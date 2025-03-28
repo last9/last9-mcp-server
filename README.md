@@ -12,8 +12,6 @@ Works with Claude desktop app. Implements two MCP [tools](https://modelcontextpr
 
 ## Installation
 
-### Releases
-
 ```
 # Add the Last9 tap
 brew tap last9/tap
