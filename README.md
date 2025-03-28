@@ -52,3 +52,26 @@ code ~/Library/Application\ Support/Claude/claude_desktop_config.json
   }
 }
 ```
+
+## Usage with Cursor
+
+Configure Cursor to use the MCP server:
+
+1. Open Cursor settings
+2. Navigate to MCP
+3. Click Add New Global Configuration
+4. Add following stanza. If you already have a MCP server configured, only add the last9 stanza.
+
+```json
+{
+  "mcpServers": {
+    "last9": {
+      "command": "/opt/homebrew/bin/last9-mcp",
+      "env": {
+        "LAST9_AUTH_TOKEN": "your_auth_token",
+        "LAST9_BASE_URL": "https://otlp.last9.io"
+      }
+    }
+  }
+}
+```
