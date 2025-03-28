@@ -1,0 +1,17 @@
+last9-mcp
+config.txt
+
+# Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/vendor/
+
+# IDE specific
+.idea/
+.vscode/
+*.swp
