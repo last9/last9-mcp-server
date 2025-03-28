@@ -14,7 +14,13 @@ Works with Claude desktop app. Implements two MCP [tools](https://modelcontextpr
 
 ### Releases
 
-Download the latest built binary from the [releases page](https://github.com/last9/last9-mcp-server/releases) depending on your architecture.
+```
+# Add the Last9 tap
+brew tap last9/tap
+
+# Install the Last9 MCP CLI
+brew install last9-mcp
+```
 
 ## Configuration
 
@@ -37,7 +43,7 @@ code ~/Library/Application\ Support/Claude/claude_desktop_config.json
 {
   "mcpServers": {
     "last9": {
-      "command": "/path/to/last9-mcp-server",
+      "command": "/opt/homebrew/bin/last9-mcp",
       "env": {
         "LAST9_AUTH_TOKEN": "your_auth_token",
         "LAST9_BASE_URL": "https://otlp.last9.io"
