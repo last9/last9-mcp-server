@@ -1,5 +1,5 @@
 {
-  "name": "last9-mcp-server",
+  "name": "@last9/mcp-server",
   "version": "0.0.9",
   "description": "Last9 MCP Server - Model Context Protocol server implementation for Last9",
   "bin": {
@@ -30,5 +30,8 @@
   "bugs": {
     "url": "https://github.com/last9/last9-mcp-server/issues"
   },
-  "homepage": "https://last9.io/mcp"
+  "homepage": "https://last9.io/mcp",
+  "publishConfig": {
+    "access": "public"
+  }
 } 
