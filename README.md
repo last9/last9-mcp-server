@@ -17,7 +17,7 @@ Works with Claude desktop app, or Cursor, Windsurf, and VSCode (Github Copilot) 
 
 ## Installation
 
-You can install the Last9 MCP server using either:
+You can install the Last9 Observability MCP server using either:
 
 ### Homebrew
 ```
