@@ -1,6 +1,9 @@
 last9-mcp
 config.txt
 
+# Build output
+dist/
+
 # Go specific
 *.exe
 *.exe~

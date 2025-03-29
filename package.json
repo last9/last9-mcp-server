@@ -1,0 +1,34 @@
+{
+  "name": "last9-mcp-server",
+  "version": "0.0.9",
+  "description": "Last9 MCP Server - Model Context Protocol server implementation for Last9",
+  "bin": {
+    "last9-mcp": "./bin/cli.js"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "postinstall": "node bin/download-binary.js",
+    "preversion": "go run main.go --version",
+    "postversion": "git push && git push --tags"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/last9/last9-mcp-server.git"
+  },
+  "engines": {
+    "node": ">=14"
+  },
+  "preferGlobal": true,
+  "keywords": ["last9", "mcp", "ai", "claude"],
+  "author": "Last9",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/last9/last9-mcp-server/issues"
+  },
+  "homepage": "https://last9.io/mcp"
+} 
