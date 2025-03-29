@@ -99,6 +99,11 @@ func createTools(cfg config) ([]mcp.ToolDefinition, error) {
 							"type":        "string",
 							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS)",
 						},
+						"limit": map[string]any{
+							"type":        "integer",
+							"description": "Maximum number of exceptions to return",
+							"default":     20,
+						},
 					},
 				},
 			},
