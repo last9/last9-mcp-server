@@ -12,12 +12,25 @@ Works with Claude desktop app. Implements two MCP [tools](https://modelcontextpr
 
 ## Installation
 
+You can install the Last9 MCP server using either
+
+### Homebrew
 ```
 # Add the Last9 tap
 brew tap last9/tap
 
 # Install the Last9 MCP CLI
 brew install last9-mcp
+```
+
+### NPM
+
+```bash
+# Install globally
+npm install -g @last9/mcp-server
+
+# Or run directly with npx
+npx @last9/mcp-server
 ```
 
 ## Configuration

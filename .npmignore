@@ -1,0 +1,15 @@
+# Go source files
+*.go
+go.mod
+go.sum
+
+# Build artifacts
+/vendor
+/.git
+/.github
+/.vscode
+.gitignore
+goreleaser.yml
+
+# Keep dist directory for binary downloads
+!dist/.gitkeep 
