@@ -1,18 +1,23 @@
 # Last9 MCP Server
 
-A [Model Context Protocol](https://modelcontextprotocol.io/) server implementation for [Last9](https://last9.io) that enables AI agents to query your data using Last9.
+![last9 mcp demo](mcp-demo.gif)
+
+A [Model Context Protocol](https://modelcontextprotocol.io/) server implementation for [Last9](https://last9.io/mcp/) that enables AI agents to seamlessly bring real-time production context — logs, metrics, and traces — into your local environment to auto-fix code faster.
+
+- [View demo](https://www.youtube.com/watch?v=AQH5xq6qzjI)
+- Read our [announcement blog post](https://last9.io/blog/launching-last9-mcp-server/)
 
 ## Status
 
-Works with Claude desktop app. Implements two MCP [tools](https://modelcontextprotocol.io/docs/concepts/tools):
+Works with Claude desktop app, or Cursor, Windsurf, and VSCode (Github Copilot) IDEs. Implements two MCP [tools](https://modelcontextprotocol.io/docs/concepts/tools):
 
-- get_exceptions: Get list of execeptions
-- get_servicegraph: Get Service graph for an endpoint from the exception
+- `get_exceptions`: Get list of execeptions
+- `get_servicegraph`: Get Service graph for an endpoint from the exception
 
 
 ## Installation
 
-You can install the Last9 MCP server using either
+You can install the Last9 Observability MCP server using either:
 
 ### Homebrew
 ```
@@ -24,7 +29,6 @@ brew install last9-mcp
 ```
 
 ### NPM
-
 ```bash
 # Install globally
 npm install -g @last9/mcp-server
@@ -42,9 +46,17 @@ The service requires the following environment variables:
 - `LAST9_AUTH_TOKEN`: Authentication token for Last9 MCP server (required)
 - `LAST9_BASE_URL`: Last9 API URL (required)
 
+Signup at [Last9](https://app.last9.io/) and get your env variable keys [here](https://app.last9.io/integrations?integration=OpenTelemetry). 
+
 ## Usage with Claude Desktop
 
 Configure the Claude app to use the MCP server:
+
+1. Open the Claude Desktop app
+2. Go to Settings, then Developer, click Edit Config
+3. Open the `claude_desktop_config.json` file
+4. Copy and paste the server config to your existing file, then save
+5. Restart Claude
 
 ```bash
 code ~/Library/Application\ Support/Claude/claude_desktop_config.json
@@ -68,10 +80,36 @@ code ~/Library/Application\ Support/Claude/claude_desktop_config.json
 
 Configure Cursor to use the MCP server:
 
-1. Open Cursor settings
-2. Navigate to MCP
-3. Click Add New Global Configuration
-4. Add following stanza. If you already have a MCP server configured, only add the last9 stanza.
+1. Navigate to Settings, then Cursor Settings
+2. Select MCP on the left
+3. Click Add new global MCP server at the top right
+4. Copy and paste the server config to your existing file, then save
+5. Restart Cursor
+
+```json
+{
+  "mcpServers": {
+    "last9": {
+      "command": "/opt/homebrew/bin/last9-mcp",
+      "env": {
+        "LAST9_AUTH_TOKEN": "your_auth_token",
+        "LAST9_BASE_URL": "https://otlp.last9.io"
+      }
+    }
+  }
+}
+```
+
+## Usage with Windsurf
+
+Configure Cursor to use the MCP server:
+
+1. Open Windsurf
+2. Go to Settings, then Developer
+3. Click Edit Config
+4. Open the `windsurf_config.json` file
+5. Copy and paste the server config to your existing file, then save
+6. Restart Windsurf
 
 ```json
 {
