@@ -13,6 +13,7 @@ Works with Claude desktop app, or Cursor, Windsurf, and VSCode (Github Copilot) 
 
 - `get_exceptions`: Get list of execeptions
 - `get_servicegraph`: Get Service graph for an endpoint from the exception
+- `get_logs`: Get logs filtered by service name and/or severity level
 
 
 ## Installation
