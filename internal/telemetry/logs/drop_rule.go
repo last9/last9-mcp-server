@@ -28,8 +28,14 @@ func NewGetDropRulesHandler(client *http.Client, cfg models.Config) func(mcp.Cal
 			return mcp.CallToolResult{}, fmt.Errorf("failed to extract organization slug: %w", err)
 		}
 
+		// Extract ActionURL from token
+		actionURL, err := utils.ExtractActionURLFromToken(accessToken)
+		if err != nil {
+			return mcp.CallToolResult{}, fmt.Errorf("failed to extract action URL: %w", err)
+		}
+
 		// Build request URL with query parameters
-		u, err := url.Parse(fmt.Sprintf("%s/api/v4/organizations/%s/logs_settings/routing", cfg.ActionURL, orgSlug))
+		u, err := url.Parse(fmt.Sprintf("%s/api/v4/organizations/%s/logs_settings/routing", actionURL, orgSlug))
 		if err != nil {
 			return mcp.CallToolResult{}, fmt.Errorf("failed to parse URL: %w", err)
 		}
@@ -90,23 +96,17 @@ func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(mcp.Call
 			return mcp.CallToolResult{}, fmt.Errorf("failed to extract organization slug: %w", err)
 		}
 
+		// Extract ActionURL from token
+		actionURL, err := utils.ExtractActionURLFromToken(accessToken)
+		if err != nil {
+			return mcp.CallToolResult{}, fmt.Errorf("failed to extract action URL: %w", err)
+		}
+
 		// Build request URL
-		u, err := url.Parse(fmt.Sprintf("%s/api/v4/organizations/%s/logs_settings/drop_rule", cfg.ActionURL, orgSlug))
+		u, err := url.Parse(fmt.Sprintf("%s/api/v4/organizations/%s/logs_settings/routing", actionURL, orgSlug))
 		if err != nil {
 			return mcp.CallToolResult{}, fmt.Errorf("failed to parse URL: %w", err)
 		}
-
-		// Parse the base URL to get the hostname
-		baseURL, err := url.Parse(cfg.BaseURL)
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to parse base URL: %w", err)
-		}
-
-		// Add region query parameter
-		q := u.Query()
-		region := utils.GetDefaultRegion(baseURL.Host)
-		q.Set("region", region)
-		u.RawQuery = q.Encode()
 
 		// Extract individual parameters and build the drop rule
 		name, ok := params.Arguments["name"].(string)
@@ -117,31 +117,47 @@ func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(mcp.Call
 		// Extract and validate filters
 		filtersRaw, ok := params.Arguments["filters"].([]interface{})
 		if !ok {
-			return mcp.CallToolResult{}, errors.New("filters are required")
+			return mcp.CallToolResult{}, errors.New("filters must be an array")
 		}
 
 		var filters []models.DropRuleFilter
 		for _, f := range filtersRaw {
-			filterMap, ok := f.(map[string]string)
+			filterMap, ok := f.(map[string]interface{})
 			if !ok {
-				return mcp.CallToolResult{}, errors.New("invalid filter format")
+				return mcp.CallToolResult{}, errors.New("each filter must be an object")
 			}
 
 			// Validate operator
-			operator := filterMap["operator"]
+			operator, ok := filterMap["operator"].(string)
+			if !ok {
+				return mcp.CallToolResult{}, errors.New("operator must be a string")
+			}
 			if operator != "equals" && operator != "not_equals" {
 				return mcp.CallToolResult{}, fmt.Errorf("invalid operator: %s. Must be one of: [equals, not_equals]", operator)
 			}
 
 			// Validate conjunction
-			conjunction := filterMap["conjunction"]
-			if conjunction != "and" && conjunction != "or" {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid conjunction: %s. Must be one of: [and, or]", conjunction)
+			conjunction, ok := filterMap["conjunction"].(string)
+			if !ok {
+				return mcp.CallToolResult{}, errors.New("conjunction must be a string")
+			}
+			if conjunction != "and" {
+				return mcp.CallToolResult{}, fmt.Errorf("invalid conjunction: %s. Must be: [and]", conjunction)
+			}
+
+			// Validate key and value
+			key, ok := filterMap["key"].(string)
+			if !ok {
+				return mcp.CallToolResult{}, errors.New("key must be a string")
+			}
+			value, ok := filterMap["value"].(string)
+			if !ok {
+				return mcp.CallToolResult{}, errors.New("value must be a string")
 			}
 
 			filter := models.DropRuleFilter{
-				Key:         filterMap["key"],
-				Value:       filterMap["value"],
+				Key:         key,
+				Value:       value,
 				Operator:    operator,
 				Conjunction: conjunction,
 			}
@@ -166,7 +182,7 @@ func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(mcp.Call
 		}
 
 		// Create request
-		req, err := http.NewRequest("POST", u.String(), bytes.NewReader(jsonData))
+		req, err := http.NewRequest("PUT", u.String(), bytes.NewReader(jsonData))
 		if err != nil {
 			return mcp.CallToolResult{}, fmt.Errorf("failed to create request: %w", err)
 		}

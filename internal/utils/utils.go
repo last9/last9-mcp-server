@@ -14,31 +14,55 @@ import (
 
 // ExtractOrgSlugFromToken extracts organization slug from JWT token
 func ExtractOrgSlugFromToken(accessToken string) (string, error) {
+	claims, err := ExtractClaimsFromToken(accessToken)
+	if err != nil {
+		return "", fmt.Errorf("failed to extract claims from token: %w", err)
+	}
+
+	orgSlug, ok := claims["organization_slug"].(string)
+	if !ok {
+		return "", errors.New("organization slug not found in token")
+	}
+
+	return orgSlug, nil
+}
+
+func ExtractClaimsFromToken(accessToken string) (map[string]interface{}, error) {
 	// Split the token into parts
 	parts := strings.Split(accessToken, ".")
 	if len(parts) != 3 {
-		return "", errors.New("invalid JWT token format")
+		return nil, errors.New("invalid JWT token format")
 	}
 
 	// Decode the payload (second part)
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return "", fmt.Errorf("failed to decode token payload: %w", err)
+		return nil, fmt.Errorf("failed to decode token payload: %w", err)
 	}
 
 	// Parse the JSON payload
-	var claims struct {
-		OrganizationSlug string `json:"organization_slug"`
-	}
+	var claims map[string]interface{}
 	if err := json.Unmarshal(payload, &claims); err != nil {
-		return "", fmt.Errorf("failed to parse token claims: %w", err)
+		return nil, fmt.Errorf("failed to parse token claims: %w", err)
 	}
 
-	if claims.OrganizationSlug == "" {
-		return "", errors.New("organization_slug not found in token")
+	return claims, nil
+}
+
+func ExtractActionURLFromToken(accessToken string) (string, error) {
+	// Extract ActionURL from token claims
+	claims, err := ExtractClaimsFromToken(accessToken)
+	if err != nil {
+		return "", fmt.Errorf("failed to extract claims from token: %w", err)
 	}
 
-	return claims.OrganizationSlug, nil
+	// Get ActionURL from aud field
+	aud, ok := claims["aud"].([]interface{})
+	if !ok || len(aud) == 0 {
+		return "", errors.New("no audience found in token claims")
+	}
+
+	return fmt.Sprintf("https://%s", aud[0].(string)), nil
 }
 
 // RefreshAccessToken gets a new access token using the refresh token
@@ -51,8 +75,13 @@ func RefreshAccessToken(client *http.Client, cfg models.Config) (string, error) 
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
+	// Extract ActionURL from token claims
+	actionURL, err := ExtractActionURLFromToken(cfg.RefreshToken)
+	if err != nil {
+		return "", fmt.Errorf("failed to extract action URL from refresh token: %w", err)
+	}
 
-	u, err := url.Parse(cfg.ActionURL + "/api/v4/oauth/access_token")
+	u, err := url.Parse(actionURL + "/api/v4/oauth/access_token")
 	if err != nil {
 		return "", fmt.Errorf("failed to parse URL: %w", err)
 	}

@@ -25,38 +25,42 @@ const GetDropRulesDescription = `Retrieve and display the configured drop rules 
 Drop rules are filtering mechanisms that determine which logs are excluded from being processed and stored.`
 
 const AddDropRuleDescription = `
-	Add a new drop rule for logs.
+	Add Drop Rule filtering capabilities:
+	
+	Not Supported
+	- Key:
+		- filtering on message content in the values array is not supported
+		- Message (attributes[\"message\"])
+		- Body (attributes[\"body\"])
+		- Individual keys like key1, key2, etc.
+		- Regular expression patterns
+		- Actual log content in values object
 
-	Args:
-		The name of the drop rule.
-		name: string
-		
-		A list of filter conditions to apply for this drop rule.
-		filters: []struct {
-			The key to filter on. If it is a resource attribute, specify it as resource.attribute[key_name].
-			Ensure that double quotes in the key name are properly escaped.
-			key: string
-			
-			The value to filter against.
-			value: string
-			
-			The operator used for filtering. Accepted operators include:
-			- "equals"
-			- "not_equals"
-			operator: string
-			
-			The logical conjunction to apply between filters. Supported conjunction:
-			- "and"
-			conjunction: string
-		}
-		
-		Example filter configuration:
-		{
-		    "key": "attributes[\"logtag\"]",
-		    "value": "P",
-		    "operator": "equals",
-		    "conjunction": "and"
-		}
-	Response:
-		List of all drop rules.
+	- Operators:
+		- No partial matching
+		- No contains, startswith, or endswith operators
+		- No numeric comparisons (greater than, less than)
+
+	- Conjunctions:
+		- No or logic between filters
+
+	Supported
+	- Key:
+		- Log attributes (attributes[\"key_name\"])
+		- Resource attributes (resource.attributes[\"key_name\"])
+
+	- Operators:
+		- equals
+		- not_equals
+
+	- Logical Conjunctions:
+		- and
+
+	Key Requirements
+	- All attribute keys must use proper escaping with double quotes
+	- Resource attributes must be prefixed with resource.attributes
+	- Log attributes must be prefixed with attributes
+	- Each filter requires a conjunction (and) to combine with other filters
+
+	The system only supports filtering on metadata about the logs, not the actual log content itself.
 `

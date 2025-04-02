@@ -132,7 +132,7 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 							"description": "Name of the drop rule",
 						},
 						"filters": map[string]any{
-							"type": "array",
+							"type": "array of map[string]string",
 							"description": `List of filter conditions.
 								e.g.
 									"filters": [
@@ -149,9 +149,9 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 											"conjunction": "and"
 										}
 									]
-								regex pattern and filtering on body attributes is not supported as of now, will be added in a future version`,
+								regex pattern and filtering on body or message is not supported as of now, will be added in a future version`,
 							"items": map[string]any{
-								"type": "object",
+								"type": "map[string]string",
 								"properties": map[string]any{
 									"key": map[string]any{
 										"type": "string",

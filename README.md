@@ -63,7 +63,7 @@ Parameters:
 
 - `name` (string, required): Name of the drop rule.
 - `filters` (array, required): List of filter conditions to apply. Each filter has:
-  - `key` (string, required): The key to filter on. For resource attributes, use format: resource.attribute[key_name]. Double quotes in key names must be escaped.
+  - `key` (string, required): The key to filter on. Only attributes and resource.attributes keys are supported. For resource attributes, use format: resource.attribute[key_name]. Double quotes in key names must be escaped.
   - `value` (string, required): The value to filter against.
   - `operator` (string, required): The operator used for filtering. Valid values:
     - "equals"
@@ -126,8 +126,9 @@ code ~/Library/Application\ Support/Claude/claude_desktop_config.json
     "last9": {
       "command": "/opt/homebrew/bin/last9-mcp",
       "env": {
-        "LAST9_AUTH_TOKEN": "your_auth_token",
-        "LAST9_BASE_URL": "https://otlp.last9.io"
+        "LAST9_AUTH_TOKEN": "<your_auth_token>",
+        "LAST9_BASE_URL": "https://otlp.last9.io",
+        "LAST9_REFRESH_TOKEN": "<refresh_token_from_last9_dashboard>"
       }
     }
   }
@@ -150,8 +151,9 @@ Configure Cursor to use the MCP server:
     "last9": {
       "command": "/opt/homebrew/bin/last9-mcp",
       "env": {
-        "LAST9_AUTH_TOKEN": "your_auth_token",
-        "LAST9_BASE_URL": "https://otlp.last9.io"
+        "LAST9_AUTH_TOKEN": "<your_auth_token>",
+        "LAST9_BASE_URL": "https://otlp.last9.io",
+        "LAST9_REFRESH_TOKEN": "<refresh_token_from_last9_dashboard>"
       }
     }
   }
@@ -175,8 +177,9 @@ Configure Cursor to use the MCP server:
     "last9": {
       "command": "/opt/homebrew/bin/last9-mcp",
       "env": {
-        "LAST9_AUTH_TOKEN": "your_auth_token",
-        "LAST9_BASE_URL": "https://otlp.last9.io"
+        "LAST9_AUTH_TOKEN": "<your_auth_token>",
+        "LAST9_BASE_URL": "https://otlp.last9.io",
+        "LAST9_REFRESH_TOKEN": "<refresh_token_from_last9_dashboard>"
       }
     }
   }
