@@ -11,10 +11,11 @@ A [Model Context Protocol](https://modelcontextprotocol.io/) server implementati
 
 Works with Claude desktop app, or Cursor, Windsurf, and VSCode (Github Copilot) IDEs. Implements the following MCP [tools](https://modelcontextprotocol.io/docs/concepts/tools):
 
-- `get_exceptions`: Get list of exceptions
-- `get_service_graph`: Get service graph for an endpoint from the exception
-- `get_logs`: Get logs filtered by service name and/or severity level
-- `get_drop_rules`: Get drop rules for logs that determine what logs get filtered out
+- `get_exceptions`: Get list of exceptions.
+- `get_service_graph`: Get service graph for an endpoint from the exception.
+- `get_logs`: Get logs filtered by service name and/or severity level.
+- `get_drop_rules`: Get drop rules for logs that determine what logs get filtered out at [Last9 Control Plane](https://last9.io/control-plane)
+- `add_drop_rule`: Create a drop rule for logs at [Last9 Control Plane](https://last9.io/control-plane)
 
 ## Tools Documentation
 
@@ -57,7 +58,7 @@ Gets drop rules for logs, which determine what logs get filtered out from reachi
 
 ### add_drop_rule
 
-Adds a new drop rule to filter out specific logs from reaching Last9.
+Adds a new drop rule to filter out specific logs at [Last9 Control Plane](https://last9.io/control-plane)
 
 Parameters:
 
