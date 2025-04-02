@@ -63,7 +63,7 @@ Parameters:
 
 - `name` (string, required): Name of the drop rule.
 - `filters` (array, required): List of filter conditions to apply. Each filter has:
-  - `key` (string, required): The key to filter on. Only attributes and resource.attributes keys are supported. For resource attributes, use format: resource.attribute[key_name]. Double quotes in key names must be escaped.
+  - `key` (string, required): The key to filter on. Only attributes and resource.attributes keys are supported. For resource attributes, use format: resource.attributes[key_name] and for log attributes, use format: attributes[key_name] Double quotes in key names must be escaped.
   - `value` (string, required): The value to filter against.
   - `operator` (string, required): The operator used for filtering. Valid values:
     - "equals"
