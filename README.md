@@ -9,18 +9,75 @@ A [Model Context Protocol](https://modelcontextprotocol.io/) server implementati
 
 ## Status
 
-Works with Claude desktop app, or Cursor, Windsurf, and VSCode (Github Copilot) IDEs. Implements two MCP [tools](https://modelcontextprotocol.io/docs/concepts/tools):
+Works with Claude desktop app, or Cursor, Windsurf, and VSCode (Github Copilot) IDEs. Implements the following MCP [tools](https://modelcontextprotocol.io/docs/concepts/tools):
 
-- `get_exceptions`: Get list of execeptions
-- `get_servicegraph`: Get Service graph for an endpoint from the exception
-- `get_logs`: Get logs filtered by service name and/or severity level
+- `get_exceptions`: Get list of exceptions.
+- `get_service_graph`: Get service graph for an endpoint from the exception.
+- `get_logs`: Get logs filtered by service name and/or severity level.
+- `get_drop_rules`: Get drop rules for logs that determine what logs get filtered out at [Last9 Control Plane](https://last9.io/control-plane)
+- `add_drop_rule`: Create a drop rule for logs at [Last9 Control Plane](https://last9.io/control-plane)
 
+## Tools Documentation
+
+### get_exceptions
+
+Retrieves server-side exceptions over a specified time range.
+
+Parameters:
+
+- `limit` (integer, optional): Maximum number of exceptions to return. Default: 20.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS).
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS).
+- `span_name` (string, optional): Name of the span to filter by.
+
+### get_service_graph
+
+Gets the upstream and downstream services for a given span name, along with the throughput for each service.
+
+Parameters:
+
+- `span_name` (string, required): Name of the span to get dependencies for.
+- `lookback_minutes` (integer, optional): Number of minutes to look back. Default: 60.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS).
+
+### get_logs
+
+Gets logs filtered by optional service name and/or severity level within a specified time range.
+
+Parameters:
+
+- `service` (string, optional): Name of the service to get logs for.
+- `severity` (string, optional): Severity of the logs to get.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS).
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS).
+- `limit` (integer, optional): Maximum number of logs to return. Default: 20.
+
+### get_drop_rules
+
+Gets drop rules for logs, which determine what logs get filtered out from reaching Last9.
+
+### add_drop_rule
+
+Adds a new drop rule to filter out specific logs at [Last9 Control Plane](https://last9.io/control-plane)
+
+Parameters:
+
+- `name` (string, required): Name of the drop rule.
+- `filters` (array, required): List of filter conditions to apply. Each filter has:
+  - `key` (string, required): The key to filter on. Only attributes and resource.attributes keys are supported. For resource attributes, use format: resource.attributes[key_name] and for log attributes, use format: attributes[key_name] Double quotes in key names must be escaped.
+  - `value` (string, required): The value to filter against.
+  - `operator` (string, required): The operator used for filtering. Valid values:
+    - "equals"
+    - "not_equals"
+  - `conjunction` (string, required): The logical conjunction between filters. Valid values:
+    - "and"
 
 ## Installation
 
 You can install the Last9 Observability MCP server using either:
 
 ### Homebrew
+
 ```
 # Add the Last9 tap
 brew tap last9/tap
@@ -30,6 +87,7 @@ brew install last9-mcp
 ```
 
 ### NPM
+
 ```bash
 # Install globally
 npm install -g @last9/mcp-server
@@ -46,8 +104,11 @@ The service requires the following environment variables:
 
 - `LAST9_AUTH_TOKEN`: Authentication token for Last9 MCP server (required)
 - `LAST9_BASE_URL`: Last9 API URL (required)
+- `LAST9_REFRESH_TOKEN`: Refresh Token with Write permissions. Needed for accessing control plane APIs (required).
 
-Signup at [Last9](https://app.last9.io/) and get your env variable keys [here](https://app.last9.io/integrations?integration=OpenTelemetry). 
+- Signup at [Last9](https://app.last9.io/) and setup one of the [integrations](https://last9.io/docs/integrations/).
+- Obtain `LAST9_BASE_URL` and `LAST9_AUTH_TOKEN` from [here](https://app.last9.io/integrations?integration=OpenTelemetry).
+- The Write Refresh Token can be obtained from [API Access](https://app.last9.io/settings/api-access) page.
 
 ## Usage with Claude Desktop
 
@@ -69,8 +130,9 @@ code ~/Library/Application\ Support/Claude/claude_desktop_config.json
     "last9": {
       "command": "/opt/homebrew/bin/last9-mcp",
       "env": {
-        "LAST9_AUTH_TOKEN": "your_auth_token",
-        "LAST9_BASE_URL": "https://otlp.last9.io"
+        "LAST9_AUTH_TOKEN": "<your_auth_token>",
+        "LAST9_BASE_URL": "<last9_otlp_host>",
+        "LAST9_REFRESH_TOKEN": "<refresh_token_from_last9_dashboard>"
       }
     }
   }
@@ -93,8 +155,9 @@ Configure Cursor to use the MCP server:
     "last9": {
       "command": "/opt/homebrew/bin/last9-mcp",
       "env": {
-        "LAST9_AUTH_TOKEN": "your_auth_token",
-        "LAST9_BASE_URL": "https://otlp.last9.io"
+        "LAST9_AUTH_TOKEN": "<auth_token>",
+        "LAST9_BASE_URL": "<last9_otlp_host>",
+        "LAST9_REFRESH_TOKEN": "<write_refresh_token>"
       }
     }
   }
@@ -118,8 +181,9 @@ Configure Cursor to use the MCP server:
     "last9": {
       "command": "/opt/homebrew/bin/last9-mcp",
       "env": {
-        "LAST9_AUTH_TOKEN": "your_auth_token",
-        "LAST9_BASE_URL": "https://otlp.last9.io"
+        "LAST9_AUTH_TOKEN": "<auth_token>",
+        "LAST9_BASE_URL": "<last9_otlp_host>",
+        "LAST9_REFRESH_TOKEN": "<refresh_token>"
       }
     }
   }

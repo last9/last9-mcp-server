@@ -1,12 +1,10 @@
 package main
 
 import (
-	"encoding/json"
-	"errors"
-	"fmt"
+	"last9-mcp/internal/models"
+	"last9-mcp/internal/telemetry/logs"
+	"last9-mcp/internal/telemetry/traces"
 	"net/http"
-	"net/url"
-	"strconv"
 	"time"
 
 	"github.com/acrmp/mcp"
@@ -14,7 +12,7 @@ import (
 )
 
 // createTools creates the MCP tool definitions with appropriate rate limits
-func createTools(cfg config) ([]mcp.ToolDefinition, error) {
+func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
@@ -23,7 +21,7 @@ func createTools(cfg config) ([]mcp.ToolDefinition, error) {
 		{
 			Metadata: mcp.Tool{
 				Name:        "get_exceptions",
-				Description: ptr(getExceptionsDescription),
+				Description: ptr(traces.GetExceptionsDescription),
 				InputSchema: mcp.ToolInputSchema{
 					Type: "object",
 					Properties: mcp.ToolInputSchemaProperties{
@@ -47,13 +45,13 @@ func createTools(cfg config) ([]mcp.ToolDefinition, error) {
 					},
 				},
 			},
-			Execute:   newGetExceptionsHandler(client, cfg),
-			RateLimit: rate.NewLimiter(rate.Limit(cfg.requestRateLimit), cfg.requestRateBurst),
+			Execute:   traces.NewGetExceptionsHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
 		},
 		{
 			Metadata: mcp.Tool{
 				Name:        "get_service_graph",
-				Description: ptr(getServiceGraphDescription),
+				Description: ptr(traces.GetServiceGraphDescription),
 				InputSchema: mcp.ToolInputSchema{
 					Type: "object",
 					Properties: mcp.ToolInputSchemaProperties{
@@ -73,13 +71,13 @@ func createTools(cfg config) ([]mcp.ToolDefinition, error) {
 					},
 				},
 			},
-			Execute:   newGetServiceGraphHandler(client, cfg),
-			RateLimit: rate.NewLimiter(rate.Limit(cfg.requestRateLimit), cfg.requestRateBurst),
+			Execute:   traces.NewGetServiceGraphHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
 		},
 		{
 			Metadata: mcp.Tool{
 				Name:        "get_logs",
-				Description: ptr(getLogsDescription),
+				Description: ptr(logs.GetLogsDescription),
 				InputSchema: mcp.ToolInputSchema{
 					Type: "object",
 					Properties: mcp.ToolInputSchemaProperties{
@@ -107,8 +105,82 @@ func createTools(cfg config) ([]mcp.ToolDefinition, error) {
 					},
 				},
 			},
-			Execute:   newGetLogsHandler(client, cfg),
-			RateLimit: rate.NewLimiter(rate.Limit(cfg.requestRateLimit), cfg.requestRateBurst),
+			Execute:   logs.NewGetLogsHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
+		{
+			Metadata: mcp.Tool{
+				Name:        "get_drop_rules",
+				Description: ptr(logs.GetDropRulesDescription),
+				InputSchema: mcp.ToolInputSchema{
+					Type:       "object",
+					Properties: mcp.ToolInputSchemaProperties{},
+				},
+			},
+			Execute:   logs.NewGetDropRulesHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
+		{
+			Metadata: mcp.Tool{
+				Name:        "add_drop_rule",
+				Description: ptr(logs.AddDropRuleDescription),
+				InputSchema: mcp.ToolInputSchema{
+					Type: "object",
+					Properties: mcp.ToolInputSchemaProperties{
+						"name": map[string]any{
+							"type":        "string",
+							"description": "Name of the drop rule",
+						},
+						"filters": map[string]any{
+							"type": "array of map[string]string",
+							"description": `List of filter conditions.
+								e.g.
+									"filters": [
+										{
+											"key": "attributes[\"logtag\"]",
+											"value": "P",
+											"operator": "equals",
+											"conjunction": "and"
+										},
+										{
+											"key": "attributes[\"logtag\"]",
+											"value": "F",
+											"operator": "not_equals",
+											"conjunction": "and"
+										}
+									]
+								regex pattern and filtering on body or message is not supported as of now, will be added in a future version`,
+							"items": map[string]any{
+								"type": "map[string]string",
+								"properties": map[string]any{
+									"key": map[string]any{
+										"type": "string",
+										"description": `The key to filter on. Must be properly escaped with double quotes.
+														For resource attributes, use format: "resource.attributes[\"key_name\"]" 
+														Example: "resource.attributes[\"service.name\"]"
+														For log attributes, use format: "attributes[\"key_name\"]"
+														Example: "attributes[\"logtag\"]"`,
+									},
+									"value": map[string]any{
+										"type":        "string",
+										"description": "Filter value to match",
+									},
+									"operator": map[string]any{
+										"type":        "string",
+										"description": "The comparison operator for the filter condition. Must be one of: [equals, not_equals]. The request will be rejected if any other operator is specified.",
+									},
+									"conjunction": map[string]any{
+										"type":        "string",
+										"description": "The logical operator used to combine multiple filter conditions. Must be one of: [and]. The request will be rejected if any other conjunction is specified.",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			Execute:   logs.NewAddDropRuleHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
 		},
 	}, nil
 }
@@ -116,249 +188,4 @@ func createTools(cfg config) ([]mcp.ToolDefinition, error) {
 // ptr returns a pointer to the provided string
 func ptr(s string) *string {
 	return &s
-}
-
-const getExceptionsDescription = `Get server side exceptions over the given time range. 
-Includes the exception type, message, stack trace, service name, trace ID and span attributes.`
-
-const getServiceGraphDescription = `Gets the upstream and downstream services for a given span name, 
-along with the throughput for each service.`
-
-const getLogsDescription = `Get logs filtered by optional service name and/or severity level within a specified time range. 
-Omitting service returns logs from all services.`
-
-// newGetExceptionsHandler creates a handler for getting exceptions
-func newGetExceptionsHandler(client *http.Client, cfg config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-		limit := 20
-		if l, ok := params.Arguments["limit"].(float64); ok {
-			limit = int(l)
-		}
-
-		// Calculate timestamps
-		endTime := time.Now()
-		startTime := endTime.Add(-1 * time.Hour)
-
-		if startTimeStr, ok := params.Arguments["start_time_iso"].(string); ok && startTimeStr != "" {
-			t, err := time.Parse("2006-01-02 15:04:05", startTimeStr)
-			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid start_time_iso format: %w", err)
-			}
-			startTime = t
-		}
-
-		if endTimeStr, ok := params.Arguments["end_time_iso"].(string); ok && endTimeStr != "" {
-			t, err := time.Parse("2006-01-02 15:04:05", endTimeStr)
-			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid end_time_iso format: %w", err)
-			}
-			endTime = t
-		}
-
-		// Build request URL with query parameters
-		u, err := url.Parse(cfg.baseURL + "/telemetry/api/v1/exceptions")
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to parse URL: %w", err)
-		}
-
-		q := u.Query()
-		q.Set("start", strconv.FormatInt(startTime.Unix(), 10))
-		q.Set("end", strconv.FormatInt(endTime.Unix(), 10))
-		q.Set("limit", strconv.Itoa(limit))
-
-		if spanName, ok := params.Arguments["span_name"].(string); ok && spanName != "" {
-			q.Set("span_name", spanName)
-		}
-
-		u.RawQuery = q.Encode()
-
-		// Create request
-		req, err := http.NewRequest("GET", u.String(), nil)
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to create request: %w", err)
-		}
-
-		req.Header.Set("Authorization", "Basic "+cfg.authToken)
-
-		// Execute request
-		resp, err := client.Do(req)
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("request failed: %w", err)
-		}
-		defer resp.Body.Close()
-
-		var result interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode response: %w", err)
-		}
-
-		jsonData, err := json.Marshal(result)
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to marshal response: %w", err)
-		}
-
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
-					Text: string(jsonData),
-					Type: "text",
-				},
-			},
-		}, nil
-	}
-}
-
-// newGetServiceGraphHandler creates a handler for getting service dependencies
-func newGetServiceGraphHandler(client *http.Client, cfg config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-		spanName, ok := params.Arguments["span_name"].(string)
-		if !ok || spanName == "" {
-			return mcp.CallToolResult{}, errors.New("span_name is required")
-		}
-
-		lookbackMinutes := 60
-		if l, ok := params.Arguments["lookback_minutes"].(float64); ok {
-			lookbackMinutes = int(l)
-		}
-
-		startTime := time.Now()
-		if startTimeStr, ok := params.Arguments["start_time_iso"].(string); ok && startTimeStr != "" {
-			t, err := time.Parse("2006-01-02 15:04:05", startTimeStr)
-			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid start_time_iso format: %w", err)
-			}
-			startTime = t
-		}
-
-		// Build request URL
-		u, err := url.Parse(cfg.baseURL + "/telemetry/api/v1/service_graph")
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to parse URL: %w", err)
-		}
-
-		q := u.Query()
-		q.Set("start", strconv.FormatInt(startTime.Unix(), 10))
-		q.Set("span_name", spanName)
-		q.Set("lookback_minutes", strconv.Itoa(lookbackMinutes))
-		u.RawQuery = q.Encode()
-
-		// Create request
-		req, err := http.NewRequest("GET", u.String(), nil)
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to create request: %w", err)
-		}
-
-		req.Header.Set("Authorization", "Basic "+cfg.authToken)
-
-		// Execute request
-		resp, err := client.Do(req)
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("request failed: %w", err)
-		}
-		defer resp.Body.Close()
-
-		var result interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode response: %w", err)
-		}
-
-		jsonData, err := json.Marshal(result)
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to marshal response: %w", err)
-		}
-
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
-					Text: string(jsonData),
-					Type: "text",
-				},
-			},
-		}, nil
-	}
-}
-
-// newGetLogsHandler creates a handler for getting logs
-func newGetLogsHandler(client *http.Client, cfg config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-		limit := 20
-		if l, ok := params.Arguments["limit"].(float64); ok {
-			limit = int(l)
-		}
-
-		// Calculate timestamps
-		endTime := time.Now()
-		startTime := endTime.Add(-1 * time.Hour)
-
-		if startTimeStr, ok := params.Arguments["start_time_iso"].(string); ok && startTimeStr != "" {
-			t, err := time.Parse("2006-01-02 15:04:05", startTimeStr)
-			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid start_time_iso format: %w", err)
-			}
-			startTime = t
-		}
-
-		if endTimeStr, ok := params.Arguments["end_time_iso"].(string); ok && endTimeStr != "" {
-			t, err := time.Parse("2006-01-02 15:04:05", endTimeStr)
-			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid end_time_iso format: %w", err)
-			}
-			endTime = t
-		}
-
-		// Build request URL with query parameters
-		u, err := url.Parse(cfg.baseURL + "/telemetry/api/v1/logs")
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to parse URL: %w", err)
-		}
-
-		q := u.Query()
-		q.Set("start", strconv.FormatInt(startTime.Unix(), 10))
-		q.Set("end", strconv.FormatInt(endTime.Unix(), 10))
-		q.Set("limit", strconv.Itoa(limit))
-
-		if service, ok := params.Arguments["service"].(string); ok && service != "" {
-			q.Set("service", service)
-		}
-
-		if severity, ok := params.Arguments["severity"].(string); ok && severity != "" {
-			q.Set("severity", severity)
-		}
-
-		u.RawQuery = q.Encode()
-
-		// Create request
-		req, err := http.NewRequest("GET", u.String(), nil)
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to create request: %w", err)
-		}
-
-		req.Header.Set("Authorization", "Basic "+cfg.authToken)
-
-		// Execute request
-		resp, err := client.Do(req)
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("request failed: %w", err)
-		}
-		defer resp.Body.Close()
-
-		var result interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode response: %w", err)
-		}
-
-		jsonData, err := json.Marshal(result)
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to marshal response: %w", err)
-		}
-
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
-					Text: string(jsonData),
-					Type: "text",
-				},
-			},
-		}, nil
-	}
 }
