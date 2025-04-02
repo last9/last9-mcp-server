@@ -25,7 +25,8 @@ const GetDropRulesDescription = `Retrieve and display the configured drop rules 
 Drop rules are filtering mechanisms that determine which logs are excluded from being processed and stored.`
 
 const AddDropRuleDescription = `
-	Add Drop Rule filtering capabilities:
+	Add Drop Rule filtering capabilities, it supports filtering on metadata about the logs, 
+	not the actual log content itself. 
 	
 	Not Supported
 	- Key:
