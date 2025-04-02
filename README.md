@@ -104,8 +104,11 @@ The service requires the following environment variables:
 
 - `LAST9_AUTH_TOKEN`: Authentication token for Last9 MCP server (required)
 - `LAST9_BASE_URL`: Last9 API URL (required)
+- `LAST9_REFRESH_TOKEN`: Refresh Token with Write permissions. Needed for accessing control plane APIs (required).
 
-Signup at [Last9](https://app.last9.io/) and get your env variable keys [here](https://app.last9.io/integrations?integration=OpenTelemetry).
+- Signup at [Last9](https://app.last9.io/) and setup one of the [integrations](https://last9.io/docs/integrations/).
+- Obtain `LAST9_BASE_URL` and `LAST9_AUTH_TOKEN` from [here](https://app.last9.io/integrations?integration=OpenTelemetry).
+- The Write Refresh Token can be obtained from [API Access](https://app.last9.io/settings/api-access) page.
 
 ## Usage with Claude Desktop
 
@@ -128,7 +131,7 @@ code ~/Library/Application\ Support/Claude/claude_desktop_config.json
       "command": "/opt/homebrew/bin/last9-mcp",
       "env": {
         "LAST9_AUTH_TOKEN": "<your_auth_token>",
-        "LAST9_BASE_URL": "https://otlp.last9.io",
+        "LAST9_BASE_URL": "<last9_otlp_host>",
         "LAST9_REFRESH_TOKEN": "<refresh_token_from_last9_dashboard>"
       }
     }
@@ -152,9 +155,9 @@ Configure Cursor to use the MCP server:
     "last9": {
       "command": "/opt/homebrew/bin/last9-mcp",
       "env": {
-        "LAST9_AUTH_TOKEN": "<your_auth_token>",
-        "LAST9_BASE_URL": "https://otlp.last9.io",
-        "LAST9_REFRESH_TOKEN": "<refresh_token_from_last9_dashboard>"
+        "LAST9_AUTH_TOKEN": "<auth_token>",
+        "LAST9_BASE_URL": "<last9_otlp_host>",
+        "LAST9_REFRESH_TOKEN": "<write_refresh_token>"
       }
     }
   }
@@ -178,9 +181,9 @@ Configure Cursor to use the MCP server:
     "last9": {
       "command": "/opt/homebrew/bin/last9-mcp",
       "env": {
-        "LAST9_AUTH_TOKEN": "<your_auth_token>",
-        "LAST9_BASE_URL": "https://otlp.last9.io",
-        "LAST9_REFRESH_TOKEN": "<refresh_token_from_last9_dashboard>"
+        "LAST9_AUTH_TOKEN": "<auth_token>",
+        "LAST9_BASE_URL": "<last9_otlp_host>",
+        "LAST9_REFRESH_TOKEN": "<refresh_token>"
       }
     }
   }
