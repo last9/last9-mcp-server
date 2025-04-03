@@ -15,7 +15,23 @@ import (
 	"github.com/peterbourgon/ff/v3"
 )
 
+// Version information
+var (
+	Version   = "dev"     // Set by goreleaser
+	CommitSHA = "unknown" // Set by goreleaser
+	BuildTime = "unknown" // Set by goreleaser
+)
+
 func main() {
+	// Handle version flag
+	versionFlag := flag.Bool("version", false, "Print version information")
+	flag.Parse()
+
+	if *versionFlag {
+		fmt.Printf("Version: %s\nCommit: %s\nBuild Time: %s\n", Version, CommitSHA, BuildTime)
+		return
+	}
+
 	cfg, err := setupConfig()
 	if err != nil {
 		log.Fatalf("config error: %v", err)
@@ -34,13 +50,6 @@ func main() {
 	s := mcp.NewServer(info, tools)
 	s.Serve()
 }
-
-// Version information
-var (
-	Version   = "dev"     // Set by goreleaser
-	CommitSHA = "unknown" // Set by goreleaser
-	BuildTime = "unknown" // Set by goreleaser
-)
 
 // setupConfig initializes and parses the configuration
 func setupConfig() (models.Config, error) {
