@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "postinstall": "node bin/download-binary.js",
-    "preversion": "go run main.go --version",
+    "preversion": "go run . --version",
     "postversion": "git push && git push --tags"
   },
   "repository": {
