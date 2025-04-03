@@ -1,6 +1,6 @@
 {
   "name": "@last9/mcp-server",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Last9 MCP Server - Model Context Protocol server implementation for Last9",
   "bin": {
     "last9-mcp": "./bin/cli.js"
@@ -24,7 +24,12 @@
     "node": ">=14"
   },
   "preferGlobal": true,
-  "keywords": ["last9", "mcp", "ai", "claude"],
+  "keywords": [
+    "last9",
+    "mcp",
+    "ai",
+    "claude"
+  ],
   "author": "Last9",
   "license": "MIT",
   "bugs": {
@@ -34,4 +39,4 @@
   "publishConfig": {
     "access": "public"
   }
-} 
+}
