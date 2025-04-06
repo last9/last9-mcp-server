@@ -166,7 +166,7 @@ Configure Cursor to use the MCP server:
 
 ## Usage with Windsurf
 
-Configure Cursor to use the MCP server:
+Configure Windsurf to use the MCP server:
 
 1. Open Windsurf
 2. Go to Settings, then Developer
