@@ -29,6 +29,8 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 							"type":        "integer",
 							"description": "Maximum number of exceptions to return",
 							"default":     20,
+							"minimum":     1,
+							"maximum":     100,
 						},
 						"start_time_iso": map[string]any{
 							"type":        "string",
@@ -67,6 +69,7 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 						"start_time_iso": map[string]any{
 							"type":        "string",
 							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS)",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
 						},
 					},
 				},
@@ -92,15 +95,20 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 						"start_time_iso": map[string]any{
 							"type":        "string",
 							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS)",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
 						},
 						"end_time_iso": map[string]any{
 							"type":        "string",
 							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS)",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
 						},
 						"limit": map[string]any{
 							"type":        "integer",
-							"description": "Maximum number of exceptions to return",
+
+							"description": "Maximum number of logs to return",
 							"default":     20,
+							"minimum":     1,
+							"maximum":     100,
 						},
 					},
 				},
@@ -132,7 +140,7 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 							"description": "Name of the drop rule",
 						},
 						"filters": map[string]any{
-							"type": "array of map[string]string",
+							"type": "array",
 							"description": `List of filter conditions.
 								e.g.
 									"filters": [
@@ -151,12 +159,12 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 									]
 								regex pattern and filtering on body or message is not supported as of now, will be added in a future version`,
 							"items": map[string]any{
-								"type": "map[string]string",
+								"type": "object",
 								"properties": map[string]any{
 									"key": map[string]any{
 										"type": "string",
 										"description": `The key to filter on. Must be properly escaped with double quotes.
-														For resource attributes, use format: "resource.attributes[\"key_name\"]" 
+														For resource attributes, use format: "resource.attributes[\"key_name\"]"
 														Example: "resource.attributes[\"service.name\"]"
 														For log attributes, use format: "attributes[\"key_name\"]"
 														Example: "attributes[\"logtag\"]"`,
@@ -168,12 +176,15 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 									"operator": map[string]any{
 										"type":        "string",
 										"description": "The comparison operator for the filter condition. Must be one of: [equals, not_equals]. The request will be rejected if any other operator is specified.",
+										"enum":        []string{"equals", "not_equals"},
 									},
 									"conjunction": map[string]any{
 										"type":        "string",
 										"description": "The logical operator used to combine multiple filter conditions. Must be one of: [and]. The request will be rejected if any other conjunction is specified.",
+										"enum":        []string{"and"},
 									},
 								},
+								"required": []string{"key", "value", "operator", "conjunction"},
 							},
 						},
 					},

@@ -17,8 +17,11 @@ import (
 func NewGetServiceGraphHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
 	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
 		spanName, ok := params.Arguments["span_name"].(string)
-		if !ok || spanName == "" {
+		if !ok {
 			return mcp.CallToolResult{}, errors.New("span_name is required")
+		}
+		if spanName == "" {
+			return mcp.CallToolResult{}, errors.New("span_name cannot be empty")
 		}
 
 		lookbackMinutes := 60
