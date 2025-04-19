@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 	"net/http"
 	"net/url"
 	"strconv"
-	"time"
 
 	"github.com/acrmp/mcp"
 )
@@ -29,13 +29,10 @@ func NewGetServiceGraphHandler(client *http.Client, cfg models.Config) func(mcp.
 			lookbackMinutes = int(l)
 		}
 
-		startTime := time.Now()
-		if startTimeStr, ok := params.Arguments["start_time_iso"].(string); ok && startTimeStr != "" {
-			t, err := time.Parse("2006-01-02 15:04:05", startTimeStr)
-			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid start_time_iso format: %w", err)
-			}
-			startTime = t
+		// Get time range using the common utility
+		startTime, _, err := utils.GetTimeRange(params.Arguments, lookbackMinutes)
+		if err != nil {
+			return mcp.CallToolResult{}, err
 		}
 
 		// Build request URL

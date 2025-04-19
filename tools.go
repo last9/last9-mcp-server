@@ -32,13 +32,25 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 							"minimum":     1,
 							"maximum":     100,
 						},
+						"lookback_minutes": map[string]any{
+							"type":        "integer",
+							"description": "Number of minutes to look back from now. Use this for relative time ranges instead of explicit timestamps.",
+							"default":     60,
+							"minimum":     1,
+							"maximum":     1440, // 24 hours
+							"examples":    []int{60, 30, 15},
+						},
 						"start_time_iso": map[string]any{
 							"type":        "string",
-							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS)",
+							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - lookback_minutes. Example: use lookback_minutes instead for relative time.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""}, // Empty string to encourage using defaults
 						},
 						"end_time_iso": map[string]any{
 							"type":        "string",
-							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS)",
+							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""}, // Empty string to encourage using defaults
 						},
 						"span_name": map[string]any{
 							"type":        "string",
@@ -63,13 +75,17 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 						},
 						"lookback_minutes": map[string]any{
 							"type":        "integer",
-							"description": "Number of minutes to look back",
+							"description": "Number of minutes to look back from now. Use this for relative time ranges instead of explicit timestamps.",
 							"default":     60,
+							"minimum":     1,
+							"maximum":     1440, // 24 hours
+							"examples":    []int{60, 30, 15},
 						},
 						"start_time_iso": map[string]any{
 							"type":        "string",
-							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS)",
+							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). If specified, lookback_minutes is ignored. Defaults to now - lookback_minutes if not specified.",
 							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""}, // Empty string to encourage using defaults
 						},
 					},
 				},
@@ -94,17 +110,26 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 						},
 						"start_time_iso": map[string]any{
 							"type":        "string",
-							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS)",
+							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes. Example: use lookback_minutes instead for relative time.",
 							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""}, // Empty string to encourage using defaults
 						},
 						"end_time_iso": map[string]any{
 							"type":        "string",
-							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS)",
+							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.",
 							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""}, // Empty string to encourage using defaults
+						},
+						"lookback_minutes": map[string]any{
+							"type":        "integer",
+							"description": "Number of minutes to look back from now. Use this for relative time ranges instead of explicit timestamps.",
+							"default":     60,
+							"minimum":     1,
+							"maximum":     1440, // 24 hours
+							"examples":    []int{60, 30, 15},
 						},
 						"limit": map[string]any{
 							"type":        "integer",
-
 							"description": "Maximum number of logs to return",
 							"default":     20,
 							"minimum":     1,

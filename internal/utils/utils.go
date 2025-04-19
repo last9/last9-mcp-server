@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // ExtractOrgSlugFromToken extracts organization slug from JWT token
@@ -125,4 +126,60 @@ func GetDefaultRegion(baseURL string) string {
 	default:
 		return "us-east-1" // default to us-east-1 if URL pattern doesn't match
 	}
+}
+
+// GetTimeRange returns start and end times based on lookback minutes
+// If start_time_iso and end_time_iso are provided, they take precedence
+// Otherwise, returns now and now - lookbackMinutes
+func GetTimeRange(params map[string]interface{}, defaultLookbackMinutes int) (startTime, endTime time.Time, err error) {
+	endTime = time.Now()
+
+	// First check if lookback_minutes is provided
+	lookbackMinutes := defaultLookbackMinutes
+	if l, ok := params["lookback_minutes"].(float64); ok {
+		lookbackMinutes = int(l)
+		if lookbackMinutes < 1 {
+			return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes must be at least 1")
+		}
+		if lookbackMinutes > 1440 { // 24 hours
+			return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes cannot exceed 1440 (24 hours)")
+		}
+	}
+
+	// Default start time based on lookback
+	startTime = endTime.Add(time.Duration(-lookbackMinutes) * time.Minute)
+
+	// Override with explicit timestamps if provided
+	if startTimeStr, ok := params["start_time_iso"].(string); ok && startTimeStr != "" {
+		t, err := time.Parse("2006-01-02 15:04:05", startTimeStr)
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("invalid start_time_iso format: %w", err)
+		}
+		startTime = t
+
+		// If start_time is provided but no end_time, use start_time + lookback_minutes
+		if endTimeStr, ok := params["end_time_iso"].(string); !ok || endTimeStr == "" {
+			endTime = startTime.Add(time.Duration(lookbackMinutes) * time.Minute)
+		}
+	}
+
+	if endTimeStr, ok := params["end_time_iso"].(string); ok && endTimeStr != "" {
+		t, err := time.Parse("2006-01-02 15:04:05", endTimeStr)
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("invalid end_time_iso format: %w", err)
+		}
+		endTime = t
+	}
+
+	// Validate time range
+	if startTime.After(endTime) {
+		return time.Time{}, time.Time{}, fmt.Errorf("start_time cannot be after end_time")
+	}
+
+	// Ensure time range doesn't exceed 24 hours
+	if endTime.Sub(startTime) > 24*time.Hour {
+		return time.Time{}, time.Time{}, fmt.Errorf("time range cannot exceed 24 hours")
+	}
+
+	return startTime, endTime, nil
 }
