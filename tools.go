@@ -196,7 +196,7 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 									},
 									"value": map[string]any{
 										"type":        "string",
-										"description": "Filter value to match",
+										"description": "The value to filter against",
 									},
 									"operator": map[string]any{
 										"type":        "string",

@@ -191,3 +191,36 @@ Configure Windsurf to use the MCP server:
   }
 }
 ```
+
+## Usage with VS Code
+
+Prerequisites:
+- VS Code version 1.99 or later
+
+Configure VS Code to use the MCP server:
+
+1. Create `.vscode/mcp.json` in your workspace or add to VS Code user settings with the following configuration:
+
+```json
+{
+  "servers": {
+    "last9": {
+      "type": "stdio",
+      "command": "/opt/homebrew/bin/last9-mcp",
+      "env": {
+        "LAST9_AUTH_TOKEN": "<auth_token>",
+        "LAST9_BASE_URL": "<last9_otlp_host>",
+        "LAST9_REFRESH_TOKEN": "<write_refresh_token>"
+      }
+    }
+  }
+}
+```
+
+2. Open Chat view (⌃⌘I on macOS, Ctrl+Alt+I on Windows/Linux)
+3. Select "Agent" mode from dropdown
+4. The Last9 MCP server will now be available in VS Code
+
+Note: Replace placeholder values (`<auth_token>`, `<last9_otlp_host>`, and `<write_refresh_token>`) with your actual Last9 credentials.
+
+For advanced configuration options and alternative setup methods, see the [official VS Code MCP documentation](https://code.visualstudio.com/docs/copilot/chat/mcp-servers).
