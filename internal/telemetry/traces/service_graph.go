@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 	"net/http"
 	"net/url"
 	"strconv"
-	"time"
 
 	"github.com/acrmp/mcp"
 )
@@ -17,8 +17,11 @@ import (
 func NewGetServiceGraphHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
 	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
 		spanName, ok := params.Arguments["span_name"].(string)
-		if !ok || spanName == "" {
+		if !ok {
 			return mcp.CallToolResult{}, errors.New("span_name is required")
+		}
+		if spanName == "" {
+			return mcp.CallToolResult{}, errors.New("span_name cannot be empty")
 		}
 
 		lookbackMinutes := 60
@@ -26,13 +29,10 @@ func NewGetServiceGraphHandler(client *http.Client, cfg models.Config) func(mcp.
 			lookbackMinutes = int(l)
 		}
 
-		startTime := time.Now()
-		if startTimeStr, ok := params.Arguments["start_time_iso"].(string); ok && startTimeStr != "" {
-			t, err := time.Parse("2006-01-02 15:04:05", startTimeStr)
-			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid start_time_iso format: %w", err)
-			}
-			startTime = t
+		// Get time range using the common utility
+		startTime, _, err := utils.GetTimeRange(params.Arguments, lookbackMinutes)
+		if err != nil {
+			return mcp.CallToolResult{}, err
 		}
 
 		// Build request URL

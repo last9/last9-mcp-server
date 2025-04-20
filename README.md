@@ -26,8 +26,9 @@ Retrieves server-side exceptions over a specified time range.
 Parameters:
 
 - `limit` (integer, optional): Maximum number of exceptions to return. Default: 20.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS).
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS).
+- `lookback_minutes` (integer, recommended): Number of minutes to look back from now. Default: 60. Examples: 60, 30, 15.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
 - `span_name` (string, optional): Name of the span to filter by.
 
 ### get_service_graph
@@ -37,8 +38,8 @@ Gets the upstream and downstream services for a given span name, along with the 
 Parameters:
 
 - `span_name` (string, required): Name of the span to get dependencies for.
-- `lookback_minutes` (integer, optional): Number of minutes to look back. Default: 60.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS).
+- `lookback_minutes` (integer, recommended): Number of minutes to look back from now. Default: 60. Examples: 60, 30, 15.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
 
 ### get_logs
 
@@ -48,8 +49,9 @@ Parameters:
 
 - `service` (string, optional): Name of the service to get logs for.
 - `severity` (string, optional): Severity of the logs to get.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS).
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS).
+- `lookback_minutes` (integer, recommended): Number of minutes to look back from now. Default: 60. Examples: 60, 30, 15.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
 - `limit` (integer, optional): Maximum number of logs to return. Default: 20.
 
 ### get_drop_rules
@@ -189,3 +191,36 @@ Configure Windsurf to use the MCP server:
   }
 }
 ```
+
+## Usage with VS Code
+
+Prerequisites:
+- VS Code version 1.99 or later
+
+Configure VS Code to use the MCP server:
+
+1. Create `.vscode/mcp.json` in your workspace or add to VS Code user settings with the following configuration:
+
+```json
+{
+  "servers": {
+    "last9": {
+      "type": "stdio",
+      "command": "/opt/homebrew/bin/last9-mcp",
+      "env": {
+        "LAST9_AUTH_TOKEN": "<auth_token>",
+        "LAST9_BASE_URL": "<last9_otlp_host>",
+        "LAST9_REFRESH_TOKEN": "<write_refresh_token>"
+      }
+    }
+  }
+}
+```
+
+2. Open Chat view (⌃⌘I on macOS, Ctrl+Alt+I on Windows/Linux)
+3. Select "Agent" mode from dropdown
+4. The Last9 MCP server will now be available in VS Code
+
+Note: Replace placeholder values (`<auth_token>`, `<last9_otlp_host>`, and `<write_refresh_token>`) with your actual Last9 credentials.
+
+For advanced configuration options and alternative setup methods, see the [official VS Code MCP documentation](https://code.visualstudio.com/docs/copilot/chat/mcp-servers).

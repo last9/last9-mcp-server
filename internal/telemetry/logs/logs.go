@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 	"net/http"
 	"net/url"
 	"strconv"
-	"time"
 
 	"github.com/acrmp/mcp"
 )
@@ -20,24 +20,10 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(mcp.CallTool
 			limit = int(l)
 		}
 
-		// Calculate timestamps
-		endTime := time.Now()
-		startTime := endTime.Add(-1 * time.Hour)
-
-		if startTimeStr, ok := params.Arguments["start_time_iso"].(string); ok && startTimeStr != "" {
-			t, err := time.Parse("2006-01-02 15:04:05", startTimeStr)
-			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid start_time_iso format: %w", err)
-			}
-			startTime = t
-		}
-
-		if endTimeStr, ok := params.Arguments["end_time_iso"].(string); ok && endTimeStr != "" {
-			t, err := time.Parse("2006-01-02 15:04:05", endTimeStr)
-			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid end_time_iso format: %w", err)
-			}
-			endTime = t
+		// Get time range using the common utility
+		startTime, endTime, err := utils.GetTimeRange(params.Arguments, 60) // Default 60 minutes lookback
+		if err != nil {
+			return mcp.CallToolResult{}, err
 		}
 
 		// Build request URL with query parameters

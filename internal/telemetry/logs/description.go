@@ -7,8 +7,9 @@ const GetLogsDescription = `
     service: (Optional) The name of the service to get the logs for.
 	severity: (Optional) The severity of the logs to get.
     limit: (Optional) The maximum number of logs to return. Defaults to 20.
-    start_time_iso: (Optional) The start time to get the data from. Defaults to now.
-    end_time_iso: (Optional) The end time to get the data from. Defaults to now.
+    lookback_minutes: (Recommended) Number of minutes to look back from now. Use this for relative time ranges.
+    start_time_iso: (Optional) The start time to get the data from. Leave empty to use lookback_minutes instead.
+    end_time_iso: (Optional) The end time to get the data from. Leave empty to default to current time.
 
 	Response is a list of log entries in the 'result' field containing the following fields:
 		stream:
