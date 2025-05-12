@@ -2,20 +2,28 @@
 
 ![last9 mcp demo](mcp-demo.gif)
 
-A [Model Context Protocol](https://modelcontextprotocol.io/) server implementation for [Last9](https://last9.io/mcp/) that enables AI agents to seamlessly bring real-time production context — logs, metrics, and traces — into your local environment to auto-fix code faster.
+A [Model Context Protocol](https://modelcontextprotocol.io/) server
+implementation for [Last9](https://last9.io/mcp/) that enables AI agents to
+seamlessly bring real-time production context — logs, metrics, and traces — into
+your local environment to auto-fix code faster.
 
 - [View demo](https://www.youtube.com/watch?v=AQH5xq6qzjI)
-- Read our [announcement blog post](https://last9.io/blog/launching-last9-mcp-server/)
+- Read our
+  [announcement blog post](https://last9.io/blog/launching-last9-mcp-server/)
 
 ## Status
 
-Works with the Claude desktop app, or Cursor, Windsurf, and VSCode (Github Copilot) IDEs. Implements the following MCP [tools](https://modelcontextprotocol.io/docs/concepts/tools):
+Works with Claude desktop app, or Cursor, Windsurf, and VSCode (Github Copilot)
+IDEs. Implements the following MCP
+[tools](https://modelcontextprotocol.io/docs/concepts/tools):
 
 - `get_exceptions`: Get the list of exceptions.
 - `get_service_graph`: Get service graph for an endpoint from the exception.
 - `get_logs`: Get logs filtered by service name and/or severity level.
-- `get_drop_rules`: Get drop rules for logs that determine what logs get filtered out at [Last9 Control Plane](https://last9.io/control-plane)
-- `add_drop_rule`: Create a drop rule for logs at [Last9 Control Plane](https://last9.io/control-plane)
+- `get_drop_rules`: Get drop rules for logs that determine what logs get
+  filtered out at [Last9 Control Plane](https://last9.io/control-plane)
+- `add_drop_rule`: Create a drop rule for logs at
+  [Last9 Control Plane](https://last9.io/control-plane)
 
 ## Tools Documentation
 
@@ -25,53 +33,72 @@ Retrieves server-side exceptions over a specified time range.
 
 Parameters:
 
-- `limit` (integer, optional): Maximum number of exceptions to return. Default: 20.
-- `lookback_minutes` (integer, recommended): Number of minutes to look back from now. Default: 60. Examples: 60, 30, 15.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `limit` (integer, optional): Maximum number of exceptions to return.
+  Default: 20.
+- `lookback_minutes` (integer, recommended): Number of minutes to look back from
+  now. Default: 60. Examples: 60, 30, 15.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD
+  HH:MM:SS). Leave empty to use lookback_minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD
+  HH:MM:SS). Leave empty to default to current time.
 - `span_name` (string, optional): Name of the span to filter by.
 
 ### get_service_graph
 
-Gets the upstream and downstream services for a given span name, along with the throughput for each service.
+Gets the upstream and downstream services for a given span name, along with the
+throughput for each service.
 
 Parameters:
 
 - `span_name` (string, required): Name of the span to get dependencies for.
-- `lookback_minutes` (integer, recommended): Number of minutes to look back from now. Default: 60. Examples: 60, 30, 15.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
+- `lookback_minutes` (integer, recommended): Number of minutes to look back from
+  now. Default: 60. Examples: 60, 30, 15.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD
+  HH:MM:SS). Leave empty to use lookback_minutes.
 
 ### get_logs
 
-Gets logs filtered by optional service name and/or severity level within a specified time range.
+Gets logs filtered by optional service name and/or severity level within a
+specified time range.
 
 Parameters:
 
 - `service` (string, optional): Name of the service to get logs for.
 - `severity` (string, optional): Severity of the logs to get.
-- `lookback_minutes` (integer, recommended): Number of minutes to look back from now. Default: 60. Examples: 60, 30, 15.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `lookback_minutes` (integer, recommended): Number of minutes to look back from
+  now. Default: 60. Examples: 60, 30, 15.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD
+  HH:MM:SS). Leave empty to use lookback_minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD
+  HH:MM:SS). Leave empty to default to current time.
 - `limit` (integer, optional): Maximum number of logs to return. Default: 20.
 
 ### get_drop_rules
 
-Gets drop rules for logs, which determine what logs get filtered out from reaching Last9.
+Gets drop rules for logs, which determine what logs get filtered out from
+reaching Last9.
 
 ### add_drop_rule
 
-Adds a new drop rule to filter out specific logs at [Last9 Control Plane](https://last9.io/control-plane)
+Adds a new drop rule to filter out specific logs at
+[Last9 Control Plane](https://last9.io/control-plane)
 
 Parameters:
 
 - `name` (string, required): Name of the drop rule.
-- `filters` (array, required): List of filter conditions to apply. Each filter has:
-  - `key` (string, required): The key to filter on. Only attributes and resource.attributes keys are supported. For resource attributes, use format: resource.attributes[key_name] and for log attributes, use format: attributes[key_name] Double quotes in key names must be escaped.
+- `filters` (array, required): List of filter conditions to apply. Each filter
+  has:
+  - `key` (string, required): The key to filter on. Only attributes and
+    resource.attributes keys are supported. For resource attributes, use format:
+    resource.attributes[key_name] and for log attributes, use format:
+    attributes[key_name] Double quotes in key names must be escaped.
   - `value` (string, required): The value to filter against.
-  - `operator` (string, required): The operator used for filtering. Valid values:
+  - `operator` (string, required): The operator used for filtering. Valid
+    values:
     - "equals"
     - "not_equals"
-  - `conjunction` (string, required): The logical conjunction between filters. Valid values:
+  - `conjunction` (string, required): The logical conjunction between filters.
+    Valid values:
     - "and"
 
 ## Installation
@@ -102,29 +129,25 @@ npx @last9/mcp-server
 
 ### Environment Variables
 
-The service requires the following environment variables:
+The Last9 MCP server requires the following environment variables:
 
-- `LAST9_AUTH_TOKEN`: Authentication token for Last9 MCP server (required)
-- `LAST9_BASE_URL`: Last9 API URL (required)
-- `LAST9_REFRESH_TOKEN`: Refresh Token with Write permissions. Needed for accessing control plane APIs (required).
-
-- Signup at [Last9](https://app.last9.io/) and setup one of the [integrations](https://last9.io/docs/integrations/).
-- Obtain `LAST9_BASE_URL` and `LAST9_AUTH_TOKEN` from [here](https://app.last9.io/integrations?integration=OpenTelemetry).
-- The Write Refresh Token can be obtained from [API Access](https://app.last9.io/settings/api-access) page.
+- `LAST9_BASE_URL`: (required) Last9 API URL from
+  [OTel integration](https://app.last9.io/integrations?integration=OpenTelemetry)
+- `LAST9_AUTH_TOKEN`: (required) Authentication token for Last9 MCP server from
+  [OTel integration](https://app.last9.io/integrations?integration=OpenTelemetry)
+- `LAST9_REFRESH_TOKEN`: (required) Refresh Token with Write permissions, needed
+  for accessing control plane APIs from
+  [API Access](https://app.last9.io/settings/api-access)
 
 ## Usage with Claude Desktop
 
 Configure the Claude app to use the MCP server:
 
-1. Open the Claude Desktop app
-2. Go to Settings, then Developer, click Edit Config
-3. Open the `claude_desktop_config.json` file
+1. Open the Claude Desktop app, go to Settings, then Developer
+2. Click Edit Config
+3. Open the `claude_desktop_config.json` file
 4. Copy and paste the server config to your existing file, then save
 5. Restart Claude
-
-```bash
-code ~/Library/Application\ Support/Claude/claude_desktop_config.json
-```
 
 ```json
 {
@@ -132,9 +155,9 @@ code ~/Library/Application\ Support/Claude/claude_desktop_config.json
     "last9": {
       "command": "/opt/homebrew/bin/last9-mcp",
       "env": {
-        "LAST9_AUTH_TOKEN": "<your_auth_token>",
         "LAST9_BASE_URL": "<last9_otlp_host>",
-        "LAST9_REFRESH_TOKEN": "<refresh_token_from_last9_dashboard>"
+        "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
+        "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>"
       }
     }
   }
@@ -145,9 +168,9 @@ code ~/Library/Application\ Support/Claude/claude_desktop_config.json
 
 Configure Cursor to use the MCP server:
 
-1. Navigate to Settings, then Cursor Settings
-2. Select MCP on the left
-3. Click Add new global MCP server at the top right
+1. Open Cursor, go to Settings, then Cursor Settings
+2. Select MCP on the left
+3. Click Add "New Global MCP Server" at the top right
 4. Copy and paste the server config to your existing file, then save
 5. Restart Cursor
 
@@ -157,9 +180,9 @@ Configure Cursor to use the MCP server:
     "last9": {
       "command": "/opt/homebrew/bin/last9-mcp",
       "env": {
-        "LAST9_AUTH_TOKEN": "<auth_token>",
         "LAST9_BASE_URL": "<last9_otlp_host>",
-        "LAST9_REFRESH_TOKEN": "<write_refresh_token>"
+        "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
+        "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>"
       }
     }
   }
@@ -170,12 +193,11 @@ Configure Cursor to use the MCP server:
 
 Configure Windsurf to use the MCP server:
 
-1. Open Windsurf
-2. Go to Settings, then Developer
-3. Click Edit Config
-4. Open the `windsurf_config.json` file
-5. Copy and paste the server config to your existing file, then save
-6. Restart Windsurf
+1. Open Windsurf, go to Settings, then Developer
+2. Click Edit Config
+3. Open the `windsurf_config.json` file
+4. Copy and paste the server config to your existing file, then save
+5. Restart Windsurf
 
 ```json
 {
@@ -183,9 +205,9 @@ Configure Windsurf to use the MCP server:
     "last9": {
       "command": "/opt/homebrew/bin/last9-mcp",
       "env": {
-        "LAST9_AUTH_TOKEN": "<auth_token>",
         "LAST9_BASE_URL": "<last9_otlp_host>",
-        "LAST9_REFRESH_TOKEN": "<refresh_token>"
+        "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
+        "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>"
       }
     }
   }
@@ -194,36 +216,32 @@ Configure Windsurf to use the MCP server:
 
 ## Usage with VS Code
 
-Prerequisites:
-- VS Code version 1.99 or later
+> Note: MCP support in VS Code is available starting v1.99 and is currently in
+> preview. For advanced configuration options and alternative setup methods,
+> [view the VS Code MCP documentation](https://code.visualstudio.com/docs/copilot/chat/mcp-servers).
 
-Configure VS Code to use the MCP server:
-
-1. Create `.vscode/mcp.json` in your workspace or add to VS Code user settings with the following configuration:
+1.  Open VS Code, go to Settings, select the User tab, then Features, then Chat
+2.  Click "Edit settings.json"
+3.  Copy and paste the server config to your existing file, then save
+4.  Restart VS Code
 
 ```json
 {
-  "servers": {
-    "last9": {
-      "type": "stdio",
-      "command": "/opt/homebrew/bin/last9-mcp",
-      "env": {
-        "LAST9_AUTH_TOKEN": "<auth_token>",
-        "LAST9_BASE_URL": "<last9_otlp_host>",
-        "LAST9_REFRESH_TOKEN": "<write_refresh_token>"
+  "mcp": {
+    "servers": {
+      "last9": {
+        "type": "stdio",
+        "command": "/opt/homebrew/bin/last9-mcp",
+        "env": {
+          "LAST9_BASE_URL": "<last9_otlp_host>",
+          "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
+          "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>"
+        }
       }
     }
   }
 }
 ```
-
-2. Open Chat view (⌃⌘I on macOS, Ctrl+Alt+I on Windows/Linux)
-3. Select "Agent" mode from dropdown
-4. The Last9 MCP server will now be available in VS Code
-
-Note: Replace placeholder values (`<auth_token>`, `<last9_otlp_host>`, and `<write_refresh_token>`) with your actual Last9 credentials.
-
-For advanced configuration options and alternative setup methods, see the [official VS Code MCP documentation](https://code.visualstudio.com/docs/copilot/chat/mcp-servers).
 
 ## Badges
 
