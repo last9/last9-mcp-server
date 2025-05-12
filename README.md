@@ -129,7 +129,7 @@ npx @last9/mcp-server
 
 ### Environment Variables
 
-The Last9 MCP requires the following environment variables:
+The Last9 MCP server requires the following environment variables:
 
 - `LAST9_BASE_URL`: (required) Last9 API URL from
   [OTel integration](https://app.last9.io/integrations?integration=OpenTelemetry)
