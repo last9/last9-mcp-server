@@ -1,5 +1,3 @@
-[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/last9-last9-mcp-server-badge.png)](https://mseep.ai/app/last9-last9-mcp-server)
-
 # Last9 MCP Server
 
 ![last9 mcp demo](mcp-demo.gif)
@@ -11,9 +9,9 @@ A [Model Context Protocol](https://modelcontextprotocol.io/) server implementati
 
 ## Status
 
-Works with Claude desktop app, or Cursor, Windsurf, and VSCode (Github Copilot) IDEs. Implements the following MCP [tools](https://modelcontextprotocol.io/docs/concepts/tools):
+Works with the Claude desktop app, or Cursor, Windsurf, and VSCode (Github Copilot) IDEs. Implements the following MCP [tools](https://modelcontextprotocol.io/docs/concepts/tools):
 
-- `get_exceptions`: Get list of exceptions.
+- `get_exceptions`: Get the list of exceptions.
 - `get_service_graph`: Get service graph for an endpoint from the exception.
 - `get_logs`: Get logs filtered by service name and/or severity level.
 - `get_drop_rules`: Get drop rules for logs that determine what logs get filtered out at [Last9 Control Plane](https://last9.io/control-plane)
@@ -226,3 +224,7 @@ Configure VS Code to use the MCP server:
 Note: Replace placeholder values (`<auth_token>`, `<last9_otlp_host>`, and `<write_refresh_token>`) with your actual Last9 credentials.
 
 For advanced configuration options and alternative setup methods, see the [official VS Code MCP documentation](https://code.visualstudio.com/docs/copilot/chat/mcp-servers).
+
+## Badges
+
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/last9-last9-mcp-server-badge.png)](https://mseep.ai/app/last9-last9-mcp-server)
