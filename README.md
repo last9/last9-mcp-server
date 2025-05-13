@@ -17,7 +17,7 @@ Works with Claude desktop app, or Cursor, Windsurf, and VSCode (Github Copilot)
 IDEs. Implements the following MCP
 [tools](https://modelcontextprotocol.io/docs/concepts/tools):
 
-- `get_exceptions`: Get list of exceptions.
+- `get_exceptions`: Get the list of exceptions.
 - `get_service_graph`: Get service graph for an endpoint from the exception.
 - `get_logs`: Get logs filtered by service name and/or severity level.
 - `get_drop_rules`: Get drop rules for logs that determine what logs get
@@ -242,3 +242,7 @@ Configure Windsurf to use the MCP server:
   }
 }
 ```
+
+## Badges
+
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/last9-last9-mcp-server-badge.png)](https://mseep.ai/app/last9-last9-mcp-server)
