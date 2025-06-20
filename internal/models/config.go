@@ -10,4 +10,9 @@ type Config struct {
 	// Rate limiting configuration
 	RequestRateLimit float64 // Maximum requests per second
 	RequestRateBurst int     // Maximum burst capacity for requests
+
+	// HTTP server configuration
+	HTTPMode bool   // Enable HTTP server mode instead of STDIO
+	Port     string // HTTP server port
+	Host     string // HTTP server host
 }

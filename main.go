@@ -23,15 +23,6 @@ var (
 )
 
 func main() {
-	// Handle version flag
-	versionFlag := flag.Bool("version", false, "Print version information")
-	flag.Parse()
-
-	if *versionFlag {
-		fmt.Printf("Version: %s\nCommit: %s\nBuild Time: %s\n", Version, CommitSHA, BuildTime)
-		return
-	}
-
 	cfg, err := setupConfig()
 	if err != nil {
 		log.Fatalf("config error: %v", err)
@@ -47,8 +38,15 @@ func main() {
 		Version: Version,
 	}
 
-	s := mcp.NewServer(info, tools)
-	s.Serve()
+	if cfg.HTTPMode {
+		// Start HTTP server
+		httpServer := NewHTTPServer(info, tools, cfg)
+		log.Fatal(httpServer.Start())
+	} else {
+		// Start STDIO server (default)
+		s := mcp.NewServer(info, tools)
+		s.Serve()
+	}
 }
 
 // setupConfig initializes and parses the configuration
@@ -61,6 +59,10 @@ func setupConfig() (models.Config, error) {
 	fs.StringVar(&cfg.RefreshToken, "refresh_token", os.Getenv("LAST9_REFRESH_TOKEN"), "Last9 refresh token for authentication")
 	fs.Float64Var(&cfg.RequestRateLimit, "rate", 1, "Requests per second limit")
 	fs.IntVar(&cfg.RequestRateBurst, "burst", 1, "Request burst capacity")
+	fs.BoolVar(&cfg.HTTPMode, "http", false, "Run as HTTP server instead of STDIO")
+	fs.StringVar(&cfg.Port, "port", "8080", "HTTP server port")
+	fs.StringVar(&cfg.Host, "host", "localhost", "HTTP server host")
+	versionFlag := fs.Bool("version", false, "Print version information")
 
 	var configFile string
 	fs.StringVar(&configFile, "config", "", "config file path")
@@ -72,6 +74,11 @@ func setupConfig() (models.Config, error) {
 	)
 	if err != nil {
 		return cfg, fmt.Errorf("failed to parse configuration: %w", err)
+	}
+
+	if *versionFlag {
+		fmt.Printf("Version: %s\nCommit: %s\nBuild Time: %s\n", Version, CommitSHA, BuildTime)
+		os.Exit(0)
 	}
 
 	if cfg.AuthToken == "" {

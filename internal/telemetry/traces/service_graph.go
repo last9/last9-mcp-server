@@ -53,7 +53,7 @@ func NewGetServiceGraphHandler(client *http.Client, cfg models.Config) func(mcp.
 			return mcp.CallToolResult{}, fmt.Errorf("failed to create request: %w", err)
 		}
 
-		req.Header.Set("Authorization", "Basic "+cfg.AuthToken)
+		req.Header.Set("Authorization", cfg.AuthToken)
 
 		// Execute request
 		resp, err := client.Do(req)
