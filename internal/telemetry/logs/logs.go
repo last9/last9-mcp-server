@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/acrmp/mcp"
 )
@@ -52,6 +53,11 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(mcp.CallTool
 		req, err := http.NewRequest("GET", u.String(), nil)
 		if err != nil {
 			return mcp.CallToolResult{}, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		// Check if the auth token already has the "Basic" prefix
+		if !strings.HasPrefix(cfg.AuthToken, "Basic ") {
+			cfg.AuthToken = "Basic " + cfg.AuthToken
 		}
 
 		req.Header.Set("Authorization", cfg.AuthToken)
