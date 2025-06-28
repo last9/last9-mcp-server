@@ -131,8 +131,13 @@ func GetDefaultRegion(baseURL string) string {
 // GetTimeRange returns start and end times based on lookback minutes
 // If start_time_iso and end_time_iso are provided, they take precedence
 // Otherwise, returns now and now - lookbackMinutes
+//
+// IMPORTANT: All ISO timestamps are parsed as UTC to ensure consistent behavior
+// across different server timezones. This prevents timezone-related bugs where
+// queries return data from unexpected time periods.
 func GetTimeRange(params map[string]interface{}, defaultLookbackMinutes int) (startTime, endTime time.Time, err error) {
-	endTime = time.Now()
+	// Always use UTC to ensure consistent behavior across timezones
+	endTime = time.Now().UTC()
 
 	// First check if lookback_minutes is provided
 	lookbackMinutes := defaultLookbackMinutes
@@ -155,7 +160,9 @@ func GetTimeRange(params map[string]interface{}, defaultLookbackMinutes int) (st
 		if err != nil {
 			return time.Time{}, time.Time{}, fmt.Errorf("invalid start_time_iso format: %w", err)
 		}
-		startTime = t
+		// Force UTC timezone to prevent server timezone from affecting timestamp interpretation
+		// This ensures "2025-06-23 16:00:00" is always treated as UTC, not local time
+		startTime = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.UTC)
 
 		// If start_time is provided but no end_time, use start_time + lookback_minutes
 		if endTimeStr, ok := params["end_time_iso"].(string); !ok || endTimeStr == "" {
@@ -168,7 +175,9 @@ func GetTimeRange(params map[string]interface{}, defaultLookbackMinutes int) (st
 		if err != nil {
 			return time.Time{}, time.Time{}, fmt.Errorf("invalid end_time_iso format: %w", err)
 		}
-		endTime = t
+		// Force UTC timezone to prevent server timezone from affecting timestamp interpretation
+		// This ensures "2025-06-23 16:30:00" is always treated as UTC, not local time
+		endTime = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.UTC)
 	}
 
 	// Validate time range
