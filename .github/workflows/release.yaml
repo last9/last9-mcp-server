@@ -71,3 +71,12 @@ jobs:
           args: release --clean --skip-validate
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trigger homebrew-tap update workflow
+        if: steps.version_change.outputs.changed == 'true'
+        run: |
+          curl -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/last9/homebrew-tap/dispatches \
+            -d '{"event_type":"update-last9-mcp","client_payload":{"tag":"v${{ steps.version_change.outputs.new_version }}"}}'
