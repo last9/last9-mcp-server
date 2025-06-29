@@ -80,3 +80,11 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.HOMEBREW_TAP_TOKEN }}" \
             https://api.github.com/repos/last9/homebrew-tap/dispatches \
             -d '{"event_type":"update-last9-mcp","client_payload":{"tag":"v${{ steps.version_change.outputs.new_version }}"}}'
+
+      - name: Publish to npm
+        if: steps.version_change.outputs.changed == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm ci
+          npm publish --access public
