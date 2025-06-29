@@ -3,11 +3,13 @@ package logs
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/acrmp/mcp"
 )
@@ -53,7 +55,12 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(mcp.CallTool
 			return mcp.CallToolResult{}, fmt.Errorf("failed to create request: %w", err)
 		}
 
-		req.Header.Set("Authorization", "Basic "+cfg.AuthToken)
+		// Check if the auth token already has the "Basic" prefix
+		if !strings.HasPrefix(cfg.AuthToken, "Basic ") {
+			cfg.AuthToken = "Basic " + cfg.AuthToken
+		}
+
+		req.Header.Set("Authorization", cfg.AuthToken)
 
 		// Execute request
 		resp, err := client.Do(req)
@@ -62,9 +69,20 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(mcp.CallTool
 		}
 		defer resp.Body.Close()
 
+		// Read response body for debugging
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return mcp.CallToolResult{}, fmt.Errorf("failed to read response body: %w", err)
+		}
+
+		// Log the response for debugging
+		if resp.StatusCode != 200 {
+			return mcp.CallToolResult{}, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(bodyBytes))
+		}
+
 		var result interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+		if err := json.Unmarshal(bodyBytes, &result); err != nil {
+			return mcp.CallToolResult{}, fmt.Errorf("failed to decode response (body: %s): %w", string(bodyBytes), err)
 		}
 
 		jsonData, err := json.Marshal(result)

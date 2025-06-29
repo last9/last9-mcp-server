@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/acrmp/mcp"
 )
@@ -49,7 +50,12 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(mcp.Ca
 			return mcp.CallToolResult{}, fmt.Errorf("failed to create request: %w", err)
 		}
 
-		req.Header.Set("Authorization", "Basic "+cfg.AuthToken)
+		// Check if the auth token already has the "Basic" prefix
+		if !strings.HasPrefix(cfg.AuthToken, "Basic ") {
+			cfg.AuthToken = "Basic " + cfg.AuthToken
+		}
+
+		req.Header.Set("Authorization", cfg.AuthToken)
 
 		// Execute request
 		resp, err := client.Do(req)
