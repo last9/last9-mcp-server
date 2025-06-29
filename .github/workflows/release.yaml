@@ -1,35 +1,73 @@
 # .github/workflows/release.yml
-name: Release
+name: Release on Version Change
 
 on:
-  push:
-    tags:
-      - 'v*'
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
 
 permissions:
   contents: write
   packages: write
 
 jobs:
-  goreleaser:
+  tag-and-release:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '>=1.21.0'
-          cache: true
+      - name: Get PR merge commit
+        run: |
+          git fetch origin main
+          git checkout ${{ github.event.pull_request.merge_commit_sha }}
+
+      - name: Get previous commit on main
+        id: prev_commit
+        run: |
+          PREV_COMMIT=$(git rev-parse ${{ github.event.pull_request.merge_commit_sha }}^)
+          echo "prev_commit=$PREV_COMMIT" >> $GITHUB_OUTPUT
+
+      - name: Check if version changed in package.json
+        id: version_change
+        run: |
+          OLD_VERSION=$(git show ${{ steps.prev_commit.outputs.prev_commit }}:package.json | jq -r .version)
+          NEW_VERSION=$(jq -r .version package.json)
+          echo "old_version=$OLD_VERSION" >> $GITHUB_OUTPUT
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          if [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create tag if version changed
+        if: steps.version_change.outputs.changed == 'true'
+        id: create_tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag v${{ steps.version_change.outputs.new_version }}
+          git push origin v${{ steps.version_change.outputs.new_version }}
+          echo "tag=v${{ steps.version_change.outputs.new_version }}" >> $GITHUB_OUTPUT
+
+      - name: Set tag output
+        if: steps.version_change.outputs.changed == 'true'
+        id: tag_output
+        run: |
+          echo "::set-output name=tag::v${{ steps.version_change.outputs.new_version }}"
 
       - name: Run GoReleaser
+        if: steps.version_change.outputs.changed == 'true'
         uses: goreleaser/goreleaser-action@v5
         with:
           distribution: goreleaser
           version: latest
-          args: release --clean
+          args: release --clean --skip-validate
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
