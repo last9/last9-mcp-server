@@ -12,6 +12,7 @@ import (
 	"last9-mcp/internal/models"
 
 	"github.com/acrmp/mcp"
+	"github.com/gorilla/websocket"
 	"github.com/sourcegraph/jsonrpc2"
 )
 
@@ -39,7 +40,7 @@ func NewHTTPServer(info mcp.Implementation, tools []mcp.ToolDefinition, config m
 	for _, tool := range tools {
 		toolsMap[tool.Metadata.Name] = tool
 	}
-	
+
 	return &HTTPServer{
 		info:     info,
 		tools:    tools,
@@ -52,10 +53,11 @@ func NewHTTPServer(info mcp.Implementation, tools []mcp.ToolDefinition, config m
 // Start starts the HTTP server
 func (h *HTTPServer) Start() error {
 	addr := fmt.Sprintf("%s:%s", h.config.Host, h.config.Port)
-	
+
 	http.HandleFunc("/mcp", h.handleMCP)
+	http.HandleFunc("/ws", h.handleWebSocket)
 	http.HandleFunc("/health", h.handleHealth)
-	
+
 	log.Printf("Starting HTTP MCP server on %s", addr)
 	return http.ListenAndServe(addr, nil)
 }
@@ -65,8 +67,8 @@ func (h *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
-		"status": "healthy",
-		"server": h.info.Name,
+		"status":  "healthy",
+		"server":  h.info.Name,
 		"version": h.info.Version,
 	})
 }
@@ -77,20 +79,20 @@ func (h *HTTPServer) handleMCP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Mcp-Session-Id")
-	
+
 	if r.Method == "OPTIONS" {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	
+
 	if r.Method != "POST" && r.Method != "GET" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	// Get session ID from header
 	sessionID := r.Header.Get("Mcp-Session-Id")
-	
+
 	if r.Method == "POST" {
 		h.handlePOST(w, r, sessionID)
 	} else {
@@ -105,17 +107,17 @@ func (h *HTTPServer) handlePOST(w http.ResponseWriter, r *http.Request, sessionI
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Parse JSON-RPC request
 	var req jsonrpc2.Request
 	if err := json.Unmarshal(body, &req); err != nil {
 		http.Error(w, "Invalid JSON-RPC request", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Process the MCP request
 	response, shouldRespond := h.handleMCPRequest(&req, sessionID)
-	
+
 	// Send response only if needed (not for notifications)
 	if shouldRespond {
 		w.Header().Set("Content-Type", "application/json")
@@ -133,7 +135,7 @@ func (h *HTTPServer) handlePOST(w http.ResponseWriter, r *http.Request, sessionI
 func (h *HTTPServer) handleMCPRequest(req *jsonrpc2.Request, sessionID string) (jsonrpc2.Response, bool) {
 	var resp jsonrpc2.Response
 	resp.ID = req.ID
-	
+
 	switch req.Method {
 	case "initialize":
 		result := map[string]interface{}{
@@ -149,17 +151,17 @@ func (h *HTTPServer) handleMCPRequest(req *jsonrpc2.Request, sessionID string) (
 		resultBytes, _ := json.Marshal(result)
 		resp.Result = (*json.RawMessage)(&resultBytes)
 		return resp, true
-		
+
 	case "notifications/initialized":
 		// No response needed for notifications
 		return jsonrpc2.Response{}, false
-		
+
 	case "ping":
 		result := map[string]interface{}{}
 		resultBytes, _ := json.Marshal(result)
 		resp.Result = (*json.RawMessage)(&resultBytes)
 		return resp, true
-		
+
 	case "tools/list":
 		tools := make([]mcp.Tool, len(h.tools))
 		for i, tool := range h.tools {
@@ -171,11 +173,11 @@ func (h *HTTPServer) handleMCPRequest(req *jsonrpc2.Request, sessionID string) (
 		resultBytes, _ := json.Marshal(result)
 		resp.Result = (*json.RawMessage)(&resultBytes)
 		return resp, true
-		
+
 	case "tools/call":
 		h.handleToolCall(req, &resp)
 		return resp, true
-		
+
 	default:
 		resp.Error = &jsonrpc2.Error{
 			Code:    jsonrpc2.CodeMethodNotFound,
@@ -188,7 +190,7 @@ func (h *HTTPServer) handleMCPRequest(req *jsonrpc2.Request, sessionID string) (
 // handleToolCall executes a tool and returns the result
 func (h *HTTPServer) handleToolCall(req *jsonrpc2.Request, resp *jsonrpc2.Response) {
 	var params mcp.CallToolRequestParams
-	
+
 	if req.Params != nil {
 		if err := json.Unmarshal(*req.Params, &params); err != nil {
 			resp.Error = &jsonrpc2.Error{
@@ -198,7 +200,7 @@ func (h *HTTPServer) handleToolCall(req *jsonrpc2.Request, resp *jsonrpc2.Respon
 			return
 		}
 	}
-	
+
 	tool, exists := h.toolsMap[params.Name]
 	if !exists {
 		resp.Error = &jsonrpc2.Error{
@@ -207,7 +209,7 @@ func (h *HTTPServer) handleToolCall(req *jsonrpc2.Request, resp *jsonrpc2.Respon
 		}
 		return
 	}
-	
+
 	// Execute the tool with rate limiting
 	if tool.RateLimit != nil {
 		if !tool.RateLimit.Allow() {
@@ -218,7 +220,7 @@ func (h *HTTPServer) handleToolCall(req *jsonrpc2.Request, resp *jsonrpc2.Respon
 			return
 		}
 	}
-	
+
 	// Execute the tool
 	result, err := tool.Execute(params)
 	if err != nil {
@@ -228,7 +230,7 @@ func (h *HTTPServer) handleToolCall(req *jsonrpc2.Request, resp *jsonrpc2.Respon
 		}
 		return
 	}
-	
+
 	// Return the MCP result directly
 	resultBytes, _ := json.Marshal(result)
 	resp.Result = (*json.RawMessage)(&resultBytes)
@@ -247,21 +249,70 @@ func (h *HTTPServer) handleGET(w http.ResponseWriter, r *http.Request, sessionID
 		}
 		h.mu.Unlock()
 	}
-	
+
 	h.mu.RLock()
 	session, exists := h.sessions[sessionID]
 	h.mu.RUnlock()
-	
+
 	if !exists {
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"sessionId": session.ID,
+		"sessionId":   session.ID,
 		"initialized": session.Initialized,
-		"createdAt": session.CreatedAt,
+		"createdAt":   session.CreatedAt,
 	})
 }
 
+// handleWebSocket handles WebSocket connections
+func (h *HTTPServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// log the WebSocket upgrade request
+	log.Printf("WebSocket upgrade requested from %s\n", r.RemoteAddr)
+	upgrader := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			return true // Allow all origins for now
+		},
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("WebSocket upgrade failed: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	sessionID := fmt.Sprintf("ws_%d", time.Now().UnixNano())
+	h.mu.Lock()
+	h.sessions[sessionID] = &MCPSession{
+		ID:        sessionID,
+		CreatedAt: time.Now(),
+	}
+	h.mu.Unlock()
+
+	for {
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("WebSocket error: %v", err)
+			}
+			break
+		}
+
+		var req jsonrpc2.Request
+		if err := json.Unmarshal(message, &req); err != nil {
+			log.Printf("Invalid JSON-RPC message: %v", err)
+			continue
+		}
+
+		response, shouldRespond := h.handleMCPRequest(&req, sessionID)
+		if shouldRespond {
+			if err := conn.WriteJSON(response); err != nil {
+				log.Printf("Failed to write response: %v", err)
+				break
+			}
+		}
+	}
+}

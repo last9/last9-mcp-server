@@ -15,4 +15,13 @@ type Config struct {
 	HTTPMode bool   // Enable HTTP server mode instead of STDIO
 	Port     string // HTTP server port
 	Host     string // HTTP server host
+
+	// Access token for authenticated requests
+	AccessToken string
+	OrgSlug     string // Organization slug for multi-tenant support
+	APIBaseURL  string // Base URL for API requests
+	// Prometheus configuration
+	PrometheusReadURL  string // URL for Prometheus read API
+	PrometheusUsername string // Username for Prometheus authentication
+	PrometheusPassword string // Password for Prometheus authentication
 }
