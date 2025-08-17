@@ -200,15 +200,15 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(mcp.C
 			valStr, _ := r.Value[1].(string)
 			val, _ := strconv.ParseFloat(valStr, 64)
 			if summary, ok := promResp[serviceName]; ok {
-				summary.ResponseTime = val
+				summary.ErrorRate = val
 				promResp[serviceName] = summary
 			} else {
 				promResp[serviceName] = ServiceSummary{
 					ServiceName:  serviceName,
 					Env:          env,
 					Throughput:   0,
-					ErrorRate:    0,
-					ResponseTime: val,
+					ErrorRate:    val,
+					ResponseTime: 0,
 				}
 			}
 		}
