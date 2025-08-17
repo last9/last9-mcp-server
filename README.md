@@ -245,4 +245,5 @@ Configure Windsurf to use the MCP server:
 
 ## Badges
 
+[![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/last9/last9-mcp-server)](https://archestra.ai/mcp-catalog/last9__last9-mcp-server)
 [![MseeP.ai Security Assessment Badge](https://mseep.net/pr/last9-last9-mcp-server-badge.png)](https://mseep.ai/app/last9-last9-mcp-server)
