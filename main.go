@@ -17,7 +17,7 @@ func main() {
 		log.Fatalf("config error: %v", err)
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		log.Fatalf("failed to refresh access token: %w", err)
+		log.Fatalf("failed to refresh access token: %v", err)
 	}
 	tools, err := createTools(cfg)
 	if err != nil {

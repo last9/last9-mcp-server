@@ -17,8 +17,20 @@ Works with Claude desktop app, or Cursor, Windsurf, and VSCode (Github Copilot)
 IDEs. Implements the following MCP
 [tools](https://modelcontextprotocol.io/docs/concepts/tools):
 
+**Observability & APM Tools:**
 - `get_exceptions`: Get the list of exceptions.
-- `get_service_graph`: Get service graph for an endpoint from the exception.
+- `get_service_summary`: Get service summary with throughput, error rate, and response time.
+- `get_service_performance_details`: Get detailed performance metrics for a service.
+- `get_service_operations_summary`: Get operations summary for a service.
+- `get_service_dependency_graph`: Get service dependency graph showing incoming/outgoing dependencies.
+
+**Prometheus/PromQL Tools:**
+- `promptheus_range_query`: Execute PromQL range queries for metrics data.
+- `prometheus_instant_query`: Execute PromQL instant queries for metrics data.
+- `prometheus_label_values`: Get label values for PromQL queries.
+- `prometheus_labels`: Get available labels for PromQL queries.
+
+**Logs Management:**
 - `get_logs`: Get logs filtered by service name and/or severity level.
 - `get_drop_rules`: Get drop rules for logs that determine what logs get
   filtered out at [Last9 Control Plane](https://last9.io/control-plane)
@@ -43,18 +55,88 @@ Parameters:
   HH:MM:SS). Leave empty to default to current time.
 - `span_name` (string, optional): Name of the span to filter by.
 
-### get_service_graph
+### get_service_summary
 
-Gets the upstream and downstream services for a given span name, along with the
-throughput for each service.
+Get service summary over a given time range. Includes service name, environment, throughput, error rate, and response time. All values are p95 quantiles over the time range.
 
 Parameters:
 
-- `span_name` (string, required): Name of the span to get dependencies for.
-- `lookback_minutes` (integer, recommended): Number of minutes to look back from
-  now. Default: 60. Examples: 60, 30, 15.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD
-  HH:MM:SS). Leave empty to use lookback_minutes.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to end_time_iso - 1 hour.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `env` (string, optional): Environment to filter by. Defaults to 'prod'.
+
+### get_service_performance_details
+
+Get detailed performance metrics for a specific service over a given time range.
+
+Parameters:
+
+- `service_name` (string, required): Name of the service to get performance details for.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `env` (string, optional): Environment to filter by. Defaults to 'prod'.
+
+### get_service_operations_summary
+
+Get a summary of operations inside a service over a given time range. Returns operations like HTTP endpoints, database queries, messaging producer and HTTP client calls.
+
+Parameters:
+
+- `service_name` (string, required): Name of the service to get operations summary for.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `env` (string, optional): Environment to filter by. Defaults to 'prod'.
+
+### get_service_dependency_graph
+
+Get details of the throughput, response times and error rates of incoming, outgoing and infrastructure components of a service. Useful for analyzing cascading effects of errors and performance issues.
+
+Parameters:
+
+- `service_name` (string, optional): Name of the service to get the dependency graph for.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `env` (string, optional): Environment to filter by. Defaults to 'prod'.
+
+### promptheus_range_query
+
+Perform a Prometheus range query to get metrics data over a specified time range. Recommended to check available labels first using `prometheus_labels` tool.
+
+Parameters:
+
+- `query` (string, required): The range query to execute.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+
+### prometheus_instant_query
+
+Perform a Prometheus instant query to get metrics data at a specific point in time. Typically should use rollup functions like sum_over_time, avg_over_time, quantile_over_time over a time window.
+
+Parameters:
+
+- `query` (string, required): The instant query to execute.
+- `time_iso` (string, optional): Time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+
+### prometheus_label_values
+
+Return the label values for a particular label and PromQL filter query. Similar to Prometheus /label_values call.
+
+Parameters:
+
+- `match_query` (string, required): A valid PromQL filter query.
+- `label` (string, required): The label to get values for.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+
+### prometheus_labels
+
+Return the labels for a given PromQL match query. Similar to Prometheus /labels call.
+
+Parameters:
+
+- `match_query` (string, required): A valid PromQL filter query.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
 
 ### get_logs
 
