@@ -31,7 +31,7 @@ type apiPromRangeResp []struct {
 const GetServiceSummaryDescription = `
 	Get service summary over a given time range.
 	Includes service name, environment, throughput, error rate, and response time.
-	All valuese are p95 quantiles over the time range.
+	All values are p95 quantiles over the time range.
 	Response times are in milliseconds. Throughput and error rates are in requests per minute (rpm).
 	Each service includes:
 	- service name
