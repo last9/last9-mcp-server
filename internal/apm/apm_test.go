@@ -17,7 +17,10 @@ import (
 const (
 	BaseURL      = "https://otlp-aps1.last9.io:443"
 	AuthToken    = "Basic <your-auth-token>"
-	RefreshToken = "<your-refresh-token>"
+var (
+	BaseURL      = "https://otlp-aps1.last9.io:443"
+	AuthToken    = os.Getenv("TEST_AUTH_TOKEN")
+	RefreshToken = os.Getenv("TEST_REFRESH_TOKEN")
 )
 
 func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {

@@ -231,7 +231,7 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 		// },
 		{
 			Metadata: mcp.Tool{
-				Name:        "promptheus_range_query",
+				Name:        "prometheus_range_query",
 				Description: ptr(apm.PromqlRangeQueryDetails),
 				InputSchema: mcp.ToolInputSchema{
 					Type: "object",
