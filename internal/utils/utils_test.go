@@ -7,8 +7,8 @@ import (
 
 func TestGetTimeRange_TimezoneHandling(t *testing.T) {
 	tests := []struct {
-		name     string
-		params   map[string]interface{}
+		name          string
+		params        map[string]interface{}
 		wantStartUnix int64
 		wantEndUnix   int64
 		wantErr       bool

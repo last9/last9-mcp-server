@@ -5,12 +5,16 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"last9-mcp/internal/models"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
+
+	"github.com/peterbourgon/ff/v3"
 )
 
 // ExtractOrgSlugFromToken extracts organization slug from JWT token
@@ -191,4 +195,251 @@ func GetTimeRange(params map[string]interface{}, defaultLookbackMinutes int) (st
 	}
 
 	return startTime, endTime, nil
+}
+
+// Version information
+var (
+	Version   = "dev"     // Set by goreleaser
+	CommitSHA = "unknown" // Set by goreleaser
+	BuildTime = "unknown" // Set by goreleaser
+)
+
+// setupConfig initializes and parses the configuration
+func SetupConfig(defaults models.Config) (models.Config, error) {
+	fs := flag.NewFlagSet("last9-mcp", flag.ExitOnError)
+
+	var cfg models.Config
+	fs.StringVar(&cfg.AuthToken, "auth", os.Getenv("LAST9_AUTH_TOKEN"), "Last9 API auth token")
+	fs.StringVar(&cfg.BaseURL, "url", os.Getenv("LAST9_BASE_URL"), "Last9 API URL")
+	fs.StringVar(&cfg.RefreshToken, "refresh_token", os.Getenv("LAST9_REFRESH_TOKEN"), "Last9 refresh token for authentication")
+	fs.Float64Var(&cfg.RequestRateLimit, "rate", 1, "Requests per second limit")
+	fs.IntVar(&cfg.RequestRateBurst, "burst", 1, "Request burst capacity")
+	fs.BoolVar(&cfg.HTTPMode, "http", false, "Run as HTTP server instead of STDIO")
+	fs.StringVar(&cfg.Port, "port", "8080", "HTTP server port")
+	fs.StringVar(&cfg.Host, "host", "localhost", "HTTP server host")
+	versionFlag := fs.Bool("version", false, "Print version information")
+
+	var configFile string
+	fs.StringVar(&configFile, "config", "", "config file path")
+
+	err := ff.Parse(fs, os.Args[1:],
+		ff.WithEnvVarPrefix("LAST9"),
+		ff.WithConfigFileFlag("config"),
+		ff.WithConfigFileParser(ff.JSONParser),
+	)
+	if err != nil {
+		return cfg, fmt.Errorf("failed to parse configuration: %w", err)
+	}
+
+	if *versionFlag {
+		fmt.Printf("Version: %s\nCommit: %s\nBuild Time: %s\n", Version, CommitSHA, BuildTime)
+		os.Exit(0)
+	}
+
+	if cfg.AuthToken == "" {
+		if defaults.AuthToken != "" {
+			cfg.AuthToken = defaults.AuthToken
+		} else {
+			return cfg, errors.New("Last9 auth token must be provided via LAST9_AUTH_TOKEN env var")
+		}
+	}
+
+	// Set default base URL if not provided
+	if cfg.BaseURL == "" {
+		if defaults.BaseURL != "" {
+			cfg.BaseURL = defaults.BaseURL
+		} else {
+			return cfg, errors.New("Last9 base URL must be provided via LAST9_BASE_URL env var")
+		}
+	}
+
+	if cfg.RefreshToken == "" {
+		if defaults.RefreshToken != "" {
+			cfg.RefreshToken = defaults.RefreshToken
+		} else {
+			return cfg, errors.New("Last9 refresh token must be provided via LAST9_REFRESH_TOKEN env var")
+		}
+	}
+
+	return cfg, nil
+}
+
+func PopulateAPICfg(cfg *models.Config) error {
+	accessToken, err := RefreshAccessToken(http.DefaultClient, *cfg)
+	if err != nil {
+		return fmt.Errorf("failed to refresh access token: %w", err)
+	}
+	cfg.AccessToken = accessToken
+	orgSlug, err := ExtractOrgSlugFromToken(cfg.AccessToken)
+	if err != nil {
+		return fmt.Errorf("failed to extract organization slug from access token: %w", err)
+	}
+	cfg.OrgSlug = orgSlug
+	cfg.APIBaseURL = fmt.Sprintf("https://%s/api/v4/organizations/%s", "app.last9.io", cfg.OrgSlug)
+	// make a GET call to /datasources and iterate over the response array
+	// find the element with is_default set to true and extract url, properties.username, properties.password
+	// add bearer token auth to the request header
+	req, err := http.NewRequest("GET", cfg.APIBaseURL+"/datasources", nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request for datasources: %w", err)
+	}
+	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to get metrics datasource: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to get metrics datasource: %s", resp.Status)
+	}
+	var datasources []struct {
+		IsDefault  bool   `json:"is_default"`
+		URL        string `json:"url"`
+		Properties struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		} `json:"properties"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&datasources); err != nil {
+		return fmt.Errorf("failed to decode metrics datasources response: %w", err)
+	}
+	for _, ds := range datasources {
+		if ds.IsDefault {
+			cfg.PrometheusReadURL = ds.URL
+			cfg.PrometheusUsername = ds.Properties.Username
+			cfg.PrometheusPassword = ds.Properties.Password
+			break
+		}
+	}
+	if cfg.PrometheusReadURL == "" || cfg.PrometheusUsername == "" || cfg.PrometheusPassword == "" {
+		return errors.New("default datasource not found or missing required properties")
+	}
+	return nil
+}
+
+func MakePromInstantAPIQuery(client *http.Client, promql string, endTimeParam int64, cfg models.Config) (*http.Response, error) {
+	promInstantParam := struct {
+		Query     string `json:"query"`
+		Timestamp int64  `json:"timestamp"`
+		ReadURL   string `json:"read_url"`
+		Username  string `json:"username"`
+		Password  string `json:"password"`
+	}{promql, endTimeParam, cfg.PrometheusReadURL, cfg.PrometheusUsername, cfg.PrometheusPassword}
+	bodyBytes, err := json.Marshal(promInstantParam)
+	if err != nil {
+		return nil, err
+	}
+	reqUrl := fmt.Sprintf("%s/prom_query_instant", cfg.APIBaseURL)
+	req, err := http.NewRequest("POST", reqUrl, strings.NewReader(string(bodyBytes)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
+
+	return client.Do(req)
+}
+
+func MakePromRangeAPIQuery(client *http.Client, promql string, startTimeParam, endTimeParam int64, cfg models.Config) (*http.Response, error) {
+	promRangeParam := struct {
+		Query     string `json:"query"`
+		Timestamp int64  `json:"timestamp"`
+		Window    int64  `json:"window"`
+		ReadURL   string `json:"read_url"`
+		Username  string `json:"username"`
+		Password  string `json:"password"`
+	}{
+		Query:     promql,
+		Timestamp: startTimeParam,
+		Window:    endTimeParam - startTimeParam,
+		ReadURL:   cfg.PrometheusReadURL,
+		Username:  cfg.PrometheusUsername,
+		Password:  cfg.PrometheusPassword,
+	}
+
+	bodyBytes, err := json.Marshal(promRangeParam)
+	if err != nil {
+		return nil, err
+	}
+
+	reqUrl := fmt.Sprintf("%s/prom_query", cfg.APIBaseURL)
+	req, err := http.NewRequest("POST", reqUrl, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
+
+	return client.Do(req)
+}
+
+// function to get the values of a particular label, for a given query filter
+// path: /prom_label_values
+
+func MakePromLabelValuesAPIQuery(client *http.Client, label string, matches string, startTimeParam, endTimeParam int64, cfg models.Config) (*http.Response, error) {
+	promLabelValuesParam := struct {
+		Label     string   `json:"label"`
+		Timestamp int64    `json:"timestamp"`
+		Window    int64    `json:"window"`
+		ReadURL   string   `json:"read_url"`
+		Username  string   `json:"username"`
+		Password  string   `json:"password"`
+		Matches   []string `json:"matches"`
+	}{
+		Label:     label,
+		Timestamp: startTimeParam,
+		Window:    endTimeParam - startTimeParam,
+		ReadURL:   cfg.PrometheusReadURL,
+		Username:  cfg.PrometheusUsername,
+		Password:  cfg.PrometheusPassword,
+		Matches:   []string{matches},
+	}
+
+	bodyBytes, err := json.Marshal(promLabelValuesParam)
+	if err != nil {
+		return nil, err
+	}
+
+	reqUrl := fmt.Sprintf("%s/prom_label_values", cfg.APIBaseURL)
+	req, err := http.NewRequest("POST", reqUrl, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
+
+	return client.Do(req)
+}
+
+func MakePromLabelsAPIQuery(client *http.Client, metric string, startTimeParam, endTimeParam int64, cfg models.Config) (*http.Response, error) {
+	promLabelsParam := struct {
+		Timestamp int64  `json:"timestamp"`
+		Window    int64  `json:"window"`
+		ReadURL   string `json:"read_url"`
+		Username  string `json:"username"`
+		Password  string `json:"password"`
+		Metric    string `json:"metric"`
+	}{
+		Timestamp: startTimeParam,
+		Window:    endTimeParam - startTimeParam,
+		ReadURL:   cfg.PrometheusReadURL,
+		Username:  cfg.PrometheusUsername,
+		Password:  cfg.PrometheusPassword,
+		Metric:    metric,
+	}
+
+	bodyBytes, err := json.Marshal(promLabelsParam)
+	if err != nil {
+		return nil, err
+	}
+
+	reqUrl := fmt.Sprintf("%s/apm/labels", cfg.APIBaseURL)
+	req, err := http.NewRequest("POST", reqUrl, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
+
+	return client.Do(req)
 }

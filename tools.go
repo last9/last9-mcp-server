@@ -1,6 +1,7 @@
 package main
 
 import (
+	"last9-mcp/internal/apm"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/telemetry/traces"
@@ -64,33 +65,276 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 		},
 		{
 			Metadata: mcp.Tool{
-				Name:        "get_service_graph",
-				Description: ptr(traces.GetServiceGraphDescription),
+				Name:        "get_service_summary",
+				Description: ptr(apm.GetServiceSummaryDescription),
 				InputSchema: mcp.ToolInputSchema{
 					Type: "object",
 					Properties: mcp.ToolInputSchemaProperties{
-						"span_name": map[string]any{
-							"type":        "string",
-							"description": "Name of the span to get dependencies for",
-						},
-						"lookback_minutes": map[string]any{
-							"type":        "integer",
-							"description": "Number of minutes to look back from now. Use this for relative time ranges instead of explicit timestamps.",
-							"default":     60,
-							"minimum":     1,
-							"maximum":     1440, // 24 hours
-							"examples":    []int{60, 30, 15},
-						},
 						"start_time_iso": map[string]any{
 							"type":        "string",
-							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). If specified, lookback_minutes is ignored. Defaults to now - lookback_minutes if not specified.",
+							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to end_time_iso - 1 hour. ",
 							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
 							"examples":    []string{""}, // Empty string to encourage using defaults
+						},
+						"end_time_iso": map[string]any{
+							"type":        "string",
+							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""}, // Empty string to encourage using defaults
+						},
+						"env": map[string]any{
+							"type":        "string",
+							"description": "Environment to filter by. Defaults to 'prod'.",
+							"default":     "prod",
 						},
 					},
 				},
 			},
-			Execute:   traces.NewGetServiceGraphHandler(client, cfg),
+			Execute:   apm.NewServiceSummaryHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
+		// Add entry for GetServicePerformanceDetails tool
+		{
+			Metadata: mcp.Tool{
+				Name:        "get_service_performance_details",
+				Description: ptr(apm.GetServicePerformanceDetails),
+				InputSchema: mcp.ToolInputSchema{
+					Type: "object",
+					Properties: mcp.ToolInputSchemaProperties{
+						"service_name": map[string]any{
+							"type":        "string",
+							"description": "Name of the service to get performance details for",
+						},
+						"start_time_iso": map[string]any{
+							"type":        "string",
+							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""}, // Empty string to encourage using defaults
+						},
+						"end_time_iso": map[string]any{
+							"type":        "string",
+							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""}, // Empty string to encourage using defaults
+						},
+						"env": map[string]any{
+							"type":        "string",
+							"description": "Environment to filter by. Defaults to 'prod'.",
+							"default":     "prod",
+						},
+					},
+				},
+			},
+			Execute:   apm.NewServicePerformanceDetailsHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
+		// Add entry for GetServiceOperationsSummary tool
+		{
+			Metadata: mcp.Tool{
+				Name:        "get_service_operations_summary",
+				Description: ptr(apm.GetServiceOperationsSummaryDescription),
+				InputSchema: mcp.ToolInputSchema{
+					Type: "object",
+					Properties: mcp.ToolInputSchemaProperties{
+						"service_name": map[string]any{
+							"type":        "string",
+							"description": "Name of the service to get operations summary for",
+						},
+						"start_time_iso": map[string]any{
+							"type":        "string",
+							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""}, // Empty string to encourage using defaults
+						},
+						"end_time_iso": map[string]any{
+							"type":        "string",
+							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""}, // Empty string to encourage using defaults
+						},
+						"env": map[string]any{
+							"type":        "string",
+							"description": "Environment to filter by. Defaults to 'prod'.",
+							"default":     "prod",
+						},
+					},
+				},
+			},
+			Execute:   apm.NewServiceOperationsSummaryHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
+		// Add entry for GetServiceGraph tool
+		{
+			Metadata: mcp.Tool{
+				Name:        "get_service_dependency_graph",
+				Description: ptr(apm.GetServiceDependencyGraphDetails),
+				InputSchema: mcp.ToolInputSchema{
+					Type: "object",
+					Properties: mcp.ToolInputSchemaProperties{
+						"start_time_iso": map[string]any{
+							"type":        "string",
+							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""}, // Empty string to encourage using defaults
+						},
+						"end_time_iso": map[string]any{
+							"type":        "string",
+							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""}, // Empty string to encourage using defaults
+						},
+						"env": map[string]any{
+							"type":        "string",
+							"description": "Environment to filter by. Defaults to 'prod'.",
+							"default":     "prod",
+						},
+						"service_name": map[string]any{
+							"type":        "string",
+							"description": "Name of the service to get the dependency graph for",
+						},
+					},
+				},
+			},
+			Execute:   apm.NewServiceDependencyGraphHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
+		// {
+		// 	Metadata: mcp.Tool{
+		// 		Name:        "get_service_graph",
+		// 		Description: ptr(traces.GetServiceGraphDescription),
+		// 		InputSchema: mcp.ToolInputSchema{
+		// 			Type: "object",
+		// 			Properties: mcp.ToolInputSchemaProperties{
+		// 				"span_name": map[string]any{
+		// 					"type":        "string",
+		// 					"description": "Name of the span to get dependencies for",
+		// 				},
+		// 				"lookback_minutes": map[string]any{
+		// 					"type":        "integer",
+		// 					"description": "Number of minutes to look back from now. Use this for relative time ranges instead of explicit timestamps.",
+		// 					"default":     60,
+		// 					"minimum":     1,
+		// 					"maximum":     1440, // 24 hours
+		// 					"examples":    []int{60, 30, 15},
+		// 				},
+		// 				"start_time_iso": map[string]any{
+		// 					"type":        "string",
+		// 					"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). If specified, lookback_minutes is ignored. Defaults to now - lookback_minutes if not specified.",
+		// 					"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+		// 					"examples":    []string{""}, // Empty string to encourage using defaults
+		// 				},
+		// 			},
+		// 		},
+		// 	},
+		// 	Execute:   traces.NewGetServiceGraphHandler(client, cfg),
+		// 	RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		// },
+		{
+			Metadata: mcp.Tool{
+				Name:        "prometheus_range_query",
+				Description: ptr(apm.PromqlRangeQueryDetails),
+				InputSchema: mcp.ToolInputSchema{
+					Type: "object",
+					Properties: mcp.ToolInputSchemaProperties{
+						"query": map[string]any{
+							"type":        "string",
+							"description": "The range query to execute",
+						},
+						"start_time_iso": map[string]any{
+							"type":        "string",
+							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						},
+						"end_time_iso": map[string]any{
+							"type":        "string",
+							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						},
+					},
+				},
+			},
+			Execute:   apm.NewPromqlRangeQueryHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
+		// Add entry for prometheus instance query tool
+		{
+			Metadata: mcp.Tool{
+				Name:        "prometheus_instant_query",
+				Description: ptr(apm.PromqlInstantQueryDetails),
+				InputSchema: mcp.ToolInputSchema{
+					Type: "object",
+					Properties: mcp.ToolInputSchemaProperties{
+						"query": map[string]any{
+							"type":        "string",
+							"description": "The instant query to execute",
+						},
+						"time_iso": map[string]any{
+							"type":        "string",
+							"description": "Time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						},
+					},
+				},
+			},
+			Execute:   apm.NewPromqlInstantQueryHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
+		{
+			Metadata: mcp.Tool{
+				Name:        "prometheus_label_values",
+				Description: ptr(apm.PromqlLabelValuesQueryDetails),
+				InputSchema: mcp.ToolInputSchema{
+					Type: "object",
+					Properties: mcp.ToolInputSchemaProperties{
+						"match_query": map[string]any{
+							"type":        "string",
+							"description": "The query to match against",
+						},
+						"label": map[string]any{
+							"type":        "string",
+							"description": "The label to get values for",
+						},
+						"start_time_iso": map[string]any{
+							"type":        "string",
+							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						},
+						"end_time_iso": map[string]any{
+							"type":        "string",
+							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						},
+					},
+				},
+			},
+			Execute:   apm.NewPromqlLabelValuesHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
+		{
+			Metadata: mcp.Tool{
+				Name:        "prometheus_labels",
+				Description: ptr(apm.PromqlLabelsQueryDetails),
+				InputSchema: mcp.ToolInputSchema{
+					Type: "object",
+					Properties: mcp.ToolInputSchemaProperties{
+						"match_query": map[string]any{
+							"type":        "string",
+							"description": "The query to match against",
+						},
+						"start_time_iso": map[string]any{
+							"type":        "string",
+							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						},
+						"end_time_iso": map[string]any{
+							"type":        "string",
+							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+						},
+					},
+				},
+			},
+			Execute:   apm.NewPromqlLabelsHandler(client, cfg),
 			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
 		},
 		{
