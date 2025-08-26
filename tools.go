@@ -526,6 +526,69 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 			Execute:   alerting.NewGetAlertsHandler(client, cfg),
 			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
 		},
+		{
+			Metadata: mcp.Tool{
+				Name:        "get_service_logs",
+				Description: ptr(logs.GetServiceLogsDescription),
+				InputSchema: mcp.ToolInputSchema{
+					Type: "object",
+					Properties: mcp.ToolInputSchemaProperties{
+						"service": map[string]any{
+							"type":        "string",
+							"description": "Name of the service to get logs for. Only pass the service name. Don't include service keyword",
+						},
+						"start_time_iso": map[string]any{
+							"type":        "string",
+							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - lookback_minutes.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""},
+						},
+						"end_time_iso": map[string]any{
+							"type":        "string",
+							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""},
+						},
+						"lookback_minutes": map[string]any{
+							"type":        "integer",
+							"description": "Number of minutes to look back from now. Use this for relative time ranges instead of explicit timestamps.",
+							"default":     60,
+							"minimum":     1,
+							"maximum":     1440,
+							"examples":    []int{60, 30, 15},
+						},
+						"limit": map[string]any{
+							"type":        "integer",
+							"description": "Maximum number of log entries to return",
+							"default":     20,
+							"minimum":     1,
+							"maximum":     100,
+						},
+						"severity_filters": map[string]any{
+							"type":        "array",
+							"description": "Optional array of severity level regex patterns to filter logs (e.g., ['ERROR', 'WARN', 'fatal', 'INFO', 'DEBUG', 'info', 'error', 'warn', 'fatal', 'debug'])",
+							"items": map[string]any{
+								"type": "string",
+							},
+							"examples": [][]string{
+								{"ERROR", "WARN"},
+								{"fatal", "error"},
+								{"INFO", "DEBUG"},
+							},
+						},
+						"body_filters": map[string]any{
+							"type":        "array",
+							"description": "Optional array of body regex patterns to filter logs",
+							"items": map[string]any{
+								"type": "string",
+							},
+						},
+					},
+				},
+			},
+			Execute:   logs.NewGetServiceLogsHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
 	}, nil
 }
 
