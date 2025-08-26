@@ -20,6 +20,7 @@ IDEs. Implements the following MCP
 **Observability & APM Tools:**
 - `get_exceptions`: Get the list of exceptions.
 - `get_service_summary`: Get service summary with throughput, error rate, and response time.
+- `get_service_environments`: Get available environments for services.
 - `get_service_performance_details`: Get detailed performance metrics for a service.
 - `get_service_operations_summary`: Get operations summary for a service.
 - `get_service_dependency_graph`: Get service dependency graph showing incoming/outgoing dependencies.
@@ -64,6 +65,17 @@ Parameters:
 - `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to end_time_iso - 1 hour.
 - `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
 - `env` (string, optional): Environment to filter by. Defaults to 'prod'.
+
+### get_service_environments
+
+Get available environments for services. Returns an array of environments that can be used with other APM tools.
+
+Parameters:
+
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to end_time_iso - 1 hour.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+
+Note: All other APM tools that retrieve service information (like `get_service_performance_details`, `get_service_dependency_graph`, `get_service_operations_summary`, `get_service_summary`) require an `env` parameter. This parameter must be one of the environments returned by this tool. If this tool returns an empty array, use an empty string `""` for the env parameter.
 
 ### get_service_performance_details
 
