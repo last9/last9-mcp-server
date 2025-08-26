@@ -84,13 +84,38 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 						},
 						"env": map[string]any{
 							"type":        "string",
-							"description": "Environment to filter by. Defaults to 'prod'.",
-							"default":     "prod",
+							"description": "Environment to filter by. Empty string if environment is unknown.",
+							"examples":    []string{"production", "prod", "", "staging", "development"},
 						},
 					},
 				},
 			},
 			Execute:   apm.NewServiceSummaryHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
+		{
+			Metadata: mcp.Tool{
+				Name:        "get_service_environments",
+				Description: ptr(apm.GetServiceEnvironmentsDescription),
+				InputSchema: mcp.ToolInputSchema{
+					Type: "object",
+					Properties: mcp.ToolInputSchemaProperties{
+						"start_time_iso": map[string]any{
+							"type":        "string",
+							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to end_time_iso - 1 hour. ",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""}, // Empty string to encourage using defaults
+						},
+						"end_time_iso": map[string]any{
+							"type":        "string",
+							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""}, // Empty string to encourage using defaults
+						},
+					},
+				},
+			},
+			Execute:   apm.NewServiceEnvironmentsHandler(client, cfg),
 			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
 		},
 		// Add entry for GetServicePerformanceDetails tool
@@ -119,8 +144,8 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 						},
 						"env": map[string]any{
 							"type":        "string",
-							"description": "Environment to filter by. Defaults to 'prod'.",
-							"default":     "prod",
+							"description": "Environment to filter by. Empty string if environment is unknown.",
+							"examples":    []string{"production", "prod", "", "staging", "development"},
 						},
 					},
 				},
@@ -154,8 +179,8 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 						},
 						"env": map[string]any{
 							"type":        "string",
-							"description": "Environment to filter by. Defaults to 'prod'.",
-							"default":     "prod",
+							"description": "Environment to filter by. Empty string if environment is unknown.",
+							"examples":    []string{"production", "prod", "", "staging", "development"},
 						},
 					},
 				},
@@ -185,8 +210,8 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 						},
 						"env": map[string]any{
 							"type":        "string",
-							"description": "Environment to filter by. Defaults to 'prod'.",
-							"default":     "prod",
+							"description": "Environment to filter by. Empty string if environment is unknown.",
+							"examples":    []string{"production", "prod", "", "staging", "development"},
 						},
 						"service_name": map[string]any{
 							"type":        "string",

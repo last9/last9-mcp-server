@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -14,9 +15,12 @@ import (
 	"github.com/acrmp/mcp"
 )
 
-const (
-	BaseURL      = "https://otlp-aps1.last9.io:443"
-	AuthToken    = "Basic <your-auth-token>"
+// const (
+//
+//	BaseURL      = "https://otlp-aps1.last9.io:443"
+//	AuthToken    = "Basic <your-auth-token>"
+//
+// )
 var (
 	BaseURL      = "https://otlp-aps1.last9.io:443"
 	AuthToken    = os.Getenv("TEST_AUTH_TOKEN")
@@ -234,6 +238,43 @@ func TestGetServiceDependencies(t *testing.T) {
 		t.Fatalf("expected TextContent type")
 	}
 	var details ServiceDependencyGraphDetails
+	if err := json.Unmarshal([]byte(textContent.Text), &details); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+}
+
+func TestNewServiceEnvironmentsHandler(t *testing.T) {
+	cfg := models.Config{
+		BaseURL:      BaseURL,
+		AuthToken:    AuthToken,
+		RefreshToken: RefreshToken,
+	}
+	if err := utils.PopulateAPICfg(&cfg); err != nil {
+		t.Fatalf("failed to refresh access token: %v", err)
+	}
+
+	handler := NewServiceEnvironmentsHandler(http.DefaultClient, cfg)
+
+	params := mcp.CallToolRequestParams{
+		Arguments: map[string]any{
+			"start_time": time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
+			"end_time":   time.Now().UTC().Format(time.RFC3339),
+		},
+	}
+
+	result, err := handler(params)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if len(result.Content) == 0 {
+		t.Fatalf("expected content in result")
+	}
+	textContent, ok := result.Content[0].(mcp.TextContent)
+	if !ok {
+		t.Fatalf("expected TextContent type")
+	}
+	var details []string
 	if err := json.Unmarshal([]byte(textContent.Text), &details); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}

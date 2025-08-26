@@ -42,7 +42,7 @@ const GetServiceSummaryDescription = `
 	Parameters:
 	- start_time: (Required) Start time of the time range in ISO format.
 	- end_time: (Required) End time of the time range in ISO format.
-	- env: (Optional) Environment to filter by. Defaults to "prod".
+	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
 `
 
 func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
@@ -79,7 +79,7 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(mcp.C
 		if e, ok := params.Arguments["env"].(string); ok && e != "" {
 			env = e
 		} else {
-			env = "prod" // default value
+			env = ".*" // default value
 		}
 		// get the value of service througputs using the query
 		// quantile_over_time(0.95, sum by (service_name)(trace_endpoint_count{service_name=~'.*', env=~'prod', span_kind=~'SPAN_KIND_SERVER|SPAN_KIND_CLIENT'})[30m])
@@ -264,7 +264,7 @@ const GetServicePerformanceDetails = `
 	Parameters:
 	- start_time: (Required) Start time of the time range in ISO format.
 	- end_time: (Required) End time of the time range in ISO format.
-	- env: (Optional) Environment to filter by. Defaults to "prod".
+	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
 `
 
 type TimeSeriesPoint struct {
@@ -387,7 +387,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}
 
 		// Handle environment
-		env := "prod"
+		env := ".*"
 		if e, ok := params.Arguments["env"].(string); ok && e != "" {
 			env = e
 		}
@@ -699,7 +699,7 @@ const GetServiceOperationsSummaryDescription = `
 	Parameters:
 	- start_time: (Required) Start time of the time range in ISO format.
 	- end_time: (Required) End time of the time range in ISO format.
-	- env: (Optional) Environment to filter by. Defaults to "prod".
+	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
 	- service_name: (Required) Service name to filter by. Defaults to all services.
 `
 
@@ -736,7 +736,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		if e, ok := params.Arguments["env"].(string); ok && e != "" {
 			env = e
 		} else {
-			env = "prod" // default environment
+			env = ".*" // default environment
 		}
 		serviceName, ok := params.Arguments["service_name"].(string)
 		if !ok || serviceName == "" {
@@ -1297,7 +1297,7 @@ const GetServiceDependencyGraphDetails = `
 	Parameters:
 	- start_time: (Required) Start time of the time range in ISO format.
 	- end_time: (Required) End time of the time range in ISO format.
-	- env: (Optional) Environment to filter by. Defaults to "prod".
+	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
 	- service_name: (Required) Name of the service to get the dependency graph for.
 	`
 
@@ -1334,7 +1334,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		if e, ok := params.Arguments["env"].(string); ok && e != "" {
 			env = e
 		} else {
-			env = "prod" // default environment
+			env = ".*" // default environment
 		}
 		serviceName, ok := params.Arguments["service_name"].(string)
 		if !ok || serviceName == "" {
@@ -1898,6 +1898,82 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(m
 		if err != nil {
 			return mcp.CallToolResult{}, fmt.Errorf("failed to read response body: %w", err)
 		}
+		return mcp.CallToolResult{
+			Content: []any{
+				mcp.TextContent{
+					Text: string(responseBodyBytes),
+					Type: "text",
+				},
+			},
+		}, nil
+	}
+}
+
+// tool handler to get label values for a given label name and filter prometheus query
+// handler for prometheus instant query
+const GetServiceEnvironmentsDescription = `
+	Return the environments available for the services. This tool returns an array of environments.
+	All other tools that retrieve information about services
+	like get_service_performance_details, get_service_dependency_graph, get_service_operations_summary,
+	get_service_sumary etc. require a mandatory "env" parameter. This must be one of the
+	environments returned by this tool. If the returned array is empty, use an empty string ""
+	as the value for the "env" parameter for other tools.
+	Parameters:
+	- start_time: (Optional) Start time of the time range in ISO format. Defaults to end_time - 1 hour
+	- end_time: (Optional) End time of the time range in ISO format. Defaults to current time
+
+	Returns an array of environments. 
+`
+
+// tool handler to make the query
+// sum by (env)(last_over_time(domain_attributes_count))
+// iterate over the values of `env` label and return the unique values
+func NewServiceEnvironmentsHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
+	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
+		var (
+			startTimeParam, endTimeParam int64
+		)
+
+		// Handle end_time
+		if endStr, ok := params.Arguments["end_time"].(string); ok {
+			t, err := time.Parse(time.RFC3339, endStr)
+			if err != nil {
+				return mcp.CallToolResult{}, fmt.Errorf("invalid end_time format, must be ISO8601: %w", err)
+			}
+			endTimeParam = t.Unix()
+		} else {
+			endTimeParam = time.Now().Unix()
+		}
+
+		// Handle start_time
+		if startStr, ok := params.Arguments["start_time"].(string); ok {
+			t, err := time.Parse(time.RFC3339, startStr)
+			if err != nil {
+				return mcp.CallToolResult{}, fmt.Errorf("invalid start_time format, must be ISO8601: %w", err)
+			}
+			startTimeParam = t.Unix()
+		} else {
+			startTimeParam = endTimeParam - 3600 // default to last hour
+		}
+
+		resp, err := utils.MakePromLabelValuesAPIQuery(client, "env", "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}", startTimeParam, endTimeParam, cfg)
+		if err != nil {
+			return mcp.CallToolResult{}, err
+		}
+		if resp == nil {
+			return mcp.CallToolResult{}, fmt.Errorf("received nil response from Prometheus")
+		}
+		if resp.StatusCode != http.StatusOK {
+			return mcp.CallToolResult{}, fmt.Errorf("failed to execute Prometheus label values query: %s", resp.Status)
+		}
+		defer resp.Body.Close()
+		// Read the response body
+		responseBodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return mcp.CallToolResult{}, fmt.Errorf("failed to read response body: %w", err)
+		}
+
+		// Return the environments as the content
 		return mcp.CallToolResult{
 			Content: []any{
 				mcp.TextContent{
