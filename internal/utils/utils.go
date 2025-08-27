@@ -214,6 +214,76 @@ var (
 	BuildTime = "unknown" // Set by goreleaser
 )
 
+// ParseStringArray safely extracts string array from interface{}
+func ParseStringArray(value interface{}) []string {
+	var result []string
+	if array, ok := value.([]interface{}); ok {
+		for _, item := range array {
+			if str, ok := item.(string); ok && str != "" {
+				result = append(result, str)
+			}
+		}
+	}
+	return result
+}
+
+// BuildOrFilter creates an $or filter for multiple values of the same field
+func BuildOrFilter(fieldName string, values []string) map[string]interface{} {
+	if len(values) == 1 {
+		return map[string]interface{}{
+			"$eq": []interface{}{fieldName, values[0]},
+		}
+	}
+
+	orConditions := make([]map[string]interface{}, 0, len(values))
+	for _, value := range values {
+		orConditions = append(orConditions, map[string]interface{}{
+			"$eq": []interface{}{fieldName, value},
+		})
+	}
+
+	return map[string]interface{}{"$or": orConditions}
+}
+
+// Helper functions for safe type conversion
+func GetStringValue(m map[string]interface{}, key string) string {
+	if val, ok := m[key].(string); ok {
+		return val
+	}
+	return ""
+}
+
+func GetInt64Value(m map[string]interface{}, key string) int64 {
+	switch val := m[key].(type) {
+	case int64:
+		return val
+	case float64:
+		return int64(val)
+	case int:
+		return int64(val)
+	default:
+		return 0
+	}
+}
+
+func ParseTimestamp(timestamp string) int64 {
+	if timestamp == "" {
+		return 0
+	}
+
+	// Parse RFC3339 timestamp format (e.g., "2025-08-27T05:50:02.47609145Z")
+	t, err := time.Parse(time.RFC3339Nano, timestamp)
+	if err != nil {
+		// If parsing fails, try without nanoseconds
+		t, err = time.Parse(time.RFC3339, timestamp)
+		if err != nil {
+			return 0
+		}
+	}
+
+	return t.Unix()
+}
+
 // setupConfig initializes and parses the configuration
 func SetupConfig(defaults models.Config) (models.Config, error) {
 	fs := flag.NewFlagSet("last9-mcp", flag.ExitOnError)
