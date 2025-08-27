@@ -1,0 +1,95 @@
+last9-mcp
+config.txt
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories
+/vendor/
+go.work
+go.work.sum
+
+# Build output
+dist/
+build/
+bin/
+
+# Go workspace file
+go.work
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.staging
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE specific
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.settings/
+.classpath
+
+# Editor backup files
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Test coverage
+coverage.txt
+coverage.html
+coverage.out
+*.cover
+
+# Profiling data
+*.prof
+*.pprof
+
+# Debug files
+debug
+__debug_bin
+
+# Air live reload
+tmp/
+
+# GoLand
+.idea/
+
+# Local development
+.local/
