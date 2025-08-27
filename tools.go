@@ -1,6 +1,7 @@
 package main
 
 import (
+	"last9-mcp/internal/alerting"
 	"last9-mcp/internal/apm"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/telemetry/logs"
@@ -485,6 +486,44 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 				},
 			},
 			Execute:   logs.NewAddDropRuleHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
+		{
+			Metadata: mcp.Tool{
+				Name:        "get_alert_config",
+				Description: ptr(alerting.GetAlertConfigDescription),
+				InputSchema: mcp.ToolInputSchema{
+					Type:       "object",
+					Properties: mcp.ToolInputSchemaProperties{},
+				},
+			},
+			Execute:   alerting.NewGetAlertConfigHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
+		{
+			Metadata: mcp.Tool{
+				Name:        "get_alerts",
+				Description: ptr(alerting.GetAlertsDescription),
+				InputSchema: mcp.ToolInputSchema{
+					Type: "object",
+					Properties: mcp.ToolInputSchemaProperties{
+						"timestamp": map[string]any{
+							"type":        "integer",
+							"description": "Unix timestamp for the query time. Leave empty to default to current time.",
+							"examples":    []int{1756228380},
+						},
+						"window": map[string]any{
+							"type":        "integer",
+							"description": "Time window in seconds to look back for alerts. Defaults to 900 seconds (15 minutes).",
+							"default":     900,
+							"minimum":     60,
+							"maximum":     86400, // 24 hours
+							"examples":    []int{900, 1800, 3600},
+						},
+					},
+				},
+			},
+			Execute:   alerting.NewGetAlertsHandler(client, cfg),
 			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
 		},
 	}, nil

@@ -67,7 +67,12 @@ func ExtractActionURLFromToken(accessToken string) (string, error) {
 		return "", errors.New("no audience found in token claims")
 	}
 
-	return fmt.Sprintf("https://%s", aud[0].(string)), nil
+	// Handle case where audience already includes https:// protocol
+	audStr := aud[0].(string)
+	if strings.HasPrefix(audStr, "https://") || strings.HasPrefix(audStr, "http://") {
+		return audStr, nil
+	}
+	return fmt.Sprintf("https://%s", audStr), nil
 }
 
 // RefreshAccessToken gets a new access token using the refresh token
@@ -86,7 +91,12 @@ func RefreshAccessToken(client *http.Client, cfg models.Config) (string, error) 
 		return "", fmt.Errorf("failed to extract action URL from refresh token: %w", err)
 	}
 
-	u, err := url.Parse(actionURL + "/api/v4/oauth/access_token")
+	// Handle case where actionURL already includes /api path
+	oauthURL := actionURL
+	if strings.HasSuffix(actionURL, "/api") {
+		oauthURL = strings.TrimSuffix(actionURL, "/api")
+	}
+	u, err := url.Parse(oauthURL + "/api/v4/oauth/access_token")
 	if err != nil {
 		return "", fmt.Errorf("failed to parse URL: %w", err)
 	}

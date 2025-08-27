@@ -38,6 +38,10 @@ IDEs. Implements the following MCP
 - `add_drop_rule`: Create a drop rule for logs at
   [Last9 Control Plane](https://last9.io/control-plane)
 
+**Alert Management:**
+- `get_alert_config`: Get alert configurations (alert rules) from Last9.
+- `get_alerts`: Get currently active alerts from Last9 monitoring system.
+
 ## Tools Documentation
 
 ### get_exceptions
@@ -194,6 +198,44 @@ Parameters:
   - `conjunction` (string, required): The logical conjunction between filters.
     Valid values:
     - "and"
+
+### get_alert_config
+
+Get alert configurations (alert rules) from Last9. Returns all configured alert rules including their conditions, labels, and annotations.
+
+Parameters:
+
+None - This tool retrieves all available alert configurations.
+
+Returns information about:
+
+- Alert rule ID and name
+- Primary indicator being monitored
+- Current state and severity
+- Algorithm used for alerting
+- Entity ID and organization details
+- Properties and configuration
+- Creation and update timestamps
+- Group timeseries notification settings
+
+### get_alerts
+
+Get currently active alerts from Last9 monitoring system. Returns all alerts that are currently firing or have fired recently within the specified time window.
+
+Parameters:
+
+- `timestamp` (integer, optional): Unix timestamp for the query time. Leave empty to default to current time.
+- `window` (integer, optional): Time window in seconds to look back for alerts. Defaults to 900 seconds (15 minutes). Range: 60-86400 seconds.
+
+Returns information about:
+
+- Alert rule details (ID, name, group, type)
+- Current state and severity
+- Last fired timestamp and duration
+- Rule properties and configuration
+- Alert instances with current values
+- Metric degradation information
+- Group labels and annotations for each instance
 
 ## Installation
 
