@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/acrmp/mcp"
 )
@@ -23,13 +24,13 @@ const (
 	DirectionDefault       = "backward"
 )
 
-// TraceQueryPipeline represents the pipeline structure for trace queries
-type TraceQueryPipeline struct {
-	Pipeline []PipelineStep `json:"pipeline"`
+// TraceQueryRequest represents the request structure for trace queries
+type TraceQueryRequest struct {
+	Pipeline []QueryStep `json:"pipeline"`
 }
 
-// PipelineStep represents a single step in the trace query pipeline
-type PipelineStep struct {
+// QueryStep represents a single step in the trace query
+type QueryStep struct {
 	Query map[string]interface{} `json:"query"`
 	Type  string                 `json:"type"`
 }
@@ -147,31 +148,17 @@ func parseTraceQueryParams(params mcp.CallToolRequestParams, cfg models.Config) 
 	}
 
 	// Parse array parameters with mapping
-	queryParams.SpanKinds = mapSpanKinds(utils.ParseStringArray(params.Arguments["span_kind"]))
-	queryParams.StatusCodes = mapStatusCodes(utils.ParseStringArray(params.Arguments["status_code"]))
+	queryParams.SpanKinds = mapValues(utils.ParseStringArray(params.Arguments["span_kind"]), spanKindMapping)
+	queryParams.StatusCodes = mapValues(utils.ParseStringArray(params.Arguments["status_code"]), statusCodeMapping)
 
 	return queryParams, nil
 }
 
-// mapSpanKinds converts user-friendly span kind terms to constants
-func mapSpanKinds(userValues []string) []string {
+// mapValues converts user-friendly terms to constants using the provided mapping
+func mapValues(userValues []string, mapping map[string]string) []string {
 	var mapped []string
 	for _, value := range userValues {
-		if constant, exists := spanKindMapping[strings.ToLower(value)]; exists {
-			mapped = append(mapped, constant)
-		} else {
-			// If no mapping found, use the original value (might already be a constant)
-			mapped = append(mapped, value)
-		}
-	}
-	return mapped
-}
-
-// mapStatusCodes converts user-friendly status code terms to constants
-func mapStatusCodes(userValues []string) []string {
-	var mapped []string
-	for _, value := range userValues {
-		if constant, exists := statusCodeMapping[strings.ToLower(value)]; exists {
+		if constant, exists := mapping[strings.ToLower(value)]; exists {
 			mapped = append(mapped, constant)
 		} else {
 			// If no mapping found, use the original value (might already be a constant)
@@ -228,15 +215,15 @@ func buildRequestURL(cfg models.Config, params *TraceQueryParams, startTime, end
 
 // createTraceRequest builds the HTTP request with proper headers and payload
 func createTraceRequest(requestURL *url.URL, filters []map[string]interface{}, cfg models.Config) (*http.Request, error) {
-	// Create pipeline payload
-	pipeline := TraceQueryPipeline{
-		Pipeline: []PipelineStep{{
+	// Create query request payload
+	queryRequest := TraceQueryRequest{
+		Pipeline: []QueryStep{{
 			Query: map[string]interface{}{"$and": filters},
 			Type:  "filter",
 		}},
 	}
 
-	payloadBytes, err := json.Marshal(pipeline)
+	payloadBytes, err := json.Marshal(queryRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal payload: %w", err)
 	}
@@ -260,6 +247,45 @@ func createTraceRequest(requestURL *url.URL, filters []map[string]interface{}, c
 	req.Header.Set("X-LAST9-API-TOKEN", accessToken)
 
 	return req, nil
+}
+
+// Helper functions for safe type conversion
+func getStringValue(m map[string]interface{}, key string) string {
+	if val, ok := m[key].(string); ok {
+		return val
+	}
+	return ""
+}
+
+func getInt64Value(m map[string]interface{}, key string) int64 {
+	switch val := m[key].(type) {
+	case int64:
+		return val
+	case float64:
+		return int64(val)
+	case int:
+		return int64(val)
+	default:
+		return 0
+	}
+}
+
+func parseTimestamp(timestamp string) int64 {
+	if timestamp == "" {
+		return 0
+	}
+
+	// Parse RFC3339 timestamp format (e.g., "2025-08-27T05:50:02.47609145Z")
+	t, err := time.Parse(time.RFC3339Nano, timestamp)
+	if err != nil {
+		// If parsing fails, try without nanoseconds
+		t, err = time.Parse(time.RFC3339, timestamp)
+		if err != nil {
+			return 0
+		}
+	}
+
+	return t.Unix()
 }
 
 // transformToTraceQueryResponse converts raw API response to structured TraceQueryResponse
@@ -293,15 +319,15 @@ func transformToTraceQueryResponse(rawResult map[string]interface{}) TraceQueryR
 		}
 
 		traceData := TraceData{
-			TraceID:     utils.GetStringValue(traceItem, "TraceId"),
-			SpanID:      utils.GetStringValue(traceItem, "SpanId"),
-			SpanKind:    utils.GetStringValue(traceItem, "SpanKind"),
-			SpanName:    utils.GetStringValue(traceItem, "SpanName"),
-			ServiceName: utils.GetStringValue(traceItem, "ServiceName"),
-			Duration:    utils.GetInt64Value(traceItem, "Duration"),
-			Timestamp:   utils.ParseTimestamp(utils.GetStringValue(traceItem, "Timestamp")),
-			TraceState:  utils.GetStringValue(traceItem, "TraceState"),
-			StatusCode:  utils.GetStringValue(traceItem, "StatusCode"),
+			TraceID:     getStringValue(traceItem, "TraceId"),
+			SpanID:      getStringValue(traceItem, "SpanId"),
+			SpanKind:    getStringValue(traceItem, "SpanKind"),
+			SpanName:    getStringValue(traceItem, "SpanName"),
+			ServiceName: getStringValue(traceItem, "ServiceName"),
+			Duration:    getInt64Value(traceItem, "Duration"),
+			Timestamp:   parseTimestamp(getStringValue(traceItem, "Timestamp")),
+			TraceState:  getStringValue(traceItem, "TraceState"),
+			StatusCode:  getStringValue(traceItem, "StatusCode"),
 		}
 
 		response.Data = append(response.Data, traceData)
@@ -310,8 +336,8 @@ func transformToTraceQueryResponse(rawResult map[string]interface{}) TraceQueryR
 	return response
 }
 
-// NewGetServiceTraceHandler creates a handler for querying service traces
-func NewGetServiceTraceHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
+// GetServiceTracesHandler creates a handler for querying service traces
+func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
 	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
 		// Parse and validate parameters
 		queryParams, err := parseTraceQueryParams(params, cfg)
@@ -353,13 +379,13 @@ func NewGetServiceTraceHandler(client *http.Client, cfg models.Config) func(mcp.
 				resp.StatusCode, string(body))
 		}
 
-		var rawResult map[string]interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&rawResult); err != nil {
+		var result map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return mcp.CallToolResult{}, fmt.Errorf("failed to decode response: %w", err)
 		}
 
 		// Transform raw response to structured TraceQueryResponse
-		traceResponse := transformToTraceQueryResponse(rawResult)
+		traceResponse := transformToTraceQueryResponse(result)
 
 		jsonData, err := json.Marshal(traceResponse)
 		if err != nil {

@@ -605,7 +605,7 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 					},
 				},
 			},
-			Execute:   traces.NewGetServiceTraceHandler(client, cfg),
+			Execute:   traces.GetServiceTracesHandler(client, cfg),
 			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
 		},
 	}, nil
