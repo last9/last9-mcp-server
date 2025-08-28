@@ -33,7 +33,7 @@ type ServiceLogsParams struct {
 	BodyFilters     []string // Optional regex patterns for body filtering
 }
 
-func NewServiceLogsParams(request ServiceLogsAPIRequest, baseURL string) ServiceLogsParams {
+func createServiceLogsParams(request ServiceLogsAPIRequest, baseURL string) ServiceLogsParams {
 	return ServiceLogsParams{
 		Service:         request.Service,
 		StartTime:       request.StartTime,
@@ -95,8 +95,8 @@ type ServiceLogsAPIRequest struct {
 	BodyFilters     []string // Optional regex patterns for body filtering
 }
 
-// NewServiceLogsAPIRequest creates a new service logs API request with default options
-func NewServiceLogsAPIRequest(service string, startTime, endTime int64, severityFilters []string, bodyFilters []string) ServiceLogsAPIRequest {
+// CreateServiceLogsAPIRequest creates a new service logs API request with default options
+func CreateServiceLogsAPIRequest(service string, startTime, endTime int64, severityFilters []string, bodyFilters []string) ServiceLogsAPIRequest {
 	return ServiceLogsAPIRequest{
 		Service:         service,
 		StartTime:       startTime,
@@ -114,7 +114,7 @@ func MakeServiceLogsAPI(client *http.Client, request ServiceLogsAPIRequest, cfg 
 	}
 
 	// Create parameters with dynamic region detection
-	params := NewServiceLogsParams(request, cfg.BaseURL)
+	params := createServiceLogsParams(request, cfg.BaseURL)
 
 	if err := (&params).Validate(); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %w", err)

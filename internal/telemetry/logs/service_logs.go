@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"time"
 
 	"last9-mcp/internal/models"
@@ -19,7 +18,21 @@ const GetServiceLogsDescription = `Get raw log entries for a specific service ov
 
 This tool retrieves actual log entries for a specified service, including log messages, timestamps, severity levels, and other metadata.
 It's useful for debugging issues, monitoring service behavior, and analyzing specific log patterns.
-This tool can be used to filter the service logs based on severity and body.
+
+Filtering behavior:
+- severity_filters: Array of severity patterns (e.g., ["error", "warn"]) - uses OR logic (matches any pattern)
+- body_filters: Array of message content patterns (e.g., ["timeout", "failed"]) - uses OR logic (matches any pattern)
+- Multiple filter types are combined with AND logic (service AND severity AND body)
+
+Examples:
+1. service="api" + severity_filters=["error"] + body_filters=["timeout"] 
+   → finds error logs containing "timeout" for the "api" service
+2. service="web" + body_filters=["timeout", "failed", "error 500"]
+   → finds logs containing "timeout" OR "failed" OR "error 500" for the "web" service
+3. service="db" + severity_filters=["error", "critical"] + body_filters=["connection", "deadlock"]
+   → finds error/critical logs containing "connection" OR "deadlock" for the "db" service
+
+Note: This tool returns raw log entries.
 
 Returns a list of log entries with full details including message content, timestamps, severity, and attributes.`
 
@@ -55,7 +68,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(mcp.C
 			limit = int(l)
 		}
 
-		// Get severity filters parameter
+		// Get severity filters parameter (array allows multiple severity levels to be matched with OR logic)
 		var severityFilters []string
 		if filters, ok := params.Arguments["severity_filters"].([]interface{}); ok {
 			for _, filter := range filters {
@@ -65,6 +78,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(mcp.C
 			}
 		}
 
+		// Get body filters parameter (array allows multiple message patterns to be matched with OR logic)
 		var bodyFilters []string
 		if filters, ok := params.Arguments["body_filters"].([]interface{}); ok {
 			for _, filter := range filters {
@@ -110,7 +124,7 @@ func fetchServiceLogs(client *http.Client, cfg models.Config, service string, st
 	endTimeMs := endTime.UnixMilli()
 
 	// Create API request struct
-	apiRequest := utils.NewServiceLogsAPIRequest(service, startTimeMs, endTimeMs, severityFilters, bodyFilters)
+	apiRequest := utils.CreateServiceLogsAPIRequest(service, startTimeMs, endTimeMs, severityFilters, bodyFilters)
 
 	// Use the existing utils function to make the API call
 	resp, err := utils.MakeServiceLogsAPI(client, apiRequest, &cfg)
@@ -169,7 +183,7 @@ func fetchServiceLogs(client *http.Client, cfg models.Config, service string, st
 						if len(value) >= 2 {
 							entry := LogEntry{
 								ServiceName: service,
-								Timestamp:   convertTimestamp(value[0]),
+								Timestamp:   utils.ConvertTimestamp(value[0]),
 								Message:     fmt.Sprintf("%v", value[1]),
 							}
 
@@ -193,27 +207,4 @@ func fetchServiceLogs(client *http.Client, cfg models.Config, service string, st
 		Count:     len(logs),
 		Logs:      logs,
 	}, nil
-}
-
-// convertTimestamp converts a timestamp from the API response to RFC3339 format
-func convertTimestamp(timestamp any) string {
-	switch ts := timestamp.(type) {
-	case string:
-		// Try to parse as Unix nanoseconds timestamp
-		if nsTimestamp, err := strconv.ParseInt(ts, 10, 64); err == nil {
-			// Convert nanoseconds to time.Time and format as RFC3339
-			return time.Unix(0, nsTimestamp).UTC().Format(time.RFC3339)
-		}
-		// If it's already a formatted timestamp, return as is
-		return ts
-	case float64:
-		// Convert to int64 and treat as nanoseconds
-		return time.Unix(0, int64(ts)).UTC().Format(time.RFC3339)
-	case int64:
-		// Treat as nanoseconds
-		return time.Unix(0, ts).UTC().Format(time.RFC3339)
-	default:
-		// Fallback to current time if we can't parse
-		return time.Now().UTC().Format(time.RFC3339)
-	}
 }

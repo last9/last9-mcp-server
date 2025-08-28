@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -452,4 +453,27 @@ func MakePromLabelsAPIQuery(client *http.Client, metric string, startTimeParam, 
 	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
 
 	return client.Do(req)
+}
+
+// ConvertTimestamp converts a timestamp from the API response to RFC3339 format
+func ConvertTimestamp(timestamp any) string {
+	switch ts := timestamp.(type) {
+	case string:
+		// Try to parse as Unix nanoseconds timestamp
+		if nsTimestamp, err := strconv.ParseInt(ts, 10, 64); err == nil {
+			// Convert nanoseconds to time.Time and format as RFC3339
+			return time.Unix(0, nsTimestamp).UTC().Format(time.RFC3339)
+		}
+		// If it's already a formatted timestamp, return as is
+		return ts
+	case float64:
+		// Convert to int64 and treat as nanoseconds
+		return time.Unix(0, int64(ts)).UTC().Format(time.RFC3339)
+	case int64:
+		// Treat as nanoseconds
+		return time.Unix(0, ts).UTC().Format(time.RFC3339)
+	default:
+		// Fallback to current time if we can't parse
+		return time.Now().UTC().Format(time.RFC3339)
+	}
 }
