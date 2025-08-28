@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/last9-last9-mcp-server-badge.png)](https://mseep.ai/app/last9-last9-mcp-server)
+
 # Last9 MCP Server
 
 ![last9 mcp demo](mcp-demo.gif)
