@@ -39,6 +39,17 @@ const GetServiceSummaryDescription = `
 	- throughput in requests per minute (rpm)
 	- error rate in requests per minute (rpm)
 	- p95 response time in milliseconds
+	
+	RELATED CHANGE EVENTS - For comprehensive service analysis, also check for:
+	When analyzing service performance, consider checking for related change events:
+	- Deployments: New code deployments that might explain performance changes
+	- Configuration changes: Settings updates that could affect service behavior
+	- Scaling events: Scale up/down operations that might impact capacity
+	- Infrastructure changes: Database migrations, certificate renewals, maintenance windows
+	- Service restarts: Restarts that might have cleared caches or reset connections
+	
+	Use the "get_change_events" tool with the same service name and time range to correlate performance changes with infrastructure events.
+	
 	Parameters:
 	- start_time: (Required) Start time of the time range in ISO format.
 	- end_time: (Required) End time of the time range in ISO format.
@@ -261,6 +272,17 @@ const GetServicePerformanceDetails = `
 	- top_operations.by_response_time: Top 10 operations by response time. The format of this is a list of dicts with operation name and response time.
 	- top_operations.by_error_rate: Top 10 operations by error rate. The format of this is a list of dicts with operation name and error count.
 	- top_errors: Top 10 errors or exceptions by count. The format of this is a list of dicts with exception type (or http error code) and count. 
+	
+	RELATED CHANGE EVENTS - For comprehensive performance analysis, also check for:
+	When analyzing service performance, consider checking for related change events that might explain performance changes:
+	- Deployments: New code deployments that might introduce performance regressions or improvements
+	- Configuration changes: Settings updates that could affect service behavior
+	- Scaling events: Scale up/down operations that might impact capacity and performance
+	- Infrastructure changes: Database migrations, certificate renewals, maintenance windows
+	- Rollbacks: Recent rollbacks that might have reverted performance fixes
+	
+	Use the "get_change_events" tool with the same service name and time range to correlate performance changes with infrastructure events.
+	
 	Parameters:
 	- start_time: (Required) Start time of the time range in ISO format.
 	- end_time: (Required) End time of the time range in ISO format.
@@ -695,6 +717,16 @@ const GetServiceOperationsSummaryDescription = `
 	HTTP client operations contain additional fields:
 		- http_method: HTTP method (e.g., GET, POST, etc.)
 		- net_peer_name: HTTP host or connection string
+	
+	RELATED CHANGE EVENTS - For comprehensive operations analysis, also check for:
+	When analyzing service operations performance, consider checking for related change events:
+	- Deployments: New code that might affect specific operation endpoints
+	- Configuration changes: Settings that could impact operation behavior
+	- Database changes: Migrations or schema updates that might affect database operations
+	- Infrastructure scaling: Capacity changes that could impact operation throughput
+	- Service restarts: Restarts that might have cleared caches or reset connections
+	
+	Use the "get_change_events" tool with the same service name and time range to correlate operation changes with infrastructure events.
 	
 	Parameters:
 	- start_time: (Required) Start time of the time range in ISO format.
@@ -1294,6 +1326,18 @@ const GetServiceDependencyGraphDetails = `
 	can be obtained by using the get_service_details tool.
 	In the parameters, it is recommended to use the ISO8601 format for start_time and end_time,
 	with a time window of 1 hour.
+	
+	RELATED CHANGE EVENTS - For comprehensive dependency analysis, also check for:
+	When analyzing service dependencies and cascading effects, consider checking for related change events:
+	- Deployments: Changes that might affect service-to-service communication
+	- Configuration changes: Settings that could impact dependency behavior
+	- Infrastructure scaling: Capacity changes that might affect dependency performance
+	- Database changes: Migrations that could impact database-dependent operations
+	- Network changes: Infrastructure updates that might affect service connectivity
+	- Service restarts: Restarts that could have cleared connection pools or caches
+	
+	Use the "get_change_events" tool with the same service name and time range to correlate dependency changes with infrastructure events.
+	
 	Parameters:
 	- start_time: (Required) Start time of the time range in ISO format.
 	- end_time: (Required) End time of the time range in ISO format.
