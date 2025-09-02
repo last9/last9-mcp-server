@@ -1,13 +1,14 @@
 package main
 
 import (
+	"net/http"
+	"time"
+
 	"last9-mcp/internal/alerting"
 	"last9-mcp/internal/apm"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/telemetry/traces"
-	"net/http"
-	"time"
 
 	"github.com/acrmp/mcp"
 	"golang.org/x/time/rate"
@@ -587,6 +588,88 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 				},
 			},
 			Execute:   logs.NewGetServiceLogsHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
+		{
+			Metadata: mcp.Tool{
+				Name:        "get_service_traces",
+				Description: ptr("Query traces for a specific service with filtering options for span kinds, status codes, and other trace attributes"),
+				InputSchema: mcp.ToolInputSchema{
+					Type: "object",
+					Properties: mcp.ToolInputSchemaProperties{
+						"service_name": map[string]any{
+							"type":        "string",
+							"description": "Name of the service to get traces for (required). Only include the service name. Dont include `service` keyword.",
+						},
+						"lookback_minutes": map[string]any{
+							"type":        "integer",
+							"description": "Number of minutes to look back from now. Use this for relative time ranges instead of explicit timestamps.",
+							"default":     60,
+							"minimum":     1,
+							"maximum":     1440, // 24 hours
+							"examples":    []int{60, 30, 15},
+						},
+						"start_time_iso": map[string]any{
+							"type":        "string",
+							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - lookback_minutes.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""}, // Empty string to encourage using defaults
+						},
+						"end_time_iso": map[string]any{
+							"type":        "string",
+							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""}, // Empty string to encourage using defaults
+						},
+						"limit": map[string]any{
+							"type":        "integer",
+							"description": "Maximum number of traces to return",
+							"default":     10,
+							"minimum":     1,
+							"maximum":     100,
+						},
+						"order": map[string]any{
+							"type":        "string",
+							"description": "Field to order traces by",
+							"default":     "Duration",
+							"examples":    []string{"Duration", "Timestamp"},
+						},
+						"direction": map[string]any{
+							"type":        "string",
+							"description": "Sort direction for traces",
+							"default":     "backward",
+							"enum":        []string{"forward", "backward"},
+						},
+						"span_kind": map[string]any{
+							"type":        "array",
+							"description": "Filter by span kinds. Accepts user-friendly terms (server, client, internal, consumer, producer) or full constants (SPAN_KIND_SERVER, etc.)",
+							"items": map[string]any{
+								"type": "string",
+								"enum": []string{
+									"server", "client", "internal", "consumer", "producer",
+									"SPAN_KIND_SERVER", "SPAN_KIND_CLIENT", "SPAN_KIND_INTERNAL", "SPAN_KIND_CONSUMER", "SPAN_KIND_PRODUCER",
+								},
+							},
+						},
+						"span_name": map[string]any{
+							"type":        "string",
+							"description": "Filter by specific span name",
+						},
+						"status_code": map[string]any{
+							"type":        "array",
+							"description": "Filter by status codes. Accepts user-friendly terms (ok, error, unset, success) or full constants (STATUS_CODE_OK, etc.)",
+							"items": map[string]any{
+								"type": "string",
+								"enum": []string{
+									"ok", "error", "unset", "success",
+									"STATUS_CODE_OK", "STATUS_CODE_ERROR", "STATUS_CODE_UNSET",
+								},
+							},
+						},
+					},
+				},
+			},
+			Execute:   traces.GetServiceTracesHandler(client, cfg),
 			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
 		},
 	}, nil
