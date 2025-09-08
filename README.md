@@ -18,6 +18,7 @@ IDEs. Implements the following MCP
 [tools](https://modelcontextprotocol.io/docs/concepts/tools):
 
 **Observability & APM Tools:**
+
 - `get_exceptions`: Get the list of exceptions.
 - `get_service_summary`: Get service summary with throughput, error rate, and response time.
 - `get_service_environments`: Get available environments for services.
@@ -26,19 +27,28 @@ IDEs. Implements the following MCP
 - `get_service_dependency_graph`: Get service dependency graph showing incoming/outgoing dependencies.
 
 **Prometheus/PromQL Tools:**
+
 - `promptheus_range_query`: Execute PromQL range queries for metrics data.
 - `prometheus_instant_query`: Execute PromQL instant queries for metrics data.
 - `prometheus_label_values`: Get label values for PromQL queries.
 - `prometheus_labels`: Get available labels for PromQL queries.
 
 **Logs Management:**
+
 - `get_logs`: Get logs filtered by service name and/or severity level.
 - `get_drop_rules`: Get drop rules for logs that determine what logs get
   filtered out at [Last9 Control Plane](https://last9.io/control-plane)
 - `add_drop_rule`: Create a drop rule for logs at
   [Last9 Control Plane](https://last9.io/control-plane)
+- `get_service_logs`: Get raw log entries for a specific service over a time range. Can apply filters on severity and body.
 
 **Alert Management:**
+
+- `get_alert_config`: Get alert configurations (alert rules) from Last9.
+- `get_alerts`: Get currently active alerts from Last9 monitoring system.
+
+**Alert Management:**
+
 - `get_alert_config`: Get alert configurations (alert rules) from Last9.
 - `get_alerts`: Get currently active alerts from Last9 monitoring system.
 
@@ -237,13 +247,27 @@ Returns information about:
 - Metric degradation information
 - Group labels and annotations for each instance
 
+### get_service_logs
+
+Get raw log entries for a specific service over a time range. Can apply filters on severity and body.
+
+Parameters:
+
+- `service` (string, required): Name of the service to get logs for.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - lookback_minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `lookback_minutes` (integer, recommended): Number of minutes to look back from now. Default: 60. Examples: 60, 30, 15.
+- `limit` (integer, optional): Maximum number of logs to return. Default: 20.
+- `severity_filters` (array, optional): List of severity filters to apply. Valid values: "debug", "info", "warn", "error", "fatal".
+- `body_filters` (array, optional): List of body filters to apply.
+
 ## Installation
 
 You can install the Last9 Observability MCP server using either:
 
 ### Homebrew
 
-```
+```bash
 # Add the Last9 tap
 brew tap last9/tap
 
@@ -356,10 +380,10 @@ Configure Windsurf to use the MCP server:
 > preview. For advanced configuration options and alternative setup methods,
 > [view the VS Code MCP documentation](https://code.visualstudio.com/docs/copilot/chat/mcp-servers).
 
-1.  Open VS Code, go to Settings, select the User tab, then Features, then Chat
-2.  Click "Edit settings.json"
-3.  Copy and paste the server config to your existing file, then save
-4.  Restart VS Code
+1. Open VS Code, go to Settings, select the User tab, then Features, then Chat
+2. Click "Edit settings.json"
+3. Copy and paste the server config to your existing file, then save
+4. Restart VS Code
 
 ```json
 {

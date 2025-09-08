@@ -93,3 +93,7 @@ tmp/
 
 # Local development
 .local/
+
+.windsurf
+.env
+last9-mcp-server

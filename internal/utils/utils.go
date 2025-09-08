@@ -7,12 +7,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"last9-mcp/internal/models"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
+
+	"last9-mcp/internal/models"
 
 	"github.com/peterbourgon/ff/v3"
 )
@@ -452,4 +454,60 @@ func MakePromLabelsAPIQuery(client *http.Client, metric string, startTimeParam, 
 	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
 
 	return client.Do(req)
+}
+
+// ConvertTimestamp converts a timestamp from the API response to RFC3339 format
+func ConvertTimestamp(timestamp any) string {
+	switch ts := timestamp.(type) {
+	case string:
+		// Try to parse as Unix nanoseconds timestamp
+		if nsTimestamp, err := strconv.ParseInt(ts, 10, 64); err == nil {
+			// Convert nanoseconds to time.Time and format as RFC3339
+			return time.Unix(0, nsTimestamp).UTC().Format(time.RFC3339)
+		}
+		// If it's already a formatted timestamp, return as is
+		return ts
+	case float64:
+		// Convert to int64 and treat as nanoseconds
+		return time.Unix(0, int64(ts)).UTC().Format(time.RFC3339)
+	case int64:
+		// Treat as nanoseconds
+		return time.Unix(0, ts).UTC().Format(time.RFC3339)
+	default:
+		// Fallback to current time if we can't parse
+		return time.Now().UTC().Format(time.RFC3339)
+	}
+}
+
+// ParseStringArray safely extracts string array from interface{}
+func ParseStringArray(value interface{}) []string {
+	var result []string
+	if array, ok := value.([]interface{}); ok {
+		for _, item := range array {
+			if str, ok := item.(string); ok && str != "" {
+				result = append(result, str)
+			}
+		}
+	}
+	return result
+}
+
+// BuildOrFilter creates an optimized filter for single or multiple values of the same field.
+// For single values, returns a simple $eq filter. For multiple values, returns an $or filter.
+// This optimization reduces query complexity and improves performance for single-value filters.
+func BuildOrFilter(fieldName string, values []string) map[string]interface{} {
+	if len(values) == 1 {
+		return map[string]interface{}{
+			"$eq": []interface{}{fieldName, values[0]},
+		}
+	}
+
+	orConditions := make([]map[string]interface{}, 0, len(values))
+	for _, value := range values {
+		orConditions = append(orConditions, map[string]interface{}{
+			"$eq": []interface{}{fieldName, value},
+		})
+	}
+
+	return map[string]interface{}{"$or": orConditions}
 }
