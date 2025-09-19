@@ -511,3 +511,50 @@ func BuildOrFilter(fieldName string, values []string) map[string]interface{} {
 
 	return map[string]interface{}{"$or": orConditions}
 }
+
+// FetchPhysicalIndex retrieves the physical index for logs queries using the provided service name and environment
+// Uses an instant query for data from the last 2 hours
+func FetchPhysicalIndex(client *http.Client, cfg models.Config, serviceName, env string) (string, error) {
+	// Build the PromQL query with a 2-hour window
+	query := fmt.Sprintf("sum by (name, destination) (physical_index_service_count{service_name='%s'", serviceName)
+	if env != "" {
+		query += fmt.Sprintf(",env=~'%s'", env)
+	}
+	query += "}[2h])"
+
+	// Get current time for the instant query
+	currentTime := time.Now().Unix()
+
+	// Make the Prometheus instant query
+	resp, err := MakePromInstantAPIQuery(client, query, currentTime, cfg)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch physical index: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := json.Marshal(resp.Body)
+		return "", fmt.Errorf("physical index API returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	// Parse the response to extract the first index
+	var physicalIndexResponse []struct {
+		Metric map[string]string `json:"metric"`
+		Value  []interface{}     `json:"value"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&physicalIndexResponse); err != nil {
+		return "", fmt.Errorf("failed to decode physical index response: %w", err)
+	}
+
+	if len(physicalIndexResponse) == 0 {
+		return "", fmt.Errorf("no physical index found for service %s", serviceName)
+	}
+
+	// Extract the index name from the first result
+	firstResult := physicalIndexResponse[0]
+	if indexName, exists := firstResult.Metric["name"]; exists {
+		return fmt.Sprintf("physical_index:%s", indexName), nil
+	}
+
+	return "", fmt.Errorf("no index name found in physical index response")
+}

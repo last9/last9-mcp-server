@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(go build:*)",
+      "mcp__last9-mcp__get_service_logs",
+      "mcp__last9-mcp__get_logs"
+    ],
+    "deny": [],
+    "ask": []
+  },
+  "outputStyle": "Learning"
+}

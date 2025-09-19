@@ -47,6 +47,24 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(mcp.CallTool
 			q.Set("severity", severity)
 		}
 
+		// Fetch physical index before making logs queries
+		if service, ok := params.Arguments["service"].(string); ok && service != "" {
+			// Extract environment parameter if available  
+			env := ""
+			if envParam, ok := params.Arguments["env"].(string); ok {
+				env = envParam
+			}
+
+			physicalIndex, err := utils.FetchPhysicalIndex(client, cfg, service, env)
+			if err != nil {
+				// Log the error but continue without index to maintain backward compatibility
+				fmt.Printf("Warning: failed to fetch physical index for service %s: %v\n", service, err)
+			} else if physicalIndex != "" {
+				// Only set index if we got a valid non-empty result
+				q.Set("index", physicalIndex)
+			}
+		}
+
 		u.RawQuery = q.Encode()
 
 		// Create request

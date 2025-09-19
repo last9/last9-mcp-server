@@ -94,8 +94,22 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(mcp.C
 			return mcp.CallToolResult{}, fmt.Errorf("invalid time range: %w", err)
 		}
 
-		// Fetch raw logs using the existing logs API approach
-		logs, err := fetchServiceLogs(client, cfg, service, startTime, endTime, limit, severityFilters, bodyFilters)
+		// Fetch physical index before making logs queries
+		// Extract environment parameter if available
+		env := ""
+		if envParam, ok := params.Arguments["env"].(string); ok {
+			env = envParam
+		}
+
+		physicalIndex, err := utils.FetchPhysicalIndex(client, cfg, service, env)
+		if err != nil {
+			// Log the error but continue without index to maintain backward compatibility
+			fmt.Printf("Warning: failed to fetch physical index for service %s: %v\n", service, err)
+			physicalIndex = ""
+		}
+
+		// Fetch raw logs using the existing logs API approach with physical index
+		logs, err := fetchServiceLogs(client, cfg, service, startTime, endTime, limit, severityFilters, bodyFilters, physicalIndex)
 		if err != nil {
 			return mcp.CallToolResult{}, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
@@ -118,13 +132,13 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(mcp.C
 }
 
 // fetchServiceLogs retrieves raw log entries for a specific service using utils package
-func fetchServiceLogs(client *http.Client, cfg models.Config, service string, startTime, endTime time.Time, limit int, severityFilters []string, bodyFilters []string) (*ServiceLogsResponse, error) {
+func fetchServiceLogs(client *http.Client, cfg models.Config, service string, startTime, endTime time.Time, limit int, severityFilters []string, bodyFilters []string, physicalIndex string) (*ServiceLogsResponse, error) {
 	// Convert time.Time to Unix milliseconds for the utils function
 	startTimeMs := startTime.UnixMilli()
 	endTimeMs := endTime.UnixMilli()
 
-	// Create API request struct
-	apiRequest := utils.CreateServiceLogsAPIRequest(service, startTimeMs, endTimeMs, severityFilters, bodyFilters)
+	// Create API request struct with physical index
+	apiRequest := utils.CreateServiceLogsAPIRequest(service, startTimeMs, endTimeMs, severityFilters, bodyFilters, physicalIndex)
 
 	// Use the existing utils function to make the API call
 	resp, err := utils.MakeServiceLogsAPI(client, apiRequest, &cfg)
