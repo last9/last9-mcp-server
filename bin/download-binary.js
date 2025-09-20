@@ -2,6 +2,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const os = require('os');
 
 // Get version from package.json
 const version = require('../package.json').version;
@@ -34,9 +35,11 @@ if (!fs.existsSync(distDir)) {
 const downloadUrl = `https://github.com/last9/last9-mcp-server/releases/download/v${version}/last9-mcp-server_${osMap[platform]}_${archMap[arch]}${platform === 'win32' ? '.zip' : '.tar.gz'}`;
 
 console.log(`Downloading from: ${downloadUrl}`);
-console.log(`Saving to: ${binaryPath}`);
+console.log(`Extracting to: ${binaryPath}`);
 
-const file = fs.createWriteStream(binaryPath);
+// Create temporary file for the archive
+const tempArchivePath = path.join(os.tmpdir(), `last9-mcp-server-${Date.now()}${platform === 'win32' ? '.zip' : '.tar.gz'}`);
+const file = fs.createWriteStream(tempArchivePath);
 
 const download = (url) => {
   return new Promise((resolve, reject) => {
@@ -59,22 +62,36 @@ const download = (url) => {
       file.on('finish', () => {
         file.close();
         console.log('Download completed');
-        
-        // Make binary executable on Unix-like systems
-        if (platform !== 'win32') {
-          try {
+
+        // Extract the archive
+        try {
+          if (platform === 'win32') {
+            // Extract zip file (requires unzip or similar)
+            execSync(`cd "${distDir}" && unzip -o "${tempArchivePath}"`);
+          } else {
+            // Extract tar.gz file
+            execSync(`tar -xzf "${tempArchivePath}" -C "${distDir}"`);
+          }
+          console.log('Archive extracted');
+
+          // Clean up temporary file
+          fs.unlinkSync(tempArchivePath);
+
+          // Make binary executable on Unix-like systems
+          if (platform !== 'win32') {
             execSync(`chmod +x ${binaryPath}`);
             console.log('Made binary executable');
-          } catch (err) {
-            reject(new Error(`Failed to make binary executable: ${err.message}`));
-            return;
           }
+
+          resolve();
+        } catch (err) {
+          // Clean up on error
+          try { fs.unlinkSync(tempArchivePath); } catch {}
+          reject(new Error(`Failed to extract or setup binary: ${err.message}`));
         }
-        
-        resolve();
       });
     }).on('error', (err) => {
-      fs.unlink(binaryPath, () => {}); // Delete the file async
+      fs.unlink(tempArchivePath, () => {}); // Delete the temp file async
       reject(new Error(`Download failed: ${err.message}`));
     });
   });

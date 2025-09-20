@@ -309,11 +309,29 @@ Configure the Claude app to use the MCP server:
 4. Copy and paste the server config to your existing file, then save
 5. Restart Claude
 
+### If installed via Homebrew:
 ```json
 {
   "mcpServers": {
     "last9": {
       "command": "/opt/homebrew/bin/last9-mcp",
+      "env": {
+        "LAST9_BASE_URL": "<last9_otlp_host>",
+        "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
+        "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>"
+      }
+    }
+  }
+}
+```
+
+### If installed via NPM:
+```json
+{
+  "mcpServers": {
+    "last9": {
+      "command": "npx",
+      "args": ["-y", "@last9/mcp-server"],
       "env": {
         "LAST9_BASE_URL": "<last9_otlp_host>",
         "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
@@ -334,11 +352,29 @@ Configure Cursor to use the MCP server:
 4. Copy and paste the server config to your existing file, then save
 5. Restart Cursor
 
+### If installed via Homebrew:
 ```json
 {
   "mcpServers": {
     "last9": {
       "command": "/opt/homebrew/bin/last9-mcp",
+      "env": {
+        "LAST9_BASE_URL": "<last9_otlp_host>",
+        "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
+        "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>"
+      }
+    }
+  }
+}
+```
+
+### If installed via NPM:
+```json
+{
+  "mcpServers": {
+    "last9": {
+      "command": "npx",
+      "args": ["-y", "@last9/mcp-server"],
       "env": {
         "LAST9_BASE_URL": "<last9_otlp_host>",
         "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
@@ -359,11 +395,29 @@ Configure Windsurf to use the MCP server:
 4. Copy and paste the server config to your existing file, then save
 5. Restart Windsurf
 
+### If installed via Homebrew:
 ```json
 {
   "mcpServers": {
     "last9": {
       "command": "/opt/homebrew/bin/last9-mcp",
+      "env": {
+        "LAST9_BASE_URL": "<last9_otlp_host>",
+        "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
+        "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>"
+      }
+    }
+  }
+}
+```
+
+### If installed via NPM:
+```json
+{
+  "mcpServers": {
+    "last9": {
+      "command": "npx",
+      "args": ["-y", "@last9/mcp-server"],
       "env": {
         "LAST9_BASE_URL": "<last9_otlp_host>",
         "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
@@ -385,6 +439,7 @@ Configure Windsurf to use the MCP server:
 3. Copy and paste the server config to your existing file, then save
 4. Restart VS Code
 
+### If installed via Homebrew:
 ```json
 {
   "mcp": {
@@ -392,6 +447,26 @@ Configure Windsurf to use the MCP server:
       "last9": {
         "type": "stdio",
         "command": "/opt/homebrew/bin/last9-mcp",
+        "env": {
+          "LAST9_BASE_URL": "<last9_otlp_host>",
+          "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
+          "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>"
+        }
+      }
+    }
+  }
+}
+```
+
+### If installed via NPM:
+```json
+{
+  "mcp": {
+    "servers": {
+      "last9": {
+        "type": "stdio",
+        "command": "npx",
+        "args": ["-y", "@last9/mcp-server"],
         "env": {
           "LAST9_BASE_URL": "<last9_otlp_host>",
           "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
