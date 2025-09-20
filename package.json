@@ -30,7 +30,7 @@
     "claude"
   ],
   "author": "Last9",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "bugs": {
     "url": "https://github.com/last9/last9-mcp-server/issues"
   },
