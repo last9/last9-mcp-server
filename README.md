@@ -523,7 +523,7 @@ Set the `HTTP_MODE` environment variable to enable HTTP server mode:
 ```bash
 # Export required environment variables
 export LAST9_API_TOKEN="your_api_token"
-export LAST9_BASE_URL="https://otlp-aps1.last9.io:443"  # Your Last9 endpoint
+export LAST9_BASE_URL="https://your-last9-endpoint"  # Your Last9 endpoint
 export HTTP_MODE=true
 export HTTP_PORT=8080  # Optional, defaults to 8080
 
