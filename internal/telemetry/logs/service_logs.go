@@ -111,9 +111,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(mcp.C
 
 		physicalIndex, err := utils.FetchPhysicalIndex(client, cfg, service, env)
 		if err != nil {
-			// Log the error but continue without index to maintain backward compatibility
-			fmt.Printf("Warning: failed to fetch physical index for service %s: %v\n", service, err)
-			physicalIndex = ""
+			return mcp.CallToolResult{}, fmt.Errorf("failed to fetch physical index: %w", err)
 		}
 
 		// Fetch raw logs using the existing logs API approach with physical index
