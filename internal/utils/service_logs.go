@@ -21,6 +21,9 @@ const (
 	headerContentType     = "Content-Type"
 	headerContentTypeJSON = "application/json"
 	headerXLast9APIToken  = "X-LAST9-API-TOKEN"
+
+	// Index constants
+	defaultPhysicalIndex = "physical_index:default"
 )
 
 // ServiceLogsParams holds parameters for service logs API call
@@ -31,6 +34,7 @@ type ServiceLogsParams struct {
 	Region          string
 	SeverityFilters []string // Optional regex patterns for severity filtering
 	BodyFilters     []string // Optional regex patterns for body filtering
+	Index           string   // Physical index parameter for logs queries
 }
 
 func createServiceLogsParams(request ServiceLogsAPIRequest, baseURL string) ServiceLogsParams {
@@ -41,6 +45,7 @@ func createServiceLogsParams(request ServiceLogsAPIRequest, baseURL string) Serv
 		Region:          GetDefaultRegion(baseURL),
 		SeverityFilters: request.SeverityFilters,
 		BodyFilters:     request.BodyFilters,
+		Index:           request.Index,
 	}
 }
 
@@ -93,16 +98,18 @@ type ServiceLogsAPIRequest struct {
 	EndTime         int64    // Unix timestamp in milliseconds
 	SeverityFilters []string // Optional regex patterns for severity filtering
 	BodyFilters     []string // Optional regex patterns for body filtering
+	Index           string   // Physical index parameter for logs queries
 }
 
 // CreateServiceLogsAPIRequest creates a new service logs API request with default options
-func CreateServiceLogsAPIRequest(service string, startTime, endTime int64, severityFilters []string, bodyFilters []string) ServiceLogsAPIRequest {
+func CreateServiceLogsAPIRequest(service string, startTime, endTime int64, severityFilters []string, bodyFilters []string, index string) ServiceLogsAPIRequest {
 	return ServiceLogsAPIRequest{
 		Service:         service,
 		StartTime:       startTime,
 		EndTime:         endTime,
 		SeverityFilters: severityFilters,
 		BodyFilters:     bodyFilters,
+		Index:           index,
 	}
 }
 
@@ -179,9 +186,18 @@ func buildServiceLogsURL(apiBaseURL string, params ServiceLogsParams) (string, e
 
 	queryParams := url.Values{}
 	queryParams.Add("direction", "backward")
-	queryParams.Add("start", fmt.Sprintf("%d", params.StartTime*1000000))
-	queryParams.Add("end", fmt.Sprintf("%d", params.EndTime*1000000))
+	queryParams.Add("start", fmt.Sprintf("%d", params.StartTime/1000)) // Convert to seconds
+	queryParams.Add("end", fmt.Sprintf("%d", params.EndTime/1000))     // Convert to seconds
 	queryParams.Add("region", params.Region)
+
+	// Add index parameter if provided and not default
+	if params.Index != "" && params.Index != defaultPhysicalIndex {
+		queryParams.Add("index", params.Index)
+		// For physical indexes, we might need index_type=physical
+		if strings.HasPrefix(params.Index, "physical_index:") {
+			queryParams.Add("index_type", "physical")
+		}
+	}
 
 	return fmt.Sprintf("%s?%s", logsURL, queryParams.Encode()), nil
 }

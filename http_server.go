@@ -230,7 +230,6 @@ func (h *HTTPServer) handleToolCall(req *jsonrpc2.Request, resp *jsonrpc2.Respon
 		}
 		return
 	}
-
 	// Return the MCP result directly
 	resultBytes, _ := json.Marshal(result)
 	resp.Result = (*json.RawMessage)(&resultBytes)

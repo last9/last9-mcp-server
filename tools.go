@@ -371,7 +371,7 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 				InputSchema: mcp.ToolInputSchema{
 					Type: "object",
 					Properties: mcp.ToolInputSchemaProperties{
-						"service": map[string]any{
+						"service_name": map[string]any{
 							"type":        "string",
 							"description": "Name of the service to get logs for",
 						},
@@ -534,7 +534,7 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 				InputSchema: mcp.ToolInputSchema{
 					Type: "object",
 					Properties: mcp.ToolInputSchemaProperties{
-						"service": map[string]any{
+						"service_name": map[string]any{
 							"type":        "string",
 							"description": "Name of the service to get logs for. Only pass the service name. Don't include service keyword",
 						},
@@ -584,6 +584,11 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 								"type": "string",
 							},
 						},
+						"env": map[string]any{
+							"type":        "string",
+							"description": "Environment to filter by. Empty string if environment is unknown.",
+							"examples":    []string{"production", "prod", "", "staging", "development"},
+						},
 					},
 				},
 			},
@@ -593,7 +598,7 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 		{
 			Metadata: mcp.Tool{
 				Name:        "get_service_traces",
-				Description: ptr("Query traces for a specific service with filtering options for span kinds, status codes, and other trace attributes"),
+				Description: ptr(traces.GetServiceTracesDescription),
 				InputSchema: mcp.ToolInputSchema{
 					Type: "object",
 					Properties: mcp.ToolInputSchemaProperties{
@@ -665,6 +670,11 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 									"STATUS_CODE_OK", "STATUS_CODE_ERROR", "STATUS_CODE_UNSET",
 								},
 							},
+						},
+						"env": map[string]any{
+							"type":        "string",
+							"description": "Environment to filter by. Empty string if environment is unknown.",
+							"examples":    []string{"production", "prod", "", "staging", "development"},
 						},
 					},
 				},

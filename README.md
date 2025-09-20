@@ -42,10 +42,9 @@ IDEs. Implements the following MCP
   [Last9 Control Plane](https://last9.io/control-plane)
 - `get_service_logs`: Get raw log entries for a specific service over a time range. Can apply filters on severity and body.
 
-**Alert Management:**
+**Traces Management:**
 
-- `get_alert_config`: Get alert configurations (alert rules) from Last9.
-- `get_alerts`: Get currently active alerts from Last9 monitoring system.
+- `get_service_traces`: Query traces for a specific service with filtering options for span kinds, status codes, and other trace attributes.
 
 **Alert Management:**
 
@@ -166,20 +165,19 @@ Parameters:
 
 ### get_logs
 
-Gets logs filtered by optional service name and/or severity level within a
-specified time range.
+Gets logs filtered by service name and/or severity level within a specified time range. This tool now uses the advanced v2 logs API with physical index optimization for better performance.
+
+**Note**: This tool now requires a `service_name` parameter and internally uses the same advanced infrastructure as `get_service_logs`.
 
 Parameters:
 
-- `service` (string, optional): Name of the service to get logs for.
-- `severity` (string, optional): Severity of the logs to get.
-- `lookback_minutes` (integer, recommended): Number of minutes to look back from
-  now. Default: 60. Examples: 60, 30, 15.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD
-  HH:MM:SS). Leave empty to use lookback_minutes.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD
-  HH:MM:SS). Leave empty to default to current time.
+- `service_name` (string, required): Name of the service to get logs for.
+- `severity` (string, optional): Severity of the logs to get (automatically converted to severity_filters format).
+- `lookback_minutes` (integer, recommended): Number of minutes to look back from now. Default: 60. Examples: 60, 30, 15.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
 - `limit` (integer, optional): Maximum number of logs to return. Default: 20.
+- `env` (string, optional): Environment to filter by. Use "get_service_environments" tool to get available environments.
 
 ### get_drop_rules
 
@@ -249,17 +247,52 @@ Returns information about:
 
 ### get_service_logs
 
-Get raw log entries for a specific service over a time range. Can apply filters on severity and body.
+Get raw log entries for a specific service over a time range. This tool retrieves actual log entries including log messages, timestamps, severity levels, and other metadata. Useful for debugging issues, monitoring service behavior, and analyzing specific log patterns.
 
 Parameters:
 
-- `service` (string, required): Name of the service to get logs for.
+- `service_name` (string, required): Name of the service to get logs for.
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60 minutes. Examples: 60, 30, 15.
+- `limit` (integer, optional): Maximum number of log entries to return. Default: 20.
+- `env` (string, optional): Environment to filter by. Use "get_service_environments" tool to get available environments.
+- `severity_filters` (array, optional): Array of severity patterns to filter logs (e.g., ["error", "warn"]). Uses OR logic.
+- `body_filters` (array, optional): Array of message content patterns to filter logs (e.g., ["timeout", "failed"]). Uses OR logic.
 - `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - lookback_minutes.
 - `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
-- `lookback_minutes` (integer, recommended): Number of minutes to look back from now. Default: 60. Examples: 60, 30, 15.
-- `limit` (integer, optional): Maximum number of logs to return. Default: 20.
-- `severity_filters` (array, optional): List of severity filters to apply. Valid values: "debug", "info", "warn", "error", "fatal".
-- `body_filters` (array, optional): List of body filters to apply.
+
+Filtering behavior:
+- Multiple filter types are combined with AND logic (service AND severity AND body)
+- Each filter array uses OR logic (matches any pattern in the array)
+
+Examples:
+- service_name="api" + severity_filters=["error"] + body_filters=["timeout"] → finds error logs containing "timeout"
+- service_name="web" + body_filters=["timeout", "failed", "error 500"] → finds logs containing any of these patterns
+
+### get_service_traces
+
+Query traces for a specific service with filtering options for span kinds, status codes, and other trace attributes. This tool retrieves distributed tracing data for debugging performance issues, understanding request flows, and analyzing service interactions.
+
+Parameters:
+
+- `service_name` (string, required): Name of the service to get traces for.
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60 minutes. Examples: 60, 30, 15.
+- `limit` (integer, optional): Maximum number of traces to return. Default: 10.
+- `env` (string, optional): Environment to filter by. Use "get_service_environments" tool to get available environments.
+- `span_kind` (array, optional): Filter by span types (server, client, internal, consumer, producer).
+- `span_name` (string, optional): Filter by specific span name.
+- `status_code` (array, optional): Filter by trace status (ok, error, unset, success).
+- `order` (string, optional): Field to order traces by. Default: "Duration". Options: Duration, Timestamp.
+- `direction` (string, optional): Sort direction. Default: "backward". Options: forward, backward.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - lookback_minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+
+Filtering options:
+- Combine multiple filters to narrow down specific traces of interest
+- Use time range filters with lookback_minutes or explicit start/end times
+
+Examples:
+- service_name="api" + span_kind=["server"] + status_code=["error"] → finds failed server-side traces
+- service_name="payment" + span_name="process_payment" + lookback_minutes=30 → finds payment processing traces from last 30 minutes
 
 ## Installation
 
@@ -477,6 +510,94 @@ Configure Windsurf to use the MCP server:
   }
 }
 ```
+
+## Development
+
+For local development and testing, you can run the MCP server in HTTP mode which makes it easier to debug requests and responses.
+
+### Running in HTTP Mode
+
+Set the `HTTP_MODE` environment variable to enable HTTP server mode:
+
+```bash
+# Export required environment variables
+export LAST9_API_TOKEN="your_api_token"
+export LAST9_BASE_URL="https://your-last9-endpoint"  # Your Last9 endpoint
+export HTTP_MODE=true
+export HTTP_PORT=8080  # Optional, defaults to 8080
+
+# Run the server
+./last9-mcp-server
+```
+
+The server will start on `http://localhost:8080/mcp` and you can test it with curl:
+
+### Testing with curl
+
+```bash
+# Test get_service_logs
+curl -X POST http://localhost:8080/mcp \
+    -H "Content-Type: application/json" \
+    -H "Mcp-Session-Id: session_$(date +%s)000000000" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "tools/call",
+      "params": {
+        "name": "get_service_logs",
+        "arguments": {
+          "service_name": "your-service-name",
+          "lookback_minutes": 30,
+          "limit": 10
+        }
+      }
+    }'
+
+# Test get_service_traces
+curl -X POST http://localhost:8080/mcp \
+    -H "Content-Type: application/json" \
+    -H "Mcp-Session-Id: session_$(date +%s)000000000" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 2,
+      "method": "tools/call",
+      "params": {
+        "name": "get_service_traces",
+        "arguments": {
+          "service_name": "your-service-name",
+          "lookback_minutes": 60,
+          "limit": 5
+        }
+      }
+    }'
+
+# List available tools
+curl -X POST http://localhost:8080/mcp \
+    -H "Content-Type: application/json" \
+    -H "Mcp-Session-Id: session_$(date +%s)000000000" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 3,
+      "method": "tools/list",
+      "params": {}
+    }'
+```
+
+### Building from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/last9/last9-mcp-server.git
+cd last9-mcp-server
+
+# Build the binary
+go build -o last9-mcp-server
+
+# Run in development mode
+HTTP_MODE=true ./last9-mcp-server
+```
+
+**Note**: HTTP mode is for development and testing only. When integrating with Claude Desktop or other MCP clients, use the default STDIO mode (without `HTTP_MODE=true`).
 
 ## Badges
 

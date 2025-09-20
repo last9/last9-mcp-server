@@ -130,14 +130,30 @@ func RefreshAccessToken(client *http.Client, cfg models.Config) (string, error) 
 	return result.AccessToken, nil
 }
 
-// GetDefaultRegion determines the region based on the Last9 BASE URL
+// GetDefaultRegion determines the region based on the Last9 BASE URL.
+// This function extracts the hostname from URLs like "https://otlp-aps1.last9.io:443"
+// and maps them to the correct AWS regions for API routing.
 func GetDefaultRegion(baseURL string) string {
-	switch {
-	case baseURL == "otlp.last9.io":
+	// Extract hostname from URL (remove protocol and port)
+	// Transform: "https://otlp-aps1.last9.io:443" → "otlp-aps1.last9.io"
+	hostname := baseURL
+	if strings.HasPrefix(hostname, "https://") {
+		hostname = strings.TrimPrefix(hostname, "https://")
+	}
+	if strings.HasPrefix(hostname, "http://") {
+		hostname = strings.TrimPrefix(hostname, "http://")
+	}
+	// Remove port if present (:443, :80, etc.)
+	if colonIndex := strings.Index(hostname, ":"); colonIndex != -1 {
+		hostname = hostname[:colonIndex]
+	}
+
+	switch hostname {
+	case "otlp.last9.io":
 		return "us-east-1"
-	case baseURL == "otlp-aps1.last9.io":
+	case "otlp-aps1.last9.io":
 		return "ap-south-1"
-	case baseURL == "otlp-apse1.last9.io":
+	case "otlp-apse1.last9.io":
 		return "ap-southeast-1"
 	default:
 		return "us-east-1" // default to us-east-1 if URL pattern doesn't match
@@ -510,4 +526,52 @@ func BuildOrFilter(fieldName string, values []string) map[string]interface{} {
 	}
 
 	return map[string]interface{}{"$or": orConditions}
+}
+
+// FetchPhysicalIndex retrieves the physical index for logs queries using the provided service name and environment
+// Uses an instant query for data from the last 1 day
+func FetchPhysicalIndex(client *http.Client, cfg models.Config, serviceName, env string) (string, error) {
+	// Build the PromQL query with a 2-hour window
+	query := fmt.Sprintf("sum by (name, destination) (physical_index_service_count{service_name='%s'", serviceName)
+	if env != "" {
+		query += fmt.Sprintf(",env=~'%s'", env)
+	}
+	query += "}[1d])"
+
+	// Get current time for the instant query
+	currentTime := time.Now().Unix()
+
+	// Make the Prometheus instant query
+	resp, err := MakePromInstantAPIQuery(client, query, currentTime, cfg)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch physical index: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := json.Marshal(resp.Body)
+		return "", fmt.Errorf("physical index API returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	// Parse the response to extract the first index
+	var physicalIndexResponse []struct {
+		Metric map[string]string `json:"metric"`
+		Value  []interface{}     `json:"value"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&physicalIndexResponse); err != nil {
+		return "", fmt.Errorf("failed to decode physical index response: %w", err)
+	}
+
+	if len(physicalIndexResponse) == 0 {
+		return "", fmt.Errorf("no physical index found for service %s", serviceName)
+	}
+
+	// Extract the index name from the first result
+	firstResult := physicalIndexResponse[0]
+
+	if indexName, exists := firstResult.Metric["name"]; exists {
+		return fmt.Sprintf("physical_index:%s", indexName), nil
+	}
+
+	return "", fmt.Errorf("no index name found in physical index response")
 }
