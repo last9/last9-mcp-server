@@ -563,7 +563,8 @@ func FetchPhysicalIndex(client *http.Client, cfg models.Config, serviceName, env
 	}
 
 	if len(physicalIndexResponse) == 0 {
-		return "", fmt.Errorf("no physical index found for service %s", serviceName)
+		// Continue without index if it is not available
+		return "", nil
 	}
 
 	// Extract the index name from the first result
