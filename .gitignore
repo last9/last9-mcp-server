@@ -97,3 +97,6 @@ tmp/
 .windsurf
 .env
 last9-mcp-server
+
+# Claude IDE settings
+.claude/
