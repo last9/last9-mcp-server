@@ -49,7 +49,7 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(mcp.CallTool
 
 		// Fetch physical index before making logs queries
 		if service, ok := params.Arguments["service"].(string); ok && service != "" {
-			// Extract environment parameter if available  
+			// Extract environment parameter if available
 			env := ""
 			if envParam, ok := params.Arguments["env"].(string); ok {
 				env = envParam

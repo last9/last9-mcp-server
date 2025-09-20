@@ -183,13 +183,17 @@ func buildServiceLogsURL(apiBaseURL string, params ServiceLogsParams) (string, e
 
 	queryParams := url.Values{}
 	queryParams.Add("direction", "backward")
-	queryParams.Add("start", fmt.Sprintf("%d", params.StartTime*1000000))
-	queryParams.Add("end", fmt.Sprintf("%d", params.EndTime*1000000))
+	queryParams.Add("start", fmt.Sprintf("%d", params.StartTime/1000))  // Convert to seconds
+	queryParams.Add("end", fmt.Sprintf("%d", params.EndTime/1000))      // Convert to seconds
 	queryParams.Add("region", params.Region)
-	
+
 	// Add index parameter if provided
 	if params.Index != "" {
 		queryParams.Add("index", params.Index)
+		// For physical indexes, we might need index_type=physical
+		if strings.HasPrefix(params.Index, "physical_index:") {
+			queryParams.Add("index_type", "physical")
+		}
 	}
 
 	return fmt.Sprintf("%s?%s", logsURL, queryParams.Encode()), nil
