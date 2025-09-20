@@ -512,6 +512,94 @@ Configure Windsurf to use the MCP server:
 }
 ```
 
+## Development
+
+For local development and testing, you can run the MCP server in HTTP mode which makes it easier to debug requests and responses.
+
+### Running in HTTP Mode
+
+Set the `HTTP_MODE` environment variable to enable HTTP server mode:
+
+```bash
+# Export required environment variables
+export LAST9_API_TOKEN="your_api_token"
+export LAST9_BASE_URL="https://otlp-aps1.last9.io:443"  # Your Last9 endpoint
+export HTTP_MODE=true
+export HTTP_PORT=8080  # Optional, defaults to 8080
+
+# Run the server
+./last9-mcp-server
+```
+
+The server will start on `http://localhost:8080/mcp` and you can test it with curl:
+
+### Testing with curl
+
+```bash
+# Test get_service_logs
+curl -X POST http://localhost:8080/mcp \
+    -H "Content-Type: application/json" \
+    -H "Mcp-Session-Id: session_$(date +%s)000000000" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "tools/call",
+      "params": {
+        "name": "get_service_logs",
+        "arguments": {
+          "service_name": "your-service-name",
+          "lookback_minutes": 30,
+          "limit": 10
+        }
+      }
+    }'
+
+# Test get_service_traces
+curl -X POST http://localhost:8080/mcp \
+    -H "Content-Type: application/json" \
+    -H "Mcp-Session-Id: session_$(date +%s)000000000" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 2,
+      "method": "tools/call",
+      "params": {
+        "name": "get_service_traces",
+        "arguments": {
+          "service_name": "your-service-name",
+          "lookback_minutes": 60,
+          "limit": 5
+        }
+      }
+    }'
+
+# List available tools
+curl -X POST http://localhost:8080/mcp \
+    -H "Content-Type: application/json" \
+    -H "Mcp-Session-Id: session_$(date +%s)000000000" \
+    -d '{
+      "jsonrpc": "2.0",
+      "id": 3,
+      "method": "tools/list",
+      "params": {}
+    }'
+```
+
+### Building from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/last9/last9-mcp-server.git
+cd last9-mcp-server
+
+# Build the binary
+go build -o last9-mcp-server
+
+# Run in development mode
+HTTP_MODE=true ./last9-mcp-server
+```
+
+**Note**: HTTP mode is for development and testing only. When integrating with Claude Desktop or other MCP clients, use the default STDIO mode (without `HTTP_MODE=true`).
+
 ## Badges
 
 [![MseeP.ai Security Assessment Badge](https://mseep.net/pr/last9-last9-mcp-server-badge.png)](https://mseep.ai/app/last9-last9-mcp-server)
