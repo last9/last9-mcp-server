@@ -1,7 +1,7 @@
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const os = require('os');
 
 // Get version from package.json
@@ -79,7 +79,7 @@ const download = (url) => {
 
           // Make binary executable on Unix-like systems
           if (platform !== 'win32') {
-            execSync(`chmod +x ${binaryPath}`);
+            execFileSync('chmod', ['+x', binaryPath]);
             console.log('Made binary executable');
           }
 
