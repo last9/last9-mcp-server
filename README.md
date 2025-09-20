@@ -165,20 +165,19 @@ Parameters:
 
 ### get_logs
 
-Gets logs filtered by optional service name and/or severity level within a
-specified time range.
+Gets logs filtered by service name and/or severity level within a specified time range. This tool now uses the advanced v2 logs API with physical index optimization for better performance.
+
+**Note**: This tool now requires a `service_name` parameter and internally uses the same advanced infrastructure as `get_service_logs`.
 
 Parameters:
 
-- `service_name` (string, optional): Name of the service to get logs for.
-- `severity` (string, optional): Severity of the logs to get.
-- `lookback_minutes` (integer, recommended): Number of minutes to look back from
-  now. Default: 60. Examples: 60, 30, 15.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD
-  HH:MM:SS). Leave empty to use lookback_minutes.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD
-  HH:MM:SS). Leave empty to default to current time.
+- `service_name` (string, required): Name of the service to get logs for.
+- `severity` (string, optional): Severity of the logs to get (automatically converted to severity_filters format).
+- `lookback_minutes` (integer, recommended): Number of minutes to look back from now. Default: 60. Examples: 60, 30, 15.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
 - `limit` (integer, optional): Maximum number of logs to return. Default: 20.
+- `env` (string, optional): Environment to filter by. Use "get_service_environments" tool to get available environments.
 
 ### get_drop_rules
 

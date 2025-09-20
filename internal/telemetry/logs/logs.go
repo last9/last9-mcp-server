@@ -1,120 +1,48 @@
 package logs
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"last9-mcp/internal/models"
-	"last9-mcp/internal/utils"
 	"net/http"
-	"net/url"
-	"strconv"
-	"strings"
 
 	"github.com/acrmp/mcp"
 )
 
-// NewGetLogsHandler creates a handler for getting logs
+// NewGetLogsHandler creates a handler for getting logs that internally uses the get_service_logs handler
+// This provides backward compatibility while leveraging the more advanced v2 API with physical index optimization
 func NewGetLogsHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
+	// Get the service logs handler
+	serviceLogsHandler := NewGetServiceLogsHandler(client, cfg)
+
 	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-		limit := 20
-		if l, ok := params.Arguments["limit"].(float64); ok {
-			limit = int(l)
+		// Transform get_logs parameters to get_service_logs format for internal processing
+		transformedParams := mcp.CallToolRequestParams{
+			Arguments: make(map[string]interface{}),
 		}
 
-		// Get time range using the common utility
-		startTime, endTime, err := utils.GetTimeRange(params.Arguments, 60) // Default 60 minutes lookback
-		if err != nil {
-			return mcp.CallToolResult{}, err
+		// Copy all parameters from original request
+		for key, value := range params.Arguments {
+			transformedParams.Arguments[key] = value
 		}
 
-		// Build request URL with query parameters
-		u, err := url.Parse(cfg.BaseURL + "/telemetry/api/v1/logs")
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to parse URL: %w", err)
-		}
-
-		q := u.Query()
-		q.Set("start", strconv.FormatInt(startTime.Unix(), 10))
-		q.Set("end", strconv.FormatInt(endTime.Unix(), 10))
-		q.Set("limit", strconv.Itoa(limit))
-
-		if service, ok := params.Arguments["service_name"].(string); ok && service != "" {
-			q.Set("service", service)
-		}
-
+		// Handle backward compatibility for severity parameter
+		// get_logs uses single "severity" string, get_service_logs uses "severity_filters" array
 		if severity, ok := params.Arguments["severity"].(string); ok && severity != "" {
-			q.Set("severity", severity)
+			// Convert single severity to array format for service_logs handler
+			transformedParams.Arguments["severity_filters"] = []interface{}{severity}
+			// Remove the old parameter to avoid conflicts
+			delete(transformedParams.Arguments, "severity")
 		}
 
-		// Fetch physical index before making logs queries
-		if service, ok := params.Arguments["service_name"].(string); ok && service != "" {
-			// Extract environment parameter if available
-			env := ""
-			if envParam, ok := params.Arguments["env"].(string); ok {
-				env = envParam
-			}
-
-			physicalIndex, err := utils.FetchPhysicalIndex(client, cfg, service, env)
-			if err != nil {
-				// Log the error but continue without index to maintain backward compatibility
-				fmt.Printf("Warning: failed to fetch physical index for service %s: %v\n", service, err)
-			} else if physicalIndex != "" {
-				// Only set index if we got a valid non-empty result
-				q.Set("index", physicalIndex)
-			}
+		// If service_name is not provided (get_logs allows optional service),
+		// we need to handle this case since get_service_logs requires it
+		if serviceName, ok := params.Arguments["service_name"].(string); !ok || serviceName == "" {
+			// For get_logs without service_name, we cannot use get_service_logs
+			// Return an error asking for service_name to be specified
+			return mcp.CallToolResult{}, fmt.Errorf("service_name parameter is required. For cross-service log queries, please specify a service name or use the Last9 web interface")
 		}
 
-		u.RawQuery = q.Encode()
-
-		// Create request
-		req, err := http.NewRequest("GET", u.String(), nil)
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to create request: %w", err)
-		}
-
-		// Check if the auth token already has the "Basic" prefix
-		if !strings.HasPrefix(cfg.AuthToken, "Basic ") {
-			cfg.AuthToken = "Basic " + cfg.AuthToken
-		}
-
-		req.Header.Set("Authorization", cfg.AuthToken)
-
-		// Execute request
-		resp, err := client.Do(req)
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("request failed: %w", err)
-		}
-		defer resp.Body.Close()
-
-		// Read response body for debugging
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to read response body: %w", err)
-		}
-
-		// Log the response for debugging
-		if resp.StatusCode != 200 {
-			return mcp.CallToolResult{}, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(bodyBytes))
-		}
-
-		var result interface{}
-		if err := json.Unmarshal(bodyBytes, &result); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode response (body: %s): %w", string(bodyBytes), err)
-		}
-
-		jsonData, err := json.Marshal(result)
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to marshal response: %w", err)
-		}
-
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
-					Text: string(jsonData),
-					Type: "text",
-				},
-			},
-		}, nil
+		// Call the service logs handler with transformed parameters
+		return serviceLogsHandler(transformedParams)
 	}
 }
