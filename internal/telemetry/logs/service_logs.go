@@ -25,7 +25,7 @@ Filtering behavior:
 - Multiple filter types are combined with AND logic (service AND severity AND body)
 
 Examples:
-1. service="api" + severity_filters=["error"] + body_filters=["timeout"] 
+1. service="api" + severity_filters=["error"] + body_filters=["timeout"]
    → finds error logs containing "timeout" for the "api" service
 2. service="web" + body_filters=["timeout", "failed", "error 500"]
    → finds logs containing "timeout" OR "failed" OR "error 500" for the "web" service
@@ -33,6 +33,14 @@ Examples:
    → finds error/critical logs containing "connection" OR "deadlock" for the "db" service
 
 Note: This tool returns raw log entries.
+
+Parameters:
+- service: (Required) Name of the service to get logs for
+- lookback_minutes: (Optional) Number of minutes to look back from now. Default: 60 minutes
+- limit: (Optional) Maximum number of log entries to return. Default: 20
+- env: (Optional) Environment to filter by. Use "get_service_environments" tool to get available environments.
+- severity_filters: (Optional) Array of severity patterns to filter logs
+- body_filters: (Optional) Array of message content patterns to filter logs
 
 Returns a list of log entries with full details including message content, timestamps, severity, and attributes.`
 

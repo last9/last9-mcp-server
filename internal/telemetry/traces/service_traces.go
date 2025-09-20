@@ -25,6 +25,38 @@ const (
 	DirectionDefault       = "backward"
 )
 
+// GetServiceTracesDescription provides the description for the service traces tool
+const GetServiceTracesDescription = `Query traces for a specific service with filtering options for span kinds, status codes, and other trace attributes.
+
+This tool retrieves distributed tracing data for debugging performance issues, understanding request flows,
+and analyzing service interactions. It supports various filtering and sorting options to help narrow down
+specific traces of interest.
+
+Filtering options:
+- span_kind: Filter by span types (server, client, internal, consumer, producer)
+- span_name: Filter by specific span names
+- status_code: Filter by trace status (ok, error, unset)
+- Time range: Use lookback_minutes or explicit start/end times
+
+Examples:
+1. service_name="api" + span_kind=["server"] + status_code=["error"]
+   → finds failed server-side traces for the "api" service
+2. service_name="payment" + span_name="process_payment" + lookback_minutes=30
+   → finds payment processing traces from the last 30 minutes
+
+Parameters:
+- service_name: (Required) Name of the service to get traces for
+- lookback_minutes: (Optional) Number of minutes to look back from now. Default: 60 minutes
+- limit: (Optional) Maximum number of traces to return. Default: 10
+- env: (Optional) Environment to filter by. Use "get_service_environments" tool to get available environments.
+- span_kind: (Optional) Array of span kinds to filter by
+- span_name: (Optional) Filter by specific span name
+- status_code: (Optional) Array of status codes to filter by
+- order: (Optional) Field to order traces by. Default: "Duration"
+- direction: (Optional) Sort direction. Default: "backward"
+
+Returns a list of trace data including trace IDs, spans, duration, timestamps, and status information.`
+
 // TraceQueryRequest represents the request structure for trace queries
 type TraceQueryRequest struct {
 	Pipeline []QueryStep `json:"pipeline"`
