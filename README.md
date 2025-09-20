@@ -42,10 +42,9 @@ IDEs. Implements the following MCP
   [Last9 Control Plane](https://last9.io/control-plane)
 - `get_service_logs`: Get raw log entries for a specific service over a time range. Can apply filters on severity and body.
 
-**Alert Management:**
+**Traces Management:**
 
-- `get_alert_config`: Get alert configurations (alert rules) from Last9.
-- `get_alerts`: Get currently active alerts from Last9 monitoring system.
+- `get_service_traces`: Query traces for a specific service with filtering options for span kinds, status codes, and other trace attributes.
 
 **Alert Management:**
 
@@ -249,17 +248,52 @@ Returns information about:
 
 ### get_service_logs
 
-Get raw log entries for a specific service over a time range. Can apply filters on severity and body.
+Get raw log entries for a specific service over a time range. This tool retrieves actual log entries including log messages, timestamps, severity levels, and other metadata. Useful for debugging issues, monitoring service behavior, and analyzing specific log patterns.
 
 Parameters:
 
 - `service` (string, required): Name of the service to get logs for.
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60 minutes. Examples: 60, 30, 15.
+- `limit` (integer, optional): Maximum number of log entries to return. Default: 20.
+- `env` (string, optional): Environment to filter by. Use "get_service_environments" tool to get available environments.
+- `severity_filters` (array, optional): Array of severity patterns to filter logs (e.g., ["error", "warn"]). Uses OR logic.
+- `body_filters` (array, optional): Array of message content patterns to filter logs (e.g., ["timeout", "failed"]). Uses OR logic.
 - `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - lookback_minutes.
 - `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
-- `lookback_minutes` (integer, recommended): Number of minutes to look back from now. Default: 60. Examples: 60, 30, 15.
-- `limit` (integer, optional): Maximum number of logs to return. Default: 20.
-- `severity_filters` (array, optional): List of severity filters to apply. Valid values: "debug", "info", "warn", "error", "fatal".
-- `body_filters` (array, optional): List of body filters to apply.
+
+Filtering behavior:
+- Multiple filter types are combined with AND logic (service AND severity AND body)
+- Each filter array uses OR logic (matches any pattern in the array)
+
+Examples:
+- service="api" + severity_filters=["error"] + body_filters=["timeout"] → finds error logs containing "timeout"
+- service="web" + body_filters=["timeout", "failed", "error 500"] → finds logs containing any of these patterns
+
+### get_service_traces
+
+Query traces for a specific service with filtering options for span kinds, status codes, and other trace attributes. This tool retrieves distributed tracing data for debugging performance issues, understanding request flows, and analyzing service interactions.
+
+Parameters:
+
+- `service_name` (string, required): Name of the service to get traces for.
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60 minutes. Examples: 60, 30, 15.
+- `limit` (integer, optional): Maximum number of traces to return. Default: 10.
+- `env` (string, optional): Environment to filter by. Use "get_service_environments" tool to get available environments.
+- `span_kind` (array, optional): Filter by span types (server, client, internal, consumer, producer).
+- `span_name` (string, optional): Filter by specific span name.
+- `status_code` (array, optional): Filter by trace status (ok, error, unset, success).
+- `order` (string, optional): Field to order traces by. Default: "Duration". Options: Duration, Timestamp.
+- `direction` (string, optional): Sort direction. Default: "backward". Options: forward, backward.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - lookback_minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+
+Filtering options:
+- Combine multiple filters to narrow down specific traces of interest
+- Use time range filters with lookback_minutes or explicit start/end times
+
+Examples:
+- service_name="api" + span_kind=["server"] + status_code=["error"] → finds failed server-side traces
+- service_name="payment" + span_name="process_payment" + lookback_minutes=30 → finds payment processing traces from last 30 minutes
 
 ## Installation
 
