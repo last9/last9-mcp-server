@@ -25,17 +25,17 @@ Filtering behavior:
 - Multiple filter types are combined with AND logic (service AND severity AND body)
 
 Examples:
-1. service="api" + severity_filters=["error"] + body_filters=["timeout"]
+1. service_name="api" + severity_filters=["error"] + body_filters=["timeout"]
    → finds error logs containing "timeout" for the "api" service
-2. service="web" + body_filters=["timeout", "failed", "error 500"]
+2. service_name="web" + body_filters=["timeout", "failed", "error 500"]
    → finds logs containing "timeout" OR "failed" OR "error 500" for the "web" service
-3. service="db" + severity_filters=["error", "critical"] + body_filters=["connection", "deadlock"]
+3. service_name="db" + severity_filters=["error", "critical"] + body_filters=["connection", "deadlock"]
    → finds error/critical logs containing "connection" OR "deadlock" for the "db" service
 
 Note: This tool returns raw log entries.
 
 Parameters:
-- service: (Required) Name of the service to get logs for
+- service_name: (Required) Name of the service to get logs for
 - lookback_minutes: (Optional) Number of minutes to look back from now. Default: 60 minutes
 - limit: (Optional) Maximum number of log entries to return. Default: 20
 - env: (Optional) Environment to filter by. Use "get_service_environments" tool to get available environments.
@@ -65,9 +65,9 @@ type LogEntry struct {
 func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
 	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
 		// Validate required parameters
-		service, ok := params.Arguments["service"].(string)
+		service, ok := params.Arguments["service_name"].(string)
 		if !ok || service == "" {
-			return mcp.CallToolResult{}, fmt.Errorf("service parameter is required")
+			return mcp.CallToolResult{}, fmt.Errorf("service_name parameter is required")
 		}
 
 		// Get limit parameter

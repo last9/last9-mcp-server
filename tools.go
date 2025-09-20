@@ -371,7 +371,7 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 				InputSchema: mcp.ToolInputSchema{
 					Type: "object",
 					Properties: mcp.ToolInputSchemaProperties{
-						"service": map[string]any{
+						"service_name": map[string]any{
 							"type":        "string",
 							"description": "Name of the service to get logs for",
 						},
@@ -534,7 +534,7 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 				InputSchema: mcp.ToolInputSchema{
 					Type: "object",
 					Properties: mcp.ToolInputSchemaProperties{
-						"service": map[string]any{
+						"service_name": map[string]any{
 							"type":        "string",
 							"description": "Name of the service to get logs for. Only pass the service name. Don't include service keyword",
 						},

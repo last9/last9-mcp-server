@@ -39,7 +39,7 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(mcp.CallTool
 		q.Set("end", strconv.FormatInt(endTime.Unix(), 10))
 		q.Set("limit", strconv.Itoa(limit))
 
-		if service, ok := params.Arguments["service"].(string); ok && service != "" {
+		if service, ok := params.Arguments["service_name"].(string); ok && service != "" {
 			q.Set("service", service)
 		}
 
@@ -48,7 +48,7 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(mcp.CallTool
 		}
 
 		// Fetch physical index before making logs queries
-		if service, ok := params.Arguments["service"].(string); ok && service != "" {
+		if service, ok := params.Arguments["service_name"].(string); ok && service != "" {
 			// Extract environment parameter if available
 			env := ""
 			if envParam, ok := params.Arguments["env"].(string); ok {

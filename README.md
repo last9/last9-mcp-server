@@ -170,7 +170,7 @@ specified time range.
 
 Parameters:
 
-- `service` (string, optional): Name of the service to get logs for.
+- `service_name` (string, optional): Name of the service to get logs for.
 - `severity` (string, optional): Severity of the logs to get.
 - `lookback_minutes` (integer, recommended): Number of minutes to look back from
   now. Default: 60. Examples: 60, 30, 15.
@@ -252,7 +252,7 @@ Get raw log entries for a specific service over a time range. This tool retrieve
 
 Parameters:
 
-- `service` (string, required): Name of the service to get logs for.
+- `service_name` (string, required): Name of the service to get logs for.
 - `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60 minutes. Examples: 60, 30, 15.
 - `limit` (integer, optional): Maximum number of log entries to return. Default: 20.
 - `env` (string, optional): Environment to filter by. Use "get_service_environments" tool to get available environments.
@@ -266,8 +266,8 @@ Filtering behavior:
 - Each filter array uses OR logic (matches any pattern in the array)
 
 Examples:
-- service="api" + severity_filters=["error"] + body_filters=["timeout"] → finds error logs containing "timeout"
-- service="web" + body_filters=["timeout", "failed", "error 500"] → finds logs containing any of these patterns
+- service_name="api" + severity_filters=["error"] + body_filters=["timeout"] → finds error logs containing "timeout"
+- service_name="web" + body_filters=["timeout", "failed", "error 500"] → finds logs containing any of these patterns
 
 ### get_service_traces
 
