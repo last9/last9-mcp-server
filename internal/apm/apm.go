@@ -695,7 +695,6 @@ const GetServiceOperationsSummaryDescription = `
 	HTTP client operations contain additional fields:
 		- http_method: HTTP method (e.g., GET, POST, etc.)
 		- net_peer_name: HTTP host or connection string
-	
 	Parameters:
 	- start_time: (Required) Start time of the time range in ISO format.
 	- end_time: (Required) End time of the time range in ISO format.

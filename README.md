@@ -51,6 +51,10 @@ IDEs. Implements the following MCP
 - `get_alert_config`: Get alert configurations (alert rules) from Last9.
 - `get_alerts`: Get currently active alerts from Last9 monitoring system.
 
+**Change Events Management:**
+
+- `get_change_events`: Get change events from the Last9 prometheus metric over a specified time range. Includes deployments, configuration changes, and other system modifications.
+
 ## Tools Documentation
 
 ### get_exceptions
@@ -293,6 +297,27 @@ Filtering options:
 Examples:
 - service_name="api" + span_kind=["server"] + status_code=["error"] → finds failed server-side traces
 - service_name="payment" + span_name="process_payment" + lookback_minutes=30 → finds payment processing traces from last 30 minutes
+
+### get_change_events
+
+Get change events from the last9_change_events prometheus metric over a given time range. Returns change events that occurred in the specified time window, including deployments, configuration changes, and other system modifications.
+
+Parameters:
+
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - lookback_minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60 minutes. Examples: 60, 30, 15.
+- `service` (string, optional): Name of the service to filter change events for.
+- `environment` (string, optional): Environment to filter by. Empty string if environment is unknown.
+- `event_name` (string, optional): Name of the change event to filter by (use available_event_names from response to see valid values).
+
+Response includes:
+- `available_event_names`: List of all available event types that can be used for filtering
+- `change_events`: Array of timeseries data with metric labels and timestamp-value pairs
+- `count`: Total number of change events returned
+- `time_range`: Start and end time of the query window
+
+For optimal results, first call without event_name to get available_event_names, then use the exact event name from available_event_names for the event_name parameter. Common event types include deployment, config_change, rollback, scale_up, scale_down, restart, upgrade, downgrade, maintenance, backup, restore, health_check, certificate, and database operations.
 
 ## Installation
 
