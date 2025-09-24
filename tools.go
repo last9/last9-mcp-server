@@ -371,14 +371,6 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 				InputSchema: mcp.ToolInputSchema{
 					Type: "object",
 					Properties: mcp.ToolInputSchemaProperties{
-						"service_name": map[string]any{
-							"type":        "string",
-							"description": "Name of the service to get logs for",
-						},
-						"severity": map[string]any{
-							"type":        "string",
-							"description": "Severity of the logs to get",
-						},
 						"start_time_iso": map[string]any{
 							"type":        "string",
 							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes. Example: use lookback_minutes instead for relative time.",
@@ -405,6 +397,13 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 							"default":     20,
 							"minimum":     1,
 							"maximum":     100,
+						},
+						"logjson_query": map[string]any{
+							"type":        "array",
+							"description": "Optional JSON pipeline query for advanced log filtering and processing. Use the logjson_query_builder prompt to generate this from natural language.",
+							"items": map[string]any{
+								"type": "object",
+							},
 						},
 					},
 				},
