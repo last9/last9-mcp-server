@@ -30,7 +30,7 @@ export class Last9MCP extends McpAgent {
 			"get_exceptions",
 			{
 				limit: z.number().min(1).max(100).optional().default(20),
-				lookback_minutes: z.number().min(1).max(1440).optional().default(60),
+				lookback_minutes: z.number().min(1).max(1440).optional().default(5),
 				start_time_iso: z.string().optional(),
 				end_time_iso: z.string().optional(),
 				span_name: z.string().optional(),
@@ -175,7 +175,7 @@ export class Last9MCP extends McpAgent {
 			{
 				start_time_iso: z.string().optional(),
 				end_time_iso: z.string().optional(),
-				lookback_minutes: z.number().min(1).max(1440).optional().default(60),
+				lookback_minutes: z.number().min(1).max(1440).optional().default(5),
 				limit: z.number().min(1).max(100).optional().default(20),
 				logjson_query: z.array(z.record(z.any())).optional(),
 			},
@@ -192,7 +192,7 @@ export class Last9MCP extends McpAgent {
 				service_name: z.string(),
 				start_time_iso: z.string().optional(),
 				end_time_iso: z.string().optional(),
-				lookback_minutes: z.number().min(1).max(1440).optional().default(60),
+				lookback_minutes: z.number().min(1).max(1440).optional().default(5),
 				limit: z.number().min(1).max(100).optional().default(20),
 				severity_filters: z.array(z.string()).optional(),
 				body_filters: z.array(z.string()).optional(),
@@ -209,7 +209,7 @@ export class Last9MCP extends McpAgent {
 			"get_service_traces",
 			{
 				service_name: z.string(),
-				lookback_minutes: z.number().min(1).max(1440).optional().default(60),
+				lookback_minutes: z.number().min(1).max(1440).optional().default(5),
 				start_time_iso: z.string().optional(),
 				end_time_iso: z.string().optional(),
 				limit: z.number().min(1).max(100).optional().default(10),

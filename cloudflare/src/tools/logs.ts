@@ -7,7 +7,7 @@ This tool requires the logjson_query parameter which contains a JSON pipeline qu
 
 Parameters:
 - logjson_query: (Required) JSON pipeline query array for advanced log filtering and processing. Use logjson_query_builder prompt to generate from natural language.
-- lookback_minutes: (Optional) Number of minutes to look back from now. Default: 60 minutes.
+- lookback_minutes: (Optional) Number of minutes to look back from now. Default: 5 minutes.
 - start_time_iso: (Optional) Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
 - end_time_iso: (Optional) End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
 
@@ -39,7 +39,7 @@ Examples:
 
 Parameters:
 - service_name (string, required): Name of the service to get logs for.
-- lookback_minutes (integer, optional): Number of minutes to look back from now. Default: 60 minutes.
+- lookback_minutes (integer, optional): Number of minutes to look back from now. Default: 5 minutes.
 - limit (integer, optional): Maximum number of log entries to return. Default: 20.
 - env (string, optional): Environment to filter by. Use "get_service_environments" tool to get available environments.
 - severity_filters (array, optional): Array of severity patterns to filter logs.
@@ -120,7 +120,7 @@ export async function handleGetServiceLogs(
     throw new Error('service_name is required');
   }
 
-  const { startTime, endTime } = getTimeRange(params, 60);
+  const { startTime, endTime } = getTimeRange(params, 5);
   const limit = params.limit || 20;
   const env = params.env || '';
   const severityFilters = params.severity_filters || [];
@@ -316,8 +316,8 @@ export async function handleLogJSONQuery(
 function parseTimeRange(params: Record<string, any>): { startTime: number; endTime: number } {
   const now = new Date();
 
-  // Default to last hour if no time parameters provided
-  let startTime = now.getTime() - (60 * 60 * 1000); // 1 hour ago in milliseconds
+  // Default to last 5 minutes if no time parameters provided
+  let startTime = now.getTime() - (5 * 60 * 1000); // 5 minutes ago in milliseconds
   let endTime = now.getTime();
 
   // Check for lookback_minutes
