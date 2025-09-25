@@ -1,0 +1,45 @@
+{
+  "name": "last9-mcp-server-cloudflare",
+  "version": "0.1.13",
+  "description": "Last9 MCP Server for Cloudflare Workers - Remote Model Context Protocol server",
+  "main": "src/index.ts",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "start": "wrangler dev",
+    "test:local": "node scripts/test-deployment.js http://localhost:8787",
+    "test:remote": "node scripts/test-deployment.js",
+    "format": "biome format --write",
+    "lint:fix": "biome lint --fix",
+    "cf-typegen": "wrangler types",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.18.0",
+    "agents": "^0.1.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.4",
+    "@cloudflare/workers-types": "^4.20241106.0",
+    "@types/node": "^24.5.2",
+    "typescript": "5.9.2",
+    "wrangler": "^4.38.0"
+  },
+  "keywords": [
+    "last9",
+    "mcp",
+    "cloudflare",
+    "workers",
+    "ai",
+    "claude",
+    "observability"
+  ],
+  "author": "Last9",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/last9/last9-mcp-server.git"
+  }
+}

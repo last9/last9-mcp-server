@@ -57,6 +57,8 @@ func (h *HTTPServer) Start() error {
 	http.HandleFunc("/mcp", h.handleMCP)
 	http.HandleFunc("/ws", h.handleWebSocket)
 	http.HandleFunc("/health", h.handleHealth)
+	http.HandleFunc("/api", h.handleAPI)
+	http.HandleFunc("/chat", h.handleChat)
 
 	log.Printf("Starting HTTP MCP server on %s", addr)
 	return http.ListenAndServe(addr, nil)
@@ -64,12 +66,147 @@ func (h *HTTPServer) Start() error {
 
 // handleHealth provides a simple health check endpoint
 func (h *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
+	// Set comprehensive CORS headers
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control, X-File-Name")
+	w.Header().Set("Access-Control-Allow-Credentials", "false")
+	w.Header().Set("Access-Control-Max-Age", "86400")
 	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":  "healthy",
 		"server":  h.info.Name,
 		"version": h.info.Version,
+	})
+}
+
+// handleAPI provides an API information endpoint
+func (h *HTTPServer) handleAPI(w http.ResponseWriter, r *http.Request) {
+	// Set comprehensive CORS headers
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control, X-File-Name")
+	w.Header().Set("Access-Control-Allow-Credentials", "false")
+	w.Header().Set("Access-Control-Max-Age", "86400")
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if r.Method != "GET" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Method not allowed. Use GET.",
+		})
+		return
+	}
+
+	// Return API information including available tools
+	toolNames := make([]string, len(h.tools))
+	for i, tool := range h.tools {
+		toolNames[i] = tool.Metadata.Name
+	}
+
+	apiInfo := map[string]interface{}{
+		"server":     h.info.Name,
+		"version":    h.info.Version,
+		"protocol":   "MCP",
+		"endpoints": map[string]string{
+			"mcp":    "/mcp",
+			"health": "/health",
+			"api":    "/api",
+			"ws":     "/ws",
+			"chat":   "/chat",
+		},
+		"tools": map[string]interface{}{
+			"count": len(h.tools),
+			"names": toolNames,
+		},
+		"description": "Last9 MCP Server - AI agent tool server for Last9 observability platform",
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(apiInfo)
+}
+
+// handleChat provides a chat interface for MCP interactions
+func (h *HTTPServer) handleChat(w http.ResponseWriter, r *http.Request) {
+	// Set comprehensive CORS headers
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control, X-File-Name")
+	w.Header().Set("Access-Control-Allow-Credentials", "false")
+	w.Header().Set("Access-Control-Max-Age", "86400")
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if r.Method == "GET" {
+		// Return chat interface information
+		chatInfo := map[string]interface{}{
+			"endpoint": "/chat",
+			"description": "Chat interface for MCP interactions",
+			"methods": []string{"GET", "POST", "OPTIONS"},
+			"usage": map[string]interface{}{
+				"GET": "Returns this information",
+				"POST": "Send chat messages and receive MCP responses",
+			},
+			"server": h.info.Name,
+			"version": h.info.Version,
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(chatInfo)
+		return
+	}
+
+	if r.Method == "POST" {
+		// Handle chat messages
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read request body", http.StatusBadRequest)
+			return
+		}
+
+		var chatRequest struct {
+			Message   string `json:"message"`
+			SessionID string `json:"session_id,omitempty"`
+		}
+
+		if err := json.Unmarshal(body, &chatRequest); err != nil {
+			http.Error(w, "Invalid JSON request", http.StatusBadRequest)
+			return
+		}
+
+		// For now, return a simple response acknowledging the message
+		chatResponse := map[string]interface{}{
+			"response": "Chat functionality is available. Use MCP protocol via /mcp endpoint for tool interactions.",
+			"message_received": chatRequest.Message,
+			"session_id": chatRequest.SessionID,
+			"available_tools": len(h.tools),
+			"suggestion": "Use the /api endpoint to see available tools, then interact via /mcp endpoint",
+		}
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(chatResponse)
+		return
+	}
+
+	// Method not allowed
+	w.WriteHeader(http.StatusMethodNotAllowed)
+	json.NewEncoder(w).Encode(map[string]string{
+		"error": "Method not allowed. Use GET, POST, or OPTIONS.",
 	})
 }
 

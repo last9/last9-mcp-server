@@ -1,0 +1,7 @@
+# Local development environment variables
+# Copy this file to .dev.vars.local and set your actual values
+
+# Last9 Configuration (Required)
+LAST9_BASE_URL=https://your-last9-endpoint
+LAST9_AUTH_TOKEN=your_last9_auth_token_here
+LAST9_REFRESH_TOKEN=your_last9_refresh_token_here
