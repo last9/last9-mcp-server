@@ -99,6 +99,7 @@ export async function handleGetLogs(
   params: Record<string, any>,
   config: Config
 ): Promise<{ content: any[] }> {
+  console.log('handleGetLogs called with params:', JSON.stringify(params, null, 2));
   // Check if logjson_query is provided
   const logjsonQuery = params.logjson_query;
   if (!logjsonQuery) {
@@ -113,6 +114,7 @@ export async function handleGetServiceLogs(
   params: Record<string, any>,
   config: Config
 ): Promise<{ content: any[] }> {
+  console.log('handleGetServiceLogs called with params:', JSON.stringify(params, null, 2));
   const serviceName = params.service_name;
   if (!serviceName) {
     throw new Error('service_name is required');
@@ -230,6 +232,7 @@ export async function handleGetDropRules(
   params: Record<string, any>,
   config: Config
 ): Promise<{ content: any[] }> {
+  console.log('handleGetDropRules called with params:', JSON.stringify(params, null, 2));
   try {
     const url = `${config.apiBaseURL}/v1/drop_rules`;
 
@@ -265,6 +268,8 @@ export async function handleLogJSONQuery(
   params: Record<string, any>,
   config: Config
 ): Promise<{ content: any[] }> {
+  console.log('handleLogJSONQuery called with logjsonQuery:', JSON.stringify(logjsonQuery, null, 2));
+  console.log('handleLogJSONQuery called with params:', JSON.stringify(params, null, 2));
   // Determine time range from parameters
   const { startTime, endTime } = parseTimeRange(params);
 
@@ -343,6 +348,7 @@ export async function handleAddDropRule(
   params: Record<string, any>,
   config: Config
 ): Promise<{ content: any[] }> {
+  console.log('handleAddDropRule called with params:', JSON.stringify(params, null, 2));
   const name = params.name;
   const filters = params.filters;
 
