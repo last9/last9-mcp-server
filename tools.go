@@ -681,6 +681,44 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 			Execute:   traces.GetServiceTracesHandler(client, cfg),
 			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
 		},
+		{
+			Metadata: mcp.Tool{
+				Name:        "get_log_attributes",
+				Description: ptr(logs.GetLogAttributesDescription),
+				InputSchema: mcp.ToolInputSchema{
+					Type: "object",
+					Properties: mcp.ToolInputSchemaProperties{
+						"lookback_minutes": map[string]any{
+							"type":        "integer",
+							"description": "Number of minutes to look back from now for the time window",
+							"default":     15,
+							"minimum":     1,
+							"maximum":     1440, // 24 hours
+							"examples":    []int{15, 30, 60},
+						},
+						"start_time_iso": map[string]any{
+							"type":        "string",
+							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""},
+						},
+						"end_time_iso": map[string]any{
+							"type":        "string",
+							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""},
+						},
+						"region": map[string]any{
+							"type":        "string",
+							"description": "AWS region to query. Leave empty to use default from configuration.",
+							"examples":    []string{"ap-south-1", "us-east-1", "eu-west-1"},
+						},
+					},
+				},
+			},
+			Execute:   logs.NewGetLogAttributesHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
 	}, nil
 }
 

@@ -41,6 +41,7 @@ IDEs. Implements the following MCP
 - `add_drop_rule`: Create a drop rule for logs at
   [Last9 Control Plane](https://last9.io/control-plane)
 - `get_service_logs`: Get raw log entries for a specific service over a time range. Can apply filters on severity and body.
+- `get_log_attributes`: Get available log attributes (labels) for a specified time window.
 
 **Traces Management:**
 
@@ -267,6 +268,22 @@ Filtering behavior:
 Examples:
 - service_name="api" + severity_filters=["error"] + body_filters=["timeout"] → finds error logs containing "timeout"
 - service_name="web" + body_filters=["timeout", "failed", "error 500"] → finds logs containing any of these patterns
+
+### get_log_attributes
+
+Get available log attributes (labels) for a specified time window. This tool retrieves all attribute names that exist in logs during the specified time range, which can be used for filtering and querying logs.
+
+Parameters:
+
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now for the time window. Default: 15. Examples: 15, 30, 60.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `region` (string, optional): AWS region to query. Leave empty to use default from configuration. Examples: ap-south-1, us-east-1, eu-west-1.
+
+Returns:
+- List of log attributes grouped into two categories:
+  - Log Attributes: Standard log fields like service, severity, body, level, etc.
+  - Resource Attributes: Resource-related fields prefixed with "resource_" like resource_k8s.pod.name, resource_service.name, etc.
 
 ### get_service_traces
 
