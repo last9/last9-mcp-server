@@ -46,6 +46,7 @@ IDEs. Implements the following MCP
 **Traces Management:**
 
 - `get_service_traces`: Query traces for a specific service with filtering options for span kinds, status codes, and other trace attributes.
+- `get_trace_attributes`: Get available trace attributes (series) for a specified time window.
 
 **Alert Management:**
 
@@ -310,6 +311,31 @@ Filtering options:
 Examples:
 - service_name="api" + span_kind=["server"] + status_code=["error"] → finds failed server-side traces
 - service_name="payment" + span_name="process_payment" + lookback_minutes=30 → finds payment processing traces from last 30 minutes
+
+### get_trace_attributes
+
+Get available trace attributes (series) for a specified time window. This tool retrieves all attribute names that exist in traces during the specified time range, which can be used for filtering and querying traces.
+
+Parameters:
+
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now for the time window. Default: 15. Examples: 15, 30, 60.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `region` (string, optional): AWS region to query. Leave empty to use default from configuration. Examples: ap-south-1, us-east-1, eu-west-1.
+
+Returns:
+- List of trace attributes organized by category:
+  - HTTP Attributes: http.method, http.status_code, http.route, etc.
+  - gRPC/RPC Attributes: grpc.method, rpc.service, rpc.system, etc.
+  - Database Attributes: db.name, db.statement, db.system, etc.
+  - Messaging Attributes: messaging.system, messaging.destination.name, etc.
+  - Application Attributes: app.* fields specific to your application
+  - Network Attributes: net.peer.ip, network.protocol.version, etc.
+  - Service Mesh Attributes: upstream_cluster, downstream_cluster, etc.
+  - Performance Attributes: duration, latency metrics, etc.
+  - Error Attributes: error, exception.message, exception.type, etc.
+  - Web Vitals: web_vital.lcp.value, web_vital.cls.rating, etc.
+  - Resource Attributes: resource_* fields like resource_service.name, resource_k8s.pod.name, etc.
 
 ## Installation
 
