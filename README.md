@@ -324,18 +324,7 @@ Parameters:
 - `region` (string, optional): AWS region to query. Leave empty to use default from configuration. Examples: ap-south-1, us-east-1, eu-west-1.
 
 Returns:
-- List of trace attributes organized by category:
-  - HTTP Attributes: http.method, http.status_code, http.route, etc.
-  - gRPC/RPC Attributes: grpc.method, rpc.service, rpc.system, etc.
-  - Database Attributes: db.name, db.statement, db.system, etc.
-  - Messaging Attributes: messaging.system, messaging.destination.name, etc.
-  - Application Attributes: app.* fields specific to your application
-  - Network Attributes: net.peer.ip, network.protocol.version, etc.
-  - Service Mesh Attributes: upstream_cluster, downstream_cluster, etc.
-  - Performance Attributes: duration, latency metrics, etc.
-  - Error Attributes: error, exception.message, exception.type, etc.
-  - Web Vitals: web_vital.lcp.value, web_vital.cls.rating, etc.
-  - Resource Attributes: resource_* fields like resource_service.name, resource_k8s.pod.name, etc.
+- An alphabetically sorted list of all available trace attributes (e.g., http.method, http.status_code, db.name, resource_service.name, duration, etc.)
 
 ## Installation
 

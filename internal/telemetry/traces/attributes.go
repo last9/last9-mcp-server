@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/acrmp/mcp"
@@ -24,12 +23,7 @@ that can be used for filtering and querying traces within the specified time ran
 The attributes returned are field names that exist in traces during the specified
 time window, which can then be used in trace queries and filters.
 
-Returns a comprehensive list of trace attributes including:
-- Standard trace attributes (http.method, http.status_code, etc.)
-- Application-specific attributes (app.* fields)
-- Resource attributes (resource_* fields)
-- Performance metrics (duration, latency, etc.)
-- Service mesh attributes (downstream_cluster, upstream_cluster, etc.)
+Returns an alphabetically sorted list of all available trace attributes.
 `
 
 // TraceAttributesResponse represents the API response structure
@@ -139,7 +133,7 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(m
 			return mcp.CallToolResult{}, fmt.Errorf("API returned non-success status: %s", result.Status)
 		}
 
-		// Extract and categorize attributes
+		// Extract attributes as simple list
 		if len(result.Data) == 0 {
 			return mcp.CallToolResult{
 				Content: []any{
@@ -151,90 +145,28 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(m
 			}, nil
 		}
 
-		// Categorize attributes
-		categories := map[string][]string{
-			"HTTP":          []string{},
-			"gRPC/RPC":      []string{},
-			"Database":      []string{},
-			"Messaging":     []string{},
-			"Application":   []string{},
-			"Network":       []string{},
-			"Service Mesh":  []string{},
-			"Resource":      []string{},
-			"Performance":   []string{},
-			"Error":         []string{},
-			"Web Vitals":    []string{},
-			"Other":         []string{},
-		}
-
-		// Process first data item (contains all available attributes)
+		// Extract all attributes into a simple list
+		attributes := []string{}
 		for attrName := range result.Data[0] {
 			// Skip empty attribute names
 			if attrName == "" {
 				continue
 			}
-
-			// Categorize based on prefix
-			switch {
-			case strings.HasPrefix(attrName, "http."):
-				categories["HTTP"] = append(categories["HTTP"], attrName)
-			case strings.HasPrefix(attrName, "grpc.") || strings.HasPrefix(attrName, "rpc."):
-				categories["gRPC/RPC"] = append(categories["gRPC/RPC"], attrName)
-			case strings.HasPrefix(attrName, "db."):
-				categories["Database"] = append(categories["Database"], attrName)
-			case strings.HasPrefix(attrName, "messaging."):
-				categories["Messaging"] = append(categories["Messaging"], attrName)
-			case strings.HasPrefix(attrName, "app."):
-				categories["Application"] = append(categories["Application"], attrName)
-			case strings.HasPrefix(attrName, "net.") || strings.HasPrefix(attrName, "network."):
-				categories["Network"] = append(categories["Network"], attrName)
-			case strings.HasPrefix(attrName, "resource_"):
-				categories["Resource"] = append(categories["Resource"], attrName)
-			case strings.Contains(attrName, "cluster") || strings.Contains(attrName, "upstream") || strings.Contains(attrName, "downstream"):
-				categories["Service Mesh"] = append(categories["Service Mesh"], attrName)
-			case strings.HasPrefix(attrName, "web_vital"):
-				categories["Web Vitals"] = append(categories["Web Vitals"], attrName)
-			case strings.Contains(attrName, "error") || strings.Contains(attrName, "exception"):
-				categories["Error"] = append(categories["Error"], attrName)
-			case attrName == "duration" || attrName == "idle_ns" || attrName == "busy_ns" || strings.Contains(attrName, "latency") || strings.Contains(attrName, "time"):
-				categories["Performance"] = append(categories["Performance"], attrName)
-			default:
-				categories["Other"] = append(categories["Other"], attrName)
-			}
+			attributes = append(attributes, attrName)
 		}
 
-		// Sort attributes within each category
-		for _, attrs := range categories {
-			sort.Strings(attrs)
-		}
+		// Sort attributes alphabetically
+		sort.Strings(attributes)
 
 		// Format the response for display
-		totalAttrs := 0
-		for _, attrs := range categories {
-			totalAttrs += len(attrs)
-		}
-
-		summary := fmt.Sprintf("Found %d trace attributes in the time window (%s to %s):\n",
-			totalAttrs,
+		summary := fmt.Sprintf("Found %d trace attributes in the time window (%s to %s):\n\n",
+			len(attributes),
 			time.Unix(startTime, 0).Format("2006-01-02 15:04:05"),
 			time.Unix(endTime, 0).Format("2006-01-02 15:04:05"))
 
-		// Define category order for display
-		categoryOrder := []string{
-			"HTTP", "gRPC/RPC", "Database", "Messaging", "Application",
-			"Network", "Service Mesh", "Performance", "Error", "Web Vitals",
-			"Resource", "Other",
-		}
-
-		// Build formatted output
-		for _, category := range categoryOrder {
-			attrs := categories[category]
-			if len(attrs) > 0 {
-				summary += fmt.Sprintf("\n%s Attributes (%d):\n", category, len(attrs))
-				for _, attr := range attrs {
-					summary += fmt.Sprintf("  • %s\n", attr)
-				}
-			}
+		// Build formatted output as simple list
+		for _, attr := range attributes {
+			summary += fmt.Sprintf("%s\n", attr)
 		}
 
 		// Return the result
