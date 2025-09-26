@@ -11,16 +11,17 @@ import (
 
 	"last9-mcp/internal/models"
 
-	"github.com/acrmp/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/gorilla/websocket"
 	"github.com/sourcegraph/jsonrpc2"
 )
 
 // HTTPServer wraps the MCP server for HTTP transport
+// TODO: Update for new MCP SDK - currently disabled
 type HTTPServer struct {
 	info     mcp.Implementation
-	tools    []mcp.ToolDefinition
-	toolsMap map[string]mcp.ToolDefinition
+	tools    []interface{} // TODO: Update to new SDK types
+	toolsMap map[string]interface{} // TODO: Update to new SDK types
 	config   models.Config
 	sessions map[string]*MCPSession
 	mu       sync.RWMutex
@@ -35,11 +36,15 @@ type MCPSession struct {
 }
 
 // NewHTTPServer creates a new HTTP-based MCP server
-func NewHTTPServer(info mcp.Implementation, tools []mcp.ToolDefinition, config models.Config) *HTTPServer {
-	toolsMap := make(map[string]mcp.ToolDefinition)
+// TODO: Update for new MCP SDK - currently disabled
+func NewHTTPServer(info mcp.Implementation, tools []interface{}, config models.Config) *HTTPServer {
+	toolsMap := make(map[string]interface{})
+	// TODO: Update for new SDK - tool structure has changed
+	/*
 	for _, tool := range tools {
 		toolsMap[tool.Metadata.Name] = tool
 	}
+	*/
 
 	return &HTTPServer{
 		info:     info,
@@ -163,12 +168,9 @@ func (h *HTTPServer) handleMCPRequest(req *jsonrpc2.Request, sessionID string) (
 		return resp, true
 
 	case "tools/list":
-		tools := make([]mcp.Tool, len(h.tools))
-		for i, tool := range h.tools {
-			tools[i] = tool.Metadata
-		}
+		// TODO: Update for new MCP SDK - currently disabled
 		result := map[string]interface{}{
-			"tools": tools,
+			"tools": []interface{}{}, // Empty list since HTTP mode is disabled
 		}
 		resultBytes, _ := json.Marshal(result)
 		resp.Result = (*json.RawMessage)(&resultBytes)
@@ -188,8 +190,9 @@ func (h *HTTPServer) handleMCPRequest(req *jsonrpc2.Request, sessionID string) (
 }
 
 // handleToolCall executes a tool and returns the result
+// TODO: Update for new MCP SDK - currently disabled
 func (h *HTTPServer) handleToolCall(req *jsonrpc2.Request, resp *jsonrpc2.Response) {
-	var params mcp.CallToolRequestParams
+	var params map[string]interface{} // TODO: Update to new SDK types
 
 	if req.Params != nil {
 		if err := json.Unmarshal(*req.Params, &params); err != nil {
@@ -201,38 +204,30 @@ func (h *HTTPServer) handleToolCall(req *jsonrpc2.Request, resp *jsonrpc2.Respon
 		}
 	}
 
-	tool, exists := h.toolsMap[params.Name]
+	// TODO: Update for new MCP SDK - currently disabled
+	toolName, ok := params["name"].(string)
+	if !ok {
+		resp.Error = &jsonrpc2.Error{
+			Code:    jsonrpc2.CodeInvalidParams,
+			Message: "Missing tool name",
+		}
+		return
+	}
+
+	_, exists := h.toolsMap[toolName]
 	if !exists {
 		resp.Error = &jsonrpc2.Error{
 			Code:    jsonrpc2.CodeMethodNotFound,
-			Message: fmt.Sprintf("Tool not found: %s", params.Name),
+			Message: fmt.Sprintf("Tool not found: %s", toolName),
 		}
 		return
 	}
 
-	// Execute the tool with rate limiting
-	if tool.RateLimit != nil {
-		if !tool.RateLimit.Allow() {
-			resp.Error = &jsonrpc2.Error{
-				Code:    -32000, // Custom error code for rate limiting
-				Message: "Rate limit exceeded",
-			}
-			return
-		}
+	// TODO: Execute the tool with new SDK patterns
+	resp.Error = &jsonrpc2.Error{
+		Code:    jsonrpc2.CodeMethodNotFound,
+		Message: "HTTP mode temporarily disabled - use STDIO mode",
 	}
-
-	// Execute the tool
-	result, err := tool.Execute(params)
-	if err != nil {
-		resp.Error = &jsonrpc2.Error{
-			Code:    jsonrpc2.CodeInternalError,
-			Message: err.Error(),
-		}
-		return
-	}
-	// Return the MCP result directly
-	resultBytes, _ := json.Marshal(result)
-	resp.Result = (*json.RawMessage)(&resultBytes)
 }
 
 // handleGET handles GET requests (for session management)
