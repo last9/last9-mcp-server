@@ -341,30 +341,6 @@ Returns:
 
 You can install and run the Last9 Observability MCP server in several ways:
 
-### Remote Deployment (Cloudflare Workers) - NEW! 🚀
-
-Deploy the MCP server remotely on Cloudflare Workers for internet-accessible MCP tools:
-
-```bash
-# Navigate to the Cloudflare directory
-cd cloudflare
-
-# Install dependencies
-npm install
-
-# Deploy to Cloudflare Workers
-npm run deploy
-```
-
-**Benefits of Remote Deployment:**
-- ✅ Internet-accessible from any MCP client
-- ✅ No local installation required
-- ✅ Automatic scaling and high availability
-- ✅ OAuth authentication support
-- ✅ Global edge deployment
-
-See [Cloudflare Deployment Guide](./cloudflare/DEPLOYMENT.md) for detailed instructions.
-
 ### Local Installation
 
 For local development and traditional STDIO usage:
@@ -404,36 +380,6 @@ The Last9 MCP server requires the following environment variables:
   [API Access](https://app.last9.io/settings/api-access)
 
 ## Usage
-
-### Using Remote MCP Server (Cloudflare Workers)
-
-After deploying to Cloudflare Workers, connect from any MCP client:
-
-#### Claude Desktop (Remote)
-```json
-{
-  "mcpServers": {
-    "last9-remote": {
-      "command": "npx",
-      "args": ["@modelcontextprotocol/client-remote", "https://your-worker-url.workers.dev/mcp"]
-    }
-  }
-}
-```
-
-#### Cursor (Remote)
-```json
-{
-  "mcpServers": {
-    "last9-remote": {
-      "command": "npx",
-      "args": ["@modelcontextprotocol/client-remote", "https://your-worker-url.workers.dev/mcp"]
-    }
-  }
-}
-```
-
-### Using Local MCP Server
 
 ## Usage with Claude Desktop
 
