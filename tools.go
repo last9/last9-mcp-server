@@ -400,7 +400,7 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 						},
 						"logjson_query": map[string]any{
 							"type":        "array",
-							"description": "Optional JSON pipeline query for advanced log filtering and processing. Use the logjson_query_builder prompt to generate this from natural language.",
+							"description": "Optional JSON pipeline query for advanced log filtering and processing.",
 							"items": map[string]any{
 								"type": "object",
 							},

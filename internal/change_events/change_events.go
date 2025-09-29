@@ -130,6 +130,10 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(mcp.
 			labelFilters = append(labelFilters, fmt.Sprintf(`event_type="%s"`, eventName))
 		}
 
+		// Add default filters to exclude backup and rehydration events
+		labelFilters = append(labelFilters, `event_name!~"cold_storage_logs_backup|cold_storage_logs_backup_endtime|cold_storage_logs_backup_time_taken_in_sec|manual_rehydration_event"`)
+		labelFilters = append(labelFilters, `l9_event_name!~"last9_scheduled_search"`)
+
 		// Build the filter string
 		var filterStr string
 		if len(labelFilters) > 0 {

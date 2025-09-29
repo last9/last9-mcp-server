@@ -28,7 +28,7 @@ IDEs. Implements the following MCP
 
 **Prometheus/PromQL Tools:**
 
-- `promptheus_range_query`: Execute PromQL range queries for metrics data.
+- `prometheus_range_query`: Execute PromQL range queries for metrics data.
 - `prometheus_instant_query`: Execute PromQL instant queries for metrics data.
 - `prometheus_label_values`: Get label values for PromQL queries.
 - `prometheus_labels`: Get available labels for PromQL queries.
@@ -125,7 +125,7 @@ Parameters:
 - `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
 - `env` (string, optional): Environment to filter by. Defaults to 'prod'.
 
-### promptheus_range_query
+### prometheus_range_query
 
 Perform a Prometheus range query to get metrics data over a specified time range. Recommended to check available labels first using `prometheus_labels` tool.
 
