@@ -48,6 +48,10 @@ IDEs. Implements the following MCP
 - `get_service_traces`: Query traces for a specific service with filtering options for span kinds, status codes, and other trace attributes.
 - `get_trace_attributes`: Get available trace attributes (series) for a specified time window.
 
+**Change Events:**
+
+- `get_change_events`: Get change events from the last9_change_events prometheus metric over a given time range.
+
 **Alert Management:**
 
 - `get_alert_config`: Get alert configurations (alert rules) from Last9.
@@ -325,6 +329,36 @@ Parameters:
 
 Returns:
 - An alphabetically sorted list of all available trace attributes (e.g., http.method, http.status_code, db.name, resource_service.name, duration, etc.)
+
+### get_change_events
+
+Get change events from the last9_change_events prometheus metric over a given time range. Returns change events that occurred in the specified time window, including deployments, configuration changes, and other system modifications.
+
+Parameters:
+
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - lookback_minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60 minutes. Examples: 60, 30, 15.
+- `service` (string, optional): Name of the service to filter change events for.
+- `environment` (string, optional): Environment to filter by.
+- `event_name` (string, optional): Name of the change event to filter by (use available_event_names to see valid values).
+
+Returns:
+- `available_event_names`: List of all available event types that can be used for filtering
+- `change_events`: Array of timeseries data with metric labels and timestamp-value pairs
+- `count`: Total number of change events returned
+- `time_range`: Start and end time of the query window
+
+Each change event includes:
+- `metric`: Map of metric labels (service_name, env, event_type, message, etc.)
+- `values`: Array of timestamp-value pairs representing the timeseries data
+
+Common event types include: deployment, config_change, rollback, scale_up/scale_down, restart, upgrade/downgrade, maintenance, backup/restore, health_check, certificate, database.
+
+Best practices:
+1. First call without event_name to get available_event_names
+2. Use exact event name from available_event_names for the event_name parameter
+3. Combine with other filters (service, environment, time) for precise results
 
 ## Installation
 

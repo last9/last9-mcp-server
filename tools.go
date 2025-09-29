@@ -6,6 +6,7 @@ import (
 
 	"last9-mcp/internal/alerting"
 	"last9-mcp/internal/apm"
+	"last9-mcp/internal/change_events"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/telemetry/traces"
@@ -755,6 +756,51 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 				},
 			},
 			Execute:   traces.NewGetTraceAttributesHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
+		{
+			Metadata: mcp.Tool{
+				Name:        "get_change_events",
+				Description: ptr(change_events.GetChangeEventsDescription),
+				InputSchema: mcp.ToolInputSchema{
+					Type: "object",
+					Properties: mcp.ToolInputSchemaProperties{
+						"start_time_iso": map[string]any{
+							"type":        "string",
+							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - lookback_minutes.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""},
+						},
+						"end_time_iso": map[string]any{
+							"type":        "string",
+							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""},
+						},
+						"lookback_minutes": map[string]any{
+							"type":        "integer",
+							"description": "Number of minutes to look back from now. Use this for relative time ranges instead of explicit timestamps.",
+							"default":     60,
+							"minimum":     1,
+							"maximum":     1440, // 24 hours
+							"examples":    []int{60, 30, 15},
+						},
+						"service": map[string]any{
+							"type":        "string",
+							"description": "Name of the service to filter change events for",
+						},
+						"environment": map[string]any{
+							"type":        "string",
+							"description": "Environment to filter by",
+						},
+						"event_name": map[string]any{
+							"type":        "string",
+							"description": "Name of the change event to filter by (use available_event_names to see valid values)",
+						},
+					},
+				},
+			},
+			Execute:   change_events.NewGetChangeEventsHandler(client, cfg),
 			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
 		},
 	}, nil
