@@ -150,6 +150,11 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(mcp.
 		}
 		defer resp.Body.Close()
 
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return mcp.CallToolResult{}, fmt.Errorf("change events API request failed with status %d: %s", resp.StatusCode, string(body))
+		}
+
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return mcp.CallToolResult{}, fmt.Errorf("failed to read response body: %w", err)
