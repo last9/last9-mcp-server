@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 	"net/http"
@@ -67,6 +68,11 @@ func NewGetServiceGraphHandler(client *http.Client, cfg models.Config) func(mcp.
 			return mcp.CallToolResult{}, fmt.Errorf("request failed: %w", err)
 		}
 		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return mcp.CallToolResult{}, fmt.Errorf("service graph API request failed with status %d: %s", resp.StatusCode, string(body))
+		}
 
 		var result interface{}
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

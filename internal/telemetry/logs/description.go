@@ -1,24 +1,25 @@
 package logs
 
 const GetLogsDescription = `
-	Get logs filtered by optional service name and/or severity level within a specified time range. 
-	Omitting service returns logs from all services.
+	Get logs using JSON pipeline queries for advanced filtering, parsing, aggregation, and processing.
+	
+	This tool requires the logjson_query parameter which contains a JSON pipeline query. Use the logjson_query_builder prompt to generate these queries from natural language descriptions.
 
-    service: (Optional) The name of the service to get the logs for.
-	severity: (Optional) The severity of the logs to get.
-    limit: (Optional) The maximum number of logs to return. Defaults to 20.
-    lookback_minutes: (Recommended) Number of minutes to look back from now. Use this for relative time ranges.
-    start_time_iso: (Optional) The start time to get the data from. Leave empty to use lookback_minutes instead.
-    end_time_iso: (Optional) The end time to get the data from. Leave empty to default to current time.
+	Parameters:
+	- logjson_query: (Required) JSON pipeline query array for advanced log filtering and processing. Use logjson_query_builder prompt to generate from natural language.
+	- lookback_minutes: (Optional) Number of minutes to look back from now. Default: 60 minutes.
+	- start_time_iso: (Optional) Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
+	- end_time_iso: (Optional) End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
 
-	Response is a list of log entries in the 'result' field containing the following fields:
-		stream:
-			it contains the attributes of the log entry
-			the attributes starting with resources_ are the resource attributes of the log entry
-			and the rest of the attributes are log attributes 
-		values:
-			it contains the log message and the timestamp of the log entry
-			each value is a list of two elements, the first element is the timestamp and the second element is the log message
+	The logjson_query supports:
+	- Filter operations: Filter logs based on conditions
+	- Parse operations: Parse log content (json, regexp, logfmt)
+	- Aggregate operations: Perform aggregations (sum, avg, count, etc.)
+	- Window aggregate operations: Time-windowed aggregations
+	- Transform operations: Transform/extract fields
+	- Select operations: Select specific fields and apply limits
+
+	Response contains the results of the JSON pipeline query execution.
 
 `
 

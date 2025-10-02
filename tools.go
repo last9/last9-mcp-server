@@ -6,6 +6,7 @@ import (
 
 	"last9-mcp/internal/alerting"
 	"last9-mcp/internal/apm"
+	"last9-mcp/internal/change_events"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/telemetry/traces"
@@ -371,14 +372,6 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 				InputSchema: mcp.ToolInputSchema{
 					Type: "object",
 					Properties: mcp.ToolInputSchemaProperties{
-						"service_name": map[string]any{
-							"type":        "string",
-							"description": "Name of the service to get logs for",
-						},
-						"severity": map[string]any{
-							"type":        "string",
-							"description": "Severity of the logs to get",
-						},
 						"start_time_iso": map[string]any{
 							"type":        "string",
 							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes. Example: use lookback_minutes instead for relative time.",
@@ -405,6 +398,13 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 							"default":     20,
 							"minimum":     1,
 							"maximum":     100,
+						},
+						"logjson_query": map[string]any{
+							"type":        "array",
+							"description": "Optional JSON pipeline query for advanced log filtering and processing.",
+							"items": map[string]any{
+								"type": "object",
+							},
 						},
 					},
 				},
@@ -680,6 +680,127 @@ func createTools(cfg models.Config) ([]mcp.ToolDefinition, error) {
 				},
 			},
 			Execute:   traces.GetServiceTracesHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
+		{
+			Metadata: mcp.Tool{
+				Name:        "get_log_attributes",
+				Description: ptr(logs.GetLogAttributesDescription),
+				InputSchema: mcp.ToolInputSchema{
+					Type: "object",
+					Properties: mcp.ToolInputSchemaProperties{
+						"lookback_minutes": map[string]any{
+							"type":        "integer",
+							"description": "Number of minutes to look back from now for the time window",
+							"default":     15,
+							"minimum":     1,
+							"maximum":     1440, // 24 hours
+							"examples":    []int{15, 30, 60},
+						},
+						"start_time_iso": map[string]any{
+							"type":        "string",
+							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""},
+						},
+						"end_time_iso": map[string]any{
+							"type":        "string",
+							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""},
+						},
+						"region": map[string]any{
+							"type":        "string",
+							"description": "AWS region to query. Leave empty to use default from configuration.",
+							"examples":    []string{"ap-south-1", "us-east-1", "eu-west-1"},
+						},
+					},
+				},
+			},
+			Execute:   logs.NewGetLogAttributesHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
+		{
+			Metadata: mcp.Tool{
+				Name:        "get_trace_attributes",
+				Description: ptr(traces.GetTraceAttributesDescription),
+				InputSchema: mcp.ToolInputSchema{
+					Type: "object",
+					Properties: mcp.ToolInputSchemaProperties{
+						"lookback_minutes": map[string]any{
+							"type":        "integer",
+							"description": "Number of minutes to look back from now for the time window",
+							"default":     15,
+							"minimum":     1,
+							"maximum":     1440, // 24 hours
+							"examples":    []int{15, 30, 60},
+						},
+						"start_time_iso": map[string]any{
+							"type":        "string",
+							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""},
+						},
+						"end_time_iso": map[string]any{
+							"type":        "string",
+							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""},
+						},
+						"region": map[string]any{
+							"type":        "string",
+							"description": "AWS region to query. Leave empty to use default from configuration.",
+							"examples":    []string{"ap-south-1", "us-east-1", "eu-west-1"},
+						},
+					},
+				},
+			},
+			Execute:   traces.NewGetTraceAttributesHandler(client, cfg),
+			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
+		},
+		{
+			Metadata: mcp.Tool{
+				Name:        "get_change_events",
+				Description: ptr(change_events.GetChangeEventsDescription),
+				InputSchema: mcp.ToolInputSchema{
+					Type: "object",
+					Properties: mcp.ToolInputSchemaProperties{
+						"start_time_iso": map[string]any{
+							"type":        "string",
+							"description": "Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - lookback_minutes.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""},
+						},
+						"end_time_iso": map[string]any{
+							"type":        "string",
+							"description": "End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.",
+							"pattern":     "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$",
+							"examples":    []string{""},
+						},
+						"lookback_minutes": map[string]any{
+							"type":        "integer",
+							"description": "Number of minutes to look back from now. Use this for relative time ranges instead of explicit timestamps.",
+							"default":     60,
+							"minimum":     1,
+							"maximum":     1440, // 24 hours
+							"examples":    []int{60, 30, 15},
+						},
+						"service": map[string]any{
+							"type":        "string",
+							"description": "Name of the service to filter change events for",
+						},
+						"environment": map[string]any{
+							"type":        "string",
+							"description": "Environment to filter by",
+						},
+						"event_name": map[string]any{
+							"type":        "string",
+							"description": "Name of the change event to filter by (use available_event_names to see valid values)",
+						},
+					},
+				},
+			},
+			Execute:   change_events.NewGetChangeEventsHandler(client, cfg),
 			RateLimit: rate.NewLimiter(rate.Limit(cfg.RequestRateLimit), cfg.RequestRateBurst),
 		},
 	}, nil
