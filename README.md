@@ -28,7 +28,7 @@ IDEs. Implements the following MCP
 
 **Prometheus/PromQL Tools:**
 
-- `promptheus_range_query`: Execute PromQL range queries for metrics data.
+- `prometheus_range_query`: Execute PromQL range queries for metrics data.
 - `prometheus_instant_query`: Execute PromQL instant queries for metrics data.
 - `prometheus_label_values`: Get label values for PromQL queries.
 - `prometheus_labels`: Get available labels for PromQL queries.
@@ -41,10 +41,16 @@ IDEs. Implements the following MCP
 - `add_drop_rule`: Create a drop rule for logs at
   [Last9 Control Plane](https://last9.io/control-plane)
 - `get_service_logs`: Get raw log entries for a specific service over a time range. Can apply filters on severity and body.
+- `get_log_attributes`: Get available log attributes (labels) for a specified time window.
 
 **Traces Management:**
 
 - `get_service_traces`: Query traces for a specific service with filtering options for span kinds, status codes, and other trace attributes.
+- `get_trace_attributes`: Get available trace attributes (series) for a specified time window.
+
+**Change Events:**
+
+- `get_change_events`: Get change events from the last9_change_events prometheus metric over a given time range.
 
 **Alert Management:**
 
@@ -123,7 +129,7 @@ Parameters:
 - `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
 - `env` (string, optional): Environment to filter by. Defaults to 'prod'.
 
-### promptheus_range_query
+### prometheus_range_query
 
 Perform a Prometheus range query to get metrics data over a specified time range. Recommended to check available labels first using `prometheus_labels` tool.
 
@@ -268,6 +274,22 @@ Examples:
 - service_name="api" + severity_filters=["error"] + body_filters=["timeout"] → finds error logs containing "timeout"
 - service_name="web" + body_filters=["timeout", "failed", "error 500"] → finds logs containing any of these patterns
 
+### get_log_attributes
+
+Get available log attributes (labels) for a specified time window. This tool retrieves all attribute names that exist in logs during the specified time range, which can be used for filtering and querying logs.
+
+Parameters:
+
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now for the time window. Default: 15. Examples: 15, 30, 60.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `region` (string, optional): AWS region to query. Leave empty to use default from configuration. Examples: ap-south-1, us-east-1, eu-west-1.
+
+Returns:
+- List of log attributes grouped into two categories:
+  - Log Attributes: Standard log fields like service, severity, body, level, etc.
+  - Resource Attributes: Resource-related fields prefixed with "resource_" like resource_k8s.pod.name, resource_service.name, etc.
+
 ### get_service_traces
 
 Query traces for a specific service with filtering options for span kinds, status codes, and other trace attributes. This tool retrieves distributed tracing data for debugging performance issues, understanding request flows, and analyzing service interactions.
@@ -294,11 +316,59 @@ Examples:
 - service_name="api" + span_kind=["server"] + status_code=["error"] → finds failed server-side traces
 - service_name="payment" + span_name="process_payment" + lookback_minutes=30 → finds payment processing traces from last 30 minutes
 
+### get_trace_attributes
+
+Get available trace attributes (series) for a specified time window. This tool retrieves all attribute names that exist in traces during the specified time range, which can be used for filtering and querying traces.
+
+Parameters:
+
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now for the time window. Default: 15. Examples: 15, 30, 60.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `region` (string, optional): AWS region to query. Leave empty to use default from configuration. Examples: ap-south-1, us-east-1, eu-west-1.
+
+Returns:
+- An alphabetically sorted list of all available trace attributes (e.g., http.method, http.status_code, db.name, resource_service.name, duration, etc.)
+
+### get_change_events
+
+Get change events from the last9_change_events prometheus metric over a given time range. Returns change events that occurred in the specified time window, including deployments, configuration changes, and other system modifications.
+
+Parameters:
+
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - lookback_minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60 minutes. Examples: 60, 30, 15.
+- `service` (string, optional): Name of the service to filter change events for.
+- `environment` (string, optional): Environment to filter by.
+- `event_name` (string, optional): Name of the change event to filter by (use available_event_names to see valid values).
+
+Returns:
+- `available_event_names`: List of all available event types that can be used for filtering
+- `change_events`: Array of timeseries data with metric labels and timestamp-value pairs
+- `count`: Total number of change events returned
+- `time_range`: Start and end time of the query window
+
+Each change event includes:
+- `metric`: Map of metric labels (service_name, env, event_type, message, etc.)
+- `values`: Array of timestamp-value pairs representing the timeseries data
+
+Common event types include: deployment, config_change, rollback, scale_up/scale_down, restart, upgrade/downgrade, maintenance, backup/restore, health_check, certificate, database.
+
+Best practices:
+1. First call without event_name to get available_event_names
+2. Use exact event name from available_event_names for the event_name parameter
+3. Combine with other filters (service, environment, time) for precise results
+
 ## Installation
 
-You can install the Last9 Observability MCP server using either:
+You can install and run the Last9 Observability MCP server in several ways:
 
-### Homebrew
+### Local Installation
+
+For local development and traditional STDIO usage:
+
+#### Homebrew
 
 ```bash
 # Add the Last9 tap
@@ -308,7 +378,7 @@ brew tap last9/tap
 brew install last9-mcp
 ```
 
-### NPM
+#### NPM
 
 ```bash
 # Install globally
@@ -331,6 +401,8 @@ The Last9 MCP server requires the following environment variables:
 - `LAST9_REFRESH_TOKEN`: (required) Refresh Token with Write permissions, needed
   for accessing control plane APIs from
   [API Access](https://app.last9.io/settings/api-access)
+
+## Usage
 
 ## Usage with Claude Desktop
 

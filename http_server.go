@@ -180,6 +180,7 @@ func (h *HTTPServer) handleMCPRequest(req *jsonrpc2.Request, sessionID string) (
 		h.handleToolCall(req, &resp)
 		return resp, true
 
+
 	default:
 		resp.Error = &jsonrpc2.Error{
 			Code:    jsonrpc2.CodeMethodNotFound,
@@ -310,3 +311,4 @@ func (h *HTTPServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+

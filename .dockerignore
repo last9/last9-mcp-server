@@ -1,0 +1,48 @@
+# Build and test artifacts
+*.out
+*.test
+*.prof
+
+# Development files
+.git/
+.gitignore
+*.md
+LICENSE
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Coverage reports
+coverage.html
+coverage.out
+
+# Dependencies
+vendor/
+
+# Build cache
+.cache/
