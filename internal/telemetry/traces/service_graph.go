@@ -81,7 +81,7 @@ func NewGetServiceGraphHandler(client *http.Client, cfg models.Config) func(cont
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
-			return mcp.CallToolResult{}, fmt.Errorf("service graph API request failed with status %d: %s", resp.StatusCode, string(body))
+			return nil, nil, fmt.Errorf("service graph API request failed with status %d: %s", resp.StatusCode, string(body))
 		}
 
 		var result interface{}

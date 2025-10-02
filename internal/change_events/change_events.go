@@ -93,15 +93,15 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 		)
 
 		// Handle lookback_minutes parameter
-		if lookback, ok := params.Arguments["lookback_minutes"].(float64); ok {
-			lookbackMinutes = int(lookback)
+		if args.LookbackMinutes > 0 {
+			lookbackMinutes = args.LookbackMinutes
 		}
 
 		// Handle end_time_iso parameter
-		if endStr, ok := params.Arguments["end_time_iso"].(string); ok && endStr != "" {
-			t, err := time.Parse("2006-01-02 15:04:05", endStr)
+		if args.EndTimeISO != "" {
+			t, err := time.Parse("2006-01-02 15:04:05", args.EndTimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid end_time_iso format: %w", err)
+				return nil, nil, fmt.Errorf("invalid end_time_iso format: %w", err)
 			}
 			endTimeParam = t.Unix()
 		} else {
@@ -109,10 +109,10 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 		}
 
 		// Handle start_time_iso parameter
-		if startStr, ok := params.Arguments["start_time_iso"].(string); ok && startStr != "" {
-			t, err := time.Parse("2006-01-02 15:04:05", startStr)
+		if args.StartTimeISO != "" {
+			t, err := time.Parse("2006-01-02 15:04:05", args.StartTimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid start_time_iso format: %w", err)
+				return nil, nil, fmt.Errorf("invalid start_time_iso format: %w", err)
 			}
 			startTimeParam = t.Unix()
 		} else {
@@ -120,25 +120,25 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 		}
 
 		// First, fetch all available event_name values using the series API
-		availableEventNames, err := fetchAvailableEventNames(client, startTimeParam, endTimeParam, cfg)
+		availableEventNames, err := fetchAvailableEventNames(ctx, client, startTimeParam, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to fetch available event names: %w", err)
+			return nil, nil, fmt.Errorf("failed to fetch available event names: %w", err)
 		}
 
 		// Build label filters for the Prometheus query
 		var labelFilters []string
 
-		if service, ok := params.Arguments["service"].(string); ok && service != "" {
-			labelFilters = append(labelFilters, fmt.Sprintf(`service_name="%s"`, service))
+		if args.Service != "" {
+			labelFilters = append(labelFilters, fmt.Sprintf(`service_name="%s"`, args.Service))
 		}
 
-		if env, ok := params.Arguments["environment"].(string); ok && env != "" {
-			labelFilters = append(labelFilters, fmt.Sprintf(`env="%s"`, env))
+		if args.Environment != "" {
+			labelFilters = append(labelFilters, fmt.Sprintf(`env="%s"`, args.Environment))
 		}
 
 		// Use event_name parameter directly - the AI should provide the exact event type
-		if eventName, ok := params.Arguments["event_name"].(string); ok && eventName != "" {
-			labelFilters = append(labelFilters, fmt.Sprintf(`event_type="%s"`, eventName))
+		if args.EventName != "" {
+			labelFilters = append(labelFilters, fmt.Sprintf(`event_type="%s"`, args.EventName))
 		}
 
 		// Add default filters to exclude backup and rehydration events
@@ -157,24 +157,24 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 		// Make range query to get change events over time
 		resp, err := utils.MakePromRangeAPIQuery(ctx, client, promql, startTimeParam, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to query change events: %w", err)
+			return nil, nil, fmt.Errorf("failed to query change events: %w", err)
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
-			return mcp.CallToolResult{}, fmt.Errorf("change events API request failed with status %d: %s", resp.StatusCode, string(body))
+			return nil, nil, fmt.Errorf("change events API request failed with status %d: %s", resp.StatusCode, string(body))
 		}
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to read response body: %w", err)
+			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 
 		// Parse Prometheus response into timeseries format
 		changeEvents, err := parseChangeEventsTimeSeries(body)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to parse change events: %w", err)
+			return nil, nil, fmt.Errorf("failed to parse change events: %w", err)
 		}
 
 		result := map[string]any{
@@ -190,24 +190,23 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 		// Format the response as JSON
 		resultJSON, err := json.Marshal(result)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to marshal result: %w", err)
+			return nil, nil, fmt.Errorf("failed to marshal result: %w", err)
 		}
 
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
 					Text: string(resultJSON),
-					Type: "text",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 }
 
 // fetchAvailableEventNames fetches all available event_name values from the last9_change_events metric
-func fetchAvailableEventNames(client *http.Client, startTime, endTime int64, cfg models.Config) ([]string, error) {
+func fetchAvailableEventNames(ctx context.Context, client *http.Client, startTime, endTime int64, cfg models.Config) ([]string, error) {
 	// Use the label values API to get all event_name values
-	resp, err := utils.MakePromLabelValuesAPIQuery(client, "event_type", "last9_change_events", startTime, endTime, cfg)
+	resp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, "event_type", "last9_change_events", startTime, endTime, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query event names: %w", err)
 	}
