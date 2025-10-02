@@ -16,6 +16,9 @@ jobs:
   tag-and-release:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    outputs:
+      version_changed: ${{ steps.version_change.outputs.changed }}
+      new_version: ${{ steps.version_change.outputs.new_version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -48,19 +51,11 @@ jobs:
 
       - name: Create tag if version changed
         if: steps.version_change.outputs.changed == 'true'
-        id: create_tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag v${{ steps.version_change.outputs.new_version }}
           git push origin v${{ steps.version_change.outputs.new_version }}
-          echo "tag=v${{ steps.version_change.outputs.new_version }}" >> $GITHUB_OUTPUT
-
-      - name: Set tag output
-        if: steps.version_change.outputs.changed == 'true'
-        id: tag_output
-        run: |
-          echo "::set-output name=tag::v${{ steps.version_change.outputs.new_version }}"
 
       - name: Run GoReleaser
         if: steps.version_change.outputs.changed == 'true'
@@ -80,3 +75,36 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.HOMEBREW_TAP_TOKEN }}" \
             https://api.github.com/repos/last9/homebrew-tap/dispatches \
             -d '{"event_type":"update-last9-mcp","client_payload":{"tag":"v${{ steps.version_change.outputs.new_version }}"}}'
+
+  publish-docker:
+    needs: tag-and-release
+    if: needs.tag-and-release.outputs.version_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Registry
+        if: ${{ secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '' }}
+        uses: docker/login-action@v3
+        with:
+          registry: docker-registry.last9.io
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push Docker Image
+        if: ${{ secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '' }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            docker-registry.last9.io/last9/last9-mcp-server:v${{ needs.tag-and-release.outputs.new_version }}
+            docker-registry.last9.io/last9/last9-mcp-server:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
