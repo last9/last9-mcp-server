@@ -1,6 +1,7 @@
 package change_events
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/acrmp/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // TimeSeriesPoint represents a single data point in a time series
@@ -74,8 +75,18 @@ Parameters:
 - environment: (Optional) Environment to filter by
 - event_name: (Optional) Name of the change event to filter by (use available_event_names to see valid values)`
 
-func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
+// GetChangeEventsArgs represents the input arguments for the get_change_events tool
+type GetChangeEventsArgs struct {
+	StartTimeISO    string `json:"start_time_iso,omitempty"`
+	EndTimeISO      string `json:"end_time_iso,omitempty"`
+	LookbackMinutes int    `json:"lookback_minutes,omitempty"`
+	Service         string `json:"service,omitempty"`
+	Environment     string `json:"environment,omitempty"`
+	EventName       string `json:"event_name,omitempty"`
+}
+
+func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetChangeEventsArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args GetChangeEventsArgs) (*mcp.CallToolResult, any, error) {
 		var (
 			startTimeParam, endTimeParam int64
 			lookbackMinutes              = 60 // default lookback
@@ -144,7 +155,7 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(mcp.
 		promql := fmt.Sprintf("last9_change_events%s", filterStr)
 
 		// Make range query to get change events over time
-		resp, err := utils.MakePromRangeAPIQuery(client, promql, startTimeParam, endTimeParam, cfg)
+		resp, err := utils.MakePromRangeAPIQuery(ctx, client, promql, startTimeParam, endTimeParam, cfg)
 		if err != nil {
 			return mcp.CallToolResult{}, fmt.Errorf("failed to query change events: %w", err)
 		}
