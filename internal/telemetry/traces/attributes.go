@@ -2,6 +2,7 @@ package traces
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"last9-mcp/internal/models"
@@ -11,7 +12,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/acrmp/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // GetTraceAttributesDescription describes the trace attributes tool
@@ -32,9 +33,17 @@ type TraceAttributesResponse struct {
 	Status string              `json:"status"`
 }
 
+// GetTraceAttributesArgs represents the input arguments for the get_trace_attributes tool
+type GetTraceAttributesArgs struct {
+	LookbackMinutes int    `json:"lookback_minutes,omitempty"`
+	StartTimeISO    string `json:"start_time_iso,omitempty"`
+	EndTimeISO      string `json:"end_time_iso,omitempty"`
+	Region          string `json:"region,omitempty"`
+}
+
 // NewGetTraceAttributesHandler creates a handler for fetching trace attributes
-func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
+func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTraceAttributesArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args GetTraceAttributesArgs) (*mcp.CallToolResult, any, error) {
 		// Parse time range parameters
 		now := time.Now()
 
@@ -43,28 +52,28 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(m
 		endTime := now.Unix()
 
 		// Check for lookback_minutes parameter
-		if lookback, ok := params.Arguments["lookback_minutes"].(float64); ok {
-			startTime = now.Add(-time.Duration(lookback) * time.Minute).Unix()
+		if args.LookbackMinutes > 0 {
+			startTime = now.Add(-time.Duration(args.LookbackMinutes) * time.Minute).Unix()
 		}
 
 		// Check for explicit start_time_iso
-		if startTimeISO, ok := params.Arguments["start_time_iso"].(string); ok && startTimeISO != "" {
-			if parsed, err := time.Parse("2006-01-02 15:04:05", startTimeISO); err == nil {
+		if args.StartTimeISO != "" {
+			if parsed, err := time.Parse("2006-01-02 15:04:05", args.StartTimeISO); err == nil {
 				startTime = parsed.Unix()
 			}
 		}
 
 		// Check for explicit end_time_iso
-		if endTimeISO, ok := params.Arguments["end_time_iso"].(string); ok && endTimeISO != "" {
-			if parsed, err := time.Parse("2006-01-02 15:04:05", endTimeISO); err == nil {
+		if args.EndTimeISO != "" {
+			if parsed, err := time.Parse("2006-01-02 15:04:05", args.EndTimeISO); err == nil {
 				endTime = parsed.Unix()
 			}
 		}
 
 		// Get region parameter or use default from base URL
 		region := utils.GetDefaultRegion(cfg.BaseURL)
-		if r, ok := params.Arguments["region"].(string); ok && r != "" {
-			region = r
+		if args.Region != "" {
+			region = args.Region
 		}
 
 		// Build the API URL
@@ -93,25 +102,25 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(m
 
 		bodyBytes, err := json.Marshal(requestBody)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to marshal request body: %v", err)
+			return nil, nil, fmt.Errorf("failed to marshal request body: %v", err)
 		}
 
 		// Create the request
-		req, err := http.NewRequest("POST", fullURL, bytes.NewBuffer(bodyBytes))
+		httpReq, err := http.NewRequest("POST", fullURL, bytes.NewBuffer(bodyBytes))
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to create request: %v", err)
+			return nil, nil, fmt.Errorf("failed to create request: %v", err)
 		}
 
 		// Set headers
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
-		req.Header.Set("User-Agent", "Last9-MCP-Server/1.0")
+		httpReq.Header.Set("Accept", "application/json")
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
+		httpReq.Header.Set("User-Agent", "Last9-MCP-Server/1.0")
 
 		// Execute the request
-		resp, err := client.Do(req)
+		resp, err := client.Do(httpReq)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to execute request: %v", err)
+			return nil, nil, fmt.Errorf("failed to execute request: %v", err)
 		}
 		defer resp.Body.Close()
 
@@ -119,30 +128,29 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(m
 		if resp.StatusCode != http.StatusOK {
 			var errorBody map[string]interface{}
 			json.NewDecoder(resp.Body).Decode(&errorBody)
-			return mcp.CallToolResult{}, fmt.Errorf("API returned status %d: %v", resp.StatusCode, errorBody)
+			return nil, nil, fmt.Errorf("API returned status %d: %v", resp.StatusCode, errorBody)
 		}
 
 		// Parse the response
 		var result TraceAttributesResponse
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode response: %v", err)
+			return nil, nil, fmt.Errorf("failed to decode response: %v", err)
 		}
 
 		// Check API status
 		if result.Status != "success" {
-			return mcp.CallToolResult{}, fmt.Errorf("API returned non-success status: %s", result.Status)
+			return nil, nil, fmt.Errorf("API returned non-success status: %s", result.Status)
 		}
 
 		// Extract attributes as simple list
 		if len(result.Data) == 0 {
-			return mcp.CallToolResult{
-				Content: []any{
-					mcp.TextContent{
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.TextContent{
 						Text: "No trace attributes found in the specified time window",
-						Type: "text",
 					},
 				},
-			}, nil
+			}, nil, nil
 		}
 
 		// Extract all attributes into a simple list
@@ -170,13 +178,12 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(m
 		}
 
 		// Return the result
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
 					Text: summary,
-					Type: "text",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 }

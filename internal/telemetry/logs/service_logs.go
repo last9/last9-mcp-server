@@ -1,6 +1,7 @@
 package logs
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,7 +11,7 @@ import (
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
-	"github.com/acrmp/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // GetServiceLogsDescription provides the description for the service logs tool
@@ -61,84 +62,85 @@ type LogEntry struct {
 	ServiceName string `json:"service_name"`
 }
 
+// GetServiceLogsArgs represents the input arguments for the get_service_logs tool
+type GetServiceLogsArgs struct {
+	Service         string   `json:"service" jsonschema:"Service name to retrieve logs for (e.g. api)"`
+	StartTimeISO    string   `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO 8601 format (e.g. 2023-10-01T10:00:00Z). If not provided lookback_minutes is used"`
+	EndTimeISO      string   `json:"end_time_iso,omitempty" jsonschema:"End time in ISO 8601 format (e.g. 2023-10-01T11:00:00Z). If not provided current time is used"`
+	LookbackMinutes int      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time if start_time_iso not provided (default: 60, range: 1-10080)"`
+	Limit           int      `json:"limit,omitempty" jsonschema:"Maximum number of log entries to return (default: 20, range: 1-1000)"`
+	SeverityFilters []string `json:"severity_filters,omitempty" jsonschema:"Array of severity patterns to match (uses OR logic) (e.g. [error warn])"`
+	BodyFilters     []string `json:"body_filters,omitempty" jsonschema:"Array of message content patterns to match (uses OR logic) (e.g. [timeout failed])"`
+	Env             string   `json:"env,omitempty" jsonschema:"Environment to filter by. Empty string if environment is unknown (e.g. production)"`
+}
+
 // NewGetServiceLogsHandler creates a new handler for the get_service_logs tool
-func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
+func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetServiceLogsArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args GetServiceLogsArgs) (*mcp.CallToolResult, any, error) {
 		// Validate required parameters
-		service, ok := params.Arguments["service_name"].(string)
-		if !ok || service == "" {
-			return mcp.CallToolResult{}, fmt.Errorf("service_name parameter is required")
+		if args.Service == "" {
+			return nil, nil, fmt.Errorf("service parameter is required")
 		}
 
-		// Get limit parameter
-		limit := 20
-		if l, ok := params.Arguments["limit"].(float64); ok {
-			limit = int(l)
+		// Set default values
+		limit := args.Limit
+		if limit == 0 {
+			limit = 20
 		}
 
-		// Get severity filters parameter (array allows multiple severity levels to be matched with OR logic)
-		var severityFilters []string
-		if filters, ok := params.Arguments["severity_filters"].([]interface{}); ok {
-			for _, filter := range filters {
-				if filterStr, ok := filter.(string); ok {
-					severityFilters = append(severityFilters, filterStr)
-				}
-			}
+		lookbackMinutes := args.LookbackMinutes
+		if lookbackMinutes == 0 {
+			lookbackMinutes = 60
 		}
 
-		// Get body filters parameter (array allows multiple message patterns to be matched with OR logic)
-		var bodyFilters []string
-		if filters, ok := params.Arguments["body_filters"].([]interface{}); ok {
-			for _, filter := range filters {
-				if filterStr, ok := filter.(string); ok {
-					bodyFilters = append(bodyFilters, filterStr)
-				}
-			}
+		// Convert args to map for GetTimeRange utility
+		params := make(map[string]interface{})
+		if args.StartTimeISO != "" {
+			params["start_time_iso"] = args.StartTimeISO
+		}
+		if args.EndTimeISO != "" {
+			params["end_time_iso"] = args.EndTimeISO
 		}
 
 		// Get time range using existing utility
-		startTime, endTime, err := utils.GetTimeRange(params.Arguments, 60) // Default 60 minutes lookback
+		startTime, endTime, err := utils.GetTimeRange(params, lookbackMinutes)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("invalid time range: %w", err)
+			return nil, nil, fmt.Errorf("invalid time range: %w", err)
 		}
 
 		// Fetch physical index before making logs queries
 		// Extract environment parameter if available
-		env := ""
-		if envParam, ok := params.Arguments["env"].(string); ok {
-			env = envParam
-		}
+		env := args.Env
 
-		physicalIndex, err := utils.FetchPhysicalIndex(client, cfg, service, env)
+		physicalIndex, err := utils.FetchPhysicalIndex(ctx, client, cfg, args.Service, env)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to fetch physical index: %w", err)
+			return nil, nil, fmt.Errorf("failed to fetch physical index: %w", err)
 		}
 
 		// Fetch raw logs using the existing logs API approach with physical index
-		logs, err := fetchServiceLogs(client, cfg, service, startTime, endTime, limit, severityFilters, bodyFilters, physicalIndex)
+		logs, err := fetchServiceLogs(ctx, client, cfg, args.Service, startTime, endTime, limit, args.SeverityFilters, args.BodyFilters, physicalIndex)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to fetch service logs: %w", err)
+			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
 
 		// Format response as JSON for better readability
 		responseJSON, err := json.MarshalIndent(logs, "", "  ")
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to format response: %w", err)
+			return nil, nil, fmt.Errorf("failed to format response: %w", err)
 		}
 
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
 					Text: string(responseJSON),
-					Type: "text",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 }
 
 // fetchServiceLogs retrieves raw log entries for a specific service using utils package
-func fetchServiceLogs(client *http.Client, cfg models.Config, service string, startTime, endTime time.Time, limit int, severityFilters []string, bodyFilters []string, physicalIndex string) (*ServiceLogsResponse, error) {
+func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Config, service string, startTime, endTime time.Time, limit int, severityFilters []string, bodyFilters []string, physicalIndex string) (*ServiceLogsResponse, error) {
 	// Convert time.Time to Unix milliseconds for the utils function
 	startTimeMs := startTime.UnixMilli()
 	endTimeMs := endTime.UnixMilli()
@@ -147,7 +149,7 @@ func fetchServiceLogs(client *http.Client, cfg models.Config, service string, st
 	apiRequest := utils.CreateServiceLogsAPIRequest(service, startTimeMs, endTimeMs, severityFilters, bodyFilters, physicalIndex)
 
 	// Use the existing utils function to make the API call
-	resp, err := utils.MakeServiceLogsAPI(client, apiRequest, &cfg)
+	resp, err := utils.MakeServiceLogsAPI(ctx, client, apiRequest, &cfg)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}

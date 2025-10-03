@@ -1,6 +1,7 @@
 package alerting
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/acrmp/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // AlertRule represents an alert configuration from Last9 API
@@ -121,44 +122,46 @@ const GetAlertsDescription = `
 	- fingerprint: Unique fingerprint for this alert instance
 `
 
-func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
+type GetAlertConfigArgs struct{}
+
+func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetAlertConfigArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args GetAlertConfigArgs) (*mcp.CallToolResult, any, error) {
 		// Build the URL for alert rules API
 		url := fmt.Sprintf("%s/alert-rules", cfg.APIBaseURL)
-		
+
 		// Create HTTP request
-		req, err := http.NewRequest("GET", url, nil)
+		httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to create request: %w", err)
+			return nil, nil, fmt.Errorf("failed to create request: %w", err)
 		}
-		
+
 		// Set headers
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
-		
+		httpReq.Header.Set("Accept", "application/json")
+		httpReq.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
+
 		// Make the request
-		resp, err := client.Do(req)
+		resp, err := client.Do(httpReq)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to make request: %w", err)
+			return nil, nil, fmt.Errorf("failed to make request: %w", err)
 		}
 		defer resp.Body.Close()
 		
 		// Check response status
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
-			return mcp.CallToolResult{}, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+			return nil, nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 		}
 		
 		// Read response body
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to read response: %w", err)
+			return nil, nil, fmt.Errorf("failed to read response: %w", err)
 		}
 		
 		// Parse JSON response
 		var alertConfig AlertConfigResponse
 		if err := json.Unmarshal(body, &alertConfig); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to parse response: %w", err)
+			return nil, nil, fmt.Errorf("failed to parse response: %w", err)
 		}
 		
 		// Format the response
@@ -193,68 +196,73 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(mcp.C
 			formattedResponse += fmt.Sprintf("  Group Timeseries Notifications: %v\n", rule.GroupTimeseriesNotifications)
 			formattedResponse += "\n"
 		}
-		
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
+
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
 					Text: formattedResponse,
-					Type: "text",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 }
 
-func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
+type GetAlertsArgs struct {
+	Timestamp float64 `json:"timestamp,omitempty" jsonschema:"Unix timestamp for query time (defaults to current time)"`
+	Window    float64 `json:"window,omitempty" jsonschema:"Time window in seconds (default: 900, range: 60-86400)"`
+}
+
+func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetAlertsArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args GetAlertsArgs) (*mcp.CallToolResult, any, error) {
+
 		// Parse timestamp parameter (defaults to current time)
 		timestamp := time.Now().Unix()
-		if t, ok := params.Arguments["timestamp"].(float64); ok {
-			timestamp = int64(t)
+		if args.Timestamp != 0 {
+			timestamp = int64(args.Timestamp)
 		}
-		
+
 		// Parse window parameter (defaults to 900 seconds = 15 minutes)
 		window := int64(900)
-		if w, ok := params.Arguments["window"].(float64); ok {
-			window = int64(w)
+		if args.Window != 0 {
+			window = int64(args.Window)
 		}
 		
 		// Build the URL for alerts monitoring API
 		url := fmt.Sprintf("%s/alerts/monitor?timestamp=%d&window=%d", cfg.APIBaseURL, timestamp, window)
-		
+
 		// Create HTTP request
-		req, err := http.NewRequest("GET", url, nil)
+		httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to create request: %w", err)
+			return nil, nil, fmt.Errorf("failed to create request: %w", err)
 		}
-		
+
 		// Set headers
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
-		
+		httpReq.Header.Set("Accept", "application/json")
+		httpReq.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
+
 		// Make the request
-		resp, err := client.Do(req)
+		resp, err := client.Do(httpReq)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to make request: %w", err)
+			return nil, nil, fmt.Errorf("failed to make request: %w", err)
 		}
 		defer resp.Body.Close()
 		
 		// Check response status
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
-			return mcp.CallToolResult{}, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+			return nil, nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 		}
 		
 		// Read response body
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to read response: %w", err)
+			return nil, nil, fmt.Errorf("failed to read response: %w", err)
 		}
 		
 		// Parse JSON response
 		var alertsResp AlertsResponse
 		if err := json.Unmarshal(body, &alertsResp); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to parse response: %w", err)
+			return nil, nil, fmt.Errorf("failed to parse response: %w", err)
 		}
 		
 		// Format the response
@@ -324,14 +332,13 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(mcp.CallTo
 				formattedResponse += "\n"
 			}
 		}
-		
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
+
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
 					Text: formattedResponse,
-					Type: "text",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 }

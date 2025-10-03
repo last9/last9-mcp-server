@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"last9-mcp/internal/models"
 
 	"github.com/peterbourgon/ff/v3"
+	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 )
 
 // ExtractOrgSlugFromToken extracts organization slug from JWT token
@@ -78,7 +80,7 @@ func ExtractActionURLFromToken(accessToken string) (string, error) {
 }
 
 // RefreshAccessToken gets a new access token using the refresh token
-func RefreshAccessToken(client *http.Client, cfg models.Config) (string, error) {
+func RefreshAccessToken(ctx context.Context, client *http.Client, cfg models.Config) (string, error) {
 	data := map[string]string{
 		"refresh_token": cfg.RefreshToken,
 	}
@@ -103,7 +105,7 @@ func RefreshAccessToken(client *http.Client, cfg models.Config) (string, error) 
 		return "", fmt.Errorf("failed to parse URL: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", u.String(), bytes.NewReader(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", u.String(), bytes.NewReader(jsonData))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -293,7 +295,8 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 }
 
 func PopulateAPICfg(cfg *models.Config) error {
-	accessToken, err := RefreshAccessToken(http.DefaultClient, *cfg)
+	client := last9mcp.WithHTTPTracing(&http.Client{Timeout: 30 * time.Second})
+	accessToken, err := RefreshAccessToken(context.Background(), client, *cfg)
 	if err != nil {
 		return fmt.Errorf("failed to refresh access token: %w", err)
 	}
@@ -307,12 +310,12 @@ func PopulateAPICfg(cfg *models.Config) error {
 	// make a GET call to /datasources and iterate over the response array
 	// find the element with is_default set to true and extract url, properties.username, properties.password
 	// add bearer token auth to the request header
-	req, err := http.NewRequest("GET", cfg.APIBaseURL+"/datasources", nil)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", cfg.APIBaseURL+"/datasources", nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request for datasources: %w", err)
 	}
 	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to get metrics datasource: %w", err)
 	}
@@ -345,7 +348,7 @@ func PopulateAPICfg(cfg *models.Config) error {
 	return nil
 }
 
-func MakePromInstantAPIQuery(client *http.Client, promql string, endTimeParam int64, cfg models.Config) (*http.Response, error) {
+func MakePromInstantAPIQuery(ctx context.Context, client *http.Client, promql string, endTimeParam int64, cfg models.Config) (*http.Response, error) {
 	promInstantParam := struct {
 		Query     string `json:"query"`
 		Timestamp int64  `json:"timestamp"`
@@ -358,7 +361,7 @@ func MakePromInstantAPIQuery(client *http.Client, promql string, endTimeParam in
 		return nil, err
 	}
 	reqUrl := fmt.Sprintf("%s/prom_query_instant", cfg.APIBaseURL)
-	req, err := http.NewRequest("POST", reqUrl, strings.NewReader(string(bodyBytes)))
+	req, err := http.NewRequestWithContext(ctx, "POST", reqUrl, strings.NewReader(string(bodyBytes)))
 	if err != nil {
 		return nil, err
 	}
@@ -368,7 +371,7 @@ func MakePromInstantAPIQuery(client *http.Client, promql string, endTimeParam in
 	return client.Do(req)
 }
 
-func MakePromRangeAPIQuery(client *http.Client, promql string, startTimeParam, endTimeParam int64, cfg models.Config) (*http.Response, error) {
+func MakePromRangeAPIQuery(ctx context.Context, client *http.Client, promql string, startTimeParam, endTimeParam int64, cfg models.Config) (*http.Response, error) {
 	promRangeParam := struct {
 		Query     string `json:"query"`
 		Timestamp int64  `json:"timestamp"`
@@ -391,7 +394,7 @@ func MakePromRangeAPIQuery(client *http.Client, promql string, startTimeParam, e
 	}
 
 	reqUrl := fmt.Sprintf("%s/prom_query", cfg.APIBaseURL)
-	req, err := http.NewRequest("POST", reqUrl, bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, "POST", reqUrl, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +407,7 @@ func MakePromRangeAPIQuery(client *http.Client, promql string, startTimeParam, e
 // function to get the values of a particular label, for a given query filter
 // path: /prom_label_values
 
-func MakePromLabelValuesAPIQuery(client *http.Client, label string, matches string, startTimeParam, endTimeParam int64, cfg models.Config) (*http.Response, error) {
+func MakePromLabelValuesAPIQuery(ctx context.Context, client *http.Client, label string, matches string, startTimeParam, endTimeParam int64, cfg models.Config) (*http.Response, error) {
 	promLabelValuesParam := struct {
 		Label     string   `json:"label"`
 		Timestamp int64    `json:"timestamp"`
@@ -429,7 +432,7 @@ func MakePromLabelValuesAPIQuery(client *http.Client, label string, matches stri
 	}
 
 	reqUrl := fmt.Sprintf("%s/prom_label_values", cfg.APIBaseURL)
-	req, err := http.NewRequest("POST", reqUrl, bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, "POST", reqUrl, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -439,7 +442,7 @@ func MakePromLabelValuesAPIQuery(client *http.Client, label string, matches stri
 	return client.Do(req)
 }
 
-func MakePromLabelsAPIQuery(client *http.Client, metric string, startTimeParam, endTimeParam int64, cfg models.Config) (*http.Response, error) {
+func MakePromLabelsAPIQuery(ctx context.Context, client *http.Client, metric string, startTimeParam, endTimeParam int64, cfg models.Config) (*http.Response, error) {
 	promLabelsParam := struct {
 		Timestamp int64  `json:"timestamp"`
 		Window    int64  `json:"window"`
@@ -462,7 +465,7 @@ func MakePromLabelsAPIQuery(client *http.Client, metric string, startTimeParam, 
 	}
 
 	reqUrl := fmt.Sprintf("%s/apm/labels", cfg.APIBaseURL)
-	req, err := http.NewRequest("POST", reqUrl, bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, "POST", reqUrl, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -530,7 +533,7 @@ func BuildOrFilter(fieldName string, values []string) map[string]interface{} {
 
 // FetchPhysicalIndex retrieves the physical index for logs queries using the provided service name and environment
 // Uses an instant query for data from the last 1 day
-func FetchPhysicalIndex(client *http.Client, cfg models.Config, serviceName, env string) (string, error) {
+func FetchPhysicalIndex(ctx context.Context, client *http.Client, cfg models.Config, serviceName, env string) (string, error) {
 	// Build the PromQL query with a 2-hour window
 	query := fmt.Sprintf("sum by (name, destination) (physical_index_service_count{service_name='%s'", serviceName)
 	if env != "" {
@@ -542,7 +545,7 @@ func FetchPhysicalIndex(client *http.Client, cfg models.Config, serviceName, env
 	currentTime := time.Now().Unix()
 
 	// Make the Prometheus instant query
-	resp, err := MakePromInstantAPIQuery(client, query, currentTime, cfg)
+	resp, err := MakePromInstantAPIQuery(ctx, client, query, currentTime, cfg)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch physical index: %w", err)
 	}

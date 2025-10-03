@@ -2,6 +2,7 @@ package traces
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,7 +16,7 @@ import (
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
-	"github.com/acrmp/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const (
@@ -142,20 +143,30 @@ var statusCodeMapping = map[string]string{
 	"status_code_ok":    StatusCodeOK,
 }
 
-// parseTraceQueryParams extracts and validates parameters from MCP request
-func parseTraceQueryParams(params mcp.CallToolRequestParams, cfg models.Config) (*TraceQueryParams, error) {
+// GetServiceTracesArgs defines the input structure for getting service traces
+type GetServiceTracesArgs struct {
+	ServiceName       string   `json:"service_name" jsonschema:"Name of the service to get traces for (required)"`
+	LookbackMinutes   float64  `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time (default: 60, range: 1-10080)"`
+	StartTimeISO      string   `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
+	EndTimeISO        string   `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+	Limit             float64  `json:"limit,omitempty" jsonschema:"Maximum number of traces to return (default: 10, range: 1-1000)"`
+	Order             string   `json:"order,omitempty" jsonschema:"Field to order traces by (default: Duration, options: Duration, Timestamp)"`
+	Direction         string   `json:"direction,omitempty" jsonschema:"Sort direction (default: backward, options: forward, backward)"`
+	SpanKind          []string `json:"span_kind,omitempty" jsonschema:"Filter by span kinds (e.g. [\"server\", \"client\"])"`
+	SpanName          string   `json:"span_name,omitempty" jsonschema:"Filter by span name (e.g. user_service)"`
+	StatusCode        []string `json:"status_code,omitempty" jsonschema:"Filter by status codes (e.g. [\"ok\", \"error\"])"`
+}
+
+// parseTraceQueryParams extracts and validates parameters from input struct
+func parseTraceQueryParams(args GetServiceTracesArgs, cfg models.Config) (*TraceQueryParams, error) {
 	// Required parameter
-	serviceName, ok := params.Arguments["service_name"].(string)
-	if !ok {
-		return nil, errors.New("service_name is required")
-	}
-	if serviceName == "" {
-		return nil, errors.New("service_name cannot be empty")
+	if args.ServiceName == "" {
+		return nil, errors.New("service_name is required and cannot be empty")
 	}
 
 	// Parse parameters with defaults
 	queryParams := &TraceQueryParams{
-		ServiceName:     serviceName,
+		ServiceName:     args.ServiceName,
 		LookbackMinutes: LookbackMinutesDefault,
 		Region:          utils.GetDefaultRegion(cfg.BaseURL),
 		Limit:           LimitDefault,
@@ -164,28 +175,29 @@ func parseTraceQueryParams(params mcp.CallToolRequestParams, cfg models.Config) 
 	}
 
 	// Override defaults with provided values
-	if l, ok := params.Arguments["lookback_minutes"].(float64); ok {
-		queryParams.LookbackMinutes = int(l)
+	if args.LookbackMinutes != 0 {
+		queryParams.LookbackMinutes = int(args.LookbackMinutes)
 	}
-	if l, ok := params.Arguments["limit"].(float64); ok {
-		queryParams.Limit = int(l)
+	if args.Limit != 0 {
+		queryParams.Limit = int(args.Limit)
 	}
-	if o, ok := params.Arguments["order"].(string); ok && o != "" {
-		queryParams.Order = o
+	if args.Order != "" {
+		queryParams.Order = args.Order
 	}
-	if d, ok := params.Arguments["direction"].(string); ok && d != "" {
-		queryParams.Direction = d
+	if args.Direction != "" {
+		queryParams.Direction = args.Direction
 	}
-	if sn, ok := params.Arguments["span_name"].(string); ok && sn != "" {
-		queryParams.SpanName = sn
+	if args.SpanName != "" {
+		queryParams.SpanName = args.SpanName
 	}
 
 	// Parse array parameters with mapping
-	queryParams.SpanKinds = mapValues(utils.ParseStringArray(params.Arguments["span_kind"]), spanKindMapping)
-	queryParams.StatusCodes = mapValues(utils.ParseStringArray(params.Arguments["status_code"]), statusCodeMapping)
+	queryParams.SpanKinds = mapValues(args.SpanKind, spanKindMapping)
+	queryParams.StatusCodes = mapValues(args.StatusCode, statusCodeMapping)
 
 	return queryParams, nil
 }
+
 
 // mapValues converts user-friendly terms to constants using the provided mapping
 func mapValues(userValues []string, mapping map[string]string) []string {
@@ -247,7 +259,7 @@ func buildRequestURL(cfg models.Config, params *TraceQueryParams, startTime, end
 }
 
 // createTraceRequest builds the HTTP request with proper headers and payload
-func createTraceRequest(requestURL *url.URL, filters []map[string]interface{}, cfg models.Config) (*http.Request, error) {
+func createTraceRequest(ctx context.Context, requestURL *url.URL, filters []map[string]interface{}, cfg models.Config) (*http.Request, error) {
 	// Create query request payload
 	queryRequest := TraceQueryRequest{
 		Pipeline: []QueryStep{{
@@ -262,7 +274,7 @@ func createTraceRequest(requestURL *url.URL, filters []map[string]interface{}, c
 	}
 
 	// Create HTTP request
-	req, err := http.NewRequest("POST", requestURL.String(), bytes.NewBuffer(payloadBytes))
+	req, err := http.NewRequestWithContext(ctx, "POST", requestURL.String(), bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -370,51 +382,60 @@ func transformToTraceQueryResponse(rawResult map[string]interface{}) TraceQueryR
 }
 
 // GetServiceTracesHandler creates a handler for querying service traces
-func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
+func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetServiceTracesArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args GetServiceTracesArgs) (*mcp.CallToolResult, any, error) {
 		// Parse and validate parameters
-		queryParams, err := parseTraceQueryParams(params, cfg)
+		queryParams, err := parseTraceQueryParams(args, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
+		}
+
+		// Prepare arguments map for GetTimeRange function
+		arguments := make(map[string]interface{})
+		if args.StartTimeISO != "" {
+			arguments["start_time_iso"] = args.StartTimeISO
+		}
+		if args.EndTimeISO != "" {
+			arguments["end_time_iso"] = args.EndTimeISO
 		}
 
 		// Get time range
-		startTime, endTime, err := utils.GetTimeRange(params.Arguments, queryParams.LookbackMinutes)
+		startTime, endTime, err := utils.GetTimeRange(arguments, queryParams.LookbackMinutes)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
 
 		// Build request URL
 		requestURL, err := buildRequestURL(cfg, queryParams, startTime.Unix(), endTime.Unix())
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
 
 		// Build filters
 		filters := buildTraceFilters(queryParams)
 
 		// Create HTTP request
-		req, err := createTraceRequest(requestURL, filters, cfg)
+		httpReq, err := createTraceRequest(ctx, requestURL, filters, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
 
 		// Execute request
-		resp, err := client.Do(req)
+		resp, err := client.Do(httpReq)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("request failed: %w", err)
+			return nil, nil, fmt.Errorf("request failed: %w", err)
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
-			return mcp.CallToolResult{}, fmt.Errorf("API request failed with status %d: %s",
+			return nil, nil, fmt.Errorf("API request failed with status %d: %s",
 				resp.StatusCode, string(body))
 		}
 
 		var result map[string]interface{}
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+			return nil, nil, fmt.Errorf("failed to decode response: %w", err)
 		}
 
 		// Transform raw response to structured TraceQueryResponse
@@ -422,16 +443,15 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(mcp.Ca
 
 		jsonData, err := json.Marshal(traceResponse)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to marshal response: %w", err)
+			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
 
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
 					Text: string(jsonData),
-					Type: "text",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 }

@@ -3,12 +3,13 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
-	"github.com/acrmp/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func main() {
@@ -23,28 +24,25 @@ func main() {
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
 		log.Fatalf("failed to refresh access token: %v", err)
 	}
-	log.Printf("API config populated successfully")
 
-	tools, err := createTools(cfg)
-	if err != nil {
-		log.Fatalf("create tools: %v", err)
-	}
-	log.Printf("Tools created: %d tools registered", len(tools))
-
-	info := mcp.Implementation{
+	// Create MCP server with official SDK
+	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "last9-mcp",
 		Version: utils.Version,
+	}, nil)
+
+	// Register all tools
+	if err := registerAllTools(server, cfg); err != nil {
+		log.Fatalf("failed to register tools: %v", err)
 	}
 
 	if cfg.HTTPMode {
-		// Start HTTP server
-		log.Printf("Starting HTTP server mode")
-		httpServer := NewHTTPServer(info, tools, cfg)
-		log.Fatal(httpServer.Start())
+		// TODO: HTTP server mode needs to be updated for new SDK
+		log.Fatal("HTTP mode is temporarily disabled during SDK migration")
 	} else {
 		// Start STDIO server (default)
-		log.Printf("Starting STDIO server mode")
-		s := mcp.NewServer(info, tools)
-		s.Serve()
+		if err := server.Run(context.Background(), mcp.NewStdioTransport()); err != nil {
+			log.Fatalf("Server error: %v", err)
+		}
 	}
 }
