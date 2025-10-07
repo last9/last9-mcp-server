@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"last9-mcp/internal/models"
-	"last9-mcp/internal/utils"
 	"net/http"
 	"strconv"
 	"time"
+
+	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/acrmp/mcp"
 )
@@ -42,7 +43,7 @@ const GetServiceSummaryDescription = `
 	Parameters:
 	- start_time: (Required) Start time of the time range in ISO format.
 	- end_time: (Required) End time of the time range in ISO format.
-	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
+	- env: (Required) Environment to filter by. If not provided, defaults to all environments.
 `
 
 func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
@@ -1783,9 +1784,7 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(mcp
 			return mcp.CallToolResult{}, fmt.Errorf("query is required")
 		}
 
-		var (
-			startTimeParam, endTimeParam int64
-		)
+		var startTimeParam, endTimeParam int64
 
 		// Handle end_time
 		if endStr, ok := params.Arguments["end_time"].(string); ok {
@@ -1912,12 +1911,8 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(m
 // tool handler to get label values for a given label name and filter prometheus query
 // handler for prometheus instant query
 const GetServiceEnvironmentsDescription = `
-	Return the environments available for the services. This tool returns an array of environments.
-	All other tools that retrieve information about services
-	like get_service_performance_details, get_service_dependency_graph, get_service_operations_summary,
-	get_service_sumary etc. require a mandatory "env" parameter. This must be one of the
-	environments returned by this tool. If the returned array is empty, use an empty string ""
-	as the value for the "env" parameter for other tools.
+	Return the environments available for the services. This tool returns an array of environments. These env can act as 
+	label or argument values for other tools.
 	Parameters:
 	- start_time: (Optional) Start time of the time range in ISO format. Defaults to end_time - 1 hour
 	- end_time: (Optional) End time of the time range in ISO format. Defaults to current time
@@ -1930,9 +1925,7 @@ const GetServiceEnvironmentsDescription = `
 // iterate over the values of `env` label and return the unique values
 func NewServiceEnvironmentsHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
 	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-		var (
-			startTimeParam, endTimeParam int64
-		)
+		var startTimeParam, endTimeParam int64
 
 		// Handle end_time
 		if endStr, ok := params.Arguments["end_time"].(string); ok {
@@ -2013,9 +2006,7 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(mc
 		if !ok || label == "" {
 			return mcp.CallToolResult{}, fmt.Errorf("label is required")
 		}
-		var (
-			startTimeParam, endTimeParam int64
-		)
+		var startTimeParam, endTimeParam int64
 
 		// Handle end_time
 		if endStr, ok := params.Arguments["end_time"].(string); ok {
@@ -2089,9 +2080,7 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(mcp.Cal
 		if !ok || query == "" {
 			return mcp.CallToolResult{}, fmt.Errorf("query is required")
 		}
-		var (
-			startTimeParam, endTimeParam int64
-		)
+		var startTimeParam, endTimeParam int64
 
 		// Handle end_time
 		if endStr, ok := params.Arguments["end_time"].(string); ok {
