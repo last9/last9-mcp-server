@@ -1,7 +1,7 @@
 package logs
 
 const GetLogsDescription = `
-	Get logs using JSON pipeline queries for advanced filtering, parsing, aggregation, and processing.
+	Get logs for service or group of services using JSON pipeline queries for advanced filtering, parsing, aggregation, and processing. 
 	
 	This tool requires the logjson_query parameter which contains a JSON pipeline query. Use the logjson_query_builder prompt to generate these queries from natural language descriptions.
 
