@@ -3,10 +3,12 @@ package logs
 import (
 	"encoding/json"
 	"fmt"
-	"last9-mcp/internal/models"
-	"last9-mcp/internal/utils"
+	"io"
 	"net/http"
 	"time"
+
+	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/acrmp/mcp"
 )
@@ -39,6 +41,11 @@ func handleLogJSONQuery(client *http.Client, cfg models.Config, logjsonQuery int
 		return mcp.CallToolResult{}, fmt.Errorf("failed to call log JSON query API: %v", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return mcp.CallToolResult{}, fmt.Errorf("logs API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
 
 	// Parse response
 	var result map[string]interface{}

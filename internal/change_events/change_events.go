@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"last9-mcp/internal/models"
-	"last9-mcp/internal/utils"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/acrmp/mcp"
 )
@@ -149,6 +150,11 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(mcp.
 			return mcp.CallToolResult{}, fmt.Errorf("failed to query change events: %w", err)
 		}
 		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return mcp.CallToolResult{}, fmt.Errorf("change events API request failed with status %d: %s", resp.StatusCode, string(body))
+		}
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
