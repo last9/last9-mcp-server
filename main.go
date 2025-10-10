@@ -38,8 +38,13 @@ func main() {
 	}
 
 	if cfg.HTTPMode {
-		// TODO: HTTP server mode needs to be updated for new SDK
-		log.Fatal("HTTP mode is temporarily disabled during SDK migration")
+		// Create HTTP server using NewHTTPServer
+		httpServer := NewHTTPServer(server, cfg)
+
+		// Start the server
+		if err := httpServer.Start(); err != nil {
+			log.Fatalf("HTTP server error: %v", err)
+		}
 	} else {
 		// Start STDIO server (default)
 		log.Fatal(server.Serve(context.Background(), &mcp.StdioTransport{}))
