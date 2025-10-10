@@ -9,6 +9,7 @@ import (
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
+	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -25,11 +26,11 @@ func main() {
 		log.Fatalf("failed to refresh access token: %v", err)
 	}
 
-	// Create MCP server with official SDK
-	server := mcp.NewServer(&mcp.Implementation{
-		Name:    "last9-mcp",
-		Version: utils.Version,
-	}, nil)
+	// Create MCP server with new SDK
+	server, err := last9mcp.NewServer("last9-mcp", utils.Version)
+	if err != nil {
+		log.Fatalf("failed to create MCP server: %v", err)
+	}
 
 	// Register all tools
 	if err := registerAllTools(server, cfg); err != nil {
@@ -41,8 +42,6 @@ func main() {
 		log.Fatal("HTTP mode is temporarily disabled during SDK migration")
 	} else {
 		// Start STDIO server (default)
-		if err := server.Run(context.Background(), mcp.NewStdioTransport()); err != nil {
-			log.Fatalf("Server error: %v", err)
-		}
+		log.Fatal(server.Serve(context.Background(), &mcp.StdioTransport{}))
 	}
 }
