@@ -92,7 +92,7 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
-			return mcp.CallToolResult{}, fmt.Errorf("exceptions API request failed with status %d: %s", resp.StatusCode, string(body))
+			return nil, nil, fmt.Errorf("exceptions API request failed with status %d: %s", resp.StatusCode, string(body))
 		}
 
 		var result interface{}

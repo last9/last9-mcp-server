@@ -6,21 +6,22 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"last9-mcp/internal/models"
-	"last9-mcp/internal/utils"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // GetServiceGraphArgs defines the input structure for getting service graph
 type GetServiceGraphArgs struct {
-	SpanName          string  `json:"span_name" jsonschema:"Name of the span to get service dependencies for (required)"`
-	LookbackMinutes   float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time (default: 60, range: 1-10080)"`
-	StartTimeISO      string  `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
+	SpanName        string  `json:"span_name" jsonschema:"Name of the span to get service dependencies for (required)"`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time (default: 60, range: 1-10080)"`
+	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
 }
 
 // NewGetServiceGraphHandler creates a handler for getting service dependencies
@@ -81,7 +82,7 @@ func NewGetServiceGraphHandler(client *http.Client, cfg models.Config) func(cont
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
-			return mcp.CallToolResult{}, fmt.Errorf("service graph API request failed with status %d: %s", resp.StatusCode, string(body))
+			return nil, nil, fmt.Errorf("service graph API request failed with status %d: %s", resp.StatusCode, string(body))
 		}
 
 		var result interface{}
