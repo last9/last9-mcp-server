@@ -1,6 +1,7 @@
 package apm
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -12,7 +13,7 @@ import (
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
-	"github.com/acrmp/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // const (
@@ -86,15 +87,15 @@ func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
 	}
 	handler := NewServiceSummaryHandler(server.Client(), cfg)
 
-	params := mcp.CallToolRequestParams{
-		Arguments: map[string]any{
-			"start_time":   time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
-			"end_time":     time.Now().UTC().Format(time.RFC3339),
-			"extra_params": map[string]any{"span_kind": []any{"SPAN_KIND_SERVER", "SPAN_KIND_CLIENT"}},
-		},
+	args := ServiceSummaryArgs{
+		StartTimeISO: time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
+		EndTimeISO:   time.Now().UTC().Format(time.RFC3339),
+		Env:          "test",
 	}
 
-	result, err := handler(params)
+	ctx := context.Background()
+	req := &mcp.CallToolRequest{}
+	result, _, err := handler(ctx, req, args)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -103,7 +104,7 @@ func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
 		t.Fatalf("expected content in result")
 	}
 
-	textContent, ok := result.Content[0].(mcp.TextContent)
+	textContent, ok := result.Content[0].(*mcp.TextContent)
 	if !ok {
 		t.Fatalf("expected TextContent type")
 	}
@@ -129,16 +130,16 @@ func TestGetServicePerformanceDetails(t *testing.T) {
 
 	handler := NewServicePerformanceDetailsHandler(http.DefaultClient, cfg)
 
-	params := mcp.CallToolRequestParams{
-		Arguments: map[string]any{
-			"service_name": "svc",
-			"start_time":   time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
-			"end_time":     time.Now().UTC().Format(time.RFC3339),
-			"environment":  "prod",
-		},
+	args := ServicePerformanceDetailsArgs{
+		ServiceName:  "svc",
+		StartTimeISO: time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
+		EndTimeISO:   time.Now().UTC().Format(time.RFC3339),
+		Env:          "prod",
 	}
 
-	result, err := handler(params)
+	ctx := context.Background()
+	req := &mcp.CallToolRequest{}
+	result, _, err := handler(ctx, req, args)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -147,7 +148,7 @@ func TestGetServicePerformanceDetails(t *testing.T) {
 		t.Fatalf("expected content in result")
 	}
 
-	textContent, ok := result.Content[0].(mcp.TextContent)
+	textContent, ok := result.Content[0].(*mcp.TextContent)
 	if !ok {
 		t.Fatalf("expected TextContent type")
 	}
@@ -173,16 +174,16 @@ func TestGetServiceOperationsSummary(t *testing.T) {
 
 	handler := NewServiceOperationsSummaryHandler(http.DefaultClient, cfg)
 
-	params := mcp.CallToolRequestParams{
-		Arguments: map[string]any{
-			"service_name": "svc",
-			"start_time":   time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
-			"end_time":     time.Now().UTC().Format(time.RFC3339),
-			"environment":  "prod",
-		},
+	args := ServiceOperationsSummaryArgs{
+		ServiceName:  "svc",
+		StartTimeISO: time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
+		EndTimeISO:   time.Now().UTC().Format(time.RFC3339),
+		Env:          "prod",
 	}
 
-	result, err := handler(params)
+	ctx := context.Background()
+	req := &mcp.CallToolRequest{}
+	result, _, err := handler(ctx, req, args)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -191,7 +192,7 @@ func TestGetServiceOperationsSummary(t *testing.T) {
 		t.Fatalf("expected content in result")
 	}
 
-	textContent, ok := result.Content[0].(mcp.TextContent)
+	textContent, ok := result.Content[0].(*mcp.TextContent)
 	if !ok {
 		t.Fatalf("expected TextContent type")
 	}
@@ -216,16 +217,16 @@ func TestGetServiceDependencies(t *testing.T) {
 
 	handler := NewServiceDependencyGraphHandler(http.DefaultClient, cfg)
 
-	params := mcp.CallToolRequestParams{
-		Arguments: map[string]any{
-			"service_name": "svc",
-			"start_time":   time.Now().Add(-60 * time.Minute).UTC().Format(time.RFC3339),
-			"end_time":     time.Now().UTC().Format(time.RFC3339),
-			"environment":  "prod",
-		},
+	args := ServiceDependencyGraphArgs{
+		ServiceName:  "svc",
+		StartTimeISO: time.Now().Add(-60 * time.Minute).UTC().Format(time.RFC3339),
+		EndTimeISO:   time.Now().UTC().Format(time.RFC3339),
+		Env:          "prod",
 	}
 
-	result, err := handler(params)
+	ctx := context.Background()
+	req := &mcp.CallToolRequest{}
+	result, _, err := handler(ctx, req, args)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -233,7 +234,7 @@ func TestGetServiceDependencies(t *testing.T) {
 	if len(result.Content) == 0 {
 		t.Fatalf("expected content in result")
 	}
-	textContent, ok := result.Content[0].(mcp.TextContent)
+	textContent, ok := result.Content[0].(*mcp.TextContent)
 	if !ok {
 		t.Fatalf("expected TextContent type")
 	}
@@ -255,14 +256,14 @@ func TestNewServiceEnvironmentsHandler(t *testing.T) {
 
 	handler := NewServiceEnvironmentsHandler(http.DefaultClient, cfg)
 
-	params := mcp.CallToolRequestParams{
-		Arguments: map[string]any{
-			"start_time": time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
-			"end_time":   time.Now().UTC().Format(time.RFC3339),
-		},
+	args := ServiceEnvironmentsArgs{
+		StartTimeISO: time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
+		EndTimeISO:   time.Now().UTC().Format(time.RFC3339),
 	}
 
-	result, err := handler(params)
+	ctx := context.Background()
+	req := &mcp.CallToolRequest{}
+	result, _, err := handler(ctx, req, args)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -270,7 +271,7 @@ func TestNewServiceEnvironmentsHandler(t *testing.T) {
 	if len(result.Content) == 0 {
 		t.Fatalf("expected content in result")
 	}
-	textContent, ok := result.Content[0].(mcp.TextContent)
+	textContent, ok := result.Content[0].(*mcp.TextContent)
 	if !ok {
 		t.Fatalf("expected TextContent type")
 	}
@@ -294,14 +295,14 @@ func TestPromqlInstantQueryHandler(t *testing.T) {
 
 	handler := NewPromqlInstantQueryHandler(http.DefaultClient, cfg)
 
-	params := mcp.CallToolRequestParams{
-		Arguments: map[string]any{
-			"query": "sum_over_time(trace_call_graph_count{}[1h])",
-			"time":  time.Now().UTC().Format(time.RFC3339),
-		},
+	args := PromqlInstantQueryArgs{
+		Query:   "sum_over_time(trace_call_graph_count{}[1h])",
+		TimeISO: time.Now().UTC().Format(time.RFC3339),
 	}
 
-	result, err := handler(params)
+	ctx := context.Background()
+	req := &mcp.CallToolRequest{}
+	result, _, err := handler(ctx, req, args)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -309,7 +310,7 @@ func TestPromqlInstantQueryHandler(t *testing.T) {
 	if len(result.Content) == 0 {
 		t.Fatalf("expected content in result")
 	}
-	_, ok := result.Content[0].(mcp.TextContent)
+	_, ok := result.Content[0].(*mcp.TextContent)
 	if !ok {
 		t.Fatalf("expected TextContent type")
 	}
@@ -329,15 +330,15 @@ func TestPromqlRangeQueryHandler(t *testing.T) {
 
 	handler := NewPromqlRangeQueryHandler(http.DefaultClient, cfg)
 
-	params := mcp.CallToolRequestParams{
-		Arguments: map[string]any{
-			"query":      "sum(rate(http_request_duration_seconds_count[1m]))",
-			"start_time": time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
-			"end_time":   time.Now().UTC().Format(time.RFC3339),
-		},
+	args := PromqlRangeQueryArgs{
+		Query:        "sum(rate(http_request_duration_seconds_count[1m]))",
+		StartTimeISO: time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
+		EndTimeISO:   time.Now().UTC().Format(time.RFC3339),
 	}
 
-	result, err := handler(params)
+	ctx := context.Background()
+	req := &mcp.CallToolRequest{}
+	result, _, err := handler(ctx, req, args)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -345,7 +346,7 @@ func TestPromqlRangeQueryHandler(t *testing.T) {
 	if len(result.Content) == 0 {
 		t.Fatalf("expected content in result")
 	}
-	textContent, ok := result.Content[0].(mcp.TextContent)
+	textContent, ok := result.Content[0].(*mcp.TextContent)
 	if !ok {
 		t.Fatalf("expected TextContent type")
 	}

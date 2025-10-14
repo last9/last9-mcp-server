@@ -2,6 +2,7 @@ package logs
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,7 +12,7 @@ import (
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
-	"github.com/acrmp/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // GetLogAttributesDescription describes the log attributes tool
@@ -26,9 +27,17 @@ time window, which can then be used in log queries and filters.
 Returns a list of attribute names like "service", "severity", "body", "level", etc.
 `
 
+// GetLogAttributesArgs represents the input arguments for the get_log_attributes tool
+type GetLogAttributesArgs struct {
+	LookbackMinutes int    `json:"lookback_minutes,omitempty"`
+	StartTimeISO    string `json:"start_time_iso,omitempty"`
+	EndTimeISO      string `json:"end_time_iso,omitempty"`
+	Region          string `json:"region,omitempty"`
+}
+
 // NewGetLogAttributesHandler creates a handler for fetching log attributes
-func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
+func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetLogAttributesArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args GetLogAttributesArgs) (*mcp.CallToolResult, any, error) {
 		// Parse time range parameters
 		now := time.Now()
 
@@ -37,28 +46,28 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(mcp
 		endTime := now.Unix()
 
 		// Check for lookback_minutes parameter
-		if lookback, ok := params.Arguments["lookback_minutes"].(float64); ok {
-			startTime = now.Add(-time.Duration(lookback) * time.Minute).Unix()
+		if args.LookbackMinutes > 0 {
+			startTime = now.Add(-time.Duration(args.LookbackMinutes) * time.Minute).Unix()
 		}
 
 		// Check for explicit start_time_iso
-		if startTimeISO, ok := params.Arguments["start_time_iso"].(string); ok && startTimeISO != "" {
-			if parsed, err := time.Parse("2006-01-02 15:04:05", startTimeISO); err == nil {
+		if args.StartTimeISO != "" {
+			if parsed, err := time.Parse("2006-01-02 15:04:05", args.StartTimeISO); err == nil {
 				startTime = parsed.Unix()
 			}
 		}
 
 		// Check for explicit end_time_iso
-		if endTimeISO, ok := params.Arguments["end_time_iso"].(string); ok && endTimeISO != "" {
-			if parsed, err := time.Parse("2006-01-02 15:04:05", endTimeISO); err == nil {
+		if args.EndTimeISO != "" {
+			if parsed, err := time.Parse("2006-01-02 15:04:05", args.EndTimeISO); err == nil {
 				endTime = parsed.Unix()
 			}
 		}
 
 		// Get region parameter or use default from base URL
 		region := utils.GetDefaultRegion(cfg.BaseURL)
-		if r, ok := params.Arguments["region"].(string); ok && r != "" {
-			region = r
+		if args.Region != "" {
+			region = args.Region
 		}
 
 		// Calculate time range duration in minutes
@@ -70,13 +79,13 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(mcp
 		queryParams.Set("start", fmt.Sprintf("%d", startTime))
 		queryParams.Set("end", fmt.Sprintf("%d", endTime))
 
-		var req *http.Request
+		var httpReq *http.Request
 		var err error
 
 		if durationMinutes > 20 {
 			// Use GET /logs/api/v1/labels for time ranges > 20 minutes
 			apiURL := fmt.Sprintf("%s/logs/api/v1/labels?%s", cfg.APIBaseURL, queryParams.Encode())
-			req, err = http.NewRequest("GET", apiURL, nil)
+			httpReq, err = http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 		} else {
 			// Use POST /logs/api/v2/series/json for time ranges <= 20 minutes
 			apiURL := fmt.Sprintf("%s/logs/api/v2/series/json?%s", cfg.APIBaseURL, queryParams.Encode())
@@ -87,24 +96,24 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(mcp
 			}
 			jsonBody, _ := json.Marshal(pipeline)
 
-			req, err = http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonBody))
+			httpReq, err = http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonBody))
 
 		}
 
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to create request: %v", err)
+			return nil, nil, fmt.Errorf("failed to create request: %v", err)
 		}
 
 		// Set headers
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
-		req.Header.Set("User-Agent", "Last9-MCP-Server/1.0")
-		req.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Accept", "application/json")
+		httpReq.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
+		httpReq.Header.Set("User-Agent", "Last9-MCP-Server/1.0")
+		httpReq.Header.Set("Content-Type", "application/json")
 
 		// Execute the request
-		resp, err := client.Do(req)
+		resp, err := client.Do(httpReq)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to execute request: %v", err)
+			return nil, nil, fmt.Errorf("failed to execute request: %v", err)
 		}
 		defer resp.Body.Close()
 
@@ -112,7 +121,7 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(mcp
 		if resp.StatusCode != http.StatusOK {
 			var errorBody map[string]interface{}
 			json.NewDecoder(resp.Body).Decode(&errorBody)
-			return mcp.CallToolResult{}, fmt.Errorf("API returned status %d: %v", resp.StatusCode, errorBody)
+			return nil, nil, fmt.Errorf("API returned status %d: %v", resp.StatusCode, errorBody)
 		}
 
 		// Parse the response based on which API was used
@@ -124,7 +133,7 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(mcp
 		if durationMinutes > 20 {
 			// Labels API returns array of strings directly
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("failed to decode response: %v", err)
+				return nil, nil, fmt.Errorf("failed to decode response for labels api: %+v", err)
 			}
 		} else {
 			// Series API returns array of objects, extract keys from first object
@@ -134,7 +143,7 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(mcp
 			}
 
 			if err := json.NewDecoder(resp.Body).Decode(&seriesResponse); err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("failed to decode response: %v", err)
+				return nil, nil, fmt.Errorf("failed to decode response: %v", err)
 			}
 
 			result.Status = seriesResponse.Status
@@ -148,7 +157,7 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(mcp
 
 		// Check API status
 		if result.Status != "success" {
-			return mcp.CallToolResult{}, fmt.Errorf("API returned non-success status: %s", result.Status)
+			return nil, nil, fmt.Errorf("API returned non-success status: %s", result.Status)
 		}
 
 		// Format the response for display
@@ -185,13 +194,12 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(mcp
 		}
 
 		// Return the result
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
 					Text: summary,
-					Type: "text",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 }

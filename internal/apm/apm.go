@@ -1,16 +1,18 @@
 package apm
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"last9-mcp/internal/models"
-	"last9-mcp/internal/utils"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/acrmp/mcp"
+	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type ServiceSummary struct {
@@ -28,6 +30,63 @@ type apiPromRangeResp []struct {
 	Values [][]any           `json:"values"`
 }
 
+// Input structs for MCP SDK handlers
+type ServiceSummaryArgs struct {
+	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
+	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+	Env          string `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
+}
+
+type ServiceEnvironmentsArgs struct {
+	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
+	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+}
+
+type ServicePerformanceDetailsArgs struct {
+	ServiceName  string `json:"service_name" jsonschema:"Name of the service to get performance details for (required)"`
+	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
+	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+	Env          string `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
+}
+
+type ServiceOperationsSummaryArgs struct {
+	ServiceName  string `json:"service_name" jsonschema:"Name of the service to get operations summary for (required)"`
+	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
+	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+	Env          string `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
+}
+
+type ServiceDependencyGraphArgs struct {
+	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
+	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+	Env          string `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
+	ServiceName  string `json:"service_name,omitempty" jsonschema:"Service name to focus on in the dependency graph (e.g. api-service)"`
+}
+
+type PromqlRangeQueryArgs struct {
+	Query        string `json:"query" jsonschema:"PromQL query to execute (required)"`
+	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
+	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+}
+
+type PromqlInstantQueryArgs struct {
+	Query   string `json:"query" jsonschema:"PromQL query to execute (required)"`
+	TimeISO string `json:"time_iso,omitempty" jsonschema:"Evaluation time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
+}
+
+type PromqlLabelValuesArgs struct {
+	MatchQuery   string `json:"match_query,omitempty" jsonschema:"PromQL query to match series (e.g. up{job=\"prometheus\"})"`
+	Label        string `json:"label" jsonschema:"Label name to get values for (required)"`
+	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
+	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+}
+
+type PromqlLabelsArgs struct {
+	MatchQuery   string `json:"match_query,omitempty" jsonschema:"PromQL query to match series (e.g. up{job=\"prometheus\"})"`
+	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
+	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+}
+
 const GetServiceSummaryDescription = `
 	Get service summary over a given time range.
 	Includes service name, environment, throughput, error rate, and response time.
@@ -42,20 +101,20 @@ const GetServiceSummaryDescription = `
 	Parameters:
 	- start_time: (Required) Start time of the time range in ISO format.
 	- end_time: (Required) End time of the time range in ISO format.
-	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
+	- env: (Required) Environment to filter by. If not provided, defaults to all environments.
 `
 
-func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
+func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceSummaryArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args ServiceSummaryArgs) (*mcp.CallToolResult, any, error) {
 		// Accept time range parameters
 		var (
 			startTimeParam, endTimeParam int64
 		)
 		// Accept end_time in ISO8601 format (e.g., "2024-06-01T13:00:00Z")
-		if endStr, ok := params.Arguments["end_time"].(string); ok {
-			t, err := time.Parse(time.RFC3339, endStr)
+		if args.EndTimeISO != "" {
+			t, err := time.Parse(time.RFC3339, args.EndTimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid end_time format, must be ISO8601: %w", err)
+				return nil, nil, fmt.Errorf("invalid end_time_iso format, must be ISO8601: %w", err)
 			}
 			endTimeParam = t.Unix()
 		} else {
@@ -63,10 +122,10 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(mcp.C
 			endTimeParam = time.Now().Unix()
 		}
 		// Accept start_time in ISO8601 format (e.g., "2024-06-01T12:00:00Z")
-		if startStr, ok := params.Arguments["start_time"].(string); ok {
-			t, err := time.Parse(time.RFC3339, startStr)
+		if args.StartTimeISO != "" {
+			t, err := time.Parse(time.RFC3339, args.StartTimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid start_time format, must be ISO8601: %w", err)
+				return nil, nil, fmt.Errorf("invalid start_time_iso format, must be ISO8601: %w", err)
 			}
 			startTimeParam = t.Unix()
 		} else {
@@ -75,10 +134,8 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(mcp.C
 		}
 
 		// Accept env from parameters if provided
-		var env string
-		if e, ok := params.Arguments["env"].(string); ok && e != "" {
-			env = e
-		} else {
+		env := args.Env
+		if env == "" {
 			env = ".*" // default value
 		}
 		// get the value of service througputs using the query
@@ -93,21 +150,21 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(mcp.C
 		)
 
 		// Prepare request to Prometheus (or your metrics backend)
-		resp, err := utils.MakePromInstantAPIQuery(client, promql, endTimeParam, cfg)
+		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, promql, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
+		defer httpResp.Body.Close()
 
 		var promResp map[string]ServiceSummary
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service summary: %s", resp.Status)
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service summary: %s", httpResp.Status)
 		}
 
 		// Extract service summary map from PromQL response
 		var thrResp apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&thrResp); err != nil {
-			return mcp.CallToolResult{}, err
+		if err := json.NewDecoder(httpResp.Body).Decode(&thrResp); err != nil {
+			return nil, nil, err
 		}
 
 		promResp = make(map[string]ServiceSummary)
@@ -127,14 +184,13 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(mcp.C
 		}
 		// If no services found, return empty result
 		if len(promResp) == 0 {
-			return mcp.CallToolResult{
-				Content: []any{
-					mcp.TextContent{
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.TextContent{
 						Text: "No services found for the given parameters",
-						Type: "text",
 					},
 				},
-			}, nil
+			}, nil, nil
 		}
 		// Make another prom_query_instant call for response time
 		respTimePromql := fmt.Sprintf(
@@ -143,18 +199,18 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(mcp.C
 			int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		resp, err = utils.MakePromInstantAPIQuery(client, respTimePromql, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, respTimePromql, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service summary: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service summary: %s", httpResp.Status)
 		}
 
 		var respTimeRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&respTimeRaw); err != nil {
-			return mcp.CallToolResult{}, err
+		if err := json.NewDecoder(httpResp.Body).Decode(&respTimeRaw); err != nil {
+			return nil, nil, err
 		}
 
 		for _, r := range respTimeRaw {
@@ -181,18 +237,18 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(mcp.C
 			int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		resp, err = utils.MakePromInstantAPIQuery(client, errorRateQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, errorRateQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service summary: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service summary: %s", httpResp.Status)
 		}
 
 		var errRateRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&errRateRaw); err != nil {
-			return mcp.CallToolResult{}, err
+		if err := json.NewDecoder(httpResp.Body).Decode(&errRateRaw); err != nil {
+			return nil, nil, err
 		}
 
 		for _, r := range errRateRaw {
@@ -214,16 +270,15 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(mcp.C
 		}
 		returnText, err := json.Marshal(promResp)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to marshal response: %w", err)
+			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
 					Text: string(returnText),
-					Type: "text",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 }
 
@@ -357,18 +412,18 @@ type ServicePerformanceDetails struct {
 	TopErrors []map[string]int64 `json:"top_errors"`
 }
 
-func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
+func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServicePerformanceDetailsArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args ServicePerformanceDetailsArgs) (*mcp.CallToolResult, any, error) {
 		// Parse time parameters
 		var (
 			startTimeParam, endTimeParam int64
 		)
 
 		// Handle end_time
-		if endStr, ok := params.Arguments["end_time"].(string); ok {
-			t, err := time.Parse(time.RFC3339, endStr)
+		if args.EndTimeISO != "" {
+			t, err := time.Parse(time.RFC3339, args.EndTimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid end_time format, must be ISO8601: %w", err)
+				return nil, nil, fmt.Errorf("invalid end_time_iso format, must be ISO8601: %w", err)
 			}
 			endTimeParam = t.Unix()
 		} else {
@@ -376,10 +431,10 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}
 
 		// Handle start_time
-		if startStr, ok := params.Arguments["start_time"].(string); ok {
-			t, err := time.Parse(time.RFC3339, startStr)
+		if args.StartTimeISO != "" {
+			t, err := time.Parse(time.RFC3339, args.StartTimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid start_time format, must be ISO8601: %w", err)
+				return nil, nil, fmt.Errorf("invalid start_time_iso format, must be ISO8601: %w", err)
 			}
 			startTimeParam = t.Unix()
 		} else {
@@ -387,15 +442,15 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}
 
 		// Handle environment
-		env := ".*"
-		if e, ok := params.Arguments["env"].(string); ok && e != "" {
-			env = e
+		env := args.Env
+		if env == "" {
+			env = ".*"
 		}
 
 		// Handle service_name
-		serviceName, ok := params.Arguments["service_name"].(string)
-		if !ok || serviceName == "" {
-			return mcp.CallToolResult{}, fmt.Errorf("service_name is required")
+		serviceName := args.ServiceName
+		if serviceName == "" {
+			return nil, nil, fmt.Errorf("service_name is required")
 		}
 
 		timeRange := fmt.Sprintf("%dm", int((endTimeParam-startTimeParam)/60))
@@ -410,20 +465,20 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			"sum(trace_service_apdex_score{service_name='%s', env=~'%s'})",
 			serviceName, env,
 		)
-		resp, err := utils.MakePromRangeAPIQuery(client, apdexQuery, startTimeParam, endTimeParam, cfg)
+		httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, apdexQuery, startTimeParam, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
+		defer httpResp.Body.Close()
 
-		if resp.StatusCode == http.StatusOK {
-			data, err := io.ReadAll(resp.Body)
+		if httpResp.StatusCode == http.StatusOK {
+			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("failed to read response body: %w", err)
+				return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 			}
 			seriesList, err := parsePromTimeSeries(data)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("failed to parse apdex score: %w", err)
+				return nil, nil, fmt.Errorf("failed to parse apdex score: %w", err)
 			}
 			details.ApdexScore = seriesList
 		}
@@ -433,20 +488,20 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			"sum by (quantile) (trace_service_response_time{service_name='%s', env='%s'}[%s])",
 			serviceName, env, timeRange,
 		)
-		resp, err = utils.MakePromRangeAPIQuery(client, rtQuery, startTimeParam, endTimeParam, cfg)
+		httpResp, err = utils.MakePromRangeAPIQuery(ctx, client, rtQuery, startTimeParam, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
+		defer httpResp.Body.Close()
 
-		if resp.StatusCode == http.StatusOK {
-			data, err := io.ReadAll(resp.Body)
+		if httpResp.StatusCode == http.StatusOK {
+			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("failed to read response body: %w", err)
+				return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 			}
 			seriesList, err := parsePromTimeSeries(data)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("failed to parse response times: %w", err)
+				return nil, nil, fmt.Errorf("failed to parse response times: %w", err)
 			}
 			details.ResponseTimes = seriesList
 		}
@@ -456,20 +511,20 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			"(1 - (sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[%s])) or 0) / (sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[%s])) + 0.0000001)) * 100 default -999",
 			serviceName, env, timeRange, serviceName, env, timeRange,
 		)
-		resp, err = utils.MakePromRangeAPIQuery(client, availQuery, startTimeParam, endTimeParam, cfg)
+		httpResp, err = utils.MakePromRangeAPIQuery(ctx, client, availQuery, startTimeParam, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
+		defer httpResp.Body.Close()
 
-		if resp.StatusCode == http.StatusOK {
-			data, err := io.ReadAll(resp.Body)
+		if httpResp.StatusCode == http.StatusOK {
+			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("failed to read response body: %w", err)
+				return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 			}
 			availabilitySeries, err := parsePromTimeSeries(data)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("failed to parse availability response: %w", err)
+				return nil, nil, fmt.Errorf("failed to parse availability response: %w", err)
 			}
 			details.Availability = availabilitySeries
 		}
@@ -479,21 +534,21 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			"sum by (http_status_code)(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[%s])) * 60 default 0",
 			serviceName, env, timeRange,
 		)
-		resp, err = utils.MakePromRangeAPIQuery(client, throughputQuery, startTimeParam, endTimeParam, cfg)
+		httpResp, err = utils.MakePromRangeAPIQuery(ctx, client, throughputQuery, startTimeParam, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
+		defer httpResp.Body.Close()
 
-		if resp.StatusCode == http.StatusOK {
+		if httpResp.StatusCode == http.StatusOK {
 			// read response body to byte array
-			data, err := io.ReadAll(resp.Body)
+			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("failed to read response body: %w", err)
+				return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 			}
 			details.Throughput, err = parsePromTimeSeries(data)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("failed to parse throughput response: %w", err)
+				return nil, nil, fmt.Errorf("failed to parse throughput response: %w", err)
 			}
 
 		}
@@ -503,20 +558,20 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			"sum by (service_name, http_status_code)(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[%s])) * 60 default 0",
 			serviceName, env, timeRange,
 		)
-		resp, err = utils.MakePromRangeAPIQuery(client, errorRateQuery, startTimeParam, endTimeParam, cfg)
+		httpResp, err = utils.MakePromRangeAPIQuery(ctx, client, errorRateQuery, startTimeParam, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
+		defer httpResp.Body.Close()
 
-		if resp.StatusCode == http.StatusOK {
-			data, err := io.ReadAll(resp.Body)
+		if httpResp.StatusCode == http.StatusOK {
+			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("failed to read response body: %w", err)
+				return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 			}
 			details.ErrorRate, err = parsePromTimeSeries(data)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("failed to parse error rate response: %w", err)
+				return nil, nil, fmt.Errorf("failed to parse error rate response: %w", err)
 			}
 		}
 
@@ -525,20 +580,20 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			"(sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[%s])) / sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[%s])) * 100) default 0",
 			serviceName, env, timeRange, serviceName, env, timeRange,
 		)
-		resp, err = utils.MakePromRangeAPIQuery(client, errorPercentQuery, startTimeParam, endTimeParam, cfg)
+		httpResp, err = utils.MakePromRangeAPIQuery(ctx, client, errorPercentQuery, startTimeParam, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
+		defer httpResp.Body.Close()
 
-		if resp.StatusCode == http.StatusOK {
-			data, err := io.ReadAll(resp.Body)
+		if httpResp.StatusCode == http.StatusOK {
+			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("failed to read response body: %w", err)
+				return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 			}
 			details.ErrorPercent, err = parsePromTimeSeries(data)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("failed to parse error percent response: %w", err)
+				return nil, nil, fmt.Errorf("failed to parse error percent response: %w", err)
 			}
 		}
 
@@ -547,15 +602,15 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			"topk(10, quantile_over_time(0.95, sum by (span_name, messaging_system, rpc_system, span_kind,net_peer_name,process_runtime_name,db_system)(trace_endpoint_duration{service_name='%s', span_kind!='SPAN_KIND_INTERNAL', env='%s', quantile='p95'}[%s])))",
 			serviceName, env, timeRange,
 		)
-		resp, err = utils.MakePromInstantAPIQuery(client, topRTQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, topRTQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
+		defer httpResp.Body.Close()
 
-		if resp.StatusCode == http.StatusOK {
+		if httpResp.StatusCode == http.StatusOK {
 			var topErrResp apiPromInstantResp
-			if err := json.NewDecoder(resp.Body).Decode(&topErrResp); err == nil {
+			if err := json.NewDecoder(httpResp.Body).Decode(&topErrResp); err == nil {
 				details.TopOperations.ByResponseTime = make([]map[string]float64, 0)
 				for _, r := range topErrResp {
 					// join values of r.Timeseries with a - to create a unique key
@@ -586,15 +641,15 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, http_status_code)(sum_over_time(trace_endpoint_count{service_name="%s", env='%s', http_status_code=~"^[45].*"}[%s]))`,
 			serviceName, env, timeRange, serviceName, env, timeRange, serviceName, env, timeRange, serviceName, env, timeRange,
 		)
-		resp, err = utils.MakePromInstantAPIQuery(client, topErrQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, topErrQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
+		defer httpResp.Body.Close()
 
-		if resp.StatusCode == http.StatusOK {
+		if httpResp.StatusCode == http.StatusOK {
 			var topErrResp apiPromInstantResp
-			if err := json.NewDecoder(resp.Body).Decode(&topErrResp); err == nil {
+			if err := json.NewDecoder(httpResp.Body).Decode(&topErrResp); err == nil {
 				details.TopOperations.ByErrorRate = make([]map[string]int64, 0)
 				for _, r := range topErrResp {
 					// join values of r.Timeseries with a - to create a unique key
@@ -625,14 +680,14 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			 sum by (http_status_code, span_kind)(sum_over_time(trace_endpoint_count{service_name="%s", env='%s', http_status_code=~"^[45].*"}[%s])))`,
 			serviceName, env, timeRange, serviceName, env, timeRange, serviceName, env, timeRange, serviceName, env, timeRange,
 		)
-		resp, err = utils.MakePromInstantAPIQuery(client, topErrorsQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, topErrorsQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode == http.StatusOK {
 			var topErrResp apiPromInstantResp
-			if err := json.NewDecoder(resp.Body).Decode(&topErrResp); err == nil {
+			if err := json.NewDecoder(httpResp.Body).Decode(&topErrResp); err == nil {
 				details.TopErrors = make([]map[string]int64, 0)
 				for _, r := range topErrResp {
 					// join values of r.Timeseries with a - to create a unique key
@@ -657,17 +712,16 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 
 		resultJSON, err := json.Marshal(details)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to marshal response: %w", err)
+			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
 
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
 					Text: string(resultJSON),
-					Type: "text",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 }
 
@@ -703,18 +757,18 @@ const GetServiceOperationsSummaryDescription = `
 	- service_name: (Required) Service name to filter by. Defaults to all services.
 `
 
-func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
+func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceOperationsSummaryArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args ServiceOperationsSummaryArgs) (*mcp.CallToolResult, any, error) {
 		// Parse time parameters
 		var (
 			startTimeParam, endTimeParam int64
 		)
 
 		// Handle end_time
-		if endStr, ok := params.Arguments["end_time"].(string); ok {
-			t, err := time.Parse(time.RFC3339, endStr)
+		if args.EndTimeISO != "" {
+			t, err := time.Parse(time.RFC3339, args.EndTimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid end_time format, must be ISO8601: %w", err)
+				return nil, nil, fmt.Errorf("invalid end_time_iso format, must be ISO8601: %w", err)
 			}
 			endTimeParam = t.Unix()
 		} else {
@@ -722,25 +776,23 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 
 		// Handle start_time
-		if startStr, ok := params.Arguments["start_time"].(string); ok {
-			t, err := time.Parse(time.RFC3339, startStr)
+		if args.StartTimeISO != "" {
+			t, err := time.Parse(time.RFC3339, args.StartTimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid start_time format, must be ISO8601: %w", err)
+				return nil, nil, fmt.Errorf("invalid start_time_iso format, must be ISO8601: %w", err)
 			}
 			startTimeParam = t.Unix()
 		} else {
 			startTimeParam = endTimeParam - 3600 // default to last hour
 		}
 
-		env := ""
-		if e, ok := params.Arguments["env"].(string); ok && e != "" {
-			env = e
-		} else {
+		env := args.Env
+		if env == "" {
 			env = ".*" // default environment
 		}
-		serviceName, ok := params.Arguments["service_name"].(string)
-		if !ok || serviceName == "" {
-			return mcp.CallToolResult{}, fmt.Errorf("service_name is required")
+		serviceName := args.ServiceName
+		if serviceName == "" {
+			return nil, nil, fmt.Errorf("service_name is required")
 		}
 		timeRange := fmt.Sprintf("%dm", int((endTimeParam-startTimeParam)/60))
 		// Prepare the Prometheus query for throughput of endpoint operations
@@ -749,17 +801,17 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare instant query request to Prometheus
-		resp, err := utils.MakePromInstantAPIQuery(client, throughputQuery, endTimeParam, cfg)
+		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, throughputQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service operations summary: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
 		}
 		var promResp apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&promResp); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&promResp); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// Prepare the Prometheus query for response times of endpoint operations
 		respTimeQuery := fmt.Sprintf(
@@ -767,17 +819,17 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		resp, err = utils.MakePromInstantAPIQuery(client, respTimeQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, respTimeQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service operations summary: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
 		}
 		var respTimeRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&respTimeRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&respTimeRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// Prepare the Prometheus query for error rate of endpoint operations
 		errorRateQuery := fmt.Sprintf(
@@ -786,17 +838,17 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		resp, err = utils.MakePromInstantAPIQuery(client, errorRateQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, errorRateQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service operations summary: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
 		}
 		var errorRateRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&errorRateRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&errorRateRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// Prepare the Prometheus query for throughput of database operations
 		dbThroughputQuery := fmt.Sprintf(
@@ -804,17 +856,17 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		resp, err = utils.MakePromInstantAPIQuery(client, dbThroughputQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, dbThroughputQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service operations summary: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
 		}
 		var dbThroughputRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&dbThroughputRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&dbThroughputRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// Prepare the Prometheus query for response times of database operations
 		dbRespTimeQuery := fmt.Sprintf(
@@ -822,17 +874,17 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		resp, err = utils.MakePromInstantAPIQuery(client, dbRespTimeQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, dbRespTimeQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service operations summary: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
 		}
 		var dbRespTimeRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&dbRespTimeRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&dbRespTimeRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// Prepare the Prometheus query for error rate of database operations
 		dbErrorRateQuery := fmt.Sprintf(
@@ -856,17 +908,17 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		resp, err = utils.MakePromInstantAPIQuery(client, dbErrorRateQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, dbErrorRateQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service operations summary: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
 		}
 		var dbErrorRateRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&dbErrorRateRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&dbErrorRateRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// Prepare query for http operations
 		httpThroughputQuery := fmt.Sprintf(
@@ -874,17 +926,17 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		resp, err = utils.MakePromInstantAPIQuery(client, httpThroughputQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, httpThroughputQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service operations summary: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
 		}
 		var httpThroughputRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&httpThroughputRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&httpThroughputRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// Prepare the Prometheus query for response times of http operations
 		httpRespTimeQuery := fmt.Sprintf(
@@ -892,17 +944,17 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		resp, err = utils.MakePromInstantAPIQuery(client, httpRespTimeQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, httpRespTimeQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service operations summary: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
 		}
 		var httpRespTimeRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&httpRespTimeRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&httpRespTimeRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// Prepare the Prometheus query for error rate of http operations
 		httpErrorRateQuery := fmt.Sprintf(
@@ -924,17 +976,17 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		resp, err = utils.MakePromInstantAPIQuery(client, httpErrorRateQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, httpErrorRateQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service operations summary: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
 		}
 		var httpErrorRateRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&httpErrorRateRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&httpErrorRateRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// Prepare query for messaging operations
 		messagingThroughputQuery := fmt.Sprintf(
@@ -942,17 +994,17 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		resp, err = utils.MakePromInstantAPIQuery(client, messagingThroughputQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, messagingThroughputQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service operations summary: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
 		}
 		var messagingThroughputRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&messagingThroughputRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&messagingThroughputRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// Prepare the Prometheus query for response times of messaging operations
 		messagingRespTimeQuery := fmt.Sprintf(
@@ -960,17 +1012,17 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		resp, err = utils.MakePromInstantAPIQuery(client, messagingRespTimeQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, messagingRespTimeQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service operations summary: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
 		}
 		var messagingRespTimeRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&messagingRespTimeRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&messagingRespTimeRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// Prepare the Prometheus query for error rate of messaging operations
 		messagingErrorRateQuery := fmt.Sprintf(
@@ -992,17 +1044,17 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		resp, err = utils.MakePromInstantAPIQuery(client, messagingErrorRateQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, messagingErrorRateQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service operations summary: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
 		}
 		var messagingErrorRateRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&messagingErrorRateRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&messagingErrorRateRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// Prepare the response structure
 		operationsSummary := make([]ServiceOperationSummary, 0)
@@ -1247,16 +1299,15 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		// Return the response
 		resultJSON, err := json.Marshal(details)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to marshal response: %w", err)
+			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
 					Text: string(resultJSON),
-					Type: "text",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 }
 
@@ -1301,18 +1352,18 @@ const GetServiceDependencyGraphDetails = `
 	- service_name: (Required) Name of the service to get the dependency graph for.
 	`
 
-func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
+func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceDependencyGraphArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args ServiceDependencyGraphArgs) (*mcp.CallToolResult, any, error) {
 		// Parse time parameters
 		var (
 			startTimeParam, endTimeParam int64
 		)
 
 		// Handle end_time
-		if endStr, ok := params.Arguments["end_time"].(string); ok {
-			t, err := time.Parse(time.RFC3339, endStr)
+		if args.EndTimeISO != "" {
+			t, err := time.Parse(time.RFC3339, args.EndTimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid end_time format, must be ISO8601: %w", err)
+				return nil, nil, fmt.Errorf("invalid end_time_iso format, must be ISO8601: %w", err)
 			}
 			endTimeParam = t.Unix()
 		} else {
@@ -1320,25 +1371,23 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 
 		// Handle start_time
-		if startStr, ok := params.Arguments["start_time"].(string); ok {
-			t, err := time.Parse(time.RFC3339, startStr)
+		if args.StartTimeISO != "" {
+			t, err := time.Parse(time.RFC3339, args.StartTimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid start_time format, must be ISO8601: %w", err)
+				return nil, nil, fmt.Errorf("invalid start_time_iso format, must be ISO8601: %w", err)
 			}
 			startTimeParam = t.Unix()
 		} else {
 			startTimeParam = endTimeParam - 3600 // default to last hour
 		}
 
-		env := ""
-		if e, ok := params.Arguments["env"].(string); ok && e != "" {
-			env = e
-		} else {
+		env := args.Env
+		if env == "" {
 			env = ".*" // default environment
 		}
-		serviceName, ok := params.Arguments["service_name"].(string)
-		if !ok || serviceName == "" {
-			return mcp.CallToolResult{}, fmt.Errorf("service_name is required")
+		serviceName := args.ServiceName
+		if serviceName == "" {
+			return nil, nil, fmt.Errorf("service_name is required")
 		}
 		timeRange := fmt.Sprintf("%dm", int((endTimeParam-startTimeParam)/60))
 
@@ -1353,51 +1402,51 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 			"sum by (client)(sum_over_time(trace_call_graph_count{server='%s', env=~'%s'}[%s])) / %d",
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
-		resp, err := utils.MakePromInstantAPIQuery(client, incomingThroughputQuery, endTimeParam, cfg)
+		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, incomingThroughputQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service dependency graph details: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service dependency graph details: %s", httpResp.Status)
 		}
 		var incomingThroughputRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&incomingThroughputRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&incomingThroughputRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// response times
 		incomingRespTimeQuery := fmt.Sprintf(
 			"quantile_over_time(0.95 ,sum by (client, quantile) (trace_call_graph_duration{server='%s', env=~'%s'}[%s]))",
 			serviceName, env, timeRange,
 		)
-		resp, err = utils.MakePromInstantAPIQuery(client, incomingRespTimeQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, incomingRespTimeQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service dependency graph details: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service dependency graph details: %s", httpResp.Status)
 		}
 		var incomingRespTimeRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&incomingRespTimeRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&incomingRespTimeRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// error rate
 		incomingErrorRateQuery := fmt.Sprintf(
 			"sum by (client)(sum_over_time(trace_call_graph_count{server='%s', env=~'%s', client_status=~'4.*|5.*'}[%s])) / %d",
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
-		resp, err = utils.MakePromInstantAPIQuery(client, incomingErrorRateQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, incomingErrorRateQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service dependency graph details: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service dependency graph details: %s", httpResp.Status)
 		}
 		var incomingErrorRateRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&incomingErrorRateRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&incomingErrorRateRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// Process incoming data
 		for _, r := range incomingThroughputRaw {
@@ -1461,51 +1510,51 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 			"sum by (server)(sum_over_time(trace_call_graph_count{client='%s', env=~'%s'}[%s])) / %d",
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
-		resp, err = utils.MakePromInstantAPIQuery(client, outgoingThroughputQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, outgoingThroughputQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service dependency graph details: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service dependency graph details: %s", httpResp.Status)
 		}
 		var outgoingThroughputRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&outgoingThroughputRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&outgoingThroughputRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// response times
 		outgoingRespTimeQuery := fmt.Sprintf(
 			"quantile_over_time(0.95 ,sum by (server, quantile) (trace_call_graph_duration{client='%s', env=~'%s'}[%s]))",
 			serviceName, env, timeRange,
 		)
-		resp, err = utils.MakePromInstantAPIQuery(client, outgoingRespTimeQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, outgoingRespTimeQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service dependency graph details: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service dependency graph details: %s", httpResp.Status)
 		}
 		var outgoingRespTimeRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&outgoingRespTimeRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&outgoingRespTimeRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// error rate
 		outgoingErrorRateQuery := fmt.Sprintf(
 			"sum by (server)(sum_over_time(trace_call_graph_count{client='%s', env=~'%s', client_status=~'4.*|5.*'}[%s])) / %d",
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
-		resp, err = utils.MakePromInstantAPIQuery(client, outgoingErrorRateQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, outgoingErrorRateQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service dependency graph details: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service dependency graph details: %s", httpResp.Status)
 		}
 		var outgoingErrorRateRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&outgoingErrorRateRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&outgoingErrorRateRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// Process outgoing data
 
@@ -1570,51 +1619,51 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 			"sum by (server_host, server_db_system, server_rpc_system, server_messaging_system, server_rpc_service) (sum_over_time(trace_internal_call_graph_count{client='%s', env=~'%s'}[%s])) / %d",
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
-		resp, err = utils.MakePromInstantAPIQuery(client, infrastructureThroughputQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, infrastructureThroughputQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service dependency graph details: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service dependency graph details: %s", httpResp.Status)
 		}
 		var infrastructureThroughputRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&infrastructureThroughputRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&infrastructureThroughputRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// response times
 		infrastructureRespTimeQuery := fmt.Sprintf(
 			"quantile_over_time(0.95 ,sum by (server_host, server_db_system, server_rpc_system, server_messaging_system, server_rpc_service, quantile) (trace_internal_call_graph_duration{client='%s', env=~'%s'}[%s]))",
 			serviceName, env, timeRange,
 		)
-		resp, err = utils.MakePromInstantAPIQuery(client, infrastructureRespTimeQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, infrastructureRespTimeQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service dependency graph details: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service dependency graph details: %s", httpResp.Status)
 		}
 		var infrastructureRespTimeRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&infrastructureRespTimeRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&infrastructureRespTimeRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// error rate
 		infrastructureErrorRateQuery := fmt.Sprintf(
 			"sum by (server_host, server_db_system, server_rpc_system, server_messaging_system, server_rpc_service) (sum_over_time(trace_internal_call_graph_count{client='%s', env=~'%s', client_status=~'4.*|5.*'}[%s])) / %d",
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
-		resp, err = utils.MakePromInstantAPIQuery(client, infrastructureErrorRateQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, infrastructureErrorRateQuery, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to get service dependency graph details: %s", resp.Status)
+		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to get service dependency graph details: %s", httpResp.Status)
 		}
 		var infrastructureErrorRateRaw apiPromInstantResp
-		if err := json.NewDecoder(resp.Body).Decode(&infrastructureErrorRateRaw); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		if err := json.NewDecoder(httpResp.Body).Decode(&infrastructureErrorRateRaw); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
 		}
 		// Process infrastructure data
 		for _, r := range infrastructureThroughputRaw {
@@ -1733,16 +1782,15 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		// Return the response
 		resultJSON, err := json.Marshal(details)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to marshal response: %w", err)
+			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
 					Text: string(resultJSON),
-					Type: "text",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 }
 
@@ -1776,22 +1824,20 @@ const PromqlRangeQueryDetails = `
 	- end_time: (Required) End time of the time range in ISO format.
 	`
 
-func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-		query, ok := params.Arguments["query"].(string)
-		if !ok || query == "" {
-			return mcp.CallToolResult{}, fmt.Errorf("query is required")
+func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlRangeQueryArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args PromqlRangeQueryArgs) (*mcp.CallToolResult, any, error) {
+		query := args.Query
+		if query == "" {
+			return nil, nil, fmt.Errorf("query is required")
 		}
 
-		var (
-			startTimeParam, endTimeParam int64
-		)
+		var startTimeParam, endTimeParam int64
 
 		// Handle end_time
-		if endStr, ok := params.Arguments["end_time"].(string); ok {
-			t, err := time.Parse(time.RFC3339, endStr)
+		if args.EndTimeISO != "" {
+			t, err := time.Parse(time.RFC3339, args.EndTimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid end_time format, must be ISO8601: %w", err)
+				return nil, nil, fmt.Errorf("invalid end_time_iso format, must be ISO8601: %w", err)
 			}
 			endTimeParam = t.Unix()
 		} else {
@@ -1799,40 +1845,39 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(mcp
 		}
 
 		// Handle start_time
-		if startStr, ok := params.Arguments["start_time"].(string); ok {
-			t, err := time.Parse(time.RFC3339, startStr)
+		if args.StartTimeISO != "" {
+			t, err := time.Parse(time.RFC3339, args.StartTimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid start_time format, must be ISO8601: %w", err)
+				return nil, nil, fmt.Errorf("invalid start_time_iso format, must be ISO8601: %w", err)
 			}
 			startTimeParam = t.Unix()
 		} else {
 			startTimeParam = endTimeParam - 3600 // default to last hour
 		}
 
-		resp, err := utils.MakePromRangeAPIQuery(client, query, startTimeParam, endTimeParam, cfg)
+		httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, query, startTimeParam, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		if resp == nil {
-			return mcp.CallToolResult{}, fmt.Errorf("received nil response from Prometheus")
+		if httpResp == nil {
+			return nil, nil, fmt.Errorf("received nil response from Prometheus")
 		}
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to execute Prometheus range query: %s", resp.Status)
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to execute Prometheus range query: %s", httpResp.Status)
 		}
-		defer resp.Body.Close()
+		defer httpResp.Body.Close()
 		// return the response body string as the content without parsing
-		responseBodyBytes, err := io.ReadAll(resp.Body)
+		responseBodyBytes, err := io.ReadAll(httpResp.Body)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to read response body: %w", err)
+			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
 					Text: string(responseBodyBytes),
-					Type: "text",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 }
 
@@ -1864,81 +1909,125 @@ const PromqlInstantQueryDetails = `
 	- time: (Required) The point in time to query in ISO format.
 `
 
-func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-		query, ok := params.Arguments["query"].(string)
-		if !ok || query == "" {
-			return mcp.CallToolResult{}, fmt.Errorf("query is required")
+func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlInstantQueryArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args PromqlInstantQueryArgs) (*mcp.CallToolResult, any, error) {
+		query := args.Query
+		if query == "" {
+			return nil, nil, fmt.Errorf("query is required")
 		}
 
 		var timeParam int64
 
-		if timeStr, ok := params.Arguments["time"].(string); ok {
-			t, err := time.Parse(time.RFC3339, timeStr)
+		if args.TimeISO != "" {
+			t, err := time.Parse(time.RFC3339, args.TimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid time format, must be ISO8601: %w", err)
+				return nil, nil, fmt.Errorf("invalid time_iso format, must be ISO8601: %w", err)
 			}
 			timeParam = t.Unix()
 		} else {
 			timeParam = time.Now().Unix()
 		}
 
-		resp, err := utils.MakePromInstantAPIQuery(client, query, timeParam, cfg)
+		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, query, timeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		if resp == nil {
-			return mcp.CallToolResult{}, fmt.Errorf("received nil response from Prometheus")
+		if httpResp == nil {
+			return nil, nil, fmt.Errorf("received nil response from Prometheus")
 		}
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to execute Prometheus instant query: %s", resp.Status)
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to execute Prometheus instant query: %s", httpResp.Status)
 		}
-		defer resp.Body.Close()
-		responseBodyBytes, err := io.ReadAll(resp.Body)
+		defer httpResp.Body.Close()
+		responseBodyBytes, err := io.ReadAll(httpResp.Body)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to read response body: %w", err)
+			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
 					Text: string(responseBodyBytes),
-					Type: "text",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 }
 
 // tool handler to get label values for a given label name and filter prometheus query
 // handler for prometheus instant query
 const GetServiceEnvironmentsDescription = `
-	Return the environments available for the services. This tool returns an array of environments.
-	All other tools that retrieve information about services
-	like get_service_performance_details, get_service_dependency_graph, get_service_operations_summary,
-	get_service_sumary etc. require a mandatory "env" parameter. This must be one of the
-	environments returned by this tool. If the returned array is empty, use an empty string ""
-	as the value for the "env" parameter for other tools.
+	Return the environments available for the services. This tool returns an array of environments. These env can act as 
+	label or argument values for other tools.
 	Parameters:
 	- start_time: (Optional) Start time of the time range in ISO format. Defaults to end_time - 1 hour
 	- end_time: (Optional) End time of the time range in ISO format. Defaults to current time
 
-	Returns an array of environments. 
+	Returns an array of environments.
+`
+
+const GetServiceDependencyGraphDescription = `
+	Get the service dependency graph showing relationships between services.
+	Parameters:
+	- start_time_iso: (Optional) Start time in ISO8601 format
+	- end_time_iso: (Optional) End time in ISO8601 format
+	- env: (Optional) Environment to filter by
+	- service_name: (Optional) Service name to focus on in the dependency graph
+
+	Returns the dependency graph data.
+`
+
+const GetPromqlRangeQueryDescription = `
+	Execute a PromQL range query against the metrics data.
+	Parameters:
+	- query: PromQL query to execute
+	- start_time_iso: (Optional) Start time in ISO8601 format
+	- end_time_iso: (Optional) End time in ISO8601 format
+
+	Returns time series data for the specified time range.
+`
+
+const GetPromqlInstantQueryDescription = `
+	Execute a PromQL instant query against the metrics data.
+	Parameters:
+	- query: PromQL query to execute
+	- time_iso: (Optional) Evaluation time in ISO8601 format
+
+	Returns instant query results.
+`
+
+const GetPromqlLabelValuesDescription = `
+	Get label values for a specific label name in PromQL.
+	Parameters:
+	- label: Label name to get values for
+	- match_query: (Optional) PromQL query to match series
+	- start_time_iso: (Optional) Start time in ISO8601 format
+	- end_time_iso: (Optional) End time in ISO8601 format
+
+	Returns available values for the specified label.
+`
+
+const GetPromqlLabelsDescription = `
+	Get available labels from PromQL metrics.
+	Parameters:
+	- match_query: (Optional) PromQL query to match series
+	- start_time_iso: (Optional) Start time in ISO8601 format
+	- end_time_iso: (Optional) End time in ISO8601 format
+
+	Returns available label names.
 `
 
 // tool handler to make the query
 // sum by (env)(last_over_time(domain_attributes_count))
 // iterate over the values of `env` label and return the unique values
-func NewServiceEnvironmentsHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-		var (
-			startTimeParam, endTimeParam int64
-		)
+func NewServiceEnvironmentsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceEnvironmentsArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args ServiceEnvironmentsArgs) (*mcp.CallToolResult, any, error) {
+		var startTimeParam, endTimeParam int64
 
 		// Handle end_time
-		if endStr, ok := params.Arguments["end_time"].(string); ok {
-			t, err := time.Parse(time.RFC3339, endStr)
+		if args.EndTimeISO != "" {
+			t, err := time.Parse(time.RFC3339, args.EndTimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid end_time format, must be ISO8601: %w", err)
+				return nil, nil, fmt.Errorf("invalid end_time_iso format, must be ISO8601: %w", err)
 			}
 			endTimeParam = t.Unix()
 		} else {
@@ -1946,42 +2035,41 @@ func NewServiceEnvironmentsHandler(client *http.Client, cfg models.Config) func(
 		}
 
 		// Handle start_time
-		if startStr, ok := params.Arguments["start_time"].(string); ok {
-			t, err := time.Parse(time.RFC3339, startStr)
+		if args.StartTimeISO != "" {
+			t, err := time.Parse(time.RFC3339, args.StartTimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid start_time format, must be ISO8601: %w", err)
+				return nil, nil, fmt.Errorf("invalid start_time_iso format, must be ISO8601: %w", err)
 			}
 			startTimeParam = t.Unix()
 		} else {
 			startTimeParam = endTimeParam - 3600 // default to last hour
 		}
 
-		resp, err := utils.MakePromLabelValuesAPIQuery(client, "env", "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}", startTimeParam, endTimeParam, cfg)
+		httpResp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, "env", "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}", startTimeParam, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		if resp == nil {
-			return mcp.CallToolResult{}, fmt.Errorf("received nil response from Prometheus")
+		if httpResp == nil {
+			return nil, nil, fmt.Errorf("received nil response from Prometheus")
 		}
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to execute Prometheus label values query: %s", resp.Status)
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to execute Prometheus label values query: %s", httpResp.Status)
 		}
-		defer resp.Body.Close()
+		defer httpResp.Body.Close()
 		// Read the response body
-		responseBodyBytes, err := io.ReadAll(resp.Body)
+		responseBodyBytes, err := io.ReadAll(httpResp.Body)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to read response body: %w", err)
+			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 
 		// Return the environments as the content
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
 					Text: string(responseBodyBytes),
-					Type: "text",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 }
 
@@ -2003,25 +2091,23 @@ const PromqlLabelValuesQueryDetails = `
 	use case
 `
 
-func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-		query, ok := params.Arguments["match_query"].(string)
-		if !ok || query == "" {
-			return mcp.CallToolResult{}, fmt.Errorf("query is required")
+func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlLabelValuesArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args PromqlLabelValuesArgs) (*mcp.CallToolResult, any, error) {
+		query := args.MatchQuery
+		if query == "" {
+			return nil, nil, fmt.Errorf("match_query is required")
 		}
-		label, ok := params.Arguments["label"].(string)
-		if !ok || label == "" {
-			return mcp.CallToolResult{}, fmt.Errorf("label is required")
+		label := args.Label
+		if label == "" {
+			return nil, nil, fmt.Errorf("label is required")
 		}
-		var (
-			startTimeParam, endTimeParam int64
-		)
+		var startTimeParam, endTimeParam int64
 
 		// Handle end_time
-		if endStr, ok := params.Arguments["end_time"].(string); ok {
-			t, err := time.Parse(time.RFC3339, endStr)
+		if args.EndTimeISO != "" {
+			t, err := time.Parse(time.RFC3339, args.EndTimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid end_time format, must be ISO8601: %w", err)
+				return nil, nil, fmt.Errorf("invalid end_time_iso format, must be ISO8601: %w", err)
 			}
 			endTimeParam = t.Unix()
 		} else {
@@ -2029,40 +2115,39 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(mc
 		}
 
 		// Handle start_time
-		if startStr, ok := params.Arguments["start_time"].(string); ok {
-			t, err := time.Parse(time.RFC3339, startStr)
+		if args.StartTimeISO != "" {
+			t, err := time.Parse(time.RFC3339, args.StartTimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid start_time format, must be ISO8601: %w", err)
+				return nil, nil, fmt.Errorf("invalid start_time_iso format, must be ISO8601: %w", err)
 			}
 			startTimeParam = t.Unix()
 		} else {
 			startTimeParam = endTimeParam - 3600 // default to last hour
 		}
 
-		resp, err := utils.MakePromLabelValuesAPIQuery(client, label, query, startTimeParam, endTimeParam, cfg)
+		httpResp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, label, query, startTimeParam, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		if resp == nil {
-			return mcp.CallToolResult{}, fmt.Errorf("received nil response from Prometheus")
+		if httpResp == nil {
+			return nil, nil, fmt.Errorf("received nil response from Prometheus")
 		}
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to execute Prometheus range query: %s", resp.Status)
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to execute Prometheus range query: %s", httpResp.Status)
 		}
-		defer resp.Body.Close()
+		defer httpResp.Body.Close()
 		// return the response body string as the content without parsing
-		responseBodyBytes, err := io.ReadAll(resp.Body)
+		responseBodyBytes, err := io.ReadAll(httpResp.Body)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to read response body: %w", err)
+			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
 					Text: string(responseBodyBytes),
-					Type: "text",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 }
 
@@ -2083,21 +2168,19 @@ const PromqlLabelsQueryDetails = `
 	use case
 `
 
-func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-		query, ok := params.Arguments["match_query"].(string)
-		if !ok || query == "" {
-			return mcp.CallToolResult{}, fmt.Errorf("query is required")
+func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlLabelsArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args PromqlLabelsArgs) (*mcp.CallToolResult, any, error) {
+		query := args.MatchQuery
+		if query == "" {
+			return nil, nil, fmt.Errorf("match_query is required")
 		}
-		var (
-			startTimeParam, endTimeParam int64
-		)
+		var startTimeParam, endTimeParam int64
 
 		// Handle end_time
-		if endStr, ok := params.Arguments["end_time"].(string); ok {
-			t, err := time.Parse(time.RFC3339, endStr)
+		if args.EndTimeISO != "" {
+			t, err := time.Parse(time.RFC3339, args.EndTimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid end_time format, must be ISO8601: %w", err)
+				return nil, nil, fmt.Errorf("invalid end_time_iso format, must be ISO8601: %w", err)
 			}
 			endTimeParam = t.Unix()
 		} else {
@@ -2105,39 +2188,38 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(mcp.Cal
 		}
 
 		// Handle start_time
-		if startStr, ok := params.Arguments["start_time"].(string); ok {
-			t, err := time.Parse(time.RFC3339, startStr)
+		if args.StartTimeISO != "" {
+			t, err := time.Parse(time.RFC3339, args.StartTimeISO)
 			if err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid start_time format, must be ISO8601: %w", err)
+				return nil, nil, fmt.Errorf("invalid start_time_iso format, must be ISO8601: %w", err)
 			}
 			startTimeParam = t.Unix()
 		} else {
 			startTimeParam = endTimeParam - 3600 // default to last hour
 		}
 
-		resp, err := utils.MakePromLabelsAPIQuery(client, query, startTimeParam, endTimeParam, cfg)
+		httpResp, err := utils.MakePromLabelsAPIQuery(ctx, client, query, startTimeParam, endTimeParam, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, err
+			return nil, nil, err
 		}
-		if resp == nil {
-			return mcp.CallToolResult{}, fmt.Errorf("received nil response from Prometheus")
+		if httpResp == nil {
+			return nil, nil, fmt.Errorf("received nil response from Prometheus")
 		}
-		if resp.StatusCode != http.StatusOK {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to execute Prometheus range query: %s", resp.Status)
+		if httpResp.StatusCode != http.StatusOK {
+			return nil, nil, fmt.Errorf("failed to execute Prometheus range query: %s", httpResp.Status)
 		}
-		defer resp.Body.Close()
+		defer httpResp.Body.Close()
 		// return the response body string as the content without parsing
-		responseBodyBytes, err := io.ReadAll(resp.Body)
+		responseBodyBytes, err := io.ReadAll(httpResp.Body)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to read response body: %w", err)
+			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
 					Text: string(responseBodyBytes),
-					Type: "text",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 }
