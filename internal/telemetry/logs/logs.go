@@ -32,7 +32,7 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 		}
 
 		// Handle logjson_query directly
-		result, err := handleLogJSONQuery(client, cfg, args.LogjsonQuery, args)
+		result, err := handleLogJSONQuery(ctx, client, cfg, args.LogjsonQuery, args)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -40,7 +40,7 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 	}
 }
 
-func handleLogJSONQuery(client *http.Client, cfg models.Config, logjsonQuery interface{}, args GetLogsArgs) (*mcp.CallToolResult, error) {
+func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, args GetLogsArgs) (*mcp.CallToolResult, error) {
 	// Determine time range from parameters
 	startTime, endTime, err := parseTimeRangeFromArgs(args)
 	if err != nil {
@@ -48,7 +48,7 @@ func handleLogJSONQuery(client *http.Client, cfg models.Config, logjsonQuery int
 	}
 
 	// Use util to execute the query
-	resp, err := utils.MakeLogsJSONQueryAPI(client, cfg, logjsonQuery, startTime, endTime)
+	resp, err := utils.MakeLogsJSONQueryAPI(ctx, client, cfg, logjsonQuery, startTime, endTime)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call log JSON query API: %v", err)
 	}
