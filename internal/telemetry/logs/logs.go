@@ -1,70 +1,82 @@
 package logs
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"last9-mcp/internal/models"
-	"last9-mcp/internal/utils"
 	"net/http"
 	"time"
 
-	"github.com/acrmp/mcp"
+	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// GetLogsArgs represents the input arguments for the get_logs tool
+type GetLogsArgs struct {
+	LogjsonQuery    []interface{} `json:"logjson_query,omitempty"`
+	StartTimeISO    string        `json:"start_time_iso,omitempty"`
+	EndTimeISO      string        `json:"end_time_iso,omitempty"`
+	LookbackMinutes int           `json:"lookback_minutes,omitempty"`
+	Limit           int           `json:"limit,omitempty"`
+}
+
 // NewGetLogsHandler creates a handler for getting logs using logjson_query parameter
-func NewGetLogsHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
+func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetLogsArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args GetLogsArgs) (*mcp.CallToolResult, any, error) {
 		// Check if logjson_query is provided
-		logjsonQuery, ok := params.Arguments["logjson_query"]
-		if !ok || logjsonQuery == nil {
-			return mcp.CallToolResult{}, fmt.Errorf("logjson_query parameter is required. Use the logjson_query_builder prompt to generate JSON pipeline queries from natural language")
+		if len(args.LogjsonQuery) == 0 {
+			return nil, nil, fmt.Errorf("logjson_query parameter is required. Use the logjson_query_builder prompt to generate JSON pipeline queries from natural language")
 		}
 
 		// Handle logjson_query directly
-		return handleLogJSONQuery(client, cfg, logjsonQuery, params.Arguments)
+		result, err := handleLogJSONQuery(client, cfg, args.LogjsonQuery, args)
+		if err != nil {
+			return nil, nil, err
+		}
+		return result, nil, nil
 	}
 }
 
-// handleLogJSONQuery processes logjson_query parameter and calls the log JSON query API directly
-func handleLogJSONQuery(client *http.Client, cfg models.Config, logjsonQuery interface{}, allParams map[string]interface{}) (mcp.CallToolResult, error) {
+func handleLogJSONQuery(client *http.Client, cfg models.Config, logjsonQuery interface{}, args GetLogsArgs) (*mcp.CallToolResult, error) {
 	// Determine time range from parameters
-	startTime, endTime, err := parseTimeRange(allParams)
+	startTime, endTime, err := parseTimeRangeFromArgs(args)
 	if err != nil {
-		return mcp.CallToolResult{}, fmt.Errorf("failed to parse time range: %v", err)
+		return nil, fmt.Errorf("failed to parse time range: %v", err)
 	}
 
 	// Use util to execute the query
 	resp, err := utils.MakeLogsJSONQueryAPI(client, cfg, logjsonQuery, startTime, endTime)
 	if err != nil {
-		return mcp.CallToolResult{}, fmt.Errorf("failed to call log JSON query API: %v", err)
+		return nil, fmt.Errorf("failed to call log JSON query API: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return mcp.CallToolResult{}, fmt.Errorf("logs API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("logs API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	// Parse response
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return mcp.CallToolResult{}, fmt.Errorf("failed to decode response: %v", err)
+		return nil, fmt.Errorf("failed to decode response: %v", err)
 	}
 
 	// Return the result in MCP format
-	return mcp.CallToolResult{
-		Content: []any{
-			mcp.TextContent{
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
 				Text: formatJSON(result),
-				Type: "text",
 			},
 		},
 	}, nil
 }
 
-// parseTimeRange extracts start and end times from parameters
-func parseTimeRange(params map[string]interface{}) (int64, int64, error) {
+// parseTimeRangeFromArgs extracts start and end times from GetLogsArgs
+func parseTimeRangeFromArgs(args GetLogsArgs) (int64, int64, error) {
 	now := time.Now()
 
 	// Default to last hour if no time parameters provided
@@ -72,20 +84,20 @@ func parseTimeRange(params map[string]interface{}) (int64, int64, error) {
 	endTime := now.UnixMilli()
 
 	// Check for lookback_minutes
-	if lookback, ok := params["lookback_minutes"].(float64); ok {
-		startTime = now.Add(-time.Duration(lookback) * time.Minute).UnixMilli()
+	if args.LookbackMinutes > 0 {
+		startTime = now.Add(-time.Duration(args.LookbackMinutes) * time.Minute).UnixMilli()
 	}
 
 	// Check for explicit start_time_iso
-	if startTimeISO, ok := params["start_time_iso"].(string); ok && startTimeISO != "" {
-		if parsed, err := time.Parse("2006-01-02 15:04:05", startTimeISO); err == nil {
+	if args.StartTimeISO != "" {
+		if parsed, err := time.Parse("2006-01-02 15:04:05", args.StartTimeISO); err == nil {
 			startTime = parsed.UnixMilli()
 		}
 	}
 
 	// Check for explicit end_time_iso
-	if endTimeISO, ok := params["end_time_iso"].(string); ok && endTimeISO != "" {
-		if parsed, err := time.Parse("2006-01-02 15:04:05", endTimeISO); err == nil {
+	if args.EndTimeISO != "" {
+		if parsed, err := time.Parse("2006-01-02 15:04:05", args.EndTimeISO); err == nil {
 			endTime = parsed.UnixMilli()
 		}
 	}

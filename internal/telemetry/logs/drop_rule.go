@@ -2,6 +2,7 @@ package logs
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,34 +11,37 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/acrmp/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// GetDropRulesArgs represents the input arguments for getting drop rules (no arguments needed)
+type GetDropRulesArgs struct{}
+
 // NewGetDropRulesHandler creates a handler for getting drop rules for logs
-func NewGetDropRulesHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
+func NewGetDropRulesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetDropRulesArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args GetDropRulesArgs) (*mcp.CallToolResult, any, error) {
 		// First refresh the access token
-		accessToken, err := utils.RefreshAccessToken(client, cfg)
+		accessToken, err := utils.RefreshAccessToken(ctx, client, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to refresh access token: %w", err)
+			return nil, nil, fmt.Errorf("failed to refresh access token: %w", err)
 		}
 
 		// Extract organization slug from token
 		orgSlug, err := utils.ExtractOrgSlugFromToken(accessToken)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to extract organization slug: %w", err)
+			return nil, nil, fmt.Errorf("failed to extract organization slug: %w", err)
 		}
 
 		// Extract ActionURL from token
 		actionURL, err := utils.ExtractActionURLFromToken(accessToken)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to extract action URL: %w", err)
+			return nil, nil, fmt.Errorf("failed to extract action URL: %w", err)
 		}
 
 		// Build request URL with query parameters
 		u, err := url.Parse(fmt.Sprintf("%s/api/v4/organizations/%s/logs_settings/routing", actionURL, orgSlug))
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to parse URL: %w", err)
+			return nil, nil, fmt.Errorf("failed to parse URL: %w", err)
 		}
 
 		q := u.Query()
@@ -45,119 +49,125 @@ func NewGetDropRulesHandler(client *http.Client, cfg models.Config) func(mcp.Cal
 		u.RawQuery = q.Encode()
 
 		// Create request
-		req, err := http.NewRequest("GET", u.String(), nil)
+		httpReq, err := http.NewRequest("GET", u.String(), nil)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to create request: %w", err)
+			return nil, nil, fmt.Errorf("failed to create request: %w", err)
 		}
 
 		// Use the new access token
-		req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+accessToken)
+		httpReq.Header.Set("X-LAST9-API-TOKEN", "Bearer "+accessToken)
 
 		// Execute request
-		resp, err := client.Do(req)
+		resp, err := client.Do(httpReq)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("request failed: %w", err)
+			return nil, nil, fmt.Errorf("request failed: %w", err)
 		}
 		defer resp.Body.Close()
 
 		var result interface{}
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+			return nil, nil, fmt.Errorf("failed to decode response: %w", err)
 		}
 
 		jsonData, err := json.Marshal(result)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to marshal response: %w", err)
+			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
 
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
 					Text: string(jsonData),
-					Type: "text",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 }
 
+// DropRuleFilter represents a filter for drop rules
+type DropRuleFilter struct {
+	Key         string `json:"key" jsonschema:"The field to filter on (e.g. service level severity)"`
+	Value       string `json:"value" jsonschema:"The value to match against (e.g. test-service)"`
+	Operator    string `json:"operator" jsonschema:"The operator to use for comparison (default: equals, options: equals, not_equals)"`
+	Conjunction string `json:"conjunction" jsonschema:"How to combine with other filters (default: and, options: and)"`
+}
+
+// AddDropRuleArgs represents the input arguments for adding drop rules
+type AddDropRuleArgs struct {
+	Name    string            `json:"name" jsonschema:"Name for the drop rule (e.g. test-service-drop-rule)"`
+	Filters []DropRuleFilter `json:"filters" jsonschema:"Array of filter conditions to match logs for dropping"`
+}
+
 // NewAddDropRuleHandler creates a handler for adding new drop rules for logs
-func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
-	return func(params mcp.CallToolRequestParams) (mcp.CallToolResult, error) {
+func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, AddDropRuleArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args AddDropRuleArgs) (*mcp.CallToolResult, any, error) {
 		// First refresh the access token
-		accessToken, err := utils.RefreshAccessToken(client, cfg)
+		accessToken, err := utils.RefreshAccessToken(ctx, client, cfg)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to refresh access token: %w", err)
+			return nil, nil, fmt.Errorf("failed to refresh access token: %w", err)
 		}
 
 		// Extract organization slug from token
 		orgSlug, err := utils.ExtractOrgSlugFromToken(accessToken)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to extract organization slug: %w", err)
+			return nil, nil, fmt.Errorf("failed to extract organization slug: %w", err)
 		}
 
 		// Extract ActionURL from token
 		actionURL, err := utils.ExtractActionURLFromToken(accessToken)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to extract action URL: %w", err)
+			return nil, nil, fmt.Errorf("failed to extract action URL: %w", err)
 		}
 
 		// Build request URL
 		u, err := url.Parse(fmt.Sprintf("%s/api/v4/organizations/%s/logs_settings/routing", actionURL, orgSlug))
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to parse URL: %w", err)
+			return nil, nil, fmt.Errorf("failed to parse URL: %w", err)
 		}
 
-		// Extract individual parameters and build the drop rule
-		name, ok := params.Arguments["name"].(string)
-		if !ok || name == "" {
-			return mcp.CallToolResult{}, errors.New("rule name is required")
+		// Validate required parameters
+		if args.Name == "" {
+			return nil, nil, errors.New("rule name is required")
 		}
 
-		// Extract and validate filters
-		filtersRaw, ok := params.Arguments["filters"].([]interface{})
-		if !ok {
-			return mcp.CallToolResult{}, errors.New("filters must be an array")
+		if len(args.Filters) == 0 {
+			return nil, nil, errors.New("filters must be provided")
 		}
 
+		// Convert filters and validate
 		var filters []models.DropRuleFilter
-		for _, f := range filtersRaw {
-			filterMap, ok := f.(map[string]interface{})
-			if !ok {
-				return mcp.CallToolResult{}, errors.New("each filter must be an object")
+		for _, f := range args.Filters {
+			// Set defaults if not provided
+			operator := f.Operator
+			if operator == "" {
+				operator = "equals"
+			}
+			conjunction := f.Conjunction
+			if conjunction == "" {
+				conjunction = "and"
 			}
 
 			// Validate operator
-			operator, ok := filterMap["operator"].(string)
-			if !ok {
-				return mcp.CallToolResult{}, errors.New("operator must be a string")
-			}
 			if operator != "equals" && operator != "not_equals" {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid operator: %s. Must be one of: [equals, not_equals]", operator)
+				return nil, nil, fmt.Errorf("invalid operator: %s. Must be one of: [equals, not_equals]", operator)
 			}
 
 			// Validate conjunction
-			conjunction, ok := filterMap["conjunction"].(string)
-			if !ok {
-				return mcp.CallToolResult{}, errors.New("conjunction must be a string")
-			}
 			if conjunction != "and" {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid conjunction: %s. Must be: [and]", conjunction)
+				return nil, nil, fmt.Errorf("invalid conjunction: %s. Must be: [and]", conjunction)
 			}
 
 			// Validate key and value
-			key, ok := filterMap["key"].(string)
-			if !ok {
-				return mcp.CallToolResult{}, errors.New("key must be a string")
+			if f.Key == "" {
+				return nil, nil, errors.New("key must be provided")
 			}
-			value, ok := filterMap["value"].(string)
-			if !ok {
-				return mcp.CallToolResult{}, errors.New("value must be a string")
+			if f.Value == "" {
+				return nil, nil, errors.New("value must be provided")
 			}
 
 			filter := models.DropRuleFilter{
-				Key:         key,
-				Value:       value,
+				Key:         f.Key,
+				Value:       f.Value,
 				Operator:    operator,
 				Conjunction: conjunction,
 			}
@@ -166,7 +176,7 @@ func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(mcp.Call
 
 		// Create the complete drop rule
 		dropRule := models.DropRule{
-			Name:      name,
+			Name:      args.Name,
 			Telemetry: TELEMETRY_LOGS,
 			Filters:   filters,
 			Action: models.DropRuleAction{
@@ -178,43 +188,42 @@ func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(mcp.Call
 		// Marshal the drop rule
 		jsonData, err := json.Marshal(dropRule)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to marshal drop rule: %w", err)
+			return nil, nil, fmt.Errorf("failed to marshal drop rule: %w", err)
 		}
 
 		// Create request
-		req, err := http.NewRequest("PUT", u.String(), bytes.NewReader(jsonData))
+		httpReq, err := http.NewRequest("PUT", u.String(), bytes.NewReader(jsonData))
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to create request: %w", err)
+			return nil, nil, fmt.Errorf("failed to create request: %w", err)
 		}
 
 		// Use the new access token
-		req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+accessToken)
-		req.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("X-LAST9-API-TOKEN", "Bearer "+accessToken)
+		httpReq.Header.Set("Content-Type", "application/json")
 
 		// Execute request
-		resp, err := client.Do(req)
+		resp, err := client.Do(httpReq)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("request failed: %w", err)
+			return nil, nil, fmt.Errorf("request failed: %w", err)
 		}
 		defer resp.Body.Close()
 
 		var result interface{}
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+			return nil, nil, fmt.Errorf("failed to decode response: %w", err)
 		}
 
 		responseData, err := json.Marshal(result)
 		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to marshal response: %w", err)
+			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
 
-		return mcp.CallToolResult{
-			Content: []any{
-				mcp.TextContent{
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
 					Text: string(responseData),
-					Type: "text",
 				},
 			},
-		}, nil
+		}, nil, nil
 	}
 }
