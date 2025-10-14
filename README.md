@@ -583,20 +583,217 @@ Configure Windsurf to use the MCP server:
 }
 ```
 
+## Usage with n8n
+
+The Last9 MCP server can be integrated with [n8n](https://n8n.io/) workflows using HTTP mode. This allows you to query Last9 observability data (logs, metrics, traces) from your n8n automation workflows.
+
+> **Note**: This guide covers local n8n setup. For cloud/remote n8n deployments, see the [Deployment Notes](#7-deployment-notes) section below.
+
+### 1. Start the MCP Server in HTTP Mode
+
+First, start the Last9 MCP server in HTTP mode on your local machine:
+
+```bash
+# Export required environment variables
+export LAST9_BASE_URL="<last9_otlp_host>"
+export LAST9_AUTH_TOKEN="<last9_otlp_auth_token>"
+export LAST9_REFRESH_TOKEN="<last9_write_refresh_token>"
+export LAST9_HTTP=true
+export LAST9_PORT=8080  # Optional, defaults to 8080
+
+# Start the server
+# If installed via Homebrew:
+last9-mcp
+
+# If installed via NPM:
+npx @last9/mcp-server
+```
+
+The server will be available at `http://localhost:8080/mcp`
+
+### 2. Configure n8n HTTP Request Node
+
+In your n8n workflow, add an **HTTP Request** node with the following configuration:
+
+**Basic Settings:**
+- **Method:** POST
+- **URL:** `http://localhost:8080/mcp`
+
+**Headers:**
+- `Content-Type`: `application/json`
+- `Mcp-Session-Id`: `session_{{ $now.toUnixInteger() }}000000000`
+
+**Body (JSON):**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "get_service_logs",
+    "arguments": {
+      "service_name": "your-service-name",
+      "lookback_minutes": 30,
+      "limit": 10
+    }
+  }
+}
+```
+
+### 3. Available MCP Tools
+
+You can call any of the Last9 MCP tools by changing the `name` parameter in the request body:
+
+- `get_service_logs` - Get raw log entries for a service
+- `get_service_traces` - Query traces for a service
+- `get_exceptions` - Get server-side exceptions
+- `get_service_summary` - Get service metrics summary
+- `get_service_performance_details` - Get detailed performance metrics
+- `get_alerts` - Get currently active alerts
+- `prometheus_range_query` - Execute PromQL queries
+- `get_change_events` - Get deployment and change events
+
+See the [Tools Documentation](#tools-documentation) section above for complete parameter details for each tool.
+
+### 4. Example n8n Workflows
+
+**Example 1: Monitor Service Errors**
+1. **Schedule Trigger** - Run every 15 minutes
+2. **HTTP Request** - Call `get_service_logs` with severity filter for errors
+3. **IF Node** - Check if errors found
+4. **Slack/Email** - Send alert notification
+
+**Example 2: Incident Investigation**
+1. **Webhook Trigger** - Receive alert webhook
+2. **HTTP Request #1** - Get recent exceptions
+3. **HTTP Request #2** - Get service traces
+4. **HTTP Request #3** - Get service logs
+5. **Function Node** - Combine and format data
+6. **Slack** - Post incident summary
+
+**Example 3: Daily Report**
+1. **Schedule Trigger** - Run daily at 9 AM
+2. **HTTP Request** - Call `get_service_summary` for all services
+3. **Function Node** - Format metrics
+4. **Email** - Send daily observability report
+
+### 5. Parsing MCP Responses
+
+The MCP server returns JSON-RPC responses. Access the result data using:
+
+```javascript
+// In n8n Function node
+const result = $json.result.content[0].text;
+const data = JSON.parse(result);
+
+// Now you can access the observability data
+return data;
+```
+
+### 6. Example curl Test
+
+Test your MCP server before integrating with n8n:
+
+```bash
+curl -X POST http://localhost:8080/mcp \
+  -H "Content-Type: application/json" \
+  -H "Mcp-Session-Id: session_$(date +%s)000000000" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "get_service_logs",
+      "arguments": {
+        "service_name": "your-service-name",
+        "lookback_minutes": 30,
+        "limit": 10
+      }
+    }
+  }'
+```
+
+### 7. Deployment Notes
+
+**For Local n8n (self-hosted on same machine):**
+- Run MCP server on `localhost:8080`
+- n8n connects to `http://localhost:8080/mcp`
+- Both services run on the same machine
+
+**For Cloud/Remote n8n Deployments:**
+
+If n8n runs on a remote server or n8n.cloud:
+
+**Option 1: Same Server Deployment**
+```bash
+# Deploy MCP server on the same server as n8n
+# n8n can connect to http://localhost:8080/mcp
+```
+
+**Option 2: Docker Deployment**
+```bash
+# Run MCP server as a Docker container
+docker run -d \
+  --name last9-mcp \
+  -e LAST9_BASE_URL="<last9_otlp_host>" \
+  -e LAST9_AUTH_TOKEN="<last9_otlp_auth_token>" \
+  -e LAST9_REFRESH_TOKEN="<last9_write_refresh_token>" \
+  -e LAST9_HTTP=true \
+  -e LAST9_PORT=8080 \
+  -p 8080:8080 \
+  last9/mcp-server
+
+# If on same Docker network as n8n, use: http://last9-mcp:8080/mcp
+# Otherwise use: http://<server-ip>:8080/mcp
+```
+
+**Option 3: Systemd Service**
+```bash
+# Create /etc/systemd/system/last9-mcp.service
+[Unit]
+Description=Last9 MCP Server
+After=network.target
+
+[Service]
+Type=simple
+User=last9
+Environment="LAST9_BASE_URL=<last9_otlp_host>"
+Environment="LAST9_AUTH_TOKEN=<last9_otlp_auth_token>"
+Environment="LAST9_REFRESH_TOKEN=<last9_write_refresh_token>"
+Environment="LAST9_HTTP=true"
+Environment="LAST9_PORT=8080"
+ExecStart=/usr/local/bin/last9-mcp
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+
+# Enable and start
+sudo systemctl enable last9-mcp
+sudo systemctl start last9-mcp
+```
+
+**Security Considerations:**
+- Use environment variables or secrets management for credentials
+- Consider using a reverse proxy (nginx) with authentication if exposing externally
+- For public internet exposure, use HTTPS and API authentication
+- Restrict access using firewall rules or network policies
+
 ## Development
 
 For local development and testing, you can run the MCP server in HTTP mode which makes it easier to debug requests and responses.
 
 ### Running in HTTP Mode
 
-Set the `HTTP_MODE` environment variable to enable HTTP server mode:
+Set the `LAST9_HTTP` environment variable to enable HTTP server mode:
 
 ```bash
 # Export required environment variables
-export LAST9_API_TOKEN="your_api_token"
+export LAST9_AUTH_TOKEN="your_auth_token"
 export LAST9_BASE_URL="https://your-last9-endpoint"  # Your Last9 endpoint
-export HTTP_MODE=true
-export HTTP_PORT=8080  # Optional, defaults to 8080
+export LAST9_REFRESH_TOKEN="your_refresh_token"
+export LAST9_HTTP=true
+export LAST9_PORT=8080  # Optional, defaults to 8080
 
 # Run the server
 ./last9-mcp-server
@@ -666,10 +863,10 @@ cd last9-mcp-server
 go build -o last9-mcp-server
 
 # Run in development mode
-HTTP_MODE=true ./last9-mcp-server
+LAST9_HTTP=true ./last9-mcp-server
 ```
 
-**Note**: HTTP mode is for development and testing only. When integrating with Claude Desktop or other MCP clients, use the default STDIO mode (without `HTTP_MODE=true`).
+**Note**: HTTP mode is for development and testing only. When integrating with Claude Desktop or other MCP clients, use the default STDIO mode (without `LAST9_HTTP=true`).
 
 ## Badges
 
