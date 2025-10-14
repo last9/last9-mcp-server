@@ -1,13 +1,15 @@
 package logs
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"last9-mcp/internal/models"
-	"last9-mcp/internal/utils"
 	"net/http"
 	"net/url"
 	"time"
+
+	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/acrmp/mcp"
 )
@@ -59,20 +61,36 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(mcp
 			region = r
 		}
 
-		// Build the API URL
-		apiURL := fmt.Sprintf("%s/logs/api/v1/labels",
-			cfg.APIBaseURL)
+		// Calculate time range duration in minutes
+		durationMinutes := (endTime - startTime) / 60
 
-		// Add query parameters
+		// Common query parameters
 		queryParams := url.Values{}
 		queryParams.Set("region", region)
 		queryParams.Set("start", fmt.Sprintf("%d", startTime))
 		queryParams.Set("end", fmt.Sprintf("%d", endTime))
 
-		fullURL := fmt.Sprintf("%s?%s", apiURL, queryParams.Encode())
+		var req *http.Request
+		var err error
 
-		// Create the request
-		req, err := http.NewRequest("GET", fullURL, nil)
+		if durationMinutes > 20 {
+			// Use GET /logs/api/v1/labels for time ranges > 20 minutes
+			apiURL := fmt.Sprintf("%s/logs/api/v1/labels?%s", cfg.APIBaseURL, queryParams.Encode())
+			req, err = http.NewRequest("GET", apiURL, nil)
+		} else {
+			// Use POST /logs/api/v2/series/json for time ranges <= 20 minutes
+			apiURL := fmt.Sprintf("%s/logs/api/v2/series/json?%s", cfg.APIBaseURL, queryParams.Encode())
+
+			// Create JSON pipeline body
+			pipeline := map[string]interface{}{
+				"pipeline": []interface{}{},
+			}
+			jsonBody, _ := json.Marshal(pipeline)
+
+			req, err = http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonBody))
+
+		}
+
 		if err != nil {
 			return mcp.CallToolResult{}, fmt.Errorf("failed to create request: %v", err)
 		}
@@ -81,6 +99,7 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(mcp
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
 		req.Header.Set("User-Agent", "Last9-MCP-Server/1.0")
+		req.Header.Set("Content-Type", "application/json")
 
 		// Execute the request
 		resp, err := client.Do(req)
@@ -96,14 +115,35 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(mcp
 			return mcp.CallToolResult{}, fmt.Errorf("API returned status %d: %v", resp.StatusCode, errorBody)
 		}
 
-		// Parse the response
+		// Parse the response based on which API was used
 		var result struct {
 			Data   []string `json:"data"`
 			Status string   `json:"status"`
 		}
 
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("failed to decode response: %v", err)
+		if durationMinutes > 20 {
+			// Labels API returns array of strings directly
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return mcp.CallToolResult{}, fmt.Errorf("failed to decode response: %v", err)
+			}
+		} else {
+			// Series API returns array of objects, extract keys from first object
+			var seriesResponse struct {
+				Data   []map[string]interface{} `json:"data"`
+				Status string                   `json:"status"`
+			}
+
+			if err := json.NewDecoder(resp.Body).Decode(&seriesResponse); err != nil {
+				return mcp.CallToolResult{}, fmt.Errorf("failed to decode response: %v", err)
+			}
+
+			result.Status = seriesResponse.Status
+			if len(seriesResponse.Data) > 0 {
+				// Extract attribute names (keys) from the first object
+				for key := range seriesResponse.Data[0] {
+					result.Data = append(result.Data, key)
+				}
+			}
 		}
 
 		// Check API status
