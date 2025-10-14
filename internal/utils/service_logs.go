@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -114,7 +115,7 @@ func CreateServiceLogsAPIRequest(service string, startTime, endTime int64, sever
 }
 
 // MakeServiceLogsAPI creates a service logs API request with improved error handling and validation
-func MakeServiceLogsAPI(client *http.Client, request ServiceLogsAPIRequest, cfg *models.Config) (*http.Response, error) {
+func MakeServiceLogsAPI(ctx context.Context, client *http.Client, request ServiceLogsAPIRequest, cfg *models.Config) (*http.Response, error) {
 	// Validate inputs
 	if err := validateServiceLogsInputs(client, cfg); err != nil {
 		return nil, err
@@ -138,7 +139,7 @@ func MakeServiceLogsAPI(client *http.Client, request ServiceLogsAPIRequest, cfg 
 		return nil, fmt.Errorf("failed to create request body: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, fullURL, bytes.NewBuffer(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
