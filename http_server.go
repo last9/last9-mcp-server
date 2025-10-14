@@ -21,7 +21,7 @@ import (
 type HTTPServer struct {
 	server   *last9mcp.Last9MCPServer
 	config   models.Config
-	toolsMap  map[string]interface{}
+	toolsMap map[string]interface{}
 	sessions map[string]*MCPSession
 	mu       sync.RWMutex
 }
