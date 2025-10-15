@@ -401,6 +401,8 @@ The Last9 MCP server requires the following environment variables:
 - `LAST9_REFRESH_TOKEN`: (required) Refresh Token with Write permissions, needed
   for accessing control plane APIs from
   [API Access](https://app.last9.io/settings/api-access)
+- `OTEL_EXPORTER_OTLP_ENDPOINT`: (required) OpenTelemetry collector endpoint URL
+- `OTEL_EXPORTER_OTLP_HEADERS`: (required) Headers for OTLP exporter authentication
 
 ## Usage
 
@@ -423,7 +425,9 @@ Configure the Claude app to use the MCP server:
       "env": {
         "LAST9_BASE_URL": "<last9_otlp_host>",
         "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
-        "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>"
+        "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "<otel_endpoint_url>",
+        "OTEL_EXPORTER_OTLP_HEADERS": "<otel_headers>"
       }
     }
   }
@@ -440,7 +444,9 @@ Configure the Claude app to use the MCP server:
       "env": {
         "LAST9_BASE_URL": "<last9_otlp_host>",
         "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
-        "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>"
+        "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "<otel_endpoint_url>",
+        "OTEL_EXPORTER_OTLP_HEADERS": "<otel_headers>"
       }
     }
   }
@@ -466,7 +472,9 @@ Configure Cursor to use the MCP server:
       "env": {
         "LAST9_BASE_URL": "<last9_otlp_host>",
         "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
-        "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>"
+        "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "<otel_endpoint_url>",
+        "OTEL_EXPORTER_OTLP_HEADERS": "<otel_headers>"
       }
     }
   }
@@ -483,7 +491,9 @@ Configure Cursor to use the MCP server:
       "env": {
         "LAST9_BASE_URL": "<last9_otlp_host>",
         "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
-        "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>"
+        "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "<otel_endpoint_url>",
+        "OTEL_EXPORTER_OTLP_HEADERS": "<otel_headers>"
       }
     }
   }
@@ -509,7 +519,9 @@ Configure Windsurf to use the MCP server:
       "env": {
         "LAST9_BASE_URL": "<last9_otlp_host>",
         "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
-        "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>"
+        "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "<otel_endpoint_url>",
+        "OTEL_EXPORTER_OTLP_HEADERS": "<otel_headers>"
       }
     }
   }
@@ -526,7 +538,9 @@ Configure Windsurf to use the MCP server:
       "env": {
         "LAST9_BASE_URL": "<last9_otlp_host>",
         "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
-        "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>"
+        "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "<otel_endpoint_url>",
+        "OTEL_EXPORTER_OTLP_HEADERS": "<otel_headers>"
       }
     }
   }
@@ -555,7 +569,9 @@ Configure Windsurf to use the MCP server:
         "env": {
           "LAST9_BASE_URL": "<last9_otlp_host>",
           "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
-          "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>"
+          "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>",
+          "OTEL_EXPORTER_OTLP_ENDPOINT": "<otel_endpoint_url>",
+          "OTEL_EXPORTER_OTLP_HEADERS": "<otel_headers>"
         }
       }
     }
@@ -575,7 +591,9 @@ Configure Windsurf to use the MCP server:
         "env": {
           "LAST9_BASE_URL": "<last9_otlp_host>",
           "LAST9_AUTH_TOKEN": "<last9_otlp_auth_token>",
-          "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>"
+          "LAST9_REFRESH_TOKEN": "<last9_write_refresh_token>",
+          "OTEL_EXPORTER_OTLP_ENDPOINT": "<otel_endpoint_url>",
+          "OTEL_EXPORTER_OTLP_HEADERS": "<otel_headers>"
         }
       }
     }
@@ -595,6 +613,8 @@ Set the `HTTP_MODE` environment variable to enable HTTP server mode:
 # Export required environment variables
 export LAST9_API_TOKEN="your_api_token"
 export LAST9_BASE_URL="https://your-last9-endpoint"  # Your Last9 endpoint
+export OTEL_EXPORTER_OTLP_ENDPOINT="<otel_endpoint_url>"
+export OTEL_EXPORTER_OTLP_HEADERS="<otel_headers>"
 export HTTP_MODE=true
 export HTTP_PORT=8080  # Optional, defaults to 8080
 

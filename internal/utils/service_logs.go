@@ -6,10 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"last9-mcp/internal/models"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"last9-mcp/internal/models"
 )
 
 // Constants for service logs API
@@ -204,7 +205,7 @@ func buildServiceLogsURL(apiBaseURL string, params ServiceLogsParams) (string, e
 }
 
 // MakeLogsJSONQueryAPI posts a raw log JSON pipeline to the query_range API with the given time range
-func MakeLogsJSONQueryAPI(client *http.Client, cfg models.Config, pipeline any, startMs, endMs int64) (*http.Response, error) {
+func MakeLogsJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.Config, pipeline any, startMs, endMs int64) (*http.Response, error) {
 	// Basic validation
 	if client == nil {
 		return nil, errors.New("http client cannot be nil")
@@ -235,7 +236,7 @@ func MakeLogsJSONQueryAPI(client *http.Client, cfg models.Config, pipeline any, 
 	}
 
 	// Create request
-	req, err := http.NewRequest(http.MethodPost, fullURL, bytes.NewBuffer(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
