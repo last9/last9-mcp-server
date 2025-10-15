@@ -7,6 +7,9 @@ on:
       - closed
     branches:
       - main
+  push:
+    branches:
+      - 'release-**'
 
 permissions:
   contents: write
@@ -14,7 +17,7 @@ permissions:
 
 jobs:
   tag-and-release:
-    if: github.event.pull_request.merged == true
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     outputs:
       version_changed: ${{ steps.version_change.outputs.changed }}
@@ -78,7 +81,10 @@ jobs:
 
   publish-docker:
     needs: tag-and-release
-    if: needs.tag-and-release.outputs.version_changed == 'true'
+    if: |
+      always() &&
+      (needs.tag-and-release.outputs.version_changed == 'true' ||
+       (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-')))
     runs-on: ubuntu-latest
     env:
       DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
@@ -86,6 +92,18 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Get version from package.json
+        id: get_version
+        run: |
+          VERSION=$(jq -r .version package.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Extract branch name
+        id: extract_branch
+        run: |
+          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -107,8 +125,27 @@ jobs:
           username: ${{ env.DOCKER_USERNAME }}
           password: ${{ env.DOCKER_PASSWORD }}
 
-      - name: Build and Push Docker Image
-        if: steps.check_secrets.outputs.has_docker_secrets == 'true'
+      - name: Build and Push Docker Image (Release Branch)
+        if: |
+          steps.check_secrets.outputs.has_docker_secrets == 'true' &&
+          github.event_name == 'push' &&
+          startsWith(github.ref, 'refs/heads/release-')
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            docker-registry.last9.io/last9/last9-mcp-server:${{ steps.extract_branch.outputs.branch_name }}
+            docker-registry.last9.io/last9/last9-mcp-server:${{ steps.extract_branch.outputs.branch_name }}-v${{ steps.get_version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      - name: Build and Push Docker Image (Main Branch)
+        if: |
+          steps.check_secrets.outputs.has_docker_secrets == 'true' &&
+          needs.tag-and-release.outputs.version_changed == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
