@@ -150,7 +150,7 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 		)
 
 		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, promql, endTimeParam, cfg)
+		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, promql, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -199,7 +199,7 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 			int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, respTimePromql, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, respTimePromql, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -237,7 +237,7 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 			int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, errorRateQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, errorRateQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -465,7 +465,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			"sum(trace_service_apdex_score{service_name='%s', env=~'%s'})",
 			serviceName, env,
 		)
-		httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, apdexQuery, startTimeParam, endTimeParam, cfg)
+		httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, apdexQuery, startTimeParam, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -488,7 +488,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			"sum by (quantile) (trace_service_response_time{service_name='%s', env='%s'}[%s])",
 			serviceName, env, timeRange,
 		)
-		httpResp, err = utils.MakePromRangeAPIQuery(ctx, client, rtQuery, startTimeParam, endTimeParam, cfg)
+		httpResp, err = utils.MakePromRangeAPIQuery(ctx, client, rtQuery, startTimeParam, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -511,7 +511,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			"(1 - (sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[%s])) or 0) / (sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[%s])) + 0.0000001)) * 100 default -999",
 			serviceName, env, timeRange, serviceName, env, timeRange,
 		)
-		httpResp, err = utils.MakePromRangeAPIQuery(ctx, client, availQuery, startTimeParam, endTimeParam, cfg)
+		httpResp, err = utils.MakePromRangeAPIQuery(ctx, client, availQuery, startTimeParam, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -534,7 +534,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			"sum by (http_status_code)(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[%s])) * 60 default 0",
 			serviceName, env, timeRange,
 		)
-		httpResp, err = utils.MakePromRangeAPIQuery(ctx, client, throughputQuery, startTimeParam, endTimeParam, cfg)
+		httpResp, err = utils.MakePromRangeAPIQuery(ctx, client, throughputQuery, startTimeParam, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -558,7 +558,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			"sum by (service_name, http_status_code)(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[%s])) * 60 default 0",
 			serviceName, env, timeRange,
 		)
-		httpResp, err = utils.MakePromRangeAPIQuery(ctx, client, errorRateQuery, startTimeParam, endTimeParam, cfg)
+		httpResp, err = utils.MakePromRangeAPIQuery(ctx, client, errorRateQuery, startTimeParam, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -580,7 +580,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			"(sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[%s])) / sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[%s])) * 100) default 0",
 			serviceName, env, timeRange, serviceName, env, timeRange,
 		)
-		httpResp, err = utils.MakePromRangeAPIQuery(ctx, client, errorPercentQuery, startTimeParam, endTimeParam, cfg)
+		httpResp, err = utils.MakePromRangeAPIQuery(ctx, client, errorPercentQuery, startTimeParam, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -602,7 +602,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			"topk(10, quantile_over_time(0.95, sum by (span_name, messaging_system, rpc_system, span_kind,net_peer_name,process_runtime_name,db_system)(trace_endpoint_duration{service_name='%s', span_kind!='SPAN_KIND_INTERNAL', env='%s', quantile='p95'}[%s])))",
 			serviceName, env, timeRange,
 		)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, topRTQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, topRTQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -641,7 +641,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, http_status_code)(sum_over_time(trace_endpoint_count{service_name="%s", env='%s', http_status_code=~"^[45].*"}[%s]))`,
 			serviceName, env, timeRange, serviceName, env, timeRange, serviceName, env, timeRange, serviceName, env, timeRange,
 		)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, topErrQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, topErrQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -680,7 +680,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			 sum by (http_status_code, span_kind)(sum_over_time(trace_endpoint_count{service_name="%s", env='%s', http_status_code=~"^[45].*"}[%s])))`,
 			serviceName, env, timeRange, serviceName, env, timeRange, serviceName, env, timeRange, serviceName, env, timeRange,
 		)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, topErrorsQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, topErrorsQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -801,7 +801,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare instant query request to Prometheus
-		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, throughputQuery, endTimeParam, cfg)
+		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, throughputQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -819,7 +819,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, respTimeQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, respTimeQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -838,7 +838,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, errorRateQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, errorRateQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -856,7 +856,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, dbThroughputQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, dbThroughputQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -874,7 +874,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, dbRespTimeQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, dbRespTimeQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -908,7 +908,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, dbErrorRateQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, dbErrorRateQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -926,7 +926,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, httpThroughputQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, httpThroughputQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -944,7 +944,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, httpRespTimeQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, httpRespTimeQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -976,7 +976,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, httpErrorRateQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, httpErrorRateQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -994,7 +994,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, messagingThroughputQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, messagingThroughputQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1012,7 +1012,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, messagingRespTimeQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, messagingRespTimeQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1044,7 +1044,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, messagingErrorRateQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, messagingErrorRateQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1402,7 +1402,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 			"sum by (client)(sum_over_time(trace_call_graph_count{server='%s', env=~'%s'}[%s])) / %d",
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
-		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, incomingThroughputQuery, endTimeParam, cfg)
+		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, incomingThroughputQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1419,7 +1419,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 			"quantile_over_time(0.95 ,sum by (client, quantile) (trace_call_graph_duration{server='%s', env=~'%s'}[%s]))",
 			serviceName, env, timeRange,
 		)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, incomingRespTimeQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, incomingRespTimeQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1436,7 +1436,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 			"sum by (client)(sum_over_time(trace_call_graph_count{server='%s', env=~'%s', client_status=~'4.*|5.*'}[%s])) / %d",
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, incomingErrorRateQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, incomingErrorRateQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1510,7 +1510,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 			"sum by (server)(sum_over_time(trace_call_graph_count{client='%s', env=~'%s'}[%s])) / %d",
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, outgoingThroughputQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, outgoingThroughputQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1527,7 +1527,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 			"quantile_over_time(0.95 ,sum by (server, quantile) (trace_call_graph_duration{client='%s', env=~'%s'}[%s]))",
 			serviceName, env, timeRange,
 		)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, outgoingRespTimeQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, outgoingRespTimeQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1544,7 +1544,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 			"sum by (server)(sum_over_time(trace_call_graph_count{client='%s', env=~'%s', client_status=~'4.*|5.*'}[%s])) / %d",
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, outgoingErrorRateQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, outgoingErrorRateQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1619,7 +1619,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 			"sum by (server_host, server_db_system, server_rpc_system, server_messaging_system, server_rpc_service) (sum_over_time(trace_internal_call_graph_count{client='%s', env=~'%s'}[%s])) / %d",
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, infrastructureThroughputQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, infrastructureThroughputQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1636,7 +1636,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 			"quantile_over_time(0.95 ,sum by (server_host, server_db_system, server_rpc_system, server_messaging_system, server_rpc_service, quantile) (trace_internal_call_graph_duration{client='%s', env=~'%s'}[%s]))",
 			serviceName, env, timeRange,
 		)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, infrastructureRespTimeQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, infrastructureRespTimeQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1653,7 +1653,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 			"sum by (server_host, server_db_system, server_rpc_system, server_messaging_system, server_rpc_service) (sum_over_time(trace_internal_call_graph_count{client='%s', env=~'%s', client_status=~'4.*|5.*'}[%s])) / %d",
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 		)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, infrastructureErrorRateQuery, endTimeParam, cfg)
+		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, infrastructureErrorRateQuery, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1855,7 +1855,7 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 			startTimeParam = endTimeParam - 3600 // default to last hour
 		}
 
-		httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, query, startTimeParam, endTimeParam, cfg)
+		httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, query, startTimeParam, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1928,7 +1928,7 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 			timeParam = time.Now().Unix()
 		}
 
-		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, query, timeParam, cfg)
+		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, query, timeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -2045,7 +2045,7 @@ func NewServiceEnvironmentsHandler(client *http.Client, cfg models.Config) func(
 			startTimeParam = endTimeParam - 3600 // default to last hour
 		}
 
-		httpResp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, "env", "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}", startTimeParam, endTimeParam, cfg)
+		httpResp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, "env", "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}", startTimeParam, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -2125,7 +2125,7 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 			startTimeParam = endTimeParam - 3600 // default to last hour
 		}
 
-		httpResp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, label, query, startTimeParam, endTimeParam, cfg)
+		httpResp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, label, query, startTimeParam, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -2198,7 +2198,7 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 			startTimeParam = endTimeParam - 3600 // default to last hour
 		}
 
-		httpResp, err := utils.MakePromLabelsAPIQuery(ctx, client, query, startTimeParam, endTimeParam, cfg)
+		httpResp, err := utils.MakePromLabelsAPIQuery(ctx, client, query, startTimeParam, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, err
 		}

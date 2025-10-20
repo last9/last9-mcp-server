@@ -112,7 +112,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		// Extract environment parameter if available
 		env := args.Env
 
-		physicalIndex, err := utils.FetchPhysicalIndex(ctx, client, cfg, args.Service, env)
+		physicalIndex, err := utils.FetchPhysicalIndex(ctx, client, &cfg, args.Service, env)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to fetch physical index: %w", err)
 		}

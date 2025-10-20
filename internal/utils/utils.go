@@ -79,6 +79,47 @@ func ExtractActionURLFromToken(accessToken string) (string, error) {
 	return fmt.Sprintf("https://%s", audStr), nil
 }
 
+// DoRequestWithTokenRefresh executes an HTTP request and automatically retries with a refreshed token on 401/403 errors
+func DoRequestWithTokenRefresh(ctx context.Context, client *http.Client, req *http.Request, cfg *models.Config) (*http.Response, error) {
+	// Try the request with the current token
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	// If we get 401 or 403, try to refresh the token and retry once
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		resp.Body.Close()
+
+		// Refresh the access token with mutex protection
+		cfg.TokenMutex.Lock()
+		newToken, refreshErr := RefreshAccessToken(ctx, client, *cfg)
+		if refreshErr != nil {
+			cfg.TokenMutex.Unlock()
+			return nil, fmt.Errorf("failed to refresh access token after %d: %w", resp.StatusCode, refreshErr)
+		}
+		cfg.AccessToken = newToken
+		cfg.TokenMutex.Unlock()
+
+		// Clone the request to retry with new token
+		retryReq := req.Clone(ctx)
+
+		// Update Authorization headers with new token
+		bearerToken := "Bearer " + newToken
+		if retryReq.Header.Get("Authorization") != "" {
+			retryReq.Header.Set("Authorization", bearerToken)
+		}
+		if retryReq.Header.Get("X-LAST9-API-TOKEN") != "" {
+			retryReq.Header.Set("X-LAST9-API-TOKEN", bearerToken)
+		}
+
+		// Retry the request
+		return client.Do(retryReq)
+	}
+
+	return resp, nil
+}
+
 // RefreshAccessToken gets a new access token using the refresh token
 func RefreshAccessToken(ctx context.Context, client *http.Client, cfg models.Config) (string, error) {
 	data := map[string]string{
@@ -348,7 +389,8 @@ func PopulateAPICfg(cfg *models.Config) error {
 	return nil
 }
 
-func MakePromInstantAPIQuery(ctx context.Context, client *http.Client, promql string, endTimeParam int64, cfg models.Config) (*http.Response, error) {
+func MakePromInstantAPIQuery(ctx context.Context, client *http.Client, promql string, endTimeParam int64, cfg *models.Config) (*http.Response, error) {
+	cfg.TokenMutex.RLock()
 	promInstantParam := struct {
 		Query     string `json:"query"`
 		Timestamp int64  `json:"timestamp"`
@@ -358,20 +400,24 @@ func MakePromInstantAPIQuery(ctx context.Context, client *http.Client, promql st
 	}{promql, endTimeParam, cfg.PrometheusReadURL, cfg.PrometheusUsername, cfg.PrometheusPassword}
 	bodyBytes, err := json.Marshal(promInstantParam)
 	if err != nil {
+		cfg.TokenMutex.RUnlock()
 		return nil, err
 	}
 	reqUrl := fmt.Sprintf("%s/prom_query_instant", cfg.APIBaseURL)
 	req, err := http.NewRequestWithContext(ctx, "POST", reqUrl, strings.NewReader(string(bodyBytes)))
 	if err != nil {
+		cfg.TokenMutex.RUnlock()
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
+	cfg.TokenMutex.RUnlock()
 
-	return client.Do(req)
+	return DoRequestWithTokenRefresh(ctx, client, req, cfg)
 }
 
-func MakePromRangeAPIQuery(ctx context.Context, client *http.Client, promql string, startTimeParam, endTimeParam int64, cfg models.Config) (*http.Response, error) {
+func MakePromRangeAPIQuery(ctx context.Context, client *http.Client, promql string, startTimeParam, endTimeParam int64, cfg *models.Config) (*http.Response, error) {
+	cfg.TokenMutex.RLock()
 	promRangeParam := struct {
 		Query     string `json:"query"`
 		Timestamp int64  `json:"timestamp"`
@@ -390,24 +436,28 @@ func MakePromRangeAPIQuery(ctx context.Context, client *http.Client, promql stri
 
 	bodyBytes, err := json.Marshal(promRangeParam)
 	if err != nil {
+		cfg.TokenMutex.RUnlock()
 		return nil, err
 	}
 
 	reqUrl := fmt.Sprintf("%s/prom_query", cfg.APIBaseURL)
 	req, err := http.NewRequestWithContext(ctx, "POST", reqUrl, bytes.NewReader(bodyBytes))
 	if err != nil {
+		cfg.TokenMutex.RUnlock()
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
+	cfg.TokenMutex.RUnlock()
 
-	return client.Do(req)
+	return DoRequestWithTokenRefresh(ctx, client, req, cfg)
 }
 
 // function to get the values of a particular label, for a given query filter
 // path: /prom_label_values
 
-func MakePromLabelValuesAPIQuery(ctx context.Context, client *http.Client, label string, matches string, startTimeParam, endTimeParam int64, cfg models.Config) (*http.Response, error) {
+func MakePromLabelValuesAPIQuery(ctx context.Context, client *http.Client, label string, matches string, startTimeParam, endTimeParam int64, cfg *models.Config) (*http.Response, error) {
+	cfg.TokenMutex.RLock()
 	promLabelValuesParam := struct {
 		Label     string   `json:"label"`
 		Timestamp int64    `json:"timestamp"`
@@ -428,21 +478,25 @@ func MakePromLabelValuesAPIQuery(ctx context.Context, client *http.Client, label
 
 	bodyBytes, err := json.Marshal(promLabelValuesParam)
 	if err != nil {
+		cfg.TokenMutex.RUnlock()
 		return nil, err
 	}
 
 	reqUrl := fmt.Sprintf("%s/prom_label_values", cfg.APIBaseURL)
 	req, err := http.NewRequestWithContext(ctx, "POST", reqUrl, bytes.NewReader(bodyBytes))
 	if err != nil {
+		cfg.TokenMutex.RUnlock()
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
+	cfg.TokenMutex.RUnlock()
 
-	return client.Do(req)
+	return DoRequestWithTokenRefresh(ctx, client, req, cfg)
 }
 
-func MakePromLabelsAPIQuery(ctx context.Context, client *http.Client, metric string, startTimeParam, endTimeParam int64, cfg models.Config) (*http.Response, error) {
+func MakePromLabelsAPIQuery(ctx context.Context, client *http.Client, metric string, startTimeParam, endTimeParam int64, cfg *models.Config) (*http.Response, error) {
+	cfg.TokenMutex.RLock()
 	promLabelsParam := struct {
 		Timestamp int64  `json:"timestamp"`
 		Window    int64  `json:"window"`
@@ -461,18 +515,21 @@ func MakePromLabelsAPIQuery(ctx context.Context, client *http.Client, metric str
 
 	bodyBytes, err := json.Marshal(promLabelsParam)
 	if err != nil {
+		cfg.TokenMutex.RUnlock()
 		return nil, err
 	}
 
 	reqUrl := fmt.Sprintf("%s/apm/labels", cfg.APIBaseURL)
 	req, err := http.NewRequestWithContext(ctx, "POST", reqUrl, bytes.NewReader(bodyBytes))
 	if err != nil {
+		cfg.TokenMutex.RUnlock()
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
+	cfg.TokenMutex.RUnlock()
 
-	return client.Do(req)
+	return DoRequestWithTokenRefresh(ctx, client, req, cfg)
 }
 
 // ConvertTimestamp converts a timestamp from the API response to RFC3339 format
@@ -533,7 +590,7 @@ func BuildOrFilter(fieldName string, values []string) map[string]interface{} {
 
 // FetchPhysicalIndex retrieves the physical index for logs queries using the provided service name and environment
 // Uses an instant query for data from the last 1 day
-func FetchPhysicalIndex(ctx context.Context, client *http.Client, cfg models.Config, serviceName, env string) (string, error) {
+func FetchPhysicalIndex(ctx context.Context, client *http.Client, cfg *models.Config, serviceName, env string) (string, error) {
 	// Build the PromQL query with a 2-hour window
 	query := fmt.Sprintf("sum by (name, destination) (physical_index_service_count{service_name='%s'", serviceName)
 	if env != "" {
@@ -552,7 +609,13 @@ func FetchPhysicalIndex(ctx context.Context, client *http.Client, cfg models.Con
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := json.Marshal(resp.Body)
+		var bodyBytes []byte
+		bodyBytes, _ = json.Marshal(map[string]interface{}{})
+		if resp.Body != nil {
+			buf := new(bytes.Buffer)
+			buf.ReadFrom(resp.Body)
+			bodyBytes = buf.Bytes()
+		}
 		return "", fmt.Errorf("physical index API returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
