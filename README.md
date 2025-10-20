@@ -605,6 +605,25 @@ Configure Windsurf to use the MCP server:
 
 For local development and testing, you can run the MCP server in HTTP mode which makes it easier to debug requests and responses.
 
+### Running Tests Locally
+
+```bash
+# Run all tests with verbose output
+go test -v ./...
+
+# Run integration tests only
+go test -v -run "^Test.*Integration$|^TestToken|^TestMCPTools|^TestError|^TestConcurrent" .
+
+# Run with race detection
+go test -v -race ./...
+
+# Run with coverage
+go test -v -coverprofile=coverage.txt ./...
+go tool cover -html=coverage.txt  # View coverage in browser
+```
+
+**Note**: Integration tests use mock servers and don't require real credentials.
+
 ### Running in HTTP Mode
 
 Set the `HTTP_MODE` environment variable to enable HTTP server mode:
