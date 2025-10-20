@@ -121,7 +121,7 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 		}
 
 		// First, fetch all available event_name values using the series API
-		availableEventNames, err := fetchAvailableEventNames(ctx, client, startTimeParam, endTimeParam, cfg)
+		availableEventNames, err := fetchAvailableEventNames(ctx, client, startTimeParam, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to fetch available event names: %w", err)
 		}
@@ -156,7 +156,7 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 		promql := fmt.Sprintf("last9_change_events%s", filterStr)
 
 		// Make range query to get change events over time
-		resp, err := utils.MakePromRangeAPIQuery(ctx, client, promql, startTimeParam, endTimeParam, cfg)
+		resp, err := utils.MakePromRangeAPIQuery(ctx, client, promql, startTimeParam, endTimeParam, &cfg)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to query change events: %w", err)
 		}
@@ -205,7 +205,7 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 }
 
 // fetchAvailableEventNames fetches all available event_name values from the last9_change_events metric
-func fetchAvailableEventNames(ctx context.Context, client *http.Client, startTime, endTime int64, cfg models.Config) ([]string, error) {
+func fetchAvailableEventNames(ctx context.Context, client *http.Client, startTime, endTime int64, cfg *models.Config) ([]string, error) {
 	// Use the label values API to get all event_name values
 	resp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, "event_type", "last9_change_events", startTime, endTime, cfg)
 	if err != nil {

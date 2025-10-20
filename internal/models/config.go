@@ -1,5 +1,7 @@
 package models
 
+import "sync"
+
 // Config holds the server configuration parameters
 type Config struct {
 	// Last9 connection settings
@@ -24,4 +26,7 @@ type Config struct {
 	PrometheusReadURL  string // URL for Prometheus read API
 	PrometheusUsername string // Username for Prometheus authentication
 	PrometheusPassword string // Password for Prometheus authentication
+
+	// Token refresh synchronization
+	TokenMutex sync.RWMutex // Protects access token during refresh
 }
