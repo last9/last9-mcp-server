@@ -603,9 +603,9 @@ Configure Windsurf to use the MCP server:
 
 ## Usage with n8n
 
-The Last9 MCP server can be integrated with [n8n](https://n8n.io/) workflows using HTTP mode. This allows you to query Last9 observability data (logs, metrics, traces) from your n8n automation workflows.
+The Last9 MCP server can be integrated with [n8n](https://n8n.io/) workflows using the stateless HTTP endpoint. This allows you to query Last9 observability data (logs, metrics, traces) from your n8n automation workflows.
 
-> **Note**: This guide covers local n8n setup. For cloud/remote n8n deployments, see the [Deployment Notes](#7-deployment-notes) section below.
+> **Note**: The server provides two endpoints - a streaming endpoint for IDEs (Claude Desktop, Cursor, etc.) and a stateless endpoint specifically designed for n8n and REST clients.
 
 ### 1. Start the MCP Server in HTTP Mode
 
@@ -627,7 +627,9 @@ last9-mcp
 npx @last9/mcp-server
 ```
 
-The server will be available at `http://localhost:8080/mcp`
+The server will start with two endpoints:
+- `http://localhost:8080/` - Streaming endpoint (for Claude Desktop, Cursor, etc.)
+- `http://localhost:8080/mcp` - **Stateless endpoint (for n8n, REST clients)** ← Use this for n8n
 
 ### 2. Configure n8n HTTP Request Node
 
@@ -635,11 +637,11 @@ In your n8n workflow, add an **HTTP Request** node with the following configurat
 
 **Basic Settings:**
 - **Method:** POST
-- **URL:** `http://localhost:8080/mcp`
+- **URL:** `http://localhost:8080/mcp` (or `http://host.docker.internal:8080/mcp` if n8n runs in Docker)
 
 **Headers:**
 - `Content-Type`: `application/json`
-- `Mcp-Session-Id`: `session_{{ $now.toUnixInteger() }}000000000`
+- `Accept`: `application/json, text/event-stream`
 
 **Body (JSON):**
 ```json
@@ -657,6 +659,12 @@ In your n8n workflow, add an **HTTP Request** node with the following configurat
   }
 }
 ```
+
+**Important Notes:**
+- Use the `/mcp` endpoint (not `/`)
+- No session initialization required - direct tool calling works
+- Include both `application/json` and `text/event-stream` in Accept header
+- No `Mcp-Session-Id` header needed for stateless endpoint
 
 ### 3. Available MCP Tools
 
@@ -697,15 +705,31 @@ See the [Tools Documentation](#tools-documentation) section above for complete p
 
 ### 5. Parsing MCP Responses
 
-The MCP server returns JSON-RPC responses. Access the result data using:
+The MCP server returns responses in Server-Sent Events (SSE) format. You need to parse the `data:` line to extract the JSON response:
 
 ```javascript
-// In n8n Function node
-const result = $json.result.content[0].text;
-const data = JSON.parse(result);
+// In n8n Function node after HTTP Request
+const response = $input.item.json.body;
 
-// Now you can access the observability data
-return data;
+// Extract JSON from SSE format
+const dataLine = response.split('\n').find(line => line.startsWith('data: '));
+if (dataLine) {
+  const jsonResponse = JSON.parse(dataLine.substring(6)); // Remove 'data: ' prefix
+
+  // Extract the actual result
+  const result = jsonResponse.result.content[0].text;
+  const data = JSON.parse(result);
+
+  // Now you can access the observability data
+  return data;
+}
+```
+
+**Example Response:**
+```
+event: message
+id: GYCTWLPK4TUP33KKWSCNYVGU4H_0
+data: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"[\"production\"]\n"}]}}
 ```
 
 ### 6. Example curl Test
@@ -715,20 +739,23 @@ Test your MCP server before integrating with n8n:
 ```bash
 curl -X POST http://localhost:8080/mcp \
   -H "Content-Type: application/json" \
-  -H "Mcp-Session-Id: session_$(date +%s)000000000" \
+  -H "Accept: application/json, text/event-stream" \
   -d '{
     "jsonrpc": "2.0",
     "id": 1,
     "method": "tools/call",
     "params": {
-      "name": "get_service_logs",
-      "arguments": {
-        "service_name": "your-service-name",
-        "lookback_minutes": 30,
-        "limit": 10
-      }
+      "name": "get_service_environments",
+      "arguments": {}
     }
   }'
+```
+
+**Expected Response:**
+```
+event: message
+id: GYCTWLPK4TUP33KKWSCNYVGU4H_0
+data: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"[\"production\"]\n"}]}}
 ```
 
 ### 7. Deployment Notes
