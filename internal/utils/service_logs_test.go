@@ -13,6 +13,10 @@ import (
 )
 
 func TestMakeLogsJSONQueryAPI(t *testing.T) {
+	if os.Getenv("ENABLE_INTEGRATION_TESTS") == "" {
+		t.Skip("Skipping integration test - set ENABLE_INTEGRATION_TESTS=1 to run")
+	}
+
 	// Prepare a fake pipeline
 	pipeline := []map[string]any{
 		{
@@ -29,20 +33,14 @@ func TestMakeLogsJSONQueryAPI(t *testing.T) {
 	end := time.Now().UnixMilli()
 	start := end - int64(60*time.Minute/time.Millisecond)
 
-	// Build config
-	// Mirror env usage from apm_test.go
-	baseURL := os.Getenv("TEST_BASE_URL")
-	authToken := os.Getenv("TEST_AUTH_TOKEN")
-	refreshToken := os.Getenv("TEST_REFRESH_TOKEN")
-
+	// Build config from environment variables
 	cfg := models.Config{
-		BaseURL:      baseURL,
-		AuthToken:    authToken,
-		RefreshToken: refreshToken,
+		BaseURL:      os.Getenv("LAST9_BASE_URL"),
+		AuthToken:    os.Getenv("LAST9_AUTH_TOKEN"),
+		RefreshToken: os.Getenv("LAST9_REFRESH_TOKEN"),
 	}
-	// Populate API cfg (e.g., AccessToken); then override APIBaseURL to our test server
 	if err := PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to populate API cfg: %v", err)
+		t.Fatalf("failed to populate API config: %v", err)
 	}
 
 	ctx := context.Background()

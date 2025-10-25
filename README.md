@@ -608,11 +608,8 @@ For local development and testing, you can run the MCP server in HTTP mode which
 ### Running Tests Locally
 
 ```bash
-# Run all tests with verbose output
+# Run unit tests (uses mock configuration)
 go test -v ./...
-
-# Run integration tests only
-go test -v -run "^Test.*Integration$|^TestToken|^TestMCPTools|^TestError|^TestConcurrent" .
 
 # Run with race detection
 go test -v -race ./...
@@ -622,7 +619,24 @@ go test -v -coverprofile=coverage.txt ./...
 go tool cover -html=coverage.txt  # View coverage in browser
 ```
 
-**Note**: Integration tests use mock servers and don't require real credentials.
+**Note**: Unit tests use mock servers and don't require real credentials.
+
+### Running Integration Tests Against Real API
+
+To test against the real Last9 API locally, set the `ENABLE_INTEGRATION_TESTS` environment variable:
+
+```bash
+# Set up credentials
+export ENABLE_INTEGRATION_TESTS=1
+export LAST9_BASE_URL="https://your-last9-endpoint"
+export LAST9_AUTH_TOKEN="your_auth_token"
+export LAST9_REFRESH_TOKEN="your_refresh_token"
+
+# Run integration tests
+go test -v ./internal/...
+```
+
+**Note**: Integration tests are automatically skipped in CI to avoid requiring real credentials.
 
 ### Running in HTTP Mode
 

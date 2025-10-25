@@ -11,54 +11,32 @@ import (
 	"time"
 
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/testutil"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// const (
-//
-//	BaseURL      = "https://otlp-aps1.last9.io:443"
-//	AuthToken    = "Basic <your-auth-token>"
-//
-// )
-var (
-	BaseURL      = "https://otlp-aps1.last9.io:443"
-	AuthToken    = os.Getenv("TEST_AUTH_TOKEN")
-	RefreshToken = os.Getenv("TEST_REFRESH_TOKEN")
-)
 
 func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
-	throughputResp := `{
-		"data": {
-			"result": [
-				{
-					"metric": {"service_name": "svc1"},
-					"value": [1687600000, "10"]
-				}
-			]
+	throughputResp := `[
+		{
+			"metric": {"service_name": "svc1"},
+			"value": [1687600000, "10"]
 		}
-	}`
-	responseTimeResp := `{
-		"data": {
-			"result": [
-				{
-					"metric": {"service_name": "svc1"},
-					"value": [1687600000, "1.1"]
-				}
-			]
+	]`
+	responseTimeResp := `[
+		{
+			"metric": {"service_name": "svc1"},
+			"value": [1687600000, "1.1"]
 		}
-	}`
-	errorRateResp := `{
-		"data": {
-			"result": [
-				{
-					"metric": {"service_name": "svc1"},
-					"value": [1687600000, "0.5"]
-				}
-			]
+	]`
+	errorRateResp := `[
+		{
+			"metric": {"service_name": "svc1"},
+			"value": [1687600000, "0.5"]
 		}
-	}`
+	]`
 
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -77,14 +55,9 @@ func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := models.Config{
-		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
-		RefreshToken: RefreshToken,
-	}
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
-	}
+	cfg := testutil.MockConfig()
+	cfg.APIBaseURL = server.URL
+	cfg.PrometheusReadURL = server.URL
 	handler := NewServiceSummaryHandler(server.Client(), cfg)
 
 	args := ServiceSummaryArgs{
@@ -118,14 +91,17 @@ func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
 
 // Add test for GetServicePerformanceDetails tool
 func TestGetServicePerformanceDetails(t *testing.T) {
+	if os.Getenv("ENABLE_INTEGRATION_TESTS") == "" {
+		t.Skip("Skipping integration test - set ENABLE_INTEGRATION_TESTS=1 to run")
+	}
 
 	cfg := models.Config{
-		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
-		RefreshToken: RefreshToken,
+		BaseURL:      os.Getenv("LAST9_BASE_URL"),
+		AuthToken:    os.Getenv("LAST9_AUTH_TOKEN"),
+		RefreshToken: os.Getenv("LAST9_REFRESH_TOKEN"),
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
+		t.Fatalf("failed to populate API config: %v", err)
 	}
 
 	handler := NewServicePerformanceDetailsHandler(http.DefaultClient, cfg)
@@ -162,14 +138,17 @@ func TestGetServicePerformanceDetails(t *testing.T) {
 
 // Add test for GetServiceOperationsSummary tool
 func TestGetServiceOperationsSummary(t *testing.T) {
+	if os.Getenv("ENABLE_INTEGRATION_TESTS") == "" {
+		t.Skip("Skipping integration test - set ENABLE_INTEGRATION_TESTS=1 to run")
+	}
 
 	cfg := models.Config{
-		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
-		RefreshToken: RefreshToken,
+		BaseURL:      os.Getenv("LAST9_BASE_URL"),
+		AuthToken:    os.Getenv("LAST9_AUTH_TOKEN"),
+		RefreshToken: os.Getenv("LAST9_REFRESH_TOKEN"),
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
+		t.Fatalf("failed to populate API config: %v", err)
 	}
 
 	handler := NewServiceOperationsSummaryHandler(http.DefaultClient, cfg)
@@ -205,14 +184,17 @@ func TestGetServiceOperationsSummary(t *testing.T) {
 
 // Add test for GetServiceDependencies tool
 func TestGetServiceDependencies(t *testing.T) {
+	if os.Getenv("ENABLE_INTEGRATION_TESTS") == "" {
+		t.Skip("Skipping integration test - set ENABLE_INTEGRATION_TESTS=1 to run")
+	}
 
 	cfg := models.Config{
-		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
-		RefreshToken: RefreshToken,
+		BaseURL:      os.Getenv("LAST9_BASE_URL"),
+		AuthToken:    os.Getenv("LAST9_AUTH_TOKEN"),
+		RefreshToken: os.Getenv("LAST9_REFRESH_TOKEN"),
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
+		t.Fatalf("failed to populate API config: %v", err)
 	}
 
 	handler := NewServiceDependencyGraphHandler(http.DefaultClient, cfg)
@@ -245,13 +227,17 @@ func TestGetServiceDependencies(t *testing.T) {
 }
 
 func TestNewServiceEnvironmentsHandler(t *testing.T) {
+	if os.Getenv("ENABLE_INTEGRATION_TESTS") == "" {
+		t.Skip("Skipping integration test - set ENABLE_INTEGRATION_TESTS=1 to run")
+	}
+
 	cfg := models.Config{
-		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
-		RefreshToken: RefreshToken,
+		BaseURL:      os.Getenv("LAST9_BASE_URL"),
+		AuthToken:    os.Getenv("LAST9_AUTH_TOKEN"),
+		RefreshToken: os.Getenv("LAST9_REFRESH_TOKEN"),
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
+		t.Fatalf("failed to populate API config: %v", err)
 	}
 
 	handler := NewServiceEnvironmentsHandler(http.DefaultClient, cfg)
@@ -283,14 +269,17 @@ func TestNewServiceEnvironmentsHandler(t *testing.T) {
 
 // write test for promql instant query handler
 func TestPromqlInstantQueryHandler(t *testing.T) {
+	if os.Getenv("ENABLE_INTEGRATION_TESTS") == "" {
+		t.Skip("Skipping integration test - set ENABLE_INTEGRATION_TESTS=1 to run")
+	}
 
 	cfg := models.Config{
-		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
-		RefreshToken: RefreshToken,
+		BaseURL:      os.Getenv("LAST9_BASE_URL"),
+		AuthToken:    os.Getenv("LAST9_AUTH_TOKEN"),
+		RefreshToken: os.Getenv("LAST9_REFRESH_TOKEN"),
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
+		t.Fatalf("failed to populate API config: %v", err)
 	}
 
 	handler := NewPromqlInstantQueryHandler(http.DefaultClient, cfg)
@@ -318,14 +307,17 @@ func TestPromqlInstantQueryHandler(t *testing.T) {
 
 // write test for promql range query handler
 func TestPromqlRangeQueryHandler(t *testing.T) {
+	if os.Getenv("ENABLE_INTEGRATION_TESTS") == "" {
+		t.Skip("Skipping integration test - set ENABLE_INTEGRATION_TESTS=1 to run")
+	}
 
 	cfg := models.Config{
-		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
-		RefreshToken: RefreshToken,
+		BaseURL:      os.Getenv("LAST9_BASE_URL"),
+		AuthToken:    os.Getenv("LAST9_AUTH_TOKEN"),
+		RefreshToken: os.Getenv("LAST9_REFRESH_TOKEN"),
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
+		t.Fatalf("failed to populate API config: %v", err)
 	}
 
 	handler := NewPromqlRangeQueryHandler(http.DefaultClient, cfg)
