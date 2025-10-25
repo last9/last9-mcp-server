@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,8 +45,9 @@ func TestMakeLogsJSONQueryAPI(t *testing.T) {
 		t.Fatalf("failed to populate API cfg: %v", err)
 	}
 
+	ctx := context.Background()
 	// Execute
-	resp, err := MakeLogsJSONQueryAPI(http.DefaultClient, cfg, pipeline, start, end)
+	resp, err := MakeLogsJSONQueryAPI(ctx, http.DefaultClient, cfg, pipeline, start, end)
 	if err != nil {
 		t.Fatalf("MakeLogsJSONQueryAPI returned error: %v", err)
 	}

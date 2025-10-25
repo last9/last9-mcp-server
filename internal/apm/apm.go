@@ -101,7 +101,7 @@ const GetServiceSummaryDescription = `
 	Parameters:
 	- start_time: (Required) Start time of the time range in ISO format.
 	- end_time: (Required) End time of the time range in ISO format.
-	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
+	- env: (Required) Environment to filter by. If not provided, defaults to all environments.
 `
 
 func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceSummaryArgs) (*mcp.CallToolResult, any, error) {
@@ -1956,12 +1956,8 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 // tool handler to get label values for a given label name and filter prometheus query
 // handler for prometheus instant query
 const GetServiceEnvironmentsDescription = `
-	Return the environments available for the services. This tool returns an array of environments.
-	All other tools that retrieve information about services
-	like get_service_performance_details, get_service_dependency_graph, get_service_operations_summary,
-	get_service_sumary etc. require a mandatory "env" parameter. This must be one of the
-	environments returned by this tool. If the returned array is empty, use an empty string ""
-	as the value for the "env" parameter for other tools.
+	Return the environments available for the services. This tool returns an array of environments. These env can act as 
+	label or argument values for other tools.
 	Parameters:
 	- start_time: (Optional) Start time of the time range in ISO format. Defaults to end_time - 1 hour
 	- end_time: (Optional) End time of the time range in ISO format. Defaults to current time

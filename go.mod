@@ -3,6 +3,7 @@ module last9-mcp
 go 1.24.6
 
 require (
+	github.com/last9/mcp-go-sdk v0.0.0-20251015185513-1886c8f0ff86
 	github.com/modelcontextprotocol/go-sdk v0.3.1
 	github.com/peterbourgon/ff/v3 v3.4.0
 )
@@ -35,5 +36,3 @@ require (
 	google.golang.org/grpc v1.75.0 // indirect
 	google.golang.org/protobuf v1.36.8 // indirect
 )
-
-require github.com/last9/mcp-go-sdk v0.0.0-20251010115609-423f1198a9a7
