@@ -73,7 +73,9 @@ Parameters:
   HH:MM:SS). Leave empty to use lookback_minutes.
 - `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD
   HH:MM:SS). Leave empty to default to current time.
+- `service_name` (string, optional): Filter exceptions by service name (e.g., api-service).
 - `span_name` (string, optional): Name of the span to filter by.
+- `deployment_environment` (string, optional): Filter exceptions by deployment environment from resource attributes (e.g., production, staging).
 
 ### get_service_summary
 
