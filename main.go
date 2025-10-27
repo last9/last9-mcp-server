@@ -9,12 +9,18 @@ import (
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
+	"github.com/joho/godotenv"
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func main() {
 	log.Printf("Starting Last9 MCP Server v%s", utils.Version)
+
+	// Load .env file if it exists (ignore errors if file doesn't exist)
+	if err := godotenv.Load(); err != nil {
+		log.Printf("No .env file found or error loading it (this is ok): %v", err)
+	}
 
 	cfg, err := utils.SetupConfig(models.Config{})
 	if err != nil {
