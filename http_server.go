@@ -51,13 +51,21 @@ func (h *HTTPServer) Start() error {
 	// Create a mux to handle multiple endpoints
 	mux := http.NewServeMux()
 
-	// Create the streamable HTTP handler for the main MCP endpoint
-	mcpHandler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
+	// Create the streamable HTTP handler for the main MCP endpoint (streaming mode)
+	streamingHandler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
 		return h.server.Server
 	}, nil)
 
+	// Create a stateless handler for n8n and REST clients (stateless mode)
+	statelessHandler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
+		return h.server.Server
+	}, &mcp.StreamableHTTPOptions{
+		Stateless: true, // Enable stateless mode - no session validation, returns JSON for single requests
+	})
+
 	// Register handlers
-	mux.Handle("/", mcpHandler) // Main MCP endpoint
+	mux.Handle("/", streamingHandler)       // Streaming endpoint (for Claude Desktop, Cursor, etc.)
+	mux.Handle("/mcp", statelessHandler)    // Stateless endpoint (for n8n, REST clients)
 	mux.HandleFunc("/health", h.handleHealth)
 
 	// Create HTTP server with timeouts
@@ -70,6 +78,8 @@ func (h *HTTPServer) Start() error {
 	}
 
 	log.Printf("🚀 MCP server listening on %s", url)
+	log.Printf("   📡 Streaming endpoint: http://%s/ (for Claude Desktop, Cursor, etc.)", url)
+	log.Printf("   🔌 Stateless endpoint: http://%s/mcp (for n8n, REST clients)", url)
 
 	// add shutdown hook
 	signalChan := make(chan os.Signal, 1)
