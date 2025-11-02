@@ -45,6 +45,7 @@ IDEs. Implements the following MCP
 
 **Traces Management:**
 
+- `get_traces`: Retrieve traces by trace ID or service name with time range filtering.
 - `get_service_traces`: Query traces for a specific service with filtering options for span kinds, status codes, and other trace attributes.
 - `get_trace_attributes`: Get available trace attributes (series) for a specified time window.
 
@@ -291,6 +292,30 @@ Returns:
 - List of log attributes grouped into two categories:
   - Log Attributes: Standard log fields like service, severity, body, level, etc.
   - Resource Attributes: Resource-related fields prefixed with "resource_" like resource_k8s.pod.name, resource_service.name, etc.
+
+### get_traces
+
+Retrieve traces from Last9 by trace ID or service name. This tool allows you to get specific traces either by providing a trace ID for a single trace, or by providing a service name to get all traces for that service within a time range.
+
+Parameters:
+
+- `trace_id` (string, optional): Specific trace ID to retrieve. Cannot be used with service_name.
+- `service_name` (string, optional): Name of service to get traces for. Cannot be used with trace_id.
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60 minutes. Examples: 60, 30, 15.
+- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - lookback_minutes.
+- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `limit` (integer, optional): Maximum number of traces to return. Default: 10. Range: 1-100.
+- `env` (string, optional): Environment to filter by. Use "get_service_environments" tool to get available environments.
+
+Usage rules:
+- Exactly one of `trace_id` or `service_name` must be provided (not both, not neither)
+- Time range filtering only applies when using `service_name`
+
+Examples:
+- trace_id="abc123def456" - retrieves the specific trace
+- service_name="payment-service" + lookback_minutes=30 - gets all payment service traces from last 30 minutes
+
+Returns trace data including trace IDs, spans, duration, timestamps, and status information.
 
 ### get_service_traces
 

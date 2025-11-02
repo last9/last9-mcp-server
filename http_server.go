@@ -51,9 +51,8 @@ func (h *HTTPServer) Start() error {
 	// Create a mux to handle multiple endpoints
 	mux := http.NewServeMux()
 
-	// Create the streamable HTTP handler for the main MCP endpoint
-	// Enable stateless mode for easy curl testing - each request is independent
-	mcpHandler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
+	// Create stateless HTTP handler for easy curl testing on /mcp
+	statelessHandler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
 		return h.server.Server
 	}, &mcp.StreamableHTTPOptions{
 		Stateless: true, // Enable stateless mode - no session management needed
@@ -62,8 +61,14 @@ func (h *HTTPServer) Start() error {
 		},
 	})
 
+	// Create stateful HTTP handler for AI agents on /
+	statefulHandler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
+		return h.server.Server
+	}, nil) // Default stateful mode with session management
+
 	// Register handlers
-	mux.Handle("/mcp", mcpHandler) // Main MCP endpoint on /mcp path
+	mux.Handle("/mcp", statelessHandler) // Stateless endpoint for curl testing
+	mux.Handle("/", statefulHandler)     // Stateful endpoint for AI agents
 	mux.HandleFunc("/health", h.handleHealth)
 
 	// Create HTTP server with timeouts
