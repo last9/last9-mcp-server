@@ -440,7 +440,7 @@ func TestGetTracesHandler_Integration(t *testing.T) {
 
 	// Test with service name
 	args := GetTracesArgs{
-		ServiceName:     "test-service",  // Replace with actual service name for real testing
+		ServiceName:     "test-service", // Replace with actual service name for real testing
 		LookbackMinutes: 60,
 		Limit:           5,
 	}
