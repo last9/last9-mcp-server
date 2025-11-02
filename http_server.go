@@ -51,24 +51,23 @@ func (h *HTTPServer) Start() error {
 	// Create a mux to handle multiple endpoints
 	mux := http.NewServeMux()
 
-	// Create stateless HTTP handler for easy curl testing on /mcp
-	statelessHandler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
+	// Create unified MCP handler following official SDK recommendations
+	// Automatically detects stateless vs stateful mode based on Mcp-Session-Id header
+	// - Present: Stateful mode with session management
+	// - Absent: Stateless mode for curl testing and serverless deployments
+	mcpHandler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
 		return h.server.Server
 	}, &mcp.StreamableHTTPOptions{
-		Stateless: true, // Enable stateless mode - no session management needed
+		// Enable stateless mode - SDK will auto-initialize sessions when no session ID present
+		Stateless: true, // This enables automatic stateless behavior for requests without session headers
 		GetSessionID: func() string {
-			return "" // No session ID header required
+			// Return empty to let SDK handle session generation automatically
+			return ""
 		},
 	})
 
-	// Create stateful HTTP handler for AI agents on /
-	statefulHandler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
-		return h.server.Server
-	}, nil) // Default stateful mode with session management
-
-	// Register handlers
-	mux.Handle("/mcp", statelessHandler) // Stateless endpoint for curl testing
-	mux.Handle("/", statefulHandler)     // Stateful endpoint for AI agents
+	// Register handlers following MCP specification
+	mux.Handle("/mcp", mcpHandler)       // Single unified MCP endpoint (spec-compliant)
 	mux.HandleFunc("/health", h.handleHealth)
 
 	// Create HTTP server with timeouts
