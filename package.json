@@ -1,6 +1,6 @@
 {
   "name": "@last9/mcp-server",
-  "version": "0.1.15",
+  "version": "0.2.0",
   "description": "Last9 MCP Server - Model Context Protocol server implementation for Last9",
   "bin": {
     "last9-mcp": "./bin/cli.js"
