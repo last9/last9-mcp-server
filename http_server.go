@@ -51,13 +51,21 @@ func (h *HTTPServer) Start() error {
 	// Create a mux to handle multiple endpoints
 	mux := http.NewServeMux()
 
-	// Create the streamable HTTP handler for the main MCP endpoint
-	mcpHandler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
+	// Create stateless MCP handler for maximum client compatibility
+	// Enables direct tool calls without session management - perfect for curl testing,
+	// serverless deployments, and horizontal scaling per MCP team recommendations
+	statelessHandler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
 		return h.server.Server
-	}, nil)
+	}, &mcp.StreamableHTTPOptions{
+		Stateless: true, // Enable stateless mode - no session management needed
+		GetSessionID: func() string {
+			return "" // No session ID header required
+		},
+	})
 
-	// Register handlers
-	mux.Handle("/", mcpHandler) // Main MCP endpoint
+	// Register handlers on both root and /mcp paths for maximum client flexibility
+	mux.Handle("/", statelessHandler)     // Root endpoint for standard MCP clients
+	mux.Handle("/mcp", statelessHandler)  // /mcp endpoint for explicit MCP usage
 	mux.HandleFunc("/health", h.handleHealth)
 
 	// Create HTTP server with timeouts
