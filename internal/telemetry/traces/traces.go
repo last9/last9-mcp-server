@@ -14,7 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// GetTracesDescription provides the description for the general traces tool
+// GetTracesDescription provides the description for the traces query tool
 const GetTracesDescription = `Query distributed traces across all services using trace JSON pipeline queries.
 
 This tool provides comprehensive access to trace data for debugging performance issues, understanding request flows,
@@ -37,7 +37,7 @@ Example tracejson_query structures:
 - Multiple conditions: [{"type": "filter", "query": {"$and": [{"$eq": ["ServiceName", "api"]}, {"$eq": ["StatusCode", "STATUS_CODE_ERROR"]}]}}]
 - Trace ID lookup: [{"type": "filter", "query": {"$eq": ["TraceId", "abc123"]}}]`
 
-// GetTracesArgs represents the input arguments for the get_traces tool
+// GetTracesArgs represents the input arguments for the traces query tool
 type GetTracesArgs struct {
 	TracejsonQuery  []interface{} `json:"tracejson_query,omitempty"`
 	StartTimeISO    string        `json:"start_time_iso,omitempty"`

@@ -58,9 +58,6 @@ func (h *HTTPServer) Start() error {
 		return h.server.Server
 	}, &mcp.StreamableHTTPOptions{
 		Stateless: true, // Enable stateless mode - no session management needed
-		GetSessionID: func() string {
-			return "" // No session ID header required
-		},
 	})
 
 	// Register handlers on both root and /mcp paths for maximum client flexibility

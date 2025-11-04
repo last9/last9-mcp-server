@@ -16,8 +16,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// GetTracesDescription provides the description for the get traces tool
-const GetTracesDescription = `Retrieve traces from Last9 by trace ID or service name.
+// GetServiceOrIdTracesDescription provides the description for the service or ID traces tool
+const GetServiceOrIdTracesDescription = `Retrieve traces from Last9 by trace ID or service name.
 
 This tool allows you to get specific traces either by providing a trace ID for a single trace,
 or by providing a service name to get all traces for that service within a time range.
@@ -37,8 +37,8 @@ Examples:
 
 Returns trace data including trace IDs, spans, duration, timestamps, and status information.`
 
-// GetTracesArgs defines the input structure for getting traces
-type GetTracesArgs struct {
+// GetServiceOrIdTracesArgs defines the input structure for getting traces by service or ID
+type GetServiceOrIdTracesArgs struct {
 	TraceID         string  `json:"trace_id,omitempty" jsonschema:"Specific trace ID to retrieve"`
 	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Name of service to get traces for"`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440)"`
@@ -59,7 +59,7 @@ type GetTracesQueryParams struct {
 }
 
 // validateGetTracesArgs validates the input arguments
-func validateGetTracesArgs(args GetTracesArgs) error {
+func validateGetTracesArgs(args GetServiceOrIdTracesArgs) error {
 	// Exactly one of trace_id or service_name must be provided
 	if args.TraceID == "" && args.ServiceName == "" {
 		return errors.New("either trace_id or service_name must be provided")
@@ -82,7 +82,7 @@ func validateGetTracesArgs(args GetTracesArgs) error {
 }
 
 // parseGetTracesParams extracts and validates parameters from input struct
-func parseGetTracesParams(args GetTracesArgs, cfg models.Config) (*GetTracesQueryParams, error) {
+func parseGetTracesParams(args GetServiceOrIdTracesArgs, cfg models.Config) (*GetTracesQueryParams, error) {
 	// Validate arguments
 	if err := validateGetTracesArgs(args); err != nil {
 		return nil, err
@@ -156,9 +156,9 @@ func buildGetTracesRequestURL(cfg models.Config, params *GetTracesQueryParams, s
 	return u, nil
 }
 
-// GetTracesHandler creates a handler for getting traces by ID or service name
-func GetTracesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTracesArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, args GetTracesArgs) (*mcp.CallToolResult, any, error) {
+// GetServiceOrIdTracesHandler creates a handler for getting traces by service or ID
+func GetServiceOrIdTracesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetServiceOrIdTracesArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args GetServiceOrIdTracesArgs) (*mcp.CallToolResult, any, error) {
 		// Parse and validate parameters
 		queryParams, err := parseGetTracesParams(args, cfg)
 		if err != nil {
