@@ -579,3 +579,58 @@ func FetchPhysicalIndex(ctx context.Context, client *http.Client, cfg models.Con
 
 	return "", fmt.Errorf("no index name found in physical index response")
 }
+
+// MakeTracesJSONQueryAPI posts a raw trace JSON pipeline to the query_range API with the given time range
+func MakeTracesJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.Config, pipeline any, startMs, endMs int64) (*http.Response, error) {
+	// Basic validation
+	if client == nil {
+		return nil, errors.New("http client cannot be nil")
+	}
+	if strings.TrimSpace(cfg.APIBaseURL) == "" {
+		return nil, errors.New("API base URL cannot be empty")
+	}
+	if strings.TrimSpace(cfg.AccessToken) == "" {
+		return nil, errors.New("access token cannot be empty")
+	}
+
+	// Build URL
+	tracesURL := fmt.Sprintf("%s/cat/api/traces/v2/query_range/json", cfg.APIBaseURL)
+	queryParams := url.Values{}
+	queryParams.Add("direction", "backward")
+	queryParams.Add("start", fmt.Sprintf("%d", startMs/1000)) // seconds
+	queryParams.Add("end", fmt.Sprintf("%d", endMs/1000))     // seconds
+	queryParams.Add("region", GetDefaultRegion(cfg.BaseURL))
+	queryParams.Add("limit", "20") // Default limit
+	queryParams.Add("order", "Timestamp") // Default order
+	fullURL := fmt.Sprintf("%s?%s", tracesURL, queryParams.Encode())
+
+	// Build body
+	body := map[string]any{
+		"pipeline": pipeline,
+	}
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal pipeline: %w", err)
+	}
+
+	// Create request
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Headers
+	bearerToken := "Bearer " + cfg.AccessToken
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", bearerToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-LAST9-API-TOKEN", bearerToken)
+
+	// Execute
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+
+	return resp, nil
+}

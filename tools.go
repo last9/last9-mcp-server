@@ -148,5 +148,11 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: change_events.GetChangeEventsDescription,
 	}, change_events.NewGetChangeEventsHandler(client, cfg))
 
+	// Register general traces tool
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_traces",
+		Description: traces.GetTracesDescription,
+	}, traces.NewGetTracesHandler(client, cfg))
+
 	return nil
 }
