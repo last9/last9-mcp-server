@@ -3,134 +3,17 @@ package utils
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"last9-mcp/internal/models"
-
-	"github.com/peterbourgon/ff/v3"
-	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 )
-
-// ExtractOrgSlugFromToken extracts organization slug from JWT token
-func ExtractOrgSlugFromToken(accessToken string) (string, error) {
-	claims, err := ExtractClaimsFromToken(accessToken)
-	if err != nil {
-		return "", fmt.Errorf("failed to extract claims from token: %w", err)
-	}
-
-	orgSlug, ok := claims["organization_slug"].(string)
-	if !ok {
-		return "", errors.New("organization slug not found in token")
-	}
-
-	return orgSlug, nil
-}
-
-func ExtractClaimsFromToken(accessToken string) (map[string]interface{}, error) {
-	// Split the token into parts
-	parts := strings.Split(accessToken, ".")
-	if len(parts) != 3 {
-		return nil, errors.New("invalid JWT token format")
-	}
-
-	// Decode the payload (second part)
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode token payload: %w", err)
-	}
-
-	// Parse the JSON payload
-	var claims map[string]interface{}
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return nil, fmt.Errorf("failed to parse token claims: %w", err)
-	}
-
-	return claims, nil
-}
-
-func ExtractActionURLFromToken(accessToken string) (string, error) {
-	// Extract ActionURL from token claims
-	claims, err := ExtractClaimsFromToken(accessToken)
-	if err != nil {
-		return "", fmt.Errorf("failed to extract claims from token: %w", err)
-	}
-
-	// Get ActionURL from aud field
-	aud, ok := claims["aud"].([]interface{})
-	if !ok || len(aud) == 0 {
-		return "", errors.New("no audience found in token claims")
-	}
-
-	// Handle case where audience already includes https:// protocol
-	audStr := aud[0].(string)
-	if strings.HasPrefix(audStr, "https://") || strings.HasPrefix(audStr, "http://") {
-		return audStr, nil
-	}
-	return fmt.Sprintf("https://%s", audStr), nil
-}
-
-// RefreshAccessToken gets a new access token using the refresh token
-func RefreshAccessToken(ctx context.Context, client *http.Client, cfg models.Config) (string, error) {
-	data := map[string]string{
-		"refresh_token": cfg.RefreshToken,
-	}
-
-	jsonData, err := json.Marshal(data)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
-	}
-	// Extract ActionURL from token claims
-	actionURL, err := ExtractActionURLFromToken(cfg.RefreshToken)
-	if err != nil {
-		return "", fmt.Errorf("failed to extract action URL from refresh token: %w", err)
-	}
-
-	// Handle case where actionURL already includes /api path
-	oauthURL := actionURL
-	if strings.HasSuffix(actionURL, "/api") {
-		oauthURL = strings.TrimSuffix(actionURL, "/api")
-	}
-	u, err := url.Parse(oauthURL + "/api/v4/oauth/access_token")
-	if err != nil {
-		return "", fmt.Errorf("failed to parse URL: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", u.String(), bytes.NewReader(jsonData))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	var result struct {
-		AccessToken string `json:"access_token"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return result.AccessToken, nil
-}
 
 // GetDefaultRegion determines the region based on the Last9 BASE URL.
 // This function extracts the hostname from URLs like "https://otlp-aps1.last9.io:443"
@@ -227,127 +110,6 @@ func GetTimeRange(params map[string]interface{}, defaultLookbackMinutes int) (st
 	return startTime, endTime, nil
 }
 
-// Version information
-var (
-	Version   = "dev"     // Set by goreleaser
-	CommitSHA = "unknown" // Set by goreleaser
-	BuildTime = "unknown" // Set by goreleaser
-)
-
-// setupConfig initializes and parses the configuration
-func SetupConfig(defaults models.Config) (models.Config, error) {
-	fs := flag.NewFlagSet("last9-mcp", flag.ExitOnError)
-
-	var cfg models.Config
-	fs.StringVar(&cfg.AuthToken, "auth", os.Getenv("LAST9_AUTH_TOKEN"), "Last9 API auth token")
-	fs.StringVar(&cfg.BaseURL, "url", os.Getenv("LAST9_BASE_URL"), "Last9 API URL")
-	fs.StringVar(&cfg.RefreshToken, "refresh_token", os.Getenv("LAST9_REFRESH_TOKEN"), "Last9 refresh token for authentication")
-	fs.Float64Var(&cfg.RequestRateLimit, "rate", 1, "Requests per second limit")
-	fs.IntVar(&cfg.RequestRateBurst, "burst", 1, "Request burst capacity")
-	fs.BoolVar(&cfg.HTTPMode, "http", false, "Run as HTTP server instead of STDIO")
-	fs.StringVar(&cfg.Port, "port", "8080", "HTTP server port")
-	fs.StringVar(&cfg.Host, "host", "localhost", "HTTP server host")
-	versionFlag := fs.Bool("version", false, "Print version information")
-
-	var configFile string
-	fs.StringVar(&configFile, "config", "", "config file path")
-
-	err := ff.Parse(fs, os.Args[1:],
-		ff.WithEnvVarPrefix("LAST9"),
-		ff.WithConfigFileFlag("config"),
-		ff.WithConfigFileParser(ff.JSONParser),
-	)
-	if err != nil {
-		return cfg, fmt.Errorf("failed to parse configuration: %w", err)
-	}
-
-	if *versionFlag {
-		fmt.Printf("Version: %s\nCommit: %s\nBuild Time: %s\n", Version, CommitSHA, BuildTime)
-		os.Exit(0)
-	}
-
-	if cfg.AuthToken == "" {
-		if defaults.AuthToken != "" {
-			cfg.AuthToken = defaults.AuthToken
-		} else {
-			return cfg, errors.New("Last9 auth token must be provided via LAST9_AUTH_TOKEN env var")
-		}
-	}
-
-	// Set default base URL if not provided
-	if cfg.BaseURL == "" {
-		if defaults.BaseURL != "" {
-			cfg.BaseURL = defaults.BaseURL
-		} else {
-			return cfg, errors.New("Last9 base URL must be provided via LAST9_BASE_URL env var")
-		}
-	}
-
-	if cfg.RefreshToken == "" {
-		if defaults.RefreshToken != "" {
-			cfg.RefreshToken = defaults.RefreshToken
-		} else {
-			return cfg, errors.New("Last9 refresh token must be provided via LAST9_REFRESH_TOKEN env var")
-		}
-	}
-
-	return cfg, nil
-}
-
-func PopulateAPICfg(cfg *models.Config) error {
-	client := last9mcp.WithHTTPTracing(&http.Client{Timeout: 30 * time.Second})
-	accessToken, err := RefreshAccessToken(context.Background(), client, *cfg)
-	if err != nil {
-		return fmt.Errorf("failed to refresh access token: %w", err)
-	}
-	cfg.AccessToken = accessToken
-	orgSlug, err := ExtractOrgSlugFromToken(cfg.AccessToken)
-	if err != nil {
-		return fmt.Errorf("failed to extract organization slug from access token: %w", err)
-	}
-	cfg.OrgSlug = orgSlug
-	cfg.APIBaseURL = fmt.Sprintf("https://%s/api/v4/organizations/%s", "app.last9.io", cfg.OrgSlug)
-	// make a GET call to /datasources and iterate over the response array
-	// find the element with is_default set to true and extract url, properties.username, properties.password
-	// add bearer token auth to the request header
-	req, err := http.NewRequestWithContext(context.Background(), "GET", cfg.APIBaseURL+"/datasources", nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request for datasources: %w", err)
-	}
-	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to get metrics datasource: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to get metrics datasource: %s", resp.Status)
-	}
-	var datasources []struct {
-		IsDefault  bool   `json:"is_default"`
-		URL        string `json:"url"`
-		Properties struct {
-			Username string `json:"username"`
-			Password string `json:"password"`
-		} `json:"properties"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&datasources); err != nil {
-		return fmt.Errorf("failed to decode metrics datasources response: %w", err)
-	}
-	for _, ds := range datasources {
-		if ds.IsDefault {
-			cfg.PrometheusReadURL = ds.URL
-			cfg.PrometheusUsername = ds.Properties.Username
-			cfg.PrometheusPassword = ds.Properties.Password
-			break
-		}
-	}
-	if cfg.PrometheusReadURL == "" || cfg.PrometheusUsername == "" || cfg.PrometheusPassword == "" {
-		return errors.New("default datasource not found or missing required properties")
-	}
-	return nil
-}
-
 func MakePromInstantAPIQuery(ctx context.Context, client *http.Client, promql string, endTimeParam int64, cfg models.Config) (*http.Response, error) {
 	promInstantParam := struct {
 		Query     string `json:"query"`
@@ -366,7 +128,7 @@ func MakePromInstantAPIQuery(ctx context.Context, client *http.Client, promql st
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
+	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.TokenManager.GetAccessToken(ctx))
 
 	return client.Do(req)
 }
@@ -399,7 +161,7 @@ func MakePromRangeAPIQuery(ctx context.Context, client *http.Client, promql stri
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
+	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.TokenManager.GetAccessToken(ctx))
 
 	return client.Do(req)
 }
@@ -437,7 +199,7 @@ func MakePromLabelValuesAPIQuery(ctx context.Context, client *http.Client, label
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
+	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.TokenManager.GetAccessToken(ctx))
 
 	return client.Do(req)
 }
@@ -470,7 +232,7 @@ func MakePromLabelsAPIQuery(ctx context.Context, client *http.Client, metric str
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
+	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.TokenManager.GetAccessToken(ctx))
 
 	return client.Do(req)
 }
@@ -589,7 +351,7 @@ func MakeTracesJSONQueryAPI(ctx context.Context, client *http.Client, cfg models
 	if strings.TrimSpace(cfg.APIBaseURL) == "" {
 		return nil, errors.New("API base URL cannot be empty")
 	}
-	if strings.TrimSpace(cfg.AccessToken) == "" {
+	if strings.TrimSpace(cfg.TokenManager.GetAccessToken(ctx)) == "" {
 		return nil, errors.New("access token cannot be empty")
 	}
 
@@ -600,7 +362,7 @@ func MakeTracesJSONQueryAPI(ctx context.Context, client *http.Client, cfg models
 	queryParams.Add("start", fmt.Sprintf("%d", startMs/1000)) // seconds
 	queryParams.Add("end", fmt.Sprintf("%d", endMs/1000))     // seconds
 	queryParams.Add("region", GetDefaultRegion(cfg.BaseURL))
-	queryParams.Add("limit", "20") // Default limit
+	queryParams.Add("limit", "20")        // Default limit
 	queryParams.Add("order", "Timestamp") // Default order
 	fullURL := fmt.Sprintf("%s?%s", tracesURL, queryParams.Encode())
 
@@ -620,7 +382,7 @@ func MakeTracesJSONQueryAPI(ctx context.Context, client *http.Client, cfg models
 	}
 
 	// Headers
-	bearerToken := "Bearer " + cfg.AccessToken
+	bearerToken := "Bearer " + cfg.TokenManager.GetAccessToken(ctx)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", bearerToken)
 	req.Header.Set("Content-Type", "application/json")

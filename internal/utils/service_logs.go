@@ -146,7 +146,7 @@ func MakeServiceLogsAPI(ctx context.Context, client *http.Client, request Servic
 	}
 
 	// Set headers
-	setServiceLogsHeaders(req, cfg.AccessToken)
+	setServiceLogsHeaders(req, cfg.TokenManager.GetAccessToken(ctx))
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -172,7 +172,7 @@ func validateServiceLogsInputs(client *http.Client, cfg *models.Config) error {
 	if strings.TrimSpace(cfg.APIBaseURL) == "" {
 		return errors.New("API base URL cannot be empty")
 	}
-	if strings.TrimSpace(cfg.AccessToken) == "" {
+	if strings.TrimSpace(cfg.TokenManager.GetAccessToken(context.Background())) == "" {
 		return errors.New("access token cannot be empty")
 	}
 	return nil
@@ -213,7 +213,7 @@ func MakeLogsJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.C
 	if strings.TrimSpace(cfg.APIBaseURL) == "" {
 		return nil, errors.New("API base URL cannot be empty")
 	}
-	if strings.TrimSpace(cfg.AccessToken) == "" {
+	if strings.TrimSpace(cfg.TokenManager.GetAccessToken(ctx)) == "" {
 		return nil, errors.New("access token cannot be empty")
 	}
 
@@ -242,7 +242,7 @@ func MakeLogsJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.C
 	}
 
 	// Headers
-	setServiceLogsHeaders(req, cfg.AccessToken)
+	setServiceLogsHeaders(req, cfg.TokenManager.GetAccessToken(ctx))
 
 	// Execute
 	resp, err := client.Do(req)

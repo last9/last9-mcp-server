@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"last9-mcp/internal/models"
-	"last9-mcp/internal/utils"
 	"net/http"
 	"net/url"
+
+	"last9-mcp/internal/models"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -20,26 +20,10 @@ type GetDropRulesArgs struct{}
 // NewGetDropRulesHandler creates a handler for getting drop rules for logs
 func NewGetDropRulesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetDropRulesArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetDropRulesArgs) (*mcp.CallToolResult, any, error) {
-		// First refresh the access token
-		accessToken, err := utils.RefreshAccessToken(ctx, client, cfg)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to refresh access token: %w", err)
-		}
-
-		// Extract organization slug from token
-		orgSlug, err := utils.ExtractOrgSlugFromToken(accessToken)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to extract organization slug: %w", err)
-		}
-
-		// Extract ActionURL from token
-		actionURL, err := utils.ExtractActionURLFromToken(accessToken)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to extract action URL: %w", err)
-		}
+		accessToken := cfg.TokenManager.GetAccessToken(ctx)
 
 		// Build request URL with query parameters
-		u, err := url.Parse(fmt.Sprintf("%s/api/v4/organizations/%s/logs_settings/routing", actionURL, orgSlug))
+		u, err := url.Parse(fmt.Sprintf("%s/api/v4/organizations/%s/logs_settings/routing", cfg.ActionURL, cfg.OrgSlug))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to parse URL: %w", err)
 		}
@@ -49,7 +33,7 @@ func NewGetDropRulesHandler(client *http.Client, cfg models.Config) func(context
 		u.RawQuery = q.Encode()
 
 		// Create request
-		httpReq, err := http.NewRequest("GET", u.String(), nil)
+		httpReq, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create request: %w", err)
 		}
@@ -94,7 +78,7 @@ type DropRuleFilter struct {
 
 // AddDropRuleArgs represents the input arguments for adding drop rules
 type AddDropRuleArgs struct {
-	Name    string            `json:"name" jsonschema:"Name for the drop rule (e.g. test-service-drop-rule)"`
+	Name    string           `json:"name" jsonschema:"Name for the drop rule (e.g. test-service-drop-rule)"`
 	Filters []DropRuleFilter `json:"filters" jsonschema:"Array of filter conditions to match logs for dropping"`
 }
 
@@ -102,25 +86,10 @@ type AddDropRuleArgs struct {
 func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, AddDropRuleArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args AddDropRuleArgs) (*mcp.CallToolResult, any, error) {
 		// First refresh the access token
-		accessToken, err := utils.RefreshAccessToken(ctx, client, cfg)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to refresh access token: %w", err)
-		}
-
-		// Extract organization slug from token
-		orgSlug, err := utils.ExtractOrgSlugFromToken(accessToken)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to extract organization slug: %w", err)
-		}
-
-		// Extract ActionURL from token
-		actionURL, err := utils.ExtractActionURLFromToken(accessToken)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to extract action URL: %w", err)
-		}
+		accessToken := cfg.TokenManager.GetAccessToken(ctx)
 
 		// Build request URL
-		u, err := url.Parse(fmt.Sprintf("%s/api/v4/organizations/%s/logs_settings/routing", actionURL, orgSlug))
+		u, err := url.Parse(fmt.Sprintf("%s/api/v4/organizations/%s/logs_settings/routing", cfg.ActionURL, cfg.OrgSlug))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to parse URL: %w", err)
 		}
