@@ -124,12 +124,6 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: traces.GetTracesDescription,
 	}, traces.NewGetTracesHandler(client, cfg))
 
-	// Register service or ID traces tool (simple lookup)
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
-		Name:        "get_service_or_id_traces",
-		Description: traces.GetServiceOrIdTracesDescription,
-	}, traces.GetServiceOrIdTracesHandler(client, cfg))
-
 	// Register service traces tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "get_service_traces",

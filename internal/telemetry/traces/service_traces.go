@@ -22,41 +22,49 @@ import (
 const (
 	LookbackMinutesDefault = 60
 	LimitDefault           = 10
-	OrderDefault           = "Duration"
-	DirectionDefault       = "backward"
 )
 
 // GetServiceTracesDescription provides the description for the service traces tool
-const GetServiceTracesDescription = `Query traces for a specific service with filtering options for span kinds, status codes, and other trace attributes.
+const GetServiceTracesDescription = `Retrieve traces from Last9 by trace ID or service name.
 
-This tool retrieves distributed tracing data for debugging performance issues, understanding request flows,
-and analyzing service interactions. It supports various filtering and sorting options to help narrow down
-specific traces of interest.
-
-Filtering options:
-- span_kind: Filter by span types (server, client, internal, consumer, producer)
-- span_name: Filter by specific span names
-- status_code: Filter by trace status (ok, error, unset)
-- Time range: Use lookback_minutes or explicit start/end times
-
-Examples:
-1. service_name="api" + span_kind=["server"] + status_code=["error"]
-   → finds failed server-side traces for the "api" service
-2. service_name="payment" + span_name="process_payment" + lookback_minutes=30
-   → finds payment processing traces from the last 30 minutes
+This tool allows you to get specific traces either by providing a trace ID for a single trace,
+or by providing a service name to get all traces for that service within a time range.
 
 Parameters:
-- service_name: (Required) Name of the service to get traces for
+- trace_id: (Optional) Specific trace ID to retrieve. Cannot be used with service_name.
+- service_name: (Optional) Name of service to get traces for. Cannot be used with trace_id.
 - lookback_minutes: (Optional) Number of minutes to look back from now. Default: 60 minutes
+- start_time_iso: (Optional) Start time in ISO format (YYYY-MM-DD HH:MM:SS)
+- end_time_iso: (Optional) End time in ISO format (YYYY-MM-DD HH:MM:SS)
 - limit: (Optional) Maximum number of traces to return. Default: 10
 - env: (Optional) Environment to filter by. Use "get_service_environments" tool to get available environments.
-- span_kind: (Optional) Array of span kinds to filter by
-- span_name: (Optional) Filter by specific span name
-- status_code: (Optional) Array of status codes to filter by
-- order: (Optional) Field to order traces by. Default: "Duration"
-- direction: (Optional) Sort direction. Default: "backward"
 
-Returns a list of trace data including trace IDs, spans, duration, timestamps, and status information.`
+Examples:
+1. trace_id="abc123def456" - retrieves the specific trace
+2. service_name="payment-service" + lookback_minutes=30 - gets all payment service traces from last 30 minutes
+
+Returns trace data including trace IDs, spans, duration, timestamps, and status information.`
+
+// GetServiceTracesArgs defines the input structure for getting traces by service or ID
+type GetServiceTracesArgs struct {
+	TraceID         string  `json:"trace_id,omitempty" jsonschema:"Specific trace ID to retrieve"`
+	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Name of service to get traces for"`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440)"`
+	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - lookback_minutes."`
+	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time."`
+	Limit           float64 `json:"limit,omitempty" jsonschema:"Maximum number of traces to return (default: 10, range: 1-100)"`
+	Env             string  `json:"env,omitempty" jsonschema:"Environment to filter by. Empty string if environment is unknown."`
+}
+
+// GetTracesQueryParams holds the parsed and validated parameters
+type GetTracesQueryParams struct {
+	TraceID         string
+	ServiceName     string
+	LookbackMinutes int
+	Region          string
+	Limit           int
+	Env             string
+}
 
 // TraceQueryRequest represents the request structure for trace queries
 type TraceQueryRequest struct {
@@ -69,19 +77,7 @@ type QueryStep struct {
 	Type  string                 `json:"type"`
 }
 
-// TraceQueryParams holds all the parameters for a trace query
-type TraceQueryParams struct {
-	ServiceName     string
-	LookbackMinutes int
-	Region          string
-	Limit           int
-	Order           string
-	Direction       string
-	SpanKinds       []string
-	SpanName        string
-	StatusCodes     []string
-}
-
+// TraceData represents structured trace data
 type TraceData struct {
 	TraceID     string `json:"trace_id"`
 	SpanID      string `json:"span_id"`
@@ -94,84 +90,51 @@ type TraceData struct {
 	StatusCode  string `json:"status_code"`
 }
 
+// TraceQueryResponse represents the structured response
 type TraceQueryResponse struct {
 	Data    []TraceData `json:"data"`
 	Success bool        `json:"success"`
 	Message string      `json:"message"`
 }
 
-// Span kind constants
-const (
-	SpanKindServer   = "SPAN_KIND_SERVER"
-	SpanKindClient   = "SPAN_KIND_CLIENT"
-	SpanKindInternal = "SPAN_KIND_INTERNAL"
-	SpanKindConsumer = "SPAN_KIND_CONSUMER"
-	SpanKindProducer = "SPAN_KIND_PRODUCER"
-)
+// validateGetServiceTracesArgs validates the input arguments
+func validateGetServiceTracesArgs(args GetServiceTracesArgs) error {
+	// Exactly one of trace_id or service_name must be provided
+	if args.TraceID == "" && args.ServiceName == "" {
+		return errors.New("either trace_id or service_name must be provided")
+	}
 
-// Status code constants
-const (
-	StatusCodeUnset = "STATUS_CODE_UNSET"
-	StatusCodeError = "STATUS_CODE_ERROR"
-	StatusCodeOK    = "STATUS_CODE_OK"
-)
+	if args.TraceID != "" && args.ServiceName != "" {
+		return errors.New("cannot specify both trace_id and service_name - use only one")
+	}
 
-// spanKindMapping maps user-friendly terms to span kind constants
-var spanKindMapping = map[string]string{
-	"server":   SpanKindServer,
-	"client":   SpanKindClient,
-	"internal": SpanKindInternal,
-	"consumer": SpanKindConsumer,
-	"producer": SpanKindProducer,
-	// Also support the full constants directly
-	"span_kind_server":   SpanKindServer,
-	"span_kind_client":   SpanKindClient,
-	"span_kind_internal": SpanKindInternal,
-	"span_kind_consumer": SpanKindConsumer,
-	"span_kind_producer": SpanKindProducer,
+	// Validate limits
+	if args.LookbackMinutes > 0 && (args.LookbackMinutes < 1 || args.LookbackMinutes > 1440) {
+		return errors.New("lookback_minutes must be between 1 and 1440 (24 hours)")
+	}
+
+	if args.Limit > 0 && (args.Limit < 1 || args.Limit > 100) {
+		return errors.New("limit must be between 1 and 100")
+	}
+
+	return nil
 }
 
-// statusCodeMapping maps user-friendly terms to status code constants
-var statusCodeMapping = map[string]string{
-	"unset":   StatusCodeUnset,
-	"error":   StatusCodeError,
-	"ok":      StatusCodeOK,
-	"success": StatusCodeOK,
-	// Also support the full constants directly
-	"status_code_unset": StatusCodeUnset,
-	"status_code_error": StatusCodeError,
-	"status_code_ok":    StatusCodeOK,
-}
-
-// GetServiceTracesArgs defines the input structure for getting service traces
-type GetServiceTracesArgs struct {
-	ServiceName       string   `json:"service_name" jsonschema:"Name of the service to get traces for (required)"`
-	LookbackMinutes   float64  `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time (default: 60, range: 1-10080)"`
-	StartTimeISO      string   `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
-	EndTimeISO        string   `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
-	Limit             float64  `json:"limit,omitempty" jsonschema:"Maximum number of traces to return (default: 10, range: 1-1000)"`
-	Order             string   `json:"order,omitempty" jsonschema:"Field to order traces by (default: Duration, options: Duration, Timestamp)"`
-	Direction         string   `json:"direction,omitempty" jsonschema:"Sort direction (default: backward, options: forward, backward)"`
-	SpanKind          []string `json:"span_kind,omitempty" jsonschema:"Filter by span kinds (e.g. [\"server\", \"client\"])"`
-	SpanName          string   `json:"span_name,omitempty" jsonschema:"Filter by span name (e.g. user_service)"`
-	StatusCode        []string `json:"status_code,omitempty" jsonschema:"Filter by status codes (e.g. [\"ok\", \"error\"])"`
-}
-
-// parseTraceQueryParams extracts and validates parameters from input struct
-func parseTraceQueryParams(args GetServiceTracesArgs, cfg models.Config) (*TraceQueryParams, error) {
-	// Required parameter
-	if args.ServiceName == "" {
-		return nil, errors.New("service_name is required and cannot be empty")
+// parseGetServiceTraceParams extracts and validates parameters from input struct
+func parseGetServiceTraceParams(args GetServiceTracesArgs, cfg models.Config) (*GetTracesQueryParams, error) {
+	// Validate arguments
+	if err := validateGetServiceTracesArgs(args); err != nil {
+		return nil, err
 	}
 
 	// Parse parameters with defaults
-	queryParams := &TraceQueryParams{
+	queryParams := &GetTracesQueryParams{
+		TraceID:         args.TraceID,
 		ServiceName:     args.ServiceName,
 		LookbackMinutes: LookbackMinutesDefault,
 		Region:          utils.GetDefaultRegion(cfg.BaseURL),
 		Limit:           LimitDefault,
-		Order:           OrderDefault,
-		Direction:       DirectionDefault,
+		Env:             args.Env,
 	}
 
 	// Override defaults with provided values
@@ -181,66 +144,40 @@ func parseTraceQueryParams(args GetServiceTracesArgs, cfg models.Config) (*Trace
 	if args.Limit != 0 {
 		queryParams.Limit = int(args.Limit)
 	}
-	if args.Order != "" {
-		queryParams.Order = args.Order
-	}
-	if args.Direction != "" {
-		queryParams.Direction = args.Direction
-	}
-	if args.SpanName != "" {
-		queryParams.SpanName = args.SpanName
-	}
-
-	// Parse array parameters with mapping
-	queryParams.SpanKinds = mapValues(args.SpanKind, spanKindMapping)
-	queryParams.StatusCodes = mapValues(args.StatusCode, statusCodeMapping)
 
 	return queryParams, nil
 }
 
+// buildGetTracesFilters creates the filter conditions for the trace query
+func buildGetTracesFilters(params *GetTracesQueryParams) []map[string]interface{} {
+	var filters []map[string]interface{}
 
-// mapValues converts user-friendly terms to constants using the provided mapping
-func mapValues(userValues []string, mapping map[string]string) []string {
-	var mapped []string
-	for _, value := range userValues {
-		if constant, exists := mapping[strings.ToLower(value)]; exists {
-			mapped = append(mapped, constant)
-		} else {
-			// If no mapping found, use the original value (might already be a constant)
-			mapped = append(mapped, value)
-		}
-	}
-	return mapped
-}
-
-// buildTraceFilters creates the filter conditions for the trace query
-func buildTraceFilters(params *TraceQueryParams) []map[string]interface{} {
-	filters := []map[string]interface{}{
-		{"$eq": []interface{}{"ServiceName", params.ServiceName}},
-	}
-
-	// Add span kind filters
-	if len(params.SpanKinds) > 0 {
-		filters = append(filters, utils.BuildOrFilter("SpanKind", params.SpanKinds))
-	}
-
-	// Add span name filter
-	if params.SpanName != "" {
+	// Filter by trace ID if provided
+	if params.TraceID != "" {
 		filters = append(filters, map[string]interface{}{
-			"$eq": []interface{}{"SpanName", params.SpanName},
+			"$eq": []interface{}{"TraceId", params.TraceID},
 		})
 	}
 
-	// Add status code filters
-	if len(params.StatusCodes) > 0 {
-		filters = append(filters, utils.BuildOrFilter("StatusCode", params.StatusCodes))
+	// Filter by service name if provided
+	if params.ServiceName != "" {
+		filters = append(filters, map[string]interface{}{
+			"$eq": []interface{}{"ServiceName", params.ServiceName},
+		})
+	}
+
+	// Add environment filter if provided
+	if params.Env != "" {
+		filters = append(filters, map[string]interface{}{
+			"$eq": []interface{}{"resource.attributes.deployment.environment", params.Env},
+		})
 	}
 
 	return filters
 }
 
-// buildRequestURL constructs the API endpoint URL with query parameters
-func buildRequestURL(cfg models.Config, params *TraceQueryParams, startTime, endTime int64) (*url.URL, error) {
+// buildGetTracesRequestURL constructs the API endpoint URL with query parameters
+func buildGetTracesRequestURL(cfg models.Config, params *GetTracesQueryParams, startTime, endTime int64) (*url.URL, error) {
 	u, err := url.Parse(cfg.APIBaseURL + "/cat/api/traces/v2/query_range/json")
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse URL: %w", err)
@@ -251,141 +188,18 @@ func buildRequestURL(cfg models.Config, params *TraceQueryParams, startTime, end
 	q.Set("start", strconv.FormatInt(startTime, 10))
 	q.Set("end", strconv.FormatInt(endTime, 10))
 	q.Set("limit", strconv.Itoa(params.Limit))
-	q.Set("order", params.Order)
-	q.Set("direction", params.Direction)
+	q.Set("order", "Duration")
+	q.Set("direction", "backward")
 	u.RawQuery = q.Encode()
 
 	return u, nil
 }
 
-// createTraceRequest builds the HTTP request with proper headers and payload
-func createTraceRequest(ctx context.Context, requestURL *url.URL, filters []map[string]interface{}, cfg models.Config) (*http.Request, error) {
-	// Create query request payload
-	queryRequest := TraceQueryRequest{
-		Pipeline: []QueryStep{{
-			Query: map[string]interface{}{"$and": filters},
-			Type:  "filter",
-		}},
-	}
-
-	payloadBytes, err := json.Marshal(queryRequest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal payload: %w", err)
-	}
-
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "POST", requestURL.String(), bytes.NewBuffer(payloadBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Set headers
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
-
-	// Handle Bearer token authentication
-	accessToken := cfg.AccessToken
-	if !strings.HasPrefix(accessToken, "Bearer ") {
-		accessToken = "Bearer " + accessToken
-	}
-	req.Header.Set("Authorization", accessToken)
-	req.Header.Set("X-LAST9-API-TOKEN", accessToken)
-
-	return req, nil
-}
-
-// Helper functions for safe type conversion
-func getStringValue(m map[string]interface{}, key string) string {
-	if val, ok := m[key].(string); ok {
-		return val
-	}
-	return ""
-}
-
-func getInt64Value(m map[string]interface{}, key string) int64 {
-	switch val := m[key].(type) {
-	case int64:
-		return val
-	case float64:
-		return int64(val)
-	case int:
-		return int64(val)
-	default:
-		return 0
-	}
-}
-
-func parseTimestamp(timestamp string) int64 {
-	if timestamp == "" {
-		return 0
-	}
-
-	// Parse RFC3339 timestamp format (e.g., "2025-08-27T05:50:02.47609145Z")
-	t, err := time.Parse(time.RFC3339Nano, timestamp)
-	if err != nil {
-		// If parsing fails, try without nanoseconds
-		t, err = time.Parse(time.RFC3339, timestamp)
-		if err != nil {
-			return 0
-		}
-	}
-
-	return t.Unix()
-}
-
-// transformToTraceQueryResponse converts raw API response to structured TraceQueryResponse
-func transformToTraceQueryResponse(rawResult map[string]interface{}) TraceQueryResponse {
-	response := TraceQueryResponse{
-		Success: true,
-		Message: "Traces retrieved successfully",
-		Data:    []TraceData{},
-	}
-
-	// Check if the response has the expected structure
-	data, ok := rawResult["data"].(map[string]interface{})
-	if !ok {
-		response.Success = false
-		response.Message = "Invalid response structure: missing data field"
-		return response
-	}
-
-	result, ok := data["result"].([]interface{})
-	if !ok {
-		response.Success = false
-		response.Message = "Invalid response structure: missing result array"
-		return response
-	}
-
-	// Transform each trace item
-	for _, item := range result {
-		traceItem, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		traceData := TraceData{
-			TraceID:     getStringValue(traceItem, "TraceId"),
-			SpanID:      getStringValue(traceItem, "SpanId"),
-			SpanKind:    getStringValue(traceItem, "SpanKind"),
-			SpanName:    getStringValue(traceItem, "SpanName"),
-			ServiceName: getStringValue(traceItem, "ServiceName"),
-			Duration:    getInt64Value(traceItem, "Duration"),
-			Timestamp:   parseTimestamp(getStringValue(traceItem, "Timestamp")),
-			TraceState:  getStringValue(traceItem, "TraceState"),
-			StatusCode:  getStringValue(traceItem, "StatusCode"),
-		}
-
-		response.Data = append(response.Data, traceData)
-	}
-
-	return response
-}
-
-// GetServiceTracesHandler creates a handler for querying service traces
+// GetServiceTracesHandler creates a handler for getting traces by service or ID
 func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetServiceTracesArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetServiceTracesArgs) (*mcp.CallToolResult, any, error) {
 		// Parse and validate parameters
-		queryParams, err := parseTraceQueryParams(args, cfg)
+		queryParams, err := parseGetServiceTraceParams(args, cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -406,15 +220,15 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 		}
 
 		// Build request URL
-		requestURL, err := buildRequestURL(cfg, queryParams, startTime.Unix(), endTime.Unix())
+		requestURL, err := buildGetTracesRequestURL(cfg, queryParams, startTime.Unix(), endTime.Unix())
 		if err != nil {
 			return nil, nil, err
 		}
 
 		// Build filters
-		filters := buildTraceFilters(queryParams)
+		filters := buildGetTracesFilters(queryParams)
 
-		// Create HTTP request
+		// Create HTTP request using existing pattern
 		httpReq, err := createTraceRequest(ctx, requestURL, filters, cfg)
 		if err != nil {
 			return nil, nil, err
@@ -438,8 +252,15 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 			return nil, nil, fmt.Errorf("failed to decode response: %w", err)
 		}
 
-		// Transform raw response to structured TraceQueryResponse
+		// Transform raw response to structured TraceQueryResponse (reusing existing function)
 		traceResponse := transformToTraceQueryResponse(result)
+
+		// Add context about the query type
+		if queryParams.TraceID != "" {
+			traceResponse.Message = fmt.Sprintf("Retrieved trace data for trace ID: %s", queryParams.TraceID)
+		} else {
+			traceResponse.Message = fmt.Sprintf("Retrieved %d traces for service: %s", len(traceResponse.Data), queryParams.ServiceName)
+		}
 
 		jsonData, err := json.Marshal(traceResponse)
 		if err != nil {
@@ -454,4 +275,130 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 			},
 		}, nil, nil
 	}
+}
+
+// createTraceRequest builds an HTTP POST request for the trace API with authentication
+func createTraceRequest(ctx context.Context, requestURL *url.URL, filters []map[string]interface{}, cfg models.Config) (*http.Request, error) {
+	// Build the JSON query pipeline for the API
+	queryRequest := TraceQueryRequest{
+		Pipeline: []QueryStep{{
+			Query: map[string]interface{}{"$and": filters},
+			Type:  "filter",
+		}},
+	}
+
+	// Marshal the request payload
+	payloadBytes, err := json.Marshal(queryRequest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal query payload: %w", err)
+	}
+
+	// Create the HTTP POST request
+	req, err := http.NewRequestWithContext(ctx, "POST", requestURL.String(), bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	// Set required headers
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	// Add authentication - ensure Bearer prefix
+	accessToken := cfg.AccessToken
+	if !strings.HasPrefix(accessToken, "Bearer ") {
+		accessToken = "Bearer " + accessToken
+	}
+	req.Header.Set("Authorization", accessToken)
+	req.Header.Set("X-LAST9-API-TOKEN", accessToken)
+
+	return req, nil
+}
+
+// transformToTraceQueryResponse converts the raw API response into structured trace data
+func transformToTraceQueryResponse(rawResult map[string]interface{}) TraceQueryResponse {
+	response := TraceQueryResponse{
+		Success: true,
+		Message: "Traces retrieved successfully",
+		Data:    []TraceData{},
+	}
+
+	// Navigate through the API response structure
+	data, ok := rawResult["data"].(map[string]interface{})
+	if !ok {
+		response.Success = false
+		response.Message = "Invalid API response: missing data field"
+		return response
+	}
+
+	result, ok := data["result"].([]interface{})
+	if !ok {
+		response.Success = false
+		response.Message = "Invalid API response: missing result array"
+		return response
+	}
+
+	// Convert each trace item to structured format
+	for _, item := range result {
+		traceItem, ok := item.(map[string]interface{})
+		if !ok {
+			continue // Skip malformed items
+		}
+
+		traceData := TraceData{
+			TraceID:     extractString(traceItem, "TraceId"),
+			SpanID:      extractString(traceItem, "SpanId"),
+			SpanKind:    extractString(traceItem, "SpanKind"),
+			SpanName:    extractString(traceItem, "SpanName"),
+			ServiceName: extractString(traceItem, "ServiceName"),
+			Duration:    extractInt64(traceItem, "Duration"),
+			Timestamp:   parseTimestampToUnix(extractString(traceItem, "Timestamp")),
+			TraceState:  extractString(traceItem, "TraceState"),
+			StatusCode:  extractString(traceItem, "StatusCode"),
+		}
+
+		response.Data = append(response.Data, traceData)
+	}
+
+	return response
+}
+
+// Helper function to safely extract string values from map
+func extractString(m map[string]interface{}, key string) string {
+	if val, ok := m[key].(string); ok {
+		return val
+	}
+	return ""
+}
+
+// Helper function to safely extract int64 values from map
+func extractInt64(m map[string]interface{}, key string) int64 {
+	switch val := m[key].(type) {
+	case int64:
+		return val
+	case float64:
+		return int64(val)
+	case int:
+		return int64(val)
+	default:
+		return 0
+	}
+}
+
+// Helper function to parse ISO timestamp strings to Unix timestamp
+func parseTimestampToUnix(timestamp string) int64 {
+	if timestamp == "" {
+		return 0
+	}
+
+	// Try parsing with nanoseconds first (RFC3339Nano format)
+	if t, err := time.Parse(time.RFC3339Nano, timestamp); err == nil {
+		return t.Unix()
+	}
+
+	// Fallback to standard RFC3339 format
+	if t, err := time.Parse(time.RFC3339, timestamp); err == nil {
+		return t.Unix()
+	}
+
+	return 0
 }
