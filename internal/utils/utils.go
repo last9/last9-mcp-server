@@ -12,7 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+
+	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 )
 
 // GetDefaultRegion determines the region based on the Last9 BASE URL.
@@ -403,4 +406,68 @@ func MakeTracesJSONQueryAPI(ctx context.Context, client *http.Client, cfg models
 	}
 
 	return resp, nil
+}
+
+// PopulateAPICfg populates the API configuration with necessary details
+func PopulateAPICfg(cfg *models.Config) error {
+	var accessToken string
+	if cfg.TokenManager != nil {
+		accessToken = cfg.TokenManager.GetAccessToken(context.Background())
+	} else {
+		// Fallback to using AuthToken for testing or when TokenManager is not initialized
+		accessToken = cfg.AuthToken
+	}
+	orgSlug, err := auth.ExtractOrgSlugFromToken(accessToken)
+	if err != nil {
+		return fmt.Errorf("failed to extract org slug from token: %w", err)
+	}
+	cfg.OrgSlug = orgSlug
+
+	actionURL, err := auth.ExtractActionURLFromToken(accessToken)
+	if err != nil {
+		return fmt.Errorf("failed to extract action URL from token: %w", err)
+	}
+	cfg.ActionURL = actionURL
+
+	client := last9mcp.WithHTTPTracing(&http.Client{Timeout: 30 * time.Second})
+	cfg.APIBaseURL = fmt.Sprintf("https://%s/api/v4/organizations/%s", "app.last9.io", cfg.OrgSlug)
+	// make a GET call to /datasources and iterate over the response array
+	// find the element with is_default set to true and extract url, properties.username, properties.password
+	// add bearer token auth to the request header
+	req, err := http.NewRequestWithContext(context.Background(), "GET", cfg.APIBaseURL+"/datasources", nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request for datasources: %w", err)
+	}
+	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+accessToken)
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to get metrics datasource: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to get metrics datasource: %s", resp.Status)
+	}
+	var datasources []struct {
+		IsDefault  bool   `json:"is_default"`
+		URL        string `json:"url"`
+		Properties struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		} `json:"properties"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&datasources); err != nil {
+		return fmt.Errorf("failed to decode metrics datasources response: %w", err)
+	}
+	for _, ds := range datasources {
+		if ds.IsDefault {
+			cfg.PrometheusReadURL = ds.URL
+			cfg.PrometheusUsername = ds.Properties.Username
+			cfg.PrometheusPassword = ds.Properties.Password
+			break
+		}
+	}
+	if cfg.PrometheusReadURL == "" || cfg.PrometheusUsername == "" || cfg.PrometheusPassword == "" {
+		return errors.New("default datasource not found or missing required properties")
+	}
+	return nil
 }
