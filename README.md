@@ -299,12 +299,11 @@ Execute advanced trace queries using JSON pipeline syntax for complex filtering 
 
 Parameters:
 
-- `pipeline` (array, required): JSON pipeline with query steps for filtering and processing traces.
-- `region` (string, optional): AWS region to query. Leave empty to use default from configuration.
+- `tracejson_query` (array, required): JSON pipeline query for traces. Use the tracejson_query_builder prompt to generate JSON pipeline queries from natural language.
 - `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS).
 - `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS).
 - `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60 minutes.
-- `limit` (integer, optional): Maximum number of traces to return. Default: 10.
+- `limit` (integer, optional): Maximum number of traces to return. Default: 20. Range: 1-100.
 
 This tool supports complex queries with multiple filter conditions, aggregations, and custom processing pipelines for advanced trace analysis.
 

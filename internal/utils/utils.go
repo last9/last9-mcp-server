@@ -581,7 +581,7 @@ func FetchPhysicalIndex(ctx context.Context, client *http.Client, cfg models.Con
 }
 
 // MakeTracesJSONQueryAPI posts a raw trace JSON pipeline to the query_range API with the given time range
-func MakeTracesJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.Config, pipeline any, startMs, endMs int64) (*http.Response, error) {
+func MakeTracesJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.Config, pipeline any, startMs, endMs int64, limit int) (*http.Response, error) {
 	// Basic validation
 	if client == nil {
 		return nil, errors.New("http client cannot be nil")
@@ -593,6 +593,14 @@ func MakeTracesJSONQueryAPI(ctx context.Context, client *http.Client, cfg models
 		return nil, errors.New("access token cannot be empty")
 	}
 
+	// Validate and set default limit
+	if limit <= 0 {
+		limit = 20 // Default limit
+	}
+	if limit > 100 {
+		limit = 100 // Maximum reasonable limit
+	}
+
 	// Build URL
 	tracesURL := fmt.Sprintf("%s/cat/api/traces/v2/query_range/json", cfg.APIBaseURL)
 	queryParams := url.Values{}
@@ -600,7 +608,7 @@ func MakeTracesJSONQueryAPI(ctx context.Context, client *http.Client, cfg models
 	queryParams.Add("start", fmt.Sprintf("%d", startMs/1000)) // seconds
 	queryParams.Add("end", fmt.Sprintf("%d", endMs/1000))     // seconds
 	queryParams.Add("region", GetDefaultRegion(cfg.BaseURL))
-	queryParams.Add("limit", "20") // Default limit
+	queryParams.Add("limit", fmt.Sprintf("%d", limit))        // User-specified limit
 	queryParams.Add("order", "Timestamp") // Default order
 	fullURL := fmt.Sprintf("%s?%s", tracesURL, queryParams.Encode())
 
