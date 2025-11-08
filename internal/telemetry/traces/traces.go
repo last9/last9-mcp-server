@@ -28,7 +28,7 @@ Parameters:
 - start_time_iso: (Optional) Start time in ISO format (YYYY-MM-DD HH:MM:SS)
 - end_time_iso: (Optional) End time in ISO format (YYYY-MM-DD HH:MM:SS)
 - lookback_minutes: (Optional) Number of minutes to look back from current time (default: 60)
-- limit: (Optional) Maximum number of traces to return (default: 20)
+- limit: (Optional) Maximum number of traces to return (default: 20, range: 1-100)
 
 Returns comprehensive trace data including trace IDs, spans, durations, timestamps, and metadata.
 
@@ -71,7 +71,7 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	}
 
 	// Use util to execute the query
-	resp, err := utils.MakeTracesJSONQueryAPI(ctx, client, cfg, tracejsonQuery, startTime, endTime)
+	resp, err := utils.MakeTracesJSONQueryAPI(ctx, client, cfg, tracejsonQuery, startTime, endTime, args.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call trace JSON query API: %v", err)
 	}
