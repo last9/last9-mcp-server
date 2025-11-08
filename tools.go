@@ -118,11 +118,11 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: alerting.GetAlertsDescription,
 	}, alerting.NewGetAlertsHandler(client, cfg))
 
-	// Register get traces tool
+	// Register get traces tool (JSON pipeline queries)
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "get_traces",
 		Description: traces.GetTracesDescription,
-	}, traces.GetTracesHandler(client, cfg))
+	}, traces.NewGetTracesHandler(client, cfg))
 
 	// Register service traces tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{

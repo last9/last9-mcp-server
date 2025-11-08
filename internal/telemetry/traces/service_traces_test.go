@@ -22,22 +22,22 @@ var (
 	testRefreshToken = os.Getenv("TEST_REFRESH_TOKEN")
 )
 
-func TestValidateGetTracesArgs(t *testing.T) {
+func TestValidateGetServiceTracesArgs(t *testing.T) {
 	tests := []struct {
 		name    string
-		args    GetTracesArgs
+		args    GetServiceTracesArgs
 		wantErr bool
 		errMsg  string
 	}{
 		{
 			name:    "Both trace_id and service_name empty",
-			args:    GetTracesArgs{},
+			args:    GetServiceTracesArgs{},
 			wantErr: true,
 			errMsg:  "either trace_id or service_name must be provided",
 		},
 		{
 			name: "Both trace_id and service_name provided",
-			args: GetTracesArgs{
+			args: GetServiceTracesArgs{
 				TraceID:     "abc123",
 				ServiceName: "test-service",
 			},
@@ -46,21 +46,21 @@ func TestValidateGetTracesArgs(t *testing.T) {
 		},
 		{
 			name: "Only trace_id provided - valid",
-			args: GetTracesArgs{
+			args: GetServiceTracesArgs{
 				TraceID: "abc123def456",
 			},
 			wantErr: false,
 		},
 		{
 			name: "Only service_name provided - valid",
-			args: GetTracesArgs{
+			args: GetServiceTracesArgs{
 				ServiceName: "test-service",
 			},
 			wantErr: false,
 		},
 		{
 			name: "Invalid lookback_minutes - too small",
-			args: GetTracesArgs{
+			args: GetServiceTracesArgs{
 				ServiceName:     "test-service",
 				LookbackMinutes: 0.5,
 			},
@@ -69,7 +69,7 @@ func TestValidateGetTracesArgs(t *testing.T) {
 		},
 		{
 			name: "Invalid lookback_minutes - too large",
-			args: GetTracesArgs{
+			args: GetServiceTracesArgs{
 				ServiceName:     "test-service",
 				LookbackMinutes: 1500,
 			},
@@ -78,7 +78,7 @@ func TestValidateGetTracesArgs(t *testing.T) {
 		},
 		{
 			name: "Invalid limit - too small",
-			args: GetTracesArgs{
+			args: GetServiceTracesArgs{
 				ServiceName: "test-service",
 				Limit:       0.5,
 			},
@@ -87,7 +87,7 @@ func TestValidateGetTracesArgs(t *testing.T) {
 		},
 		{
 			name: "Invalid limit - too large",
-			args: GetTracesArgs{
+			args: GetServiceTracesArgs{
 				ServiceName: "test-service",
 				Limit:       150,
 			},
@@ -98,13 +98,13 @@ func TestValidateGetTracesArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateGetTracesArgs(tt.args)
+			err := validateGetServiceTracesArgs(tt.args)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("validateGetTracesArgs() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("validateGetServiceTracesArgs() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if err != nil && tt.errMsg != "" && !strings.Contains(err.Error(), tt.errMsg) {
-				t.Errorf("validateGetTracesArgs() error = %v, want error containing %v", err, tt.errMsg)
+				t.Errorf("validateGetServiceTracesArgs() error = %v, want error containing %v", err, tt.errMsg)
 			}
 		})
 	}
@@ -117,7 +117,7 @@ func TestParseGetTracesParams(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		args      GetTracesArgs
+		args      GetServiceTracesArgs
 		wantErr   bool
 		wantTrace string
 		wantSvc   string
@@ -125,7 +125,7 @@ func TestParseGetTracesParams(t *testing.T) {
 	}{
 		{
 			name: "Valid trace ID request",
-			args: GetTracesArgs{
+			args: GetServiceTracesArgs{
 				TraceID: "abc123def456",
 				Limit:   20,
 			},
@@ -135,7 +135,7 @@ func TestParseGetTracesParams(t *testing.T) {
 		},
 		{
 			name: "Valid service name request with defaults",
-			args: GetTracesArgs{
+			args: GetServiceTracesArgs{
 				ServiceName: "payment-service",
 			},
 			wantErr:   false,
@@ -144,7 +144,7 @@ func TestParseGetTracesParams(t *testing.T) {
 		},
 		{
 			name: "Valid service name with custom params",
-			args: GetTracesArgs{
+			args: GetServiceTracesArgs{
 				ServiceName:     "api-service",
 				LookbackMinutes: 30,
 				Limit:           5,
@@ -236,7 +236,7 @@ func TestBuildGetTracesFilters(t *testing.T) {
 	}
 }
 
-func TestGetTracesHandler_MockedResponse(t *testing.T) {
+func TestGetServiceTracesHandler_MockedResponse(t *testing.T) {
 	// Mock API response
 	mockResponse := `{
 		"data": {
@@ -297,16 +297,16 @@ func TestGetTracesHandler_MockedResponse(t *testing.T) {
 		RefreshToken: testRefreshToken,
 	}
 
-	handler := GetTracesHandler(server.Client(), cfg)
+	handler := GetServiceTracesHandler(server.Client(), cfg)
 
 	tests := []struct {
 		name    string
-		args    GetTracesArgs
+		args    GetServiceTracesArgs
 		wantErr bool
 	}{
 		{
 			name: "Get traces by service name",
-			args: GetTracesArgs{
+			args: GetServiceTracesArgs{
 				ServiceName:     "api-service",
 				LookbackMinutes: 60,
 				Limit:           10,
@@ -315,7 +315,7 @@ func TestGetTracesHandler_MockedResponse(t *testing.T) {
 		},
 		{
 			name: "Get traces by trace ID",
-			args: GetTracesArgs{
+			args: GetServiceTracesArgs{
 				TraceID: "abc123def456",
 				Limit:   5,
 			},
@@ -330,7 +330,7 @@ func TestGetTracesHandler_MockedResponse(t *testing.T) {
 			result, _, err := handler(ctx, req, tt.args)
 
 			if (err != nil) != tt.wantErr {
-				t.Errorf("GetTracesHandler() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("GetServiceTracesHandler() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 
@@ -371,29 +371,29 @@ func TestGetTracesHandler_MockedResponse(t *testing.T) {
 	}
 }
 
-func TestGetTracesHandler_ValidationErrors(t *testing.T) {
+func TestGetServiceTracesHandler_ValidationErrors(t *testing.T) {
 	cfg := models.Config{
 		BaseURL:   testBaseURL,
 		AuthToken: "test-token",
 	}
 
-	handler := GetTracesHandler(http.DefaultClient, cfg)
+	handler := GetServiceTracesHandler(http.DefaultClient, cfg)
 
 	tests := []struct {
 		name    string
-		args    GetTracesArgs
+		args    GetServiceTracesArgs
 		wantErr bool
 		errMsg  string
 	}{
 		{
 			name:    "Missing both trace_id and service_name",
-			args:    GetTracesArgs{},
+			args:    GetServiceTracesArgs{},
 			wantErr: true,
 			errMsg:  "either trace_id or service_name must be provided",
 		},
 		{
 			name: "Both trace_id and service_name provided",
-			args: GetTracesArgs{
+			args: GetServiceTracesArgs{
 				TraceID:     "abc123",
 				ServiceName: "test-service",
 			},
@@ -409,19 +409,19 @@ func TestGetTracesHandler_ValidationErrors(t *testing.T) {
 			_, _, err := handler(ctx, req, tt.args)
 
 			if (err != nil) != tt.wantErr {
-				t.Errorf("GetTracesHandler() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("GetServiceTracesHandler() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 
 			if err != nil && tt.errMsg != "" && !strings.Contains(err.Error(), tt.errMsg) {
-				t.Errorf("GetTracesHandler() error = %v, want error containing %v", err, tt.errMsg)
+				t.Errorf("GetServiceTracesHandler() error = %v, want error containing %v", err, tt.errMsg)
 			}
 		})
 	}
 }
 
 // Integration test - requires real API credentials
-func TestGetTracesHandler_Integration(t *testing.T) {
+func TestGetServiceTracesHandler_Integration(t *testing.T) {
 	if testAuthToken == "" || testRefreshToken == "" {
 		t.Skip("Skipping integration test: TEST_AUTH_TOKEN or TEST_REFRESH_TOKEN not set")
 	}
@@ -436,10 +436,10 @@ func TestGetTracesHandler_Integration(t *testing.T) {
 		t.Fatalf("failed to refresh access token: %v", err)
 	}
 
-	handler := GetTracesHandler(http.DefaultClient, cfg)
+	handler := GetServiceTracesHandler(http.DefaultClient, cfg)
 
 	// Test with service name
-	args := GetTracesArgs{
+	args := GetServiceTracesArgs{
 		ServiceName:     "test-service", // Replace with actual service name for real testing
 		LookbackMinutes: 60,
 		Limit:           5,

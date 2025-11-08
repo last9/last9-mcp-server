@@ -54,18 +54,13 @@ func (h *HTTPServer) Start() error {
 	// Create stateless MCP handler for maximum client compatibility
 	// Enables direct tool calls without session management - perfect for curl testing,
 	// serverless deployments, and horizontal scaling per MCP team recommendations
-	statelessHandler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
+	httpHandler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
 		return h.server.Server
-	}, &mcp.StreamableHTTPOptions{
-		Stateless: true, // Enable stateless mode - no session management needed
-		GetSessionID: func() string {
-			return "" // No session ID header required
-		},
-	})
+	}, nil)
 
 	// Register handlers on both root and /mcp paths for maximum client flexibility
-	mux.Handle("/", statelessHandler)     // Root endpoint for standard MCP clients
-	mux.Handle("/mcp", statelessHandler)  // /mcp endpoint for explicit MCP usage
+	mux.Handle("/", httpHandler)    // Root endpoint for standard MCP clients
+	mux.Handle("/mcp", httpHandler) // /mcp endpoint for explicit MCP usage
 	mux.HandleFunc("/health", h.handleHealth)
 
 	// Create HTTP server with timeouts
