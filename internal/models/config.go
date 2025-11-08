@@ -1,5 +1,7 @@
 package models
 
+import "last9-mcp/internal/auth"
+
 // Config holds the server configuration parameters
 type Config struct {
 	// Last9 connection settings
@@ -16,12 +18,13 @@ type Config struct {
 	Port     string // HTTP server port
 	Host     string // HTTP server host
 
-	// Access token for authenticated requests
-	AccessToken string
-	OrgSlug     string // Organization slug for multi-tenant support
-	APIBaseURL  string // Base URL for API requests
+	OrgSlug    string // Organization slug for multi-tenant support
+	ActionURL  string
+	APIBaseURL string // Base URL for API requests
 	// Prometheus configuration
 	PrometheusReadURL  string // URL for Prometheus read API
 	PrometheusUsername string // Username for Prometheus authentication
 	PrometheusPassword string // Password for Prometheus authentication
+
+	TokenManager *auth.TokenManager // Manages authentication tokens
 }

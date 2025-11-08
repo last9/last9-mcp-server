@@ -115,7 +115,7 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 		// Set headers
 		httpReq.Header.Set("Accept", "application/json")
 		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.AccessToken)
+		httpReq.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.TokenManager.GetAccessToken(ctx))
 		httpReq.Header.Set("User-Agent", "Last9-MCP-Server/1.0")
 
 		// Execute the request

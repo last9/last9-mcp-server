@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -158,20 +159,20 @@ func TestParseGetTracesParams(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseGetTracesParams(tt.args, cfg)
+			result, err := parseGetServiceTraceParams(tt.args, cfg)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseGetTracesParams() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("parseGetServiceTraceParams() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if err == nil {
 				if result.TraceID != tt.wantTrace {
-					t.Errorf("parseGetTracesParams() TraceID = %v, want %v", result.TraceID, tt.wantTrace)
+					t.Errorf("parseGetServiceTraceParams() TraceID = %v, want %v", result.TraceID, tt.wantTrace)
 				}
 				if result.ServiceName != tt.wantSvc {
-					t.Errorf("parseGetTracesParams() ServiceName = %v, want %v", result.ServiceName, tt.wantSvc)
+					t.Errorf("parseGetServiceTraceParams() ServiceName = %v, want %v", result.ServiceName, tt.wantSvc)
 				}
 				if result.Limit != tt.wantLimit {
-					t.Errorf("parseGetTracesParams() Limit = %v, want %v", result.Limit, tt.wantLimit)
+					t.Errorf("parseGetServiceTraceParams() Limit = %v, want %v", result.Limit, tt.wantLimit)
 				}
 			}
 		})
@@ -295,6 +296,19 @@ func TestGetServiceTracesHandler_MockedResponse(t *testing.T) {
 		BaseURL:      testBaseURL,
 		AuthToken:    "test-token",
 		RefreshToken: testRefreshToken,
+	}
+
+	// Initialize TokenManager for test
+	refreshToken := testRefreshToken
+	if refreshToken == "" {
+		// Use dummy refresh token for testing if not set
+		refreshToken = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJsYXN0OS5pbyIsImF1ZCI6WyJhcHAubGFzdDkuaW8iXSwiZXhwIjoxNzU2NjUwMDAwLCJuYmYiOjE2OTM1MzYwMDAsImlhdCI6MTY5MzUzNjAwMCwianRpIjoiZHVtbXktdGVzdC10b2tlbiIsImtpbmQiOiJyZWZyZXNoX3Rva2VuIiwiZW1haWwiOiJ0ZXN0QGxhc3Q5LmlvIiwib3JnYW5pemF0aW9uX3NsdWciOiJ0ZXN0LW9yZyIsInNjb3BlcyI6WyJyZWFkIl19.dummy_signature"
+	}
+	tokenManager, err := auth.NewTokenManager(refreshToken)
+	if err != nil {
+		t.Logf("Warning: Failed to create TokenManager for test: %v", err)
+	} else {
+		cfg.TokenManager = tokenManager
 	}
 
 	handler := GetServiceTracesHandler(server.Client(), cfg)

@@ -1,11 +1,9 @@
 package main
 
 import (
-	"net/http"
-	"time"
-
 	"last9-mcp/internal/alerting"
 	"last9-mcp/internal/apm"
+	"last9-mcp/internal/auth"
 	"last9-mcp/internal/change_events"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/telemetry/logs"
@@ -18,9 +16,7 @@ import (
 
 // registerAllTools registers all tools with the MCP server using the new SDK pattern
 func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error {
-	client := last9mcp.WithHTTPTracing(&http.Client{
-		Timeout: 30 * time.Second,
-	})
+	client := auth.GetHTTPClient()
 
 	// Register exceptions tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
