@@ -304,7 +304,7 @@ func createTraceRequest(ctx context.Context, requestURL *url.URL, filters []map[
 	req.Header.Set("Content-Type", "application/json")
 
 	// Add authentication - ensure Bearer prefix
-	accessToken := cfg.AccessToken
+	accessToken := cfg.TokenManager.GetAccessToken(ctx)
 	if !strings.HasPrefix(accessToken, "Bearer ") {
 		accessToken = "Bearer " + accessToken
 	}
