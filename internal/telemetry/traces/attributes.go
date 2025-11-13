@@ -93,10 +93,8 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 		requestBody := map[string]interface{}{
 			"pipeline": []map[string]interface{}{
 				{
-					"query": map[string]interface{}{
-						"$and": []interface{}{},
-					},
-					"type": "filter",
+					"query": map[string]interface{}{},
+					"type":  "filter",
 				},
 			},
 		}
@@ -188,4 +186,3 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 		}, nil, nil
 	}
 }
-
