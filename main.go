@@ -103,7 +103,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
-	log.Printf("Config loaded - BaseURL: %s, HTTPMode: %t", cfg.BaseURL, cfg.HTTPMode)
+	log.Printf("Config loaded - HTTPMode: %t, Authentication: enabled", cfg.HTTPMode)
 
 	tokenManager, err := auth.NewTokenManager(cfg.RefreshToken)
 	if err != nil {
