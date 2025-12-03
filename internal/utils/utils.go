@@ -263,39 +263,6 @@ func ConvertTimestamp(timestamp any) string {
 	}
 }
 
-// ParseStringArray safely extracts string array from interface{}
-func ParseStringArray(value interface{}) []string {
-	var result []string
-	if array, ok := value.([]interface{}); ok {
-		for _, item := range array {
-			if str, ok := item.(string); ok && str != "" {
-				result = append(result, str)
-			}
-		}
-	}
-	return result
-}
-
-// BuildOrFilter creates an optimized filter for single or multiple values of the same field.
-// For single values, returns a simple $eq filter. For multiple values, returns an $or filter.
-// This optimization reduces query complexity and improves performance for single-value filters.
-func BuildOrFilter(fieldName string, values []string) map[string]interface{} {
-	if len(values) == 1 {
-		return map[string]interface{}{
-			"$eq": []interface{}{fieldName, values[0]},
-		}
-	}
-
-	orConditions := make([]map[string]interface{}, 0, len(values))
-	for _, value := range values {
-		orConditions = append(orConditions, map[string]interface{}{
-			"$eq": []interface{}{fieldName, value},
-		})
-	}
-
-	return map[string]interface{}{"$or": orConditions}
-}
-
 // FetchPhysicalIndex retrieves the physical index for logs queries using the provided service name and environment
 // Uses an instant query for data from the last 1 day
 func FetchPhysicalIndex(ctx context.Context, client *http.Client, cfg models.Config, serviceName, env string) (string, error) {
