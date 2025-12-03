@@ -5,8 +5,7 @@ import "last9-mcp/internal/auth"
 // Config holds the server configuration parameters
 type Config struct {
 	// Last9 connection settings
-	AuthToken    string // API token for authentication
-	BaseURL      string // Last9 API URL
+	BaseURL      string // Last9 API URL (used for region detection)
 	RefreshToken string // Refresh token for authentication
 
 	// Rate limiting configuration

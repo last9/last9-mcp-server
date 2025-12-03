@@ -16,15 +16,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// const (
-//
-//	BaseURL      = "https://otlp-aps1.last9.io:443"
-//	AuthToken    = "Basic <your-auth-token>"
-//
-// )
 var (
 	BaseURL      = "https://otlp-aps1.last9.io:443"
-	AuthToken    = os.Getenv("TEST_AUTH_TOKEN")
 	RefreshToken = os.Getenv("TEST_REFRESH_TOKEN")
 )
 
@@ -79,7 +72,6 @@ func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
 
 	cfg := models.Config{
 		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
 		RefreshToken: RefreshToken,
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
@@ -121,7 +113,6 @@ func TestGetServicePerformanceDetails(t *testing.T) {
 
 	cfg := models.Config{
 		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
 		RefreshToken: RefreshToken,
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
@@ -165,7 +156,6 @@ func TestGetServiceOperationsSummary(t *testing.T) {
 
 	cfg := models.Config{
 		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
 		RefreshToken: RefreshToken,
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
@@ -208,7 +198,6 @@ func TestGetServiceDependencies(t *testing.T) {
 
 	cfg := models.Config{
 		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
 		RefreshToken: RefreshToken,
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
@@ -247,7 +236,6 @@ func TestGetServiceDependencies(t *testing.T) {
 func TestNewServiceEnvironmentsHandler(t *testing.T) {
 	cfg := models.Config{
 		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
 		RefreshToken: RefreshToken,
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
@@ -286,7 +274,6 @@ func TestPromqlInstantQueryHandler(t *testing.T) {
 
 	cfg := models.Config{
 		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
 		RefreshToken: RefreshToken,
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
@@ -321,7 +308,6 @@ func TestPromqlRangeQueryHandler(t *testing.T) {
 
 	cfg := models.Config{
 		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
 		RefreshToken: RefreshToken,
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {

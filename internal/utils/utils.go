@@ -410,13 +410,11 @@ func MakeTracesJSONQueryAPI(ctx context.Context, client *http.Client, cfg models
 
 // PopulateAPICfg populates the API configuration with necessary details
 func PopulateAPICfg(cfg *models.Config) error {
-	var accessToken string
-	if cfg.TokenManager != nil {
-		accessToken = cfg.TokenManager.GetAccessToken(context.Background())
-	} else {
-		// Fallback to using AuthToken for testing or when TokenManager is not initialized
-		accessToken = cfg.AuthToken
+	if cfg.TokenManager == nil {
+		return errors.New("TokenManager is required but not initialized")
 	}
+
+	accessToken := cfg.TokenManager.GetAccessToken(context.Background())
 	orgSlug, err := auth.ExtractOrgSlugFromToken(accessToken)
 	if err != nil {
 		return fmt.Errorf("failed to extract org slug from token: %w", err)

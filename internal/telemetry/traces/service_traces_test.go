@@ -19,7 +19,6 @@ import (
 
 var (
 	testBaseURL      = "https://otlp-aps1.last9.io:443"
-	testAuthToken    = os.Getenv("TEST_AUTH_TOKEN")
 	testRefreshToken = os.Getenv("TEST_REFRESH_TOKEN")
 )
 
@@ -294,7 +293,6 @@ func TestGetServiceTracesHandler_MockedResponse(t *testing.T) {
 	cfg := models.Config{
 		APIBaseURL:   server.URL,
 		BaseURL:      testBaseURL,
-		AuthToken:    "test-token",
 		RefreshToken: testRefreshToken,
 	}
 
@@ -387,8 +385,7 @@ func TestGetServiceTracesHandler_MockedResponse(t *testing.T) {
 
 func TestGetServiceTracesHandler_ValidationErrors(t *testing.T) {
 	cfg := models.Config{
-		BaseURL:   testBaseURL,
-		AuthToken: "test-token",
+		BaseURL: testBaseURL,
 	}
 
 	handler := GetServiceTracesHandler(http.DefaultClient, cfg)
@@ -436,13 +433,12 @@ func TestGetServiceTracesHandler_ValidationErrors(t *testing.T) {
 
 // Integration test - requires real API credentials
 func TestGetServiceTracesHandler_Integration(t *testing.T) {
-	if testAuthToken == "" || testRefreshToken == "" {
-		t.Skip("Skipping integration test: TEST_AUTH_TOKEN or TEST_REFRESH_TOKEN not set")
+	if testRefreshToken == "" {
+		t.Skip("Skipping integration test: TEST_REFRESH_TOKEN not set")
 	}
 
 	cfg := models.Config{
 		BaseURL:      testBaseURL,
-		AuthToken:    testAuthToken,
 		RefreshToken: testRefreshToken,
 	}
 

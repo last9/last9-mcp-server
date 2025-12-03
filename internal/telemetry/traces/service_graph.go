@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
@@ -66,12 +65,9 @@ func NewGetServiceGraphHandler(client *http.Client, cfg models.Config) func(cont
 			return nil, nil, fmt.Errorf("failed to create request: %w", err)
 		}
 
-		// Check if the auth token already has the "Basic" prefix
-		if !strings.HasPrefix(cfg.AuthToken, "Basic ") {
-			cfg.AuthToken = "Basic " + cfg.AuthToken
-		}
-
-		httpReq.Header.Set("Authorization", cfg.AuthToken)
+		// Use Bearer token authentication via X-LAST9-API-TOKEN header
+		accessToken := cfg.TokenManager.GetAccessToken(ctx)
+		httpReq.Header.Set("X-LAST9-API-TOKEN", "Bearer "+accessToken)
 
 		// Execute request
 		resp, err := client.Do(httpReq)

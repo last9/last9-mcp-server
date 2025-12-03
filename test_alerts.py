@@ -23,8 +23,6 @@ def test_alert_tools():
     print("Starting server...")
     env = {
         **os.environ,
-        "LAST9_BASE_URL": os.environ.get("LAST9_BASE_URL", "https://otlp-aps1.last9.io:443"),
-        "LAST9_AUTH_TOKEN": os.environ.get("LAST9_AUTH_TOKEN", "your_auth_token_here"),
         "LAST9_REFRESH_TOKEN": os.environ.get("LAST9_REFRESH_TOKEN", "your_refresh_token_here")
     }
     
