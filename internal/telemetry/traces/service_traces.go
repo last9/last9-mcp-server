@@ -132,7 +132,7 @@ func parseGetServiceTraceParams(args GetServiceTracesArgs, cfg models.Config) (*
 		TraceID:         args.TraceID,
 		ServiceName:     args.ServiceName,
 		LookbackMinutes: LookbackMinutesDefault,
-		Region:          utils.GetDefaultRegion(cfg.BaseURL),
+		Region:          cfg.Region,
 		Limit:           LimitDefault,
 		Env:             args.Env,
 	}

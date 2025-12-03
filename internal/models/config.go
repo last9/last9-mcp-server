@@ -5,8 +5,8 @@ import "last9-mcp/internal/auth"
 // Config holds the server configuration parameters
 type Config struct {
 	// Last9 connection settings
-	BaseURL      string // Last9 API URL (used for region detection)
 	RefreshToken string // Refresh token for authentication
+	Region       string // AWS region (e.g., us-east-1, ap-south-1)
 
 	// Rate limiting configuration
 	RequestRateLimit float64 // Maximum requests per second

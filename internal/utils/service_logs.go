@@ -39,12 +39,12 @@ type ServiceLogsParams struct {
 	Index           string   // Physical index parameter for logs queries
 }
 
-func createServiceLogsParams(request ServiceLogsAPIRequest, baseURL string) ServiceLogsParams {
+func createServiceLogsParams(request ServiceLogsAPIRequest, region string) ServiceLogsParams {
 	return ServiceLogsParams{
 		Service:         request.Service,
 		StartTime:       request.StartTime,
 		EndTime:         request.EndTime,
-		Region:          GetDefaultRegion(baseURL),
+		Region:          region,
 		SeverityFilters: request.SeverityFilters,
 		BodyFilters:     request.BodyFilters,
 		Index:           request.Index,
@@ -123,7 +123,7 @@ func MakeServiceLogsAPI(ctx context.Context, client *http.Client, request Servic
 	}
 
 	// Create parameters with dynamic region detection
-	params := createServiceLogsParams(request, cfg.BaseURL)
+	params := createServiceLogsParams(request, cfg.Region)
 
 	if err := (&params).Validate(); err != nil {
 		return nil, fmt.Errorf("invalid parameters: %w", err)
@@ -223,7 +223,7 @@ func MakeLogsJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.C
 	queryParams.Add("direction", "backward")
 	queryParams.Add("start", fmt.Sprintf("%d", startMs/1000)) // seconds
 	queryParams.Add("end", fmt.Sprintf("%d", endMs/1000))     // seconds
-	queryParams.Add("region", GetDefaultRegion(cfg.BaseURL))
+	queryParams.Add("region", cfg.Region)
 	fullURL := fmt.Sprintf("%s?%s", logsURL, queryParams.Encode())
 
 	// Build body

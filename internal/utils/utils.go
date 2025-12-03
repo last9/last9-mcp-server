@@ -372,7 +372,7 @@ func MakeTracesJSONQueryAPI(ctx context.Context, client *http.Client, cfg models
 	queryParams.Add("direction", "backward")
 	queryParams.Add("start", fmt.Sprintf("%d", startMs/1000)) // seconds
 	queryParams.Add("end", fmt.Sprintf("%d", endMs/1000))     // seconds
-	queryParams.Add("region", GetDefaultRegion(cfg.BaseURL))
+	queryParams.Add("region", cfg.Region)
 	queryParams.Add("limit", fmt.Sprintf("%d", limit))        // User-specified limit
 	queryParams.Add("order", "Timestamp") // Default order
 	fullURL := fmt.Sprintf("%s?%s", tracesURL, queryParams.Encode())
@@ -461,6 +461,8 @@ func PopulateAPICfg(cfg *models.Config) error {
 			cfg.PrometheusReadURL = ds.URL
 			cfg.PrometheusUsername = ds.Properties.Username
 			cfg.PrometheusPassword = ds.Properties.Password
+			// Extract region from the Prometheus URL
+			cfg.Region = GetDefaultRegion(ds.URL)
 			break
 		}
 	}

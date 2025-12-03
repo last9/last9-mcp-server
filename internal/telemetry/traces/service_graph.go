@@ -47,8 +47,8 @@ func NewGetServiceGraphHandler(client *http.Client, cfg models.Config) func(cont
 			return nil, nil, err
 		}
 
-		// Build request URL
-		u, err := url.Parse(cfg.BaseURL + "/telemetry/api/v1/service_graph")
+		// Build request URL using APIBaseURL (legacy endpoint)
+		u, err := url.Parse(cfg.APIBaseURL + "/telemetry/api/v1/service_graph")
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to parse URL: %w", err)
 		}

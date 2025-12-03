@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"last9-mcp/internal/models"
-	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -71,8 +70,8 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 			}
 		}
 
-		// Get region parameter or use default from base URL
-		region := utils.GetDefaultRegion(cfg.BaseURL)
+		// Get region parameter or use default from config
+		region := cfg.Region
 		if args.Region != "" {
 			region = args.Region
 		}
