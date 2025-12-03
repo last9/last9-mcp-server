@@ -18,7 +18,6 @@ import (
 )
 
 var (
-	testBaseURL      = "https://otlp-aps1.last9.io:443"
 	testRefreshToken = os.Getenv("TEST_REFRESH_TOKEN")
 )
 
@@ -112,7 +111,7 @@ func TestValidateGetServiceTracesArgs(t *testing.T) {
 
 func TestParseGetTracesParams(t *testing.T) {
 	cfg := models.Config{
-		BaseURL: testBaseURL,
+		Region: "us-east-1",
 	}
 
 	tests := []struct {
@@ -292,7 +291,7 @@ func TestGetServiceTracesHandler_MockedResponse(t *testing.T) {
 
 	cfg := models.Config{
 		APIBaseURL:   server.URL,
-		BaseURL:      testBaseURL,
+		Region:       "ap-south-1",
 		RefreshToken: testRefreshToken,
 	}
 
@@ -385,7 +384,7 @@ func TestGetServiceTracesHandler_MockedResponse(t *testing.T) {
 
 func TestGetServiceTracesHandler_ValidationErrors(t *testing.T) {
 	cfg := models.Config{
-		BaseURL: testBaseURL,
+		Region: "us-east-1",
 	}
 
 	handler := GetServiceTracesHandler(http.DefaultClient, cfg)
@@ -438,7 +437,6 @@ func TestGetServiceTracesHandler_Integration(t *testing.T) {
 	}
 
 	cfg := models.Config{
-		BaseURL:      testBaseURL,
 		RefreshToken: testRefreshToken,
 	}
 

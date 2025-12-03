@@ -17,7 +17,6 @@ import (
 )
 
 var (
-	BaseURL      = "https://otlp-aps1.last9.io:443"
 	RefreshToken = os.Getenv("TEST_REFRESH_TOKEN")
 )
 
@@ -71,7 +70,6 @@ func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
 	defer server.Close()
 
 	cfg := models.Config{
-		BaseURL:      BaseURL,
 		RefreshToken: RefreshToken,
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
@@ -112,7 +110,6 @@ func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
 func TestGetServicePerformanceDetails(t *testing.T) {
 
 	cfg := models.Config{
-		BaseURL:      BaseURL,
 		RefreshToken: RefreshToken,
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
@@ -155,7 +152,6 @@ func TestGetServicePerformanceDetails(t *testing.T) {
 func TestGetServiceOperationsSummary(t *testing.T) {
 
 	cfg := models.Config{
-		BaseURL:      BaseURL,
 		RefreshToken: RefreshToken,
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
@@ -197,7 +193,6 @@ func TestGetServiceOperationsSummary(t *testing.T) {
 func TestGetServiceDependencies(t *testing.T) {
 
 	cfg := models.Config{
-		BaseURL:      BaseURL,
 		RefreshToken: RefreshToken,
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
@@ -235,7 +230,6 @@ func TestGetServiceDependencies(t *testing.T) {
 
 func TestNewServiceEnvironmentsHandler(t *testing.T) {
 	cfg := models.Config{
-		BaseURL:      BaseURL,
 		RefreshToken: RefreshToken,
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
@@ -273,7 +267,6 @@ func TestNewServiceEnvironmentsHandler(t *testing.T) {
 func TestPromqlInstantQueryHandler(t *testing.T) {
 
 	cfg := models.Config{
-		BaseURL:      BaseURL,
 		RefreshToken: RefreshToken,
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
@@ -307,7 +300,6 @@ func TestPromqlInstantQueryHandler(t *testing.T) {
 func TestPromqlRangeQueryHandler(t *testing.T) {
 
 	cfg := models.Config{
-		BaseURL:      BaseURL,
 		RefreshToken: RefreshToken,
 	}
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
