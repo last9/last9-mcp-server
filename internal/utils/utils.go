@@ -411,7 +411,7 @@ func PopulateAPICfg(cfg *models.Config) error {
 			break
 		}
 	}
-	if cfg.PrometheusReadURL == "" || cfg.PrometheusUsername == "" || cfg.PrometheusPassword == "" {
+	if cfg.PrometheusReadURL == "" || cfg.PrometheusUsername == "" || cfg.PrometheusPassword == "" || cfg.Region == "" {
 		return errors.New("default datasource not found or missing required properties")
 	}
 	return nil
