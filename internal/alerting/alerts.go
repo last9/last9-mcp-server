@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"last9-mcp/internal/constants"
@@ -87,6 +88,8 @@ type AlertInstance struct {
 const GetAlertConfigDescription = `
 	Get alert configurations (alert rules) from Last9.
 	Returns all configured alert rules including their conditions, labels, and annotations.
+	Uses the datasource configured in the server config (or default if not specified).
+	
 	Each alert rule includes:
 	- id: Unique identifier for the alert rule
 	- name: Human-readable name of the alert
@@ -110,6 +113,8 @@ const GetAlertsDescription = `
 	- timestamp: Unix timestamp for the query time (defaults to current time)
 	- window: Time window in seconds to look back for alerts (defaults to 900 seconds = 15 minutes)
 	
+	Uses the datasource configured in the server config (or default if not specified).
+	
 	Each alert includes:
 	- id: Unique identifier for this alert instance
 	- rule_id: ID of the alert rule that triggered this alert
@@ -129,10 +134,13 @@ type GetAlertConfigArgs struct{}
 func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetAlertConfigArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetAlertConfigArgs) (*mcp.CallToolResult, any, error) {
 		// Build the URL for alert rules API
-		url := fmt.Sprintf("%s%s", cfg.APIBaseURL, constants.EndpointAlertRules)
+		// Datasource is already configured in cfg via PopulateAPICfg
+		// If a specific datasource was set, it's already in cfg.PrometheusReadURL
+		baseURL := fmt.Sprintf("%s%s", cfg.APIBaseURL, constants.EndpointAlertRules)
+		finalURL := baseURL
 
 		// Create HTTP request
-		httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		httpReq, err := http.NewRequestWithContext(ctx, "GET", finalURL, nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create request: %w", err)
 		}
@@ -184,7 +192,7 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 				formattedResponse += fmt.Sprintf("  Error Since: %s\n", errorTime)
 			}
 
-			if rule.Properties != nil && len(rule.Properties) > 0 {
+			if len(rule.Properties) > 0 {
 				formattedResponse += "  Properties:\n"
 				for k, v := range rule.Properties {
 					formattedResponse += fmt.Sprintf("    %s: %v\n", k, v)
@@ -228,11 +236,19 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 			window = int64(args.Window)
 		}
 
-		// Build the URL for alerts monitoring API
-		url := fmt.Sprintf("%s%s?timestamp=%d&window=%d", cfg.APIBaseURL, constants.EndpointAlertsMonitor, timestamp, window)
+		// Build the base URL for alerts monitoring API
+		// Datasource is already configured in cfg via PopulateAPICfg
+		baseURL := fmt.Sprintf("%s%s", cfg.APIBaseURL, constants.EndpointAlertsMonitor)
+		queryParams := url.Values{}
+		queryParams.Set("timestamp", fmt.Sprintf("%d", timestamp))
+		queryParams.Set("window", fmt.Sprintf("%d", window))
+		// Note: read_url is not needed here as datasource is configured at config level
+
+		// Build final URL with query parameters
+		finalURL := fmt.Sprintf("%s?%s", baseURL, queryParams.Encode())
 
 		// Create HTTP request
-		httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		httpReq, err := http.NewRequestWithContext(ctx, "GET", finalURL, nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create request: %w", err)
 		}

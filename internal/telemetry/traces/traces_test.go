@@ -226,7 +226,8 @@ func TestGetTracesHandler_Integration(t *testing.T) {
 	}
 
 	cfg := models.Config{
-		RefreshToken: testRefreshToken,
+		RefreshToken:   testRefreshToken,
+		DatasourceName: os.Getenv("TEST_DATASOURCE"), // Optional: use specific datasource for testing
 	}
 	// Initialize TokenManager first
 	tokenManager, err := auth.NewTokenManager(testRefreshToken)
@@ -357,26 +358,15 @@ func createMockTraceResponse(numTraces int) string {
 
 // Integration test for get_trace_attributes tool
 func TestGetTraceAttributesHandler_Integration(t *testing.T) {
-	// Skip if no refresh token is provided (integration test)
-	testRefreshToken := os.Getenv("TEST_REFRESH_TOKEN")
-	if testRefreshToken == "" {
-		t.Skip("Skipping integration test: TEST_REFRESH_TOKEN not set")
-	}
-
-	cfg := models.Config{
-		RefreshToken: testRefreshToken,
-	}
-	// Initialize TokenManager first
-	tokenManager, err := auth.NewTokenManager(testRefreshToken)
+	cfg, err := utils.SetupTestConfig()
 	if err != nil {
-		t.Fatalf("failed to create token manager: %v", err)
-	}
-	cfg.TokenManager = tokenManager
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to populate API config: %v", err)
+		if _, ok := err.(*utils.TestConfigError); ok {
+			t.Skipf("Skipping test: %v", err)
+		}
+		t.Fatalf("failed to setup test config: %v", err)
 	}
 
-	handler := NewGetTraceAttributesHandler(http.DefaultClient, cfg)
+	handler := NewGetTraceAttributesHandler(http.DefaultClient, *cfg)
 
 	args := GetTraceAttributesArgs{
 		LookbackMinutes: 15,
@@ -418,26 +408,15 @@ func TestGetTraceAttributesHandler_Integration(t *testing.T) {
 
 // Integration test for get_exceptions tool
 func TestGetExceptionsHandler_Integration(t *testing.T) {
-	// Skip if no refresh token is provided (integration test)
-	testRefreshToken := os.Getenv("TEST_REFRESH_TOKEN")
-	if testRefreshToken == "" {
-		t.Skip("Skipping integration test: TEST_REFRESH_TOKEN not set")
-	}
-
-	cfg := models.Config{
-		RefreshToken: testRefreshToken,
-	}
-	// Initialize TokenManager first
-	tokenManager, err := auth.NewTokenManager(testRefreshToken)
+	cfg, err := utils.SetupTestConfig()
 	if err != nil {
-		t.Fatalf("failed to create token manager: %v", err)
-	}
-	cfg.TokenManager = tokenManager
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to populate API config: %v", err)
+		if _, ok := err.(*utils.TestConfigError); ok {
+			t.Skipf("Skipping test: %v", err)
+		}
+		t.Fatalf("failed to setup test config: %v", err)
 	}
 
-	handler := NewGetExceptionsHandler(http.DefaultClient, cfg)
+	handler := NewGetExceptionsHandler(http.DefaultClient, *cfg)
 
 	args := GetExceptionsArgs{
 		LookbackMinutes: 60,

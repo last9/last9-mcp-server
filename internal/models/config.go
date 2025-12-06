@@ -20,6 +20,8 @@ type Config struct {
 	OrgSlug    string // Organization slug for multi-tenant support
 	ActionURL  string
 	APIBaseURL string // Base URL for API requests
+	// Datasource configuration
+	DatasourceName string // Datasource name to use (overrides default datasource)
 	// Prometheus configuration
 	PrometheusReadURL  string // URL for Prometheus read API
 	PrometheusUsername string // Username for Prometheus authentication

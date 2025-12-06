@@ -355,6 +355,59 @@ func MakeTracesJSONQueryAPI(ctx context.Context, client *http.Client, cfg models
 	return resp, nil
 }
 
+// Datasource represents a datasource configuration
+type Datasource struct {
+	Name       string `json:"name"`
+	IsDefault  bool   `json:"is_default"`
+	URL        string `json:"url"`
+	Region     string `json:"region"`
+	Properties struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	} `json:"properties"`
+}
+
+// GetDatasourceByName fetches all datasources and returns the one matching the provided name.
+// If datasourceName is empty, returns nil (indicating to use default).
+// Returns an error if the datasource is not found.
+func GetDatasourceByName(ctx context.Context, client *http.Client, cfg models.Config, datasourceName string) (*Datasource, error) {
+	if datasourceName == "" {
+		return nil, nil // Use default
+	}
+
+	// Fetch all datasources
+	req, err := http.NewRequestWithContext(ctx, "GET", cfg.APIBaseURL+constants.EndpointDatasources, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request for datasources: %w", err)
+	}
+	req.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get datasources: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to get datasources: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var datasources []Datasource
+	if err := json.NewDecoder(resp.Body).Decode(&datasources); err != nil {
+		return nil, fmt.Errorf("failed to decode datasources response: %w", err)
+	}
+
+	// Find the datasource matching the provided name
+	for _, ds := range datasources {
+		if ds.Name == datasourceName {
+			return &ds, nil
+		}
+	}
+
+	return nil, fmt.Errorf("datasource with name '%s' not found", datasourceName)
+}
+
 // PopulateAPICfg populates the API configuration with necessary details
 func PopulateAPICfg(cfg *models.Config) error {
 	if cfg.TokenManager == nil {
@@ -389,30 +442,45 @@ func PopulateAPICfg(cfg *models.Config) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to get metrics datasource: %s", resp.Status)
 	}
-	var datasources []struct {
-		IsDefault  bool   `json:"is_default"`
-		URL        string `json:"url"`
-		Region     string `json:"region"`
-		Properties struct {
-			Username string `json:"username"`
-			Password string `json:"password"`
-		} `json:"properties"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&datasources); err != nil {
+	var datasourcesList []Datasource
+	if err := json.NewDecoder(resp.Body).Decode(&datasourcesList); err != nil {
 		return fmt.Errorf("failed to decode metrics datasources response: %w", err)
 	}
-	for _, ds := range datasources {
-		if ds.IsDefault {
-			cfg.PrometheusReadURL = ds.URL
-			cfg.PrometheusUsername = ds.Properties.Username
-			cfg.PrometheusPassword = ds.Properties.Password
-			// Use region directly from the datasource response
-			cfg.Region = ds.Region
-			break
+
+	// Find the datasource to use
+	var selectedDatasource *Datasource
+	if cfg.DatasourceName != "" {
+		// Use specified datasource by name
+		for i := range datasourcesList {
+			if datasourcesList[i].Name == cfg.DatasourceName {
+				selectedDatasource = &datasourcesList[i]
+				break
+			}
+		}
+		if selectedDatasource == nil {
+			return fmt.Errorf("datasource with name '%s' not found", cfg.DatasourceName)
+		}
+	} else {
+		// Use default datasource
+		for i := range datasourcesList {
+			if datasourcesList[i].IsDefault {
+				selectedDatasource = &datasourcesList[i]
+				break
+			}
+		}
+		if selectedDatasource == nil {
+			return errors.New("default datasource not found")
 		}
 	}
+
+	// Set config from selected datasource
+	cfg.PrometheusReadURL = selectedDatasource.URL
+	cfg.PrometheusUsername = selectedDatasource.Properties.Username
+	cfg.PrometheusPassword = selectedDatasource.Properties.Password
+	cfg.Region = selectedDatasource.Region
+
 	if cfg.PrometheusReadURL == "" || cfg.PrometheusUsername == "" || cfg.PrometheusPassword == "" || cfg.Region == "" {
-		return errors.New("default datasource not found or missing required properties")
+		return errors.New("selected datasource missing required properties")
 	}
 	return nil
 }

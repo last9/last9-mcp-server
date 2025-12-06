@@ -108,26 +108,15 @@ func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
 }
 
 func TestGetServicePerformanceDetails(t *testing.T) {
-	// Skip if no refresh token is provided (integration test)
-	testRefreshToken := os.Getenv("TEST_REFRESH_TOKEN")
-	if testRefreshToken == "" {
-		t.Skip("Skipping test: TEST_REFRESH_TOKEN not set")
-	}
-
-	cfg := models.Config{
-		RefreshToken: testRefreshToken,
-	}
-	// Initialize TokenManager first
-	tokenManager, err := auth.NewTokenManager(testRefreshToken)
+	cfg, err := utils.SetupTestConfig()
 	if err != nil {
-		t.Fatalf("failed to create token manager: %v", err)
-	}
-	cfg.TokenManager = tokenManager
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
+		if _, ok := err.(*utils.TestConfigError); ok {
+			t.Skipf("Skipping test: %v", err)
+		}
+		t.Fatalf("failed to setup test config: %v", err)
 	}
 
-	handler := NewServicePerformanceDetailsHandler(http.DefaultClient, cfg)
+	handler := NewServicePerformanceDetailsHandler(http.DefaultClient, *cfg)
 
 	args := ServicePerformanceDetailsArgs{
 		ServiceName:  "svc",
@@ -160,26 +149,15 @@ func TestGetServicePerformanceDetails(t *testing.T) {
 }
 
 func TestGetServiceOperationsSummary(t *testing.T) {
-	// Skip if no refresh token is provided (integration test)
-	testRefreshToken := os.Getenv("TEST_REFRESH_TOKEN")
-	if testRefreshToken == "" {
-		t.Skip("Skipping test: TEST_REFRESH_TOKEN not set")
-	}
-
-	cfg := models.Config{
-		RefreshToken: testRefreshToken,
-	}
-	// Initialize TokenManager first
-	tokenManager, err := auth.NewTokenManager(testRefreshToken)
+	cfg, err := utils.SetupTestConfig()
 	if err != nil {
-		t.Fatalf("failed to create token manager: %v", err)
-	}
-	cfg.TokenManager = tokenManager
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
+		if _, ok := err.(*utils.TestConfigError); ok {
+			t.Skipf("Skipping test: %v", err)
+		}
+		t.Fatalf("failed to setup test config: %v", err)
 	}
 
-	handler := NewServiceOperationsSummaryHandler(http.DefaultClient, cfg)
+	handler := NewServiceOperationsSummaryHandler(http.DefaultClient, *cfg)
 
 	args := ServiceOperationsSummaryArgs{
 		ServiceName:  "svc",
@@ -211,26 +189,15 @@ func TestGetServiceOperationsSummary(t *testing.T) {
 }
 
 func TestGetServiceDependencies(t *testing.T) {
-	// Skip if no refresh token is provided (integration test)
-	testRefreshToken := os.Getenv("TEST_REFRESH_TOKEN")
-	if testRefreshToken == "" {
-		t.Skip("Skipping test: TEST_REFRESH_TOKEN not set")
-	}
-
-	cfg := models.Config{
-		RefreshToken: testRefreshToken,
-	}
-	// Initialize TokenManager first
-	tokenManager, err := auth.NewTokenManager(testRefreshToken)
+	cfg, err := utils.SetupTestConfig()
 	if err != nil {
-		t.Fatalf("failed to create token manager: %v", err)
-	}
-	cfg.TokenManager = tokenManager
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
+		if _, ok := err.(*utils.TestConfigError); ok {
+			t.Skipf("Skipping test: %v", err)
+		}
+		t.Fatalf("failed to setup test config: %v", err)
 	}
 
-	handler := NewServiceDependencyGraphHandler(http.DefaultClient, cfg)
+	handler := NewServiceDependencyGraphHandler(http.DefaultClient, *cfg)
 
 	args := ServiceDependencyGraphArgs{
 		ServiceName:  "svc",
@@ -260,26 +227,15 @@ func TestGetServiceDependencies(t *testing.T) {
 }
 
 func TestNewServiceEnvironmentsHandler(t *testing.T) {
-	// Skip if no refresh token is provided (integration test)
-	testRefreshToken := os.Getenv("TEST_REFRESH_TOKEN")
-	if testRefreshToken == "" {
-		t.Skip("Skipping test: TEST_REFRESH_TOKEN not set")
-	}
-
-	cfg := models.Config{
-		RefreshToken: testRefreshToken,
-	}
-	// Initialize TokenManager first
-	tokenManager, err := auth.NewTokenManager(testRefreshToken)
+	cfg, err := utils.SetupTestConfig()
 	if err != nil {
-		t.Fatalf("failed to create token manager: %v", err)
-	}
-	cfg.TokenManager = tokenManager
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
+		if _, ok := err.(*utils.TestConfigError); ok {
+			t.Skipf("Skipping test: %v", err)
+		}
+		t.Fatalf("failed to setup test config: %v", err)
 	}
 
-	handler := NewServiceEnvironmentsHandler(http.DefaultClient, cfg)
+	handler := NewServiceEnvironmentsHandler(http.DefaultClient, *cfg)
 
 	args := ServiceEnvironmentsArgs{
 		StartTimeISO: time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
@@ -307,26 +263,15 @@ func TestNewServiceEnvironmentsHandler(t *testing.T) {
 }
 
 func TestPromqlInstantQueryHandler(t *testing.T) {
-	// Skip if no refresh token is provided (integration test)
-	testRefreshToken := os.Getenv("TEST_REFRESH_TOKEN")
-	if testRefreshToken == "" {
-		t.Skip("Skipping test: TEST_REFRESH_TOKEN not set")
-	}
-
-	cfg := models.Config{
-		RefreshToken: testRefreshToken,
-	}
-	// Initialize TokenManager first
-	tokenManager, err := auth.NewTokenManager(testRefreshToken)
+	cfg, err := utils.SetupTestConfig()
 	if err != nil {
-		t.Fatalf("failed to create token manager: %v", err)
-	}
-	cfg.TokenManager = tokenManager
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
+		if _, ok := err.(*utils.TestConfigError); ok {
+			t.Skipf("Skipping test: %v", err)
+		}
+		t.Fatalf("failed to setup test config: %v", err)
 	}
 
-	handler := NewPromqlInstantQueryHandler(http.DefaultClient, cfg)
+	handler := NewPromqlInstantQueryHandler(http.DefaultClient, *cfg)
 
 	args := PromqlInstantQueryArgs{
 		Query:   "sum_over_time(trace_call_graph_count{}[1h])",
@@ -350,26 +295,15 @@ func TestPromqlInstantQueryHandler(t *testing.T) {
 }
 
 func TestPromqlRangeQueryHandler(t *testing.T) {
-	// Skip if no refresh token is provided (integration test)
-	testRefreshToken := os.Getenv("TEST_REFRESH_TOKEN")
-	if testRefreshToken == "" {
-		t.Skip("Skipping test: TEST_REFRESH_TOKEN not set")
-	}
-
-	cfg := models.Config{
-		RefreshToken: testRefreshToken,
-	}
-	// Initialize TokenManager first
-	tokenManager, err := auth.NewTokenManager(testRefreshToken)
+	cfg, err := utils.SetupTestConfig()
 	if err != nil {
-		t.Fatalf("failed to create token manager: %v", err)
-	}
-	cfg.TokenManager = tokenManager
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
+		if _, ok := err.(*utils.TestConfigError); ok {
+			t.Skipf("Skipping test: %v", err)
+		}
+		t.Fatalf("failed to setup test config: %v", err)
 	}
 
-	handler := NewPromqlRangeQueryHandler(http.DefaultClient, cfg)
+	handler := NewPromqlRangeQueryHandler(http.DefaultClient, *cfg)
 
 	args := PromqlRangeQueryArgs{
 		Query:        "sum(rate(http_request_duration_seconds_count[1m]))",
@@ -401,25 +335,15 @@ func TestPromqlRangeQueryHandler(t *testing.T) {
 // Integration test for prometheus_labels tool
 func TestPromqlLabelsHandler_Integration(t *testing.T) {
 	// Skip if no refresh token is provided (integration test)
-	testRefreshToken := os.Getenv("TEST_REFRESH_TOKEN")
-	if testRefreshToken == "" {
-		t.Skip("Skipping integration test: TEST_REFRESH_TOKEN not set")
-	}
-
-	cfg := models.Config{
-		RefreshToken: testRefreshToken,
-	}
-	// Initialize TokenManager first
-	tokenManager, err := auth.NewTokenManager(testRefreshToken)
+	cfg, err := utils.SetupTestConfig()
 	if err != nil {
-		t.Fatalf("failed to create token manager: %v", err)
-	}
-	cfg.TokenManager = tokenManager
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to populate API config: %v", err)
+		if _, ok := err.(*utils.TestConfigError); ok {
+			t.Skipf("Skipping test: %v", err)
+		}
+		t.Fatalf("failed to setup test config: %v", err)
 	}
 
-	handler := NewPromqlLabelsHandler(http.DefaultClient, cfg)
+	handler := NewPromqlLabelsHandler(http.DefaultClient, *cfg)
 
 	args := PromqlLabelsArgs{
 		MatchQuery: "up",
@@ -461,25 +385,15 @@ func TestPromqlLabelsHandler_Integration(t *testing.T) {
 
 func TestNewServiceSummaryHandler_Integration(t *testing.T) {
 	// Skip if no refresh token is provided (integration test)
-	testRefreshToken := os.Getenv("TEST_REFRESH_TOKEN")
-	if testRefreshToken == "" {
-		t.Skip("Skipping integration test: TEST_REFRESH_TOKEN not set")
-	}
-
-	cfg := models.Config{
-		RefreshToken: testRefreshToken,
-	}
-	// Initialize TokenManager first
-	tokenManager, err := auth.NewTokenManager(testRefreshToken)
+	cfg, err := utils.SetupTestConfig()
 	if err != nil {
-		t.Fatalf("failed to create token manager: %v", err)
-	}
-	cfg.TokenManager = tokenManager
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to populate API config: %v", err)
+		if _, ok := err.(*utils.TestConfigError); ok {
+			t.Skipf("Skipping test: %v", err)
+		}
+		t.Fatalf("failed to setup test config: %v", err)
 	}
 
-	handler := NewServiceSummaryHandler(http.DefaultClient, cfg)
+	handler := NewServiceSummaryHandler(http.DefaultClient, *cfg)
 
 	args := ServiceSummaryArgs{
 		StartTimeISO: time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
@@ -523,25 +437,15 @@ func TestNewServiceSummaryHandler_Integration(t *testing.T) {
 
 func TestPromqlLabelValuesHandler_Integration(t *testing.T) {
 	// Skip if no refresh token is provided (integration test)
-	testRefreshToken := os.Getenv("TEST_REFRESH_TOKEN")
-	if testRefreshToken == "" {
-		t.Skip("Skipping integration test: TEST_REFRESH_TOKEN not set")
-	}
-
-	cfg := models.Config{
-		RefreshToken: testRefreshToken,
-	}
-	// Initialize TokenManager first
-	tokenManager, err := auth.NewTokenManager(testRefreshToken)
+	cfg, err := utils.SetupTestConfig()
 	if err != nil {
-		t.Fatalf("failed to create token manager: %v", err)
-	}
-	cfg.TokenManager = tokenManager
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to populate API config: %v", err)
+		if _, ok := err.(*utils.TestConfigError); ok {
+			t.Skipf("Skipping test: %v", err)
+		}
+		t.Fatalf("failed to setup test config: %v", err)
 	}
 
-	handler := NewPromqlLabelValuesHandler(http.DefaultClient, cfg)
+	handler := NewPromqlLabelValuesHandler(http.DefaultClient, *cfg)
 
 	args := PromqlLabelValuesArgs{
 		MatchQuery:   "up",

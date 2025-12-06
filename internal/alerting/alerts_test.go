@@ -4,13 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"last9-mcp/internal/auth"
-	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -18,26 +15,15 @@ import (
 
 // Integration test for get_alert_config tool
 func TestGetAlertConfigHandler_Integration(t *testing.T) {
-	// Skip if no refresh token is provided (integration test)
-	testRefreshToken := os.Getenv("TEST_REFRESH_TOKEN")
-	if testRefreshToken == "" {
-		t.Skip("Skipping integration test: TEST_REFRESH_TOKEN not set")
-	}
-
-	cfg := models.Config{
-		RefreshToken: testRefreshToken,
-	}
-	// Initialize TokenManager first
-	tokenManager, err := auth.NewTokenManager(testRefreshToken)
+	cfg, err := utils.SetupTestConfig()
 	if err != nil {
-		t.Fatalf("failed to create token manager: %v", err)
-	}
-	cfg.TokenManager = tokenManager
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to populate API config: %v", err)
+		if _, ok := err.(*utils.TestConfigError); ok {
+			t.Skipf("Skipping integration test: %v", err)
+		}
+		t.Fatalf("failed to setup test config: %v", err)
 	}
 
-	handler := NewGetAlertConfigHandler(http.DefaultClient, cfg)
+	handler := NewGetAlertConfigHandler(http.DefaultClient, *cfg)
 
 	args := GetAlertConfigArgs{}
 
@@ -78,26 +64,15 @@ func TestGetAlertConfigHandler_Integration(t *testing.T) {
 
 // Integration test for get_alerts tool
 func TestGetAlertsHandler_Integration(t *testing.T) {
-	// Skip if no refresh token is provided (integration test)
-	testRefreshToken := os.Getenv("TEST_REFRESH_TOKEN")
-	if testRefreshToken == "" {
-		t.Skip("Skipping integration test: TEST_REFRESH_TOKEN not set")
-	}
-
-	cfg := models.Config{
-		RefreshToken: testRefreshToken,
-	}
-	// Initialize TokenManager first
-	tokenManager, err := auth.NewTokenManager(testRefreshToken)
+	cfg, err := utils.SetupTestConfig()
 	if err != nil {
-		t.Fatalf("failed to create token manager: %v", err)
-	}
-	cfg.TokenManager = tokenManager
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to populate API config: %v", err)
+		if _, ok := err.(*utils.TestConfigError); ok {
+			t.Skipf("Skipping integration test: %v", err)
+		}
+		t.Fatalf("failed to setup test config: %v", err)
 	}
 
-	handler := NewGetAlertsHandler(http.DefaultClient, cfg)
+	handler := NewGetAlertsHandler(http.DefaultClient, *cfg)
 
 	tests := []struct {
 		name      string

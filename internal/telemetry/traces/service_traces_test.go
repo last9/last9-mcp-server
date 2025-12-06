@@ -427,24 +427,15 @@ func TestGetServiceTracesHandler_ValidationErrors(t *testing.T) {
 
 // Integration test - requires real API credentials
 func TestGetServiceTracesHandler_Integration(t *testing.T) {
-	if testRefreshToken == "" {
-		t.Skip("Skipping integration test: TEST_REFRESH_TOKEN not set")
-	}
-
-	cfg := models.Config{
-		RefreshToken: testRefreshToken,
-	}
-	// Initialize TokenManager first
-	tokenManager, err := auth.NewTokenManager(testRefreshToken)
+	cfg, err := utils.SetupTestConfig()
 	if err != nil {
-		t.Fatalf("failed to create token manager: %v", err)
-	}
-	cfg.TokenManager = tokenManager
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
+		if _, ok := err.(*utils.TestConfigError); ok {
+			t.Skipf("Skipping test: %v", err)
+		}
+		t.Fatalf("failed to setup test config: %v", err)
 	}
 
-	handler := GetServiceTracesHandler(http.DefaultClient, cfg)
+	handler := GetServiceTracesHandler(http.DefaultClient, *cfg)
 
 	// Test with service name
 	args := GetServiceTracesArgs{
