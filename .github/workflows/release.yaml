@@ -9,14 +9,35 @@ on:
       - main
   push:
     branches:
-      - 'release-**'
+      - "release-**"
 
 permissions:
   contents: write
   packages: write
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -v -race ./...
+        env:
+          TEST_REFRESH_TOKEN: ${{ secrets.TEST_REFRESH_TOKEN }}
+
   tag-and-release:
+    needs: test
     if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     outputs:

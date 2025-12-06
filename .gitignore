@@ -100,3 +100,12 @@ last9-mcp-server
 
 # Claude IDE settings
 .claude/
+
+# Test output files
+*_output.txt
+*_output.json
+test_input.txt
+init.json
+query.json
+trace-response.json
+traces_output.json

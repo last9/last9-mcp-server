@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -132,7 +133,7 @@ func parseGetServiceTraceParams(args GetServiceTracesArgs, cfg models.Config) (*
 		TraceID:         args.TraceID,
 		ServiceName:     args.ServiceName,
 		LookbackMinutes: LookbackMinutesDefault,
-		Region:          utils.GetDefaultRegion(cfg.BaseURL),
+		Region:          cfg.Region,
 		Limit:           LimitDefault,
 		Env:             args.Env,
 	}
@@ -178,7 +179,7 @@ func buildGetTracesFilters(params *GetTracesQueryParams) []map[string]interface{
 
 // buildGetTracesRequestURL constructs the API endpoint URL with query parameters
 func buildGetTracesRequestURL(cfg models.Config, params *GetTracesQueryParams, startTime, endTime int64) (*url.URL, error) {
-	u, err := url.Parse(cfg.APIBaseURL + "/cat/api/traces/v2/query_range/json")
+	u, err := url.Parse(cfg.APIBaseURL + constants.EndpointTracesQueryRange)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse URL: %w", err)
 	}
@@ -243,8 +244,13 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
-			return nil, nil, fmt.Errorf("API request failed with status %d: %s",
-				resp.StatusCode, string(body))
+			// Limit body size in error message to avoid huge HTML responses
+			bodyStr := string(body)
+			if len(bodyStr) > 100 {
+				bodyStr = bodyStr[:100] + "... (truncated)"
+			}
+			return nil, nil, fmt.Errorf("API request failed with status %d (endpoint: %s/cat/api/traces/v2/query_range/json). Response: %s",
+				resp.StatusCode, cfg.APIBaseURL, bodyStr)
 		}
 
 		var result map[string]interface{}
@@ -300,17 +306,16 @@ func createTraceRequest(ctx context.Context, requestURL *url.URL, filters []map[
 	}
 
 	// Set required headers
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
+	req.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
 
 	// Add authentication - ensure Bearer prefix
 	accessToken := cfg.TokenManager.GetAccessToken(ctx)
 
-	if !strings.HasPrefix(accessToken, "Bearer ") {
-		accessToken = "Bearer " + accessToken
+	if !strings.HasPrefix(accessToken, constants.BearerPrefix) {
+		accessToken = constants.BearerPrefix + accessToken
 	}
-	req.Header.Set("Authorization", accessToken)
-	req.Header.Set("X-LAST9-API-TOKEN", accessToken)
+	req.Header.Set(constants.HeaderXLast9APIToken, accessToken)
 
 	return req, nil
 }
