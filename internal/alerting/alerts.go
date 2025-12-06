@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -128,7 +129,7 @@ type GetAlertConfigArgs struct{}
 func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetAlertConfigArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetAlertConfigArgs) (*mcp.CallToolResult, any, error) {
 		// Build the URL for alert rules API
-		url := fmt.Sprintf("%s/alert-rules", cfg.APIBaseURL)
+		url := fmt.Sprintf("%s%s", cfg.APIBaseURL, constants.EndpointAlertRules)
 
 		// Create HTTP request
 		httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -137,8 +138,8 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 		}
 
 		// Set headers
-		httpReq.Header.Set("Accept", "application/json")
-		httpReq.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.TokenManager.GetAccessToken(ctx))
+		httpReq.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
+		httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
 
 		// Make the request
 		resp, err := client.Do(httpReq)
@@ -228,7 +229,7 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 		}
 
 		// Build the URL for alerts monitoring API
-		url := fmt.Sprintf("%s/alerts/monitor?timestamp=%d&window=%d", cfg.APIBaseURL, timestamp, window)
+		url := fmt.Sprintf("%s%s?timestamp=%d&window=%d", cfg.APIBaseURL, constants.EndpointAlertsMonitor, timestamp, window)
 
 		// Create HTTP request
 		httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -237,8 +238,8 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 		}
 
 		// Set headers
-		httpReq.Header.Set("Accept", "application/json")
-		httpReq.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.TokenManager.GetAccessToken(ctx))
+		httpReq.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
+		httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
 
 		// Make the request
 		resp, err := client.Do(httpReq)
@@ -342,4 +343,3 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 		}, nil, nil
 	}
 }
-

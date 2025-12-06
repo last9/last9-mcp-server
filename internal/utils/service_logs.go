@@ -10,19 +10,13 @@ import (
 	"net/url"
 	"strings"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
 )
 
 // Constants for service logs API
 const (
 	maxServiceLogsDurationHours = 24 // Maximum allowed duration for service logs
-
-	// HTTP headers
-	headerAccept          = "Accept"
-	headerAuthorization   = "Authorization"
-	headerContentType     = "Content-Type"
-	headerContentTypeJSON = "application/json"
-	headerXLast9APIToken  = "X-LAST9-API-TOKEN"
 
 	// Index constants
 	defaultPhysicalIndex = "physical_index:default"
@@ -122,7 +116,7 @@ func MakeServiceLogsAPI(ctx context.Context, client *http.Client, request Servic
 		return nil, err
 	}
 
-	// Create parameters with dynamic region detection
+	// Create parameters using region from config (set from datasource API response)
 	params := createServiceLogsParams(request, cfg.Region)
 
 	if err := (&params).Validate(); err != nil {
@@ -184,7 +178,7 @@ func buildServiceLogsURL(apiBaseURL string, params ServiceLogsParams) (string, e
 		return "", errors.New("API base URL cannot be empty")
 	}
 
-	logsURL := fmt.Sprintf("%s/logs/api/v2/query_range/json", apiBaseURL)
+	logsURL := fmt.Sprintf("%s%s", apiBaseURL, constants.EndpointLogsQueryRange)
 
 	queryParams := url.Values{}
 	queryParams.Add("direction", "backward")
@@ -218,7 +212,7 @@ func MakeLogsJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.C
 	}
 
 	// Build URL
-	logsURL := fmt.Sprintf("%s/logs/api/v2/query_range/json", cfg.APIBaseURL)
+	logsURL := fmt.Sprintf("%s%s", cfg.APIBaseURL, constants.EndpointLogsQueryRange)
 	queryParams := url.Values{}
 	queryParams.Add("direction", "backward")
 	queryParams.Add("start", fmt.Sprintf("%d", startMs/1000)) // seconds
@@ -322,9 +316,8 @@ func createServiceLogsRequestBody(serviceName string, severityFilters []string, 
 
 // setServiceLogsHeaders sets the required HTTP headers
 func setServiceLogsHeaders(req *http.Request, accessToken string) {
-	bearerToken := "Bearer " + accessToken
-	req.Header.Set(headerAccept, headerContentTypeJSON)
-	req.Header.Set(headerAuthorization, bearerToken)
-	req.Header.Set(headerContentType, headerContentTypeJSON)
-	req.Header.Set(headerXLast9APIToken, bearerToken)
+	bearerToken := constants.BearerPrefix + accessToken
+	req.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
+	req.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
+	req.Header.Set(constants.HeaderXLast9APIToken, bearerToken)
 }

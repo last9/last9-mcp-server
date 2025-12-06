@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"last9-mcp/internal/constants"
+
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 )
 
@@ -124,7 +126,7 @@ func RefreshAccessToken(ctx context.Context, client *http.Client, refreshToken s
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
 
 	resp, err := client.Do(req)
 	if err != nil {

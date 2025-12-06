@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
@@ -295,17 +296,11 @@ func TestGetServiceTracesHandler_MockedResponse(t *testing.T) {
 		RefreshToken: testRefreshToken,
 	}
 
-	// Initialize TokenManager for test
-	refreshToken := testRefreshToken
-	if refreshToken == "" {
-		// Use dummy refresh token for testing if not set
-		refreshToken = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJsYXN0OS5pbyIsImF1ZCI6WyJhcHAubGFzdDkuaW8iXSwiZXhwIjoxNzU2NjUwMDAwLCJuYmYiOjE2OTM1MzYwMDAsImlhdCI6MTY5MzUzNjAwMCwianRpIjoiZHVtbXktdGVzdC10b2tlbiIsImtpbmQiOiJyZWZyZXNoX3Rva2VuIiwiZW1haWwiOiJ0ZXN0QGxhc3Q5LmlvIiwib3JnYW5pemF0aW9uX3NsdWciOiJ0ZXN0LW9yZyIsInNjb3BlcyI6WyJyZWFkIl19.dummy_signature"
-	}
-	tokenManager, err := auth.NewTokenManager(refreshToken)
-	if err != nil {
-		t.Logf("Warning: Failed to create TokenManager for test: %v", err)
-	} else {
-		cfg.TokenManager = tokenManager
+	// Initialize TokenManager for test with a fixed access token
+	// Set expiry far in the future to avoid token refresh during tests
+	cfg.TokenManager = &auth.TokenManager{
+		AccessToken: "mock-access-token-for-testing",
+		ExpiresAt:   time.Now().Add(365 * 24 * time.Hour), // Valid for 1 year
 	}
 
 	handler := GetServiceTracesHandler(server.Client(), cfg)
@@ -439,7 +434,12 @@ func TestGetServiceTracesHandler_Integration(t *testing.T) {
 	cfg := models.Config{
 		RefreshToken: testRefreshToken,
 	}
-
+	// Initialize TokenManager first
+	tokenManager, err := auth.NewTokenManager(testRefreshToken)
+	if err != nil {
+		t.Fatalf("failed to create token manager: %v", err)
+	}
+	cfg.TokenManager = tokenManager
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
 		t.Fatalf("failed to refresh access token: %v", err)
 	}
@@ -457,9 +457,14 @@ func TestGetServiceTracesHandler_Integration(t *testing.T) {
 	req := &mcp.CallToolRequest{}
 	result, _, err := handler(ctx, req, args)
 
+	// Fail on API errors (like 502) - these indicate real problems
 	if err != nil {
-		// Integration test may fail if service doesn't exist - that's ok
-		t.Logf("Integration test failed (expected if test service doesn't exist): %v", err)
+		// Check if error is an HTTP error (like 502)
+		if strings.Contains(err.Error(), "status") || strings.Contains(err.Error(), "502") || strings.Contains(err.Error(), "500") {
+			t.Fatalf("API returned error (test should fail): %v", err)
+		}
+		// For other errors (like service doesn't exist), log but don't fail
+		t.Logf("Integration test warning (expected if test service doesn't exist): %v", err)
 		return
 	}
 
@@ -477,5 +482,11 @@ func TestGetServiceTracesHandler_Integration(t *testing.T) {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 
-	t.Logf("Integration test successful: received %d traces", len(traceResponse.Data))
+	// Verify response structure
+	if traceResponse.Data == nil {
+		t.Logf("Warning: traceResponse.Data is nil (may be empty result)")
+	}
+
+	// Log summary instead of full response
+	t.Logf("Integration test successful: received %d trace(s)", len(traceResponse.Data))
 }

@@ -515,5 +515,10 @@ go build -o last9-mcp-server
 LAST9_HTTP=true ./last9-mcp-server
 ```
 **Note**: HTTP mode is for development and testing only. When integrating with Claude Desktop or other MCP clients, use the default STDIO mode (without `LAST9_HTTP=true`).
+
+## Testing
+
+See [TESTING.md](TESTING.md) for detailed testing instructions.
+
 ## Badges
 [![MseeP.ai Security Assessment Badge](https://mseep.net/pr/last9-last9-mcp-server-badge.png)](https://mseep.ai/app/last9-last9-mcp-server)
