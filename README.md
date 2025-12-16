@@ -618,7 +618,7 @@ Configure Windsurf to use the MCP server:
 
 ## Development
 
-For local development and testing, you can run the MCP server in HTTP mode which makes it easier to debug requests and responses.
+For local development and testing, you can run the MCP server in HTTP mode which makes it easier to debug requests and responses
 
 ### Running in HTTP Mode
 
