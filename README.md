@@ -282,6 +282,10 @@ The Last9 MCP server requires the following environment variables:
   all authentication and will automatically obtain access tokens as needed.
 - `OTEL_EXPORTER_OTLP_ENDPOINT`: (required) OpenTelemetry collector endpoint URL
 - `OTEL_EXPORTER_OTLP_HEADERS`: (required) Headers for OTLP exporter authentication
+
+Optional environment variables:
+- `LAST9_DATASOURCE`: Name of the datasource/cluster to use. If not specified, the default datasource configured in your Last9 organization will be used.
+- `LAST9_API_HOST`: API host to connect to. Defaults to `app.last9.io`. Use this if you need to connect to a different Last9 endpoint (e.g., regional or self-hosted instances).
 ## Usage
 ## Usage with Claude Desktop
 Configure the Claude app to use the MCP server:

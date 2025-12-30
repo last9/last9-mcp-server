@@ -22,6 +22,7 @@ type Config struct {
 	APIBaseURL string // Base URL for API requests
 	// Datasource configuration
 	DatasourceName string // Datasource name to use (overrides default datasource)
+	APIHost        string // API host (defaults to app.last9.io)
 	// Prometheus configuration
 	PrometheusReadURL  string // URL for Prometheus read API
 	PrometheusUsername string // Username for Prometheus authentication

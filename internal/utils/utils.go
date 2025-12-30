@@ -428,7 +428,13 @@ func PopulateAPICfg(cfg *models.Config) error {
 	cfg.ActionURL = actionURL
 
 	client := last9mcp.WithHTTPTracing(&http.Client{Timeout: 30 * time.Second})
-	cfg.APIBaseURL = fmt.Sprintf("https://%s/api/v4/organizations/%s", constants.APIBaseHost, cfg.OrgSlug)
+
+	// Use configured API host or default
+	apiHost := cfg.APIHost
+	if apiHost == "" {
+		apiHost = constants.APIBaseHost
+	}
+	cfg.APIBaseURL = fmt.Sprintf("https://%s/api/v4/organizations/%s", apiHost, cfg.OrgSlug)
 	req, err := http.NewRequestWithContext(context.Background(), "GET", cfg.APIBaseURL+constants.EndpointDatasources, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request for datasources: %w", err)
