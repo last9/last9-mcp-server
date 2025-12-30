@@ -286,6 +286,7 @@ The Last9 MCP server requires the following environment variables:
 Optional environment variables:
 - `LAST9_DATASOURCE`: Name of the datasource/cluster to use. If not specified, the default datasource configured in your Last9 organization will be used.
 - `LAST9_API_HOST`: API host to connect to. Defaults to `app.last9.io`. Use this if you need to connect to a different Last9 endpoint (e.g., regional or self-hosted instances).
+- `LAST9_DISABLE_TELEMETRY`: Set to `true` to disable OpenTelemetry tracing and metrics. Use this if you don't have an OTLP collector running or want to skip telemetry.
 ## Usage
 ## Usage with Claude Desktop
 Configure the Claude app to use the MCP server:
