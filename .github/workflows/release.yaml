@@ -11,13 +11,11 @@ on:
     branches:
       - "release-**"
 
-permissions:
-  contents: write
-  packages: write
-
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -40,6 +38,8 @@ jobs:
     needs: test
     if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       version_changed: ${{ steps.version_change.outputs.changed }}
       new_version: ${{ steps.version_change.outputs.new_version }}
@@ -107,6 +107,8 @@ jobs:
       (needs.tag-and-release.outputs.version_changed == 'true' ||
        (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-')))
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
       DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
