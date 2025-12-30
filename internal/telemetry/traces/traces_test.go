@@ -358,13 +358,7 @@ func createMockTraceResponse(numTraces int) string {
 
 // Integration test for get_trace_attributes tool
 func TestGetTraceAttributesHandler_Integration(t *testing.T) {
-	cfg, err := utils.SetupTestConfig()
-	if err != nil {
-		if _, ok := err.(*utils.TestConfigError); ok {
-			t.Skipf("Skipping test: %v", err)
-		}
-		t.Fatalf("failed to setup test config: %v", err)
-	}
+	cfg := utils.SetupTestConfigOrSkip(t)
 
 	handler := NewGetTraceAttributesHandler(http.DefaultClient, *cfg)
 
@@ -376,30 +370,14 @@ func TestGetTraceAttributesHandler_Integration(t *testing.T) {
 	req := &mcp.CallToolRequest{}
 	result, _, err := handler(ctx, req, args)
 
-	// Fail on API errors (like 502) - these indicate real problems
-	if err != nil {
-		// Check if error is an HTTP error (like 502)
-		if strings.Contains(err.Error(), "status") || strings.Contains(err.Error(), "502") || strings.Contains(err.Error(), "500") {
-			t.Fatalf("API returned error (test should fail): %v", err)
-		}
-		// For other errors, log but don't fail
-		t.Logf("Integration test warning: %v", err)
+	if utils.CheckAPIError(t, err) {
 		return
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
+	text := utils.GetTextContent(t, result)
 
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
-
-	// Log summary - attributes are typically returned as a list
 	var attributes []string
-	if err := json.Unmarshal([]byte(textContent.Text), &attributes); err != nil {
-		// If it's not JSON, it might be formatted text - that's ok
+	if err := json.Unmarshal([]byte(text), &attributes); err != nil {
 		t.Logf("Integration test successful. Response is formatted text (not JSON)")
 	} else {
 		t.Logf("Integration test successful: found %d trace attribute(s)", len(attributes))
@@ -408,13 +386,7 @@ func TestGetTraceAttributesHandler_Integration(t *testing.T) {
 
 // Integration test for get_exceptions tool
 func TestGetExceptionsHandler_Integration(t *testing.T) {
-	cfg, err := utils.SetupTestConfig()
-	if err != nil {
-		if _, ok := err.(*utils.TestConfigError); ok {
-			t.Skipf("Skipping test: %v", err)
-		}
-		t.Fatalf("failed to setup test config: %v", err)
-	}
+	cfg := utils.SetupTestConfigOrSkip(t)
 
 	handler := NewGetExceptionsHandler(http.DefaultClient, *cfg)
 
@@ -427,33 +399,17 @@ func TestGetExceptionsHandler_Integration(t *testing.T) {
 	req := &mcp.CallToolRequest{}
 	result, _, err := handler(ctx, req, args)
 
-	// Fail on API errors (like 502) - these indicate real problems
-	if err != nil {
-		// Check if error is an HTTP error (like 502)
-		if strings.Contains(err.Error(), "status") || strings.Contains(err.Error(), "502") || strings.Contains(err.Error(), "500") {
-			t.Fatalf("API returned error (test should fail): %v", err)
-		}
-		// For other errors (like no exceptions), log but don't fail
-		t.Logf("Integration test warning (may be expected if no exceptions exist): %v", err)
+	if utils.CheckAPIError(t, err) {
 		return
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
+	text := utils.GetTextContent(t, result)
 
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
-
-	// Verify response structure and log summary
 	var response map[string]interface{}
-	if err := json.Unmarshal([]byte(textContent.Text), &response); err != nil {
+	if err := json.Unmarshal([]byte(text), &response); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 
-	// Log summary instead of full response
 	count := 0
 	if data, ok := response["data"].(map[string]interface{}); ok {
 		if result, ok := data["result"].([]interface{}); ok {

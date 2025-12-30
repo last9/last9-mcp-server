@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -16,10 +15,6 @@ import (
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-)
-
-var (
-	testRefreshToken = os.Getenv("TEST_REFRESH_TOKEN")
 )
 
 func TestValidateGetServiceTracesArgs(t *testing.T) {
@@ -291,9 +286,8 @@ func TestGetServiceTracesHandler_MockedResponse(t *testing.T) {
 	defer server.Close()
 
 	cfg := models.Config{
-		APIBaseURL:   server.URL,
-		Region:       "ap-south-1",
-		RefreshToken: testRefreshToken,
+		APIBaseURL: server.URL,
+		Region:     "ap-south-1",
 	}
 
 	// Initialize TokenManager for test with a fixed access token
@@ -427,19 +421,12 @@ func TestGetServiceTracesHandler_ValidationErrors(t *testing.T) {
 
 // Integration test - requires real API credentials
 func TestGetServiceTracesHandler_Integration(t *testing.T) {
-	cfg, err := utils.SetupTestConfig()
-	if err != nil {
-		if _, ok := err.(*utils.TestConfigError); ok {
-			t.Skipf("Skipping test: %v", err)
-		}
-		t.Fatalf("failed to setup test config: %v", err)
-	}
+	cfg := utils.SetupTestConfigOrSkip(t)
 
 	handler := GetServiceTracesHandler(http.DefaultClient, *cfg)
 
-	// Test with service name
 	args := GetServiceTracesArgs{
-		ServiceName:     "test-service", // Replace with actual service name for real testing
+		ServiceName:     "test-service",
 		LookbackMinutes: 60,
 		Limit:           5,
 	}
@@ -448,36 +435,16 @@ func TestGetServiceTracesHandler_Integration(t *testing.T) {
 	req := &mcp.CallToolRequest{}
 	result, _, err := handler(ctx, req, args)
 
-	// Fail on API errors (like 502) - these indicate real problems
-	if err != nil {
-		// Check if error is an HTTP error (like 502)
-		if strings.Contains(err.Error(), "status") || strings.Contains(err.Error(), "502") || strings.Contains(err.Error(), "500") {
-			t.Fatalf("API returned error (test should fail): %v", err)
-		}
-		// For other errors (like service doesn't exist), log but don't fail
-		t.Logf("Integration test warning (expected if test service doesn't exist): %v", err)
+	if utils.CheckAPIError(t, err) {
 		return
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
-
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
+	text := utils.GetTextContent(t, result)
 
 	var traceResponse TraceQueryResponse
-	if err := json.Unmarshal([]byte(textContent.Text), &traceResponse); err != nil {
+	if err := json.Unmarshal([]byte(text), &traceResponse); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 
-	// Verify response structure
-	if traceResponse.Data == nil {
-		t.Logf("Warning: traceResponse.Data is nil (may be empty result)")
-	}
-
-	// Log summary instead of full response
 	t.Logf("Integration test successful: received %d trace(s)", len(traceResponse.Data))
 }

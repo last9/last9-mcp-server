@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -15,69 +14,38 @@ import (
 
 // Integration test for get_alert_config tool
 func TestGetAlertConfigHandler_Integration(t *testing.T) {
-	cfg, err := utils.SetupTestConfig()
-	if err != nil {
-		if _, ok := err.(*utils.TestConfigError); ok {
-			t.Skipf("Skipping integration test: %v", err)
-		}
-		t.Fatalf("failed to setup test config: %v", err)
-	}
+	cfg := utils.SetupTestConfigOrSkip(t)
 
 	handler := NewGetAlertConfigHandler(http.DefaultClient, *cfg)
 
-	args := GetAlertConfigArgs{}
-
 	ctx := context.Background()
 	req := &mcp.CallToolRequest{}
-	result, _, err := handler(ctx, req, args)
+	result, _, err := handler(ctx, req, GetAlertConfigArgs{})
 
-	// Fail on API errors (like 502) - these indicate real problems
-	if err != nil {
-		// Check if error is an HTTP error (like 502)
-		if strings.Contains(err.Error(), "status") || strings.Contains(err.Error(), "502") || strings.Contains(err.Error(), "500") {
-			t.Fatalf("API returned error (test should fail): %v", err)
-		}
-		// For other errors, log but don't fail
-		t.Logf("Integration test warning: %v", err)
+	if utils.CheckAPIError(t, err) {
 		return
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
-
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
+	text := utils.GetTextContent(t, result)
 
 	// Verify response structure - try to parse as JSON array
 	var alertConfig AlertConfigResponse
-	if err := json.Unmarshal([]byte(textContent.Text), &alertConfig); err != nil {
-		// If it's not JSON, it might be formatted text - that's ok, just log summary
+	if err := json.Unmarshal([]byte(text), &alertConfig); err != nil {
 		t.Logf("Integration test successful. Response is formatted text (not JSON)")
 	} else {
-		// Log summary instead of full response
 		t.Logf("Integration test successful: received %d alert rule(s)", len(alertConfig))
 	}
 }
 
 // Integration test for get_alerts tool
 func TestGetAlertsHandler_Integration(t *testing.T) {
-	cfg, err := utils.SetupTestConfig()
-	if err != nil {
-		if _, ok := err.(*utils.TestConfigError); ok {
-			t.Skipf("Skipping integration test: %v", err)
-		}
-		t.Fatalf("failed to setup test config: %v", err)
-	}
+	cfg := utils.SetupTestConfigOrSkip(t)
 
 	handler := NewGetAlertsHandler(http.DefaultClient, *cfg)
 
 	tests := []struct {
-		name      string
-		args      GetAlertsArgs
-		wantError bool
+		name string
+		args GetAlertsArgs
 	}{
 		{
 			name: "Get alerts with default parameters",
@@ -104,38 +72,17 @@ func TestGetAlertsHandler_Integration(t *testing.T) {
 			req := &mcp.CallToolRequest{}
 			result, _, err := handler(ctx, req, tt.args)
 
-			// Fail on API errors (like 502) - these indicate real problems
-			if err != nil {
-				// Check if error is an HTTP error (like 502)
-				if strings.Contains(err.Error(), "status") || strings.Contains(err.Error(), "502") || strings.Contains(err.Error(), "500") {
-					t.Fatalf("API returned error (test should fail): %v", err)
-				}
-				// For other errors, log but don't fail
-				if tt.wantError {
-					return // Expected error
-				}
-				t.Logf("Integration test warning: %v", err)
+			if utils.CheckAPIError(t, err) {
 				return
 			}
 
-			if len(result.Content) == 0 {
-				t.Fatalf("expected content in result")
-			}
-
-			textContent, ok := result.Content[0].(*mcp.TextContent)
-			if !ok {
-				t.Fatalf("expected TextContent type")
-			}
+			text := utils.GetTextContent(t, result)
 
 			// Try to parse response to verify structure and log summary
 			var alertsResponse AlertsResponse
-			if err := json.Unmarshal([]byte(textContent.Text), &alertsResponse); err != nil {
-				// If it's not JSON, it's formatted text - extract summary from formatted text
-				// The formatted text contains "Found X alert rule(s) with Y alert instance(s)"
-				// Just log that we got a response without parsing the full text
+			if err := json.Unmarshal([]byte(text), &alertsResponse); err != nil {
 				t.Logf("Integration test successful: alerts retrieved (formatted text response)")
 			} else {
-				// Log summary instead of full response
 				totalAlerts := 0
 				for _, rule := range alertsResponse.AlertRules {
 					totalAlerts += len(rule.Alerts)

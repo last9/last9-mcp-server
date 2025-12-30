@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -18,9 +17,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-var (
-	RefreshToken = os.Getenv("TEST_REFRESH_TOKEN")
-)
+// Note: strings import is still needed for TestNewServiceSummaryHandler_ExtraParams
 
 func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
 	// Mock responses should match apiPromInstantResp format (direct array)
@@ -108,13 +105,7 @@ func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
 }
 
 func TestGetServicePerformanceDetails(t *testing.T) {
-	cfg, err := utils.SetupTestConfig()
-	if err != nil {
-		if _, ok := err.(*utils.TestConfigError); ok {
-			t.Skipf("Skipping test: %v", err)
-		}
-		t.Fatalf("failed to setup test config: %v", err)
-	}
+	cfg := utils.SetupTestConfigOrSkip(t)
 
 	handler := NewServicePerformanceDetailsHandler(http.DefaultClient, *cfg)
 
@@ -132,30 +123,16 @@ func TestGetServicePerformanceDetails(t *testing.T) {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
-
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
+	text := utils.GetTextContent(t, result)
 
 	var details ServicePerformanceDetails
-	if err := json.Unmarshal([]byte(textContent.Text), &details); err != nil {
+	if err := json.Unmarshal([]byte(text), &details); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
-
 }
 
 func TestGetServiceOperationsSummary(t *testing.T) {
-	cfg, err := utils.SetupTestConfig()
-	if err != nil {
-		if _, ok := err.(*utils.TestConfigError); ok {
-			t.Skipf("Skipping test: %v", err)
-		}
-		t.Fatalf("failed to setup test config: %v", err)
-	}
+	cfg := utils.SetupTestConfigOrSkip(t)
 
 	handler := NewServiceOperationsSummaryHandler(http.DefaultClient, *cfg)
 
@@ -173,29 +150,16 @@ func TestGetServiceOperationsSummary(t *testing.T) {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
-
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
+	text := utils.GetTextContent(t, result)
 
 	var details ServiceOperationsSummaryResponse
-	if err := json.Unmarshal([]byte(textContent.Text), &details); err != nil {
+	if err := json.Unmarshal([]byte(text), &details); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 }
 
 func TestGetServiceDependencies(t *testing.T) {
-	cfg, err := utils.SetupTestConfig()
-	if err != nil {
-		if _, ok := err.(*utils.TestConfigError); ok {
-			t.Skipf("Skipping test: %v", err)
-		}
-		t.Fatalf("failed to setup test config: %v", err)
-	}
+	cfg := utils.SetupTestConfigOrSkip(t)
 
 	handler := NewServiceDependencyGraphHandler(http.DefaultClient, *cfg)
 
@@ -213,27 +177,16 @@ func TestGetServiceDependencies(t *testing.T) {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
+	text := utils.GetTextContent(t, result)
+
 	var details ServiceDependencyGraphDetails
-	if err := json.Unmarshal([]byte(textContent.Text), &details); err != nil {
+	if err := json.Unmarshal([]byte(text), &details); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 }
 
 func TestNewServiceEnvironmentsHandler(t *testing.T) {
-	cfg, err := utils.SetupTestConfig()
-	if err != nil {
-		if _, ok := err.(*utils.TestConfigError); ok {
-			t.Skipf("Skipping test: %v", err)
-		}
-		t.Fatalf("failed to setup test config: %v", err)
-	}
+	cfg := utils.SetupTestConfigOrSkip(t)
 
 	handler := NewServiceEnvironmentsHandler(http.DefaultClient, *cfg)
 
@@ -249,27 +202,16 @@ func TestNewServiceEnvironmentsHandler(t *testing.T) {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
+	text := utils.GetTextContent(t, result)
+
 	var details []string
-	if err := json.Unmarshal([]byte(textContent.Text), &details); err != nil {
+	if err := json.Unmarshal([]byte(text), &details); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 }
 
 func TestPromqlInstantQueryHandler(t *testing.T) {
-	cfg, err := utils.SetupTestConfig()
-	if err != nil {
-		if _, ok := err.(*utils.TestConfigError); ok {
-			t.Skipf("Skipping test: %v", err)
-		}
-		t.Fatalf("failed to setup test config: %v", err)
-	}
+	cfg := utils.SetupTestConfigOrSkip(t)
 
 	handler := NewPromqlInstantQueryHandler(http.DefaultClient, *cfg)
 
@@ -285,23 +227,11 @@ func TestPromqlInstantQueryHandler(t *testing.T) {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
-	_, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
+	_ = utils.GetTextContent(t, result)
 }
 
 func TestPromqlRangeQueryHandler(t *testing.T) {
-	cfg, err := utils.SetupTestConfig()
-	if err != nil {
-		if _, ok := err.(*utils.TestConfigError); ok {
-			t.Skipf("Skipping test: %v", err)
-		}
-		t.Fatalf("failed to setup test config: %v", err)
-	}
+	cfg := utils.SetupTestConfigOrSkip(t)
 
 	handler := NewPromqlRangeQueryHandler(http.DefaultClient, *cfg)
 
@@ -318,30 +248,17 @@ func TestPromqlRangeQueryHandler(t *testing.T) {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
+	text := utils.GetTextContent(t, result)
+
 	var details []TimeSeries
-	if err := json.Unmarshal([]byte(textContent.Text), &details); err != nil {
+	if err := json.Unmarshal([]byte(text), &details); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
-
 }
 
 // Integration test for prometheus_labels tool
 func TestPromqlLabelsHandler_Integration(t *testing.T) {
-	// Skip if no refresh token is provided (integration test)
-	cfg, err := utils.SetupTestConfig()
-	if err != nil {
-		if _, ok := err.(*utils.TestConfigError); ok {
-			t.Skipf("Skipping test: %v", err)
-		}
-		t.Fatalf("failed to setup test config: %v", err)
-	}
+	cfg := utils.SetupTestConfigOrSkip(t)
 
 	handler := NewPromqlLabelsHandler(http.DefaultClient, *cfg)
 
@@ -353,30 +270,14 @@ func TestPromqlLabelsHandler_Integration(t *testing.T) {
 	req := &mcp.CallToolRequest{}
 	result, _, err := handler(ctx, req, args)
 
-	// Fail on API errors (like 502) - these indicate real problems
-	if err != nil {
-		// Check if error is an HTTP error (like 502)
-		if strings.Contains(err.Error(), "status") || strings.Contains(err.Error(), "502") || strings.Contains(err.Error(), "500") {
-			t.Fatalf("API returned error (test should fail): %v", err)
-		}
-		// For other errors, log but don't fail
-		t.Logf("Integration test warning: %v", err)
+	if utils.CheckAPIError(t, err) {
 		return
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
+	text := utils.GetTextContent(t, result)
 
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
-
-	// Log summary - labels are typically returned as a list
 	var labels []string
-	if err := json.Unmarshal([]byte(textContent.Text), &labels); err != nil {
-		// If it's not JSON, it might be formatted text - that's ok
+	if err := json.Unmarshal([]byte(text), &labels); err != nil {
 		t.Logf("Integration test successful. Response is formatted text (not JSON)")
 	} else {
 		t.Logf("Integration test successful: found %d label(s)", len(labels))
@@ -384,14 +285,7 @@ func TestPromqlLabelsHandler_Integration(t *testing.T) {
 }
 
 func TestNewServiceSummaryHandler_Integration(t *testing.T) {
-	// Skip if no refresh token is provided (integration test)
-	cfg, err := utils.SetupTestConfig()
-	if err != nil {
-		if _, ok := err.(*utils.TestConfigError); ok {
-			t.Skipf("Skipping test: %v", err)
-		}
-		t.Fatalf("failed to setup test config: %v", err)
-	}
+	cfg := utils.SetupTestConfigOrSkip(t)
 
 	handler := NewServiceSummaryHandler(http.DefaultClient, *cfg)
 
@@ -405,30 +299,14 @@ func TestNewServiceSummaryHandler_Integration(t *testing.T) {
 	req := &mcp.CallToolRequest{}
 	result, _, err := handler(ctx, req, args)
 
-	// Fail on API errors (like 502) - these indicate real problems
-	if err != nil {
-		// Check if error is an HTTP error (like 502)
-		if strings.Contains(err.Error(), "status") || strings.Contains(err.Error(), "502") || strings.Contains(err.Error(), "500") {
-			t.Fatalf("API returned error (test should fail): %v", err)
-		}
-		// For other errors, log but don't fail
-		t.Logf("Integration test warning: %v", err)
+	if utils.CheckAPIError(t, err) {
 		return
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
+	text := utils.GetTextContent(t, result)
 
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
-
-	// Log summary - service summary is typically returned as a JSON object
 	var summaries map[string]ServiceSummary
-	if err := json.Unmarshal([]byte(textContent.Text), &summaries); err != nil {
-		// If it's not JSON, it might be formatted text - that's ok
+	if err := json.Unmarshal([]byte(text), &summaries); err != nil {
 		t.Logf("Integration test successful. Response is formatted text (not JSON)")
 	} else {
 		t.Logf("Integration test successful: found %d service summary/ies", len(summaries))
@@ -436,14 +314,7 @@ func TestNewServiceSummaryHandler_Integration(t *testing.T) {
 }
 
 func TestPromqlLabelValuesHandler_Integration(t *testing.T) {
-	// Skip if no refresh token is provided (integration test)
-	cfg, err := utils.SetupTestConfig()
-	if err != nil {
-		if _, ok := err.(*utils.TestConfigError); ok {
-			t.Skipf("Skipping test: %v", err)
-		}
-		t.Fatalf("failed to setup test config: %v", err)
-	}
+	cfg := utils.SetupTestConfigOrSkip(t)
 
 	handler := NewPromqlLabelValuesHandler(http.DefaultClient, *cfg)
 
@@ -458,30 +329,14 @@ func TestPromqlLabelValuesHandler_Integration(t *testing.T) {
 	req := &mcp.CallToolRequest{}
 	result, _, err := handler(ctx, req, args)
 
-	// Fail on API errors (like 502) - these indicate real problems
-	if err != nil {
-		// Check if error is an HTTP error (like 502)
-		if strings.Contains(err.Error(), "status") || strings.Contains(err.Error(), "502") || strings.Contains(err.Error(), "500") {
-			t.Fatalf("API returned error (test should fail): %v", err)
-		}
-		// For other errors, log but don't fail
-		t.Logf("Integration test warning: %v", err)
+	if utils.CheckAPIError(t, err) {
 		return
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
+	text := utils.GetTextContent(t, result)
 
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
-
-	// Log summary - label values are typically returned as a JSON array
 	var labelValues []string
-	if err := json.Unmarshal([]byte(textContent.Text), &labelValues); err != nil {
-		// If it's not JSON, it might be formatted text - that's ok
+	if err := json.Unmarshal([]byte(text), &labelValues); err != nil {
 		t.Logf("Integration test successful. Response is formatted text (not JSON)")
 	} else {
 		t.Logf("Integration test successful: found %d label value(s) for label '%s'", len(labelValues), args.Label)
