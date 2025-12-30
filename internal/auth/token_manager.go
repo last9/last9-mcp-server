@@ -88,10 +88,12 @@ func ExtractActionURLFromToken(accessToken string) (string, error) {
 	}
 
 	// Handle case where audience already includes https:// protocol
+	// Note: Only HTTPS is allowed for security - HTTP would expose tokens
 	audStr := aud[0].(string)
-	if strings.HasPrefix(audStr, "https://") || strings.HasPrefix(audStr, "http://") {
+	if strings.HasPrefix(audStr, "https://") {
 		return audStr, nil
 	}
+	// Always use HTTPS for token exchange
 	return fmt.Sprintf("https://%s", audStr), nil
 }
 
