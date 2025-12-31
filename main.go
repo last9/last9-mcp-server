@@ -36,6 +36,7 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	fs.StringVar(&cfg.DatasourceName, "datasource", os.Getenv("LAST9_DATASOURCE"), "Datasource name to use (overrides default datasource)")
 	fs.StringVar(&cfg.APIHost, "api_host", os.Getenv("LAST9_API_HOST"), "API host (defaults to app.last9.io)")
 	fs.BoolVar(&cfg.DisableTelemetry, "disable_telemetry", os.Getenv("LAST9_DISABLE_TELEMETRY") == "true", "Disable OpenTelemetry tracing/metrics")
+	fs.BoolVar(&cfg.Debug, "debug", os.Getenv("LAST9_DEBUG") == "true", "Enable debug mode to log API requests and responses")
 	fs.Float64Var(&cfg.RequestRateLimit, "rate", 1, "Requests per second limit")
 	fs.IntVar(&cfg.RequestRateBurst, "burst", 1, "Request burst capacity")
 	fs.BoolVar(&cfg.HTTPMode, "http", false, "Run as HTTP server instead of STDIO")
@@ -99,6 +100,11 @@ func main() {
 	if cfg.DisableTelemetry {
 		log.Println("Telemetry disabled - setting OTEL_SDK_DISABLED=true")
 		os.Setenv("OTEL_SDK_DISABLED", "true")
+	}
+
+	// Enable debug mode if requested
+	if cfg.Debug {
+		log.Println("Debug mode enabled - API calls will be logged")
 	}
 
 	// Create MCP server with new SDK
