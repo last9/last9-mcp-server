@@ -1977,6 +1977,7 @@ const GetServiceDependencyGraphDescription = `
 `
 
 const GetPromqlRangeQueryDescription = `
+
 	Execute a PromQL range query against the metrics data.
 	Parameters:
 	- query: PromQL query to execute
@@ -1984,15 +1985,124 @@ const GetPromqlRangeQueryDescription = `
 	- end_time_iso: (Optional) End time in ISO8601 format
 
 	Returns time series data for the specified time range.
+
+
+Usage guidance (from get_metrics):
+
+# get_metrics Tool Usage Guide
+
+Use for performance monitoring, trend analysis, and system health checks.
+
+## When to Use
+- Monitoring system performance trends
+- Analyzing response time patterns
+- Tracking error rates over time
+- Identifying performance bottlenecks
+- Comparing metrics across time periods
+- Detecting anomalies and spikes
+
+## Best Practices
+
+### Time Range Selection
+- **Recent monitoring**: Last 15-30 minutes
+- **Trend analysis**: Last few hours to days
+- **Performance baselines**: Week or month comparisons
+- **Incident investigation**: Before, during, and after incident times
+
+### Metric Selection
+Choose metrics that align with the user's question:
+- **Response times**: For performance issues
+- **Error rates**: For reliability concerns
+- **Throughput**: For capacity planning
+- **Cache ratios**: For CDN optimization
+
+## Common Use Cases
+
+### Performance Analysis
+- Response time trends
+- Latency percentiles (p50, p95, p99)
+- Throughput measurements
+- Resource utilization
+
+### Error Monitoring
+- Error rate trends
+- Error distribution by type
+- Impact analysis
+
+### Capacity Planning
+- Traffic volume patterns
+- Peak usage identification
+- Growth trend analysis
+
+## Tips
+- Consider time zones when analyzing patterns
+- Look for correlations between different metrics
+- Use appropriate granularity for time ranges
+- Compare against historical baselines when possible
 `
 
 const GetPromqlInstantQueryDescription = `
+
 	Execute a PromQL instant query against the metrics data.
 	Parameters:
 	- query: PromQL query to execute
 	- time_iso: (Optional) Evaluation time in ISO8601 format
 
 	Returns instant query results.
+
+
+Usage guidance (from get_metrics):
+
+# get_metrics Tool Usage Guide
+
+Use for performance monitoring, trend analysis, and system health checks.
+
+## When to Use
+- Monitoring system performance trends
+- Analyzing response time patterns
+- Tracking error rates over time
+- Identifying performance bottlenecks
+- Comparing metrics across time periods
+- Detecting anomalies and spikes
+
+## Best Practices
+
+### Time Range Selection
+- **Recent monitoring**: Last 15-30 minutes
+- **Trend analysis**: Last few hours to days
+- **Performance baselines**: Week or month comparisons
+- **Incident investigation**: Before, during, and after incident times
+
+### Metric Selection
+Choose metrics that align with the user's question:
+- **Response times**: For performance issues
+- **Error rates**: For reliability concerns
+- **Throughput**: For capacity planning
+- **Cache ratios**: For CDN optimization
+
+## Common Use Cases
+
+### Performance Analysis
+- Response time trends
+- Latency percentiles (p50, p95, p99)
+- Throughput measurements
+- Resource utilization
+
+### Error Monitoring
+- Error rate trends
+- Error distribution by type
+- Impact analysis
+
+### Capacity Planning
+- Traffic volume patterns
+- Peak usage identification
+- Growth trend analysis
+
+## Tips
+- Consider time zones when analyzing patterns
+- Look for correlations between different metrics
+- Use appropriate granularity for time ranges
+- Compare against historical baselines when possible
 `
 
 const GetPromqlLabelValuesDescription = `

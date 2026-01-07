@@ -1,37 +1,12 @@
-package logs
-
-const GetLogsDescription = `
-Get logs for service or group of services using JSON pipeline queries for advanced filtering, parsing, aggregation, and processing.
-
-This tool requires the logjson_query parameter which contains a JSON pipeline query. Use the logjson_query_builder prompt to generate these queries from natural language descriptions.
-
-Parameters:
-- logjson_query: (Required) JSON pipeline query array for advanced log filtering and processing. Use logjson_query_builder prompt to generate from natural language.
-- lookback_minutes: (Optional) Number of minutes to look back from now. Default: 5 minutes when no time range is specified.
-- start_time_iso: (Optional) Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
-- end_time_iso: (Optional) End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
-
-The logjson_query supports:
-- Filter operations: Filter logs based on conditions
-- Parse operations: Parse log content (json, regexp, logfmt)
-- Aggregate operations: Perform aggregations (sum, avg, count, etc.)
-- Window aggregate operations: Time-windowed aggregations
-- Transform operations: Transform/extract fields
-- Select operations: Select specific fields and apply limits
-
-Response contains the results of the JSON pipeline query execution.
-
-Additional guidance:
-
 # Log Query Construction Prompt
 
 ## System Prompt
 
-These are instructions for constructing a natural language logs analytics queries into structured JSON log pipeline queries that will be executed by the get_logs tool for log analysis.
+These are instructions for constructing a natural language logs analytics queries into structured JSON log pipeline queries that will be executed by the `get_logs` tool for log analysis.
 
 **Your Purpose:**
-- You are a log analytics assistant that can execute log queries using the get_logs tool
-- When users ask about logs, you should immediately use the get_logs tool with appropriate JSON query parameters
+- You are a log analytics assistant that can execute log queries using the `get_logs` tool
+- When users ask about logs, you should immediately use the `get_logs` tool with appropriate JSON query parameters
 - Focus on accurate JSON structure and proper field references for log data
 - NEVER return raw JSON to users - always execute the query and analyze the results
 
@@ -49,7 +24,7 @@ These are instructions for constructing a natural language logs analytics querie
 **Process Flow:**
 1. User provides natural language query about logs
 2. You translate it to JSON pipeline format internally
-3. You immediately call the get_logs tool with the JSON query and **ALWAYS USE lookback_minutes: 5 AS DEFAULT** unless the user specifies otherwise
+3. You immediately call the `get_logs` tool with the JSON query and **ALWAYS USE lookback_minutes: 5 AS DEFAULT** unless the user specifies otherwise
 4. You analyze the results and provide insights to the user
 
 **CRITICAL DEFAULT TIME RULE:**
@@ -93,7 +68,7 @@ The JSON pipeline format supports filtering, parsing, aggregation on log data.
 4. **window_aggregate** - Time-windowed aggregations
 
 ### Filter Operations:
-~~~json
+```json
 {
   "type": "filter",
   "query": {
@@ -112,21 +87,21 @@ The JSON pipeline format supports filtering, parsing, aggregation on log data.
     "$not": [condition]        // Negation
   }
 }
-~~~
+```
 
 ### Parse Operations:
 Note that regex parsing operators also work as regex filters
-~~~json
+```json
 {
   "type": "parse",
   "parser": "json|regexp|logfmt",
   "pattern": "regex_pattern",  // For regexp parser. Must include named capture groups using the (?P<field>...) syntax for field mapping.
   "labels": {"field": "alias"}  // Field mappings for json parsing
 }
-~~~
+```
 
 ### Aggregate Operations:
-~~~json
+```json
 {
   "type": "aggregate",
   "aggregates": [ // one or more aggregation functions
@@ -157,10 +132,10 @@ Note that regex parsing operators also work as regex filters
   ],
   "groupby": {"field": "alias"} // zero or more group by fields. Only to be added is grouping by some field is requested by the user
 }
-~~~
+```
 
 ### Window Aggregate Operations:
-~~~json
+```json
 {
   "type": "window_aggregate",
   "function": {"$count": []},
@@ -168,25 +143,25 @@ Note that regex parsing operators also work as regex filters
   "window": ["duration", "unit"],  // e.g., ["10", "minutes"]
   "groupby": {"field": "alias"} // optional group-by fields
 }
-~~~
+```
 
 ## Field Reference Format:
 
 ### Standard Log Fields:
 
 - **Body**: Log message content
-- **ServiceName**: Service name. Always prefer this over similar looking attributes in attributes or resource_attributes given below
+- **ServiceName**: Service name. Always prefer this over similar looking attributes in `attributes` or `resource_attributes` given below
 - **SeverityText**: Log level (DEBUG, INFO, WARN, ERROR, FATAL)
 - **Timestamp**: Log timestamp
 - **attributes['field_name']**: Log/span attributes (OpenTelemetry semantic conventions)
-- **resource_attributes['field_name']**: Resource attributes (prefixed with resource_)
+- **resource_attributes['field_name']**: Resource attributes (prefixed with `resource_`)
 
 ### Custom Fields for user's environment:
-In addition to standard labels, the list of available customer specific attribute labels is below. In the query, the following rule should be applied to get the attribute from the field name - if the field matches the pattern with resource_fieldname the attribute is resource_attributes['fieldname']. Otherwise it is attribute['fieldname'].
+In addition to standard labels, the list of available customer specific attribute labels is below. In the query, the following rule should be applied to get the attribute from the field name - if the field matches the pattern with `resource_fieldname` the attribute is `resource_attributes['fieldname']`. Otherwise it is `attribute['fieldname']`.
 Any attribute used in the query should either be a standard attribute or available in the list below
 {{labels}}
 
-Note: {{labels}} is dynamically injected by some clients. If it is empty, call get_log_attributes to fetch available fields.
+Note: `{{labels}}` is dynamically injected by some clients. If it is empty, call `get_log_attributes` to fetch available fields.
 
 To find the appropriate field name, try partial matches or matching fields which have similar meaning from the above list.
 
@@ -216,20 +191,20 @@ To find the appropriate field name, try partial matches or matching fields which
 4. Does it ask to "group by" something? → Add **groupby** to aggregate
 
 ### ❌ WRONG Examples (DO NOT DO THIS):
-- "Show me errors" → DON'T ADD: {"type": "aggregate"}
-- "Find failed requests" → DON'T ADD: {"type": "aggregate"}
-- "Get timeout logs" → DON'T ADD: {"type": "aggregate"}
+- "Show me errors" → DON'T ADD: `{"type": "aggregate"}`
+- "Find failed requests" → DON'T ADD: `{"type": "aggregate"}`
+- "Get timeout logs" → DON'T ADD: `{"type": "aggregate"}`
 
 ### ✅ CORRECT Examples:
-- "Show me errors" → ONLY: [{"type": "filter", "query": {"$contains": ["Body", "error"]}}]
-- "How many errors?" → ADD: [{"type": "filter"}, {"type": "aggregate"}]
+- "Show me errors" → ONLY: `[{"type": "filter", "query": {"$contains": ["Body", "error"]}}]`
+- "How many errors?" → ADD: `[{"type": "filter"}, {"type": "aggregate"}]`
 
 ## Translation Examples (Ordered by Complexity):
 These are examples of pipeline json structure and available stages and functions. The attribute names are only indicative
 ### Example 1: Simple Text Search (FILTER ONLY - NO AGGREGATION)
 **Natural Language:** "Show me logs containing 'error'"
 **JSON:**
-~~~json
+```json
 [{
   "type": "filter",
   "query": {
@@ -238,12 +213,12 @@ These are examples of pipeline json structure and available stages and functions
     ]
   }
 }]
-~~~
+```
 
 ### Example 2: Service Error Logs (FILTER ONLY - NO AGGREGATION)
 **Natural Language:** "Find errors from auth service"
 **JSON:**
-~~~json
+```json
 [{
   "type": "filter",
   "query": {
@@ -253,12 +228,12 @@ These are examples of pipeline json structure and available stages and functions
     ]
   }
 }]
-~~~
+```
 
 ### Example 3: Status Code Filter (FILTER ONLY - NO AGGREGATION)
 **Natural Language:** "Get 5xx errors from the logs"
 **JSON:**
-~~~json
+```json
 [{
   "type": "filter",
   "query": {
@@ -268,12 +243,12 @@ These are examples of pipeline json structure and available stages and functions
     ]
   }
 }]
-~~~
+```
 
 ### Example 4: Attribute Filter
 **Natural Language:** "Find logs where the service is 'auth' and status code is greater than 400"
 **JSON:**
-~~~json
+```json
 [{
   "type": "filter",
   "query": {
@@ -283,12 +258,12 @@ These are examples of pipeline json structure and available stages and functions
     ]
   }
 }]
-~~~
+```
 
 ### Example 3: Complex Filter with Parsing
 **Natural Language:** "Parse logs as JSON and find where the duration field is greater than 100ms and the user_id exists"
 **JSON:**
-~~~json
+```json
 [
   {
     "type": "parse",
@@ -304,12 +279,12 @@ These are examples of pipeline json structure and available stages and functions
     }
   }
 ]
-~~~
+```
 
 ### Example 4: Aggregation - Average
 **Natural Language:** "What is the average response time grouped by service?"
 **JSON:**
-~~~json
+```json
 [{
   "type": "filter",
   "query": {
@@ -327,12 +302,12 @@ These are examples of pipeline json structure and available stages and functions
   ],
   "groupby": {"ServiceName": "service"}
 }]
-~~~
+```
 
 ### Example 4b: Aggregation - Count
 **Natural Language:** "How many errors occurred by service?"
 **JSON:**
-~~~json
+```json
 [{
   "type": "filter",
   "query": {
@@ -350,12 +325,12 @@ These are examples of pipeline json structure and available stages and functions
   ],
   "groupby": {"ServiceName": "service"}
 }]
-~~~
+```
 
 ### Example 4c: Aggregation - Sum
 **Natural Language:** "What is the total bytes transferred by endpoint?"
 **JSON:**
-~~~json
+```json
 [{
   "type": "filter",
   "query": {
@@ -373,12 +348,12 @@ These are examples of pipeline json structure and available stages and functions
   ],
   "groupby": {"attributes['http.route']": "endpoint"}
 }]
-~~~
+```
 
 ### Example 5: Time Window Analysis
 **Natural Language:** "What is the rate of requests over 5 minute windows grouped by endpoint?"
 **JSON:**
-~~~json
+```json
 [{
   "type": "filter",
   "query": {
@@ -393,12 +368,12 @@ These are examples of pipeline json structure and available stages and functions
   "window": ["5", "minutes"],
   "groupby": {"attributes['endpoint']": "endpoint"}
 }]
-~~~
+```
 
 ### Example 6: Multi-step Pipeline
 **Natural Language:** "Find logs where job is 'mysql' and body contains 'error', then parse with regex to extract status and duration, then calculate rate over 10 minute windows"
 **JSON:**
-~~~json
+```json
 [
   {
     "type": "filter",
@@ -412,7 +387,7 @@ These are examples of pipeline json structure and available stages and functions
   {
     "type": "parse",
     "parser": "regexp",
-    "pattern": "\[(?P<status>\d+)\].*(?P<dur>\d+)ms"
+    "pattern": "\\[(?P<status>\\d+)\\].*(?P<dur>\\d+)ms"
   },
   {
     "type": "window_aggregate",
@@ -421,14 +396,14 @@ These are examples of pipeline json structure and available stages and functions
     "window": ["10", "minutes"],
   }
 ]
-~~~
+```
 
 ## SRE-Specific Translation Examples:
 
 ### Example 7: HTTP Error Rate Analysis
 **Natural Language:** "Find HTTP 5xx errors from the last hour and calculate error rate by service and endpoint"
 **JSON:**
-~~~json
+```json
 [{
   "type": "filter",
   "query": {
@@ -447,12 +422,12 @@ These are examples of pipeline json structure and available stages and functions
     "ServiceName": "service"
   }
 }]
-~~~
+```
 
 ### Example 8: Database Performance Issues
 **Natural Language:** "Show slow database queries taking more than 1000ms, grouped by database and operation type"
 **JSON:**
-~~~json
+```json
 [{
   "type": "filter",
   "query": {
@@ -474,12 +449,12 @@ These are examples of pipeline json structure and available stages and functions
     "attributes['db.operation']": "operation"
   }
 }]
-~~~
+```
 
 ### Example 9: Kubernetes Pod Restart Analysis
 **Natural Language:** "Find container restart events and group by namespace and deployment name"
 **JSON:**
-~~~json
+```json
 [{
   "type": "filter",
   "query": {
@@ -501,12 +476,12 @@ These are examples of pipeline json structure and available stages and functions
     "resource_attributes['k8s.deployment.name']": "deployment"
   }
 }]
-~~~
+```
 
 ### Example 10: Message Queue Processing Issues
 **Natural Language:** "Find failed Kafka message processing events with high latency over 500ms"
 **JSON:**
-~~~json
+```json
 [{
   "type": "filter",
   "query": {
@@ -533,12 +508,12 @@ These are examples of pipeline json structure and available stages and functions
     "attributes['messaging.kafka.partition']": "partition"
   }
 }]
-~~~
+```
 
 ### Example 11: gRPC Service Health Monitoring
 **Natural Language:** "Monitor gRPC service errors and calculate success rate by RPC method"
 **JSON:**
-~~~json
+```json
 [{
   "type": "filter",
   "query": {
@@ -557,12 +532,12 @@ These are examples of pipeline json structure and available stages and functions
     "attributes['rpc.method']": "method"
   }
 }]
-~~~
+```
 
 ### Example 12: User Authentication Failures
 **Natural Language:** "Find authentication failures by user and session, excluding bots and automated systems"
 **JSON:**
-~~~json
+```json
 [{
   "type": "filter",
   "query": {
@@ -589,7 +564,7 @@ These are examples of pipeline json structure and available stages and functions
     "attributes['session.id']": "session"
   }
 }]
-~~~
+```
 
 ## Translation Rules:
 
@@ -606,20 +581,20 @@ These are examples of pipeline json structure and available stages and functions
 ## Common Natural Language Patterns:
 
 ### Basic Filter Patterns:
-- "where X contains Y" → {"$contains": [field, value]}
-- "where X equals/is Y" → {"$eq": [field, value]}
-- "where X is greater than Y" → {"$gt": [field, value]}
-- "where X exists" → {"$neq": [field, ""]}
-- "parse as JSON/regex/logfmt" → {"type": "parse", "parser": "..."}
-- "sum/average/count of X" → {"type": "aggregate", "function": {"$sumgenerate it's parameterswindows" → {"type": "window_aggregate", "window": ["N", "minutes"]}
-- "grouped by X" → "groupby": {"field": "alias"}
+- "where X contains Y" → `{"$contains": [field, value]}`
+- "where X equals/is Y" → `{"$eq": [field, value]}`
+- "where X is greater than Y" → `{"$gt": [field, value]}`
+- "where X exists" → `{"$neq": [field, ""]}`
+- "parse as JSON/regex/logfmt" → `{"type": "parse", "parser": "..."}`
+- "sum/average/count of X" → `{"type": "aggregate", "function": {"$sumgenerate it's parameterswindows" → `{"type": "window_aggregate", "window": ["N", "minutes"]}`
+- "grouped by X" → `"groupby": {"field": "alias"}`
 
 ### Time-based Patterns:
 - "in the last hour" → Use appropriate time filters in pipeline (handled by system)
-- "over 5 minutes" → "window": ["5", "minutes"]
-- "per second" → "window": ["1", "seconds"]
-- "hourly" → "window": ["1", "hours"]
-- "daily" → "window": ["24", "hours"]
+- "over 5 minutes" → `"window": ["5", "minutes"]`
+- "per second" → `"window": ["1", "seconds"]`
+- "hourly" → `"window": ["1", "hours"]`
+- "daily" → `"window": ["24", "hours"]`
 
 ## Default Parameters:
 
@@ -673,7 +648,7 @@ Example interactions showing CORRECT default behavior:
 ### Example 13: Authentication Events Query (Corrected $and Structure)
 **Natural Language:** "Find authentication-related events including login, logout, auth failures"
 **Incorrect structure:**
-~~~json
+```json
 [{
   "type": "filter",
   "query": {
@@ -687,10 +662,10 @@ Example interactions showing CORRECT default behavior:
     ]
   }
 }]
-~~~
+```
 
 **Correct structure with $and wrapper:**
-~~~json
+```json
 [{
   "type": "filter",
   "query": {
@@ -706,51 +681,4 @@ Example interactions showing CORRECT default behavior:
     ]
   }
 }]
-~~~
-
-`
-
-const GetDropRulesDescription = `Retrieve and display the configured drop rules for log management in Last9.
-Drop rules are filtering mechanisms that determine which logs are excluded from being processed and stored.`
-
-const AddDropRuleDescription = `
-	Add Drop Rule filtering capabilities, it supports filtering on metadata about the logs, 
-	not the actual log content itself. 
-	
-	Not Supported
-	- Key:
-		- filtering on message content in the values array is not supported
-		- Message (attributes[\"message\"])
-		- Body (attributes[\"body\"])
-		- Individual keys like key1, key2, etc.
-		- Regular expression patterns
-		- Actual log content in values object
-
-	- Operators:
-		- No partial matching
-		- No contains, startswith, or endswith operators
-		- No numeric comparisons (greater than, less than)
-
-	- Conjunctions:
-		- No or logic between filters
-
-	Supported
-	- Key:
-		- Log attributes (attributes[\"key_name\"])
-		- Resource attributes (resource.attributes[\"key_name\"])
-
-	- Operators:
-		- equals
-		- not_equals
-
-	- Logical Conjunctions:
-		- and
-
-	Key Requirements
-	- All attribute keys must use proper escaping with double quotes
-	- Resource attributes must be prefixed with resource.attributes
-	- Log attributes must be prefixed with attributes
-	- Each filter requires a conjunction (and) to combine with other filters
-
-	The system only supports filtering on metadata about the logs, not the actual log content itself.
-`
+```
