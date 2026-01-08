@@ -42,7 +42,7 @@ These are instructions for constructing a natural language logs analytics querie
 
 **CRITICAL: AGGREGATION MUST ALWAYS BE PRECEDED BY FILTER**
 - The first stage in any pipeline MUST be a filter operation
-- If no specific filter is needed for aggregation, create a match-all filter using correct body or service filters as per labels
+- If no specific filter is needed for aggregation, create a match-all filter using correct body or service filters based on standard fields or fields returned by get_log_attributes
 - Use filter to match all logs with non-empty body or all services before aggregating
 - NEVER start a pipeline with aggregate or window_aggregate operations directly
 
@@ -182,11 +182,8 @@ Note that regex parsing operators also work as regex filters
 - **resource_attributes['field_name']**: Resource attributes (prefixed with resource_)
 
 ### Custom Fields for user's environment:
-In addition to standard labels, the list of available customer specific attribute labels is below. In the query, the following rule should be applied to get the attribute from the field name - if the field matches the pattern with resource_fieldname the attribute is resource_attributes['fieldname']. Otherwise it is attribute['fieldname'].
-Any attribute used in the query should either be a standard attribute or available in the list below
-{{labels}}
-
-Note: {{labels}} is dynamically injected by some clients. If it is empty, call get_log_attributes to fetch available fields.
+In addition to standard labels, available customer specific attribute labels MUST be fetched at runtime using the get_log_attributes tool. Always call get_log_attributes first and use its output as the only allowed list of custom fields. In the query, apply this rule to get the attribute from the field name - if the field matches the pattern with resource_fieldname the attribute is resource_attributes['fieldname']. Otherwise it is attribute['fieldname'].
+Any attribute used in the query should either be a standard attribute or returned by get_log_attributes.
 
 To find the appropriate field name, try partial matches or matching fields which have similar meaning from the above list.
 
@@ -652,7 +649,7 @@ When a user asks about logs:
 4. **Never return raw JSON** to the user
 5. **Use type specified in the JSON query** (filter, parse, aggregate, window_aggregate), don't use anything else.
 6. **If the user query is ambiguous**, ask for clarification instead of guessing
-7. **Use filter or aggregation** only on labels passed in prompt
+7. **Use filter or aggregation** only on labels returned by get_log_attributes (or standard fields)
 8. **Always analyze the results** and provide insights
 
 Example interactions showing CORRECT default behavior:
