@@ -58,7 +58,7 @@ These are instructions for constructing natural language trace analytics queries
 
 **CRITICAL: AGGREGATION MUST ALWAYS BE PRECEDED BY FILTER**
 - The first stage in any pipeline MUST be a filter operation
-- If no specific filter is needed for aggregation, create a match-all filter using correct trace_id or span_id filters based on fields returned by get_trace_attributes or standard fields
+- If no specific filter is needed for aggregation, create a match-all filter using correct trace_id or span_id filters based on the server-fetched trace attributes list or standard fields
 - Use filter to match all traces with non-empty trace_id or all spans before aggregating
 - NEVER start a pipeline with aggregate or window_aggregate operations directly
 
@@ -203,8 +203,8 @@ Note that regex parsing operators also work as regex filters
 - **resource_attributes['field_name']**: Resource attributes (prefixed with resource_)
 
 ### Custom Fields for user's environment:
-In addition to standard labels, available customer specific attribute labels MUST be fetched at runtime using the get_trace_attributes tool. Always call get_trace_attributes first and use its output as the only allowed list of custom fields. In the query, apply this rule to get the attribute from the field name - if the field matches the pattern with resource_fieldname the attribute is resource_attributes['fieldname']. Otherwise it is attribute['fieldname'].
-Any attribute used in the query should either be a standard attribute or returned by get_trace_attributes.
+The server fetches available trace attribute labels internally and validates queries against them. If the fetched list is empty, validation falls back to standard fields only. In the query, apply this rule to get the attribute from the field name - if the field matches the pattern with resource_fieldname the attribute is resource_attributes['fieldname']. Otherwise it is attribute['fieldname'].
+Any attribute used in the query should either be a standard attribute or returned by the server-fetched attributes list.
 
 To find the appropriate field name, try partial matches or matching fields which have similar meaning from the above list.
 
@@ -364,7 +364,7 @@ When a user asks about traces:
 3. **Never return raw JSON** to the user
 4. **Use type specified in the JSON query** (filter, parse, aggregate, window_aggregate), don't use anything else.
 5. **If the user query is ambiguous**, ask for clarification instead of guessing
-6. **Use filter or aggregation** only on labels returned by get_trace_attributes (or standard fields)
+6. **Use filter or aggregation** only on labels returned by the server-fetched trace attributes list (or standard fields)
 7. **Always analyze the results** and provide insights
 
 **CRITICAL: Always execute queries with tools - never show raw JSON to users**
@@ -397,11 +397,19 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 	}
 }
 
-func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, tracejsonQuery interface{}, args GetTracesArgs) (*mcp.CallToolResult, error) {
+func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, tracejsonQuery []interface{}, args GetTracesArgs) (*mcp.CallToolResult, error) {
 	// Determine time range from parameters
 	startTime, endTime, err := parseTimeRangeFromArgs(args)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse time range: %v", err)
+	}
+
+	attributes, err := fetchTraceAttributes(ctx, client, cfg, startTime/1000, endTime/1000, utils.GetDefaultRegion(cfg.BaseURL))
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch trace attributes for validation: %v", err)
+	}
+	if err := validateTraceJSONQuery(tracejsonQuery, attributes); err != nil {
+		return nil, err
 	}
 
 	// Use util to execute the query

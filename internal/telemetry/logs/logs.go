@@ -40,11 +40,19 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 	}
 }
 
-func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, args GetLogsArgs) (*mcp.CallToolResult, error) {
+func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery []interface{}, args GetLogsArgs) (*mcp.CallToolResult, error) {
 	// Determine time range from parameters
 	startTime, endTime, err := parseTimeRangeFromArgs(args)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse time range: %v", err)
+	}
+
+	attributes, err := fetchLogAttributes(ctx, client, cfg, startTime/1000, endTime/1000, utils.GetDefaultRegion(cfg.BaseURL))
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch log attributes for validation: %v", err)
+	}
+	if err := validateLogJSONQuery(logjsonQuery, attributes); err != nil {
+		return nil, err
 	}
 
 	// Use util to execute the query

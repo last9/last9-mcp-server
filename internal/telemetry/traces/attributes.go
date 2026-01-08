@@ -42,6 +42,89 @@ type GetTraceAttributesArgs struct {
 	Region          string `json:"region,omitempty"`
 }
 
+func fetchTraceAttributes(ctx context.Context, client *http.Client, cfg models.Config, startTime, endTime int64, region string) ([]string, error) {
+	// Build the API URL
+	apiURL := fmt.Sprintf("%s/cat/api/traces/v2/series/json",
+		cfg.APIBaseURL)
+
+	// Add query parameters
+	queryParams := url.Values{}
+	queryParams.Set("region", region)
+	queryParams.Set("start", fmt.Sprintf("%d", startTime))
+	queryParams.Set("end", fmt.Sprintf("%d", endTime))
+
+	fullURL := fmt.Sprintf("%s?%s", apiURL, queryParams.Encode())
+
+	// Create the request body
+	requestBody := map[string]interface{}{
+		"pipeline": []map[string]interface{}{
+			{
+				"query": map[string]interface{}{},
+				"type":  "filter",
+			},
+		},
+	}
+
+	bodyBytes, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request body: %v", err)
+	}
+
+	// Create the request
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+
+	// Set headers
+	httpReq.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.TokenManager.GetAccessToken(ctx))
+	httpReq.Header.Set("User-Agent", "Last9-MCP-Server/1.0")
+
+	// Execute the request
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Check response status
+	if resp.StatusCode != http.StatusOK {
+		var errorBody map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&errorBody)
+		return nil, fmt.Errorf("API returned status %d: %v", resp.StatusCode, errorBody)
+	}
+
+	// Parse the response
+	var result TraceAttributesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	// Check API status
+	if result.Status != "success" {
+		return nil, fmt.Errorf("API returned non-success status: %s", result.Status)
+	}
+
+	// Extract all attributes into a simple list
+	attributes := []string{}
+	if len(result.Data) > 0 {
+		for attrName := range result.Data[0] {
+			// Skip empty attribute names
+			if attrName == "" {
+				continue
+			}
+			attributes = append(attributes, attrName)
+		}
+	}
+
+	// Sort attributes alphabetically
+	sort.Strings(attributes)
+
+	return attributes, nil
+}
+
 // NewGetTraceAttributesHandler creates a handler for fetching trace attributes
 func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTraceAttributesArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetTraceAttributesArgs) (*mcp.CallToolResult, any, error) {
@@ -77,72 +160,12 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 			region = args.Region
 		}
 
-		// Build the API URL
-		apiURL := fmt.Sprintf("%s/cat/api/traces/v2/series/json",
-			cfg.APIBaseURL)
-
-		// Add query parameters
-		queryParams := url.Values{}
-		queryParams.Set("region", region)
-		queryParams.Set("start", fmt.Sprintf("%d", startTime))
-		queryParams.Set("end", fmt.Sprintf("%d", endTime))
-
-		fullURL := fmt.Sprintf("%s?%s", apiURL, queryParams.Encode())
-
-		// Create the request body
-		requestBody := map[string]interface{}{
-			"pipeline": []map[string]interface{}{
-				{
-					"query": map[string]interface{}{},
-					"type":  "filter",
-				},
-			},
-		}
-
-		bodyBytes, err := json.Marshal(requestBody)
+		attributes, err := fetchTraceAttributes(ctx, client, cfg, startTime, endTime, region)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to marshal request body: %v", err)
+			return nil, nil, err
 		}
 
-		// Create the request
-		httpReq, err := http.NewRequest("POST", fullURL, bytes.NewBuffer(bodyBytes))
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create request: %v", err)
-		}
-
-		// Set headers
-		httpReq.Header.Set("Accept", "application/json")
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.TokenManager.GetAccessToken(ctx))
-		httpReq.Header.Set("User-Agent", "Last9-MCP-Server/1.0")
-
-		// Execute the request
-		resp, err := client.Do(httpReq)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to execute request: %v", err)
-		}
-		defer resp.Body.Close()
-
-		// Check response status
-		if resp.StatusCode != http.StatusOK {
-			var errorBody map[string]interface{}
-			json.NewDecoder(resp.Body).Decode(&errorBody)
-			return nil, nil, fmt.Errorf("API returned status %d: %v", resp.StatusCode, errorBody)
-		}
-
-		// Parse the response
-		var result TraceAttributesResponse
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return nil, nil, fmt.Errorf("failed to decode response: %v", err)
-		}
-
-		// Check API status
-		if result.Status != "success" {
-			return nil, nil, fmt.Errorf("API returned non-success status: %s", result.Status)
-		}
-
-		// Extract attributes as simple list
-		if len(result.Data) == 0 {
+		if len(attributes) == 0 {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{
@@ -151,19 +174,6 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 				},
 			}, nil, nil
 		}
-
-		// Extract all attributes into a simple list
-		attributes := []string{}
-		for attrName := range result.Data[0] {
-			// Skip empty attribute names
-			if attrName == "" {
-				continue
-			}
-			attributes = append(attributes, attrName)
-		}
-
-		// Sort attributes alphabetically
-		sort.Strings(attributes)
 
 		// Format the response for display
 		summary := fmt.Sprintf("Found %d trace attributes in the time window (%s to %s):\n\n",
