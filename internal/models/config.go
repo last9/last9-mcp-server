@@ -24,7 +24,6 @@ type Config struct {
 	DatasourceName   string // Datasource name to use (overrides default datasource)
 	APIHost          string // API host (defaults to app.last9.io)
 	DisableTelemetry bool   // Disable OpenTelemetry tracing/metrics
-	Debug            bool   // Enable debug mode to log API calls
 	// Prometheus configuration
 	PrometheusReadURL  string // URL for Prometheus read API
 	PrometheusUsername string // Username for Prometheus authentication

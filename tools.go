@@ -8,7 +8,6 @@ import (
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/telemetry/traces"
-	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -17,7 +16,7 @@ import (
 
 // registerAllTools registers all tools with the MCP server using the new SDK pattern
 func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error {
-	client := utils.WrapClientWithDebug(auth.GetHTTPClient(), cfg.Debug)
+	client := auth.GetHTTPClient()
 
 	// Register exceptions tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
