@@ -40,7 +40,7 @@ RUN chown -R mcp:mcp /home/mcp/
 USER mcp
 
 # Default to STDIO mode (standard MCP pattern)
-ENV HTTP_MODE=false
+ENV LAST9_HTTP=false
 
 # MCP servers typically don't expose ports in STDIO mode
 # EXPOSE directive omitted intentionally

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -13,40 +14,25 @@ import (
 	"time"
 
 	"last9-mcp/internal/auth"
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 )
 
-// GetDefaultRegion determines the region based on the Last9 BASE URL.
-// This function extracts the hostname from URLs like "https://otlp-aps1.last9.io:443"
-// and maps them to the correct AWS regions for API routing.
-func GetDefaultRegion(baseURL string) string {
-	// Extract hostname from URL (remove protocol and port)
-	// Transform: "https://otlp-aps1.last9.io:443" → "otlp-aps1.last9.io"
-	hostname := baseURL
-	if strings.HasPrefix(hostname, "https://") {
-		hostname = strings.TrimPrefix(hostname, "https://")
-	}
-	if strings.HasPrefix(hostname, "http://") {
-		hostname = strings.TrimPrefix(hostname, "http://")
-	}
-	// Remove port if present (:443, :80, etc.)
-	if colonIndex := strings.Index(hostname, ":"); colonIndex != -1 {
-		hostname = hostname[:colonIndex]
-	}
-
-	switch hostname {
-	case "otlp.last9.io":
-		return "us-east-1"
-	case "otlp-aps1.last9.io":
-		return "ap-south-1"
-	case "otlp-apse1.last9.io":
-		return "ap-southeast-1"
-	default:
-		return "us-east-1" // default to us-east-1 if URL pattern doesn't match
-	}
-}
+// Constants for time-related values
+const (
+	// MaxLookbackMinutes is the maximum number of minutes allowed for lookback queries (24 hours)
+	MaxLookbackMinutes = 1440
+	// MaxTimeRangeHours is the maximum time range allowed for queries (24 hours)
+	MaxTimeRangeHours = 24
+	// DefaultLookbackMinutes is the default lookback time in minutes (1 hour)
+	DefaultLookbackMinutes = 60
+	// DefaultHTTPTimeout is the default HTTP client timeout
+	DefaultHTTPTimeout = 30 * time.Second
+	// TokenRefreshBuffer is the percentage of token lifetime to refresh before expiry (50%)
+	TokenRefreshBufferPercent = 50
+)
 
 // GetTimeRange returns start and end times based on lookback minutes
 // If start_time_iso and end_time_iso are provided, they take precedence
@@ -66,8 +52,8 @@ func GetTimeRange(params map[string]interface{}, defaultLookbackMinutes int) (st
 		if lookbackMinutes < 1 {
 			return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes must be at least 1")
 		}
-		if lookbackMinutes > 1440 { // 24 hours
-			return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes cannot exceed 1440 (24 hours)")
+		if lookbackMinutes > MaxLookbackMinutes {
+			return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes cannot exceed %d (24 hours)", MaxLookbackMinutes)
 		}
 	}
 
@@ -105,9 +91,9 @@ func GetTimeRange(params map[string]interface{}, defaultLookbackMinutes int) (st
 		return time.Time{}, time.Time{}, fmt.Errorf("start_time cannot be after end_time")
 	}
 
-	// Ensure time range doesn't exceed 24 hours
-	if endTime.Sub(startTime) > 24*time.Hour {
-		return time.Time{}, time.Time{}, fmt.Errorf("time range cannot exceed 24 hours")
+	// Ensure time range doesn't exceed maximum allowed
+	if endTime.Sub(startTime) > MaxTimeRangeHours*time.Hour {
+		return time.Time{}, time.Time{}, fmt.Errorf("time range cannot exceed %d hours", MaxTimeRangeHours)
 	}
 
 	return startTime, endTime, nil
@@ -125,13 +111,13 @@ func MakePromInstantAPIQuery(ctx context.Context, client *http.Client, promql st
 	if err != nil {
 		return nil, err
 	}
-	reqUrl := fmt.Sprintf("%s/prom_query_instant", cfg.APIBaseURL)
+	reqUrl := fmt.Sprintf("%s%s", cfg.APIBaseURL, constants.EndpointPromQueryInstant)
 	req, err := http.NewRequestWithContext(ctx, "POST", reqUrl, strings.NewReader(string(bodyBytes)))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.TokenManager.GetAccessToken(ctx))
+	req.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
+	req.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
 
 	return client.Do(req)
 }
@@ -158,13 +144,13 @@ func MakePromRangeAPIQuery(ctx context.Context, client *http.Client, promql stri
 		return nil, err
 	}
 
-	reqUrl := fmt.Sprintf("%s/prom_query", cfg.APIBaseURL)
+	reqUrl := fmt.Sprintf("%s%s", cfg.APIBaseURL, constants.EndpointPromQuery)
 	req, err := http.NewRequestWithContext(ctx, "POST", reqUrl, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.TokenManager.GetAccessToken(ctx))
+	req.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
+	req.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
 
 	return client.Do(req)
 }
@@ -196,13 +182,13 @@ func MakePromLabelValuesAPIQuery(ctx context.Context, client *http.Client, label
 		return nil, err
 	}
 
-	reqUrl := fmt.Sprintf("%s/prom_label_values", cfg.APIBaseURL)
+	reqUrl := fmt.Sprintf("%s%s", cfg.APIBaseURL, constants.EndpointPromLabelValues)
 	req, err := http.NewRequestWithContext(ctx, "POST", reqUrl, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.TokenManager.GetAccessToken(ctx))
+	req.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
+	req.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
 
 	return client.Do(req)
 }
@@ -229,13 +215,13 @@ func MakePromLabelsAPIQuery(ctx context.Context, client *http.Client, metric str
 		return nil, err
 	}
 
-	reqUrl := fmt.Sprintf("%s/apm/labels", cfg.APIBaseURL)
+	reqUrl := fmt.Sprintf("%s%s", cfg.APIBaseURL, constants.EndpointAPMLabels)
 	req, err := http.NewRequestWithContext(ctx, "POST", reqUrl, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.TokenManager.GetAccessToken(ctx))
+	req.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
+	req.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
 
 	return client.Do(req)
 }
@@ -263,53 +249,15 @@ func ConvertTimestamp(timestamp any) string {
 	}
 }
 
-// ParseStringArray safely extracts string array from interface{}
-func ParseStringArray(value interface{}) []string {
-	var result []string
-	if array, ok := value.([]interface{}); ok {
-		for _, item := range array {
-			if str, ok := item.(string); ok && str != "" {
-				result = append(result, str)
-			}
-		}
-	}
-	return result
-}
-
-// BuildOrFilter creates an optimized filter for single or multiple values of the same field.
-// For single values, returns a simple $eq filter. For multiple values, returns an $or filter.
-// This optimization reduces query complexity and improves performance for single-value filters.
-func BuildOrFilter(fieldName string, values []string) map[string]interface{} {
-	if len(values) == 1 {
-		return map[string]interface{}{
-			"$eq": []interface{}{fieldName, values[0]},
-		}
-	}
-
-	orConditions := make([]map[string]interface{}, 0, len(values))
-	for _, value := range values {
-		orConditions = append(orConditions, map[string]interface{}{
-			"$eq": []interface{}{fieldName, value},
-		})
-	}
-
-	return map[string]interface{}{"$or": orConditions}
-}
-
 // FetchPhysicalIndex retrieves the physical index for logs queries using the provided service name and environment
-// Uses an instant query for data from the last 1 day
 func FetchPhysicalIndex(ctx context.Context, client *http.Client, cfg models.Config, serviceName, env string) (string, error) {
-	// Build the PromQL query with a 2-hour window
 	query := fmt.Sprintf("sum by (name, destination) (physical_index_service_count{service_name='%s'", serviceName)
 	if env != "" {
 		query += fmt.Sprintf(",env=~'%s'", env)
 	}
 	query += "}[1d])"
 
-	// Get current time for the instant query
 	currentTime := time.Now().Unix()
-
-	// Make the Prometheus instant query
 	resp, err := MakePromInstantAPIQuery(ctx, client, query, currentTime, cfg)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch physical index: %w", err)
@@ -317,7 +265,7 @@ func FetchPhysicalIndex(ctx context.Context, client *http.Client, cfg models.Con
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := json.Marshal(resp.Body)
+		bodyBytes, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("physical index API returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
@@ -367,14 +315,14 @@ func MakeTracesJSONQueryAPI(ctx context.Context, client *http.Client, cfg models
 	}
 
 	// Build URL
-	tracesURL := fmt.Sprintf("%s/cat/api/traces/v2/query_range/json", cfg.APIBaseURL)
+	tracesURL := fmt.Sprintf("%s%s", cfg.APIBaseURL, constants.EndpointTracesQueryRange)
 	queryParams := url.Values{}
 	queryParams.Add("direction", "backward")
 	queryParams.Add("start", fmt.Sprintf("%d", startMs/1000)) // seconds
 	queryParams.Add("end", fmt.Sprintf("%d", endMs/1000))     // seconds
-	queryParams.Add("region", GetDefaultRegion(cfg.BaseURL))
-	queryParams.Add("limit", fmt.Sprintf("%d", limit))        // User-specified limit
-	queryParams.Add("order", "Timestamp") // Default order
+	queryParams.Add("region", cfg.Region)
+	queryParams.Add("limit", fmt.Sprintf("%d", limit)) // User-specified limit
+	queryParams.Add("order", "Timestamp")              // Default order
 	fullURL := fmt.Sprintf("%s?%s", tracesURL, queryParams.Encode())
 
 	// Build body
@@ -393,30 +341,80 @@ func MakeTracesJSONQueryAPI(ctx context.Context, client *http.Client, cfg models
 	}
 
 	// Headers
-	bearerToken := "Bearer " + cfg.TokenManager.GetAccessToken(ctx)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", bearerToken)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-LAST9-API-TOKEN", bearerToken)
+	bearerToken := constants.BearerPrefix + cfg.TokenManager.GetAccessToken(ctx)
+	req.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
+	req.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
+	req.Header.Set(constants.HeaderXLast9APIToken, bearerToken)
 
 	// Execute
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, fmt.Errorf("HTTP request failed (URL: %s): %w", fullURL, err)
 	}
 
 	return resp, nil
 }
 
+// Datasource represents a datasource configuration
+type Datasource struct {
+	Name       string `json:"name"`
+	IsDefault  bool   `json:"is_default"`
+	URL        string `json:"url"`
+	Region     string `json:"region"`
+	Properties struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	} `json:"properties"`
+}
+
+// GetDatasourceByName fetches all datasources and returns the one matching the provided name.
+// If datasourceName is empty, returns nil (indicating to use default).
+// Returns an error if the datasource is not found.
+func GetDatasourceByName(ctx context.Context, client *http.Client, cfg models.Config, datasourceName string) (*Datasource, error) {
+	if datasourceName == "" {
+		return nil, nil // Use default
+	}
+
+	// Fetch all datasources
+	req, err := http.NewRequestWithContext(ctx, "GET", cfg.APIBaseURL+constants.EndpointDatasources, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request for datasources: %w", err)
+	}
+	req.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get datasources: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to get datasources: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var datasources []Datasource
+	if err := json.NewDecoder(resp.Body).Decode(&datasources); err != nil {
+		return nil, fmt.Errorf("failed to decode datasources response: %w", err)
+	}
+
+	// Find the datasource matching the provided name
+	for _, ds := range datasources {
+		if ds.Name == datasourceName {
+			return &ds, nil
+		}
+	}
+
+	return nil, fmt.Errorf("datasource with name '%s' not found", datasourceName)
+}
+
 // PopulateAPICfg populates the API configuration with necessary details
 func PopulateAPICfg(cfg *models.Config) error {
-	var accessToken string
-	if cfg.TokenManager != nil {
-		accessToken = cfg.TokenManager.GetAccessToken(context.Background())
-	} else {
-		// Fallback to using AuthToken for testing or when TokenManager is not initialized
-		accessToken = cfg.AuthToken
+	if cfg.TokenManager == nil {
+		return errors.New("TokenManager is required but not initialized")
 	}
+
+	accessToken := cfg.TokenManager.GetAccessToken(context.Background())
 	orgSlug, err := auth.ExtractOrgSlugFromToken(accessToken)
 	if err != nil {
 		return fmt.Errorf("failed to extract org slug from token: %w", err)
@@ -430,15 +428,18 @@ func PopulateAPICfg(cfg *models.Config) error {
 	cfg.ActionURL = actionURL
 
 	client := last9mcp.WithHTTPTracing(&http.Client{Timeout: 30 * time.Second})
-	cfg.APIBaseURL = fmt.Sprintf("https://%s/api/v4/organizations/%s", "app.last9.io", cfg.OrgSlug)
-	// make a GET call to /datasources and iterate over the response array
-	// find the element with is_default set to true and extract url, properties.username, properties.password
-	// add bearer token auth to the request header
-	req, err := http.NewRequestWithContext(context.Background(), "GET", cfg.APIBaseURL+"/datasources", nil)
+
+	// Use configured API host or default
+	apiHost := cfg.APIHost
+	if apiHost == "" {
+		apiHost = constants.APIBaseHost
+	}
+	cfg.APIBaseURL = fmt.Sprintf("https://%s/api/v4/organizations/%s", apiHost, cfg.OrgSlug)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", cfg.APIBaseURL+constants.EndpointDatasources, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request for datasources: %w", err)
 	}
-	req.Header.Set("X-LAST9-API-TOKEN", "Bearer "+accessToken)
+	req.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+accessToken)
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to get metrics datasource: %w", err)
@@ -447,27 +448,45 @@ func PopulateAPICfg(cfg *models.Config) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to get metrics datasource: %s", resp.Status)
 	}
-	var datasources []struct {
-		IsDefault  bool   `json:"is_default"`
-		URL        string `json:"url"`
-		Properties struct {
-			Username string `json:"username"`
-			Password string `json:"password"`
-		} `json:"properties"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&datasources); err != nil {
+	var datasourcesList []Datasource
+	if err := json.NewDecoder(resp.Body).Decode(&datasourcesList); err != nil {
 		return fmt.Errorf("failed to decode metrics datasources response: %w", err)
 	}
-	for _, ds := range datasources {
-		if ds.IsDefault {
-			cfg.PrometheusReadURL = ds.URL
-			cfg.PrometheusUsername = ds.Properties.Username
-			cfg.PrometheusPassword = ds.Properties.Password
-			break
+
+	// Find the datasource to use
+	var selectedDatasource *Datasource
+	if cfg.DatasourceName != "" {
+		// Use specified datasource by name
+		for i := range datasourcesList {
+			if datasourcesList[i].Name == cfg.DatasourceName {
+				selectedDatasource = &datasourcesList[i]
+				break
+			}
+		}
+		if selectedDatasource == nil {
+			return fmt.Errorf("datasource with name '%s' not found", cfg.DatasourceName)
+		}
+	} else {
+		// Use default datasource
+		for i := range datasourcesList {
+			if datasourcesList[i].IsDefault {
+				selectedDatasource = &datasourcesList[i]
+				break
+			}
+		}
+		if selectedDatasource == nil {
+			return errors.New("default datasource not found")
 		}
 	}
-	if cfg.PrometheusReadURL == "" || cfg.PrometheusUsername == "" || cfg.PrometheusPassword == "" {
-		return errors.New("default datasource not found or missing required properties")
+
+	// Set config from selected datasource
+	cfg.PrometheusReadURL = selectedDatasource.URL
+	cfg.PrometheusUsername = selectedDatasource.Properties.Username
+	cfg.PrometheusPassword = selectedDatasource.Properties.Password
+	cfg.Region = selectedDatasource.Region
+
+	if cfg.PrometheusReadURL == "" || cfg.PrometheusUsername == "" || cfg.PrometheusPassword == "" || cfg.Region == "" {
+		return errors.New("selected datasource missing required properties")
 	}
 	return nil
 }

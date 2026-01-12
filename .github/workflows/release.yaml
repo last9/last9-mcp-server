@@ -9,16 +9,37 @@ on:
       - main
   push:
     branches:
-      - 'release-**'
-
-permissions:
-  contents: write
-  packages: write
+      - "release-**"
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -v -race ./...
+        env:
+          TEST_REFRESH_TOKEN: ${{ secrets.TEST_REFRESH_TOKEN }}
+
   tag-and-release:
+    needs: test
     if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       version_changed: ${{ steps.version_change.outputs.changed }}
       new_version: ${{ steps.version_change.outputs.new_version }}
@@ -86,6 +107,8 @@ jobs:
       (needs.tag-and-release.outputs.version_changed == 'true' ||
        (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-')))
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
       DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}

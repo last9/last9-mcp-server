@@ -6,21 +6,15 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-)
-
-var (
-	testBaseURL      = "https://otlp-aps1.last9.io:443"
-	testAuthToken    = os.Getenv("TEST_AUTH_TOKEN")
-	testRefreshToken = os.Getenv("TEST_REFRESH_TOKEN")
 )
 
 func TestValidateGetServiceTracesArgs(t *testing.T) {
@@ -113,7 +107,7 @@ func TestValidateGetServiceTracesArgs(t *testing.T) {
 
 func TestParseGetTracesParams(t *testing.T) {
 	cfg := models.Config{
-		BaseURL: testBaseURL,
+		Region: "us-east-1",
 	}
 
 	tests := []struct {
@@ -292,23 +286,15 @@ func TestGetServiceTracesHandler_MockedResponse(t *testing.T) {
 	defer server.Close()
 
 	cfg := models.Config{
-		APIBaseURL:   server.URL,
-		BaseURL:      testBaseURL,
-		AuthToken:    "test-token",
-		RefreshToken: testRefreshToken,
+		APIBaseURL: server.URL,
+		Region:     "ap-south-1",
 	}
 
-	// Initialize TokenManager for test
-	refreshToken := testRefreshToken
-	if refreshToken == "" {
-		// Use dummy refresh token for testing if not set
-		refreshToken = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJsYXN0OS5pbyIsImF1ZCI6WyJhcHAubGFzdDkuaW8iXSwiZXhwIjoxNzU2NjUwMDAwLCJuYmYiOjE2OTM1MzYwMDAsImlhdCI6MTY5MzUzNjAwMCwianRpIjoiZHVtbXktdGVzdC10b2tlbiIsImtpbmQiOiJyZWZyZXNoX3Rva2VuIiwiZW1haWwiOiJ0ZXN0QGxhc3Q5LmlvIiwib3JnYW5pemF0aW9uX3NsdWciOiJ0ZXN0LW9yZyIsInNjb3BlcyI6WyJyZWFkIl19.dummy_signature"
-	}
-	tokenManager, err := auth.NewTokenManager(refreshToken)
-	if err != nil {
-		t.Logf("Warning: Failed to create TokenManager for test: %v", err)
-	} else {
-		cfg.TokenManager = tokenManager
+	// Initialize TokenManager for test with a fixed access token
+	// Set expiry far in the future to avoid token refresh during tests
+	cfg.TokenManager = &auth.TokenManager{
+		AccessToken: "mock-access-token-for-testing",
+		ExpiresAt:   time.Now().Add(365 * 24 * time.Hour), // Valid for 1 year
 	}
 
 	handler := GetServiceTracesHandler(server.Client(), cfg)
@@ -387,8 +373,7 @@ func TestGetServiceTracesHandler_MockedResponse(t *testing.T) {
 
 func TestGetServiceTracesHandler_ValidationErrors(t *testing.T) {
 	cfg := models.Config{
-		BaseURL:   testBaseURL,
-		AuthToken: "test-token",
+		Region: "us-east-1",
 	}
 
 	handler := GetServiceTracesHandler(http.DefaultClient, cfg)
@@ -436,25 +421,12 @@ func TestGetServiceTracesHandler_ValidationErrors(t *testing.T) {
 
 // Integration test - requires real API credentials
 func TestGetServiceTracesHandler_Integration(t *testing.T) {
-	if testAuthToken == "" || testRefreshToken == "" {
-		t.Skip("Skipping integration test: TEST_AUTH_TOKEN or TEST_REFRESH_TOKEN not set")
-	}
+	cfg := utils.SetupTestConfigOrSkip(t)
 
-	cfg := models.Config{
-		BaseURL:      testBaseURL,
-		AuthToken:    testAuthToken,
-		RefreshToken: testRefreshToken,
-	}
+	handler := GetServiceTracesHandler(http.DefaultClient, *cfg)
 
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
-	}
-
-	handler := GetServiceTracesHandler(http.DefaultClient, cfg)
-
-	// Test with service name
 	args := GetServiceTracesArgs{
-		ServiceName:     "test-service", // Replace with actual service name for real testing
+		ServiceName:     "test-service",
 		LookbackMinutes: 60,
 		Limit:           5,
 	}
@@ -463,25 +435,16 @@ func TestGetServiceTracesHandler_Integration(t *testing.T) {
 	req := &mcp.CallToolRequest{}
 	result, _, err := handler(ctx, req, args)
 
-	if err != nil {
-		// Integration test may fail if service doesn't exist - that's ok
-		t.Logf("Integration test failed (expected if test service doesn't exist): %v", err)
+	if utils.CheckAPIError(t, err) {
 		return
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
-
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
+	text := utils.GetTextContent(t, result)
 
 	var traceResponse TraceQueryResponse
-	if err := json.Unmarshal([]byte(textContent.Text), &traceResponse); err != nil {
+	if err := json.Unmarshal([]byte(text), &traceResponse); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 
-	t.Logf("Integration test successful: received %d traces", len(traceResponse.Data))
+	t.Logf("Integration test successful: received %d trace(s)", len(traceResponse.Data))
 }

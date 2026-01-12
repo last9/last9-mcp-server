@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"last9-mcp/internal/constants"
+
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 )
 
@@ -85,11 +87,12 @@ func ExtractActionURLFromToken(accessToken string) (string, error) {
 		return "", errors.New("no audience found in token claims")
 	}
 
-	// Handle case where audience already includes https:// protocol
+	// Handle case where audience already includes protocol
 	audStr := aud[0].(string)
 	if strings.HasPrefix(audStr, "https://") || strings.HasPrefix(audStr, "http://") {
 		return audStr, nil
 	}
+	// Default to HTTPS if no protocol specified
 	return fmt.Sprintf("https://%s", audStr), nil
 }
 
@@ -124,7 +127,7 @@ func RefreshAccessToken(ctx context.Context, client *http.Client, refreshToken s
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
 
 	resp, err := client.Do(req)
 	if err != nil {

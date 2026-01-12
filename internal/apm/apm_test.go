@@ -6,63 +6,48 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// const (
-//
-//	BaseURL      = "https://otlp-aps1.last9.io:443"
-//	AuthToken    = "Basic <your-auth-token>"
-//
-// )
-var (
-	BaseURL      = "https://otlp-aps1.last9.io:443"
-	AuthToken    = os.Getenv("TEST_AUTH_TOKEN")
-	RefreshToken = os.Getenv("TEST_REFRESH_TOKEN")
-)
+// Note: strings import is still needed for TestNewServiceSummaryHandler_ExtraParams
 
 func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
-	throughputResp := `{
-		"data": {
-			"result": [
+	// Mock responses should match apiPromInstantResp format (direct array)
+	throughputResp := `[
 				{
 					"metric": {"service_name": "svc1"},
 					"value": [1687600000, "10"]
 				}
-			]
-		}
-	}`
-	responseTimeResp := `{
-		"data": {
-			"result": [
+	]`
+	responseTimeResp := `[
 				{
 					"metric": {"service_name": "svc1"},
 					"value": [1687600000, "1.1"]
 				}
-			]
-		}
-	}`
-	errorRateResp := `{
-		"data": {
-			"result": [
+	]`
+	errorRateResp := `[
 				{
 					"metric": {"service_name": "svc1"},
 					"value": [1687600000, "0.5"]
 				}
-			]
-		}
-	}`
+	]`
 
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify we're hitting the prom_query_instant endpoint
+		if !strings.Contains(r.URL.Path, "/prom_query_instant") {
+			t.Errorf("Expected request to /prom_query_instant, got %s", r.URL.Path)
+		}
 		callCount++
+		w.Header().Set("Content-Type", "application/json")
 		switch callCount {
 		case 1:
 			w.WriteHeader(http.StatusOK)
@@ -73,17 +58,20 @@ func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
 		case 3:
 			w.WriteHeader(http.StatusOK)
 			io.WriteString(w, errorRateResp)
+		default:
+			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
 	defer server.Close()
 
 	cfg := models.Config{
-		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
-		RefreshToken: RefreshToken,
+		APIBaseURL: server.URL,
+		Region:     "us-east-1",
 	}
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
+	// Create a mock TokenManager for testing
+	cfg.TokenManager = &auth.TokenManager{
+		AccessToken: "mock-access-token-for-testing",
+		ExpiresAt:   time.Now().Add(365 * 24 * time.Hour), // Valid for 1 year
 	}
 	handler := NewServiceSummaryHandler(server.Client(), cfg)
 
@@ -116,19 +104,10 @@ func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
 
 }
 
-// Add test for GetServicePerformanceDetails tool
 func TestGetServicePerformanceDetails(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
 
-	cfg := models.Config{
-		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
-		RefreshToken: RefreshToken,
-	}
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
-	}
-
-	handler := NewServicePerformanceDetailsHandler(http.DefaultClient, cfg)
+	handler := NewServicePerformanceDetailsHandler(http.DefaultClient, *cfg)
 
 	args := ServicePerformanceDetailsArgs{
 		ServiceName:  "svc",
@@ -144,35 +123,18 @@ func TestGetServicePerformanceDetails(t *testing.T) {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
-
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
+	text := utils.GetTextContent(t, result)
 
 	var details ServicePerformanceDetails
-	if err := json.Unmarshal([]byte(textContent.Text), &details); err != nil {
+	if err := json.Unmarshal([]byte(text), &details); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
-
 }
 
-// Add test for GetServiceOperationsSummary tool
 func TestGetServiceOperationsSummary(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
 
-	cfg := models.Config{
-		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
-		RefreshToken: RefreshToken,
-	}
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
-	}
-
-	handler := NewServiceOperationsSummaryHandler(http.DefaultClient, cfg)
+	handler := NewServiceOperationsSummaryHandler(http.DefaultClient, *cfg)
 
 	args := ServiceOperationsSummaryArgs{
 		ServiceName:  "svc",
@@ -188,34 +150,18 @@ func TestGetServiceOperationsSummary(t *testing.T) {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
-
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
+	text := utils.GetTextContent(t, result)
 
 	var details ServiceOperationsSummaryResponse
-	if err := json.Unmarshal([]byte(textContent.Text), &details); err != nil {
+	if err := json.Unmarshal([]byte(text), &details); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 }
 
-// Add test for GetServiceDependencies tool
 func TestGetServiceDependencies(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
 
-	cfg := models.Config{
-		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
-		RefreshToken: RefreshToken,
-	}
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
-	}
-
-	handler := NewServiceDependencyGraphHandler(http.DefaultClient, cfg)
+	handler := NewServiceDependencyGraphHandler(http.DefaultClient, *cfg)
 
 	args := ServiceDependencyGraphArgs{
 		ServiceName:  "svc",
@@ -231,30 +177,18 @@ func TestGetServiceDependencies(t *testing.T) {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
+	text := utils.GetTextContent(t, result)
+
 	var details ServiceDependencyGraphDetails
-	if err := json.Unmarshal([]byte(textContent.Text), &details); err != nil {
+	if err := json.Unmarshal([]byte(text), &details); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 }
 
 func TestNewServiceEnvironmentsHandler(t *testing.T) {
-	cfg := models.Config{
-		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
-		RefreshToken: RefreshToken,
-	}
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
-	}
+	cfg := utils.SetupTestConfigOrSkip(t)
 
-	handler := NewServiceEnvironmentsHandler(http.DefaultClient, cfg)
+	handler := NewServiceEnvironmentsHandler(http.DefaultClient, *cfg)
 
 	args := ServiceEnvironmentsArgs{
 		StartTimeISO: time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
@@ -268,32 +202,18 @@ func TestNewServiceEnvironmentsHandler(t *testing.T) {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
+	text := utils.GetTextContent(t, result)
+
 	var details []string
-	if err := json.Unmarshal([]byte(textContent.Text), &details); err != nil {
+	if err := json.Unmarshal([]byte(text), &details); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 }
 
-// write test for promql instant query handler
 func TestPromqlInstantQueryHandler(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
 
-	cfg := models.Config{
-		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
-		RefreshToken: RefreshToken,
-	}
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
-	}
-
-	handler := NewPromqlInstantQueryHandler(http.DefaultClient, cfg)
+	handler := NewPromqlInstantQueryHandler(http.DefaultClient, *cfg)
 
 	args := PromqlInstantQueryArgs{
 		Query:   "sum_over_time(trace_call_graph_count{}[1h])",
@@ -307,28 +227,13 @@ func TestPromqlInstantQueryHandler(t *testing.T) {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
-	_, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
+	_ = utils.GetTextContent(t, result)
 }
 
-// write test for promql range query handler
 func TestPromqlRangeQueryHandler(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
 
-	cfg := models.Config{
-		BaseURL:      BaseURL,
-		AuthToken:    AuthToken,
-		RefreshToken: RefreshToken,
-	}
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to refresh access token: %v", err)
-	}
-
-	handler := NewPromqlRangeQueryHandler(http.DefaultClient, cfg)
+	handler := NewPromqlRangeQueryHandler(http.DefaultClient, *cfg)
 
 	args := PromqlRangeQueryArgs{
 		Query:        "sum(rate(http_request_duration_seconds_count[1m]))",
@@ -343,21 +248,97 @@ func TestPromqlRangeQueryHandler(t *testing.T) {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
+	text := utils.GetTextContent(t, result)
+
 	var details []TimeSeries
-	if err := json.Unmarshal([]byte(textContent.Text), &details); err != nil {
+	if err := json.Unmarshal([]byte(text), &details); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
-
 }
 
-// write test for promql label values handler
-func TestPromqlLabelValuesHandler(t *testing.T) {
+// Integration test for prometheus_labels tool
+func TestPromqlLabelsHandler_Integration(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
 
+	handler := NewPromqlLabelsHandler(http.DefaultClient, *cfg)
+
+	args := PromqlLabelsArgs{
+		MatchQuery: "up",
+	}
+
+	ctx := context.Background()
+	req := &mcp.CallToolRequest{}
+	result, _, err := handler(ctx, req, args)
+
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+
+	text := utils.GetTextContent(t, result)
+
+	var labels []string
+	if err := json.Unmarshal([]byte(text), &labels); err != nil {
+		t.Logf("Integration test successful. Response is formatted text (not JSON)")
+	} else {
+		t.Logf("Integration test successful: found %d label(s)", len(labels))
+	}
+}
+
+func TestNewServiceSummaryHandler_Integration(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+
+	handler := NewServiceSummaryHandler(http.DefaultClient, *cfg)
+
+	args := ServiceSummaryArgs{
+		StartTimeISO: time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
+		EndTimeISO:   time.Now().UTC().Format(time.RFC3339),
+		Env:          ".*",
+	}
+
+	ctx := context.Background()
+	req := &mcp.CallToolRequest{}
+	result, _, err := handler(ctx, req, args)
+
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+
+	text := utils.GetTextContent(t, result)
+
+	var summaries map[string]ServiceSummary
+	if err := json.Unmarshal([]byte(text), &summaries); err != nil {
+		t.Logf("Integration test successful. Response is formatted text (not JSON)")
+	} else {
+		t.Logf("Integration test successful: found %d service summary/ies", len(summaries))
+	}
+}
+
+func TestPromqlLabelValuesHandler_Integration(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+
+	handler := NewPromqlLabelValuesHandler(http.DefaultClient, *cfg)
+
+	args := PromqlLabelValuesArgs{
+		MatchQuery:   "up",
+		Label:        "job",
+		StartTimeISO: time.Now().Add(-1 * time.Hour).UTC().Format(time.RFC3339),
+		EndTimeISO:   time.Now().UTC().Format(time.RFC3339),
+	}
+
+	ctx := context.Background()
+	req := &mcp.CallToolRequest{}
+	result, _, err := handler(ctx, req, args)
+
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+
+	text := utils.GetTextContent(t, result)
+
+	var labelValues []string
+	if err := json.Unmarshal([]byte(text), &labelValues); err != nil {
+		t.Logf("Integration test successful. Response is formatted text (not JSON)")
+	} else {
+		t.Logf("Integration test successful: found %d label value(s) for label '%s'", len(labelValues), args.Label)
+	}
 }

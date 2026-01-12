@@ -79,7 +79,13 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("traces API request failed with status %d: %s", resp.StatusCode, string(body))
+		// Limit body size in error message to avoid huge HTML responses
+		bodyStr := string(body)
+		if len(bodyStr) > 100 {
+			bodyStr = bodyStr[:100] + "... (truncated)"
+		}
+		// Include status code in error message for better test detection
+		return nil, fmt.Errorf("traces API request failed with status %d (endpoint: %s/cat/api/traces/v2/query_range/json). Response: %s", resp.StatusCode, cfg.APIBaseURL, bodyStr)
 	}
 
 	// Parse response

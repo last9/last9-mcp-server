@@ -10,8 +10,8 @@ import (
 	"sort"
 	"time"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
-	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -71,15 +71,15 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 			}
 		}
 
-		// Get region parameter or use default from base URL
-		region := utils.GetDefaultRegion(cfg.BaseURL)
+		// Get region parameter or use default from config
+		region := cfg.Region
 		if args.Region != "" {
 			region = args.Region
 		}
 
 		// Build the API URL
-		apiURL := fmt.Sprintf("%s/cat/api/traces/v2/series/json",
-			cfg.APIBaseURL)
+		apiURL := fmt.Sprintf("%s%s",
+			cfg.APIBaseURL, constants.EndpointTracesSeries)
 
 		// Add query parameters
 		queryParams := url.Values{}
@@ -111,10 +111,10 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 		}
 
 		// Set headers
-		httpReq.Header.Set("Accept", "application/json")
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.TokenManager.GetAccessToken(ctx))
-		httpReq.Header.Set("User-Agent", "Last9-MCP-Server/1.0")
+		httpReq.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
+		httpReq.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
+		httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
+		httpReq.Header.Set(constants.HeaderUserAgent, constants.UserAgentLast9MCP)
 
 		// Execute the request
 		resp, err := client.Do(httpReq)

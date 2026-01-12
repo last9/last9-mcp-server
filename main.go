@@ -32,9 +32,10 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	fs := flag.NewFlagSet("last9-mcp", flag.ExitOnError)
 
 	var cfg models.Config
-	fs.StringVar(&cfg.AuthToken, "auth", os.Getenv("LAST9_AUTH_TOKEN"), "Last9 API auth token")
-	fs.StringVar(&cfg.BaseURL, "url", os.Getenv("LAST9_BASE_URL"), "Last9 API URL")
 	fs.StringVar(&cfg.RefreshToken, "refresh_token", os.Getenv("LAST9_REFRESH_TOKEN"), "Last9 refresh token for authentication")
+	fs.StringVar(&cfg.DatasourceName, "datasource", os.Getenv("LAST9_DATASOURCE"), "Datasource name to use (overrides default datasource)")
+	fs.StringVar(&cfg.APIHost, "api_host", os.Getenv("LAST9_API_HOST"), "API host (defaults to app.last9.io)")
+	fs.BoolVar(&cfg.DisableTelemetry, "disable_telemetry", os.Getenv("LAST9_DISABLE_TELEMETRY") == "true", "Disable OpenTelemetry tracing/metrics")
 	fs.Float64Var(&cfg.RequestRateLimit, "rate", 1, "Requests per second limit")
 	fs.IntVar(&cfg.RequestRateBurst, "burst", 1, "Request burst capacity")
 	fs.BoolVar(&cfg.HTTPMode, "http", false, "Run as HTTP server instead of STDIO")
@@ -59,23 +60,6 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 		os.Exit(0)
 	}
 
-	if cfg.AuthToken == "" {
-		if defaults.AuthToken != "" {
-			cfg.AuthToken = defaults.AuthToken
-		} else {
-			return cfg, errors.New("Last9 auth token must be provided via LAST9_AUTH_TOKEN env var")
-		}
-	}
-
-	// Set default base URL if not provided
-	if cfg.BaseURL == "" {
-		if defaults.BaseURL != "" {
-			cfg.BaseURL = defaults.BaseURL
-		} else {
-			return cfg, errors.New("Last9 base URL must be provided via LAST9_BASE_URL env var")
-		}
-	}
-
 	if cfg.RefreshToken == "" {
 		if defaults.RefreshToken != "" {
 			cfg.RefreshToken = defaults.RefreshToken
@@ -86,7 +70,6 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 
 	return cfg, nil
 }
-
 
 func main() {
 	log.Printf("Starting Last9 MCP Server v%s", Version)
@@ -100,7 +83,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
-	log.Printf("Config loaded - BaseURL: %s, HTTPMode: %t", cfg.BaseURL, cfg.HTTPMode)
+	log.Printf("Config loaded - HTTPMode: %t, Authentication: enabled", cfg.HTTPMode)
 
 	tokenManager, err := auth.NewTokenManager(cfg.RefreshToken)
 	if err != nil {
@@ -110,6 +93,12 @@ func main() {
 	cfg.TokenManager = tokenManager
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
 		log.Fatalf("failed to refresh access token: %v", err)
+	}
+
+	// Disable OpenTelemetry if requested
+	if cfg.DisableTelemetry {
+		log.Println("Telemetry disabled - setting OTEL_SDK_DISABLED=true")
+		os.Setenv("OTEL_SDK_DISABLED", "true")
 	}
 
 	// Create MCP server with new SDK
