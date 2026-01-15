@@ -4,6 +4,10 @@ import "last9-mcp/internal/auth"
 
 // Config holds the server configuration parameters
 type Config struct {
+	// Environment mode: "production" (default), "test", or "debug"
+	// In test/debug mode, authentication is skipped
+	Env string
+
 	// Last9 connection settings
 	RefreshToken string // Refresh token for authentication
 	Region       string // AWS region (e.g., us-east-1, ap-south-1)

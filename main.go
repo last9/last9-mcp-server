@@ -32,6 +32,7 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	fs := flag.NewFlagSet("last9-mcp", flag.ExitOnError)
 
 	var cfg models.Config
+	fs.StringVar(&cfg.Env, "env", os.Getenv("LAST9_ENV"), "Environment mode: production (default), test, or debug. In test/debug mode, authentication is skipped")
 	fs.StringVar(&cfg.RefreshToken, "refresh_token", os.Getenv("LAST9_REFRESH_TOKEN"), "Last9 refresh token for authentication")
 	fs.StringVar(&cfg.DatasourceName, "datasource", os.Getenv("LAST9_DATASOURCE"), "Datasource name to use (overrides default datasource)")
 	fs.StringVar(&cfg.APIHost, "api_host", os.Getenv("LAST9_API_HOST"), "API host (defaults to app.last9.io)")
@@ -60,15 +61,28 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 		os.Exit(0)
 	}
 
-	if cfg.RefreshToken == "" {
-		if defaults.RefreshToken != "" {
-			cfg.RefreshToken = defaults.RefreshToken
-		} else {
+	// Skip refresh token validation in test/debug mode
+	if cfg.Env != "test" && cfg.Env != "debug" {
+		if cfg.RefreshToken == "" {
 			return cfg, errors.New("Last9 refresh token must be provided via LAST9_REFRESH_TOKEN env var")
 		}
 	}
 
 	return cfg, nil
+}
+
+func setUpDevEnd(cfg *models.Config) {
+	cfg.TokenManager = auth.NewDummyTokenManager()
+	// Set APIBaseURL directly for test/debug mode
+	if cfg.APIHost == "" {
+		cfg.APIHost = "localhost:8080"
+	}
+
+	if cfg.OrgSlug == "" {
+		cfg.OrgSlug = "last9"
+	}
+
+	cfg.APIBaseURL = fmt.Sprintf("http://%s/v4/organizations/%s", cfg.APIHost, cfg.OrgSlug)
 }
 
 func main() {
@@ -83,16 +97,24 @@ func main() {
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
-	log.Printf("Config loaded - HTTPMode: %t, Authentication: enabled", cfg.HTTPMode)
 
-	tokenManager, err := auth.NewTokenManager(cfg.RefreshToken)
-	if err != nil {
-		log.Fatalf("failed to create token manager: %v", err)
-	}
+	// Check if running in test/debug mode
+	if cfg.Env == "test" || cfg.Env == "debug" {
+		log.Printf("Config loaded - HTTPMode: %t, Mode: %s (authentication disabled)", cfg.HTTPMode, cfg.Env)
+		setUpDevEnd(&cfg)
 
-	cfg.TokenManager = tokenManager
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		log.Fatalf("failed to refresh access token: %v", err)
+	} else {
+		log.Printf("Config loaded - HTTPMode: %t, Authentication: enabled", cfg.HTTPMode)
+
+		tokenManager, err := auth.NewTokenManager(cfg.RefreshToken)
+		if err != nil {
+			log.Fatalf("failed to create token manager: %v", err)
+		}
+
+		cfg.TokenManager = tokenManager
+		if err := utils.PopulateAPICfg(&cfg); err != nil {
+			log.Fatalf("failed to refresh access token: %v", err)
+		}
 	}
 
 	// Disable OpenTelemetry if requested

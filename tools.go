@@ -5,6 +5,7 @@ import (
 	"last9-mcp/internal/apm"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/change_events"
+	"last9-mcp/internal/discovery"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/telemetry/traces"
@@ -143,6 +144,18 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Name:        "get_change_events",
 		Description: change_events.GetChangeEventsDescription,
 	}, change_events.NewGetChangeEventsHandler(client, cfg))
+
+	// Register system discovery tool
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "discover_system_components",
+		Description: discovery.DiscoverSystemComponentsDescription,
+	}, discovery.DiscoverSystemComponentsHandler(client, cfg))
+
+	// Register metrics discovery tool
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "discover_metrics",
+		Description: discovery.DiscoverMetricsDescription,
+	}, discovery.DiscoverMetricsHandler(client, cfg))
 
 	return nil
 }
