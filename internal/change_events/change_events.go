@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -194,7 +195,12 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 			return nil, nil, fmt.Errorf("failed to marshal result: %w", err)
 		}
 
+		// Build deep link URL
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dashboardURL := dlBuilder.BuildChangeEventsLink(startTimeParam*1000, endTimeParam*1000)
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(resultJSON),

@@ -10,6 +10,7 @@ import (
 	"net/url"
 
 	"last9-mcp/internal/constants"
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -59,7 +60,12 @@ func NewGetDropRulesHandler(client *http.Client, cfg models.Config) func(context
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
 
+		// Build deep link URL for drop rules (uses default cluster)
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dashboardURL := dlBuilder.BuildDropRulesLink("default")
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(jsonData),
@@ -188,7 +194,12 @@ func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(context.
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
 
+		// Build deep link URL for drop rules (uses default cluster)
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dashboardURL := dlBuilder.BuildDropRulesLink("default")
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseData),

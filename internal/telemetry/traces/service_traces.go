@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"last9-mcp/internal/constants"
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -273,7 +274,19 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
 
+		// Build deep link URL
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		// Build pipeline from filters
+		pipeline := []map[string]interface{}{
+			{
+				"type":  "filter",
+				"query": map[string]interface{}{"$and": buildGetTracesFilters(queryParams)},
+			},
+		}
+		dashboardURL := dlBuilder.BuildTracesLink(startTime.UnixMilli(), endTime.UnixMilli(), pipeline, queryParams.TraceID, "")
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(jsonData),

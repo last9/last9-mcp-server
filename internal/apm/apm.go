@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -272,7 +273,13 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
+
+		// Build deep link URL
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dashboardURL := dlBuilder.BuildServiceCatalogLink(startTimeParam*1000, endTimeParam*1000, "", env, "")
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(returnText),
@@ -715,7 +722,12 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
 
+		// Build deep link URL
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dashboardURL := dlBuilder.BuildServiceCatalogLink(startTimeParam*1000, endTimeParam*1000, serviceName, env, "")
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(resultJSON),
@@ -1301,7 +1313,13 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
+
+		// Build deep link URL
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dashboardURL := dlBuilder.BuildServiceCatalogLink(startTimeParam*1000, endTimeParam*1000, serviceName, env, "operations")
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(resultJSON),
@@ -1784,7 +1802,13 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
+
+		// Build deep link URL
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dashboardURL := dlBuilder.BuildServiceCatalogLink(startTimeParam*1000, endTimeParam*1000, serviceName, env, "dependencies")
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(resultJSON),
@@ -1871,7 +1895,13 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
+
+		// Build deep link URL (Grafana uses milliseconds)
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dashboardURL := dlBuilder.BuildGrafanaLink(startTimeParam*1000, endTimeParam*1000)
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseBodyBytes),
@@ -1943,7 +1973,13 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
+
+		// Build deep link URL (Grafana uses milliseconds, use 1 hour window around the instant)
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dashboardURL := dlBuilder.BuildGrafanaLink((timeParam-3600)*1000, timeParam*1000)
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseBodyBytes),
@@ -2062,8 +2098,13 @@ func NewServiceEnvironmentsHandler(client *http.Client, cfg models.Config) func(
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 
-		// Return the environments as the content
+		// Build deep link URL
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dashboardURL := dlBuilder.BuildServiceCatalogLink(startTimeParam*1000, endTimeParam*1000, "", "", "")
+
+		// Return the environments as the content with deep link
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseBodyBytes),
@@ -2141,7 +2182,13 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
+
+		// Build deep link URL (Grafana uses milliseconds)
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dashboardURL := dlBuilder.BuildGrafanaLink(startTimeParam*1000, endTimeParam*1000)
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseBodyBytes),
@@ -2214,7 +2261,13 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
+
+		// Build deep link URL (Grafana uses milliseconds)
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dashboardURL := dlBuilder.BuildGrafanaLink(startTimeParam*1000, endTimeParam*1000)
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseBodyBytes),

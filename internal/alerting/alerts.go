@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"last9-mcp/internal/constants"
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -207,7 +208,12 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			formattedResponse += "\n"
 		}
 
+		// Build deep link URL
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dashboardURL := dlBuilder.BuildAlertingLink(0, 0, "", "")
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: formattedResponse,
@@ -350,7 +356,12 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 			}
 		}
 
+		// Build deep link URL
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dashboardURL := dlBuilder.BuildAlertingLink((timestamp-window)*1000, timestamp*1000, "", "")
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: formattedResponse,

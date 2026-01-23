@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -129,7 +130,20 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("failed to format response: %w", err)
 		}
 
+		// Build deep link URL with service filter pipeline
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		pipeline := []map[string]interface{}{
+			{
+				"type": "filter",
+				"query": map[string]interface{}{
+					"$eq": []interface{}{"service", args.Service},
+				},
+			},
+		}
+		dashboardURL := dlBuilder.BuildLogsLink(startTime.UnixMilli(), endTime.UnixMilli(), pipeline)
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseJSON),
