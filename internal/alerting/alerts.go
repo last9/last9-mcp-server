@@ -208,12 +208,16 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			formattedResponse += "\n"
 		}
 
-		// Build deep link URL
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
-		dashboardURL := dlBuilder.BuildAlertingLink(0, 0, "", "")
+		// Build deep link URL to compass entity health page using the first alert rule
+		var meta mcp.Meta
+		if len(alertConfig) > 0 {
+			dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+			dashboardURL := dlBuilder.BuildCompassEntityHealthLink(alertConfig[0].EntityID, alertConfig[0].RuleName)
+			meta = deeplink.ToMeta(dashboardURL)
+		}
 
 		return &mcp.CallToolResult{
-			Meta: deeplink.ToMeta(dashboardURL),
+			Meta: meta,
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: formattedResponse,

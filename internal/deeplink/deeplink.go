@@ -10,14 +10,13 @@ import (
 
 // Route constants matching dashboard routes
 const (
-	RouteLogs           = "logs"
-	RouteTraces         = "traces"
-	RouteExceptions     = "exceptions"
-	RouteServiceCatalog = "service-catalog"
-	RouteGrafana        = "grafana"
-	RouteAlerting       = "alerting/monitor"
-	RouteChangeEvents   = "compass/changeboard"
-	RouteDropRules      = "control-plane/%s/drop" // requires clusterId
+	RouteLogs                = "logs"
+	RouteTraces              = "traces"
+	RouteExceptions          = "exceptions"
+	RouteServiceCatalog      = "service-catalog"
+	RouteAlerting            = "alerting/monitor"
+	RouteDropRules           = "control-plane/%s/drop" // requires clusterId
+	RouteCompassEntityHealth = "compass/entities/%s/health"
 )
 
 // Builder helps construct deep links
@@ -94,14 +93,6 @@ func (b *Builder) BuildServiceCatalogLink(fromMs, toMs int64, serviceName, env, 
 	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteServiceCatalog, params.Encode())
 }
 
-// BuildGrafanaLink creates a Grafana/metrics dashboard deep link
-func (b *Builder) BuildGrafanaLink(fromMs, toMs int64) string {
-	params := url.Values{}
-	params.Set("from", fmt.Sprintf("%d", fromMs)) // Grafana uses milliseconds
-	params.Set("to", fmt.Sprintf("%d", toMs))
-	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteGrafana, params.Encode())
-}
-
 // BuildAlertingLink creates an alerting dashboard deep link
 func (b *Builder) BuildAlertingLink(fromMs, toMs int64, severity, ruleID string) string {
 	params := url.Values{}
@@ -120,17 +111,22 @@ func (b *Builder) BuildAlertingLink(fromMs, toMs int64, severity, ruleID string)
 	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteAlerting, params.Encode())
 }
 
-// BuildChangeEventsLink creates a change events dashboard deep link
-func (b *Builder) BuildChangeEventsLink(fromMs, toMs int64) string {
-	params := url.Values{}
-	params.Set("from", fmt.Sprintf("%d", fromMs/1000))
-	params.Set("to", fmt.Sprintf("%d", toMs/1000))
-	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteChangeEvents, params.Encode())
-}
-
 // BuildDropRulesLink creates a drop rules dashboard deep link
 func (b *Builder) BuildDropRulesLink(clusterID string) string {
 	route := fmt.Sprintf(RouteDropRules, clusterID)
+	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, route)
+}
+
+// BuildCompassEntityHealthLink creates a compass entity health page deep link
+func (b *Builder) BuildCompassEntityHealthLink(entityID, ruleName string) string {
+	route := fmt.Sprintf(RouteCompassEntityHealth, entityID)
+	params := url.Values{}
+	if ruleName != "" {
+		params.Set("rule_name", ruleName)
+	}
+	if len(params) > 0 {
+		return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, route, params.Encode())
+	}
 	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, route)
 }
 

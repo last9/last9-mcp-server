@@ -1896,12 +1896,7 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 
-		// Build deep link URL (Grafana uses milliseconds)
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
-		dashboardURL := dlBuilder.BuildGrafanaLink(startTimeParam*1000, endTimeParam*1000)
-
 		return &mcp.CallToolResult{
-			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseBodyBytes),
@@ -1974,12 +1969,7 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 
-		// Build deep link URL (Grafana uses milliseconds, use 1 hour window around the instant)
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
-		dashboardURL := dlBuilder.BuildGrafanaLink((timeParam-3600)*1000, timeParam*1000)
-
 		return &mcp.CallToolResult{
-			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseBodyBytes),
@@ -2183,12 +2173,7 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 
-		// Build deep link URL (Grafana uses milliseconds)
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
-		dashboardURL := dlBuilder.BuildGrafanaLink(startTimeParam*1000, endTimeParam*1000)
-
 		return &mcp.CallToolResult{
-			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseBodyBytes),
@@ -2262,12 +2247,7 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 
-		// Build deep link URL (Grafana uses milliseconds)
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
-		dashboardURL := dlBuilder.BuildGrafanaLink(startTimeParam*1000, endTimeParam*1000)
-
 		return &mcp.CallToolResult{
-			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseBodyBytes),
