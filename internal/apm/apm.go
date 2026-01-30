@@ -276,7 +276,7 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 
 		// Build deep link URL
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
-		dashboardURL := dlBuilder.BuildServiceCatalogLink(startTimeParam*1000, endTimeParam*1000, "", env, "")
+		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, "", env, "")
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
@@ -724,7 +724,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 
 		// Build deep link URL
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
-		dashboardURL := dlBuilder.BuildServiceCatalogLink(startTimeParam*1000, endTimeParam*1000, serviceName, env, "")
+		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, env, "")
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
@@ -1316,7 +1316,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 
 		// Build deep link URL
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
-		dashboardURL := dlBuilder.BuildServiceCatalogLink(startTimeParam*1000, endTimeParam*1000, serviceName, env, "operations")
+		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, env, "operations")
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
@@ -1805,7 +1805,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 
 		// Build deep link URL
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
-		dashboardURL := dlBuilder.BuildServiceCatalogLink(startTimeParam*1000, endTimeParam*1000, serviceName, env, "dependencies")
+		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, env, "dependency")
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
@@ -2088,13 +2088,8 @@ func NewServiceEnvironmentsHandler(client *http.Client, cfg models.Config) func(
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 
-		// Build deep link URL
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
-		dashboardURL := dlBuilder.BuildServiceCatalogLink(startTimeParam*1000, endTimeParam*1000, "", "", "")
-
-		// Return the environments as the content with deep link
+		// Return the environments as the content
 		return &mcp.CallToolResult{
-			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseBodyBytes),

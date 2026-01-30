@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"last9-mcp/internal/constants"
-	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -177,13 +176,7 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 			summary += fmt.Sprintf("%s\n", attr)
 		}
 
-		// Build deep link URL
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
-		dashboardURL := dlBuilder.BuildTracesLink(startTime*1000, endTime*1000, nil, "", "")
-
-		// Return the result with deep link
 		return &mcp.CallToolResult{
-			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: summary,

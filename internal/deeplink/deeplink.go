@@ -15,6 +15,7 @@ const (
 	RouteExceptions          = "exceptions"
 	RouteServiceCatalog      = "service-catalog"
 	RouteAlerting            = "alerting/monitor"
+	RouteAlertingGroups      = "alerting/groups"
 	RouteDropRules           = "control-plane/%s/drop" // requires clusterId
 	RouteCompassEntityHealth = "compass/entities/%s/health"
 )
@@ -128,6 +129,32 @@ func (b *Builder) BuildCompassEntityHealthLink(entityID, ruleName string) string
 		return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, route, params.Encode())
 	}
 	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, route)
+}
+
+// BuildAPMServiceLink creates a deep link to the APM service catalog page with the service name in the path
+// and environment filter as a JSON array
+func (b *Builder) BuildAPMServiceLink(fromMs, toMs int64, serviceName, env, tab string) string {
+	params := url.Values{}
+	params.Set("live", "true")
+	params.Set("from", fmt.Sprintf("%d", fromMs/1000))
+	params.Set("to", fmt.Sprintf("%d", toMs/1000))
+	if env != "" && env != ".*" {
+		// Format: ["deployment_environment=\"{env}\""]
+		filterValue := fmt.Sprintf(`["deployment_environment=\"%s\""]`, env)
+		params.Set("filter", filterValue)
+	}
+	if tab != "" {
+		params.Set("activeServicePanelTab", tab)
+	}
+	if serviceName != "" {
+		return fmt.Sprintf("/v2/organizations/%s/%s/%s?%s", b.orgSlug, RouteServiceCatalog, serviceName, params.Encode())
+	}
+	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteServiceCatalog, params.Encode())
+}
+
+// BuildAlertingGroupsLink creates a deep link to the alerting groups page
+func (b *Builder) BuildAlertingGroupsLink() string {
+	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, RouteAlertingGroups)
 }
 
 // ToMeta converts a dashboard URL to MCP Meta format
