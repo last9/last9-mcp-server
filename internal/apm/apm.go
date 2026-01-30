@@ -275,7 +275,7 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 		}
 
 		// Build deep link URL
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, "", env, "")
 
 		return &mcp.CallToolResult{
@@ -723,7 +723,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}
 
 		// Build deep link URL
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, env, "")
 
 		return &mcp.CallToolResult{
@@ -1315,7 +1315,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 
 		// Build deep link URL
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, env, "operations")
 
 		return &mcp.CallToolResult{
@@ -1804,7 +1804,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 
 		// Build deep link URL
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, env, "dependency")
 
 		return &mcp.CallToolResult{

@@ -96,7 +96,7 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	}
 
 	// Build deep link URL
-	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	dashboardURL := dlBuilder.BuildTracesLink(startTime, endTime, tracejsonQuery, "", "")
 
 	// Return the result in MCP format with deep link

@@ -67,7 +67,7 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	}
 
 	// Build deep link URL
-	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	dashboardURL := dlBuilder.BuildLogsLink(startTime, endTime, logjsonQuery)
 
 	// Return the result in MCP format with deep link

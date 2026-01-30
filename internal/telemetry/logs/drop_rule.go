@@ -60,9 +60,9 @@ func NewGetDropRulesHandler(client *http.Client, cfg models.Config) func(context
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
 
-		// Build deep link URL for drop rules (uses default cluster)
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
-		dashboardURL := dlBuilder.BuildDropRulesLink("default")
+		// Build deep link URL for drop rules
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
+		dashboardURL := dlBuilder.BuildDropRulesLink()
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
@@ -194,9 +194,9 @@ func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(context.
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
 
-		// Build deep link URL for drop rules (uses default cluster)
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
-		dashboardURL := dlBuilder.BuildDropRulesLink("default")
+		// Build deep link URL for drop rules
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
+		dashboardURL := dlBuilder.BuildDropRulesLink()
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),

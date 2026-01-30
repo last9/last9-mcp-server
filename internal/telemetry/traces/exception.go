@@ -181,7 +181,7 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 		}
 
 		// Build deep link URL
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 		dashboardURL := dlBuilder.BuildExceptionsLink(startMs, endMs, args.ServiceName, "")
 
 		return &mcp.CallToolResult{

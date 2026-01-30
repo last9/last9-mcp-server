@@ -209,7 +209,7 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 		}
 
 		// Build deep link URL to alerting groups page
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 		dashboardURL := dlBuilder.BuildAlertingGroupsLink()
 
 		return &mcp.CallToolResult{
@@ -357,7 +357,7 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 		}
 
 		// Build deep link URL
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 		dashboardURL := dlBuilder.BuildAlertingLink((timestamp-window)*1000, timestamp*1000, "", "")
 
 		return &mcp.CallToolResult{

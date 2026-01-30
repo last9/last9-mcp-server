@@ -131,7 +131,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		}
 
 		// Build deep link URL with service filter pipeline
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug)
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 		pipeline := []map[string]interface{}{
 			{
 				"type": "filter",

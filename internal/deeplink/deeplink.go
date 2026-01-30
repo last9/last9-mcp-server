@@ -22,12 +22,13 @@ const (
 
 // Builder helps construct deep links
 type Builder struct {
-	orgSlug string
+	orgSlug   string
+	clusterID string
 }
 
-// NewBuilder creates a new deep link builder for the given organization
-func NewBuilder(orgSlug string) *Builder {
-	return &Builder{orgSlug: orgSlug}
+// NewBuilder creates a new deep link builder for the given organization and cluster
+func NewBuilder(orgSlug, clusterID string) *Builder {
+	return &Builder{orgSlug: orgSlug, clusterID: clusterID}
 }
 
 // BuildLogsLink creates a logs dashboard deep link
@@ -35,6 +36,9 @@ func (b *Builder) BuildLogsLink(fromMs, toMs int64, pipeline any) string {
 	params := url.Values{}
 	params.Set("from", fmt.Sprintf("%d", fromMs/1000)) // convert ms to seconds
 	params.Set("to", fmt.Sprintf("%d", toMs/1000))
+	if b.clusterID != "" {
+		params.Set("cluster", b.clusterID)
+	}
 	if pipeline != nil {
 		if pipelineJSON, err := json.Marshal(pipeline); err == nil {
 			params.Set("pipeline", string(pipelineJSON))
@@ -48,6 +52,9 @@ func (b *Builder) BuildTracesLink(fromMs, toMs int64, pipeline any, traceID, spa
 	params := url.Values{}
 	params.Set("from", fmt.Sprintf("%d", fromMs/1000))
 	params.Set("to", fmt.Sprintf("%d", toMs/1000))
+	if b.clusterID != "" {
+		params.Set("cluster", b.clusterID)
+	}
 	if pipeline != nil {
 		if pipelineJSON, err := json.Marshal(pipeline); err == nil {
 			params.Set("pipeline", string(pipelineJSON))
@@ -68,6 +75,9 @@ func (b *Builder) BuildExceptionsLink(fromMs, toMs int64, serviceName, exception
 	params := url.Values{}
 	params.Set("from", fmt.Sprintf("%d", fromMs/1000))
 	params.Set("to", fmt.Sprintf("%d", toMs/1000))
+	if b.clusterID != "" {
+		params.Set("cluster", b.clusterID)
+	}
 	if serviceName != "" {
 		params.Set("filter", serviceName)
 	}
@@ -82,6 +92,9 @@ func (b *Builder) BuildServiceCatalogLink(fromMs, toMs int64, serviceName, env, 
 	params := url.Values{}
 	params.Set("from", fmt.Sprintf("%d", fromMs/1000))
 	params.Set("to", fmt.Sprintf("%d", toMs/1000))
+	if b.clusterID != "" {
+		params.Set("cluster", b.clusterID)
+	}
 	if serviceName != "" {
 		params.Set("current_service_detail", serviceName)
 	}
@@ -113,7 +126,11 @@ func (b *Builder) BuildAlertingLink(fromMs, toMs int64, severity, ruleID string)
 }
 
 // BuildDropRulesLink creates a drop rules dashboard deep link
-func (b *Builder) BuildDropRulesLink(clusterID string) string {
+func (b *Builder) BuildDropRulesLink() string {
+	clusterID := b.clusterID
+	if clusterID == "" {
+		clusterID = "default"
+	}
 	route := fmt.Sprintf(RouteDropRules, clusterID)
 	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, route)
 }
@@ -138,6 +155,9 @@ func (b *Builder) BuildAPMServiceLink(fromMs, toMs int64, serviceName, env, tab 
 	params.Set("live", "true")
 	params.Set("from", fmt.Sprintf("%d", fromMs/1000))
 	params.Set("to", fmt.Sprintf("%d", toMs/1000))
+	if b.clusterID != "" {
+		params.Set("cluster", b.clusterID)
+	}
 	if env != "" && env != ".*" {
 		// Format: ["deployment_environment=\"{env}\""]
 		filterValue := fmt.Sprintf(`["deployment_environment=\"%s\""]`, env)
