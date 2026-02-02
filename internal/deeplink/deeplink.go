@@ -71,18 +71,12 @@ func (b *Builder) BuildTracesLink(fromMs, toMs int64, pipeline any, traceID, spa
 }
 
 // BuildExceptionsLink creates an exceptions dashboard deep link
-func (b *Builder) BuildExceptionsLink(fromMs, toMs int64, serviceName, exceptionID string) string {
+func (b *Builder) BuildExceptionsLink(fromMs, toMs int64) string {
 	params := url.Values{}
 	params.Set("from", fmt.Sprintf("%d", fromMs/1000))
 	params.Set("to", fmt.Sprintf("%d", toMs/1000))
 	if b.clusterID != "" {
 		params.Set("cluster", b.clusterID)
-	}
-	if serviceName != "" {
-		params.Set("filter", serviceName)
-	}
-	if exceptionID != "" {
-		params.Set("exception_id", exceptionID)
 	}
 	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteExceptions, params.Encode())
 }
