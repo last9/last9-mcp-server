@@ -96,11 +96,15 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: logs.GetDropRulesDescription,
 	}, logs.NewGetDropRulesHandler(client, cfg))
 
-	// Register add drop rule tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
-		Name:        "add_drop_rule",
-		Description: logs.AddDropRuleDescription,
-	}, logs.NewAddDropRuleHandler(client, cfg))
+	// DISABLED: Write/destroy tools temporarily disabled pending proper RBAC and
+	// authorization implementation on the UI. Flagged by VAPT team.
+	// TODO: Re-enable once UI-level authorization controls are in place.
+	//
+	// // Register add drop rule tool
+	// last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	// 	Name:        "add_drop_rule",
+	// 	Description: logs.AddDropRuleDescription,
+	// }, logs.NewAddDropRuleHandler(client, cfg))
 
 	// Register alert config tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
