@@ -131,13 +131,13 @@ func (b *Builder) BuildDropRulesLink() string {
 	if clusterID == "" {
 		clusterID = "default"
 	}
-	route := fmt.Sprintf(RouteDropRules, clusterID)
+	route := fmt.Sprintf(RouteDropRules, url.PathEscape(clusterID))
 	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, route)
 }
 
 // BuildCompassEntityHealthLink creates a compass entity health page deep link
 func (b *Builder) BuildCompassEntityHealthLink(entityID, ruleName string) string {
-	route := fmt.Sprintf(RouteCompassEntityHealth, entityID)
+	route := fmt.Sprintf(RouteCompassEntityHealth, url.PathEscape(entityID))
 	params := url.Values{}
 	if ruleName != "" {
 		params.Set("rule_name", ruleName)
@@ -159,15 +159,15 @@ func (b *Builder) BuildAPMServiceLink(fromMs, toMs int64, serviceName, env, tab 
 		params.Set("cluster", b.clusterID)
 	}
 	if env != "" && env != ".*" {
-		// Format: ["deployment_environment=\"{env}\""]
-		filterValue := fmt.Sprintf(`["deployment_environment=\"%s\""]`, env)
-		params.Set("filter", filterValue)
+		if filterValue, err := json.Marshal([]string{fmt.Sprintf(`deployment_environment="%s"`, env)}); err == nil {
+			params.Set("filter", string(filterValue))
+		}
 	}
 	if tab != "" {
 		params.Set("activeServicePanelTab", tab)
 	}
 	if serviceName != "" {
-		return fmt.Sprintf("/v2/organizations/%s/%s/%s?%s", b.orgSlug, RouteServiceCatalog, serviceName, params.Encode())
+		return fmt.Sprintf("/v2/organizations/%s/%s/%s?%s", b.orgSlug, RouteServiceCatalog, url.PathEscape(serviceName), params.Encode())
 	}
 	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteServiceCatalog, params.Encode())
 }
