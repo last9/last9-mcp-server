@@ -83,7 +83,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
-	log.Printf("Config loaded - HTTPMode: %t, Authentication: enabled", cfg.HTTPMode)
+
+	// SECURITY: Mutating tools disabled by default until RBAC is implemented on UI
+	// Flagged by VAPT team - requires proper authorization before enabling
+	// Override with LAST9_DISABLE_MUTATING_TOOLS=false to enable (not recommended)
+	cfg.DisableMutatingTools = os.Getenv("LAST9_DISABLE_MUTATING_TOOLS") != "false"
+
+	log.Printf("Config loaded - HTTPMode: %t, MutatingToolsDisabled: %t, Authentication: enabled", cfg.HTTPMode, cfg.DisableMutatingTools)
 
 	tokenManager, err := auth.NewTokenManager(cfg.RefreshToken)
 	if err != nil {

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"log"
+
 	"last9-mcp/internal/alerting"
 	"last9-mcp/internal/apm"
 	"last9-mcp/internal/auth"
@@ -14,9 +16,40 @@ import (
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 )
 
+// SECURITY BLACKLIST: Tools that perform write/destroy operations.
+// WARNING: These tools are DISABLED by default (DisableMutatingTools=true).
+//
+// IMPORTANT - VAPT Team Flag:
+// These mutating operations require proper RBAC and authorization to be
+// implemented on the Last9 UI before they can be safely exposed via MCP.
+// Until authorization controls are in place, these tools remain disabled
+// in production environments.
+//
+// Before enabling mutating tools:
+// 1. Implement proper RBAC on the Last9 UI
+// 2. Add authorization checks for the user/agent making the request
+// 3. Add audit logging for all mutating operations
+// 4. Review with security team before deployment
+//
+// See: internal/telemetry/logs/drop_rule.go for implementation details.
+var mutatingToolsBlacklist = map[string]bool{
+	"add_drop_rule": true, // Creates drop rules - PUT /logs/settings/routing
+	// Add future mutating tools here as they are implemented
+}
+
 // registerAllTools registers all tools with the MCP server using the new SDK pattern
 func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error {
 	client := auth.GetHTTPClient()
+
+	// shouldRegisterTool checks if a tool should be registered based on security blacklist.
+	// SECURITY: Mutating tools are disabled by default until RBAC is implemented on UI.
+	shouldRegisterTool := func(toolName string) bool {
+		if cfg.DisableMutatingTools && mutatingToolsBlacklist[toolName] {
+			log.Printf("SECURITY: Skipping blacklisted mutating tool '%s' - requires RBAC/authorization on UI (VAPT flagged)", toolName)
+			return false
+		}
+		return true
+	}
 
 	// Register exceptions tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
@@ -96,11 +129,15 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: logs.GetDropRulesDescription,
 	}, logs.NewGetDropRulesHandler(client, cfg))
 
-	// Register add drop rule tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
-		Name:        "add_drop_rule",
-		Description: logs.AddDropRuleDescription,
-	}, logs.NewAddDropRuleHandler(client, cfg))
+	// Register add drop rule tool (MUTATING - blacklisted by default)
+	// SECURITY: This tool creates drop rules via PUT request
+	// Requires RBAC/authorization on UI before enabling (VAPT flagged)
+	if shouldRegisterTool("add_drop_rule") {
+		last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+			Name:        "add_drop_rule",
+			Description: logs.AddDropRuleDescription,
+		}, logs.NewAddDropRuleHandler(client, cfg))
+	}
 
 	// Register alert config tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{

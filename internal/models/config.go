@@ -24,6 +24,14 @@ type Config struct {
 	DatasourceName   string // Datasource name to use (overrides default datasource)
 	APIHost          string // API host (defaults to app.last9.io)
 	DisableTelemetry bool   // Disable OpenTelemetry tracing/metrics
+
+	// SECURITY: Disables mutating tools (write/destroy operations) - DEFAULT: true
+	// IMPORTANT: This flag is required until proper RBAC and authorization
+	// is implemented on the UI. Flagged by VAPT team for security review.
+	// Mutating tools like 'add_drop_rule' create/modify resources and
+	// should only be enabled after authorization controls are in place.
+	// Set LAST9_DISABLE_MUTATING_TOOLS=false to enable (NOT RECOMMENDED).
+	DisableMutatingTools bool
 	// Prometheus configuration
 	PrometheusReadURL  string // URL for Prometheus read API
 	PrometheusUsername string // Username for Prometheus authentication
