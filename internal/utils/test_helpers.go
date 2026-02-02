@@ -91,3 +91,4 @@ func GetTextContent(t *testing.T, result *mcp.CallToolResult) string {
 	}
 	return textContent.Text
 }
+

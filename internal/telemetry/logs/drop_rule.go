@@ -89,20 +89,7 @@ type AddDropRuleArgs struct {
 	Filters []DropRuleFilter `json:"filters" jsonschema:"Array of filter conditions to match logs for dropping"`
 }
 
-// NewAddDropRuleHandler creates a handler for adding new drop rules for logs.
-//
-// SECURITY WARNING - VAPT Team Flag:
-// This is a MUTATING operation (HTTP PUT) that creates drop rules in the
-// Last9 Control Plane. This tool is blacklisted by default until proper
-// RBAC and authorization is implemented on the UI layer.
-//
-// Before enabling this tool in production:
-// 1. Implement proper RBAC on the Last9 UI
-// 2. Add authorization checks for the user/agent making the request
-// 3. Add audit logging for all drop rule creation operations
-// 4. Review with security team before deployment
-//
-// Tool: add_drop_rule | Method: PUT | Endpoint: /logs/settings/routing
+// NewAddDropRuleHandler creates a handler for adding new drop rules for logs
 func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, AddDropRuleArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args AddDropRuleArgs) (*mcp.CallToolResult, any, error) {
 		// First refresh the access token
