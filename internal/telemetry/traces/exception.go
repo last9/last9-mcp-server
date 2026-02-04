@@ -60,12 +60,29 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 		filters := make([]map[string]interface{}, 0)
 
 		// Filter for traces with exceptions (exception.type exists and is not empty)
-		filters = append(filters, map[string]interface{}{
-			"$exists": []interface{}{"attributes['exception.type']"},
-		})
-		filters = append(filters, map[string]interface{}{
-			"$ne": []interface{}{"attributes['exception.type']", ""},
-		})
+		exceptionTypeFilter := map[string]interface{}{
+			"$or": []interface{}{
+				map[string]interface{}{
+					"$and": []interface{}{
+						map[string]interface{}{"$exists": []interface{}{"SpanAttributes['exception.type']"}},
+						map[string]interface{}{"$ne": []interface{}{"SpanAttributes['exception.type']", ""}},
+					},
+				},
+				map[string]interface{}{
+					"$and": []interface{}{
+						map[string]interface{}{"$exists": []interface{}{"EventsAttributes['exception.type']"}},
+						map[string]interface{}{"$ne": []interface{}{"EventsAttributes['exception.type']", ""}},
+					},
+				},
+				map[string]interface{}{
+					"$and": []interface{}{
+						map[string]interface{}{"$exists": []interface{}{"attributes['exception.type']"}},
+						map[string]interface{}{"$ne": []interface{}{"attributes['exception.type']", ""}},
+					},
+				},
+			},
+		}
+		filters = append(filters, exceptionTypeFilter)
 
 		// Filter by service name if provided
 		if args.ServiceName != "" {
@@ -135,15 +152,44 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 			}
 
 			// Extract attributes if they exist
-			if attrs, ok := trace["attributes"].(map[string]interface{}); ok {
-				exception["exception_type"] = attrs["exception.type"]
-				exception["exception_message"] = attrs["exception.message"]
-				exception["exception_stacktrace"] = attrs["exception.stacktrace"]
-				exception["exception_escaped"] = attrs["exception.escaped"]
+			extracted := false
+			if attrs, ok := trace["SpanAttributes"].(map[string]interface{}); ok {
+				if _, ok := attrs["exception.type"]; ok {
+					exception["exception_type"] = attrs["exception.type"]
+					exception["exception_message"] = attrs["exception.message"]
+					exception["exception_stacktrace"] = attrs["exception.stacktrace"]
+					exception["exception_escaped"] = attrs["exception.escaped"]
+					extracted = true
+				}
+			}
+			if !extracted {
+				if attrs, ok := trace["attributes"].(map[string]interface{}); ok {
+					if _, ok := attrs["exception.type"]; ok {
+						exception["exception_type"] = attrs["exception.type"]
+						exception["exception_message"] = attrs["exception.message"]
+						exception["exception_stacktrace"] = attrs["exception.stacktrace"]
+						exception["exception_escaped"] = attrs["exception.escaped"]
+						extracted = true
+					}
+				}
+			}
+			if !extracted {
+				if events, ok := trace["EventsAttributes"].([]interface{}); ok && len(events) > 0 {
+					if first, ok := events[0].(map[string]interface{}); ok {
+						exception["exception_type"] = first["exception.type"]
+						exception["exception_message"] = first["exception.message"]
+						exception["exception_stacktrace"] = first["exception.stacktrace"]
+						exception["exception_escaped"] = first["exception.escaped"]
+					}
+				}
 			}
 
 			// Extract resource attributes if they exist
-			if resources, ok := trace["resources"].(map[string]interface{}); ok {
+			if resources, ok := trace["ResourceAttributes"].(map[string]interface{}); ok {
+				exception["deployment_environment"] = resources["deployment.environment"]
+				exception["service_namespace"] = resources["service.namespace"]
+				exception["service_instance_id"] = resources["service.instance.id"]
+			} else if resources, ok := trace["resources"].(map[string]interface{}); ok {
 				exception["deployment_environment"] = resources["deployment.environment"]
 				exception["service_namespace"] = resources["service.namespace"]
 				exception["service_instance_id"] = resources["service.instance.id"]
