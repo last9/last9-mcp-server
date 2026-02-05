@@ -194,7 +194,6 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(con
 			}
 		}
 
-		// Return the result
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{

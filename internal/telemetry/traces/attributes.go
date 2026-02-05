@@ -178,7 +178,6 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 			summary += fmt.Sprintf("%s\n", attr)
 		}
 
-		// Return the result
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{

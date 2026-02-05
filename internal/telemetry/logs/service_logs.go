@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -129,7 +130,68 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("failed to format response: %w", err)
 		}
 
+		// Build deep link URL with filters matching dashboard conventions
+		// Dashboard expects a single filter stage with $and containing all conditions
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
+		andConditions := []interface{}{
+			map[string]interface{}{
+				"$eq": []interface{}{"ServiceName", args.Service},
+			},
+		}
+
+		// Add env filter if provided (uses attributes['deployment_environment'] format)
+		if args.Env != "" {
+			andConditions = append(andConditions, map[string]interface{}{
+				"$ieq": []interface{}{"attributes['deployment_environment']", args.Env},
+			})
+		}
+
+		// Add severity filters if provided (uses SeverityText with case-insensitive regex)
+		if len(args.SeverityFilters) > 0 {
+			orConditions := make([]interface{}, 0, len(args.SeverityFilters))
+			for _, severity := range args.SeverityFilters {
+				if severity != "" {
+					orConditions = append(orConditions, map[string]interface{}{
+						"$iregex": []interface{}{"SeverityText", severity},
+					})
+				}
+			}
+			if len(orConditions) > 0 {
+				andConditions = append(andConditions, map[string]interface{}{
+					"$or": orConditions,
+				})
+			}
+		}
+
+		// Add body filters if provided (uses Body with case-insensitive contains)
+		if len(args.BodyFilters) > 0 {
+			orConditions := make([]interface{}, 0, len(args.BodyFilters))
+			for _, bodyPattern := range args.BodyFilters {
+				if bodyPattern != "" {
+					orConditions = append(orConditions, map[string]interface{}{
+						"$icontains": []interface{}{"Body", bodyPattern},
+					})
+				}
+			}
+			if len(orConditions) > 0 {
+				andConditions = append(andConditions, map[string]interface{}{
+					"$or": orConditions,
+				})
+			}
+		}
+
+		pipeline := []map[string]interface{}{
+			{
+				"type": "filter",
+				"query": map[string]interface{}{
+					"$and": andConditions,
+				},
+			},
+		}
+		dashboardURL := dlBuilder.BuildLogsLink(startTime.UnixMilli(), endTime.UnixMilli(), pipeline)
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseJSON),

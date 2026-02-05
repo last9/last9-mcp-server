@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -65,8 +66,13 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		return nil, fmt.Errorf("failed to decode response: %v", err)
 	}
 
-	// Return the result in MCP format
+	// Build deep link URL
+	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
+	dashboardURL := dlBuilder.BuildLogsLink(startTime, endTime, logjsonQuery)
+
+	// Return the result in MCP format with deep link
 	return &mcp.CallToolResult{
+		Meta: deeplink.ToMeta(dashboardURL),
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: formatJSON(result),

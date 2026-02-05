@@ -362,8 +362,9 @@ type Datasource struct {
 	URL        string `json:"url"`
 	Region     string `json:"region"`
 	Properties struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
+		Username          string `json:"username"`
+		Password          string `json:"password"`
+		LevitateClusterID string `json:"levitate_cluster_id"`
 	} `json:"properties"`
 }
 
@@ -484,6 +485,7 @@ func PopulateAPICfg(cfg *models.Config) error {
 	cfg.PrometheusUsername = selectedDatasource.Properties.Username
 	cfg.PrometheusPassword = selectedDatasource.Properties.Password
 	cfg.Region = selectedDatasource.Region
+	cfg.ClusterID = selectedDatasource.Properties.LevitateClusterID
 
 	if cfg.PrometheusReadURL == "" || cfg.PrometheusUsername == "" || cfg.PrometheusPassword == "" || cfg.Region == "" {
 		return errors.New("selected datasource missing required properties")
