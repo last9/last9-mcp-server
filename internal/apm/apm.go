@@ -99,9 +99,9 @@ const GetServiceSummaryDescription = `
 	- error rate in requests per minute (rpm)
 	- p95 response time in milliseconds
 	Parameters:
-	- start_time: (Required) Start time of the time range in ISO format.
-	- end_time: (Required) End time of the time range in ISO format.
-	- env: (Required) Environment to filter by. If not provided, defaults to all environments.
+	- start_time: (Optional) Start time of the time range in ISO format. Defaults to end_time - 1 hour.
+	- end_time: (Optional) End time of the time range in ISO format. Defaults to current time.
+	- env: (Optional) Environment to filter by. If not provided, defaults to all environments.
 `
 
 func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceSummaryArgs) (*mcp.CallToolResult, any, error) {
@@ -317,8 +317,8 @@ const GetServicePerformanceDetails = `
 	- top_operations.by_error_rate: Top 10 operations by error rate. The format of this is a list of dicts with operation name and error count.
 	- top_errors: Top 10 errors or exceptions by count. The format of this is a list of dicts with exception type (or http error code) and count. 
 	Parameters:
-	- start_time: (Required) Start time of the time range in ISO format.
-	- end_time: (Required) End time of the time range in ISO format.
+	- start_time: (Optional) Start time of the time range in ISO format. Defaults to end_time - 1 hour.
+	- end_time: (Optional) End time of the time range in ISO format. Defaults to current time.
 	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
 `
 
@@ -751,8 +751,8 @@ const GetServiceOperationsSummaryDescription = `
 		- net_peer_name: HTTP host or connection string
 	
 	Parameters:
-	- start_time: (Required) Start time of the time range in ISO format.
-	- end_time: (Required) End time of the time range in ISO format.
+	- start_time: (Optional) Start time of the time range in ISO format. Defaults to end_time - 1 hour.
+	- end_time: (Optional) End time of the time range in ISO format. Defaults to current time.
 	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
 	- service_name: (Required) Service name to filter by. Defaults to all services.
 `
@@ -1343,11 +1343,9 @@ const GetServiceDependencyGraphDetails = `
 	- error percentage
 	The detailed metrics, error rates and operation details of incoming and outgoing dependencies
 	can be obtained by using the get_service_details tool.
-	In the parameters, it is recommended to use the ISO8601 format for start_time and end_time,
-	with a time window of 1 hour.
 	Parameters:
-	- start_time: (Required) Start time of the time range in ISO format.
-	- end_time: (Required) End time of the time range in ISO format.
+	- start_time: (Optional) Start time of the time range in ISO format. Defaults to end_time - 1 hour.
+	- end_time: (Optional) End time of the time range in ISO format. Defaults to current time.
 	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
 	- service_name: (Required) Name of the service to get the dependency graph for.
 	`
@@ -1820,8 +1818,8 @@ const PromqlRangeQueryDetails = `
 	The response will contain the metrics data for the specified query.
 	Parameters:
 	- query: (Required) The Prometheus query to execute.
-	- start_time: (Required) Start time of the time range in ISO format.
-	- end_time: (Required) End time of the time range in ISO format.
+	- start_time: (Optional) Start time of the time range in ISO format. Defaults to end_time - 1 hour.
+	- end_time: (Optional) End time of the time range in ISO format. Defaults to current time.
 	`
 
 func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlRangeQueryArgs) (*mcp.CallToolResult, any, error) {
@@ -1906,7 +1904,7 @@ const PromqlInstantQueryDetails = `
 	The response will contain the metrics data for the specified query.
 	Parameters:
 	- query: (Required) The Prometheus query to execute.
-	- time: (Required) The point in time to query in ISO format.
+	- time: (Optional) The point in time to query in ISO format. Defaults to current time.
 `
 
 func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlInstantQueryArgs) (*mcp.CallToolResult, any, error) {

@@ -5,7 +5,7 @@ const GetExceptionsDescription = `
     Includes the exception type, message, stack trace, service name, trace ID and span attributes.
 
     limit: (Optional) The maximum number of exceptions to return. Defaults to 20.
-    lookback_minutes: (Recommended) Number of minutes to look back from now. Use this for relative time ranges.
+    lookback_minutes: (Recommended) Number of minutes to look back from now. Default: 60 minutes.
     start_time_iso: (Optional) The start time to get the data from. Leave empty to use lookback_minutes instead.
     end_time_iso: (Optional) The end time to get the data from. Leave empty to default to current time.
     service_name: (Optional) Filter exceptions by service name (e.g. api-service).
