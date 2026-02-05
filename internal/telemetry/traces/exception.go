@@ -61,25 +61,9 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 
 		// Filter for traces with exceptions (exception.type exists and is not empty)
 		exceptionTypeFilter := map[string]interface{}{
-			"$or": []interface{}{
-				map[string]interface{}{
-					"$and": []interface{}{
-						map[string]interface{}{"$exists": []interface{}{"SpanAttributes['exception.type']"}},
-						map[string]interface{}{"$ne": []interface{}{"SpanAttributes['exception.type']", ""}},
-					},
-				},
-				map[string]interface{}{
-					"$and": []interface{}{
-						map[string]interface{}{"$exists": []interface{}{"EventsAttributes['exception.type']"}},
-						map[string]interface{}{"$ne": []interface{}{"EventsAttributes['exception.type']", ""}},
-					},
-				},
-				map[string]interface{}{
-					"$and": []interface{}{
-						map[string]interface{}{"$exists": []interface{}{"attributes['exception.type']"}},
-						map[string]interface{}{"$ne": []interface{}{"attributes['exception.type']", ""}},
-					},
-				},
+			"$and": []interface{}{
+				map[string]interface{}{"$exists": []interface{}{"attributes['exception.type']"}},
+				map[string]interface{}{"$ne": []interface{}{"attributes['exception.type']", ""}},
 			},
 		}
 		filters = append(filters, exceptionTypeFilter)
@@ -134,14 +118,22 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 		// Parse the response
 		var traceResponse struct {
 			Result []map[string]interface{} `json:"result"`
+			Data   struct {
+				Result []map[string]interface{} `json:"result"`
+			} `json:"data"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&traceResponse); err != nil {
 			return nil, nil, fmt.Errorf("failed to decode response: %w", err)
 		}
 
+		result := traceResponse.Result
+		if len(result) == 0 {
+			result = traceResponse.Data.Result
+		}
+
 		// Extract exception details from traces
-		exceptions := make([]map[string]interface{}, 0, len(traceResponse.Result))
-		for _, trace := range traceResponse.Result {
+		exceptions := make([]map[string]interface{}, 0, len(result))
+		for _, trace := range result {
 			// Extract relevant exception information
 			exception := map[string]interface{}{
 				"trace_id":     trace["TraceId"],
