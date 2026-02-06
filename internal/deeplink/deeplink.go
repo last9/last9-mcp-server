@@ -3,6 +3,7 @@ package deeplink
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/url"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -42,9 +43,11 @@ func (b *Builder) BuildLogsLink(fromMs, toMs int64, pipeline any) string {
 	if pipeline != nil {
 		if pipelineJSON, err := json.Marshal(pipeline); err == nil {
 			params.Set("pipeline", string(pipelineJSON))
+		} else {
+			log.Printf("deeplink: failed to marshal logs pipeline: %v", err)
 		}
 	}
-	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteLogs, params.Encode())
+	return fmt.Sprintf("/v2/organizations/%s/%s?%s", url.PathEscape(b.orgSlug), RouteLogs, params.Encode())
 }
 
 // BuildTracesLink creates a traces dashboard deep link
@@ -58,6 +61,8 @@ func (b *Builder) BuildTracesLink(fromMs, toMs int64, pipeline any, traceID, spa
 	if pipeline != nil {
 		if pipelineJSON, err := json.Marshal(pipeline); err == nil {
 			params.Set("pipeline", string(pipelineJSON))
+		} else {
+			log.Printf("deeplink: failed to marshal traces pipeline: %v", err)
 		}
 	}
 	if traceID != "" {
@@ -67,7 +72,7 @@ func (b *Builder) BuildTracesLink(fromMs, toMs int64, pipeline any, traceID, spa
 	if spanID != "" {
 		params.Set("span", spanID)
 	}
-	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteTraces, params.Encode())
+	return fmt.Sprintf("/v2/organizations/%s/%s?%s", url.PathEscape(b.orgSlug), RouteTraces, params.Encode())
 }
 
 // BuildExceptionsLink creates an exceptions dashboard deep link
@@ -78,7 +83,7 @@ func (b *Builder) BuildExceptionsLink(fromMs, toMs int64) string {
 	if b.clusterID != "" {
 		params.Set("cluster", b.clusterID)
 	}
-	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteExceptions, params.Encode())
+	return fmt.Sprintf("/v2/organizations/%s/%s?%s", url.PathEscape(b.orgSlug), RouteExceptions, params.Encode())
 }
 
 // BuildServiceCatalogLink creates a service catalog dashboard deep link
@@ -98,7 +103,7 @@ func (b *Builder) BuildServiceCatalogLink(fromMs, toMs int64, serviceName, env, 
 	if tab != "" {
 		params.Set("activeServicePanelTab", tab)
 	}
-	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteServiceCatalog, params.Encode())
+	return fmt.Sprintf("/v2/organizations/%s/%s?%s", url.PathEscape(b.orgSlug), RouteServiceCatalog, params.Encode())
 }
 
 // BuildAlertingLink creates an alerting dashboard deep link
@@ -116,7 +121,7 @@ func (b *Builder) BuildAlertingLink(fromMs, toMs int64, severity, ruleID string)
 	if ruleID != "" {
 		params.Set("rule_id", ruleID)
 	}
-	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteAlerting, params.Encode())
+	return fmt.Sprintf("/v2/organizations/%s/%s?%s", url.PathEscape(b.orgSlug), RouteAlerting, params.Encode())
 }
 
 // BuildDropRulesLink creates a drop rules dashboard deep link
@@ -126,7 +131,7 @@ func (b *Builder) BuildDropRulesLink() string {
 		clusterID = "default"
 	}
 	route := fmt.Sprintf(RouteDropRules, url.PathEscape(clusterID))
-	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, route)
+	return fmt.Sprintf("/v2/organizations/%s/%s", url.PathEscape(b.orgSlug), route)
 }
 
 // BuildCompassEntityHealthLink creates a compass entity health page deep link
@@ -137,9 +142,9 @@ func (b *Builder) BuildCompassEntityHealthLink(entityID, ruleName string) string
 		params.Set("rule_name", ruleName)
 	}
 	if len(params) > 0 {
-		return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, route, params.Encode())
+		return fmt.Sprintf("/v2/organizations/%s/%s?%s", url.PathEscape(b.orgSlug), route, params.Encode())
 	}
-	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, route)
+	return fmt.Sprintf("/v2/organizations/%s/%s", url.PathEscape(b.orgSlug), route)
 }
 
 // BuildAPMServiceLink creates a deep link to the APM service catalog page with the service name in the path
@@ -155,20 +160,22 @@ func (b *Builder) BuildAPMServiceLink(fromMs, toMs int64, serviceName, env, tab 
 	if env != "" && env != ".*" {
 		if filterValue, err := json.Marshal([]string{fmt.Sprintf(`deployment_environment="%s"`, env)}); err == nil {
 			params.Set("filter", string(filterValue))
+		} else {
+			log.Printf("deeplink: failed to marshal APM service filter: %v", err)
 		}
 	}
 	if tab != "" {
 		params.Set("activeServicePanelTab", tab)
 	}
 	if serviceName != "" {
-		return fmt.Sprintf("/v2/organizations/%s/%s/%s?%s", b.orgSlug, RouteServiceCatalog, url.PathEscape(serviceName), params.Encode())
+		return fmt.Sprintf("/v2/organizations/%s/%s/%s?%s", url.PathEscape(b.orgSlug), RouteServiceCatalog, url.PathEscape(serviceName), params.Encode())
 	}
-	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteServiceCatalog, params.Encode())
+	return fmt.Sprintf("/v2/organizations/%s/%s?%s", url.PathEscape(b.orgSlug), RouteServiceCatalog, params.Encode())
 }
 
 // BuildAlertingGroupsLink creates a deep link to the alerting groups page
 func (b *Builder) BuildAlertingGroupsLink() string {
-	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, RouteAlertingGroups)
+	return fmt.Sprintf("/v2/organizations/%s/%s", url.PathEscape(b.orgSlug), RouteAlertingGroups)
 }
 
 // ToMeta converts a dashboard URL to MCP Meta format

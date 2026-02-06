@@ -118,8 +118,8 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("failed to fetch physical index: %w", err)
 		}
 
-		// Fetch raw logs using the existing logs API approach with physical index
-		logs, err := fetchServiceLogs(ctx, client, cfg, args.Service, startTime, endTime, limit, args.SeverityFilters, args.BodyFilters, physicalIndex)
+		// Fetch raw logs and the deeplink pipeline (built inside fetchServiceLogs)
+		logs, pipeline, err := fetchServiceLogs(ctx, client, cfg, args.Service, args.Env, startTime, endTime, limit, args.SeverityFilters, args.BodyFilters, physicalIndex)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
@@ -130,64 +130,8 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("failed to format response: %w", err)
 		}
 
-		// Build deep link URL with filters matching dashboard conventions
-		// Dashboard expects a single filter stage with $and containing all conditions
+		// Build deep link URL reusing the pipeline returned by fetchServiceLogs
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		andConditions := []interface{}{
-			map[string]interface{}{
-				"$eq": []interface{}{"ServiceName", args.Service},
-			},
-		}
-
-		// Add env filter if provided (uses attributes['deployment_environment'] format)
-		if args.Env != "" {
-			andConditions = append(andConditions, map[string]interface{}{
-				"$ieq": []interface{}{"attributes['deployment_environment']", args.Env},
-			})
-		}
-
-		// Add severity filters if provided (uses SeverityText with case-insensitive regex)
-		if len(args.SeverityFilters) > 0 {
-			orConditions := make([]interface{}, 0, len(args.SeverityFilters))
-			for _, severity := range args.SeverityFilters {
-				if severity != "" {
-					orConditions = append(orConditions, map[string]interface{}{
-						"$iregex": []interface{}{"SeverityText", severity},
-					})
-				}
-			}
-			if len(orConditions) > 0 {
-				andConditions = append(andConditions, map[string]interface{}{
-					"$or": orConditions,
-				})
-			}
-		}
-
-		// Add body filters if provided (uses Body with case-insensitive contains)
-		if len(args.BodyFilters) > 0 {
-			orConditions := make([]interface{}, 0, len(args.BodyFilters))
-			for _, bodyPattern := range args.BodyFilters {
-				if bodyPattern != "" {
-					orConditions = append(orConditions, map[string]interface{}{
-						"$icontains": []interface{}{"Body", bodyPattern},
-					})
-				}
-			}
-			if len(orConditions) > 0 {
-				andConditions = append(andConditions, map[string]interface{}{
-					"$or": orConditions,
-				})
-			}
-		}
-
-		pipeline := []map[string]interface{}{
-			{
-				"type": "filter",
-				"query": map[string]interface{}{
-					"$and": andConditions,
-				},
-			},
-		}
 		dashboardURL := dlBuilder.BuildLogsLink(startTime.UnixMilli(), endTime.UnixMilli(), pipeline)
 
 		return &mcp.CallToolResult{
@@ -201,8 +145,66 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 	}
 }
 
-// fetchServiceLogs retrieves raw log entries for a specific service using utils package
-func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Config, service string, startTime, endTime time.Time, limit int, severityFilters []string, bodyFilters []string, physicalIndex string) (*ServiceLogsResponse, error) {
+// buildServiceLogsPipeline builds the dashboard-compatible pipeline for deeplinks
+// containing service name, environment, severity, and body filters.
+func buildServiceLogsPipeline(service, env string, severityFilters, bodyFilters []string) []map[string]interface{} {
+	andConditions := []interface{}{
+		map[string]interface{}{
+			"$eq": []interface{}{"ServiceName", service},
+		},
+	}
+
+	if env != "" {
+		andConditions = append(andConditions, map[string]interface{}{
+			"$ieq": []interface{}{"attributes['deployment_environment']", env},
+		})
+	}
+
+	if len(severityFilters) > 0 {
+		orConditions := make([]interface{}, 0, len(severityFilters))
+		for _, severity := range severityFilters {
+			if severity != "" {
+				orConditions = append(orConditions, map[string]interface{}{
+					"$iregex": []interface{}{"SeverityText", severity},
+				})
+			}
+		}
+		if len(orConditions) > 0 {
+			andConditions = append(andConditions, map[string]interface{}{
+				"$or": orConditions,
+			})
+		}
+	}
+
+	if len(bodyFilters) > 0 {
+		orConditions := make([]interface{}, 0, len(bodyFilters))
+		for _, bodyPattern := range bodyFilters {
+			if bodyPattern != "" {
+				orConditions = append(orConditions, map[string]interface{}{
+					"$icontains": []interface{}{"Body", bodyPattern},
+				})
+			}
+		}
+		if len(orConditions) > 0 {
+			andConditions = append(andConditions, map[string]interface{}{
+				"$or": orConditions,
+			})
+		}
+	}
+
+	return []map[string]interface{}{
+		{
+			"type": "filter",
+			"query": map[string]interface{}{
+				"$and": andConditions,
+			},
+		},
+	}
+}
+
+// fetchServiceLogs retrieves raw log entries for a specific service using utils package.
+// It also returns the deeplink-compatible pipeline built from the query filters.
+func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Config, service, env string, startTime, endTime time.Time, limit int, severityFilters []string, bodyFilters []string, physicalIndex string) (*ServiceLogsResponse, []map[string]interface{}, error) {
 	// Convert time.Time to Unix milliseconds for the utils function
 	startTimeMs := startTime.UnixMilli()
 	endTimeMs := endTime.UnixMilli()
@@ -213,25 +215,25 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 	// Use the existing utils function to make the API call
 	resp, err := utils.MakeServiceLogsAPI(ctx, client, apiRequest, &cfg)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	// Read response body
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(bodyBytes))
+		return nil, nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	// Parse the raw response - the utils function returns aggregated data, not raw logs
 	// We need to extract the actual log entries from the response
 	var apiResponse map[string]any
 	if err := json.Unmarshal(bodyBytes, &apiResponse); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	// Extract logs from the API response structure
@@ -284,11 +286,14 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		}
 	}
 
+	// Build the deeplink-compatible pipeline from the same query filters
+	pipeline := buildServiceLogsPipeline(service, env, severityFilters, bodyFilters)
+
 	return &ServiceLogsResponse{
 		Service:   service,
 		StartTime: startTime.Format(time.RFC3339),
 		EndTime:   endTime.Format(time.RFC3339),
 		Count:     len(logs),
 		Logs:      logs,
-	}, nil
+	}, pipeline, nil
 }

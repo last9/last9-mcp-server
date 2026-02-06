@@ -274,13 +274,12 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
 
-		// Build deep link URL
+		// Build deep link URL, reusing the filters already computed above
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		// Build pipeline from filters
 		pipeline := []map[string]interface{}{
 			{
 				"type":  "filter",
-				"query": map[string]interface{}{"$and": buildGetTracesFilters(queryParams)},
+				"query": map[string]interface{}{"$and": filters},
 			},
 		}
 		dashboardURL := dlBuilder.BuildTracesLink(startTime.UnixMilli(), endTime.UnixMilli(), pipeline, queryParams.TraceID, "")
