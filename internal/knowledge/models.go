@@ -7,6 +7,7 @@ type Node struct {
 	ID         string                 `json:"id"`
 	Type       string                 `json:"type"`
 	Name       string                 `json:"name,omitempty"`
+	Env        string                 `json:"env,omitempty" jsonschema:"description=Environment this node belongs to (e.g. production, staging). Use get_service_environments to discover valid values."`
 	Properties map[string]interface{} `json:"properties,omitempty"`
 	UpdatedAt  time.Time              `json:"updated_at,omitempty"`
 }

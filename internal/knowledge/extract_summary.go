@@ -61,11 +61,15 @@ func (e *ServiceSummaryExtractor) Extract(parsed interface{}) (*ExtractionResult
 			svcName = key
 		}
 
+		// Extract env from inner service object when available
+		env, _ := inner["Env"].(string)
+
 		nodeID := MakeNodeID("Service", svcName)
 		result.Nodes = append(result.Nodes, Node{
 			ID:   nodeID,
 			Type: "Service",
 			Name: svcName,
+			Env:  env,
 		})
 
 		// Extract metrics as statistics

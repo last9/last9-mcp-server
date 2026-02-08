@@ -82,12 +82,14 @@ func (s *SQLiteStore) Close() error {
 }
 
 func (s *SQLiteStore) migrate() error {
-	queries := []string{
+	// Phase 1: Base tables (includes env column for new databases)
+	baseTables := []string{
 		// Nodes
 		`CREATE TABLE IF NOT EXISTS nodes (
 			id TEXT PRIMARY KEY,
 			type TEXT NOT NULL,
 			name TEXT,
+			env TEXT,
 			properties JSON,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -148,36 +150,6 @@ func (s *SQLiteStore) migrate() error {
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_events_lookup ON events(source_id, time_window_start);`,
 
-		// Drop old FTS infrastructure so we can recreate as external-content table.
-		// External-content FTS avoids the content-mismatch bug on upserts.
-		`DROP TRIGGER IF EXISTS nodes_ai;`,
-		`DROP TRIGGER IF EXISTS nodes_ad;`,
-		`DROP TRIGGER IF EXISTS nodes_au;`,
-		`DROP TABLE IF EXISTS nodes_fts;`,
-
-		// External-content FTS5 table referencing nodes via rowid
-		`CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
-			id, name, type, properties,
-			content=nodes, content_rowid=rowid
-		);`,
-		`CREATE TRIGGER IF NOT EXISTS nodes_ai AFTER INSERT ON nodes BEGIN
-			INSERT INTO nodes_fts(rowid, id, name, type, properties)
-			VALUES (new.rowid, new.id, new.name, new.type, new.properties);
-		END;`,
-		`CREATE TRIGGER IF NOT EXISTS nodes_ad AFTER DELETE ON nodes BEGIN
-			INSERT INTO nodes_fts(nodes_fts, rowid, id, name, type, properties)
-			VALUES('delete', old.rowid, old.id, old.name, old.type, old.properties);
-		END;`,
-		`CREATE TRIGGER IF NOT EXISTS nodes_au AFTER UPDATE ON nodes BEGIN
-			INSERT INTO nodes_fts(nodes_fts, rowid, id, name, type, properties)
-			VALUES('delete', old.rowid, old.id, old.name, old.type, old.properties);
-			INSERT INTO nodes_fts(rowid, id, name, type, properties)
-			VALUES (new.rowid, new.id, new.name, new.type, new.properties);
-		END;`,
-
-		// Rebuild FTS index from existing node data
-		`INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild');`,
-
 		// Notes table
 		`CREATE TABLE IF NOT EXISTS notes (
 			id TEXT PRIMARY KEY,
@@ -203,6 +175,59 @@ func (s *SQLiteStore) migrate() error {
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_note_node_links_node ON note_node_links(node_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_note_edge_links_edge ON note_edge_links(edge_source_id, edge_target_id, edge_relation);`,
+	}
+
+	for _, q := range baseTables {
+		if _, err := s.db.Exec(q); err != nil {
+			return fmt.Errorf("base table query failed: %s, err: %w", q, err)
+		}
+	}
+
+	// Phase 2: Column migrations for existing databases.
+	// Must run before FTS so that new columns exist when FTS references them.
+	columnMigrations := []struct {
+		table, column, colDef string
+	}{
+		{"schemas", "description", "TEXT DEFAULT ''"},
+		{"schemas", "builtin", "INTEGER DEFAULT 0"},
+		{"nodes", "env", "TEXT"},
+	}
+	for _, m := range columnMigrations {
+		if err := s.addColumnIfNotExists(m.table, m.column, m.colDef); err != nil {
+			return fmt.Errorf("column migration failed (%s.%s): %w", m.table, m.column, err)
+		}
+	}
+
+	// Phase 3: FTS tables — drop and recreate so column set stays in sync.
+	ftsQueries := []string{
+		// Drop old FTS infrastructure so we can recreate as external-content table.
+		`DROP TRIGGER IF EXISTS nodes_ai;`,
+		`DROP TRIGGER IF EXISTS nodes_ad;`,
+		`DROP TRIGGER IF EXISTS nodes_au;`,
+		`DROP TABLE IF EXISTS nodes_fts;`,
+
+		// External-content FTS5 table referencing nodes via rowid (includes env)
+		`CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
+			id, name, type, properties, env,
+			content=nodes, content_rowid=rowid
+		);`,
+		`CREATE TRIGGER IF NOT EXISTS nodes_ai AFTER INSERT ON nodes BEGIN
+			INSERT INTO nodes_fts(rowid, id, name, type, properties, env)
+			VALUES (new.rowid, new.id, new.name, new.type, new.properties, new.env);
+		END;`,
+		`CREATE TRIGGER IF NOT EXISTS nodes_ad AFTER DELETE ON nodes BEGIN
+			INSERT INTO nodes_fts(nodes_fts, rowid, id, name, type, properties, env)
+			VALUES('delete', old.rowid, old.id, old.name, old.type, old.properties, old.env);
+		END;`,
+		`CREATE TRIGGER IF NOT EXISTS nodes_au AFTER UPDATE ON nodes BEGIN
+			INSERT INTO nodes_fts(nodes_fts, rowid, id, name, type, properties, env)
+			VALUES('delete', old.rowid, old.id, old.name, old.type, old.properties, old.env);
+			INSERT INTO nodes_fts(rowid, id, name, type, properties, env)
+			VALUES (new.rowid, new.id, new.name, new.type, new.properties, new.env);
+		END;`,
+
+		// Rebuild FTS index from existing node data
+		`INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild');`,
 
 		// Drop old notes FTS infrastructure so we can recreate cleanly
 		`DROP TRIGGER IF EXISTS notes_ai;`,
@@ -234,22 +259,9 @@ func (s *SQLiteStore) migrate() error {
 		`INSERT INTO notes_fts(notes_fts) VALUES('rebuild');`,
 	}
 
-	for _, q := range queries {
+	for _, q := range ftsQueries {
 		if _, err := s.db.Exec(q); err != nil {
-			return fmt.Errorf("query failed: %s, err: %w", q, err)
-		}
-	}
-
-	// Idempotent column additions for existing databases
-	columnMigrations := []struct {
-		table, column, colDef string
-	}{
-		{"schemas", "description", "TEXT DEFAULT ''"},
-		{"schemas", "builtin", "INTEGER DEFAULT 0"},
-	}
-	for _, m := range columnMigrations {
-		if err := s.addColumnIfNotExists(m.table, m.column, m.colDef); err != nil {
-			return fmt.Errorf("column migration failed (%s.%s): %w", m.table, m.column, err)
+			return fmt.Errorf("FTS query failed: %s, err: %w", q, err)
 		}
 	}
 
@@ -283,6 +295,15 @@ func (s *SQLiteStore) addColumnIfNotExists(table, column, colDef string) error {
 	return err
 }
 
+// nullableString converts an empty string to nil so that SQL COALESCE
+// preserves an existing non-NULL value when the new value is unset.
+func nullableString(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
 // IngestNodes upserts nodes
 func (s *SQLiteStore) IngestNodes(ctx context.Context, nodes []Node) error {
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -292,12 +313,13 @@ func (s *SQLiteStore) IngestNodes(ctx context.Context, nodes []Node) error {
 	defer tx.Rollback()
 
 	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO nodes (id, type, name, properties, updated_at) 
-		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-		ON CONFLICT(id) DO UPDATE SET 
-			type=excluded.type, 
-			name=excluded.name, 
-			properties=excluded.properties, 
+		INSERT INTO nodes (id, type, name, env, properties, updated_at)
+		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(id) DO UPDATE SET
+			type=excluded.type,
+			name=excluded.name,
+			env=COALESCE(excluded.env, nodes.env),
+			properties=excluded.properties,
 			updated_at=CURRENT_TIMESTAMP
 	`)
 	if err != nil {
@@ -307,7 +329,7 @@ func (s *SQLiteStore) IngestNodes(ctx context.Context, nodes []Node) error {
 
 	for _, n := range nodes {
 		props, _ := json.Marshal(n.Properties)
-		if _, err := stmt.ExecContext(ctx, n.ID, n.Type, n.Name, string(props)); err != nil {
+		if _, err := stmt.ExecContext(ctx, n.ID, n.Type, n.Name, nullableString(n.Env), string(props)); err != nil {
 			return fmt.Errorf("failed to ingest node %s: %w", n.ID, err)
 		}
 	}
@@ -529,7 +551,7 @@ func (s *SQLiteStore) Search(ctx context.Context, query string, limit int) (*Sea
 	// 1. Search Nodes via FTS (JOIN with nodes since external-content FTS
 	// tables don't reliably return column values directly)
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT n.id, n.name, n.type, n.properties
+		SELECT n.id, n.name, n.type, n.properties, n.env
 		FROM nodes_fts fts
 		JOIN nodes n ON n.rowid = fts.rowid
 		WHERE nodes_fts MATCH ?
@@ -552,10 +574,14 @@ func (s *SQLiteStore) Search(ctx context.Context, query string, limit int) (*Sea
 	for rows.Next() {
 		var n Node
 		var props []byte
-		if err := rows.Scan(&n.ID, &n.Name, &n.Type, &props); err != nil {
+		var env sql.NullString
+		if err := rows.Scan(&n.ID, &n.Name, &n.Type, &props, &env); err != nil {
 			continue
 		}
 		json.Unmarshal(props, &n.Properties)
+		if env.Valid {
+			n.Env = env.String
+		}
 		result.Nodes = append(result.Nodes, n)
 		nodeIDs = append(nodeIDs, n.ID)
 	}

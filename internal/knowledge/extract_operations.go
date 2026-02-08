@@ -46,6 +46,9 @@ func (e *OperationsSummaryExtractor) Extract(parsed interface{}) (*ExtractionRes
 		return &ExtractionResult{Confidence: 0.1}, nil
 	}
 
+	// Extract env from top-level field when available
+	env, _ := obj["env"].(string)
+
 	result := &ExtractionResult{
 		Confidence: 0.9,
 	}
@@ -57,6 +60,7 @@ func (e *OperationsSummaryExtractor) Extract(parsed interface{}) (*ExtractionRes
 		ID:   svcID,
 		Type: "Service",
 		Name: serviceName,
+		Env:  env,
 	})
 
 	operations, _ := obj["operations"].([]interface{})
@@ -77,6 +81,7 @@ func (e *OperationsSummaryExtractor) Extract(parsed interface{}) (*ExtractionRes
 			ID:   endpointID,
 			Type: "HTTPEndpoint",
 			Name: opName,
+			Env:  env,
 		})
 		result.Edges = append(result.Edges, Edge{
 			SourceID: svcID,
@@ -98,6 +103,7 @@ func (e *OperationsSummaryExtractor) Extract(parsed interface{}) (*ExtractionRes
 				ID:   dbID,
 				Type: "DataStoreInstance",
 				Name: dbSystem,
+				Env:  env,
 				Properties: map[string]interface{}{
 					"db_system":     dbSystem,
 					"net_peer_name": netPeer,
@@ -118,6 +124,7 @@ func (e *OperationsSummaryExtractor) Extract(parsed interface{}) (*ExtractionRes
 				ID:   msgID,
 				Type: "KafkaTopic",
 				Name: msgSystem,
+				Env:  env,
 			})
 			result.Edges = append(result.Edges, Edge{
 				SourceID: endpointID,

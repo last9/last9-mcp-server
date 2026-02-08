@@ -46,6 +46,9 @@ func (e *DependencyGraphExtractor) Extract(parsed interface{}) (*ExtractionResul
 		return &ExtractionResult{Confidence: 0.1}, nil
 	}
 
+	// Extract env from top-level field when available
+	env, _ := obj["env"].(string)
+
 	result := &ExtractionResult{
 		Confidence: 0.9,
 	}
@@ -57,6 +60,7 @@ func (e *DependencyGraphExtractor) Extract(parsed interface{}) (*ExtractionResul
 		ID:   rootID,
 		Type: "Service",
 		Name: serviceName,
+		Env:  env,
 	})
 
 	// Incoming services: they CALL us
@@ -67,6 +71,7 @@ func (e *DependencyGraphExtractor) Extract(parsed interface{}) (*ExtractionResul
 				ID:   svcID,
 				Type: "Service",
 				Name: svcName,
+				Env:  env,
 			})
 			result.Edges = append(result.Edges, Edge{
 				SourceID: svcID,
@@ -85,6 +90,7 @@ func (e *DependencyGraphExtractor) Extract(parsed interface{}) (*ExtractionResul
 				ID:   svcID,
 				Type: "Service",
 				Name: svcName,
+				Env:  env,
 			})
 			result.Edges = append(result.Edges, Edge{
 				SourceID: rootID,
@@ -103,6 +109,7 @@ func (e *DependencyGraphExtractor) Extract(parsed interface{}) (*ExtractionResul
 				ID:   dbID,
 				Type: "DataStoreInstance",
 				Name: dbName,
+				Env:  env,
 			})
 			result.Edges = append(result.Edges, Edge{
 				SourceID: rootID,
@@ -121,6 +128,7 @@ func (e *DependencyGraphExtractor) Extract(parsed interface{}) (*ExtractionResul
 				ID:   msgID,
 				Type: "KafkaTopic",
 				Name: msgName,
+				Env:  env,
 			})
 			result.Edges = append(result.Edges, Edge{
 				SourceID: rootID,

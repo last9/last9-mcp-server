@@ -910,6 +910,82 @@ func TestSearchReturnsNotes_EdgeLinked(t *testing.T) {
 	}
 }
 
+// TestNodeEnvPreservedOnUpsert verifies that upserting a node without env
+// preserves the env value set by a prior ingestion (COALESCE semantics).
+func TestNodeEnvPreservedOnUpsert(t *testing.T) {
+	store, cleanup := newTestStore(t, "test_env_preserve.db")
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Insert node with env set
+	err := store.IngestNodes(ctx, []Node{{
+		ID:   "svc:alpha",
+		Type: "Service",
+		Name: "alpha",
+		Env:  "production",
+	}})
+	if err != nil {
+		t.Fatalf("First IngestNodes failed: %v", err)
+	}
+
+	// Upsert the same node without env — env should be preserved
+	err = store.IngestNodes(ctx, []Node{{
+		ID:   "svc:alpha",
+		Type: "Service",
+		Name: "alpha-updated",
+	}})
+	if err != nil {
+		t.Fatalf("Upsert IngestNodes failed: %v", err)
+	}
+
+	result, err := store.Search(ctx, "alpha", 10)
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(result.Nodes) == 0 {
+		t.Fatal("expected to find node")
+	}
+	if result.Nodes[0].Env != "production" {
+		t.Errorf("expected env 'production' to be preserved, got %q", result.Nodes[0].Env)
+	}
+	if result.Nodes[0].Name != "alpha-updated" {
+		t.Errorf("expected name to be updated to 'alpha-updated', got %q", result.Nodes[0].Name)
+	}
+}
+
+// TestSearchByEnv verifies that FTS5 indexes the env column so searching
+// for an environment name finds the corresponding nodes.
+func TestSearchByEnv(t *testing.T) {
+	store, cleanup := newTestStore(t, "test_search_env.db")
+	defer cleanup()
+
+	ctx := context.Background()
+
+	err := store.IngestNodes(ctx, []Node{
+		{ID: "svc:prod-api", Type: "Service", Name: "prod-api", Env: "production"},
+		{ID: "svc:staging-api", Type: "Service", Name: "staging-api", Env: "staging"},
+	})
+	if err != nil {
+		t.Fatalf("IngestNodes failed: %v", err)
+	}
+
+	// Search for "production" — should find the prod node via env FTS
+	result, err := store.Search(ctx, "production", 10)
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(result.Nodes) != 1 {
+		t.Fatalf("expected 1 node for 'production', got %d", len(result.Nodes))
+	}
+	if result.Nodes[0].ID != "svc:prod-api" {
+		t.Errorf("expected svc:prod-api, got %s", result.Nodes[0].ID)
+	}
+	if result.Nodes[0].Env != "production" {
+		t.Errorf("expected env 'production', got %q", result.Nodes[0].Env)
+	}
+}
+
 func TestGenerateNoteID(t *testing.T) {
 	seen := make(map[string]struct{}, 1000)
 	for i := 0; i < 1000; i++ {
