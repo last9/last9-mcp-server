@@ -71,15 +71,23 @@ func (e *PrometheusExtractor) Extract(parsed interface{}) (*ExtractionResult, er
 
 		// Phase 1: resolve entities from labels.
 		entities := resolveEntities(metricLabels, metricName)
+		env := resolveEnv(metricLabels)
 
-		// Phase 2: add unique nodes.
+		// Phase 2: add unique nodes with env-aware dedup.
+		// If a node already exists with empty Env and this series provides one,
+		// upgrade to the non-empty value (first non-empty wins).
 		for _, ent := range entities {
-			if _, exists := nodeSet[ent.nodeID]; !exists {
+			existing, exists := nodeSet[ent.nodeID]
+			if !exists {
 				nodeSet[ent.nodeID] = Node{
 					ID:   ent.nodeID,
 					Type: ent.nodeType,
 					Name: ent.name,
+					Env:  env,
 				}
+			} else if existing.Env == "" && env != "" {
+				existing.Env = env
+				nodeSet[ent.nodeID] = existing
 			}
 		}
 

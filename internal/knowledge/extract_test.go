@@ -67,6 +67,13 @@ func TestDependencyGraphExtractor_Extract(t *testing.T) {
 		t.Errorf("expected 5 nodes, got %d", len(result.Nodes))
 	}
 
+	// All nodes should have env set to "prod"
+	for _, n := range result.Nodes {
+		if n.Env != "prod" {
+			t.Errorf("expected env 'prod' on node %s, got %q", n.ID, n.Env)
+		}
+	}
+
 	// Expect: web-frontend->api-service (CALLS), api-service->database-service (CALLS),
 	//         api-service->postgres-primary (CONNECTS_TO), api-service->kafka-cluster (PRODUCES_TO) = 4 edges
 	if len(result.Edges) != 4 {
@@ -247,8 +254,8 @@ func TestServiceSummaryExtractor_Extract(t *testing.T) {
 	e := &ServiceSummaryExtractor{}
 
 	input := `{
-		"svc1": {"ServiceName": "svc1", "Throughput": 10.5, "ErrorRate": 0.5, "ResponseTime": 2.3},
-		"svc2": {"ServiceName": "svc2", "Throughput": 20.0, "ErrorRate": 1.0, "ResponseTime": 5.1}
+		"svc1": {"ServiceName": "svc1", "Env": "prod", "Throughput": 10.5, "ErrorRate": 0.5, "ResponseTime": 2.3},
+		"svc2": {"ServiceName": "svc2", "Env": "staging", "Throughput": 20.0, "ErrorRate": 1.0, "ResponseTime": 5.1}
 	}`
 	var parsed interface{}
 	json.Unmarshal([]byte(input), &parsed)
@@ -260,6 +267,18 @@ func TestServiceSummaryExtractor_Extract(t *testing.T) {
 
 	if len(result.Nodes) != 2 {
 		t.Errorf("expected 2 nodes, got %d", len(result.Nodes))
+	}
+
+	// Verify env propagation from inner objects
+	envByName := map[string]string{}
+	for _, n := range result.Nodes {
+		envByName[n.Name] = n.Env
+	}
+	if envByName["svc1"] != "prod" {
+		t.Errorf("expected env 'prod' for svc1, got %q", envByName["svc1"])
+	}
+	if envByName["svc2"] != "staging" {
+		t.Errorf("expected env 'staging' for svc2, got %q", envByName["svc2"])
 	}
 
 	// Each service has 3 metrics = 6 stats total
@@ -341,6 +360,13 @@ func TestOperationsSummaryExtractor_Extract(t *testing.T) {
 		t.Errorf("expected 6 nodes, got %d", len(result.Nodes))
 		for _, n := range result.Nodes {
 			t.Logf("  node: %s (%s) %s", n.ID, n.Type, n.Name)
+		}
+	}
+
+	// All nodes should have env set to "prod"
+	for _, n := range result.Nodes {
+		if n.Env != "prod" {
+			t.Errorf("expected env 'prod' on node %s, got %q", n.ID, n.Env)
 		}
 	}
 
@@ -968,6 +994,97 @@ func TestPrometheusExtract_Fallback(t *testing.T) {
 	}
 	if result.Stats[0].NodeID != MakeNodeID("Service", "myapp") {
 		t.Errorf("expected fallback nodeID %s, got %s", MakeNodeID("Service", "myapp"), result.Stats[0].NodeID)
+	}
+}
+
+func TestPrometheusExtract_EnvFromClusterLabel(t *testing.T) {
+	e := &PrometheusExtractor{}
+
+	input := `[
+		{"metric":{"__name__":"kube_pod_container_resource_requests","namespace":"default","pod":"nginx-abc","container":"nginx","node":"worker-1","cluster":"minikube","resource":"cpu"},"value":[1700000000,"0.5"]}
+	]`
+	var parsed interface{}
+	json.Unmarshal([]byte(input), &parsed)
+
+	result, err := e.Extract(parsed)
+	if err != nil {
+		t.Fatalf("Extract failed: %v", err)
+	}
+
+	for _, n := range result.Nodes {
+		if n.Env != "minikube" {
+			t.Errorf("node %s (%s): expected env 'minikube', got %q", n.ID, n.Type, n.Env)
+		}
+	}
+}
+
+func TestPrometheusExtract_EnvPriority(t *testing.T) {
+	e := &PrometheusExtractor{}
+
+	// environment label should beat cluster
+	input := `[
+		{"metric":{"__name__":"kube_pod_info","namespace":"default","pod":"nginx-abc","environment":"production","cluster":"minikube"},"value":[1700000000,"1"]}
+	]`
+	var parsed interface{}
+	json.Unmarshal([]byte(input), &parsed)
+
+	result, err := e.Extract(parsed)
+	if err != nil {
+		t.Fatalf("Extract failed: %v", err)
+	}
+
+	for _, n := range result.Nodes {
+		if n.Env != "production" {
+			t.Errorf("node %s (%s): expected env 'production', got %q", n.ID, n.Type, n.Env)
+		}
+	}
+}
+
+func TestPrometheusExtract_EnvDedupUpgrade(t *testing.T) {
+	e := &PrometheusExtractor{}
+
+	// First series: same pod but no env label. Second series: same pod with cluster label.
+	// The node should get upgraded to have env set.
+	input := `[
+		{"metric":{"__name__":"container_cpu","namespace":"default","pod":"nginx-abc","container":"nginx"},"value":[1700000000,"0.1"]},
+		{"metric":{"__name__":"kube_pod_info","namespace":"default","pod":"nginx-abc","cluster":"minikube"},"value":[1700000000,"1"]}
+	]`
+	var parsed interface{}
+	json.Unmarshal([]byte(input), &parsed)
+
+	result, err := e.Extract(parsed)
+	if err != nil {
+		t.Fatalf("Extract failed: %v", err)
+	}
+
+	// The shared nodes (Namespace:default, Pod:default:nginx-abc) should have env upgraded
+	for _, n := range result.Nodes {
+		if n.Type == "Namespace" || n.Type == "Pod" {
+			if n.Env != "minikube" {
+				t.Errorf("node %s (%s): expected env 'minikube' after dedup upgrade, got %q", n.ID, n.Type, n.Env)
+			}
+		}
+	}
+}
+
+func TestPrometheusExtract_NoEnvLabel(t *testing.T) {
+	e := &PrometheusExtractor{}
+
+	input := `[
+		{"metric":{"__name__":"kube_pod_info","namespace":"default","pod":"nginx-abc"},"value":[1700000000,"1"]}
+	]`
+	var parsed interface{}
+	json.Unmarshal([]byte(input), &parsed)
+
+	result, err := e.Extract(parsed)
+	if err != nil {
+		t.Fatalf("Extract failed: %v", err)
+	}
+
+	for _, n := range result.Nodes {
+		if n.Env != "" {
+			t.Errorf("node %s (%s): expected empty env, got %q", n.ID, n.Type, n.Env)
+		}
 	}
 }
 

@@ -89,6 +89,22 @@ var defaultEdgeRules = []edgeRule{
 // name to disambiguate (e.g. resource=cpu → "metric_name:cpu").
 var statQualifierLabels = []string{"resource"}
 
+// envLabelCandidates lists Prometheus label names that indicate environment,
+// tried in priority order. These do NOT create entities; they provide metadata
+// that enriches existing nodes.
+var envLabelCandidates = []string{"environment", "env", "cluster"}
+
+// resolveEnv returns the environment string from a Prometheus series by
+// trying each candidate label in priority order. Returns "" when absent.
+func resolveEnv(labels map[string]interface{}) string {
+	for _, key := range envLabelCandidates {
+		if val, ok := labels[key].(string); ok && val != "" {
+			return val
+		}
+	}
+	return ""
+}
+
 // resolvedEntity records a single entity found in a Prometheus series.
 type resolvedEntity struct {
 	label    string // Prometheus label that matched

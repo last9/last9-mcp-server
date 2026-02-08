@@ -266,6 +266,57 @@ func TestQualifyStatName(t *testing.T) {
 	}
 }
 
+func TestResolveEnv(t *testing.T) {
+	t.Run("environment_present", func(t *testing.T) {
+		labels := map[string]interface{}{"environment": "production", "cluster": "us-east-1"}
+		if got := resolveEnv(labels); got != "production" {
+			t.Errorf("expected 'production', got %q", got)
+		}
+	})
+
+	t.Run("env_present", func(t *testing.T) {
+		labels := map[string]interface{}{"env": "staging"}
+		if got := resolveEnv(labels); got != "staging" {
+			t.Errorf("expected 'staging', got %q", got)
+		}
+	})
+
+	t.Run("only_cluster", func(t *testing.T) {
+		labels := map[string]interface{}{"cluster": "minikube", "namespace": "default"}
+		if got := resolveEnv(labels); got != "minikube" {
+			t.Errorf("expected 'minikube', got %q", got)
+		}
+	})
+
+	t.Run("no_env_labels", func(t *testing.T) {
+		labels := map[string]interface{}{"namespace": "default", "pod": "nginx-abc"}
+		if got := resolveEnv(labels); got != "" {
+			t.Errorf("expected '', got %q", got)
+		}
+	})
+
+	t.Run("empty_strings_ignored", func(t *testing.T) {
+		labels := map[string]interface{}{"environment": "", "env": "", "cluster": "prod-eu"}
+		if got := resolveEnv(labels); got != "prod-eu" {
+			t.Errorf("expected 'prod-eu', got %q", got)
+		}
+	})
+
+	t.Run("priority_ordering", func(t *testing.T) {
+		// environment beats env beats cluster
+		labels := map[string]interface{}{"environment": "prod", "env": "staging", "cluster": "minikube"}
+		if got := resolveEnv(labels); got != "prod" {
+			t.Errorf("expected 'prod', got %q", got)
+		}
+
+		// env beats cluster when environment is absent
+		labels2 := map[string]interface{}{"env": "staging", "cluster": "minikube"}
+		if got := resolveEnv(labels2); got != "staging" {
+			t.Errorf("expected 'staging', got %q", got)
+		}
+	})
+}
+
 func TestResolveLabel(t *testing.T) {
 	// KSM-style: canonical name matches directly
 	val, ok := resolveLabel("namespace", map[string]interface{}{"namespace": "default"})
