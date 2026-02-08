@@ -1,0 +1,29 @@
+name: kafka_consumer_jobs
+description: >
+  Consumer jobs that read from Kafka or Redpanda topics and write to various
+  datastores including relational databases, caches, search engines, and object storage.
+builtin: true
+
+blueprint:
+  nodes:
+    - ConsumerJob
+    - KafkaTopic
+    - RedpandaTopic
+    - KafkaConsumerGroup
+    - DataStoreInstance
+  edges:
+    - ConsumerJob -> CONSUMES_FROM -> KafkaTopic
+    - ConsumerJob -> CONSUMES_FROM -> RedpandaTopic
+    - KafkaConsumerGroup -> CONTAINS -> ConsumerJob
+    - ConsumerJob -> WRITES_TO -> DataStoreInstance
+  field_hints:
+    KafkaTopic:
+      aliases: ["messaging_system", "kafka_topic", "topic"]
+    DataStoreInstance:
+      aliases: ["db_system", "database"]
+      id_fields: ["net_peer_name"]
+
+environments:
+  - "*"
+services:
+  - "*"

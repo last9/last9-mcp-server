@@ -1,0 +1,36 @@
+name: http_vm_datastore
+description: >
+  HTTP services running on virtual machines accessing various datastores.
+  Models the VM-based deployment pattern with load balancing, process-level services,
+  and connections to MySQL, PostgreSQL, Redis, MongoDB, and Elasticsearch.
+builtin: true
+
+blueprint:
+  nodes:
+    - LoadBalancer
+    - VirtualMachine
+    - ServiceProcess
+    - HTTPEndpoint
+    - DataStoreInstance
+  edges:
+    - LoadBalancer -> ROUTES_TO -> VirtualMachine
+    - VirtualMachine -> RUNS -> ServiceProcess
+    - ServiceProcess -> EXPOSES -> HTTPEndpoint
+    - HTTPEndpoint -> CALLS -> HTTPEndpoint
+    - HTTPEndpoint -> CALLS -> ServiceProcess
+    - ServiceProcess -> CALLS -> HTTPEndpoint
+    - ServiceProcess -> CALLS -> ServiceProcess
+    - ServiceProcess -> CONNECTS_TO -> DataStoreInstance
+  field_hints:
+    ServiceProcess:
+      aliases: ["service", "svc", "service_name", "ServiceName"]
+    DataStoreInstance:
+      aliases: ["db_system", "database", "db"]
+      id_fields: ["net_peer_name", "host"]
+    HTTPEndpoint:
+      aliases: ["endpoint", "operation"]
+
+environments:
+  - "*"
+services:
+  - "*"

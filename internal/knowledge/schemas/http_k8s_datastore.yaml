@@ -1,0 +1,49 @@
+name: http_k8s_datastore
+description: >
+  HTTP services deployed on Kubernetes accessing relational databases and caches.
+  Models the full K8s deployment stack (Ingress -> Service -> Deployment -> Pod -> Container)
+  plus connections to MySQL, PostgreSQL, and Redis datastores.
+builtin: true
+
+blueprint:
+  nodes:
+    - Ingress
+    - Service
+    - HTTPEndpoint
+    - Deployment
+    - Pod
+    - Container
+    - Namespace
+    - DataStoreInstance
+  edges:
+    - Ingress -> ROUTES_TO -> Service
+    - Service -> SELECTS -> Deployment
+    - Service -> EXPOSES -> HTTPEndpoint
+    - Deployment -> MANAGES -> Pod
+    - Pod -> RUNS -> Container
+    - Namespace -> CONTAINS -> Deployment
+    - Namespace -> CONTAINS -> Service
+    - HTTPEndpoint -> CALLS -> HTTPEndpoint
+    - HTTPEndpoint -> CALLS -> Service
+    - Service -> CALLS -> HTTPEndpoint
+    - Service -> CALLS -> Service
+    - Container -> CONNECTS_TO -> DataStoreInstance
+  field_hints:
+    Service:
+      aliases: ["svc", "service_name", "ServiceName", "service"]
+    DataStoreInstance:
+      aliases: ["db_system", "database", "db", "datastore"]
+      id_fields: ["net_peer_name", "db_name", "host"]
+    HTTPEndpoint:
+      aliases: ["endpoint", "operation", "span_name", "operation_name"]
+    Pod:
+      aliases: ["pod", "pod_name"]
+    Container:
+      aliases: ["container", "container_name"]
+    Namespace:
+      aliases: ["namespace", "k8s_namespace"]
+
+environments:
+  - "*"
+services:
+  - "*"

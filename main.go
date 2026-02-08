@@ -130,9 +130,13 @@ func main() {
 	}
 
 	// Register all tools
-	if err := registerAllTools(server, cfg); err != nil {
+	kStore, err := registerAllTools(server, cfg)
+	if err != nil {
 		log.Fatalf("failed to register tools: %v", err)
 	}
+
+	// Register SRE workflow prompts (available to any MCP client)
+	registerAllPrompts(server, kStore)
 
 	if cfg.HTTPMode {
 		// Create HTTP server using NewHTTPServer

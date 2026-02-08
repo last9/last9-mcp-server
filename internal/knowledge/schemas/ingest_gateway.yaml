@@ -1,0 +1,30 @@
+name: ingest_gateway
+description: >
+  Ingest gateway pattern where HTTP endpoints accept data and write to streaming
+  platforms like Kafka or Redpanda for downstream processing.
+builtin: true
+
+blueprint:
+  nodes:
+    - LoadBalancer
+    - IngestService
+    - KafkaBroker
+    - KafkaTopic
+    - RedpandaBroker
+    - RedpandaTopic
+  edges:
+    - LoadBalancer -> ROUTES_TO -> IngestService
+    - IngestService -> PRODUCES_TO -> KafkaTopic
+    - IngestService -> PRODUCES_TO -> RedpandaTopic
+    - KafkaBroker -> HOSTS -> KafkaTopic
+    - RedpandaBroker -> HOSTS -> RedpandaTopic
+  field_hints:
+    KafkaTopic:
+      aliases: ["messaging_system", "kafka_topic", "topic"]
+    IngestService:
+      aliases: ["service", "svc", "ingest"]
+
+environments:
+  - "*"
+services:
+  - "*"
