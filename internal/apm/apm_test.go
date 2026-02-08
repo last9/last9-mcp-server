@@ -342,3 +342,64 @@ func TestPromqlLabelValuesHandler_Integration(t *testing.T) {
 		t.Logf("Integration test successful: found %d label value(s) for label '%s'", len(labelValues), args.Label)
 	}
 }
+
+func TestResolveDatasourceCfg_EmptyName(t *testing.T) {
+	cfg := models.Config{
+		PrometheusReadURL:  "http://default-prom:9090",
+		PrometheusUsername: "default-user",
+		PrometheusPassword: "default-pass",
+	}
+
+	result, err := resolveDatasourceCfg(context.Background(), http.DefaultClient, cfg, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.PrometheusReadURL != cfg.PrometheusReadURL {
+		t.Errorf("expected PrometheusReadURL %q, got %q", cfg.PrometheusReadURL, result.PrometheusReadURL)
+	}
+	if result.PrometheusUsername != cfg.PrometheusUsername {
+		t.Errorf("expected PrometheusUsername %q, got %q", cfg.PrometheusUsername, result.PrometheusUsername)
+	}
+	if result.PrometheusPassword != cfg.PrometheusPassword {
+		t.Errorf("expected PrometheusPassword %q, got %q", cfg.PrometheusPassword, result.PrometheusPassword)
+	}
+}
+
+func TestResolveDatasourceCfg_WithName(t *testing.T) {
+	// Mock the datasources API endpoint
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, `[{"name":"my-prom","url":"http://other-prom:9090","properties":{"username":"other-user","password":"other-pass"}}]`)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL:         server.URL,
+		PrometheusReadURL:  "http://default-prom:9090",
+		PrometheusUsername: "default-user",
+		PrometheusPassword: "default-pass",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "mock-token",
+			ExpiresAt:   time.Now().Add(time.Hour),
+		},
+	}
+
+	result, err := resolveDatasourceCfg(context.Background(), server.Client(), cfg, "my-prom")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.PrometheusReadURL != "http://other-prom:9090" {
+		t.Errorf("expected PrometheusReadURL %q, got %q", "http://other-prom:9090", result.PrometheusReadURL)
+	}
+	if result.PrometheusUsername != "other-user" {
+		t.Errorf("expected PrometheusUsername %q, got %q", "other-user", result.PrometheusUsername)
+	}
+	if result.PrometheusPassword != "other-pass" {
+		t.Errorf("expected PrometheusPassword %q, got %q", "other-pass", result.PrometheusPassword)
+	}
+	// Original cfg should be unchanged (pass-by-value)
+	if cfg.PrometheusReadURL != "http://default-prom:9090" {
+		t.Errorf("original cfg was mutated: PrometheusReadURL = %q", cfg.PrometheusReadURL)
+	}
+}

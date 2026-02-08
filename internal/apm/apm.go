@@ -64,27 +64,31 @@ type ServiceDependencyGraphArgs struct {
 }
 
 type PromqlRangeQueryArgs struct {
-	Query        string `json:"query" jsonschema:"PromQL query to execute (required)"`
-	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
-	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+	Query          string `json:"query" jsonschema:"PromQL query to execute (required)"`
+	StartTimeISO   string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
+	EndTimeISO     string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+	DatasourceName string `json:"datasource_name,omitempty" jsonschema:"Name of the datasource to query. If not provided, the default datasource is used."`
 }
 
 type PromqlInstantQueryArgs struct {
-	Query   string `json:"query" jsonschema:"PromQL query to execute (required)"`
-	TimeISO string `json:"time_iso,omitempty" jsonschema:"Evaluation time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
+	Query          string `json:"query" jsonschema:"PromQL query to execute (required)"`
+	TimeISO        string `json:"time_iso,omitempty" jsonschema:"Evaluation time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
+	DatasourceName string `json:"datasource_name,omitempty" jsonschema:"Name of the datasource to query. If not provided, the default datasource is used."`
 }
 
 type PromqlLabelValuesArgs struct {
-	MatchQuery   string `json:"match_query,omitempty" jsonschema:"PromQL query to match series (e.g. up{job=\"prometheus\"})"`
-	Label        string `json:"label" jsonschema:"Label name to get values for (required)"`
-	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
-	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+	MatchQuery     string `json:"match_query,omitempty" jsonschema:"PromQL query to match series (e.g. up{job=\"prometheus\"})"`
+	Label          string `json:"label" jsonschema:"Label name to get values for (required)"`
+	StartTimeISO   string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
+	EndTimeISO     string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+	DatasourceName string `json:"datasource_name,omitempty" jsonschema:"Name of the datasource to query. If not provided, the default datasource is used."`
 }
 
 type PromqlLabelsArgs struct {
-	MatchQuery   string `json:"match_query,omitempty" jsonschema:"PromQL query to match series (e.g. up{job=\"prometheus\"})"`
-	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
-	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+	MatchQuery     string `json:"match_query,omitempty" jsonschema:"PromQL query to match series (e.g. up{job=\"prometheus\"})"`
+	StartTimeISO   string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
+	EndTimeISO     string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+	DatasourceName string `json:"datasource_name,omitempty" jsonschema:"Name of the datasource to query. If not provided, the default datasource is used."`
 }
 
 const GetServiceSummaryDescription = `
@@ -1824,6 +1828,26 @@ const PromqlRangeQueryDetails = `
 	- end_time: (Required) End time of the time range in ISO format.
 	`
 
+// resolveDatasourceCfg returns a copy of cfg with Prometheus credentials
+// overridden if datasourceName is non-empty. When datasourceName is empty the
+// original cfg is returned unchanged (use the default datasource).
+func resolveDatasourceCfg(ctx context.Context, client *http.Client, cfg models.Config, datasourceName string) (models.Config, error) {
+	if datasourceName == "" {
+		return cfg, nil
+	}
+	ds, err := utils.GetDatasourceByName(ctx, client, cfg, datasourceName)
+	if err != nil {
+		return cfg, err
+	}
+	if ds == nil {
+		return cfg, nil
+	}
+	cfg.PrometheusReadURL = ds.URL
+	cfg.PrometheusUsername = ds.Properties.Username
+	cfg.PrometheusPassword = ds.Properties.Password
+	return cfg, nil
+}
+
 func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlRangeQueryArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args PromqlRangeQueryArgs) (*mcp.CallToolResult, any, error) {
 		query := args.Query
@@ -1855,7 +1879,12 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 			startTimeParam = endTimeParam - 3600 // default to last hour
 		}
 
-		httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, query, startTimeParam, endTimeParam, cfg)
+		effectiveCfg, err := resolveDatasourceCfg(ctx, client, cfg, args.DatasourceName)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, query, startTimeParam, endTimeParam, effectiveCfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1928,7 +1957,12 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 			timeParam = time.Now().Unix()
 		}
 
-		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, query, timeParam, cfg)
+		effectiveCfg, err := resolveDatasourceCfg(ctx, client, cfg, args.DatasourceName)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, query, timeParam, effectiveCfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -2125,7 +2159,12 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 			startTimeParam = endTimeParam - 3600 // default to last hour
 		}
 
-		httpResp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, label, query, startTimeParam, endTimeParam, cfg)
+		effectiveCfg, err := resolveDatasourceCfg(ctx, client, cfg, args.DatasourceName)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		httpResp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, label, query, startTimeParam, endTimeParam, effectiveCfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -2198,7 +2237,12 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 			startTimeParam = endTimeParam - 3600 // default to last hour
 		}
 
-		httpResp, err := utils.MakePromLabelsAPIQuery(ctx, client, query, startTimeParam, endTimeParam, cfg)
+		effectiveCfg, err := resolveDatasourceCfg(ctx, client, cfg, args.DatasourceName)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		httpResp, err := utils.MakePromLabelsAPIQuery(ctx, client, query, startTimeParam, endTimeParam, effectiveCfg)
 		if err != nil {
 			return nil, nil, err
 		}
