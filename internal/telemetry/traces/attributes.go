@@ -44,6 +44,86 @@ type GetTraceAttributesArgs struct {
 	Region          string `json:"region,omitempty"`
 }
 
+// FetchTraceAttributeNames fetches trace attribute names from the API and returns them as a sorted string slice.
+// This is the core logic shared by both the MCP handler and the attribute cache.
+func FetchTraceAttributeNames(ctx context.Context, client *http.Client, cfg models.Config) ([]string, error) {
+	now := time.Now()
+	startTime := now.Add(-15 * time.Minute).Unix()
+	endTime := now.Unix()
+
+	region := cfg.Region
+
+	apiURL := fmt.Sprintf("%s%s", cfg.APIBaseURL, constants.EndpointTracesSeries)
+
+	queryParams := url.Values{}
+	queryParams.Set("region", region)
+	queryParams.Set("start", fmt.Sprintf("%d", startTime))
+	queryParams.Set("end", fmt.Sprintf("%d", endTime))
+
+	fullURL := fmt.Sprintf("%s?%s", apiURL, queryParams.Encode())
+
+	requestBody := map[string]interface{}{
+		"pipeline": []map[string]interface{}{
+			{
+				"query": map[string]interface{}{},
+				"type":  "filter",
+			},
+		},
+	}
+
+	bodyBytes, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request body: %v", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", fullURL, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+
+	httpReq.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
+	httpReq.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
+	httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
+	httpReq.Header.Set(constants.HeaderUserAgent, constants.UserAgentLast9MCP)
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errorBody map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&errorBody)
+		return nil, fmt.Errorf("API returned status %d: %v", resp.StatusCode, errorBody)
+	}
+
+	var result TraceAttributesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	if result.Status != "success" {
+		return nil, fmt.Errorf("API returned non-success status: %s", result.Status)
+	}
+
+	if len(result.Data) == 0 {
+		return []string{}, nil
+	}
+
+	attributes := []string{}
+	for attrName := range result.Data[0] {
+		if attrName == "" {
+			continue
+		}
+		attributes = append(attributes, attrName)
+	}
+
+	sort.Strings(attributes)
+
+	return attributes, nil
+}
+
 // NewGetTraceAttributesHandler creates a handler for fetching trace attributes
 func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTraceAttributesArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetTraceAttributesArgs) (*mcp.CallToolResult, any, error) {

@@ -36,6 +36,91 @@ type GetLogAttributesArgs struct {
 	Region          string `json:"region,omitempty"`
 }
 
+// FetchLogAttributeNames fetches log attribute names from the API and returns them as a string slice.
+// This is the core logic shared by both the MCP handler and the attribute cache.
+func FetchLogAttributeNames(ctx context.Context, client *http.Client, cfg models.Config) ([]string, error) {
+	now := time.Now()
+	startTime := now.Add(-15 * time.Minute).Unix()
+	endTime := now.Unix()
+
+	region := cfg.Region
+	durationMinutes := (endTime - startTime) / 60
+
+	queryParams := url.Values{}
+	queryParams.Set("region", region)
+	queryParams.Set("start", fmt.Sprintf("%d", startTime))
+	queryParams.Set("end", fmt.Sprintf("%d", endTime))
+
+	var httpReq *http.Request
+	var err error
+
+	if durationMinutes > 20 {
+		apiURL := fmt.Sprintf("%s/logs/api/v1/labels?%s", cfg.APIBaseURL, queryParams.Encode())
+		httpReq, err = http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	} else {
+		apiURL := fmt.Sprintf("%s/logs/api/v2/series/json?%s", cfg.APIBaseURL, queryParams.Encode())
+		pipeline := map[string]interface{}{
+			"pipeline": []interface{}{},
+		}
+		jsonBody, _ := json.Marshal(pipeline)
+		httpReq, err = http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonBody))
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+
+	httpReq.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("X-LAST9-API-TOKEN", "Bearer "+cfg.TokenManager.GetAccessToken(ctx))
+	httpReq.Header.Set("User-Agent", "Last9-MCP-Server/1.0")
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errorBody map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&errorBody)
+		return nil, fmt.Errorf("API returned status %d: %v", resp.StatusCode, errorBody)
+	}
+
+	var result struct {
+		Data   []string `json:"data"`
+		Status string   `json:"status"`
+	}
+
+	if durationMinutes > 20 {
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return nil, fmt.Errorf("failed to decode response for labels api: %+v", err)
+		}
+	} else {
+		var seriesResponse struct {
+			Data   []map[string]interface{} `json:"data"`
+			Status string                   `json:"status"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&seriesResponse); err != nil {
+			return nil, fmt.Errorf("failed to decode response: %v", err)
+		}
+
+		result.Status = seriesResponse.Status
+		if len(seriesResponse.Data) > 0 {
+			for key := range seriesResponse.Data[0] {
+				result.Data = append(result.Data, key)
+			}
+		}
+	}
+
+	if result.Status != "success" {
+		return nil, fmt.Errorf("API returned non-success status: %s", result.Status)
+	}
+
+	return result.Data, nil
+}
+
 // NewGetLogAttributesHandler creates a handler for fetching log attributes
 func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetLogAttributesArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetLogAttributesArgs) (*mcp.CallToolResult, any, error) {
