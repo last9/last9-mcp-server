@@ -12,6 +12,7 @@ import (
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -28,6 +29,12 @@ time window, which can then be used in trace queries and filters.
 Defaults to the last 15 minutes if no time window is provided.
 
 Returns an alphabetically sorted list of all available trace attributes.
+
+Time format rules:
+- Prefer lookback_minutes for relative windows.
+- Use start_time_iso/end_time_iso for absolute windows.
+- start_time_iso/end_time_iso accept RFC3339/ISO8601 (e.g. 2026-02-09T15:04:05Z).
+- Legacy format YYYY-MM-DD HH:MM:SS is accepted only for compatibility.
 `
 
 // TraceAttributesResponse represents the API response structure
@@ -38,10 +45,10 @@ type TraceAttributesResponse struct {
 
 // GetTraceAttributesArgs represents the input arguments for the get_trace_attributes tool
 type GetTraceAttributesArgs struct {
-	LookbackMinutes int    `json:"lookback_minutes,omitempty"`
-	StartTimeISO    string `json:"start_time_iso,omitempty"`
-	EndTimeISO      string `json:"end_time_iso,omitempty"`
-	Region          string `json:"region,omitempty"`
+	LookbackMinutes int    `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 15, range: 1-1440)"`
+	StartTimeISO    string `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
+	EndTimeISO      string `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
+	Region          string `json:"region,omitempty" jsonschema:"Region to query (optional). Defaults to configured region."`
 }
 
 // FetchTraceAttributeNames fetches trace attribute names from the API and returns them as a sorted string slice.
@@ -141,16 +148,20 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 
 		// Check for explicit start_time_iso
 		if args.StartTimeISO != "" {
-			if parsed, err := time.Parse("2006-01-02 15:04:05", args.StartTimeISO); err == nil {
-				startTime = parsed.Unix()
+			parsed, err := utils.ParseToolTimestamp(args.StartTimeISO)
+			if err != nil {
+				return nil, nil, fmt.Errorf("invalid start_time_iso format: %w", err)
 			}
+			startTime = parsed.Unix()
 		}
 
 		// Check for explicit end_time_iso
 		if args.EndTimeISO != "" {
-			if parsed, err := time.Parse("2006-01-02 15:04:05", args.EndTimeISO); err == nil {
-				endTime = parsed.Unix()
+			parsed, err := utils.ParseToolTimestamp(args.EndTimeISO)
+			if err != nil {
+				return nil, nil, fmt.Errorf("invalid end_time_iso format: %w", err)
 			}
+			endTime = parsed.Unix()
 		}
 
 		// Get region parameter or use default from config

@@ -34,13 +34,34 @@ const (
 	TokenRefreshBufferPercent = 50
 )
 
-// GetTimeRange returns start and end times based on lookback minutes
-// If start_time_iso and end_time_iso are provided, they take precedence
-// Otherwise, returns now and now - lookbackMinutes
+// ParseToolTimestamp parses tool timestamp input into UTC.
 //
-// IMPORTANT: All ISO timestamps are parsed as UTC to ensure consistent behavior
-// across different server timezones. This prevents timezone-related bugs where
-// queries return data from unexpected time periods.
+// Accepted formats:
+// - RFC3339Nano (canonical)
+// - RFC3339 (canonical)
+// - "2006-01-02 15:04:05" (legacy compatibility; interpreted as UTC)
+func ParseToolTimestamp(value string) (time.Time, error) {
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05",
+	}
+
+	for _, layout := range layouts {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed.UTC(), nil
+		}
+	}
+
+	return time.Time{}, fmt.Errorf(
+		"unsupported time format %q. Use RFC3339/ISO8601 like 2026-02-09T15:04:05Z",
+		value,
+	)
+}
+
+// GetTimeRange returns start and end times based on lookback minutes.
+// If start_time_iso and end_time_iso are provided, they take precedence.
+// Otherwise, returns now and now - lookbackMinutes.
 func GetTimeRange(params map[string]interface{}, defaultLookbackMinutes int) (startTime, endTime time.Time, err error) {
 	// Always use UTC to ensure consistent behavior across timezones
 	endTime = time.Now().UTC()
@@ -73,7 +94,7 @@ func GetTimeRange(params map[string]interface{}, defaultLookbackMinutes int) (st
 	endTimeStr, hasEnd := params["end_time_iso"].(string)
 
 	if hasStart && startTimeStr != "" {
-		parsedStart, parseErr := parseISOTime(startTimeStr)
+		parsedStart, parseErr := ParseToolTimestamp(startTimeStr)
 		if parseErr != nil {
 			return time.Time{}, time.Time{}, fmt.Errorf("invalid start_time_iso format: %w", parseErr)
 		}
@@ -81,7 +102,7 @@ func GetTimeRange(params map[string]interface{}, defaultLookbackMinutes int) (st
 	}
 
 	if hasEnd && endTimeStr != "" {
-		parsedEnd, parseErr := parseISOTime(endTimeStr)
+		parsedEnd, parseErr := ParseToolTimestamp(endTimeStr)
 		if parseErr != nil {
 			return time.Time{}, time.Time{}, fmt.Errorf("invalid end_time_iso format: %w", parseErr)
 		}
@@ -106,23 +127,6 @@ func GetTimeRange(params map[string]interface{}, defaultLookbackMinutes int) (st
 	}
 
 	return startTime, endTime, nil
-}
-
-// parseISOTime accepts both RFC3339 timestamps and legacy dashboard-style timestamps.
-func parseISOTime(value string) (time.Time, error) {
-	layouts := []string{
-		time.RFC3339Nano,
-		time.RFC3339,
-		"2006-01-02 15:04:05",
-	}
-
-	for _, layout := range layouts {
-		if parsed, err := time.Parse(layout, value); err == nil {
-			return parsed.UTC(), nil
-		}
-	}
-
-	return time.Time{}, fmt.Errorf("unsupported time format: %s", value)
 }
 
 func MakePromInstantAPIQuery(ctx context.Context, client *http.Client, promql string, endTimeParam int64, cfg models.Config) (*http.Response, error) {

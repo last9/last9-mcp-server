@@ -5,11 +5,18 @@ const GetLogsDescription = `
 	
 	This tool requires the logjson_query parameter which contains a JSON pipeline query. Use the logjson_query_builder prompt to generate these queries from natural language descriptions.
 
+	Time format rules:
+	- Prefer lookback_minutes for relative windows (for example, last 5 or 60 minutes).
+	- Use start_time_iso and end_time_iso for absolute windows.
+	- start_time_iso/end_time_iso accept RFC3339/ISO8601 (e.g. 2026-02-09T15:04:05Z).
+	- Legacy format YYYY-MM-DD HH:MM:SS is accepted only for compatibility.
+	- If both lookback_minutes and absolute times are provided, absolute times take precedence.
+
 	Parameters:
 	- logjson_query: (Required) JSON pipeline query array for advanced log filtering and processing. Use logjson_query_builder prompt to generate from natural language.
 	- lookback_minutes: (Optional) Number of minutes to look back from now. Default: 60 minutes.
-	- start_time_iso: (Optional) Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
-	- end_time_iso: (Optional) End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+	- start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
+	- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 
 	The logjson_query supports:
 	- Filter operations: Filter logs based on conditions
