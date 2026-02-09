@@ -113,6 +113,7 @@ const GetAlertsDescription = `
 	Parameters:
 	- timestamp: Unix timestamp for the query time (defaults to current time)
 	- window: Time window in seconds to look back for alerts (defaults to 900 seconds = 15 minutes)
+	- lookback_minutes: Relative time window in minutes. Used only when window is not provided.
 	
 	Uses the datasource configured in the server config (or default if not specified).
 	
@@ -224,8 +225,9 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 }
 
 type GetAlertsArgs struct {
-	Timestamp float64 `json:"timestamp,omitempty" jsonschema:"Unix timestamp for query time (defaults to current time)"`
-	Window    float64 `json:"window,omitempty" jsonschema:"Time window in seconds (default: 900, range: 60-86400)"`
+	Timestamp       float64 `json:"timestamp,omitempty" jsonschema:"Unix timestamp for query time (defaults to current time)"`
+	Window          float64 `json:"window,omitempty" jsonschema:"Time window in seconds (default: 900, range: 60-86400)"`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Time window in minutes (default: 15, range: 1-1440). Used only when window is omitted."`
 }
 
 func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetAlertsArgs) (*mcp.CallToolResult, any, error) {
@@ -240,6 +242,15 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 		window := int64(900)
 		if args.Window != 0 {
 			window = int64(args.Window)
+		} else if args.LookbackMinutes != 0 {
+			if args.LookbackMinutes < 1 || args.LookbackMinutes > 1440 {
+				return nil, nil, fmt.Errorf("lookback_minutes must be between 1 and 1440")
+			}
+			window = int64(args.LookbackMinutes * 60)
+		}
+
+		if window < 60 || window > 86400 {
+			return nil, nil, fmt.Errorf("window must be between 60 and 86400 seconds")
 		}
 
 		// Build the base URL for alerts monitoring API

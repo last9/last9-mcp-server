@@ -14,7 +14,7 @@ func TestGetTimeRange_TimezoneHandling(t *testing.T) {
 		wantErr       bool
 	}{
 		{
-			name: "ISO timestamps parsed as UTC",
+			name: "legacy ISO timestamps parsed as UTC",
 			params: map[string]interface{}{
 				"start_time_iso": "2025-06-23 16:00:00",
 				"end_time_iso":   "2025-06-23 16:30:00",
@@ -24,13 +24,31 @@ func TestGetTimeRange_TimezoneHandling(t *testing.T) {
 			wantErr:       false,
 		},
 		{
+			name: "RFC3339 timestamps parsed as UTC",
+			params: map[string]interface{}{
+				"start_time_iso": "2025-06-23T16:00:00Z",
+				"end_time_iso":   "2025-06-23T16:30:00Z",
+			},
+			wantStartUnix: 1750694400,
+			wantEndUnix:   1750696200,
+			wantErr:       false,
+		},
+		{
 			name: "only start_time provided - end time should be start + lookback",
 			params: map[string]interface{}{
 				"start_time_iso": "2025-06-27 16:00:00",
 			},
 			wantStartUnix: 1751040000, // 2025-06-27 16:00:00 UTC
-			// end time will be current time, so we'll check it separately
+			// end time should be start + lookback and is checked separately
 			wantErr: false,
+		},
+		{
+			name: "only end_time provided - start time should be end - lookback",
+			params: map[string]interface{}{
+				"end_time_iso": "2025-06-27 16:00:00",
+			},
+			wantEndUnix: 1751040000, // 2025-06-27 16:00:00 UTC
+			wantErr:     false,
 		},
 		{
 			name: "lookback minutes only - no explicit timestamps",
@@ -100,6 +118,14 @@ func TestGetTimeRange_TimezoneHandling(t *testing.T) {
 				expectedEnd := start.Add(60 * time.Minute)
 				if end.Unix() != expectedEnd.Unix() {
 					t.Errorf("GetTimeRange() end time = %d, want %d (start + 60min)", end.Unix(), expectedEnd.Unix())
+				}
+			}
+
+			if tt.name == "only end_time provided - start time should be end - lookback" {
+				// Start time should be end time - 60 minutes (default lookback)
+				expectedStart := end.Add(-60 * time.Minute)
+				if start.Unix() != expectedStart.Unix() {
+					t.Errorf("GetTimeRange() start time = %d, want %d (end - 60min)", start.Unix(), expectedStart.Unix())
 				}
 			}
 
@@ -200,8 +226,8 @@ func TestGetTimeRange_LookbackMinutes(t *testing.T) {
 func TestGetTimeRange_UTCConsistency(t *testing.T) {
 	// Test that all returned times are consistently in UTC
 	params := map[string]interface{}{
-		"start_time_iso": "2025-06-23 16:00:00",
-		"end_time_iso":   "2025-06-23 16:30:00",
+		"start_time_iso": "2025-06-23T16:00:00Z",
+		"end_time_iso":   "2025-06-23T16:30:00Z",
 	}
 
 	start, end, err := GetTimeRange(params, 60)
