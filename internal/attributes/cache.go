@@ -39,11 +39,13 @@ func (c *AttributeCache) Warm(ctx context.Context) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	updated := false
 	logAttrs, err := logs.FetchLogAttributeNames(ctx, c.client, c.cfg)
 	if err != nil {
 		log.Printf("Warning: failed to warm log attributes cache: %v", err)
 	} else {
 		c.logAttrs = logAttrs
+		updated = true
 	}
 
 	traceAttrs, err := traces.FetchTraceAttributeNames(ctx, c.client, c.cfg)
@@ -51,9 +53,12 @@ func (c *AttributeCache) Warm(ctx context.Context) {
 		log.Printf("Warning: failed to warm trace attributes cache: %v", err)
 	} else {
 		c.traceAttrs = traceAttrs
+		updated = true
 	}
 
-	c.lastFetched = time.Now()
+	if updated {
+		c.lastFetched = time.Now()
+	}
 }
 
 // GetLogAttributes returns cached log attribute names.
