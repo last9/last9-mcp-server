@@ -90,12 +90,12 @@ The JSON pipeline format supports filtering, parsing, aggregation on trace data.
 ```
 
 ### Parse Operations:
-Note that regex parsing operators also work as regex filters
+Note that regexp parsing operators also work as regexp filters
 ```json
 {
   "type": "parse",
   "parser": "json|regexp|logfmt",
-  "pattern": "regex_pattern",  // For regexp parser. Must include named capture groups using the (?P<field>...) syntax for field mapping.
+  "pattern": "regexp_pattern",  // For regexp parser. Must include named capture groups using the (?P<field>...) syntax for field mapping.
   "labels": {"field": "alias"}  // Field mappings for json parsing
 }
 ```
@@ -122,13 +122,13 @@ Note that regex parsing operators also work as regex filters
       "as": "_min_"
     },
     {
-      "function": {"$max": []},
+      "function": {"$max": [field]},
       "as": "_max"
     },
-      {
+    {
       "function": {"$quantile": [percentile, field]}, // percentile is a number between 0 and 1
       "as": "_quantile"
-    },
+    }
   ],
   "groupby": {"field": "alias"} // zero or more group by fields. Only to be added is grouping by some field is requested by the user
 }
@@ -162,12 +162,12 @@ Note that regex parsing operators also work as regex filters
 - **resources['field_name']**: Resource attributes (prefixed with `resource_`), extract field name by stripping resource_
 
 ### Custom Fields for user's environment:
-In addition to standard labels, the list of available customer specific attribute labels is below. In the query, the following rule should be applied to get the attribute from the field name - if the field matches the pattern with `resource_fieldname` the attribute is `resources['fieldname']`. Otherwise it is `attribute['fieldname']`.
+In addition to standard labels, the list of available customer-specific attribute labels is below. In the query, the following rule should be applied to get the attribute from the field name - if the field matches the pattern with `resource_fieldname` the attribute is `resources['fieldname']`. Otherwise it is `attributes['fieldname']`.
 Any attribute used in the query should either be a standard attribute or available from get_trace_attributes
 
 To find the appropriate field name, try partial matches or matching fields which have similar meaning from the above list.
 
-**IMPORTANT**:  For filtering, if a field is not available in the list above, fall back to a regex based filter / parser instead of using conditions on attributes
+**IMPORTANT**:  For filtering, if a field is not available in the list above, fall back to a regexp-based filter / parser instead of using conditions on attributes
 
 ## Query Analysis Patterns:
 
