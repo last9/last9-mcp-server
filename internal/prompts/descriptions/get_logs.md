@@ -157,7 +157,7 @@ Note that regex parsing operators also work as regex filters
 - **resource_attributes['field_name']**: Resource attributes (prefixed with `resource_`)
 
 ### Custom Fields for user's environment:
-In addition to standard labels, the list of available customer specific attribute labels is below. In the query, the following rule should be applied to get the attribute from the field name - if the field matches the pattern with `resource_fieldname` the attribute is `resource_attributes['fieldname']`. Otherwise it is `attribute['fieldname']`.
+In addition to standard labels, the list of available customer-specific attribute labels is below. In the query, the following rule should be applied to get the attribute from the field name - if the field matches the pattern with `resource_fieldname` the attribute is `resource_attributes['fieldname']`. Otherwise it is `attributes['fieldname']`.
 Any attribute used in the query should either be a standard attribute or available in the list below
 {{labels}}
 
@@ -252,7 +252,7 @@ These are examples of pipeline json structure and available stages and functions
   "query": {
     "$and": [
       {"$eq": ["ServiceName", "auth"]},
-      {"$gt": ["attributes['http.status_code']", 400]}
+      {"$gt": ["attributes['http.status_code']", "400"]}
     ]
   }
 }]
@@ -264,17 +264,17 @@ These are examples of pipeline json structure and available stages and functions
 ```json
 [
   {
-    "type": "parse",
-    "parser": "json"
-  },
-  {
     "type": "filter",
     "query": {
       "$and": [
-        {"$gt": ["attributes['duration']", 100]},
+        {"$gt": ["attributes['duration']", "100"]},
         {"$neq": ["attributes['user_id']", ""]}
       ]
     }
+  },
+  {
+    "type": "parse",
+    "parser": "json"
   }
 ]
 ```
@@ -391,7 +391,7 @@ These are examples of pipeline json structure and available stages and functions
     "type": "window_aggregate",
     "function": {"$count": []},
     "as": "rate",
-    "window": ["10", "minutes"],
+    "window": ["10", "minutes"]
   }
 ]
 ```
@@ -406,8 +406,8 @@ These are examples of pipeline json structure and available stages and functions
   "type": "filter",
   "query": {
     "$and": [
-      {"$gte": ["attributes['http.status_code']", 500]},
-      {"$lt": ["attributes['http.status_code']", 600]}
+      {"$gte": ["attributes['http.status_code']", "500"]},
+      {"$lt": ["attributes['http.status_code']", "600"]}
     ]
   }
 }, {
@@ -430,7 +430,7 @@ These are examples of pipeline json structure and available stages and functions
   "type": "filter",
   "query": {
     "$and": [
-      {"$gt": ["attributes['duration']", 1000]},
+      {"$gt": ["attributes['duration']", "1000"]},
       {"$neq": ["attributes['db.statement']", ""]}
     ]
   }
@@ -485,11 +485,11 @@ These are examples of pipeline json structure and available stages and functions
   "query": {
     "$and": [
       {"$eq": ["attributes['messaging.system']", "kafka"]},
-      {"$gt": ["attributes['duration']", 500]},
+      {"$gt": ["attributes['duration']", "500"]},
       {"$or": [
         {"$contains": ["Body", "failed"]},
         {"$contains": ["Body", "error"]},
-        {"$gte": ["attributes['http.status_code']", 400]}
+        {"$gte": ["attributes['http.status_code']", "400"]}
       ]}
     ]
   }
@@ -543,7 +543,7 @@ These are examples of pipeline json structure and available stages and functions
       {"$or": [
         {"$contains": ["Body", "authentication failed"]},
         {"$contains": ["Body", "login failed"]},
-        {"$eq": ["attributes['http.status_code']", 401]}
+        {"$eq": ["attributes['http.status_code']", "401"]}
       ]},
       {"$neq": ["attributes['user.id']", ""]},
       {"$notcontains": ["attributes['http.user_agent']", "bot"]}
@@ -554,7 +554,7 @@ These are examples of pipeline json structure and available stages and functions
   "aggregates": [
     {
       "function": {"$count": []},
-      "as": "failed_logins",
+      "as": "failed_logins"
     }
   ],
   "groupby": {
@@ -584,7 +584,8 @@ These are examples of pipeline json structure and available stages and functions
 - "where X is greater than Y" → `{"$gt": [field, value]}`
 - "where X exists" → `{"$neq": [field, ""]}`
 - "parse as JSON/regex/logfmt" → `{"type": "parse", "parser": "..."}`
-- "sum/average/count of X" → `{"type": "aggregate", "function": {"$sumgenerate it's parameterswindows" → `{"type": "window_aggregate", "window": ["N", "minutes"]}`
+- "sum/average/count of X" → `{"type": "aggregate", "aggregates": [{"function": {"$sum": ["attributes['alias']"]}, "as": "_sum"}]}`
+- "per N minutes" → `{"type": "window_aggregate", "window": ["N", "minutes"]}`
 - "grouped by X" → `"groupby": {"field": "alias"}`
 
 ### Time-based Patterns:
