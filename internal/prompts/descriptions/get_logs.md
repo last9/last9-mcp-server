@@ -157,7 +157,7 @@ Note that regex parsing operators also work as regex filters
 - **resource_attributes['field_name']**: Resource attributes (prefixed with `resource_`)
 
 ### Custom Fields for user's environment:
-In addition to standard labels, the list of available customer specific attribute labels is below. In the query, the following rule should be applied to get the attribute from the field name - if the field matches the pattern with `resource_fieldname` the attribute is `resource_attributes['fieldname']`. Otherwise it is `attribute['fieldname']`.
+In addition to standard labels, the list of available customer-specific attribute labels is below. In the query, the following rule should be applied to get the attribute from the field name - if the field matches the pattern with `resource_fieldname` the attribute is `resource_attributes['fieldname']`. Otherwise it is `attributes['fieldname']`.
 Any attribute used in the query should either be a standard attribute or available in the list below
 {{labels}}
 

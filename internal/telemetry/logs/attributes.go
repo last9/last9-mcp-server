@@ -63,7 +63,10 @@ func FetchLogAttributeNames(ctx context.Context, client *http.Client, cfg models
 		pipeline := map[string]interface{}{
 			"pipeline": []interface{}{},
 		}
-		jsonBody, _ := json.Marshal(pipeline)
+		jsonBody, err := json.Marshal(pipeline)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal pipeline: %v", err)
+		}
 		httpReq, err = http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonBody))
 	}
 
@@ -182,7 +185,10 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(con
 			pipeline := map[string]interface{}{
 				"pipeline": []interface{}{},
 			}
-			jsonBody, _ := json.Marshal(pipeline)
+			jsonBody, err := json.Marshal(pipeline)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to marshal pipeline: %v", err)
+			}
 
 			httpReq, err = http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonBody))
 

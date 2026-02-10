@@ -90,12 +90,12 @@ The JSON pipeline format supports filtering, parsing, aggregation on trace data.
 ```
 
 ### Parse Operations:
-Note that regex parsing operators also work as regex filters
+Note that regexp parsing operators also work as regexp filters
 ```json
 {
   "type": "parse",
   "parser": "json|regexp|logfmt",
-  "pattern": "regex_pattern",  // For regexp parser. Must include named capture groups using the (?P<field>...) syntax for field mapping.
+  "pattern": "regexp_pattern",  // For regexp parser. Must include named capture groups using the (?P<field>...) syntax for field mapping.
   "labels": {"field": "alias"}  // Field mappings for json parsing
 }
 ```
@@ -167,7 +167,7 @@ Any attribute used in the query should either be a standard attribute or availab
 
 To find the appropriate field name, try partial matches or matching fields which have similar meaning from the above list.
 
-**IMPORTANT**:  For filtering, if a field is not available in the list above, fall back to a regex based filter / parser instead of using conditions on attributes
+**IMPORTANT**:  For filtering, if a field is not available in the list above, fall back to a regexp-based filter / parser instead of using conditions on attributes
 
 ## Query Analysis Patterns:
 
