@@ -74,12 +74,12 @@ The JSON pipeline format supports filtering, parsing, aggregation on log data.
   "query": {
     "$and": [...],        // AND multiple conditions
     "$or": [...],         // OR multiple conditions
-    "$eq": [field, value],     // Equals. value may be a string or a number
-    "$neq": [field, value],    // Not equals. value may be a string or a number
-    "$gt": [field, value],     // Greater than. value may be a string or a number (numeric operators accept numeric literals or strings containing numbers)
-    "$lt": [field, value],     // Less than. value may be a string or a number (numeric operators accept numeric literals or strings containing numbers)
-    "$gte": [field, value],    // Greater than or equal. value may be a string or a number (numeric operators accept numeric literals or strings containing numbers)
-    "$lte": [field, value],    // Less than or equal. value may be a string or a number (numeric operators accept numeric literals or strings containing numbers)
+    "$eq": [field, value],     // Equals. value must be a string
+    "$neq": [field, value],    // Not equals. value must be a string
+    "$gt": [field, value],     // Greater than. value must be a string containing a number
+    "$lt": [field, value],     // Less than. value must be a string containing a number
+    "$gte": [field, value],    // Greater than or equal. value must be a string containing a number
+    "$lte": [field, value],    // Less than or equal. value must be a string containing a number
     "$contains": [field, text], // Contains text
     "$notcontains": [field, text], // Doesn't contain text
     "$regex": [field, pattern], // Regex match
@@ -252,7 +252,7 @@ These are examples of pipeline json structure and available stages and functions
   "query": {
     "$and": [
       {"$eq": ["ServiceName", "auth"]},
-      {"$gt": ["attributes['http.status_code']", 400]}
+      {"$gt": ["attributes['http.status_code']", "400"]}
     ]
   }
 }]
@@ -267,7 +267,7 @@ These are examples of pipeline json structure and available stages and functions
     "type": "filter",
     "query": {
       "$and": [
-        {"$gt": ["attributes['duration']", 100]},
+        {"$gt": ["attributes['duration']", "100"]},
         {"$neq": ["attributes['user_id']", ""]}
       ]
     }
@@ -406,8 +406,8 @@ These are examples of pipeline json structure and available stages and functions
   "type": "filter",
   "query": {
     "$and": [
-      {"$gte": ["attributes['http.status_code']", 500]},
-      {"$lt": ["attributes['http.status_code']", 600]}
+      {"$gte": ["attributes['http.status_code']", "500"]},
+      {"$lt": ["attributes['http.status_code']", "600"]}
     ]
   }
 }, {
@@ -430,7 +430,7 @@ These are examples of pipeline json structure and available stages and functions
   "type": "filter",
   "query": {
     "$and": [
-      {"$gt": ["attributes['duration']", 1000]},
+      {"$gt": ["attributes['duration']", "1000"]},
       {"$neq": ["attributes['db.statement']", ""]}
     ]
   }
@@ -485,11 +485,11 @@ These are examples of pipeline json structure and available stages and functions
   "query": {
     "$and": [
       {"$eq": ["attributes['messaging.system']", "kafka"]},
-      {"$gt": ["attributes['duration']", 500]},
+      {"$gt": ["attributes['duration']", "500"]},
       {"$or": [
         {"$contains": ["Body", "failed"]},
         {"$contains": ["Body", "error"]},
-        {"$gte": ["attributes['http.status_code']", 400]}
+        {"$gte": ["attributes['http.status_code']", "400"]}
       ]}
     ]
   }
@@ -543,7 +543,7 @@ These are examples of pipeline json structure and available stages and functions
       {"$or": [
         {"$contains": ["Body", "authentication failed"]},
         {"$contains": ["Body", "login failed"]},
-        {"$eq": ["attributes['http.status_code']", 401]}
+        {"$eq": ["attributes['http.status_code']", "401"]}
       ]},
       {"$neq": ["attributes['user.id']", ""]},
       {"$notcontains": ["attributes['http.user_agent']", "bot"]}
