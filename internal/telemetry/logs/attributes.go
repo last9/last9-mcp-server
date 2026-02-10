@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"time"
 
 	"last9-mcp/internal/models"
@@ -118,6 +119,7 @@ func FetchLogAttributeNames(ctx context.Context, client *http.Client, cfg models
 		return nil, fmt.Errorf("API returned non-success status: %s", result.Status)
 	}
 
+	sort.Strings(result.Data)
 	return result.Data, nil
 }
 

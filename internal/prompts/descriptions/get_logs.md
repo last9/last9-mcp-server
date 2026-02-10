@@ -74,12 +74,12 @@ The JSON pipeline format supports filtering, parsing, aggregation on log data.
   "query": {
     "$and": [...],        // AND multiple conditions
     "$or": [...],         // OR multiple conditions
-    "$eq": [field, value],     // Equals. value must be a string
-    "$neq": [field, value],    // Not equals. value must be a string
-    "$gt": [field, value],     // Greater than. value must be a string containing a number
-    "$lt": [field, value],     // Less than. value must be a string containing a number
-    "$gte": [field, value],    // Greater than or equal. value must be a string containing a number
-    "$lte": [field, value],    // Less than or equal. value must be a string containing a number
+    "$eq": [field, value],     // Equals. value may be a string or a number
+    "$neq": [field, value],    // Not equals. value may be a string or a number
+    "$gt": [field, value],     // Greater than. value may be a string or a number (numeric operators accept numeric literals or strings containing numbers)
+    "$lt": [field, value],     // Less than. value may be a string or a number (numeric operators accept numeric literals or strings containing numbers)
+    "$gte": [field, value],    // Greater than or equal. value may be a string or a number (numeric operators accept numeric literals or strings containing numbers)
+    "$lte": [field, value],    // Less than or equal. value may be a string or a number (numeric operators accept numeric literals or strings containing numbers)
     "$contains": [field, text], // Contains text
     "$notcontains": [field, text], // Doesn't contain text
     "$regex": [field, pattern], // Regex match
@@ -264,10 +264,6 @@ These are examples of pipeline json structure and available stages and functions
 ```json
 [
   {
-    "type": "parse",
-    "parser": "json"
-  },
-  {
     "type": "filter",
     "query": {
       "$and": [
@@ -275,6 +271,10 @@ These are examples of pipeline json structure and available stages and functions
         {"$neq": ["attributes['user_id']", ""]}
       ]
     }
+  },
+  {
+    "type": "parse",
+    "parser": "json"
   }
 ]
 ```
@@ -391,7 +391,7 @@ These are examples of pipeline json structure and available stages and functions
     "type": "window_aggregate",
     "function": {"$count": []},
     "as": "rate",
-    "window": ["10", "minutes"],
+    "window": ["10", "minutes"]
   }
 ]
 ```
@@ -554,7 +554,7 @@ These are examples of pipeline json structure and available stages and functions
   "aggregates": [
     {
       "function": {"$count": []},
-      "as": "failed_logins",
+      "as": "failed_logins"
     }
   ],
   "groupby": {
@@ -584,7 +584,8 @@ These are examples of pipeline json structure and available stages and functions
 - "where X is greater than Y" → `{"$gt": [field, value]}`
 - "where X exists" → `{"$neq": [field, ""]}`
 - "parse as JSON/regex/logfmt" → `{"type": "parse", "parser": "..."}`
-- "sum/average/count of X" → `{"type": "aggregate", "function": {"$sumgenerate it's parameterswindows" → `{"type": "window_aggregate", "window": ["N", "minutes"]}`
+- "sum/average/count of X" → `{"type": "aggregate", "aggregates": [{"function": {"$sum": ["attributes['alias']"]}, "as": "_sum"}]}`
+- "per N minutes" → `{"type": "window_aggregate", "window": ["N", "minutes"]}`
 - "grouped by X" → `"groupby": {"field": "alias"}`
 
 ### Time-based Patterns:

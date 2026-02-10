@@ -65,14 +65,18 @@ func (c *AttributeCache) Warm(ctx context.Context) {
 func (c *AttributeCache) GetLogAttributes() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.logAttrs
+	attrs := make([]string, len(c.logAttrs))
+	copy(attrs, c.logAttrs)
+	return attrs
 }
 
 // GetTraceAttributes returns cached trace attribute names.
 func (c *AttributeCache) GetTraceAttributes() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.traceAttrs
+	attrs := make([]string, len(c.traceAttrs))
+	copy(attrs, c.traceAttrs)
+	return attrs
 }
 
 // IsStale returns true if the cache is older than the TTL.
