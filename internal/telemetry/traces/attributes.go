@@ -163,6 +163,9 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 			}
 			endTime = parsed.Unix()
 		}
+		if startTime > endTime {
+			return nil, nil, fmt.Errorf("start_time_iso must be before or equal to end_time_iso")
+		}
 
 		// Get region parameter or use default from config
 		region := cfg.Region

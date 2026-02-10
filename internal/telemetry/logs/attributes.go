@@ -131,35 +131,24 @@ func FetchLogAttributeNames(ctx context.Context, client *http.Client, cfg models
 // NewGetLogAttributesHandler creates a handler for fetching log attributes
 func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetLogAttributesArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetLogAttributesArgs) (*mcp.CallToolResult, any, error) {
-		// Parse time range parameters
-		now := time.Now()
-
-		// Default to 15 minutes window
-		startTime := now.Add(-15 * time.Minute).Unix()
-		endTime := now.Unix()
-
-		// Check for lookback_minutes parameter
+		params := make(map[string]interface{})
 		if args.LookbackMinutes > 0 {
-			startTime = now.Add(-time.Duration(args.LookbackMinutes) * time.Minute).Unix()
+			params["lookback_minutes"] = args.LookbackMinutes
 		}
-
-		// Check for explicit start_time_iso
 		if args.StartTimeISO != "" {
-			parsed, err := utils.ParseToolTimestamp(args.StartTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid start_time_iso format: %w", err)
-			}
-			startTime = parsed.Unix()
+			params["start_time_iso"] = args.StartTimeISO
+		}
+		if args.EndTimeISO != "" {
+			params["end_time_iso"] = args.EndTimeISO
 		}
 
-		// Check for explicit end_time_iso
-		if args.EndTimeISO != "" {
-			parsed, err := utils.ParseToolTimestamp(args.EndTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid end_time_iso format: %w", err)
-			}
-			endTime = parsed.Unix()
+		const defaultLogAttributesLookback = 15
+		startTimeParsed, endTimeParsed, err := utils.GetTimeRange(params, defaultLogAttributesLookback)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to parse time range: %w", err)
 		}
+		startTime := startTimeParsed.Unix()
+		endTime := endTimeParsed.Unix()
 
 		// Get region parameter or use default from config
 		region := cfg.Region
@@ -177,7 +166,6 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(con
 		queryParams.Set("end", fmt.Sprintf("%d", endTime))
 
 		var httpReq *http.Request
-		var err error
 
 		if durationMinutes > 20 {
 			// Use GET /logs/api/v1/labels for time ranges > 20 minutes

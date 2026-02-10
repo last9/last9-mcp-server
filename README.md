@@ -99,7 +99,7 @@ Parameters:
 - `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - 60 minutes.
 - `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 ### prometheus_instant_query
-Perform a Prometheus instant query to get metrics data at a specific point in time. Typically should use rollup functions like sum_over_time, avg_over_time, quantile_over_time over a time window.
+Perform a Prometheus instant query to get metrics data at a specific time. Typically should use rollup functions like sum_over_time, avg_over_time, quantile_over_time over a time window.
 Parameters:
 - `query` (string, required): The instant query to execute.
 - `time_iso` (string, optional): Time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to current time.
