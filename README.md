@@ -41,6 +41,12 @@ IDEs. Implements the following MCP
 - `get_alert_config`: Get alert configurations (alert rules) from Last9.
 - `get_alerts`: Get currently active alerts from Last9 monitoring system.
 ## Tools Documentation
+### Time Input Standard
+- For relative windows, prefer `lookback_minutes`.
+- For absolute windows, use `start_time_iso`, `end_time_iso`, or `time_iso` in RFC3339/ISO8601 (for example, `2026-02-09T15:04:05Z`).
+- If both relative and absolute inputs are provided, absolute time inputs take precedence.
+- Legacy `YYYY-MM-DD HH:MM:SS` is accepted only for compatibility.
+
 ### get_exceptions
 Retrieves server-side exceptions over a specified time range.
 Parameters:
@@ -48,70 +54,68 @@ Parameters:
   Default: 20.
 - `lookback_minutes` (integer, recommended): Number of minutes to look back from
   now. Default: 60. Examples: 60, 30, 15.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD
-  HH:MM:SS). Leave empty to use lookback_minutes.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD
-  HH:MM:SS). Leave empty to default to current time.
+- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
+- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `service_name` (string, optional): Filter exceptions by service name (e.g., api-service).
 - `span_name` (string, optional): Name of the span to filter by.
 - `deployment_environment` (string, optional): Filter exceptions by deployment environment from resource attributes (e.g., production, staging).
 ### get_service_summary
 Get service summary over a given time range. Includes service name, environment, throughput, error rate, and response time. All values are p95 quantiles over the time range.
 Parameters:
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to end_time_iso - 1 hour.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to end_time_iso - 1 hour.
+- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `env` (string, optional): Environment to filter by. Defaults to 'prod'.
 ### get_service_environments
 Get available environments for services. Returns an array of environments that can be used with other APM tools.
 Parameters:
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to end_time_iso - 1 hour.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to end_time_iso - 1 hour.
+- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 Note: All other APM tools that retrieve service information (like `get_service_performance_details`, `get_service_dependency_graph`, `get_service_operations_summary`, `get_service_summary`) require an `env` parameter. This parameter must be one of the environments returned by this tool. If this tool returns an empty array, use an empty string `""` for the env parameter.
 ### get_service_performance_details
 Get detailed performance metrics for a specific service over a given time range.
 Parameters:
 - `service_name` (string, required): Name of the service to get performance details for.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - 60 minutes.
+- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `env` (string, optional): Environment to filter by. Defaults to 'prod'.
 ### get_service_operations_summary
 Get a summary of operations inside a service over a given time range. Returns operations like HTTP endpoints, database queries, messaging producer and HTTP client calls.
 Parameters:
 - `service_name` (string, required): Name of the service to get operations summary for.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - 60 minutes.
+- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `env` (string, optional): Environment to filter by. Defaults to 'prod'.
 ### get_service_dependency_graph
 Get details of the throughput, response times and error rates of incoming, outgoing and infrastructure components of a service. Useful for analyzing cascading effects of errors and performance issues.
 Parameters:
 - `service_name` (string, optional): Name of the service to get the dependency graph for.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - 60 minutes.
+- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `env` (string, optional): Environment to filter by. Defaults to 'prod'.
 ### prometheus_range_query
 Perform a Prometheus range query to get metrics data over a specified time range. Recommended to check available labels first using `prometheus_labels` tool.
 Parameters:
 - `query` (string, required): The range query to execute.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - 60 minutes.
+- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 ### prometheus_instant_query
-Perform a Prometheus instant query to get metrics data at a specific point in time. Typically should use rollup functions like sum_over_time, avg_over_time, quantile_over_time over a time window.
+Perform a Prometheus instant query to get metrics data at a specific time. Typically should use rollup functions like sum_over_time, avg_over_time, quantile_over_time over a time window.
 Parameters:
 - `query` (string, required): The instant query to execute.
-- `time_iso` (string, optional): Time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `time_iso` (string, optional): Time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to current time.
 ### prometheus_label_values
 Return the label values for a particular label and PromQL filter query. Similar to Prometheus /label_values call.
 Parameters:
 - `match_query` (string, required): A valid PromQL filter query.
 - `label` (string, required): The label to get values for.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - 60 minutes.
+- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 ### prometheus_labels
 Return the labels for a given PromQL match query. Similar to Prometheus /labels call.
 Parameters:
 - `match_query` (string, required): A valid PromQL filter query.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - 60 minutes.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - 60 minutes.
+- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 ### get_logs
 Gets logs filtered by service name and/or severity level within a specified time range. This tool now uses the advanced v2 logs API with physical index optimization for better performance.
 **Note**: This tool now requires a `service_name` parameter and internally uses the same advanced infrastructure as `get_service_logs`.
@@ -119,8 +123,8 @@ Parameters:
 - `service_name` (string, required): Name of the service to get logs for.
 - `severity` (string, optional): Severity of the logs to get (automatically converted to severity_filters format).
 - `lookback_minutes` (integer, recommended): Number of minutes to look back from now. Default: 60. Examples: 60, 30, 15.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
+- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `limit` (integer, optional): Maximum number of logs to return. Default: 20.
 - `env` (string, optional): Environment to filter by. Use "get_service_environments" tool to get available environments.
 ### get_drop_rules
@@ -161,7 +165,8 @@ Returns information about:
 ### get_alerts
 Get currently active alerts from Last9 monitoring system. Returns all alerts that are currently firing or have fired recently within the specified time window.
 Parameters:
-- `timestamp` (integer, optional): Unix timestamp for the query time. Leave empty to default to current time.
+- `time_iso` (string, optional): Evaluation time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Preferred.
+- `timestamp` (integer, optional): Unix timestamp for the query time. Deprecated alias.
 - `window` (integer, optional): Time window in seconds to look back for alerts. Defaults to 900 seconds (15 minutes). Range: 60-86400 seconds.
 Returns information about:
 - Alert rule details (ID, name, group, type)
@@ -180,8 +185,8 @@ Parameters:
 - `env` (string, optional): Environment to filter by. Use "get_service_environments" tool to get available environments.
 - `severity_filters` (array, optional): Array of severity patterns to filter logs (e.g., ["error", "warn"]). Uses OR logic.
 - `body_filters` (array, optional): Array of message content patterns to filter logs (e.g., ["timeout", "failed"]). Uses OR logic.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - lookback_minutes.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - lookback_minutes.
+- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 Filtering behavior:
 - Multiple filter types are combined with AND logic (service AND severity AND body)
 - Each filter array uses OR logic (matches any pattern in the array)
@@ -192,8 +197,8 @@ Examples:
 Get available log attributes (labels) for a specified time window. This tool retrieves all attribute names that exist in logs during the specified time range, which can be used for filtering and querying logs.
 Parameters:
 - `lookback_minutes` (integer, optional): Number of minutes to look back from now for the time window. Default: 15. Examples: 15, 30, 60.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
+- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `region` (string, optional): AWS region to query. Leave empty to use default from configuration. Examples: ap-south-1, us-east-1, eu-west-1.
 Returns:
 - List of log attributes grouped into two categories:
@@ -203,8 +208,8 @@ Returns:
 Execute advanced trace queries using JSON pipeline syntax for complex filtering and aggregation. This tool provides powerful querying capabilities for traces using a pipeline-based approach with filters, aggregations, and transformations.
 Parameters:
 - `tracejson_query` (array, required): JSON pipeline query for traces. Use the tracejson_query_builder prompt to generate JSON pipeline queries from natural language.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS).
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS).
+- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z).
+- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z).
 - `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60 minutes.
 - `limit` (integer, optional): Maximum number of traces to return. Default: 20. Range: 1-100.
 This tool supports complex queries with multiple filter conditions, aggregations, and custom processing pipelines for advanced trace analysis.
@@ -214,8 +219,8 @@ Parameters:
 - `trace_id` (string, optional): Specific trace ID to retrieve. Cannot be used with service_name.
 - `service_name` (string, optional): Name of service to get traces for. Cannot be used with trace_id.
 - `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60 minutes. Examples: 60, 30, 15.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
+- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `limit` (integer, optional): Maximum number of traces to return. Default: 10. Range: 1-100.
 - `env` (string, optional): Environment to filter by. Use "get_service_environments" tool to get available environments.
 Usage rules:
@@ -229,16 +234,16 @@ Returns trace data including trace IDs, spans, duration, timestamps, and status 
 Get available trace attributes (series) for a specified time window. This tool retrieves all attribute names that exist in traces during the specified time range, which can be used for filtering and querying traces.
 Parameters:
 - `lookback_minutes` (integer, optional): Number of minutes to look back from now for the time window. Default: 15. Examples: 15, 30, 60.
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to use lookback_minutes.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
+- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `region` (string, optional): AWS region to query. Leave empty to use default from configuration. Examples: ap-south-1, us-east-1, eu-west-1.
 Returns:
 - An alphabetically sorted list of all available trace attributes (e.g., http.method, http.status_code, db.name, resource_service.name, duration, etc.)
 ### get_change_events
 Get change events from the last9_change_events prometheus metric over a given time range. Returns change events that occurred in the specified time window, including deployments, configuration changes, and other system modifications.
 Parameters:
-- `start_time_iso` (string, optional): Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - lookback_minutes.
-- `end_time_iso` (string, optional): End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time.
+- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - lookback_minutes.
+- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60 minutes. Examples: 60, 30, 15.
 - `service` (string, optional): Name of the service to filter change events for.
 - `environment` (string, optional): Environment to filter by.

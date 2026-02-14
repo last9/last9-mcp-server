@@ -34,56 +34,86 @@ const (
 	TokenRefreshBufferPercent = 50
 )
 
-// GetTimeRange returns start and end times based on lookback minutes
-// If start_time_iso and end_time_iso are provided, they take precedence
-// Otherwise, returns now and now - lookbackMinutes
+// ParseToolTimestamp parses tool timestamp input into UTC.
 //
-// IMPORTANT: All ISO timestamps are parsed as UTC to ensure consistent behavior
-// across different server timezones. This prevents timezone-related bugs where
-// queries return data from unexpected time periods.
+// Accepted formats:
+// - RFC3339Nano (canonical)
+// - RFC3339 (canonical)
+// - "2006-01-02 15:04:05" (legacy compatibility; interpreted as UTC)
+func ParseToolTimestamp(value string) (time.Time, error) {
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05",
+	}
+
+	for _, layout := range layouts {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed.UTC(), nil
+		}
+	}
+
+	return time.Time{}, fmt.Errorf(
+		"unsupported time format %q. Use RFC3339/ISO8601 like 2026-02-09T15:04:05Z",
+		value,
+	)
+}
+
+// GetTimeRange returns start and end times based on lookback minutes.
+// If start_time_iso and end_time_iso are provided, they take precedence.
+// Otherwise, returns now and now - lookbackMinutes.
 func GetTimeRange(params map[string]interface{}, defaultLookbackMinutes int) (startTime, endTime time.Time, err error) {
 	// Always use UTC to ensure consistent behavior across timezones
 	endTime = time.Now().UTC()
 
 	// First check if lookback_minutes is provided
 	lookbackMinutes := defaultLookbackMinutes
-	if l, ok := params["lookback_minutes"].(float64); ok {
-		lookbackMinutes = int(l)
-		if lookbackMinutes < 1 {
-			return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes must be at least 1")
+	if rawLookback, ok := params["lookback_minutes"]; ok {
+		switch l := rawLookback.(type) {
+		case float64:
+			lookbackMinutes = int(l)
+		case int:
+			lookbackMinutes = l
+		case int64:
+			lookbackMinutes = int(l)
+		default:
+			return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes must be a number")
 		}
-		if lookbackMinutes > MaxLookbackMinutes {
-			return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes cannot exceed %d (24 hours)", MaxLookbackMinutes)
-		}
+	}
+	if lookbackMinutes < 1 {
+		return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes must be at least 1")
+	}
+	if lookbackMinutes > MaxLookbackMinutes {
+		return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes cannot exceed %d (24 hours)", MaxLookbackMinutes)
 	}
 
 	// Default start time based on lookback
 	startTime = endTime.Add(time.Duration(-lookbackMinutes) * time.Minute)
 
-	// Override with explicit timestamps if provided
-	if startTimeStr, ok := params["start_time_iso"].(string); ok && startTimeStr != "" {
-		t, err := time.Parse("2006-01-02 15:04:05", startTimeStr)
-		if err != nil {
-			return time.Time{}, time.Time{}, fmt.Errorf("invalid start_time_iso format: %w", err)
-		}
-		// Force UTC timezone to prevent server timezone from affecting timestamp interpretation
-		// This ensures "2025-06-23 16:00:00" is always treated as UTC, not local time
-		startTime = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.UTC)
+	startTimeStr, hasStart := params["start_time_iso"].(string)
+	endTimeStr, hasEnd := params["end_time_iso"].(string)
 
-		// If start_time is provided but no end_time, use start_time + lookback_minutes
-		if endTimeStr, ok := params["end_time_iso"].(string); !ok || endTimeStr == "" {
-			endTime = startTime.Add(time.Duration(lookbackMinutes) * time.Minute)
+	if hasStart && startTimeStr != "" {
+		parsedStart, parseErr := ParseToolTimestamp(startTimeStr)
+		if parseErr != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("invalid start_time_iso format: %w", parseErr)
 		}
+		startTime = parsedStart
 	}
 
-	if endTimeStr, ok := params["end_time_iso"].(string); ok && endTimeStr != "" {
-		t, err := time.Parse("2006-01-02 15:04:05", endTimeStr)
-		if err != nil {
-			return time.Time{}, time.Time{}, fmt.Errorf("invalid end_time_iso format: %w", err)
+	if hasEnd && endTimeStr != "" {
+		parsedEnd, parseErr := ParseToolTimestamp(endTimeStr)
+		if parseErr != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("invalid end_time_iso format: %w", parseErr)
 		}
-		// Force UTC timezone to prevent server timezone from affecting timestamp interpretation
-		// This ensures "2025-06-23 16:30:00" is always treated as UTC, not local time
-		endTime = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.UTC)
+		endTime = parsedEnd
+	}
+
+	// Apply lookback defaults only when one explicit boundary is provided.
+	if hasStart && startTimeStr != "" && (!hasEnd || endTimeStr == "") {
+		endTime = startTime.Add(time.Duration(lookbackMinutes) * time.Minute)
+	} else if hasEnd && endTimeStr != "" && (!hasStart || startTimeStr == "") {
+		startTime = endTime.Add(time.Duration(-lookbackMinutes) * time.Minute)
 	}
 
 	// Validate time range

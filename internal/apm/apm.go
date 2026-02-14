@@ -33,59 +33,112 @@ type apiPromRangeResp []struct {
 
 // Input structs for MCP SDK handlers
 type ServiceSummaryArgs struct {
-	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
-	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
-	Env          string `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
+	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
+	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440). Use for relative windows like last 30 minutes."`
+	Env             string  `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
 }
 
 type ServiceEnvironmentsArgs struct {
-	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
-	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
+	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440). Use for relative windows like last 30 minutes."`
 }
 
 type ServicePerformanceDetailsArgs struct {
-	ServiceName  string `json:"service_name" jsonschema:"Name of the service to get performance details for (required)"`
-	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
-	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
-	Env          string `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
+	ServiceName     string  `json:"service_name" jsonschema:"Name of the service to get performance details for (required)"`
+	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
+	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440). Use for relative windows like last 30 minutes."`
+	Env             string  `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
 }
 
 type ServiceOperationsSummaryArgs struct {
-	ServiceName  string `json:"service_name" jsonschema:"Name of the service to get operations summary for (required)"`
-	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
-	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
-	Env          string `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
+	ServiceName     string  `json:"service_name" jsonschema:"Name of the service to get operations summary for (required)"`
+	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
+	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440). Use for relative windows like last 30 minutes."`
+	Env             string  `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
 }
 
 type ServiceDependencyGraphArgs struct {
-	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
-	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
-	Env          string `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
-	ServiceName  string `json:"service_name,omitempty" jsonschema:"Service name to focus on in the dependency graph (e.g. api-service)"`
+	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
+	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440). Use for relative windows like last 30 minutes."`
+	Env             string  `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
+	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Service name to focus on in the dependency graph (e.g. api-service)"`
 }
 
 type PromqlRangeQueryArgs struct {
-	Query        string `json:"query" jsonschema:"PromQL query to execute (required)"`
-	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
-	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+	Query           string  `json:"query" jsonschema:"PromQL query to execute (required)"`
+	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
+	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440). Use for relative windows like last 30 minutes."`
 }
 
 type PromqlInstantQueryArgs struct {
-	Query   string `json:"query" jsonschema:"PromQL query to execute (required)"`
-	TimeISO string `json:"time_iso,omitempty" jsonschema:"Evaluation time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
+	Query           string  `json:"query" jsonschema:"PromQL query to execute (required)"`
+	TimeISO         string  `json:"time_iso,omitempty" jsonschema:"Evaluation time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). If omitted, defaults to now or now-lookback_minutes."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now when time_iso is omitted (default: 0, range: 1-1440)."`
 }
 
 type PromqlLabelValuesArgs struct {
-	MatchQuery   string `json:"match_query,omitempty" jsonschema:"PromQL query to match series (e.g. up{job=\"prometheus\"})"`
-	Label        string `json:"label" jsonschema:"Label name to get values for (required)"`
-	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
-	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+	MatchQuery      string  `json:"match_query,omitempty" jsonschema:"PromQL query to match series (e.g. up{job=\"prometheus\"})"`
+	Label           string  `json:"label" jsonschema:"Label name to get values for (required)"`
+	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
+	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440). Use for relative windows like last 30 minutes."`
 }
 
 type PromqlLabelsArgs struct {
-	MatchQuery   string `json:"match_query,omitempty" jsonschema:"PromQL query to match series (e.g. up{job=\"prometheus\"})"`
-	StartTimeISO string `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO8601 format (e.g. 2024-06-01T12:00:00Z)"`
-	EndTimeISO   string `json:"end_time_iso,omitempty" jsonschema:"End time in ISO8601 format (e.g. 2024-06-01T13:00:00Z)"`
+	MatchQuery      string  `json:"match_query,omitempty" jsonschema:"PromQL query to match series (e.g. up{job=\"prometheus\"})"`
+	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
+	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440). Use for relative windows like last 30 minutes."`
+}
+
+func resolveTimeRange(startTimeISO, endTimeISO string, lookbackMinutes float64) (int64, int64, error) {
+	params := map[string]interface{}{}
+	if startTimeISO != "" {
+		params["start_time_iso"] = startTimeISO
+	}
+	if endTimeISO != "" {
+		params["end_time_iso"] = endTimeISO
+	}
+	if lookbackMinutes != 0 {
+		params["lookback_minutes"] = lookbackMinutes
+	}
+
+	startTime, endTime, err := utils.GetTimeRange(params, utils.DefaultLookbackMinutes)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return startTime.Unix(), endTime.Unix(), nil
+}
+
+func resolveInstantQueryTime(timeISO string, lookbackMinutes float64) (int64, error) {
+	if timeISO != "" {
+		_, endTime, err := utils.GetTimeRange(map[string]interface{}{
+			"end_time_iso": timeISO,
+		}, utils.DefaultLookbackMinutes)
+		if err != nil {
+			return 0, fmt.Errorf("invalid time_iso format: %w", err)
+		}
+		return endTime.Unix(), nil
+	}
+
+	if lookbackMinutes != 0 {
+		startTime, _, err := utils.GetTimeRange(map[string]interface{}{
+			"lookback_minutes": lookbackMinutes,
+		}, utils.DefaultLookbackMinutes)
+		if err != nil {
+			return 0, err
+		}
+		return startTime.Unix(), nil
+	}
+
+	return time.Now().UTC().Unix(), nil
 }
 
 const GetServiceSummaryDescription = `
@@ -100,38 +153,17 @@ const GetServiceSummaryDescription = `
 	- error rate in requests per minute (rpm)
 	- p95 response time in milliseconds
 	Parameters:
-	- start_time: (Optional) Start time of the time range in ISO format. Defaults to end_time - 1 hour.
-	- end_time: (Optional) End time of the time range in ISO format. Defaults to current time.
+	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
+	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
+	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
 	- env: (Optional) Environment to filter by. If not provided, defaults to all environments.
 `
 
 func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceSummaryArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args ServiceSummaryArgs) (*mcp.CallToolResult, any, error) {
-		// Accept time range parameters
-		var (
-			startTimeParam, endTimeParam int64
-		)
-		// Accept end_time in ISO8601 format (e.g., "2024-06-01T13:00:00Z")
-		if args.EndTimeISO != "" {
-			t, err := time.Parse(time.RFC3339, args.EndTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid end_time_iso format, must be ISO8601: %w", err)
-			}
-			endTimeParam = t.Unix()
-		} else {
-			// Default end_time to current time
-			endTimeParam = time.Now().Unix()
-		}
-		// Accept start_time in ISO8601 format (e.g., "2024-06-01T12:00:00Z")
-		if args.StartTimeISO != "" {
-			t, err := time.Parse(time.RFC3339, args.StartTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid start_time_iso format, must be ISO8601: %w", err)
-			}
-			startTimeParam = t.Unix()
-		} else {
-			// Default start_time to end_time - 1 hour
-			startTimeParam = endTimeParam - 3600
+		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
+		if err != nil {
+			return nil, nil, err
 		}
 
 		// Accept env from parameters if provided
@@ -324,8 +356,9 @@ const GetServicePerformanceDetails = `
 	- top_operations.by_error_rate: Top 10 operations by error rate. The format of this is a list of dicts with operation name and error count.
 	- top_errors: Top 10 errors or exceptions by count. The format of this is a list of dicts with exception type (or http error code) and count. 
 	Parameters:
-	- start_time: (Optional) Start time of the time range in ISO format. Defaults to end_time - 1 hour.
-	- end_time: (Optional) End time of the time range in ISO format. Defaults to current time.
+	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
+	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
+	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
 	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
 `
 
@@ -421,31 +454,9 @@ type ServicePerformanceDetails struct {
 
 func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServicePerformanceDetailsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args ServicePerformanceDetailsArgs) (*mcp.CallToolResult, any, error) {
-		// Parse time parameters
-		var (
-			startTimeParam, endTimeParam int64
-		)
-
-		// Handle end_time
-		if args.EndTimeISO != "" {
-			t, err := time.Parse(time.RFC3339, args.EndTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid end_time_iso format, must be ISO8601: %w", err)
-			}
-			endTimeParam = t.Unix()
-		} else {
-			endTimeParam = time.Now().Unix()
-		}
-
-		// Handle start_time
-		if args.StartTimeISO != "" {
-			t, err := time.Parse(time.RFC3339, args.StartTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid start_time_iso format, must be ISO8601: %w", err)
-			}
-			startTimeParam = t.Unix()
-		} else {
-			startTimeParam = endTimeParam - 3600
+		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
+		if err != nil {
+			return nil, nil, err
 		}
 
 		// Handle environment
@@ -763,39 +774,18 @@ const GetServiceOperationsSummaryDescription = `
 		- net_peer_name: HTTP host or connection string
 	
 	Parameters:
-	- start_time: (Optional) Start time of the time range in ISO format. Defaults to end_time - 1 hour.
-	- end_time: (Optional) End time of the time range in ISO format. Defaults to current time.
+	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
+	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
+	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
 	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
 	- service_name: (Required) Service name to filter by. Defaults to all services.
 `
 
 func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceOperationsSummaryArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args ServiceOperationsSummaryArgs) (*mcp.CallToolResult, any, error) {
-		// Parse time parameters
-		var (
-			startTimeParam, endTimeParam int64
-		)
-
-		// Handle end_time
-		if args.EndTimeISO != "" {
-			t, err := time.Parse(time.RFC3339, args.EndTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid end_time_iso format, must be ISO8601: %w", err)
-			}
-			endTimeParam = t.Unix()
-		} else {
-			endTimeParam = time.Now().Unix()
-		}
-
-		// Handle start_time
-		if args.StartTimeISO != "" {
-			t, err := time.Parse(time.RFC3339, args.StartTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid start_time_iso format, must be ISO8601: %w", err)
-			}
-			startTimeParam = t.Unix()
-		} else {
-			startTimeParam = endTimeParam - 3600 // default to last hour
+		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
+		if err != nil {
+			return nil, nil, err
 		}
 
 		env := args.Env
@@ -1362,39 +1352,18 @@ const GetServiceDependencyGraphDetails = `
 	The detailed metrics, error rates and operation details of incoming and outgoing dependencies
 	can be obtained by using the get_service_details tool.
 	Parameters:
-	- start_time: (Optional) Start time of the time range in ISO format. Defaults to end_time - 1 hour.
-	- end_time: (Optional) End time of the time range in ISO format. Defaults to current time.
+	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
+	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
+	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
 	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
 	- service_name: (Required) Name of the service to get the dependency graph for.
 	`
 
 func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceDependencyGraphArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args ServiceDependencyGraphArgs) (*mcp.CallToolResult, any, error) {
-		// Parse time parameters
-		var (
-			startTimeParam, endTimeParam int64
-		)
-
-		// Handle end_time
-		if args.EndTimeISO != "" {
-			t, err := time.Parse(time.RFC3339, args.EndTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid end_time_iso format, must be ISO8601: %w", err)
-			}
-			endTimeParam = t.Unix()
-		} else {
-			endTimeParam = time.Now().Unix()
-		}
-
-		// Handle start_time
-		if args.StartTimeISO != "" {
-			t, err := time.Parse(time.RFC3339, args.StartTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid start_time_iso format, must be ISO8601: %w", err)
-			}
-			startTimeParam = t.Unix()
-		} else {
-			startTimeParam = endTimeParam - 3600 // default to last hour
+		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
+		if err != nil {
+			return nil, nil, err
 		}
 
 		env := args.Env
@@ -1842,8 +1811,9 @@ const PromqlRangeQueryDetails = `
 	The response will contain the metrics data for the specified query.
 	Parameters:
 	- query: (Required) The Prometheus query to execute.
-	- start_time: (Optional) Start time of the time range in ISO format. Defaults to end_time - 1 hour.
-	- end_time: (Optional) End time of the time range in ISO format. Defaults to current time.
+	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
+	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
+	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
 	`
 
 func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlRangeQueryArgs) (*mcp.CallToolResult, any, error) {
@@ -1853,28 +1823,9 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 			return nil, nil, fmt.Errorf("query is required")
 		}
 
-		var startTimeParam, endTimeParam int64
-
-		// Handle end_time
-		if args.EndTimeISO != "" {
-			t, err := time.Parse(time.RFC3339, args.EndTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid end_time_iso format, must be ISO8601: %w", err)
-			}
-			endTimeParam = t.Unix()
-		} else {
-			endTimeParam = time.Now().Unix()
-		}
-
-		// Handle start_time
-		if args.StartTimeISO != "" {
-			t, err := time.Parse(time.RFC3339, args.StartTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid start_time_iso format, must be ISO8601: %w", err)
-			}
-			startTimeParam = t.Unix()
-		} else {
-			startTimeParam = endTimeParam - 3600 // default to last hour
+		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
+		if err != nil {
+			return nil, nil, err
 		}
 
 		httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, query, startTimeParam, endTimeParam, cfg)
@@ -1929,7 +1880,8 @@ const PromqlInstantQueryDetails = `
 	The response will contain the metrics data for the specified query.
 	Parameters:
 	- query: (Required) The Prometheus query to execute.
-	- time: (Optional) The point in time to query in ISO format. Defaults to current time.
+	- time_iso: (Optional) The point in time to query in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
+	- lookback_minutes: (Optional) Number of minutes to look back from now when time_iso is omitted.
 `
 
 func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlInstantQueryArgs) (*mcp.CallToolResult, any, error) {
@@ -1939,16 +1891,9 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 			return nil, nil, fmt.Errorf("query is required")
 		}
 
-		var timeParam int64
-
-		if args.TimeISO != "" {
-			t, err := time.Parse(time.RFC3339, args.TimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid time_iso format, must be ISO8601: %w", err)
-			}
-			timeParam = t.Unix()
-		} else {
-			timeParam = time.Now().Unix()
+		timeParam, err := resolveInstantQueryTime(args.TimeISO, args.LookbackMinutes)
+		if err != nil {
+			return nil, nil, err
 		}
 
 		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, query, timeParam, cfg)
@@ -1983,8 +1928,9 @@ const GetServiceEnvironmentsDescription = `
 	Return the environments available for the services. This tool returns an array of environments. These env can act as 
 	label or argument values for other tools.
 	Parameters:
-	- start_time: (Optional) Start time of the time range in ISO format. Defaults to end_time - 1 hour
-	- end_time: (Optional) End time of the time range in ISO format. Defaults to current time
+	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
+	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
+	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
 
 	Returns an array of environments.
 `
@@ -1992,8 +1938,9 @@ const GetServiceEnvironmentsDescription = `
 const GetServiceDependencyGraphDescription = `
 	Get the service dependency graph showing relationships between services.
 	Parameters:
-	- start_time_iso: (Optional) Start time in ISO8601 format
-	- end_time_iso: (Optional) End time in ISO8601 format
+	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
+	- start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)
+	- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)
 	- env: (Optional) Environment to filter by
 	- service_name: (Optional) Service name to focus on in the dependency graph
 
@@ -2004,8 +1951,9 @@ const GetPromqlRangeQueryDescription = `
 	Execute a PromQL range query against the metrics data.
 	Parameters:
 	- query: PromQL query to execute
-	- start_time_iso: (Optional) Start time in ISO8601 format
-	- end_time_iso: (Optional) End time in ISO8601 format
+	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
+	- start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)
+	- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)
 
 	Returns time series data for the specified time range.
 `
@@ -2014,7 +1962,8 @@ const GetPromqlInstantQueryDescription = `
 	Execute a PromQL instant query against the metrics data.
 	Parameters:
 	- query: PromQL query to execute
-	- time_iso: (Optional) Evaluation time in ISO8601 format
+	- time_iso: (Optional) Evaluation time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)
+	- lookback_minutes: (Optional) Number of minutes to look back from now when time_iso is omitted.
 
 	Returns instant query results.
 `
@@ -2024,8 +1973,9 @@ const GetPromqlLabelValuesDescription = `
 	Parameters:
 	- label: Label name to get values for
 	- match_query: (Optional) PromQL query to match series
-	- start_time_iso: (Optional) Start time in ISO8601 format
-	- end_time_iso: (Optional) End time in ISO8601 format
+	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
+	- start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)
+	- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)
 
 	Returns available values for the specified label.
 `
@@ -2034,8 +1984,9 @@ const GetPromqlLabelsDescription = `
 	Get available labels from PromQL metrics.
 	Parameters:
 	- match_query: (Optional) PromQL query to match series
-	- start_time_iso: (Optional) Start time in ISO8601 format
-	- end_time_iso: (Optional) End time in ISO8601 format
+	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
+	- start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)
+	- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)
 
 	Returns available label names.
 `
@@ -2045,28 +1996,9 @@ const GetPromqlLabelsDescription = `
 // iterate over the values of `env` label and return the unique values
 func NewServiceEnvironmentsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceEnvironmentsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args ServiceEnvironmentsArgs) (*mcp.CallToolResult, any, error) {
-		var startTimeParam, endTimeParam int64
-
-		// Handle end_time
-		if args.EndTimeISO != "" {
-			t, err := time.Parse(time.RFC3339, args.EndTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid end_time_iso format, must be ISO8601: %w", err)
-			}
-			endTimeParam = t.Unix()
-		} else {
-			endTimeParam = time.Now().Unix()
-		}
-
-		// Handle start_time
-		if args.StartTimeISO != "" {
-			t, err := time.Parse(time.RFC3339, args.StartTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid start_time_iso format, must be ISO8601: %w", err)
-			}
-			startTimeParam = t.Unix()
-		} else {
-			startTimeParam = endTimeParam - 3600 // default to last hour
+		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
+		if err != nil {
+			return nil, nil, err
 		}
 
 		httpResp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, "env", "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}", startTimeParam, endTimeParam, cfg)
@@ -2106,8 +2038,9 @@ const PromqlLabelValuesQueryDetails = `
 	Parameters:
 	- match_query: (Required) A valid promql filter query
 	- label: (Required) Name of the label to return values for 
-	- start_time: (Optional) Start time of the time range in ISO format. Defaults to end_time - 1 hour
-	- end_time: (Optional) End time of the time range in ISO format. Defaults to current time
+	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
+	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
+	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
 
 	match_query should be a well formed, valid promql query
 	It is enouraged to not use default
@@ -2125,28 +2058,9 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 		if label == "" {
 			return nil, nil, fmt.Errorf("label is required")
 		}
-		var startTimeParam, endTimeParam int64
-
-		// Handle end_time
-		if args.EndTimeISO != "" {
-			t, err := time.Parse(time.RFC3339, args.EndTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid end_time_iso format, must be ISO8601: %w", err)
-			}
-			endTimeParam = t.Unix()
-		} else {
-			endTimeParam = time.Now().Unix()
-		}
-
-		// Handle start_time
-		if args.StartTimeISO != "" {
-			t, err := time.Parse(time.RFC3339, args.StartTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid start_time_iso format, must be ISO8601: %w", err)
-			}
-			startTimeParam = t.Unix()
-		} else {
-			startTimeParam = endTimeParam - 3600 // default to last hour
+		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
+		if err != nil {
+			return nil, nil, err
 		}
 
 		httpResp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, label, query, startTimeParam, endTimeParam, cfg)
@@ -2184,8 +2098,9 @@ const PromqlLabelsQueryDetails = `
 	It returns an array of labels.
 	Parameters:
 	- match_query: (Required) A valid promql filter query
-	- start_time: (Optional) Start time of the time range in ISO format. Defaults to end_time - 1 hour
-	- end_time: (Optional) End time of the time range in ISO format. Defaults to current time
+	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
+	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
+	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
 
 	match_query should be a well formed, valid promql query
 	It is enouraged to not use default
@@ -2199,28 +2114,9 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 		if query == "" {
 			return nil, nil, fmt.Errorf("match_query is required")
 		}
-		var startTimeParam, endTimeParam int64
-
-		// Handle end_time
-		if args.EndTimeISO != "" {
-			t, err := time.Parse(time.RFC3339, args.EndTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid end_time_iso format, must be ISO8601: %w", err)
-			}
-			endTimeParam = t.Unix()
-		} else {
-			endTimeParam = time.Now().Unix()
-		}
-
-		// Handle start_time
-		if args.StartTimeISO != "" {
-			t, err := time.Parse(time.RFC3339, args.StartTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid start_time_iso format, must be ISO8601: %w", err)
-			}
-			startTimeParam = t.Unix()
-		} else {
-			startTimeParam = endTimeParam - 3600 // default to last hour
+		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
+		if err != nil {
+			return nil, nil, err
 		}
 
 		httpResp, err := utils.MakePromLabelsAPIQuery(ctx, client, query, startTimeParam, endTimeParam, cfg)
