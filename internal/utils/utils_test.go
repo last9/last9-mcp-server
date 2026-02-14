@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -293,6 +294,68 @@ func TestGetTimeRange_TimeRangeValidation(t *testing.T) {
 				if err != nil {
 					t.Errorf("GetTimeRange() unexpected error: %v", err)
 				}
+			}
+		})
+	}
+}
+
+func TestParseToolTimestamp(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		wantUnix   int64
+		wantErr    bool
+		errSnippet string
+	}{
+		{
+			name:     "RFC3339",
+			input:    "2026-02-09T15:04:05Z",
+			wantUnix: 1770649445,
+		},
+		{
+			name:     "RFC3339Nano",
+			input:    "2026-02-09T15:04:05.123456789Z",
+			wantUnix: 1770649445,
+		},
+		{
+			name:     "RFC3339 with offset",
+			input:    "2026-02-09T20:34:05+05:30",
+			wantUnix: 1770649445,
+		},
+		{
+			name:     "Legacy format compatibility",
+			input:    "2026-02-09 15:04:05",
+			wantUnix: 1770649445,
+		},
+		{
+			name:       "Invalid format",
+			input:      "2026/02/09 15:04:05",
+			wantErr:    true,
+			errSnippet: "Use RFC3339/ISO8601",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed, err := ParseToolTimestamp(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("ParseToolTimestamp() expected error, got nil")
+				}
+				if tt.errSnippet != "" && !strings.Contains(err.Error(), tt.errSnippet) {
+					t.Fatalf("ParseToolTimestamp() error = %q, want substring %q", err.Error(), tt.errSnippet)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("ParseToolTimestamp() unexpected error: %v", err)
+			}
+			if parsed.Unix() != tt.wantUnix {
+				t.Fatalf("ParseToolTimestamp() unix = %d, want %d", parsed.Unix(), tt.wantUnix)
+			}
+			if parsed.Location() != time.UTC {
+				t.Fatalf("ParseToolTimestamp() expected UTC, got %v", parsed.Location())
 			}
 		})
 	}
