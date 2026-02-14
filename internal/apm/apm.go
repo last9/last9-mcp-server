@@ -827,7 +827,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the Prometheus query for response times of endpoint operations
 		respTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (quantile, span_name, span_kind) (trace_endpoint_duration{service_name='%s', span_kind='SPAN_KIND_SERVER', env='%s'}[%s]))",
+			"quantile_over_time(0.95, sum by (quantile, span_name, span_kind) (trace_endpoint_duration{service_name='%s', span_kind='SPAN_KIND_SERVER', env=~'%s'}[%s]))",
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
@@ -882,7 +882,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the Prometheus query for response times of database operations
 		dbRespTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (quantile, span_name, db_system, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name='%s', span_kind='SPAN_KIND_CLIENT', db_system!='', env='%s'}[%s]))",
+			"quantile_over_time(0.95, sum by (quantile, span_name, db_system, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name='%s', span_kind='SPAN_KIND_CLIENT', db_system!='', env=~'%s'}[%s]))",
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
@@ -904,15 +904,15 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			    100 * 
     			(
 					sum by(span_name, db_system, messaging_system, net_peer_name, rpc_system, span_kind)
-						(sum_over_time(trace_client_count{service_name="%s", db_system!="",env="%s", status_code=~"STATUS_CODE_ERROR"} [%s]) / %d)
+						(sum_over_time(trace_client_count{service_name="%s", db_system!="",env=~"%s", status_code=~"STATUS_CODE_ERROR"} [%s]) / %d)
 					or
 					sum by(span_name, db_system, messaging_system, net_peer_name, rpc_system, span_kind)
-						(sum_over_time(trace_client_count{service_name="%s", db_system!="",env="%s", http_status_code=~"4.*|5.*"} [%s]) / %d)
+						(sum_over_time(trace_client_count{service_name="%s", db_system!="",env=~"%s", http_status_code=~"4.*|5.*"} [%s]) / %d)
 				)  
 				/ 
 				(
 					sum by(span_name, db_system, messaging_system, net_peer_name, rpc_system, span_kind)
-						(sum_over_time(trace_client_count{service_name="%s", db_system!="",env="%s"} [%s]) / %d)
+						(sum_over_time(trace_client_count{service_name="%s", db_system!="",env=~"%s"} [%s]) / %d)
 				)
 			`,
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
@@ -952,7 +952,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the Prometheus query for response times of http operations
 		httpRespTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (quantile, span_name, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name='%s', span_kind='SPAN_KIND_CLIENT', env='%s'}[%s]))",
+			"quantile_over_time(0.95, sum by (quantile, span_name, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name='%s', span_kind='SPAN_KIND_CLIENT', env=~'%s'}[%s]))",
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
@@ -973,15 +973,15 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			`			100 * 
 			(
 				sum by(span_name, db_system, messaging_system, net_peer_name, rpc_system, span_kind)
-					(sum_over_time(trace_client_count{service_name="%s", env="%s", status_code=~"STATUS_CODE_ERROR"} [%s]) / %d)
+					(sum_over_time(trace_client_count{service_name="%s", env=~"%s", status_code=~"STATUS_CODE_ERROR"} [%s]) / %d)
 				or
 				sum by(span_name, db_system, messaging_system, net_peer_name, rpc_system, span_kind)
-					(sum_over_time(trace_client_count{service_name="%s", env="%s", http_status_code=~"4.*|5.*"} [%s]) / %d)
+					(sum_over_time(trace_client_count{service_name="%s", env=~"%s", http_status_code=~"4.*|5.*"} [%s]) / %d)
 			)
 			/
 			(
 				sum by(span_name, db_system, messaging_system, net_peer_name, rpc_system, span_kind)
-					(sum_over_time(trace_client_count{service_name="%s", env="%s"} [%s]) / %d)
+					(sum_over_time(trace_client_count{service_name="%s", env=~"%s"} [%s]) / %d)
 			)`,
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
@@ -1020,7 +1020,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the Prometheus query for response times of messaging operations
 		messagingRespTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (quantile, span_name, messaging_system, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name='%s', messaging_system!='', span_kind='SPAN_KIND_PRODUCER', env='%s'}[%s]))",
+			"quantile_over_time(0.95, sum by (quantile, span_name, messaging_system, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name='%s', messaging_system!='', span_kind='SPAN_KIND_PRODUCER', env=~'%s'}[%s]))",
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
@@ -1041,15 +1041,15 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			`			100 * 
 			(
 				sum by(span_name, messaging_system, net_peer_name, rpc_system, span_kind)
-					(sum_over_time(trace_client_count{service_name="%s", messaging_system!="", env="%s", status_code=~"STATUS_CODE_ERROR", span_kind='SPAN_KIND_PRODUCER'} [%s]) / %d)
+					(sum_over_time(trace_client_count{service_name="%s", messaging_system!="", env=~"%s", status_code=~"STATUS_CODE_ERROR", span_kind='SPAN_KIND_PRODUCER'} [%s]) / %d)
 				or
 				sum by(span_name, messaging_system, net_peer_name, rpc_system, span_kind)
-					(sum_over_time(trace_client_count{service_name="%s", messaging_system!="", env="%s", http_status_code=~"4.*|5.*", span_kind='SPAN_KIND_PRODUCER'} [%s]) / %d)
+					(sum_over_time(trace_client_count{service_name="%s", messaging_system!="", env=~"%s", http_status_code=~"4.*|5.*", span_kind='SPAN_KIND_PRODUCER'} [%s]) / %d)
 			)
 			/
 			(
 				sum by(span_name, messaging_system, net_peer_name, rpc_system, span_kind)
-					(sum_over_time(trace_client_count{service_name="%s", messaging_system!="", env="%s", span_kind='SPAN_KIND_PRODUCER'} [%s]) / %d)
+					(sum_over_time(trace_client_count{service_name="%s", messaging_system!="", env=~"%s", span_kind='SPAN_KIND_PRODUCER'} [%s]) / %d)
 			)`,
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
