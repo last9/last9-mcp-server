@@ -74,7 +74,8 @@ Parameters:
 - lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60 minutes.
 - service: (Optional) Name of the service to filter change events for
 - environment: (Optional) Environment to filter by
-- event_name: (Optional) Name of the change event to filter by (use available_event_names to see valid values)`
+- event_name: (Optional) Name of the change event to filter by (use available_event_names to see valid values)
+`
 
 // GetChangeEventsArgs represents the input arguments for the get_change_events tool
 type GetChangeEventsArgs struct {

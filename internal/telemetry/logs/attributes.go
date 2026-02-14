@@ -23,6 +23,8 @@ that can be used for filtering and querying logs within the specified time range
 The attributes returned are field names that exist in the logs during the specified
 time window, which can then be used in log queries and filters.
 
+Defaults to the last 15 minutes if no time window is provided.
+
 Returns a list of attribute names like "service", "severity", "body", "level", etc.
 `
 

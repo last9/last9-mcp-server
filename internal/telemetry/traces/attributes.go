@@ -25,6 +25,8 @@ that can be used for filtering and querying traces within the specified time ran
 The attributes returned are field names that exist in traces during the specified
 time window, which can then be used in trace queries and filters.
 
+Defaults to the last 15 minutes if no time window is provided.
+
 Returns an alphabetically sorted list of all available trace attributes.
 `
 
