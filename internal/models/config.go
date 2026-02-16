@@ -29,5 +29,7 @@ type Config struct {
 	PrometheusUsername string // Username for Prometheus authentication
 	PrometheusPassword string // Password for Prometheus authentication
 
+	ClusterID string // Cluster ID from datasource (for dashboard deep links)
+
 	TokenManager *auth.TokenManager // Manages authentication tokens
 }

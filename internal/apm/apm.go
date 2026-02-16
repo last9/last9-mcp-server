@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -272,7 +273,13 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
+
+		// Build deep link URL
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
+		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, "", env, "")
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(returnText),
@@ -715,7 +722,12 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
 
+		// Build deep link URL
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
+		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, env, "")
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(resultJSON),
@@ -815,7 +827,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the Prometheus query for response times of endpoint operations
 		respTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (quantile, span_name, span_kind) (trace_endpoint_duration{service_name='%s', span_kind='SPAN_KIND_SERVER', env='%s'}[%s]))",
+			"quantile_over_time(0.95, sum by (quantile, span_name, span_kind) (trace_endpoint_duration{service_name='%s', span_kind='SPAN_KIND_SERVER', env=~'%s'}[%s]))",
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
@@ -870,7 +882,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the Prometheus query for response times of database operations
 		dbRespTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (quantile, span_name, db_system, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name='%s', span_kind='SPAN_KIND_CLIENT', db_system!='', env='%s'}[%s]))",
+			"quantile_over_time(0.95, sum by (quantile, span_name, db_system, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name='%s', span_kind='SPAN_KIND_CLIENT', db_system!='', env=~'%s'}[%s]))",
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
@@ -892,15 +904,15 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			    100 * 
     			(
 					sum by(span_name, db_system, messaging_system, net_peer_name, rpc_system, span_kind)
-						(sum_over_time(trace_client_count{service_name="%s", db_system!="",env="%s", status_code=~"STATUS_CODE_ERROR"} [%s]) / %d)
+						(sum_over_time(trace_client_count{service_name="%s", db_system!="",env=~"%s", status_code=~"STATUS_CODE_ERROR"} [%s]) / %d)
 					or
 					sum by(span_name, db_system, messaging_system, net_peer_name, rpc_system, span_kind)
-						(sum_over_time(trace_client_count{service_name="%s", db_system!="",env="%s", http_status_code=~"4.*|5.*"} [%s]) / %d)
+						(sum_over_time(trace_client_count{service_name="%s", db_system!="",env=~"%s", http_status_code=~"4.*|5.*"} [%s]) / %d)
 				)  
 				/ 
 				(
 					sum by(span_name, db_system, messaging_system, net_peer_name, rpc_system, span_kind)
-						(sum_over_time(trace_client_count{service_name="%s", db_system!="",env="%s"} [%s]) / %d)
+						(sum_over_time(trace_client_count{service_name="%s", db_system!="",env=~"%s"} [%s]) / %d)
 				)
 			`,
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
@@ -940,7 +952,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the Prometheus query for response times of http operations
 		httpRespTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (quantile, span_name, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name='%s', span_kind='SPAN_KIND_CLIENT', env='%s'}[%s]))",
+			"quantile_over_time(0.95, sum by (quantile, span_name, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name='%s', span_kind='SPAN_KIND_CLIENT', env=~'%s'}[%s]))",
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
@@ -961,15 +973,15 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			`			100 * 
 			(
 				sum by(span_name, db_system, messaging_system, net_peer_name, rpc_system, span_kind)
-					(sum_over_time(trace_client_count{service_name="%s", env="%s", status_code=~"STATUS_CODE_ERROR"} [%s]) / %d)
+					(sum_over_time(trace_client_count{service_name="%s", env=~"%s", status_code=~"STATUS_CODE_ERROR"} [%s]) / %d)
 				or
 				sum by(span_name, db_system, messaging_system, net_peer_name, rpc_system, span_kind)
-					(sum_over_time(trace_client_count{service_name="%s", env="%s", http_status_code=~"4.*|5.*"} [%s]) / %d)
+					(sum_over_time(trace_client_count{service_name="%s", env=~"%s", http_status_code=~"4.*|5.*"} [%s]) / %d)
 			)
 			/
 			(
 				sum by(span_name, db_system, messaging_system, net_peer_name, rpc_system, span_kind)
-					(sum_over_time(trace_client_count{service_name="%s", env="%s"} [%s]) / %d)
+					(sum_over_time(trace_client_count{service_name="%s", env=~"%s"} [%s]) / %d)
 			)`,
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
@@ -1008,7 +1020,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the Prometheus query for response times of messaging operations
 		messagingRespTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (quantile, span_name, messaging_system, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name='%s', messaging_system!='', span_kind='SPAN_KIND_PRODUCER', env='%s'}[%s]))",
+			"quantile_over_time(0.95, sum by (quantile, span_name, messaging_system, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name='%s', messaging_system!='', span_kind='SPAN_KIND_PRODUCER', env=~'%s'}[%s]))",
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
@@ -1029,15 +1041,15 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			`			100 * 
 			(
 				sum by(span_name, messaging_system, net_peer_name, rpc_system, span_kind)
-					(sum_over_time(trace_client_count{service_name="%s", messaging_system!="", env="%s", status_code=~"STATUS_CODE_ERROR", span_kind='SPAN_KIND_PRODUCER'} [%s]) / %d)
+					(sum_over_time(trace_client_count{service_name="%s", messaging_system!="", env=~"%s", status_code=~"STATUS_CODE_ERROR", span_kind='SPAN_KIND_PRODUCER'} [%s]) / %d)
 				or
 				sum by(span_name, messaging_system, net_peer_name, rpc_system, span_kind)
-					(sum_over_time(trace_client_count{service_name="%s", messaging_system!="", env="%s", http_status_code=~"4.*|5.*", span_kind='SPAN_KIND_PRODUCER'} [%s]) / %d)
+					(sum_over_time(trace_client_count{service_name="%s", messaging_system!="", env=~"%s", http_status_code=~"4.*|5.*", span_kind='SPAN_KIND_PRODUCER'} [%s]) / %d)
 			)
 			/
 			(
 				sum by(span_name, messaging_system, net_peer_name, rpc_system, span_kind)
-					(sum_over_time(trace_client_count{service_name="%s", messaging_system!="", env="%s", span_kind='SPAN_KIND_PRODUCER'} [%s]) / %d)
+					(sum_over_time(trace_client_count{service_name="%s", messaging_system!="", env=~"%s", span_kind='SPAN_KIND_PRODUCER'} [%s]) / %d)
 			)`,
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
 			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
@@ -1301,7 +1313,13 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
+
+		// Build deep link URL
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
+		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, env, "operations")
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(resultJSON),
@@ -1782,7 +1800,13 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
+
+		// Build deep link URL
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
+		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, env, "dependency")
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(resultJSON),
@@ -1869,6 +1893,7 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
+
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
@@ -1941,6 +1966,7 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
+
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
@@ -2139,6 +2165,7 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
+
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
@@ -2212,6 +2239,7 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
+
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
