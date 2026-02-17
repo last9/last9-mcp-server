@@ -28,11 +28,12 @@ You can connect to Last9 MCP in two ways:
 ### Recommended: Managed MCP over HTTP
 
 This is the easiest and cleanest setup. You do not need to run a local binary.
-Use an API token from [Last9 API Access](https://app.last9.io/settings/api-access).
+Use a Last9 Client Token with client type `MCP` from
+[Ingestion Tokens](https://app.last9.io/control-plane/ingestion-tokens).
 
 ```bash
 claude mcp add --transport http last9 https://app.last9.io/api/v4/organizations/<organization_slug>/mcp \
-  --header "X-LAST9-API-TOKEN: Bearer <last9_api_token>"
+  --header "X-LAST9-API-TOKEN: Bearer <last9_client_token>"
 ```
 
 Or add it directly to your MCP client config:
@@ -44,7 +45,7 @@ Or add it directly to your MCP client config:
       "type": "http",
       "url": "https://app.last9.io/api/v4/organizations/<organization_slug>/mcp",
       "headers": {
-        "X-LAST9-API-TOKEN": "Bearer <last9_api_token>"
+        "X-LAST9-API-TOKEN": "Bearer <last9_client_token>"
       }
     }
   }
@@ -401,7 +402,8 @@ Parameters:
 
 Set this header in your MCP client config:
 
-- `X-LAST9-API-TOKEN`: Bearer token for Last9 API access.
+- `X-LAST9-API-TOKEN`: Bearer Last9 Client Token (client type `MCP`) from
+  [Ingestion Tokens](https://app.last9.io/control-plane/ingestion-tokens).
 
 ### Local STDIO server environment variables
 
