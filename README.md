@@ -28,7 +28,7 @@ You can connect to Last9 MCP in two ways:
 ### Recommended: Managed MCP over HTTP
 
 This is the easiest and cleanest setup. You do not need to run a local binary.
-Use an API token from [Last9 API Access](https://app.last9.io/settings/api-access).
+You'll need a **Client Token** (MCP type) — see [Getting your credentials](#getting-your-credentials) below. Your org slug is in your Last9 URL: `app.last9.io/<org_slug>/...`
 
 ```bash
 claude mcp add --transport http last9 https://app.last9.io/api/v4/organizations/<organization_slug>/mcp \
@@ -72,6 +72,46 @@ npm install -g @last9/mcp-server@latest
 # Or run directly with npx
 npx -y @last9/mcp-server@latest
 ```
+
+#### GitHub Releases (Windows / manual install)
+
+Download the binary for your platform from [GitHub Releases](https://github.com/last9/last9-mcp-server/releases/latest):
+
+| Platform | Archive |
+|----------|---------|
+| Windows (x64) | `last9-mcp-server_Windows_x86_64.zip` |
+| Windows (ARM64) | `last9-mcp-server_Windows_arm64.zip` |
+| Linux (x64) | `last9-mcp-server_Linux_x86_64.tar.gz` |
+| Linux (ARM64) | `last9-mcp-server_Linux_arm64.tar.gz` |
+| macOS (x64) | `last9-mcp-server_Darwin_x86_64.tar.gz` |
+| macOS (ARM64) | `last9-mcp-server_Darwin_arm64.tar.gz` |
+
+Extract the archive. On Windows the binary is `last9-mcp-server.exe`. Use the full path to the binary in your MCP client config (see [Windows example](#windows-example-claude-desktop) below).
+
+> On Windows, [NPM](#npm) is easier to set up (no path management needed), or use the [hosted HTTP transport](#recommended-managed-mcp-over-http) to skip local installation entirely.
+
+## Getting Your Credentials
+
+### For hosted MCP (recommended)
+
+You need a **Client Token** with MCP type. Only **admins** can create tokens. If you're not an admin, ask your admin to create one or grant you admin access via [User Access settings](https://app.last9.io/settings/user-access).
+
+1. Go to [Ingestion Tokens](https://app.last9.io/control-plane/ingestion-tokens)
+2. Click **New Ingestion Token**
+3. Set **Token Type** to **Client**
+4. Set **Client Type** to **MCP**
+5. Enter a name (e.g., `claude-desktop`, `cursor`)
+6. Click **Create** — copy the token immediately (shown only once)
+
+Your **organization slug** is in your Last9 URL: `https://app.last9.io/<org_slug>/...`
+
+### For local binary (STDIO mode)
+
+You need a **Refresh Token** with Write permissions. Only **admins** can create them.
+
+1. Go to [API Access](https://app.last9.io/settings/api-access)
+2. Click **Generate Token** with Write permissions
+3. Copy the token
 
 ## Status
 
@@ -408,16 +448,16 @@ Set this header in your MCP client config:
 If you run the server locally (`last9-mcp`), use these environment variables:
 
 - `LAST9_REFRESH_TOKEN`: (required) Refresh Token with Write permissions from
-  [API Access](https://app.last9.io/settings/api-access). This token is used for
-  all authentication and will automatically obtain access tokens as needed.
-- `OTEL_EXPORTER_OTLP_ENDPOINT`: (required) OpenTelemetry collector endpoint URL
-- `OTEL_EXPORTER_OTLP_HEADERS`: (required) Headers for OTLP exporter authentication
+  [API Access](https://app.last9.io/settings/api-access). Only admins can create
+  refresh tokens.
 
 Optional environment variables:
 
+- `LAST9_DISABLE_TELEMETRY`: Defaults to `true` (telemetry is disabled by default). Set to `false` to enable OpenTelemetry tracing if you have an OTLP collector configured.
+- `OTEL_EXPORTER_OTLP_ENDPOINT`: OpenTelemetry collector endpoint URL. Only needed if `LAST9_DISABLE_TELEMETRY=false`.
+- `OTEL_EXPORTER_OTLP_HEADERS`: Headers for OTLP exporter authentication. Only needed if `LAST9_DISABLE_TELEMETRY=false`.
 - `LAST9_DATASOURCE`: Name of the datasource/cluster to use. If not specified, the default datasource configured in your Last9 organization will be used.
 - `LAST9_API_HOST`: API host to connect to. Defaults to `app.last9.io`. Use this if you need to connect to a different Last9 endpoint (e.g., regional or self-hosted instances).
-- `LAST9_DISABLE_TELEMETRY`: Set to `true` to disable OpenTelemetry tracing and metrics. Use this if you don't have an OTLP collector running or want to skip telemetry.
 
 ## Usage
 
@@ -433,6 +473,35 @@ Configure the Claude app to use the MCP server:
 4. Copy and paste the server config to your existing file, then save
 5. Restart Claude
 
+### Hosted MCP over HTTP (recommended)
+
+No local binary needed. Use a [Client Token (MCP type)](#getting-your-credentials):
+
+```json
+{
+  "mcpServers": {
+    "last9": {
+      "type": "http",
+      "url": "https://app.last9.io/api/v4/organizations/<org_slug>/mcp",
+      "headers": {
+        "X-LAST9-API-TOKEN": "Bearer <mcp_client_token>"
+      }
+    }
+  }
+}
+```
+
+Or via the Claude Code CLI:
+
+```bash
+claude mcp add --transport http last9 https://app.last9.io/api/v4/organizations/<org_slug>/mcp \
+  --header "X-LAST9-API-TOKEN: Bearer <mcp_client_token>"
+```
+
+### Local STDIO (alternative)
+
+Install via [Homebrew](#homebrew) or [NPM](#npm) first, then use a [Refresh Token](#getting-your-credentials).
+
 ### If installed via Homebrew:
 
 ```json
@@ -441,9 +510,7 @@ Configure the Claude app to use the MCP server:
     "last9": {
       "command": "/opt/homebrew/bin/last9-mcp",
       "env": {
-        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>",
-        "OTEL_EXPORTER_OTLP_ENDPOINT": "<otel_endpoint_url>",
-        "OTEL_EXPORTER_OTLP_HEADERS": "<otel_headers>"
+        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>"
       }
     }
   }
@@ -459,9 +526,7 @@ Configure the Claude app to use the MCP server:
       "command": "npx",
       "args": ["-y", "@last9/mcp-server@latest"],
       "env": {
-        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>",
-        "OTEL_EXPORTER_OTLP_ENDPOINT": "<otel_endpoint_url>",
-        "OTEL_EXPORTER_OTLP_HEADERS": "<otel_headers>"
+        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>"
       }
     }
   }
@@ -478,6 +543,24 @@ Configure Cursor to use the MCP server:
 4. Copy and paste the server config to your existing file, then save
 5. Restart Cursor
 
+### Hosted MCP over HTTP (recommended)
+
+```json
+{
+  "mcpServers": {
+    "last9": {
+      "type": "http",
+      "url": "https://app.last9.io/api/v4/organizations/<org_slug>/mcp",
+      "headers": {
+        "X-LAST9-API-TOKEN": "Bearer <mcp_client_token>"
+      }
+    }
+  }
+}
+```
+
+### Local STDIO (alternative)
+
 ### If installed via Homebrew:
 
 ```json
@@ -486,9 +569,7 @@ Configure Cursor to use the MCP server:
     "last9": {
       "command": "/opt/homebrew/bin/last9-mcp",
       "env": {
-        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>",
-        "OTEL_EXPORTER_OTLP_ENDPOINT": "<otel_endpoint_url>",
-        "OTEL_EXPORTER_OTLP_HEADERS": "<otel_headers>"
+        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>"
       }
     }
   }
@@ -504,9 +585,7 @@ Configure Cursor to use the MCP server:
       "command": "npx",
       "args": ["-y", "@last9/mcp-server@latest"],
       "env": {
-        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>",
-        "OTEL_EXPORTER_OTLP_ENDPOINT": "<otel_endpoint_url>",
-        "OTEL_EXPORTER_OTLP_HEADERS": "<otel_headers>"
+        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>"
       }
     }
   }
@@ -523,6 +602,24 @@ Configure Windsurf to use the MCP server:
 4. Copy and paste the server config to your existing file, then save
 5. Restart Windsurf
 
+### Hosted MCP over HTTP (recommended)
+
+```json
+{
+  "mcpServers": {
+    "last9": {
+      "type": "http",
+      "url": "https://app.last9.io/api/v4/organizations/<org_slug>/mcp",
+      "headers": {
+        "X-LAST9-API-TOKEN": "Bearer <mcp_client_token>"
+      }
+    }
+  }
+}
+```
+
+### Local STDIO (alternative)
+
 ### If installed via Homebrew:
 
 ```json
@@ -531,9 +628,7 @@ Configure Windsurf to use the MCP server:
     "last9": {
       "command": "/opt/homebrew/bin/last9-mcp",
       "env": {
-        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>",
-        "OTEL_EXPORTER_OTLP_ENDPOINT": "<otel_endpoint_url>",
-        "OTEL_EXPORTER_OTLP_HEADERS": "<otel_headers>"
+        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>"
       }
     }
   }
@@ -549,9 +644,7 @@ Configure Windsurf to use the MCP server:
       "command": "npx",
       "args": ["-y", "@last9/mcp-server@latest"],
       "env": {
-        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>",
-        "OTEL_EXPORTER_OTLP_ENDPOINT": "<otel_endpoint_url>",
-        "OTEL_EXPORTER_OTLP_HEADERS": "<otel_headers>"
+        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>"
       }
     }
   }
@@ -569,6 +662,26 @@ Configure Windsurf to use the MCP server:
 3. Copy and paste the server config to your existing file, then save
 4. Restart VS Code
 
+### Hosted MCP over HTTP (recommended)
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "last9": {
+        "type": "http",
+        "url": "https://app.last9.io/api/v4/organizations/<org_slug>/mcp",
+        "headers": {
+          "X-LAST9-API-TOKEN": "Bearer <mcp_client_token>"
+        }
+      }
+    }
+  }
+}
+```
+
+### Local STDIO (alternative)
+
 ### If installed via Homebrew:
 
 ```json
@@ -579,9 +692,7 @@ Configure Windsurf to use the MCP server:
         "type": "stdio",
         "command": "/opt/homebrew/bin/last9-mcp",
         "env": {
-          "LAST9_REFRESH_TOKEN": "<last9_refresh_token>",
-          "OTEL_EXPORTER_OTLP_ENDPOINT": "<otel_endpoint_url>",
-          "OTEL_EXPORTER_OTLP_HEADERS": "<otel_headers>"
+          "LAST9_REFRESH_TOKEN": "<last9_refresh_token>"
         }
       }
     }
@@ -600,15 +711,32 @@ Configure Windsurf to use the MCP server:
         "command": "npx",
         "args": ["-y", "@last9/mcp-server@latest"],
         "env": {
-          "LAST9_REFRESH_TOKEN": "<last9_refresh_token>",
-          "OTEL_EXPORTER_OTLP_ENDPOINT": "<otel_endpoint_url>",
-          "OTEL_EXPORTER_OTLP_HEADERS": "<otel_headers>"
+          "LAST9_REFRESH_TOKEN": "<last9_refresh_token>"
         }
       }
     }
   }
 }
 ```
+
+## Windows Example (Claude Desktop)
+
+After downloading `last9-mcp-server_Windows_x86_64.zip` from [GitHub Releases](https://github.com/last9/last9-mcp-server/releases/latest), extract to get `last9-mcp-server.exe` and use its full path:
+
+```json
+{
+  "mcpServers": {
+    "last9": {
+      "command": "C:\\Users\\<user>\\AppData\\Local\\Programs\\last9-mcp-server.exe",
+      "env": {
+        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>"
+      }
+    }
+  }
+}
+```
+
+The same pattern applies for Cursor and Windsurf on Windows. For VS Code, use the `"mcp": { "servers": { ... } }` wrapper. On Windows, prefer [NPM](#npm) to avoid path management, or use the [hosted HTTP transport](#recommended-managed-mcp-over-http) to skip local installation entirely.
 
 ## Development
 
@@ -621,8 +749,6 @@ Set the `LAST9_HTTP` environment variable to enable HTTP server mode:
 ```bash
 # Export required environment variables
 export LAST9_REFRESH_TOKEN="your_refresh_token"
-export OTEL_EXPORTER_OTLP_ENDPOINT="<otel_endpoint_url>"
-export OTEL_EXPORTER_OTLP_HEADERS="<otel_headers>"
 export LAST9_HTTP=true
 export LAST9_PORT=8080  # Optional, defaults to 8080
 # Run the server
