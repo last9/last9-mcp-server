@@ -1,11 +1,15 @@
 package main
 
 import (
+	"strings"
+
 	"last9-mcp/internal/alerting"
 	"last9-mcp/internal/apm"
+	"last9-mcp/internal/attributes"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/change_events"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/telemetry/traces"
 
@@ -14,9 +18,27 @@ import (
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 )
 
+// buildEnhancedDescription appends the embedded markdown instructions to the
+// base tool description. For get_logs, it also replaces the {{labels}} placeholder
+// with the actual attribute names from the cache.
+func buildEnhancedDescription(base, instructions string, labelValues []string) string {
+	desc := base + "\n\n" + instructions
+	if len(labelValues) > 0 {
+		desc = strings.ReplaceAll(desc, "{{labels}}", strings.Join(labelValues, ", "))
+	} else {
+		desc = strings.ReplaceAll(desc, "{{labels}}", "")
+	}
+	return desc
+}
+
 // registerAllTools registers all tools with the MCP server using the new SDK pattern
-func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error {
+func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCache *attributes.AttributeCache) error {
 	client := auth.GetHTTPClient()
+
+	// Build enhanced descriptions for tools that have embedded instructions
+	getLogsDesc := buildEnhancedDescription(logs.GetLogsDescription, prompts.GetLogsInstructions, attrCache.GetLogAttributes())
+	getTracesDesc := buildEnhancedDescription(traces.GetTracesDescription, prompts.GetTracesInstructions, nil)
+	getMetricsDesc := buildEnhancedDescription(apm.PromqlRangeQueryDetails, prompts.GetMetricsInstructions, nil)
 
 	// Register exceptions tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
@@ -54,10 +76,10 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: apm.GetServiceDependencyGraphDetails,
 	}, apm.NewServiceDependencyGraphHandler(client, cfg))
 
-	// Register PromQL range query tool
+	// Register PromQL range query tool (enhanced with metrics instructions)
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "prometheus_range_query",
-		Description: apm.PromqlRangeQueryDetails,
+		Description: getMetricsDesc,
 	}, apm.NewPromqlRangeQueryHandler(client, cfg))
 
 	// Register PromQL instant query tool
@@ -78,10 +100,10 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: apm.PromqlLabelsQueryDetails,
 	}, apm.NewPromqlLabelsHandler(client, cfg))
 
-	// Register logs tool
+	// Register logs tool (enhanced with log query instructions + labels)
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "get_logs",
-		Description: logs.GetLogsDescription,
+		Description: getLogsDesc,
 	}, logs.NewGetLogsHandler(client, cfg))
 
 	// Register service logs tool
@@ -114,10 +136,10 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: alerting.GetAlertsDescription,
 	}, alerting.NewGetAlertsHandler(client, cfg))
 
-	// Register get traces tool (JSON pipeline queries)
+	// Register get traces tool (enhanced with trace query instructions)
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "get_traces",
-		Description: traces.GetTracesDescription,
+		Description: getTracesDesc,
 	}, traces.NewGetTracesHandler(client, cfg))
 
 	// Register service traces tool

@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -14,7 +15,7 @@ func TestGetTimeRange_TimezoneHandling(t *testing.T) {
 		wantErr       bool
 	}{
 		{
-			name: "ISO timestamps parsed as UTC",
+			name: "legacy ISO timestamps parsed as UTC",
 			params: map[string]interface{}{
 				"start_time_iso": "2025-06-23 16:00:00",
 				"end_time_iso":   "2025-06-23 16:30:00",
@@ -24,13 +25,31 @@ func TestGetTimeRange_TimezoneHandling(t *testing.T) {
 			wantErr:       false,
 		},
 		{
+			name: "RFC3339 timestamps parsed as UTC",
+			params: map[string]interface{}{
+				"start_time_iso": "2025-06-23T16:00:00Z",
+				"end_time_iso":   "2025-06-23T16:30:00Z",
+			},
+			wantStartUnix: 1750694400,
+			wantEndUnix:   1750696200,
+			wantErr:       false,
+		},
+		{
 			name: "only start_time provided - end time should be start + lookback",
 			params: map[string]interface{}{
 				"start_time_iso": "2025-06-27 16:00:00",
 			},
 			wantStartUnix: 1751040000, // 2025-06-27 16:00:00 UTC
-			// end time will be current time, so we'll check it separately
+			// end time should be start + lookback and is checked separately
 			wantErr: false,
+		},
+		{
+			name: "only end_time provided - start time should be end - lookback",
+			params: map[string]interface{}{
+				"end_time_iso": "2025-06-27 16:00:00",
+			},
+			wantEndUnix: 1751040000, // 2025-06-27 16:00:00 UTC
+			wantErr:     false,
 		},
 		{
 			name: "lookback minutes only - no explicit timestamps",
@@ -100,6 +119,14 @@ func TestGetTimeRange_TimezoneHandling(t *testing.T) {
 				expectedEnd := start.Add(60 * time.Minute)
 				if end.Unix() != expectedEnd.Unix() {
 					t.Errorf("GetTimeRange() end time = %d, want %d (start + 60min)", end.Unix(), expectedEnd.Unix())
+				}
+			}
+
+			if tt.name == "only end_time provided - start time should be end - lookback" {
+				// Start time should be end time - 60 minutes (default lookback)
+				expectedStart := end.Add(-60 * time.Minute)
+				if start.Unix() != expectedStart.Unix() {
+					t.Errorf("GetTimeRange() start time = %d, want %d (end - 60min)", start.Unix(), expectedStart.Unix())
 				}
 			}
 
@@ -200,8 +227,8 @@ func TestGetTimeRange_LookbackMinutes(t *testing.T) {
 func TestGetTimeRange_UTCConsistency(t *testing.T) {
 	// Test that all returned times are consistently in UTC
 	params := map[string]interface{}{
-		"start_time_iso": "2025-06-23 16:00:00",
-		"end_time_iso":   "2025-06-23 16:30:00",
+		"start_time_iso": "2025-06-23T16:00:00Z",
+		"end_time_iso":   "2025-06-23T16:30:00Z",
 	}
 
 	start, end, err := GetTimeRange(params, 60)
@@ -267,6 +294,68 @@ func TestGetTimeRange_TimeRangeValidation(t *testing.T) {
 				if err != nil {
 					t.Errorf("GetTimeRange() unexpected error: %v", err)
 				}
+			}
+		})
+	}
+}
+
+func TestParseToolTimestamp(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		wantUnix   int64
+		wantErr    bool
+		errSnippet string
+	}{
+		{
+			name:     "RFC3339",
+			input:    "2026-02-09T15:04:05Z",
+			wantUnix: 1770649445,
+		},
+		{
+			name:     "RFC3339Nano",
+			input:    "2026-02-09T15:04:05.123456789Z",
+			wantUnix: 1770649445,
+		},
+		{
+			name:     "RFC3339 with offset",
+			input:    "2026-02-09T20:34:05+05:30",
+			wantUnix: 1770649445,
+		},
+		{
+			name:     "Legacy format compatibility",
+			input:    "2026-02-09 15:04:05",
+			wantUnix: 1770649445,
+		},
+		{
+			name:       "Invalid format",
+			input:      "2026/02/09 15:04:05",
+			wantErr:    true,
+			errSnippet: "Use RFC3339/ISO8601",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed, err := ParseToolTimestamp(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("ParseToolTimestamp() expected error, got nil")
+				}
+				if tt.errSnippet != "" && !strings.Contains(err.Error(), tt.errSnippet) {
+					t.Fatalf("ParseToolTimestamp() error = %q, want substring %q", err.Error(), tt.errSnippet)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("ParseToolTimestamp() unexpected error: %v", err)
+			}
+			if parsed.Unix() != tt.wantUnix {
+				t.Fatalf("ParseToolTimestamp() unix = %d, want %d", parsed.Unix(), tt.wantUnix)
+			}
+			if parsed.Location() != time.UTC {
+				t.Fatalf("ParseToolTimestamp() expected UTC, got %v", parsed.Location())
 			}
 		})
 	}
