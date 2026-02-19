@@ -465,7 +465,9 @@ func PopulateAPICfg(cfg *models.Config) error {
 	if apiHost == "" {
 		apiHost = constants.APIBaseHost
 	}
-	cfg.APIBaseURL = fmt.Sprintf("https://%s/api/v4/organizations/%s", apiHost, cfg.OrgSlug)
+	// Use http for localhost, https otherwise
+	scheme := "https"
+	cfg.APIBaseURL = fmt.Sprintf("%s://%s/api/v4/organizations/%s", scheme, apiHost, cfg.OrgSlug)
 	req, err := http.NewRequestWithContext(context.Background(), "GET", cfg.APIBaseURL+constants.EndpointDatasources, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request for datasources: %w", err)

@@ -269,3 +269,17 @@ func GetHTTPClient() *http.Client {
 
 	return httpClient
 }
+
+// NewDummyTokenManager creates a no-op token manager for test/debug mode
+// No authentication required
+func NewDummyTokenManager() *TokenManager {
+	tm := &TokenManager{
+		AccessToken:   "",
+		RefreshToken:  "",
+		ExpiresAt:     time.Now().Add(100 * 365 * 24 * time.Hour),
+		refreshBuffer: 0,
+		mu:            sync.RWMutex{},
+	}
+	tm.refreshCond = sync.NewCond(&tm.mu)
+	return tm
+}

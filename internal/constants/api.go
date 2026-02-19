@@ -23,6 +23,10 @@ const (
 	EndpointAlertRules          = "/alert-rules"
 	EndpointAlertsMonitor       = "/alerts/monitor"
 
+	// Discovery API endpoints (appended to APIBaseURL which includes /api/v4/organizations/{org})
+	EndpointDiscoverSystem  = "/knowledge_graph/system/context"
+	EndpointDiscoverMetrics = "/knowledge_graph/metric/context"
+
 	// API Base URL
 	APIBaseHost = "app.last9.io"
 )
