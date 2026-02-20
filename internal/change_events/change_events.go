@@ -69,21 +69,28 @@ Best practices:
 4. Use available_event_names to discover what event types are available in the system
 
 Parameters:
-- start_time_iso: (Optional) Start time in ISO format (YYYY-MM-DD HH:MM:SS). Defaults to now - lookback_minutes.
-- end_time_iso: (Optional) End time in ISO format (YYYY-MM-DD HH:MM:SS). Defaults to now.
+- start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Defaults to now - lookback_minutes.
+- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to now.
 - lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60 minutes.
 - service: (Optional) Name of the service to filter change events for
 - environment: (Optional) Environment to filter by
-- event_name: (Optional) Name of the change event to filter by (use available_event_names to see valid values)`
+- event_name: (Optional) Name of the change event to filter by (use available_event_names to see valid values)
+
+Time format rules:
+- Prefer lookback_minutes for relative windows.
+- Use start_time_iso/end_time_iso for absolute windows.
+- Legacy format YYYY-MM-DD HH:MM:SS is accepted only for compatibility.
+- If both lookback_minutes and absolute times are provided, absolute times take precedence.
+`
 
 // GetChangeEventsArgs represents the input arguments for the get_change_events tool
 type GetChangeEventsArgs struct {
-	StartTimeISO    string `json:"start_time_iso,omitempty"`
-	EndTimeISO      string `json:"end_time_iso,omitempty"`
-	LookbackMinutes int    `json:"lookback_minutes,omitempty"`
-	Service         string `json:"service,omitempty"`
-	Environment     string `json:"environment,omitempty"`
-	EventName       string `json:"event_name,omitempty"`
+	StartTimeISO    string `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
+	EndTimeISO      string `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
+	LookbackMinutes int    `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440)"`
+	Service         string `json:"service,omitempty" jsonschema:"Service name filter (optional)"`
+	Environment     string `json:"environment,omitempty" jsonschema:"Environment filter (optional)"`
+	EventName       string `json:"event_name,omitempty" jsonschema:"Exact event type filter (optional). Use available_event_names from a previous call."`
 }
 
 func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetChangeEventsArgs) (*mcp.CallToolResult, any, error) {
@@ -100,7 +107,7 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 
 		// Handle end_time_iso parameter
 		if args.EndTimeISO != "" {
-			t, err := time.Parse("2006-01-02 15:04:05", args.EndTimeISO)
+			t, err := utils.ParseToolTimestamp(args.EndTimeISO)
 			if err != nil {
 				return nil, nil, fmt.Errorf("invalid end_time_iso format: %w", err)
 			}
@@ -111,7 +118,7 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 
 		// Handle start_time_iso parameter
 		if args.StartTimeISO != "" {
-			t, err := time.Parse("2006-01-02 15:04:05", args.StartTimeISO)
+			t, err := utils.ParseToolTimestamp(args.StartTimeISO)
 			if err != nil {
 				return nil, nil, fmt.Errorf("invalid start_time_iso format: %w", err)
 			}

@@ -256,6 +256,129 @@ func TestPromqlRangeQueryHandler(t *testing.T) {
 	}
 }
 
+func TestResolveTimeRange_Precedence(t *testing.T) {
+	startISO := "2025-06-23 16:00:00"
+	endISO := "2025-06-23 16:30:00"
+
+	start, end, err := resolveTimeRange(startISO, endISO, 5)
+	if err != nil {
+		t.Fatalf("resolveTimeRange() returned error: %v", err)
+	}
+	if start != 1750694400 {
+		t.Fatalf("start = %d, want %d", start, int64(1750694400))
+	}
+	if end != 1750696200 {
+		t.Fatalf("end = %d, want %d", end, int64(1750696200))
+	}
+
+	start, end, err = resolveTimeRange("", endISO, 30)
+	if err != nil {
+		t.Fatalf("resolveTimeRange() end-only returned error: %v", err)
+	}
+	if end != 1750696200 {
+		t.Fatalf("end-only end = %d, want %d", end, int64(1750696200))
+	}
+	if start != 1750694400 {
+		t.Fatalf("end-only start = %d, want %d", start, int64(1750694400))
+	}
+
+	start, end, err = resolveTimeRange(startISO, "", 45)
+	if err != nil {
+		t.Fatalf("resolveTimeRange() start-only returned error: %v", err)
+	}
+	if start != 1750694400 {
+		t.Fatalf("start-only start = %d, want %d", start, int64(1750694400))
+	}
+	if end != 1750697100 {
+		t.Fatalf("start-only end = %d, want %d", end, int64(1750697100))
+	}
+}
+
+func TestResolveInstantQueryTime(t *testing.T) {
+	timeParam, err := resolveInstantQueryTime("2025-06-23T16:00:00Z", 30)
+	if err != nil {
+		t.Fatalf("resolveInstantQueryTime() returned error: %v", err)
+	}
+	if timeParam != 1750694400 {
+		t.Fatalf("timeParam = %d, want %d", timeParam, int64(1750694400))
+	}
+
+	timeParam, err = resolveInstantQueryTime("", 30)
+	if err != nil {
+		t.Fatalf("resolveInstantQueryTime() lookback returned error: %v", err)
+	}
+	expected := time.Now().UTC().Add(-30 * time.Minute).Unix()
+	if timeParam < expected-5 || timeParam > expected+5 {
+		t.Fatalf("lookback timeParam = %d, expected near %d", timeParam, expected)
+	}
+}
+
+func TestPromqlRangeHandler_UsesLookbackAndExplicitPrecedence(t *testing.T) {
+	type capturedReq struct {
+		Timestamp int64 `json:"timestamp"`
+		Window    int64 `json:"window"`
+	}
+
+	var captured []capturedReq
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/prom_query") {
+			t.Fatalf("expected prom_query endpoint, got %s", r.URL.Path)
+		}
+
+		body, _ := io.ReadAll(r.Body)
+		var reqPayload capturedReq
+		_ = json.Unmarshal(body, &reqPayload)
+		captured = append(captured, reqPayload)
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+		Region:     "us-east-1",
+	}
+	cfg.TokenManager = &auth.TokenManager{
+		AccessToken: "mock-access-token",
+		ExpiresAt:   time.Now().Add(365 * 24 * time.Hour),
+	}
+
+	handler := NewPromqlRangeQueryHandler(server.Client(), cfg)
+
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, PromqlRangeQueryArgs{
+		Query:           "sum(rate(http_request_duration_seconds_count[1m]))",
+		LookbackMinutes: 30,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error for lookback mode: %v", err)
+	}
+
+	if len(captured) != 1 {
+		t.Fatalf("expected 1 captured request, got %d", len(captured))
+	}
+	if captured[0].Window != 1800 {
+		t.Fatalf("window = %d, want %d", captured[0].Window, int64(1800))
+	}
+
+	_, _, err = handler(context.Background(), &mcp.CallToolRequest{}, PromqlRangeQueryArgs{
+		Query:           "sum(rate(http_request_duration_seconds_count[1m]))",
+		StartTimeISO:    "2025-06-23T16:00:00Z",
+		EndTimeISO:      "2025-06-23T16:10:00Z",
+		LookbackMinutes: 30,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error for explicit mode: %v", err)
+	}
+
+	if len(captured) != 2 {
+		t.Fatalf("expected 2 captured requests, got %d", len(captured))
+	}
+	if captured[1].Window != 600 {
+		t.Fatalf("window with explicit timestamps = %d, want %d", captured[1].Window, int64(600))
+	}
+}
+
 // Integration test for prometheus_labels tool
 func TestPromqlLabelsHandler_Integration(t *testing.T) {
 	cfg := utils.SetupTestConfigOrSkip(t)

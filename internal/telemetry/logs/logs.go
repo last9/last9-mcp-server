@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -16,11 +16,11 @@ import (
 
 // GetLogsArgs represents the input arguments for the get_logs tool
 type GetLogsArgs struct {
-	LogjsonQuery    []interface{} `json:"logjson_query,omitempty"`
-	StartTimeISO    string        `json:"start_time_iso,omitempty"`
-	EndTimeISO      string        `json:"end_time_iso,omitempty"`
-	LookbackMinutes int           `json:"lookback_minutes,omitempty"`
-	Limit           int           `json:"limit,omitempty"`
+	LogjsonQuery    []interface{} `json:"logjson_query,omitempty" jsonschema:"JSON pipeline query for logs (required)"`
+	StartTimeISO    string        `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
+	EndTimeISO      string        `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
+	LookbackMinutes int           `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440)"`
+	Limit           int           `json:"limit,omitempty" jsonschema:"Maximum number of rows to return (optional)"`
 }
 
 // NewGetLogsHandler creates a handler for getting logs using logjson_query parameter
@@ -65,8 +65,13 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		return nil, fmt.Errorf("failed to decode response: %v", err)
 	}
 
-	// Return the result in MCP format
+	// Build deep link URL
+	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
+	dashboardURL := dlBuilder.BuildLogsLink(startTime, endTime, logjsonQuery)
+
+	// Return the result in MCP format with deep link
 	return &mcp.CallToolResult{
+		Meta: deeplink.ToMeta(dashboardURL),
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: formatJSON(result),
@@ -77,32 +82,22 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 
 // parseTimeRangeFromArgs extracts start and end times from GetLogsArgs
 func parseTimeRangeFromArgs(args GetLogsArgs) (int64, int64, error) {
-	now := time.Now()
-
-	// Default to last hour if no time parameters provided
-	startTime := now.Add(-time.Hour).UnixMilli()
-	endTime := now.UnixMilli()
-
-	// Check for lookback_minutes
+	params := make(map[string]interface{})
 	if args.LookbackMinutes > 0 {
-		startTime = now.Add(-time.Duration(args.LookbackMinutes) * time.Minute).UnixMilli()
+		params["lookback_minutes"] = args.LookbackMinutes
 	}
-
-	// Check for explicit start_time_iso
 	if args.StartTimeISO != "" {
-		if parsed, err := time.Parse("2006-01-02 15:04:05", args.StartTimeISO); err == nil {
-			startTime = parsed.UnixMilli()
-		}
+		params["start_time_iso"] = args.StartTimeISO
 	}
-
-	// Check for explicit end_time_iso
 	if args.EndTimeISO != "" {
-		if parsed, err := time.Parse("2006-01-02 15:04:05", args.EndTimeISO); err == nil {
-			endTime = parsed.UnixMilli()
-		}
+		params["end_time_iso"] = args.EndTimeISO
 	}
 
-	return startTime, endTime, nil
+	startTime, endTime, err := utils.GetTimeRange(params, utils.DefaultLookbackMinutes)
+	if err != nil {
+		return 0, 0, err
+	}
+	return startTime.UnixMilli(), endTime.UnixMilli(), nil
 }
 
 // formatJSON formats JSON for display

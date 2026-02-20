@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"last9-mcp/internal/constants"
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -35,10 +36,16 @@ Parameters:
 - trace_id: (Optional) Specific trace ID to retrieve. Cannot be used with service_name.
 - service_name: (Optional) Name of service to get traces for. Cannot be used with trace_id.
 - lookback_minutes: (Optional) Number of minutes to look back from now. Default: 60 minutes
-- start_time_iso: (Optional) Start time in ISO format (YYYY-MM-DD HH:MM:SS)
-- end_time_iso: (Optional) End time in ISO format (YYYY-MM-DD HH:MM:SS)
+- start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)
+- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)
 - limit: (Optional) Maximum number of traces to return. Default: 10
 - env: (Optional) Environment to filter by. Use "get_service_environments" tool to get available environments.
+
+Time format rules:
+- Prefer lookback_minutes for relative windows.
+- Use start_time_iso/end_time_iso for absolute windows.
+- Legacy format YYYY-MM-DD HH:MM:SS is accepted only for compatibility.
+- If both lookback_minutes and absolute times are provided, absolute times take precedence.
 
 Examples:
 1. trace_id="abc123def456" - retrieves the specific trace
@@ -51,8 +58,8 @@ type GetServiceTracesArgs struct {
 	TraceID         string  `json:"trace_id,omitempty" jsonschema:"Specific trace ID to retrieve"`
 	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Name of service to get traces for"`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440)"`
-	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to now - lookback_minutes."`
-	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in ISO format (YYYY-MM-DD HH:MM:SS). Leave empty to default to current time."`
+	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - lookback_minutes."`
+	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time."`
 	Limit           float64 `json:"limit,omitempty" jsonschema:"Maximum number of traces to return (default: 10, range: 1-100)"`
 	Env             string  `json:"env,omitempty" jsonschema:"Environment to filter by. Empty string if environment is unknown."`
 }
@@ -273,7 +280,19 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
 
+		// Build deep link URL
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
+		// Build pipeline from filters
+		pipeline := []map[string]interface{}{
+			{
+				"type":  "filter",
+				"query": map[string]interface{}{"$and": buildGetTracesFilters(queryParams)},
+			},
+		}
+		dashboardURL := dlBuilder.BuildTracesLink(startTime.UnixMilli(), endTime.UnixMilli(), pipeline, queryParams.TraceID, "")
+
 		return &mcp.CallToolResult{
+			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(jsonData),

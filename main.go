@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
+	"last9-mcp/internal/attributes"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
@@ -35,7 +37,7 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	fs.StringVar(&cfg.RefreshToken, "refresh_token", os.Getenv("LAST9_REFRESH_TOKEN"), "Last9 refresh token for authentication")
 	fs.StringVar(&cfg.DatasourceName, "datasource", os.Getenv("LAST9_DATASOURCE"), "Datasource name to use (overrides default datasource)")
 	fs.StringVar(&cfg.APIHost, "api_host", os.Getenv("LAST9_API_HOST"), "API host (defaults to app.last9.io)")
-	fs.BoolVar(&cfg.DisableTelemetry, "disable_telemetry", os.Getenv("LAST9_DISABLE_TELEMETRY") == "true", "Disable OpenTelemetry tracing/metrics")
+	fs.BoolVar(&cfg.DisableTelemetry, "disable_telemetry", true, "Disable OpenTelemetry tracing/metrics")
 	fs.Float64Var(&cfg.RequestRateLimit, "rate", 1, "Requests per second limit")
 	fs.IntVar(&cfg.RequestRateBurst, "burst", 1, "Request burst capacity")
 	fs.BoolVar(&cfg.HTTPMode, "http", false, "Run as HTTP server instead of STDIO")
@@ -101,6 +103,12 @@ func main() {
 		os.Setenv("OTEL_SDK_DISABLED", "true")
 	}
 
+	// Create attribute cache and perform best-effort initial fetch
+	attrCache := attributes.NewAttributeCache(auth.GetHTTPClient(), cfg)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	attrCache.Warm(ctx)
+	cancel()
+
 	// Create MCP server with new SDK
 	server, err := last9mcp.NewServer("last9-mcp", Version)
 	if err != nil {
@@ -108,9 +116,29 @@ func main() {
 	}
 
 	// Register all tools
-	if err := registerAllTools(server, cfg); err != nil {
+	if err := registerAllTools(server, cfg, attrCache); err != nil {
 		log.Fatalf("failed to register tools: %v", err)
 	}
+
+	// Background goroutine to refresh attributes and re-register tools periodically
+	go func() {
+		ticker := time.NewTicker(2 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			refreshCtx, refreshCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := attrCache.RefreshIfStale(refreshCtx); err != nil {
+				log.Printf("Warning: failed to refresh attribute cache: %v", err)
+			} else {
+				// Re-register tools with updated descriptions (AddTool is an upsert)
+				if err := registerAllTools(server, cfg, attrCache); err != nil {
+					log.Printf("Warning: failed to re-register tools after cache refresh: %v", err)
+				} else {
+					log.Println("Attribute cache refreshed and tools re-registered")
+				}
+			}
+			refreshCancel()
+		}
+	}()
 
 	if cfg.HTTPMode {
 		// Create HTTP server using NewHTTPServer

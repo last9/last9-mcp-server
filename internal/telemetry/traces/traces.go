@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -25,10 +25,16 @@ operations on trace data.
 
 Parameters:
 - tracejson_query: (Required) JSON pipeline query for traces. Use the tracejson_query_builder prompt to generate JSON pipeline queries from natural language
-- start_time_iso: (Optional) Start time in ISO format (YYYY-MM-DD HH:MM:SS)
-- end_time_iso: (Optional) End time in ISO format (YYYY-MM-DD HH:MM:SS)
+- start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)
+- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)
 - lookback_minutes: (Optional) Number of minutes to look back from current time (default: 60)
 - limit: (Optional) Maximum number of traces to return (default: 20, range: 1-100)
+
+Time format rules:
+- Prefer lookback_minutes for relative windows (for example, last 5 or 60 minutes).
+- Use start_time_iso/end_time_iso for absolute windows.
+- Legacy format YYYY-MM-DD HH:MM:SS is accepted only for compatibility.
+- If both lookback_minutes and absolute times are provided, absolute times take precedence.
 
 Returns comprehensive trace data including trace IDs, spans, durations, timestamps, and metadata.
 
@@ -39,11 +45,11 @@ Example tracejson_query structures:
 
 // GetTracesArgs represents the input arguments for the traces query tool
 type GetTracesArgs struct {
-	TracejsonQuery  []interface{} `json:"tracejson_query,omitempty"`
-	StartTimeISO    string        `json:"start_time_iso,omitempty"`
-	EndTimeISO      string        `json:"end_time_iso,omitempty"`
-	LookbackMinutes int           `json:"lookback_minutes,omitempty"`
-	Limit           int           `json:"limit,omitempty"`
+	TracejsonQuery  []interface{} `json:"tracejson_query,omitempty" jsonschema:"JSON pipeline query for traces (required)"`
+	StartTimeISO    string        `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
+	EndTimeISO      string        `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
+	LookbackMinutes int           `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time (default: 60, range: 1-1440)"`
+	Limit           int           `json:"limit,omitempty" jsonschema:"Maximum number of traces to return (default: 20, range: 1-100)"`
 }
 
 // NewGetTracesHandler creates a handler for getting traces using tracejson_query parameter
@@ -94,8 +100,13 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 		return nil, fmt.Errorf("failed to decode response: %v", err)
 	}
 
-	// Return the result in MCP format
+	// Build deep link URL
+	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
+	dashboardURL := dlBuilder.BuildTracesLink(startTime, endTime, tracejsonQuery, "", "")
+
+	// Return the result in MCP format with deep link
 	return &mcp.CallToolResult{
+		Meta: deeplink.ToMeta(dashboardURL),
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: formatJSON(result),
@@ -106,32 +117,22 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 
 // parseTimeRangeFromArgs extracts start and end times from GetTracesArgs
 func parseTimeRangeFromArgs(args GetTracesArgs) (int64, int64, error) {
-	now := time.Now()
-
-	// Default to last hour if no time parameters provided
-	startTime := now.Add(-time.Hour).UnixMilli()
-	endTime := now.UnixMilli()
-
-	// Check for lookback_minutes
+	params := make(map[string]interface{})
 	if args.LookbackMinutes > 0 {
-		startTime = now.Add(-time.Duration(args.LookbackMinutes) * time.Minute).UnixMilli()
+		params["lookback_minutes"] = args.LookbackMinutes
 	}
-
-	// Check for explicit start_time_iso
 	if args.StartTimeISO != "" {
-		if parsed, err := time.Parse("2006-01-02 15:04:05", args.StartTimeISO); err == nil {
-			startTime = parsed.UnixMilli()
-		}
+		params["start_time_iso"] = args.StartTimeISO
 	}
-
-	// Check for explicit end_time_iso
 	if args.EndTimeISO != "" {
-		if parsed, err := time.Parse("2006-01-02 15:04:05", args.EndTimeISO); err == nil {
-			endTime = parsed.UnixMilli()
-		}
+		params["end_time_iso"] = args.EndTimeISO
 	}
 
-	return startTime, endTime, nil
+	startTime, endTime, err := utils.GetTimeRange(params, utils.DefaultLookbackMinutes)
+	if err != nil {
+		return 0, 0, err
+	}
+	return startTime.UnixMilli(), endTime.UnixMilli(), nil
 }
 
 // formatJSON formats JSON for display
