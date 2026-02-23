@@ -172,6 +172,15 @@ func TestGetTimeRange_LookbackMinutes(t *testing.T) {
 			wantErr:                false,
 		},
 		{
+			name: "valid multi-day lookback minutes",
+			params: map[string]interface{}{
+				"lookback_minutes": float64(10080), // 7 days
+			},
+			defaultLookbackMinutes: 30,
+			wantLookbackUsed:       10080,
+			wantErr:                false,
+		},
+		{
 			name: "lookback too small",
 			params: map[string]interface{}{
 				"lookback_minutes": float64(0),
@@ -182,7 +191,7 @@ func TestGetTimeRange_LookbackMinutes(t *testing.T) {
 		{
 			name: "lookback too large",
 			params: map[string]interface{}{
-				"lookback_minutes": float64(1500), // > 1440
+				"lookback_minutes": float64(25000), // > 20160
 			},
 			defaultLookbackMinutes: 30,
 			wantErr:                true,
@@ -260,19 +269,19 @@ func TestGetTimeRange_TimeRangeValidation(t *testing.T) {
 		errMsg  string
 	}{
 		{
-			name: "time range exceeds 24 hours",
+			name: "time range exceeds 14 days",
 			params: map[string]interface{}{
-				"start_time_iso": "2025-06-23 00:00:00",
-				"end_time_iso":   "2025-06-24 01:00:00", // 25 hours
+				"start_time_iso": "2025-06-01 00:00:00",
+				"end_time_iso":   "2025-06-16 00:00:00", // 15 days
 			},
 			wantErr: true,
-			errMsg:  "time range cannot exceed 24 hours",
+			errMsg:  "time range cannot exceed 336 hours",
 		},
 		{
-			name: "valid 24 hour range",
+			name: "valid 14 day range",
 			params: map[string]interface{}{
-				"start_time_iso": "2025-06-23 00:00:00",
-				"end_time_iso":   "2025-06-24 00:00:00", // exactly 24 hours
+				"start_time_iso": "2025-06-01 00:00:00",
+				"end_time_iso":   "2025-06-15 00:00:00", // exactly 14 days
 			},
 			wantErr: false,
 		},
