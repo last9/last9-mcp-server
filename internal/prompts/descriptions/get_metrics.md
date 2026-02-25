@@ -21,6 +21,12 @@ Use for performance monitoring, trend analysis, and system health checks.
 - **Performance baselines**: Week or month comparisons
 - **Incident investigation**: Before, during, and after incident times
 
+**ISO TIME FALLBACK RULE:**
+- If you receive an error like "lookback_minutes cannot exceed..." or any lookback-related error,
+  retry the same query using `start_time_iso` and `end_time_iso` parameters instead of `lookback_minutes`.
+- Calculate the appropriate start and end timestamps in RFC3339 format (e.g. 2026-02-09T15:04:05Z)
+  based on the user's requested time range, and reissue the tool call.
+
 ### Metric Selection
 Choose metrics that align with the user's question:
 - **Response times**: For performance issues

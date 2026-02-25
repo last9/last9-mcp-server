@@ -60,16 +60,16 @@ func TestValidateGetServiceTracesArgs(t *testing.T) {
 				LookbackMinutes: 0.5,
 			},
 			wantErr: true,
-			errMsg:  "lookback_minutes must be between 1 and 1440",
+			errMsg:  "lookback_minutes must be between 1 and 20160",
 		},
 		{
 			name: "Invalid lookback_minutes - too large",
 			args: GetServiceTracesArgs{
 				ServiceName:     "test-service",
-				LookbackMinutes: 1500,
+				LookbackMinutes: 25000,
 			},
 			wantErr: true,
-			errMsg:  "lookback_minutes must be between 1 and 1440",
+			errMsg:  "lookback_minutes must be between 1 and 20160",
 		},
 		{
 			name: "Invalid limit - too small",

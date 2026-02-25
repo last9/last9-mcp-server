@@ -22,10 +22,10 @@ import (
 
 // Constants for time-related values
 const (
-	// MaxLookbackMinutes is the maximum number of minutes allowed for lookback queries (24 hours)
-	MaxLookbackMinutes = 1440
-	// MaxTimeRangeHours is the maximum time range allowed for queries (24 hours)
-	MaxTimeRangeHours = 24
+	// MaxLookbackMinutes is the maximum number of minutes allowed for lookback queries (14 days)
+	MaxLookbackMinutes = 20160
+	// MaxTimeRangeHours is the maximum time range allowed for queries (14 days)
+	MaxTimeRangeHours = 336
 	// DefaultLookbackMinutes is the default lookback time in minutes (1 hour)
 	DefaultLookbackMinutes = 60
 	// DefaultHTTPTimeout is the default HTTP client timeout
@@ -84,7 +84,7 @@ func GetTimeRange(params map[string]interface{}, defaultLookbackMinutes int) (st
 		return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes must be at least 1")
 	}
 	if lookbackMinutes > MaxLookbackMinutes {
-		return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes cannot exceed %d (24 hours)", MaxLookbackMinutes)
+		return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes cannot exceed %d (14 days)", MaxLookbackMinutes)
 	}
 
 	// Default start time based on lookback
