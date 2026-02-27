@@ -473,32 +473,11 @@ Configure the Claude app to use the MCP server:
 4. Copy and paste the server config to your existing file, then save
 5. Restart Claude
 
-### Hosted MCP over HTTP (recommended)
+### Local STDIO
 
-No local binary needed. Use a [Client Token (MCP type)](#getting-your-credentials):
+> **Note:** Claude Desktop currently supports local STDIO-based MCP servers only. Hosted HTTP transport is not yet supported in Claude Desktop.
 
-```json
-{
-  "mcpServers": {
-    "last9": {
-      "type": "http",
-      "url": "https://app.last9.io/api/v4/organizations/<org_slug>/mcp",
-      "headers": {
-        "X-LAST9-API-TOKEN": "Bearer <mcp_client_token>"
-      }
-    }
-  }
-}
-```
-
-Or via the Claude Code CLI:
-
-```bash
-claude mcp add --transport http last9 https://app.last9.io/api/v4/organizations/<org_slug>/mcp \
-  --header "X-LAST9-API-TOKEN: Bearer <mcp_client_token>"
-```
-
-### Local STDIO (alternative)
+Use a [Refresh Token](#getting-your-credentials).
 
 Install via [Homebrew](#homebrew) or [NPM](#npm) first, then use a [Refresh Token](#getting-your-credentials).
 
