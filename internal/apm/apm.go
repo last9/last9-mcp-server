@@ -35,21 +35,21 @@ type apiPromRangeResp []struct {
 type ServiceSummaryArgs struct {
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440). Use for relative windows like last 30 minutes."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-20160). Use for relative windows like last 30 minutes."`
 	Env             string  `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
 }
 
 type ServiceEnvironmentsArgs struct {
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440). Use for relative windows like last 30 minutes."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-20160). Use for relative windows like last 30 minutes."`
 }
 
 type ServicePerformanceDetailsArgs struct {
 	ServiceName     string  `json:"service_name" jsonschema:"Name of the service to get performance details for (required)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440). Use for relative windows like last 30 minutes."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-20160). Use for relative windows like last 30 minutes."`
 	Env             string  `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
 }
 
@@ -57,14 +57,14 @@ type ServiceOperationsSummaryArgs struct {
 	ServiceName     string  `json:"service_name" jsonschema:"Name of the service to get operations summary for (required)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440). Use for relative windows like last 30 minutes."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-20160). Use for relative windows like last 30 minutes."`
 	Env             string  `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
 }
 
 type ServiceDependencyGraphArgs struct {
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440). Use for relative windows like last 30 minutes."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-20160). Use for relative windows like last 30 minutes."`
 	Env             string  `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
 	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Service name to focus on in the dependency graph (e.g. api-service)"`
 }
@@ -73,13 +73,13 @@ type PromqlRangeQueryArgs struct {
 	Query           string  `json:"query" jsonschema:"PromQL query to execute (required)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440). Use for relative windows like last 30 minutes."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-20160). Use for relative windows like last 30 minutes."`
 }
 
 type PromqlInstantQueryArgs struct {
 	Query           string  `json:"query" jsonschema:"PromQL query to execute (required)"`
 	TimeISO         string  `json:"time_iso,omitempty" jsonschema:"Evaluation time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). If omitted, defaults to now or now-lookback_minutes."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now when time_iso is omitted (default: 0, range: 1-1440)."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now when time_iso is omitted (default: 0, range: 1-20160)."`
 }
 
 type PromqlLabelValuesArgs struct {
@@ -87,14 +87,14 @@ type PromqlLabelValuesArgs struct {
 	Label           string  `json:"label" jsonschema:"Label name to get values for (required)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440). Use for relative windows like last 30 minutes."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-20160). Use for relative windows like last 30 minutes."`
 }
 
 type PromqlLabelsArgs struct {
 	MatchQuery      string  `json:"match_query,omitempty" jsonschema:"PromQL query to match series (e.g. up{job=\"prometheus\"})"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-1440). Use for relative windows like last 30 minutes."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-20160). Use for relative windows like last 30 minutes."`
 }
 
 func resolveTimeRange(startTimeISO, endTimeISO string, lookbackMinutes float64) (int64, int64, error) {
@@ -329,7 +329,7 @@ const GetServicePerformanceDetails = `
 		- throughput in rpm
 		- error rate in rpm for 4xx and 5xx errors
 		- error percentage
-		- p50, p90, p95 and avg response times in seconds
+		- p50, p90, p95, avg, and max response times in seconds
 		- apdex score
 		- availability in percentage
 		- top 10 web operations by response time
@@ -347,7 +347,7 @@ const GetServicePerformanceDetails = `
 	- throughput: Throughput in requests per minute (rpm) by status code. The format of this is in promql response format.
 	- error_rate: Error rate in requests per minute (rpm) by status code. The format of this is in promql response format.
 	- error_percentage: Error percentage in requests by status code. The format of this is in promql response format.
-	- response_times: Response times in seconds by quantile (p50, p90, p95, avg). The format of this is in promql response format.
+	- response_times: Response times in seconds by quantile (p50, p90, p95, avg, max). The format of this is in promql response format.
 	- apdex_score: Apdex score over the time range. The format of this is in promql response format.
 	- availability: Availability in percentage over the time range. The format of this is in promql response format.
 	- top_operations: Top operations by response time and error rate. The format of this is a dict of operations and their throuputs
@@ -442,7 +442,7 @@ type ServicePerformanceDetails struct {
 	Throughput    []TimeSeries `json:"throughput"` // by status code
 	ErrorRate     []TimeSeries `json:"error_rate"` // by status code
 	ErrorPercent  []TimeSeries `json:"error_percentage"`
-	ResponseTimes []TimeSeries `json:"response_times"` // p50, p90, p95, avg
+	ResponseTimes []TimeSeries `json:"response_times"` // p50, p90, p95, avg, max
 	ApdexScore    []TimeSeries `json:"apdex_score"`
 	Availability  []TimeSeries `json:"availability"`
 	TopOperations struct {
@@ -761,7 +761,7 @@ const GetServiceOperationsSummaryDescription = `
 		- environment
 		- throughput in requests per minute (rpm)
 		- error rate in requests per minute (rpm)
-		- response time in milliseconds (p95, p90, p50 quantiles and avg)
+		- response time in milliseconds (p95, p90, p50 quantiles, avg, and max)
 		- error percentage
 	Database operations contain additional fields:
 		- db_system: Database system (e.g., mysql, postgres, etc.)
@@ -1073,6 +1073,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 					"p90": 0,
 					"p50": 0,
 					"avg": 0,
+					"max": 0,
 				},
 				ErrorPercent: 0, // default to 0, will be updated later
 			}
@@ -1128,6 +1129,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 					"p90": 0,
 					"p50": 0,
 					"avg": 0,
+					"max": 0,
 				},
 				ErrorPercent: 0, // default to 0, will be updated later
 			}
@@ -1187,6 +1189,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 					"p90": 0,
 					"p50": 0,
 					"avg": 0,
+					"max": 0,
 				},
 				ErrorPercent: 0, // default to 0, will be updated later
 			}
@@ -1247,6 +1250,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 					"p90": 0,
 					"p50": 0,
 					"avg": 0,
+					"max": 0,
 				},
 				ErrorPercent: 0, // default to 0, will be updated later
 			}
@@ -1322,6 +1326,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 type RedMetrics struct {
 	Throughput, ResponseTimeP95, ErrorRate, ErrorPercent float64
 	ResponseTimeP50, ResponseTimeP90, ResponseTimeAvg    float64
+	ResponseTimeMax                                      float64
 }
 
 type ServiceDependencyGraphDetails struct {
@@ -1348,6 +1353,7 @@ const GetServiceDependencyGraphDetails = `
 	- p90 response time in milliseconds
 	- p50 response time in milliseconds
 	- avg response time in milliseconds
+	- max response time in milliseconds
 	- error percentage
 	The detailed metrics, error rates and operation details of incoming and outgoing dependencies
 	can be obtained by using the get_service_details tool.
@@ -1465,6 +1471,8 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 						metrics.ResponseTimeP50 = val
 					case "avg":
 						metrics.ResponseTimeAvg = val
+					case "max":
+						metrics.ResponseTimeMax = val
 					}
 				}
 			}
@@ -1574,6 +1582,8 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 						metrics.ResponseTimeP50 = val
 					case "avg":
 						metrics.ResponseTimeAvg = val
+					case "max":
+						metrics.ResponseTimeMax = val
 					}
 				}
 			}
@@ -1706,6 +1716,8 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 						metrics.ResponseTimeP50 = val
 					case "avg":
 						metrics.ResponseTimeAvg = val
+					case "max":
+						metrics.ResponseTimeMax = val
 					}
 				}
 			}
