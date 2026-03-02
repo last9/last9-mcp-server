@@ -117,8 +117,8 @@ func TestGetTracesLimitParameter(t *testing.T) {
 
 			// Build test arguments
 			args := GetTracesArgs{
-				TracejsonQuery: []interface{}{
-					map[string]interface{}{
+				TracejsonQuery: []map[string]interface{}{
+					{
 						"type": "filter",
 						"query": map[string]interface{}{
 							"$exists": []string{"ServiceName"},
@@ -193,7 +193,7 @@ func TestGetTracesHandler_ValidationErrors(t *testing.T) {
 		{
 			name: "Empty tracejson_query",
 			args: GetTracesArgs{
-				TracejsonQuery: []interface{}{},
+				TracejsonQuery: []map[string]interface{}{},
 			},
 			wantErr: true,
 			errMsg:  "tracejson_query parameter is required",
@@ -262,8 +262,8 @@ func TestGetTracesHandler_Integration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			args := GetTracesArgs{
-				TracejsonQuery: []interface{}{
-					map[string]interface{}{
+				TracejsonQuery: []map[string]interface{}{
+					{
 						"type": "filter",
 						"query": map[string]interface{}{
 							"$exists": []string{"ServiceName"},
