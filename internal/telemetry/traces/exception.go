@@ -1,7 +1,6 @@
 package traces
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
@@ -26,11 +24,6 @@ var promQLRegexSpecialChars = regexp.MustCompile(`[.\-+*?^$()|\[\]{}\\/]`)
 type promInstantResponse []struct {
 	Metric map[string]string `json:"metric"`
 	Value  []any             `json:"value"`
-}
-
-type promRangeResponse []struct {
-	Metric map[string]string `json:"metric"`
-	Values [][]any           `json:"values"`
 }
 
 type exceptionAggregate struct {
@@ -121,65 +114,6 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 			return nil, nil, fmt.Errorf("failed to decode exceptions instant response: %w", err)
 		}
 
-		lastSeenMap := map[string]int64{}
-		shouldFetchLastSeen := endTime.Sub(startTime) >= 5*time.Minute
-
-		if shouldFetchLastSeen {
-			lookbackSeconds := int64(endTime.Sub(startTime).Seconds())
-			if lookbackSeconds > 300 {
-				lookbackSeconds = 300
-			}
-			if lookbackSeconds <= 0 {
-				lookbackSeconds = 300
-			}
-
-			// Frontend parity: use prom_query range query over the last few minutes
-			// to find the latest non-zero exception datapoint per exception group.
-			lastSeenQuery := buildExceptionsPromQL(baseFilter, "1m")
-			lastSeenResp, err := makePromRangeAPIQueryWithStep(ctx, client, lastSeenQuery, endTime.Unix(), lookbackSeconds, 60, cfg)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to execute exceptions last-seen range query: %w", err)
-			}
-			defer lastSeenResp.Body.Close()
-
-			if lastSeenResp.StatusCode != http.StatusOK {
-				body, _ := io.ReadAll(lastSeenResp.Body)
-				return nil, nil, fmt.Errorf("exceptions last-seen query failed with status %d: %s", lastSeenResp.StatusCode, string(body))
-			}
-
-			var rangeSeries promRangeResponse
-			if err := json.NewDecoder(lastSeenResp.Body).Decode(&rangeSeries); err != nil {
-				return nil, nil, fmt.Errorf("failed to decode exceptions last-seen response: %w", err)
-			}
-
-			for _, series := range rangeSeries {
-				key := buildExceptionKey(
-					orDefault(series.Metric["exception_type"], "Unknown"),
-					orDefault(series.Metric["service_name"], "Unknown"),
-					orDefault(series.Metric["span_name"], "Unknown"),
-					orDefault(series.Metric["span_kind"], "UNKNOWN"),
-				)
-
-				var lastSeenMs int64
-				for i := len(series.Values) - 1; i >= 0; i-- {
-					if len(series.Values[i]) < 2 {
-						continue
-					}
-					if parsePromNumber(series.Values[i][1]) <= 0 {
-						continue
-					}
-					tsSeconds := parsePromTimestampSeconds(series.Values[i][0])
-					if tsSeconds > 0 {
-						lastSeenMs = tsSeconds * 1000
-					}
-					break
-				}
-				if lastSeenMs > 0 {
-					lastSeenMap[key] = lastSeenMs
-				}
-			}
-		}
-
 		aggregates := make([]exceptionAggregate, 0, len(instantSeries))
 		for _, point := range instantSeries {
 			exceptionType := orDefault(point.Metric["exception_type"], "Unknown")
@@ -192,10 +126,11 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 				count = parsePromNumber(point.Value[1])
 			}
 
-			key := buildExceptionKey(exceptionType, serviceName, spanName, spanKind)
 			lastSeenMs := endMs
-			if v, ok := lastSeenMap[key]; ok {
-				lastSeenMs = v
+			if len(point.Value) > 0 {
+				if tsSeconds := parsePromTimestampSeconds(point.Value[0]); tsSeconds > 0 {
+					lastSeenMs = tsSeconds * 1000
+				}
 			}
 
 			deploymentEnvironment := point.Metric["env"]
@@ -318,10 +253,6 @@ func buildExceptionsPromQL(baseFilter string, rangeSelector string) string {
 	`, selector, rangeSelector, selector, rangeSelector, selector, rangeSelector)
 }
 
-func buildExceptionKey(exceptionType, serviceName, spanName, spanKind string) string {
-	return strings.Join([]string{exceptionType, serviceName, spanName, spanKind}, ":")
-}
-
 func parsePromNumber(raw any) float64 {
 	switch value := raw.(type) {
 	case float64:
@@ -389,48 +320,4 @@ func escapePromQLLabelValue(value string) string {
 	return promQLRegexSpecialChars.ReplaceAllStringFunc(escapedSingleQuotes, func(match string) string {
 		return `\` + match
 	})
-}
-
-func makePromRangeAPIQueryWithStep(
-	ctx context.Context,
-	client *http.Client,
-	promql string,
-	timestamp int64,
-	window int64,
-	step int,
-	cfg models.Config,
-) (*http.Response, error) {
-	params := struct {
-		Query     string `json:"query"`
-		Timestamp int64  `json:"timestamp"`
-		Window    int64  `json:"window"`
-		Step      int    `json:"step,omitempty"`
-		ReadURL   string `json:"read_url"`
-		Username  string `json:"username"`
-		Password  string `json:"password"`
-	}{
-		Query:     promql,
-		Timestamp: timestamp,
-		Window:    window,
-		Step:      step,
-		ReadURL:   cfg.PrometheusReadURL,
-		Username:  cfg.PrometheusUsername,
-		Password:  cfg.PrometheusPassword,
-	}
-
-	bodyBytes, err := json.Marshal(params)
-	if err != nil {
-		return nil, err
-	}
-
-	reqURL := fmt.Sprintf("%s%s", cfg.APIBaseURL, constants.EndpointPromQuery)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, err
-	}
-
-	httpReq.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
-	httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
-
-	return client.Do(httpReq)
 }

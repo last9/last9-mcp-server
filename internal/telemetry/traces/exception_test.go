@@ -23,7 +23,7 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 	startTime := time.Date(2026, 1, 20, 10, 0, 0, 0, time.UTC)
 	endTime := startTime.Add(30 * time.Minute)
 
-	var instantCalls, rangeCalls int
+	var instantCalls int
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get(constants.HeaderXLast9APIToken); got != constants.BearerPrefix+"test-access-token" {
@@ -69,46 +69,13 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			io.WriteString(w, `[
-				{"metric":{"exception_type":"TimeoutException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_CLIENT"},"value":[1737369000,"3"]},
-				{"metric":{"exception_type":"NullPointerException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_SERVER"},"value":[1737369000,"12"]}
-			]`)
+			io.WriteString(w, fmt.Sprintf(`[
+				{"metric":{"exception_type":"TimeoutException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_CLIENT"},"value":[%d,"3"]},
+				{"metric":{"exception_type":"NullPointerException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_SERVER"},"value":[%d,"12"]}
+			]`, endTime.Unix(), endTime.Unix()))
 
 		case constants.EndpointPromQuery:
-			rangeCalls++
-
-			var reqBody map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-				t.Fatalf("failed to decode range request body: %v", err)
-			}
-
-			query := fmt.Sprintf("%v", reqBody["query"])
-			if !strings.Contains(query, "[1m]") {
-				t.Fatalf("expected 1m range selector in last-seen query: %s", query)
-			}
-			if got := int64(reqBody["timestamp"].(float64)); got != endTime.Unix() {
-				t.Fatalf("unexpected range timestamp: got %d, want %d", got, endTime.Unix())
-			}
-			if got := int64(reqBody["window"].(float64)); got != 300 {
-				t.Fatalf("unexpected range window: got %d, want 300", got)
-			}
-			if got := int(reqBody["step"].(float64)); got != 60 {
-				t.Fatalf("unexpected range step: got %d, want 60", got)
-			}
-
-			lastSeenNullPointer := endTime.Add(-2 * time.Minute).Unix()
-			w.WriteHeader(http.StatusOK)
-			io.WriteString(w, fmt.Sprintf(`[
-				{"metric":{"exception_type":"NullPointerException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_SERVER"},"values":[[%d,"0"],[%d,"2"],[%d,"0"]]},
-				{"metric":{"exception_type":"TimeoutException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_CLIENT"},"values":[[%d,"0"],[%d,"0"],[%d,"0"]]}
-			]`,
-				endTime.Add(-4*time.Minute).Unix(),
-				lastSeenNullPointer,
-				endTime.Unix(),
-				endTime.Add(-4*time.Minute).Unix(),
-				endTime.Add(-2*time.Minute).Unix(),
-				endTime.Unix(),
-			))
+			t.Fatalf("did not expect range query")
 
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
@@ -147,9 +114,6 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 	if instantCalls != 1 {
 		t.Fatalf("expected 1 instant query call, got %d", instantCalls)
 	}
-	if rangeCalls != 1 {
-		t.Fatalf("expected 1 range query call for last-seen, got %d", rangeCalls)
-	}
 
 	text := utils.GetTextContent(t, result)
 	var payload map[string]any
@@ -182,22 +146,20 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 		t.Fatalf("unexpected deployment_environment: got %v, want prod", first["deployment_environment"])
 	}
 
-	expectedLastSeenFirst := endTime.Add(-2 * time.Minute).UTC().Format(time.RFC3339)
-	if first["last_seen"] != expectedLastSeenFirst {
-		t.Fatalf("unexpected first last_seen: got %v, want %s", first["last_seen"], expectedLastSeenFirst)
+	expectedLastSeen := endTime.UTC().Format(time.RFC3339)
+	if first["last_seen"] != expectedLastSeen {
+		t.Fatalf("unexpected first last_seen: got %v, want %s", first["last_seen"], expectedLastSeen)
 	}
-
-	expectedLastSeenSecond := endTime.UTC().Format(time.RFC3339)
-	if second["last_seen"] != expectedLastSeenSecond {
-		t.Fatalf("unexpected fallback last_seen: got %v, want %s", second["last_seen"], expectedLastSeenSecond)
+	if second["last_seen"] != expectedLastSeen {
+		t.Fatalf("unexpected second last_seen: got %v, want %s", second["last_seen"], expectedLastSeen)
 	}
 }
 
-func TestGetExceptionsHandler_SkipsLastSeenRangeForShortWindow(t *testing.T) {
+func TestGetExceptionsHandler_DoesNotCallRangeQuery(t *testing.T) {
 	endTime := time.Date(2026, 1, 20, 12, 0, 0, 0, time.UTC)
 	startTime := endTime.Add(-4 * time.Minute)
 
-	var instantCalls, rangeCalls int
+	var instantCalls int
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -221,8 +183,7 @@ func TestGetExceptionsHandler_SkipsLastSeenRangeForShortWindow(t *testing.T) {
 			io.WriteString(w, `[{"metric":{"exception_type":"IOException","service_name":"api","span_name":"GET /health","span_kind":"SPAN_KIND_SERVER"},"value":[1737374400,"5"]}]`)
 
 		case constants.EndpointPromQuery:
-			rangeCalls++
-			t.Fatalf("did not expect range query for short window")
+			t.Fatalf("did not expect range query")
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -254,9 +215,6 @@ func TestGetExceptionsHandler_SkipsLastSeenRangeForShortWindow(t *testing.T) {
 	if instantCalls != 1 {
 		t.Fatalf("expected 1 instant call, got %d", instantCalls)
 	}
-	if rangeCalls != 0 {
-		t.Fatalf("expected no range calls, got %d", rangeCalls)
-	}
 
 	text := utils.GetTextContent(t, result)
 	var payload map[string]any
@@ -269,26 +227,22 @@ func TestGetExceptionsHandler_SkipsLastSeenRangeForShortWindow(t *testing.T) {
 	}
 }
 
-func TestGetExceptionsHandler_LastSeenKeyIncludesSpanKind(t *testing.T) {
+func TestGetExceptionsHandler_LastSeenUsesInstantTimestamp(t *testing.T) {
 	startTime := time.Date(2026, 1, 20, 10, 0, 0, 0, time.UTC)
 	endTime := startTime.Add(10 * time.Minute)
-	oldLastSeen := endTime.Add(-3 * time.Minute).Unix()
+	clientLastSeen := endTime.Add(-3 * time.Minute).Unix()
+	serverLastSeen := endTime.Unix()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case constants.EndpointPromQueryInstant:
 			w.WriteHeader(http.StatusOK)
-			io.WriteString(w, `[{"metric":{"exception_type":"TimeoutException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_CLIENT"},"value":[1737369000,"1"]},{"metric":{"exception_type":"TimeoutException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_SERVER"},"value":[1737369000,"2"]}]`)
+			io.WriteString(w, fmt.Sprintf(`[
+				{"metric":{"exception_type":"TimeoutException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_CLIENT"},"value":[%d,"1"]},
+				{"metric":{"exception_type":"TimeoutException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_SERVER"},"value":[%d,"2"]}
+			]`, clientLastSeen, serverLastSeen))
 		case constants.EndpointPromQuery:
-			w.WriteHeader(http.StatusOK)
-			io.WriteString(w, fmt.Sprintf(`[{"metric":{"exception_type":"TimeoutException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_SERVER"},"values":[[%d,"0"],[%d,"0"],[%d,"4"]]},{"metric":{"exception_type":"TimeoutException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_CLIENT"},"values":[[%d,"0"],[%d,"3"],[%d,"0"]]}]`,
-				endTime.Add(-5*time.Minute).Unix(),
-				endTime.Add(-2*time.Minute).Unix(),
-				endTime.Unix(),
-				endTime.Add(-5*time.Minute).Unix(),
-				oldLastSeen,
-				endTime.Unix(),
-			))
+			t.Fatalf("did not expect range query")
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -343,12 +297,12 @@ func TestGetExceptionsHandler_LastSeenKeyIncludesSpanKind(t *testing.T) {
 		lastSeenBySpanKind[spanKind] = lastSeen
 	}
 
-	expectedServerLastSeen := endTime.UTC().Format(time.RFC3339)
+	expectedServerLastSeen := time.Unix(serverLastSeen, 0).UTC().Format(time.RFC3339)
 	if got := lastSeenBySpanKind["SPAN_KIND_SERVER"]; got != expectedServerLastSeen {
 		t.Fatalf("unexpected server last_seen: got %q, want %q", got, expectedServerLastSeen)
 	}
 
-	expectedClientLastSeen := time.Unix(oldLastSeen, 0).UTC().Format(time.RFC3339)
+	expectedClientLastSeen := time.Unix(clientLastSeen, 0).UTC().Format(time.RFC3339)
 	if got := lastSeenBySpanKind["SPAN_KIND_CLIENT"]; got != expectedClientLastSeen {
 		t.Fatalf("unexpected client last_seen: got %q, want %q", got, expectedClientLastSeen)
 	}
