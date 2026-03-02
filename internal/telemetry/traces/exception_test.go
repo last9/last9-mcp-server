@@ -57,6 +57,9 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 			if !strings.Contains(query, "exception_type!=''") {
 				t.Fatalf("exception_type guard missing from instant query: %s", query)
 			}
+			if !strings.Contains(query, "sum by (exception_type, service_name, span_name, span_kind, env)") {
+				t.Fatalf("instant query is missing env in grouping labels: %s", query)
+			}
 			if !strings.Contains(query, "[30m]") {
 				t.Fatalf("expected 30m range selector in instant query: %s", query)
 			}
@@ -263,5 +266,90 @@ func TestGetExceptionsHandler_SkipsLastSeenRangeForShortWindow(t *testing.T) {
 
 	if got := int(payload["count"].(float64)); got != 1 {
 		t.Fatalf("unexpected count: got %d, want 1", got)
+	}
+}
+
+func TestGetExceptionsHandler_LastSeenKeyIncludesSpanKind(t *testing.T) {
+	startTime := time.Date(2026, 1, 20, 10, 0, 0, 0, time.UTC)
+	endTime := startTime.Add(10 * time.Minute)
+	oldLastSeen := endTime.Add(-3 * time.Minute).Unix()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case constants.EndpointPromQueryInstant:
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, `[{"metric":{"exception_type":"TimeoutException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_CLIENT"},"value":[1737369000,"1"]},{"metric":{"exception_type":"TimeoutException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_SERVER"},"value":[1737369000,"2"]}]`)
+		case constants.EndpointPromQuery:
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, fmt.Sprintf(`[{"metric":{"exception_type":"TimeoutException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_SERVER"},"values":[[%d,"0"],[%d,"0"],[%d,"4"]]},{"metric":{"exception_type":"TimeoutException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_CLIENT"},"values":[[%d,"0"],[%d,"3"],[%d,"0"]]}]`,
+				endTime.Add(-5*time.Minute).Unix(),
+				endTime.Add(-2*time.Minute).Unix(),
+				endTime.Unix(),
+				endTime.Add(-5*time.Minute).Unix(),
+				oldLastSeen,
+				endTime.Unix(),
+			))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL:         server.URL,
+		PrometheusReadURL:  "https://prom.example.com",
+		PrometheusUsername: "prom-user",
+		PrometheusPassword: "prom-pass",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-access-token",
+			ExpiresAt:   time.Now().Add(24 * time.Hour),
+		},
+	}
+
+	handler := NewGetExceptionsHandler(server.Client(), cfg)
+	args := GetExceptionsArgs{
+		StartTimeISO: startTime.Format(time.RFC3339),
+		EndTimeISO:   endTime.Format(time.RFC3339),
+	}
+
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	text := utils.GetTextContent(t, result)
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(text), &payload); err != nil {
+		t.Fatalf("failed to decode tool response: %v", err)
+	}
+
+	exceptions, ok := payload["exceptions"].([]any)
+	if !ok {
+		t.Fatalf("expected exceptions array in response")
+	}
+	if len(exceptions) != 2 {
+		t.Fatalf("unexpected exceptions length: got %d, want 2", len(exceptions))
+	}
+
+	lastSeenBySpanKind := map[string]string{}
+	for _, entry := range exceptions {
+		exceptionMap, ok := entry.(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected exception entry type: %T", entry)
+		}
+
+		spanKind, _ := exceptionMap["span_kind"].(string)
+		lastSeen, _ := exceptionMap["last_seen"].(string)
+		lastSeenBySpanKind[spanKind] = lastSeen
+	}
+
+	expectedServerLastSeen := endTime.UTC().Format(time.RFC3339)
+	if got := lastSeenBySpanKind["SPAN_KIND_SERVER"]; got != expectedServerLastSeen {
+		t.Fatalf("unexpected server last_seen: got %q, want %q", got, expectedServerLastSeen)
+	}
+
+	expectedClientLastSeen := time.Unix(oldLastSeen, 0).UTC().Format(time.RFC3339)
+	if got := lastSeenBySpanKind["SPAN_KIND_CLIENT"]; got != expectedClientLastSeen {
+		t.Fatalf("unexpected client last_seen: got %q, want %q", got, expectedClientLastSeen)
 	}
 }

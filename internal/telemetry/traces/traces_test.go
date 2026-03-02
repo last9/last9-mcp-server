@@ -410,13 +410,10 @@ func TestGetExceptionsHandler_Integration(t *testing.T) {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 
-	count := 0
-	if exceptions, ok := response["exceptions"].([]interface{}); ok {
-		count = len(exceptions)
-	} else if data, ok := response["data"].(map[string]interface{}); ok {
-		if result, ok := data["result"].([]interface{}); ok {
-			count = len(result)
-		}
+	exceptions, ok := response["exceptions"].([]interface{})
+	if !ok {
+		t.Fatalf("expected \"exceptions\" array in response, got: %T", response["exceptions"])
 	}
+	count := len(exceptions)
 	t.Logf("Integration test successful: received %d exception(s)", count)
 }

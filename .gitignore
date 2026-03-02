@@ -109,3 +109,6 @@ init.json
 query.json
 trace-response.json
 traces_output.json
+
+# Local planning docs
+docs/frontend-parity-tool-audit-plan.md

@@ -157,6 +157,7 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 					orDefault(series.Metric["exception_type"], "Unknown"),
 					orDefault(series.Metric["service_name"], "Unknown"),
 					orDefault(series.Metric["span_name"], "Unknown"),
+					orDefault(series.Metric["span_kind"], "UNKNOWN"),
 				)
 
 				var lastSeenMs int64
@@ -191,7 +192,7 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 				count = parsePromNumber(point.Value[1])
 			}
 
-			key := buildExceptionKey(exceptionType, serviceName, spanName)
+			key := buildExceptionKey(exceptionType, serviceName, spanName, spanKind)
 			lastSeenMs := endMs
 			if v, ok := lastSeenMap[key]; ok {
 				lastSeenMs = v
@@ -305,20 +306,20 @@ func buildExceptionsPromQL(baseFilter string, rangeSelector string) string {
 	}
 
 	return fmt.Sprintf(`
-		sum by (exception_type, service_name, span_name, span_kind) (
+		sum by (exception_type, service_name, span_name, span_kind, env) (
 			sum_over_time(trace_endpoint_count{%s}[%s])
 		) or
-		sum by (exception_type, service_name, span_name, span_kind) (
+		sum by (exception_type, service_name, span_name, span_kind, env) (
 			sum_over_time(trace_client_count{%s}[%s])
 		) or
-		sum by (exception_type, service_name, span_name, span_kind) (
+		sum by (exception_type, service_name, span_name, span_kind, env) (
 			sum_over_time(trace_internal_count{%s}[%s])
 		)
 	`, selector, rangeSelector, selector, rangeSelector, selector, rangeSelector)
 }
 
-func buildExceptionKey(exceptionType, serviceName, spanName string) string {
-	return strings.Join([]string{exceptionType, serviceName, spanName}, ":")
+func buildExceptionKey(exceptionType, serviceName, spanName, spanKind string) string {
+	return strings.Join([]string{exceptionType, serviceName, spanName, spanKind}, ":")
 }
 
 func parsePromNumber(raw any) float64 {
