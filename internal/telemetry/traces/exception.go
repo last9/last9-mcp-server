@@ -1,18 +1,48 @@
 package traces
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+var promQLRegexSpecialChars = regexp.MustCompile(`[.\-+*?^$()|\[\]{}\\/]`)
+
+type promInstantResponse []struct {
+	Metric map[string]string `json:"metric"`
+	Value  []any             `json:"value"`
+}
+
+type promRangeResponse []struct {
+	Metric map[string]string `json:"metric"`
+	Values [][]any           `json:"values"`
+}
+
+type exceptionAggregate struct {
+	ExceptionType          string
+	ServiceName            string
+	SpanName               string
+	SpanKind               string
+	DeploymentEnvironment  string
+	Count                  float64
+	FirstSeenAtMillisecond int64
+	LastSeenAtMillisecond  int64
+}
 
 // GetExceptionsArgs defines the input structure for getting exceptions
 type GetExceptionsArgs struct {
@@ -31,6 +61,9 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 		limit := 20
 		if args.Limit != 0 {
 			limit = int(args.Limit)
+		}
+		if limit <= 0 {
+			limit = 20
 		}
 		if limit > 100 {
 			limit = 100 // Maximum limit for trace queries
@@ -56,153 +89,167 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 			return nil, nil, err
 		}
 
-		// Build trace JSON query pipeline with filters
-		filters := make([]map[string]interface{}, 0)
-
-		// Filter for traces with exceptions (exception.type exists and is not empty)
-		exceptionTypeFilter := map[string]interface{}{
-			"$and": []interface{}{
-				map[string]interface{}{"$exists": []interface{}{"attributes['exception.type']"}},
-				map[string]interface{}{"$ne": []interface{}{"attributes['exception.type']", ""}},
-			},
-		}
-		filters = append(filters, exceptionTypeFilter)
-
-		// Filter by service name if provided
-		if args.ServiceName != "" {
-			filters = append(filters, map[string]interface{}{
-				"$eq": []interface{}{"ServiceName", args.ServiceName},
-			})
-		}
-
-		// Filter by span name if provided
-		if args.SpanName != "" {
-			filters = append(filters, map[string]interface{}{
-				"$eq": []interface{}{"SpanName", args.SpanName},
-			})
-		}
-
-		// Filter by deployment environment if provided
-		if args.DeploymentEnvironment != "" {
-			filters = append(filters, map[string]interface{}{
-				"$eq": []interface{}{"resources['deployment.environment']", args.DeploymentEnvironment},
-			})
-		}
-
-		// Build the pipeline query
-		pipeline := []map[string]interface{}{
-			{
-				"type": "filter",
-				"query": map[string]interface{}{
-					"$and": filters,
-				},
-			},
-		}
-
 		// Convert start/end times to milliseconds
 		startMs := startTime.UnixMilli()
 		endMs := endTime.UnixMilli()
 
-		// Use the MakeTracesJSONQueryAPI utility function
-		resp, err := utils.MakeTracesJSONQueryAPI(ctx, client, cfg, pipeline, startMs, endMs, limit)
+		durationMinutes := int(endTime.Sub(startTime).Minutes())
+		if endTime.Sub(startTime)%time.Minute != 0 {
+			durationMinutes++
+		}
+		if durationMinutes <= 0 {
+			durationMinutes = 1
+		}
+
+		baseFilter := buildExceptionBaseFilter(args)
+		exceptionsQuery := buildExceptionsPromQL(baseFilter, fmt.Sprintf("%dm", durationMinutes))
+
+		// Frontend parity: exceptions list is fetched from prom_query_instant over trace_*_count.
+		resp, err := utils.MakePromInstantAPIQuery(ctx, client, exceptionsQuery, endTime.Unix(), cfg)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to execute trace query: %w", err)
+			return nil, nil, fmt.Errorf("failed to execute exceptions instant query: %w", err)
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
-			return nil, nil, fmt.Errorf("exceptions API request failed with status %d: %s", resp.StatusCode, string(body))
+			return nil, nil, fmt.Errorf("exceptions instant query failed with status %d: %s", resp.StatusCode, string(body))
 		}
 
-		// Parse the response
-		var traceResponse struct {
-			Result []map[string]interface{} `json:"result"`
-			Data   struct {
-				Result []map[string]interface{} `json:"result"`
-			} `json:"data"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&traceResponse); err != nil {
-			return nil, nil, fmt.Errorf("failed to decode response: %w", err)
+		var instantSeries promInstantResponse
+		if err := json.NewDecoder(resp.Body).Decode(&instantSeries); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode exceptions instant response: %w", err)
 		}
 
-		result := traceResponse.Result
-		if len(result) == 0 {
-			result = traceResponse.Data.Result
-		}
+		lastSeenMap := map[string]int64{}
+		shouldFetchLastSeen := endTime.Sub(startTime) >= 5*time.Minute
 
-		// Extract exception details from traces
-		exceptions := make([]map[string]interface{}, 0, len(result))
-		for _, trace := range result {
-			// Extract relevant exception information
-			exception := map[string]interface{}{
-				"trace_id":     trace["TraceId"],
-				"span_id":      trace["SpanId"],
-				"service_name": trace["ServiceName"],
-				"span_name":    trace["SpanName"],
-				"timestamp":    trace["Timestamp"],
+		if shouldFetchLastSeen {
+			lookbackSeconds := int64(endTime.Sub(startTime).Seconds())
+			if lookbackSeconds > 300 {
+				lookbackSeconds = 300
+			}
+			if lookbackSeconds <= 0 {
+				lookbackSeconds = 300
 			}
 
-			// Extract attributes if they exist
-			extracted := false
-			if attrs, ok := trace["SpanAttributes"].(map[string]interface{}); ok {
-				if _, ok := attrs["exception.type"]; ok {
-					exception["exception_type"] = attrs["exception.type"]
-					exception["exception_message"] = attrs["exception.message"]
-					exception["exception_stacktrace"] = attrs["exception.stacktrace"]
-					exception["exception_escaped"] = attrs["exception.escaped"]
-					extracted = true
-				}
+			// Frontend parity: use prom_query range query over the last few minutes
+			// to find the latest non-zero exception datapoint per exception group.
+			lastSeenQuery := buildExceptionsPromQL(baseFilter, "1m")
+			lastSeenResp, err := makePromRangeAPIQueryWithStep(ctx, client, lastSeenQuery, endTime.Unix(), lookbackSeconds, 60, cfg)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to execute exceptions last-seen range query: %w", err)
 			}
-			if !extracted {
-				if attrs, ok := trace["attributes"].(map[string]interface{}); ok {
-					if _, ok := attrs["exception.type"]; ok {
-						exception["exception_type"] = attrs["exception.type"]
-						exception["exception_message"] = attrs["exception.message"]
-						exception["exception_stacktrace"] = attrs["exception.stacktrace"]
-						exception["exception_escaped"] = attrs["exception.escaped"]
-						extracted = true
+			defer lastSeenResp.Body.Close()
+
+			if lastSeenResp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(lastSeenResp.Body)
+				return nil, nil, fmt.Errorf("exceptions last-seen query failed with status %d: %s", lastSeenResp.StatusCode, string(body))
+			}
+
+			var rangeSeries promRangeResponse
+			if err := json.NewDecoder(lastSeenResp.Body).Decode(&rangeSeries); err != nil {
+				return nil, nil, fmt.Errorf("failed to decode exceptions last-seen response: %w", err)
+			}
+
+			for _, series := range rangeSeries {
+				key := buildExceptionKey(
+					orDefault(series.Metric["exception_type"], "Unknown"),
+					orDefault(series.Metric["service_name"], "Unknown"),
+					orDefault(series.Metric["span_name"], "Unknown"),
+				)
+
+				var lastSeenMs int64
+				for i := len(series.Values) - 1; i >= 0; i-- {
+					if len(series.Values[i]) < 2 {
+						continue
 					}
-				}
-			}
-			if !extracted {
-				if events, ok := trace["EventsAttributes"].([]interface{}); ok && len(events) > 0 {
-					if first, ok := events[0].(map[string]interface{}); ok {
-						exception["exception_type"] = first["exception.type"]
-						exception["exception_message"] = first["exception.message"]
-						exception["exception_stacktrace"] = first["exception.stacktrace"]
-						exception["exception_escaped"] = first["exception.escaped"]
+					if parsePromNumber(series.Values[i][1]) <= 0 {
+						continue
 					}
+					tsSeconds := parsePromTimestampSeconds(series.Values[i][0])
+					if tsSeconds > 0 {
+						lastSeenMs = tsSeconds * 1000
+					}
+					break
+				}
+				if lastSeenMs > 0 {
+					lastSeenMap[key] = lastSeenMs
 				}
 			}
+		}
 
-			// Extract resource attributes if they exist
-			if resources, ok := trace["ResourceAttributes"].(map[string]interface{}); ok {
-				exception["deployment_environment"] = resources["deployment.environment"]
-				exception["service_namespace"] = resources["service.namespace"]
-				exception["service_instance_id"] = resources["service.instance.id"]
-			} else if resources, ok := trace["resources"].(map[string]interface{}); ok {
-				exception["deployment_environment"] = resources["deployment.environment"]
-				exception["service_namespace"] = resources["service.namespace"]
-				exception["service_instance_id"] = resources["service.instance.id"]
+		aggregates := make([]exceptionAggregate, 0, len(instantSeries))
+		for _, point := range instantSeries {
+			exceptionType := orDefault(point.Metric["exception_type"], "Unknown")
+			serviceName := orDefault(point.Metric["service_name"], "Unknown")
+			spanName := orDefault(point.Metric["span_name"], "Unknown")
+			spanKind := orDefault(point.Metric["span_kind"], "UNKNOWN")
+
+			var count float64
+			if len(point.Value) > 1 {
+				count = parsePromNumber(point.Value[1])
 			}
 
-			// Extract span kind
-			if spanKind, ok := trace["SpanKind"].(string); ok {
-				exception["span_kind"] = spanKind
+			key := buildExceptionKey(exceptionType, serviceName, spanName)
+			lastSeenMs := endMs
+			if v, ok := lastSeenMap[key]; ok {
+				lastSeenMs = v
 			}
 
-			// Extract duration
-			if duration, ok := trace["Duration"].(float64); ok {
-				exception["duration_ms"] = duration / 1000000 // Convert nanoseconds to milliseconds
+			deploymentEnvironment := point.Metric["env"]
+			if deploymentEnvironment == "" {
+				deploymentEnvironment = args.DeploymentEnvironment
 			}
 
-			// Extract status
-			if status, ok := trace["StatusCode"].(string); ok {
-				exception["status_code"] = status
-			}
+			aggregates = append(aggregates, exceptionAggregate{
+				ExceptionType:          exceptionType,
+				ServiceName:            serviceName,
+				SpanName:               spanName,
+				SpanKind:               spanKind,
+				DeploymentEnvironment:  deploymentEnvironment,
+				Count:                  count,
+				FirstSeenAtMillisecond: startMs,
+				LastSeenAtMillisecond:  lastSeenMs,
+			})
+		}
 
-			exceptions = append(exceptions, exception)
+		sort.SliceStable(aggregates, func(i, j int) bool {
+			if aggregates[i].Count == aggregates[j].Count {
+				return aggregates[i].ExceptionType < aggregates[j].ExceptionType
+			}
+			return aggregates[i].Count > aggregates[j].Count
+		})
+
+		if len(aggregates) > limit {
+			aggregates = aggregates[:limit]
+		}
+
+		exceptions := make([]map[string]interface{}, 0, len(aggregates))
+		for _, exceptionData := range aggregates {
+			lastSeen := time.UnixMilli(exceptionData.LastSeenAtMillisecond).UTC().Format(time.RFC3339)
+			firstSeen := time.UnixMilli(exceptionData.FirstSeenAtMillisecond).UTC().Format(time.RFC3339)
+
+			exceptions = append(exceptions, map[string]interface{}{
+				"trace_id":               nil,
+				"span_id":                nil,
+				"service_name":           exceptionData.ServiceName,
+				"span_name":              exceptionData.SpanName,
+				"timestamp":              lastSeen,
+				"exception_type":         exceptionData.ExceptionType,
+				"exception_message":      "",
+				"exception_stacktrace":   "",
+				"exception_escaped":      nil,
+				"deployment_environment": exceptionData.DeploymentEnvironment,
+				"service_namespace":      "",
+				"service_instance_id":    "",
+				"span_kind":              exceptionData.SpanKind,
+				"duration_ms":            nil,
+				"status_code":            "",
+				"count":                  exceptionData.Count,
+				"first_seen":             firstSeen,
+				"last_seen":              lastSeen,
+			})
 		}
 
 		// Format response
@@ -231,4 +278,158 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 			},
 		}, nil, nil
 	}
+}
+
+func buildExceptionBaseFilter(args GetExceptionsArgs) string {
+	matchers := make([]string, 0, 3)
+
+	if args.ServiceName != "" {
+		matchers = append(matchers, fmt.Sprintf("service_name=~'%s'", escapePromQLLabelValue(args.ServiceName)))
+	}
+
+	if args.SpanName != "" {
+		matchers = append(matchers, fmt.Sprintf("span_name=~'%s'", escapePromQLLabelValue(args.SpanName)))
+	}
+
+	if args.DeploymentEnvironment != "" {
+		matchers = append(matchers, fmt.Sprintf("env=~'%s'", escapePromQLLabelValue(args.DeploymentEnvironment)))
+	}
+
+	return strings.Join(matchers, ", ")
+}
+
+func buildExceptionsPromQL(baseFilter string, rangeSelector string) string {
+	selector := "exception_type!=''"
+	if baseFilter != "" {
+		selector = fmt.Sprintf("%s, exception_type!=''", baseFilter)
+	}
+
+	return fmt.Sprintf(`
+		sum by (exception_type, service_name, span_name, span_kind) (
+			sum_over_time(trace_endpoint_count{%s}[%s])
+		) or
+		sum by (exception_type, service_name, span_name, span_kind) (
+			sum_over_time(trace_client_count{%s}[%s])
+		) or
+		sum by (exception_type, service_name, span_name, span_kind) (
+			sum_over_time(trace_internal_count{%s}[%s])
+		)
+	`, selector, rangeSelector, selector, rangeSelector, selector, rangeSelector)
+}
+
+func buildExceptionKey(exceptionType, serviceName, spanName string) string {
+	return strings.Join([]string{exceptionType, serviceName, spanName}, ":")
+}
+
+func parsePromNumber(raw any) float64 {
+	switch value := raw.(type) {
+	case float64:
+		return value
+	case float32:
+		return float64(value)
+	case int:
+		return float64(value)
+	case int64:
+		return float64(value)
+	case json.Number:
+		f, err := value.Float64()
+		if err == nil {
+			return f
+		}
+	case string:
+		f, err := strconv.ParseFloat(value, 64)
+		if err == nil {
+			return f
+		}
+	}
+
+	return 0
+}
+
+func parsePromTimestampSeconds(raw any) int64 {
+	switch value := raw.(type) {
+	case int64:
+		return value
+	case int:
+		return int64(value)
+	case float64:
+		return int64(value)
+	case float32:
+		return int64(value)
+	case json.Number:
+		f, err := value.Float64()
+		if err == nil {
+			return int64(f)
+		}
+	case string:
+		f, err := strconv.ParseFloat(value, 64)
+		if err == nil {
+			return int64(f)
+		}
+	}
+
+	return 0
+}
+
+func orDefault(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func escapePromQLLabelValue(value string) string {
+	if value == "" {
+		return value
+	}
+
+	escapedSingleQuotes := strings.ReplaceAll(value, "'", `\'`)
+
+	return promQLRegexSpecialChars.ReplaceAllStringFunc(escapedSingleQuotes, func(match string) string {
+		return `\` + match
+	})
+}
+
+func makePromRangeAPIQueryWithStep(
+	ctx context.Context,
+	client *http.Client,
+	promql string,
+	timestamp int64,
+	window int64,
+	step int,
+	cfg models.Config,
+) (*http.Response, error) {
+	params := struct {
+		Query     string `json:"query"`
+		Timestamp int64  `json:"timestamp"`
+		Window    int64  `json:"window"`
+		Step      int    `json:"step,omitempty"`
+		ReadURL   string `json:"read_url"`
+		Username  string `json:"username"`
+		Password  string `json:"password"`
+	}{
+		Query:     promql,
+		Timestamp: timestamp,
+		Window:    window,
+		Step:      step,
+		ReadURL:   cfg.PrometheusReadURL,
+		Username:  cfg.PrometheusUsername,
+		Password:  cfg.PrometheusPassword,
+	}
+
+	bodyBytes, err := json.Marshal(params)
+	if err != nil {
+		return nil, err
+	}
+
+	reqURL := fmt.Sprintf("%s%s", cfg.APIBaseURL, constants.EndpointPromQuery)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
+	httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
+
+	return client.Do(httpReq)
 }

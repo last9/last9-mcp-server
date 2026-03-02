@@ -411,7 +411,9 @@ func TestGetExceptionsHandler_Integration(t *testing.T) {
 	}
 
 	count := 0
-	if data, ok := response["data"].(map[string]interface{}); ok {
+	if exceptions, ok := response["exceptions"].([]interface{}); ok {
+		count = len(exceptions)
+	} else if data, ok := response["data"].(map[string]interface{}); ok {
 		if result, ok := data["result"].([]interface{}); ok {
 			count = len(result)
 		}
