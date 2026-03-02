@@ -90,6 +90,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
+	// OTEL_SDK_DISABLED is the standard OTel env var. Honour it explicitly so
+	// that users can override the default (disable_telemetry=true) without
+	// needing the LAST9_DISABLE_TELEMETRY env var.
+	if v := os.Getenv("OTEL_SDK_DISABLED"); v == "false" {
+		cfg.DisableTelemetry = false
+	} else if v == "true" {
+		cfg.DisableTelemetry = true
+	}
 	log.Printf("Config loaded - HTTPMode: %t, Authentication: enabled", cfg.HTTPMode)
 
 	tokenManager, err := auth.NewTokenManager(cfg.RefreshToken)
