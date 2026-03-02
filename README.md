@@ -823,6 +823,7 @@ LAST9_HTTP=true ./last9-mcp-server
 
 See [TESTING.md](TESTING.md) for detailed testing instructions.
 
+
 ## Badges
 
 [![MseeP.ai Security Assessment Badge](https://mseep.net/pr/last9-last9-mcp-server-badge.png)](https://mseep.ai/app/last9-last9-mcp-server)
