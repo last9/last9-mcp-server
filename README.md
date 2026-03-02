@@ -470,8 +470,9 @@ If you run the server locally (`last9-mcp`), use these environment variables:
 Optional environment variables:
 
 - `LAST9_DISABLE_TELEMETRY`: Defaults to `true` (telemetry is disabled by default). Set to `false` to enable OpenTelemetry tracing if you have an OTLP collector configured.
-- `OTEL_EXPORTER_OTLP_ENDPOINT`: OpenTelemetry collector endpoint URL. Only needed if `LAST9_DISABLE_TELEMETRY=false`.
-- `OTEL_EXPORTER_OTLP_HEADERS`: Headers for OTLP exporter authentication. Only needed if `LAST9_DISABLE_TELEMETRY=false`.
+- `OTEL_SDK_DISABLED`: Standard OTel env var. Set to `false` to enable telemetry (overrides `LAST9_DISABLE_TELEMETRY`). Set to `true` to disable telemetry explicitly.
+- `OTEL_EXPORTER_OTLP_ENDPOINT`: OpenTelemetry collector endpoint URL. Only needed if telemetry is enabled.
+- `OTEL_EXPORTER_OTLP_HEADERS`: Headers for OTLP exporter authentication. Only needed when telemetry is enabled (i.e., `OTEL_SDK_DISABLED` is not `true` and `LAST9_DISABLE_TELEMETRY` is not `true`).
 - `LAST9_DATASOURCE`: Name of the datasource/cluster to use. If not specified, the default datasource configured in your Last9 organization will be used.
 - `LAST9_API_HOST`: API host to connect to. Defaults to `app.last9.io`. Use this if you need to connect to a different Last9 endpoint (e.g., regional or self-hosted instances).
 
