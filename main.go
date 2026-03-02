@@ -20,6 +20,11 @@ import (
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/peterbourgon/ff/v3"
+	"go.opentelemetry.io/otel"
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 )
 
 // Version information
@@ -97,12 +102,6 @@ func main() {
 		log.Fatalf("failed to refresh access token: %v", err)
 	}
 
-	// Disable OpenTelemetry if requested
-	if cfg.DisableTelemetry {
-		log.Println("Telemetry disabled - setting OTEL_SDK_DISABLED=true")
-		os.Setenv("OTEL_SDK_DISABLED", "true")
-	}
-
 	// Create attribute cache and perform best-effort initial fetch
 	attrCache := attributes.NewAttributeCache(auth.GetHTTPClient(), cfg)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -113,6 +112,23 @@ func main() {
 	server, err := last9mcp.NewServer("last9-mcp", Version)
 	if err != nil {
 		log.Fatalf("failed to create MCP server: %v", err)
+	}
+
+	// The mcp-go-sdk always initialises real OTLP exporters inside NewServer,
+	// regardless of OTEL_SDK_DISABLED. Shut them down and replace with no-ops
+	// so the periodic exporter doesn't spam logs with upload failures.
+	if cfg.DisableTelemetry {
+		log.Println("Telemetry disabled - replacing OTLP providers with no-ops")
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if mp, ok := otel.GetMeterProvider().(*sdkmetric.MeterProvider); ok {
+			_ = mp.Shutdown(shutdownCtx)
+		}
+		if tp, ok := otel.GetTracerProvider().(*sdktrace.TracerProvider); ok {
+			_ = tp.Shutdown(shutdownCtx)
+		}
+		otel.SetMeterProvider(metricnoop.NewMeterProvider())
+		otel.SetTracerProvider(tracenoop.NewTracerProvider())
 	}
 
 	// Register all tools
