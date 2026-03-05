@@ -134,38 +134,23 @@ func FetchTraceAttributeNames(ctx context.Context, client *http.Client, cfg mode
 // NewGetTraceAttributesHandler creates a handler for fetching trace attributes
 func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTraceAttributesArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetTraceAttributesArgs) (*mcp.CallToolResult, any, error) {
-		// Parse time range parameters
-		now := time.Now()
-
-		// Default to 15 minutes window
-		startTime := now.Add(-15 * time.Minute).Unix()
-		endTime := now.Unix()
-
-		// Check for lookback_minutes parameter
+		timeParams := map[string]interface{}{}
 		if args.LookbackMinutes > 0 {
-			startTime = now.Add(-time.Duration(args.LookbackMinutes) * time.Minute).Unix()
+			timeParams["lookback_minutes"] = args.LookbackMinutes
 		}
-
-		// Check for explicit start_time_iso
 		if args.StartTimeISO != "" {
-			parsed, err := utils.ParseToolTimestamp(args.StartTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid start_time_iso format: %w", err)
-			}
-			startTime = parsed.Unix()
+			timeParams["start_time_iso"] = args.StartTimeISO
+		}
+		if args.EndTimeISO != "" {
+			timeParams["end_time_iso"] = args.EndTimeISO
 		}
 
-		// Check for explicit end_time_iso
-		if args.EndTimeISO != "" {
-			parsed, err := utils.ParseToolTimestamp(args.EndTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid end_time_iso format: %w", err)
-			}
-			endTime = parsed.Unix()
+		startTimeValue, endTimeValue, err := utils.GetTimeRange(timeParams, 15)
+		if err != nil {
+			return nil, nil, err
 		}
-		if startTime > endTime {
-			return nil, nil, fmt.Errorf("start_time_iso must be before or equal to end_time_iso")
-		}
+		startTime := startTimeValue.Unix()
+		endTime := endTimeValue.Unix()
 
 		// Get region parameter or use default from config
 		region := cfg.Region
@@ -201,7 +186,7 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 		}
 
 		// Create the request
-		httpReq, err := http.NewRequest("POST", fullURL, bytes.NewBuffer(bodyBytes))
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", fullURL, bytes.NewBuffer(bodyBytes))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create request: %v", err)
 		}

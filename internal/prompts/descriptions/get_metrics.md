@@ -13,9 +13,11 @@ Use for performance monitoring, trend analysis, and system health checks.
 ## Best Practices
 
 ### Time Range Selection
+- Canonical precedence is: explicit `start_time_iso`/`end_time_iso` -> `lookback_minutes`.
 - For relative windows ("last 30 minutes", "past 2 hours"), prefer `lookback_minutes`.
 - Use explicit `start_time_iso` / `end_time_iso` only when the user gives concrete timestamps.
 - If both explicit timestamps and `lookback_minutes` are present, explicit timestamps take priority.
+- Never include a `time_expression` parameter in MCP tool calls.
 - **Recent monitoring**: Last 15-30 minutes
 - **Trend analysis**: Last few hours to days
 - **Performance baselines**: Week or month comparisons

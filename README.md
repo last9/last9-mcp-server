@@ -153,9 +153,11 @@ IDEs. Implements the following MCP
 
 ### Time Input Standard
 
+- Canonical precedence is: valid absolute times (`start_time_iso`/`end_time_iso`, or `time_iso` where applicable) -> `lookback_minutes`.
 - For relative windows, prefer `lookback_minutes` (up to 20160 minutes = 14 days).
-- For absolute windows, use `start_time_iso`, `end_time_iso`, or `time_iso` in RFC3339/ISO8601 (for example, `2026-02-09T15:04:05Z`).
-- If both relative and absolute inputs are provided, absolute time inputs take precedence.
+- For absolute windows, use RFC3339/ISO8601 (`2026-02-09T15:04:05Z`).
+- If both relative and absolute inputs are provided, absolute inputs take precedence.
+- Do not send a `time_expression` parameter to MCP tools.
 - Legacy `YYYY-MM-DD HH:MM:SS` is accepted only for compatibility.
 - If a lookback limit error occurs, retry using explicit `start_time_iso`/`end_time_iso` timestamps.
 

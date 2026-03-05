@@ -24,7 +24,10 @@ These are instructions for constructing natural language trace analytics queries
 **Process Flow:**
 1. User provides natural language query about traces
 2. You translate it to JSON pipeline format internally
-3. You immediately call the `get_traces` tool with the JSON query and **ALWAYS USE lookback_minutes: 5 AS DEFAULT** unless the user specifies otherwise
+3. You immediately call the `get_traces` tool with canonical time params:
+   - Use `start_time_iso` + `end_time_iso` when the user gave explicit absolute dates/times
+   - Otherwise use `lookback_minutes` (default: 5 when no time is specified)
+   - Never include a `time_expression` field
 4. You analyze the results and provide insights to the user
 
 **CRITICAL DEFAULT TIME RULE:**

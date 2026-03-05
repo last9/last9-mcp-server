@@ -235,19 +235,7 @@ type GetAlertsArgs struct {
 
 func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetAlertsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetAlertsArgs) (*mcp.CallToolResult, any, error) {
-		// Parse query time parameter. time_iso is canonical and takes precedence.
-		timestamp := time.Now().Unix()
-		if args.TimeISO != "" {
-			parsedTime, err := utils.ParseToolTimestamp(args.TimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid time_iso format: %w", err)
-			}
-			timestamp = parsedTime.Unix()
-		} else if args.Timestamp != 0 {
-			timestamp = int64(args.Timestamp)
-		}
-
-		// Parse window parameter (defaults to 900 seconds = 15 minutes)
+		// Parse window parameter (defaults to 900 seconds = 15 minutes).
 		window := int64(900)
 		if args.Window != 0 {
 			window = int64(args.Window)
@@ -261,6 +249,30 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 		if window < 60 || window > 86400 {
 			return nil, nil, fmt.Errorf("window must be between 60 and 86400 seconds")
 		}
+
+		// Resolve timestamp using shared time-range logic.
+		timeParams := map[string]interface{}{}
+		if args.TimeISO != "" {
+			timeParams["end_time_iso"] = args.TimeISO
+		} else if args.Timestamp != 0 {
+			timeParams["end_time_iso"] = time.Unix(int64(args.Timestamp), 0).UTC().Format(time.RFC3339)
+		} else if args.LookbackMinutes != 0 {
+			timeParams["lookback_minutes"] = args.LookbackMinutes
+		}
+
+		defaultLookbackMinutes := int(window / 60)
+		if defaultLookbackMinutes < 1 {
+			defaultLookbackMinutes = 1
+		}
+
+		_, endTime, err := utils.GetTimeRange(timeParams, defaultLookbackMinutes)
+		if err != nil {
+			if args.TimeISO != "" {
+				return nil, nil, fmt.Errorf("invalid time_iso format: %w", err)
+			}
+			return nil, nil, err
+		}
+		timestamp := endTime.Unix()
 
 		// Build the base URL for alerts monitoring API
 		// Datasource is already configured in cfg via PopulateAPICfg

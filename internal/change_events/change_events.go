@@ -95,37 +95,23 @@ type GetChangeEventsArgs struct {
 
 func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetChangeEventsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetChangeEventsArgs) (*mcp.CallToolResult, any, error) {
-		var (
-			startTimeParam, endTimeParam int64
-			lookbackMinutes              = 60 // default lookback
-		)
-
-		// Handle lookback_minutes parameter
+		timeParams := map[string]interface{}{}
 		if args.LookbackMinutes > 0 {
-			lookbackMinutes = args.LookbackMinutes
+			timeParams["lookback_minutes"] = args.LookbackMinutes
 		}
-
-		// Handle end_time_iso parameter
-		if args.EndTimeISO != "" {
-			t, err := utils.ParseToolTimestamp(args.EndTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid end_time_iso format: %w", err)
-			}
-			endTimeParam = t.Unix()
-		} else {
-			endTimeParam = time.Now().Unix()
-		}
-
-		// Handle start_time_iso parameter
 		if args.StartTimeISO != "" {
-			t, err := utils.ParseToolTimestamp(args.StartTimeISO)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid start_time_iso format: %w", err)
-			}
-			startTimeParam = t.Unix()
-		} else {
-			startTimeParam = endTimeParam - int64(lookbackMinutes*60)
+			timeParams["start_time_iso"] = args.StartTimeISO
 		}
+		if args.EndTimeISO != "" {
+			timeParams["end_time_iso"] = args.EndTimeISO
+		}
+
+		startTime, endTime, err := utils.GetTimeRange(timeParams, utils.DefaultLookbackMinutes)
+		if err != nil {
+			return nil, nil, err
+		}
+		startTimeParam := startTime.Unix()
+		endTimeParam := endTime.Unix()
 
 		// First, fetch all available event_name values using the series API
 		availableEventNames, err := fetchAvailableEventNames(ctx, client, startTimeParam, endTimeParam, cfg)
@@ -190,8 +176,8 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 			"change_events":         changeEvents,
 			"count":                 len(changeEvents),
 			"time_range": map[string]any{
-				"start": time.Unix(startTimeParam, 0).Format(time.RFC3339),
-				"end":   time.Unix(endTimeParam, 0).Format(time.RFC3339),
+				"start": startTime.Format(time.RFC3339),
+				"end":   endTime.Format(time.RFC3339),
 			},
 		}
 
