@@ -256,7 +256,7 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 			timeParams["end_time_iso"] = args.TimeISO
 		} else if args.Timestamp != 0 {
 			timeParams["end_time_iso"] = time.Unix(int64(args.Timestamp), 0).UTC().Format(time.RFC3339)
-		} else if args.LookbackMinutes != 0 {
+		} else if args.LookbackMinutes != 0 && args.Window == 0 {
 			timeParams["lookback_minutes"] = args.LookbackMinutes
 		}
 
