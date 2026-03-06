@@ -308,6 +308,29 @@ func TestGetTimeRange_TimeRangeValidation(t *testing.T) {
 	}
 }
 
+func TestGetTimeRange_ExplicitRangePrecedenceOverLookback(t *testing.T) {
+	params := map[string]interface{}{
+		"start_time_iso":   "2026-02-09T15:04:05Z",
+		"end_time_iso":     "2026-02-09T16:04:05Z",
+		"lookback_minutes": float64(5),
+	}
+
+	start, end, err := GetTimeRange(params, 60)
+	if err != nil {
+		t.Fatalf("GetTimeRange() unexpected error: %v", err)
+	}
+
+	if got, want := start.Unix(), int64(1770649445); got != want {
+		t.Fatalf("start unix = %d, want %d", got, want)
+	}
+	if got, want := end.Unix(), int64(1770653045); got != want {
+		t.Fatalf("end unix = %d, want %d", got, want)
+	}
+	if end.Sub(start) != time.Hour {
+		t.Fatalf("range duration = %v, want 1h", end.Sub(start))
+	}
+}
+
 func TestParseToolTimestamp(t *testing.T) {
 	tests := []struct {
 		name       string

@@ -42,7 +42,7 @@ func TestGetTraceAttributesHandler_InvalidTimeOrder(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for inverted time range, got nil")
 	}
-	if !strings.Contains(err.Error(), "start_time_iso must be before or equal to end_time_iso") {
+	if !strings.Contains(err.Error(), "start_time cannot be after end_time") {
 		t.Fatalf("expected specific time-order error, got: %v", err)
 	}
 	if requestCount != 0 {
