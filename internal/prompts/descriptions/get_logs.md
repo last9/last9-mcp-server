@@ -29,6 +29,13 @@ These are instructions for constructing a natural language logs analytics querie
    - Otherwise use `lookback_minutes` (default: 5 when no time is specified)
 4. You analyze the results and provide insights to the user
 
+**CRITICAL INDEX RULES:**
+- Only pass `index` when the user explicitly names a log index in the prompt.
+- Accepted `index` values are `physical_index:<name>` and `rehydration_index:<block_name>`.
+- If the user says "rehydration index X", use `rehydration_index:X`.
+- If the user says "physical index X" or just "index X", use `physical_index:X`.
+- Do not guess or invent an `index`; omit it entirely when the user did not specify one.
+
 **CRITICAL DEFAULT TIME RULE:**
 - **ALWAYS use lookback_minutes: 5 when no time range is specified**
 - **NEVER use 60 minutes unless explicitly requested**

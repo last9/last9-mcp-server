@@ -32,12 +32,15 @@ func NewBuilder(orgSlug, clusterID string) *Builder {
 }
 
 // BuildLogsLink creates a logs dashboard deep link
-func (b *Builder) BuildLogsLink(fromMs, toMs int64, pipeline any) string {
+func (b *Builder) BuildLogsLink(fromMs, toMs int64, pipeline any, index string) string {
 	params := url.Values{}
 	params.Set("from", fmt.Sprintf("%d", fromMs/1000)) // convert ms to seconds
 	params.Set("to", fmt.Sprintf("%d", toMs/1000))
 	if b.clusterID != "" {
 		params.Set("cluster", b.clusterID)
+	}
+	if index != "" {
+		params.Set("index", index)
 	}
 	if pipeline != nil {
 		if pipelineJSON, err := json.Marshal(pipeline); err == nil {

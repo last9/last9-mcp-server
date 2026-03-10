@@ -34,6 +34,13 @@ Time format rules:
 - Use start_time_iso/end_time_iso for absolute windows.
 - start_time_iso/end_time_iso accept RFC3339/ISO8601 (e.g. 2026-02-09T15:04:05Z).
 - Legacy format YYYY-MM-DD HH:MM:SS is accepted only for compatibility.
+
+Index rules:
+- Pass index only when the user explicitly names a log index.
+- Accepted values are physical_index:<name> and rehydration_index:<block_name>.
+- If the user says "rehydration index X", use rehydration_index:X.
+- If the user says "physical index X" or just "index X", use physical_index:X.
+- Omit index when the user did not specify one.
 `
 
 // GetLogAttributesArgs represents the input arguments for the get_log_attributes tool
@@ -42,6 +49,7 @@ type GetLogAttributesArgs struct {
 	StartTimeISO    string `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
 	EndTimeISO      string `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
 	Region          string `json:"region,omitempty" jsonschema:"Region to query (optional). Defaults to configured region."`
+	Index           string `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Omit this when the user did not specify an index."`
 }
 
 // FetchLogAttributeNames fetches log attribute names from the API and returns them as a string slice.
@@ -161,6 +169,11 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(con
 			region = args.Region
 		}
 
+		normalizedIndex, err := utils.NormalizeLogIndex(args.Index)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid index: %w", err)
+		}
+
 		// Calculate time range duration in minutes
 		durationMinutes := (endTime - startTime) / 60
 
@@ -169,6 +182,9 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(con
 		queryParams.Set("region", region)
 		queryParams.Set("start", fmt.Sprintf("%d", startTime))
 		queryParams.Set("end", fmt.Sprintf("%d", endTime))
+		if normalizedIndex != "" {
+			queryParams.Set("index", normalizedIndex)
+		}
 
 		var httpReq *http.Request
 
