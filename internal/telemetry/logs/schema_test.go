@@ -3,6 +3,7 @@ package logs
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -122,5 +123,26 @@ func TestLogToolsSchemaIncludesIndex(t *testing.T) {
 				t.Fatalf("index.type expected string, got %v", field["type"])
 			}
 		})
+	}
+}
+
+func TestGetLogsArgs_LookbackDescriptionMatchesPromptDefault(t *testing.T) {
+	props := schemaPropertiesForType[GetLogsArgs](t)
+
+	field, ok := props["lookback_minutes"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("lookback_minutes not found in schema properties")
+	}
+
+	description, ok := field["description"].(string)
+	if !ok {
+		t.Fatalf("lookback_minutes.description expected string, got %T", field["description"])
+	}
+
+	if !strings.Contains(description, "default: 5") {
+		t.Fatalf("lookback_minutes.description should advertise default: 5, got %q", description)
+	}
+	if strings.Contains(description, "default: 60") {
+		t.Fatalf("lookback_minutes.description should not advertise default: 60, got %q", description)
 	}
 }
