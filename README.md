@@ -168,34 +168,6 @@ Most tools return a `deep_link` field in the response metadata. This is a direct
 
 The server automatically fetches and caches available log and trace attribute names at startup (with a 10-second timeout) and refreshes the cache every 2 hours in the background. These dynamic attributes are embedded into the `get_logs`, `get_traces`, and `prometheus_range_query` tool descriptions, so AI assistants always see up-to-date field names when constructing queries.
 
-### Log Indexes
-
-The log query tools (`get_logs`, `get_service_logs`, `get_log_attributes`) support an optional `index` parameter that allows you to query specific log indexes instead of the default index.
-
-**Index Types:**
-
-- **Physical Index**: A named log storage index in your Last9 organization
-  - Format: `physical_index:<name>`
-  - Example: `physical_index:logs-prod-2024`
-
-- **Rehydration Index**: A temporary index created from rehydrated log blocks for incident investigation
-  - Format: `rehydration_index:<block_name>`
-  - Example: `rehydration_index:incident-2024-02-15`
-
-**When to Use:**
-
-- **Omit the parameter** (default): Queries use the default log index and automatic fallback behavior
-- **Specify an index**: When you need to query a specific physical index or investigate rehydrated logs
-
-**Behavior:**
-
-- When an explicit index is provided, it's forwarded to the logs API and resolved to its ID for dashboard deep links
-- When omitted, `get_service_logs` automatically infers the appropriate physical index for the service
-- Deep link metadata is only included when no index is specified or when index resolution succeeds
-- Invalid index formats return an error: `"invalid index"`
-
-**Important:** Only pass the `index` parameter when explicitly needed. AI assistants are instructed not to infer or guess index values — the parameter should only be used when the user explicitly specifies an index name.
-
 ### get_exceptions
 
 Retrieves server-side exceptions over a specified time range.
@@ -313,11 +285,6 @@ Parameters:
 - `limit` (integer, optional): Maximum number of rows to return.
 - `index` (string, optional): Explicit log index to query. Accepted values are `physical_index:<name>` and `rehydration_index:<block_name>`. Omit it when the user did not specify an index.
 
-  Examples:
-  - Query a specific physical index: `index: "physical_index:logs-prod-2024"`
-  - Query a rehydration index: `index: "rehydration_index:incident-2024-02-15"`
-  - Query default index: omit the `index` parameter entirely
-
 ### get_drop_rules
 
 Gets drop rules for logs, which determine what logs get filtered out from
@@ -393,16 +360,12 @@ Parameters:
 - `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - lookback_minutes.
 - `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `index` (string, optional): Explicit log index to query. Accepted values are `physical_index:<name>` and `rehydration_index:<block_name>`. Omit it when the user did not specify an index.
-
   Filtering behavior:
 - Multiple filter types are combined with AND logic (service AND severity AND body)
 - Each filter array uses OR logic (matches any pattern in the array)
-
   Examples:
 - service="api" + severity_filters=["error"] + body_filters=["timeout"] → finds error logs containing "timeout"
 - service="web" + body_filters=["timeout", "failed", "error 500"] → finds logs containing any of these patterns
-- service="api" + index="physical_index:logs-prod" → queries logs from a specific physical index
-- service="payment" + index="rehydration_index:incident-block-123" → queries logs from a rehydrated index block
 
 ### get_log_attributes
 
@@ -414,12 +377,6 @@ Parameters:
 - `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `region` (string, optional): AWS region to query. Leave empty to use default from configuration. Examples: ap-south-1, us-east-1, eu-west-1.
 - `index` (string, optional): Explicit log index to query. Accepted values are `physical_index:<name>` and `rehydration_index:<block_name>`. Omit it when the user did not specify an index.
-
-  Examples:
-  - Get attributes from default index: omit the `index` parameter
-  - Get attributes from physical index: `index: "physical_index:logs-staging"`
-  - Get attributes from rehydration index: `index: "rehydration_index:debug-session-abc"`
-
   Returns:
 - List of log attributes grouped into two categories:
   - Log Attributes: Standard log fields like service, severity, body, level, etc.
@@ -830,7 +787,7 @@ curl -s -X POST http://localhost:8080/mcp \
     -H "Mcp-Session-Id: $SESSION_ID" \
     -d '{"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}'
 
-# Step 4: Call a tool (basic example)
+# Step 4: Call a tool
 curl -s -X POST http://localhost:8080/mcp \
     -H "Content-Type: application/json" \
     -H "Mcp-Session-Id: $SESSION_ID" \
@@ -844,25 +801,6 @@ curl -s -X POST http://localhost:8080/mcp \
           "service": "your-service-name",
           "lookback_minutes": 30,
           "limit": 10
-        }
-      }
-    }'
-
-# Step 5: Call a tool with explicit index parameter
-curl -s -X POST http://localhost:8080/mcp \
-    -H "Content-Type: application/json" \
-    -H "Mcp-Session-Id: $SESSION_ID" \
-    -d '{
-      "jsonrpc": "2.0",
-      "id": 4,
-      "method": "tools/call",
-      "params": {
-        "name": "get_service_logs",
-        "arguments": {
-          "service": "your-service-name",
-          "lookback_minutes": 30,
-          "limit": 10,
-          "index": "physical_index:logs-prod-2024"
         }
       }
     }'
