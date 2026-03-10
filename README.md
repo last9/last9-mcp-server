@@ -279,7 +279,7 @@ Execute advanced log queries using a JSON pipeline over a specified time range.
 Parameters:
 
 - `logjson_query` (array, required): JSON pipeline query for logs. Use the log query prompt to generate this from natural language.
-- `lookback_minutes` (integer, recommended): Number of minutes to look back from now. Default: 60. Range: 1–20160 (14 days). Examples: 60, 30, 15.
+- `lookback_minutes` (integer, recommended): Number of minutes to look back from now. Default: 5. Range: 1–20160 (14 days). Examples: 60, 30, 15.
 - `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
 - `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `limit` (integer, optional): Maximum number of rows to return.

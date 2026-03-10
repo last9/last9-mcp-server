@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
@@ -48,13 +49,7 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		return nil, fmt.Errorf("failed to parse time range: %v", err)
 	}
 
-	// Use util to execute the query
-	normalizedIndex, err := utils.NormalizeLogIndex(args.Index)
-	if err != nil {
-		return nil, fmt.Errorf("invalid index: %w", err)
-	}
-
-	resp, err := utils.MakeLogsJSONQueryAPI(ctx, client, cfg, logjsonQuery, startTime, endTime, normalizedIndex)
+	resp, err := utils.MakeLogsJSONQueryAPI(ctx, client, cfg, logjsonQuery, startTime, endTime, args.Index)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call log JSON query API: %v", err)
 	}
@@ -74,15 +69,16 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	// Build deep link URL
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	dashboardIndex := ""
-	if normalizedIndex != "" {
-		resolvedIndex, err := utils.ResolveLogIndexDashboardParam(ctx, client, cfg, normalizedIndex)
+	hasExplicitIndex := strings.TrimSpace(args.Index) != ""
+	if hasExplicitIndex {
+		resolvedIndex, err := utils.ResolveLogIndexDashboardParam(ctx, client, cfg, args.Index)
 		if err == nil {
 			dashboardIndex = resolvedIndex
 		}
 	}
 	dashboardURL := dlBuilder.BuildLogsLink(startTime, endTime, logjsonQuery, dashboardIndex)
 	var meta mcp.Meta
-	if normalizedIndex == "" || dashboardIndex != "" {
+	if !hasExplicitIndex || dashboardIndex != "" {
 		meta = deeplink.ToMeta(dashboardURL)
 	}
 
