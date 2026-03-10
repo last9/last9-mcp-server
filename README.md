@@ -275,17 +275,15 @@ Parameters:
 
 ### get_logs
 
-Gets logs filtered by service name and/or severity level within a specified time range. This tool now uses the advanced v2 logs API with physical index optimization for better performance.
-**Note**: This tool now requires a `service_name` parameter and internally uses the same advanced infrastructure as `get_service_logs`.
+Execute advanced log queries using a JSON pipeline over a specified time range.
 Parameters:
 
-- `service_name` (string, required): Name of the service to get logs for.
-- `severity` (string, optional): Severity of the logs to get (automatically converted to severity_filters format).
+- `logjson_query` (array, required): JSON pipeline query for logs. Use the log query prompt to generate this from natural language.
 - `lookback_minutes` (integer, recommended): Number of minutes to look back from now. Default: 60. Range: 1–20160 (14 days). Examples: 60, 30, 15.
 - `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
 - `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-- `limit` (integer, optional): Maximum number of logs to return. Default: 20.
-- `env` (string, optional): Environment to filter by. Use "get_service_environments" tool to get available environments.
+- `limit` (integer, optional): Maximum number of rows to return.
+- `index` (string, optional): Explicit log index to query. Accepted values are `physical_index:<name>` and `rehydration_index:<block_name>`. Omit it when the user did not specify an index.
 
 ### get_drop_rules
 
@@ -353,7 +351,7 @@ Parameters:
 Get raw log entries for a specific service over a time range. This tool retrieves actual log entries including log messages, timestamps, severity levels, and other metadata. Useful for debugging issues, monitoring service behavior, and analyzing specific log patterns.
 Parameters:
 
-- `service_name` (string, required): Name of the service to get logs for.
+- `service` (string, required): Name of the service to get logs for.
 - `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Range: 1–20160 (14 days). Examples: 60, 30, 15.
 - `limit` (integer, optional): Maximum number of log entries to return. Default: 20.
 - `env` (string, optional): Environment to filter by. Use "get_service_environments" tool to get available environments.
@@ -361,12 +359,13 @@ Parameters:
 - `body_filters` (array, optional): Array of message content patterns to filter logs (e.g., ["timeout", "failed"]). Uses OR logic.
 - `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - lookback_minutes.
 - `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
+- `index` (string, optional): Explicit log index to query. Accepted values are `physical_index:<name>` and `rehydration_index:<block_name>`. Omit it when the user did not specify an index.
   Filtering behavior:
 - Multiple filter types are combined with AND logic (service AND severity AND body)
 - Each filter array uses OR logic (matches any pattern in the array)
   Examples:
-- service_name="api" + severity_filters=["error"] + body_filters=["timeout"] → finds error logs containing "timeout"
-- service_name="web" + body_filters=["timeout", "failed", "error 500"] → finds logs containing any of these patterns
+- service="api" + severity_filters=["error"] + body_filters=["timeout"] → finds error logs containing "timeout"
+- service="web" + body_filters=["timeout", "failed", "error 500"] → finds logs containing any of these patterns
 
 ### get_log_attributes
 
@@ -377,6 +376,7 @@ Parameters:
 - `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
 - `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `region` (string, optional): AWS region to query. Leave empty to use default from configuration. Examples: ap-south-1, us-east-1, eu-west-1.
+- `index` (string, optional): Explicit log index to query. Accepted values are `physical_index:<name>` and `rehydration_index:<block_name>`. Omit it when the user did not specify an index.
   Returns:
 - List of log attributes grouped into two categories:
   - Log Attributes: Standard log fields like service, severity, body, level, etc.

@@ -17,6 +17,7 @@ const GetLogsDescription = `
 	- lookback_minutes: (Optional) Number of minutes to look back from now. Default: 60 minutes.
 	- start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
 	- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
+	- index: (Optional) Explicit log index to query. Accepted values are physical_index:<name> and rehydration_index:<block_name>. Omit it when the user did not specify an index.
 
 	The logjson_query supports:
 	- Filter operations: Filter logs based on conditions

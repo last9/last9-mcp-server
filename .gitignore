@@ -36,6 +36,8 @@ go.work
 # Log files
 *.log
 logs/
+!internal/telemetry/logs/
+!internal/telemetry/logs/*_test.go
 
 # Temporary files
 *.tmp
