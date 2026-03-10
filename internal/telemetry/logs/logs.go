@@ -41,43 +41,86 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 }
 
 func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, args GetLogsArgs) (*mcp.CallToolResult, error) {
-	// Determine time range from parameters
 	startTime, endTime, err := parseTimeRangeFromArgs(args)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse time range: %v", err)
 	}
 
-	// Use util to execute the query
-	resp, err := utils.MakeLogsJSONQueryAPI(ctx, client, cfg, logjsonQuery, startTime, endTime)
+	limit := args.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+
+	// Fetch logs in backward chunks (most-recent-first), merging results across chunks.
+	chunks := utils.GetTimeRangeChunksBackward(startTime, endTime)
+	var mergedResults []interface{}
+
+	for _, chunk := range chunks {
+		if ctx.Err() != nil {
+			break
+		}
+
+		chunkResult, err := fetchLogsChunk(ctx, client, cfg, logjsonQuery, chunk.StartMs, chunk.EndMs)
+		if err != nil {
+			continue
+		}
+
+		mergedResults = append(mergedResults, chunkResult...)
+		if len(mergedResults) >= limit {
+			mergedResults = mergedResults[:limit]
+			break
+		}
+	}
+
+	// Reconstruct the response envelope with merged results.
+	merged := map[string]interface{}{
+		"data": map[string]interface{}{
+			"result":     mergedResults,
+			"resultType": "streams",
+		},
+	}
+
+	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
+	dashboardURL := dlBuilder.BuildLogsLink(startTime, endTime, logjsonQuery)
+
+	return &mcp.CallToolResult{
+		Meta: deeplink.ToMeta(dashboardURL),
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: formatJSON(merged),
+			},
+		},
+	}, nil
+}
+
+// fetchLogsChunk fetches logs for a single time chunk and returns the result array.
+func fetchLogsChunk(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, startMs, endMs int64) ([]interface{}, error) {
+	resp, err := utils.MakeLogsJSONQueryAPI(ctx, client, cfg, logjsonQuery, startMs, endMs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call log JSON query API: %v", err)
+		return nil, fmt.Errorf("chunk request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("logs API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	// Build deep link URL
-	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-	dashboardURL := dlBuilder.BuildLogsLink(startTime, endTime, logjsonQuery)
+	data, ok := result["data"].(map[string]interface{})
+	if !ok {
+		return nil, nil
+	}
+	streams, ok := data["result"].([]interface{})
+	if !ok {
+		return nil, nil
+	}
 
-	// Return the result in MCP format with deep link
-	return &mcp.CallToolResult{
-		Meta: deeplink.ToMeta(dashboardURL),
-		Content: []mcp.Content{
-			&mcp.TextContent{
-				Text: formatJSON(result),
-			},
-		},
-	}, nil
+	return streams, nil
 }
 
 // parseTimeRangeFromArgs extracts start and end times from GetLogsArgs

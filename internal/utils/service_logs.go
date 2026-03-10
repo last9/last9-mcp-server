@@ -280,15 +280,15 @@ func createServiceLogsRequestBody(serviceName string, severityFilters []string, 
 		}
 	}
 
-	// Add body regex filters if provided
+	// Add body word filters if provided.
+	// Uses $icontainsWords (case-insensitive word matching) which leverages ClickHouse's
+	// tokenbf_v1 bloom filter index for fast filtering, matching the dashboard's behavior.
 	if len(bodyFilters) > 0 {
 		orConditions := make([]map[string]any, 0, len(bodyFilters))
 		for _, bodyPattern := range bodyFilters {
 			if strings.TrimSpace(bodyPattern) != "" {
-				// Use case insensitive regex with (?i) flag for contains matching
-				caseInsensitivePattern := "(?i)" + bodyPattern
 				orConditions = append(orConditions, map[string]any{
-					"$regex": []any{"Body", caseInsensitivePattern},
+					"$icontainsWords": []any{"Body", bodyPattern},
 				})
 			}
 		}

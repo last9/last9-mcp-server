@@ -163,13 +163,13 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			}
 		}
 
-		// Add body filters if provided (uses Body with case-insensitive contains)
+		// Add body filters if provided (uses $icontainsWords for bloom filter optimization)
 		if len(args.BodyFilters) > 0 {
 			orConditions := make([]interface{}, 0, len(args.BodyFilters))
 			for _, bodyPattern := range args.BodyFilters {
 				if bodyPattern != "" {
 					orConditions = append(orConditions, map[string]interface{}{
-						"$icontains": []interface{}{"Body", bodyPattern},
+						"$icontainsWords": []interface{}{"Body", bodyPattern},
 					})
 				}
 			}
@@ -201,23 +201,53 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 	}
 }
 
-// fetchServiceLogs retrieves raw log entries for a specific service using utils package
+// fetchServiceLogs retrieves raw log entries for a specific service.
+// It splits the time range into backward chunks (most-recent-first) and fetches
+// sequentially until the limit is reached, mirroring the dashboard's chunked loading.
 func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Config, service string, startTime, endTime time.Time, limit int, severityFilters []string, bodyFilters []string, physicalIndex string) (*ServiceLogsResponse, error) {
-	// Convert time.Time to Unix milliseconds for the utils function
-	startTimeMs := startTime.UnixMilli()
-	endTimeMs := endTime.UnixMilli()
+	startMs := startTime.UnixMilli()
+	endMs := endTime.UnixMilli()
 
-	// Create API request struct with physical index
-	apiRequest := utils.CreateServiceLogsAPIRequest(service, startTimeMs, endTimeMs, severityFilters, bodyFilters, physicalIndex)
+	chunks := utils.GetTimeRangeChunksBackward(startMs, endMs)
+	allLogs := make([]LogEntry, 0, limit)
 
-	// Use the existing utils function to make the API call
+	for _, chunk := range chunks {
+		if ctx.Err() != nil {
+			break
+		}
+
+		chunkLogs, err := fetchServiceLogsChunk(ctx, client, cfg, service, chunk.StartMs, chunk.EndMs, severityFilters, bodyFilters, physicalIndex)
+		if err != nil {
+			// Log chunk errors but continue with remaining chunks.
+			continue
+		}
+
+		allLogs = append(allLogs, chunkLogs...)
+		if len(allLogs) >= limit {
+			allLogs = allLogs[:limit]
+			break
+		}
+	}
+
+	return &ServiceLogsResponse{
+		Service:   service,
+		StartTime: startTime.Format(time.RFC3339),
+		EndTime:   endTime.Format(time.RFC3339),
+		Count:     len(allLogs),
+		Logs:      allLogs,
+	}, nil
+}
+
+// fetchServiceLogsChunk fetches logs for a single time chunk and parses the response.
+func fetchServiceLogsChunk(ctx context.Context, client *http.Client, cfg models.Config, service string, startMs, endMs int64, severityFilters []string, bodyFilters []string, physicalIndex string) ([]LogEntry, error) {
+	apiRequest := utils.CreateServiceLogsAPIRequest(service, startMs, endMs, severityFilters, bodyFilters, physicalIndex)
+
 	resp, err := utils.MakeServiceLogsAPI(ctx, client, apiRequest, &cfg)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Read response body
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
@@ -227,68 +257,56 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	// Parse the raw response - the utils function returns aggregated data, not raw logs
-	// We need to extract the actual log entries from the response
 	var apiResponse map[string]any
 	if err := json.Unmarshal(bodyBytes, &apiResponse); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	// Extract logs from the API response structure
-	logs := make([]LogEntry, 0)
+	return parseLogEntries(apiResponse, service), nil
+}
 
-	// Navigate through the response structure: data -> result (array of streams)
-	if data, ok := apiResponse["data"].(map[string]any); ok {
-		if result, ok := data["result"].([]any); ok {
-			for i, item := range result {
-				if i >= limit {
-					break
-				}
+// parseLogEntries extracts log entries from the API response structure: data -> result -> stream/values.
+func parseLogEntries(apiResponse map[string]any, service string) []LogEntry {
+	var logs []LogEntry
 
-				if streamData, ok := item.(map[string]any); ok {
-					// Extract stream metadata
-					var streamMetadata map[string]any
-					var values [][]any
+	data, ok := apiResponse["data"].(map[string]any)
+	if !ok {
+		return logs
+	}
+	result, ok := data["result"].([]any)
+	if !ok {
+		return logs
+	}
 
-					if stream, exists := streamData["stream"].(map[string]any); exists {
-						streamMetadata = stream
-					}
+	for _, item := range result {
+		streamData, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
 
-					if vals, exists := streamData["values"].([]any); exists {
-						for _, val := range vals {
-							if valArray, ok := val.([]any); ok {
-								values = append(values, valArray)
-							}
-						}
-					}
+		var streamMetadata map[string]any
+		if stream, exists := streamData["stream"].(map[string]any); exists {
+			streamMetadata = stream
+		}
 
-					// Create log entries for each value in the stream
-					for _, value := range values {
-						if len(value) >= 2 {
-							entry := LogEntry{
-								ServiceName: service,
-								Timestamp:   utils.ConvertTimestamp(value[0]),
-								Message:     fmt.Sprintf("%v", value[1]),
-							}
-
-							// Extract severity from stream metadata
-							if severity, exists := streamMetadata["severity"]; exists {
-								entry.Severity = fmt.Sprintf("%v", severity)
-							}
-
-							logs = append(logs, entry)
-						}
-					}
-				}
+		vals, _ := streamData["values"].([]any)
+		for _, val := range vals {
+			valArray, ok := val.([]any)
+			if !ok || len(valArray) < 2 {
+				continue
 			}
+
+			entry := LogEntry{
+				ServiceName: service,
+				Timestamp:   utils.ConvertTimestamp(valArray[0]),
+				Message:     fmt.Sprintf("%v", valArray[1]),
+			}
+			if severity, exists := streamMetadata["severity"]; exists {
+				entry.Severity = fmt.Sprintf("%v", severity)
+			}
+			logs = append(logs, entry)
 		}
 	}
 
-	return &ServiceLogsResponse{
-		Service:   service,
-		StartTime: startTime.Format(time.RFC3339),
-		EndTime:   endTime.Format(time.RFC3339),
-		Count:     len(logs),
-		Logs:      logs,
-	}, nil
+	return logs
 }
