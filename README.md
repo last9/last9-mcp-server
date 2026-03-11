@@ -132,7 +132,7 @@ IDEs. Implements the following MCP
 - `prometheus_label_values`: Get label values for PromQL queries.
 - `prometheus_labels`: Get available labels for PromQL queries.
   **Logs Management:**
-- `get_logs`: Get logs filtered by service name and/or severity level.
+- `get_logs`: Execute JSON-pipeline log queries over a time range, with optional limit and explicit log index selection.
 - `get_drop_rules`: Get drop rules for logs that determine what logs get
   filtered out at [Last9 Control Plane](https://last9.io/control-plane)
 - `add_drop_rule`: Create a drop rule for logs at

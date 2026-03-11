@@ -60,6 +60,59 @@ func TestGetLogsHandler_ForwardsIndexAndBuildsResolvedDeepLink(t *testing.T) {
 	}
 }
 
+func TestGetLogsHandler_ForwardsLimitWhenProvided(t *testing.T) {
+	tests := []struct {
+		name          string
+		limit         int
+		expectedLimit string
+	}{
+		{
+			name:          "forwards explicit limit",
+			limit:         25,
+			expectedLimit: "25",
+		},
+		{
+			name:          "omits limit when unset",
+			limit:         0,
+			expectedLimit: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != constants.EndpointLogsQueryRange {
+					t.Fatalf("unexpected path %s", r.URL.Path)
+				}
+				if got := r.URL.Query().Get("limit"); got != tt.expectedLimit {
+					t.Fatalf("expected limit %q, got %q", tt.expectedLimit, got)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"status":"success","data":{"result":[]}}`))
+			}))
+			defer server.Close()
+
+			handler := NewGetLogsHandler(server.Client(), testLogsConfig(server.URL))
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+				LogjsonQuery: []map[string]interface{}{
+					{
+						"type": "filter",
+						"query": map[string]interface{}{
+							"$eq": []interface{}{"ServiceName", "api"},
+						},
+					},
+				},
+				LookbackMinutes: 5,
+				Limit:           tt.limit,
+			})
+			if err != nil {
+				t.Fatalf("handler returned error: %v", err)
+			}
+		})
+	}
+}
+
 func TestGetLogsHandler_OmitsSourceLinkWhenIndexCannotBeResolved(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

@@ -197,8 +197,8 @@ func buildServiceLogsURL(apiBaseURL string, params ServiceLogsParams) (string, e
 	return fmt.Sprintf("%s?%s", logsURL, queryParams.Encode()), nil
 }
 
-// MakeLogsJSONQueryAPI posts a raw log JSON pipeline to the query_range API with the given time range
-func MakeLogsJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.Config, pipeline any, startMs, endMs int64, index string) (*http.Response, error) {
+// MakeLogsJSONQueryAPI posts a raw log JSON pipeline to the query_range API with the given time range.
+func MakeLogsJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.Config, pipeline any, startMs, endMs int64, limit int, index string) (*http.Response, error) {
 	// Basic validation
 	if client == nil {
 		return nil, errors.New("http client cannot be nil")
@@ -217,6 +217,9 @@ func MakeLogsJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.C
 	queryParams.Add("start", fmt.Sprintf("%d", startMs/1000)) // seconds
 	queryParams.Add("end", fmt.Sprintf("%d", endMs/1000))     // seconds
 	queryParams.Add("region", cfg.Region)
+	if limit > 0 {
+		queryParams.Add("limit", fmt.Sprintf("%d", limit))
+	}
 	normalizedIndex, err := NormalizeLogIndex(index)
 	if err != nil {
 		return nil, err

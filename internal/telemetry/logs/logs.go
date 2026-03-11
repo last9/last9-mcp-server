@@ -49,7 +49,7 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		return nil, fmt.Errorf("failed to parse time range: %v", err)
 	}
 
-	resp, err := utils.MakeLogsJSONQueryAPI(ctx, client, cfg, logjsonQuery, startTime, endTime, args.Index)
+	resp, err := utils.MakeLogsJSONQueryAPI(ctx, client, cfg, logjsonQuery, startTime, endTime, args.Limit, args.Index)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call log JSON query API: %v", err)
 	}
