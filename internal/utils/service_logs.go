@@ -17,9 +17,6 @@ import (
 // Constants for service logs API
 const (
 	maxServiceLogsDurationHours = 24 // Maximum allowed duration for service logs
-
-	// Index constants
-	defaultPhysicalIndex = "physical_index:default"
 )
 
 // ServiceLogsParams holds parameters for service logs API call
@@ -30,7 +27,7 @@ type ServiceLogsParams struct {
 	Region          string
 	SeverityFilters []string // Optional regex patterns for severity filtering
 	BodyFilters     []string // Optional regex patterns for body filtering
-	Index           string   // Physical index parameter for logs queries
+	Index           string   // Optional log index parameter for logs queries
 }
 
 func createServiceLogsParams(request ServiceLogsAPIRequest, region string) ServiceLogsParams {
@@ -94,7 +91,7 @@ type ServiceLogsAPIRequest struct {
 	EndTime         int64    // Unix timestamp in milliseconds
 	SeverityFilters []string // Optional regex patterns for severity filtering
 	BodyFilters     []string // Optional regex patterns for body filtering
-	Index           string   // Physical index parameter for logs queries
+	Index           string   // Optional log index parameter for logs queries
 }
 
 // CreateServiceLogsAPIRequest creates a new service logs API request with default options
@@ -186,11 +183,13 @@ func buildServiceLogsURL(apiBaseURL string, params ServiceLogsParams) (string, e
 	queryParams.Add("end", fmt.Sprintf("%d", params.EndTime/1000))     // Convert to seconds
 	queryParams.Add("region", params.Region)
 
-	// Add index parameter if provided and not default
-	if params.Index != "" && params.Index != defaultPhysicalIndex {
-		queryParams.Add("index", params.Index)
-		// For physical indexes, we might need index_type=physical
-		if strings.HasPrefix(params.Index, "physical_index:") {
+	normalizedIndex, err := NormalizeLogIndex(params.Index)
+	if err != nil {
+		return "", err
+	}
+	if normalizedIndex != "" {
+		queryParams.Add("index", normalizedIndex)
+		if strings.HasPrefix(normalizedIndex, logIndexPhysicalPrefix) {
 			queryParams.Add("index_type", "physical")
 		}
 	}
@@ -198,8 +197,8 @@ func buildServiceLogsURL(apiBaseURL string, params ServiceLogsParams) (string, e
 	return fmt.Sprintf("%s?%s", logsURL, queryParams.Encode()), nil
 }
 
-// MakeLogsJSONQueryAPI posts a raw log JSON pipeline to the query_range API with the given time range
-func MakeLogsJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.Config, pipeline any, startMs, endMs int64) (*http.Response, error) {
+// MakeLogsJSONQueryAPI posts a raw log JSON pipeline to the query_range API with the given time range.
+func MakeLogsJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.Config, pipeline any, startMs, endMs int64, limit int, index string) (*http.Response, error) {
 	// Basic validation
 	if client == nil {
 		return nil, errors.New("http client cannot be nil")
@@ -218,6 +217,19 @@ func MakeLogsJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.C
 	queryParams.Add("start", fmt.Sprintf("%d", startMs/1000)) // seconds
 	queryParams.Add("end", fmt.Sprintf("%d", endMs/1000))     // seconds
 	queryParams.Add("region", cfg.Region)
+	if limit > 0 {
+		queryParams.Add("limit", fmt.Sprintf("%d", limit))
+	}
+	normalizedIndex, err := NormalizeLogIndex(index)
+	if err != nil {
+		return nil, err
+	}
+	if normalizedIndex != "" {
+		queryParams.Add("index", normalizedIndex)
+		if strings.HasPrefix(normalizedIndex, logIndexPhysicalPrefix) {
+			queryParams.Add("index_type", "physical")
+		}
+	}
 	fullURL := fmt.Sprintf("%s?%s", logsURL, queryParams.Encode())
 
 	// Build body

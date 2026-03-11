@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
@@ -17,10 +18,11 @@ import (
 // GetLogsArgs represents the input arguments for the get_logs tool
 type GetLogsArgs struct {
 	LogjsonQuery    []map[string]interface{} `json:"logjson_query,omitempty" jsonschema:"JSON pipeline query for logs (required)"`
-	StartTimeISO    string        `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
-	EndTimeISO      string        `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
-	LookbackMinutes int           `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-20160)"`
-	Limit           int           `json:"limit,omitempty" jsonschema:"Maximum number of rows to return (optional)"`
+	StartTimeISO    string                   `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
+	EndTimeISO      string                   `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
+	LookbackMinutes int                      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 5, range: 1-20160)"`
+	Limit           int                      `json:"limit,omitempty" jsonschema:"Maximum number of rows to return (optional)"`
+	Index           string                   `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Omit this when the user did not specify an index."`
 }
 
 // NewGetLogsHandler creates a handler for getting logs using logjson_query parameter
@@ -47,8 +49,7 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		return nil, fmt.Errorf("failed to parse time range: %v", err)
 	}
 
-	// Use util to execute the query
-	resp, err := utils.MakeLogsJSONQueryAPI(ctx, client, cfg, logjsonQuery, startTime, endTime)
+	resp, err := utils.MakeLogsJSONQueryAPI(ctx, client, cfg, logjsonQuery, startTime, endTime, args.Limit, args.Index)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call log JSON query API: %v", err)
 	}
@@ -67,11 +68,23 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 
 	// Build deep link URL
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-	dashboardURL := dlBuilder.BuildLogsLink(startTime, endTime, logjsonQuery)
+	dashboardIndex := ""
+	hasExplicitIndex := strings.TrimSpace(args.Index) != ""
+	if hasExplicitIndex {
+		resolvedIndex, err := utils.ResolveLogIndexDashboardParam(ctx, client, cfg, args.Index)
+		if err == nil {
+			dashboardIndex = resolvedIndex
+		}
+	}
+	dashboardURL := dlBuilder.BuildLogsLink(startTime, endTime, logjsonQuery, dashboardIndex)
+	var meta mcp.Meta
+	if !hasExplicitIndex || dashboardIndex != "" {
+		meta = deeplink.ToMeta(dashboardURL)
+	}
 
 	// Return the result in MCP format with deep link
 	return &mcp.CallToolResult{
-		Meta: deeplink.ToMeta(dashboardURL),
+		Meta: meta,
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: formatJSON(result),

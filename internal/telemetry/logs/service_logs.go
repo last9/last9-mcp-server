@@ -27,22 +27,25 @@ Filtering behavior:
 - Multiple filter types are combined with AND logic (service AND severity AND body)
 
 Examples:
-1. service_name="api" + severity_filters=["error"] + body_filters=["timeout"]
+1. service="api" + severity_filters=["error"] + body_filters=["timeout"]
    → finds error logs containing "timeout" for the "api" service
-2. service_name="web" + body_filters=["timeout", "failed", "error 500"]
+2. service="web" + body_filters=["timeout", "failed", "error 500"]
    → finds logs containing "timeout" OR "failed" OR "error 500" for the "web" service
-3. service_name="db" + severity_filters=["error", "critical"] + body_filters=["connection", "deadlock"]
+3. service="db" + severity_filters=["error", "critical"] + body_filters=["connection", "deadlock"]
    → finds error/critical logs containing "connection" OR "deadlock" for the "db" service
 
 Note: This tool returns raw log entries.
 
 Parameters:
-- service_name: (Required) Name of the service to get logs for
+- service: (Required) Name of the service to get logs for
 - lookback_minutes: (Optional) Number of minutes to look back from now. Default: 60 minutes
 - limit: (Optional) Maximum number of log entries to return. Default: 20
 - env: (Optional) Environment to filter by. Use "get_service_environments" tool to get available environments.
 - severity_filters: (Optional) Array of severity patterns to filter logs
 - body_filters: (Optional) Array of message content patterns to filter logs
+- index: (Optional) Explicit log index to query. Accepted values are physical_index:<name> and rehydration_index:<block_name>. Omit it when the user did not specify an index.
+- If the user says "rehydration index X", use rehydration_index:X.
+- If the user says "physical index X" or just "index X", use physical_index:X.
 
 Returns a list of log entries with full details including message content, timestamps, severity, and attributes.`
 
@@ -73,6 +76,7 @@ type GetServiceLogsArgs struct {
 	SeverityFilters []string `json:"severity_filters,omitempty" jsonschema:"Array of severity patterns to match (uses OR logic) (e.g. [error warn])"`
 	BodyFilters     []string `json:"body_filters,omitempty" jsonschema:"Array of message content patterns to match (uses OR logic) (e.g. [timeout failed])"`
 	Env             string   `json:"env,omitempty" jsonschema:"Environment to filter by. Empty string if environment is unknown (e.g. production)"`
+	Index           string   `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Omit this when the user did not specify an index."`
 }
 
 // NewGetServiceLogsHandler creates a new handler for the get_service_logs tool
@@ -109,17 +113,20 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("invalid time range: %w", err)
 		}
 
-		// Fetch physical index before making logs queries
-		// Extract environment parameter if available
 		env := args.Env
-
-		physicalIndex, err := utils.FetchPhysicalIndex(ctx, client, cfg, args.Service, env)
+		normalizedIndex, err := utils.NormalizeLogIndex(args.Index)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to fetch physical index: %w", err)
+			return nil, nil, fmt.Errorf("invalid index: %w", err)
+		}
+		if normalizedIndex == "" {
+			normalizedIndex, err = utils.FetchPhysicalIndex(ctx, client, cfg, args.Service, env)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to fetch physical index: %w", err)
+			}
 		}
 
-		// Fetch raw logs using the existing logs API approach with physical index
-		logs, err := fetchServiceLogs(ctx, client, cfg, args.Service, startTime, endTime, limit, args.SeverityFilters, args.BodyFilters, physicalIndex)
+		// Fetch raw logs using the existing logs API approach with the requested or inferred index.
+		logs, err := fetchServiceLogs(ctx, client, cfg, args.Service, startTime, endTime, limit, args.SeverityFilters, args.BodyFilters, normalizedIndex)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
@@ -188,10 +195,21 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 				},
 			},
 		}
-		dashboardURL := dlBuilder.BuildLogsLink(startTime.UnixMilli(), endTime.UnixMilli(), pipeline)
+		dashboardIndex := ""
+		if normalizedIndex != "" {
+			resolvedIndex, err := utils.ResolveLogIndexDashboardParam(ctx, client, cfg, normalizedIndex)
+			if err == nil {
+				dashboardIndex = resolvedIndex
+			}
+		}
+		dashboardURL := dlBuilder.BuildLogsLink(startTime.UnixMilli(), endTime.UnixMilli(), pipeline, dashboardIndex)
+		var meta mcp.Meta
+		if normalizedIndex == "" || dashboardIndex != "" {
+			meta = deeplink.ToMeta(dashboardURL)
+		}
 
 		return &mcp.CallToolResult{
-			Meta: deeplink.ToMeta(dashboardURL),
+			Meta: meta,
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseJSON),
@@ -202,13 +220,12 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 }
 
 // fetchServiceLogs retrieves raw log entries for a specific service using utils package
-func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Config, service string, startTime, endTime time.Time, limit int, severityFilters []string, bodyFilters []string, physicalIndex string) (*ServiceLogsResponse, error) {
+func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Config, service string, startTime, endTime time.Time, limit int, severityFilters []string, bodyFilters []string, index string) (*ServiceLogsResponse, error) {
 	// Convert time.Time to Unix milliseconds for the utils function
 	startTimeMs := startTime.UnixMilli()
 	endTimeMs := endTime.UnixMilli()
 
-	// Create API request struct with physical index
-	apiRequest := utils.CreateServiceLogsAPIRequest(service, startTimeMs, endTimeMs, severityFilters, bodyFilters, physicalIndex)
+	apiRequest := utils.CreateServiceLogsAPIRequest(service, startTimeMs, endTimeMs, severityFilters, bodyFilters, index)
 
 	// Use the existing utils function to make the API call
 	resp, err := utils.MakeServiceLogsAPI(ctx, client, apiRequest, &cfg)
