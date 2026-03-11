@@ -221,84 +221,35 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 
 // fetchServiceLogs retrieves raw log entries for a specific service using utils package
 func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Config, service string, startTime, endTime time.Time, limit int, severityFilters []string, bodyFilters []string, index string) (*ServiceLogsResponse, error) {
-	// Convert time.Time to Unix milliseconds for the utils function
-	startTimeMs := startTime.UnixMilli()
-	endTimeMs := endTime.UnixMilli()
+	chunks := utils.GetTimeRangeChunksBackward(startTime.UnixMilli(), endTime.UnixMilli())
+	logs := make([]LogEntry, 0, limit)
 
-	apiRequest := utils.CreateServiceLogsAPIRequest(service, startTimeMs, endTimeMs, severityFilters, bodyFilters, index)
-
-	// Use the existing utils function to make the API call
-	resp, err := utils.MakeServiceLogsAPI(ctx, client, apiRequest, &cfg)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Read response body
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	// Parse the raw response - the utils function returns aggregated data, not raw logs
-	// We need to extract the actual log entries from the response
-	var apiResponse map[string]any
-	if err := json.Unmarshal(bodyBytes, &apiResponse); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	// Extract logs from the API response structure
-	logs := make([]LogEntry, 0)
-
-	// Navigate through the response structure: data -> result (array of streams)
-	if data, ok := apiResponse["data"].(map[string]any); ok {
-		if result, ok := data["result"].([]any); ok {
-			for i, item := range result {
-				if i >= limit {
-					break
-				}
-
-				if streamData, ok := item.(map[string]any); ok {
-					// Extract stream metadata
-					var streamMetadata map[string]any
-					var values [][]any
-
-					if stream, exists := streamData["stream"].(map[string]any); exists {
-						streamMetadata = stream
-					}
-
-					if vals, exists := streamData["values"].([]any); exists {
-						for _, val := range vals {
-							if valArray, ok := val.([]any); ok {
-								values = append(values, valArray)
-							}
-						}
-					}
-
-					// Create log entries for each value in the stream
-					for _, value := range values {
-						if len(value) >= 2 {
-							entry := LogEntry{
-								ServiceName: service,
-								Timestamp:   utils.ConvertTimestamp(value[0]),
-								Message:     fmt.Sprintf("%v", value[1]),
-							}
-
-							// Extract severity from stream metadata
-							if severity, exists := streamMetadata["severity"]; exists {
-								entry.Severity = fmt.Sprintf("%v", severity)
-							}
-
-							logs = append(logs, entry)
-						}
-					}
-				}
-			}
+	for _, chunk := range chunks {
+		remaining := limit - len(logs)
+		if remaining <= 0 {
+			break
 		}
+
+		chunkLogs, err := fetchServiceLogsChunk(
+			ctx,
+			client,
+			cfg,
+			service,
+			chunk.StartMs,
+			chunk.EndMs,
+			remaining,
+			severityFilters,
+			bodyFilters,
+			index,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(chunkLogs) > remaining {
+			chunkLogs = chunkLogs[:remaining]
+		}
+		logs = append(logs, chunkLogs...)
 	}
 
 	return &ServiceLogsResponse{
@@ -308,4 +259,77 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		Count:     len(logs),
 		Logs:      logs,
 	}, nil
+}
+
+func fetchServiceLogsChunk(ctx context.Context, client *http.Client, cfg models.Config, service string, startTimeMs, endTimeMs int64, limit int, severityFilters []string, bodyFilters []string, index string) ([]LogEntry, error) {
+	apiRequest := utils.CreateServiceLogsAPIRequest(service, startTimeMs, endTimeMs, limit, severityFilters, bodyFilters, index)
+
+	resp, err := utils.MakeServiceLogsAPI(ctx, client, apiRequest, &cfg)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var apiResponse map[string]any
+	if err := json.Unmarshal(bodyBytes, &apiResponse); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return parseServiceLogEntries(apiResponse, service), nil
+}
+
+func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEntry {
+	logs := make([]LogEntry, 0)
+
+	data, ok := apiResponse["data"].(map[string]any)
+	if !ok {
+		return logs
+	}
+
+	result, ok := data["result"].([]any)
+	if !ok {
+		return logs
+	}
+
+	for _, item := range result {
+		streamData, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		var streamMetadata map[string]any
+		if stream, exists := streamData["stream"].(map[string]any); exists {
+			streamMetadata = stream
+		}
+
+		vals, _ := streamData["values"].([]any)
+		for _, val := range vals {
+			valArray, ok := val.([]any)
+			if !ok || len(valArray) < 2 {
+				continue
+			}
+
+			entry := LogEntry{
+				ServiceName: service,
+				Timestamp:   utils.ConvertTimestamp(valArray[0]),
+				Message:     fmt.Sprintf("%v", valArray[1]),
+			}
+			if severity, exists := streamMetadata["severity"]; exists {
+				entry.Severity = fmt.Sprintf("%v", severity)
+			}
+
+			logs = append(logs, entry)
+		}
+	}
+
+	return logs
 }

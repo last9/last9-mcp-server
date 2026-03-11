@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 
 	"last9-mcp/internal/deeplink"
@@ -14,6 +15,13 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+const defaultGetLogsLookbackMinutes = 5
+
+var nonChunkedLogQueryStageTypes = []string{
+	"aggregate",
+	"window_aggregate",
+}
 
 // GetLogsArgs represents the input arguments for the get_logs tool
 type GetLogsArgs struct {
@@ -49,21 +57,9 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		return nil, fmt.Errorf("failed to parse time range: %v", err)
 	}
 
-	resp, err := utils.MakeLogsJSONQueryAPI(ctx, client, cfg, logjsonQuery, startTime, endTime, args.Limit, args.Index)
+	result, err := fetchLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call log JSON query API: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("logs API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Parse response
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+		return nil, err
 	}
 
 	// Build deep link URL
@@ -93,6 +89,221 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	}, nil
 }
 
+func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, startTime, endTime int64, args GetLogsArgs) (map[string]interface{}, error) {
+	if !shouldChunkGetLogsQuery(logjsonQuery, args.Limit) {
+		return executeLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args.Limit, args.Index)
+	}
+
+	chunks := utils.GetTimeRangeChunksBackward(startTime, endTime)
+	if len(chunks) == 0 {
+		return emptyStreamsResponse(), nil
+	}
+
+	var (
+		baseResponse map[string]interface{}
+		mergedItems  []interface{}
+		remaining    = args.Limit
+	)
+
+	for chunkIndex, chunk := range chunks {
+		chunkResponse, err := executeLogJSONQuery(
+			ctx,
+			client,
+			cfg,
+			logjsonQuery,
+			chunk.StartMs,
+			chunk.EndMs,
+			remaining,
+			args.Index,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		resultType, items, err := extractResultItems(chunkResponse)
+		if err != nil {
+			return nil, err
+		}
+
+		if resultType != "streams" {
+			if chunkIndex == 0 {
+				return executeLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args.Limit, args.Index)
+			}
+			return nil, fmt.Errorf("chunked get_logs expected streams result, got %q", resultType)
+		}
+
+		if baseResponse == nil {
+			baseResponse = chunkResponse
+		}
+
+		if len(items) == 0 {
+			continue
+		}
+
+		if remaining > 0 {
+			items = truncateResultItemsByEntryLimit(items, remaining)
+			remaining -= countLogEntriesInResultItems(items)
+		}
+
+		mergedItems = append(mergedItems, items...)
+		if remaining <= 0 {
+			break
+		}
+	}
+
+	if baseResponse == nil {
+		return emptyStreamsResponse(), nil
+	}
+
+	data, ok := baseResponse["data"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("logs API response missing data object")
+	}
+
+	data["result"] = mergedItems
+	data["resultType"] = "streams"
+
+	return baseResponse, nil
+}
+
+func shouldChunkGetLogsQuery(logjsonQuery interface{}, limit int) bool {
+	if limit <= 0 {
+		return false
+	}
+
+	stages, ok := logjsonQuery.([]map[string]interface{})
+	if !ok {
+		return false
+	}
+
+	for _, stage := range stages {
+		stageType, _ := stage["type"].(string)
+		if slices.Contains(nonChunkedLogQueryStageTypes, stageType) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func executeLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, startTime, endTime int64, limit int, index string) (map[string]interface{}, error) {
+	resp, err := utils.MakeLogsJSONQueryAPI(ctx, client, cfg, logjsonQuery, startTime, endTime, limit, index)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call log JSON query API: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("logs API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	return result, nil
+}
+
+func extractResultItems(result map[string]interface{}) (string, []interface{}, error) {
+	data, ok := result["data"].(map[string]interface{})
+	if !ok {
+		return "", nil, fmt.Errorf("logs API response missing data object")
+	}
+
+	resultType, ok := data["resultType"].(string)
+	if !ok {
+		return "", nil, fmt.Errorf("logs API response missing resultType")
+	}
+
+	items, ok := data["result"].([]interface{})
+	if !ok {
+		return resultType, nil, fmt.Errorf("logs API response missing result array")
+	}
+
+	return resultType, items, nil
+}
+
+func countLogEntriesInResultItems(items []interface{}) int {
+	total := 0
+
+	for _, item := range items {
+		streamData, ok := item.(map[string]interface{})
+		if !ok {
+			total++
+			continue
+		}
+
+		values, ok := streamData["values"].([]interface{})
+		if !ok {
+			total++
+			continue
+		}
+
+		total += len(values)
+	}
+
+	return total
+}
+
+func truncateResultItemsByEntryLimit(items []interface{}, limit int) []interface{} {
+	if limit <= 0 {
+		return nil
+	}
+
+	truncated := make([]interface{}, 0, len(items))
+	remaining := limit
+
+	for _, item := range items {
+		if remaining <= 0 {
+			break
+		}
+
+		streamData, ok := item.(map[string]interface{})
+		if !ok {
+			truncated = append(truncated, item)
+			remaining--
+			continue
+		}
+
+		values, ok := streamData["values"].([]interface{})
+		if !ok || len(values) <= remaining {
+			truncated = append(truncated, item)
+			if ok {
+				remaining -= len(values)
+			} else {
+				remaining--
+			}
+			continue
+		}
+
+		cloned := mapsClone(streamData)
+		cloned["values"] = values[:remaining]
+		truncated = append(truncated, cloned)
+		break
+	}
+
+	return truncated
+}
+
+func mapsClone(source map[string]interface{}) map[string]interface{} {
+	cloned := make(map[string]interface{}, len(source))
+	for key, value := range source {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func emptyStreamsResponse() map[string]interface{} {
+	return map[string]interface{}{
+		"data": map[string]interface{}{
+			"resultType": "streams",
+			"result":     []interface{}{},
+		},
+	}
+}
+
 // parseTimeRangeFromArgs extracts start and end times from GetLogsArgs
 func parseTimeRangeFromArgs(args GetLogsArgs) (int64, int64, error) {
 	params := make(map[string]interface{})
@@ -106,7 +317,7 @@ func parseTimeRangeFromArgs(args GetLogsArgs) (int64, int64, error) {
 		params["end_time_iso"] = args.EndTimeISO
 	}
 
-	startTime, endTime, err := utils.GetTimeRange(params, utils.DefaultLookbackMinutes)
+	startTime, endTime, err := utils.GetTimeRange(params, defaultGetLogsLookbackMinutes)
 	if err != nil {
 		return 0, 0, err
 	}

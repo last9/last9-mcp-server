@@ -89,7 +89,7 @@ func TestGetLogsHandler_ForwardsLimitWhenProvided(t *testing.T) {
 				}
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(`{"status":"success","data":{"result":[]}}`))
+				_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[]}}`))
 			}))
 			defer server.Close()
 
