@@ -1,7 +1,6 @@
 package logs
 
 import (
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -17,12 +16,4 @@ func chunkingDebugEnabled() bool {
 
 	enabled, err := strconv.ParseBool(value)
 	return err == nil && enabled
-}
-
-func logChunkingf(format string, args ...any) {
-	if !chunkingDebugEnabled() {
-		return
-	}
-
-	log.Printf("[chunking] "+format, args...)
 }

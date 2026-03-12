@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -223,16 +224,19 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Config, service string, startTime, endTime time.Time, limit int, severityFilters []string, bodyFilters []string, index string) (*ServiceLogsResponse, error) {
 	chunks := utils.GetTimeRangeChunksBackward(startTime.UnixMilli(), endTime.UnixMilli())
 	logs := make([]LogEntry, 0, limit)
+	chunkingDebug := chunkingDebugEnabled()
 
-	logChunkingf(
-		"get_service_logs chunking enabled service=%q chunks=%d start_ms=%d end_ms=%d limit=%d index=%q",
-		service,
-		len(chunks),
-		startTime.UnixMilli(),
-		endTime.UnixMilli(),
-		limit,
-		index,
-	)
+	if chunkingDebug {
+		log.Printf(
+			"[chunking] get_service_logs chunking enabled service=%q chunks=%d start_ms=%d end_ms=%d limit=%d index=%q",
+			service,
+			len(chunks),
+			startTime.UnixMilli(),
+			endTime.UnixMilli(),
+			limit,
+			index,
+		)
+	}
 
 	for chunkIndex, chunk := range chunks {
 		remaining := limit - len(logs)
@@ -240,15 +244,17 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 			break
 		}
 
-		logChunkingf(
-			"get_service_logs chunk request service=%q chunk=%d/%d start_ms=%d end_ms=%d remaining_limit=%d",
-			service,
-			chunkIndex+1,
-			len(chunks),
-			chunk.StartMs,
-			chunk.EndMs,
-			remaining,
-		)
+		if chunkingDebug {
+			log.Printf(
+				"[chunking] get_service_logs chunk request service=%q chunk=%d/%d start_ms=%d end_ms=%d remaining_limit=%d",
+				service,
+				chunkIndex+1,
+				len(chunks),
+				chunk.StartMs,
+				chunk.EndMs,
+				remaining,
+			)
+		}
 
 		chunkLogs, err := fetchServiceLogsChunk(
 			ctx,
@@ -263,56 +269,66 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 			index,
 		)
 		if err != nil {
-			logChunkingf(
-				"get_service_logs chunk error service=%q chunk=%d/%d start_ms=%d end_ms=%d err=%v",
-				service,
-				chunkIndex+1,
-				len(chunks),
-				chunk.StartMs,
-				chunk.EndMs,
-				err,
-			)
+			if chunkingDebug {
+				log.Printf(
+					"[chunking] get_service_logs chunk error service=%q chunk=%d/%d start_ms=%d end_ms=%d err=%v",
+					service,
+					chunkIndex+1,
+					len(chunks),
+					chunk.StartMs,
+					chunk.EndMs,
+					err,
+				)
+			}
 			return nil, err
 		}
 
-		logChunkingf(
-			"get_service_logs chunk response service=%q chunk=%d/%d returned_entries=%d",
-			service,
-			chunkIndex+1,
-			len(chunks),
-			len(chunkLogs),
-		)
-
-		if len(chunkLogs) > remaining {
-			logChunkingf(
-				"get_service_logs chunk trim service=%q chunk=%d/%d kept_entries=%d dropped_entries=%d",
+		if chunkingDebug {
+			log.Printf(
+				"[chunking] get_service_logs chunk response service=%q chunk=%d/%d returned_entries=%d",
 				service,
 				chunkIndex+1,
 				len(chunks),
-				remaining,
-				len(chunkLogs)-remaining,
+				len(chunkLogs),
 			)
+		}
+
+		if len(chunkLogs) > remaining {
+			if chunkingDebug {
+				log.Printf(
+					"[chunking] get_service_logs chunk trim service=%q chunk=%d/%d kept_entries=%d dropped_entries=%d",
+					service,
+					chunkIndex+1,
+					len(chunks),
+					remaining,
+					len(chunkLogs)-remaining,
+				)
+			}
 			chunkLogs = chunkLogs[:remaining]
 		}
 		logs = append(logs, chunkLogs...)
 
-		logChunkingf(
-			"get_service_logs chunk merged service=%q chunk=%d/%d total_entries=%d remaining_limit=%d",
-			service,
-			chunkIndex+1,
-			len(chunks),
-			len(logs),
-			limit-len(logs),
-		)
+		if chunkingDebug {
+			log.Printf(
+				"[chunking] get_service_logs chunk merged service=%q chunk=%d/%d total_entries=%d remaining_limit=%d",
+				service,
+				chunkIndex+1,
+				len(chunks),
+				len(logs),
+				limit-len(logs),
+			)
+		}
 	}
 
-	logChunkingf(
-		"get_service_logs chunking complete service=%q returned_entries=%d start_ms=%d end_ms=%d",
-		service,
-		len(logs),
-		startTime.UnixMilli(),
-		endTime.UnixMilli(),
-	)
+	if chunkingDebug {
+		log.Printf(
+			"[chunking] get_service_logs chunking complete service=%q returned_entries=%d start_ms=%d end_ms=%d",
+			service,
+			len(logs),
+			startTime.UnixMilli(),
+			endTime.UnixMilli(),
+		)
+	}
 
 	return &ServiceLogsResponse{
 		Service:   service,
@@ -351,35 +367,42 @@ func fetchServiceLogsChunk(ctx context.Context, client *http.Client, cfg models.
 
 func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEntry {
 	logs := make([]LogEntry, 0)
+	chunkingDebug := chunkingDebugEnabled()
 
 	data, ok := apiResponse["data"].(map[string]any)
 	if !ok {
-		logChunkingf(
-			"get_service_logs parse missing data object service=%q response=%#v",
-			service,
-			apiResponse,
-		)
+		if chunkingDebug {
+			log.Printf(
+				"[chunking] get_service_logs parse missing data object service=%q response=%#v",
+				service,
+				apiResponse,
+			)
+		}
 		return logs
 	}
 
 	result, ok := data["result"].([]any)
 	if !ok {
-		logChunkingf(
-			"get_service_logs parse missing result array service=%q data=%#v",
-			service,
-			data,
-		)
+		if chunkingDebug {
+			log.Printf(
+				"[chunking] get_service_logs parse missing result array service=%q data=%#v",
+				service,
+				data,
+			)
+		}
 		return logs
 	}
 
 	for _, item := range result {
 		streamData, ok := item.(map[string]any)
 		if !ok {
-			logChunkingf(
-				"get_service_logs parse skipped non-stream item service=%q item=%#v",
-				service,
-				item,
-			)
+			if chunkingDebug {
+				log.Printf(
+					"[chunking] get_service_logs parse skipped non-stream item service=%q item=%#v",
+					service,
+					item,
+				)
+			}
 			continue
 		}
 
@@ -387,40 +410,48 @@ func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEnt
 		if stream, exists := streamData["stream"].(map[string]any); exists {
 			streamMetadata = stream
 		} else {
-			logChunkingf(
-				"get_service_logs parse missing stream metadata service=%q item=%#v",
-				service,
-				item,
-			)
+			if chunkingDebug {
+				log.Printf(
+					"[chunking] get_service_logs parse missing stream metadata service=%q item=%#v",
+					service,
+					item,
+				)
+			}
 		}
 
 		severity, hasSeverity := streamMetadata["severity"]
 		if !hasSeverity {
-			logChunkingf(
-				"get_service_logs parse missing severity service=%q stream=%#v",
-				service,
-				streamMetadata,
-			)
+			if chunkingDebug {
+				log.Printf(
+					"[chunking] get_service_logs parse missing severity service=%q stream=%#v",
+					service,
+					streamMetadata,
+				)
+			}
 		}
 
 		vals, ok := streamData["values"].([]any)
 		if !ok {
-			logChunkingf(
-				"get_service_logs parse missing values array service=%q item=%#v",
-				service,
-				item,
-			)
+			if chunkingDebug {
+				log.Printf(
+					"[chunking] get_service_logs parse missing values array service=%q item=%#v",
+					service,
+					item,
+				)
+			}
 			continue
 		}
 
 		for _, val := range vals {
 			valArray, ok := val.([]any)
 			if !ok || len(valArray) < 2 {
-				logChunkingf(
-					"get_service_logs parse skipped malformed value service=%q value=%#v",
-					service,
-					val,
-				)
+				if chunkingDebug {
+					log.Printf(
+						"[chunking] get_service_logs parse skipped malformed value service=%q value=%#v",
+						service,
+						val,
+					)
+				}
 				continue
 			}
 
