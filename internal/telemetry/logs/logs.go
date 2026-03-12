@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
@@ -197,13 +198,6 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		)
 
 		if resultType != "streams" {
-			if chunkIndex == 0 {
-				logChunkingf(
-					"get_logs falling back to single request due to non-stream result_type=%s",
-					resultType,
-				)
-				return executeLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args.Limit, args.Index)
-			}
 			logChunkingf(
 				"get_logs chunking aborted due to unexpected result_type=%s after chunk=%d/%d",
 				resultType,
@@ -400,7 +394,7 @@ func truncateResultItemsByEntryLimit(items []interface{}, limit int) []interface
 		}
 
 		cloned := mapsClone(streamData)
-		cloned["values"] = values[:remaining]
+		cloned["values"] = slices.Clone(values[:remaining])
 		truncated = append(truncated, cloned)
 		break
 	}
@@ -427,6 +421,10 @@ func emptyStreamsResponse() map[string]interface{} {
 
 // parseTimeRangeFromArgs extracts start and end times from GetLogsArgs
 func parseTimeRangeFromArgs(args GetLogsArgs) (int64, int64, error) {
+	return parseTimeRangeFromArgsAt(args, time.Now().UTC())
+}
+
+func parseTimeRangeFromArgsAt(args GetLogsArgs, now time.Time) (int64, int64, error) {
 	params := make(map[string]interface{})
 	if args.LookbackMinutes > 0 {
 		params["lookback_minutes"] = args.LookbackMinutes
@@ -438,7 +436,7 @@ func parseTimeRangeFromArgs(args GetLogsArgs) (int64, int64, error) {
 		params["end_time_iso"] = args.EndTimeISO
 	}
 
-	startTime, endTime, err := utils.GetTimeRange(params, defaultGetLogsLookbackMinutes)
+	startTime, endTime, err := utils.GetTimeRangeAt(params, defaultGetLogsLookbackMinutes, now)
 	if err != nil {
 		return 0, 0, err
 	}

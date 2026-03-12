@@ -63,8 +63,13 @@ func ParseToolTimestamp(value string) (time.Time, error) {
 // If start_time_iso and end_time_iso are provided, they take precedence.
 // Otherwise, returns now and now - lookbackMinutes.
 func GetTimeRange(params map[string]interface{}, defaultLookbackMinutes int) (startTime, endTime time.Time, err error) {
+	return GetTimeRangeAt(params, defaultLookbackMinutes, time.Now().UTC())
+}
+
+// GetTimeRangeAt returns start and end times based on lookback minutes using the provided current time.
+func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, now time.Time) (startTime, endTime time.Time, err error) {
 	// Always use UTC to ensure consistent behavior across timezones
-	endTime = time.Now().UTC()
+	endTime = now.UTC()
 
 	// First check if lookback_minutes is provided
 	lookbackMinutes := defaultLookbackMinutes

@@ -354,29 +354,73 @@ func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEnt
 
 	data, ok := apiResponse["data"].(map[string]any)
 	if !ok {
+		logChunkingf(
+			"get_service_logs parse missing data object service=%q response=%#v",
+			service,
+			apiResponse,
+		)
 		return logs
 	}
 
 	result, ok := data["result"].([]any)
 	if !ok {
+		logChunkingf(
+			"get_service_logs parse missing result array service=%q data=%#v",
+			service,
+			data,
+		)
 		return logs
 	}
 
 	for _, item := range result {
 		streamData, ok := item.(map[string]any)
 		if !ok {
+			logChunkingf(
+				"get_service_logs parse skipped non-stream item service=%q item=%#v",
+				service,
+				item,
+			)
 			continue
 		}
 
 		var streamMetadata map[string]any
 		if stream, exists := streamData["stream"].(map[string]any); exists {
 			streamMetadata = stream
+		} else {
+			logChunkingf(
+				"get_service_logs parse missing stream metadata service=%q item=%#v",
+				service,
+				item,
+			)
 		}
 
-		vals, _ := streamData["values"].([]any)
+		severity, hasSeverity := streamMetadata["severity"]
+		if !hasSeverity {
+			logChunkingf(
+				"get_service_logs parse missing severity service=%q stream=%#v",
+				service,
+				streamMetadata,
+			)
+		}
+
+		vals, ok := streamData["values"].([]any)
+		if !ok {
+			logChunkingf(
+				"get_service_logs parse missing values array service=%q item=%#v",
+				service,
+				item,
+			)
+			continue
+		}
+
 		for _, val := range vals {
 			valArray, ok := val.([]any)
 			if !ok || len(valArray) < 2 {
+				logChunkingf(
+					"get_service_logs parse skipped malformed value service=%q value=%#v",
+					service,
+					val,
+				)
 				continue
 			}
 
@@ -385,7 +429,7 @@ func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEnt
 				Timestamp:   utils.ConvertTimestamp(valArray[0]),
 				Message:     fmt.Sprintf("%v", valArray[1]),
 			}
-			if severity, exists := streamMetadata["severity"]; exists {
+			if hasSeverity {
 				entry.Severity = fmt.Sprintf("%v", severity)
 			}
 

@@ -226,6 +226,39 @@ func TestGetLogsHandlerDoesNotChunkAggregateQueries(t *testing.T) {
 	}
 }
 
+func TestGetLogsHandlerErrorsOnNonStreamChunkResult(t *testing.T) {
+	requests := make([]url.Values, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.URL.Query())
+		_, _ = w.Write([]byte(`{"data":{"resultType":"matrix","result":[]}}`))
+	}))
+	defer server.Close()
+
+	handler := NewGetLogsHandler(server.Client(), testLogsConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+		LogjsonQuery: []map[string]interface{}{
+			{
+				"type": "filter",
+				"query": map[string]interface{}{
+					"$contains": []interface{}{"Body", "error"},
+				},
+			},
+		},
+		StartTimeISO: "1970-01-01T00:00:00Z",
+		EndTimeISO:   "1970-01-01T00:07:00Z",
+		Limit:        3,
+	})
+	if err == nil {
+		t.Fatal("expected handler to fail for non-stream chunk result")
+	}
+	if err.Error() != `chunked get_logs expected streams result, got "matrix"` {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(requests) != 1 {
+		t.Fatalf("expected a single chunk request, got %d", len(requests))
+	}
+}
+
 func TestFetchServiceLogsChunksAndHonorsEntryLimit(t *testing.T) {
 	requests := make([]url.Values, 0)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -287,14 +320,53 @@ func TestFetchServiceLogsChunksAndHonorsEntryLimit(t *testing.T) {
 }
 
 func TestParseTimeRangeFromArgsDefaultsToFiveMinutes(t *testing.T) {
-	startTime, endTime, err := parseTimeRangeFromArgs(GetLogsArgs{})
+	now := time.Date(2026, time.March, 12, 12, 0, 0, 0, time.UTC)
+
+	startTime, endTime, err := parseTimeRangeFromArgsAt(GetLogsArgs{}, now)
 	if err != nil {
 		t.Fatalf("parseTimeRangeFromArgs returned error: %v", err)
 	}
 
 	duration := time.UnixMilli(endTime).Sub(time.UnixMilli(startTime))
-	if duration < 5*time.Minute-2*time.Second || duration > 5*time.Minute+2*time.Second {
-		t.Fatalf("expected default lookback near 5 minutes, got %s", duration)
+	if duration != 5*time.Minute {
+		t.Fatalf("expected exact 5 minute default lookback, got %s", duration)
+	}
+	if got := time.UnixMilli(endTime).UTC(); !got.Equal(now) {
+		t.Fatalf("expected end time %s, got %s", now, got)
+	}
+}
+
+func TestTruncateResultItemsByEntryLimitClonesValuesSlice(t *testing.T) {
+	values := []interface{}{
+		[]interface{}{"420000000000", "latest"},
+		[]interface{}{"300000000000", "recent"},
+	}
+	items := []interface{}{
+		map[string]interface{}{
+			"stream": map[string]interface{}{
+				"severity": "error",
+			},
+			"values": values,
+		},
+	}
+
+	truncated := truncateResultItemsByEntryLimit(items, 1)
+	stream, ok := truncated[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected stream map, got %T", truncated[0])
+	}
+	truncatedValues, ok := stream["values"].([]interface{})
+	if !ok {
+		t.Fatalf("expected values slice, got %T", stream["values"])
+	}
+
+	values[0] = []interface{}{"0", "mutated"}
+	firstValue, ok := truncatedValues[0].([]interface{})
+	if !ok {
+		t.Fatalf("expected log value array, got %T", truncatedValues[0])
+	}
+	if got := firstValue[1]; got != "latest" {
+		t.Fatalf("expected cloned slice to preserve original entry, got %#v", firstValue)
 	}
 }
 
