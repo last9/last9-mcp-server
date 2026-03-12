@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"slices"
 	"strings"
@@ -93,8 +92,9 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 
 func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, startTime, endTime int64, args GetLogsArgs) (map[string]interface{}, error) {
 	if !shouldChunkGetLogsQuery(logjsonQuery) {
-		log.Printf(
-			"[chunking] get_logs chunking disabled start_ms=%d end_ms=%d limit=%d index=%q",
+		logGetLogsf(
+			ctx,
+			"chunking disabled start_ms=%d end_ms=%d limit=%d index=%q",
 			startTime,
 			endTime,
 			args.Limit,
@@ -105,8 +105,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 
 	chunks := utils.GetTimeRangeChunksBackward(startTime, endTime)
 	if len(chunks) == 0 {
-		log.Printf(
-			"[chunking] get_logs produced no chunks start_ms=%d end_ms=%d limit=%d index=%q",
+		logGetLogsf(
+			ctx,
+			"produced no chunks start_ms=%d end_ms=%d limit=%d index=%q",
 			startTime,
 			endTime,
 			args.Limit,
@@ -117,8 +118,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 
 	effectiveLimit := effectiveGetLogsChunkLimit(cfg, args.Limit)
 
-	log.Printf(
-		"[chunking] get_logs chunking enabled chunks=%d start_ms=%d end_ms=%d requested_limit=%d effective_limit=%d index=%q",
+	logGetLogsf(
+		ctx,
+		"chunking enabled chunks=%d start_ms=%d end_ms=%d requested_limit=%d effective_limit=%d index=%q",
 		len(chunks),
 		startTime,
 		endTime,
@@ -127,8 +129,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		args.Index,
 	)
 	if args.Limit > 0 && args.Limit > effectiveLimit {
-		log.Printf(
-			"[chunking] get_logs requested limit capped requested_limit=%d configured_max=%d",
+		logGetLogsf(
+			ctx,
+			"requested limit capped requested_limit=%d configured_max=%d",
 			args.Limit,
 			effectiveLimit,
 		)
@@ -143,8 +146,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 	for chunkIndex, chunk := range chunks {
 		chunkLimit := remaining
 
-		log.Printf(
-			"[chunking] get_logs chunk request chunk=%d/%d start_ms=%d end_ms=%d chunk_limit=%d remaining_limit=%d",
+		logGetLogsf(
+			ctx,
+			"chunk request chunk=%d/%d start_ms=%d end_ms=%d chunk_limit=%d remaining_limit=%d",
 			chunkIndex+1,
 			len(chunks),
 			chunk.StartMs,
@@ -164,8 +168,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 			args.Index,
 		)
 		if err != nil {
-			log.Printf(
-				"[chunking] get_logs chunk error chunk=%d/%d start_ms=%d end_ms=%d err=%v",
+			logGetLogsf(
+				ctx,
+				"chunk error chunk=%d/%d start_ms=%d end_ms=%d err=%v",
 				chunkIndex+1,
 				len(chunks),
 				chunk.StartMs,
@@ -177,8 +182,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 
 		resultType, items, err := extractResultItems(chunkResponse)
 		if err != nil {
-			log.Printf(
-				"[chunking] get_logs chunk parse error chunk=%d/%d start_ms=%d end_ms=%d err=%v",
+			logGetLogsf(
+				ctx,
+				"chunk parse error chunk=%d/%d start_ms=%d end_ms=%d err=%v",
 				chunkIndex+1,
 				len(chunks),
 				chunk.StartMs,
@@ -189,8 +195,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		}
 
 		returnedEntries := countLogEntriesInResultItems(items)
-		log.Printf(
-			"[chunking] get_logs chunk response chunk=%d/%d result_type=%s stream_items=%d returned_entries=%d",
+		logGetLogsf(
+			ctx,
+			"chunk response chunk=%d/%d result_type=%s stream_items=%d returned_entries=%d",
 			chunkIndex+1,
 			len(chunks),
 			resultType,
@@ -199,8 +206,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		)
 
 		if resultType != "streams" {
-			log.Printf(
-				"[chunking] get_logs chunking aborted due to unexpected result_type=%s after chunk=%d/%d",
+			logGetLogsf(
+				ctx,
+				"chunking aborted due to unexpected result_type=%s after chunk=%d/%d",
 				resultType,
 				chunkIndex+1,
 				len(chunks),
@@ -220,8 +228,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		items = truncateResultItemsByEntryLimit(items, remaining)
 		entriesAfterTrim := countLogEntriesInResultItems(items)
 		if entriesAfterTrim != entriesBeforeTrim {
-			log.Printf(
-				"[chunking] get_logs chunk trim chunk=%d/%d kept_entries=%d dropped_entries=%d",
+			logGetLogsf(
+				ctx,
+				"chunk trim chunk=%d/%d kept_entries=%d dropped_entries=%d",
 				chunkIndex+1,
 				len(chunks),
 				entriesAfterTrim,
@@ -231,8 +240,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		remaining -= entriesAfterTrim
 
 		mergedItems = append(mergedItems, items...)
-		log.Printf(
-			"[chunking] get_logs chunk merged chunk=%d/%d merged_entries=%d remaining_limit=%d",
+		logGetLogsf(
+			ctx,
+			"chunk merged chunk=%d/%d merged_entries=%d remaining_limit=%d",
 			chunkIndex+1,
 			len(chunks),
 			countLogEntriesInResultItems(mergedItems),
@@ -244,8 +254,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 	}
 
 	if baseResponse == nil {
-		log.Printf(
-			"[chunking] get_logs chunking complete with empty response start_ms=%d end_ms=%d limit=%d",
+		logGetLogsf(
+			ctx,
+			"chunking complete with empty response start_ms=%d end_ms=%d limit=%d",
 			startTime,
 			endTime,
 			args.Limit,
@@ -261,8 +272,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 	data["result"] = mergedItems
 	data["resultType"] = "streams"
 
-	log.Printf(
-		"[chunking] get_logs chunking complete chunks=%d returned_entries=%d start_ms=%d end_ms=%d",
+	logGetLogsf(
+		ctx,
+		"chunking complete chunks=%d returned_entries=%d start_ms=%d end_ms=%d",
 		len(chunks),
 		countLogEntriesInResultItems(mergedItems),
 		startTime,

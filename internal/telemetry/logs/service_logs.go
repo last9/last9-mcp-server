@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
@@ -225,8 +224,9 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 	chunks := utils.GetTimeRangeChunksBackward(startTime.UnixMilli(), endTime.UnixMilli())
 	logs := make([]LogEntry, 0, limit)
 
-	log.Printf(
-		"[chunking] get_service_logs chunking enabled service=%q chunks=%d start_ms=%d end_ms=%d limit=%d index=%q",
+	logServiceLogsf(
+		ctx,
+		"chunking enabled service=%q chunks=%d start_ms=%d end_ms=%d limit=%d index=%q",
 		service,
 		len(chunks),
 		startTime.UnixMilli(),
@@ -241,8 +241,9 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 			break
 		}
 
-		log.Printf(
-			"[chunking] get_service_logs chunk request service=%q chunk=%d/%d start_ms=%d end_ms=%d remaining_limit=%d",
+		logServiceLogsf(
+			ctx,
+			"chunk request service=%q chunk=%d/%d start_ms=%d end_ms=%d remaining_limit=%d",
 			service,
 			chunkIndex+1,
 			len(chunks),
@@ -264,8 +265,9 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 			index,
 		)
 		if err != nil {
-			log.Printf(
-				"[chunking] get_service_logs chunk error service=%q chunk=%d/%d start_ms=%d end_ms=%d err=%v",
+			logServiceLogsf(
+				ctx,
+				"chunk error service=%q chunk=%d/%d start_ms=%d end_ms=%d err=%v",
 				service,
 				chunkIndex+1,
 				len(chunks),
@@ -276,8 +278,9 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 			return nil, err
 		}
 
-		log.Printf(
-			"[chunking] get_service_logs chunk response service=%q chunk=%d/%d returned_entries=%d",
+		logServiceLogsf(
+			ctx,
+			"chunk response service=%q chunk=%d/%d returned_entries=%d",
 			service,
 			chunkIndex+1,
 			len(chunks),
@@ -285,8 +288,9 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		)
 
 		if len(chunkLogs) > remaining {
-			log.Printf(
-				"[chunking] get_service_logs chunk trim service=%q chunk=%d/%d kept_entries=%d dropped_entries=%d",
+			logServiceLogsf(
+				ctx,
+				"chunk trim service=%q chunk=%d/%d kept_entries=%d dropped_entries=%d",
 				service,
 				chunkIndex+1,
 				len(chunks),
@@ -297,8 +301,9 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		}
 		logs = append(logs, chunkLogs...)
 
-		log.Printf(
-			"[chunking] get_service_logs chunk merged service=%q chunk=%d/%d total_entries=%d remaining_limit=%d",
+		logServiceLogsf(
+			ctx,
+			"chunk merged service=%q chunk=%d/%d total_entries=%d remaining_limit=%d",
 			service,
 			chunkIndex+1,
 			len(chunks),
@@ -307,8 +312,9 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		)
 	}
 
-	log.Printf(
-		"[chunking] get_service_logs chunking complete service=%q returned_entries=%d start_ms=%d end_ms=%d",
+	logServiceLogsf(
+		ctx,
+		"chunking complete service=%q returned_entries=%d start_ms=%d end_ms=%d",
 		service,
 		len(logs),
 		startTime.UnixMilli(),
@@ -347,16 +353,17 @@ func fetchServiceLogsChunk(ctx context.Context, client *http.Client, cfg models.
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return parseServiceLogEntries(apiResponse, service), nil
+	return parseServiceLogEntries(ctx, apiResponse, service), nil
 }
 
-func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEntry {
+func parseServiceLogEntries(ctx context.Context, apiResponse map[string]any, service string) []LogEntry {
 	logs := make([]LogEntry, 0)
 
 	data, ok := apiResponse["data"].(map[string]any)
 	if !ok {
-		log.Printf(
-			"[chunking] get_service_logs parse missing data object service=%q response=%#v",
+		logServiceLogsf(
+			ctx,
+			"parse missing data object service=%q response=%#v",
 			service,
 			apiResponse,
 		)
@@ -365,8 +372,9 @@ func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEnt
 
 	result, ok := data["result"].([]any)
 	if !ok {
-		log.Printf(
-			"[chunking] get_service_logs parse missing result array service=%q data=%#v",
+		logServiceLogsf(
+			ctx,
+			"parse missing result array service=%q data=%#v",
 			service,
 			data,
 		)
@@ -376,8 +384,9 @@ func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEnt
 	for _, item := range result {
 		streamData, ok := item.(map[string]any)
 		if !ok {
-			log.Printf(
-				"[chunking] get_service_logs parse skipped non-stream item service=%q item=%#v",
+			logServiceLogsf(
+				ctx,
+				"parse skipped non-stream item service=%q item=%#v",
 				service,
 				item,
 			)
@@ -388,8 +397,9 @@ func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEnt
 		if stream, exists := streamData["stream"].(map[string]any); exists {
 			streamMetadata = stream
 		} else {
-			log.Printf(
-				"[chunking] get_service_logs parse missing stream metadata service=%q item=%#v",
+			logServiceLogsf(
+				ctx,
+				"parse missing stream metadata service=%q item=%#v",
 				service,
 				item,
 			)
@@ -397,8 +407,9 @@ func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEnt
 
 		severity, hasSeverity := streamMetadata["severity"]
 		if !hasSeverity {
-			log.Printf(
-				"[chunking] get_service_logs parse missing severity service=%q stream=%#v",
+			logServiceLogsf(
+				ctx,
+				"parse missing severity service=%q stream=%#v",
 				service,
 				streamMetadata,
 			)
@@ -406,8 +417,9 @@ func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEnt
 
 		vals, ok := streamData["values"].([]any)
 		if !ok {
-			log.Printf(
-				"[chunking] get_service_logs parse missing values array service=%q item=%#v",
+			logServiceLogsf(
+				ctx,
+				"parse missing values array service=%q item=%#v",
 				service,
 				item,
 			)
@@ -417,8 +429,9 @@ func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEnt
 		for _, val := range vals {
 			valArray, ok := val.([]any)
 			if !ok || len(valArray) < 2 {
-				log.Printf(
-					"[chunking] get_service_logs parse skipped malformed value service=%q value=%#v",
+				logServiceLogsf(
+					ctx,
+					"parse skipped malformed value service=%q value=%#v",
 					service,
 					val,
 				)
