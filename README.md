@@ -477,7 +477,7 @@ Optional environment variables:
 - `LAST9_DATASOURCE`: Name of the datasource/cluster to use. If not specified, the default datasource configured in your Last9 organization will be used.
 - `LAST9_API_HOST`: API host to connect to. Defaults to `app.last9.io`. Use this if you need to connect to a different Last9 endpoint (e.g., regional or self-hosted instances).
 - `LAST9_DEBUG_CHUNKING`: Set to `true` to emit chunk-planning and per-chunk execution logs for `get_logs` and `get_service_logs`.
-- `LAST9_MAX_GET_LOGS_ENTRIES`: Maximum number of entries returned by chunked raw `get_logs` requests. Defaults to `50000`.
+- `LAST9_MAX_GET_LOGS_ENTRIES`: Maximum number of entries returned by chunked raw `get_logs` requests. This also maps to the `-max_get_logs_entries` CLI flag. If unset or set to `0`/a negative number, the server falls back to the default `50000`.
 
 ## Usage
 
