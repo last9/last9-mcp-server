@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -72,7 +73,7 @@ type GetServiceLogsArgs struct {
 	StartTimeISO    string   `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2023-10-01T10:00:00Z). If not provided lookback_minutes is used"`
 	EndTimeISO      string   `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2023-10-01T11:00:00Z). If not provided current time is used"`
 	LookbackMinutes int      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time if start_time_iso not provided (default: 60, range: 1-10080)"`
-	Limit           int      `json:"limit,omitempty" jsonschema:"Maximum number of log entries to return (default: 20, range: 1-1000)"`
+	Limit           int      `json:"limit,omitempty" jsonschema:"Maximum number of log entries to return (optional, default: 20)"`
 	SeverityFilters []string `json:"severity_filters,omitempty" jsonschema:"Array of severity patterns to match (uses OR logic) (e.g. [error warn])"`
 	BodyFilters     []string `json:"body_filters,omitempty" jsonschema:"Array of message content patterns to match (uses OR logic) (e.g. [timeout failed])"`
 	Env             string   `json:"env,omitempty" jsonschema:"Environment to filter by. Empty string if environment is unknown (e.g. production)"`
@@ -221,84 +222,112 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 
 // fetchServiceLogs retrieves raw log entries for a specific service using utils package
 func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Config, service string, startTime, endTime time.Time, limit int, severityFilters []string, bodyFilters []string, index string) (*ServiceLogsResponse, error) {
-	// Convert time.Time to Unix milliseconds for the utils function
-	startTimeMs := startTime.UnixMilli()
-	endTimeMs := endTime.UnixMilli()
+	chunks := utils.GetTimeRangeChunksBackward(startTime.UnixMilli(), endTime.UnixMilli())
+	logs := make([]LogEntry, 0, limit)
+	chunkingDebug := chunkingDebugEnabled()
 
-	apiRequest := utils.CreateServiceLogsAPIRequest(service, startTimeMs, endTimeMs, severityFilters, bodyFilters, index)
-
-	// Use the existing utils function to make the API call
-	resp, err := utils.MakeServiceLogsAPI(ctx, client, apiRequest, &cfg)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Read response body
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+	if chunkingDebug {
+		log.Printf(
+			"[chunking] get_service_logs chunking enabled service=%q chunks=%d start_ms=%d end_ms=%d limit=%d index=%q",
+			service,
+			len(chunks),
+			startTime.UnixMilli(),
+			endTime.UnixMilli(),
+			limit,
+			index,
+		)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	// Parse the raw response - the utils function returns aggregated data, not raw logs
-	// We need to extract the actual log entries from the response
-	var apiResponse map[string]any
-	if err := json.Unmarshal(bodyBytes, &apiResponse); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	// Extract logs from the API response structure
-	logs := make([]LogEntry, 0)
-
-	// Navigate through the response structure: data -> result (array of streams)
-	if data, ok := apiResponse["data"].(map[string]any); ok {
-		if result, ok := data["result"].([]any); ok {
-			for i, item := range result {
-				if i >= limit {
-					break
-				}
-
-				if streamData, ok := item.(map[string]any); ok {
-					// Extract stream metadata
-					var streamMetadata map[string]any
-					var values [][]any
-
-					if stream, exists := streamData["stream"].(map[string]any); exists {
-						streamMetadata = stream
-					}
-
-					if vals, exists := streamData["values"].([]any); exists {
-						for _, val := range vals {
-							if valArray, ok := val.([]any); ok {
-								values = append(values, valArray)
-							}
-						}
-					}
-
-					// Create log entries for each value in the stream
-					for _, value := range values {
-						if len(value) >= 2 {
-							entry := LogEntry{
-								ServiceName: service,
-								Timestamp:   utils.ConvertTimestamp(value[0]),
-								Message:     fmt.Sprintf("%v", value[1]),
-							}
-
-							// Extract severity from stream metadata
-							if severity, exists := streamMetadata["severity"]; exists {
-								entry.Severity = fmt.Sprintf("%v", severity)
-							}
-
-							logs = append(logs, entry)
-						}
-					}
-				}
-			}
+	for chunkIndex, chunk := range chunks {
+		remaining := limit - len(logs)
+		if remaining <= 0 {
+			break
 		}
+
+		if chunkingDebug {
+			log.Printf(
+				"[chunking] get_service_logs chunk request service=%q chunk=%d/%d start_ms=%d end_ms=%d remaining_limit=%d",
+				service,
+				chunkIndex+1,
+				len(chunks),
+				chunk.StartMs,
+				chunk.EndMs,
+				remaining,
+			)
+		}
+
+		chunkLogs, err := fetchServiceLogsChunk(
+			ctx,
+			client,
+			cfg,
+			service,
+			chunk.StartMs,
+			chunk.EndMs,
+			remaining,
+			severityFilters,
+			bodyFilters,
+			index,
+		)
+		if err != nil {
+			if chunkingDebug {
+				log.Printf(
+					"[chunking] get_service_logs chunk error service=%q chunk=%d/%d start_ms=%d end_ms=%d err=%v",
+					service,
+					chunkIndex+1,
+					len(chunks),
+					chunk.StartMs,
+					chunk.EndMs,
+					err,
+				)
+			}
+			return nil, err
+		}
+
+		if chunkingDebug {
+			log.Printf(
+				"[chunking] get_service_logs chunk response service=%q chunk=%d/%d returned_entries=%d",
+				service,
+				chunkIndex+1,
+				len(chunks),
+				len(chunkLogs),
+			)
+		}
+
+		if len(chunkLogs) > remaining {
+			if chunkingDebug {
+				log.Printf(
+					"[chunking] get_service_logs chunk trim service=%q chunk=%d/%d kept_entries=%d dropped_entries=%d",
+					service,
+					chunkIndex+1,
+					len(chunks),
+					remaining,
+					len(chunkLogs)-remaining,
+				)
+			}
+			chunkLogs = chunkLogs[:remaining]
+		}
+		logs = append(logs, chunkLogs...)
+
+		if chunkingDebug {
+			log.Printf(
+				"[chunking] get_service_logs chunk merged service=%q chunk=%d/%d total_entries=%d remaining_limit=%d",
+				service,
+				chunkIndex+1,
+				len(chunks),
+				len(logs),
+				limit-len(logs),
+			)
+		}
+	}
+
+	if chunkingDebug {
+		log.Printf(
+			"[chunking] get_service_logs chunking complete service=%q returned_entries=%d start_ms=%d end_ms=%d",
+			service,
+			len(logs),
+			startTime.UnixMilli(),
+			endTime.UnixMilli(),
+		)
 	}
 
 	return &ServiceLogsResponse{
@@ -308,4 +337,136 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		Count:     len(logs),
 		Logs:      logs,
 	}, nil
+}
+
+func fetchServiceLogsChunk(ctx context.Context, client *http.Client, cfg models.Config, service string, startTimeMs, endTimeMs int64, limit int, severityFilters []string, bodyFilters []string, index string) ([]LogEntry, error) {
+	apiRequest := utils.CreateServiceLogsAPIRequest(service, startTimeMs, endTimeMs, limit, severityFilters, bodyFilters, index)
+
+	resp, err := utils.MakeServiceLogsAPI(ctx, client, apiRequest, &cfg)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var apiResponse map[string]any
+	if err := json.Unmarshal(bodyBytes, &apiResponse); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return parseServiceLogEntries(apiResponse, service), nil
+}
+
+func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEntry {
+	logs := make([]LogEntry, 0)
+	chunkingDebug := chunkingDebugEnabled()
+
+	data, ok := apiResponse["data"].(map[string]any)
+	if !ok {
+		if chunkingDebug {
+			log.Printf(
+				"[chunking] get_service_logs parse missing data object service=%q response=%#v",
+				service,
+				apiResponse,
+			)
+		}
+		return logs
+	}
+
+	result, ok := data["result"].([]any)
+	if !ok {
+		if chunkingDebug {
+			log.Printf(
+				"[chunking] get_service_logs parse missing result array service=%q data=%#v",
+				service,
+				data,
+			)
+		}
+		return logs
+	}
+
+	for _, item := range result {
+		streamData, ok := item.(map[string]any)
+		if !ok {
+			if chunkingDebug {
+				log.Printf(
+					"[chunking] get_service_logs parse skipped non-stream item service=%q item=%#v",
+					service,
+					item,
+				)
+			}
+			continue
+		}
+
+		var streamMetadata map[string]any
+		if stream, exists := streamData["stream"].(map[string]any); exists {
+			streamMetadata = stream
+		} else {
+			if chunkingDebug {
+				log.Printf(
+					"[chunking] get_service_logs parse missing stream metadata service=%q item=%#v",
+					service,
+					item,
+				)
+			}
+		}
+
+		severity, hasSeverity := streamMetadata["severity"]
+		if !hasSeverity {
+			if chunkingDebug {
+				log.Printf(
+					"[chunking] get_service_logs parse missing severity service=%q stream=%#v",
+					service,
+					streamMetadata,
+				)
+			}
+		}
+
+		vals, ok := streamData["values"].([]any)
+		if !ok {
+			if chunkingDebug {
+				log.Printf(
+					"[chunking] get_service_logs parse missing values array service=%q item=%#v",
+					service,
+					item,
+				)
+			}
+			continue
+		}
+
+		for _, val := range vals {
+			valArray, ok := val.([]any)
+			if !ok || len(valArray) < 2 {
+				if chunkingDebug {
+					log.Printf(
+						"[chunking] get_service_logs parse skipped malformed value service=%q value=%#v",
+						service,
+						val,
+					)
+				}
+				continue
+			}
+
+			entry := LogEntry{
+				ServiceName: service,
+				Timestamp:   utils.ConvertTimestamp(valArray[0]),
+				Message:     fmt.Sprintf("%v", valArray[1]),
+			}
+			if hasSeverity {
+				entry.Severity = fmt.Sprintf("%v", severity)
+			}
+
+			logs = append(logs, entry)
+		}
+	}
+
+	return logs
 }

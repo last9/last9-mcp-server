@@ -25,7 +25,7 @@ func TestGetLogsHandler_ForwardsIndexAndBuildsResolvedDeepLink(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":"success","data":{"result":[]}}`))
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[]}}`))
 		case "/logs_settings/physical_indexes":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
@@ -60,6 +60,59 @@ func TestGetLogsHandler_ForwardsIndexAndBuildsResolvedDeepLink(t *testing.T) {
 	}
 }
 
+func TestGetLogsHandler_ForwardsLimitWhenProvided(t *testing.T) {
+	tests := []struct {
+		name          string
+		limit         int
+		expectedLimit string
+	}{
+		{
+			name:          "forwards explicit limit",
+			limit:         25,
+			expectedLimit: "25",
+		},
+		{
+			name:          "uses configured max when unset",
+			limit:         0,
+			expectedLimit: "50000",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != constants.EndpointLogsQueryRange {
+					t.Fatalf("unexpected path %s", r.URL.Path)
+				}
+				if got := r.URL.Query().Get("limit"); got != tt.expectedLimit {
+					t.Fatalf("expected limit %q, got %q", tt.expectedLimit, got)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[]}}`))
+			}))
+			defer server.Close()
+
+			handler := NewGetLogsHandler(server.Client(), testLogsConfig(server.URL))
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+				LogjsonQuery: []map[string]interface{}{
+					{
+						"type": "filter",
+						"query": map[string]interface{}{
+							"$eq": []interface{}{"ServiceName", "api"},
+						},
+					},
+				},
+				LookbackMinutes: 5,
+				Limit:           tt.limit,
+			})
+			if err != nil {
+				t.Fatalf("handler returned error: %v", err)
+			}
+		})
+	}
+}
+
 func TestGetLogsHandler_OmitsSourceLinkWhenIndexCannotBeResolved(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -69,7 +122,7 @@ func TestGetLogsHandler_OmitsSourceLinkWhenIndexCannotBeResolved(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":"success","data":{"result":[]}}`))
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[]}}`))
 		case "/logs_settings/physical_indexes":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
@@ -227,6 +280,41 @@ func TestGetServiceLogsHandler_FallsBackToFetchedPhysicalIndex(t *testing.T) {
 	}
 	if !promLookupCalled {
 		t.Fatal("expected fallback physical index lookup when index is omitted")
+	}
+}
+
+func TestGetServiceLogsHandler_ForwardsLargeLimitWhenProvided(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case constants.EndpointLogsQueryRange:
+			if got := r.URL.Query().Get("limit"); got != "2500" {
+				t.Fatalf("expected limit %q, got %q", "2500", got)
+			}
+			if got := r.URL.Query().Get("index"); got != "physical_index:payments" {
+				t.Fatalf("unexpected logs query index %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(serviceLogsAPIResponse("large limit forwarded")))
+		case "/logs_settings/physical_indexes":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"properties":[{"id":"idx-123","name":"payments"}]}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := NewGetServiceLogsHandler(server.Client(), testLogsConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
+		Service:         "api",
+		LookbackMinutes: 5,
+		Limit:           2500,
+		Index:           "physical_index:payments",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
 	}
 }
 

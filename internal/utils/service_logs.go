@@ -24,6 +24,7 @@ type ServiceLogsParams struct {
 	Service         string
 	StartTime       int64 // Unix timestamp in milliseconds
 	EndTime         int64 // Unix timestamp in milliseconds
+	Limit           int
 	Region          string
 	SeverityFilters []string // Optional regex patterns for severity filtering
 	BodyFilters     []string // Optional regex patterns for body filtering
@@ -35,6 +36,7 @@ func createServiceLogsParams(request ServiceLogsAPIRequest, region string) Servi
 		Service:         request.Service,
 		StartTime:       request.StartTime,
 		EndTime:         request.EndTime,
+		Limit:           request.Limit,
 		Region:          region,
 		SeverityFilters: request.SeverityFilters,
 		BodyFilters:     request.BodyFilters,
@@ -87,19 +89,21 @@ type ServiceLogsRequest struct {
 // ServiceLogsAPIRequest contains all parameters needed for service logs API calls
 type ServiceLogsAPIRequest struct {
 	Service         string
-	StartTime       int64    // Unix timestamp in milliseconds
-	EndTime         int64    // Unix timestamp in milliseconds
+	StartTime       int64 // Unix timestamp in milliseconds
+	EndTime         int64 // Unix timestamp in milliseconds
+	Limit           int
 	SeverityFilters []string // Optional regex patterns for severity filtering
 	BodyFilters     []string // Optional regex patterns for body filtering
 	Index           string   // Optional log index parameter for logs queries
 }
 
 // CreateServiceLogsAPIRequest creates a new service logs API request with default options
-func CreateServiceLogsAPIRequest(service string, startTime, endTime int64, severityFilters []string, bodyFilters []string, index string) ServiceLogsAPIRequest {
+func CreateServiceLogsAPIRequest(service string, startTime, endTime int64, limit int, severityFilters []string, bodyFilters []string, index string) ServiceLogsAPIRequest {
 	return ServiceLogsAPIRequest{
 		Service:         service,
 		StartTime:       startTime,
 		EndTime:         endTime,
+		Limit:           limit,
 		SeverityFilters: severityFilters,
 		BodyFilters:     bodyFilters,
 		Index:           index,
@@ -182,6 +186,9 @@ func buildServiceLogsURL(apiBaseURL string, params ServiceLogsParams) (string, e
 	queryParams.Add("start", fmt.Sprintf("%d", params.StartTime/1000)) // Convert to seconds
 	queryParams.Add("end", fmt.Sprintf("%d", params.EndTime/1000))     // Convert to seconds
 	queryParams.Add("region", params.Region)
+	if params.Limit > 0 {
+		queryParams.Add("limit", fmt.Sprintf("%d", params.Limit))
+	}
 
 	normalizedIndex, err := NormalizeLogIndex(params.Index)
 	if err != nil {
@@ -197,8 +204,8 @@ func buildServiceLogsURL(apiBaseURL string, params ServiceLogsParams) (string, e
 	return fmt.Sprintf("%s?%s", logsURL, queryParams.Encode()), nil
 }
 
-// MakeLogsJSONQueryAPI posts a raw log JSON pipeline to the query_range API with the given time range
-func MakeLogsJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.Config, pipeline any, startMs, endMs int64, index string) (*http.Response, error) {
+// MakeLogsJSONQueryAPI posts a raw log JSON pipeline to the query_range API with the given time range.
+func MakeLogsJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.Config, pipeline any, startMs, endMs int64, limit int, index string) (*http.Response, error) {
 	// Basic validation
 	if client == nil {
 		return nil, errors.New("http client cannot be nil")
@@ -217,12 +224,18 @@ func MakeLogsJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.C
 	queryParams.Add("start", fmt.Sprintf("%d", startMs/1000)) // seconds
 	queryParams.Add("end", fmt.Sprintf("%d", endMs/1000))     // seconds
 	queryParams.Add("region", cfg.Region)
+	if limit > 0 {
+		queryParams.Add("limit", fmt.Sprintf("%d", limit))
+	}
 	normalizedIndex, err := NormalizeLogIndex(index)
 	if err != nil {
 		return nil, err
 	}
 	if normalizedIndex != "" {
 		queryParams.Add("index", normalizedIndex)
+		if strings.HasPrefix(normalizedIndex, logIndexPhysicalPrefix) {
+			queryParams.Add("index_type", "physical")
+		}
 	}
 	fullURL := fmt.Sprintf("%s?%s", logsURL, queryParams.Encode())
 

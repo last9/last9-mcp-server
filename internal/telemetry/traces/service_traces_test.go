@@ -71,24 +71,6 @@ func TestValidateGetServiceTracesArgs(t *testing.T) {
 			wantErr: true,
 			errMsg:  "lookback_minutes must be between 1 and 20160",
 		},
-		{
-			name: "Invalid limit - too small",
-			args: GetServiceTracesArgs{
-				ServiceName: "test-service",
-				Limit:       0.5,
-			},
-			wantErr: true,
-			errMsg:  "limit must be between 1 and 100",
-		},
-		{
-			name: "Invalid limit - too large",
-			args: GetServiceTracesArgs{
-				ServiceName: "test-service",
-				Limit:       150,
-			},
-			wantErr: true,
-			errMsg:  "limit must be between 1 and 100",
-		},
 	}
 
 	for _, tt := range tests {
@@ -148,6 +130,26 @@ func TestParseGetTracesParams(t *testing.T) {
 			wantErr:   false,
 			wantSvc:   "api-service",
 			wantLimit: 5,
+		},
+		{
+			name: "Valid service name with large limit",
+			args: GetServiceTracesArgs{
+				ServiceName: "api-service",
+				Limit:       250,
+			},
+			wantErr:   false,
+			wantSvc:   "api-service",
+			wantLimit: 250,
+		},
+		{
+			name: "Fractional limit below one keeps default",
+			args: GetServiceTracesArgs{
+				ServiceName: "api-service",
+				Limit:       0.5,
+			},
+			wantErr:   false,
+			wantSvc:   "api-service",
+			wantLimit: LimitDefault,
 		},
 	}
 
@@ -368,6 +370,40 @@ func TestGetServiceTracesHandler_MockedResponse(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestGetServiceTracesHandler_ForwardsLargeLimit(t *testing.T) {
+	var receivedLimit string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedLimit = r.URL.Query().Get("limit")
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, `{"data":{"result":[]}}`)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+		Region:     "ap-south-1",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "mock-access-token-for-testing",
+			ExpiresAt:   time.Now().Add(365 * 24 * time.Hour),
+		},
+	}
+
+	handler := GetServiceTracesHandler(server.Client(), cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceTracesArgs{
+		ServiceName:     "api-service",
+		LookbackMinutes: 60,
+		Limit:           250,
+	})
+	if err != nil {
+		t.Fatalf("GetServiceTracesHandler() error = %v", err)
+	}
+
+	if receivedLimit != "250" {
+		t.Fatalf("expected forwarded limit 250, got %q", receivedLimit)
 	}
 }
 
