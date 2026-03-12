@@ -72,6 +72,123 @@ func TestGetLogsHandlerChunksRawQueriesAndHonorsLimit(t *testing.T) {
 	}
 }
 
+func TestGetLogsHandlerChunksRawQueriesWithoutLimit(t *testing.T) {
+	requests := make([]url.Values, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.URL.Query())
+
+		switch len(requests) {
+		case 1:
+			_, _ = w.Write([]byte(streamsAPIResponse(
+				[]logValue{{Timestamp: "420000000000", Message: "latest"}, {Timestamp: "300000000000", Message: "recent"}},
+			)))
+		case 2:
+			_, _ = w.Write([]byte(streamsAPIResponse(
+				[]logValue{{Timestamp: "60000000000", Message: "older"}},
+			)))
+		default:
+			t.Fatalf("unexpected extra request %d", len(requests))
+		}
+	}))
+	defer server.Close()
+
+	cfg := testLogsConfig(server.URL)
+	cfg.MaxGetLogsEntries = 3
+	handler := NewGetLogsHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+		LogjsonQuery: []map[string]interface{}{
+			{
+				"type": "filter",
+				"query": map[string]interface{}{
+					"$contains": []interface{}{"Body", "error"},
+				},
+			},
+		},
+		StartTimeISO: "1970-01-01T00:00:00Z",
+		EndTimeISO:   "1970-01-01T00:07:00Z",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if len(requests) != 2 {
+		t.Fatalf("expected 2 chunk requests, got %d", len(requests))
+	}
+	if got := requests[0].Get("limit"); got != "3" {
+		t.Fatalf("expected first request limit=3, got %q", got)
+	}
+	if got := requests[1].Get("limit"); got != "1" {
+		t.Fatalf("expected second request limit=1, got %q", got)
+	}
+	if got := requests[0].Get("start"); got != "120" || requests[0].Get("end") != "420" {
+		t.Fatalf("unexpected first chunk bounds: %v", requests[0])
+	}
+	if got := requests[1].Get("start"); got != "0" || requests[1].Get("end") != "120" {
+		t.Fatalf("unexpected second chunk bounds: %v", requests[1])
+	}
+
+	payload := parseToolJSONResult(t, result)
+	if entryCount := countEntriesInPayload(t, payload); entryCount != 3 {
+		t.Fatalf("expected 3 merged log entries in payload, got %d", entryCount)
+	}
+}
+
+func TestGetLogsHandlerCapsExplicitLimitAtConfiguredMax(t *testing.T) {
+	requests := make([]url.Values, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.URL.Query())
+
+		switch len(requests) {
+		case 1:
+			_, _ = w.Write([]byte(streamsAPIResponse(
+				[]logValue{{Timestamp: "420000000000", Message: "latest"}, {Timestamp: "300000000000", Message: "recent"}},
+			)))
+		case 2:
+			_, _ = w.Write([]byte(streamsAPIResponse(
+				[]logValue{{Timestamp: "60000000000", Message: "older"}},
+			)))
+		default:
+			t.Fatalf("unexpected extra request %d", len(requests))
+		}
+	}))
+	defer server.Close()
+
+	cfg := testLogsConfig(server.URL)
+	cfg.MaxGetLogsEntries = 3
+	handler := NewGetLogsHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+		LogjsonQuery: []map[string]interface{}{
+			{
+				"type": "filter",
+				"query": map[string]interface{}{
+					"$contains": []interface{}{"Body", "error"},
+				},
+			},
+		},
+		StartTimeISO: "1970-01-01T00:00:00Z",
+		EndTimeISO:   "1970-01-01T00:07:00Z",
+		Limit:        10,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if len(requests) != 2 {
+		t.Fatalf("expected 2 chunk requests, got %d", len(requests))
+	}
+	if got := requests[0].Get("limit"); got != "3" {
+		t.Fatalf("expected first request limit=3, got %q", got)
+	}
+	if got := requests[1].Get("limit"); got != "1" {
+		t.Fatalf("expected second request limit=1, got %q", got)
+	}
+
+	payload := parseToolJSONResult(t, result)
+	if entryCount := countEntriesInPayload(t, payload); entryCount != 3 {
+		t.Fatalf("expected 3 merged log entries in payload, got %d", entryCount)
+	}
+}
+
 func TestGetLogsHandlerDoesNotChunkAggregateQueries(t *testing.T) {
 	requests := make([]url.Values, 0)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

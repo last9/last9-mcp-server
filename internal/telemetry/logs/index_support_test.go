@@ -25,7 +25,7 @@ func TestGetLogsHandler_ForwardsIndexAndBuildsResolvedDeepLink(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":"success","data":{"result":[]}}`))
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[]}}`))
 		case "/logs_settings/physical_indexes":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
@@ -72,9 +72,9 @@ func TestGetLogsHandler_ForwardsLimitWhenProvided(t *testing.T) {
 			expectedLimit: "25",
 		},
 		{
-			name:          "omits limit when unset",
+			name:          "uses configured max when unset",
 			limit:         0,
-			expectedLimit: "",
+			expectedLimit: "50000",
 		},
 	}
 
@@ -122,7 +122,7 @@ func TestGetLogsHandler_OmitsSourceLinkWhenIndexCannotBeResolved(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":"success","data":{"result":[]}}`))
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[]}}`))
 		case "/logs_settings/physical_indexes":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
@@ -280,6 +280,41 @@ func TestGetServiceLogsHandler_FallsBackToFetchedPhysicalIndex(t *testing.T) {
 	}
 	if !promLookupCalled {
 		t.Fatal("expected fallback physical index lookup when index is omitted")
+	}
+}
+
+func TestGetServiceLogsHandler_ForwardsLargeLimitWhenProvided(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case constants.EndpointLogsQueryRange:
+			if got := r.URL.Query().Get("limit"); got != "2500" {
+				t.Fatalf("expected limit %q, got %q", "2500", got)
+			}
+			if got := r.URL.Query().Get("index"); got != "physical_index:payments" {
+				t.Fatalf("unexpected logs query index %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(serviceLogsAPIResponse("large limit forwarded")))
+		case "/logs_settings/physical_indexes":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"properties":[{"id":"idx-123","name":"payments"}]}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := NewGetServiceLogsHandler(server.Client(), testLogsConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
+		Service:         "api",
+		LookbackMinutes: 5,
+		Limit:           2500,
+		Index:           "physical_index:payments",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
 	}
 }
 

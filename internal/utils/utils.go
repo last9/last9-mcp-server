@@ -336,12 +336,9 @@ func MakeTracesJSONQueryAPI(ctx context.Context, client *http.Client, cfg models
 		return nil, errors.New("access token cannot be empty")
 	}
 
-	// Validate and set default limit
+	// Set default limit when omitted.
 	if limit <= 0 {
-		limit = 20 // Default limit
-	}
-	if limit > 100 {
-		limit = 100 // Maximum reasonable limit
+		limit = 20
 	}
 
 	// Build URL

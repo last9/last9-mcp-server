@@ -391,7 +391,7 @@ Parameters:
 - `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z).
 - `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z).
 - `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Range: 1–20160 (14 days).
-- `limit` (integer, optional): Maximum number of traces to return. Default: 20. Range: 1-100.
+- `limit` (integer, optional): Maximum number of traces to return. Default: 20.
   This tool supports complex queries with multiple filter conditions, aggregations, and custom processing pipelines for advanced trace analysis.
 
 ### get_service_traces
@@ -404,7 +404,7 @@ Parameters:
 - `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Range: 1–20160 (14 days). Examples: 60, 30, 15.
 - `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
 - `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-- `limit` (integer, optional): Maximum number of traces to return. Default: 10. Range: 1-100.
+- `limit` (integer, optional): Maximum number of traces to return. Default: 10.
 - `env` (string, optional): Environment to filter by. Use "get_service_environments" tool to get available environments.
   Usage rules:
 - Exactly one of `trace_id` or `service_name` must be provided (not both, not neither)
@@ -476,6 +476,8 @@ Optional environment variables:
 - `OTEL_EXPORTER_OTLP_HEADERS`: Headers for OTLP exporter authentication. Only needed when telemetry is enabled (i.e., `OTEL_SDK_DISABLED` is not `true` and `LAST9_DISABLE_TELEMETRY` is not `true`).
 - `LAST9_DATASOURCE`: Name of the datasource/cluster to use. If not specified, the default datasource configured in your Last9 organization will be used.
 - `LAST9_API_HOST`: API host to connect to. Defaults to `app.last9.io`. Use this if you need to connect to a different Last9 endpoint (e.g., regional or self-hosted instances).
+- `LAST9_DEBUG_CHUNKING`: Set to `true` to emit chunk-planning and per-chunk execution logs for `get_logs` and `get_service_logs`.
+- `LAST9_MAX_GET_LOGS_ENTRIES`: Maximum number of entries returned by chunked raw `get_logs` requests. Defaults to `50000`.
 
 ## Usage
 
