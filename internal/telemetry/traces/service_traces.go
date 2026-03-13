@@ -60,7 +60,7 @@ type GetServiceTracesArgs struct {
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, range: 1-20160)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - lookback_minutes."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time."`
-	Limit           float64 `json:"limit,omitempty" jsonschema:"Maximum number of traces to return (default: 10, range: 1-100)"`
+	Limit           float64 `json:"limit,omitempty" jsonschema:"Maximum number of traces to return (optional, default: 10)"`
 	Env             string  `json:"env,omitempty" jsonschema:"Environment to filter by. Empty string if environment is unknown."`
 }
 
@@ -116,13 +116,9 @@ func validateGetServiceTracesArgs(args GetServiceTracesArgs) error {
 		return errors.New("cannot specify both trace_id and service_name - use only one")
 	}
 
-	// Validate limits
+	// Validate lookback only. Limit is optional and forwarded as provided.
 	if args.LookbackMinutes > 0 && (args.LookbackMinutes < 1 || args.LookbackMinutes > 20160) {
 		return errors.New("lookback_minutes must be between 1 and 20160 (14 days)")
-	}
-
-	if args.Limit > 0 && (args.Limit < 1 || args.Limit > 100) {
-		return errors.New("limit must be between 1 and 100")
 	}
 
 	return nil
@@ -149,7 +145,7 @@ func parseGetServiceTraceParams(args GetServiceTracesArgs, cfg models.Config) (*
 	if args.LookbackMinutes != 0 {
 		queryParams.LookbackMinutes = int(args.LookbackMinutes)
 	}
-	if args.Limit != 0 {
+	if args.Limit >= 1 {
 		queryParams.Limit = int(args.Limit)
 	}
 

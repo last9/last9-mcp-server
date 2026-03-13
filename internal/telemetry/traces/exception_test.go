@@ -307,3 +307,92 @@ func TestGetExceptionsHandler_LastSeenUsesInstantTimestamp(t *testing.T) {
 		t.Fatalf("unexpected client last_seen: got %q, want %q", got, expectedClientLastSeen)
 	}
 }
+
+func TestGetExceptionsHandler_DoesNotCapLargeLimit(t *testing.T) {
+	endTime := time.Date(2026, 1, 20, 12, 0, 0, 0, time.UTC)
+	startTime := endTime.Add(-10 * time.Minute)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case constants.EndpointPromQueryInstant:
+			points := make([]string, 0, 120)
+			for i := 0; i < 120; i++ {
+				points = append(points, fmt.Sprintf(
+					`{"metric":{"exception_type":"Exception%d","service_name":"api","span_name":"GET /health","span_kind":"SPAN_KIND_SERVER"},"value":[%d,"%d"]}`,
+					i,
+					endTime.Unix(),
+					i+1,
+				))
+			}
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, "["+strings.Join(points, ",")+"]")
+		case constants.EndpointPromQuery:
+			t.Fatalf("did not expect range query")
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL:         server.URL,
+		PrometheusReadURL:  "https://prom.example.com",
+		PrometheusUsername: "prom-user",
+		PrometheusPassword: "prom-pass",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-access-token",
+			ExpiresAt:   time.Now().Add(24 * time.Hour),
+		},
+	}
+
+	handler := NewGetExceptionsHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetExceptionsArgs{
+		StartTimeISO: startTime.Format(time.RFC3339),
+		EndTimeISO:   endTime.Format(time.RFC3339),
+		Limit:        150,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	text := utils.GetTextContent(t, result)
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(text), &payload); err != nil {
+		t.Fatalf("failed to decode tool response: %v", err)
+	}
+
+	if got := int(payload["count"].(float64)); got != 120 {
+		t.Fatalf("unexpected count: got %d, want 120", got)
+	}
+
+	exceptions, ok := payload["exceptions"].([]any)
+	if !ok {
+		t.Fatalf("expected exceptions array in response")
+	}
+	if len(exceptions) != 120 {
+		t.Fatalf("unexpected exceptions length: got %d, want 120", len(exceptions))
+	}
+
+	first, ok := exceptions[0].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected exception entry type: %T", exceptions[0])
+	}
+	if first["exception_type"] != "Exception119" {
+		t.Fatalf("expected highest-count exception first, got %v", first["exception_type"])
+	}
+	if got := int(first["count"].(float64)); got != 120 {
+		t.Fatalf("unexpected first exception count: got %d, want 120", got)
+	}
+
+	last, ok := exceptions[len(exceptions)-1].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected exception entry type: %T", exceptions[len(exceptions)-1])
+	}
+	if last["exception_type"] != "Exception0" {
+		t.Fatalf("expected lowest-count exception last, got %v", last["exception_type"])
+	}
+	if got := int(last["count"].(float64)); got != 1 {
+		t.Fatalf("unexpected last exception count: got %d, want 1", got)
+	}
+
+}
