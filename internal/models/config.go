@@ -14,6 +14,7 @@ type Config struct {
 	RequestRateLimit  float64 // Maximum requests per second
 	RequestRateBurst  int     // Maximum burst capacity for requests
 	MaxGetLogsEntries int     // Maximum number of entries returned by chunked raw get_logs requests
+	DebugChunking     bool    // Emit chunk-planning and per-chunk execution logs for chunked log queries
 
 	// HTTP server configuration
 	HTTPMode bool   // Enable HTTP server mode instead of STDIO

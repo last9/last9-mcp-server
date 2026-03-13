@@ -224,7 +224,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Config, service string, startTime, endTime time.Time, limit int, severityFilters []string, bodyFilters []string, index string) (*ServiceLogsResponse, error) {
 	chunks := utils.GetTimeRangeChunksBackward(startTime.UnixMilli(), endTime.UnixMilli())
 	logs := make([]LogEntry, 0, limit)
-	chunkingDebug := chunkingDebugEnabled()
+	chunkingDebug := chunkingDebugEnabled(cfg)
 
 	if chunkingDebug {
 		log.Printf(
@@ -362,12 +362,12 @@ func fetchServiceLogsChunk(ctx context.Context, client *http.Client, cfg models.
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return parseServiceLogEntries(apiResponse, service), nil
+	return parseServiceLogEntries(cfg, apiResponse, service), nil
 }
 
-func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEntry {
+func parseServiceLogEntries(cfg models.Config, apiResponse map[string]any, service string) []LogEntry {
 	logs := make([]LogEntry, 0)
-	chunkingDebug := chunkingDebugEnabled()
+	chunkingDebug := chunkingDebugEnabled(cfg)
 
 	data, ok := apiResponse["data"].(map[string]any)
 	if !ok {

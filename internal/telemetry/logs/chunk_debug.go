@@ -1,19 +1,7 @@
 package logs
 
-import (
-	"os"
-	"strconv"
-	"strings"
-)
+import "last9-mcp/internal/models"
 
-const chunkingDebugEnvVar = "LAST9_DEBUG_CHUNKING"
-
-func chunkingDebugEnabled() bool {
-	value := strings.TrimSpace(os.Getenv(chunkingDebugEnvVar))
-	if value == "" {
-		return false
-	}
-
-	enabled, err := strconv.ParseBool(value)
-	return err == nil && enabled
+func chunkingDebugEnabled(cfg models.Config) bool {
+	return cfg.DebugChunking
 }
