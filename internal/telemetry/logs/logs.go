@@ -92,7 +92,7 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 }
 
 func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, startTime, endTime int64, args GetLogsArgs) (map[string]interface{}, error) {
-	chunkingDebug := chunkingDebugEnabled(cfg)
+	chunkingDebug := chunkingDebugEnabled()
 
 	if !shouldChunkGetLogsQuery(logjsonQuery) {
 		if chunkingDebug {

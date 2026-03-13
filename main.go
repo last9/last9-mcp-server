@@ -46,7 +46,6 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	fs.BoolVar(&cfg.DisableTelemetry, "disable_telemetry", true, "Disable OpenTelemetry tracing/metrics")
 	fs.Float64Var(&cfg.RequestRateLimit, "rate", 1, "Requests per second limit")
 	fs.IntVar(&cfg.RequestRateBurst, "burst", 1, "Request burst capacity")
-	fs.BoolVar(&cfg.DebugChunking, "debug_chunking", false, "Emit chunk-planning and per-chunk execution logs for get_logs and get_service_logs")
 	fs.IntVar(&cfg.MaxGetLogsEntries, "max_get_logs_entries", models.DefaultMaxGetLogsEntries, "Maximum number of entries returned by chunked raw get_logs requests")
 	fs.BoolVar(&cfg.HTTPMode, "http", false, "Run as HTTP server instead of STDIO")
 	fs.StringVar(&cfg.Port, "port", "8080", "HTTP server port")
@@ -105,10 +104,9 @@ func main() {
 		}
 	}
 	log.Printf(
-		"Config loaded - HTTPMode: %t, Authentication: enabled, MaxGetLogsEntries: %d, DebugChunking: %t",
+		"Config loaded - HTTPMode: %t, Authentication: enabled, MaxGetLogsEntries: %d",
 		cfg.HTTPMode,
 		cfg.MaxGetLogsEntries,
-		cfg.DebugChunking,
 	)
 
 	tokenManager, err := auth.NewTokenManager(cfg.RefreshToken)
