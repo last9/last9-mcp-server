@@ -419,9 +419,11 @@ func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEnt
 			}
 		}
 
-		severity, hasSeverity := streamMetadata["severity"]
-		if !hasSeverity {
-			if chunkingDebug {
+		var severity any
+		hasSeverity := false
+		if streamMetadata != nil {
+			severity, hasSeverity = streamMetadata["severity"]
+			if !hasSeverity && chunkingDebug {
 				log.Printf(
 					"[chunking] get_service_logs parse missing severity service=%q stream=%#v",
 					service,
