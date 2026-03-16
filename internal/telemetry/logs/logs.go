@@ -361,7 +361,15 @@ func extractResultItems(result map[string]interface{}) (string, []interface{}, e
 		return "", nil, fmt.Errorf("logs API response missing resultType")
 	}
 
-	items, ok := data["result"].([]interface{})
+	rawItems, exists := data["result"]
+	if !exists || rawItems == nil {
+		if resultType == "streams" {
+			return resultType, []interface{}{}, nil
+		}
+		return resultType, nil, fmt.Errorf("logs API response missing result array")
+	}
+
+	items, ok := rawItems.([]interface{})
 	if !ok {
 		return resultType, nil, fmt.Errorf("logs API response missing result array")
 	}

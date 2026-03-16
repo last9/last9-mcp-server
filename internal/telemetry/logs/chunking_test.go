@@ -259,6 +259,52 @@ func TestGetLogsHandlerErrorsOnNonStreamChunkResult(t *testing.T) {
 	}
 }
 
+func TestGetLogsHandlerTreatsMissingStreamsResultAsEmptyChunk(t *testing.T) {
+	requests := make([]url.Values, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.URL.Query())
+
+		switch len(requests) {
+		case 1:
+			_, _ = w.Write([]byte(`{"data":{"resultType":"streams"}}`))
+		case 2:
+			_, _ = w.Write([]byte(streamsAPIResponse(
+				[]logValue{{Timestamp: "60000000000", Message: "older"}},
+			)))
+		default:
+			t.Fatalf("unexpected extra request %d", len(requests))
+		}
+	}))
+	defer server.Close()
+
+	handler := NewGetLogsHandler(server.Client(), testLogsConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+		LogjsonQuery: []map[string]interface{}{
+			{
+				"type": "filter",
+				"query": map[string]interface{}{
+					"$contains": []interface{}{"Body", "error"},
+				},
+			},
+		},
+		StartTimeISO: "1970-01-01T00:00:00Z",
+		EndTimeISO:   "1970-01-01T00:07:00Z",
+		Limit:        3,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if len(requests) != 2 {
+		t.Fatalf("expected 2 chunk requests, got %d", len(requests))
+	}
+
+	payload := parseToolJSONResult(t, result)
+	if entryCount := countEntriesInPayload(t, payload); entryCount != 1 {
+		t.Fatalf("expected 1 merged log entry in payload, got %d", entryCount)
+	}
+}
+
 func TestFetchServiceLogsChunksAndHonorsEntryLimit(t *testing.T) {
 	requests := make([]url.Values, 0)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
