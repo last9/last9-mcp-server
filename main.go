@@ -46,6 +46,7 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	fs.BoolVar(&cfg.DisableTelemetry, "disable_telemetry", true, "Disable OpenTelemetry tracing/metrics")
 	fs.Float64Var(&cfg.RequestRateLimit, "rate", 1, "Requests per second limit")
 	fs.IntVar(&cfg.RequestRateBurst, "burst", 1, "Request burst capacity")
+	fs.IntVar(&cfg.MaxGetLogsEntries, "max_get_logs_entries", models.DefaultMaxGetLogsEntries, "Maximum number of entries returned by chunked raw get_logs requests")
 	fs.BoolVar(&cfg.HTTPMode, "http", false, "Run as HTTP server instead of STDIO")
 	fs.StringVar(&cfg.Port, "port", "8080", "HTTP server port")
 	fs.StringVar(&cfg.Host, "host", "localhost", "HTTP server host")
@@ -75,6 +76,9 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 			return cfg, errors.New("Last9 refresh token must be provided via LAST9_REFRESH_TOKEN env var")
 		}
 	}
+	if cfg.MaxGetLogsEntries <= 0 {
+		cfg.MaxGetLogsEntries = models.DefaultMaxGetLogsEntries
+	}
 
 	return cfg, nil
 }
@@ -99,7 +103,11 @@ func main() {
 			cfg.DisableTelemetry = parsed
 		}
 	}
-	log.Printf("Config loaded - HTTPMode: %t, Authentication: enabled", cfg.HTTPMode)
+	log.Printf(
+		"Config loaded - HTTPMode: %t, Authentication: enabled, MaxGetLogsEntries: %d",
+		cfg.HTTPMode,
+		cfg.MaxGetLogsEntries,
+	)
 
 	tokenManager, err := auth.NewTokenManager(cfg.RefreshToken)
 	if err != nil {

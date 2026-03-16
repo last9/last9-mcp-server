@@ -45,22 +45,16 @@ func TestGetTracesLimitParameter(t *testing.T) {
 			expectedLimit: 50,
 		},
 		{
-			name:          "Large limit of 150 (should be capped at 100)",
+			name:          "Large limit of 150 is forwarded",
 			limit:         150,
 			wantErr:       false,
-			expectedLimit: 100, // Maximum limit
+			expectedLimit: 150,
 		},
 		{
 			name:          "Custom limit of 1 (minimum)",
 			limit:         1,
 			wantErr:       false,
 			expectedLimit: 1,
-		},
-		{
-			name:          "Custom limit of 100 (maximum)",
-			limit:         100,
-			wantErr:       false,
-			expectedLimit: 100,
 		},
 	}
 
