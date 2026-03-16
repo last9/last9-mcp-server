@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -259,6 +260,114 @@ func TestGetLogsHandlerErrorsOnNonStreamChunkResult(t *testing.T) {
 	}
 }
 
+func TestGetLogsHandlerTreatsMissingStreamsResultAsEmptyChunk(t *testing.T) {
+	requests := make([]url.Values, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.URL.Query())
+
+		switch len(requests) {
+		case 1:
+			_, _ = w.Write([]byte(`{"data":{"resultType":"streams"}}`))
+		case 2:
+			_, _ = w.Write([]byte(streamsAPIResponse(
+				[]logValue{{Timestamp: "60000000000", Message: "older"}},
+			)))
+		default:
+			t.Fatalf("unexpected extra request %d", len(requests))
+		}
+	}))
+	defer server.Close()
+
+	handler := NewGetLogsHandler(server.Client(), testLogsConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+		LogjsonQuery: []map[string]interface{}{
+			{
+				"type": "filter",
+				"query": map[string]interface{}{
+					"$contains": []interface{}{"Body", "error"},
+				},
+			},
+		},
+		StartTimeISO: "1970-01-01T00:00:00Z",
+		EndTimeISO:   "1970-01-01T00:07:00Z",
+		Limit:        3,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if len(requests) != 2 {
+		t.Fatalf("expected 2 chunk requests, got %d", len(requests))
+	}
+
+	payload := parseToolJSONResult(t, result)
+	if entryCount := countEntriesInPayload(t, payload); entryCount != 1 {
+		t.Fatalf("expected 1 merged log entry in payload, got %d", entryCount)
+	}
+}
+
+func TestGetLogsHandlerReturnsPartialResultsAfterLaterChunkParseError(t *testing.T) {
+	requests := make([]url.Values, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.URL.Query())
+
+		switch len(requests) {
+		case 1:
+			_, _ = w.Write([]byte(streamsAPIResponse(
+				[]logValue{{Timestamp: "780000000000", Message: "latest"}, {Timestamp: "660000000000", Message: "recent"}},
+			)))
+		case 2:
+			_, _ = w.Write([]byte(streamsAPIResponse(
+				[]logValue{{Timestamp: "360000000000", Message: "older"}},
+			)))
+		case 3:
+			_, _ = w.Write([]byte(`{"data":{"resultType":"streams","result":{}}}`))
+		default:
+			t.Fatalf("unexpected extra request %d", len(requests))
+		}
+	}))
+	defer server.Close()
+
+	handler := NewGetLogsHandler(server.Client(), testLogsConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+		LogjsonQuery: []map[string]interface{}{
+			{
+				"type": "filter",
+				"query": map[string]interface{}{
+					"$contains": []interface{}{"Body", "error"},
+				},
+			},
+		},
+		StartTimeISO: "1970-01-01T00:00:00Z",
+		EndTimeISO:   "1970-01-01T00:13:00Z",
+		Limit:        10,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if len(requests) != 3 {
+		t.Fatalf("expected 3 chunk requests, got %d", len(requests))
+	}
+
+	payload := parseToolJSONResult(t, result)
+	if entryCount := countEntriesInPayload(t, payload); entryCount != 3 {
+		t.Fatalf("expected 3 merged log entries in payload, got %d", entryCount)
+	}
+
+	meta, ok := payload[partialResultMetadataKey].(map[string]any)
+	if !ok {
+		t.Fatalf("expected partial metadata in payload, got %#v", payload)
+	}
+	if partial, ok := meta["partial_result"].(bool); !ok || !partial {
+		t.Fatalf("expected partial_result=true, got %#v", meta["partial_result"])
+	}
+	warning, ok := meta["warning"].(string)
+	if !ok || !strings.Contains(warning, "chunk 3/3 failed to parse") {
+		t.Fatalf("expected parse warning in metadata, got %#v", meta["warning"])
+	}
+}
+
 func TestFetchServiceLogsChunksAndHonorsEntryLimit(t *testing.T) {
 	requests := make([]url.Values, 0)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -316,6 +425,62 @@ func TestFetchServiceLogsChunksAndHonorsEntryLimit(t *testing.T) {
 	}
 	if response.Logs[2].Message != "older" {
 		t.Fatalf("expected final retained log to be trimmed to 'older', got %#v", response.Logs[2])
+	}
+}
+
+func TestFetchServiceLogsReturnsPartialResultsAfterLaterChunkError(t *testing.T) {
+	requests := make([]url.Values, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.URL.Query())
+
+		switch len(requests) {
+		case 1:
+			_, _ = w.Write([]byte(streamsAPIResponse(
+				[]logValue{{Timestamp: "780000000000", Message: "latest"}, {Timestamp: "660000000000", Message: "recent"}},
+			)))
+		case 2:
+			_, _ = w.Write([]byte(streamsAPIResponse(
+				[]logValue{{Timestamp: "360000000000", Message: "older"}},
+			)))
+		default:
+			http.Error(w, "backend blew up", http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+
+	startTime := time.Unix(0, 0).UTC()
+	endTime := startTime.Add(31 * time.Minute)
+
+	response, err := fetchServiceLogs(
+		context.Background(),
+		server.Client(),
+		testLogsConfig(server.URL),
+		"api",
+		startTime,
+		endTime,
+		10,
+		nil,
+		nil,
+		"",
+	)
+	if err != nil {
+		t.Fatalf("fetchServiceLogs returned error: %v", err)
+	}
+
+	if len(requests) != 3 {
+		t.Fatalf("expected 3 chunk requests, got %d", len(requests))
+	}
+	if response.Count != 3 {
+		t.Fatalf("expected count=3, got %d", response.Count)
+	}
+	if len(response.Logs) != 3 {
+		t.Fatalf("expected 3 logs, got %d", len(response.Logs))
+	}
+	if !response.PartialResult {
+		t.Fatalf("expected partial result flag, got %#v", response)
+	}
+	if !strings.Contains(response.Warning, "chunk 3/") || !strings.Contains(response.Warning, "failed") {
+		t.Fatalf("expected partial warning, got %q", response.Warning)
 	}
 }
 

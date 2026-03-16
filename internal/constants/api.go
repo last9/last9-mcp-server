@@ -1,5 +1,7 @@
 package constants
 
+import "time"
+
 // API Endpoints
 const (
 	// Traces API endpoints
@@ -25,6 +27,9 @@ const (
 
 	// API Base URL
 	APIBaseHost = "app.last9.io"
+
+	// DefaultHTTPTimeout is the fixed timeout used for outbound API calls and HTTP server read/write operations.
+	DefaultHTTPTimeout = 3 * time.Minute
 )
 
 // HTTP Headers

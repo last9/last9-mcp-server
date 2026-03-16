@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
@@ -67,8 +68,8 @@ func (h *HTTPServer) Start() error {
 	httpServer := &http.Server{
 		Addr:         url,
 		Handler:      mux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		ReadTimeout:  constants.DefaultHTTPTimeout,
+		WriteTimeout: constants.DefaultHTTPTimeout,
 		IdleTimeout:  60 * time.Second,
 	}
 

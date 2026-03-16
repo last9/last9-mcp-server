@@ -28,8 +28,6 @@ const (
 	MaxTimeRangeHours = 336
 	// DefaultLookbackMinutes is the default lookback time in minutes (1 hour)
 	DefaultLookbackMinutes = 60
-	// DefaultHTTPTimeout is the default HTTP client timeout
-	DefaultHTTPTimeout = 30 * time.Second
 	// TokenRefreshBuffer is the percentage of token lifetime to refresh before expiry (50%)
 	TokenRefreshBufferPercent = 50
 )
@@ -460,7 +458,7 @@ func PopulateAPICfg(cfg *models.Config) error {
 	}
 	cfg.ActionURL = actionURL
 
-	client := last9mcp.WithHTTPTracing(&http.Client{Timeout: 30 * time.Second})
+	client := last9mcp.WithHTTPTracing(&http.Client{Timeout: constants.DefaultHTTPTimeout})
 
 	// Use configured API host or default
 	apiHost := cfg.APIHost
