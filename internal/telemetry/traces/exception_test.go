@@ -57,11 +57,8 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 			if !strings.Contains(query, "exception_type!=''") {
 				t.Fatalf("exception_type guard missing from instant query: %s", query)
 			}
-			if !strings.Contains(query, "sum by (exception_type, service_name, span_name, span_kind)") {
+			if !strings.Contains(query, "sum by (exception_type, service_name, span_name, span_kind, env)") {
 				t.Fatalf("instant query is missing expected grouping labels: %s", query)
-			}
-			if strings.Contains(query, "sum by (exception_type, service_name, span_name, span_kind, env)") {
-				t.Fatalf("instant query should not include env in grouping labels: %s", query)
 			}
 			if !strings.Contains(query, "[30m]") {
 				t.Fatalf("expected 30m range selector in instant query: %s", query)
@@ -171,11 +168,8 @@ func TestGetExceptionsHandler_UsesDashboardShapeForEnvOnlyFilters(t *testing.T) 
 			}
 
 			query := fmt.Sprintf("%v", reqBody["query"])
-			if !strings.Contains(query, "sum by (exception_type, service_name, span_name, span_kind)") {
+			if !strings.Contains(query, "sum by (exception_type, service_name, span_name, span_kind, env)") {
 				t.Fatalf("expected frontend grouping labels, got: %s", query)
-			}
-			if strings.Contains(query, "span_kind, env)") {
-				t.Fatalf("query should not include env in grouping labels: %s", query)
 			}
 			if !strings.Contains(query, "trace_endpoint_count{env=~'alpha', exception_type!=''}[60m]") {
 				t.Fatalf("expected env-only selector for endpoint count, got: %s", query)
