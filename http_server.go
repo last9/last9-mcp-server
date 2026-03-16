@@ -69,7 +69,7 @@ func (h *HTTPServer) Start() error {
 		Addr:         url,
 		Handler:      mux,
 		ReadTimeout:  constants.DefaultHTTPTimeout,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: constants.DefaultHTTPTimeout,
 		IdleTimeout:  60 * time.Second,
 	}
 
