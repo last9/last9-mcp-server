@@ -331,9 +331,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 
 func annotatePartialGetLogsResponse(response map[string]interface{}, err error, totalChunks, returnedEntries int) {
 	response[partialResultMetadataKey] = map[string]interface{}{
-		"partial_result":  true,
-		"warning":         fmt.Sprintf("Returning partial results: %v", err),
-		"total_chunks":    totalChunks,
+		"partial_result":   true,
+		"warning":          fmt.Sprintf("Returning partial results: %v", err),
+		"total_chunks":     totalChunks,
 		"returned_entries": returnedEntries,
 	}
 }
