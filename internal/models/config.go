@@ -2,6 +2,8 @@ package models
 
 import "last9-mcp/internal/auth"
 
+const DefaultMaxGetLogsEntries = 50000
+
 // Config holds the server configuration parameters
 type Config struct {
 	// Last9 connection settings
@@ -9,8 +11,9 @@ type Config struct {
 	Region       string // AWS region (e.g., us-east-1, ap-south-1)
 
 	// Rate limiting configuration
-	RequestRateLimit float64 // Maximum requests per second
-	RequestRateBurst int     // Maximum burst capacity for requests
+	RequestRateLimit  float64 // Maximum requests per second
+	RequestRateBurst  int     // Maximum burst capacity for requests
+	MaxGetLogsEntries int     // Maximum number of entries returned by chunked raw get_logs requests
 
 	// HTTP server configuration
 	HTTPMode bool   // Enable HTTP server mode instead of STDIO

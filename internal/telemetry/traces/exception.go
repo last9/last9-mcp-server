@@ -39,7 +39,7 @@ type exceptionAggregate struct {
 
 // GetExceptionsArgs defines the input structure for getting exceptions
 type GetExceptionsArgs struct {
-	Limit                 float64 `json:"limit,omitempty" jsonschema:"Maximum number of exceptions to return (default: 20, range: 1-1000)"`
+	Limit                 float64 `json:"limit,omitempty" jsonschema:"Maximum number of exceptions to return (optional, default: 20)"`
 	LookbackMinutes       float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time (default: 60, range: 1-10080)"`
 	StartTimeISO          string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
 	EndTimeISO            string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
@@ -52,14 +52,11 @@ type GetExceptionsArgs struct {
 func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetExceptionsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetExceptionsArgs) (*mcp.CallToolResult, any, error) {
 		limit := 20
-		if args.Limit != 0 {
+		if args.Limit >= 1 {
 			limit = int(args.Limit)
 		}
 		if limit <= 0 {
 			limit = 20
-		}
-		if limit > 100 {
-			limit = 100 // Maximum limit for trace queries
 		}
 
 		lookbackMinutes := 60

@@ -24,6 +24,7 @@ type ServiceLogsParams struct {
 	Service         string
 	StartTime       int64 // Unix timestamp in milliseconds
 	EndTime         int64 // Unix timestamp in milliseconds
+	Limit           int
 	Region          string
 	SeverityFilters []string // Optional regex patterns for severity filtering
 	BodyFilters     []string // Optional regex patterns for body filtering
@@ -35,6 +36,7 @@ func createServiceLogsParams(request ServiceLogsAPIRequest, region string) Servi
 		Service:         request.Service,
 		StartTime:       request.StartTime,
 		EndTime:         request.EndTime,
+		Limit:           request.Limit,
 		Region:          region,
 		SeverityFilters: request.SeverityFilters,
 		BodyFilters:     request.BodyFilters,
@@ -87,19 +89,21 @@ type ServiceLogsRequest struct {
 // ServiceLogsAPIRequest contains all parameters needed for service logs API calls
 type ServiceLogsAPIRequest struct {
 	Service         string
-	StartTime       int64    // Unix timestamp in milliseconds
-	EndTime         int64    // Unix timestamp in milliseconds
+	StartTime       int64 // Unix timestamp in milliseconds
+	EndTime         int64 // Unix timestamp in milliseconds
+	Limit           int
 	SeverityFilters []string // Optional regex patterns for severity filtering
 	BodyFilters     []string // Optional regex patterns for body filtering
 	Index           string   // Optional log index parameter for logs queries
 }
 
 // CreateServiceLogsAPIRequest creates a new service logs API request with default options
-func CreateServiceLogsAPIRequest(service string, startTime, endTime int64, severityFilters []string, bodyFilters []string, index string) ServiceLogsAPIRequest {
+func CreateServiceLogsAPIRequest(service string, startTime, endTime int64, limit int, severityFilters []string, bodyFilters []string, index string) ServiceLogsAPIRequest {
 	return ServiceLogsAPIRequest{
 		Service:         service,
 		StartTime:       startTime,
 		EndTime:         endTime,
+		Limit:           limit,
 		SeverityFilters: severityFilters,
 		BodyFilters:     bodyFilters,
 		Index:           index,
@@ -182,6 +186,9 @@ func buildServiceLogsURL(apiBaseURL string, params ServiceLogsParams) (string, e
 	queryParams.Add("start", fmt.Sprintf("%d", params.StartTime/1000)) // Convert to seconds
 	queryParams.Add("end", fmt.Sprintf("%d", params.EndTime/1000))     // Convert to seconds
 	queryParams.Add("region", params.Region)
+	if params.Limit > 0 {
+		queryParams.Add("limit", fmt.Sprintf("%d", params.Limit))
+	}
 
 	normalizedIndex, err := NormalizeLogIndex(params.Index)
 	if err != nil {
