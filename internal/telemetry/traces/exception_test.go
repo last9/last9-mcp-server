@@ -48,7 +48,7 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 			if !strings.Contains(query, "service_name=~'checkout'") {
 				t.Fatalf("service_name filter missing from instant query: %s", query)
 			}
-			if !strings.Contains(query, "span_name=~'POST \\/orders'") {
+			if !strings.Contains(query, "span_name=~'POST \\\\/orders'") {
 				t.Fatalf("span_name filter missing from instant query: %s", query)
 			}
 			if !strings.Contains(query, "env=~'prod'") {
@@ -57,8 +57,11 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 			if !strings.Contains(query, "exception_type!=''") {
 				t.Fatalf("exception_type guard missing from instant query: %s", query)
 			}
-			if !strings.Contains(query, "sum by (exception_type, service_name, span_name, span_kind, env)") {
-				t.Fatalf("instant query is missing env in grouping labels: %s", query)
+			if !strings.Contains(query, "sum by (exception_type, service_name, span_name, span_kind)") {
+				t.Fatalf("instant query is missing expected grouping labels: %s", query)
+			}
+			if strings.Contains(query, "sum by (exception_type, service_name, span_name, span_kind, env)") {
+				t.Fatalf("instant query should not include env in grouping labels: %s", query)
 			}
 			if !strings.Contains(query, "[30m]") {
 				t.Fatalf("expected 30m range selector in instant query: %s", query)
@@ -155,6 +158,138 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 	}
 }
 
+func TestGetExceptionsHandler_UsesDashboardShapeForEnvOnlyFilters(t *testing.T) {
+	endTime := time.Date(2026, 1, 20, 12, 0, 0, 0, time.UTC)
+	startTime := endTime.Add(-60 * time.Minute)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case constants.EndpointPromQueryInstant:
+			var reqBody map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+				t.Fatalf("failed to decode instant request body: %v", err)
+			}
+
+			query := fmt.Sprintf("%v", reqBody["query"])
+			if !strings.Contains(query, "sum by (exception_type, service_name, span_name, span_kind)") {
+				t.Fatalf("expected frontend grouping labels, got: %s", query)
+			}
+			if strings.Contains(query, "span_kind, env)") {
+				t.Fatalf("query should not include env in grouping labels: %s", query)
+			}
+			if !strings.Contains(query, "trace_endpoint_count{env=~'alpha', exception_type!=''}[60m]") {
+				t.Fatalf("expected env-only selector for endpoint count, got: %s", query)
+			}
+			if !strings.Contains(query, "trace_client_count{env=~'alpha', exception_type!=''}[60m]") {
+				t.Fatalf("expected env-only selector for client count, got: %s", query)
+			}
+			if !strings.Contains(query, "trace_internal_count{env=~'alpha', exception_type!=''}[60m]") {
+				t.Fatalf("expected env-only selector for internal count, got: %s", query)
+			}
+
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, `[{"metric":{"exception_type":"IOException","service_name":"api","span_name":"GET /health","span_kind":"SPAN_KIND_SERVER"},"value":[1737374400,"5"]}]`)
+
+		case constants.EndpointPromQuery:
+			t.Fatalf("did not expect range query")
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL:         server.URL,
+		PrometheusReadURL:  "https://prom.example.com",
+		PrometheusUsername: "prom-user",
+		PrometheusPassword: "prom-pass",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-access-token",
+			ExpiresAt:   time.Now().Add(24 * time.Hour),
+		},
+	}
+
+	handler := NewGetExceptionsHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetExceptionsArgs{
+		StartTimeISO:          startTime.Format(time.RFC3339),
+		EndTimeISO:            endTime.Format(time.RFC3339),
+		DeploymentEnvironment: "alpha",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	text := utils.GetTextContent(t, result)
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(text), &payload); err != nil {
+		t.Fatalf("failed to decode tool response: %v", err)
+	}
+
+	exceptions, ok := payload["exceptions"].([]any)
+	if !ok || len(exceptions) != 1 {
+		t.Fatalf("expected one exception in response, got: %v", payload["exceptions"])
+	}
+
+	first := exceptions[0].(map[string]any)
+	if first["deployment_environment"] != "alpha" {
+		t.Fatalf("expected deployment_environment to come from request args, got %v", first["deployment_environment"])
+	}
+}
+
+func TestGetExceptionsHandler_EscapesHyphenatedServiceNamesLikeFrontend(t *testing.T) {
+	endTime := time.Date(2026, 1, 20, 12, 0, 0, 0, time.UTC)
+	startTime := endTime.Add(-60 * time.Minute)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case constants.EndpointPromQueryInstant:
+			var reqBody map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+				t.Fatalf("failed to decode instant request body: %v", err)
+			}
+
+			query := fmt.Sprintf("%v", reqBody["query"])
+			if !strings.Contains(query, "service_name=~'last9\\\\-api'") {
+				t.Fatalf("expected frontend-style escaping for service_name, got: %s", query)
+			}
+			if !strings.Contains(query, "env=~'prod'") {
+				t.Fatalf("expected env filter in selector, got: %s", query)
+			}
+
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, `[{"metric":{"exception_type":"IOException","service_name":"last9-api","span_name":"GET /health","span_kind":"SPAN_KIND_SERVER"},"value":[1737374400,"5"]}]`)
+
+		case constants.EndpointPromQuery:
+			t.Fatalf("did not expect range query")
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL:         server.URL,
+		PrometheusReadURL:  "https://prom.example.com",
+		PrometheusUsername: "prom-user",
+		PrometheusPassword: "prom-pass",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-access-token",
+			ExpiresAt:   time.Now().Add(24 * time.Hour),
+		},
+	}
+
+	handler := NewGetExceptionsHandler(server.Client(), cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetExceptionsArgs{
+		StartTimeISO:          startTime.Format(time.RFC3339),
+		EndTimeISO:            endTime.Format(time.RFC3339),
+		ServiceName:           "last9-api",
+		DeploymentEnvironment: "prod",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+}
+
 func TestGetExceptionsHandler_DoesNotCallRangeQuery(t *testing.T) {
 	endTime := time.Date(2026, 1, 20, 12, 0, 0, 0, time.UTC)
 	startTime := endTime.Add(-4 * time.Minute)
@@ -174,6 +309,9 @@ func TestGetExceptionsHandler_DoesNotCallRangeQuery(t *testing.T) {
 
 			if strings.Contains(query, "{, exception_type!=''}") {
 				t.Fatalf("query includes malformed empty filter matcher: %s", query)
+			}
+			if strings.Contains(query, ", exception_type!=''}") {
+				t.Fatalf("query includes malformed selector prefix: %s", query)
 			}
 			if !strings.Contains(query, "trace_endpoint_count{exception_type!=''}[4m]") {
 				t.Fatalf("expected unfiltered selector with 4m window, got: %s", query)

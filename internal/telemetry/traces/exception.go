@@ -235,10 +235,11 @@ func buildExceptionBaseFilter(args GetExceptionsArgs) string {
 }
 
 func buildExceptionsPromQL(baseFilter string, rangeSelector string) string {
-	selector := "exception_type!=''"
-	if baseFilter != "" {
-		selector = fmt.Sprintf("%s, exception_type!=''", baseFilter)
+	selector := baseFilter
+	if selector != "" {
+		selector += ", "
 	}
+	selector += "exception_type!=''"
 
 	return fmt.Sprintf(`
 		sum by (exception_type, service_name, span_name, span_kind, env) (
@@ -315,9 +316,15 @@ func escapePromQLLabelValue(value string) string {
 		return value
 	}
 
-	escapedSingleQuotes := strings.ReplaceAll(value, "'", `\'`)
+	if promQLRegexSpecialChars.MatchString(value) {
+		promQLEscaped := promQLRegexSpecialChars.ReplaceAllStringFunc(value, func(match string) string {
+			return `\` + match
+		})
 
-	return promQLRegexSpecialChars.ReplaceAllStringFunc(escapedSingleQuotes, func(match string) string {
-		return `\` + match
-	})
+		// Match the frontend builder: the query is serialized to JSON before it
+		// reaches the API, so existing backslashes must be doubled here.
+		return strings.ReplaceAll(promQLEscaped, `\`, `\\`)
+	}
+
+	return value
 }
