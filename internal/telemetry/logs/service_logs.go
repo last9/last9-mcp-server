@@ -52,11 +52,13 @@ Returns a list of log entries with full details including message content, times
 
 // ServiceLogsResponse represents the response structure for service logs
 type ServiceLogsResponse struct {
-	Service   string     `json:"service"`
-	StartTime string     `json:"start_time"`
-	EndTime   string     `json:"end_time"`
-	Count     int        `json:"count"`
-	Logs      []LogEntry `json:"logs"`
+	Service       string     `json:"service"`
+	StartTime     string     `json:"start_time"`
+	EndTime       string     `json:"end_time"`
+	Count         int        `json:"count"`
+	Logs          []LogEntry `json:"logs"`
+	PartialResult bool       `json:"partial_result,omitempty"`
+	Warning       string     `json:"warning,omitempty"`
 }
 
 // LogEntry represents a single log entry
@@ -225,6 +227,7 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 	chunks := utils.GetTimeRangeChunksBackward(startTime.UnixMilli(), endTime.UnixMilli())
 	logs := make([]LogEntry, 0, limit)
 	chunkingDebug := chunkingDebugEnabled()
+	var partialErr error
 
 	if chunkingDebug {
 		log.Printf(
@@ -280,6 +283,10 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 					err,
 				)
 			}
+			if len(logs) > 0 {
+				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkIndex+1, len(chunks), err)
+				break
+			}
 			return nil, err
 		}
 
@@ -321,22 +328,39 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 	}
 
 	if chunkingDebug {
-		log.Printf(
-			"[chunking] get_service_logs chunking complete service=%q returned_entries=%d start_ms=%d end_ms=%d",
-			service,
-			len(logs),
-			startTime.UnixMilli(),
-			endTime.UnixMilli(),
-		)
+		if partialErr != nil {
+			log.Printf(
+				"[chunking] get_service_logs chunking partial service=%q returned_entries=%d start_ms=%d end_ms=%d err=%v",
+				service,
+				len(logs),
+				startTime.UnixMilli(),
+				endTime.UnixMilli(),
+				partialErr,
+			)
+		} else {
+			log.Printf(
+				"[chunking] get_service_logs chunking complete service=%q returned_entries=%d start_ms=%d end_ms=%d",
+				service,
+				len(logs),
+				startTime.UnixMilli(),
+				endTime.UnixMilli(),
+			)
+		}
 	}
 
-	return &ServiceLogsResponse{
+	response := &ServiceLogsResponse{
 		Service:   service,
 		StartTime: startTime.Format(time.RFC3339),
 		EndTime:   endTime.Format(time.RFC3339),
 		Count:     len(logs),
 		Logs:      logs,
-	}, nil
+	}
+	if partialErr != nil {
+		response.PartialResult = true
+		response.Warning = fmt.Sprintf("Returning partial results: %v", partialErr)
+	}
+
+	return response, nil
 }
 
 func fetchServiceLogsChunk(ctx context.Context, client *http.Client, cfg models.Config, service string, startTimeMs, endTimeMs int64, limit int, severityFilters []string, bodyFilters []string, index string) ([]LogEntry, error) {
@@ -381,7 +405,23 @@ func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEnt
 		return logs
 	}
 
-	result, ok := data["result"].([]any)
+	resultType, _ := data["resultType"].(string)
+	rawResult, exists := data["result"]
+	if !exists || rawResult == nil {
+		if resultType == "streams" {
+			return logs
+		}
+		if chunkingDebug {
+			log.Printf(
+				"[chunking] get_service_logs parse missing result array service=%q data=%#v",
+				service,
+				data,
+			)
+		}
+		return logs
+	}
+
+	result, ok := rawResult.([]any)
 	if !ok {
 		if chunkingDebug {
 			log.Printf(

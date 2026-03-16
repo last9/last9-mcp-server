@@ -19,6 +19,7 @@ import (
 )
 
 const defaultGetLogsLookbackMinutes = 5
+const partialResultMetadataKey = "_last9_mcp"
 
 var nonChunkedLogQueryStageTypes = []string{
 	"aggregate",
@@ -148,6 +149,7 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		baseResponse map[string]interface{}
 		mergedItems  []interface{}
 		remaining    = effectiveLimit
+		partialErr   error
 	)
 
 	for chunkIndex, chunk := range chunks {
@@ -186,6 +188,10 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 					err,
 				)
 			}
+			if baseResponse != nil {
+				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkIndex+1, len(chunks), err)
+				break
+			}
 			return nil, err
 		}
 
@@ -200,6 +206,10 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 					chunk.EndMs,
 					err,
 				)
+			}
+			if baseResponse != nil {
+				partialErr = fmt.Errorf("chunk %d/%d failed to parse: %w", chunkIndex+1, len(chunks), err)
+				break
 			}
 			return nil, err
 		}
@@ -217,6 +227,7 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		}
 
 		if resultType != "streams" {
+			err := fmt.Errorf("chunked get_logs expected streams result, got %q", resultType)
 			if chunkingDebug {
 				log.Printf(
 					"[chunking] get_logs chunking aborted due to unexpected result_type=%s after chunk=%d/%d",
@@ -225,7 +236,11 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 					len(chunks),
 				)
 			}
-			return nil, fmt.Errorf("chunked get_logs expected streams result, got %q", resultType)
+			if baseResponse != nil {
+				partialErr = fmt.Errorf("chunk %d/%d returned unexpected result_type=%q", chunkIndex+1, len(chunks), resultType)
+				break
+			}
+			return nil, err
 		}
 
 		if baseResponse == nil {
@@ -286,6 +301,20 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 
 	data["result"] = mergedItems
 	data["resultType"] = "streams"
+	if partialErr != nil {
+		annotatePartialGetLogsResponse(baseResponse, partialErr, len(chunks), countLogEntriesInResultItems(mergedItems))
+		if chunkingDebug {
+			log.Printf(
+				"[chunking] get_logs chunking partial chunks=%d returned_entries=%d start_ms=%d end_ms=%d err=%v",
+				len(chunks),
+				countLogEntriesInResultItems(mergedItems),
+				startTime,
+				endTime,
+				partialErr,
+			)
+		}
+		return baseResponse, nil
+	}
 
 	if chunkingDebug {
 		log.Printf(
@@ -298,6 +327,15 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 	}
 
 	return baseResponse, nil
+}
+
+func annotatePartialGetLogsResponse(response map[string]interface{}, err error, totalChunks, returnedEntries int) {
+	response[partialResultMetadataKey] = map[string]interface{}{
+		"partial_result":  true,
+		"warning":         fmt.Sprintf("Returning partial results: %v", err),
+		"total_chunks":    totalChunks,
+		"returned_entries": returnedEntries,
+	}
 }
 
 func effectiveGetLogsChunkLimit(cfg models.Config, requestedLimit int) int {
