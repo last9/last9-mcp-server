@@ -263,7 +263,7 @@ func GetHTTPClient() *http.Client {
 	// implement sync.Once if needed in future
 	httpClientOnce.Do(func() {
 		httpClient = last9mcp.WithHTTPTracing(&http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: constants.DefaultHTTPTimeout,
 		})
 	})
 
