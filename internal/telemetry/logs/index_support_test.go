@@ -74,7 +74,7 @@ func TestGetLogsHandler_ForwardsLimitWhenProvided(t *testing.T) {
 		{
 			name:          "uses configured max when unset",
 			limit:         0,
-			expectedLimit: "50000",
+			expectedLimit: "5000",
 		},
 	}
 
