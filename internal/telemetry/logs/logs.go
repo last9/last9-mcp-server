@@ -32,7 +32,7 @@ type GetLogsArgs struct {
 	StartTimeISO    string                   `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
 	EndTimeISO      string                   `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
 	LookbackMinutes int                      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 5, range: 1-20160)"`
-	Limit           int                      `json:"limit,omitempty" jsonschema:"Maximum number of rows to return (optional)"`
+	Limit           int                      `json:"limit,omitempty" jsonschema:"Maximum number of rows to return (optional, default: 5000 for chunked raw queries)"`
 	Index           string                   `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Omit this when the user did not specify an index."`
 }
 
