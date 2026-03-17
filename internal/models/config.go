@@ -3,6 +3,7 @@ package models
 import "last9-mcp/internal/auth"
 
 const DefaultMaxGetLogsEntries = 50000
+const DefaultMaxGetTracesEntries = 2000
 
 // Config holds the server configuration parameters
 type Config struct {
@@ -14,6 +15,7 @@ type Config struct {
 	RequestRateLimit  float64 // Maximum requests per second
 	RequestRateBurst  int     // Maximum burst capacity for requests
 	MaxGetLogsEntries int     // Maximum number of entries returned by chunked raw get_logs requests
+	MaxGetTracesEntries int   // Maximum number of traces returned by chunked get_traces requests
 
 	// HTTP server configuration
 	HTTPMode bool   // Enable HTTP server mode instead of STDIO
