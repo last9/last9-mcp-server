@@ -1,11 +1,13 @@
 package traces
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
-	"fmt"
 	"net/url"
 	"strings"
 	"testing"
@@ -151,6 +153,64 @@ func TestGetTracesHandlerCapsAtConfiguredMax(t *testing.T) {
 	}
 }
 
+func TestGetTracesHandlerEmitsChunkingDebugLogs(t *testing.T) {
+	t.Setenv(tracesChunkingDebugEnvVar, "true")
+
+	var logBuffer bytes.Buffer
+	originalWriter := log.Writer()
+	originalFlags := log.Flags()
+	log.SetOutput(&logBuffer)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(originalWriter)
+		log.SetFlags(originalFlags)
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("start") + "-" + r.URL.Query().Get("end") {
+		case "120-420":
+			w.Write([]byte(traceAPIResponse(2)))
+		case "0-120":
+			w.Write([]byte(traceAPIResponse(2)))
+		default:
+			t.Fatalf("unexpected chunk request %q", r.URL.RawQuery)
+		}
+	}))
+	defer server.Close()
+
+	cfg := testChunkTracesConfig(server.URL)
+	cfg.MaxGetTracesEntries = 3
+
+	handler := NewGetTracesHandler(server.Client(), cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+		TracejsonQuery: []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{"$exists": []string{"ServiceName"}}},
+		},
+		StartTimeISO: "1970-01-01T00:00:00Z",
+		EndTimeISO:   "1970-01-01T00:07:00Z",
+		Limit:        100,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	output := logBuffer.String()
+	for _, want := range []string{
+		"[chunking] get_traces chunking enabled chunks=2 start_ms=0 end_ms=420000 requested_limit=100 effective_limit=3",
+		"[chunking] get_traces requested limit capped requested_limit=100 configured_max=3",
+		"[chunking] get_traces chunk request chunk=1/2 start_ms=120000 end_ms=420000 chunk_limit=3 remaining_limit=3",
+		"[chunking] get_traces chunk response chunk=1/2 returned_traces=2",
+		"[chunking] get_traces chunk merged chunk=1/2 merged_traces=2 remaining_limit=1",
+		"[chunking] get_traces chunk request chunk=2/2 start_ms=0 end_ms=120000 chunk_limit=1 remaining_limit=1",
+		"[chunking] get_traces chunk trim chunk=2/2 kept_traces=1 dropped_traces=1",
+		"[chunking] get_traces chunking complete chunks=2 returned_traces=3 start_ms=0 end_ms=420000",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected debug log %q in output:\n%s", want, output)
+		}
+	}
+}
+
 func TestGetTracesHandlerEmptyChunks(t *testing.T) {
 	requests := make([]url.Values, 0)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -255,10 +315,10 @@ func TestEffectiveGetTracesLimit(t *testing.T) {
 		want      int
 	}{
 		{
-			name:      "no limit requested uses default max",
+			name:      "no limit requested uses tool default",
 			cfg:       models.Config{},
 			requested: 0,
-			want:      models.DefaultMaxGetTracesEntries,
+			want:      defaultGetTracesLimit,
 		},
 		{
 			name:      "limit below max is honoured",
@@ -273,10 +333,16 @@ func TestEffectiveGetTracesLimit(t *testing.T) {
 			want:      models.DefaultMaxGetTracesEntries,
 		},
 		{
-			name:      "configured max overrides default",
+			name:      "configured max caps tool default when smaller",
+			cfg:       models.Config{MaxGetTracesEntries: 10},
+			requested: 0,
+			want:      10,
+		},
+		{
+			name:      "configured max above tool default keeps tool default",
 			cfg:       models.Config{MaxGetTracesEntries: 100},
 			requested: 0,
-			want:      100,
+			want:      defaultGetTracesLimit,
 		},
 		{
 			name:      "request above configured max is capped",

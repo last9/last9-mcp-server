@@ -30,7 +30,7 @@ func TestGetTracesLimitParameter(t *testing.T) {
 			name:          "Default limit (no limit specified)",
 			limit:         0, // 0 means not specified
 			wantErr:       false,
-			expectedLimit: 20, // Default limit
+			expectedLimit: defaultGetTracesLimit,
 		},
 		{
 			name:          "Custom limit of 10",
@@ -109,7 +109,8 @@ func TestGetTracesLimitParameter(t *testing.T) {
 
 			handler := NewGetTracesHandler(server.Client(), cfg)
 
-			// Build test arguments
+			// Build test arguments with a ≤5-minute window so chunking produces a single chunk
+			now := time.Now().UTC()
 			args := GetTracesArgs{
 				TracejsonQuery: []map[string]interface{}{
 					{
@@ -119,7 +120,8 @@ func TestGetTracesLimitParameter(t *testing.T) {
 						},
 					},
 				},
-				LookbackMinutes: 60,
+				StartTimeISO: now.Add(-5 * time.Minute).Format(time.RFC3339),
+				EndTimeISO:   now.Format(time.RFC3339),
 			}
 
 			// Set limit if specified
@@ -327,7 +329,7 @@ func parseLimit(limitStr string) (int, error) {
 // Helper function to create a mock trace response with a specific number of traces
 func createMockTraceResponse(numTraces int) string {
 	traces := []map[string]interface{}{}
-	for i := 0; i < numTraces && i < 10; i++ { // Cap at 10 for mock response
+	for i := 0; i < numTraces; i++ {
 		traces = append(traces, map[string]interface{}{
 			"TraceId":     fmt.Sprintf("trace-%d", i),
 			"SpanId":      fmt.Sprintf("span-%d", i),
