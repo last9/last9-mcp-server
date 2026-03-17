@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"time"
 
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
@@ -52,6 +54,8 @@ type GetTracesArgs struct {
 	Limit           int                      `json:"limit,omitempty" jsonschema:"Maximum number of traces to return (optional, default: 20)"`
 }
 
+const partialResultMetadataKey = "_last9_mcp"
+
 // NewGetTracesHandler creates a handler for getting traces using tracejson_query parameter
 func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTracesArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetTracesArgs) (*mcp.CallToolResult, any, error) {
@@ -76,28 +80,9 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 		return nil, fmt.Errorf("failed to parse time range: %v", err)
 	}
 
-	// Use util to execute the query
-	resp, err := utils.MakeTracesJSONQueryAPI(ctx, client, cfg, tracejsonQuery, startTime, endTime, args.Limit)
+	result, err := fetchTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startTime, endTime, args)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call trace JSON query API: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		// Limit body size in error message to avoid huge HTML responses
-		bodyStr := string(body)
-		if len(bodyStr) > 100 {
-			bodyStr = bodyStr[:100] + "... (truncated)"
-		}
-		// Include status code in error message for better test detection
-		return nil, fmt.Errorf("traces API request failed with status %d (endpoint: %s/cat/api/traces/v2/query_range/json). Response: %s", resp.StatusCode, cfg.APIBaseURL, bodyStr)
-	}
-
-	// Parse response
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+		return nil, err
 	}
 
 	// Build deep link URL
@@ -113,6 +98,202 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 			},
 		},
 	}, nil
+}
+
+// fetchTraceJSONQuery executes the trace query, chunking the time range into 5-minute windows
+// and merging results newest-first — mirroring the logs chunking approach.
+func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, tracejsonQuery interface{}, startMs, endMs int64, args GetTracesArgs) (map[string]interface{}, error) {
+	debug := chunkingDebugEnabled()
+
+	chunks := utils.GetTimeRangeChunksBackward(startMs, endMs)
+	if len(chunks) == 0 {
+		if debug {
+			log.Printf("[chunking] get_traces produced no chunks start_ms=%d end_ms=%d limit=%d", startMs, endMs, args.Limit)
+		}
+		return emptyTracesResponse(), nil
+	}
+
+	effectiveLimit := effectiveGetTracesLimit(cfg, args.Limit)
+
+	if debug {
+		log.Printf(
+			"[chunking] get_traces chunking enabled chunks=%d start_ms=%d end_ms=%d requested_limit=%d effective_limit=%d",
+			len(chunks), startMs, endMs, args.Limit, effectiveLimit,
+		)
+	}
+
+	var (
+		baseResponse map[string]interface{}
+		mergedItems  []interface{}
+		remaining    = effectiveLimit
+		partialErr   error
+	)
+
+	for chunkIndex, chunk := range chunks {
+		if debug {
+			log.Printf(
+				"[chunking] get_traces chunk request chunk=%d/%d start_ms=%d end_ms=%d chunk_limit=%d remaining=%d",
+				chunkIndex+1, len(chunks), chunk.StartMs, chunk.EndMs, remaining, remaining,
+			)
+		}
+
+		chunkResp, err := executeTraceJSONQuery(ctx, client, cfg, tracejsonQuery, chunk.StartMs, chunk.EndMs, remaining)
+		if err != nil {
+			if debug {
+				log.Printf("[chunking] get_traces chunk error chunk=%d/%d err=%v", chunkIndex+1, len(chunks), err)
+			}
+			if baseResponse != nil {
+				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkIndex+1, len(chunks), err)
+				break
+			}
+			return nil, err
+		}
+
+		items, err := extractTraceResultItems(chunkResp)
+		if err != nil {
+			if debug {
+				log.Printf("[chunking] get_traces chunk parse error chunk=%d/%d err=%v", chunkIndex+1, len(chunks), err)
+			}
+			if baseResponse != nil {
+				partialErr = fmt.Errorf("chunk %d/%d failed to parse: %w", chunkIndex+1, len(chunks), err)
+				break
+			}
+			return nil, err
+		}
+
+		if debug {
+			log.Printf(
+				"[chunking] get_traces chunk response chunk=%d/%d items=%d",
+				chunkIndex+1, len(chunks), len(items),
+			)
+		}
+
+		if baseResponse == nil {
+			baseResponse = chunkResp
+		}
+
+		if len(items) == 0 {
+			continue
+		}
+
+		// Trim to remaining budget
+		if len(items) > remaining {
+			items = items[:remaining]
+		}
+		remaining -= len(items)
+		mergedItems = append(mergedItems, items...)
+
+		if debug {
+			log.Printf(
+				"[chunking] get_traces chunk merged chunk=%d/%d total_items=%d remaining=%d",
+				chunkIndex+1, len(chunks), len(mergedItems), remaining,
+			)
+		}
+
+		if remaining <= 0 {
+			break
+		}
+	}
+
+	if baseResponse == nil {
+		return emptyTracesResponse(), nil
+	}
+
+	data, ok := baseResponse["data"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("traces API response missing data object")
+	}
+	data["result"] = mergedItems
+
+	if partialErr != nil {
+		baseResponse[partialResultMetadataKey] = map[string]interface{}{
+			"partial_result":  true,
+			"warning":         fmt.Sprintf("Returning partial results: %v", partialErr),
+			"total_chunks":    len(chunks),
+			"returned_traces": len(mergedItems),
+		}
+		if debug {
+			log.Printf(
+				"[chunking] get_traces chunking partial chunks=%d returned_traces=%d err=%v",
+				len(chunks), len(mergedItems), partialErr,
+			)
+		}
+	} else if debug {
+		log.Printf(
+			"[chunking] get_traces chunking complete chunks=%d returned_traces=%d start_ms=%d end_ms=%d",
+			len(chunks), len(mergedItems), startMs, endMs,
+		)
+	}
+
+	return baseResponse, nil
+}
+
+// executeTraceJSONQuery performs a single API call for a given time window.
+func executeTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, tracejsonQuery interface{}, startMs, endMs int64, limit int) (map[string]interface{}, error) {
+	resp, err := utils.MakeTracesJSONQueryAPI(ctx, client, cfg, tracejsonQuery, startMs, endMs, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call trace JSON query API: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		bodyStr := string(body)
+		if len(bodyStr) > 100 {
+			bodyStr = bodyStr[:100] + "... (truncated)"
+		}
+		return nil, fmt.Errorf("traces API request failed with status %d (endpoint: %s/cat/api/traces/v2/query_range/json). Response: %s",
+			resp.StatusCode, cfg.APIBaseURL, bodyStr)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %v", err)
+	}
+	return result, nil
+}
+
+// extractTraceResultItems pulls the result array from a traces API response.
+func extractTraceResultItems(result map[string]interface{}) ([]interface{}, error) {
+	data, ok := result["data"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("traces API response missing data object")
+	}
+
+	rawItems, exists := data["result"]
+	if !exists || rawItems == nil {
+		return []interface{}{}, nil
+	}
+
+	items, ok := rawItems.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("traces API response result is not an array")
+	}
+	return items, nil
+}
+
+// effectiveGetTracesLimit returns the capped limit to use across all chunks.
+func effectiveGetTracesLimit(cfg models.Config, requestedLimit int) int {
+	maxEntries := cfg.MaxGetTracesEntries
+	if maxEntries <= 0 {
+		maxEntries = models.DefaultMaxGetTracesEntries
+	}
+	if requestedLimit <= 0 {
+		return maxEntries
+	}
+	if requestedLimit > maxEntries {
+		return maxEntries
+	}
+	return requestedLimit
+}
+
+// emptyTracesResponse returns a minimal valid empty traces response.
+func emptyTracesResponse() map[string]interface{} {
+	return map[string]interface{}{
+		"data": map[string]interface{}{
+			"result": []interface{}{},
+		},
+	}
 }
 
 // parseTimeRangeFromArgs extracts start and end times from GetTracesArgs
@@ -142,4 +323,24 @@ func formatJSON(data interface{}) string {
 		return fmt.Sprintf("%v", data)
 	}
 	return string(bytes)
+}
+
+// parseTimeRangeFromArgsAt is the testable version of parseTimeRangeFromArgs
+func parseTimeRangeFromArgsAt(args GetTracesArgs, now time.Time) (int64, int64, error) {
+	params := make(map[string]interface{})
+	if args.LookbackMinutes > 0 {
+		params["lookback_minutes"] = args.LookbackMinutes
+	}
+	if args.StartTimeISO != "" {
+		params["start_time_iso"] = args.StartTimeISO
+	}
+	if args.EndTimeISO != "" {
+		params["end_time_iso"] = args.EndTimeISO
+	}
+
+	startTime, endTime, err := utils.GetTimeRangeAt(params, utils.DefaultLookbackMinutes, now)
+	if err != nil {
+		return 0, 0, err
+	}
+	return startTime.UnixMilli(), endTime.UnixMilli(), nil
 }
