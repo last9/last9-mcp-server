@@ -391,7 +391,7 @@ Parameters:
 - `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z).
 - `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z).
 - `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Range: 1–20160 (14 days).
-- `limit` (integer, optional): Maximum number of traces to return. Default: 20.
+- `limit` (integer, optional): Maximum number of traces to return. Default: 2000.
   This tool supports complex queries with multiple filter conditions, aggregations, and custom processing pipelines for advanced trace analysis.
 
 ### get_service_traces

@@ -318,7 +318,7 @@ func TestEffectiveGetTracesLimit(t *testing.T) {
 			name:      "no limit requested uses tool default",
 			cfg:       models.Config{},
 			requested: 0,
-			want:      defaultGetTracesLimit,
+			want:      models.DefaultMaxGetTracesEntries,
 		},
 		{
 			name:      "limit below max is honoured",
@@ -333,16 +333,10 @@ func TestEffectiveGetTracesLimit(t *testing.T) {
 			want:      models.DefaultMaxGetTracesEntries,
 		},
 		{
-			name:      "configured max caps tool default when smaller",
+			name:      "configured max overrides default",
 			cfg:       models.Config{MaxGetTracesEntries: 10},
 			requested: 0,
 			want:      10,
-		},
-		{
-			name:      "configured max above tool default keeps tool default",
-			cfg:       models.Config{MaxGetTracesEntries: 100},
-			requested: 0,
-			want:      defaultGetTracesLimit,
 		},
 		{
 			name:      "request above configured max is capped",

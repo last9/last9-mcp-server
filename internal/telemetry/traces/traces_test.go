@@ -30,7 +30,7 @@ func TestGetTracesLimitParameter(t *testing.T) {
 			name:          "Default limit (no limit specified)",
 			limit:         0, // 0 means not specified
 			wantErr:       false,
-			expectedLimit: defaultGetTracesLimit,
+			expectedLimit: models.DefaultMaxGetTracesEntries,
 		},
 		{
 			name:          "Custom limit of 10",
