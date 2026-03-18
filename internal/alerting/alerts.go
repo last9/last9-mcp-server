@@ -89,8 +89,22 @@ type AlertInstance struct {
 
 const GetAlertConfigDescription = `
 	Get alert configurations (alert rules) from Last9.
-	Returns all configured alert rules including their conditions, labels, and annotations.
+	Returns configured alert rules and supports both typed filters and free-text search.
 	Uses the datasource configured in the server config (or default if not specified).
+
+	Optional filters:
+	- search_term: Case-insensitive substring search across rule name, external ref, primary indicator, alert group name/type, data source name, and tags
+	- rule_name: Case-insensitive substring match on rule name
+	- severity: Exact case-insensitive match
+	- rule_type: Exact case-insensitive match on derived rule type ("static" or "anomaly")
+	- algorithm: Exact case-insensitive match
+	- state: Exact case-insensitive match
+	- entity_ids: Exact match on entity IDs
+	- external_ref: Case-insensitive substring match on the rule external ref
+	- alert_group_name: Case-insensitive substring match on alert group name
+	- alert_group_type: Case-insensitive substring match on alert group type
+	- data_source_name: Case-insensitive substring match on alert group data source name
+	- tags: Array of case-insensitive substring matches; all provided tags must match
 	
 	Each alert rule includes:
 	- id: Unique identifier for the alert rule
@@ -133,83 +147,48 @@ const GetAlertsDescription = `
 	- fingerprint: Unique fingerprint for this alert instance
 `
 
-type GetAlertConfigArgs struct{}
+type GetAlertConfigArgs struct {
+	SearchTerm     string   `json:"search_term,omitempty" jsonschema:"Case-insensitive substring search across rule fields and alert group metadata (optional)"`
+	RuleName       string   `json:"rule_name,omitempty" jsonschema:"Case-insensitive substring match on rule name (optional)"`
+	Severity       string   `json:"severity,omitempty" jsonschema:"Exact case-insensitive severity filter (optional, e.g. breach or threat)"`
+	RuleType       string   `json:"rule_type,omitempty" jsonschema:"Derived rule type filter (optional, allowed values: static or anomaly)"`
+	Algorithm      string   `json:"algorithm,omitempty" jsonschema:"Exact case-insensitive algorithm filter (optional, e.g. static_threshold)"`
+	State          string   `json:"state,omitempty" jsonschema:"Exact case-insensitive state filter (optional, e.g. active muted disabled)"`
+	EntityIDs      []string `json:"entity_ids,omitempty" jsonschema:"Exact entity IDs to include (optional)"`
+	ExternalRef    string   `json:"external_ref,omitempty" jsonschema:"Case-insensitive substring match on rule external ref (optional)"`
+	AlertGroupName string   `json:"alert_group_name,omitempty" jsonschema:"Case-insensitive substring match on alert group name (optional)"`
+	AlertGroupType string   `json:"alert_group_type,omitempty" jsonschema:"Case-insensitive substring match on alert group type (optional)"`
+	DataSourceName string   `json:"data_source_name,omitempty" jsonschema:"Case-insensitive substring match on alert group data source name (optional)"`
+	Tags           []string `json:"tags,omitempty" jsonschema:"Alert group tag filters combined with AND semantics (optional)"`
+}
 
 func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetAlertConfigArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetAlertConfigArgs) (*mcp.CallToolResult, any, error) {
-		// Build the URL for alert rules API
-		// Datasource is already configured in cfg via PopulateAPICfg
-		// If a specific datasource was set, it's already in cfg.PrometheusReadURL
-		baseURL := fmt.Sprintf("%s%s", cfg.APIBaseURL, constants.EndpointAlertRules)
-		finalURL := baseURL
+		if err := validateGetAlertConfigArgs(args); err != nil {
+			return nil, nil, err
+		}
 
-		// Create HTTP request
-		httpReq, err := http.NewRequestWithContext(ctx, "GET", finalURL, nil)
+		alertConfig, err := fetchAlertConfig(ctx, client, cfg)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create request: %w", err)
+			return nil, nil, err
 		}
 
-		// Set headers
-		httpReq.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
-		httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
+		filteredAlertConfig := filterAlertConfigByRuleFields(alertConfig, args)
 
-		// Make the request
-		resp, err := client.Do(httpReq)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to make request: %w", err)
-		}
-		defer resp.Body.Close()
-
-		// Check response status
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return nil, nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-		}
-
-		// Read response body
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read response: %w", err)
-		}
-
-		// Parse JSON response
-		var alertConfig AlertConfigResponse
-		if err := json.Unmarshal(body, &alertConfig); err != nil {
-			return nil, nil, fmt.Errorf("failed to parse response: %w", err)
-		}
-
-		// Format the response
-		formattedResponse := fmt.Sprintf("Found %d alert rules:\n\n", len(alertConfig))
-
-		for i, rule := range alertConfig {
-			formattedResponse += fmt.Sprintf("Alert Rule %d:\n", i+1)
-			formattedResponse += fmt.Sprintf("  ID: %s\n", rule.ID)
-			formattedResponse += fmt.Sprintf("  Rule Name: %s\n", rule.RuleName)
-			formattedResponse += fmt.Sprintf("  Primary Indicator: %s\n", rule.PrimaryIndicator)
-			formattedResponse += fmt.Sprintf("  State: %s\n", rule.State)
-			formattedResponse += fmt.Sprintf("  Severity: %s\n", rule.Severity)
-			formattedResponse += fmt.Sprintf("  Algorithm: %s\n", rule.Algorithm)
-			formattedResponse += fmt.Sprintf("  Entity ID: %s\n", rule.EntityID)
-
-			if rule.ErrorSince != nil {
-				errorTime := time.Unix(*rule.ErrorSince, 0).UTC().Format("2006-01-02 15:04:05 UTC")
-				formattedResponse += fmt.Sprintf("  Error Since: %s\n", errorTime)
+		if len(filteredAlertConfig) > 0 && requiresAlertGroupEntityLookup(args) {
+			entitiesByID, err := fetchAlertGroupEntities(ctx, client, cfg, args)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to fetch alert group entities: %w", err)
 			}
 
-			if len(rule.Properties) > 0 {
-				formattedResponse += "  Properties:\n"
-				for k, v := range rule.Properties {
-					formattedResponse += fmt.Sprintf("    %s: %v\n", k, v)
-				}
-			}
-
-			createdTime := time.Unix(rule.CreatedAt, 0).UTC().Format("2006-01-02 15:04:05 UTC")
-			updatedTime := time.Unix(rule.UpdatedAt, 0).UTC().Format("2006-01-02 15:04:05 UTC")
-			formattedResponse += fmt.Sprintf("  Created: %s\n", createdTime)
-			formattedResponse += fmt.Sprintf("  Updated: %s\n", updatedTime)
-			formattedResponse += fmt.Sprintf("  Group Timeseries Notifications: %v\n", rule.GroupTimeseriesNotifications)
-			formattedResponse += "\n"
+			filteredAlertConfig = filterAlertConfigByEntityFieldsAndSearch(
+				filteredAlertConfig,
+				entitiesByID,
+				args,
+			)
 		}
+
+		formattedResponse := formatAlertConfigResponse(filteredAlertConfig)
 
 		// Build deep link URL to alerting groups page
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
