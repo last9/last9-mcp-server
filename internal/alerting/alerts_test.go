@@ -22,22 +22,39 @@ func TestGetAlertConfigHandler_Integration(t *testing.T) {
 
 	handler := NewGetAlertConfigHandler(http.DefaultClient, *cfg)
 
-	ctx := context.Background()
-	req := &mcp.CallToolRequest{}
-	result, _, err := handler(ctx, req, GetAlertConfigArgs{})
-
-	if utils.CheckAPIError(t, err) {
-		return
+	tests := []struct {
+		name string
+		args GetAlertConfigArgs
+	}{
+		{
+			name: "unfiltered",
+			args: GetAlertConfigArgs{},
+		},
+		{
+			name: "filtered by rule type",
+			args: GetAlertConfigArgs{
+				RuleType: "static",
+			},
+		},
 	}
 
-	text := utils.GetTextContent(t, result)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			req := &mcp.CallToolRequest{}
+			result, _, err := handler(ctx, req, tt.args)
 
-	// Verify response structure - try to parse as JSON array
-	var alertConfig AlertConfigResponse
-	if err := json.Unmarshal([]byte(text), &alertConfig); err != nil {
-		t.Logf("Integration test successful. Response is formatted text (not JSON)")
-	} else {
-		t.Logf("Integration test successful: received %d alert rule(s)", len(alertConfig))
+			if utils.CheckAPIError(t, err) {
+				return
+			}
+
+			text := utils.GetTextContent(t, result)
+			if text == "" {
+				t.Fatal("expected non-empty response")
+			}
+
+			t.Logf("Integration test successful for %s", tt.name)
+		})
 	}
 }
 

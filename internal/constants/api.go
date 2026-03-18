@@ -24,6 +24,7 @@ const (
 	EndpointLogsSettingsRouting = "/api/v4/organizations/%s/logs_settings/routing"
 	EndpointAlertRules          = "/alert-rules"
 	EndpointAlertsMonitor       = "/alerts/monitor"
+	EndpointEntitiesList        = "/entities/list"
 
 	// API Base URL
 	APIBaseHost = "app.last9.io"

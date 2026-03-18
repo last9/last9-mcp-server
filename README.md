@@ -314,9 +314,24 @@ Parameters:
 
 ### get_alert_config
 
-Get alert configurations (alert rules) from Last9. Returns all configured alert rules including their conditions, labels, and annotations.
+Get alert configurations (alert rules) from Last9. Returns configured alert rules and supports both typed filters and free-text search.
 Parameters:
-None - This tool retrieves all available alert configurations.
+
+- `search_term` (string, optional): Case-insensitive substring search across `rule_name`, alert group `name`, alert group `type`, `data_source_name`, and tags.
+- `rule_name` (string, optional): Case-insensitive substring match on the rule name.
+- `severity` (string, optional): Exact case-insensitive match on severity.
+- `rule_type` (string, optional): Exact case-insensitive match on the derived rule type. Allowed values: `static`, `anomaly`.
+- `alert_group_name` (string, optional): Case-insensitive substring match on alert group name.
+- `alert_group_type` (string, optional): Case-insensitive substring match on alert group type.
+- `data_source_name` (string, optional): Case-insensitive substring match on alert group data source name.
+- `tags` (array of strings, optional): Case-insensitive substring matches on alert group tags. All provided tags must match.
+
+Semantics:
+
+- All provided filters combine with `AND`.
+- `search_term` also combines with the typed filters using `AND`.
+- If no filters are provided, the tool preserves the existing unfiltered behavior.
+
 Returns information about:
 
 - Alert rule ID and name
