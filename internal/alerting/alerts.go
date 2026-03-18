@@ -93,14 +93,10 @@ const GetAlertConfigDescription = `
 	Uses the datasource configured in the server config (or default if not specified).
 
 	Optional filters:
-	- search_term: Case-insensitive substring search across rule name, external ref, primary indicator, alert group name/type, data source name, and tags
+	- search_term: Case-insensitive substring search across rule name, alert group name/type, data source name, and tags
 	- rule_name: Case-insensitive substring match on rule name
 	- severity: Exact case-insensitive match
 	- rule_type: Exact case-insensitive match on derived rule type ("static" or "anomaly")
-	- algorithm: Exact case-insensitive match
-	- state: Exact case-insensitive match
-	- entity_ids: Exact match on entity IDs
-	- external_ref: Case-insensitive substring match on the rule external ref
 	- alert_group_name: Case-insensitive substring match on alert group name
 	- alert_group_type: Case-insensitive substring match on alert group type
 	- data_source_name: Case-insensitive substring match on alert group data source name
@@ -148,14 +144,10 @@ const GetAlertsDescription = `
 `
 
 type GetAlertConfigArgs struct {
-	SearchTerm     string   `json:"search_term,omitempty" jsonschema:"Case-insensitive substring search across rule fields and alert group metadata (optional)"`
+	SearchTerm     string   `json:"search_term,omitempty" jsonschema:"Case-insensitive substring search across rule name and alert group metadata (optional)"`
 	RuleName       string   `json:"rule_name,omitempty" jsonschema:"Case-insensitive substring match on rule name (optional)"`
 	Severity       string   `json:"severity,omitempty" jsonschema:"Exact case-insensitive severity filter (optional, e.g. breach or threat)"`
 	RuleType       string   `json:"rule_type,omitempty" jsonschema:"Derived rule type filter (optional, allowed values: static or anomaly)"`
-	Algorithm      string   `json:"algorithm,omitempty" jsonschema:"Exact case-insensitive algorithm filter (optional, e.g. static_threshold)"`
-	State          string   `json:"state,omitempty" jsonschema:"Exact case-insensitive state filter (optional, e.g. active muted disabled)"`
-	EntityIDs      []string `json:"entity_ids,omitempty" jsonschema:"Exact entity IDs to include (optional)"`
-	ExternalRef    string   `json:"external_ref,omitempty" jsonschema:"Case-insensitive substring match on rule external ref (optional)"`
 	AlertGroupName string   `json:"alert_group_name,omitempty" jsonschema:"Case-insensitive substring match on alert group name (optional)"`
 	AlertGroupType string   `json:"alert_group_type,omitempty" jsonschema:"Case-insensitive substring match on alert group type (optional)"`
 	DataSourceName string   `json:"data_source_name,omitempty" jsonschema:"Case-insensitive substring match on alert group data source name (optional)"`

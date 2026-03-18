@@ -317,14 +317,10 @@ Parameters:
 Get alert configurations (alert rules) from Last9. Returns configured alert rules and supports both typed filters and free-text search.
 Parameters:
 
-- `search_term` (string, optional): Case-insensitive substring search across `rule_name`, `external_ref`, `primary_indicator`, alert group `name`, alert group `type`, `data_source_name`, and tags.
+- `search_term` (string, optional): Case-insensitive substring search across `rule_name`, alert group `name`, alert group `type`, `data_source_name`, and tags.
 - `rule_name` (string, optional): Case-insensitive substring match on the rule name.
 - `severity` (string, optional): Exact case-insensitive match on severity.
 - `rule_type` (string, optional): Exact case-insensitive match on the derived rule type. Allowed values: `static`, `anomaly`.
-- `algorithm` (string, optional): Exact case-insensitive match on the rule algorithm.
-- `state` (string, optional): Exact case-insensitive match on the rule state.
-- `entity_ids` (array of strings, optional): Exact match on rule `entity_id`.
-- `external_ref` (string, optional): Case-insensitive substring match on the rule external ref.
 - `alert_group_name` (string, optional): Case-insensitive substring match on alert group name.
 - `alert_group_type` (string, optional): Case-insensitive substring match on alert group type.
 - `data_source_name` (string, optional): Case-insensitive substring match on alert group data source name.

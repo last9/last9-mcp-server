@@ -249,11 +249,6 @@ func filterAlertConfigByRuleFields(
 	alertConfig AlertConfigResponse,
 	args GetAlertConfigArgs,
 ) AlertConfigResponse {
-	entityIDs := make(map[string]struct{}, len(args.EntityIDs))
-	for _, entityID := range normalizeStringSlice(args.EntityIDs) {
-		entityIDs[entityID] = struct{}{}
-	}
-
 	filtered := make(AlertConfigResponse, 0, len(alertConfig))
 	for _, rule := range alertConfig {
 		if ruleName := strings.TrimSpace(args.RuleName); ruleName != "" && !containsFold(rule.RuleName, ruleName) {
@@ -265,24 +260,6 @@ func filterAlertConfigByRuleFields(
 		}
 
 		if ruleType := strings.TrimSpace(args.RuleType); ruleType != "" && !strings.EqualFold(alertConfigRuleType(rule), ruleType) {
-			continue
-		}
-
-		if algorithm := strings.TrimSpace(args.Algorithm); algorithm != "" && !strings.EqualFold(rule.Algorithm, algorithm) {
-			continue
-		}
-
-		if state := strings.TrimSpace(args.State); state != "" && !strings.EqualFold(rule.State, state) {
-			continue
-		}
-
-		if len(entityIDs) > 0 {
-			if _, ok := entityIDs[rule.EntityID]; !ok {
-				continue
-			}
-		}
-
-		if externalRef := strings.TrimSpace(args.ExternalRef); externalRef != "" && !containsFold(rule.ExternalRef, externalRef) {
 			continue
 		}
 
@@ -380,9 +357,7 @@ func matchesAlertConfigSearchTerm(
 	entityFound bool,
 	searchTerm string,
 ) bool {
-	if containsFold(rule.RuleName, searchTerm) ||
-		containsFold(rule.ExternalRef, searchTerm) ||
-		containsFold(rule.PrimaryIndicator, searchTerm) {
+	if containsFold(rule.RuleName, searchTerm) {
 		return true
 	}
 

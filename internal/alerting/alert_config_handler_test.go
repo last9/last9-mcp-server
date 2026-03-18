@@ -53,47 +53,11 @@ func TestGetAlertConfigHandler_RuleOnlyFilters(t *testing.T) {
 			expectedIDs: []string{"rule-1"},
 		},
 		{
-			name: "algorithm filter",
-			args: GetAlertConfigArgs{
-				Algorithm: "HIGH_SPIKE",
-			},
-			expectedIDs: []string{"rule-2"},
-		},
-		{
-			name: "state filter",
-			args: GetAlertConfigArgs{
-				State: "disabled",
-			},
-			expectedIDs: []string{"rule-3"},
-		},
-		{
 			name: "rule name substring filter",
 			args: GetAlertConfigArgs{
 				RuleName: "latency",
 			},
 			expectedIDs: []string{"rule-1"},
-		},
-		{
-			name: "entity ids filter",
-			args: GetAlertConfigArgs{
-				EntityIDs: []string{"entity-2", "entity-3"},
-			},
-			expectedIDs: []string{"rule-2", "rule-3"},
-		},
-		{
-			name: "external ref substring filter",
-			args: GetAlertConfigArgs{
-				ExternalRef: "errors",
-			},
-			expectedIDs: []string{"rule-2"},
-		},
-		{
-			name: "mismatched rule type and algorithm",
-			args: GetAlertConfigArgs{
-				RuleType:  "static",
-				Algorithm: "high_spike",
-			},
-			expectedIDs: []string{},
 		},
 	}
 
