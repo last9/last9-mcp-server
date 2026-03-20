@@ -154,11 +154,11 @@ IDEs. Implements the following MCP
 ### Time Input Standard
 
 - Canonical precedence is: valid absolute times (`start_time_iso`/`end_time_iso`, or `time_iso` where applicable) -> `lookback_minutes`.
-- For relative windows, prefer `lookback_minutes` (up to 20160 minutes = 14 days).
+- For relative windows, prefer `lookback_minutes`.
 - For absolute windows, use RFC3339/ISO8601 (`2026-02-09T15:04:05Z`).
 - If both relative and absolute inputs are provided, absolute inputs take precedence.
 - Legacy `YYYY-MM-DD HH:MM:SS` is accepted only for compatibility.
-- If a lookback limit error occurs, retry using explicit `start_time_iso`/`end_time_iso` timestamps.
+- If a tool returns a relative-window validation error, retry using the explicit timestamp fields that tool supports.
 
 ### Deep Links
 
@@ -176,7 +176,7 @@ Parameters:
 - `limit` (integer, optional): Maximum number of exceptions to return.
   Default: 20.
 - `lookback_minutes` (integer, recommended): Number of minutes to look back from
-  now. Default: 60. Range: 1–20160 (14 days). Examples: 60, 30, 15.
+  now. Default: 60. Minimum: 1. Examples: 60, 30, 15.
 - `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
 - `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `service_name` (string, optional): Filter exceptions by service name (e.g., api-service).
@@ -207,7 +207,7 @@ Get detailed performance metrics for a specific service over a given time range.
 Parameters:
 
 - `service_name` (string, required): Name of the service to get performance details for.
-- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Range: 1–20160 (14 days).
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Minimum: 1.
 - `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
 - `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `env` (string, optional): Environment to filter by. Defaults to 'prod'.
@@ -219,7 +219,7 @@ Get a summary of operations inside a service over a given time range. Returns op
 Parameters:
 
 - `service_name` (string, required): Name of the service to get operations summary for.
-- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Range: 1–20160 (14 days).
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Minimum: 1.
 - `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
 - `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `env` (string, optional): Environment to filter by. Defaults to 'prod'.
@@ -231,7 +231,7 @@ Get details of the throughput, response times and error rates of incoming, outgo
 Parameters:
 
 - `service_name` (string, optional): Name of the service to get the dependency graph for.
-- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Range: 1–20160 (14 days).
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Minimum: 1.
 - `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
 - `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `env` (string, optional): Environment to filter by. Defaults to 'prod'.
@@ -279,7 +279,7 @@ Execute advanced log queries using a JSON pipeline over a specified time range.
 Parameters:
 
 - `logjson_query` (array, required): JSON pipeline query for logs. Use the log query prompt to generate this from natural language.
-- `lookback_minutes` (integer, recommended): Number of minutes to look back from now. Default: 5. Range: 1–20160 (14 days). Examples: 60, 30, 15.
+- `lookback_minutes` (integer, recommended): Number of minutes to look back from now. Default: 5. Minimum: 1. Examples: 60, 30, 15.
 - `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
 - `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `limit` (integer, optional): Maximum number of rows to return. If omitted for chunked raw `get_logs` queries, the server defaults to `5000` and caps larger requests at that configured maximum.
@@ -367,7 +367,7 @@ Get raw log entries for a specific service over a time range. This tool retrieve
 Parameters:
 
 - `service` (string, required): Name of the service to get logs for.
-- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Range: 1–20160 (14 days). Examples: 60, 30, 15.
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Minimum: 1. Examples: 60, 30, 15.
 - `limit` (integer, optional): Maximum number of log entries to return. Default: 20.
 - `env` (string, optional): Environment to filter by. Use "get_service_environments" tool to get available environments.
 - `severity_filters` (array, optional): Array of severity patterns to filter logs (e.g., ["error", "warn"]). Uses OR logic.
@@ -405,7 +405,7 @@ Parameters:
 - `tracejson_query` (array, required): JSON pipeline query for traces. Use the tracejson_query_builder prompt to generate JSON pipeline queries from natural language.
 - `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z).
 - `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z).
-- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Range: 1–20160 (14 days).
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Minimum: 1.
 - `limit` (integer, optional): Maximum number of traces to return. Default: 5000.
   This tool supports complex queries with multiple filter conditions, aggregations, and custom processing pipelines for advanced trace analysis.
 
@@ -416,7 +416,7 @@ Parameters:
 
 - `trace_id` (string, optional): Specific trace ID to retrieve. Cannot be used with service_name.
 - `service_name` (string, optional): Name of service to get traces for. Cannot be used with trace_id.
-- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Range: 1–20160 (14 days). Examples: 60, 30, 15.
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Minimum: 1. Examples: 60, 30, 15.
 - `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
 - `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 - `limit` (integer, optional): Maximum number of traces to return. Default: 10.
@@ -448,7 +448,7 @@ Parameters:
 
 - `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - lookback_minutes.
 - `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Range: 1–20160 (14 days). Examples: 60, 30, 15.
+- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Minimum: 1. Examples: 60, 30, 15.
 - `service` (string, optional): Name of the service to filter change events for.
 - `environment` (string, optional): Environment to filter by.
 - `event_name` (string, optional): Name of the change event to filter by (use available_event_names to see valid values).
