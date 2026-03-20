@@ -117,7 +117,7 @@ func validateGetServiceTracesArgs(args GetServiceTracesArgs) error {
 	}
 
 	// Validate lookback only. Limit is optional and forwarded as provided.
-	if args.LookbackMinutes > 0 && args.LookbackMinutes < 1 {
+	if args.LookbackMinutes != 0 && args.LookbackMinutes < 1 {
 		return errors.New("lookback_minutes must be at least 1")
 	}
 

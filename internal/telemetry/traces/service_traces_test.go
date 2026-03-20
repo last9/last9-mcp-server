@@ -63,6 +63,15 @@ func TestValidateGetServiceTracesArgs(t *testing.T) {
 			errMsg:  "lookback_minutes must be at least 1",
 		},
 		{
+			name: "Negative lookback_minutes",
+			args: GetServiceTracesArgs{
+				ServiceName:     "test-service",
+				LookbackMinutes: -10,
+			},
+			wantErr: true,
+			errMsg:  "lookback_minutes must be at least 1",
+		},
+		{
 			name: "Large lookback_minutes is valid",
 			args: GetServiceTracesArgs{
 				ServiceName:     "test-service",

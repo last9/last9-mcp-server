@@ -189,7 +189,7 @@ func TestGetTimeRange_LookbackMinutes(t *testing.T) {
 			wantErr:                true,
 		},
 		{
-			name: "lookback too large",
+			name: "large lookback is valid",
 			params: map[string]interface{}{
 				"lookback_minutes": float64(25000),
 			},
