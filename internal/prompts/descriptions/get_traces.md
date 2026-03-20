@@ -318,7 +318,7 @@ To find the appropriate field name, try partial matches or matching fields which
 - "recent", "latest", "current" → **5 minutes**
 
 **ISO TIME FALLBACK RULE:**
-- If you receive an error like "lookback_minutes cannot exceed..." or any lookback-related error,
+- If you receive a lookback-related validation error,
   retry the same query using `start_time_iso` and `end_time_iso` parameters instead of `lookback_minutes`.
 - Calculate the appropriate start and end timestamps in RFC3339 format (e.g. 2026-02-09T15:04:05Z)
   based on the user's requested time range, and reissue the tool call.

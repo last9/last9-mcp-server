@@ -189,12 +189,13 @@ func TestGetTimeRange_LookbackMinutes(t *testing.T) {
 			wantErr:                true,
 		},
 		{
-			name: "lookback too large",
+			name: "large lookback is valid",
 			params: map[string]interface{}{
-				"lookback_minutes": float64(25000), // > 20160
+				"lookback_minutes": float64(25000),
 			},
 			defaultLookbackMinutes: 30,
-			wantErr:                true,
+			wantLookbackUsed:       25000,
+			wantErr:                false,
 		},
 	}
 
@@ -266,16 +267,14 @@ func TestGetTimeRange_TimeRangeValidation(t *testing.T) {
 		name    string
 		params  map[string]interface{}
 		wantErr bool
-		errMsg  string
 	}{
 		{
-			name: "time range exceeds 14 days",
+			name: "time range larger than 14 days is allowed",
 			params: map[string]interface{}{
 				"start_time_iso": "2025-06-01 00:00:00",
 				"end_time_iso":   "2025-06-16 00:00:00", // 15 days
 			},
-			wantErr: true,
-			errMsg:  "time range cannot exceed 336 hours",
+			wantErr: false,
 		},
 		{
 			name: "valid 14 day range",
@@ -295,9 +294,6 @@ func TestGetTimeRange_TimeRangeValidation(t *testing.T) {
 				if err == nil {
 					t.Errorf("GetTimeRange() expected error but got none")
 					return
-				}
-				if tt.errMsg != "" && err.Error() != tt.errMsg {
-					t.Errorf("GetTimeRange() error = %q, want %q", err.Error(), tt.errMsg)
 				}
 			} else {
 				if err != nil {

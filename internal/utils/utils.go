@@ -22,10 +22,6 @@ import (
 
 // Constants for time-related values
 const (
-	// MaxLookbackMinutes is the maximum number of minutes allowed for lookback queries (14 days)
-	MaxLookbackMinutes = 20160
-	// MaxTimeRangeHours is the maximum time range allowed for queries (14 days)
-	MaxTimeRangeHours = 336
 	// DefaultLookbackMinutes is the default lookback time in minutes (1 hour)
 	DefaultLookbackMinutes = 60
 	// TokenRefreshBuffer is the percentage of token lifetime to refresh before expiry (50%)
@@ -86,10 +82,6 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 	if lookbackMinutes < 1 {
 		return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes must be at least 1")
 	}
-	if lookbackMinutes > MaxLookbackMinutes {
-		return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes cannot exceed %d (14 days)", MaxLookbackMinutes)
-	}
-
 	// Default start time based on lookback
 	startTime = endTime.Add(time.Duration(-lookbackMinutes) * time.Minute)
 
@@ -122,11 +114,6 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 	// Validate time range
 	if startTime.After(endTime) {
 		return time.Time{}, time.Time{}, fmt.Errorf("start_time cannot be after end_time")
-	}
-
-	// Ensure time range doesn't exceed maximum allowed
-	if endTime.Sub(startTime) > MaxTimeRangeHours*time.Hour {
-		return time.Time{}, time.Time{}, fmt.Errorf("time range cannot exceed %d hours", MaxTimeRangeHours)
 	}
 
 	return startTime, endTime, nil
