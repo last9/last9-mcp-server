@@ -10,6 +10,14 @@ environment to auto-fix code faster.
 - Read our
   [announcement blog post](https://last9.io/blog/launching-last9-mcp-server/)
 
+## Table of Contents
+
+- [Quick Start (Hosted MCP)](#quick-start-hosted-mcp)
+- [Self-Hosted Setup (STDIO)](#self-hosted-setup-stdio)
+- [Available Tools](#available-tools)
+- [Development](#development)
+- [Testing](#testing)
+
 ## Quick Start (Hosted MCP)
 
 The fastest way to get started. No local binary, no tokens — authentication is
