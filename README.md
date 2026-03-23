@@ -1,682 +1,73 @@
 # Last9 MCP Server
 
-![last9 mcp demo](mcp-demo.gif)
-A [Model Context Protocol](https://modelcontextprotocol.io/) server
-implementation for [Last9](https://last9.io/mcp/) that enables AI agents to
-seamlessly bring real-time production context — logs, metrics, and traces — into
-your local environment to auto-fix code faster.
+![last9 mcp demo](mcp-demo.gif) A
+[Model Context Protocol](https://modelcontextprotocol.io/) server implementation
+for [Last9](https://last9.io/mcp/) that enables AI agents to seamlessly bring
+real-time production context — logs, metrics, and traces — into your local
+environment to auto-fix code faster.
 
 - [View demo](https://www.youtube.com/watch?v=AQH5xq6qzjI)
 - Read our
   [announcement blog post](https://last9.io/blog/launching-last9-mcp-server/)
 
-## Quick Links
+## Table of Contents
 
-- [Status](#status)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Usage](#usage)
-- [Tools Documentation](#tools-documentation)
+- [Quick Start (Hosted MCP)](#quick-start-hosted-mcp)
+  - [Claude Code](#claude-code)
+  - [Cursor](#cursor)
+  - [VS Code](#vs-code)
+  - [Windsurf](#windsurf)
+  - [Claude Web/Desktop](#claude-webdesktop)
+- [Self-Hosted Setup (STDIO)](#self-hosted-setup-stdio)
+- [Available Tools](#available-tools)
 - [Development](#development)
 - [Testing](#testing)
-- [Badges](#badges)
 
-## Installation
+## Quick Start (Hosted MCP)
 
-You can connect to Last9 MCP in two ways:
+The fastest way to get started. No local binary, no tokens — authentication is
+handled via OAuth in your browser.
 
-### Recommended: Managed MCP over HTTP
+Find your **org slug** in your Last9 URL: `app.last9.io/<org_slug>/...`
 
-This is the easiest and cleanest setup. You do not need to run a local binary.
-You'll need a **Client Token** (MCP type) — see [Getting your credentials](#getting-your-credentials) below. Your org slug is in your Last9 URL: `app.last9.io/<org_slug>/...`
+### Claude Code
 
 ```bash
-claude mcp add --transport http last9 https://app.last9.io/api/v4/organizations/<organization_slug>/mcp \
-  --header "X-LAST9-API-TOKEN: Bearer <last9_api_token>"
+claude mcp add --transport http last9 https://app.last9.io/api/v4/organizations/<org_slug>/mcp
 ```
 
-Or add it directly to your MCP client config:
+Then type `/mcp`, select the last9 server, and authenticate via OAuth.
+
+### Cursor
+
+1. Open **Cursor Settings > MCP**
+2. Click **Add New MCP Server**
+3. Paste the config below and save
 
 ```json
 {
   "mcpServers": {
     "last9": {
       "type": "http",
-      "url": "https://app.last9.io/api/v4/organizations/<organization_slug>/mcp",
-      "headers": {
-        "X-LAST9-API-TOKEN": "Bearer <last9_api_token>"
-      }
+      "url": "https://app.last9.io/api/v4/organizations/<org_slug>/mcp"
     }
   }
 }
 ```
 
-### Local Installation (STDIO fallback)
+Click **Connect** and complete OAuth authorization in your browser.
 
-Use this only if your client needs a local STDIO server process.
+### VS Code
 
-#### Homebrew
+> Requires v1.99+. See the
+> [VS Code MCP documentation](https://code.visualstudio.com/docs/copilot/chat/mcp-servers)
+> for details.
 
-```bash
-brew update
-brew install last9/tap/last9-mcp
-brew upgrade last9/tap/last9-mcp
-last9-mcp --version
-```
+1. Open Command Palette: **MCP: Add Server**
+2. Enter the server URL with your org slug
+3. Complete OAuth authorization in your browser
 
-#### NPM
-
-```bash
-# Install globally
-npm install -g @last9/mcp-server@latest
-# Or run directly with npx
-npx -y @last9/mcp-server@latest
-```
-
-#### GitHub Releases (Windows / manual install)
-
-Download the binary for your platform from [GitHub Releases](https://github.com/last9/last9-mcp-server/releases/latest):
-
-| Platform | Archive |
-|----------|---------|
-| Windows (x64) | `last9-mcp-server_Windows_x86_64.zip` |
-| Windows (ARM64) | `last9-mcp-server_Windows_arm64.zip` |
-| Linux (x64) | `last9-mcp-server_Linux_x86_64.tar.gz` |
-| Linux (ARM64) | `last9-mcp-server_Linux_arm64.tar.gz` |
-| macOS (x64) | `last9-mcp-server_Darwin_x86_64.tar.gz` |
-| macOS (ARM64) | `last9-mcp-server_Darwin_arm64.tar.gz` |
-
-Extract the archive. On Windows the binary is `last9-mcp-server.exe`. Use the full path to the binary in your MCP client config (see [Windows example](#windows-example-claude-desktop) below).
-
-> On Windows, [NPM](#npm) is easier to set up (no path management needed), or use the [hosted HTTP transport](#recommended-managed-mcp-over-http) to skip local installation entirely.
-
-## Getting Your Credentials
-
-### For hosted MCP (recommended)
-
-You need a **Client Token** with MCP type. Only **admins** can create tokens. If you're not an admin, ask your admin to create one or grant you admin access via [User Access settings](https://app.last9.io/settings/user-access).
-
-1. Go to [Ingestion Tokens](https://app.last9.io/control-plane/ingestion-tokens)
-2. Click **New Ingestion Token**
-3. Set **Token Type** to **Client**
-4. Set **Client Type** to **MCP**
-5. Enter a name (e.g., `claude-desktop`, `cursor`)
-6. Click **Create** — copy the token immediately (shown only once)
-
-Your **organization slug** is in your Last9 URL: `https://app.last9.io/<org_slug>/...`
-
-### For local binary (STDIO mode)
-
-You need a **Refresh Token** with Write permissions. Only **admins** can create them.
-
-1. Go to [API Access](https://app.last9.io/settings/api-access)
-2. Click **Generate Token** with Write permissions
-3. Copy the token
-
-## Status
-
-Works with Claude desktop app, or Cursor, Windsurf, and VSCode (Github Copilot)
-IDEs. Implements the following MCP
-[tools](https://modelcontextprotocol.io/docs/concepts/tools):
-**Observability & APM Tools:**
-
-- `get_exceptions`: Get the list of exceptions.
-- `get_service_summary`: Get service summary with throughput, error rate, and response time.
-- `get_service_environments`: Get available environments for services.
-- `get_service_performance_details`: Get detailed performance metrics for a service.
-- `get_service_operations_summary`: Get operations summary for a service.
-- `get_service_dependency_graph`: Get service dependency graph showing incoming/outgoing dependencies.
-  **Prometheus/PromQL Tools:**
-- `prometheus_range_query`: Execute PromQL range queries for metrics data.
-- `prometheus_instant_query`: Execute PromQL instant queries for metrics data.
-- `prometheus_label_values`: Get label values for PromQL queries.
-- `prometheus_labels`: Get available labels for PromQL queries.
-  **Logs Management:**
-- `get_logs`: Execute JSON-pipeline log queries over a time range, with optional limit and explicit log index selection.
-- `get_drop_rules`: Get drop rules for logs that determine what logs get
-  filtered out at [Last9 Control Plane](https://last9.io/control-plane)
-- `add_drop_rule`: Create a drop rule for logs at
-  [Last9 Control Plane](https://last9.io/control-plane)
-- `get_service_logs`: Get raw log entries for a specific service over a time range. Can apply filters on severity and body.
-- `get_log_attributes`: Get available log attributes (labels) for a specified time window.
-  **Traces Management:**
-- `get_traces`: Retrieve traces using JSON pipeline queries for advanced filtering.
-- `get_service_traces`: Retrieve traces by trace ID or service name with time range filtering.
-- `get_trace_attributes`: Get available trace attributes (series) for a specified time window.
-  **Change Events:**
-- `get_change_events`: Get change events from the last9_change_events prometheus metric over a given time range.
-  **Alert Management:**
-- `get_alert_config`: Get alert configurations (alert rules) from Last9.
-- `get_alerts`: Get currently active alerts from Last9 monitoring system.
-
-## Tools Documentation
-
-### Time Input Standard
-
-- Canonical precedence is: valid absolute times (`start_time_iso`/`end_time_iso`, or `time_iso` where applicable) -> `lookback_minutes`.
-- For relative windows, prefer `lookback_minutes`.
-- For absolute windows, use RFC3339/ISO8601 (`2026-02-09T15:04:05Z`).
-- If both relative and absolute inputs are provided, absolute inputs take precedence.
-- Legacy `YYYY-MM-DD HH:MM:SS` is accepted only for compatibility.
-- If a tool returns a relative-window validation error, retry using the explicit timestamp fields that tool supports.
-
-### Deep Links
-
-Most tools return a `deep_link` field in the response metadata. This is a direct URL to the relevant Last9 dashboard view for the queried data — click it to open the corresponding alerts, logs, traces, or APM dashboard page.
-
-### Attribute Caching
-
-The server automatically fetches and caches available log and trace attribute names at startup (with a 10-second timeout) and refreshes the cache every 2 hours in the background. These dynamic attributes are embedded into the `get_logs`, `get_traces`, and `prometheus_range_query` tool descriptions, so AI assistants always see up-to-date field names when constructing queries.
-
-### get_exceptions
-
-Retrieves server-side exceptions over a specified time range.
-Parameters:
-
-- `limit` (integer, optional): Maximum number of exceptions to return.
-  Default: 20.
-- `lookback_minutes` (integer, recommended): Number of minutes to look back from
-  now. Default: 60. Minimum: 1. Examples: 60, 30, 15.
-- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
-- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-- `service_name` (string, optional): Filter exceptions by service name (e.g., api-service).
-- `span_name` (string, optional): Name of the span to filter by.
-- `deployment_environment` (string, optional): Filter exceptions by deployment environment from resource attributes (e.g., production, staging).
-
-### get_service_summary
-
-Get service summary over a given time range. Includes service name, environment, throughput, error rate, and response time. All values are p95 quantiles over the time range.
-Parameters:
-
-- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to end_time_iso - 1 hour.
-- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-- `env` (string, optional): Environment to filter by. Defaults to 'prod'.
-
-### get_service_environments
-
-Get available environments for services. Returns an array of environments that can be used with other APM tools.
-Parameters:
-
-- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to end_time_iso - 1 hour.
-- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-  Note: All other APM tools that retrieve service information (like `get_service_performance_details`, `get_service_dependency_graph`, `get_service_operations_summary`, `get_service_summary`) require an `env` parameter. This parameter must be one of the environments returned by this tool. If this tool returns an empty array, use an empty string `""` for the env parameter.
-
-### get_service_performance_details
-
-Get detailed performance metrics for a specific service over a given time range.
-Parameters:
-
-- `service_name` (string, required): Name of the service to get performance details for.
-- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Minimum: 1.
-- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
-- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-- `env` (string, optional): Environment to filter by. Defaults to 'prod'.
-  Returns: throughput, error rate, p50/p90/p95/avg/max response times, apdex score, availability, top operations, and top errors.
-
-### get_service_operations_summary
-
-Get a summary of operations inside a service over a given time range. Returns operations like HTTP endpoints, database queries, messaging producer and HTTP client calls.
-Parameters:
-
-- `service_name` (string, required): Name of the service to get operations summary for.
-- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Minimum: 1.
-- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
-- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-- `env` (string, optional): Environment to filter by. Defaults to 'prod'.
-  Each operation includes: throughput (rpm), error rate (rpm), error percentage, and p50/p90/p95/avg/max response times (ms).
-
-### get_service_dependency_graph
-
-Get details of the throughput, response times and error rates of incoming, outgoing and infrastructure components of a service. Useful for analyzing cascading effects of errors and performance issues.
-Parameters:
-
-- `service_name` (string, optional): Name of the service to get the dependency graph for.
-- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Minimum: 1.
-- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
-- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-- `env` (string, optional): Environment to filter by. Defaults to 'prod'.
-  Each node includes: throughput (rpm), error rate (rpm), error percentage, and p50/p90/p95/avg/max response times (ms).
-
-### prometheus_range_query
-
-Perform a Prometheus range query to get metrics data over a specified time range. Recommended to check available labels first using `prometheus_labels` tool.
-Parameters:
-
-- `query` (string, required): The range query to execute.
-- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - 60 minutes.
-- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-
-### prometheus_instant_query
-
-Perform a Prometheus instant query to get metrics data at a specific time. Typically should use rollup functions like sum_over_time, avg_over_time, quantile_over_time over a time window.
-Parameters:
-
-- `query` (string, required): The instant query to execute.
-- `time_iso` (string, optional): Time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to current time.
-
-### prometheus_label_values
-
-Return the label values for a particular label and PromQL filter query. Similar to Prometheus /label_values call.
-Parameters:
-
-- `match_query` (string, required): A valid PromQL filter query.
-- `label` (string, required): The label to get values for.
-- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - 60 minutes.
-- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-
-### prometheus_labels
-
-Return the labels for a given PromQL match query. Similar to Prometheus /labels call.
-Parameters:
-
-- `match_query` (string, required): A valid PromQL filter query.
-- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - 60 minutes.
-- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-
-### get_logs
-
-Execute advanced log queries using a JSON pipeline over a specified time range.
-Parameters:
-
-- `logjson_query` (array, required): JSON pipeline query for logs. Use the log query prompt to generate this from natural language.
-- `lookback_minutes` (integer, recommended): Number of minutes to look back from now. Default: 5. Minimum: 1. Examples: 60, 30, 15.
-- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
-- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-- `limit` (integer, optional): Maximum number of rows to return. If omitted for chunked raw `get_logs` queries, the server defaults to `5000` and caps larger requests at that configured maximum.
-- `index` (string, optional): Explicit log index to query. Accepted values are `physical_index:<name>` and `rehydration_index:<block_name>`. Omit it when the user did not specify an index.
-
-### get_drop_rules
-
-Gets drop rules for logs, which determine what logs get filtered out from
-reaching Last9.
-
-### add_drop_rule
-
-Adds a new drop rule to filter out specific logs at
-[Last9 Control Plane](https://last9.io/control-plane)
-Parameters:
-
-- `name` (string, required): Name of the drop rule.
-- `filters` (array, required): List of filter conditions to apply. Each filter
-  has:
-  - `key` (string, required): The key to filter on. Only attributes and
-    resource.attributes keys are supported. For resource attributes, use format:
-    resource.attributes[key_name] and for log attributes, use format:
-    attributes[key_name] Double quotes in key names must be escaped.
-  - `value` (string, required): The value to filter against.
-  - `operator` (string, required): The operator used for filtering. Valid
-    values:
-    - "equals"
-    - "not_equals"
-  - `conjunction` (string, required): The logical conjunction between filters.
-    Valid values:
-    - "and"
-
-### get_alert_config
-
-Get alert configurations (alert rules) from Last9. Returns configured alert rules and supports both typed filters and free-text search.
-Parameters:
-
-- `search_term` (string, optional): Case-insensitive substring search across `rule_name`, alert group `name`, alert group `type`, `data_source_name`, and tags.
-- `rule_name` (string, optional): Case-insensitive substring match on the rule name.
-- `severity` (string, optional): Exact case-insensitive match on severity.
-- `rule_type` (string, optional): Exact case-insensitive match on the derived rule type. Allowed values: `static`, `anomaly`.
-- `alert_group_name` (string, optional): Case-insensitive substring match on alert group name.
-- `alert_group_type` (string, optional): Case-insensitive substring match on alert group type.
-- `data_source_name` (string, optional): Case-insensitive substring match on alert group data source name.
-- `tags` (array of strings, optional): Case-insensitive substring matches on alert group tags. All provided tags must match.
-
-Semantics:
-
-- All provided filters combine with `AND`.
-- `search_term` also combines with the typed filters using `AND`.
-- If no filters are provided, the tool preserves the existing unfiltered behavior.
-
-Returns information about:
-
-- Alert rule ID and name
-- Primary indicator being monitored
-- Current state and severity
-- Algorithm used for alerting
-- Entity ID and organization details
-- Properties and configuration
-- Creation and update timestamps
-- Group timeseries notification settings
-
-### get_alerts
-
-Get currently active alerts from Last9 monitoring system. Returns all alerts that are currently firing or have fired recently within the specified time window.
-Parameters:
-
-- `time_iso` (string, optional): Evaluation time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Preferred.
-- `timestamp` (integer, optional): Unix timestamp for the query time. Deprecated alias.
-- `window` (integer, optional): Time window in seconds to look back for alerts. Defaults to 900 seconds (15 minutes). Range: 60-86400 seconds.
-- `lookback_minutes` (integer, optional): Relative time window in minutes. Used only when `window` is not provided. Range: 1-1440.
-  Returns information about:
-- Alert rule details (ID, name, group, type)
-- Current state and severity
-- Last fired timestamp and duration
-- Rule properties and configuration
-- Alert instances with current values
-- Metric degradation information
-- Group labels and annotations for each instance
-
-### get_service_logs
-
-Get raw log entries for a specific service over a time range. This tool retrieves actual log entries including log messages, timestamps, severity levels, and other metadata. Useful for debugging issues, monitoring service behavior, and analyzing specific log patterns.
-Parameters:
-
-- `service` (string, required): Name of the service to get logs for.
-- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Minimum: 1. Examples: 60, 30, 15.
-- `limit` (integer, optional): Maximum number of log entries to return. Default: 20.
-- `env` (string, optional): Environment to filter by. Use "get_service_environments" tool to get available environments.
-- `severity_filters` (array, optional): Array of severity patterns to filter logs (e.g., ["error", "warn"]). Uses OR logic.
-- `body_filters` (array, optional): Array of message content patterns to filter logs (e.g., ["timeout", "failed"]). Uses OR logic.
-- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - lookback_minutes.
-- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-- `index` (string, optional): Explicit log index to query. Accepted values are `physical_index:<name>` and `rehydration_index:<block_name>`. Omit it when the user did not specify an index.
-  Filtering behavior:
-- Multiple filter types are combined with AND logic (service AND severity AND body)
-- Each filter array uses OR logic (matches any pattern in the array)
-  Examples:
-- service="api" + severity_filters=["error"] + body_filters=["timeout"] → finds error logs containing "timeout"
-- service="web" + body_filters=["timeout", "failed", "error 500"] → finds logs containing any of these patterns
-
-### get_log_attributes
-
-Get available log attributes (labels) for a specified time window. This tool retrieves all attribute names that exist in logs during the specified time range, which can be used for filtering and querying logs.
-Parameters:
-
-- `lookback_minutes` (integer, optional): Number of minutes to look back from now for the time window. Default: 15. Examples: 15, 30, 60.
-- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
-- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-- `region` (string, optional): AWS region to query. Leave empty to use default from configuration. Examples: ap-south-1, us-east-1, eu-west-1.
-- `index` (string, optional): Explicit log index to query. Accepted values are `physical_index:<name>` and `rehydration_index:<block_name>`. Omit it when the user did not specify an index.
-  Returns:
-- List of log attributes grouped into two categories:
-  - Log Attributes: Standard log fields like service, severity, body, level, etc.
-  - Resource Attributes: Resource-related fields prefixed with "resource\_" like resource_k8s.pod.name, resource_service.name, etc.
-
-### get_traces
-
-Execute advanced trace queries using JSON pipeline syntax for complex filtering and aggregation. This tool provides powerful querying capabilities for traces using a pipeline-based approach with filters, aggregations, and transformations.
-Parameters:
-
-- `tracejson_query` (array, required): JSON pipeline query for traces. Use the tracejson_query_builder prompt to generate JSON pipeline queries from natural language.
-- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z).
-- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z).
-- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Minimum: 1.
-- `limit` (integer, optional): Maximum number of traces to return. Default: 5000.
-  This tool supports complex queries with multiple filter conditions, aggregations, and custom processing pipelines for advanced trace analysis.
-
-### get_service_traces
-
-Retrieve traces from Last9 by trace ID or service name. This tool allows you to get specific traces either by providing a trace ID for a single trace, or by providing a service name to get all traces for that service within a time range.
-Parameters:
-
-- `trace_id` (string, optional): Specific trace ID to retrieve. Cannot be used with service_name.
-- `service_name` (string, optional): Name of service to get traces for. Cannot be used with trace_id.
-- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Minimum: 1. Examples: 60, 30, 15.
-- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
-- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-- `limit` (integer, optional): Maximum number of traces to return. Default: 10.
-- `env` (string, optional): Environment to filter by. Use "get_service_environments" tool to get available environments.
-  Usage rules:
-- Exactly one of `trace_id` or `service_name` must be provided (not both, not neither)
-- Time range filtering only applies when using `service_name`
-  Examples:
-- trace_id="abc123def456" - retrieves the specific trace
-- service_name="payment-service" + lookback_minutes=30 - gets all payment service traces from last 30 minutes
-  Returns trace data including trace IDs, spans, duration, timestamps, and status information.
-
-### get_trace_attributes
-
-Get available trace attributes (series) for a specified time window. This tool retrieves all attribute names that exist in traces during the specified time range, which can be used for filtering and querying traces.
-Parameters:
-
-- `lookback_minutes` (integer, optional): Number of minutes to look back from now for the time window. Default: 15. Examples: 15, 30, 60.
-- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
-- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-- `region` (string, optional): AWS region to query. Leave empty to use default from configuration. Examples: ap-south-1, us-east-1, eu-west-1.
-  Returns:
-- An alphabetically sorted list of all available trace attributes (e.g., http.method, http.status_code, db.name, resource_service.name, duration, etc.)
-
-### get_change_events
-
-Get change events from the last9_change_events prometheus metric over a given time range. Returns change events that occurred in the specified time window, including deployments, configuration changes, and other system modifications.
-Parameters:
-
-- `start_time_iso` (string, optional): Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - lookback_minutes.
-- `end_time_iso` (string, optional): End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-- `lookback_minutes` (integer, optional): Number of minutes to look back from now. Default: 60. Minimum: 1. Examples: 60, 30, 15.
-- `service` (string, optional): Name of the service to filter change events for.
-- `environment` (string, optional): Environment to filter by.
-- `event_name` (string, optional): Name of the change event to filter by (use available_event_names to see valid values).
-  Returns:
-- `available_event_names`: List of all available event types that can be used for filtering
-- `change_events`: Array of timeseries data with metric labels and timestamp-value pairs
-- `count`: Total number of change events returned
-- `time_range`: Start and end time of the query window
-  Each change event includes:
-- `metric`: Map of metric labels (service_name, env, event_type, message, etc.)
-- `values`: Array of timestamp-value pairs representing the timeseries data
-  Common event types include: deployment, config_change, rollback, scale_up/scale_down, restart, upgrade/downgrade, maintenance, backup/restore, health_check, certificate, database.
-  Best practices:
-
-1. First call without event_name to get available_event_names
-2. Use exact event name from available_event_names for the event_name parameter
-3. Combine with other filters (service, environment, time) for precise results
-
-## Configuration
-
-### Managed HTTP transport (recommended)
-
-Set this header in your MCP client config:
-
-- `X-LAST9-API-TOKEN`: Bearer token for Last9 API access.
-
-### Local STDIO server environment variables
-
-If you run the server locally (`last9-mcp`), use these environment variables:
-
-- `LAST9_REFRESH_TOKEN`: (required) Refresh Token with Write permissions from
-  [API Access](https://app.last9.io/settings/api-access). Only admins can create
-  refresh tokens.
-
-Optional environment variables:
-
-- `LAST9_DISABLE_TELEMETRY`: Defaults to `true` (telemetry is disabled by default). Set to `false` to enable OpenTelemetry tracing if you have an OTLP collector configured.
-- `OTEL_SDK_DISABLED`: Standard OTel env var. Set to `false` to enable telemetry (overrides `LAST9_DISABLE_TELEMETRY`). Set to `true` to disable telemetry explicitly.
-- `OTEL_EXPORTER_OTLP_ENDPOINT`: OpenTelemetry collector endpoint URL. Only needed if telemetry is enabled.
-- `OTEL_EXPORTER_OTLP_HEADERS`: Headers for OTLP exporter authentication. Only needed when telemetry is enabled (i.e., `OTEL_SDK_DISABLED` is not `true` and `LAST9_DISABLE_TELEMETRY` is not `true`).
-- `LAST9_DATASOURCE`: Name of the datasource/cluster to use. If not specified, the default datasource configured in your Last9 organization will be used.
-- `LAST9_API_HOST`: API host to connect to. Defaults to `app.last9.io`. Use this if you need to connect to a different Last9 endpoint (e.g., regional or self-hosted instances).
-- `LAST9_DEBUG_CHUNKING`: Set to `true` to emit chunk-planning and per-chunk execution logs for `get_logs`, `get_service_logs`, and `get_traces`.
-- `LAST9_MAX_GET_LOGS_ENTRIES`: Maximum number of entries returned by chunked raw `get_logs` requests. This also maps to the `-max_get_logs_entries` CLI flag. If unset or set to `0`/a negative number, the server falls back to the default `5000`.
-
-## Usage
-
-Use the managed HTTP transport config from [Installation](#installation) whenever possible. The examples below are for local STDIO setup via Homebrew or NPM.
-
-## Usage with Claude Desktop
-
-Configure the Claude app to use the MCP server:
-
-1. Open the Claude Desktop app, go to Settings, then Developer
-2. Click Edit Config
-3. Open the `claude_desktop_config.json` file
-4. Copy and paste the server config to your existing file, then save
-5. Restart Claude
-
-### Local STDIO
-
-> **Note:** Claude Desktop currently supports local STDIO-based MCP servers only. Hosted HTTP transport is not yet supported in Claude Desktop.
-
-Use a [Refresh Token](#getting-your-credentials).
-
-Install via [Homebrew](#homebrew) or [NPM](#npm) first, then use a [Refresh Token](#getting-your-credentials).
-
-### If installed via Homebrew:
-
-```json
-{
-  "mcpServers": {
-    "last9": {
-      "command": "/opt/homebrew/bin/last9-mcp",
-      "env": {
-        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>"
-      }
-    }
-  }
-}
-```
-
-### If installed via NPM:
-
-```json
-{
-  "mcpServers": {
-    "last9": {
-      "command": "npx",
-      "args": ["-y", "@last9/mcp-server@latest"],
-      "env": {
-        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>"
-      }
-    }
-  }
-}
-```
-
-## Usage with Cursor
-
-Configure Cursor to use the MCP server:
-
-1. Open Cursor, go to Settings, then Cursor Settings
-2. Select MCP on the left
-3. Click Add "New Global MCP Server" at the top right
-4. Copy and paste the server config to your existing file, then save
-5. Restart Cursor
-
-### Hosted MCP over HTTP (recommended)
-
-```json
-{
-  "mcpServers": {
-    "last9": {
-      "type": "http",
-      "url": "https://app.last9.io/api/v4/organizations/<org_slug>/mcp",
-      "headers": {
-        "X-LAST9-API-TOKEN": "Bearer <mcp_client_token>"
-      }
-    }
-  }
-}
-```
-
-### Local STDIO (alternative)
-
-### If installed via Homebrew:
-
-```json
-{
-  "mcpServers": {
-    "last9": {
-      "command": "/opt/homebrew/bin/last9-mcp",
-      "env": {
-        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>"
-      }
-    }
-  }
-}
-```
-
-### If installed via NPM:
-
-```json
-{
-  "mcpServers": {
-    "last9": {
-      "command": "npx",
-      "args": ["-y", "@last9/mcp-server@latest"],
-      "env": {
-        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>"
-      }
-    }
-  }
-}
-```
-
-## Usage with Windsurf
-
-Configure Windsurf to use the MCP server:
-
-1. Open Windsurf, go to Settings, then Developer
-2. Click Edit Config
-3. Open the `windsurf_config.json` file
-4. Copy and paste the server config to your existing file, then save
-5. Restart Windsurf
-
-### Hosted MCP over HTTP (recommended)
-
-```json
-{
-  "mcpServers": {
-    "last9": {
-      "type": "http",
-      "url": "https://app.last9.io/api/v4/organizations/<org_slug>/mcp",
-      "headers": {
-        "X-LAST9-API-TOKEN": "Bearer <mcp_client_token>"
-      }
-    }
-  }
-}
-```
-
-### Local STDIO (alternative)
-
-### If installed via Homebrew:
-
-```json
-{
-  "mcpServers": {
-    "last9": {
-      "command": "/opt/homebrew/bin/last9-mcp",
-      "env": {
-        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>"
-      }
-    }
-  }
-}
-```
-
-### If installed via NPM:
-
-```json
-{
-  "mcpServers": {
-    "last9": {
-      "command": "npx",
-      "args": ["-y", "@last9/mcp-server@latest"],
-      "env": {
-        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>"
-      }
-    }
-  }
-}
-```
-
-## Usage with VS Code
-
-> Note: MCP support in VS Code is available starting v1.99 and is currently in
-> preview. For advanced configuration options and alternative setup methods,
-> [view the VS Code MCP documentation](https://code.visualstudio.com/docs/copilot/chat/mcp-servers).
-
-1. Open VS Code, go to Settings, select the User tab, then Features, then Chat
-2. Click "Edit settings.json"
-3. Copy and paste the server config to your existing file, then save
-4. Restart VS Code
-
-### Hosted MCP over HTTP (recommended)
+Or manually add to `settings.json`:
 
 ```json
 {
@@ -684,19 +75,133 @@ Configure Windsurf to use the MCP server:
     "servers": {
       "last9": {
         "type": "http",
-        "url": "https://app.last9.io/api/v4/organizations/<org_slug>/mcp",
-        "headers": {
-          "X-LAST9-API-TOKEN": "Bearer <mcp_client_token>"
-        }
+        "url": "https://app.last9.io/api/v4/organizations/<org_slug>/mcp"
       }
     }
   }
 }
 ```
 
-### Local STDIO (alternative)
+### Windsurf
 
-### If installed via Homebrew:
+1. Navigate to **Settings > Cascade > Open MCP Marketplace**
+2. Click the gear icon to edit `mcp_config.json`
+3. Paste the config below and save
+
+```json
+{
+  "mcpServers": {
+    "last9": {
+      "serverUrl": "https://app.last9.io/api/v4/organizations/<org_slug>/mcp"
+    }
+  }
+}
+```
+
+Complete OAuth authorization in your browser when prompted.
+
+### Claude Web/Desktop
+
+1. Go to **Settings > Connectors**
+2. Click **Add custom connector**
+3. Enter `last9` as the name
+4. Paste the server URL:
+   `https://app.last9.io/api/v4/organizations/<org_slug>/mcp`
+5. Complete OAuth authorization in your browser
+
+> **Note:** Requires admin access to your Claude organization.
+
+## Self-Hosted Setup (STDIO)
+
+Use this if your MCP client does not support HTTP transport or you need to run a
+local server process.
+
+### Install
+
+**Homebrew:**
+
+```bash
+brew install last9/tap/last9-mcp
+```
+
+**NPM:**
+
+```bash
+npm install -g @last9/mcp-server@latest
+# Or run directly with npx
+npx -y @last9/mcp-server@latest
+```
+
+**GitHub Releases (Windows / manual install):**
+
+Download from
+[GitHub Releases](https://github.com/last9/last9-mcp-server/releases/latest):
+
+| Platform        | Archive                                 |
+| --------------- | --------------------------------------- |
+| Windows (x64)   | `last9-mcp-server_Windows_x86_64.zip`   |
+| Windows (ARM64) | `last9-mcp-server_Windows_arm64.zip`    |
+| Linux (x64)     | `last9-mcp-server_Linux_x86_64.tar.gz`  |
+| Linux (ARM64)   | `last9-mcp-server_Linux_arm64.tar.gz`   |
+| macOS (x64)     | `last9-mcp-server_Darwin_x86_64.tar.gz` |
+| macOS (ARM64)   | `last9-mcp-server_Darwin_arm64.tar.gz`  |
+
+### Credentials
+
+You need a **Refresh Token** with Write permissions. Only **admins** can create
+them.
+
+1. Go to [API Access](https://app.last9.io/settings/api-access)
+2. Click **Generate Token** with Write permissions
+3. Copy the token
+
+### Client Configuration
+
+Most MCP clients use the same JSON structure. Pick the config that matches how
+you installed:
+
+**Homebrew:**
+
+```json
+{
+  "mcpServers": {
+    "last9": {
+      "command": "/opt/homebrew/bin/last9-mcp",
+      "env": {
+        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>"
+      }
+    }
+  }
+}
+```
+
+**NPM:**
+
+```json
+{
+  "mcpServers": {
+    "last9": {
+      "command": "npx",
+      "args": ["-y", "@last9/mcp-server@latest"],
+      "env": {
+        "LAST9_REFRESH_TOKEN": "<last9_refresh_token>"
+      }
+    }
+  }
+}
+```
+
+**Where to paste this config:**
+
+| Client         | Config location                                                                                                                         |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Web/Desktop | Settings > Developer > Edit Config (`claude_desktop_config.json`)                                                                       |
+| Cursor         | Settings > Cursor Settings > MCP > Add New Global MCP Server                                                                            |
+| Windsurf       | Settings > Cascade > MCP Marketplace > gear icon (`mcp_config.json`)                                                                    |
+| VS Code        | Wrap in `{ "mcp": { "servers": { ... } } }` in `settings.json` — [details](https://code.visualstudio.com/docs/copilot/chat/mcp-servers) |
+
+<details>
+<summary>VS Code STDIO config (different JSON wrapper)</summary>
 
 ```json
 {
@@ -714,28 +219,17 @@ Configure Windsurf to use the MCP server:
 }
 ```
 
-### If installed via NPM:
+For NPM, replace `"command"` with `"command": "npx"` and add
+`"args": ["-y", "@last9/mcp-server@latest"]`.
 
-```json
-{
-  "mcp": {
-    "servers": {
-      "last9": {
-        "type": "stdio",
-        "command": "npx",
-        "args": ["-y", "@last9/mcp-server@latest"],
-        "env": {
-          "LAST9_REFRESH_TOKEN": "<last9_refresh_token>"
-        }
-      }
-    }
-  }
-}
-```
+</details>
 
-## Windows Example (Claude Desktop)
+<details>
+<summary>Windows example</summary>
 
-After downloading `last9-mcp-server_Windows_x86_64.zip` from [GitHub Releases](https://github.com/last9/last9-mcp-server/releases/latest), extract to get `last9-mcp-server.exe` and use its full path:
+After downloading from
+[GitHub Releases](https://github.com/last9/last9-mcp-server/releases/latest),
+extract and use the full path:
 
 ```json
 {
@@ -750,34 +244,328 @@ After downloading `last9-mcp-server_Windows_x86_64.zip` from [GitHub Releases](h
 }
 ```
 
-The same pattern applies for Cursor and Windsurf on Windows. For VS Code, use the `"mcp": { "servers": { ... } }` wrapper. On Windows, prefer [NPM](#npm) to avoid path management, or use the [hosted HTTP transport](#recommended-managed-mcp-over-http) to skip local installation entirely.
+On Windows, [NPM](#npm) is easier (no path management), or use the
+[hosted HTTP transport](#quick-start-hosted-mcp) to skip local installation
+entirely.
+
+</details>
+
+### Environment Variables
+
+- `LAST9_REFRESH_TOKEN` **(required)**: Refresh Token from
+  [API Access](https://app.last9.io/settings/api-access).
+- `LAST9_DATASOURCE`: Datasource/cluster name. Defaults to your org's default
+  datasource.
+- `LAST9_API_HOST`: API host. Defaults to `app.last9.io`.
+- `LAST9_MAX_GET_LOGS_ENTRIES`: Max entries for chunked `get_logs` requests.
+  Default: `5000`.
+- `LAST9_DEBUG_CHUNKING`: Set `true` to emit chunk-planning logs for `get_logs`,
+  `get_service_logs`, and `get_traces`.
+- `LAST9_DISABLE_TELEMETRY`: Defaults to `true`. Set `false` to enable
+  OpenTelemetry tracing.
+- `OTEL_SDK_DISABLED`: Standard OTel env var. Overrides
+  `LAST9_DISABLE_TELEMETRY`.
+- `OTEL_EXPORTER_OTLP_ENDPOINT`: OTLP collector endpoint. Only needed if
+  telemetry is enabled.
+- `OTEL_EXPORTER_OTLP_HEADERS`: OTLP exporter auth headers. Only needed if
+  telemetry is enabled.
+
+## Available Tools
+
+**Observability & APM:**
+
+- `get_exceptions` — List of exceptions
+- `get_service_summary` — Service throughput, error rate, response time
+- `get_service_environments` — Available environments for services
+- `get_service_performance_details` — Detailed performance metrics for a service
+- `get_service_operations_summary` — Operations summary for a service
+- `get_service_dependency_graph` — Service dependency graph
+
+**Prometheus/PromQL:**
+
+- `prometheus_range_query` — Range queries for metrics data
+- `prometheus_instant_query` — Instant queries for metrics data
+- `prometheus_label_values` — Label values for PromQL queries
+- `prometheus_labels` — Available labels for PromQL queries
+
+**Logs:**
+
+- `get_logs` — JSON-pipeline log queries
+- `get_service_logs` — Raw log entries for a service
+- `get_log_attributes` — Available log attributes
+- `get_drop_rules` — Log drop rules from Control Plane
+- `add_drop_rule` — Create a log drop rule
+
+**Traces:**
+
+- `get_traces` — JSON pipeline trace queries
+- `get_service_traces` — Traces by trace ID or service name
+- `get_trace_attributes` — Available trace attributes
+
+**Change Events & Alerts:**
+
+- `get_change_events` — Deployments, config changes, rollbacks
+- `get_alert_config` — Alert rule configurations
+- `get_alerts` — Currently active alerts
+
+<details>
+<summary><strong>Tools Reference (parameters & details)</strong></summary>
+
+### Time Input Standard
+
+- Canonical precedence: absolute times (`start_time_iso`/`end_time_iso`, or
+  `time_iso`) > `lookback_minutes`.
+- For relative windows, prefer `lookback_minutes`.
+- For absolute windows, use RFC3339/ISO8601 (`2026-02-09T15:04:05Z`).
+- If both relative and absolute inputs are provided, absolute inputs take
+  precedence.
+- Legacy `YYYY-MM-DD HH:MM:SS` is accepted only for compatibility.
+
+### Deep Links
+
+Most tools return a `deep_link` field — a direct URL to the relevant Last9
+dashboard view.
+
+### Attribute Caching
+
+The server caches log and trace attribute names at startup (10-second timeout)
+and refreshes every 2 hours. These are embedded into tool descriptions so AI
+assistants see up-to-date field names.
+
+---
+
+### get_exceptions
+
+Retrieves server-side exceptions over a specified time range.
+
+- `limit` (integer, optional): Max exceptions to return. Default: 20.
+- `lookback_minutes` (integer, recommended): Minutes to look back. Default: 60.
+- `start_time_iso` / `end_time_iso` (string, optional): Absolute time range in
+  RFC3339.
+- `service_name` (string, optional): Filter by service name.
+- `span_name` (string, optional): Filter by span name.
+- `deployment_environment` (string, optional): Filter by environment.
+
+### get_service_summary
+
+Service summary with throughput, error rate, and response time (p95).
+
+- `start_time_iso` / `end_time_iso` (string, optional): Absolute time range.
+- `env` (string, optional): Environment filter. Defaults to `prod`.
+
+### get_service_environments
+
+Returns available environments for services.
+
+- `start_time_iso` / `end_time_iso` (string, optional): Absolute time range.
+
+> All other APM tools require an `env` parameter from this tool's output. If
+> empty, use `""`.
+
+### get_service_performance_details
+
+Detailed performance metrics: throughput, error rate, p50/p90/p95/avg/max
+response times, apdex, availability.
+
+- `service_name` (string, required): Service name.
+- `lookback_minutes` (integer, optional): Default: 60.
+- `start_time_iso` / `end_time_iso` (string, optional): Absolute time range.
+- `env` (string, optional): Defaults to `prod`.
+
+### get_service_operations_summary
+
+Operations summary: HTTP endpoints, DB queries, messaging, HTTP client calls.
+
+- `service_name` (string, required): Service name.
+- `lookback_minutes` (integer, optional): Default: 60.
+- `start_time_iso` / `end_time_iso` (string, optional): Absolute time range.
+- `env` (string, optional): Defaults to `prod`.
+
+### get_service_dependency_graph
+
+Dependency graph with throughput, response times, and error rates for
+incoming/outgoing/infrastructure components.
+
+- `service_name` (string, optional): Service name.
+- `lookback_minutes` (integer, optional): Default: 60.
+- `start_time_iso` / `end_time_iso` (string, optional): Absolute time range.
+- `env` (string, optional): Defaults to `prod`.
+
+### prometheus_range_query
+
+PromQL range query. Check labels first with `prometheus_labels`.
+
+- `query` (string, required): The PromQL query.
+- `start_time_iso` / `end_time_iso` (string, optional): Defaults to last 60
+  minutes.
+
+### prometheus_instant_query
+
+PromQL instant query. Use rollup functions like `sum_over_time`,
+`avg_over_time`.
+
+- `query` (string, required): The PromQL query.
+- `time_iso` (string, optional): Defaults to now.
+
+### prometheus_label_values
+
+Label values for a PromQL filter query.
+
+- `match_query` (string, required): PromQL filter query.
+- `label` (string, required): Label name.
+- `start_time_iso` / `end_time_iso` (string, optional): Defaults to last 60
+  minutes.
+
+### prometheus_labels
+
+Labels for a PromQL match query.
+
+- `match_query` (string, required): PromQL filter query.
+- `start_time_iso` / `end_time_iso` (string, optional): Defaults to last 60
+  minutes.
+
+### get_logs
+
+Advanced log queries using JSON pipeline syntax.
+
+- `logjson_query` (array, required): JSON pipeline query.
+- `lookback_minutes` (integer, recommended): Default: 5.
+- `start_time_iso` / `end_time_iso` (string, optional): Absolute time range.
+- `limit` (integer, optional): Max rows. Server default: 5000.
+- `index` (string, optional): `physical_index:<name>` or
+  `rehydration_index:<block_name>`.
+
+### get_service_logs
+
+Raw log entries for a service.
+
+- `service` (string, required): Service name.
+- `lookback_minutes` (integer, optional): Default: 60.
+- `limit` (integer, optional): Default: 20.
+- `env` (string, optional): Environment filter.
+- `severity_filters` (array, optional): e.g. `["error", "warn"]`. OR logic.
+- `body_filters` (array, optional): e.g. `["timeout", "failed"]`. OR logic.
+- `start_time_iso` / `end_time_iso` (string, optional): Absolute time range.
+- `index` (string, optional): Explicit log index.
+
+Multiple filter types combine with AND; each array uses OR.
+
+### get_log_attributes
+
+Available log attributes for a time window.
+
+- `lookback_minutes` (integer, optional): Default: 15.
+- `start_time_iso` / `end_time_iso` (string, optional): Absolute time range.
+- `region` (string, optional): AWS region.
+- `index` (string, optional): Explicit log index.
+
+### get_drop_rules
+
+Gets drop rules for logs from
+[Last9 Control Plane](https://last9.io/control-plane). No parameters.
+
+### add_drop_rule
+
+Create a drop rule at [Last9 Control Plane](https://last9.io/control-plane).
+
+- `name` (string, required): Rule name.
+- `filters` (array, required): Filter conditions. Each filter has:
+  - `key` (string): `resource.attributes[key_name]` or `attributes[key_name]`.
+  - `value` (string): Value to match.
+  - `operator` (string): `equals` or `not_equals`.
+  - `conjunction` (string): `and`.
+
+### get_traces
+
+Advanced trace queries using JSON pipeline syntax.
+
+- `tracejson_query` (array, required): JSON pipeline query.
+- `start_time_iso` / `end_time_iso` (string, optional): Absolute time range.
+- `lookback_minutes` (integer, optional): Default: 60.
+- `limit` (integer, optional): Default: 5000.
+
+### get_service_traces
+
+Traces by trace ID or service name (exactly one required).
+
+- `trace_id` (string, optional): Specific trace ID.
+- `service_name` (string, optional): Service name.
+- `lookback_minutes` (integer, optional): Default: 60.
+- `start_time_iso` / `end_time_iso` (string, optional): Absolute time range.
+- `limit` (integer, optional): Default: 10.
+- `env` (string, optional): Environment filter.
+
+### get_trace_attributes
+
+Available trace attributes for a time window.
+
+- `lookback_minutes` (integer, optional): Default: 15.
+- `start_time_iso` / `end_time_iso` (string, optional): Absolute time range.
+- `region` (string, optional): AWS region.
+
+### get_change_events
+
+Change events (deployments, config changes, rollbacks, etc.).
+
+- `start_time_iso` / `end_time_iso` (string, optional): Absolute time range.
+- `lookback_minutes` (integer, optional): Default: 60.
+- `service` (string, optional): Filter by service.
+- `environment` (string, optional): Filter by environment.
+- `event_name` (string, optional): Filter by event type.
+
+Call without `event_name` first to get `available_event_names`.
+
+### get_alert_config
+
+Alert rule configurations with filtering.
+
+- `search_term` (string, optional): Free-text search across rule name, group,
+  data source, tags.
+- `rule_name` (string, optional): Filter by rule name.
+- `severity` (string, optional): Filter by severity.
+- `rule_type` (string, optional): `static` or `anomaly`.
+- `alert_group_name` / `alert_group_type` / `data_source_name` (string,
+  optional): Group filters.
+- `tags` (array, optional): Tag filters. All must match.
+
+All filters combine with AND.
+
+### get_alerts
+
+Currently active alerts.
+
+- `time_iso` (string, optional): Evaluation time in RFC3339.
+- `timestamp` (integer, optional): Unix timestamp (deprecated).
+- `window` (integer, optional): Lookback in seconds. Default: 900. Range:
+  60-86400.
+- `lookback_minutes` (integer, optional): Alternative to `window`. Range:
+  1-1440.
+
+</details>
 
 ## Development
 
-For local development and testing, you can run the MCP server in HTTP mode which makes it easier to debug requests and responses.
+<details>
+<summary>Running in HTTP mode, testing with curl, building from source</summary>
 
 ### Running in HTTP Mode
 
-Set the `LAST9_HTTP` environment variable to enable HTTP server mode:
-
 ```bash
-# Export required environment variables
 export LAST9_REFRESH_TOKEN="your_refresh_token"
 export LAST9_HTTP=true
 export LAST9_PORT=8080  # Optional, defaults to 8080
-# Run the server
 ./last9-mcp-server
 ```
 
-The server will start on `http://localhost:8080/mcp` and you can test it with curl:
+The server starts on `http://localhost:8080/mcp`.
 
 ### Testing with curl
 
-The MCP Streamable HTTP protocol requires an initialize handshake first. The server creates and returns a session ID in the response — do **not** set `Mcp-Session-Id` on the first request.
+The MCP Streamable HTTP protocol requires an initialize handshake first. Do
+**not** set `Mcp-Session-Id` on the first request.
 
 ```bash
-# Step 1: Initialize — omit Mcp-Session-Id so the server creates the session.
-# Extract the returned Mcp-Session-Id from the response headers.
+# Step 1: Initialize
 SESSION_ID=$(curl -si -X POST http://localhost:8080/mcp \
     -H "Content-Type: application/json" \
     -d '{
@@ -792,13 +580,13 @@ SESSION_ID=$(curl -si -X POST http://localhost:8080/mcp \
     }' | grep -i "^Mcp-Session-Id:" | awk '{print $2}' | tr -d '\r')
 echo "Session: $SESSION_ID"
 
-# Step 2: Send the initialized notification
+# Step 2: Send initialized notification
 curl -s -X POST http://localhost:8080/mcp \
     -H "Content-Type: application/json" \
     -H "Mcp-Session-Id: $SESSION_ID" \
     -d '{"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}'
 
-# Step 3: List available tools
+# Step 3: List tools
 curl -s -X POST http://localhost:8080/mcp \
     -H "Content-Type: application/json" \
     -H "Mcp-Session-Id: $SESSION_ID" \
@@ -826,21 +614,20 @@ curl -s -X POST http://localhost:8080/mcp \
 ### Building from Source
 
 ```bash
-# Clone the repository
 git clone https://github.com/last9/last9-mcp-server.git
 cd last9-mcp-server
-# Build the binary
 go build -o last9-mcp-server
-# Run in development mode
 LAST9_HTTP=true ./last9-mcp-server
 ```
 
-**Note**: `LAST9_HTTP=true` is for local development and debugging of your own server process. For normal client integration, prefer the managed HTTP endpoint from [Installation](#installation).
+**Note**: `LAST9_HTTP=true` is for local development only. For normal usage,
+prefer the [hosted HTTP endpoint](#quick-start-hosted-mcp).
+
+</details>
 
 ## Testing
 
 See [TESTING.md](TESTING.md) for detailed testing instructions.
-
 
 ## Badges
 
