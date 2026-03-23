@@ -13,6 +13,11 @@ environment to auto-fix code faster.
 ## Table of Contents
 
 - [Quick Start (Hosted MCP)](#quick-start-hosted-mcp)
+  - [Claude Code](#claude-code)
+  - [Cursor](#cursor)
+  - [VS Code](#vs-code)
+  - [Windsurf](#windsurf)
+  - [Claude Web/Desktop](#claude-webdesktop)
 - [Self-Hosted Setup (STDIO)](#self-hosted-setup-stdio)
 - [Available Tools](#available-tools)
 - [Development](#development)
@@ -95,7 +100,7 @@ Or manually add to `settings.json`:
 
 Complete OAuth authorization in your browser when prompted.
 
-### Claude Desktop
+### Claude Web/Desktop
 
 1. Go to **Settings > Connectors**
 2. Click **Add custom connector**
@@ -190,7 +195,7 @@ you installed:
 
 | Client         | Config location                                                                                                                         |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude Desktop | Settings > Developer > Edit Config (`claude_desktop_config.json`)                                                                       |
+| Claude Web/Desktop | Settings > Developer > Edit Config (`claude_desktop_config.json`)                                                                       |
 | Cursor         | Settings > Cursor Settings > MCP > Add New Global MCP Server                                                                            |
 | Windsurf       | Settings > Cascade > MCP Marketplace > gear icon (`mcp_config.json`)                                                                    |
 | VS Code        | Wrap in `{ "mcp": { "servers": { ... } } }` in `settings.json` — [details](https://code.visualstudio.com/docs/copilot/chat/mcp-servers) |
