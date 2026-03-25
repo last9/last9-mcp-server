@@ -101,12 +101,13 @@ func TestParseGetTracesParams(t *testing.T) {
 	}
 
 	tests := []struct {
-		name      string
-		args      GetServiceTracesArgs
-		wantErr   bool
-		wantTrace string
-		wantSvc   string
-		wantLimit int
+		name         string
+		args         GetServiceTracesArgs
+		wantErr      bool
+		wantTrace    string
+		wantSvc      string
+		wantLookback int
+		wantLimit    int
 	}{
 		{
 			name: "Valid trace ID request",
@@ -114,18 +115,20 @@ func TestParseGetTracesParams(t *testing.T) {
 				TraceID: "abc123def456",
 				Limit:   20,
 			},
-			wantErr:   false,
-			wantTrace: "abc123def456",
-			wantLimit: 20,
+			wantErr:      false,
+			wantTrace:    "abc123def456",
+			wantLookback: TraceIDLookbackMinutesDefault,
+			wantLimit:    20,
 		},
 		{
 			name: "Valid service name request with defaults",
 			args: GetServiceTracesArgs{
 				ServiceName: "payment-service",
 			},
-			wantErr:   false,
-			wantSvc:   "payment-service",
-			wantLimit: LimitDefault,
+			wantErr:      false,
+			wantSvc:      "payment-service",
+			wantLookback: ServiceLookbackMinutesDefault,
+			wantLimit:    LimitDefault,
 		},
 		{
 			name: "Valid service name with custom params",
@@ -135,9 +138,10 @@ func TestParseGetTracesParams(t *testing.T) {
 				Limit:           5,
 				Env:             "prod",
 			},
-			wantErr:   false,
-			wantSvc:   "api-service",
-			wantLimit: 5,
+			wantErr:      false,
+			wantSvc:      "api-service",
+			wantLookback: 30,
+			wantLimit:    5,
 		},
 		{
 			name: "Valid service name with large limit",
@@ -145,9 +149,10 @@ func TestParseGetTracesParams(t *testing.T) {
 				ServiceName: "api-service",
 				Limit:       250,
 			},
-			wantErr:   false,
-			wantSvc:   "api-service",
-			wantLimit: 250,
+			wantErr:      false,
+			wantSvc:      "api-service",
+			wantLookback: ServiceLookbackMinutesDefault,
+			wantLimit:    250,
 		},
 		{
 			name: "Fractional limit below one keeps default",
@@ -155,9 +160,10 @@ func TestParseGetTracesParams(t *testing.T) {
 				ServiceName: "api-service",
 				Limit:       0.5,
 			},
-			wantErr:   false,
-			wantSvc:   "api-service",
-			wantLimit: LimitDefault,
+			wantErr:      false,
+			wantSvc:      "api-service",
+			wantLookback: ServiceLookbackMinutesDefault,
+			wantLimit:    LimitDefault,
 		},
 	}
 
@@ -174,6 +180,9 @@ func TestParseGetTracesParams(t *testing.T) {
 				}
 				if result.ServiceName != tt.wantSvc {
 					t.Errorf("parseGetServiceTraceParams() ServiceName = %v, want %v", result.ServiceName, tt.wantSvc)
+				}
+				if result.LookbackMinutes != tt.wantLookback {
+					t.Errorf("parseGetServiceTraceParams() LookbackMinutes = %v, want %v", result.LookbackMinutes, tt.wantLookback)
 				}
 				if result.Limit != tt.wantLimit {
 					t.Errorf("parseGetServiceTraceParams() Limit = %v, want %v", result.Limit, tt.wantLimit)
@@ -412,6 +421,45 @@ func TestGetServiceTracesHandler_ForwardsLargeLimit(t *testing.T) {
 
 	if receivedLimit != "250" {
 		t.Fatalf("expected forwarded limit 250, got %q", receivedLimit)
+	}
+}
+
+func TestGetServiceTracesHandler_EmptyTraceIDResponseAsksForSpecificTimeWindow(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, `{"data":{"result":[]}}`)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+		Region:     "ap-south-1",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "mock-access-token-for-testing",
+			ExpiresAt:   time.Now().Add(365 * 24 * time.Hour),
+		},
+	}
+
+	handler := GetServiceTracesHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceTracesArgs{
+		TraceID: "ea8148dece205073096e4ad48145b08a",
+	})
+	if err != nil {
+		t.Fatalf("GetServiceTracesHandler() error = %v", err)
+	}
+
+	textContent, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("expected TextContent type")
+	}
+
+	var traceResponse TraceQueryResponse
+	if err := json.Unmarshal([]byte(textContent.Text), &traceResponse); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if !strings.Contains(traceResponse.Message, "specific time window") {
+		t.Fatalf("expected empty trace-id response to ask for a specific time window, got %q", traceResponse.Message)
 	}
 }
 

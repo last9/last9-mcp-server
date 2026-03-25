@@ -492,10 +492,12 @@ prefer `get_service_traces` with `trace_id`.
 Traces by trace ID or service name (exactly one required).
 
 Prefer this tool whenever you already have an exact `trace_id`.
+If a `trace_id` lookup returns empty data, ask for a specific time window and retry with
+explicit time bounds or a larger `lookback_minutes`.
 
 - `trace_id` (string, optional): Specific trace ID.
 - `service_name` (string, optional): Service name.
-- `lookback_minutes` (integer, optional): Default: 60.
+- `lookback_minutes` (integer, optional): Default: 1440 for `trace_id`, 60 for `service_name`.
 - `start_time_iso` / `end_time_iso` (string, optional): Absolute time range.
 - `limit` (integer, optional): Default: 10.
 - `env` (string, optional): Environment filter.
