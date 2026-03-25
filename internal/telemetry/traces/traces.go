@@ -59,6 +59,10 @@ type GetTracesArgs struct {
 
 const partialResultMetadataKey = "_last9_mcp"
 
+// maxResponseBytes is the maximum size of a get_traces MCP response.
+// Responses exceeding this are trimmed by removing traces from the end.
+const maxResponseBytes = 128 * 1024
+
 // NewGetTracesHandler creates a handler for getting traces using tracejson_query parameter
 func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTracesArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetTracesArgs) (*mcp.CallToolResult, any, error) {
@@ -92,11 +96,16 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	dashboardURL := dlBuilder.BuildTracesLink(startTime, endTime, tracejsonQuery, "", "")
 
-	// Transform raw result into a compact format to avoid filling LLM context
+	// Transform raw result into a compact format to avoid filling LLM context.
+	// If the response exceeds the size guard, trim traces and add a warning.
 	compact := compactTraceResponse(result)
 	jsonBytes, err := json.Marshal(compact)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal compact response: %v", err)
+	}
+
+	if len(jsonBytes) > maxResponseBytes {
+		jsonBytes = trimCompactTraceResponse(compact, maxResponseBytes)
 	}
 
 	return &mcp.CallToolResult{
@@ -540,6 +549,83 @@ func compactSpanResults(items []interface{}, originalResult map[string]interface
 		response[partialResultMetadataKey] = meta
 	}
 	return response
+}
+
+// trimCompactTraceResponse progressively removes traces from the compact response
+// until the JSON size fits within maxBytes. Returns the trimmed JSON bytes.
+func trimCompactTraceResponse(compact map[string]interface{}, maxBytes int) []byte {
+	traces, ok := compact["traces"].([]map[string]interface{})
+	if !ok {
+		// Try aggregation format
+		if data, ok := compact["data"].([]interface{}); ok {
+			return trimGenericArrayResponse(compact, "data", len(data), maxBytes)
+		}
+		out, _ := json.Marshal(compact)
+		return out
+	}
+
+	return trimGenericArrayResponse(compact, "traces", len(traces), maxBytes)
+}
+
+// trimGenericArrayResponse trims an array field in a compact response by progressively
+// halving the number of items until the JSON fits within maxBytes.
+func trimGenericArrayResponse(compact map[string]interface{}, arrayKey string, originalCount int, maxBytes int) []byte {
+	keepCount := originalCount
+	for keepCount > 0 {
+		items := compact[arrayKey]
+		var trimmedItems interface{}
+
+		switch arr := items.(type) {
+		case []map[string]interface{}:
+			if keepCount < len(arr) {
+				trimmedItems = arr[:keepCount]
+			} else {
+				trimmedItems = arr
+			}
+		case []interface{}:
+			if keepCount < len(arr) {
+				trimmedItems = arr[:keepCount]
+			} else {
+				trimmedItems = arr
+			}
+		default:
+			trimmedItems = items
+		}
+
+		result := map[string]interface{}{
+			"count":    keepCount,
+			arrayKey:   trimmedItems,
+			"_trimmed": map[string]interface{}{
+				"original_count": originalCount,
+				"kept_count":     keepCount,
+				"reason":         "Response exceeded size limit. Use the dashboard link for full results.",
+			},
+		}
+		// Preserve result_type if present
+		if rt, ok := compact["result_type"]; ok {
+			result["result_type"] = rt
+		}
+		if meta, ok := compact[partialResultMetadataKey]; ok {
+			result[partialResultMetadataKey] = meta
+		}
+
+		out, err := json.Marshal(result)
+		if err != nil || len(out) <= maxBytes {
+			return out
+		}
+		keepCount = keepCount / 2
+	}
+
+	out, _ := json.Marshal(map[string]interface{}{
+		"count":    0,
+		arrayKey:   []interface{}{},
+		"_trimmed": map[string]interface{}{
+			"original_count": originalCount,
+			"kept_count":     0,
+			"reason":         "Response exceeded size limit. Use the dashboard link for full results.",
+		},
+	})
+	return out
 }
 
 func exactTraceIDEquality(rawEq interface{}) (string, bool) {
