@@ -438,6 +438,12 @@ func extractExactTraceIDLookup(pipeline []map[string]interface{}) (string, bool)
 	return findExactTraceIDInCondition(query)
 }
 
+// findExactTraceIDInCondition returns a trace ID fast-path when an exact
+// TraceId equality appears anywhere in the condition tree. The helper walks
+// both "$and" and "$or" groups via findExactTraceIDInConditionGroup; while
+// "$or" can semantically mean "this TraceId OR other conditions" and therefore
+// still match multiple traces, we intentionally treat any TraceId equality as a
+// signal to avoid chunking and favor performance.
 func findExactTraceIDInCondition(condition map[string]interface{}) (string, bool) {
 	if traceID, ok := exactTraceIDEquality(condition["$eq"]); ok {
 		return traceID, true
