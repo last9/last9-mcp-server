@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"last9-mcp/internal/deeplink"
@@ -21,6 +22,9 @@ const GetTracesDescription = `Query distributed traces across all services using
 
 This tool provides comprehensive access to trace data for debugging performance issues, understanding request flows,
 and analyzing distributed system behavior. It accepts raw JSON pipeline queries for maximum flexibility.
+
+Use this tool for broad trace searches, analytics, and aggregations. For an exact trace ID lookup, prefer
+the ` + "`get_service_traces`" + ` tool with ` + "`trace_id`" + ` because it avoids the slower chunked query path.
 
 The tool uses a pipeline-based query system similar to the logs API, allowing complex filtering and aggregation
 operations on trace data.
@@ -42,8 +46,7 @@ Returns comprehensive trace data including trace IDs, spans, durations, timestam
 
 Example tracejson_query structures:
 - Simple filter: [{"type": "filter", "query": {"$eq": ["ServiceName", "api"]}}]
-- Multiple conditions: [{"type": "filter", "query": {"$and": [{"$eq": ["ServiceName", "api"]}, {"$eq": ["StatusCode", "STATUS_CODE_ERROR"]}]}}]
-- Trace ID lookup: [{"type": "filter", "query": {"$eq": ["TraceId", "abc123"]}}]`
+- Multiple conditions: [{"type": "filter", "query": {"$and": [{"$eq": ["ServiceName", "api"]}, {"$eq": ["StatusCode", "STATUS_CODE_ERROR"]}]}}]`
 
 // GetTracesArgs represents the input arguments for the traces query tool
 type GetTracesArgs struct {
@@ -104,6 +107,20 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 // and merging results newest-first — mirroring the logs chunking approach.
 func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, tracejsonQuery interface{}, startMs, endMs int64, args GetTracesArgs) (map[string]interface{}, error) {
 	chunkingDebug := chunkingDebugEnabled()
+	effectiveLimit := effectiveGetTracesLimit(cfg, args.Limit)
+
+	if traceID, ok := extractExactTraceIDLookup(args.TracejsonQuery); ok {
+		if chunkingDebug {
+			log.Printf(
+				"[chunking] get_traces exact trace_id lookup detected trace_id=%s using single request start_ms=%d end_ms=%d effective_limit=%d",
+				traceID,
+				startMs,
+				endMs,
+				effectiveLimit,
+			)
+		}
+		return executeTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startMs, endMs, effectiveLimit)
+	}
 
 	chunks := utils.GetTimeRangeChunksBackward(startMs, endMs)
 	if len(chunks) == 0 {
@@ -112,8 +129,6 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 		}
 		return emptyTracesResponse(), nil
 	}
-
-	effectiveLimit := effectiveGetTracesLimit(cfg, args.Limit)
 
 	if chunkingDebug {
 		log.Printf(
@@ -402,4 +417,86 @@ func parseTimeRangeFromArgsAt(args GetTracesArgs, now time.Time) (int64, int64, 
 		return 0, 0, err
 	}
 	return startTime.UnixMilli(), endTime.UnixMilli(), nil
+}
+
+func extractExactTraceIDLookup(pipeline []map[string]interface{}) (string, bool) {
+	if len(pipeline) != 1 {
+		return "", false
+	}
+
+	filterStep := pipeline[0]
+	stepType, _ := filterStep["type"].(string)
+	if stepType != "filter" {
+		return "", false
+	}
+
+	query, ok := filterStep["query"].(map[string]interface{})
+	if !ok {
+		return "", false
+	}
+
+	return findExactTraceIDInCondition(query)
+}
+
+// findExactTraceIDInCondition returns a trace ID fast-path when an exact
+// TraceId equality appears anywhere in the condition tree. The helper walks
+// both "$and" and "$or" groups via findExactTraceIDInConditionGroup; while
+// "$or" can semantically mean "this TraceId OR other conditions" and therefore
+// still match multiple traces, we intentionally treat any TraceId equality as a
+// signal to avoid chunking and favor performance.
+func findExactTraceIDInCondition(condition map[string]interface{}) (string, bool) {
+	if traceID, ok := exactTraceIDEquality(condition["$eq"]); ok {
+		return traceID, true
+	}
+
+	if traceID, ok := findExactTraceIDInConditionGroup(condition["$and"]); ok {
+		return traceID, true
+	}
+
+	if traceID, ok := findExactTraceIDInConditionGroup(condition["$or"]); ok {
+		return traceID, true
+	}
+
+	return "", false
+}
+
+func findExactTraceIDInConditionGroup(rawConditions interface{}) (string, bool) {
+	conditions, ok := rawConditions.([]interface{})
+	if !ok {
+		return "", false
+	}
+
+	for _, rawCondition := range conditions {
+		nestedCondition, ok := rawCondition.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if traceID, ok := findExactTraceIDInCondition(nestedCondition); ok {
+			return traceID, true
+		}
+	}
+	return "", false
+}
+
+func exactTraceIDEquality(rawEq interface{}) (string, bool) {
+	eqArgs, ok := rawEq.([]interface{})
+	if !ok || len(eqArgs) != 2 {
+		return "", false
+	}
+
+	field, fieldOK := eqArgs[0].(string)
+	traceID, traceOK := eqArgs[1].(string)
+	if !fieldOK || !traceOK {
+		return "", false
+	}
+	if field != "TraceId" {
+		return "", false
+	}
+
+	traceID = strings.TrimSpace(traceID)
+	if traceID == "" {
+		return "", false
+	}
+
+	return traceID, true
 }

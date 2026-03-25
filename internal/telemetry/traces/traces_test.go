@@ -214,6 +214,115 @@ func TestGetTracesHandler_ValidationErrors(t *testing.T) {
 	}
 }
 
+func TestExtractExactTraceIDLookup(t *testing.T) {
+	tests := []struct {
+		name     string
+		pipeline []map[string]interface{}
+		wantID   string
+		wantOK   bool
+	}{
+		{
+			name: "direct exact trace id equality",
+			pipeline: []map[string]interface{}{
+				{
+					"type": "filter",
+					"query": map[string]interface{}{
+						"$eq": []interface{}{"TraceId", "trace-123"},
+					},
+				},
+			},
+			wantID: "trace-123",
+			wantOK: true,
+		},
+		{
+			name: "nested exact trace id equality",
+			pipeline: []map[string]interface{}{
+				{
+					"type": "filter",
+					"query": map[string]interface{}{
+						"$and": []interface{}{
+							map[string]interface{}{
+								"$eq": []interface{}{"ServiceName", "api"},
+							},
+							map[string]interface{}{
+								"$eq": []interface{}{"TraceId", "trace-123"},
+							},
+						},
+					},
+				},
+			},
+			wantID: "trace-123",
+			wantOK: true,
+		},
+		{
+			name: "or exact trace id equality",
+			pipeline: []map[string]interface{}{
+				{
+					"type": "filter",
+					"query": map[string]interface{}{
+						"$or": []interface{}{
+							"skip-non-map-entry",
+							map[string]interface{}{
+								"$eq": []interface{}{"TraceId", "trace-123"},
+							},
+						},
+					},
+				},
+			},
+			wantID: "trace-123",
+			wantOK: true,
+		},
+		{
+			name: "trace id contains is not exact lookup",
+			pipeline: []map[string]interface{}{
+				{
+					"type": "filter",
+					"query": map[string]interface{}{
+						"$contains": []interface{}{"TraceId", "trace-123"},
+					},
+				},
+			},
+			wantOK: false,
+		},
+		{
+			name: "non filter pipeline does not match",
+			pipeline: []map[string]interface{}{
+				{
+					"type": "aggregate",
+				},
+			},
+			wantOK: false,
+		},
+		{
+			name: "multiple pipeline steps do not match",
+			pipeline: []map[string]interface{}{
+				{
+					"type": "filter",
+					"query": map[string]interface{}{
+						"$eq": []interface{}{"TraceId", "trace-123"},
+					},
+				},
+				{
+					"type": "aggregate",
+				},
+			},
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotID, gotOK := extractExactTraceIDLookup(tt.pipeline)
+			if gotOK != tt.wantOK {
+				t.Fatalf("extractExactTraceIDLookup() ok = %v, want %v", gotOK, tt.wantOK)
+			}
+			if gotID != tt.wantID {
+				t.Fatalf("extractExactTraceIDLookup() id = %q, want %q", gotID, tt.wantID)
+			}
+		})
+	}
+}
+
 // Integration test - requires real API credentials
 func TestGetTracesHandler_Integration(t *testing.T) {
 	testRefreshToken := os.Getenv("TEST_REFRESH_TOKEN")

@@ -22,8 +22,9 @@ import (
 )
 
 const (
-	LookbackMinutesDefault = 60
-	LimitDefault           = 10
+	ServiceLookbackMinutesDefault = 60
+	TraceIDLookbackMinutesDefault = 1440
+	LimitDefault                  = 10
 )
 
 // GetServiceTracesDescription provides the description for the service traces tool
@@ -31,11 +32,12 @@ const GetServiceTracesDescription = `Retrieve traces from Last9 by trace ID or s
 
 This tool allows you to get specific traces either by providing a trace ID for a single trace,
 or by providing a service name to get all traces for that service within a time range.
+Prefer this tool over ` + "`get_traces`" + ` whenever you have an exact ` + "`trace_id`" + `.
 
 Parameters:
 - trace_id: (Optional) Specific trace ID to retrieve. Cannot be used with service_name.
 - service_name: (Optional) Name of service to get traces for. Cannot be used with trace_id.
-- lookback_minutes: (Optional) Number of minutes to look back from now. Default: 60 minutes
+- lookback_minutes: (Optional) Number of minutes to look back from now. Default: 1440 minutes for trace_id lookups, 60 minutes for service_name lookups
 - start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)
 - end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)
 - limit: (Optional) Maximum number of traces to return. Default: 10
@@ -51,13 +53,16 @@ Examples:
 1. trace_id="abc123def456" - retrieves the specific trace
 2. service_name="payment-service" + lookback_minutes=30 - gets all payment service traces from last 30 minutes
 
+If a trace_id lookup returns no data, ask the user for a specific time window and retry with
+start_time_iso/end_time_iso or a larger explicit lookback_minutes.
+
 Returns trace data including trace IDs, spans, duration, timestamps, and status information.`
 
 // GetServiceTracesArgs defines the input structure for getting traces by service or ID
 type GetServiceTracesArgs struct {
 	TraceID         string  `json:"trace_id,omitempty" jsonschema:"Specific trace ID to retrieve"`
 	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Name of service to get traces for"`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1)"`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 1440 for trace_id, 60 for service_name, minimum: 1)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - lookback_minutes."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time."`
 	Limit           float64 `json:"limit,omitempty" jsonschema:"Maximum number of traces to return (optional, default: 10)"`
@@ -135,10 +140,14 @@ func parseGetServiceTraceParams(args GetServiceTracesArgs, cfg models.Config) (*
 	queryParams := &GetTracesQueryParams{
 		TraceID:         args.TraceID,
 		ServiceName:     args.ServiceName,
-		LookbackMinutes: LookbackMinutesDefault,
+		LookbackMinutes: ServiceLookbackMinutesDefault,
 		Region:          cfg.Region,
 		Limit:           LimitDefault,
 		Env:             args.Env,
+	}
+
+	if args.TraceID != "" {
+		queryParams.LookbackMinutes = TraceIDLookbackMinutesDefault
 	}
 
 	// Override defaults with provided values
@@ -266,7 +275,14 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 
 		// Add context about the query type
 		if queryParams.TraceID != "" {
-			traceResponse.Message = fmt.Sprintf("Retrieved trace data for trace ID: %s", queryParams.TraceID)
+			if len(traceResponse.Data) == 0 {
+				traceResponse.Message = fmt.Sprintf(
+					"No trace data found for trace ID: %s in the searched time window. Ask the user for a specific time window and retry with start_time_iso/end_time_iso or an explicit lookback_minutes.",
+					queryParams.TraceID,
+				)
+			} else {
+				traceResponse.Message = fmt.Sprintf("Retrieved trace data for trace ID: %s", queryParams.TraceID)
+			}
 		} else {
 			traceResponse.Message = fmt.Sprintf("Retrieved %d traces for service: %s", len(traceResponse.Data), queryParams.ServiceName)
 		}
