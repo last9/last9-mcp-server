@@ -443,17 +443,24 @@ func findExactTraceIDInCondition(condition map[string]interface{}) (string, bool
 		return traceID, true
 	}
 
-	rawAndConditions, ok := condition["$and"]
+	if traceID, ok := findExactTraceIDInConditionGroup(condition["$and"]); ok {
+		return traceID, true
+	}
+
+	if traceID, ok := findExactTraceIDInConditionGroup(condition["$or"]); ok {
+		return traceID, true
+	}
+
+	return "", false
+}
+
+func findExactTraceIDInConditionGroup(rawConditions interface{}) (string, bool) {
+	conditions, ok := rawConditions.([]interface{})
 	if !ok {
 		return "", false
 	}
 
-	andConditions, ok := rawAndConditions.([]interface{})
-	if !ok {
-		return "", false
-	}
-
-	for _, rawCondition := range andConditions {
+	for _, rawCondition := range conditions {
 		nestedCondition, ok := rawCondition.(map[string]interface{})
 		if !ok {
 			continue
@@ -462,7 +469,6 @@ func findExactTraceIDInCondition(condition map[string]interface{}) (string, bool
 			return traceID, true
 		}
 	}
-
 	return "", false
 }
 

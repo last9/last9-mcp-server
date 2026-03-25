@@ -255,6 +255,24 @@ func TestExtractExactTraceIDLookup(t *testing.T) {
 			wantOK: true,
 		},
 		{
+			name: "or exact trace id equality",
+			pipeline: []map[string]interface{}{
+				{
+					"type": "filter",
+					"query": map[string]interface{}{
+						"$or": []interface{}{
+							"skip-non-map-entry",
+							map[string]interface{}{
+								"$eq": []interface{}{"TraceId", "trace-123"},
+							},
+						},
+					},
+				},
+			},
+			wantID: "trace-123",
+			wantOK: true,
+		},
+		{
 			name: "trace id contains is not exact lookup",
 			pipeline: []map[string]interface{}{
 				{
