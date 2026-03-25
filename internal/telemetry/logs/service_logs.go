@@ -134,8 +134,8 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
 
-		// Format response as JSON for better readability
-		responseJSON, err := json.MarshalIndent(logs, "", "  ")
+		// Format response as compact JSON to minimize LLM token usage
+		responseJSON, err := json.Marshal(logs)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to format response: %w", err)
 		}
