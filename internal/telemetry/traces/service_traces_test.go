@@ -250,8 +250,7 @@ func TestBuildGetTracesFilters(t *testing.T) {
 	}
 }
 
-func TestGetServiceTracesHandler_MockedResponse(t *testing.T) {
-	// Mock API response
+func TestGetServiceTracesHandler_MockedResponse_ServiceName(t *testing.T) {
 	mockResponse := `{
 		"data": {
 			"result": [
@@ -317,76 +316,124 @@ func TestGetServiceTracesHandler_MockedResponse(t *testing.T) {
 	}
 
 	handler := GetServiceTracesHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceTracesArgs{
+		ServiceName:     "api-service",
+		LookbackMinutes: 60,
+		Limit:           10,
+	})
+	if err != nil {
+		t.Fatalf("GetServiceTracesHandler() error = %v", err)
+	}
 
-	tests := []struct {
-		name    string
-		args    GetServiceTracesArgs
-		wantErr bool
-	}{
-		{
-			name: "Get traces by service name",
-			args: GetServiceTracesArgs{
-				ServiceName:     "api-service",
-				LookbackMinutes: 60,
-				Limit:           10,
-			},
-			wantErr: false,
-		},
-		{
-			name: "Get traces by trace ID",
-			args: GetServiceTracesArgs{
-				TraceID: "abc123def456",
-				Limit:   5,
-			},
-			wantErr: false,
+	if len(result.Content) == 0 {
+		t.Fatalf("expected content in result")
+	}
+
+	textContent, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("expected TextContent type")
+	}
+
+	var traceResponse TraceQueryResponse
+	if err := json.Unmarshal([]byte(textContent.Text), &traceResponse); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if !traceResponse.Success {
+		t.Errorf("expected successful response, got success=%v", traceResponse.Success)
+	}
+
+	if len(traceResponse.Data) == 0 {
+		t.Error("expected trace data in response")
+	}
+
+	// Verify trace data structure
+	for _, trace := range traceResponse.Data {
+		if trace.TraceID == "" {
+			t.Error("expected TraceID to be populated")
+		}
+		if trace.ServiceName == "" {
+			t.Error("expected ServiceName to be populated")
+		}
+	}
+}
+
+func TestGetServiceTracesHandler_TraceIDUsesTraceDetailsEndpoint(t *testing.T) {
+	mockResponse := `{
+		"traces": [
+			{
+				"Timestamp": "2025-11-02T10:00:00Z",
+				"TraceId": "abc123def456",
+				"SpanId": "span789",
+				"ParentSpanId": "",
+				"TraceState": "",
+				"SpanName": "GET /api/users",
+				"SpanKind": "SPAN_KIND_SERVER",
+				"ServiceName": "api-service",
+				"ResourceAttributes": {
+					"deployment.environment": "prod"
+				},
+				"Duration": 150000000,
+				"StatusCode": "STATUS_CODE_OK"
+			}
+		]
+	}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET request, got %s", r.Method)
+		}
+		if r.URL.Path != "/cat/api/traces/abc123def456" {
+			t.Errorf("expected trace details path, got %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("limit"); got != "5" {
+			t.Errorf("expected forwarded limit=5, got %q", got)
+		}
+		if got := r.URL.Query().Get("region"); got != "ap-south-1" {
+			t.Errorf("expected region query param, got %q", got)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, mockResponse)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+		Region:     "ap-south-1",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "mock-access-token-for-testing",
+			ExpiresAt:   time.Now().Add(365 * 24 * time.Hour),
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-			req := &mcp.CallToolRequest{}
-			result, _, err := handler(ctx, req, tt.args)
+	handler := GetServiceTracesHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceTracesArgs{
+		TraceID: "abc123def456",
+		Limit:   5,
+	})
+	if err != nil {
+		t.Fatalf("GetServiceTracesHandler() error = %v", err)
+	}
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GetServiceTracesHandler() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
+	textContent, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("expected TextContent type")
+	}
 
-			if err == nil {
-				if len(result.Content) == 0 {
-					t.Fatalf("expected content in result")
-				}
+	var traceResponse TraceQueryResponse
+	if err := json.Unmarshal([]byte(textContent.Text), &traceResponse); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
 
-				textContent, ok := result.Content[0].(*mcp.TextContent)
-				if !ok {
-					t.Fatalf("expected TextContent type")
-				}
-
-				var traceResponse TraceQueryResponse
-				if err := json.Unmarshal([]byte(textContent.Text), &traceResponse); err != nil {
-					t.Fatalf("failed to unmarshal response: %v", err)
-				}
-
-				if !traceResponse.Success {
-					t.Errorf("expected successful response, got success=%v", traceResponse.Success)
-				}
-
-				if len(traceResponse.Data) == 0 {
-					t.Error("expected trace data in response")
-				}
-
-				// Verify trace data structure
-				for _, trace := range traceResponse.Data {
-					if trace.TraceID == "" {
-						t.Error("expected TraceID to be populated")
-					}
-					if trace.ServiceName == "" {
-						t.Error("expected ServiceName to be populated")
-					}
-				}
-			}
-		})
+	if !traceResponse.Success {
+		t.Fatalf("expected success=true, got false")
+	}
+	if len(traceResponse.Data) != 1 {
+		t.Fatalf("expected one span from trace details endpoint, got %d", len(traceResponse.Data))
+	}
+	if traceResponse.Data[0].TraceID != "abc123def456" {
+		t.Fatalf("unexpected trace ID: got %q", traceResponse.Data[0].TraceID)
 	}
 }
 
@@ -427,7 +474,7 @@ func TestGetServiceTracesHandler_ForwardsLargeLimit(t *testing.T) {
 func TestGetServiceTracesHandler_EmptyTraceIDResponseAsksForSpecificTimeWindow(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		io.WriteString(w, `{"data":{"result":[]}}`)
+		io.WriteString(w, `{"traces":[]}`)
 	}))
 	defer server.Close()
 

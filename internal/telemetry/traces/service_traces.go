@@ -23,7 +23,7 @@ import (
 
 const (
 	ServiceLookbackMinutesDefault = 60
-	TraceIDLookbackMinutesDefault = 1440
+	TraceIDLookbackMinutesDefault = 4320
 	LimitDefault                  = 10
 )
 
@@ -37,7 +37,7 @@ Prefer this tool over ` + "`get_traces`" + ` whenever you have an exact ` + "`tr
 Parameters:
 - trace_id: (Optional) Specific trace ID to retrieve. Cannot be used with service_name.
 - service_name: (Optional) Name of service to get traces for. Cannot be used with trace_id.
-- lookback_minutes: (Optional) Number of minutes to look back from now. Default: 1440 minutes for trace_id lookups, 60 minutes for service_name lookups
+- lookback_minutes: (Optional) Number of minutes to look back from now. Default: 4320 minutes for trace_id lookups, 60 minutes for service_name lookups
 - start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)
 - end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)
 - limit: (Optional) Maximum number of traces to return. Default: 10
@@ -62,7 +62,7 @@ Returns trace data including trace IDs, spans, duration, timestamps, and status 
 type GetServiceTracesArgs struct {
 	TraceID         string  `json:"trace_id,omitempty" jsonschema:"Specific trace ID to retrieve"`
 	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Name of service to get traces for"`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 1440 for trace_id, 60 for service_name, minimum: 1)"`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 4320 for trace_id, 60 for service_name, minimum: 1)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - lookback_minutes."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time."`
 	Limit           float64 `json:"limit,omitempty" jsonschema:"Maximum number of traces to return (optional, default: 10)"`
@@ -108,6 +108,25 @@ type TraceQueryResponse struct {
 	Data    []TraceData `json:"data"`
 	Success bool        `json:"success"`
 	Message string      `json:"message"`
+}
+
+// TraceDetailsResponse represents the response returned by the dedicated trace details endpoint.
+type TraceDetailsResponse struct {
+	Traces []TraceDetailsSpan `json:"traces"`
+}
+
+// TraceDetailsSpan represents a single span from the dedicated trace details endpoint.
+type TraceDetailsSpan struct {
+	Timestamp          string            `json:"Timestamp"`
+	TraceID            string            `json:"TraceId"`
+	SpanID             string            `json:"SpanId"`
+	TraceState         string            `json:"TraceState"`
+	SpanName           string            `json:"SpanName"`
+	SpanKind           string            `json:"SpanKind"`
+	ServiceName        string            `json:"ServiceName"`
+	ResourceAttributes map[string]string `json:"ResourceAttributes"`
+	Duration           int64             `json:"Duration"`
+	StatusCode         string            `json:"StatusCode"`
 }
 
 // validateGetServiceTracesArgs validates the input arguments
@@ -208,6 +227,23 @@ func buildGetTracesRequestURL(cfg models.Config, params *GetTracesQueryParams, s
 	return u, nil
 }
 
+// buildTraceDetailsRequestURL constructs the dedicated trace details API URL for an exact trace lookup.
+func buildTraceDetailsRequestURL(cfg models.Config, params *GetTracesQueryParams, startTime, endTime int64) (*url.URL, error) {
+	u, err := url.Parse(cfg.APIBaseURL + fmt.Sprintf(constants.EndpointTraceDetails, url.PathEscape(params.TraceID)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse URL: %w", err)
+	}
+
+	q := u.Query()
+	q.Set("region", params.Region)
+	q.Set("start", strconv.FormatInt(startTime, 10))
+	q.Set("end", strconv.FormatInt(endTime, 10))
+	q.Set("limit", strconv.Itoa(params.Limit))
+	u.RawQuery = q.Encode()
+
+	return u, nil
+}
+
 // GetServiceTracesHandler creates a handler for getting traces by service or ID
 func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetServiceTracesArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetServiceTracesArgs) (*mcp.CallToolResult, any, error) {
@@ -232,46 +268,10 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 			return nil, nil, err
 		}
 
-		// Build request URL
-		requestURL, err := buildGetTracesRequestURL(cfg, queryParams, startTime.Unix(), endTime.Unix())
+		traceResponse, err := fetchServiceTraceResponse(ctx, client, cfg, queryParams, startTime.Unix(), endTime.Unix())
 		if err != nil {
 			return nil, nil, err
 		}
-
-		// Build filters
-		filters := buildGetTracesFilters(queryParams)
-
-		// Create HTTP request using existing pattern
-		httpReq, err := createTraceRequest(ctx, requestURL, filters, cfg)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		// Execute request
-		resp, err := client.Do(httpReq)
-		if err != nil {
-			return nil, nil, fmt.Errorf("request failed: %w", err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			// Limit body size in error message to avoid huge HTML responses
-			bodyStr := string(body)
-			if len(bodyStr) > 100 {
-				bodyStr = bodyStr[:100] + "... (truncated)"
-			}
-			return nil, nil, fmt.Errorf("API request failed with status %d (endpoint: %s/cat/api/traces/v2/query_range/json). Response: %s",
-				resp.StatusCode, cfg.APIBaseURL, bodyStr)
-		}
-
-		var result map[string]interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return nil, nil, fmt.Errorf("failed to decode response: %w", err)
-		}
-
-		// Transform raw response to structured TraceQueryResponse (reusing existing function)
-		traceResponse := transformToTraceQueryResponse(result)
 
 		// Add context about the query type
 		if queryParams.TraceID != "" {
@@ -314,6 +314,87 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 	}
 }
 
+func fetchServiceTraceResponse(ctx context.Context, client *http.Client, cfg models.Config, params *GetTracesQueryParams, startTime, endTime int64) (TraceQueryResponse, error) {
+	if params.TraceID != "" {
+		return fetchTraceDetailsResponse(ctx, client, cfg, params, startTime, endTime)
+	}
+	return fetchServiceQueryRangeResponse(ctx, client, cfg, params, startTime, endTime)
+}
+
+func fetchServiceQueryRangeResponse(ctx context.Context, client *http.Client, cfg models.Config, params *GetTracesQueryParams, startTime, endTime int64) (TraceQueryResponse, error) {
+	requestURL, err := buildGetTracesRequestURL(cfg, params, startTime, endTime)
+	if err != nil {
+		return TraceQueryResponse{}, err
+	}
+
+	filters := buildGetTracesFilters(params)
+
+	httpReq, err := createTraceRequest(ctx, requestURL, filters, cfg)
+	if err != nil {
+		return TraceQueryResponse{}, err
+	}
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return TraceQueryResponse{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyStr := readTruncatedResponseBody(resp.Body)
+		return TraceQueryResponse{}, fmt.Errorf(
+			"API request failed with status %d (endpoint: %s%s). Response: %s",
+			resp.StatusCode,
+			cfg.APIBaseURL,
+			constants.EndpointTracesQueryRange,
+			bodyStr,
+		)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return TraceQueryResponse{}, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return transformToTraceQueryResponse(result), nil
+}
+
+func fetchTraceDetailsResponse(ctx context.Context, client *http.Client, cfg models.Config, params *GetTracesQueryParams, startTime, endTime int64) (TraceQueryResponse, error) {
+	requestURL, err := buildTraceDetailsRequestURL(cfg, params, startTime, endTime)
+	if err != nil {
+		return TraceQueryResponse{}, err
+	}
+
+	httpReq, err := createTraceDetailsRequest(ctx, requestURL, cfg)
+	if err != nil {
+		return TraceQueryResponse{}, err
+	}
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return TraceQueryResponse{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyStr := readTruncatedResponseBody(resp.Body)
+		return TraceQueryResponse{}, fmt.Errorf(
+			"API request failed with status %d (endpoint: %s%s). Response: %s",
+			resp.StatusCode,
+			cfg.APIBaseURL,
+			fmt.Sprintf(constants.EndpointTraceDetails, params.TraceID),
+			bodyStr,
+		)
+	}
+
+	var result TraceDetailsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return TraceQueryResponse{}, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return transformTraceDetailsToTraceQueryResponse(result, params.Env), nil
+}
+
 // createTraceRequest builds an HTTP POST request for the trace API with authentication
 func createTraceRequest(ctx context.Context, requestURL *url.URL, filters []map[string]interface{}, cfg models.Config) (*http.Request, error) {
 	// Build the JSON query pipeline for the API
@@ -343,6 +424,24 @@ func createTraceRequest(ctx context.Context, requestURL *url.URL, filters []map[
 	// Add authentication - ensure Bearer prefix
 	accessToken := cfg.TokenManager.GetAccessToken(ctx)
 
+	if !strings.HasPrefix(accessToken, constants.BearerPrefix) {
+		accessToken = constants.BearerPrefix + accessToken
+	}
+	req.Header.Set(constants.HeaderXLast9APIToken, accessToken)
+
+	return req, nil
+}
+
+// createTraceDetailsRequest builds an authenticated GET request for the dedicated trace details API.
+func createTraceDetailsRequest(ctx context.Context, requestURL *url.URL, cfg models.Config) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	req.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
+
+	accessToken := cfg.TokenManager.GetAccessToken(ctx)
 	if !strings.HasPrefix(accessToken, constants.BearerPrefix) {
 		accessToken = constants.BearerPrefix + accessToken
 	}
@@ -397,6 +496,66 @@ func transformToTraceQueryResponse(rawResult map[string]interface{}) TraceQueryR
 	}
 
 	return response
+}
+
+// transformTraceDetailsToTraceQueryResponse flattens dedicated trace details spans into the tool's stable response shape.
+func transformTraceDetailsToTraceQueryResponse(rawResult TraceDetailsResponse, env string) TraceQueryResponse {
+	response := TraceQueryResponse{
+		Success: true,
+		Message: "Traces retrieved successfully",
+		Data:    []TraceData{},
+	}
+
+	for _, span := range rawResult.Traces {
+		if !traceDetailsMatchesEnv(span, env) {
+			continue
+		}
+
+		response.Data = append(response.Data, TraceData{
+			TraceID:     span.TraceID,
+			SpanID:      span.SpanID,
+			SpanKind:    span.SpanKind,
+			SpanName:    span.SpanName,
+			ServiceName: span.ServiceName,
+			Duration:    span.Duration,
+			Timestamp:   parseTimestampToUnix(span.Timestamp),
+			TraceState:  span.TraceState,
+			StatusCode:  span.StatusCode,
+		})
+	}
+
+	return response
+}
+
+func traceDetailsMatchesEnv(span TraceDetailsSpan, env string) bool {
+	if env == "" {
+		return true
+	}
+
+	if span.ResourceAttributes == nil {
+		return false
+	}
+
+	resourceEnv, ok := span.ResourceAttributes["deployment.environment"]
+	if ok {
+		return resourceEnv == env
+	}
+
+	resourceEnv, ok = span.ResourceAttributes["deployment_environment"]
+	if ok {
+		return resourceEnv == env
+	}
+
+	return false
+}
+
+func readTruncatedResponseBody(body io.Reader) string {
+	respBody, _ := io.ReadAll(body)
+	bodyStr := string(respBody)
+	if len(bodyStr) > 100 {
+		return bodyStr[:100] + "... (truncated)"
+	}
+	return bodyStr
 }
 
 // Helper function to safely extract string values from map

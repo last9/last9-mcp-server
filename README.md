@@ -497,7 +497,7 @@ explicit time bounds or a larger `lookback_minutes`.
 
 - `trace_id` (string, optional): Specific trace ID.
 - `service_name` (string, optional): Service name.
-- `lookback_minutes` (integer, optional): Default: 1440 for `trace_id`, 60 for `service_name`.
+- `lookback_minutes` (integer, optional): Default: 4320 for `trace_id`, 60 for `service_name`.
 - `start_time_iso` / `end_time_iso` (string, optional): Absolute time range.
 - `limit` (integer, optional): Default: 10.
 - `env` (string, optional): Environment filter.
