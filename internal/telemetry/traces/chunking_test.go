@@ -238,6 +238,55 @@ func TestGetTracesHandlerEmptyChunks(t *testing.T) {
 	}
 }
 
+func TestGetTracesHandlerExactTraceIDUsesSingleRequest(t *testing.T) {
+	requests := make([]url.Values, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.URL.Query())
+		if len(requests) > 1 {
+			t.Fatalf("unexpected extra request %d", len(requests))
+		}
+		w.Write([]byte(traceAPIResponse(1)))
+	}))
+	defer server.Close()
+
+	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+		TracejsonQuery: []map[string]interface{}{
+			{
+				"type": "filter",
+				"query": map[string]interface{}{
+					"$and": []interface{}{
+						map[string]interface{}{
+							"$eq": []interface{}{"TraceId", "ea8148dece205073096e4ad48145b08a"},
+						},
+					},
+				},
+			},
+		},
+		StartTimeISO: "1970-01-01T00:00:00Z",
+		EndTimeISO:   "1970-01-01T00:30:00Z",
+		Limit:        3,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if len(requests) != 1 {
+		t.Fatalf("expected 1 request for exact trace ID lookup, got %d", len(requests))
+	}
+	if got := requests[0].Get("limit"); got != "3" {
+		t.Fatalf("expected full-window request limit=3, got %q", got)
+	}
+	if got := requests[0].Get("start"); got != "0" || requests[0].Get("end") != "1800" {
+		t.Fatalf("expected full-window bounds start=0 end=1800, got %v", requests[0])
+	}
+
+	payload := parseTracesToolResult(t, result)
+	if count := countTracesInPayload(t, payload); count != 1 {
+		t.Fatalf("expected 1 trace in payload, got %d", count)
+	}
+}
+
 func TestGetTracesHandlerReturnsPartialResultAfterLaterChunkError(t *testing.T) {
 	requests := make([]url.Values, 0)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

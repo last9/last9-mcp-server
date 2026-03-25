@@ -479,6 +479,9 @@ Create a drop rule at [Last9 Control Plane](https://last9.io/control-plane).
 
 Advanced trace queries using JSON pipeline syntax.
 
+Use this for broad searches and aggregations. For an exact trace ID lookup,
+prefer `get_service_traces` with `trace_id`.
+
 - `tracejson_query` (array, required): JSON pipeline query.
 - `start_time_iso` / `end_time_iso` (string, optional): Absolute time range.
 - `lookback_minutes` (integer, optional): Default: 60.
@@ -487,6 +490,8 @@ Advanced trace queries using JSON pipeline syntax.
 ### get_service_traces
 
 Traces by trace ID or service name (exactly one required).
+
+Prefer this tool whenever you already have an exact `trace_id`.
 
 - `trace_id` (string, optional): Specific trace ID.
 - `service_name` (string, optional): Service name.

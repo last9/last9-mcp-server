@@ -31,6 +31,7 @@ const GetServiceTracesDescription = `Retrieve traces from Last9 by trace ID or s
 
 This tool allows you to get specific traces either by providing a trace ID for a single trace,
 or by providing a service name to get all traces for that service within a time range.
+Prefer this tool over ` + "`get_traces`" + ` whenever you have an exact ` + "`trace_id`" + `.
 
 Parameters:
 - trace_id: (Optional) Specific trace ID to retrieve. Cannot be used with service_name.
