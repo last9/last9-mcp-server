@@ -81,11 +81,16 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		meta = deeplink.ToMeta(dashboardURL)
 	}
 
-	// Transform raw result into a compact format to avoid filling LLM context
+	// Transform raw result into a compact format to avoid filling LLM context.
+	// If the response exceeds the size guard, trim entries and add a warning.
 	compact := compactLogResponse(result)
 	jsonBytes, err := json.Marshal(compact)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal compact response: %v", err)
+	}
+
+	if len(jsonBytes) > maxResponseBytes {
+		jsonBytes = trimCompactLogResponse(compact, maxResponseBytes)
 	}
 
 	return &mcp.CallToolResult{
@@ -567,6 +572,112 @@ func compactStreamResults(items []interface{}, originalResult map[string]interfa
 }
 
 const maxLogMessageLength = 1000
+
+// maxResponseBytes is the maximum size of a get_logs MCP response.
+// Responses exceeding this are trimmed by removing entries from the end.
+// This prevents large queries from overwhelming the LLM context window.
+// 128KB is approximately 32K tokens — a reasonable upper bound for a single tool response.
+const maxResponseBytes = 128 * 1024
+
+// trimCompactLogResponse progressively removes log entries from the compact response
+// until the JSON size fits within maxBytes. Returns the trimmed JSON bytes.
+func trimCompactLogResponse(compact map[string]interface{}, maxBytes int) []byte {
+	streams, ok := compact["streams"].([]map[string]interface{})
+	if !ok {
+		// Can't trim, return as-is
+		out, _ := json.Marshal(compact)
+		return out
+	}
+
+	// Binary search for the right number of total entries to keep
+	totalEntries := 0
+	for _, s := range streams {
+		if entries, ok := s["entries"].([]interface{}); ok {
+			totalEntries += len(entries)
+		}
+	}
+
+	// Progressively halve entries until we fit
+	keepEntries := totalEntries
+	for keepEntries > 0 {
+		trimmed := trimStreamsToEntryCount(streams, keepEntries)
+		keptCount := countCompactStreamEntries(trimmed)
+		result := map[string]interface{}{
+			"count":       keptCount,
+			"result_type": "streams",
+			"streams":     trimmed,
+			"_trimmed": map[string]interface{}{
+				"original_count": totalEntries,
+				"kept_count":     keptCount,
+				"reason":         "Response exceeded size limit. Use the dashboard link for full results.",
+			},
+		}
+		if meta, ok := compact[partialResultMetadataKey]; ok {
+			result[partialResultMetadataKey] = meta
+		}
+
+		out, err := json.Marshal(result)
+		if err != nil || len(out) <= maxBytes {
+			return out
+		}
+		keepEntries = keepEntries / 2
+	}
+
+	// Fallback: return just the warning
+	out, _ := json.Marshal(map[string]interface{}{
+		"count":       0,
+		"result_type": "streams",
+		"streams":     []interface{}{},
+		"_trimmed": map[string]interface{}{
+			"original_count": totalEntries,
+			"kept_count":     0,
+			"reason":         "Response exceeded size limit. Use the dashboard link for full results.",
+		},
+	})
+	return out
+}
+
+func trimStreamsToEntryCount(streams []map[string]interface{}, maxEntries int) []map[string]interface{} {
+	remaining := maxEntries
+	result := make([]map[string]interface{}, 0, len(streams))
+
+	for _, s := range streams {
+		if remaining <= 0 {
+			break
+		}
+
+		entries, ok := s["entries"].([]interface{})
+		if !ok {
+			result = append(result, s)
+			continue
+		}
+
+		if len(entries) <= remaining {
+			result = append(result, s)
+			remaining -= len(entries)
+		} else {
+			trimmed := make(map[string]interface{})
+			for k, v := range s {
+				trimmed[k] = v
+			}
+			trimmed["entries"] = entries[:remaining]
+			result = append(result, trimmed)
+			remaining = 0
+		}
+	}
+
+	return result
+}
+
+func countCompactStreamEntries(streams []map[string]interface{}) int {
+	total := 0
+	for _, s := range streams {
+		if entries, ok := s["entries"].([]interface{}); ok {
+			total += len(entries)
+		}
+	}
+	return total
+}
 
 // truncateLogEntryMessages caps each [timestamp, message] entry's message at
 // maxLogMessageLength characters. This prevents stack traces, large JSON payloads,
