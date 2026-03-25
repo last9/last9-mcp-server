@@ -138,7 +138,58 @@ func compactPromResponse(raw []byte) string {
 	if err != nil {
 		return string(raw)
 	}
+
+	// If response exceeds 128KB, progressively trim series
+	if len(out) > maxPromResponseBytes {
+		out = trimPromResponse(compact, rawResult, resultType, maxPromResponseBytes)
+	}
+
 	return string(out)
+}
+
+const maxPromResponseBytes = 128 * 1024
+
+// trimPromResponse progressively halves the number of result series until
+// the JSON fits within maxBytes.
+func trimPromResponse(_ map[string]interface{}, rawResult []interface{}, resultType string, maxBytes int) []byte {
+	originalCount := len(rawResult)
+	keepCount := originalCount
+
+	for keepCount > 0 {
+		trimmed := rawResult
+		if keepCount < len(rawResult) {
+			trimmed = rawResult[:keepCount]
+		}
+
+		result := map[string]interface{}{
+			"count":       keepCount,
+			"result_type": resultType,
+			"result":      trimmed,
+			"_trimmed": map[string]interface{}{
+				"original_series": originalCount,
+				"kept_series":     keepCount,
+				"reason":          "Response exceeded size limit. Narrow your query or reduce the time range.",
+			},
+		}
+
+		out, err := json.Marshal(result)
+		if err != nil || len(out) <= maxBytes {
+			return out
+		}
+		keepCount = keepCount / 2
+	}
+
+	out, _ := json.Marshal(map[string]interface{}{
+		"count":       0,
+		"result_type": resultType,
+		"result":      []interface{}{},
+		"_trimmed": map[string]interface{}{
+			"original_series": originalCount,
+			"kept_series":     0,
+			"reason":          "Response exceeded size limit. Narrow your query or reduce the time range.",
+		},
+	})
+	return out
 }
 
 func resolveTimeRange(startTimeISO, endTimeISO string, lookbackMinutes float64) (int64, int64, error) {
