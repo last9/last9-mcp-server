@@ -545,9 +545,10 @@ func compactStreamResults(items []interface{}, originalResult map[string]interfa
 			compact["labels"] = labels
 		}
 
-		// Keep values (entries) as-is — they're already compact [ts, msg] pairs
+		// Truncate long log messages to keep response compact.
+		// Full logs are available via the dashboard deep link.
 		if values, ok := streamData["values"].([]interface{}); ok {
-			compact["entries"] = values
+			compact["entries"] = truncateLogEntryMessages(values)
 			totalEntries += len(values)
 		}
 
@@ -563,6 +564,35 @@ func compactStreamResults(items []interface{}, originalResult map[string]interfa
 		response[partialResultMetadataKey] = meta
 	}
 	return response
+}
+
+const maxLogMessageLength = 1000
+
+// truncateLogEntryMessages caps each [timestamp, message] entry's message at
+// maxLogMessageLength characters. This prevents stack traces, large JSON payloads,
+// and verbose error messages from blowing up the LLM context. The full content
+// is always available via the dashboard deep link.
+func truncateLogEntryMessages(values []interface{}) []interface{} {
+	out := make([]interface{}, len(values))
+	for i, val := range values {
+		entry, ok := val.([]interface{})
+		if !ok || len(entry) < 2 {
+			out[i] = val
+			continue
+		}
+
+		msg, ok := entry[1].(string)
+		if !ok || len(msg) <= maxLogMessageLength {
+			out[i] = val
+			continue
+		}
+
+		truncated := make([]interface{}, len(entry))
+		copy(truncated, entry)
+		truncated[1] = msg[:maxLogMessageLength] + "... (truncated)"
+		out[i] = truncated
+	}
+	return out
 }
 
 func emptyStreamsResponse() map[string]interface{} {

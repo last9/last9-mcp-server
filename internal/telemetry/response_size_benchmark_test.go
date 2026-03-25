@@ -283,7 +283,15 @@ func buildVerboseLogResponse(numStreams int) string {
 		values := make([][]interface{}, 0, 5)
 		for j := 0; j < 5; j++ {
 			ts := fmt.Sprintf("%d000000000", 1700000000+i*60+j)
-			msg := fmt.Sprintf(`{"level":"error","msg":"connection timeout to upstream service after 30s retry","service":"api-gateway","trace_id":"abcdef%06d","span_id":"123456%04d","request_id":"req-%d-%d","method":"GET","path":"/api/v1/users/%d","status":503,"duration_ms":30012,"error":"context deadline exceeded","stack":"goroutine 1234 [running]:\nmain.handleRequest(0xc0001234%02d)\n\t/app/handler.go:123\nmain.main()\n\t/app/main.go:45"}`, i, j, i, j, i, j)
+			// Alternate between short messages and long stack traces (realistic mix)
+			var msg string
+			if j%2 == 0 {
+				// Long message with stack trace (~2000 chars) — common in real error logs
+				msg = fmt.Sprintf(`{"level":"error","msg":"connection timeout to upstream service after 30s retry","service":"api-gateway","trace_id":"abcdef%06d","span_id":"123456%04d","request_id":"req-%d-%d","method":"GET","path":"/api/v1/users/%d","status":503,"duration_ms":30012,"error":"context deadline exceeded","stack":"goroutine 1234 [running]:\nruntime/debug.Stack()\n\t/usr/local/go/src/runtime/debug/stack.go:24\nmain.(*Server).handleRequest(0xc0001234%02d, {0x7f8b2c000000, 0xc00012%04d})\n\t/app/internal/server/handler.go:123 +0x1a4\nmain.(*Server).ServeHTTP(0xc000456000, {0x7f8b2c000000, 0xc00012%04d}, 0xc0001234%02d)\n\t/app/internal/server/server.go:89 +0x2b8\nnet/http.serverHandler.ServeHTTP({0xc000789000}, {0x7f8b2c000000, 0xc00012%04d}, 0xc0001234%02d)\n\t/usr/local/go/src/net/http/server.go:2936 +0x316\nnet/http.(*conn).serve(0xc000abc000, {0x7f8b2c000100, 0xc000def000})\n\t/usr/local/go/src/net/http/server.go:1995 +0x612\ncreated by net/http.(*Server).Serve\n\t/usr/local/go/src/net/http/server.go:3089 +0x5ed","upstream_response":{"status":504,"body":"gateway timeout after 30000ms","headers":{"x-request-id":"req-%d-%d","x-trace-id":"abcdef%06d"}}}`, i, j, i, j, i, j, j, j, j, j, j, i, j, i)
+			} else {
+				// Short message (~200 chars)
+				msg = fmt.Sprintf(`{"level":"info","msg":"request completed successfully","service":"api-gateway","trace_id":"abcdef%06d","method":"GET","path":"/api/v1/users/%d","status":200,"duration_ms":45}`, i, i)
+			}
 			values = append(values, []interface{}{ts, msg})
 		}
 		streams = append(streams, map[string]interface{}{
