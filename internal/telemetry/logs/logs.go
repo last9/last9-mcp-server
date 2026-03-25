@@ -81,12 +81,18 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		meta = deeplink.ToMeta(dashboardURL)
 	}
 
-	// Return the result in MCP format with deep link
+	// Transform raw result into a compact format to avoid filling LLM context
+	compact := compactLogResponse(result)
+	jsonBytes, err := json.Marshal(compact)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal compact response: %v", err)
+	}
+
 	return &mcp.CallToolResult{
 		Meta: meta,
 		Content: []mcp.Content{
 			&mcp.TextContent{
-				Text: formatJSON(result),
+				Text: string(jsonBytes),
 			},
 		},
 	}, nil
@@ -485,6 +491,80 @@ func mapsClone(source map[string]interface{}) map[string]interface{} {
 	return cloned
 }
 
+// compactLogResponse transforms a raw logs API response into a compact format
+// that removes unnecessary nesting and uses compact JSON encoding.
+// For "streams" results: returns {count, result_type, streams: [{labels, entries}]}
+// For other result types (aggregations): returns {count, result_type, data: [...]}
+func compactLogResponse(result map[string]interface{}) map[string]interface{} {
+	resultType, items, err := extractResultItems(result)
+	if err != nil {
+		response := map[string]interface{}{
+			"count":       0,
+			"result_type": "streams",
+			"streams":     []interface{}{},
+		}
+		if meta, ok := result[partialResultMetadataKey]; ok {
+			response[partialResultMetadataKey] = meta
+		}
+		return response
+	}
+
+	if resultType == "streams" {
+		return compactStreamResults(items, result)
+	}
+
+	// For non-stream results (aggregations), return data as-is but compact
+	response := map[string]interface{}{
+		"count":       len(items),
+		"result_type": resultType,
+		"data":        items,
+	}
+	if meta, ok := result[partialResultMetadataKey]; ok {
+		response[partialResultMetadataKey] = meta
+	}
+	return response
+}
+
+// compactStreamResults transforms Loki stream items into a compact format.
+// Keeps the grouped structure (labels shared across entries) but strips the
+// outer {data: {resultType, result}} nesting and uses shorter field names.
+func compactStreamResults(items []interface{}, originalResult map[string]interface{}) map[string]interface{} {
+	totalEntries := 0
+	compactStreams := make([]map[string]interface{}, 0, len(items))
+
+	for _, item := range items {
+		streamData, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		compact := make(map[string]interface{})
+
+		// Keep stream labels as-is (they're the grouping key)
+		if labels, ok := streamData["stream"]; ok {
+			compact["labels"] = labels
+		}
+
+		// Keep values (entries) as-is — they're already compact [ts, msg] pairs
+		if values, ok := streamData["values"].([]interface{}); ok {
+			compact["entries"] = values
+			totalEntries += len(values)
+		}
+
+		compactStreams = append(compactStreams, compact)
+	}
+
+	response := map[string]interface{}{
+		"count":       totalEntries,
+		"result_type": "streams",
+		"streams":     compactStreams,
+	}
+	if meta, ok := originalResult[partialResultMetadataKey]; ok {
+		response[partialResultMetadataKey] = meta
+	}
+	return response
+}
+
 func emptyStreamsResponse() map[string]interface{} {
 	return map[string]interface{}{
 		"data": map[string]interface{}{
@@ -518,11 +598,3 @@ func parseTimeRangeFromArgsAt(args GetLogsArgs, now time.Time) (int64, int64, er
 	return startTime.UnixMilli(), endTime.UnixMilli(), nil
 }
 
-// formatJSON formats JSON for display
-func formatJSON(data interface{}) string {
-	bytes, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		return fmt.Sprintf("%v", data)
-	}
-	return string(bytes)
-}
