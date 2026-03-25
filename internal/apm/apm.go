@@ -97,6 +97,50 @@ type PromqlLabelsArgs struct {
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
 }
 
+// compactPromResponse transforms a raw Prometheus API response into a compact format.
+// It strips the {status, data} wrapper, removes __name__ from metric labels (redundant
+// since it's the query itself), and re-serializes as compact JSON.
+// Falls back to the original bytes if parsing fails.
+func compactPromResponse(raw []byte) string {
+	var resp map[string]interface{}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return string(raw)
+	}
+
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		return string(raw)
+	}
+
+	resultType, _ := data["resultType"].(string)
+	rawResult, _ := data["result"].([]interface{})
+
+	// Strip __name__ from metric labels to reduce token usage
+	for _, item := range rawResult {
+		series, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		metric, ok := series["metric"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		delete(metric, "__name__")
+	}
+
+	compact := map[string]interface{}{
+		"count":       len(rawResult),
+		"result_type": resultType,
+		"result":      rawResult,
+	}
+
+	out, err := json.Marshal(compact)
+	if err != nil {
+		return string(raw)
+	}
+	return string(out)
+}
+
 func resolveTimeRange(startTimeISO, endTimeISO string, lookbackMinutes float64) (int64, int64, error) {
 	params := map[string]interface{}{}
 	if startTimeISO != "" {
@@ -1851,16 +1895,17 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 			return nil, nil, fmt.Errorf("failed to execute Prometheus range query: %s", httpResp.Status)
 		}
 		defer httpResp.Body.Close()
-		// return the response body string as the content without parsing
 		responseBodyBytes, err := io.ReadAll(httpResp.Body)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 
+		compactJSON := compactPromResponse(responseBodyBytes)
+
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
-					Text: string(responseBodyBytes),
+					Text: compactJSON,
 				},
 			},
 		}, nil, nil
@@ -1924,10 +1969,12 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 
+		compactJSON := compactPromResponse(responseBodyBytes)
+
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
-					Text: string(responseBodyBytes),
+					Text: compactJSON,
 				},
 			},
 		}, nil, nil
