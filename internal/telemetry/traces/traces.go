@@ -92,12 +92,18 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	dashboardURL := dlBuilder.BuildTracesLink(startTime, endTime, tracejsonQuery, "", "")
 
-	// Return the result in MCP format with deep link
+	// Transform raw result into a compact format to avoid filling LLM context
+	compact := compactTraceResponse(result)
+	jsonBytes, err := json.Marshal(compact)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal compact response: %v", err)
+	}
+
 	return &mcp.CallToolResult{
 		Meta: deeplink.ToMeta(dashboardURL),
 		Content: []mcp.Content{
 			&mcp.TextContent{
-				Text: formatJSON(result),
+				Text: string(jsonBytes),
 			},
 		},
 	}, nil
@@ -390,14 +396,6 @@ func parseTimeRangeFromArgs(args GetTracesArgs) (int64, int64, error) {
 	return startTime.UnixMilli(), endTime.UnixMilli(), nil
 }
 
-// formatJSON formats JSON for display
-func formatJSON(data interface{}) string {
-	bytes, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		return fmt.Sprintf("%v", data)
-	}
-	return string(bytes)
-}
 
 // parseTimeRangeFromArgsAt is the testable version of parseTimeRangeFromArgs
 func parseTimeRangeFromArgsAt(args GetTracesArgs, now time.Time) (int64, int64, error) {
@@ -476,6 +474,72 @@ func findExactTraceIDInConditionGroup(rawConditions interface{}) (string, bool) 
 		}
 	}
 	return "", false
+}
+
+// compactTraceResponse transforms a raw traces API response into a compact format
+// that preserves essential fields while stripping verbose attributes (ResourceAttributes,
+// SpanAttributes, Events, Links, etc.) that can inflate the response by 10-20x.
+// For non-span results (e.g. aggregations), the data is returned as-is.
+func compactTraceResponse(result map[string]interface{}) map[string]interface{} {
+	items, err := extractTraceResultItems(result)
+	if err != nil || len(items) == 0 {
+		response := map[string]interface{}{
+			"count":  0,
+			"traces": []interface{}{},
+		}
+		if meta, ok := result[partialResultMetadataKey]; ok {
+			response[partialResultMetadataKey] = meta
+		}
+		return response
+	}
+
+	// Check if first item looks like a raw trace span (has TraceId field)
+	if firstItem, ok := items[0].(map[string]interface{}); ok {
+		if _, hasTraceID := firstItem["TraceId"]; hasTraceID {
+			return compactSpanResults(items, result)
+		}
+	}
+
+	// For non-span results (aggregations etc.), return as-is
+	response := map[string]interface{}{
+		"count": len(items),
+		"data":  items,
+	}
+	if meta, ok := result[partialResultMetadataKey]; ok {
+		response[partialResultMetadataKey] = meta
+	}
+	return response
+}
+
+// compactSpanResults extracts only the essential fields from each trace span.
+func compactSpanResults(items []interface{}, originalResult map[string]interface{}) map[string]interface{} {
+	traces := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		traceItem, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		compact := map[string]interface{}{
+			"trace_id":     extractString(traceItem, "TraceId"),
+			"span_id":      extractString(traceItem, "SpanId"),
+			"span_kind":    extractString(traceItem, "SpanKind"),
+			"span_name":    extractString(traceItem, "SpanName"),
+			"service_name": extractString(traceItem, "ServiceName"),
+			"duration":     extractInt64(traceItem, "Duration"),
+			"timestamp":    extractString(traceItem, "Timestamp"),
+			"status_code":  extractString(traceItem, "StatusCode"),
+		}
+		traces = append(traces, compact)
+	}
+
+	response := map[string]interface{}{
+		"count":  len(traces),
+		"traces": traces,
+	}
+	if meta, ok := originalResult[partialResultMetadataKey]; ok {
+		response[partialResultMetadataKey] = meta
+	}
+	return response
 }
 
 func exactTraceIDEquality(rawEq interface{}) (string, bool) {
