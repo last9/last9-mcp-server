@@ -117,47 +117,51 @@ func TestGetDatabasesHandler_NoDatabases(t *testing.T) {
 
 func TestGetDatabaseSlowQueriesHandler(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify it hits the traces query endpoint
-		if !strings.Contains(r.URL.Path, "/cat/api/traces/v2/query_range/json") {
-			t.Errorf("expected traces API path, got %s", r.URL.Path)
-		}
-
-		// Verify order=Duration for slow query sorting
-		// Note: the current traces API uses order=Timestamp by default,
-		// but results are sorted by duration in the handler
 		w.WriteHeader(http.StatusOK)
-		response := map[string]any{
-			"data": map[string]any{
-				"result": []any{
-					map[string]any{
-						"TraceId":     "abc123",
-						"SpanId":      "span-1",
-						"ServiceName": "order-service",
-						"SpanName":    "SELECT * FROM orders WHERE id = ?",
-						"Duration":    float64(500_000_000), // 500ms in nanoseconds
-						"StatusCode":  "STATUS_CODE_OK",
-						"Timestamp":   "2025-01-01T10:00:00Z",
-						"SpanAttributes": map[string]any{
-							"db.system":    "postgresql",
-							"db.statement": "SELECT * FROM orders WHERE id = $1",
-						},
-					},
-					map[string]any{
-						"TraceId":     "def456",
-						"SpanId":      "span-2",
-						"ServiceName": "user-service",
-						"SpanName":    "db.query",
-						"Duration":    float64(200_000_000), // 200ms
-						"StatusCode":  "STATUS_CODE_OK",
-						"Timestamp":   "2025-01-01T10:01:00Z",
-						"SpanAttributes": map[string]any{
-							"db.system": "mongodb",
+
+		if strings.Contains(r.URL.Path, "/cat/api/traces/v2/query_range/json") {
+			// Traces API — return trace spans
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"result": []any{
+						map[string]any{
+							"TraceId":     "abc123",
+							"SpanId":      "span-1",
+							"ServiceName": "order-service",
+							"SpanName":    "SELECT * FROM orders WHERE id = ?",
+							"Duration":    float64(500_000_000), // 500ms
+							"StatusCode":  "STATUS_CODE_OK",
+							"Timestamp":   "2025-01-01T10:00:00Z",
+							"SpanAttributes": map[string]any{
+								"db.system":    "postgresql",
+								"db.statement": "SELECT * FROM orders WHERE id = $1",
+							},
 						},
 					},
 				},
-			},
+			})
+		} else if strings.Contains(r.URL.Path, "/logs/api/v2/query_range/json") {
+			// Logs API — return slow query logs with enrichment fields
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"resultType": "streams",
+					"result": []any{
+						map[string]any{
+							"stream": map[string]any{
+								"service_name": "order-service",
+								"severity":     "warn",
+							},
+							"values": []any{
+								[]any{
+									"1700000000000000000",
+									`{"db.system":"postgresql","db.operation.duration_ms":750,"db.statement":"SELECT * FROM orders WHERE status = 'pending'","db.namespace":"public.orders","db.plan_summary":"IXSCAN status_idx","db.query_hash":"abc123hash","db.docs_examined":1500,"db.keys_examined":1500,"db.rows_affected":42}`,
+								},
+							},
+						},
+					},
+				},
+			})
 		}
-		json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -179,26 +183,47 @@ func TestGetDatabaseSlowQueriesHandler(t *testing.T) {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 
-	count, ok := response["count"].(float64)
-	if !ok || count != 2 {
-		t.Fatalf("expected 2 slow queries, got %v", response["count"])
+	count := int(response["count"].(float64))
+	if count != 2 {
+		t.Fatalf("expected 2 slow queries (1 trace + 1 log), got %d", count)
+	}
+
+	// Verify source counts
+	if response["from_traces"].(float64) != 1 {
+		t.Errorf("expected from_traces=1, got %v", response["from_traces"])
+	}
+	if response["from_logs"].(float64) != 1 {
+		t.Errorf("expected from_logs=1, got %v", response["from_logs"])
 	}
 
 	queries := response["slow_queries"].([]any)
-	first := queries[0].(map[string]any)
 
-	// Sorted by duration desc — 500ms should be first
-	if first["duration_ms"].(float64) != 500 {
-		t.Errorf("expected first query duration=500ms, got %v", first["duration_ms"])
+	// Sorted by duration desc — 750ms log entry should be first
+	first := queries[0].(map[string]any)
+	if first["source"] != "log" {
+		t.Errorf("expected first query source=log (750ms), got %v", first["source"])
 	}
-	if first["trace_id"] != "abc123" {
-		t.Errorf("expected trace_id=abc123, got %v", first["trace_id"])
+	if first["duration_ms"].(float64) != 750 {
+		t.Errorf("expected first query duration=750ms, got %v", first["duration_ms"])
 	}
-	if first["db_system"] != "postgresql" {
-		t.Errorf("expected db_system=postgresql, got %v", first["db_system"])
+	// Verify log-specific enrichment fields
+	if first["plan_summary"] != "IXSCAN status_idx" {
+		t.Errorf("expected plan_summary, got %v", first["plan_summary"])
 	}
-	if first["db_statement"] != "SELECT * FROM orders WHERE id = $1" {
-		t.Errorf("expected db_statement, got %v", first["db_statement"])
+	if first["query_hash"] != "abc123hash" {
+		t.Errorf("expected query_hash, got %v", first["query_hash"])
+	}
+	if first["docs_examined"].(float64) != 1500 {
+		t.Errorf("expected docs_examined=1500, got %v", first["docs_examined"])
+	}
+
+	// Second should be the trace entry (500ms)
+	second := queries[1].(map[string]any)
+	if second["source"] != "trace" {
+		t.Errorf("expected second query source=trace (500ms), got %v", second["source"])
+	}
+	if second["trace_id"] != "abc123" {
+		t.Errorf("expected trace_id=abc123, got %v", second["trace_id"])
 	}
 }
 
