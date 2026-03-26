@@ -234,31 +234,31 @@ func NewGetDatabaseSlowQueriesHandler(client *http.Client, cfg models.Config) fu
 			limit = 20
 		}
 
-		// Build trace query pipeline filters
+		// Build trace query pipeline filters.
+		// The traces API uses dot-notation for nested attributes:
+		//   - span attributes: "attributes.db.system"
+		//   - resource attributes: "resource.attributes.deployment.environment"
 		var conditions []any
 
-		// Always filter for spans with db_system set
+		// Filter by SPAN_KIND_CLIENT or SPAN_KIND_INTERNAL (DB operations)
 		conditions = append(conditions, map[string]any{
-			"$neq": []any{"SpanAttributes['db.system']", ""},
-		})
-
-		// Filter by SPAN_KIND_CLIENT or SPAN_KIND_INTERNAL
-		conditions = append(conditions, map[string]any{
-			"$or": []any{
-				map[string]any{"$eq": []any{"SpanKind", "SPAN_KIND_CLIENT"}},
-				map[string]any{"$eq": []any{"SpanKind", "SPAN_KIND_INTERNAL"}},
-			},
+			"$regex": []any{"SpanKind", "SPAN_KIND_CLIENT|SPAN_KIND_INTERNAL"},
 		})
 
 		if args.DBSystem != "" {
 			conditions = append(conditions, map[string]any{
-				"$eq": []any{"SpanAttributes['db.system']", args.DBSystem},
+				"$eq": []any{"attributes.db.system", args.DBSystem},
+			})
+		} else {
+			// No specific db_system — match any span that has db.system set
+			conditions = append(conditions, map[string]any{
+				"$exists": []any{"attributes.db.system"},
 			})
 		}
 
 		if args.Host != "" {
 			conditions = append(conditions, map[string]any{
-				"$eq": []any{"SpanAttributes['net.peer.name']", args.Host},
+				"$eq": []any{"attributes.net.peer.name", args.Host},
 			})
 		}
 
@@ -270,7 +270,7 @@ func NewGetDatabaseSlowQueriesHandler(client *http.Client, cfg models.Config) fu
 
 		if args.Env != "" {
 			conditions = append(conditions, map[string]any{
-				"$eq": []any{"ResourceAttributes['deployment.environment']", args.Env},
+				"$eq": []any{"resource.attributes.deployment.environment", args.Env},
 			})
 		}
 
