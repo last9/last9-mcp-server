@@ -178,5 +178,11 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Description: apm.GetDatabaseSlowQueriesDescription,
 	}, apm.NewGetDatabaseSlowQueriesHandler(client, cfg))
 
+	// Register database query patterns tool
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_database_queries",
+		Description: apm.GetDatabaseQueriesDescription,
+	}, apm.NewGetDatabaseQueriesHandler(client, cfg))
+
 	return nil
 }

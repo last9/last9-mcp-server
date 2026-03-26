@@ -343,6 +343,242 @@ func NewGetDatabaseSlowQueriesHandler(client *http.Client, cfg models.Config) fu
 	}
 }
 
+// --- get_database_queries tool ---
+
+const GetDatabaseQueriesDescription = `Get top query patterns for a specific database, aggregated by operation.
+
+Shows the most active and slowest query patterns hitting a database, grouped by span_name
+(which typically contains the SQL operation or query fingerprint). For each pattern, returns
+throughput (calls/min), average latency, p95 latency, and error rate.
+
+This is useful for identifying:
+- Hot queries (high throughput) that dominate database load
+- Slow query patterns (high p95 latency) that need optimization
+- Failing queries (high error rate) that indicate bugs or schema issues
+
+Parameters:
+- db_system: (Required) Database system (e.g. "postgresql", "mysql", "mongodb", "redis").
+- host: (Optional) Database host to filter by (net_peer_name).
+- env: (Optional) Deployment environment filter.
+- lookback_minutes: (Optional) Time window in minutes (default: 60).
+- start_time_iso: (Optional) Start time in RFC3339 format.
+- end_time_iso: (Optional) End time in RFC3339 format.
+- sort_by: (Optional) Sort by "throughput" (default), "latency", or "errors".`
+
+type GetDatabaseQueriesArgs struct {
+	DBSystem        string  `json:"db_system" jsonschema:"Database system (required, e.g. postgresql, mysql, mongodb, redis)"`
+	Host            string  `json:"host,omitempty" jsonschema:"Database host filter (net_peer_name)"`
+	Env             string  `json:"env,omitempty" jsonschema:"Deployment environment filter"`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60)"`
+	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339 format"`
+	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339 format"`
+	SortBy          string  `json:"sort_by,omitempty" jsonschema:"Sort by: throughput (default), latency, or errors"`
+}
+
+type QueryPattern struct {
+	SpanName   string  `json:"span_name"`
+	CallsPerMin float64 `json:"calls_per_min"`
+	AvgLatency float64 `json:"avg_latency_ms"`
+	P95Latency float64 `json:"p95_latency_ms"`
+	ErrorRate  float64 `json:"error_rate_pct"`
+}
+
+func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetDatabaseQueriesArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args GetDatabaseQueriesArgs) (*mcp.CallToolResult, any, error) {
+		if args.DBSystem == "" {
+			return nil, nil, fmt.Errorf("db_system parameter is required (e.g. postgresql, mysql, mongodb, redis)")
+		}
+
+		startTime, endTime, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		durationMin := (endTime - startTime) / 60
+		if durationMin <= 0 {
+			durationMin = 1
+		}
+
+		baseFilter := buildDBBaseFilter(args.DBSystem, args.Host, args.Env)
+
+		// Build patterns map keyed by span_name
+		patterns := make(map[string]*QueryPattern)
+
+		// 1. Throughput (calls/min) by span_name
+		throughputQuery := fmt.Sprintf(
+			`sum by(span_name)(sum_over_time(trace_client_count{%s}[%dm])) / %d`,
+			baseFilter, durationMin, durationMin,
+		)
+		if err := fetchPromBySpanName(ctx, client, cfg, throughputQuery, endTime, patterns, func(p *QueryPattern, val float64) {
+			p.CallsPerMin = val
+		}); err != nil {
+			return nil, nil, fmt.Errorf("failed to fetch throughput: %w", err)
+		}
+
+		if len(patterns) == 0 {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: fmt.Sprintf("No query patterns found for db_system=%s. Ensure services are instrumented with OpenTelemetry database client spans.", args.DBSystem)},
+				},
+			}, nil, nil
+		}
+
+		// 2. Avg latency (ms) by span_name
+		avgLatencyQuery := fmt.Sprintf(
+			`avg by(span_name)(avg_over_time(trace_client_duration{%s, quantile="p50"}[%dm])) * 1000`,
+			baseFilter, durationMin,
+		)
+		fetchPromBySpanName(ctx, client, cfg, avgLatencyQuery, endTime, patterns, func(p *QueryPattern, val float64) {
+			p.AvgLatency = val
+		})
+
+		// 3. P95 latency (ms) by span_name
+		p95LatencyQuery := fmt.Sprintf(
+			`avg by(span_name)(avg_over_time(trace_client_duration{%s, quantile="p95"}[%dm])) * 1000`,
+			baseFilter, durationMin,
+		)
+		fetchPromBySpanName(ctx, client, cfg, p95LatencyQuery, endTime, patterns, func(p *QueryPattern, val float64) {
+			p.P95Latency = val
+		})
+
+		// 4. Error rate by span_name
+		errorCountQuery := fmt.Sprintf(
+			`sum by(span_name)(sum_over_time(trace_client_count{%s, status_code="STATUS_CODE_ERROR"}[%dm]))`,
+			baseFilter, durationMin,
+		)
+		totalCountQuery := fmt.Sprintf(
+			`sum by(span_name)(sum_over_time(trace_client_count{%s}[%dm]))`,
+			baseFilter, durationMin,
+		)
+		errorCounts := make(map[string]float64)
+		totalCounts := make(map[string]float64)
+		fetchPromToSpanNameMap(ctx, client, cfg, errorCountQuery, endTime, errorCounts)
+		fetchPromToSpanNameMap(ctx, client, cfg, totalCountQuery, endTime, totalCounts)
+		for spanName, total := range totalCounts {
+			if total > 0 {
+				if p, ok := patterns[spanName]; ok {
+					p.ErrorRate = (errorCounts[spanName] / total) * 100
+				}
+			}
+		}
+
+		// Convert to slice and sort
+		result := make([]QueryPattern, 0, len(patterns))
+		for _, p := range patterns {
+			result = append(result, *p)
+		}
+
+		sortBy := args.SortBy
+		if sortBy == "" {
+			sortBy = "throughput"
+		}
+		sort.Slice(result, func(i, j int) bool {
+			switch sortBy {
+			case "latency":
+				return result[i].P95Latency > result[j].P95Latency
+			case "errors":
+				return result[i].ErrorRate > result[j].ErrorRate
+			default: // throughput
+				return result[i].CallsPerMin > result[j].CallsPerMin
+			}
+		})
+
+		// Cap at top 50 patterns
+		if len(result) > 50 {
+			result = result[:50]
+		}
+
+		response := map[string]any{
+			"count":     len(result),
+			"db_system": args.DBSystem,
+			"sort_by":   sortBy,
+			"queries":   result,
+		}
+
+		jsonBytes, err := json.Marshal(response)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
+		}
+
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: string(jsonBytes)},
+			},
+		}, nil, nil
+	}
+}
+
+func buildDBBaseFilter(dbSystem, host, env string) string {
+	filter := fmt.Sprintf(
+		`span_kind=~"SPAN_KIND_CLIENT|SPAN_KIND_INTERNAL", db_system="%s"`,
+		dbSystem,
+	)
+	if host != "" {
+		filter += fmt.Sprintf(`, net_peer_name="%s"`, host)
+	}
+	if env != "" {
+		filter += fmt.Sprintf(`, env=~"%s"`, env)
+	}
+	return filter
+}
+
+func fetchPromBySpanName(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64, patterns map[string]*QueryPattern, setter func(*QueryPattern, float64)) error {
+	resp, err := utils.MakePromInstantAPIQuery(ctx, client, query, endTime, cfg)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("PromQL query failed with status %d", resp.StatusCode)
+	}
+
+	var series apiPromInstantResp
+	if err := json.NewDecoder(resp.Body).Decode(&series); err != nil {
+		return err
+	}
+
+	for _, point := range series {
+		spanName := point.Metric["span_name"]
+		if spanName == "" {
+			continue
+		}
+		val := parsePromValue(point.Value)
+		p, ok := patterns[spanName]
+		if !ok {
+			p = &QueryPattern{SpanName: spanName}
+			patterns[spanName] = p
+		}
+		setter(p, val)
+	}
+	return nil
+}
+
+func fetchPromToSpanNameMap(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64, result map[string]float64) {
+	resp, err := utils.MakePromInstantAPIQuery(ctx, client, query, endTime, cfg)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+
+	var series apiPromInstantResp
+	if err := json.NewDecoder(resp.Body).Decode(&series); err != nil {
+		return
+	}
+
+	for _, point := range series {
+		spanName := point.Metric["span_name"]
+		if spanName == "" {
+			continue
+		}
+		result[spanName] = parsePromValue(point.Value)
+	}
+}
+
 // --- helpers ---
 
 func extractSlowQueries(rawResult map[string]any) []SlowQuery {
