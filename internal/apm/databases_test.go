@@ -250,6 +250,98 @@ func TestGetDatabaseSlowQueriesHandler_NoResults(t *testing.T) {
 	}
 }
 
+func TestGetDatabaseServerMetricsHandler(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+
+		if strings.Contains(r.URL.Path, "prom_label_values") {
+			// Probe request — return some pg_ metric names
+			json.NewEncoder(w).Encode([]string{
+				"pg_stat_activity_count",
+				"pg_stat_database_blks_hit",
+				"pg_settings_max_connections",
+			})
+		} else {
+			// Instant query for metrics — return a single value
+			json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"metric": map[string]string{},
+					"value":  []any{1700000000, "42.5"},
+				},
+			})
+		}
+	}))
+	defer server.Close()
+
+	handler := NewGetDatabaseServerMetricsHandler(server.Client(), testDBConfig(server.URL))
+	now := time.Now().UTC()
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabaseServerMetricsArgs{
+		DBSystem:     "postgresql",
+		StartTimeISO: now.Add(-60 * time.Minute).Format(time.RFC3339),
+		EndTimeISO:   now.Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	text := result.Content[0].(*mcp.TextContent).Text
+	var response map[string]any
+	if err := json.Unmarshal([]byte(text), &response); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	databases, ok := response["databases"].([]any)
+	if !ok || len(databases) == 0 {
+		t.Fatal("expected at least one database in response")
+	}
+
+	db := databases[0].(map[string]any)
+	if db["db_system"] != "postgresql" {
+		t.Errorf("expected db_system=postgresql, got %v", db["db_system"])
+	}
+	if db["available"] != true {
+		t.Error("expected postgresql to be available")
+	}
+	if db["metrics"] == nil {
+		t.Error("expected metrics map")
+	}
+
+	metrics := db["metrics"].(map[string]any)
+	if metrics["active_connections"] == nil {
+		t.Error("expected active_connections metric")
+	}
+}
+
+func TestGetDatabaseServerMetricsHandler_NotAvailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// Return empty label values — no metrics found
+		json.NewEncoder(w).Encode([]string{})
+	}))
+	defer server.Close()
+
+	handler := NewGetDatabaseServerMetricsHandler(server.Client(), testDBConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabaseServerMetricsArgs{
+		DBSystem:        "oracle",
+		LookbackMinutes: 60,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	text := result.Content[0].(*mcp.TextContent).Text
+	var response map[string]any
+	if err := json.Unmarshal([]byte(text), &response); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	databases := response["databases"].([]any)
+	db := databases[0].(map[string]any)
+	if db["available"] != false {
+		t.Error("expected oracle to be unavailable")
+	}
+}
+
 func TestExtractSlowQueries_TruncatesLongStatements(t *testing.T) {
 	longSQL := strings.Repeat("SELECT * FROM very_long_table WHERE ", 20) // >500 chars
 	rawResult := map[string]any{

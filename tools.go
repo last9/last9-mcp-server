@@ -184,5 +184,11 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Description: apm.GetDatabaseQueriesDescription,
 	}, apm.NewGetDatabaseQueriesHandler(client, cfg))
 
+	// Register database server-side metrics tool
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_database_server_metrics",
+		Description: apm.GetDatabaseServerMetricsDescription,
+	}, apm.NewGetDatabaseServerMetricsHandler(client, cfg))
+
 	return nil
 }
