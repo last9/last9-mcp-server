@@ -585,28 +585,9 @@ func fetchPromBySpanName(ctx context.Context, client *http.Client, cfg models.Co
 }
 
 func fetchPromToSpanNameMap(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64, result map[string]float64) {
-	resp, err := utils.MakePromInstantAPIQuery(ctx, client, query, endTime, cfg)
-	if err != nil {
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return
-	}
-
-	var series apiPromInstantResp
-	if err := json.NewDecoder(resp.Body).Decode(&series); err != nil {
-		return
-	}
-
-	for _, point := range series {
-		spanName := point.Metric["span_name"]
-		if spanName == "" {
-			continue
-		}
-		result[spanName] = parsePromValue(point.Value)
-	}
+	fetchPromToMapByKey(ctx, client, cfg, query, endTime, result, func(m map[string]string) string {
+		return m["span_name"]
+	})
 }
 
 // --- get_database_server_metrics tool ---
@@ -764,8 +745,8 @@ func NewGetDatabaseServerMetricsHandler(client *http.Client, cfg models.Config) 
 		// Determine which database types to check
 		configsToCheck := dbExporterConfigs
 		if args.DBSystem != "" {
-			if cfg, ok := dbExporterConfigs[args.DBSystem]; ok {
-				configsToCheck = map[string]dbExporterConfig{args.DBSystem: cfg}
+			if expCfg, ok := dbExporterConfigs[args.DBSystem]; ok {
+				configsToCheck = map[string]dbExporterConfig{args.DBSystem: expCfg}
 			} else {
 				return nil, nil, fmt.Errorf("unknown db_system %q. Supported: postgresql, mysql, oracle, redis, mongodb, mssql, elasticsearch", args.DBSystem)
 			}
@@ -1131,18 +1112,18 @@ func extractSlowQueries(rawResult map[string]any) []SlowQuery {
 			continue
 		}
 
-		durationNs := extractFloat64(span, "Duration")
+		durationNs := jsonFloat64(span, "Duration")
 		durationMs := durationNs / 1_000_000
 
 		sq := SlowQuery{
 			Source:      "trace",
-			TraceID:     extractStr(span, "TraceId"),
-			SpanID:      extractStr(span, "SpanId"),
-			ServiceName: extractStr(span, "ServiceName"),
-			SpanName:    extractStr(span, "SpanName"),
+			TraceID:     jsonString(span, "TraceId"),
+			SpanID:      jsonString(span, "SpanId"),
+			ServiceName: jsonString(span, "ServiceName"),
+			SpanName:    jsonString(span, "SpanName"),
 			DurationMs:  durationMs,
-			StatusCode:  extractStr(span, "StatusCode"),
-			Timestamp:   extractStr(span, "Timestamp"),
+			StatusCode:  jsonString(span, "StatusCode"),
+			Timestamp:   jsonString(span, "Timestamp"),
 		}
 
 		// Extract db.system and db.statement from SpanAttributes
@@ -1164,25 +1145,6 @@ func extractSlowQueries(rawResult map[string]any) []SlowQuery {
 	return queries
 }
 
-func extractStr(m map[string]any, key string) string {
-	if v, ok := m[key].(string); ok {
-		return v
-	}
-	return ""
-}
-
-func extractFloat64(m map[string]any, key string) float64 {
-	switch v := m[key].(type) {
-	case float64:
-		return v
-	case int64:
-		return float64(v)
-	case int:
-		return float64(v)
-	default:
-		return 0
-	}
-}
 
 // fetchPromAndPopulate runs a PromQL instant query and populates DatabaseSummary entries
 // keyed by "db_system|net_peer_name".
@@ -1224,6 +1186,14 @@ func fetchPromAndPopulate(ctx context.Context, client *http.Client, cfg models.C
 
 // fetchPromToMap runs a PromQL query and stores values in a map keyed by "db_system|net_peer_name".
 func fetchPromToMap(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64, result map[string]float64) {
+	fetchPromToMapByKey(ctx, client, cfg, query, endTime, result, func(m map[string]string) string {
+		return m["db_system"] + "|" + m["net_peer_name"]
+	})
+}
+
+// fetchPromToMapByKey is the generic version: runs a PromQL instant query
+// and stores values in a map using a caller-provided key extractor.
+func fetchPromToMapByKey(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64, result map[string]float64, keyFn func(map[string]string) string) {
 	resp, err := utils.MakePromInstantAPIQuery(ctx, client, query, endTime, cfg)
 	if err != nil {
 		return
@@ -1240,7 +1210,10 @@ func fetchPromToMap(ctx context.Context, client *http.Client, cfg models.Config,
 	}
 
 	for _, point := range series {
-		key := point.Metric["db_system"] + "|" + point.Metric["net_peer_name"]
+		key := keyFn(point.Metric)
+		if key == "" {
+			continue
+		}
 		result[key] = parsePromValue(point.Value)
 	}
 }
