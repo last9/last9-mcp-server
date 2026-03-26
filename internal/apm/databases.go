@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
@@ -71,32 +72,15 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 			envFilter,
 		)
 
-		// Build a map keyed by "db_system|host"
-		databases := make(map[string]*DatabaseSummary)
-
-		// 1. Throughput (rpm)
+		// Build all PromQL queries
 		throughputQuery := fmt.Sprintf(
 			`sum by(db_system, net_peer_name)(sum_over_time(trace_client_count{%s}[%dm])) / %d`,
 			baseFilter, durationMin, durationMin,
 		)
-		if err := fetchPromAndPopulate(ctx, client, cfg, throughputQuery, endTime, databases, func(db *DatabaseSummary, val float64) {
-			db.Throughput = val
-		}); err != nil {
-			return nil, nil, fmt.Errorf("failed to fetch throughput: %w", err)
-		}
-
-		// 2. P95 latency (ms)
 		latencyQuery := fmt.Sprintf(
 			`max by(db_system, net_peer_name)(avg_over_time(trace_client_duration{%s, quantile="p95"}[%dm])) * 1000`,
 			baseFilter, durationMin,
 		)
-		if err := fetchPromAndPopulate(ctx, client, cfg, latencyQuery, endTime, databases, func(db *DatabaseSummary, val float64) {
-			db.P95Latency = val
-		}); err != nil {
-			// Non-fatal: latency might not be available
-		}
-
-		// 3. Error rate (%)
 		errorCountQuery := fmt.Sprintf(
 			`sum by(db_system, net_peer_name)(sum_over_time(trace_client_count{%s, status_code="STATUS_CODE_ERROR"}[%dm]))`,
 			baseFilter, durationMin,
@@ -105,27 +89,73 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 			`sum by(db_system, net_peer_name)(sum_over_time(trace_client_count{%s}[%dm]))`,
 			baseFilter, durationMin,
 		)
-		errorCounts := make(map[string]float64)
-		totalCounts := make(map[string]float64)
-		fetchPromToMap(ctx, client, cfg, errorCountQuery, endTime, errorCounts)
-		fetchPromToMap(ctx, client, cfg, totalCountQuery, endTime, totalCounts)
+		serviceCountQuery := fmt.Sprintf(
+			`count by(db_system, net_peer_name)(sum by(service_name, db_system, net_peer_name)(sum_over_time(trace_client_count{%s}[%dm])))`,
+			baseFilter, durationMin,
+		)
+
+		// Run all 5 PromQL queries in parallel, each writing to its own map
+		var (
+			throughputDBs   = make(map[string]*DatabaseSummary)
+			latencyDBs      = make(map[string]*DatabaseSummary)
+			serviceCountDBs = make(map[string]*DatabaseSummary)
+			errorCounts     = make(map[string]float64)
+			totalCounts     = make(map[string]float64)
+			throughputErr   error
+			wg              sync.WaitGroup
+		)
+
+		wg.Add(5)
+		go func() {
+			defer wg.Done()
+			throughputErr = fetchPromAndPopulate(ctx, client, cfg, throughputQuery, endTime, throughputDBs, func(db *DatabaseSummary, val float64) {
+				db.Throughput = val
+			})
+		}()
+		go func() {
+			defer wg.Done()
+			fetchPromAndPopulate(ctx, client, cfg, latencyQuery, endTime, latencyDBs, func(db *DatabaseSummary, val float64) {
+				db.P95Latency = val
+			})
+		}()
+		go func() {
+			defer wg.Done()
+			fetchPromToMap(ctx, client, cfg, errorCountQuery, endTime, errorCounts)
+		}()
+		go func() {
+			defer wg.Done()
+			fetchPromToMap(ctx, client, cfg, totalCountQuery, endTime, totalCounts)
+		}()
+		go func() {
+			defer wg.Done()
+			fetchPromAndPopulate(ctx, client, cfg, serviceCountQuery, endTime, serviceCountDBs, func(db *DatabaseSummary, val float64) {
+				db.ServiceCount = int(val)
+			})
+		}()
+		wg.Wait()
+
+		if throughputErr != nil {
+			return nil, nil, fmt.Errorf("failed to fetch throughput: %w", throughputErr)
+		}
+
+		// Merge results: throughput is the primary map, enrich from others
+		databases := throughputDBs
+		for key, latDB := range latencyDBs {
+			if db, ok := databases[key]; ok {
+				db.P95Latency = latDB.P95Latency
+			}
+		}
+		for key, scDB := range serviceCountDBs {
+			if db, ok := databases[key]; ok {
+				db.ServiceCount = scDB.ServiceCount
+			}
+		}
 		for key, total := range totalCounts {
 			if total > 0 {
 				if db, ok := databases[key]; ok {
 					db.ErrorRate = (errorCounts[key] / total) * 100
 				}
 			}
-		}
-
-		// 4. Service count
-		serviceCountQuery := fmt.Sprintf(
-			`count by(db_system, net_peer_name)(sum by(service_name, db_system, net_peer_name)(sum_over_time(trace_client_count{%s}[%dm])))`,
-			baseFilter, durationMin,
-		)
-		if err := fetchPromAndPopulate(ctx, client, cfg, serviceCountQuery, endTime, databases, func(db *DatabaseSummary, val float64) {
-			db.ServiceCount = int(val)
-		}); err != nil {
-			// Non-fatal
 		}
 
 		if len(databases) == 0 {
@@ -293,31 +323,50 @@ func NewGetDatabaseSlowQueriesHandler(client *http.Client, cfg models.Config) fu
 		startMs := startTime * 1000
 		endMs := endTime * 1000
 
-		resp, err := utils.MakeTracesJSONQueryAPI(ctx, client, cfg, pipeline, startMs, endMs, limit)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to query slow database traces: %w", err)
-		}
-		defer resp.Body.Close()
+		// Fetch traces and logs in parallel
+		var (
+			slowQueries []SlowQuery
+			logQueries  []SlowQuery
+			traceErr    error
+			sqWg        sync.WaitGroup
+		)
 
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			bodyStr := string(body)
-			if len(bodyStr) > 200 {
-				bodyStr = bodyStr[:200] + "..."
+		sqWg.Add(2)
+		go func() {
+			defer sqWg.Done()
+			resp, err := utils.MakeTracesJSONQueryAPI(ctx, client, cfg, pipeline, startMs, endMs, limit)
+			if err != nil {
+				traceErr = fmt.Errorf("failed to query slow database traces: %w", err)
+				return
 			}
-			return nil, nil, fmt.Errorf("traces API returned status %d: %s", resp.StatusCode, bodyStr)
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				bodyStr := string(body)
+				if len(bodyStr) > 200 {
+					bodyStr = bodyStr[:200] + "..."
+				}
+				traceErr = fmt.Errorf("traces API returned status %d: %s", resp.StatusCode, bodyStr)
+				return
+			}
+
+			var rawResult map[string]any
+			if err := json.NewDecoder(resp.Body).Decode(&rawResult); err != nil {
+				traceErr = fmt.Errorf("failed to decode traces response: %w", err)
+				return
+			}
+			slowQueries = extractSlowQueries(rawResult)
+		}()
+		go func() {
+			defer sqWg.Done()
+			logQueries = fetchSlowQueryLogs(ctx, client, cfg, args, startMs, endMs, limit)
+		}()
+		sqWg.Wait()
+
+		if traceErr != nil {
+			return nil, nil, traceErr
 		}
-
-		var rawResult map[string]any
-		if err := json.NewDecoder(resp.Body).Decode(&rawResult); err != nil {
-			return nil, nil, fmt.Errorf("failed to decode traces response: %w", err)
-		}
-
-		// Extract and transform spans into SlowQuery format
-		slowQueries := extractSlowQueries(rawResult)
-
-		// Enrich with slow query logs (best-effort — logs may not exist)
-		logQueries := fetchSlowQueryLogs(ctx, client, cfg, args, startMs, endMs, limit)
 		slowQueries = append(slowQueries, logQueries...)
 
 		// Sort all results by duration descending
@@ -431,10 +480,8 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 
 		baseFilter := buildDBBaseFilter(args.DBSystem, args.Host, args.Env)
 
-		// Build patterns map keyed by span_name
+		// 1. Throughput first (to check if any patterns exist)
 		patterns := make(map[string]*QueryPattern)
-
-		// 1. Throughput (calls/min) by span_name
 		throughputQuery := fmt.Sprintf(
 			`sum by(span_name)(sum_over_time(trace_client_count{%s}[%dm])) / %d`,
 			baseFilter, durationMin, durationMin,
@@ -453,25 +500,15 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 			}, nil, nil
 		}
 
-		// 2. Avg latency (ms) by span_name
+		// 2. Remaining metrics in parallel (avg latency, p95 latency, error count, total count)
 		avgLatencyQuery := fmt.Sprintf(
 			`avg by(span_name)(avg_over_time(trace_client_duration{%s, quantile="p50"}[%dm])) * 1000`,
 			baseFilter, durationMin,
 		)
-		fetchPromBySpanName(ctx, client, cfg, avgLatencyQuery, endTime, patterns, func(p *QueryPattern, val float64) {
-			p.AvgLatency = val
-		})
-
-		// 3. P95 latency (ms) by span_name
 		p95LatencyQuery := fmt.Sprintf(
 			`avg by(span_name)(avg_over_time(trace_client_duration{%s, quantile="p95"}[%dm])) * 1000`,
 			baseFilter, durationMin,
 		)
-		fetchPromBySpanName(ctx, client, cfg, p95LatencyQuery, endTime, patterns, func(p *QueryPattern, val float64) {
-			p.P95Latency = val
-		})
-
-		// 4. Error rate by span_name
 		errorCountQuery := fmt.Sprintf(
 			`sum by(span_name)(sum_over_time(trace_client_count{%s, status_code="STATUS_CODE_ERROR"}[%dm]))`,
 			baseFilter, durationMin,
@@ -480,14 +517,53 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 			`sum by(span_name)(sum_over_time(trace_client_count{%s}[%dm]))`,
 			baseFilter, durationMin,
 		)
-		errorCounts := make(map[string]float64)
-		totalCounts := make(map[string]float64)
-		fetchPromToSpanNameMap(ctx, client, cfg, errorCountQuery, endTime, errorCounts)
-		fetchPromToSpanNameMap(ctx, client, cfg, totalCountQuery, endTime, totalCounts)
-		for spanName, total := range totalCounts {
+
+		// Each goroutine writes to its own map to avoid concurrent map writes
+		var (
+			avgLatencyMap = make(map[string]*QueryPattern)
+			p95LatencyMap = make(map[string]*QueryPattern)
+			qpErrorCounts = make(map[string]float64)
+			qpTotalCounts = make(map[string]float64)
+			qpWg          sync.WaitGroup
+		)
+		qpWg.Add(4)
+		go func() {
+			defer qpWg.Done()
+			fetchPromBySpanName(ctx, client, cfg, avgLatencyQuery, endTime, avgLatencyMap, func(p *QueryPattern, val float64) {
+				p.AvgLatency = val
+			})
+		}()
+		go func() {
+			defer qpWg.Done()
+			fetchPromBySpanName(ctx, client, cfg, p95LatencyQuery, endTime, p95LatencyMap, func(p *QueryPattern, val float64) {
+				p.P95Latency = val
+			})
+		}()
+		go func() {
+			defer qpWg.Done()
+			fetchPromToSpanNameMap(ctx, client, cfg, errorCountQuery, endTime, qpErrorCounts)
+		}()
+		go func() {
+			defer qpWg.Done()
+			fetchPromToSpanNameMap(ctx, client, cfg, totalCountQuery, endTime, qpTotalCounts)
+		}()
+		qpWg.Wait()
+
+		// Merge parallel results into the main patterns map
+		for spanName, lat := range avgLatencyMap {
+			if p, ok := patterns[spanName]; ok {
+				p.AvgLatency = lat.AvgLatency
+			}
+		}
+		for spanName, lat := range p95LatencyMap {
+			if p, ok := patterns[spanName]; ok {
+				p.P95Latency = lat.P95Latency
+			}
+		}
+		for spanName, total := range qpTotalCounts {
 			if total > 0 {
 				if p, ok := patterns[spanName]; ok {
-					p.ErrorRate = (errorCounts[spanName] / total) * 100
+					p.ErrorRate = (qpErrorCounts[spanName] / total) * 100
 				}
 			}
 		}
@@ -759,39 +835,77 @@ func NewGetDatabaseServerMetricsHandler(client *http.Client, cfg models.Config) 
 			Metrics     map[string]any `json:"metrics,omitempty"`
 		}
 
-		var results []dbResult
+		// Probe all database types in parallel
+		type probeResult struct {
+			dbSys       string
+			exporterCfg dbExporterConfig
+			available   bool
+		}
+		probeResults := make([]probeResult, 0, len(configsToCheck))
+		var probeMu sync.Mutex
+		var probeWg sync.WaitGroup
 
 		for dbSys, exporterCfg := range configsToCheck {
-			// Probe: check if any metrics with this prefix exist
-			available := probeMetricPrefix(ctx, client, cfg, exporterCfg.MetricPrefixes, startTime, endTime)
-			if !available {
+			probeWg.Add(1)
+			go func(dbSys string, exporterCfg dbExporterConfig) {
+				defer probeWg.Done()
+				available := probeMetricPrefix(ctx, client, cfg, exporterCfg.MetricPrefixes, startTime, endTime)
+				probeMu.Lock()
+				probeResults = append(probeResults, probeResult{dbSys, exporterCfg, available})
+				probeMu.Unlock()
+			}(dbSys, exporterCfg)
+		}
+		probeWg.Wait()
+
+		// For available exporters, query all key metrics in parallel
+		var results []dbResult
+		var resultsMu sync.Mutex
+		var metricsWg sync.WaitGroup
+
+		for _, pr := range probeResults {
+			if !pr.available {
 				if args.DBSystem != "" {
-					// User asked for a specific DB — report it as unavailable
 					results = append(results, dbResult{
-						DBSystem:    dbSys,
-						DisplayName: exporterCfg.DisplayName,
+						DBSystem:    pr.dbSys,
+						DisplayName: pr.exporterCfg.DisplayName,
 						Available:   false,
 					})
 				}
 				continue
 			}
 
-			// Query key metrics
-			metrics := make(map[string]any)
-			for _, km := range exporterCfg.KeyMetrics {
-				val := queryPromInstantValue(ctx, client, cfg, km.Query, endTime)
-				if val != nil {
-					metrics[km.Name] = val
-				}
-			}
+			metricsWg.Add(1)
+			go func(pr probeResult) {
+				defer metricsWg.Done()
+				metrics := make(map[string]any)
+				var metricMu sync.Mutex
+				var mWg sync.WaitGroup
 
-			results = append(results, dbResult{
-				DBSystem:    dbSys,
-				DisplayName: exporterCfg.DisplayName,
-				Available:   true,
-				Metrics:     metrics,
-			})
+				for _, km := range pr.exporterCfg.KeyMetrics {
+					mWg.Add(1)
+					go func(km dbKeyMetric) {
+						defer mWg.Done()
+						val := queryPromInstantValue(ctx, client, cfg, km.Query, endTime)
+						if val != nil {
+							metricMu.Lock()
+							metrics[km.Name] = val
+							metricMu.Unlock()
+						}
+					}(km)
+				}
+				mWg.Wait()
+
+				resultsMu.Lock()
+				results = append(results, dbResult{
+					DBSystem:    pr.dbSys,
+					DisplayName: pr.exporterCfg.DisplayName,
+					Available:   true,
+					Metrics:     metrics,
+				})
+				resultsMu.Unlock()
+			}(pr)
 		}
+		metricsWg.Wait()
 
 		if len(results) == 0 {
 			return &mcp.CallToolResult{

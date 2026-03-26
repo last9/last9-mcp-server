@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -28,11 +29,9 @@ func testDBConfig(serverURL string) models.Config {
 }
 
 func TestGetDatabasesHandler(t *testing.T) {
-	// Mock server that returns PromQL responses for throughput, latency, error rate, service count
-	requestCount := 0
+	var requestCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount++
-		// All requests go to /prom_query_instant
+		requestCount.Add(1)
 		w.WriteHeader(http.StatusOK)
 
 		// Return different results depending on the query
@@ -89,8 +88,8 @@ func TestGetDatabasesHandler(t *testing.T) {
 	}
 
 	// Should have made at least 4 PromQL requests (throughput, latency, error_count, total_count + service_count)
-	if requestCount < 4 {
-		t.Errorf("expected at least 4 PromQL requests, got %d", requestCount)
+	if rc := requestCount.Load(); rc < 4 {
+		t.Errorf("expected at least 4 PromQL requests, got %d", rc)
 	}
 }
 
