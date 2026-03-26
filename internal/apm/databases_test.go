@@ -11,6 +11,7 @@ import (
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -374,4 +375,96 @@ func TestExtractSlowQueries_TruncatesLongStatements(t *testing.T) {
 	if !strings.HasSuffix(queries[0].DBStatement, "...") {
 		t.Error("expected truncated statement to end with '...'")
 	}
+}
+
+// --- Integration tests (require TEST_REFRESH_TOKEN) ---
+
+func TestGetDatabasesHandler_Integration(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+
+	handler := NewGetDatabasesHandler(http.DefaultClient, *cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
+		LookbackMinutes: 60,
+	})
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+
+	text := utils.GetTextContent(t, result)
+	t.Logf("get_databases response (%d bytes): %.500s", len(text), text)
+}
+
+func TestGetDatabaseSlowQueriesHandler_Integration(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+
+	handler := NewGetDatabaseSlowQueriesHandler(http.DefaultClient, *cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabaseSlowQueriesArgs{
+		LookbackMinutes: 60,
+		Limit:           5,
+	})
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+
+	text := utils.GetTextContent(t, result)
+	t.Logf("get_database_slow_queries response (%d bytes): %.500s", len(text), text)
+}
+
+func TestGetDatabaseQueriesHandler_Integration(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+
+	// First discover databases to get a db_system to test with
+	dbHandler := NewGetDatabasesHandler(http.DefaultClient, *cfg)
+	dbResult, _, err := dbHandler(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
+		LookbackMinutes: 60,
+	})
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+
+	dbText := utils.GetTextContent(t, dbResult)
+	var dbResp map[string]any
+	if err := json.Unmarshal([]byte(dbText), &dbResp); err != nil {
+		// Might be a "No databases found" message
+		t.Logf("No databases found, skipping queries test: %s", dbText)
+		return
+	}
+
+	databases, ok := dbResp["databases"].([]any)
+	if !ok || len(databases) == 0 {
+		t.Log("No databases found, skipping queries test")
+		return
+	}
+
+	// Use the first database's system
+	firstDB := databases[0].(map[string]any)
+	dbSystem := firstDB["db_system"].(string)
+	t.Logf("Testing query patterns for db_system=%s", dbSystem)
+
+	handler := NewGetDatabaseQueriesHandler(http.DefaultClient, *cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabaseQueriesArgs{
+		DBSystem:        dbSystem,
+		LookbackMinutes: 60,
+	})
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+
+	text := utils.GetTextContent(t, result)
+	t.Logf("get_database_queries response (%d bytes): %.500s", len(text), text)
+}
+
+func TestGetDatabaseServerMetricsHandler_Integration(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+
+	handler := NewGetDatabaseServerMetricsHandler(http.DefaultClient, *cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabaseServerMetricsArgs{
+		LookbackMinutes: 60,
+	})
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+
+	text := utils.GetTextContent(t, result)
+	t.Logf("get_database_server_metrics response (%d bytes): %.500s", len(text), text)
 }
