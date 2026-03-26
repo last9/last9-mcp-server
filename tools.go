@@ -166,5 +166,17 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Description: change_events.GetChangeEventsDescription,
 	}, change_events.NewGetChangeEventsHandler(client, cfg))
 
+	// Register database discovery tool
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_databases",
+		Description: apm.GetDatabasesDescription,
+	}, apm.NewGetDatabasesHandler(client, cfg))
+
+	// Register database slow queries tool
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_database_slow_queries",
+		Description: apm.GetDatabaseSlowQueriesDescription,
+	}, apm.NewGetDatabaseSlowQueriesHandler(client, cfg))
+
 	return nil
 }

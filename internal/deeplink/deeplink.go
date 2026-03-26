@@ -14,6 +14,7 @@ const (
 	RouteTraces              = "traces"
 	RouteExceptions          = "exceptions"
 	RouteServiceCatalog      = "service-catalog"
+	RouteDatabases           = "databases"
 	RouteAlerting            = "alerting/monitor"
 	RouteAlertingGroups      = "alerting/groups"
 	RouteDropRules           = "control-plane/%s/drop" // requires clusterId
@@ -167,6 +168,11 @@ func (b *Builder) BuildAPMServiceLink(fromMs, toMs int64, serviceName, env, tab 
 		return fmt.Sprintf("/v2/organizations/%s/%s/%s?%s", b.orgSlug, RouteServiceCatalog, url.PathEscape(serviceName), params.Encode())
 	}
 	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteServiceCatalog, params.Encode())
+}
+
+// BuildDatabasesLink creates a deep link to the databases discovery page
+func (b *Builder) BuildDatabasesLink() string {
+	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, RouteDatabases)
 }
 
 // BuildAlertingGroupsLink creates a deep link to the alerting groups page
