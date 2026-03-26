@@ -64,7 +64,7 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 
 		envFilter := ""
 		if args.Env != "" {
-			envFilter = fmt.Sprintf(", env=~'%s'", args.Env)
+			envFilter = fmt.Sprintf(`, env=~"%s"`, escapePromQLLabel(args.Env))
 		}
 
 		baseFilter := fmt.Sprintf(
@@ -102,6 +102,8 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 			errorCounts     = make(map[string]float64)
 			totalCounts     = make(map[string]float64)
 			throughputErr   error
+			warnings        []string
+			warnMu          sync.Mutex
 			wg              sync.WaitGroup
 		)
 
@@ -114,9 +116,13 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 		}()
 		go func() {
 			defer wg.Done()
-			fetchPromAndPopulate(ctx, client, cfg, latencyQuery, endTime, latencyDBs, func(db *DatabaseSummary, val float64) {
+			if err := fetchPromAndPopulate(ctx, client, cfg, latencyQuery, endTime, latencyDBs, func(db *DatabaseSummary, val float64) {
 				db.P95Latency = val
-			})
+			}); err != nil {
+				warnMu.Lock()
+				warnings = append(warnings, "p95 latency unavailable")
+				warnMu.Unlock()
+			}
 		}()
 		go func() {
 			defer wg.Done()
@@ -128,9 +134,13 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 		}()
 		go func() {
 			defer wg.Done()
-			fetchPromAndPopulate(ctx, client, cfg, serviceCountQuery, endTime, serviceCountDBs, func(db *DatabaseSummary, val float64) {
+			if err := fetchPromAndPopulate(ctx, client, cfg, serviceCountQuery, endTime, serviceCountDBs, func(db *DatabaseSummary, val float64) {
 				db.ServiceCount = int(val)
-			})
+			}); err != nil {
+				warnMu.Lock()
+				warnings = append(warnings, "service count unavailable")
+				warnMu.Unlock()
+			}
 		}()
 		wg.Wait()
 
@@ -178,6 +188,9 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 		response := map[string]any{
 			"count":     len(result),
 			"databases": result,
+		}
+		if len(warnings) > 0 {
+			response["_warnings"] = warnings
 		}
 
 		jsonBytes, err := json.Marshal(response)
@@ -617,15 +630,24 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 func buildDBBaseFilter(dbSystem, host, env string) string {
 	filter := fmt.Sprintf(
 		`span_kind=~"SPAN_KIND_CLIENT|SPAN_KIND_INTERNAL", db_system="%s"`,
-		dbSystem,
+		escapePromQLLabel(dbSystem),
 	)
 	if host != "" {
-		filter += fmt.Sprintf(`, net_peer_name="%s"`, host)
+		filter += fmt.Sprintf(`, net_peer_name="%s"`, escapePromQLLabel(host))
 	}
 	if env != "" {
-		filter += fmt.Sprintf(`, env=~"%s"`, env)
+		filter += fmt.Sprintf(`, env=~"%s"`, escapePromQLLabel(env))
 	}
 	return filter
+}
+
+// escapePromQLLabel escapes special characters in a PromQL label value
+// to prevent injection when interpolating into queries.
+func escapePromQLLabel(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, "\n", `\n`)
+	return s
 }
 
 func fetchPromBySpanName(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64, patterns map[string]*QueryPattern, setter func(*QueryPattern, float64)) error {

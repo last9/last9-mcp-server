@@ -21,6 +21,8 @@ func testDBConfig(serverURL string) models.Config {
 	return models.Config{
 		APIBaseURL: serverURL,
 		Region:     "ap-south-1",
+		OrgSlug:    "test-org",
+		ClusterID:  "test-cluster",
 		TokenManager: &auth.TokenManager{
 			AccessToken: "mock-token",
 			ExpiresAt:   time.Now().Add(365 * 24 * time.Hour),
