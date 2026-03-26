@@ -817,7 +817,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the Prometheus query for response times of endpoint operations
 		respTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (quantile, span_name, span_kind) (trace_endpoint_duration{service_name='%s', span_kind='SPAN_KIND_SERVER', env=~'%s'}[%s]))",
+			"avg by (quantile, span_name, span_kind) (avg_over_time(trace_endpoint_duration{service_name='%s', span_kind='SPAN_KIND_SERVER', env=~'%s'}[%s]))",
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
@@ -872,7 +872,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the Prometheus query for response times of database operations
 		dbRespTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (quantile, span_name, db_system, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name='%s', span_kind='SPAN_KIND_CLIENT', db_system!='', env=~'%s'}[%s]))",
+			"avg by (quantile, span_name, db_system, net_peer_name, rpc_system, span_kind) (avg_over_time(trace_client_duration{service_name='%s', span_kind='SPAN_KIND_CLIENT', db_system!='', env=~'%s'}[%s]))",
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
@@ -942,7 +942,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the Prometheus query for response times of http operations
 		httpRespTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (quantile, span_name, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name='%s', span_kind='SPAN_KIND_CLIENT', env=~'%s'}[%s]))",
+			"avg by (quantile, span_name, net_peer_name, rpc_system, span_kind) (avg_over_time(trace_client_duration{service_name='%s', span_kind='SPAN_KIND_CLIENT', env=~'%s'}[%s]))",
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
@@ -1010,7 +1010,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the Prometheus query for response times of messaging operations
 		messagingRespTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (quantile, span_name, messaging_system, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name='%s', messaging_system!='', span_kind='SPAN_KIND_PRODUCER', env=~'%s'}[%s]))",
+			"avg by (quantile, span_name, messaging_system, net_peer_name, rpc_system, span_kind) (avg_over_time(trace_client_duration{service_name='%s', messaging_system!='', span_kind='SPAN_KIND_PRODUCER', env=~'%s'}[%s]))",
 			serviceName, env, timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
