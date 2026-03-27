@@ -153,14 +153,20 @@ func TestGetTracesLimitParameter(t *testing.T) {
 					t.Fatalf("failed to unmarshal response: %v", err)
 				}
 
-				// Verify response structure
-				if data, ok := response["data"].(map[string]interface{}); ok {
-					if result, ok := data["result"].([]interface{}); ok {
-						// The mock returns exactly the number of traces we expect
-						if len(result) > tt.expectedLimit {
-							t.Errorf("Expected at most %d traces in response, got %d", tt.expectedLimit, len(result))
-						}
-					}
+				// Verify compact response structure
+				count, ok := response["count"].(float64)
+				if !ok {
+					t.Fatalf("expected 'count' field in compact response")
+				}
+				if int(count) > tt.expectedLimit {
+					t.Errorf("Expected at most %d traces in response, got %d", tt.expectedLimit, int(count))
+				}
+				traces, ok := response["traces"].([]interface{})
+				if !ok {
+					t.Fatalf("expected 'traces' array in compact response")
+				}
+				if len(traces) > tt.expectedLimit {
+					t.Errorf("Expected at most %d traces, got %d", tt.expectedLimit, len(traces))
 				}
 			}
 		})
@@ -323,6 +329,159 @@ func TestExtractExactTraceIDLookup(t *testing.T) {
 	}
 }
 
+func TestCompactTraceResponse_SpanResults(t *testing.T) {
+	raw := map[string]interface{}{
+		"data": map[string]interface{}{
+			"result": []interface{}{
+				map[string]interface{}{
+					"TraceId":     "abc123",
+					"SpanId":      "span-1",
+					"SpanKind":    "SPAN_KIND_SERVER",
+					"SpanName":    "GET /api",
+					"ServiceName": "api-service",
+					"Duration":    float64(150000),
+					"Timestamp":   "2025-11-02T10:00:00Z",
+					"StatusCode":  "STATUS_CODE_OK",
+					// Verbose fields that should be stripped
+					"ResourceAttributes": map[string]interface{}{
+						"service.namespace": "prod",
+						"k8s.pod.name":      "api-service-abc-123",
+						"host.name":         "ip-10-0-1-5",
+					},
+					"SpanAttributes": map[string]interface{}{
+						"http.method":      "GET",
+						"http.url":         "https://api.example.com/users",
+						"http.status_code": float64(200),
+					},
+					"Events": []interface{}{},
+					"Links":  []interface{}{},
+				},
+			},
+		},
+	}
+
+	compact := compactTraceResponse(raw)
+
+	count, ok := compact["count"].(int)
+	if !ok || count != 1 {
+		t.Fatalf("expected count=1, got %v", compact["count"])
+	}
+
+	traces, ok := compact["traces"].([]map[string]interface{})
+	if !ok || len(traces) != 1 {
+		t.Fatalf("expected 1 trace, got %v", compact["traces"])
+	}
+
+	tr := traces[0]
+	if tr["trace_id"] != "abc123" {
+		t.Errorf("expected trace_id=abc123, got %v", tr["trace_id"])
+	}
+	if tr["service_name"] != "api-service" {
+		t.Errorf("expected service_name=api-service, got %v", tr["service_name"])
+	}
+
+	// Verify verbose fields are NOT present
+	if _, exists := tr["ResourceAttributes"]; exists {
+		t.Error("ResourceAttributes should be stripped from compact response")
+	}
+	if _, exists := tr["SpanAttributes"]; exists {
+		t.Error("SpanAttributes should be stripped from compact response")
+	}
+
+	// Verify size reduction: compact JSON should be much smaller than raw
+	rawJSON, _ := json.Marshal(raw)
+	compactJSON, _ := json.Marshal(compact)
+	if len(compactJSON) >= len(rawJSON) {
+		t.Errorf("compact response (%d bytes) should be smaller than raw (%d bytes)", len(compactJSON), len(rawJSON))
+	}
+}
+
+func TestCompactTraceResponse_EmptyResults(t *testing.T) {
+	raw := map[string]interface{}{
+		"data": map[string]interface{}{
+			"result": []interface{}{},
+		},
+	}
+
+	compact := compactTraceResponse(raw)
+
+	count, ok := compact["count"].(int)
+	if !ok || count != 0 {
+		t.Fatalf("expected count=0, got %v", compact["count"])
+	}
+
+	traces, ok := compact["traces"].([]interface{})
+	if !ok || len(traces) != 0 {
+		t.Fatalf("expected empty traces array, got %v", compact["traces"])
+	}
+}
+
+func TestCompactTraceResponse_AggregationResults(t *testing.T) {
+	// Aggregation results don't have TraceId — should be returned as-is
+	raw := map[string]interface{}{
+		"data": map[string]interface{}{
+			"result": []interface{}{
+				map[string]interface{}{
+					"ServiceName": "api-service",
+					"count":       float64(42),
+				},
+				map[string]interface{}{
+					"ServiceName": "web-service",
+					"count":       float64(18),
+				},
+			},
+		},
+	}
+
+	compact := compactTraceResponse(raw)
+
+	count, ok := compact["count"].(int)
+	if !ok || count != 2 {
+		t.Fatalf("expected count=2, got %v", compact["count"])
+	}
+
+	// Aggregation results should be under "data", not "traces"
+	data, ok := compact["data"].([]interface{})
+	if !ok {
+		t.Fatalf("expected 'data' field for aggregation results, got %v", compact)
+	}
+	if len(data) != 2 {
+		t.Errorf("expected 2 data items, got %d", len(data))
+	}
+}
+
+func TestCompactTraceResponse_PreservesPartialMetadata(t *testing.T) {
+	raw := map[string]interface{}{
+		"data": map[string]interface{}{
+			"result": []interface{}{
+				map[string]interface{}{
+					"TraceId":     "abc123",
+					"SpanId":      "span-1",
+					"ServiceName": "svc",
+					"Duration":    float64(100),
+					"Timestamp":   "2025-11-02T10:00:00Z",
+				},
+			},
+		},
+		partialResultMetadataKey: map[string]interface{}{
+			"partial_result":  true,
+			"warning":         "Returning partial results: chunk 3/3 failed",
+			"total_chunks":    3,
+			"returned_traces": 1,
+		},
+	}
+
+	compact := compactTraceResponse(raw)
+
+	meta, ok := compact[partialResultMetadataKey].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected partial result metadata to be preserved")
+	}
+	if meta["partial_result"] != true {
+		t.Errorf("expected partial_result=true, got %v", meta["partial_result"])
+	}
+}
+
 // Integration test - requires real API credentials
 func TestGetTracesHandler_Integration(t *testing.T) {
 	testRefreshToken := os.Getenv("TEST_REFRESH_TOKEN")
@@ -411,17 +570,14 @@ func TestGetTracesHandler_Integration(t *testing.T) {
 				t.Fatalf("failed to unmarshal response: %v", err)
 			}
 
-			// Verify response structure
+			// Verify compact response structure
 			if response == nil {
 				t.Fatalf("response is nil")
 			}
 
-			// Log summary instead of full response
 			count := 0
-			if data, ok := response["data"].(map[string]interface{}); ok {
-				if result, ok := data["result"].([]interface{}); ok {
-					count = len(result)
-				}
+			if c, ok := response["count"].(float64); ok {
+				count = int(c)
 			}
 			t.Logf("Integration test successful for limit %d: received %d trace(s)", tt.limit, count)
 		})

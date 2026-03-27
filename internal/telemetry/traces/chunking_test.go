@@ -425,13 +425,14 @@ func parseTracesToolResult(t *testing.T, result *mcp.CallToolResult) map[string]
 
 func countTracesInPayload(t *testing.T, payload map[string]interface{}) int {
 	t.Helper()
-	data, ok := payload["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("missing data object: %#v", payload)
+	// Compact format: {"count": N, "traces": [...]}
+	if traces, ok := payload["traces"].([]interface{}); ok {
+		return len(traces)
 	}
-	result, ok := data["result"].([]interface{})
-	if !ok {
-		t.Fatalf("missing result array: %#v", data)
+	// Fallback: aggregation format {"count": N, "data": [...]}
+	if data, ok := payload["data"].([]interface{}); ok {
+		return len(data)
 	}
-	return len(result)
+	t.Fatalf("missing traces or data array: %#v", payload)
+	return 0
 }

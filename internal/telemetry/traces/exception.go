@@ -163,26 +163,24 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 			lastSeen := time.UnixMilli(exceptionData.LastSeenAtMillisecond).UTC().Format(time.RFC3339)
 			firstSeen := time.UnixMilli(exceptionData.FirstSeenAtMillisecond).UTC().Format(time.RFC3339)
 
-			exceptions = append(exceptions, map[string]interface{}{
-				"trace_id":               nil,
-				"span_id":                nil,
-				"service_name":           exceptionData.ServiceName,
-				"span_name":              exceptionData.SpanName,
-				"timestamp":              lastSeen,
-				"exception_type":         exceptionData.ExceptionType,
-				"exception_message":      "",
-				"exception_stacktrace":   "",
-				"exception_escaped":      nil,
-				"deployment_environment": exceptionData.DeploymentEnvironment,
-				"service_namespace":      "",
-				"service_instance_id":    "",
-				"span_kind":              exceptionData.SpanKind,
-				"duration_ms":            nil,
-				"status_code":            "",
-				"count":                  exceptionData.Count,
-				"first_seen":             firstSeen,
-				"last_seen":              lastSeen,
-			})
+			exception := map[string]interface{}{
+				"service_name":   exceptionData.ServiceName,
+				"exception_type": exceptionData.ExceptionType,
+				"count":          exceptionData.Count,
+				"first_seen":     firstSeen,
+				"last_seen":      lastSeen,
+			}
+			// Only include optional fields when they carry useful information
+			if exceptionData.SpanName != "" && exceptionData.SpanName != "Unknown" {
+				exception["span_name"] = exceptionData.SpanName
+			}
+			if exceptionData.SpanKind != "" && exceptionData.SpanKind != "UNKNOWN" {
+				exception["span_kind"] = exceptionData.SpanKind
+			}
+			if exceptionData.DeploymentEnvironment != "" {
+				exception["deployment_environment"] = exceptionData.DeploymentEnvironment
+			}
+			exceptions = append(exceptions, exception)
 		}
 
 		// Format response

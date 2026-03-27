@@ -81,12 +81,23 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		meta = deeplink.ToMeta(dashboardURL)
 	}
 
-	// Return the result in MCP format with deep link
+	// Transform raw result into a compact format to avoid filling LLM context.
+	// If the response exceeds the size guard, trim entries and add a warning.
+	compact := compactLogResponse(result)
+	jsonBytes, err := json.Marshal(compact)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal compact response: %v", err)
+	}
+
+	if len(jsonBytes) > maxResponseBytes {
+		jsonBytes = trimCompactLogResponse(compact, maxResponseBytes)
+	}
+
 	return &mcp.CallToolResult{
 		Meta: meta,
 		Content: []mcp.Content{
 			&mcp.TextContent{
-				Text: formatJSON(result),
+				Text: string(jsonBytes),
 			},
 		},
 	}, nil
@@ -485,6 +496,216 @@ func mapsClone(source map[string]interface{}) map[string]interface{} {
 	return cloned
 }
 
+// compactLogResponse transforms a raw logs API response into a compact format
+// that removes unnecessary nesting and uses compact JSON encoding.
+// For "streams" results: returns {count, result_type, streams: [{labels, entries}]}
+// For other result types (aggregations): returns {count, result_type, data: [...]}
+func compactLogResponse(result map[string]interface{}) map[string]interface{} {
+	resultType, items, err := extractResultItems(result)
+	if err != nil {
+		response := map[string]interface{}{
+			"count":       0,
+			"result_type": "streams",
+			"streams":     []interface{}{},
+		}
+		if meta, ok := result[partialResultMetadataKey]; ok {
+			response[partialResultMetadataKey] = meta
+		}
+		return response
+	}
+
+	if resultType == "streams" {
+		return compactStreamResults(items, result)
+	}
+
+	// For non-stream results (aggregations), return data as-is but compact
+	response := map[string]interface{}{
+		"count":       len(items),
+		"result_type": resultType,
+		"data":        items,
+	}
+	if meta, ok := result[partialResultMetadataKey]; ok {
+		response[partialResultMetadataKey] = meta
+	}
+	return response
+}
+
+// compactStreamResults transforms Loki stream items into a compact format.
+// Keeps the grouped structure (labels shared across entries) but strips the
+// outer {data: {resultType, result}} nesting and uses shorter field names.
+func compactStreamResults(items []interface{}, originalResult map[string]interface{}) map[string]interface{} {
+	totalEntries := 0
+	compactStreams := make([]map[string]interface{}, 0, len(items))
+
+	for _, item := range items {
+		streamData, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		compact := make(map[string]interface{})
+
+		// Keep stream labels as-is (they're the grouping key)
+		if labels, ok := streamData["stream"]; ok {
+			compact["labels"] = labels
+		}
+
+		// Truncate long log messages to keep response compact.
+		// Full logs are available via the dashboard deep link.
+		if values, ok := streamData["values"].([]interface{}); ok {
+			compact["entries"] = truncateLogEntryMessages(values)
+			totalEntries += len(values)
+		}
+
+		compactStreams = append(compactStreams, compact)
+	}
+
+	response := map[string]interface{}{
+		"count":       totalEntries,
+		"result_type": "streams",
+		"streams":     compactStreams,
+	}
+	if meta, ok := originalResult[partialResultMetadataKey]; ok {
+		response[partialResultMetadataKey] = meta
+	}
+	return response
+}
+
+const maxLogMessageLength = 1000
+
+// maxResponseBytes is the maximum size of a get_logs MCP response.
+// Responses exceeding this are trimmed by removing entries from the end.
+// This prevents large queries from overwhelming the LLM context window.
+// 128KB is approximately 32K tokens — a reasonable upper bound for a single tool response.
+const maxResponseBytes = 128 * 1024
+
+// trimCompactLogResponse progressively removes log entries from the compact response
+// until the JSON size fits within maxBytes. Returns the trimmed JSON bytes.
+func trimCompactLogResponse(compact map[string]interface{}, maxBytes int) []byte {
+	streams, ok := compact["streams"].([]map[string]interface{})
+	if !ok {
+		// Can't trim, return as-is
+		out, _ := json.Marshal(compact)
+		return out
+	}
+
+	// Binary search for the right number of total entries to keep
+	totalEntries := 0
+	for _, s := range streams {
+		if entries, ok := s["entries"].([]interface{}); ok {
+			totalEntries += len(entries)
+		}
+	}
+
+	// Progressively halve entries until we fit
+	keepEntries := totalEntries
+	for keepEntries > 0 {
+		trimmed := trimStreamsToEntryCount(streams, keepEntries)
+		keptCount := countCompactStreamEntries(trimmed)
+		result := map[string]interface{}{
+			"count":       keptCount,
+			"result_type": "streams",
+			"streams":     trimmed,
+			"_trimmed": map[string]interface{}{
+				"original_count": totalEntries,
+				"kept_count":     keptCount,
+				"reason":         "Response exceeded size limit. Use the dashboard link for full results.",
+			},
+		}
+		if meta, ok := compact[partialResultMetadataKey]; ok {
+			result[partialResultMetadataKey] = meta
+		}
+
+		out, err := json.Marshal(result)
+		if err != nil || len(out) <= maxBytes {
+			return out
+		}
+		keepEntries = keepEntries / 2
+	}
+
+	// Fallback: return just the warning
+	out, _ := json.Marshal(map[string]interface{}{
+		"count":       0,
+		"result_type": "streams",
+		"streams":     []interface{}{},
+		"_trimmed": map[string]interface{}{
+			"original_count": totalEntries,
+			"kept_count":     0,
+			"reason":         "Response exceeded size limit. Use the dashboard link for full results.",
+		},
+	})
+	return out
+}
+
+func trimStreamsToEntryCount(streams []map[string]interface{}, maxEntries int) []map[string]interface{} {
+	remaining := maxEntries
+	result := make([]map[string]interface{}, 0, len(streams))
+
+	for _, s := range streams {
+		if remaining <= 0 {
+			break
+		}
+
+		entries, ok := s["entries"].([]interface{})
+		if !ok {
+			result = append(result, s)
+			continue
+		}
+
+		if len(entries) <= remaining {
+			result = append(result, s)
+			remaining -= len(entries)
+		} else {
+			trimmed := make(map[string]interface{})
+			for k, v := range s {
+				trimmed[k] = v
+			}
+			trimmed["entries"] = entries[:remaining]
+			result = append(result, trimmed)
+			remaining = 0
+		}
+	}
+
+	return result
+}
+
+func countCompactStreamEntries(streams []map[string]interface{}) int {
+	total := 0
+	for _, s := range streams {
+		if entries, ok := s["entries"].([]interface{}); ok {
+			total += len(entries)
+		}
+	}
+	return total
+}
+
+// truncateLogEntryMessages caps each [timestamp, message] entry's message at
+// maxLogMessageLength characters. This prevents stack traces, large JSON payloads,
+// and verbose error messages from blowing up the LLM context. The full content
+// is always available via the dashboard deep link.
+func truncateLogEntryMessages(values []interface{}) []interface{} {
+	out := make([]interface{}, len(values))
+	for i, val := range values {
+		entry, ok := val.([]interface{})
+		if !ok || len(entry) < 2 {
+			out[i] = val
+			continue
+		}
+
+		msg, ok := entry[1].(string)
+		if !ok || len(msg) <= maxLogMessageLength {
+			out[i] = val
+			continue
+		}
+
+		truncated := make([]interface{}, len(entry))
+		copy(truncated, entry)
+		truncated[1] = msg[:maxLogMessageLength] + "... (truncated)"
+		out[i] = truncated
+	}
+	return out
+}
+
 func emptyStreamsResponse() map[string]interface{} {
 	return map[string]interface{}{
 		"data": map[string]interface{}{
@@ -518,11 +739,3 @@ func parseTimeRangeFromArgsAt(args GetLogsArgs, now time.Time) (int64, int64, er
 	return startTime.UnixMilli(), endTime.UnixMilli(), nil
 }
 
-// formatJSON formats JSON for display
-func formatJSON(data interface{}) string {
-	bytes, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		return fmt.Sprintf("%v", data)
-	}
-	return string(bytes)
-}

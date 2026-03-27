@@ -587,27 +587,23 @@ func parseToolJSONResult(t *testing.T, result *mcp.CallToolResult) map[string]an
 func countEntriesInPayload(t *testing.T, payload map[string]any) int {
 	t.Helper()
 
-	data, ok := payload["data"].(map[string]any)
+	// Compact format: {"count": N, "result_type": "streams", "streams": [{labels, entries}, ...]}
+	streams, ok := payload["streams"].([]any)
 	if !ok {
-		t.Fatalf("missing data object: %#v", payload)
-	}
-
-	result, ok := data["result"].([]any)
-	if !ok {
-		t.Fatalf("missing result array: %#v", payload)
+		t.Fatalf("missing streams array in compact response: %#v", payload)
 	}
 
 	total := 0
-	for _, item := range result {
+	for _, item := range streams {
 		stream, ok := item.(map[string]any)
 		if !ok {
-			t.Fatalf("unexpected result item type: %T", item)
+			t.Fatalf("unexpected stream item type: %T", item)
 		}
-		values, ok := stream["values"].([]any)
+		entries, ok := stream["entries"].([]any)
 		if !ok {
-			t.Fatalf("unexpected values type: %T", stream["values"])
+			t.Fatalf("unexpected entries type: %T", stream["entries"])
 		}
-		total += len(values)
+		total += len(entries)
 	}
 
 	return total
