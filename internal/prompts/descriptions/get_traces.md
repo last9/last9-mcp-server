@@ -157,8 +157,12 @@ Note that regexp parsing operators also work as regexp filters
 - **SpanId**: Span identifier (primary filtering field, equivalent to SeverityText in logs)
 - **ServiceName**: Service name. Always prefer this over similar looking attributes in `attributes` or `resources` given below
 - **SpanName**: Name of the span
-- **SpanKind**: Span kind (CLIENT, SERVER, PRODUCER, CONSUMER, INTERNAL)
-- **StatusCode**: Span status code (OK, ERROR, TIMEOUT)
+- **SpanKind**: Span kind. Valid values: `SPAN_KIND_CLIENT`, `SPAN_KIND_SERVER`, `SPAN_KIND_PRODUCER`, `SPAN_KIND_CONSUMER`, `SPAN_KIND_INTERNAL`
+  - CORRECT: `{"$eq": ["SpanKind", "SPAN_KIND_SERVER"]}` ← always use full prefix
+  - WRONG:   `{"$eq": ["SpanKind", "SERVER"]}` ← will return no results
+- **StatusCode**: Span status code. Valid values: `STATUS_CODE_OK`, `STATUS_CODE_ERROR`, `STATUS_CODE_UNSET`
+  - CORRECT: `{"$eq": ["StatusCode", "STATUS_CODE_ERROR"]}` ← always use full prefix
+  - WRONG:   `{"$eq": ["StatusCode", "ERROR"]}` ← will return no results
 - **StatusMessage**: Status message
 - **Timestamp**: Trace timestamp
 - **Duration**: Span duration
@@ -201,7 +205,7 @@ To find the appropriate field name, try partial matches or matching fields which
 - "Get timeout traces" → DON'T ADD: `{"type": "aggregate"}`
 
 ### ✅ CORRECT Examples:
-- "Show me error traces" → ONLY: `[{"type": "filter", "query": {"$contains": ["StatusMessage", "error"]}}]`
+- "Show me error traces" → ONLY: `[{"type": "filter", "query": {"$eq": ["StatusCode", "STATUS_CODE_ERROR"]}}]`
 - "How many error traces?" → ADD: `[{"type": "filter"}, {"type": "aggregate"}]`
 
 ## Translation Examples (Ordered by Complexity):
