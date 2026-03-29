@@ -833,6 +833,15 @@ var dbExporterConfigs = map[string]dbExporterConfig{
 	},
 }
 
+var supportedDBSystems = func() string {
+	keys := make([]string, 0, len(dbExporterConfigs))
+	for k := range dbExporterConfigs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ", ")
+}()
+
 func NewGetDatabaseServerMetricsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetDatabaseServerMetricsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetDatabaseServerMetricsArgs) (*mcp.CallToolResult, any, error) {
 		startTime, endTime, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
@@ -846,7 +855,7 @@ func NewGetDatabaseServerMetricsHandler(client *http.Client, cfg models.Config) 
 			if expCfg, ok := dbExporterConfigs[args.DBSystem]; ok {
 				configsToCheck = map[string]dbExporterConfig{args.DBSystem: expCfg}
 			} else {
-				return nil, nil, fmt.Errorf("unknown db_system %q. Supported: postgresql, mysql, oracle, redis, mongodb, mssql, elasticsearch", args.DBSystem)
+				return nil, nil, fmt.Errorf("unknown db_system %q. Supported: %s", args.DBSystem, supportedDBSystems)
 			}
 		}
 
