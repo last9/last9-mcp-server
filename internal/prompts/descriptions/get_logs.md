@@ -131,7 +131,7 @@ Note that regex parsing operators also work as regex filters
       "as": "_min_"
     },
     {
-      "function": {"$max": []},
+      "function": {"$max": [field]},
       "as": "_max"
     },
       {
@@ -267,11 +267,15 @@ These are examples of pipeline json structure and available stages and functions
 }]
 ```
 
-### Example 3: Complex Filter with Parsing
+### Example 5: Complex Filter with Parsing
 **Natural Language:** "Parse logs as JSON and find where the duration field is greater than 100ms and the user_id exists"
 **JSON:**
 ```json
 [
+  {
+    "type": "parse",
+    "parser": "json"
+  },
   {
     "type": "filter",
     "query": {
@@ -280,15 +284,12 @@ These are examples of pipeline json structure and available stages and functions
         {"$neq": ["attributes['user_id']", ""]}
       ]
     }
-  },
-  {
-    "type": "parse",
-    "parser": "json"
   }
 ]
 ```
+**NOTE:** Parse always comes BEFORE the filter that references extracted fields. The filter cannot use fields that haven't been parsed yet.
 
-### Example 4: Aggregation - Average
+### Example 6: Aggregation - Average
 **Natural Language:** "What is the average response time grouped by service?"
 **JSON:**
 ```json
@@ -311,7 +312,7 @@ These are examples of pipeline json structure and available stages and functions
 }]
 ```
 
-### Example 4b: Aggregation - Count
+### Example 6b: Aggregation - Count
 **Natural Language:** "How many errors occurred by service?"
 **JSON:**
 ```json
@@ -334,7 +335,7 @@ These are examples of pipeline json structure and available stages and functions
 }]
 ```
 
-### Example 4c: Aggregation - Sum
+### Example 6c: Aggregation - Sum
 **Natural Language:** "What is the total bytes transferred by endpoint?"
 **JSON:**
 ```json
