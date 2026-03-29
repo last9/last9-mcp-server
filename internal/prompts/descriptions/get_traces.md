@@ -223,7 +223,7 @@ To find the appropriate field name, try partial matches or matching fields which
   "query": {
     "$and": [
       {"$eq": ["ServiceName", "auth"]},
-      {"$eq": ["StatusCode", "ERROR"]}
+      {"$eq": ["StatusCode", "STATUS_CODE_ERROR"]}
     ]
   }
 }]
@@ -274,7 +274,7 @@ To find the appropriate field name, try partial matches or matching fields which
   "type": "filter",
   "query": {
     "$and": [
-      {"$eq": ["StatusCode", "ERROR"]}
+      {"$eq": ["StatusCode", "STATUS_CODE_ERROR"]}
     ]
   }
 }, {
