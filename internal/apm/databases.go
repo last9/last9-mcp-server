@@ -818,6 +818,20 @@ var dbExporterConfigs = map[string]dbExporterConfig{
 			{Name: "lock_wait_time_ms", Query: "mssql_lock_wait_time_ms"},
 		},
 	},
+	"aerospike": {
+		DisplayName:    "Aerospike",
+		MetricPrefixes: []string{"aerospike_"},
+		KeyMetrics: []dbKeyMetric{
+			{Name: "open_connections", Query: "sum(aerospike_node_connection_open)"},
+			{Name: "memory_free_pct", Query: "min(aerospike_node_memory_free)"},
+			{Name: "namespace_memory_free_pct", Query: "min(aerospike_namespace_memory_free)"},
+			{Name: "namespace_memory_used_bytes", Query: "sum(aerospike_namespace_memory_usage)"},
+			{Name: "reads_per_sec", Query: "sum(rate(aerospike_namespace_transaction_count{type='read',result='success'}[5m]))"},
+			{Name: "writes_per_sec", Query: "sum(rate(aerospike_namespace_transaction_count{type='write',result='success'}[5m]))"},
+			{Name: "errors_per_sec", Query: "sum(rate(aerospike_namespace_transaction_count{result=~'error|timeout'}[5m]))"},
+			{Name: "disk_available_pct", Query: "min(aerospike_namespace_disk_available)"},
+		},
+	},
 	"elasticsearch": {
 		DisplayName:    "Elasticsearch",
 		MetricPrefixes: []string{"elasticsearch_", "es_"},
