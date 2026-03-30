@@ -23,6 +23,10 @@ environment to auto-fix code faster.
 - [Development](#development)
 - [Testing](#testing)
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/last9-last9-mcp-server).
+
 ## Quick Start (Hosted MCP)
 
 The fastest way to get started. No local binary, no tokens — authentication is
