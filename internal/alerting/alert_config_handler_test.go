@@ -59,6 +59,43 @@ func TestGetAlertConfigHandler_RuleOnlyFilters(t *testing.T) {
 			},
 			expectedIDs: []string{"rule-1"},
 		},
+		{
+			name: "rule_id exact match",
+			args: GetAlertConfigArgs{
+				RuleID: "rule-2",
+			},
+			expectedIDs: []string{"rule-2"},
+		},
+		{
+			name: "rule_id case-insensitive match",
+			args: GetAlertConfigArgs{
+				RuleID: "RULE-2",
+			},
+			expectedIDs: []string{"rule-2"},
+		},
+		{
+			name: "rule_id no match returns empty",
+			args: GetAlertConfigArgs{
+				RuleID: "ff000725-eb50-4642-b448-5cde395905df",
+			},
+			expectedIDs: []string{},
+		},
+		{
+			name: "rule_id combined with severity filter",
+			args: GetAlertConfigArgs{
+				RuleID:   "rule-1",
+				Severity: "breach",
+			},
+			expectedIDs: []string{"rule-1"},
+		},
+		{
+			name: "rule_id combined with mismatching severity returns empty",
+			args: GetAlertConfigArgs{
+				RuleID:   "rule-1",
+				Severity: "threat",
+			},
+			expectedIDs: []string{},
+		},
 	}
 
 	for _, tt := range tests {
