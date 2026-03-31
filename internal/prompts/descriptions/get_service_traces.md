@@ -1,6 +1,5 @@
 Use this tool to retrieve traces from Last9 either by exact `trace_id` or by `service_name`.
 
-Prefer this tool over `get_traces` whenever you already have an exact `trace_id`.
 
 Parameters:
 - `trace_id` (optional): Specific trace ID to retrieve. Cannot be used with `service_name`.
