@@ -27,36 +27,11 @@ const (
 	LimitDefault                  = 10
 )
 
-// GetServiceTracesDescription provides the description for the service traces tool
-const GetServiceTracesDescription = `Retrieve traces from Last9 by trace ID or service name.
+// GetServiceTracesDescription provides the short summary used ahead of the
+// embedded markdown instructions for the tool description.
+const GetServiceTracesDescription = `Retrieve traces from Last9 by exact trace ID or by service name.
 
-This tool allows you to get specific traces either by providing a trace ID for a single trace,
-or by providing a service name to get all traces for that service within a time range.
-Prefer this tool over ` + "`get_traces`" + ` whenever you have an exact ` + "`trace_id`" + `.
-
-Parameters:
-- trace_id: (Optional) Specific trace ID to retrieve. Cannot be used with service_name.
-- service_name: (Optional) Name of service to get traces for. Cannot be used with trace_id.
-- lookback_minutes: (Optional) Number of minutes to look back from now. Default: 4320 minutes for trace_id lookups, 60 minutes for service_name lookups
-- start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)
-- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)
-- limit: (Optional) Maximum number of traces to return. Default: 10
-- env: (Optional) Environment to filter by. Use "get_service_environments" tool to get available environments.
-
-Time format rules:
-- Prefer lookback_minutes for relative windows.
-- Use start_time_iso/end_time_iso for absolute windows.
-- Legacy format YYYY-MM-DD HH:MM:SS is accepted only for compatibility.
-- If both lookback_minutes and absolute times are provided, absolute times take precedence.
-
-Examples:
-1. trace_id="abc123def456" - retrieves the specific trace
-2. service_name="payment-service" + lookback_minutes=30 - gets all payment service traces from last 30 minutes
-
-If a trace_id lookup returns no data, ask the user for a specific time window and retry with
-start_time_iso/end_time_iso or a larger explicit lookback_minutes.
-
-Returns trace data including trace IDs, spans, duration, timestamps, and status information.`
+Prefer this tool over ` + "`get_traces`" + ` whenever you already have an exact ` + "`trace_id`" + `.`
 
 // GetServiceTracesArgs defines the input structure for getting traces by service or ID
 type GetServiceTracesArgs struct {
@@ -201,7 +176,7 @@ func buildGetTracesFilters(params *GetTracesQueryParams) []map[string]interface{
 	// Add environment filter if provided
 	if params.Env != "" {
 		filters = append(filters, map[string]interface{}{
-			"$eq": []interface{}{"resource.attributes.deployment.environment", params.Env},
+			"$eq": []interface{}{"resources['deployment.environment']", params.Env},
 		})
 	}
 
