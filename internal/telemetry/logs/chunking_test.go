@@ -400,8 +400,7 @@ func TestFetchServiceLogsChunksAndHonorsEntryLimit(t *testing.T) {
 		startTime,
 		endTime,
 		3,
-		[]string{"error"},
-		[]string{"timeout"},
+		buildServiceLogsQuery("api", []string{"error"}, []string{"timeout"}),
 		"physical_index:payments",
 	)
 	if err != nil {
@@ -459,8 +458,7 @@ func TestFetchServiceLogsReturnsPartialResultsAfterLaterChunkError(t *testing.T)
 		startTime,
 		endTime,
 		10,
-		nil,
-		nil,
+		buildServiceLogsQuery("api", nil, nil),
 		"",
 	)
 	if err != nil {
