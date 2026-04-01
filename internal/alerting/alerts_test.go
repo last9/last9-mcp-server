@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -110,6 +111,104 @@ func TestGetAlertsHandler_Integration(t *testing.T) {
 				}
 				t.Logf("Integration test successful: %d alert rule(s), %d alert instance(s) (timestamp: %d, window: %ds)",
 					len(alertsResponse.AlertRules), totalAlerts, alertsResponse.Timestamp, alertsResponse.Window)
+			}
+		})
+	}
+}
+
+func TestGetAlertsHandler_WindowValidation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		window, _ := strconv.ParseInt(r.URL.Query().Get("window"), 10, 64)
+		resp := AlertsResponse{
+			Timestamp:  time.Now().Unix(),
+			Window:     window,
+			AlertRules: []AlertRuleData{},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+	}
+	cfg.TokenManager = &auth.TokenManager{
+		AccessToken: "mock-token",
+		ExpiresAt:   time.Now().Add(365 * 24 * time.Hour),
+	}
+	handler := NewGetAlertsHandler(server.Client(), cfg)
+
+	tests := []struct {
+		name        string
+		args        GetAlertsArgs
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:    "window=1 (API minimum) is accepted",
+			args:    GetAlertsArgs{Window: 1},
+			wantErr: false,
+		},
+		{
+			name:    "window=900 (default) is accepted",
+			args:    GetAlertsArgs{Window: 900},
+			wantErr: false,
+		},
+		{
+			name:    "window=3600 (API maximum) is accepted",
+			args:    GetAlertsArgs{Window: 3600},
+			wantErr: false,
+		},
+		{
+			name:        "window=0 uses default (accepted)",
+			args:        GetAlertsArgs{Window: 0},
+			wantErr:     false,
+		},
+		{
+			name:        "window=3601 exceeds API maximum",
+			args:        GetAlertsArgs{Window: 3601},
+			wantErr:     true,
+			errContains: "window must be between 1 and 3600",
+		},
+		{
+			name:        "window=5400 (90 min) exceeds API maximum",
+			args:        GetAlertsArgs{Window: 5400},
+			wantErr:     true,
+			errContains: "window must be between 1 and 3600",
+		},
+		{
+			name:        "window=86400 far exceeds API maximum",
+			args:        GetAlertsArgs{Window: 86400},
+			wantErr:     true,
+			errContains: "window must be between 1 and 3600",
+		},
+		{
+			name:        "lookback_minutes=61 exceeds max",
+			args:        GetAlertsArgs{LookbackMinutes: 61},
+			wantErr:     true,
+			errContains: "lookback_minutes must be between 1 and 60",
+		},
+		{
+			name:    "lookback_minutes=60 (API maximum) is accepted",
+			args:    GetAlertsArgs{LookbackMinutes: 60},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, tt.args)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error but got nil")
+				}
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Fatalf("error %q does not contain %q", err.Error(), tt.errContains)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
 		})
 	}

@@ -93,6 +93,7 @@ const GetAlertConfigDescription = `
 	Uses the datasource configured in the server config (or default if not specified).
 
 	Optional filters:
+	- rule_id: Exact match on alert rule ID
 	- search_term: Case-insensitive substring search across rule name, alert group name/type, data source name, and tags
 	- rule_name: Case-insensitive substring match on rule name
 	- severity: Exact case-insensitive match
@@ -124,8 +125,8 @@ const GetAlertsDescription = `
 	Parameters:
 	- time_iso: Evaluation time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Preferred over timestamp.
 	- timestamp: Unix timestamp for the query time (deprecated alias, defaults to current time)
-	- window: Time window in seconds to look back for alerts (defaults to 900 seconds = 15 minutes)
-	- lookback_minutes: Relative time window in minutes. Used only when window is not provided.
+	- window: Time window in seconds to look back for alerts (defaults to 900 seconds = 15 minutes, range: 1-3600)
+	- lookback_minutes: Relative time window in minutes (range: 1-60). Used only when window is not provided.
 	
 	Uses the datasource configured in the server config (or default if not specified).
 	
@@ -144,6 +145,7 @@ const GetAlertsDescription = `
 `
 
 type GetAlertConfigArgs struct {
+	RuleID         string   `json:"rule_id,omitempty" jsonschema:"Exact match on alert rule ID (optional)"`
 	SearchTerm     string   `json:"search_term,omitempty" jsonschema:"Case-insensitive substring search across rule name and alert group metadata (optional)"`
 	RuleName       string   `json:"rule_name,omitempty" jsonschema:"Case-insensitive substring match on rule name (optional)"`
 	Severity       string   `json:"severity,omitempty" jsonschema:"Exact case-insensitive severity filter (optional, e.g. breach or threat)"`
@@ -200,8 +202,8 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 type GetAlertsArgs struct {
 	TimeISO         string  `json:"time_iso,omitempty" jsonschema:"Evaluation time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
 	Timestamp       float64 `json:"timestamp,omitempty" jsonschema:"Unix timestamp for query time (deprecated alias; defaults to current time)"`
-	Window          float64 `json:"window,omitempty" jsonschema:"Time window in seconds (default: 900, range: 60-86400)"`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Time window in minutes (default: 15, range: 1-1440). Used only when window is omitted."`
+	Window          float64 `json:"window,omitempty" jsonschema:"Time window in seconds (default: 900, range: 1-3600)"`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Time window in minutes (default: 15, range: 1-60). Used only when window is omitted."`
 }
 
 func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetAlertsArgs) (*mcp.CallToolResult, any, error) {
@@ -211,14 +213,14 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 		if args.Window != 0 {
 			window = int64(args.Window)
 		} else if args.LookbackMinutes != 0 {
-			if args.LookbackMinutes < 1 || args.LookbackMinutes > 1440 {
-				return nil, nil, fmt.Errorf("lookback_minutes must be between 1 and 1440")
+			if args.LookbackMinutes < 1 || args.LookbackMinutes > 60 {
+				return nil, nil, fmt.Errorf("lookback_minutes must be between 1 and 60")
 			}
 			window = int64(args.LookbackMinutes * 60)
 		}
 
-		if window < 60 || window > 86400 {
-			return nil, nil, fmt.Errorf("window must be between 60 and 86400 seconds")
+		if window < 1 || window > 3600 {
+			return nil, nil, fmt.Errorf("window must be between 1 and 3600 seconds")
 		}
 
 		// Resolve timestamp using shared time-range logic.
