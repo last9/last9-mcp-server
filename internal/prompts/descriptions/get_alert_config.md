@@ -1,6 +1,7 @@
 # get_alert_config Tool Arguments
 
 ## Purpose
+
 Select the correct JSON arguments to call the `get_alert_config` tool, which returns alert rule configurations from Last9.
 
 ## Parameters (all optional)
