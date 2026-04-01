@@ -705,13 +705,16 @@ Server-side metrics provide a different perspective than client-side traces:
 - Query throughput from the server perspective
 
 Parameters:
-- db_system: (Optional) Focus on a specific database type (e.g. "postgresql", "mysql", "oracle", "redis", "mongodb"). If omitted, discovers all available exporters.
+- db_system: (Optional) Focus on a specific database type (e.g. "postgresql", "mysql", "oracle", "redis", "mongodb", "mssql", "elasticsearch", "aerospike"). If omitted, discovers all available exporters.
 - lookback_minutes: (Optional) Time window in minutes (default: 60).
 - start_time_iso: (Optional) Start time in RFC3339 format.
-- end_time_iso: (Optional) End time in RFC3339 format.`
+- end_time_iso: (Optional) End time in RFC3339 format.
+
+Example metrics:
+- Aerospike: open_connections, memory_free_pct, namespace_memory_free_pct, namespace_memory_used_bytes, reads_per_sec, writes_per_sec, errors_per_sec, disk_available_pct.`
 
 type GetDatabaseServerMetricsArgs struct {
-	DBSystem        string  `json:"db_system,omitempty" jsonschema:"Focus on a specific database type (e.g. postgresql, mysql, oracle, redis, mongodb)"`
+	DBSystem        string  `json:"db_system,omitempty" jsonschema:"Focus on a specific database type (e.g. postgresql, mysql, oracle, redis, mongodb, mssql, elasticsearch, aerospike). Aerospike metrics include open_connections, memory_free_pct, namespace_memory_free_pct, namespace_memory_used_bytes, reads_per_sec, writes_per_sec, errors_per_sec, disk_available_pct"`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339 format"`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339 format"`
@@ -818,6 +821,20 @@ var dbExporterConfigs = map[string]dbExporterConfig{
 			{Name: "lock_wait_time_ms", Query: "mssql_lock_wait_time_ms"},
 		},
 	},
+	"aerospike": {
+		DisplayName:    "Aerospike",
+		MetricPrefixes: []string{"aerospike_"},
+		KeyMetrics: []dbKeyMetric{
+			{Name: "open_connections", Query: "sum(aerospike_node_connection_open)"},
+			{Name: "memory_free_pct", Query: "min(aerospike_node_memory_free)"},
+			{Name: "namespace_memory_free_pct", Query: "min(aerospike_namespace_memory_free)"},
+			{Name: "namespace_memory_used_bytes", Query: "sum(aerospike_namespace_memory_usage)"},
+			{Name: "reads_per_sec", Query: "sum(rate(aerospike_namespace_transaction_count{type='read',result='success'}[5m]))"},
+			{Name: "writes_per_sec", Query: "sum(rate(aerospike_namespace_transaction_count{type='write',result='success'}[5m]))"},
+			{Name: "errors_per_sec", Query: "sum(rate(aerospike_namespace_transaction_count{result=~'error|timeout'}[5m]))"},
+			{Name: "disk_available_pct", Query: "min(aerospike_namespace_disk_available)"},
+		},
+	},
 	"elasticsearch": {
 		DisplayName:    "Elasticsearch",
 		MetricPrefixes: []string{"elasticsearch_", "es_"},
@@ -833,6 +850,15 @@ var dbExporterConfigs = map[string]dbExporterConfig{
 	},
 }
 
+var supportedDBSystems = func() string {
+	keys := make([]string, 0, len(dbExporterConfigs))
+	for k := range dbExporterConfigs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ", ")
+}()
+
 func NewGetDatabaseServerMetricsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetDatabaseServerMetricsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetDatabaseServerMetricsArgs) (*mcp.CallToolResult, any, error) {
 		startTime, endTime, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
@@ -846,7 +872,7 @@ func NewGetDatabaseServerMetricsHandler(client *http.Client, cfg models.Config) 
 			if expCfg, ok := dbExporterConfigs[args.DBSystem]; ok {
 				configsToCheck = map[string]dbExporterConfig{args.DBSystem: expCfg}
 			} else {
-				return nil, nil, fmt.Errorf("unknown db_system %q. Supported: postgresql, mysql, oracle, redis, mongodb, mssql, elasticsearch", args.DBSystem)
+				return nil, nil, fmt.Errorf("unknown db_system %q. Supported: %s", args.DBSystem, supportedDBSystems)
 			}
 		}
 
