@@ -359,8 +359,8 @@ func TestGetDatabaseServerMetricsHandler_UnknownDBSystem(t *testing.T) {
 	if !strings.Contains(err.Error(), "cassandra") {
 		t.Errorf("expected db_system name in error, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "postgresql") {
-		t.Errorf("expected supported list in error, got: %v", err)
+	if !strings.Contains(err.Error(), supportedDBSystems) {
+		t.Errorf("expected full supported list %q in error, got: %v", supportedDBSystems, err)
 	}
 }
 
