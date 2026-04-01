@@ -344,6 +344,26 @@ func TestGetDatabaseServerMetricsHandler_NotAvailable(t *testing.T) {
 	}
 }
 
+func TestGetDatabaseServerMetricsHandler_UnknownDBSystem(t *testing.T) {
+	handler := NewGetDatabaseServerMetricsHandler(nil, testDBConfig("http://unused"))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabaseServerMetricsArgs{
+		DBSystem:        "cassandra",
+		LookbackMinutes: 60,
+	})
+	if err == nil {
+		t.Fatal("expected error for unsupported db_system, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown db_system") {
+		t.Errorf("expected 'unknown db_system' in error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "cassandra") {
+		t.Errorf("expected db_system name in error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), supportedDBSystems) {
+		t.Errorf("expected full supported list %q in error, got: %v", supportedDBSystems, err)
+	}
+}
+
 func TestExtractSlowQueries_TruncatesLongStatements(t *testing.T) {
 	longSQL := strings.Repeat("SELECT * FROM very_long_table WHERE ", 20) // >500 chars
 	rawResult := map[string]any{
