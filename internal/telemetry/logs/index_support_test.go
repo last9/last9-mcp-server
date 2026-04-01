@@ -376,6 +376,63 @@ func TestGetServiceLogsHandler_UsesFrontendParityFilters(t *testing.T) {
 	}
 }
 
+func TestGetServiceLogsHandler_AppliesEnvFilterToFetchAndDeepLink(t *testing.T) {
+	expectedQuery := addServiceLogsEnvFilter(
+		buildServiceLogsQuery("api", []string{"error"}, []string{"timeout"}),
+		"production",
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != constants.EndpointLogsQueryRange {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+
+		var body struct {
+			Pipeline []map[string]interface{} `json:"pipeline"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		if !reflect.DeepEqual(body.Pipeline, expectedQuery) {
+			gotJSON, _ := json.Marshal(body.Pipeline)
+			wantJSON, _ := json.Marshal(expectedQuery)
+			t.Fatalf("unexpected service logs pipeline\nwant: %s\ngot:  %s", wantJSON, gotJSON)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(serviceLogsAPIResponse("env filter matched")))
+	}))
+	defer server.Close()
+
+	handler := NewGetServiceLogsHandler(server.Client(), testLogsConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
+		Service:         "api",
+		LookbackMinutes: 5,
+		SeverityFilters: []string{"error"},
+		BodyFilters:     []string{"timeout"},
+		Env:             "production",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	rawPipeline := parseRelativeURL(t, referenceURL(t, result)).Query().Get("pipeline")
+	if rawPipeline == "" {
+		t.Fatal("expected dashboard pipeline in reference_url")
+	}
+
+	var dashboardPipeline []map[string]interface{}
+	if err := json.Unmarshal([]byte(rawPipeline), &dashboardPipeline); err != nil {
+		t.Fatalf("failed to decode dashboard pipeline %q: %v", rawPipeline, err)
+	}
+	if !reflect.DeepEqual(dashboardPipeline, expectedQuery) {
+		gotJSON, _ := json.Marshal(dashboardPipeline)
+		wantJSON, _ := json.Marshal(expectedQuery)
+		t.Fatalf("unexpected dashboard pipeline\nwant: %s\ngot:  %s", wantJSON, gotJSON)
+	}
+}
+
 func testLogsConfig(apiBaseURL string) models.Config {
 	return models.Config{
 		APIBaseURL: apiBaseURL,

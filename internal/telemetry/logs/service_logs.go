@@ -122,6 +122,9 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		}
 
 		logjsonQuery := buildServiceLogsQuery(args.Service, args.SeverityFilters, args.BodyFilters)
+		if args.Env != "" {
+			logjsonQuery = addServiceLogsEnvFilter(logjsonQuery, args.Env)
+		}
 
 		// Fetch raw logs using the existing logs API approach. When index is omitted,
 		// keep the query on the no-index path that matches the live dashboard/API.
@@ -139,9 +142,6 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		// Build deep link URL with filters matching dashboard conventions
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 		dashboardQuery := cloneLogJSONQuery(logjsonQuery)
-		if args.Env != "" {
-			dashboardQuery = addServiceLogsEnvFilter(dashboardQuery, args.Env)
-		}
 
 		dashboardIndex := ""
 		if normalizedIndex != "" {
