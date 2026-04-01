@@ -1,6 +1,7 @@
 # get_alerts Tool Arguments
 
 ## Purpose
+
 Select the correct JSON arguments to call the `get_alerts` tool, which returns currently active or recently fired alerts from Last9.
 
 ## Parameters
@@ -10,6 +11,7 @@ Select the correct JSON arguments to call the `get_alerts` tool, which returns c
 - `lookback_minutes` (integer, optional): Alternative to `window`, in minutes. Valid range: 1–60. Used only when `window` is omitted.
 
 ## Critical constraint
+
 The API enforces `window` between 1 and 3600 seconds. If a user asks for more than 1 hour of alerts, cap `window` at 3600. Do NOT generate `window` values like 5400, 7200, or 86400 — the API will reject them.
 
 ## Examples
