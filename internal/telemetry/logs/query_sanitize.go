@@ -2,7 +2,15 @@ package logs
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
+)
+
+var (
+	logAttributeFieldRefPattern         = regexp.MustCompile(`^attributes\[(?:'[^'\[\]]+'|"[^"\[\]]+")\]$`)
+	logResourceAttributeFieldRefPattern = regexp.MustCompile(`^resource_attributes\[(?:'[^'\[\]]+'|"[^"\[\]]+")\]$`)
+	logKubernetesAliasPattern           = regexp.MustCompile(`^k8s(?:\.[A-Za-z0-9_/-]+)+$`)
+	logSimpleFieldRefPattern            = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
 
 var logFilterFieldOperators = map[string]int{
@@ -207,11 +215,24 @@ func sanitizeLogGroupBy(value interface{}, path string) (interface{}, error) {
 	}
 
 	sanitized := make(map[string]interface{}, len(groupBy))
+	originalBySanitized := make(map[string]string, len(groupBy))
 	for fieldRef, alias := range groupBy {
 		next, err := sanitizeLogFieldRef(fieldRef, path+"."+fieldRef)
 		if err != nil {
 			return nil, err
 		}
+
+		if previous, exists := originalBySanitized[next]; exists {
+			return nil, fmt.Errorf(
+				"groupby collision at %s: %q and %q both normalize to %q",
+				path,
+				previous,
+				fieldRef,
+				next,
+			)
+		}
+
+		originalBySanitized[next] = fieldRef
 		sanitized[next] = alias
 	}
 
@@ -227,11 +248,11 @@ func sanitizeLogFieldRef(fieldRef, path string) (string, error) {
 	switch {
 	case trimmed == "service.name":
 		return "ServiceName", nil
-	case strings.HasPrefix(trimmed, "k8s."):
+	case logKubernetesAliasPattern.MatchString(trimmed):
 		return fmt.Sprintf("resource_attributes['%s']", trimmed), nil
 	case isCanonicalLogFieldRef(trimmed):
 		return trimmed, nil
-	case !strings.Contains(trimmed, "."):
+	case logSimpleFieldRefPattern.MatchString(trimmed):
 		return trimmed, nil
 	default:
 		return "", fmt.Errorf(
@@ -248,8 +269,6 @@ func isCanonicalLogFieldRef(fieldRef string) bool {
 		return true
 	}
 
-	return strings.HasPrefix(fieldRef, "attributes['") ||
-		strings.HasPrefix(fieldRef, "attributes[\"") ||
-		strings.HasPrefix(fieldRef, "resource_attributes['") ||
-		strings.HasPrefix(fieldRef, "resource_attributes[\"")
+	return logAttributeFieldRefPattern.MatchString(fieldRef) ||
+		logResourceAttributeFieldRefPattern.MatchString(fieldRef)
 }

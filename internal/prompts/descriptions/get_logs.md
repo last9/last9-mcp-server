@@ -282,8 +282,10 @@ These are examples of pipeline json structure and available stages and functions
 ```
 
 ### Example 4b: RCA-Friendly Canonical Field Mapping
+
 **Natural Language:** "Show logs for service.name auth grouped by k8s.namespace.name and k8s.deployment.name"
 **JSON:**
+
 ```json
 [{
   "type": "filter",

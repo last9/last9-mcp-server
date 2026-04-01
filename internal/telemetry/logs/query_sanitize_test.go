@@ -3,6 +3,7 @@ package logs
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -112,56 +113,144 @@ func TestSanitizeLogJSONQueryPreservesCanonicalRefs(t *testing.T) {
 }
 
 func TestSanitizeLogJSONQueryRejectsUnsupportedBareDottedRefs(t *testing.T) {
-	_, err := sanitizeLogJSONQuery([]map[string]interface{}{
+	tests := []struct {
+		name        string
+		fieldRef    string
+		expectedErr string
+	}{
 		{
-			"type": "filter",
-			"query": map[string]interface{}{
-				"$and": []interface{}{
-					map[string]interface{}{
-						"$eq": []interface{}{"deployment.environment", "prod"},
+			name:        "unsupported dotted field",
+			fieldRef:    "deployment.environment",
+			expectedErr: `invalid log field reference "deployment.environment"`,
+		},
+		{
+			name:        "malformed canonical field",
+			fieldRef:    `attributes['http.status_code']tail`,
+			expectedErr: `invalid log field reference "attributes['http.status_code']tail"`,
+		},
+		{
+			name:        "invalid kubernetes alias characters",
+			fieldRef:    `k8s.namespace.name']`,
+			expectedErr: `invalid log field reference "k8s.namespace.name']"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := sanitizeLogJSONQuery([]map[string]interface{}{
+				{
+					"type": "filter",
+					"query": map[string]interface{}{
+						"$and": []interface{}{
+							map[string]interface{}{
+								"$eq": []interface{}{tt.fieldRef, "prod"},
+							},
+						},
 					},
 				},
+			})
+			if err == nil {
+				t.Fatal("expected sanitizeLogJSONQuery to reject invalid field refs")
+			}
+			if !strings.Contains(err.Error(), tt.expectedErr) {
+				t.Fatalf("expected invalid field error containing %q, got %v", tt.expectedErr, err)
+			}
+			if !strings.Contains(err.Error(), "get_log_attributes") {
+				t.Fatalf("expected error to point callers to get_log_attributes, got %v", err)
+			}
+		})
+	}
+}
+
+func TestSanitizeLogJSONQueryRejectsGroupByCollisions(t *testing.T) {
+	_, err := sanitizeLogJSONQuery([]map[string]interface{}{
+		{
+			"type": "aggregate",
+			"aggregates": []interface{}{
+				map[string]interface{}{
+					"function": map[string]interface{}{
+						"$count": []interface{}{},
+					},
+					"as": "log_count",
+				},
+			},
+			"groupby": map[string]interface{}{
+				"service.name": "service_alias",
+				"ServiceName":  "service",
 			},
 		},
 	})
 	if err == nil {
-		t.Fatal("expected sanitizeLogJSONQuery to reject unsupported dotted field refs")
+		t.Fatal("expected sanitizeLogJSONQuery to reject groupby collisions")
 	}
-	if !strings.Contains(err.Error(), `invalid log field reference "deployment.environment"`) {
-		t.Fatalf("expected invalid field error, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "get_log_attributes") {
-		t.Fatalf("expected error to point callers to get_log_attributes, got %v", err)
+	if !strings.Contains(err.Error(), "groupby collision") {
+		t.Fatalf("expected groupby collision error, got %v", err)
 	}
 }
 
 func TestGetLogsHandlerNormalizesAliasesBeforeAPICall(t *testing.T) {
 	requestCount := 0
+	handlerErr := make(chan error, 1)
+	recordHandlerErr := func(err error) {
+		select {
+		case handlerErr <- err:
+		default:
+		}
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
+		defer func() {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
+		}()
 
 		var body struct {
 			Pipeline []map[string]interface{} `json:"pipeline"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("failed to decode request body: %v", err)
+			recordHandlerErr(fmt.Errorf("failed to decode request body: %w", err))
+			return
+		}
+		if len(body.Pipeline) < 2 {
+			recordHandlerErr(fmt.Errorf("expected at least 2 pipeline stages, got %d", len(body.Pipeline)))
+			return
 		}
 
-		filterStage := body.Pipeline[0]["query"].(map[string]interface{})
-		andConditions := filterStage["$and"].([]interface{})
-		serviceCondition := andConditions[0].(map[string]interface{})["$eq"].([]interface{})
+		filterStage, ok := body.Pipeline[0]["query"].(map[string]interface{})
+		if !ok {
+			recordHandlerErr(fmt.Errorf("expected first pipeline stage query map, got %T", body.Pipeline[0]["query"]))
+			return
+		}
+		andConditions, ok := filterStage["$and"].([]interface{})
+		if !ok || len(andConditions) == 0 {
+			recordHandlerErr(fmt.Errorf("expected $and conditions in first pipeline stage, got %#v", filterStage["$and"]))
+			return
+		}
+		firstCondition, ok := andConditions[0].(map[string]interface{})
+		if !ok {
+			recordHandlerErr(fmt.Errorf("expected first condition map, got %T", andConditions[0]))
+			return
+		}
+		serviceCondition, ok := firstCondition["$eq"].([]interface{})
+		if !ok || len(serviceCondition) == 0 {
+			recordHandlerErr(fmt.Errorf("expected $eq service condition, got %#v", firstCondition["$eq"]))
+			return
+		}
 		if got := serviceCondition[0]; got != "ServiceName" {
-			t.Fatalf("expected service filter to use ServiceName, got %#v", got)
+			recordHandlerErr(fmt.Errorf("expected service filter to use ServiceName, got %#v", got))
+			return
 		}
 
-		groupBy := body.Pipeline[1]["groupby"].(map[string]interface{})
+		groupBy, ok := body.Pipeline[1]["groupby"].(map[string]interface{})
+		if !ok {
+			recordHandlerErr(fmt.Errorf("expected second pipeline stage groupby map, got %T", body.Pipeline[1]["groupby"]))
+			return
+		}
 		if _, ok := groupBy["resource_attributes['k8s.namespace.name']"]; !ok {
-			t.Fatalf("expected groupby to include normalized k8s namespace key, got %#v", groupBy)
+			recordHandlerErr(fmt.Errorf("expected groupby to include normalized k8s namespace key, got %#v", groupBy))
+			return
 		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
 	}))
 	defer server.Close()
 
@@ -197,6 +286,11 @@ func TestGetLogsHandlerNormalizesAliasesBeforeAPICall(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
+	}
+	select {
+	case err := <-handlerErr:
+		t.Fatal(err)
+	default:
 	}
 	if requestCount != 1 {
 		t.Fatalf("expected exactly one API request, got %d", requestCount)
