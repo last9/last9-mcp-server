@@ -19,7 +19,7 @@ These are instructions for constructing natural language trace analytics queries
 **CRITICAL: AGGREGATION MUST ALWAYS BE PRECEDED BY FILTER**
 - The first stage in any pipeline MUST be a filter operation
 - If no specific filter is needed for aggregation, create a match-all filter using TraceId or SpanId fields (e.g., `{"$neq": ["TraceId", ""]}`) before aggregating
-- Use filter to match all traces with non-empty trace_id or all spans before aggregating
+- Use filter to match all traces with non-empty TraceId or non-empty SpanId before aggregating
 - NEVER start a pipeline with aggregate or window_aggregate operations directly
 
 **Process Flow:**
@@ -238,8 +238,10 @@ To find the appropriate field name, try partial matches or matching fields which
 ```
 
 ### Example 3: SpanKind and StatusCode Filter (FILTER ONLY - NO AGGREGATION)
+
 **Natural Language:** "Find server spans that completed successfully"
 **JSON:**
+
 ```json
 [{
   "type": "filter",
@@ -258,8 +260,10 @@ To find the appropriate field name, try partial matches or matching fields which
 - NEVER use short forms like `"SERVER"`, `"CLIENT"`, `"OK"`, `"ERROR"` — they return no results
 
 ### Example 4: Span Duration Filter (FILTER ONLY - NO AGGREGATION)
+
 **Natural Language:** "Get slow spans taking more than 1000ms"
 **JSON:**
+
 ```json
 [{
   "type": "filter",
@@ -272,8 +276,10 @@ To find the appropriate field name, try partial matches or matching fields which
 ```
 
 ### Example 5: Aggregation - Average Duration
+
 **Natural Language:** "What is the average span duration grouped by service?"
 **JSON:**
+
 ```json
 [{
   "type": "filter",
@@ -295,8 +301,10 @@ To find the appropriate field name, try partial matches or matching fields which
 ```
 
 ### Example 6: Count Error Traces
+
 **Natural Language:** "How many error traces occurred by service?"
 **JSON:**
+
 ```json
 [{
   "type": "filter",
