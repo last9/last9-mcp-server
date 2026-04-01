@@ -44,8 +44,14 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 			return nil, nil, fmt.Errorf("logjson_query parameter is required. Use the logjson_query_builder prompt to generate JSON pipeline queries from natural language")
 		}
 
+		sanitizedQuery, err := sanitizeLogJSONQuery(args.LogjsonQuery)
+		if err != nil {
+			return nil, nil, err
+		}
+		args.LogjsonQuery = sanitizedQuery
+
 		// Handle logjson_query directly
-		result, err := handleLogJSONQuery(ctx, client, cfg, args.LogjsonQuery, args)
+		result, err := handleLogJSONQuery(ctx, client, cfg, sanitizedQuery, args)
 		if err != nil {
 			return nil, nil, err
 		}

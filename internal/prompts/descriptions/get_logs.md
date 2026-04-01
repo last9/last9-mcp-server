@@ -41,6 +41,13 @@ These are instructions for constructing a natural language logs analytics querie
 - **NEVER use 60 minutes unless explicitly requested**
 - **Default means 5 minutes, not 60 minutes**
 
+**CRITICAL FIELD REFERENCE RULES:**
+- Never emit bare dotted field references such as `service.name`, `http.status_code`, or `k8s.namespace.name`.
+- Use `ServiceName` for service filters and grouping, not `service.name`.
+- Use `attributes['field.name']` for log attributes.
+- Use `resource_attributes['field.name']` for resource attributes, including Kubernetes metadata like `k8s.namespace.name`.
+- If you are not sure whether a field exists or whether environment is stored on `attributes[...]` vs `resource_attributes[...]`, use `get_log_attributes` first or broaden the query instead of guessing.
+
 The JSON pipeline format supports filtering, parsing, aggregation on log data.
 
 ## JSON Query Format Specification
@@ -165,6 +172,13 @@ Note that regex parsing operators also work as regex filters
 - **attributes['field_name']**: Log/span attributes (OpenTelemetry semantic conventions)
 - **resource_attributes['field_name']**: Resource attributes (prefixed with `resource_`)
 
+### Invalid Field Reference Patterns:
+
+- **Never use bare dotted refs** like `service.name`, `deployment.environment`, or `k8s.namespace.name`
+- **Correct service alias**: `service.name` → `ServiceName`
+- **Correct Kubernetes alias**: `k8s.namespace.name` → `resource_attributes['k8s.namespace.name']`
+- **Correct Kubernetes alias**: `k8s.deployment.name` → `resource_attributes['k8s.deployment.name']`
+
 ### Custom Fields for user's environment:
 In addition to standard labels, the list of available customer-specific attribute labels is below. In the query, the following rule should be applied to get the attribute from the field name - if the field matches the pattern with `resource_fieldname` the attribute is `resource_attributes['fieldname']`. Otherwise it is `attributes['fieldname']`.
 Any attribute used in the query should either be a standard attribute or available in the list below
@@ -263,6 +277,32 @@ These are examples of pipeline json structure and available stages and functions
       {"$eq": ["ServiceName", "auth"]},
       {"$gt": ["attributes['http.status_code']", "400"]}
     ]
+  }
+}]
+```
+
+### Example 4b: RCA-Friendly Canonical Field Mapping
+**Natural Language:** "Show logs for service.name auth grouped by k8s.namespace.name and k8s.deployment.name"
+**JSON:**
+```json
+[{
+  "type": "filter",
+  "query": {
+    "$and": [
+      {"$eq": ["ServiceName", "auth"]}
+    ]
+  }
+}, {
+  "type": "aggregate",
+  "aggregates": [
+    {
+      "function": {"$count": []},
+      "as": "log_count"
+    }
+  ],
+  "groupby": {
+    "resource_attributes['k8s.namespace.name']": "namespace",
+    "resource_attributes['k8s.deployment.name']": "deployment"
   }
 }]
 ```
@@ -577,7 +617,7 @@ These are examples of pipeline json structure and available stages and functions
 ## Translation Rules:
 
 1. **Always return valid JSON array** containing operation objects
-2. **Use proper field references**: Body, ServiceName, attributes['field'], etc.
+2. **Use proper field references**: Body, ServiceName, attributes['field'], resource_attributes['field']; never emit bare dotted refs.
 3. **Chain operations logically**: filter → parse → aggregate
 4. **For time-based queries**, use window_aggregate with appropriate time units.
 5. **For existence checks**, use $neq operator
