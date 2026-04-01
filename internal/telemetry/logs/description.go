@@ -14,10 +14,16 @@ const GetLogsDescription = `
 
 	Parameters:
 	- logjson_query: (Required) JSON pipeline query array for advanced log filtering and processing. Use logjson_query_builder prompt to generate from natural language.
-	- lookback_minutes: (Optional) Number of minutes to look back from now. Default: 60 minutes.
+	- lookback_minutes: (Optional) Number of minutes to look back from now. Default: 5 minutes.
 	- start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
 	- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 	- index: (Optional) Explicit log index to query. Accepted values are physical_index:<name> and rehydration_index:<block_name>. Omit it when the user did not specify an index.
+
+	Field reference rules:
+	- Use ServiceName for service filters/grouping. Do not use bare service.name.
+	- Use attributes['field'] for log attributes.
+	- Use resource_attributes['field'] for resource attributes such as Kubernetes metadata.
+	- Bare dotted field references are rejected unless they are normalized aliases like service.name or k8s.*.
 
 	The logjson_query supports:
 	- Filter operations: Filter logs based on conditions
