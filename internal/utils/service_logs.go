@@ -196,9 +196,6 @@ func buildServiceLogsURL(apiBaseURL string, params ServiceLogsParams) (string, e
 	}
 	if normalizedIndex != "" {
 		queryParams.Add("index", normalizedIndex)
-		if strings.HasPrefix(normalizedIndex, logIndexPhysicalPrefix) {
-			queryParams.Add("index_type", "physical")
-		}
 	}
 
 	return fmt.Sprintf("%s?%s", logsURL, queryParams.Encode()), nil
@@ -233,9 +230,6 @@ func MakeLogsJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.C
 	}
 	if normalizedIndex != "" {
 		queryParams.Add("index", normalizedIndex)
-		if strings.HasPrefix(normalizedIndex, logIndexPhysicalPrefix) {
-			queryParams.Add("index_type", "physical")
-		}
 	}
 	fullURL := fmt.Sprintf("%s?%s", logsURL, queryParams.Encode())
 

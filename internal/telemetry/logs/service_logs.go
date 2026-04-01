@@ -116,21 +116,15 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("invalid time range: %w", err)
 		}
 
-		env := args.Env
 		normalizedIndex, err := utils.NormalizeLogIndex(args.Index)
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid index: %w", err)
 		}
-		if normalizedIndex == "" {
-			normalizedIndex, err = utils.FetchPhysicalIndex(ctx, client, cfg, args.Service, env)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to fetch physical index: %w", err)
-			}
-		}
 
 		logjsonQuery := buildServiceLogsQuery(args.Service, args.SeverityFilters, args.BodyFilters)
 
-		// Fetch raw logs using the existing logs API approach with the requested or inferred index.
+		// Fetch raw logs using the existing logs API approach. When index is omitted,
+		// keep the query on the no-index path that matches the live dashboard/API.
 		logs, err := fetchServiceLogs(ctx, client, cfg, args.Service, startTime, endTime, limit, logjsonQuery, normalizedIndex)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)

@@ -212,8 +212,8 @@ func TestGetServiceLogsHandler_ExplicitIndexOverridesFallback(t *testing.T) {
 			if got := r.URL.Query().Get("index"); got != "physical_index:payments" {
 				t.Fatalf("unexpected logs query index %q", got)
 			}
-			if got := r.URL.Query().Get("index_type"); got != "physical" {
-				t.Fatalf("unexpected logs query index_type %q", got)
+			if got := r.URL.Query().Get("index_type"); got != "" {
+				t.Fatalf("expected logs query index_type to be omitted, got %q", got)
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
@@ -245,27 +245,18 @@ func TestGetServiceLogsHandler_ExplicitIndexOverridesFallback(t *testing.T) {
 	}
 }
 
-func TestGetServiceLogsHandler_FallsBackToFetchedPhysicalIndex(t *testing.T) {
-	promLookupCalled := false
-
+func TestGetServiceLogsHandler_OmitsIndexWhenNotProvided(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case constants.EndpointPromQueryInstant:
-			promLookupCalled = true
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`[{"metric":{"name":"payments"},"value":[1,"1"]}]`))
 		case constants.EndpointLogsQueryRange:
-			if got := r.URL.Query().Get("index"); got != "physical_index:payments" {
+			if got := r.URL.Query().Get("index"); got != "" {
 				t.Fatalf("unexpected logs query index %q", got)
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(serviceLogsAPIResponse("fallback path worked")))
-		case "/logs_settings/physical_indexes":
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"properties":[{"id":"idx-123","name":"payments"}]}`))
+			_, _ = w.Write([]byte(serviceLogsAPIResponse("no-index path worked")))
+		case constants.EndpointPromQueryInstant:
+			t.Fatal("did not expect fallback physical index lookup when index is omitted")
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -273,15 +264,16 @@ func TestGetServiceLogsHandler_FallsBackToFetchedPhysicalIndex(t *testing.T) {
 	defer server.Close()
 
 	handler := NewGetServiceLogsHandler(server.Client(), testLogsConfig(server.URL))
-	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
 		Service:         "api",
 		LookbackMinutes: 5,
 	})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
-	if !promLookupCalled {
-		t.Fatal("expected fallback physical index lookup when index is omitted")
+
+	if got := parseRelativeURL(t, referenceURL(t, result)).Query().Get("index"); got != "" {
+		t.Fatalf("expected dashboard index to be omitted, got %q", got)
 	}
 }
 
@@ -336,8 +328,8 @@ func TestGetServiceLogsHandler_UsesFrontendParityFilters(t *testing.T) {
 			if got := r.URL.Query().Get("index"); got != "physical_index:payments" {
 				t.Fatalf("unexpected logs query index %q", got)
 			}
-			if got := r.URL.Query().Get("index_type"); got != "physical" {
-				t.Fatalf("unexpected logs query index_type %q", got)
+			if got := r.URL.Query().Get("index_type"); got != "" {
+				t.Fatalf("expected logs query index_type to be omitted, got %q", got)
 			}
 
 			var body struct {
