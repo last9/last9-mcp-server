@@ -250,6 +250,38 @@ func TestBuildGetTracesFilters(t *testing.T) {
 	}
 }
 
+func TestBuildGetTracesFilters_UsesTraceQueryResourceSyntaxForEnv(t *testing.T) {
+	filters := buildGetTracesFilters(&GetTracesQueryParams{
+		ServiceName: "checkout",
+		Env:         "prod",
+	})
+
+	foundEnvFilter := false
+	for _, filter := range filters {
+		eq, ok := filter["$eq"].([]interface{})
+		if !ok || len(eq) != 2 {
+			continue
+		}
+
+		field, ok := eq[0].(string)
+		if !ok {
+			continue
+		}
+
+		if field == "resources['deployment.environment']" {
+			foundEnvFilter = true
+		}
+
+		if field == "resource.attributes.deployment.environment" {
+			t.Fatalf("found legacy invalid trace env field syntax: %q", field)
+		}
+	}
+
+	if !foundEnvFilter {
+		t.Fatalf("expected environment filter using resources['deployment.environment']")
+	}
+}
+
 func TestGetServiceTracesHandler_MockedResponse_ServiceName(t *testing.T) {
 	mockResponse := `{
 		"data": {
@@ -355,6 +387,73 @@ func TestGetServiceTracesHandler_MockedResponse_ServiceName(t *testing.T) {
 		if trace.ServiceName == "" {
 			t.Error("expected ServiceName to be populated")
 		}
+	}
+}
+
+func TestGetServiceTracesHandler_ServiceNameEnvUsesValidTracePipeline(t *testing.T) {
+	mockResponse := `{"data":{"result":[]}}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST request, got %s", r.Method)
+		}
+		if !strings.Contains(r.URL.Path, "/cat/api/traces/v2/query_range/json") {
+			t.Errorf("expected traces API path, got %s", r.URL.Path)
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+
+		var req TraceQueryRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("failed to unmarshal request body: %v", err)
+		}
+
+		if len(req.Pipeline) != 1 {
+			t.Fatalf("expected exactly one pipeline stage, got %d", len(req.Pipeline))
+		}
+
+		rawQueryBytes, err := json.Marshal(req.Pipeline[0].Query)
+		if err != nil {
+			t.Fatalf("failed to marshal stage query: %v", err)
+		}
+		rawQuery := string(rawQueryBytes)
+
+		if !strings.Contains(rawQuery, "ServiceName") {
+			t.Fatalf("expected pipeline to include ServiceName filter, got %s", rawQuery)
+		}
+		if !strings.Contains(rawQuery, "resources['deployment.environment']") {
+			t.Fatalf("expected pipeline to include resources['deployment.environment'], got %s", rawQuery)
+		}
+		if strings.Contains(rawQuery, "resource.attributes.deployment.environment") {
+			t.Fatalf("pipeline should not include legacy invalid env field syntax, got %s", rawQuery)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, mockResponse)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+		Region:     "ap-south-1",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "mock-access-token-for-testing",
+			ExpiresAt:   time.Now().Add(365 * 24 * time.Hour),
+		},
+	}
+
+	handler := GetServiceTracesHandler(server.Client(), cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceTracesArgs{
+		ServiceName:     "checkout",
+		Env:             "prod",
+		LookbackMinutes: 60,
+		Limit:           10,
+	})
+	if err != nil {
+		t.Fatalf("GetServiceTracesHandler() error = %v", err)
 	}
 }
 

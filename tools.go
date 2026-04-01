@@ -38,6 +38,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 	// Build enhanced descriptions for tools that have embedded instructions
 	getLogsDesc := buildEnhancedDescription(logs.GetLogsDescription, prompts.GetLogsInstructions, attrCache.GetLogAttributes())
 	getTracesDesc := buildEnhancedDescription(traces.GetTracesDescription, prompts.GetTracesInstructions, nil)
+	getServiceTracesDesc := buildEnhancedDescription(traces.GetServiceTracesDescription, prompts.GetServiceTracesInstructions, nil)
 	getMetricsDesc := buildEnhancedDescription(apm.PromqlRangeQueryDetails, prompts.GetMetricsInstructions, nil)
 
 	// Register exceptions tool
@@ -145,7 +146,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 	// Register service traces tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "get_service_traces",
-		Description: traces.GetServiceTracesDescription,
+		Description: getServiceTracesDesc,
 	}, traces.GetServiceTracesHandler(client, cfg))
 
 	// Register log attributes tool
