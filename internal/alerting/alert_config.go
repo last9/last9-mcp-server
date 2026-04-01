@@ -251,6 +251,10 @@ func filterAlertConfigByRuleFields(
 ) AlertConfigResponse {
 	filtered := make(AlertConfigResponse, 0, len(alertConfig))
 	for _, rule := range alertConfig {
+		if ruleID := strings.TrimSpace(args.RuleID); ruleID != "" && !strings.EqualFold(rule.ID, ruleID) {
+			continue
+		}
+
 		if ruleName := strings.TrimSpace(args.RuleName); ruleName != "" && !containsFold(rule.RuleName, ruleName) {
 			continue
 		}
