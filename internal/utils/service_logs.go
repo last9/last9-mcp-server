@@ -279,15 +279,13 @@ func createServiceLogsRequestBody(serviceName string, severityFilters []string, 
 		},
 	}
 
-	// Add severity regex filters if provided
+	// Add case-insensitive severity equality filters if provided
 	if len(severityFilters) > 0 {
 		orConditions := make([]map[string]any, 0, len(severityFilters))
 		for _, severity := range severityFilters {
-			if strings.TrimSpace(severity) != "" {
-				// Use case insensitive regex with (?i) flag
-				caseInsensitivePattern := "(?i)" + severity
+			if trimmedSeverity := strings.TrimSpace(severity); trimmedSeverity != "" {
 				orConditions = append(orConditions, map[string]any{
-					"$regex": []any{"SeverityText", caseInsensitivePattern},
+					"$ieq": []any{"SeverityText", trimmedSeverity},
 				})
 			}
 		}
@@ -299,15 +297,13 @@ func createServiceLogsRequestBody(serviceName string, severityFilters []string, 
 		}
 	}
 
-	// Add body regex filters if provided
+	// Add case-insensitive body contains filters if provided
 	if len(bodyFilters) > 0 {
 		orConditions := make([]map[string]any, 0, len(bodyFilters))
 		for _, bodyPattern := range bodyFilters {
-			if strings.TrimSpace(bodyPattern) != "" {
-				// Use case insensitive regex with (?i) flag for contains matching
-				caseInsensitivePattern := "(?i)" + bodyPattern
+			if trimmedBodyPattern := strings.TrimSpace(bodyPattern); trimmedBodyPattern != "" {
 				orConditions = append(orConditions, map[string]any{
-					"$regex": []any{"Body", caseInsensitivePattern},
+					"$icontains": []any{"Body", trimmedBodyPattern},
 				})
 			}
 		}

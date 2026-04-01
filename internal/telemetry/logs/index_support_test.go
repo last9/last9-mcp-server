@@ -2,9 +2,11 @@ package logs
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -311,6 +313,70 @@ func TestGetServiceLogsHandler_ForwardsLargeLimitWhenProvided(t *testing.T) {
 		Service:         "api",
 		LookbackMinutes: 5,
 		Limit:           2500,
+		Index:           "physical_index:payments",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+}
+
+func TestGetServiceLogsHandler_UsesFrontendParityFilters(t *testing.T) {
+	expectedQuery := buildServiceLogsQuery(
+		"l9alert-pinelabs",
+		[]string{"error", "fatal", "critical"},
+		nil,
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case constants.EndpointLogsQueryRange:
+			if got := r.URL.Query().Get("limit"); got == "" || got == "0" {
+				t.Fatalf("expected a positive chunk limit, got %q", got)
+			}
+			if got := r.URL.Query().Get("index"); got != "physical_index:payments" {
+				t.Fatalf("unexpected logs query index %q", got)
+			}
+			if got := r.URL.Query().Get("index_type"); got != "physical" {
+				t.Fatalf("unexpected logs query index_type %q", got)
+			}
+
+			var body struct {
+				Pipeline []map[string]interface{} `json:"pipeline"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("failed to decode request body: %v", err)
+			}
+			if !reflect.DeepEqual(body.Pipeline, expectedQuery) {
+				gotJSON, _ := json.Marshal(body.Pipeline)
+				wantJSON, _ := json.Marshal(expectedQuery)
+				t.Fatalf("unexpected service logs pipeline\nwant: %s\ngot:  %s", wantJSON, gotJSON)
+			}
+
+			rawBody, _ := json.Marshal(body.Pipeline)
+			if strings.Contains(string(rawBody), "$regex") || strings.Contains(string(rawBody), "(?i)") {
+				t.Fatalf("expected frontend-parity operators without regex flags, got %s", rawBody)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(serviceLogsAPIResponse("severity filters matched")))
+		case "/logs_settings/physical_indexes":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"properties":[{"id":"idx-123","name":"payments"}]}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := NewGetServiceLogsHandler(server.Client(), testLogsConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
+		Service:         "l9alert-pinelabs",
+		StartTimeISO:    "2026-03-31T07:16:38.000Z",
+		EndTimeISO:      "2026-04-01T07:16:38.907Z",
+		Limit:           100,
+		SeverityFilters: []string{"error", "fatal", "critical"},
 		Index:           "physical_index:payments",
 	})
 	if err != nil {

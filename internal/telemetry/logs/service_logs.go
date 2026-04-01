@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"last9-mcp/internal/deeplink"
@@ -128,8 +128,10 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			}
 		}
 
+		logjsonQuery := buildServiceLogsQuery(args.Service, args.SeverityFilters, args.BodyFilters)
+
 		// Fetch raw logs using the existing logs API approach with the requested or inferred index.
-		logs, err := fetchServiceLogs(ctx, client, cfg, args.Service, startTime, endTime, limit, args.SeverityFilters, args.BodyFilters, normalizedIndex)
+		logs, err := fetchServiceLogs(ctx, client, cfg, args.Service, startTime, endTime, limit, logjsonQuery, normalizedIndex)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
@@ -141,63 +143,12 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		}
 
 		// Build deep link URL with filters matching dashboard conventions
-		// Dashboard expects a single filter stage with $and containing all conditions
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		andConditions := []interface{}{
-			map[string]interface{}{
-				"$eq": []interface{}{"ServiceName", args.Service},
-			},
-		}
-
-		// Add env filter if provided (uses attributes['deployment_environment'] format)
+		dashboardQuery := cloneLogJSONQuery(logjsonQuery)
 		if args.Env != "" {
-			andConditions = append(andConditions, map[string]interface{}{
-				"$ieq": []interface{}{"attributes['deployment_environment']", args.Env},
-			})
+			dashboardQuery = addServiceLogsEnvFilter(dashboardQuery, args.Env)
 		}
 
-		// Add severity filters if provided (uses SeverityText with case-insensitive regex)
-		if len(args.SeverityFilters) > 0 {
-			orConditions := make([]interface{}, 0, len(args.SeverityFilters))
-			for _, severity := range args.SeverityFilters {
-				if severity != "" {
-					orConditions = append(orConditions, map[string]interface{}{
-						"$iregex": []interface{}{"SeverityText", severity},
-					})
-				}
-			}
-			if len(orConditions) > 0 {
-				andConditions = append(andConditions, map[string]interface{}{
-					"$or": orConditions,
-				})
-			}
-		}
-
-		// Add body filters if provided (uses Body with case-insensitive contains)
-		if len(args.BodyFilters) > 0 {
-			orConditions := make([]interface{}, 0, len(args.BodyFilters))
-			for _, bodyPattern := range args.BodyFilters {
-				if bodyPattern != "" {
-					orConditions = append(orConditions, map[string]interface{}{
-						"$icontains": []interface{}{"Body", bodyPattern},
-					})
-				}
-			}
-			if len(orConditions) > 0 {
-				andConditions = append(andConditions, map[string]interface{}{
-					"$or": orConditions,
-				})
-			}
-		}
-
-		pipeline := []map[string]interface{}{
-			{
-				"type": "filter",
-				"query": map[string]interface{}{
-					"$and": andConditions,
-				},
-			},
-		}
 		dashboardIndex := ""
 		if normalizedIndex != "" {
 			resolvedIndex, err := utils.ResolveLogIndexDashboardParam(ctx, client, cfg, normalizedIndex)
@@ -205,7 +156,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 				dashboardIndex = resolvedIndex
 			}
 		}
-		dashboardURL := dlBuilder.BuildLogsLink(startTime.UnixMilli(), endTime.UnixMilli(), pipeline, dashboardIndex)
+		dashboardURL := dlBuilder.BuildLogsLink(startTime.UnixMilli(), endTime.UnixMilli(), dashboardQuery, dashboardIndex)
 		var meta mcp.Meta
 		if normalizedIndex == "" || dashboardIndex != "" {
 			meta = deeplink.ToMeta(dashboardURL)
@@ -222,8 +173,93 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 	}
 }
 
+func buildServiceLogsQuery(service string, severityFilters []string, bodyFilters []string) []map[string]interface{} {
+	andConditions := []interface{}{
+		map[string]interface{}{
+			"$eq": []interface{}{"ServiceName", service},
+		},
+	}
+
+	if severityCondition := buildServiceLogsORCondition("SeverityText", severityFilters, "$ieq"); severityCondition != nil {
+		andConditions = append(andConditions, severityCondition)
+	}
+	if bodyCondition := buildServiceLogsORCondition("Body", bodyFilters, "$icontains"); bodyCondition != nil {
+		andConditions = append(andConditions, bodyCondition)
+	}
+
+	return []map[string]interface{}{
+		{
+			"type": "filter",
+			"query": map[string]interface{}{
+				"$and": andConditions,
+			},
+		},
+	}
+}
+
+func buildServiceLogsORCondition(field string, filters []string, operator string) map[string]interface{} {
+	conditions := make([]interface{}, 0, len(filters))
+	for _, filter := range filters {
+		trimmed := strings.TrimSpace(filter)
+		if trimmed == "" {
+			continue
+		}
+		conditions = append(conditions, map[string]interface{}{
+			operator: []interface{}{field, trimmed},
+		})
+	}
+
+	switch len(conditions) {
+	case 0:
+		return nil
+	case 1:
+		condition, _ := conditions[0].(map[string]interface{})
+		return condition
+	default:
+		return map[string]interface{}{
+			"$or": conditions,
+		}
+	}
+}
+
+func cloneLogJSONQuery(query []map[string]interface{}) []map[string]interface{} {
+	cloned := make([]map[string]interface{}, len(query))
+	for i, stage := range query {
+		cloned[i] = mapsClone(stage)
+	}
+	return cloned
+}
+
+func addServiceLogsEnvFilter(query []map[string]interface{}, env string) []map[string]interface{} {
+	trimmedEnv := strings.TrimSpace(env)
+	if trimmedEnv == "" || len(query) == 0 {
+		return query
+	}
+
+	filterStage := mapsClone(query[0])
+	queryMap, ok := filterStage["query"].(map[string]interface{})
+	if !ok {
+		return query
+	}
+
+	clonedQuery := mapsClone(queryMap)
+	andConditions, ok := clonedQuery["$and"].([]interface{})
+	if !ok {
+		return query
+	}
+
+	clonedConditions := append([]interface{}(nil), andConditions...)
+	clonedConditions = append(clonedConditions, map[string]interface{}{
+		"$ieq": []interface{}{"attributes['deployment_environment']", trimmedEnv},
+	})
+	clonedQuery["$and"] = clonedConditions
+	filterStage["query"] = clonedQuery
+	query[0] = filterStage
+	return query
+}
+
 // fetchServiceLogs retrieves raw log entries for a specific service using utils package
-func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Config, service string, startTime, endTime time.Time, limit int, severityFilters []string, bodyFilters []string, index string) (*ServiceLogsResponse, error) {
+func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Config, service string, startTime, endTime time.Time, limit int, logjsonQuery []map[string]interface{}, index string) (*ServiceLogsResponse, error) {
 	chunks := utils.GetTimeRangeChunksBackward(startTime.UnixMilli(), endTime.UnixMilli())
 	logs := make([]LogEntry, 0, limit)
 	chunkingDebug := chunkingDebugEnabled()
@@ -264,11 +300,10 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 			client,
 			cfg,
 			service,
+			logjsonQuery,
 			chunk.StartMs,
 			chunk.EndMs,
 			remaining,
-			severityFilters,
-			bodyFilters,
 			index,
 		)
 		if err != nil {
@@ -363,27 +398,10 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 	return response, nil
 }
 
-func fetchServiceLogsChunk(ctx context.Context, client *http.Client, cfg models.Config, service string, startTimeMs, endTimeMs int64, limit int, severityFilters []string, bodyFilters []string, index string) ([]LogEntry, error) {
-	apiRequest := utils.CreateServiceLogsAPIRequest(service, startTimeMs, endTimeMs, limit, severityFilters, bodyFilters, index)
-
-	resp, err := utils.MakeServiceLogsAPI(ctx, client, apiRequest, &cfg)
+func fetchServiceLogsChunk(ctx context.Context, client *http.Client, cfg models.Config, service string, logjsonQuery []map[string]interface{}, startTimeMs, endTimeMs int64, limit int, index string) ([]LogEntry, error) {
+	apiResponse, err := executeLogJSONQuery(ctx, client, cfg, logjsonQuery, startTimeMs, endTimeMs, limit, index)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	var apiResponse map[string]any
-	if err := json.Unmarshal(bodyBytes, &apiResponse); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	return parseServiceLogEntries(apiResponse, service), nil
