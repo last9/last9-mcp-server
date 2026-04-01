@@ -249,25 +249,33 @@ func filterAlertConfigByRuleFields(
 	alertConfig AlertConfigResponse,
 	args GetAlertConfigArgs,
 ) AlertConfigResponse {
+	ruleID := strings.TrimSpace(args.RuleID)
+	ruleName := strings.TrimSpace(args.RuleName)
+	severity := strings.TrimSpace(args.Severity)
+	ruleType := strings.TrimSpace(args.RuleType)
+
 	filtered := make(AlertConfigResponse, 0, len(alertConfig))
 	for _, rule := range alertConfig {
-		if ruleID := strings.TrimSpace(args.RuleID); ruleID != "" && !strings.EqualFold(rule.ID, ruleID) {
+		if ruleID != "" && !strings.EqualFold(rule.ID, ruleID) {
 			continue
 		}
 
-		if ruleName := strings.TrimSpace(args.RuleName); ruleName != "" && !containsFold(rule.RuleName, ruleName) {
+		if ruleName != "" && !containsFold(rule.RuleName, ruleName) {
 			continue
 		}
 
-		if severity := strings.TrimSpace(args.Severity); severity != "" && !strings.EqualFold(rule.Severity, severity) {
+		if severity != "" && !strings.EqualFold(rule.Severity, severity) {
 			continue
 		}
 
-		if ruleType := strings.TrimSpace(args.RuleType); ruleType != "" && !strings.EqualFold(alertConfigRuleType(rule), ruleType) {
+		if ruleType != "" && !strings.EqualFold(alertConfigRuleType(rule), ruleType) {
 			continue
 		}
 
 		filtered = append(filtered, rule)
+		if ruleID != "" {
+			break // rule IDs are unique primary keys; no need to scan further
+		}
 	}
 
 	return filtered

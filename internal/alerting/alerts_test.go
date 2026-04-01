@@ -39,6 +39,45 @@ func TestGetAlertConfigHandler_Integration(t *testing.T) {
 		},
 	}
 
+	// Separate sub-test: fetch a real rule ID then verify rule_id filter returns exactly that rule.
+	t.Run("filtered by rule_id", func(t *testing.T) {
+		ctx := context.Background()
+
+		// Step 1: get all rules to find a real ID.
+		result, _, err := handler(ctx, &mcp.CallToolRequest{}, GetAlertConfigArgs{})
+		if utils.CheckAPIError(t, err) {
+			return
+		}
+		text := utils.GetTextContent(t, result)
+
+		// Extract the first ID from the formatted response ("  ID: <uuid>").
+		var firstID string
+		for _, line := range strings.Split(text, "\n") {
+			if id, ok := strings.CutPrefix(strings.TrimSpace(line), "ID: "); ok {
+				firstID = id
+				break
+			}
+		}
+		if firstID == "" {
+			t.Skip("no alert rules returned by API — skipping rule_id filter test")
+		}
+
+		// Step 2: query by that specific rule ID.
+		result, _, err = handler(ctx, &mcp.CallToolRequest{}, GetAlertConfigArgs{RuleID: firstID})
+		if utils.CheckAPIError(t, err) {
+			return
+		}
+		text = utils.GetTextContent(t, result)
+
+		if !strings.Contains(text, "Found 1 alert rules:") {
+			t.Fatalf("expected exactly 1 rule for rule_id=%q, got:\n%s", firstID, text)
+		}
+		if !strings.Contains(text, "ID: "+firstID) {
+			t.Fatalf("response does not contain expected rule ID %q:\n%s", firstID, text)
+		}
+		t.Logf("Integration test successful: rule_id=%s returned exactly 1 rule", firstID)
+	})
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
