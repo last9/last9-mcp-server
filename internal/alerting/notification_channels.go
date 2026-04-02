@@ -26,6 +26,14 @@ const GetNotificationChannelsDescription = `
 	- services: comma-separated namespace/name pairs, "-" if global
 `
 
+const maxNotificationChannelsErrorBodyBytes = 4096
+
+var notificationChannelsTSVEscaper = strings.NewReplacer(
+	"\t", "\\t",
+	"\n", "\\n",
+	"\r", "\\r",
+)
+
 // NotificationChannel represents a notification channel configuration from Last9 API
 type NotificationChannel struct {
 	ID           int                          `json:"id"`
@@ -75,8 +83,16 @@ func fetchNotificationChannels(ctx context.Context, client *http.Client, cfg mod
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
+	if cfg.TokenManager == nil {
+		return nil, fmt.Errorf("token manager is not configured")
+	}
+	token := strings.TrimSpace(cfg.TokenManager.GetAccessToken(ctx))
+	if token == "" {
+		return nil, fmt.Errorf("access token cannot be empty")
+	}
+
 	httpReq.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
-	httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
+	httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+token)
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
@@ -85,8 +101,12 @@ func fetchNotificationChannels(ctx context.Context, client *http.Client, cfg mod
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxNotificationChannelsErrorBodyBytes+1))
+		bodyText := string(body)
+		if len(body) > maxNotificationChannelsErrorBodyBytes {
+			bodyText = string(body[:maxNotificationChannelsErrorBodyBytes]) + "...(truncated)"
+		}
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, bodyText)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -122,20 +142,26 @@ func formatNotificationChannelsResponse(channels []NotificationChannel) string {
 		if len(ch.Services) > 0 {
 			parts := make([]string, len(ch.Services))
 			for i, svc := range ch.Services {
+				serviceName := escapeTSV(svc.Name)
+				serviceNamespace := escapeTSV(svc.Namespace)
 				if svc.Namespace != "" {
-					parts[i] = svc.Namespace + "/" + svc.Name
+					parts[i] = serviceNamespace + "/" + serviceName
 				} else {
-					parts[i] = svc.Name
+					parts[i] = serviceName
 				}
 			}
 			services = strings.Join(parts, ",")
 		}
 
 		rows = append(rows, fmt.Sprintf("%d\t%s\t%s\t%v\t%v\t%s\t%s\t%s\t%d\t%s",
-			ch.ID, ch.Name, ch.Type, ch.Global, ch.InUse,
-			sendResolved, snoozeUntil, ch.Severity, ch.Priority, services,
+			ch.ID, escapeTSV(ch.Name), escapeTSV(ch.Type), ch.Global, ch.InUse,
+			escapeTSV(sendResolved), escapeTSV(snoozeUntil), escapeTSV(ch.Severity), ch.Priority, escapeTSV(services),
 		))
 	}
 
 	return strings.Join(rows, "\n")
+}
+
+func escapeTSV(value string) string {
+	return notificationChannelsTSVEscaper.Replace(value)
 }

@@ -39,7 +39,7 @@ func TestGetNotificationChannelsHandler_TSVFormat(t *testing.T) {
 	channels := []NotificationChannel{
 		{
 			ID:           1,
-			Name:         "ops-slack",
+			Name:         "ops\t\n\r-slack",
 			Type:         "slack",
 			Global:       true,
 			InUse:        true,
@@ -70,12 +70,9 @@ func TestGetNotificationChannelsHandler_TSVFormat(t *testing.T) {
 		t.Fatalf("header mismatch\ngot:  %s\nwant: %s", lines[1], wantHeader)
 	}
 
-	// Data row
-	cols := strings.Split(lines[2], "\t")
-	if len(cols) != 10 {
-		t.Fatalf("expected 10 TSV columns, got %d: %v", len(cols), cols)
-	}
-	if cols[0] != "1" || cols[1] != "ops-slack" || cols[2] != "slack" {
+	rows := assertStableNotificationChannelsTSV(t, text, len(channels))
+	cols := rows[0]
+	if cols[0] != "1" || cols[1] != "ops\\t\\n\\r-slack" || cols[2] != "slack" {
 		t.Fatalf("unexpected column values: %v", cols)
 	}
 	if cols[5] != "true" {
@@ -113,8 +110,8 @@ func TestGetNotificationChannelsHandler_SendResolvedVariants(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			lines := strings.Split(strings.TrimSpace(text), "\n")
-			cols := strings.Split(lines[2], "\t")
+			rows := assertStableNotificationChannelsTSV(t, text, len(channels))
+			cols := rows[0]
 			if cols[5] != tt.wantCol {
 				t.Fatalf("send_resolved col: got %q, want %q", cols[5], tt.wantCol)
 			}
@@ -133,8 +130,8 @@ func TestGetNotificationChannelsHandler_SnoozedUntil(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	lines := strings.Split(strings.TrimSpace(text), "\n")
-	cols := strings.Split(lines[2], "\t")
+	rows := assertStableNotificationChannelsTSV(t, text, len(channels))
+	cols := rows[0]
 
 	want := time.Unix(snoozeTS, 0).UTC().Format("2006-01-02 15:04:05 UTC")
 	if cols[6] != want {
@@ -164,6 +161,14 @@ func TestGetNotificationChannelsHandler_Services(t *testing.T) {
 			wantCol:  "prod/api",
 		},
 		{
+			name: "service with control characters",
+			services: []notificationChannelService{
+				{Name: "api\tteam", Namespace: "prod\ncore"},
+				{Name: "worker\rjobs"},
+			},
+			wantCol: "prod\\ncore/api\\tteam,worker\\rjobs",
+		},
+		{
 			name: "multiple services",
 			services: []notificationChannelService{
 				{Name: "api", Namespace: "prod"},
@@ -183,8 +188,8 @@ func TestGetNotificationChannelsHandler_Services(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			lines := strings.Split(strings.TrimSpace(text), "\n")
-			cols := strings.Split(lines[2], "\t")
+			rows := assertStableNotificationChannelsTSV(t, text, len(channels))
+			cols := rows[0]
 			if cols[9] != tt.wantCol {
 				t.Fatalf("services col: got %q, want %q", cols[9], tt.wantCol)
 			}
@@ -214,6 +219,64 @@ func TestGetNotificationChannelsHandler_APIError(t *testing.T) {
 		t.Fatal("expected error for non-200 API response")
 	}
 	if !strings.Contains(err.Error(), "API request failed with status 500") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGetNotificationChannelsHandler_APIErrorTruncatesBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(strings.Repeat("x", maxNotificationChannelsErrorBodyBytes+32) + "END"))
+	}))
+	defer server.Close()
+
+	cfg := newTestNotificationChannelsConfig(server.URL)
+	handler := NewGetNotificationChannelsHandler(server.Client(), cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetNotificationChannelsArgs{})
+	if err == nil {
+		t.Fatal("expected error for non-200 API response")
+	}
+	if !strings.Contains(err.Error(), "...(truncated)") {
+		t.Fatalf("expected truncated marker in error, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "END") {
+		t.Fatalf("expected truncated body to omit tail marker, got: %v", err)
+	}
+}
+
+func TestGetNotificationChannelsHandler_MissingTokenManager(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+
+	cfg := newTestNotificationChannelsConfig(server.URL)
+	cfg.TokenManager = nil
+
+	handler := NewGetNotificationChannelsHandler(server.Client(), cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetNotificationChannelsArgs{})
+	if err == nil {
+		t.Fatal("expected error when token manager is missing")
+	}
+	if !strings.Contains(err.Error(), "token manager is not configured") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGetNotificationChannelsHandler_EmptyAccessToken(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+
+	cfg := newTestNotificationChannelsConfig(server.URL)
+	cfg.TokenManager = &auth.TokenManager{
+		AccessToken: "   ",
+		ExpiresAt:   time.Now().Add(24 * time.Hour),
+	}
+
+	handler := NewGetNotificationChannelsHandler(server.Client(), cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetNotificationChannelsArgs{})
+	if err == nil {
+		t.Fatal("expected error when access token is empty")
+	}
+	if !strings.Contains(err.Error(), "access token cannot be empty") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -257,15 +320,7 @@ func executeGetNotificationChannels(
 	}))
 	defer server.Close()
 
-	cfg := models.Config{
-		APIBaseURL: server.URL,
-		OrgSlug:    "test-org",
-		ClusterID:  "cluster-1",
-	}
-	cfg.TokenManager = &auth.TokenManager{
-		AccessToken: "test-token",
-		ExpiresAt:   time.Now().Add(24 * time.Hour),
-	}
+	cfg := newTestNotificationChannelsConfig(server.URL)
 
 	handler := NewGetNotificationChannelsHandler(server.Client(), cfg)
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetNotificationChannelsArgs{})
@@ -274,4 +329,43 @@ func executeGetNotificationChannels(
 	}
 
 	return utils.GetTextContent(t, result), result, nil
+}
+
+func newTestNotificationChannelsConfig(apiBaseURL string) models.Config {
+	cfg := models.Config{
+		APIBaseURL: apiBaseURL,
+		OrgSlug:    "test-org",
+		ClusterID:  "cluster-1",
+	}
+	cfg.TokenManager = &auth.TokenManager{
+		AccessToken: "test-token",
+		ExpiresAt:   time.Now().Add(24 * time.Hour),
+	}
+
+	return cfg
+}
+
+func assertStableNotificationChannelsTSV(t *testing.T, text string, wantDataRows int) [][]string {
+	t.Helper()
+
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	if len(lines) != wantDataRows+2 {
+		t.Fatalf("expected %d lines (count + header + %d row(s)), got %d:\n%s", wantDataRows+2, wantDataRows, len(lines), text)
+	}
+
+	rows := make([][]string, 0, wantDataRows)
+	for i, line := range lines[2:] {
+		cols := strings.Split(line, "\t")
+		if len(cols) != 10 {
+			t.Fatalf("row %d: expected 10 TSV columns, got %d: %v", i+1, len(cols), cols)
+		}
+		for _, col := range cols {
+			if strings.ContainsAny(col, "\n\r") {
+				t.Fatalf("row %d contains raw newline or carriage return in column %q", i+1, col)
+			}
+		}
+		rows = append(rows, cols)
+	}
+
+	return rows
 }
