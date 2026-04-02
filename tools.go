@@ -10,6 +10,7 @@ import (
 	"last9-mcp/internal/change_events"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/prompts"
+	"last9-mcp/internal/suggest"
 	"last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/telemetry/traces"
 
@@ -190,6 +191,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Name:        "get_database_server_metrics",
 		Description: apm.GetDatabaseServerMetricsDescription,
 	}, apm.NewGetDatabaseServerMetricsHandler(client, cfg))
+
+	// Register did_you_mean tool
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "did_you_mean",
+		Description: suggest.DidYouMeanDescription,
+	}, suggest.NewDidYouMeanHandler(client, cfg))
 
 	return nil
 }

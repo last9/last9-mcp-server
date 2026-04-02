@@ -48,7 +48,9 @@ Parameters:
 - If the user says "rehydration index X", use rehydration_index:X.
 - If the user says "physical index X" or just "index X", use physical_index:X.
 
-Returns a list of log entries with full details including message content, timestamps, severity, and attributes.`
+Returns a list of log entries with full details including message content, timestamps, severity, and attributes.
+
+- If unsure of the service or env name, call "did_you_mean" first to find the correct spelling.`
 
 // ServiceLogsResponse represents the response structure for service logs
 type ServiceLogsResponse struct {

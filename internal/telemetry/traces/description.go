@@ -11,6 +11,7 @@ const GetExceptionsDescription = `
     service_name: (Optional) Filter exceptions by service name (e.g. api-service).
     span_name: (Optional) The name of the span to get the data for. This is often the API endpoint name or controller name.
     deployment_environment: (Optional) Filter exceptions by deployment environment from resource attributes (e.g. production, staging).
+    - If unsure of the service_name or deployment_environment spelling, call "did_you_mean" first.
 
     Time format rules:
     - Prefer lookback_minutes for relative windows.

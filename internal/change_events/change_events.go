@@ -81,6 +81,7 @@ Time format rules:
 - Use start_time_iso/end_time_iso for absolute windows.
 - Legacy format YYYY-MM-DD HH:MM:SS is accepted only for compatibility.
 - If both lookback_minutes and absolute times are provided, absolute times take precedence.
+- If unsure of the service or environment name, call "did_you_mean" first to find the correct spelling.
 `
 
 // GetChangeEventsArgs represents the input arguments for the get_change_events tool

@@ -26,6 +26,7 @@ const (
 	EndpointAlertRules          = "/alert-rules"
 	EndpointAlertsMonitor       = "/alerts/monitor"
 	EndpointEntitiesList        = "/entities/list"
+	EndpointSuggest             = "/suggest"
 
 	// API Base URL
 	APIBaseHost = "app.last9.io"
