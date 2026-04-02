@@ -15,9 +15,10 @@ const (
 	RouteExceptions          = "exceptions"
 	RouteServiceCatalog      = "service-catalog"
 	RouteDatabases           = "databases"
-	RouteAlerting            = "alerting/monitor"
-	RouteAlertingGroups      = "alerting/groups"
-	RouteDropRules           = "control-plane/%s/drop" // requires clusterId
+	RouteAlerting             = "alerting/monitor"
+	RouteAlertingGroups       = "alerting/groups"
+	RouteNotificationChannels = "settings/notification-channels"
+	RouteDropRules            = "control-plane/%s/drop" // requires clusterId
 	RouteCompassEntityHealth = "compass/entities/%s/health"
 )
 
@@ -178,6 +179,11 @@ func (b *Builder) BuildDatabasesLink() string {
 // BuildAlertingGroupsLink creates a deep link to the alerting groups page
 func (b *Builder) BuildAlertingGroupsLink() string {
 	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, RouteAlertingGroups)
+}
+
+// BuildNotificationChannelsLink creates a deep link to the notification channels settings page
+func (b *Builder) BuildNotificationChannelsLink() string {
+	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, RouteNotificationChannels)
 }
 
 // ToMeta converts a dashboard URL to MCP Meta format

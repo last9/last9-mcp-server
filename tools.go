@@ -126,6 +126,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Description: logs.AddDropRuleDescription,
 	}, logs.NewAddDropRuleHandler(client, cfg))
 
+	// Register notification channels tool
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_notification_channels",
+		Description: alerting.GetNotificationChannelsDescription,
+	}, alerting.NewGetNotificationChannelsHandler(client, cfg))
+
 	// Register alert config tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "get_alert_config",
