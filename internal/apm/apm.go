@@ -360,6 +360,7 @@ const GetServicePerformanceDetails = `
 	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
 	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
+	- If unsure of the service_name or env spelling, call "did_you_mean" first.
 `
 
 type TimeSeriesPoint struct {
@@ -779,6 +780,7 @@ const GetServiceOperationsSummaryDescription = `
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
 	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
 	- service_name: (Required) Service name to filter by. Defaults to all services.
+	- If unsure of the service_name or env spelling, call "did_you_mean" first.
 `
 
 func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceOperationsSummaryArgs) (*mcp.CallToolResult, any, error) {
@@ -1363,6 +1365,7 @@ const GetServiceDependencyGraphDetails = `
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
 	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
 	- service_name: (Required) Name of the service to get the dependency graph for.
+	- If unsure of the service_name or env spelling, call "did_you_mean" first.
 	`
 
 func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceDependencyGraphArgs) (*mcp.CallToolResult, any, error) {
