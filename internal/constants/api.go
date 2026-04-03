@@ -20,14 +20,15 @@ const (
 	EndpointAPMLabels        = "/apm/labels"
 
 	// Organization and configuration endpoints
-	EndpointDatasources         = "/datasources"
-	EndpointOAuthAccessToken    = "/api/v4/oauth/access_token"
-	EndpointLogsSettingsRouting = "/api/v4/organizations/%s/logs_settings/routing"
+	EndpointDatasources          = "/datasources"
+	EndpointOAuthAccessToken     = "/api/v4/oauth/access_token"
+	EndpointLogsSettingsRouting  = "/api/v4/organizations/%s/logs_settings/routing"
 	EndpointAlertRules           = "/alert-rules"
 	EndpointAlertsMonitor        = "/alerts/monitor"
 	EndpointEntitiesList         = "/entities/list"
 	EndpointNotificationSettings = "/notification_settings"
-	EndpointSuggest              = "/suggest"
+	// EndpointSuggest returns fuzzy entity-name suggestions for the did_you_mean tool.
+	EndpointSuggest = "/suggest"
 
 	// API Base URL
 	APIBaseHost = "app.last9.io"

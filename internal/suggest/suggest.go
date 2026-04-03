@@ -15,6 +15,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+const (
+	maxDidYouMeanSuggestions = 3
+	maxSuggestErrorBodyBytes = 2048
+)
+
+// DidYouMeanDescription describes when the did_you_mean tool should be used.
 const DidYouMeanDescription = `Suggests correct entity names when you're unsure of the exact spelling.
 
 Use this tool PROACTIVELY before querying with an entity name you're not confident about — for example,
@@ -98,6 +104,10 @@ func NewDidYouMeanHandler(client *http.Client, cfg models.Config) func(context.C
 			return nil, nil, fmt.Errorf("failed to create request: %w", err)
 		}
 
+		if cfg.TokenManager == nil {
+			return nil, nil, fmt.Errorf("token manager is not configured")
+		}
+
 		httpReq.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
 		httpReq.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
 		httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
@@ -109,8 +119,12 @@ func NewDidYouMeanHandler(client *http.Client, cfg models.Config) func(context.C
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return nil, nil, fmt.Errorf("suggest API returned status %d: %s", resp.StatusCode, string(body))
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxSuggestErrorBodyBytes))
+			msg := strings.TrimSpace(string(body))
+			if msg == "" {
+				msg = http.StatusText(resp.StatusCode)
+			}
+			return nil, nil, fmt.Errorf("suggest API returned status %d: %s", resp.StatusCode, msg)
 		}
 
 		body, err := io.ReadAll(resp.Body)
@@ -135,7 +149,11 @@ func NewDidYouMeanHandler(client *http.Client, cfg models.Config) func(context.C
 
 		var sb strings.Builder
 		fmt.Fprintf(&sb, "Did you mean one of these for %q?\n\n", query)
-		for _, s := range apiResp.Suggestions {
+		max := len(apiResp.Suggestions)
+		if max > maxDidYouMeanSuggestions {
+			max = maxDidYouMeanSuggestions
+		}
+		for _, s := range apiResp.Suggestions[:max] {
 			fmt.Fprintf(&sb, "  - %s (%d%% match, type: %s)\n", s.Name, int(s.Score*100), s.Type)
 		}
 

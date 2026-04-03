@@ -19,10 +19,11 @@ import (
 
 func TestDidYouMeanHandler_Suggestions(t *testing.T) {
 	tests := []struct {
-		name           string
-		args           DidYouMeanArgs
-		apiSuggestions []suggestionItem
-		wantContains   []string
+		name            string
+		args            DidYouMeanArgs
+		apiSuggestions  []suggestionItem
+		wantContains    []string
+		wantNotContains []string
 	}{
 		{
 			name: "typo returns top suggestions with scores",
@@ -62,6 +63,18 @@ func TestDidYouMeanHandler_Suggestions(t *testing.T) {
 			},
 			wantContains: []string{"auth-service", "95%", "authentication-api", "81%", "auth-db", "76%"},
 		},
+		{
+			name: "more than three suggestions are truncated",
+			args: DidYouMeanArgs{Query: "auth"},
+			apiSuggestions: []suggestionItem{
+				{Name: "auth-service", Type: "service", Score: 0.95},
+				{Name: "authentication-api", Type: "service", Score: 0.81},
+				{Name: "auth-db", Type: "service", Score: 0.76},
+				{Name: "auth-cache", Type: "service", Score: 0.74},
+			},
+			wantContains:    []string{"auth-service", "authentication-api", "auth-db"},
+			wantNotContains: []string{"auth-cache"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -73,6 +86,11 @@ func TestDidYouMeanHandler_Suggestions(t *testing.T) {
 			for _, want := range tt.wantContains {
 				if !strings.Contains(text, want) {
 					t.Errorf("response missing %q\ngot:\n%s", want, text)
+				}
+			}
+			for _, unwanted := range tt.wantNotContains {
+				if strings.Contains(text, unwanted) {
+					t.Errorf("response unexpectedly contained %q\ngot:\n%s", unwanted, text)
 				}
 			}
 		})
@@ -99,10 +117,54 @@ func TestDidYouMeanHandler_APIError(t *testing.T) {
 	}
 }
 
+func TestDidYouMeanHandler_APIErrorTruncatesBody(t *testing.T) {
+	const hiddenTail = "SHOULD_NOT_APPEAR"
+	body := strings.Repeat("a", maxSuggestErrorBodyBytes) + hiddenTail
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !assertSuggestRequest(t, w, r) {
+			return
+		}
+		http.Error(w, body, http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{APIBaseURL: server.URL}
+	cfg.TokenManager = &auth.TokenManager{
+		AccessToken: "test-token",
+		ExpiresAt:   time.Now().Add(24 * time.Hour),
+	}
+
+	handler := NewDidYouMeanHandler(server.Client(), cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, DidYouMeanArgs{Query: "prod"})
+	if err == nil {
+		t.Fatal("expected error on API 500, got nil")
+	}
+	if strings.Contains(err.Error(), hiddenTail) {
+		t.Fatalf("expected error body to be truncated, got %q", err)
+	}
+}
+
+func TestDidYouMeanHandler_MissingTokenManager(t *testing.T) {
+	cfg := models.Config{APIBaseURL: "https://example.com"}
+
+	handler := NewDidYouMeanHandler(http.DefaultClient, cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, DidYouMeanArgs{Query: "prod"})
+	if err == nil {
+		t.Fatal("expected error when token manager is missing")
+	}
+	if !strings.Contains(err.Error(), "token manager is not configured") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestDidYouMeanHandler_TypeFilterForwardedToAPI(t *testing.T) {
 	var capturedType string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !assertSuggestRequest(t, w, r) {
+			return
+		}
 		var body suggestRequest
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "bad body", http.StatusBadRequest)
@@ -140,6 +202,9 @@ func TestDidYouMeanHandler_PromCredentialsForwardedToAPI(t *testing.T) {
 	var capturedReadURL, capturedUsername, capturedPassword string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !assertSuggestRequest(t, w, r) {
+			return
+		}
 		var body suggestRequest
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "bad body", http.StatusBadRequest)
@@ -168,7 +233,10 @@ func TestDidYouMeanHandler_PromCredentialsForwardedToAPI(t *testing.T) {
 	}
 
 	handler := NewDidYouMeanHandler(server.Client(), cfg)
-	_, _, _ = handler(context.Background(), &mcp.CallToolRequest{}, DidYouMeanArgs{Query: "host1"})
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, DidYouMeanArgs{Query: "host1"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if capturedReadURL != "https://prom.example.com" {
 		t.Errorf("expected read_url forwarded, got %q", capturedReadURL)
@@ -209,6 +277,23 @@ func executeDidYouMean(
 	return utils.GetTextContent(t, result), result, nil
 }
 
+func assertSuggestRequest(t *testing.T, w http.ResponseWriter, r *http.Request) bool {
+	t.Helper()
+
+	if r.URL.Path != constants.EndpointSuggest {
+		t.Errorf("unexpected API path: got %q, want %q", r.URL.Path, constants.EndpointSuggest)
+		http.Error(w, "unexpected path", http.StatusNotFound)
+		return false
+	}
+	if r.Method != http.MethodPost {
+		t.Errorf("expected POST, got %s", r.Method)
+		http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+		return false
+	}
+
+	return true
+}
+
 func newSuggestTestServer(
 	t *testing.T,
 	suggestions []suggestionItem,
@@ -217,14 +302,7 @@ func newSuggestTestServer(
 	t.Helper()
 
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != constants.EndpointSuggest {
-			t.Errorf("unexpected API path: got %q, want %q", r.URL.Path, constants.EndpointSuggest)
-			http.Error(w, "unexpected path", http.StatusNotFound)
-			return
-		}
-		if r.Method != http.MethodPost {
-			t.Errorf("expected POST, got %s", r.Method)
-			http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+		if !assertSuggestRequest(t, w, r) {
 			return
 		}
 		var body suggestRequest
