@@ -26,4 +26,4 @@ The eval harness reads tool descriptions directly from this repo at runtime via 
 | `get_alert_config` | `internal/prompts/descriptions/get_alert_config.md` |
 | `exception_investigation` | `internal/prompts/descriptions/exception_investigation.md` |
 
-When fixing a description bug: update both the relevant `.md` file (used by evals) **and** the Go constant in `internal/telemetry/traces/description.go` (used by the live MCP server).
+When fixing a description bug: edit the relevant `.md` file under `internal/prompts/descriptions/`. The live MCP server embeds these files at compile time; the eval harness reads them at runtime. One file, one edit.
