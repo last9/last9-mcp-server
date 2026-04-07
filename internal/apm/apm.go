@@ -43,6 +43,7 @@ type ServiceEnvironmentsArgs struct {
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
+	Service         string  `json:"service,omitempty" jsonschema:"Optional service name to filter environments for (e.g. my-api). When omitted, returns environments across all services."`
 }
 
 type ServicePerformanceDetailsArgs struct {
@@ -1940,9 +1941,10 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 // tool handler to get label values for a given label name and filter prometheus query
 // handler for prometheus instant query
 const GetServiceEnvironmentsDescription = `
-	Return the environments available for the services. This tool returns an array of environments. These env can act as 
+	Return the environments available for the services. This tool returns an array of environments. These env can act as
 	label or argument values for other tools.
 	Parameters:
+	- service: (Optional) Service name to filter environments for (e.g. my-api). When omitted, returns environments across all services.
 	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
 	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
@@ -2016,7 +2018,11 @@ func NewServiceEnvironmentsHandler(client *http.Client, cfg models.Config) func(
 			return nil, nil, err
 		}
 
-		httpResp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, "env", "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}", startTimeParam, endTimeParam, cfg)
+		matchQuery := "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}"
+		if args.Service != "" {
+			matchQuery = fmt.Sprintf("domain_attributes_count{span_kind='SPAN_KIND_SERVER',service=%q}", args.Service)
+		}
+		httpResp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, "env", matchQuery, startTimeParam, endTimeParam, cfg)
 		if err != nil {
 			return nil, nil, err
 		}
