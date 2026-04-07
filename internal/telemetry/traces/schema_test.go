@@ -3,6 +3,7 @@ package traces
 import (
 	"encoding/json"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -22,6 +23,28 @@ func hasArrayType(typ interface{}) bool {
 		}
 	}
 	return false
+}
+
+// findStageByType finds the first oneOf stage whose "type" enum contains the given value.
+func findStageByType(oneOf []interface{}, stageType string) map[string]interface{} {
+	for _, s := range oneOf {
+		stage, ok := s.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		stageProps, ok := stage["properties"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		typeField, ok := stageProps["type"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if slices.Contains(typeField["enum"].([]string), stageType) {
+			return stage
+		}
+	}
+	return nil
 }
 
 // TestGetTracesInputSchema_Structure validates the hand-crafted InputSchema has the
@@ -62,41 +85,12 @@ func TestGetTracesInputSchema_Structure(t *testing.T) {
 	if !ok {
 		t.Fatalf("InputSchema missing 'required'")
 	}
-	found := false
-	for _, r := range required {
-		if r == "tracejson_query" {
-			found = true
-		}
-	}
-	if !found {
+	if !slices.Contains(required, "tracejson_query") {
 		t.Error("tracejson_query must be in required")
 	}
 
 	// aggregate stage must have additionalProperties:false to block wrong key names
-	var aggregateStage map[string]interface{}
-	for _, s := range oneOf {
-		stage, ok := s.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		stageProps, ok := stage["properties"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-		typeField, ok := stageProps["type"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-		enums, ok := typeField["enum"].([]string)
-		if !ok {
-			continue
-		}
-		for _, e := range enums {
-			if e == "aggregate" {
-				aggregateStage = stage
-			}
-		}
-	}
+	aggregateStage := findStageByType(oneOf, "aggregate")
 	if aggregateStage == nil {
 		t.Fatal("aggregate stage not found in oneOf")
 	}
@@ -104,9 +98,15 @@ func TestGetTracesInputSchema_Structure(t *testing.T) {
 		t.Errorf("aggregate stage must have additionalProperties:false, got %v", aggregateStage["additionalProperties"])
 	}
 
-	// aggregate stage items must also have additionalProperties:false
-	aggProps, _ := aggregateStage["properties"].(map[string]interface{})
-	aggregates, _ := aggProps["aggregates"].(map[string]interface{})
+	// aggregate entry items must also have additionalProperties:false
+	aggProps, ok := aggregateStage["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatal("aggregate stage missing 'properties'")
+	}
+	aggregates, ok := aggProps["aggregates"].(map[string]interface{})
+	if !ok {
+		t.Fatal("aggregate stage missing 'aggregates' property")
+	}
 	aggItems, ok := aggregates["items"].(map[string]interface{})
 	if !ok {
 		t.Fatal("aggregate stage.aggregates.items missing")
