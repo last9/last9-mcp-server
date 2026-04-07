@@ -2018,9 +2018,11 @@ func NewServiceEnvironmentsHandler(client *http.Client, cfg models.Config) func(
 			return nil, nil, err
 		}
 
-		matchQuery := "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}"
+		var matchQuery string
 		if args.Service != "" {
 			matchQuery = fmt.Sprintf("domain_attributes_count{span_kind='SPAN_KIND_SERVER',service=%q}", args.Service)
+		} else {
+			matchQuery = "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}"
 		}
 		httpResp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, "env", matchQuery, startTimeParam, endTimeParam, cfg)
 		if err != nil {

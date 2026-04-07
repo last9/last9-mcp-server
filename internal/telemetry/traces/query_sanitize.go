@@ -23,7 +23,6 @@ func sanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 	return nil
 }
 
-// validateStageKeys catches wrong top-level key names in a stage.
 func validateStageKeys(stage map[string]interface{}, stageType, path string) error {
 	if _, bad := stage["aggregations"]; bad {
 		return fmt.Errorf(
@@ -42,12 +41,9 @@ func validateStageKeys(stage map[string]interface{}, stageType, path string) err
 	return nil
 }
 
-// validateAggregateStage validates the contents of an aggregate stage.
 func validateAggregateStage(stage map[string]interface{}, path string) error {
 	rawAggregates, ok := stage["aggregates"]
 	if !ok {
-		// missing aggregates — the upstream API will return its own error;
-		// not our job to duplicate all validation, just the LLM-mistake class.
 		return nil
 	}
 
@@ -61,26 +57,23 @@ func validateAggregateStage(stage map[string]interface{}, path string) error {
 		if !ok {
 			continue
 		}
-		entryPath := fmt.Sprintf("%s.aggregates[%d]", path, j)
 
-		// "alias" instead of "as"
 		if _, bad := entry["alias"]; bad {
 			return fmt.Errorf(
-				"%s: invalid key \"alias\" — use \"as\" instead. "+
+				"%s.aggregates[%d]: invalid key \"alias\" — use \"as\" instead. "+
 					"Example: {\"function\": {\"$count\": []}, \"as\": \"count\"}",
-				entryPath,
+				path, j,
 			)
 		}
 
-		// function must be an object like {"$count": []}, not a string like "count"
 		if fn, exists := entry["function"]; exists {
 			if _, isString := fn.(string); isString {
 				return fmt.Errorf(
-					"%s: \"function\" must be an object, not a string. "+
+					"%s.aggregates[%d]: \"function\" must be an object, not a string. "+
 						"Wrong: \"function\": \"count\". "+
 						"Correct: \"function\": {\"$count\": []}. "+
 						"Other examples: {\"$avg\": [\"Duration\"]}, {\"$sum\": [\"Duration\"]}, {\"$quantile\": [0.95, \"Duration\"]}",
-					entryPath,
+					path, j,
 				)
 			}
 		}

@@ -1,5 +1,9 @@
 package traces
 
+func stringEnum(values ...string) map[string]interface{} {
+	return map[string]interface{}{"type": "string", "enum": values}
+}
+
 // GetTracesInputSchema returns a hand-crafted JSON Schema for the get_traces tool.
 // This replaces the auto-generated schema from GetTracesArgs so that tracejson_query
 // items have a detailed oneOf definition — constraining the LLM to use correct field
@@ -53,10 +57,7 @@ func filterStageSchema() map[string]interface{} {
 		"description": "Filter stage: narrows the dataset by condition. Use $and/$or for multiple conditions.",
 		"required":    []string{"type", "query"},
 		"properties": map[string]interface{}{
-			"type": map[string]interface{}{
-				"type": "string",
-				"enum": []string{"filter", "where"},
-			},
+			"type": stringEnum("filter", "where"),
 			"query": map[string]interface{}{
 				"type": "object",
 				"description": "Condition object. " +
@@ -99,10 +100,7 @@ func aggregateStageSchema() map[string]interface{} {
 		"description": "Aggregate stage. CRITICAL: use 'aggregates' (NOT 'aggregations') and 'groupby' (NOT 'group_by'). Each aggregate entry uses 'as' (NOT 'alias') and function as object (NOT string).",
 		"required":    []string{"type", "aggregates"},
 		"properties": map[string]interface{}{
-			"type": map[string]interface{}{
-				"type": "string",
-				"enum": []string{"aggregate"},
-			},
+			"type": stringEnum("aggregate"),
 			"aggregates": map[string]interface{}{
 				"type":  "array",
 				"items": aggregateFuncSchema,
@@ -122,10 +120,7 @@ func windowAggregateStageSchema() map[string]interface{} {
 		"description": "Window aggregate stage: time-bucketed aggregation. Use for rates or counts over time windows.",
 		"required":    []string{"type", "function", "as", "window"},
 		"properties": map[string]interface{}{
-			"type": map[string]interface{}{
-				"type": "string",
-				"enum": []string{"window_aggregate"},
-			},
+			"type": stringEnum("window_aggregate"),
 			"function": map[string]interface{}{
 				"type":        "object",
 				"description": "Aggregation function object. Example: {\"$count\": []}",
@@ -151,10 +146,7 @@ func transformStageSchema() map[string]interface{} {
 		"description": "Transform stage: computes new fields from existing ones.",
 		"required":    []string{"type", "transforms"},
 		"properties": map[string]interface{}{
-			"type": map[string]interface{}{
-				"type": "string",
-				"enum": []string{"transform"},
-			},
+			"type": stringEnum("transform"),
 			"transforms": map[string]interface{}{
 				"type": "array",
 				"description": "List of transform entries, each with 'function' (object) and 'as' (string or array of strings). " +
@@ -176,14 +168,8 @@ func parseStageSchema() map[string]interface{} {
 		"description": "Parse stage: extracts fields from span content using json, regexp, or logfmt parsers.",
 		"required":    []string{"type", "parser"},
 		"properties": map[string]interface{}{
-			"type": map[string]interface{}{
-				"type": "string",
-				"enum": []string{"parse"},
-			},
-			"parser": map[string]interface{}{
-				"type": "string",
-				"enum": []string{"json", "regexp", "logfmt"},
-			},
+			"type":   stringEnum("parse"),
+			"parser": stringEnum("json", "regexp", "logfmt"),
 			"pattern": map[string]interface{}{
 				"type":        "string",
 				"description": "Regexp pattern with named capture groups (for regexp parser). Example: (?P<user_id>\\d+)",
@@ -202,10 +188,7 @@ func selectStageSchema() map[string]interface{} {
 		"description": "Select stage: projects specific fields in the output.",
 		"required":    []string{"type", "labels"},
 		"properties": map[string]interface{}{
-			"type": map[string]interface{}{
-				"type": "string",
-				"enum": []string{"select"},
-			},
+			"type": stringEnum("select"),
 			"labels": map[string]interface{}{
 				"type":        "object",
 				"description": "Fields to include in output as {\"FieldName\": \"alias\"}.",
