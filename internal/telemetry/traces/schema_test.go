@@ -24,6 +24,105 @@ func hasArrayType(typ interface{}) bool {
 	return false
 }
 
+// TestGetTracesInputSchema_Structure validates the hand-crafted InputSchema has the
+// correct structure: tracejson_query with items.oneOf covering all stage types, and
+// aggregate stage with additionalProperties:false to block hallucinated key names.
+func TestGetTracesInputSchema_Structure(t *testing.T) {
+	schema := GetTracesInputSchema()
+
+	props, ok := schema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("InputSchema missing 'properties'")
+	}
+
+	// tracejson_query must exist and be an array with oneOf items
+	tq, ok := props["tracejson_query"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("tracejson_query missing from properties")
+	}
+	if tq["type"] != "array" {
+		t.Errorf("tracejson_query type: want array, got %v", tq["type"])
+	}
+	items, ok := tq["items"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("tracejson_query.items missing or not an object")
+	}
+	oneOf, ok := items["oneOf"].([]interface{})
+	if !ok {
+		t.Fatalf("tracejson_query.items.oneOf missing")
+	}
+	// filter, aggregate, window_aggregate, parse, transform, select
+	const wantStages = 6
+	if len(oneOf) != wantStages {
+		t.Errorf("oneOf stage count: want %d, got %d", wantStages, len(oneOf))
+	}
+
+	// required must include tracejson_query
+	required, ok := schema["required"].([]string)
+	if !ok {
+		t.Fatalf("InputSchema missing 'required'")
+	}
+	found := false
+	for _, r := range required {
+		if r == "tracejson_query" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("tracejson_query must be in required")
+	}
+
+	// aggregate stage must have additionalProperties:false to block wrong key names
+	var aggregateStage map[string]interface{}
+	for _, s := range oneOf {
+		stage, ok := s.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		stageProps, ok := stage["properties"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		typeField, ok := stageProps["type"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		enums, ok := typeField["enum"].([]string)
+		if !ok {
+			continue
+		}
+		for _, e := range enums {
+			if e == "aggregate" {
+				aggregateStage = stage
+			}
+		}
+	}
+	if aggregateStage == nil {
+		t.Fatal("aggregate stage not found in oneOf")
+	}
+	if aggregateStage["additionalProperties"] != false {
+		t.Errorf("aggregate stage must have additionalProperties:false, got %v", aggregateStage["additionalProperties"])
+	}
+
+	// aggregate stage items must also have additionalProperties:false
+	aggProps, _ := aggregateStage["properties"].(map[string]interface{})
+	aggregates, _ := aggProps["aggregates"].(map[string]interface{})
+	aggItems, ok := aggregates["items"].(map[string]interface{})
+	if !ok {
+		t.Fatal("aggregate stage.aggregates.items missing")
+	}
+	if aggItems["additionalProperties"] != false {
+		t.Errorf("aggregate items must have additionalProperties:false, got %v", aggItems["additionalProperties"])
+	}
+
+	// all scalar params must be present
+	for _, param := range []string{"start_time_iso", "end_time_iso", "lookback_minutes", "limit"} {
+		if _, ok := props[param]; !ok {
+			t.Errorf("param %q missing from InputSchema properties", param)
+		}
+	}
+}
+
 // TestGetTracesArgs_SchemaCompatibility ensures the generated JSON Schema for
 // GetTracesArgs does not contain "items": true for the tracejson_query field.
 //
