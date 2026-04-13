@@ -198,7 +198,9 @@ jobs:
         run: |
           docker build -f Dockerfile -t 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build .
           docker tag 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${{ steps.extract_branch.outputs.branch_name }}
+          docker tag 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${{ steps.extract_branch.outputs.branch_name }}-v${{ steps.get_version.outputs.version }}
           docker push 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${{ steps.extract_branch.outputs.branch_name }}
+          docker push 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${{ steps.extract_branch.outputs.branch_name }}-v${{ steps.get_version.outputs.version }}
 
       - name: Push to Amazon ECR (Main Branch)
         if: needs.tag-and-release.outputs.version_changed == 'true'
