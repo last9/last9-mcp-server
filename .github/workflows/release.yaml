@@ -108,6 +108,7 @@ jobs:
        (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-')))
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       contents: read
     env:
       DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
@@ -180,3 +181,30 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-south-1
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push to Amazon ECR (Release Branch)
+        if: |
+          github.event_name == 'push' &&
+          startsWith(github.ref, 'refs/heads/release-')
+        run: |
+          docker build -f Dockerfile -t 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build .
+          docker tag 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${{ steps.extract_branch.outputs.branch_name }}
+          docker push 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${{ steps.extract_branch.outputs.branch_name }}
+
+      - name: Push to Amazon ECR (Main Branch)
+        if: needs.tag-and-release.outputs.version_changed == 'true'
+        run: |
+          docker build -f Dockerfile -t 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build .
+          for tag in v${{ needs.tag-and-release.outputs.new_version }} latest; do
+            docker tag 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:$tag
+            docker push 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:$tag
+          done
