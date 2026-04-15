@@ -588,4 +588,10 @@ Returns up to 3 closest matches with similarity scores. Use this before any tool
 
 ---
 
+## Testing
+
+See [TESTING.md](TESTING.md) for integration test setup and instructions.
+
+---
+
 [![MseeP.ai Security Assessment Badge](https://mseep.net/pr/last9-last9-mcp-server-badge.png)](https://mseep.ai/app/last9-last9-mcp-server)
