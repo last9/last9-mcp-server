@@ -385,47 +385,6 @@ type Datasource struct {
 	} `json:"properties"`
 }
 
-// GetDatasourceByName fetches all datasources and returns the one matching the provided name.
-// If datasourceName is empty, returns nil (indicating to use default).
-// Returns an error if the datasource is not found.
-func GetDatasourceByName(ctx context.Context, client *http.Client, cfg models.Config, datasourceName string) (*Datasource, error) {
-	if datasourceName == "" {
-		return nil, nil // Use default
-	}
-
-	// Fetch all datasources
-	req, err := http.NewRequestWithContext(ctx, "GET", cfg.APIBaseURL+constants.EndpointDatasources, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request for datasources: %w", err)
-	}
-	req.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get datasources: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to get datasources: status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var datasources []Datasource
-	if err := json.NewDecoder(resp.Body).Decode(&datasources); err != nil {
-		return nil, fmt.Errorf("failed to decode datasources response: %w", err)
-	}
-
-	// Find the datasource matching the provided name
-	for _, ds := range datasources {
-		if ds.Name == datasourceName {
-			return &ds, nil
-		}
-	}
-
-	return nil, fmt.Errorf("datasource with name '%s' not found", datasourceName)
-}
-
 // PopulateAPICfg populates the API configuration with necessary details
 func PopulateAPICfg(cfg *models.Config) error {
 	if cfg.TokenManager == nil {
@@ -507,5 +466,21 @@ func PopulateAPICfg(cfg *models.Config) error {
 	if cfg.PrometheusReadURL == "" || cfg.PrometheusUsername == "" || cfg.PrometheusPassword == "" || cfg.Region == "" {
 		return errors.New("selected datasource missing required properties")
 	}
+
+	// Cache all datasources so handlers can resolve per-query datasource credentials
+	// without an extra API call on each request.
+	cfg.Datasources = make([]models.DatasourceInfo, 0, len(datasourcesList))
+	for _, ds := range datasourcesList {
+		cfg.Datasources = append(cfg.Datasources, models.DatasourceInfo{
+			Name:      ds.Name,
+			ReadURL:   ds.URL,
+			Username:  ds.Properties.Username,
+			Password:  ds.Properties.Password,
+			Region:    ds.Region,
+			ClusterID: ds.Properties.LevitateClusterID,
+			IsDefault: ds.IsDefault,
+		})
+	}
+
 	return nil
 }

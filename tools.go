@@ -78,6 +78,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Description: apm.GetServiceDependencyGraphDetails,
 	}, apm.NewServiceDependencyGraphHandler(client, cfg))
 
+	// Register list datasources tool
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "list_datasources",
+		Description: apm.ListDatasourcesDescription,
+	}, apm.NewListDatasourcesHandler(cfg))
+
 	// Register PromQL range query tool (enhanced with metrics instructions)
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "prometheus_range_query",
