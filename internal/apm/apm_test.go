@@ -465,3 +465,178 @@ func TestPromqlLabelValuesHandler_Integration(t *testing.T) {
 		t.Logf("Integration test successful: found %d label value(s) for label '%s'", len(labelValues), args.Label)
 	}
 }
+
+func TestResolveDatasourceCfg(t *testing.T) {
+	cfg := models.Config{
+		PrometheusReadURL:  "https://default.example.com/prom",
+		PrometheusUsername: "default-user",
+		PrometheusPassword: "default-pass",
+		Datasources: []models.DatasourceInfo{
+			{Name: "prod", ReadURL: "https://prod.example.com/prom", Username: "prod-user", Password: "prod-pass", IsDefault: true},
+			{Name: "staging", ReadURL: "https://staging.example.com/prom", Username: "staging-user", Password: "staging-pass"},
+		},
+	}
+
+	t.Run("empty name returns original cfg unchanged", func(t *testing.T) {
+		resolved, err := resolveDatasourceCfg(cfg, "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resolved.PrometheusReadURL != cfg.PrometheusReadURL {
+			t.Errorf("ReadURL = %q, want %q", resolved.PrometheusReadURL, cfg.PrometheusReadURL)
+		}
+	})
+
+	t.Run("known datasource overrides prometheus credentials", func(t *testing.T) {
+		resolved, err := resolveDatasourceCfg(cfg, "staging")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resolved.PrometheusReadURL != "https://staging.example.com/prom" {
+			t.Errorf("ReadURL = %q, want staging URL", resolved.PrometheusReadURL)
+		}
+		if resolved.PrometheusUsername != "staging-user" {
+			t.Errorf("Username = %q, want staging-user", resolved.PrometheusUsername)
+		}
+		if resolved.PrometheusPassword != "staging-pass" {
+			t.Errorf("Password = %q, want staging-pass", resolved.PrometheusPassword)
+		}
+	})
+
+	t.Run("unknown datasource returns error containing the name", func(t *testing.T) {
+		_, err := resolveDatasourceCfg(cfg, "nonexistent")
+		if err == nil {
+			t.Fatal("expected error for unknown datasource, got nil")
+		}
+		if !strings.Contains(err.Error(), "nonexistent") {
+			t.Errorf("error %q does not mention the datasource name", err.Error())
+		}
+	})
+
+	t.Run("original cfg is not mutated", func(t *testing.T) {
+		_, _ = resolveDatasourceCfg(cfg, "staging")
+		if cfg.PrometheusReadURL != "https://default.example.com/prom" {
+			t.Error("original cfg was mutated by resolveDatasourceCfg")
+		}
+	})
+}
+
+func TestPromqlRangeHandler_DatasourceOverride(t *testing.T) {
+	type capturedReq struct {
+		ReadURL  string `json:"read_url"`
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+
+	var captured capturedReq
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &captured)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL:         server.URL,
+		PrometheusReadURL:  "https://default.example.com/prom",
+		PrometheusUsername: "default-user",
+		PrometheusPassword: "default-pass",
+		Datasources: []models.DatasourceInfo{
+			{Name: "staging", ReadURL: "https://staging.example.com/prom", Username: "staging-user", Password: "staging-pass"},
+		},
+	}
+	cfg.TokenManager = &auth.TokenManager{
+		AccessToken: "mock-token",
+		ExpiresAt:   time.Now().Add(time.Hour),
+	}
+
+	handler := NewPromqlRangeQueryHandler(server.Client(), cfg)
+
+	// No datasource — default credentials should reach the server
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, PromqlRangeQueryArgs{
+		Query: "up", LookbackMinutes: 5,
+	})
+	if err != nil {
+		t.Fatalf("handler error (default): %v", err)
+	}
+	if captured.ReadURL != "https://default.example.com/prom" {
+		t.Errorf("default: read_url = %q, want default URL", captured.ReadURL)
+	}
+
+	// With datasource override — staging credentials should reach the server
+	_, _, err = handler(context.Background(), &mcp.CallToolRequest{}, PromqlRangeQueryArgs{
+		Query: "up", LookbackMinutes: 5, Datasource: "staging",
+	})
+	if err != nil {
+		t.Fatalf("handler error (staging): %v", err)
+	}
+	if captured.ReadURL != "https://staging.example.com/prom" {
+		t.Errorf("staging: read_url = %q, want staging URL", captured.ReadURL)
+	}
+	if captured.Username != "staging-user" {
+		t.Errorf("staging: username = %q, want staging-user", captured.Username)
+	}
+	if captured.Password != "staging-pass" {
+		t.Errorf("staging: password = %q, want staging-pass", captured.Password)
+	}
+
+	// Unknown datasource — handler must return error before hitting the server
+	_, _, err = handler(context.Background(), &mcp.CallToolRequest{}, PromqlRangeQueryArgs{
+		Query: "up", LookbackMinutes: 5, Datasource: "nonexistent",
+	})
+	if err == nil {
+		t.Fatal("expected error for unknown datasource, got nil")
+	}
+}
+
+func TestNewListDatasourcesHandler(t *testing.T) {
+	t.Run("returns all datasources with correct is_default flags", func(t *testing.T) {
+		cfg := models.Config{
+			Datasources: []models.DatasourceInfo{
+				{Name: "prod", IsDefault: true},
+				{Name: "staging", IsDefault: false},
+			},
+		}
+
+		handler := NewListDatasourcesHandler(cfg)
+		result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ListDatasourcesArgs{})
+		if err != nil {
+			t.Fatalf("handler returned error: %v", err)
+		}
+
+		textContent, ok := result.Content[0].(*mcp.TextContent)
+		if !ok {
+			t.Fatal("expected TextContent")
+		}
+
+		var views []struct {
+			Name      string `json:"name"`
+			IsDefault bool   `json:"is_default"`
+		}
+		if err := json.Unmarshal([]byte(textContent.Text), &views); err != nil {
+			t.Fatalf("failed to unmarshal response: %v", err)
+		}
+		if len(views) != 2 {
+			t.Fatalf("expected 2 datasources, got %d", len(views))
+		}
+		if views[0].Name != "prod" || !views[0].IsDefault {
+			t.Errorf("first entry: name=%q is_default=%v, want prod/true", views[0].Name, views[0].IsDefault)
+		}
+		if views[1].Name != "staging" || views[1].IsDefault {
+			t.Errorf("second entry: name=%q is_default=%v, want staging/false", views[1].Name, views[1].IsDefault)
+		}
+	})
+
+	t.Run("empty datasources list returns empty JSON array", func(t *testing.T) {
+		handler := NewListDatasourcesHandler(models.Config{})
+		result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ListDatasourcesArgs{})
+		if err != nil {
+			t.Fatalf("handler returned error: %v", err)
+		}
+		textContent := result.Content[0].(*mcp.TextContent)
+		if textContent.Text != "[]" {
+			t.Errorf("empty list text = %q, want []", textContent.Text)
+		}
+	})
+}
