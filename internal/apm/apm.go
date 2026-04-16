@@ -1815,6 +1815,9 @@ func resolveDatasourceCfg(cfg models.Config, datasourceName string) (models.Conf
 	if !ok {
 		return cfg, fmt.Errorf("datasource %q not found", datasourceName)
 	}
+	if ds.ReadURL == "" || ds.Username == "" || ds.Password == "" || ds.Region == "" {
+		return cfg, fmt.Errorf("datasource %q is missing required Prometheus configuration", datasourceName)
+	}
 	cfg.PrometheusReadURL = ds.ReadURL
 	cfg.PrometheusUsername = ds.Username
 	cfg.PrometheusPassword = ds.Password

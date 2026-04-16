@@ -478,7 +478,7 @@ func PopulateAPICfg(cfg *models.Config) error {
 			Password:  ds.Properties.Password,
 			Region:    ds.Region,
 			ClusterID: ds.Properties.LevitateClusterID,
-			IsDefault: ds.IsDefault,
+			IsDefault: ds.Name == selectedDatasource.Name,
 		})
 	}
 

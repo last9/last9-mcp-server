@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -533,8 +534,12 @@ func TestPromqlRangeHandler_DatasourceOverride(t *testing.T) {
 		Password string `json:"password"`
 	}
 
-	var captured capturedReq
+	var (
+		captured capturedReq
+		hitCount int32
+	)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hitCount, 1)
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &captured)
 		w.Header().Set("Content-Type", "application/json")
@@ -548,7 +553,7 @@ func TestPromqlRangeHandler_DatasourceOverride(t *testing.T) {
 		PrometheusUsername: "default-user",
 		PrometheusPassword: "default-pass",
 		Datasources: []models.DatasourceInfo{
-			{Name: "staging", ReadURL: "https://staging.example.com/prom", Username: "staging-user", Password: "staging-pass"},
+			{Name: "staging", ReadURL: "https://staging.example.com/prom", Username: "staging-user", Password: "staging-pass", Region: "us-east-1"},
 		},
 	}
 	cfg.TokenManager = &auth.TokenManager{
@@ -587,11 +592,15 @@ func TestPromqlRangeHandler_DatasourceOverride(t *testing.T) {
 	}
 
 	// Unknown datasource — handler must return error before hitting the server
+	beforeUnknown := atomic.LoadInt32(&hitCount)
 	_, _, err = handler(context.Background(), &mcp.CallToolRequest{}, PromqlRangeQueryArgs{
 		Query: "up", LookbackMinutes: 5, Datasource: "nonexistent",
 	})
 	if err == nil {
 		t.Fatal("expected error for unknown datasource, got nil")
+	}
+	if after := atomic.LoadInt32(&hitCount); after != beforeUnknown {
+		t.Fatalf("unknown datasource: server was contacted %d time(s), want 0", after-beforeUnknown)
 	}
 }
 
