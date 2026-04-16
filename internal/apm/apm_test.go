@@ -17,7 +17,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Note: strings import is still needed for TestNewServiceSummaryHandler_ExtraParams
 
 func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
 	// Mock responses should match apiPromInstantResp format (direct array)
@@ -472,8 +471,8 @@ func TestResolveDatasourceCfg(t *testing.T) {
 		PrometheusUsername: "default-user",
 		PrometheusPassword: "default-pass",
 		Datasources: []models.DatasourceInfo{
-			{Name: "prod", ReadURL: "https://prod.example.com/prom", Username: "prod-user", Password: "prod-pass", IsDefault: true},
-			{Name: "staging", ReadURL: "https://staging.example.com/prom", Username: "staging-user", Password: "staging-pass"},
+			{Name: "prod", ReadURL: "https://prod.example.com/prom", Username: "prod-user", Password: "prod-pass", Region: "us-east-1", ClusterID: "prod-cluster", IsDefault: true},
+			{Name: "staging", ReadURL: "https://staging.example.com/prom", Username: "staging-user", Password: "staging-pass", Region: "ap-south-1", ClusterID: "staging-cluster"},
 		},
 	}
 
@@ -487,7 +486,7 @@ func TestResolveDatasourceCfg(t *testing.T) {
 		}
 	})
 
-	t.Run("known datasource overrides prometheus credentials", func(t *testing.T) {
+	t.Run("known datasource overrides prometheus credentials and region", func(t *testing.T) {
 		resolved, err := resolveDatasourceCfg(cfg, "staging")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -500,6 +499,12 @@ func TestResolveDatasourceCfg(t *testing.T) {
 		}
 		if resolved.PrometheusPassword != "staging-pass" {
 			t.Errorf("Password = %q, want staging-pass", resolved.PrometheusPassword)
+		}
+		if resolved.Region != "ap-south-1" {
+			t.Errorf("Region = %q, want ap-south-1", resolved.Region)
+		}
+		if resolved.ClusterID != "staging-cluster" {
+			t.Errorf("ClusterID = %q, want staging-cluster", resolved.ClusterID)
 		}
 	})
 

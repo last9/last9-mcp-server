@@ -1818,6 +1818,8 @@ func resolveDatasourceCfg(cfg models.Config, datasourceName string) (models.Conf
 	cfg.PrometheusReadURL = ds.ReadURL
 	cfg.PrometheusUsername = ds.Username
 	cfg.PrometheusPassword = ds.Password
+	cfg.Region = ds.Region
+	cfg.ClusterID = ds.ClusterID
 	return cfg, nil
 }
 
