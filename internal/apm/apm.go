@@ -2092,7 +2092,7 @@ const PromqlLabelValuesQueryDetails = `
 	- datasource: (Optional) Name of the datasource to query. If omitted, uses the default configured datasource.
 
 	match_query should be a well formed, valid promql query
-	It is enouraged to not use default
+	It is encouraged to not use default
 	values of start_time and end_time and use values that are appropriate for the
 	use case
 `
@@ -2158,7 +2158,7 @@ const PromqlLabelsQueryDetails = `
 	- datasource: (Optional) Name of the datasource to query. If omitted, uses the default configured datasource.
 
 	match_query should be a well formed, valid promql query
-	It is enouraged to not use default
+	It is encouraged to not use default
 	values of start_time and end_time and use values that are appropriate for the
 	use case
 `
