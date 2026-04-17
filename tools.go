@@ -154,6 +154,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "get_traces",
 		Description: getTracesDesc,
+		InputSchema: traces.GetTracesInputSchema(),
 	}, traces.NewGetTracesHandler(client, cfg))
 
 	// Register service traces tool
