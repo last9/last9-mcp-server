@@ -13,3 +13,6 @@ var GetServiceTracesInstructions string
 
 //go:embed descriptions/get_metrics.md
 var GetMetricsInstructions string
+
+//go:embed descriptions/get_exceptions.md
+var GetExceptionsInstructions string
