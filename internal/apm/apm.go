@@ -74,12 +74,14 @@ type PromqlRangeQueryArgs struct {
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
+	Datasource      string  `json:"datasource,omitempty" jsonschema:"Name of the datasource to query. If omitted, uses the default configured datasource."`
 }
 
 type PromqlInstantQueryArgs struct {
 	Query           string  `json:"query" jsonschema:"PromQL query to execute (required)"`
 	TimeISO         string  `json:"time_iso,omitempty" jsonschema:"Evaluation time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). If omitted, defaults to now or now-lookback_minutes."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now when time_iso is omitted (default: 0, minimum: 1)."`
+	Datasource      string  `json:"datasource,omitempty" jsonschema:"Name of the datasource to query. If omitted, uses the default configured datasource."`
 }
 
 type PromqlLabelValuesArgs struct {
@@ -88,6 +90,7 @@ type PromqlLabelValuesArgs struct {
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
+	Datasource      string  `json:"datasource,omitempty" jsonschema:"Name of the datasource to query. If omitted, uses the default configured datasource."`
 }
 
 type PromqlLabelsArgs struct {
@@ -95,6 +98,7 @@ type PromqlLabelsArgs struct {
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
+	Datasource      string  `json:"datasource,omitempty" jsonschema:"Name of the datasource to query. If omitted, uses the default configured datasource."`
 }
 
 func resolveTimeRange(startTimeISO, endTimeISO string, lookbackMinutes float64) (int64, int64, error) {
@@ -1800,6 +1804,28 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 	}
 }
 
+// resolveDatasourceCfg returns a copy of cfg with Prometheus credentials overridden
+// to those of the named datasource. If datasourceName is empty the original cfg is
+// returned unchanged. Returns an error when the name is non-empty but not found.
+func resolveDatasourceCfg(cfg models.Config, datasourceName string) (models.Config, error) {
+	if datasourceName == "" {
+		return cfg, nil
+	}
+	ds, ok := cfg.ResolveDatasource(datasourceName)
+	if !ok {
+		return cfg, fmt.Errorf("datasource %q not found", datasourceName)
+	}
+	if ds.ReadURL == "" || ds.Username == "" || ds.Password == "" || ds.Region == "" {
+		return cfg, fmt.Errorf("datasource %q is missing required Prometheus configuration", datasourceName)
+	}
+	cfg.PrometheusReadURL = ds.ReadURL
+	cfg.PrometheusUsername = ds.Username
+	cfg.PrometheusPassword = ds.Password
+	cfg.Region = ds.Region
+	cfg.ClusterID = ds.ClusterID
+	return cfg, nil
+}
+
 const PromqlRangeQueryDetails = `
 	Perform a Prometheus range query to get metrics data.
 	This tool can be used to query Prometheus for metrics data over a specified time range.
@@ -1829,6 +1855,7 @@ const PromqlRangeQueryDetails = `
 	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
 	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
+	- datasource: (Optional) Name of the datasource to query. If omitted, uses the default configured datasource.
 	`
 
 func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlRangeQueryArgs) (*mcp.CallToolResult, any, error) {
@@ -1843,7 +1870,12 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 			return nil, nil, err
 		}
 
-		httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, query, startTimeParam, endTimeParam, cfg)
+		queryCfg, err := resolveDatasourceCfg(cfg, args.Datasource)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, query, startTimeParam, endTimeParam, queryCfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1897,6 +1929,7 @@ const PromqlInstantQueryDetails = `
 	- query: (Required) The Prometheus query to execute.
 	- time_iso: (Optional) The point in time to query in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- lookback_minutes: (Optional) Number of minutes to look back from now when time_iso is omitted.
+	- datasource: (Optional) Name of the datasource to query. If omitted, uses the default configured datasource.
 `
 
 func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlInstantQueryArgs) (*mcp.CallToolResult, any, error) {
@@ -1911,7 +1944,12 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 			return nil, nil, err
 		}
 
-		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, query, timeParam, cfg)
+		queryCfg, err := resolveDatasourceCfg(cfg, args.Datasource)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, query, timeParam, queryCfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -2052,14 +2090,15 @@ const PromqlLabelValuesQueryDetails = `
 	It returns an array of values for the label.
 	Parameters:
 	- match_query: (Required) A valid promql filter query
-	- label: (Required) Name of the label to return values for 
+	- label: (Required) Name of the label to return values for
 	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
 	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
+	- datasource: (Optional) Name of the datasource to query. If omitted, uses the default configured datasource.
 
 	match_query should be a well formed, valid promql query
-	It is enouraged to not use default
-	values of start_time and end_time and use values that are appropriate for the 
+	It is encouraged to not use default
+	values of start_time and end_time and use values that are appropriate for the
 	use case
 `
 
@@ -2078,7 +2117,12 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 			return nil, nil, err
 		}
 
-		httpResp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, label, query, startTimeParam, endTimeParam, cfg)
+		queryCfg, err := resolveDatasourceCfg(cfg, args.Datasource)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		httpResp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, label, query, startTimeParam, endTimeParam, queryCfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -2116,10 +2160,11 @@ const PromqlLabelsQueryDetails = `
 	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
 	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
+	- datasource: (Optional) Name of the datasource to query. If omitted, uses the default configured datasource.
 
 	match_query should be a well formed, valid promql query
-	It is enouraged to not use default
-	values of start_time and end_time and use values that are appropriate for the 
+	It is encouraged to not use default
+	values of start_time and end_time and use values that are appropriate for the
 	use case
 `
 
@@ -2134,7 +2179,12 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 			return nil, nil, err
 		}
 
-		httpResp, err := utils.MakePromLabelsAPIQuery(ctx, client, query, startTimeParam, endTimeParam, cfg)
+		queryCfg, err := resolveDatasourceCfg(cfg, args.Datasource)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		httpResp, err := utils.MakePromLabelsAPIQuery(ctx, client, query, startTimeParam, endTimeParam, queryCfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -2156,6 +2206,47 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 				&mcp.TextContent{
 					Text: string(responseBodyBytes),
 				},
+			},
+		}, nil, nil
+	}
+}
+
+// ListDatasourcesArgs has no required parameters.
+type ListDatasourcesArgs struct{}
+
+const ListDatasourcesDescription = `
+	List all available datasources configured for this organization.
+	Use this tool to discover valid datasource names before passing them to
+	prometheus_range_query, prometheus_instant_query, prometheus_label_values,
+	or prometheus_labels via the datasource parameter.
+
+	Returns an array of objects, each with:
+	- name: the datasource name to use in the datasource parameter
+	- is_default: true for the datasource that is used when no datasource is specified
+`
+
+// NewListDatasourcesHandler returns a handler that serves the datasource list from
+// the in-memory cache populated at startup — no extra API call is made.
+// The response is serialized once at registration time since the list never changes.
+func NewListDatasourcesHandler(cfg models.Config) func(context.Context, *mcp.CallToolRequest, ListDatasourcesArgs) (*mcp.CallToolResult, any, error) {
+	type datasourceView struct {
+		Name      string `json:"name"`
+		IsDefault bool   `json:"is_default"`
+	}
+
+	views := make([]datasourceView, 0, len(cfg.Datasources))
+	for _, ds := range cfg.Datasources {
+		views = append(views, datasourceView{
+			Name:      ds.Name,
+			IsDefault: ds.IsDefault,
+		})
+	}
+	out, _ := json.Marshal(views) // slice of plain structs — cannot fail
+
+	return func(_ context.Context, _ *mcp.CallToolRequest, _ ListDatasourcesArgs) (*mcp.CallToolResult, any, error) {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: string(out)},
 			},
 		}, nil, nil
 	}
