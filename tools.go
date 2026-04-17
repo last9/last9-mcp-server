@@ -45,7 +45,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 	// Register exceptions tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "get_exceptions",
-		Description: traces.GetExceptionsDescription,
+		Description: prompts.GetExceptionsInstructions,
 	}, traces.NewGetExceptionsHandler(client, cfg))
 
 	// Register service summary tool
