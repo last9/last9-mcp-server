@@ -31,6 +31,12 @@ var logFilterFieldOperators = map[string]int{
 	"$regex":        0,
 }
 
+var logFilterLogicalOperators = map[string]struct{}{
+	"$and": {},
+	"$or":  {},
+	"$not": {},
+}
+
 var logAggregateFieldArgIndexes = map[string][]int{
 	"$avg":      {0},
 	"$max":      {0},
@@ -102,6 +108,15 @@ func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 				continue
 			}
 
+			if _, isLogicalOperator := logFilterLogicalOperators[key]; !isLogicalOperator {
+				return nil, fmt.Errorf(
+					"invalid filter condition key %q at %s: keys must be operators ($eq, $neq, $gt, $gte, $lt, $lte, $contains, $notcontains, $icontains, $noticontains, $regex, $notregex, $iregex, $notiregex, $ieq) or logical operators ($and, $or, $not); use the form {%q: [field, value]} — for example {\"$eq\": [\"ServiceName\", \"checkout\"]} — and call get_log_attributes if you need the exact field name",
+					key,
+					path,
+					"$eq",
+				)
+			}
+
 			next, err := sanitizeLogCondition(item, path+"."+key)
 			if err != nil {
 				return nil, err
@@ -117,7 +132,11 @@ func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 func sanitizeLogFieldOperatorArgs(value interface{}, fieldArgIndex int, path string) (interface{}, error) {
 	args, ok := value.([]interface{})
 	if !ok {
-		return value, nil
+		return nil, fmt.Errorf(
+			"invalid arguments for field operator at %s: expected an array like [field, value], got %T — use the form {\"$eq\": [\"ServiceName\", \"checkout\"]}",
+			path,
+			value,
+		)
 	}
 
 	sanitized := append([]interface{}(nil), args...)
