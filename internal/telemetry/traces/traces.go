@@ -44,9 +44,14 @@ Time format rules:
 
 Returns comprehensive trace data including trace IDs, spans, durations, timestamps, and metadata.
 
+IMPORTANT: There is no "filter_tags", "tags", or "attributes" parameter. ALL filtering — including by span tags,
+attributes, session IDs, trace metadata, or any key-value pair — must be expressed as a tracejson_query filter.
+Do NOT invent parameter names; use tracejson_query exclusively for filtering.
+
 Example tracejson_query structures:
 - Simple filter: [{"type": "filter", "query": {"$eq": ["ServiceName", "api"]}}]
-- Multiple conditions: [{"type": "filter", "query": {"$and": [{"$eq": ["ServiceName", "api"]}, {"$eq": ["StatusCode", "STATUS_CODE_ERROR"]}]}}]`
+- Multiple conditions: [{"type": "filter", "query": {"$and": [{"$eq": ["ServiceName", "api"]}, {"$eq": ["StatusCode", "STATUS_CODE_ERROR"]}]}}]
+- Filter by span tag/attribute: [{"type": "filter", "query": {"$eq": ["dd_session_id", "abc123"]}}]`
 
 // GetTracesArgs represents the input arguments for the traces query tool
 type GetTracesArgs struct {
@@ -65,6 +70,11 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 		// Check if tracejson_query is provided
 		if len(args.TracejsonQuery) == 0 {
 			return nil, nil, fmt.Errorf("tracejson_query parameter is required. Use the tracejson_query_builder prompt to generate JSON pipeline queries from natural language")
+		}
+
+		// Validate the pipeline before forwarding to the API
+		if err := sanitizeTraceJSONQuery(args.TracejsonQuery); err != nil {
+			return nil, nil, err
 		}
 
 		// Handle tracejson_query directly
