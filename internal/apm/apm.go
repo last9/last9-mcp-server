@@ -2058,7 +2058,7 @@ func NewServiceEnvironmentsHandler(client *http.Client, cfg models.Config) func(
 
 		var matchQuery string
 		if args.Service != "" {
-			matchQuery = fmt.Sprintf("domain_attributes_count{span_kind='SPAN_KIND_SERVER',service=%q}", args.Service)
+			matchQuery = fmt.Sprintf("domain_attributes_count{span_kind='SPAN_KIND_SERVER',service_name=%q}", args.Service)
 		} else {
 			matchQuery = "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}"
 		}
