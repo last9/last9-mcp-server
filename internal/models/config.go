@@ -5,6 +5,18 @@ import "last9-mcp/internal/auth"
 const DefaultMaxGetLogsEntries = 5000
 const DefaultMaxGetTracesEntries = 5000
 
+// DatasourceInfo holds resolved credentials for a named datasource.
+// Populated at startup from the /datasources API response and cached in Config.Datasources.
+type DatasourceInfo struct {
+	Name      string
+	ReadURL   string
+	Username  string
+	Password  string
+	Region    string
+	ClusterID string
+	IsDefault bool
+}
+
 // Config holds the server configuration parameters
 type Config struct {
 	// Last9 connection settings
@@ -36,5 +48,23 @@ type Config struct {
 
 	ClusterID string // Cluster ID from datasource (for dashboard deep links)
 
+	// Datasources holds all available datasources fetched at startup.
+	// Used to resolve per-query datasource credentials without an extra API call.
+	Datasources []DatasourceInfo
+
 	TokenManager *auth.TokenManager // Manages authentication tokens
+}
+
+// ResolveDatasource looks up a datasource by name from the cached list.
+// Returns the zero value and false when name is empty or not found.
+func (cfg Config) ResolveDatasource(name string) (DatasourceInfo, bool) {
+	if name == "" {
+		return DatasourceInfo{}, false
+	}
+	for _, ds := range cfg.Datasources {
+		if ds.Name == name {
+			return ds, true
+		}
+	}
+	return DatasourceInfo{}, false
 }

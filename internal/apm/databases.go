@@ -231,7 +231,8 @@ Parameters:
 - lookback_minutes: (Optional) Time window in minutes (default: 60).
 - start_time_iso: (Optional) Start time in RFC3339 format.
 - end_time_iso: (Optional) End time in RFC3339 format.
-- limit: (Optional) Maximum number of slow queries to return (default: 20).`
+- limit: (Optional) Maximum number of slow queries to return (default: 20).
+- If unsure of the db_system, host, or service_name spelling, call "did_you_mean" first.`
 
 type GetDatabaseSlowQueriesArgs struct {
 	DBSystem        string  `json:"db_system,omitempty" jsonschema:"Database system filter (e.g. postgresql, mysql, mongodb, redis)"`
@@ -455,7 +456,8 @@ Parameters:
 - lookback_minutes: (Optional) Time window in minutes (default: 60).
 - start_time_iso: (Optional) Start time in RFC3339 format.
 - end_time_iso: (Optional) End time in RFC3339 format.
-- sort_by: (Optional) Sort by "throughput" (default), "latency", or "errors".`
+- sort_by: (Optional) Sort by "throughput" (default), "latency", or "errors".
+- If unsure of the db_system or host spelling, call "did_you_mean" first.`
 
 type GetDatabaseQueriesArgs struct {
 	DBSystem        string  `json:"db_system" jsonschema:"Database system (required, e.g. postgresql, mysql, mongodb, redis)"`
