@@ -61,6 +61,7 @@ type ServiceLogsResponse struct {
 	Logs          []LogEntry `json:"logs"`
 	PartialResult bool       `json:"partial_result,omitempty"`
 	Warning       string     `json:"warning,omitempty"`
+	NextSteps     []string   `json:"next_steps,omitempty"`
 }
 
 // LogEntry represents a single log entry
@@ -389,6 +390,9 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 	if partialErr != nil {
 		response.PartialResult = true
 		response.Warning = fmt.Sprintf("Returning partial results: %v", partialErr)
+	}
+	if len(logs) == 0 {
+		response.NextSteps = emptyLogsNextSteps(service)
 	}
 
 	return response, nil

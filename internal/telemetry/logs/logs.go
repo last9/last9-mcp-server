@@ -70,6 +70,7 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	if err != nil {
 		return nil, err
 	}
+	annotateEmptyLogsResult(result)
 
 	// Build deep link URL
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
@@ -491,12 +492,43 @@ func mapsClone(source map[string]interface{}) map[string]interface{} {
 	return cloned
 }
 
+func annotateEmptyLogsResult(result map[string]interface{}) {
+	if result == nil {
+		return
+	}
+	if _, exists := result["next_steps"]; exists {
+		return
+	}
+	data, ok := result["data"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	items, _ := data["result"].([]interface{})
+	if len(items) == 0 {
+		result["next_steps"] = emptyLogsNextSteps("")
+	}
+}
+
 func emptyStreamsResponse() map[string]interface{} {
 	return map[string]interface{}{
 		"data": map[string]interface{}{
 			"resultType": "streams",
 			"result":     []interface{}{},
 		},
+		"next_steps": emptyLogsNextSteps(""),
+	}
+}
+
+func emptyLogsNextSteps(service string) []string {
+	serviceHint := "this service"
+	if service != "" {
+		serviceHint = fmt.Sprintf("service %q", service)
+	}
+	return []string{
+		fmt.Sprintf("A drop rule may be silently filtering logs for %s — run get_drop_rules to inspect active rules and check for matches on service name or attributes.", serviceHint),
+		"Widen the time range: logs may exist outside the queried window.",
+		"Verify the service is actually emitting logs by checking get_service_summary or get_service_traces.",
+		"If using severity_filters or body_filters, try removing them to confirm logs exist at all.",
 	}
 }
 
