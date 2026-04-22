@@ -74,6 +74,57 @@ func queryServiceLogIndex(ctx context.Context, client *http.Client, cfg models.C
 	return physicalIndexResult{Indexes: indexes, ServiceFound: true}
 }
 
+// extractServiceNameFromQuery walks a logjson_query pipeline and returns the
+// first ServiceName equality value it finds, or "" if none is present.
+// Only exact $eq matches are considered — partial/regex matches are skipped.
+func extractServiceNameFromQuery(pipeline interface{}) string {
+	stages, ok := pipeline.([]map[string]interface{})
+	if !ok {
+		return ""
+	}
+	for _, stage := range stages {
+		if stage["type"] != "filter" {
+			continue
+		}
+		query, ok := stage["query"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if name := extractServiceNameFromCondition(query); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+func extractServiceNameFromCondition(cond map[string]interface{}) string {
+	// {"$eq": ["ServiceName", "value"]}
+	if eqRaw, ok := cond["$eq"]; ok {
+		if pair, ok := eqRaw.([]interface{}); ok && len(pair) == 2 {
+			if field, ok := pair[0].(string); ok && field == "ServiceName" {
+				if val, ok := pair[1].(string); ok {
+					return val
+				}
+			}
+		}
+	}
+	// recurse into $and / $or
+	for _, key := range []string{"$and", "$or"} {
+		if raw, ok := cond[key]; ok {
+			if items, ok := raw.([]interface{}); ok {
+				for _, item := range items {
+					if sub, ok := item.(map[string]interface{}); ok {
+						if name := extractServiceNameFromCondition(sub); name != "" {
+							return name
+						}
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
 // resolveIndexFromPreflight returns the normalised index string to use for the
 // log query (e.g. "physical_index:payments"), or "" to leave the index
 // unset. It also returns a warning string when the service was found on

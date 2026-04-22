@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"last9-mcp/internal/constants"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -198,6 +200,13 @@ func TestGetLogsHandlerNormalizesAliasesBeforeAPICall(t *testing.T) {
 		}
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Preflight prom query — respond gracefully without counting or validating.
+		if r.URL.Path == constants.EndpointPromQueryInstant {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
 		requestCount++
 		defer func() {
 			w.Header().Set("Content-Type", "application/json")

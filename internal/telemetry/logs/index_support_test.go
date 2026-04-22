@@ -83,15 +83,21 @@ func TestGetLogsHandler_ForwardsLimitWhenProvided(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != constants.EndpointLogsQueryRange {
+				switch r.URL.Path {
+				case constants.EndpointLogsQueryRange:
+					if got := r.URL.Query().Get("limit"); got != tt.expectedLimit {
+						t.Fatalf("expected limit %q, got %q", tt.expectedLimit, got)
+					}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[]}}`))
+				case constants.EndpointPromQueryInstant:
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					_, _ = w.Write([]byte(`{}`))
+				default:
 					t.Fatalf("unexpected path %s", r.URL.Path)
 				}
-				if got := r.URL.Query().Get("limit"); got != tt.expectedLimit {
-					t.Fatalf("expected limit %q, got %q", tt.expectedLimit, got)
-				}
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[]}}`))
 			}))
 			defer server.Close()
 
