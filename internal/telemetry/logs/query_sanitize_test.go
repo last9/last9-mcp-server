@@ -162,6 +162,77 @@ func TestSanitizeLogJSONQueryRejectsUnsupportedBareDottedRefs(t *testing.T) {
 	}
 }
 
+func TestSanitizeLogJSONQueryRejectsUnknownFilterConditionKeys(t *testing.T) {
+	tests := []struct {
+		name  string
+		query map[string]interface{}
+	}{
+		{
+			name:  "field as key with scalar",
+			query: map[string]interface{}{"ServiceName": "checkout"},
+		},
+		{
+			name: "field as key with nested operator",
+			query: map[string]interface{}{
+				"ServiceName": map[string]interface{}{"$eq": "checkout"},
+			},
+		},
+		{
+			name:  "operator suffix on field",
+			query: map[string]interface{}{"ServiceName=~": "checkout"},
+		},
+		{
+			name: "unknown key inside $and",
+			query: map[string]interface{}{
+				"$and": []interface{}{
+					map[string]interface{}{"ServiceName": "checkout"},
+				},
+			},
+		},
+		{
+			name:  "bare contains operator without dollar prefix",
+			query: map[string]interface{}{"contains": []interface{}{"Body", "error"}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := sanitizeLogJSONQuery([]map[string]interface{}{
+				{
+					"type":  "filter",
+					"query": tt.query,
+				},
+			})
+			if err == nil {
+				t.Fatal("expected sanitizeLogJSONQuery to reject unknown filter key")
+			}
+			if !strings.Contains(err.Error(), "invalid filter condition key") {
+				t.Fatalf("expected invalid filter key error, got %v", err)
+			}
+			if !strings.Contains(err.Error(), "get_log_attributes") {
+				t.Fatalf("expected error to point callers to get_log_attributes, got %v", err)
+			}
+		})
+	}
+}
+
+func TestSanitizeLogJSONQueryRejectsNonArrayFieldOperatorArgs(t *testing.T) {
+	_, err := sanitizeLogJSONQuery([]map[string]interface{}{
+		{
+			"type": "filter",
+			"query": map[string]interface{}{
+				"$eq": "checkout",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected sanitizeLogJSONQuery to reject non-array field operator args")
+	}
+	if !strings.Contains(err.Error(), "invalid arguments for field operator") {
+		t.Fatalf("expected invalid args error, got %v", err)
+	}
+}
+
 func TestSanitizeLogJSONQueryRejectsGroupByCollisions(t *testing.T) {
 	_, err := sanitizeLogJSONQuery([]map[string]interface{}{
 		{
