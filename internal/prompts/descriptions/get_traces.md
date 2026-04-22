@@ -114,37 +114,32 @@ Note that regexp parsing operators also work as regexp filters
 ```
 
 ### Aggregate Operations:
+
+**CRITICAL — EXACT FIELD NAMES (any deviation causes a 400 error):**
+- Use `"aggregates"` (NOT `"aggregations"`)
+- Use `"groupby"` (NOT `"group_by"`)
+- Use `{"function": {"$count": []}, "as": "name"}` (NOT `{"function": "count", "alias": "name"}`)
+- Each aggregate entry MUST have exactly `"function"` and `"as"` keys — no other keys allowed
+
 ```json
 {
   "type": "aggregate",
-  "aggregates": [ // one or more aggregation functions
-    {
-      "function": {"$sum": [field]},
-      "as": "_sum"
-    },
-    {
-      "function": {"$avg": [field]},
-      "as": "_avg"
-    },
-    {
-      "function": {"$count": []}, // count doesn't take any arguments
-      "as": "_count"
-    },
-    {
-      "function": {"$min": [field]},
-      "as": "_min_"
-    },
-    {
-      "function": {"$max": [field]},
-      "as": "_max"
-    },
-    {
-      "function": {"$quantile": [percentile, field]}, // percentile is a number between 0 and 1
-      "as": "_quantile"
-    }
+  "aggregates": [
+    {"function": {"$count": []}, "as": "count"},
+    {"function": {"$sum": ["Duration"]}, "as": "total_duration"},
+    {"function": {"$avg": ["Duration"]}, "as": "avg_duration"},
+    {"function": {"$min": ["Duration"]}, "as": "min_duration"},
+    {"function": {"$max": ["Duration"]}, "as": "max_duration"},
+    {"function": {"$quantile": [0.95, "Duration"]}, "as": "p95_duration"}
   ],
-  "groupby": {"field": "alias"} // zero or more group by fields. Only to be added is grouping by some field is requested by the user
+  "groupby": {"ServiceName": "service", "SpanName": "span"}
 }
+```
+
+❌ WRONG (causes 400):
+```json
+{"type": "aggregate", "aggregations": [...], "group_by": [...]}
+{"type": "aggregate", "aggregates": [{"function": "count", "alias": "n"}]}
 ```
 
 ### Window Aggregate Operations:
