@@ -124,16 +124,45 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("invalid index: %w", err)
 		}
 
+		// Preflight: use physical_index_service_count to discover the correct index
+		// and short-circuit when the service has no active log streams.
+		var preflightHints []string
+		if normalizedIndex == "" {
+			preflight := queryServiceLogIndex(ctx, client, cfg, args.Service, args.Env)
+			if !preflight.ServiceFound {
+				resp := &ServiceLogsResponse{
+					Service:   args.Service,
+					StartTime: startTime.Format(time.RFC3339),
+					EndTime:   endTime.Format(time.RFC3339),
+					Count:     0,
+					Logs:      []LogEntry{},
+					NextSteps: serviceNotSendingLogsNextSteps(args.Service),
+				}
+				responseJSON, _ := json.MarshalIndent(resp, "", "  ")
+				return &mcp.CallToolResult{
+					Content: []mcp.Content{&mcp.TextContent{Text: string(responseJSON)}},
+				}, nil, nil
+			}
+			resolvedIndex, hint := resolveIndexFromPreflight(preflight)
+			normalizedIndex = resolvedIndex
+			if hint != "" {
+				preflightHints = append(preflightHints, hint)
+			}
+		}
+
 		logjsonQuery := buildServiceLogsQuery(args.Service, args.SeverityFilters, args.BodyFilters)
 		if args.Env != "" {
 			logjsonQuery = addServiceLogsEnvFilter(logjsonQuery, args.Env)
 		}
 
-		// Fetch raw logs using the existing logs API approach. When index is omitted,
-		// keep the query on the no-index path that matches the live dashboard/API.
+		// Fetch raw logs using the existing logs API approach.
 		logs, err := fetchServiceLogs(ctx, client, cfg, args.Service, startTime, endTime, limit, logjsonQuery, normalizedIndex)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
+		}
+
+		if len(preflightHints) > 0 {
+			logs.NextSteps = append(preflightHints, logs.NextSteps...)
 		}
 
 		// Format response as JSON for better readability

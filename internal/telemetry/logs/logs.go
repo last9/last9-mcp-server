@@ -532,6 +532,17 @@ func emptyLogsNextSteps(service string) []string {
 	}
 }
 
+// serviceNotSendingLogsNextSteps is used when physical_index_service_count
+// returns no series for the service — meaning no logs are being ingested at all.
+func serviceNotSendingLogsNextSteps(service string) []string {
+	return []string{
+		fmt.Sprintf("No active log streams found for service %q in physical_index_service_count — the service may not be sending logs to Last9.", service),
+		fmt.Sprintf("A drop rule may be dropping all logs before ingestion — run get_drop_rules and check for rules matching service_name=%q.", service),
+		"Verify the service instrumentation is configured correctly and the Last9 endpoint/credentials are valid.",
+		"Check get_service_traces to confirm whether the service is visible at all.",
+	}
+}
+
 // parseTimeRangeFromArgs extracts start and end times from GetLogsArgs
 func parseTimeRangeFromArgs(args GetLogsArgs) (int64, int64, error) {
 	return parseTimeRangeFromArgsAt(args, time.Now().UTC())

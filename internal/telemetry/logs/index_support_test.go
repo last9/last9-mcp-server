@@ -245,7 +245,7 @@ func TestGetServiceLogsHandler_ExplicitIndexOverridesFallback(t *testing.T) {
 	}
 }
 
-func TestGetServiceLogsHandler_OmitsIndexWhenNotProvided(t *testing.T) {
+func TestGetServiceLogsHandler_OmitsIndexWhenPreflightFails(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case constants.EndpointLogsQueryRange:
@@ -256,7 +256,11 @@ func TestGetServiceLogsHandler_OmitsIndexWhenNotProvided(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(serviceLogsAPIResponse("no-index path worked")))
 		case constants.EndpointPromQueryInstant:
-			t.Fatal("did not expect fallback physical index lookup when index is omitted")
+			// Simulate preflight failure: return a non-array JSON so decode fails
+			// gracefully and the handler proceeds without an index override.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{}`))
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -273,7 +277,82 @@ func TestGetServiceLogsHandler_OmitsIndexWhenNotProvided(t *testing.T) {
 	}
 
 	if got := parseRelativeURL(t, referenceURL(t, result)).Query().Get("index"); got != "" {
-		t.Fatalf("expected dashboard index to be omitted, got %q", got)
+		t.Fatalf("expected dashboard index to be omitted when preflight fails, got %q", got)
+	}
+}
+
+func TestGetServiceLogsHandler_PreflightSetsPhysicalIndex(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case constants.EndpointLogsQueryRange:
+			if got := r.URL.Query().Get("index"); got != "physical_index:payments" {
+				t.Fatalf("expected index physical_index:payments from preflight, got %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(serviceLogsAPIResponse("preflight index used")))
+		case constants.EndpointPromQueryInstant:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`[{"metric":{"name":"payments","service_name":"api"},"value":[1700000000,"5"]}]`))
+		case "/logs_settings/physical_indexes":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"properties":[{"id":"idx-123","name":"payments"}]}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := NewGetServiceLogsHandler(server.Client(), testLogsConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
+		Service:         "api",
+		LookbackMinutes: 5,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+}
+
+func TestGetServiceLogsHandler_PreflightEarlyReturnWhenNotSendingLogs(t *testing.T) {
+	logQueryCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case constants.EndpointLogsQueryRange:
+			logQueryCalled = true
+			t.Error("log query should not be called when preflight reports service not sending logs")
+		case constants.EndpointPromQueryInstant:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := NewGetServiceLogsHandler(server.Client(), testLogsConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
+		Service:         "ghost-service",
+		LookbackMinutes: 5,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if logQueryCalled {
+		t.Fatal("log query was called despite preflight reporting service not sending logs")
+	}
+
+	var resp ServiceLogsResponse
+	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp.Count != 0 {
+		t.Fatalf("expected count 0, got %d", resp.Count)
+	}
+	if len(resp.NextSteps) == 0 {
+		t.Fatal("expected next_steps hints in early-return response")
 	}
 }
 
@@ -314,7 +393,7 @@ func TestGetServiceLogsHandler_ForwardsLargeLimitWhenProvided(t *testing.T) {
 
 func TestGetServiceLogsHandler_UsesFrontendParityFilters(t *testing.T) {
 	expectedQuery := buildServiceLogsQuery(
-		"l9alert-pinelabs",
+		"l9alert-example",
 		[]string{"error", "fatal", "critical"},
 		nil,
 	)
@@ -364,7 +443,7 @@ func TestGetServiceLogsHandler_UsesFrontendParityFilters(t *testing.T) {
 
 	handler := NewGetServiceLogsHandler(server.Client(), testLogsConfig(server.URL))
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
-		Service:         "l9alert-pinelabs",
+		Service:         "l9alert-example",
 		StartTimeISO:    "2026-03-31T07:16:38.000Z",
 		EndTimeISO:      "2026-04-01T07:16:38.907Z",
 		Limit:           100,
@@ -383,25 +462,29 @@ func TestGetServiceLogsHandler_AppliesEnvFilterToFetchAndDeepLink(t *testing.T) 
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != constants.EndpointLogsQueryRange {
+		switch r.URL.Path {
+		case constants.EndpointLogsQueryRange:
+			var body struct {
+				Pipeline []map[string]interface{} `json:"pipeline"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("failed to decode request body: %v", err)
+			}
+			if !reflect.DeepEqual(body.Pipeline, expectedQuery) {
+				gotJSON, _ := json.Marshal(body.Pipeline)
+				wantJSON, _ := json.Marshal(expectedQuery)
+				t.Fatalf("unexpected service logs pipeline\nwant: %s\ngot:  %s", wantJSON, gotJSON)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(serviceLogsAPIResponse("env filter matched")))
+		case constants.EndpointPromQueryInstant:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{}`))
+		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
-
-		var body struct {
-			Pipeline []map[string]interface{} `json:"pipeline"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("failed to decode request body: %v", err)
-		}
-		if !reflect.DeepEqual(body.Pipeline, expectedQuery) {
-			gotJSON, _ := json.Marshal(body.Pipeline)
-			wantJSON, _ := json.Marshal(expectedQuery)
-			t.Fatalf("unexpected service logs pipeline\nwant: %s\ngot:  %s", wantJSON, gotJSON)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(serviceLogsAPIResponse("env filter matched")))
 	}))
 	defer server.Close()
 
