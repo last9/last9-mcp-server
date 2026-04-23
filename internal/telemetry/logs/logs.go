@@ -66,37 +66,17 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		return nil, fmt.Errorf("failed to parse time range: %v", err)
 	}
 
-	// Preflight: when no index is specified, use physical_index_service_count to
-	// discover the correct index from the ServiceName filter in the query.
-	userProvidedIndex := strings.TrimSpace(args.Index) != ""
-	var preflightHints []string
-	if !userProvidedIndex {
-		if service := extractServiceNameFromQuery(logjsonQuery); service != "" {
-			preflight := queryServiceLogIndex(ctx, client, cfg, service, "")
-			resolvedIndex, hint := resolveIndexFromPreflight(preflight)
-			if resolvedIndex != "" {
-				args.Index = resolvedIndex
-			}
-			if hint != "" {
-				preflightHints = append(preflightHints, hint)
-			}
-		}
-	}
-
 	result, err := fetchLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
 	if err != nil {
 		return nil, err
 	}
 	annotateEmptyLogsResult(result)
-	if len(preflightHints) > 0 {
-		existing, _ := result["next_steps"].([]string)
-		result["next_steps"] = append(preflightHints, existing...)
-	}
 
 	// Build deep link URL
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
+	hasExplicitIndex := strings.TrimSpace(args.Index) != ""
 	dashboardIndex := ""
-	if strings.TrimSpace(args.Index) != "" {
+	if hasExplicitIndex {
 		resolvedIndex, err := utils.ResolveLogIndexDashboardParam(ctx, client, cfg, args.Index)
 		if err == nil {
 			dashboardIndex = resolvedIndex
@@ -104,7 +84,7 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	}
 	dashboardURL := dlBuilder.BuildLogsLink(startTime, endTime, logjsonQuery, dashboardIndex)
 	var meta mcp.Meta
-	if !userProvidedIndex || dashboardIndex != "" {
+	if !hasExplicitIndex || dashboardIndex != "" {
 		meta = deeplink.ToMeta(dashboardURL)
 	}
 

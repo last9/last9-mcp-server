@@ -35,6 +35,10 @@ const GetLogsDescription = `
 
 	Response contains the results of the JSON pipeline query execution.
 
+	Tip: call get_log_services first to confirm the service is ingesting logs, get exact
+	service_name and env values, and obtain the physical_index to pass as the index parameter
+	for faster, targeted queries.
+
 `
 
 const GetDropRulesDescription = `Retrieve and display the configured drop rules for log management in Last9.

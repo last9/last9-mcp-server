@@ -120,6 +120,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Description: logs.GetServiceLogsDescription,
 	}, logs.NewGetServiceLogsHandler(client, cfg))
 
+	// Register log services discovery tool
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_log_services",
+		Description: logs.GetLogServicesDescription,
+	}, logs.NewGetLogServicesHandler(client, cfg))
+
 	// Register drop rules tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "get_drop_rules",
