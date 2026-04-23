@@ -14,7 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const GetLogServicesDescription = `Discover which services are actively sending logs to Last9, along with their valid environments, physical index, and severity levels.
+const GetLoggingServicesDescription = `Discover which services are actively sending logs to Last9, along with their valid environments, physical index, and severity levels.
 
 Use this tool before get_logs or get_service_logs to:
 - Confirm a service is actually ingesting logs (avoids querying for data that doesn't exist)
@@ -29,24 +29,24 @@ Parameters:
 Returns a list of entries with: service_name, env, physical_index, severity.
 `
 
-// GetLogServicesArgs represents the input arguments for the get_log_services tool
-type GetLogServicesArgs struct {
+// GetLoggingServicesArgs represents the input arguments for the get_logging_services tool
+type GetLoggingServicesArgs struct {
 	Service string `json:"service,omitempty" jsonschema:"Optional service name to filter results"`
 	Env     string `json:"env,omitempty" jsonschema:"Optional environment to filter results (e.g. production)"`
 }
 
-// LogServiceEntry represents one distinct combination of service, env, index and severity
-type LogServiceEntry struct {
+// LoggingServiceEntry represents one distinct combination of service, env, index and severity
+type LoggingServiceEntry struct {
 	ServiceName   string `json:"service_name"`
 	Env           string `json:"env"`
 	PhysicalIndex string `json:"physical_index"`
 	Severity      string `json:"severity,omitempty"`
 }
 
-// NewGetLogServicesHandler creates a handler for the get_log_services tool
-func NewGetLogServicesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetLogServicesArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, args GetLogServicesArgs) (*mcp.CallToolResult, any, error) {
-		query := buildLogServicesQuery(args.Service, args.Env)
+// NewGetLoggingServicesHandler creates a handler for the get_logging_services tool
+func NewGetLoggingServicesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetLoggingServicesArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args GetLoggingServicesArgs) (*mcp.CallToolResult, any, error) {
+		query := buildLoggingServicesQuery(args.Service, args.Env)
 
 		resp, err := utils.MakePromInstantAPIQuery(ctx, client, query, time.Now().UTC().Unix(), cfg)
 		if err != nil {
@@ -71,13 +71,13 @@ func NewGetLogServicesHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("failed to parse response: %w", err)
 		}
 
-		entries := make([]LogServiceEntry, 0, len(results))
+		entries := make([]LoggingServiceEntry, 0, len(results))
 		for _, r := range results {
 			name := r.Metric["name"]
 			if name == "" {
 				name = "default"
 			}
-			entries = append(entries, LogServiceEntry{
+			entries = append(entries, LoggingServiceEntry{
 				ServiceName:   r.Metric["service_name"],
 				Env:           r.Metric["env"],
 				PhysicalIndex: "physical_index:" + name,
@@ -98,7 +98,7 @@ func NewGetLogServicesHandler(client *http.Client, cfg models.Config) func(conte
 	}
 }
 
-func buildLogServicesQuery(service, env string) string {
+func buildLoggingServicesQuery(service, env string) string {
 	filter := ""
 	if service != "" && env != "" {
 		filter = fmt.Sprintf(`{service_name=%q,env=%q}`, service, env)

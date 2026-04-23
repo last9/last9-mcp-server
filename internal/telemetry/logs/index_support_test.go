@@ -479,7 +479,7 @@ func serviceLogsAPIResponse(message string) string {
 	return `{"data":{"result":[{"stream":{"severity":"ERROR"},"values":[["1741500000000000000","` + strings.ReplaceAll(message, `"`, `\"`) + `"]]}]}}`
 }
 
-func TestGetLogServicesHandler_ReturnsEntries(t *testing.T) {
+func TestGetLoggingServicesHandler_ReturnsEntries(t *testing.T) {
 	promResp := `[
 		{"metric":{"name":"payments","service_name":"checkout","env":"production","severity":"error"},"value":[1700000000,"3"]},
 		{"metric":{"name":"default","service_name":"api","env":"staging","severity":"info"},"value":[1700000000,"10"]}
@@ -495,13 +495,13 @@ func TestGetLogServicesHandler_ReturnsEntries(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := NewGetLogServicesHandler(server.Client(), testLogsConfig(server.URL))
-	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogServicesArgs{})
+	handler := NewGetLoggingServicesHandler(server.Client(), testLogsConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLoggingServicesArgs{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	var entries []LogServiceEntry
+	var entries []LoggingServiceEntry
 	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &entries); err != nil {
 		t.Fatalf("failed to parse response: %v", err)
 	}
@@ -509,7 +509,7 @@ func TestGetLogServicesHandler_ReturnsEntries(t *testing.T) {
 		t.Fatalf("expected 2 entries, got %d", len(entries))
 	}
 
-	byService := make(map[string]LogServiceEntry, len(entries))
+	byService := make(map[string]LoggingServiceEntry, len(entries))
 	for _, e := range entries {
 		byService[e.ServiceName] = e
 	}
@@ -531,7 +531,7 @@ func TestGetLogServicesHandler_ReturnsEntries(t *testing.T) {
 	}
 }
 
-func TestGetLogServicesHandler_FiltersQuery(t *testing.T) {
+func TestGetLoggingServicesHandler_FiltersQuery(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != constants.EndpointPromQueryInstant {
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -554,8 +554,8 @@ func TestGetLogServicesHandler_FiltersQuery(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := NewGetLogServicesHandler(server.Client(), testLogsConfig(server.URL))
-	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogServicesArgs{
+	handler := NewGetLoggingServicesHandler(server.Client(), testLogsConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLoggingServicesArgs{
 		Service: "checkout",
 		Env:     "production",
 	})

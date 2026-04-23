@@ -50,7 +50,7 @@ Parameters:
 
 Returns a list of log entries with full details including message content, timestamps, severity, and attributes.
 
-- Call get_log_services first to confirm the service is ingesting logs, get exact service_name
+- Call get_logging_services first to confirm the service is ingesting logs, get exact service_name
   and env values, and obtain the physical_index to pass as the index parameter for faster queries.
 - If unsure of the service or env name, call "did_you_mean" first to find the correct spelling.`
 
