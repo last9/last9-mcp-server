@@ -14,19 +14,29 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const GetLoggingServicesDescription = `Discover which services are actively sending logs to Last9, along with their valid environments, physical index, and severity levels.
+const GetLoggingServicesDescription = `Discover which services are actively sending logs to Last9.
 
-Use this tool before get_logs or get_service_logs to:
-- Confirm a service is actually ingesting logs (avoids querying for data that doesn't exist)
-- Get the exact service_name and env values to use in log queries (prevents typos and wrong filters)
-- Identify the physical index a service writes to — pass this as the index parameter to get_logs / get_service_logs for faster, targeted queries
-- Understand which severity levels are present for a service
+Returns the exact service_name, env, physical_index, and severity values present in the log
+ingestion pipeline. Use this BEFORE calling get_logs or get_service_logs to:
+
+1. Confirm a service is actually ingesting logs — if it doesn't appear here, no log query will
+   return results (check drop rules next with get_drop_rules).
+2. Get the exact spelling of service_name and env — prevents silent empty results from typos.
+3. Obtain the physical_index for the service — pass it as the index parameter to get_logs /
+   get_service_logs for faster queries that skip unrelated indexes.
+4. Know which severity levels exist — avoids filtering for severities with no data.
 
 Parameters:
-- service: (Optional) Filter by a specific service name. Omit to list all services.
-- env: (Optional) Filter by environment (e.g. production, staging).
+- service: (Optional) Filter by service name. Omit to list all services sending logs.
+- env: (Optional) Filter by environment (e.g. production, staging). Omit for all environments.
 
-Returns a list of entries with: service_name, env, physical_index, severity.
+Call with no parameters to get a full map of what is ingesting logs and where.
+
+Examples:
+- Before "show errors for checkout service" → call with service="checkout" to confirm it exists
+  and find its physical_index and valid env values.
+- "Which services are sending logs?" → call with no parameters.
+- "Are there logs for api in production?" → call with service="api", env="production".
 `
 
 // GetLoggingServicesArgs represents the input arguments for the get_logging_services tool

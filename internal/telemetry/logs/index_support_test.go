@@ -563,3 +563,128 @@ func TestGetLoggingServicesHandler_FiltersQuery(t *testing.T) {
 		t.Fatalf("handler returned error: %v", err)
 	}
 }
+
+func TestGetLoggingServicesHandler_ServiceOnlyFilter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Query string `json:"query"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("failed to decode request: %v", err)
+		}
+		if !strings.Contains(body.Query, `service_name="api"`) {
+			t.Errorf("expected service_name filter, got %q", body.Query)
+		}
+		if strings.Contains(body.Query, "env=") {
+			t.Errorf("unexpected env filter in query, got %q", body.Query)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	handler := NewGetLoggingServicesHandler(server.Client(), testLogsConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLoggingServicesArgs{Service: "api"})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+}
+
+func TestGetLoggingServicesHandler_EnvOnlyFilter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Query string `json:"query"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("failed to decode request: %v", err)
+		}
+		if !strings.Contains(body.Query, `env="production"`) {
+			t.Errorf("expected env filter, got %q", body.Query)
+		}
+		if strings.Contains(body.Query, "service_name=") {
+			t.Errorf("unexpected service_name filter, got %q", body.Query)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	handler := NewGetLoggingServicesHandler(server.Client(), testLogsConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLoggingServicesArgs{Env: "production"})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+}
+
+func TestGetLoggingServicesHandler_NoFilterQuery(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Query string `json:"query"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("failed to decode request: %v", err)
+		}
+		if body.Query != "physical_index_service_count" {
+			t.Errorf("expected bare metric query, got %q", body.Query)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	handler := NewGetLoggingServicesHandler(server.Client(), testLogsConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLoggingServicesArgs{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	var entries []LoggingServiceEntry
+	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &entries); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected empty entries for empty prom response, got %d", len(entries))
+	}
+}
+
+func TestGetLoggingServicesHandler_MissingNameDefaultsToDefault(t *testing.T) {
+	promResp := `[{"metric":{"service_name":"worker","env":"production","severity":"warn"},"value":[1700000000,"1"]}]`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(promResp))
+	}))
+	defer server.Close()
+
+	handler := NewGetLoggingServicesHandler(server.Client(), testLogsConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLoggingServicesArgs{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	var entries []LoggingServiceEntry
+	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &entries); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].PhysicalIndex != "physical_index:default" {
+		t.Errorf("missing name label should default to physical_index:default, got %q", entries[0].PhysicalIndex)
+	}
+}
+
+func TestGetLoggingServicesHandler_PromError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("internal error"))
+	}))
+	defer server.Close()
+
+	handler := NewGetLoggingServicesHandler(server.Client(), testLogsConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLoggingServicesArgs{})
+	if err == nil {
+		t.Fatal("expected error on prom 500, got nil")
+	}
+}
