@@ -23,8 +23,6 @@ import (
 	"github.com/peterbourgon/ff/v3"
 	"go.opentelemetry.io/otel"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 )
 
@@ -125,27 +123,18 @@ func main() {
 	attrCache.Warm(ctx)
 	cancel()
 
-	// Create MCP server with new SDK
-	server, err := last9mcp.NewServer("last9-mcp", Version)
-	if err != nil {
-		log.Fatalf("failed to create MCP server: %v", err)
-	}
-
-	// The mcp-go-sdk always initialises real OTLP exporters inside NewServer,
-	// regardless of OTEL_SDK_DISABLED. Shut them down and replace with no-ops
-	// so the periodic exporter doesn't spam logs with upload failures.
+	// Set up noop providers before creating the server when telemetry is disabled,
+	// so WithSkipProviderInit picks them up instead of initialising real OTLP exporters.
 	if cfg.DisableTelemetry {
-		log.Println("Telemetry disabled - replacing OTLP providers with no-ops")
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer shutdownCancel()
-		if mp, ok := otel.GetMeterProvider().(*sdkmetric.MeterProvider); ok {
-			_ = mp.Shutdown(shutdownCtx)
-		}
-		if tp, ok := otel.GetTracerProvider().(*sdktrace.TracerProvider); ok {
-			_ = tp.Shutdown(shutdownCtx)
-		}
 		otel.SetMeterProvider(metricnoop.NewMeterProvider())
 		otel.SetTracerProvider(tracenoop.NewTracerProvider())
+	}
+
+	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version,
+		last9mcp.WithSkipProviderInit(),
+	)
+	if err != nil {
+		log.Fatalf("failed to create MCP server: %v", err)
 	}
 
 	// Register all tools
