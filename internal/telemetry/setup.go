@@ -37,7 +37,6 @@ func InitProviders(ctx context.Context, version, tenant, clusterID string) (func
 			semconv.ServiceName(mcpServiceName),
 			semconv.ServiceVersion(version),
 			attribute.String("mcp.server.type", "golang"),
-			attribute.String("mcp.server.version", version),
 			attribute.String("last9.tenant", tenant),
 			attribute.String("last9.cluster_id", clusterID),
 		),

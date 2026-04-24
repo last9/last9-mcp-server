@@ -13,16 +13,6 @@ import (
 	"strconv"
 	"time"
 
-	"last9-mcp/internal/attributes"
-	"last9-mcp/internal/auth"
-	"last9-mcp/internal/models"
-	l9telemetry "last9-mcp/internal/telemetry"
-	"last9-mcp/internal/utils"
-
-	"bytes"
-	"encoding/json"
-	"net/http"
-
 	"github.com/joho/godotenv"
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -33,7 +23,11 @@ import (
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"last9-mcp/internal/constants"
+	"last9-mcp/internal/attributes"
+	"last9-mcp/internal/auth"
+	"last9-mcp/internal/models"
+	l9telemetry "last9-mcp/internal/telemetry"
+	"last9-mcp/internal/utils"
 )
 
 // Version information
@@ -91,46 +85,6 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	return cfg, nil
 }
 
-// emitDeployChangeEvent records a deploy change event in Last9 so it can be
-// overlaid on latency/error charts to correlate regressions with releases.
-// Fires only for non-dev builds to avoid noise in local development.
-func emitDeployChangeEvent(cfg models.Config) {
-	if Version == "dev" {
-		return
-	}
-	payload, err := json.Marshal(map[string]any{
-		"name": "MCP server start",
-		"attributes": map[string]string{
-			"version": Version,
-			"commit":  CommitSHA,
-			"service": "last9-mcp",
-		},
-		"event_state": "start",
-	})
-	if err != nil {
-		slog.Warn("failed to marshal change event payload", "error", err)
-		return
-	}
-	ctx := context.Background()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
-		cfg.APIBaseURL+"/change_events", bytes.NewReader(payload))
-	if err != nil {
-		slog.Warn("failed to create change event request", "error", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(constants.HeaderXLast9APIToken,
-		constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
-	resp, err := auth.GetHTTPClient().Do(req)
-	if err != nil {
-		slog.Warn("failed to emit deploy change event", "error", err)
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		slog.Warn("deploy change event returned non-2xx", "status", resp.StatusCode)
-	}
-}
 
 func main() {
 	log.Printf("Starting Last9 MCP Server v%s", Version)
@@ -189,8 +143,6 @@ func main() {
 		"version", Version,
 	)
 
-	go emitDeployChangeEvent(cfg)
-
 	// Create attribute cache and perform best-effort initial fetch
 	attrCache := attributes.NewAttributeCache(auth.GetHTTPClient(), cfg)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -215,8 +167,8 @@ func main() {
 				metric.WithAttributes(
 					attribute.String("version", Version),
 					attribute.String("commit", CommitSHA),
-					attribute.String("tenant", cfg.OrgSlug),
-					attribute.String("cluster_id", cfg.ClusterID),
+					attribute.String("last9.tenant", cfg.OrgSlug),
+					attribute.String("last9.cluster_id", cfg.ClusterID),
 				),
 			)
 			return nil
