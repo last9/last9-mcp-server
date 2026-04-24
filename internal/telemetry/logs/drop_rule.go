@@ -168,7 +168,7 @@ func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(context.
 		}
 
 		// Create request
-		httpReq, err := http.NewRequest("PUT", u.String(), bytes.NewReader(jsonData))
+		httpReq, err := http.NewRequestWithContext(ctx, "PUT", u.String(), bytes.NewReader(jsonData))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create request: %w", err)
 		}
