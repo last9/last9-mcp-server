@@ -123,8 +123,6 @@ func main() {
 	attrCache.Warm(ctx)
 	cancel()
 
-	// Set up noop providers before creating the server when telemetry is disabled,
-	// so WithSkipProviderInit picks them up instead of initialising real OTLP exporters.
 	if cfg.DisableTelemetry {
 		otel.SetMeterProvider(metricnoop.NewMeterProvider())
 		otel.SetTracerProvider(tracenoop.NewTracerProvider())
