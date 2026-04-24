@@ -85,7 +85,6 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	return cfg, nil
 }
 
-
 func main() {
 	log.Printf("Starting Last9 MCP Server v%s", Version)
 
@@ -162,7 +161,7 @@ func main() {
 		)
 		if err != nil {
 			slog.Warn("failed to create server info gauge", "error", err)
-		} else if _, err := meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		} else if reg, err := meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
 			o.ObserveInt64(serverInfo, 1,
 				metric.WithAttributes(
 					attribute.String("version", Version),
@@ -174,6 +173,8 @@ func main() {
 			return nil
 		}, serverInfo); err != nil {
 			slog.Warn("failed to register server info callback", "error", err)
+		} else {
+			defer reg.Unregister()
 		}
 	}
 
