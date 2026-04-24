@@ -162,6 +162,9 @@ jobs:
           tags: |
             docker-registry.last9.io/last9/last9-mcp-server:${{ steps.extract_branch.outputs.branch_name }}
             docker-registry.last9.io/last9/last9-mcp-server:${{ steps.extract_branch.outputs.branch_name }}-v${{ steps.get_version.outputs.version }}
+          build-args: |
+            VERSION=${{ steps.get_version.outputs.version }}
+            COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
@@ -178,6 +181,9 @@ jobs:
           tags: |
             docker-registry.last9.io/last9/last9-mcp-server:v${{ needs.tag-and-release.outputs.new_version }}
             docker-registry.last9.io/last9/last9-mcp-server:latest
+          build-args: |
+            VERSION=${{ needs.tag-and-release.outputs.new_version }}
+            COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
@@ -195,18 +201,31 @@ jobs:
         if: |
           github.event_name == 'push' &&
           startsWith(github.ref, 'refs/heads/release-')
+        env:
+          VERSION: ${{ steps.get_version.outputs.version }}
+          COMMIT: ${{ github.sha }}
+          BRANCH: ${{ steps.extract_branch.outputs.branch_name }}
         run: |
-          docker build -f Dockerfile -t 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build .
-          docker tag 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${{ steps.extract_branch.outputs.branch_name }}
-          docker tag 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${{ steps.extract_branch.outputs.branch_name }}-v${{ steps.get_version.outputs.version }}
-          docker push 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${{ steps.extract_branch.outputs.branch_name }}
-          docker push 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${{ steps.extract_branch.outputs.branch_name }}-v${{ steps.get_version.outputs.version }}
+          docker build -f Dockerfile \
+            --build-arg VERSION="${VERSION}" \
+            --build-arg COMMIT="${COMMIT}" \
+            -t 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build .
+          docker tag 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${BRANCH}
+          docker tag 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${BRANCH}-v${VERSION}
+          docker push 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${BRANCH}
+          docker push 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${BRANCH}-v${VERSION}
 
       - name: Push to Amazon ECR (Main Branch)
         if: needs.tag-and-release.outputs.version_changed == 'true'
+        env:
+          VERSION: ${{ needs.tag-and-release.outputs.new_version }}
+          COMMIT: ${{ github.sha }}
         run: |
-          docker build -f Dockerfile -t 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build .
-          for tag in v${{ needs.tag-and-release.outputs.new_version }} latest; do
+          docker build -f Dockerfile \
+            --build-arg VERSION="${VERSION}" \
+            --build-arg COMMIT="${COMMIT}" \
+            -t 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build .
+          for tag in v${VERSION} latest; do
             docker tag 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:$tag
             docker push 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:$tag
           done

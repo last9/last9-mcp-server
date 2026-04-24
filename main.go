@@ -19,13 +19,21 @@ import (
 	l9telemetry "last9-mcp/internal/telemetry"
 	"last9-mcp/internal/utils"
 
+	"bytes"
+	"encoding/json"
+	"net/http"
+
 	"github.com/joho/godotenv"
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/peterbourgon/ff/v3"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
+
+	"last9-mcp/internal/constants"
 )
 
 // Version information
@@ -83,6 +91,47 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	return cfg, nil
 }
 
+// emitDeployChangeEvent records a deploy change event in Last9 so it can be
+// overlaid on latency/error charts to correlate regressions with releases.
+// Fires only for non-dev builds to avoid noise in local development.
+func emitDeployChangeEvent(cfg models.Config) {
+	if Version == "dev" {
+		return
+	}
+	payload, err := json.Marshal(map[string]any{
+		"name": "MCP server start",
+		"attributes": map[string]string{
+			"version": Version,
+			"commit":  CommitSHA,
+			"service": "last9-mcp",
+		},
+		"event_state": "start",
+	})
+	if err != nil {
+		slog.Warn("failed to marshal change event payload", "error", err)
+		return
+	}
+	ctx := context.Background()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
+		cfg.APIBaseURL+"/change_events", bytes.NewReader(payload))
+	if err != nil {
+		slog.Warn("failed to create change event request", "error", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(constants.HeaderXLast9APIToken,
+		constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
+	resp, err := auth.GetHTTPClient().Do(req)
+	if err != nil {
+		slog.Warn("failed to emit deploy change event", "error", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		slog.Warn("deploy change event returned non-2xx", "status", resp.StatusCode)
+	}
+}
+
 func main() {
 	log.Printf("Starting Last9 MCP Server v%s", Version)
 
@@ -104,11 +153,23 @@ func main() {
 		}
 	}
 
+	// Auth and API config must come before OTel init so tenant/cluster IDs
+	// are available as resource attributes on all spans and metrics.
+	tokenManager, err := auth.NewTokenManager(cfg.RefreshToken)
+	if err != nil {
+		log.Fatalf("failed to create token manager: %v", err)
+	}
+
+	cfg.TokenManager = tokenManager
+	if err := utils.PopulateAPICfg(&cfg); err != nil {
+		log.Fatalf("failed to refresh access token: %v", err)
+	}
+
 	if cfg.DisableTelemetry {
 		otel.SetMeterProvider(metricnoop.NewMeterProvider())
 		otel.SetTracerProvider(tracenoop.NewTracerProvider())
 	} else {
-		shutdown, err := l9telemetry.InitProviders(context.Background(), Version)
+		shutdown, err := l9telemetry.InitProviders(context.Background(), Version, cfg.OrgSlug, cfg.ClusterID)
 		if err != nil {
 			log.Fatalf("failed to init telemetry: %v", err)
 		}
@@ -128,15 +189,7 @@ func main() {
 		"version", Version,
 	)
 
-	tokenManager, err := auth.NewTokenManager(cfg.RefreshToken)
-	if err != nil {
-		log.Fatalf("failed to create token manager: %v", err)
-	}
-
-	cfg.TokenManager = tokenManager
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		log.Fatalf("failed to refresh access token: %v", err)
-	}
+	go emitDeployChangeEvent(cfg)
 
 	// Create attribute cache and perform best-effort initial fetch
 	attrCache := attributes.NewAttributeCache(auth.GetHTTPClient(), cfg)
@@ -147,6 +200,29 @@ func main() {
 	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
 	if err != nil {
 		log.Fatalf("failed to create MCP server: %v", err)
+	}
+
+	if !cfg.DisableTelemetry {
+		meter := otel.GetMeterProvider().Meter("last9-mcp")
+		serverInfo, err := meter.Int64ObservableGauge(
+			"last9_mcp_server_info",
+			metric.WithDescription("MCP server version info; value is always 1, use labels for version tracking"),
+		)
+		if err != nil {
+			slog.Warn("failed to create server info gauge", "error", err)
+		} else if _, err := meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+			o.ObserveInt64(serverInfo, 1,
+				metric.WithAttributes(
+					attribute.String("version", Version),
+					attribute.String("commit", CommitSHA),
+					attribute.String("tenant", cfg.OrgSlug),
+					attribute.String("cluster_id", cfg.ClusterID),
+				),
+			)
+			return nil
+		}, serverInfo); err != nil {
+			slog.Warn("failed to register server info callback", "error", err)
+		}
 	}
 
 	// Register all tools

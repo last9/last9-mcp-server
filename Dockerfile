@@ -15,8 +15,14 @@ RUN go mod download
 # Copy source code
 COPY . .
 
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_TIME=unknown
+
 # Build the application for STDIO mode (default MCP pattern)
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o last9-mcp-server .
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo \
+    -ldflags "-s -w -X main.Version=${VERSION} -X main.CommitSHA=${COMMIT} -X main.BuildTime=${BUILD_TIME}" \
+    -o last9-mcp-server .
 
 # Final stage - minimal image for MCP server
 FROM alpine:latest
