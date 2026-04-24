@@ -123,14 +123,14 @@ func main() {
 	attrCache.Warm(ctx)
 	cancel()
 
+	var serverOpts []last9mcp.Option
 	if cfg.DisableTelemetry {
 		otel.SetMeterProvider(metricnoop.NewMeterProvider())
 		otel.SetTracerProvider(tracenoop.NewTracerProvider())
+		serverOpts = append(serverOpts, last9mcp.WithSkipProviderInit())
 	}
 
-	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version,
-		last9mcp.WithSkipProviderInit(),
-	)
+	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, serverOpts...)
 	if err != nil {
 		log.Fatalf("failed to create MCP server: %v", err)
 	}
