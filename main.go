@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"last9-mcp/internal/attributes"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	l9telemetry "last9-mcp/internal/telemetry"
 	"last9-mcp/internal/utils"
 
 	"github.com/joho/godotenv"
@@ -23,8 +25,6 @@ import (
 	"github.com/peterbourgon/ff/v3"
 	"go.opentelemetry.io/otel"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 )
 
@@ -103,10 +103,29 @@ func main() {
 			cfg.DisableTelemetry = parsed
 		}
 	}
-	log.Printf(
-		"Config loaded - HTTPMode: %t, Authentication: enabled, MaxGetLogsEntries: %d",
-		cfg.HTTPMode,
-		cfg.MaxGetLogsEntries,
+
+	if cfg.DisableTelemetry {
+		otel.SetMeterProvider(metricnoop.NewMeterProvider())
+		otel.SetTracerProvider(tracenoop.NewTracerProvider())
+	} else {
+		shutdown, err := l9telemetry.InitProviders(context.Background(), Version)
+		if err != nil {
+			log.Fatalf("failed to init telemetry: %v", err)
+		}
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := shutdown(ctx); err != nil {
+				slog.Error("telemetry shutdown error", "error", err)
+			}
+		}()
+	}
+
+	slog.Info("config loaded",
+		"http_mode", cfg.HTTPMode,
+		"max_get_logs_entries", cfg.MaxGetLogsEntries,
+		"telemetry_disabled", cfg.DisableTelemetry,
+		"version", Version,
 	)
 
 	tokenManager, err := auth.NewTokenManager(cfg.RefreshToken)
@@ -125,27 +144,9 @@ func main() {
 	attrCache.Warm(ctx)
 	cancel()
 
-	// Create MCP server with new SDK
-	server, err := last9mcp.NewServer("last9-mcp", Version)
+	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
 	if err != nil {
 		log.Fatalf("failed to create MCP server: %v", err)
-	}
-
-	// The mcp-go-sdk always initialises real OTLP exporters inside NewServer,
-	// regardless of OTEL_SDK_DISABLED. Shut them down and replace with no-ops
-	// so the periodic exporter doesn't spam logs with upload failures.
-	if cfg.DisableTelemetry {
-		log.Println("Telemetry disabled - replacing OTLP providers with no-ops")
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer shutdownCancel()
-		if mp, ok := otel.GetMeterProvider().(*sdkmetric.MeterProvider); ok {
-			_ = mp.Shutdown(shutdownCtx)
-		}
-		if tp, ok := otel.GetTracerProvider().(*sdktrace.TracerProvider); ok {
-			_ = tp.Shutdown(shutdownCtx)
-		}
-		otel.SetMeterProvider(metricnoop.NewMeterProvider())
-		otel.SetTracerProvider(tracenoop.NewTracerProvider())
 	}
 
 	// Register all tools
@@ -160,13 +161,13 @@ func main() {
 		for range ticker.C {
 			refreshCtx, refreshCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			if err := attrCache.RefreshIfStale(refreshCtx); err != nil {
-				log.Printf("Warning: failed to refresh attribute cache: %v", err)
+				slog.Warn("failed to refresh attribute cache", "error", err)
 			} else {
 				// Re-register tools with updated descriptions (AddTool is an upsert)
 				if err := registerAllTools(server, cfg, attrCache); err != nil {
-					log.Printf("Warning: failed to re-register tools after cache refresh: %v", err)
+					slog.Warn("failed to re-register tools after cache refresh", "error", err)
 				} else {
-					log.Println("Attribute cache refreshed and tools re-registered")
+					slog.Info("attribute cache refreshed and tools re-registered")
 				}
 			}
 			refreshCancel()
@@ -174,15 +175,11 @@ func main() {
 	}()
 
 	if cfg.HTTPMode {
-		// Create HTTP server using NewHTTPServer
 		httpServer := NewHTTPServer(server, cfg)
-
-		// Start the server
 		if err := httpServer.Start(); err != nil {
 			log.Fatalf("HTTP server error: %v", err)
 		}
 	} else {
-		// Start STDIO server (default)
 		log.Fatal(server.Serve(context.Background(), &mcp.StdioTransport{}))
 	}
 }
