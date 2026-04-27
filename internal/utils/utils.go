@@ -143,6 +143,11 @@ func MakePromInstantAPIQuery(ctx context.Context, client *http.Client, promql st
 }
 
 func MakePromRangeAPIQuery(ctx context.Context, client *http.Client, promql string, startTimeParam, endTimeParam int64, cfg models.Config) (*http.Response, error) {
+	// The Last9 PromQL HTTP endpoint treats `timestamp` as the END of the
+	// query window and runs Prometheus over [timestamp - window, timestamp]
+	// (this is also how MakePromInstantAPIQuery above uses endTimeParam as
+	// `timestamp`). Anchoring on startTimeParam shifts every range query
+	// backwards by exactly one window length.
 	promRangeParam := struct {
 		Query     string `json:"query"`
 		Timestamp int64  `json:"timestamp"`
@@ -152,7 +157,7 @@ func MakePromRangeAPIQuery(ctx context.Context, client *http.Client, promql stri
 		Password  string `json:"password"`
 	}{
 		Query:     promql,
-		Timestamp: startTimeParam,
+		Timestamp: endTimeParam,
 		Window:    endTimeParam - startTimeParam,
 		ReadURL:   cfg.PrometheusReadURL,
 		Username:  cfg.PrometheusUsername,
@@ -189,7 +194,7 @@ func MakePromLabelValuesAPIQuery(ctx context.Context, client *http.Client, label
 		Matches   []string `json:"matches"`
 	}{
 		Label:     label,
-		Timestamp: startTimeParam,
+		Timestamp: endTimeParam,
 		Window:    endTimeParam - startTimeParam,
 		ReadURL:   cfg.PrometheusReadURL,
 		Username:  cfg.PrometheusUsername,
@@ -222,7 +227,7 @@ func MakePromLabelsAPIQuery(ctx context.Context, client *http.Client, metric str
 		Password  string `json:"password"`
 		Metric    string `json:"metric"`
 	}{
-		Timestamp: startTimeParam,
+		Timestamp: endTimeParam,
 		Window:    endTimeParam - startTimeParam,
 		ReadURL:   cfg.PrometheusReadURL,
 		Username:  cfg.PrometheusUsername,
