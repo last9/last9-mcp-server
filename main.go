@@ -13,19 +13,21 @@ import (
 	"strconv"
 	"time"
 
-	"last9-mcp/internal/attributes"
-	"last9-mcp/internal/auth"
-	"last9-mcp/internal/models"
-	l9telemetry "last9-mcp/internal/telemetry"
-	"last9-mcp/internal/utils"
-
 	"github.com/joho/godotenv"
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/peterbourgon/ff/v3"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
+
+	"last9-mcp/internal/attributes"
+	"last9-mcp/internal/auth"
+	"last9-mcp/internal/models"
+	l9telemetry "last9-mcp/internal/telemetry"
+	"last9-mcp/internal/utils"
 )
 
 // Version information
@@ -104,11 +106,23 @@ func main() {
 		}
 	}
 
+	// Auth and API config must come before OTel init so tenant/cluster IDs
+	// are available as resource attributes on all spans and metrics.
+	tokenManager, err := auth.NewTokenManager(cfg.RefreshToken)
+	if err != nil {
+		log.Fatalf("failed to create token manager: %v", err)
+	}
+
+	cfg.TokenManager = tokenManager
+	if err := utils.PopulateAPICfg(&cfg); err != nil {
+		log.Fatalf("failed to refresh access token: %v", err)
+	}
+
 	if cfg.DisableTelemetry {
 		otel.SetMeterProvider(metricnoop.NewMeterProvider())
 		otel.SetTracerProvider(tracenoop.NewTracerProvider())
 	} else {
-		shutdown, err := l9telemetry.InitProviders(context.Background(), Version)
+		shutdown, err := l9telemetry.InitProviders(context.Background(), Version, cfg.OrgSlug, cfg.ClusterID)
 		if err != nil {
 			log.Fatalf("failed to init telemetry: %v", err)
 		}
@@ -128,16 +142,6 @@ func main() {
 		"version", Version,
 	)
 
-	tokenManager, err := auth.NewTokenManager(cfg.RefreshToken)
-	if err != nil {
-		log.Fatalf("failed to create token manager: %v", err)
-	}
-
-	cfg.TokenManager = tokenManager
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		log.Fatalf("failed to refresh access token: %v", err)
-	}
-
 	// Create attribute cache and perform best-effort initial fetch
 	attrCache := attributes.NewAttributeCache(auth.GetHTTPClient(), cfg)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -147,6 +151,29 @@ func main() {
 	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
 	if err != nil {
 		log.Fatalf("failed to create MCP server: %v", err)
+	}
+
+	if !cfg.DisableTelemetry {
+		meter := otel.GetMeterProvider().Meter("last9-mcp")
+		serverInfo, err := meter.Int64ObservableGauge(
+			"last9_mcp_server_info",
+			metric.WithDescription("MCP server version info; value is always 1, use labels for version tracking"),
+		)
+		if err != nil {
+			slog.Warn("failed to create server info gauge", "error", err)
+		} else if reg, err := meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+			o.ObserveInt64(serverInfo, 1,
+				metric.WithAttributes(
+					attribute.String("version", Version),
+					attribute.String("commit", CommitSHA),
+				),
+			)
+			return nil
+		}, serverInfo); err != nil {
+			slog.Warn("failed to register server info callback", "error", err)
+		} else {
+			defer reg.Unregister()
+		}
 	}
 
 	// Register all tools

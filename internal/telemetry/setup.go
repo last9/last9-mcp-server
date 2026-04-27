@@ -27,7 +27,7 @@ const mcpServiceName = "last9-mcp"
 // Exporters pick up OTEL_EXPORTER_OTLP_ENDPOINT / OTEL_EXPORTER_OTLP_HEADERS
 // from the environment automatically.
 // Returns a shutdown function that must be called on process exit to flush buffers.
-func InitProviders(ctx context.Context, version string) (func(context.Context) error, error) {
+func InitProviders(ctx context.Context, version, tenant, clusterID string) (func(context.Context) error, error) {
 	res, err := resource.New(ctx,
 		resource.WithFromEnv(),
 		resource.WithProcess(),
@@ -37,7 +37,8 @@ func InitProviders(ctx context.Context, version string) (func(context.Context) e
 			semconv.ServiceName(mcpServiceName),
 			semconv.ServiceVersion(version),
 			attribute.String("mcp.server.type", "golang"),
-			attribute.String("mcp.server.version", version),
+			attribute.String("last9.tenant", tenant),
+			attribute.String("last9.cluster_id", clusterID),
 		),
 	)
 	if err != nil && !errors.Is(err, resource.ErrPartialResource) {
