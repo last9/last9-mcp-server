@@ -166,8 +166,6 @@ func main() {
 				metric.WithAttributes(
 					attribute.String("version", Version),
 					attribute.String("commit", CommitSHA),
-					attribute.String("last9.tenant", cfg.OrgSlug),
-					attribute.String("last9.cluster_id", cfg.ClusterID),
 				),
 			)
 			return nil

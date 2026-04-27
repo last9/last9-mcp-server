@@ -123,6 +123,10 @@ jobs:
           VERSION=$(jq -r .version package.json)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      - name: Get build time
+        id: build_time
+        run: echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+
       - name: Extract branch name
         id: extract_branch
         run: |
@@ -165,6 +169,7 @@ jobs:
           build-args: |
             VERSION=${{ steps.get_version.outputs.version }}
             COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ steps.build_time.outputs.build_time }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
@@ -184,6 +189,7 @@ jobs:
           build-args: |
             VERSION=${{ needs.tag-and-release.outputs.new_version }}
             COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ steps.build_time.outputs.build_time }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
@@ -205,10 +211,12 @@ jobs:
           VERSION: ${{ steps.get_version.outputs.version }}
           COMMIT: ${{ github.sha }}
           BRANCH: ${{ steps.extract_branch.outputs.branch_name }}
+          BUILD_TIME: ${{ steps.build_time.outputs.build_time }}
         run: |
           docker build -f Dockerfile \
             --build-arg VERSION="${VERSION}" \
             --build-arg COMMIT="${COMMIT}" \
+            --build-arg BUILD_TIME="${BUILD_TIME}" \
             -t 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build .
           docker tag 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${BRANCH}
           docker tag 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${BRANCH}-v${VERSION}
@@ -220,10 +228,12 @@ jobs:
         env:
           VERSION: ${{ needs.tag-and-release.outputs.new_version }}
           COMMIT: ${{ github.sha }}
+          BUILD_TIME: ${{ steps.build_time.outputs.build_time }}
         run: |
           docker build -f Dockerfile \
             --build-arg VERSION="${VERSION}" \
             --build-arg COMMIT="${COMMIT}" \
+            --build-arg BUILD_TIME="${BUILD_TIME}" \
             -t 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build .
           for tag in v${VERSION} latest; do
             docker tag 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:$tag
