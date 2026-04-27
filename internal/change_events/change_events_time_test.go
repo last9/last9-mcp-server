@@ -98,9 +98,11 @@ func TestGetChangeEventsHandler_ExplicitRangePrecedence(t *testing.T) {
 		t.Fatalf("expected 2 upstream requests, got %d", len(captured))
 	}
 
+	// endTimeParam = "2026-02-09T16:04:05Z" = 1770653045
+	// window = endTimeParam - startTimeParam = 3600
 	for _, req := range captured {
-		if req.Timestamp != 1770649445 {
-			t.Fatalf("timestamp = %d, want %d", req.Timestamp, int64(1770649445))
+		if req.Timestamp != 1770653045 {
+			t.Fatalf("timestamp = %d, want %d (= endTimeParam)", req.Timestamp, int64(1770653045))
 		}
 		if req.Window != 3600 {
 			t.Fatalf("window = %d, want %d", req.Window, int64(3600))
