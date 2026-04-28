@@ -117,7 +117,21 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Get version from package.json
+        id: get_version
+        run: echo "version=$(jq -r .version package.json)" >> $GITHUB_OUTPUT
+
+      - name: Check if version already published
+        id: npm_check
+        run: |
+          if npm view @last9/mcp-server@${{ steps.get_version.outputs.version }} version 2>/dev/null | grep -qF "${{ steps.get_version.outputs.version }}"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Publish to npm
+        if: steps.npm_check.outputs.exists == 'false'
         run: npm publish --access public --provenance
 
   publish-docker:
