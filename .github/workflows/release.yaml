@@ -100,6 +100,26 @@ jobs:
             https://api.github.com/repos/last9/homebrew-tap/dispatches \
             -d '{"event_type":"update-last9-mcp","client_payload":{"tag":"v${{ steps.version_change.outputs.new_version }}"}}'
 
+  publish-npm:
+    needs: tag-and-release
+    if: needs.tag-and-release.outputs.version_changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Publish to npm
+        run: npm publish --access public --provenance
+
   publish-docker:
     needs: tag-and-release
     if: |
