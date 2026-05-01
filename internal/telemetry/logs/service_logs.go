@@ -50,6 +50,8 @@ Parameters:
 
 Returns a list of log entries with full details including message content, timestamps, severity, and attributes.
 
+- Call get_logging_services first to confirm the service is ingesting logs, get exact service_name
+  and env values, and obtain the physical_index to pass as the index parameter for faster queries.
 - If unsure of the service or env name, call "did_you_mean" first to find the correct spelling.`
 
 // ServiceLogsResponse represents the response structure for service logs
@@ -61,6 +63,7 @@ type ServiceLogsResponse struct {
 	Logs          []LogEntry `json:"logs"`
 	PartialResult bool       `json:"partial_result,omitempty"`
 	Warning       string     `json:"warning,omitempty"`
+	NextSteps     []string   `json:"next_steps,omitempty"`
 }
 
 // LogEntry represents a single log entry
@@ -128,8 +131,6 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			logjsonQuery = addServiceLogsEnvFilter(logjsonQuery, args.Env)
 		}
 
-		// Fetch raw logs using the existing logs API approach. When index is omitted,
-		// keep the query on the no-index path that matches the live dashboard/API.
 		logs, err := fetchServiceLogs(ctx, client, cfg, args.Service, startTime, endTime, limit, logjsonQuery, normalizedIndex)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
@@ -389,6 +390,9 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 	if partialErr != nil {
 		response.PartialResult = true
 		response.Warning = fmt.Sprintf("Returning partial results: %v", partialErr)
+	}
+	if len(logs) == 0 {
+		response.NextSteps = emptyLogsNextSteps(service)
 	}
 
 	return response, nil
