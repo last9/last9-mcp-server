@@ -24,17 +24,11 @@ func NewGetDropRulesHandler(client *http.Client, cfg models.Config) func(context
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetDropRulesArgs) (*mcp.CallToolResult, any, error) {
 		accessToken := cfg.TokenManager.GetAccessToken(ctx)
 
-		// Build request URL with query parameters
 		u, err := url.Parse(cfg.APIBaseURL + constants.EndpointLogsSettingsRouting)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to parse URL: %w", err)
 		}
 
-		q := u.Query()
-
-		u.RawQuery = q.Encode()
-
-		// Create request
 		httpReq, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create request: %w", err)
@@ -92,10 +86,8 @@ type AddDropRuleArgs struct {
 // NewAddDropRuleHandler creates a handler for adding new drop rules for logs
 func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, AddDropRuleArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args AddDropRuleArgs) (*mcp.CallToolResult, any, error) {
-		// First refresh the access token
 		accessToken := cfg.TokenManager.GetAccessToken(ctx)
 
-		// Build request URL
 		u, err := url.Parse(cfg.APIBaseURL + constants.EndpointLogsSettingsRouting)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to parse URL: %w", err)
