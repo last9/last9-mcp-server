@@ -25,7 +25,7 @@ func NewGetDropRulesHandler(client *http.Client, cfg models.Config) func(context
 		accessToken := cfg.TokenManager.GetAccessToken(ctx)
 
 		// Build request URL with query parameters
-		u, err := url.Parse(cfg.ActionURL + fmt.Sprintf(constants.EndpointLogsSettingsRouting, cfg.OrgSlug))
+		u, err := url.Parse(cfg.APIBaseURL + constants.EndpointLogsSettingsRouting)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to parse URL: %w", err)
 		}
@@ -96,7 +96,7 @@ func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(context.
 		accessToken := cfg.TokenManager.GetAccessToken(ctx)
 
 		// Build request URL
-		u, err := url.Parse(cfg.ActionURL + fmt.Sprintf(constants.EndpointLogsSettingsRouting, cfg.OrgSlug))
+		u, err := url.Parse(cfg.APIBaseURL + constants.EndpointLogsSettingsRouting)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to parse URL: %w", err)
 		}
