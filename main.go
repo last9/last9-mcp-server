@@ -115,7 +115,7 @@ func main() {
 
 	cfg.TokenManager = tokenManager
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		log.Fatalf("failed to refresh access token: %v", err)
+		log.Fatalf("failed to populate API config: %v", err)
 	}
 
 	if cfg.DisableTelemetry {

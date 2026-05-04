@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Default API host now derived from access token `aud` claim instead of hardcoded `app.last9.io`. Set `LAST9_API_HOST` to override.
+- Drop rule endpoints now use the unified API host (previously routed to token `aud` host independently).
+- `cfg.ActionURL` field retained for struct compatibility but no longer consumed internally.
+
+### Fixed
+- Startup `failed to refresh access token: ... 400 Bad Request` when token `aud` host did not match the hardcoded default. Error message also corrected to `failed to populate API config`.
+
 ## [0.6.0] - 2026-04-19
 
 ### Added
