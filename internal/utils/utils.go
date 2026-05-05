@@ -411,10 +411,16 @@ func PopulateAPICfg(cfg *models.Config) error {
 
 	client := last9mcp.WithHTTPTracing(&http.Client{Timeout: constants.DefaultHTTPTimeout})
 
-	// Use configured API host or default
 	apiHost := cfg.APIHost
 	if apiHost == "" {
-		apiHost = constants.APIBaseHost
+		audURL, parseErr := url.Parse(actionURL)
+		if parseErr != nil {
+			return fmt.Errorf("failed to derive API host from token aud: %w", parseErr)
+		}
+		if audURL.Host == "" {
+			return errors.New("failed to derive API host from token aud: empty host")
+		}
+		apiHost = audURL.Host
 	}
 	cfg.APIBaseURL = fmt.Sprintf("https://%s/api/v4/organizations/%s", apiHost, cfg.OrgSlug)
 	req, err := http.NewRequestWithContext(context.Background(), "GET", cfg.APIBaseURL+constants.EndpointDatasources, nil)
