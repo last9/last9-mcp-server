@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-05-05
+
 ### Changed
 
 - Default API host now derived from access token `aud` claim instead of hardcoded `app.last9.io`. Set `LAST9_API_HOST` to override.
@@ -16,6 +18,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Startup `failed to refresh access token: ... 400 Bad Request` when token `aud` host did not match the hardcoded default. Error message also corrected to `failed to populate API config`.
+
+## [0.7.0] - 2026-04-28
+
+### Added
+
+- `service.version` tracking and tenant identity across all deployments (#137).
+- Trace query reliability: input validation, structured schema, and service env filter (#123).
+
+### Fixed
+
+- PromQL range/labels queries now anchor on end time, not start time (#138).
+- `get_service_environments` filter uses correct `service_name` label (#133).
+- `add_drop_rule` HTTP request now includes context (#134).
+- `get_logs` rejects non-canonical filter shapes instead of silently dropping them (#131).
+
+### Changed
+
+- Upgraded `mcp-go-sdk` to v0.1.2 (#135).
+- Bumped OpenTelemetry log exporter dependencies (#136).
+- Automated `@last9/mcp-server` npm publish via OIDC trusted publishing (#139).
 
 ## [0.6.0] - 2026-04-19
 
@@ -92,6 +114,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Tool improvements (#51).
 
+[0.7.1]: https://github.com/last9/last9-mcp-server/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/last9/last9-mcp-server/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/last9/last9-mcp-server/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/last9/last9-mcp-server/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/last9/last9-mcp-server/compare/v0.4.0...v0.5.0
