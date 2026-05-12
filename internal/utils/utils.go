@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -272,50 +271,6 @@ func ConvertTimestamp(timestamp any) string {
 		// Fallback to current time if we can't parse
 		return time.Now().UTC().Format(time.RFC3339)
 	}
-}
-
-// FetchPhysicalIndex retrieves the physical index for logs queries using the provided service name and environment
-func FetchPhysicalIndex(ctx context.Context, client *http.Client, cfg models.Config, serviceName, env string) (string, error) {
-	query := fmt.Sprintf("sum by (name, destination) (physical_index_service_count{service_name='%s'", serviceName)
-	if env != "" {
-		query += fmt.Sprintf(",env=~'%s'", env)
-	}
-	query += "}[1d])"
-
-	currentTime := time.Now().Unix()
-	resp, err := MakePromInstantAPIQuery(ctx, client, query, currentTime, cfg)
-	if err != nil {
-		return "", fmt.Errorf("failed to fetch physical index: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("physical index API returned status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	// Parse the response to extract the first index
-	var physicalIndexResponse []struct {
-		Metric map[string]string `json:"metric"`
-		Value  []interface{}     `json:"value"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&physicalIndexResponse); err != nil {
-		return "", fmt.Errorf("failed to decode physical index response: %w", err)
-	}
-
-	if len(physicalIndexResponse) == 0 {
-		// Continue without index if it is not available
-		return "", nil
-	}
-
-	// Extract the index name from the first result
-	firstResult := physicalIndexResponse[0]
-
-	if indexName, exists := firstResult.Metric["name"]; exists {
-		return fmt.Sprintf("physical_index:%s", indexName), nil
-	}
-
-	return "", fmt.Errorf("no index name found in physical index response")
 }
 
 // MakeTracesJSONQueryAPI posts a raw trace JSON pipeline to the query_range API with the given time range
