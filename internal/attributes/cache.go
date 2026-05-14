@@ -70,15 +70,6 @@ func (c *AttributeCache) GetLogAttributes() []string {
 	return attrs
 }
 
-// GetTraceAttributes returns cached trace attribute names.
-func (c *AttributeCache) GetTraceAttributes() []string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	attrs := make([]string, len(c.traceAttrs))
-	copy(attrs, c.traceAttrs)
-	return attrs
-}
-
 // IsStale returns true if the cache is older than the TTL.
 func (c *AttributeCache) IsStale() bool {
 	c.mu.RLock()

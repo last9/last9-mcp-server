@@ -10,16 +10,15 @@ import (
 
 // Route constants matching dashboard routes
 const (
-	RouteLogs                = "logs"
-	RouteTraces              = "traces"
-	RouteExceptions          = "exceptions"
-	RouteServiceCatalog      = "service-catalog"
-	RouteDatabases           = "databases"
+	RouteLogs                 = "logs"
+	RouteTraces               = "traces"
+	RouteExceptions           = "exceptions"
+	RouteServiceCatalog       = "service-catalog"
+	RouteDatabases            = "databases"
 	RouteAlerting             = "alerting/monitor"
 	RouteAlertingGroups       = "alerting/groups"
 	RouteNotificationChannels = "settings/notification-channels"
 	RouteDropRules            = "control-plane/%s/drop" // requires clusterId
-	RouteCompassEntityHealth = "compass/entities/%s/health"
 )
 
 // Builder helps construct deep links
@@ -86,26 +85,6 @@ func (b *Builder) BuildExceptionsLink(fromMs, toMs int64) string {
 	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteExceptions, params.Encode())
 }
 
-// BuildServiceCatalogLink creates a service catalog dashboard deep link
-func (b *Builder) BuildServiceCatalogLink(fromMs, toMs int64, serviceName, env, tab string) string {
-	params := url.Values{}
-	params.Set("from", fmt.Sprintf("%d", fromMs/1000))
-	params.Set("to", fmt.Sprintf("%d", toMs/1000))
-	if b.clusterID != "" {
-		params.Set("cluster", b.clusterID)
-	}
-	if serviceName != "" {
-		params.Set("current_service_detail", serviceName)
-	}
-	if env != "" && env != ".*" {
-		params.Set("deployment_environment", env)
-	}
-	if tab != "" {
-		params.Set("activeServicePanelTab", tab)
-	}
-	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteServiceCatalog, params.Encode())
-}
-
 // BuildAlertingLink creates an alerting dashboard deep link
 func (b *Builder) BuildAlertingLink(fromMs, toMs int64, severity, ruleID string) string {
 	params := url.Values{}
@@ -131,19 +110,6 @@ func (b *Builder) BuildDropRulesLink() string {
 		clusterID = "default"
 	}
 	route := fmt.Sprintf(RouteDropRules, url.PathEscape(clusterID))
-	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, route)
-}
-
-// BuildCompassEntityHealthLink creates a compass entity health page deep link
-func (b *Builder) BuildCompassEntityHealthLink(entityID, ruleName string) string {
-	route := fmt.Sprintf(RouteCompassEntityHealth, url.PathEscape(entityID))
-	params := url.Values{}
-	if ruleName != "" {
-		params.Set("rule_name", ruleName)
-	}
-	if len(params) > 0 {
-		return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, route, params.Encode())
-	}
 	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, route)
 }
 
