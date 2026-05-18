@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- MCP tools for dashboard CRUD: `list_dashboards`, `get_dashboard`, `create_dashboard`, `update_dashboard`, `delete_dashboard`.
+- `list_dashboard_templates` — lists embedded dashboard templates with required knob keys.
+- `create_dashboard_from_template` — renders a template with caller-supplied knobs and POSTs to `/dashboards/`. Ships `k8s-rightsizing` (K8s CPU/Memory Rightsizing) as the v1 template.
+
 ## [0.7.1] - 2026-05-05
 
 ### Changed

@@ -3,7 +3,10 @@ package utils
 import (
 	"os"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/joho/godotenv"
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
@@ -11,13 +14,30 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+var loadTestEnvOnce sync.Once
+
+func loadTestEnv() {
+	loadTestEnvOnce.Do(func() {
+		_ = godotenv.Load()
+	})
+}
+
+func resolveTestRefreshToken() string {
+	loadTestEnv()
+	if t := os.Getenv("TEST_REFRESH_TOKEN"); t != "" {
+		return t
+	}
+	return os.Getenv("LAST9_REFRESH_TOKEN")
+}
+
 // SetupTestConfig creates and initializes a test configuration.
-// It automatically reads TEST_REFRESH_TOKEN and TEST_DATASOURCE from environment variables.
-// Returns an error if TEST_REFRESH_TOKEN is not set or if PopulateAPICfg fails.
+// It loads .env (if present), then reads TEST_REFRESH_TOKEN or LAST9_REFRESH_TOKEN,
+// and TEST_DATASOURCE from environment variables.
+// Returns an error if no refresh token is set or if PopulateAPICfg fails.
 func SetupTestConfig() (*models.Config, error) {
-	testRefreshToken := os.Getenv("TEST_REFRESH_TOKEN")
+	testRefreshToken := resolveTestRefreshToken()
 	if testRefreshToken == "" {
-		return nil, &TestConfigError{Message: "TEST_REFRESH_TOKEN not set"}
+		return nil, &TestConfigError{Message: "TEST_REFRESH_TOKEN or LAST9_REFRESH_TOKEN not set"}
 	}
 
 	cfg := models.Config{

@@ -1,0 +1,60 @@
+{
+  "dashboard": {
+    "name": "{{.DASHBOARD_NAME}}",
+    "time": {
+      "relative_time": {{.WINDOW}}
+    },
+    "variables": [
+      {
+        "display_name": "Namespace",
+        "target": "namespace",
+        "type": "label",
+        "source": "namespace",
+        "matches": [
+          "kube_pod_container_resource_requests{namespace=~\"{{.NAMESPACES}}\"}"
+        ],
+        "multiple": true,
+        "current_values": [".*"]
+      },
+      {
+        "display_name": "Cluster",
+        "target": "cluster",
+        "type": "label",
+        "source": "cluster",
+        "matches": [
+          "container_cpu_usage_seconds_total{cluster=~\"{{.CLUSTERS}}\"}"
+        ],
+        "multiple": true,
+        "current_values": [".*"]
+      }
+    ],
+    "panels": [
+      {
+        "name": "CPU — sum 5m rate by namespace (uses $namespace, $cluster variables)",
+        "version": 1,
+        "layout": { "x": 0, "y": 0, "w": 24, "h": 8 },
+        "visualization": {
+          "type": "timeseries",
+          "full_width": false,
+          "timeseries_config": { "display_type": "line" }
+        },
+        "queries": [
+          {
+            "name": "A",
+            "type": "range",
+            "expr": "sum by (namespace) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\",cluster=~\"$cluster\"}[5m]))",
+            "telemetry": "metrics",
+            "query_type": "promql",
+            "legend": { "type": "auto", "value": "" },
+            "legend_placement": "bottom"
+          }
+        ]
+      }
+    ]
+  },
+  "metadata": {
+    "_category": "custom",
+    "_type": "metrics",
+    "tags": ["rightsizing", "k8s"]
+  }
+}

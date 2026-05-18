@@ -1,0 +1,53 @@
+id: k8s-rightsizing
+display_name: K8s CPU/Memory Rightsizing
+intent_tags: [rightsizing, k8s, capacity, cost]
+description: |
+  p95/p50-style CPU + memory usage trends vs capacity signals by pod/deployment/namespace.
+  Timeseries-first; heavy tabular rightsizing belongs in Last9 Kubernetes UI.
+
+required_inventory:
+  metrics:
+    - container_cpu_usage_seconds_total
+    - container_memory_working_set_bytes
+    - kube_pod_container_resource_requests
+  labels_must_exist:
+    - namespace
+    - pod
+    - container
+    - resource
+
+inventory_queries:
+  namespaces:
+    mcp_tool: prometheus_label_values
+    args:
+      label: namespace
+      match_query: kube_pod_container_resource_requests
+  clusters:
+    mcp_tool: prometheus_label_values
+    args:
+      label: cluster
+      match_query: container_cpu_usage_seconds_total
+
+knobs:
+  - id: scope
+    prompt: "Filter scope?"
+    type: enum
+    options: [namespace, deployment, pod]
+    default: deployment
+  - id: percentiles
+    prompt: "Which percentiles (for UI guidance / naming — expressions stay rate-based)?"
+    type: multi
+    options: [p50, p95, p99]
+    default: [p50, p95]
+  - id: window
+    prompt: "Default dashboard lookback (relative_time minutes)?"
+    type: string
+    default: "360"
+
+placeholders:
+  - DASHBOARD_NAME
+  - REGION
+  - NAMESPACES
+  - CLUSTERS
+  - SCOPE
+  - WINDOW

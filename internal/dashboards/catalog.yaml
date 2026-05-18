@@ -1,0 +1,9 @@
+templates:
+  - id: k8s-rightsizing
+    display_name: K8s CPU/Memory Rightsizing
+    platform: kubernetes
+    required_knobs:
+      - DASHBOARD_NAME
+      - NAMESPACES
+      - CLUSTERS
+      - WINDOW

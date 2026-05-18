@@ -19,7 +19,8 @@ const (
 	RouteAlertingGroups       = "alerting/groups"
 	RouteNotificationChannels = "settings/notification-channels"
 	RouteDropRules            = "control-plane/%s/drop" // requires clusterId
-	RouteCompassEntityHealth = "compass/entities/%s/health"
+	RouteCompassEntityHealth  = "compass/entities/%s/health"
+	RouteDashboards           = "dashboards"
 )
 
 // Builder helps construct deep links
@@ -184,6 +185,16 @@ func (b *Builder) BuildAlertingGroupsLink() string {
 // BuildNotificationChannelsLink creates a deep link to the notification channels settings page
 func (b *Builder) BuildNotificationChannelsLink() string {
 	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, RouteNotificationChannels)
+}
+
+// BuildDashboardsIndexLink creates a deep link to the custom dashboards list in the Last9 UI.
+func (b *Builder) BuildDashboardsIndexLink() string {
+	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, RouteDashboards)
+}
+
+// BuildDashboardLink creates a deep link to a single custom dashboard by ID.
+func (b *Builder) BuildDashboardLink(dashboardID string) string {
+	return fmt.Sprintf("/v2/organizations/%s/%s/%s", b.orgSlug, RouteDashboards, url.PathEscape(dashboardID))
 }
 
 // ToMeta converts a dashboard URL to MCP Meta format
