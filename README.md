@@ -279,6 +279,14 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_alerts`** — Currently firing alerts within a time window
 - **`get_notification_channels`** — Configured notification channels (Slack, PagerDuty, email, etc.)
 
+### Custom Dashboards
+
+- **`list_dashboards`** — All custom dashboards in your org: IDs, names, and metadata
+- **`get_dashboard`** — Full dashboard definition by ID, including panels and queries
+- **`create_dashboard`** — Create a new custom dashboard with panels, queries, and metadata
+- **`update_dashboard`** — Update an existing dashboard by ID (readonly system dashboards return an error)
+- **`delete_dashboard`** — Delete a custom dashboard by ID
+
 ### Fuzzy Name Resolution
 
 - **`did_you_mean`** — When the agent isn't sure about an entity name, this returns the closest matches from your catalog (services, environments, hosts, databases, K8s deployments/namespaces, jobs). Up to 3 suggestions with similarity scores. The server calls this automatically before most tools when a name lookup returns empty.
