@@ -8,7 +8,7 @@ import (
 )
 
 func validateID(id string) error {
-	if id == "" {
+	if strings.TrimSpace(id) == "" {
 		return errors.New("id is required")
 	}
 	return nil
@@ -20,6 +20,10 @@ func validateDashboardRequest(dashboard json.RawMessage) error {
 	}
 	if !json.Valid(dashboard) {
 		return errors.New("dashboard must be valid JSON")
+	}
+	trimmed := strings.TrimSpace(string(dashboard))
+	if trimmed == "null" || (len(trimmed) > 0 && trimmed[0] != '{') {
+		return errors.New("dashboard must be a JSON object")
 	}
 	return nil
 }

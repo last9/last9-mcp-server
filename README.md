@@ -592,6 +592,30 @@ No parameters. Returns all configured notification channels (Slack, PagerDuty, e
 
 Returns up to 3 closest matches with similarity scores. Use this before any tool call where the entity name is uncertain. If a previous call returned empty results, try this before retrying.
 
+### list_dashboards
+
+No parameters. Returns all custom dashboards in the org as a JSON array with `id`, `name`, and metadata.
+
+### get_dashboard
+
+- `id` (string, required): Dashboard UUID.
+- `region` (string, optional): Region for panel query population. Defaults to configured datasource region.
+
+### create_dashboard
+
+- `dashboard` (object, required): Dashboard definition with `name` and `panels[]`. Each panel requires `name`, `version`, `layout` (`x`, `y`, `w`, `h`), `visualization.type`, and `queries[]`.
+- `metadata` (object, optional): Dashboard metadata — `_category` and `_type` fields (e.g. `{"_category":"custom","_type":"metrics"}`).
+
+### update_dashboard
+
+- `id` (string, required): Dashboard UUID to update.
+- `dashboard` (object, required): Full replacement dashboard body (same shape as create).
+- `metadata` (object, optional): Replacement metadata. Readonly system dashboards return a 403 error.
+
+### delete_dashboard
+
+- `id` (string, required): Dashboard UUID to delete. Readonly system dashboards cannot be deleted.
+
 </details>
 
 ---

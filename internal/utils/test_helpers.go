@@ -85,6 +85,9 @@ func SetupTestConfigOrSkip(t *testing.T) *models.Config {
 // Falls back to fallback if the env var is not set (allows the caller to proceed with reduced permissions).
 func SetupTestConfigWithTokenOrSkip(t *testing.T, envVar string, fallback *models.Config) *models.Config {
 	t.Helper()
+	if fallback == nil {
+		t.Fatalf("fallback config must not be nil")
+	}
 	loadTestEnv()
 	token := os.Getenv(envVar)
 	if token == "" {

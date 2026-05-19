@@ -14,6 +14,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+const integrationTestTimeout = 30 * time.Second
+
 func minimalDashboardPayload(name string) (dashboard, metadata json.RawMessage) {
 	dashboard = json.RawMessage(fmt.Sprintf(`{
 		"name": %q,
@@ -40,7 +42,9 @@ func TestListDashboardsHandler_Integration(t *testing.T) {
 	cfg := utils.SetupTestConfigOrSkip(t)
 	handler := NewListDashboardsHandler(http.DefaultClient, *cfg)
 
-	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ListDashboardsArgs{})
+	ctx, cancel := context.WithTimeout(context.Background(), integrationTestTimeout)
+	defer cancel()
+	result, _, err := handler(ctx, &mcp.CallToolRequest{}, ListDashboardsArgs{})
 	if utils.CheckAPIError(t, err) {
 		return
 	}
@@ -64,7 +68,9 @@ func TestGetDashboardHandler_Integration(t *testing.T) {
 	cfg := utils.SetupTestConfigOrSkip(t)
 	client := http.DefaultClient
 
-	listResult, _, err := NewListDashboardsHandler(client, *cfg)(context.Background(), &mcp.CallToolRequest{}, ListDashboardsArgs{})
+	ctx, cancel := context.WithTimeout(context.Background(), integrationTestTimeout)
+	defer cancel()
+	listResult, _, err := NewListDashboardsHandler(client, *cfg)(ctx, &mcp.CallToolRequest{}, ListDashboardsArgs{})
 	if utils.CheckAPIError(t, err) {
 		return
 	}
@@ -86,7 +92,7 @@ func TestGetDashboardHandler_Integration(t *testing.T) {
 	}
 
 	getHandler := NewGetDashboardHandler(client, *cfg)
-	result, _, err := getHandler(context.Background(), &mcp.CallToolRequest{}, GetDashboardArgs{ID: dashboardID})
+	result, _, err := getHandler(ctx, &mcp.CallToolRequest{}, GetDashboardArgs{ID: dashboardID})
 	if utils.CheckAPIError(t, err) {
 		return
 	}
@@ -117,9 +123,10 @@ func TestDashboardCRUD_Integration(t *testing.T) {
 	cfg := utils.SetupTestConfigOrSkip(t)
 	deleteCfg := utils.SetupTestConfigWithTokenOrSkip(t, "LAST9_DELETE_TOKEN", cfg)
 	client := http.DefaultClient
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), integrationTestTimeout)
+	defer cancel()
 
-	suffix := time.Now().Unix()
+	suffix := time.Now().UnixNano()
 	createName := fmt.Sprintf("mcp-e2e-%d", suffix)
 	updateName := createName + "-updated"
 
