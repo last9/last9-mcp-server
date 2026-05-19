@@ -2,12 +2,11 @@ package dashboards
 
 import (
 	"last9-mcp/internal/deeplink"
-	"last9-mcp/internal/models"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func textResultWithDashboardLink(cfg models.Config, body []byte, fallbackDashboardID string) *mcp.CallToolResult {
+func textResultWithDashboardLink(dlBuilder *deeplink.Builder, body []byte, fallbackDashboardID string) *mcp.CallToolResult {
 	dashboardID := dashboardIDFromResponse(body)
 	if dashboardID == "" {
 		dashboardID = fallbackDashboardID
@@ -19,7 +18,6 @@ func textResultWithDashboardLink(cfg models.Config, body []byte, fallbackDashboa
 		},
 	}
 	if dashboardID != "" {
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 		result.Meta = deeplink.ToMeta(dlBuilder.BuildDashboardLink(dashboardID))
 	}
 	return result

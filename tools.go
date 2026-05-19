@@ -212,6 +212,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Description: suggest.DidYouMeanDescription,
 	}, suggest.NewDidYouMeanHandler(client, cfg))
 
+	// Register dashboard tools
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "list_dashboards",
 		Description: dashboards.ListDashboardsDescription,

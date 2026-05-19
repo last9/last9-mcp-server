@@ -14,6 +14,7 @@ import (
 type ListDashboardsArgs struct{}
 
 func NewListDashboardsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ListDashboardsArgs) (*mcp.CallToolResult, any, error) {
+	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	return func(ctx context.Context, _ *mcp.CallToolRequest, _ ListDashboardsArgs) (*mcp.CallToolResult, any, error) {
 		u := cfg.APIBaseURL + constants.EndpointDashboards
 		body, _, err := doJSONRequest(ctx, client, cfg, http.MethodGet, u, nil)
@@ -21,7 +22,6 @@ func NewListDashboardsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, err
 		}
 
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dlBuilder.BuildDashboardsIndexLink()),
 			Content: []mcp.Content{
