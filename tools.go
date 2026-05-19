@@ -237,15 +237,5 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Description: dashboards.DeleteDashboardDescription,
 	}, dashboards.NewDeleteDashboardHandler(client, cfg))
 
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
-		Name:        "list_dashboard_templates",
-		Description: dashboards.ListDashboardTemplatesDescription,
-	}, dashboards.NewListDashboardTemplatesHandler())
-
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
-		Name:        "create_dashboard_from_template",
-		Description: dashboards.CreateDashboardFromTemplateDescription,
-	}, dashboards.NewCreateDashboardFromTemplateHandler(client, cfg))
-
 	return nil
 }
