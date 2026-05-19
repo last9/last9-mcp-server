@@ -135,6 +135,12 @@ func TestDashboardCRUD_Integration(t *testing.T) {
 	if dashboardID == "" {
 		t.Fatalf("create response missing dashboard.id: %s", createText)
 	}
+
+	wantCreateRef := "/v2/organizations/" + cfg.OrgSlug + "/dashboards/" + dashboardID
+	if createRef, ok := createResult.Meta["reference_url"].(string); !ok || createRef != wantCreateRef {
+		t.Fatalf("create reference_url %q want %q", createResult.Meta["reference_url"], wantCreateRef)
+	}
+
 	t.Cleanup(func() {
 		_, _, _ = NewDeleteDashboardHandler(client, *cfg)(ctx, &mcp.CallToolRequest{}, DeleteDashboardArgs{ID: dashboardID})
 	})
@@ -167,9 +173,14 @@ func TestDashboardCRUD_Integration(t *testing.T) {
 		t.Fatalf("name %q want %q", got.Dashboard.Name, updateName)
 	}
 
-	_, _, err = NewDeleteDashboardHandler(client, *cfg)(ctx, &mcp.CallToolRequest{}, DeleteDashboardArgs{ID: dashboardID})
+	deleteResult, _, err := NewDeleteDashboardHandler(client, *cfg)(ctx, &mcp.CallToolRequest{}, DeleteDashboardArgs{ID: dashboardID})
 	if utils.CheckAPIError(t, err) {
 		return
+	}
+
+	wantDeleteRef := "/v2/organizations/" + cfg.OrgSlug + "/dashboards"
+	if deleteRef, ok := deleteResult.Meta["reference_url"].(string); !ok || deleteRef != wantDeleteRef {
+		t.Fatalf("delete reference_url %q want %q", deleteResult.Meta["reference_url"], wantDeleteRef)
 	}
 
 	_, _, err = NewGetDashboardHandler(client, *cfg)(ctx, &mcp.CallToolRequest{}, GetDashboardArgs{ID: dashboardID})
