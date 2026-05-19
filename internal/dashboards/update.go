@@ -2,8 +2,6 @@ package dashboards
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -18,14 +16,14 @@ import (
 func NewUpdateDashboardHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, UpdateDashboardArgs) (*mcp.CallToolResult, any, error) {
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args UpdateDashboardArgs) (*mcp.CallToolResult, any, error) {
-		if args.ID == "" {
-			return nil, nil, errors.New("id is required")
+		if err := validateID(args.ID); err != nil {
+			return nil, nil, err
 		}
 		if err := validateDashboardRequest(args.Dashboard); err != nil {
 			return nil, nil, err
 		}
-		if len(args.Metadata) > 0 && !json.Valid(args.Metadata) {
-			return nil, nil, errors.New("metadata must be valid JSON")
+		if err := validateMetadata(args.Metadata); err != nil {
+			return nil, nil, err
 		}
 
 		payload, err := marshalDashboardRequest(args.DashboardRequest)

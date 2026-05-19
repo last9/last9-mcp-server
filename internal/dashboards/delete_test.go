@@ -19,7 +19,7 @@ func TestDeleteDashboardHandler_DELETESByID(t *testing.T) {
 	defer srv.Close()
 
 	handler := NewDeleteDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
-	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, DeleteDashboardArgs{ID: "uuid-1"})
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, DeleteDashboardArgs{ID: "uuid-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,6 +28,10 @@ func TestDeleteDashboardHandler_DELETESByID(t *testing.T) {
 	}
 	if capturedPath != "/dashboards/uuid-1" {
 		t.Fatalf("path %s", capturedPath)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	if text != `{"deleted":true,"id":"uuid-1"}` {
+		t.Fatalf("synthesized body %q", text)
 	}
 }
 

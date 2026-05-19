@@ -2,8 +2,6 @@ package dashboards
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"net/http"
 
 	"last9-mcp/internal/constants"
@@ -19,8 +17,8 @@ func NewCreateDashboardHandler(client *http.Client, cfg models.Config) func(cont
 		if err := validateDashboardRequest(args.Dashboard); err != nil {
 			return nil, nil, err
 		}
-		if len(args.Metadata) > 0 && !json.Valid(args.Metadata) {
-			return nil, nil, errors.New("metadata must be valid JSON")
+		if err := validateMetadata(args.Metadata); err != nil {
+			return nil, nil, err
 		}
 
 		payload, err := marshalDashboardRequest(args.DashboardRequest)

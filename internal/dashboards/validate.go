@@ -7,12 +7,26 @@ import (
 	"strings"
 )
 
+func validateID(id string) error {
+	if id == "" {
+		return errors.New("id is required")
+	}
+	return nil
+}
+
 func validateDashboardRequest(dashboard json.RawMessage) error {
 	if len(dashboard) == 0 {
 		return errors.New("dashboard is required")
 	}
 	if !json.Valid(dashboard) {
 		return errors.New("dashboard must be valid JSON")
+	}
+	return nil
+}
+
+func validateMetadata(metadata json.RawMessage) error {
+	if len(metadata) > 0 && !json.Valid(metadata) {
+		return errors.New("metadata must be valid JSON")
 	}
 	return nil
 }

@@ -32,8 +32,8 @@ func resolveRegion(cfg models.Config, arg string) (string, error) {
 func NewGetDashboardHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetDashboardArgs) (*mcp.CallToolResult, any, error) {
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args GetDashboardArgs) (*mcp.CallToolResult, any, error) {
-		if args.ID == "" {
-			return nil, nil, errors.New("id is required")
+		if err := validateID(args.ID); err != nil {
+			return nil, nil, err
 		}
 
 		region, err := resolveRegion(cfg, args.Region)
@@ -46,7 +46,7 @@ func NewGetDashboardHandler(client *http.Client, cfg models.Config) func(context
 
 		body, _, err := doJSONRequest(ctx, client, cfg, http.MethodGet, u, nil)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, mapDashboardAPIError(err)
 		}
 
 		return textResultWithDashboardLink(dlBuilder, body, args.ID), nil, nil

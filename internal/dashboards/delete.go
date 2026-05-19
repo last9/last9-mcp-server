@@ -2,7 +2,6 @@ package dashboards
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -16,8 +15,8 @@ import (
 
 func NewDeleteDashboardHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, DeleteDashboardArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args DeleteDashboardArgs) (*mcp.CallToolResult, any, error) {
-		if args.ID == "" {
-			return nil, nil, errors.New("id is required")
+		if err := validateID(args.ID); err != nil {
+			return nil, nil, err
 		}
 
 		path := fmt.Sprintf(constants.EndpointDashboardByID, url.PathEscape(args.ID))

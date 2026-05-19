@@ -10,6 +10,42 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+func TestUpdateDashboardHandler_RequiresID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("server should not be called")
+	}))
+	defer srv.Close()
+
+	dash := json.RawMessage(`{"name":"x","panels":[]}`)
+	handler := NewUpdateDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, UpdateDashboardArgs{
+		DashboardRequest: DashboardRequest{Dashboard: dash},
+	})
+	if err == nil {
+		t.Fatal("expected validation error for empty ID")
+	}
+}
+
+func TestUpdateDashboardHandler_InvalidMetadata(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("server should not be called")
+	}))
+	defer srv.Close()
+
+	dash := json.RawMessage(`{"name":"x","panels":[]}`)
+	handler := NewUpdateDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, UpdateDashboardArgs{
+		ID: "uuid-1",
+		DashboardRequest: DashboardRequest{
+			Dashboard: dash,
+			Metadata:  json.RawMessage(`not-json`),
+		},
+	})
+	if err == nil {
+		t.Fatal("expected validation error for invalid metadata")
+	}
+}
+
 func TestUpdateDashboardHandler_PUTsToID(t *testing.T) {
 	var capturedMethod, capturedPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
