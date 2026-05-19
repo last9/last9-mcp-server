@@ -115,6 +115,7 @@ func TestGetDashboardHandler_Integration(t *testing.T) {
 
 func TestDashboardCRUD_Integration(t *testing.T) {
 	cfg := utils.SetupTestConfigOrSkip(t)
+	deleteCfg := utils.SetupTestConfigWithTokenOrSkip(t, "LAST9_DELETE_TOKEN", cfg)
 	client := http.DefaultClient
 	ctx := context.Background()
 
@@ -142,7 +143,7 @@ func TestDashboardCRUD_Integration(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		_, _, _ = NewDeleteDashboardHandler(client, *cfg)(ctx, &mcp.CallToolRequest{}, DeleteDashboardArgs{ID: dashboardID})
+		_, _, _ = NewDeleteDashboardHandler(client, *deleteCfg)(ctx, &mcp.CallToolRequest{}, DeleteDashboardArgs{ID: dashboardID})
 	})
 
 	updateDash, _ := minimalDashboardPayload(updateName)
@@ -173,7 +174,7 @@ func TestDashboardCRUD_Integration(t *testing.T) {
 		t.Fatalf("name %q want %q", got.Dashboard.Name, updateName)
 	}
 
-	deleteResult, _, err := NewDeleteDashboardHandler(client, *cfg)(ctx, &mcp.CallToolRequest{}, DeleteDashboardArgs{ID: dashboardID})
+	deleteResult, _, err := NewDeleteDashboardHandler(client, *deleteCfg)(ctx, &mcp.CallToolRequest{}, DeleteDashboardArgs{ID: dashboardID})
 	if utils.CheckAPIError(t, err) {
 		return
 	}

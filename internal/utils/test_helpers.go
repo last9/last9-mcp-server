@@ -81,6 +81,31 @@ func SetupTestConfigOrSkip(t *testing.T) *models.Config {
 	return cfg
 }
 
+// SetupTestConfigWithTokenOrSkip builds a config using the given env var as the refresh token.
+// Falls back to fallback if the env var is not set (allows the caller to proceed with reduced permissions).
+func SetupTestConfigWithTokenOrSkip(t *testing.T, envVar string, fallback *models.Config) *models.Config {
+	t.Helper()
+	loadTestEnv()
+	token := os.Getenv(envVar)
+	if token == "" {
+		t.Logf("%s not set; using default token (some operations may be permission-limited)", envVar)
+		return fallback
+	}
+	cfg := models.Config{
+		RefreshToken:   token,
+		DatasourceName: fallback.DatasourceName,
+	}
+	tokenManager, err := auth.NewTokenManager(token)
+	if err != nil {
+		t.Fatalf("failed to create token manager from %s: %v", envVar, err)
+	}
+	cfg.TokenManager = tokenManager
+	if err := PopulateAPICfg(&cfg); err != nil {
+		t.Fatalf("failed to populate API config from %s: %v", envVar, err)
+	}
+	return &cfg
+}
+
 // CheckAPIError checks if an error is an API error (502, 500, etc.) and fails the test if so.
 // For non-API errors, it logs a warning and returns true to indicate the test should return early.
 // Returns false if there's no error and the test should continue.
