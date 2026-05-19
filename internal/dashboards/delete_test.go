@@ -33,6 +33,10 @@ func TestDeleteDashboardHandler_DELETESByID(t *testing.T) {
 	if text != `{"deleted":true,"id":"uuid-1"}` {
 		t.Fatalf("synthesized body %q", text)
 	}
+	refURL, ok := result.Meta["reference_url"].(string)
+	if !ok || refURL != "/v2/organizations/test-org/dashboards" {
+		t.Fatalf("reference_url %q", refURL)
+	}
 }
 
 func TestDeleteDashboardHandler_RequiresID(t *testing.T) {
