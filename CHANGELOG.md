@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - MCP tools for dashboard CRUD: `list_dashboards`, `get_dashboard`, `create_dashboard`, `update_dashboard`, `delete_dashboard`.
+- Dashboard tools return a `reference_url` in the MCP metadata pointing directly to the dashboard in the Last9 UI.
 
 ## [0.7.1] - 2026-05-05
 

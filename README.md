@@ -295,7 +295,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 ## How It Works
 
-**Deep links on every response.** Every tool returns a `deep_link` field — a direct URL into the Last9 dashboard for that exact query and time range. The agent can hand you the link; you click it; you're there.
+**Deep links on every response.** Most tools return a `reference_url` field in the MCP metadata — a direct URL into the Last9 dashboard for that exact query and time range. The agent can hand you the link; you click it; you're there.
 
 **Live attribute caching.** At startup, the server fetches the actual log and trace attribute names from your data and embeds them into tool descriptions. This means the AI assistant knows what fields exist in your schema, not just a generic list. The cache refreshes every 2 hours.
 
