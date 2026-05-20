@@ -8,6 +8,7 @@ import (
 	"last9-mcp/internal/attributes"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/change_events"
+	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/suggest"
@@ -210,6 +211,32 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Name:        "did_you_mean",
 		Description: suggest.DidYouMeanDescription,
 	}, suggest.NewDidYouMeanHandler(client, cfg))
+
+	// Register dashboard tools
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "list_dashboards",
+		Description: dashboards.ListDashboardsDescription,
+	}, dashboards.NewListDashboardsHandler(client, cfg))
+
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_dashboard",
+		Description: dashboards.GetDashboardDescription,
+	}, dashboards.NewGetDashboardHandler(client, cfg))
+
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "create_dashboard",
+		Description: dashboards.CreateDashboardDescription,
+	}, dashboards.NewCreateDashboardHandler(client, cfg))
+
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "update_dashboard",
+		Description: dashboards.UpdateDashboardDescription,
+	}, dashboards.NewUpdateDashboardHandler(client, cfg))
+
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "delete_dashboard",
+		Description: dashboards.DeleteDashboardDescription,
+	}, dashboards.NewDeleteDashboardHandler(client, cfg))
 
 	return nil
 }

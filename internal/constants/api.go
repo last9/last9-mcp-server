@@ -30,6 +30,10 @@ const (
 	// EndpointSuggest returns fuzzy entity-name suggestions for the did_you_mean tool.
 	EndpointSuggest = "/suggest"
 
+	// Dashboard API endpoints (v4)
+	EndpointDashboards    = "/dashboards"
+	EndpointDashboardByID = "/dashboards/%s" // fmt with id; GET requires ?region=
+
 	// DefaultHTTPTimeout is the fixed timeout used for outbound API calls and HTTP server read/write operations.
 	DefaultHTTPTimeout = 3 * time.Minute
 )
