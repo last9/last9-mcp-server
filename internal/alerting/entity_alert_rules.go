@@ -109,10 +109,12 @@ func fetchEntityAlertRules(
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	var rules AlertConfigResponse
-	if err := json.Unmarshal(body, &rules); err != nil {
+	var wrapper struct {
+		Rules AlertConfigResponse `json:"rules"`
+	}
+	if err := json.Unmarshal(body, &wrapper); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return rules, nil
+	return wrapper.Rules, nil
 }

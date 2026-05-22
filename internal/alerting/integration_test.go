@@ -27,6 +27,7 @@ func TestGetAlertConfigHandler_Integration_Basic(t *testing.T) {
 	}
 
 	text := utils.GetTextContent(t, result)
+	t.Logf("response:\n%s", text)
 
 	if !strings.Contains(text, "Found") {
 		t.Fatalf("expected 'Found N alert rules' in response, got:\n%s", text)
@@ -59,6 +60,7 @@ func TestGetAlertConfigHandler_Integration_KPIResolution(t *testing.T) {
 	}
 
 	text := utils.GetTextContent(t, result)
+	t.Logf("response:\n%s", text)
 
 	if strings.Contains(text, "Found 0 alert rules") {
 		t.Skip("no alert rules in org; skipping KPI resolution assertions")
@@ -76,18 +78,8 @@ func TestGetAlertConfigHandler_Integration_KPIResolution(t *testing.T) {
 	// lookup failure note — never a silent empty field.
 	indicatorBlocks := strings.Split(text, "Indicators:")
 	for _, block := range indicatorBlocks[1:] { // skip text before first "Indicators:"
-		// Take only up to the next top-level field (two-space indent = rule field).
-		endIdx := strings.Index(block, "\n  ")
-		if endIdx == -1 {
-			endIdx = len(block)
-		}
-		indicatorSection := block[:endIdx]
-
-		hasPromQL := strings.Contains(indicatorSection, "PromQL:")
-		hasLookupFailed := strings.Contains(indicatorSection, "lookup failed")
-
-		if !hasPromQL && !hasLookupFailed {
-			t.Fatalf("indicator block has neither PromQL nor lookup failure note:\n%s", indicatorSection)
+		if !strings.Contains(block, "PromQL:") && !strings.Contains(block, "lookup failed") {
+			t.Fatalf("indicator block has neither PromQL nor lookup failure note:\n%s", block)
 		}
 	}
 }
@@ -105,6 +97,7 @@ func TestGetAlertConfigHandler_Integration_SeverityFilter(t *testing.T) {
 	}
 
 	text := utils.GetTextContent(t, result)
+	t.Logf("response:\n%s", text)
 
 	// Every rule in response must have severity breach (case-insensitive).
 	for _, line := range strings.Split(text, "\n") {
@@ -113,6 +106,56 @@ func TestGetAlertConfigHandler_Integration_SeverityFilter(t *testing.T) {
 			severity := strings.TrimSpace(strings.TrimPrefix(trimmed, "Severity:"))
 			if !strings.EqualFold(severity, "breach") {
 				t.Fatalf("severity filter returned non-breach rule with severity %q", severity)
+			}
+		}
+	}
+}
+
+func TestGetEntityAlertRulesHandler_Integration(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+
+	// First fetch the org-wide list to get a real entity ID.
+	ctx, cancel := context.WithTimeout(context.Background(), integrationTestTimeout)
+	defer cancel()
+
+	rules, err := fetchAlertConfig(ctx, http.DefaultClient, *cfg)
+	if err != nil {
+		t.Skipf("could not fetch org alert config: %v", err)
+	}
+	if len(rules) == 0 {
+		t.Skip("no alert rules in org; skipping")
+	}
+
+	entityID := rules[0].EntityID
+	if entityID == "" {
+		t.Skip("first rule has no entity_id; skipping")
+	}
+
+	handler := NewGetEntityAlertRulesHandler(http.DefaultClient, *cfg)
+	result, _, err := handler(ctx, &mcp.CallToolRequest{}, GetEntityAlertRulesArgs{EntityID: entityID})
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+
+	text := utils.GetTextContent(t, result)
+	t.Logf("entity_id=%s response:\n%s", entityID, text)
+
+	if !strings.Contains(text, "Found") {
+		t.Fatalf("expected 'Found N alert rules' in response, got:\n%s", text)
+	}
+	if !strings.Contains(text, "ID:") {
+		t.Fatalf("expected at least one rule with 'ID:' in response, got:\n%s", text)
+	}
+
+	// If any indicators present, each must have PromQL or a lookup failure note.
+	// Split on "Indicators:" — each block runs from one marker to the next, containing
+	// that rule's indicator sub-section followed by the next rule's fields.
+	// No truncation needed: "PromQL:" and "lookup failed" only appear inside indicators.
+	if strings.Contains(text, "Indicators:") {
+		indicatorBlocks := strings.Split(text, "Indicators:")
+		for _, block := range indicatorBlocks[1:] {
+			if !strings.Contains(block, "PromQL:") && !strings.Contains(block, "lookup failed") {
+				t.Fatalf("indicator block has neither PromQL nor lookup failure note:\n%s", block)
 			}
 		}
 	}

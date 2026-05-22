@@ -40,7 +40,10 @@ func newEntityAlertRulesTestServer(t *testing.T, state *entityAlertRulesTestServ
 				w.WriteHeader(status)
 				if status == http.StatusOK {
 					rules := state.rulesByEntityID[entityID]
-					_ = json.NewEncoder(w).Encode(rules)
+					_ = json.NewEncoder(w).Encode(struct {
+						Rules        AlertConfigResponse `json:"rules"`
+						SnoozedUntil int                 `json:"snoozed_until"`
+					}{Rules: rules})
 					return
 				}
 				_, _ = w.Write([]byte(`{"error":"entity alert rules failed"}`))
