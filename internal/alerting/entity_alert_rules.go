@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 
 	"last9-mcp/internal/constants"
@@ -15,22 +16,19 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const GetEntityAlertRulesDescription = `Fetches all alert rules for a specific entity (alert group) with full detail:
-expression, condition, eval window, and resolved PromQL for each indicator.
+const GetEntityAlertRulesDescription = `Fetches alert rule expressions and resolved PromQL for a specific entity.
 
-Use this tool when you need the complete alert rule configuration for a known entity,
-including the actual PromQL queries behind each indicator. The org-wide get_alert_config
-tool omits expression_args and PromQL; this tool includes them.
+Use after get_alert_config to drill into the actual queries behind each alert rule.
+The org-wide tool shows basic metadata; this tool shows the expression logic and PromQL.
 
 Input:
-- entity_id (required): UUID of the entity / alert group
+- entity_id (required): UUID of the entity / alert group (from get_alert_config Entity ID field)
 - severity (optional): filter rules by severity (e.g. "breach", "warn")
 
-Output per rule:
-- id, rule_name, primary_indicator, state, severity, algorithm
+Output per rule (expression-focused; basic metadata available from get_alert_config):
+- id, rule_name
 - expression, condition, alert_condition, eval_window
-- indicators: each indicator name with resolved PromQL, unit, and variables
-- created_at, updated_at`
+- indicators: each indicator name with resolved PromQL and unit`
 
 // GetEntityAlertRulesArgs holds the input arguments for get_entity_alert_rules.
 type GetEntityAlertRulesArgs struct {
@@ -72,7 +70,7 @@ func NewGetEntityAlertRulesHandler(client *http.Client, cfg models.Config) func(
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
-				&mcp.TextContent{Text: formatAlertConfigResponse(rules)},
+				&mcp.TextContent{Text: formatEntityAlertRulesResponse(rules)},
 			},
 		}, nil, nil
 	}
@@ -117,4 +115,58 @@ func fetchEntityAlertRules(
 	}
 
 	return wrapper.Rules, nil
+}
+
+// formatEntityAlertRulesResponse formats entity-scoped rules showing only
+// expression/indicator fields. Basic metadata (state, severity, timestamps, etc.)
+// is omitted because callers already have it from get_alert_config.
+func formatEntityAlertRulesResponse(rules AlertConfigResponse) string {
+	out := fmt.Sprintf("Found %d alert rules for entity:\n\n", len(rules))
+	for i, rule := range rules {
+		out += fmt.Sprintf("Rule %d:\n", i+1)
+		out += fmt.Sprintf("  ID: %s\n", rule.ID)
+		out += fmt.Sprintf("  Rule Name: %s\n", rule.RuleName)
+		if rule.Expression != "" {
+			out += fmt.Sprintf("  Expression: %s\n", rule.Expression)
+		}
+		if rule.Condition != "" {
+			out += fmt.Sprintf("  Condition: %s\n", rule.Condition)
+		}
+		if rule.AlertCondition != "" {
+			out += fmt.Sprintf("  Alert Condition: %s\n", rule.AlertCondition)
+		}
+		if rule.EvalWindow > 0 {
+			out += fmt.Sprintf("  Eval Window: %d minutes\n", rule.EvalWindow)
+		}
+		if len(rule.ExpressionArgs) > 0 {
+			out += "  Indicators:\n"
+			indicatorNames := make([]string, 0, len(rule.ExpressionArgs))
+			for name := range rule.ExpressionArgs {
+				indicatorNames = append(indicatorNames, name)
+			}
+			sort.Strings(indicatorNames)
+			for _, name := range indicatorNames {
+				arg := rule.ExpressionArgs[name]
+				out += fmt.Sprintf("    %s (KPI ID: %s)\n", name, arg.ID)
+				if arg.LookupError != "" {
+					out += fmt.Sprintf("      PromQL: [lookup failed: %s]\n", arg.LookupError)
+				} else if arg.PromQL != "" {
+					out += fmt.Sprintf("      PromQL: %s\n", arg.PromQL)
+					if arg.Unit != "" {
+						out += fmt.Sprintf("      Unit: %s\n", arg.Unit)
+					}
+				}
+				varKeys := make([]string, 0, len(arg.Variables))
+				for k := range arg.Variables {
+					varKeys = append(varKeys, k)
+				}
+				sort.Strings(varKeys)
+				for _, k := range varKeys {
+					out += fmt.Sprintf("      Variable %s: %s\n", k, arg.Variables[k])
+				}
+			}
+		}
+		out += "\n"
+	}
+	return out
 }

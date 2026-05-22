@@ -146,6 +146,10 @@ func TestGetEntityAlertRulesHandler_Integration(t *testing.T) {
 	if !strings.Contains(text, "ID:") {
 		t.Fatalf("expected at least one rule with 'ID:' in response, got:\n%s", text)
 	}
+	// Basic metadata fields are omitted from this focused tool.
+	if strings.Contains(text, "State:") || strings.Contains(text, "Severity:") {
+		t.Fatalf("basic metadata fields should be absent from entity alert rules output, got:\n%s", text)
+	}
 
 	// If any indicators present, each must have PromQL or a lookup failure note.
 	// Split on "Indicators:" — each block runs from one marker to the next, containing

@@ -151,6 +151,10 @@ func TestGetEntityAlertRulesHandler_ReturnsRules(t *testing.T) {
 	if !strings.Contains(text, "rule-1") || !strings.Contains(text, "rule-2") {
 		t.Fatalf("expected both rule IDs in response, got:\n%s", text)
 	}
+	// Basic metadata fields are intentionally omitted — covered by get_alert_config.
+	if strings.Contains(text, "State:") || strings.Contains(text, "Severity:") || strings.Contains(text, "Algorithm:") {
+		t.Fatalf("expected basic metadata fields absent from focused output, got:\n%s", text)
+	}
 }
 
 func TestGetEntityAlertRulesHandler_SeverityFilter(t *testing.T) {
@@ -177,6 +181,9 @@ func TestGetEntityAlertRulesHandler_SeverityFilter(t *testing.T) {
 	}
 	if strings.Contains(text, "rule-2") {
 		t.Fatalf("severity filter let warn rule through, got:\n%s", text)
+	}
+	if strings.Contains(text, "Severity:") {
+		t.Fatalf("severity field should not appear in focused output, got:\n%s", text)
 	}
 }
 
