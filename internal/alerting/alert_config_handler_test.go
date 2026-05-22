@@ -412,10 +412,7 @@ func TestGetAlertConfigHandler_KPIResolution(t *testing.T) {
 				kpiID: {
 					ID:   kpiID,
 					Name: "p99_latency",
-					Definition: struct {
-						Query string `json:"query"`
-						Unit  string `json:"unit"`
-					}{
+					Definition: kpiDefinition{
 						Query: `histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))`,
 						Unit:  "seconds",
 					},
@@ -454,6 +451,60 @@ func TestGetAlertConfigHandler_KPIResolution(t *testing.T) {
 		}
 		if !strings.Contains(text, "rule-kpi") {
 			t.Fatalf("expected rule still present despite KPI failure, got:\n%s", text)
+		}
+	})
+
+	t.Run("partial failure: one indicator resolves, one fails", func(t *testing.T) {
+		kpiID2 := "kpi-uuid-2"
+		multiRules := AlertConfigResponse{
+			{
+				ID:               "rule-multi",
+				OrganizationID:   "org-1",
+				EntityID:         "entity-1",
+				PrimaryIndicator: "errors_total",
+				Expression:       "errors_total / requests_total",
+				Condition:        "expr > 0.05",
+				State:            "active",
+				Severity:         "breach",
+				Algorithm:        "static_threshold",
+				RuleName:         "High error rate",
+				ExpressionArgs: map[string]AlertRuleExpressionArg{
+					"errors_total":   {ID: kpiID},   // registered → resolves
+					"requests_total": {ID: kpiID2},  // not registered → 404
+				},
+			},
+		}
+
+		state := alertConfigTestServerState{
+			alertRules:       multiRules,
+			entityGroups:     sampleAlertGroupEntities(),
+			alertRulesStatus: http.StatusOK,
+			kpiResponses: map[string]kpiResponse{
+				kpiID: {
+					ID:   kpiID,
+					Name: "errors_total",
+					Definition: kpiDefinition{
+						Query: `sum(rate(http_errors_total[5m]))`,
+						Unit:  "count",
+					},
+				},
+				// kpiID2 intentionally absent → 404
+			},
+		}
+
+		text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{})
+		if err != nil {
+			t.Fatalf("handler should succeed with partial KPI failure, got: %v", err)
+		}
+
+		if !strings.Contains(text, "http_errors_total") {
+			t.Fatalf("expected resolved PromQL for errors_total, got:\n%s", text)
+		}
+		if !strings.Contains(text, "lookup failed") {
+			t.Fatalf("expected lookup failure note for requests_total, got:\n%s", text)
+		}
+		if !strings.Contains(text, "rule-multi") {
+			t.Fatalf("expected rule present despite partial failure, got:\n%s", text)
 		}
 	})
 }

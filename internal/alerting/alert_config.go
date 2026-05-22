@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -73,13 +74,15 @@ func validateGetAlertConfigArgs(args GetAlertConfigArgs) error {
 	return nil
 }
 
+type kpiDefinition struct {
+	Query string `json:"query"`
+	Unit  string `json:"unit"`
+}
+
 type kpiResponse struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Definition struct {
-		Query string `json:"query"`
-		Unit  string `json:"unit"`
-	} `json:"definition"`
+	ID         string        `json:"id"`
+	Name       string        `json:"name"`
+	Definition kpiDefinition `json:"definition"`
 }
 
 func fetchKPI(
@@ -88,8 +91,8 @@ func fetchKPI(
 	cfg models.Config,
 	entityID, kpiID string,
 ) (kpiResponse, error) {
-	url := fmt.Sprintf("%s%s", cfg.APIBaseURL, fmt.Sprintf(constants.EndpointEntityKPI, entityID, kpiID))
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	fullURL := cfg.APIBaseURL + fmt.Sprintf(constants.EndpointEntityKPI, entityID, kpiID)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
 		return kpiResponse{}, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -127,15 +130,36 @@ func resolveAlertConfigKPIs(
 	cfg models.Config,
 	alertConfig AlertConfigResponse,
 ) {
+	// Cache KPI results by "entityID/kpiID" to avoid redundant fetches when
+	// multiple rules share the same KPI (common across entity-scoped rules).
+	type kpiCacheKey struct{ entityID, kpiID string }
+	cache := make(map[kpiCacheKey]kpiResponse)
+	errCache := make(map[kpiCacheKey]string)
+
 	for i := range alertConfig {
 		rule := &alertConfig[i]
 		for indicatorName, arg := range rule.ExpressionArgs {
-			kpi, err := fetchKPI(ctx, client, cfg, rule.EntityID, arg.ID)
-			if err != nil {
-				arg.LookupError = err.Error()
-			} else {
+			if ctx.Err() != nil {
+				arg.LookupError = "context cancelled"
+				rule.ExpressionArgs[indicatorName] = arg
+				continue
+			}
+			key := kpiCacheKey{rule.EntityID, arg.ID}
+			if errMsg, ok := errCache[key]; ok {
+				arg.LookupError = errMsg
+			} else if kpi, ok := cache[key]; ok {
 				arg.PromQL = kpi.Definition.Query
 				arg.Unit = kpi.Definition.Unit
+			} else {
+				kpi, err := fetchKPI(ctx, client, cfg, rule.EntityID, arg.ID)
+				if err != nil {
+					errCache[key] = err.Error()
+					arg.LookupError = err.Error()
+				} else {
+					cache[key] = kpi
+					arg.PromQL = kpi.Definition.Query
+					arg.Unit = kpi.Definition.Unit
+				}
 			}
 			rule.ExpressionArgs[indicatorName] = arg
 		}
@@ -504,7 +528,13 @@ func formatAlertConfigResponse(alertConfig AlertConfigResponse) string {
 		}
 		if len(rule.ExpressionArgs) > 0 {
 			formattedResponse += "  Indicators:\n"
-			for indicatorName, arg := range rule.ExpressionArgs {
+			indicatorNames := make([]string, 0, len(rule.ExpressionArgs))
+			for name := range rule.ExpressionArgs {
+				indicatorNames = append(indicatorNames, name)
+			}
+			sort.Strings(indicatorNames)
+			for _, indicatorName := range indicatorNames {
+				arg := rule.ExpressionArgs[indicatorName]
 				formattedResponse += fmt.Sprintf("    %s (KPI ID: %s)\n", indicatorName, arg.ID)
 				if arg.LookupError != "" {
 					formattedResponse += fmt.Sprintf("      PromQL: [lookup failed: %s]\n", arg.LookupError)
@@ -514,8 +544,13 @@ func formatAlertConfigResponse(alertConfig AlertConfigResponse) string {
 						formattedResponse += fmt.Sprintf("      Unit: %s\n", arg.Unit)
 					}
 				}
-				for k, v := range arg.Variables {
-					formattedResponse += fmt.Sprintf("      Variable %s: %s\n", k, v)
+				varKeys := make([]string, 0, len(arg.Variables))
+				for k := range arg.Variables {
+					varKeys = append(varKeys, k)
+				}
+				sort.Strings(varKeys)
+				for _, k := range varKeys {
+					formattedResponse += fmt.Sprintf("      Variable %s: %s\n", k, arg.Variables[k])
 				}
 			}
 		}
@@ -531,8 +566,13 @@ func formatAlertConfigResponse(alertConfig AlertConfigResponse) string {
 
 		if len(rule.Properties) > 0 {
 			formattedResponse += "  Properties:\n"
-			for k, v := range rule.Properties {
-				formattedResponse += fmt.Sprintf("    %s: %v\n", k, v)
+			propKeys := make([]string, 0, len(rule.Properties))
+			for k := range rule.Properties {
+				propKeys = append(propKeys, k)
+			}
+			sort.Strings(propKeys)
+			for _, k := range propKeys {
+				formattedResponse += fmt.Sprintf("    %s: %v\n", k, rule.Properties[k])
 			}
 		}
 
