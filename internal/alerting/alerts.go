@@ -105,8 +105,8 @@ type AlertInstance struct {
 const GetAlertConfigDescription = `
 	Get alert configurations (alert rules) from Last9.
 	Returns configured alert rules with metadata and supports both typed filters and free-text search.
-	Use this tool first to discover rules and entity IDs, then call get_entity_alert_rules with an
-	entity_id to get the full expression logic and resolved PromQL for that entity's rules.
+	Use this tool first to discover rules and entity IDs, then if required, use get_entity_alert_rules
+	with an entity_id to get the PromQL for the indicator and other details of the alert group (entity) of the alert rule.
 
 	Optional filters:
 	- rule_id: Exact match on alert rule ID
