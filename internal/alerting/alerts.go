@@ -126,7 +126,7 @@ const GetAlertConfigDescription = `
 	- condition: Threshold expression applied to the evaluated result (e.g. "expr > 200")
 	- alert_condition: Firing condition over the eval window (e.g. "count_true(result) > 10")
 	- eval_window: Evaluation window in minutes
-	- indicator_kpi_ids: Maps each indicator name to its KPI definition ID (look up KPI to get raw PromQL)
+	- expression_args: Maps each indicator name to its KPI binding, including the resolved PromQL query and unit
 	- state: Current state of the alert rule (active, inactive, etc.)
 	- severity: Alert severity level
 	- algorithm: Detection algorithm (static_threshold, high_spike, inc_trend, etc.)
