@@ -16,16 +16,17 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const GetEntityAlertRulesDescription = `Fetches alert rule expressions and resolved PromQL for a specific entity.
+const GetEntityAlertRulesDescription = `Fetches the expression logic and resolved PromQL for all alert rules on a specific entity.
 
-Use after get_alert_config to drill into the actual queries behind each alert rule.
-The org-wide tool shows basic metadata; this tool shows the expression logic and PromQL.
+Companion to get_alert_config: call get_alert_config first to discover rules and find the
+entity_id, then call this tool with that entity_id to get the full alert configuration
+including the actual PromQL queries behind each indicator.
 
 Input:
-- entity_id (required): UUID of the entity / alert group (from get_alert_config Entity ID field)
+- entity_id (required): UUID of the entity / alert group (from the Entity ID field in get_alert_config output)
 - severity (optional): filter rules by severity (e.g. "breach", "warn")
 
-Output per rule (expression-focused; basic metadata available from get_alert_config):
+Output per rule (expression-focused; basic metadata such as state/severity/timestamps is in get_alert_config):
 - id, rule_name
 - expression, condition, alert_condition, eval_window
 - indicators: each indicator name with resolved PromQL and unit`

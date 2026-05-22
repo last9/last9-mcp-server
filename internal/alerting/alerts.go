@@ -104,8 +104,9 @@ type AlertInstance struct {
 
 const GetAlertConfigDescription = `
 	Get alert configurations (alert rules) from Last9.
-	Returns configured alert rules and supports both typed filters and free-text search.
-	Uses the datasource configured in the server config (or default if not specified).
+	Returns configured alert rules with metadata and supports both typed filters and free-text search.
+	Use this tool first to discover rules and entity IDs, then call get_entity_alert_rules with an
+	entity_id to get the full expression logic and resolved PromQL for that entity's rules.
 
 	Optional filters:
 	- rule_id: Exact match on alert rule ID
@@ -117,16 +118,12 @@ const GetAlertConfigDescription = `
 	- alert_group_type: Case-insensitive substring match on alert group type
 	- data_source_name: Case-insensitive substring match on alert group data source name
 	- tags: Array of case-insensitive substring matches; all provided tags must match
-	
+
 	Each alert rule includes:
 	- id: Unique identifier for the alert rule
 	- name: Human-readable name of the alert
 	- primary_indicator: Name of the primary KPI (metric) being monitored
-	- expression: Indicator expression template (e.g. "p99_latency" or "errors / total")
-	- condition: Threshold expression applied to the evaluated result (e.g. "expr > 200")
-	- alert_condition: Firing condition over the eval window (e.g. "count_true(result) > 10")
-	- eval_window: Evaluation window in minutes
-	- expression_args: Maps each indicator name to its KPI binding, including the resolved PromQL query and unit
+	- entity_id: Use this with get_entity_alert_rules to fetch the full PromQL for this entity's rules
 	- state: Current state of the alert rule (active, inactive, etc.)
 	- severity: Alert severity level
 	- algorithm: Detection algorithm (static_threshold, high_spike, inc_trend, etc.)
