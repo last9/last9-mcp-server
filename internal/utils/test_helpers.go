@@ -2,6 +2,7 @@ package utils
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -18,7 +19,22 @@ var loadTestEnvOnce sync.Once
 
 func loadTestEnv() {
 	loadTestEnvOnce.Do(func() {
-		_ = godotenv.Load()
+		dir, err := os.Getwd()
+		if err != nil {
+			return
+		}
+		for {
+			candidate := filepath.Join(dir, ".env")
+			if _, err := os.Stat(candidate); err == nil {
+				_ = godotenv.Load(candidate)
+				return
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
 	})
 }
 
