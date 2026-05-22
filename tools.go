@@ -145,6 +145,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Description: alerting.GetAlertConfigDescription,
 	}, alerting.NewGetAlertConfigHandler(client, cfg))
 
+	// Register entity alert rules tool (entity-scoped, includes expression_args and resolved PromQL)
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_entity_alert_rules",
+		Description: alerting.GetEntityAlertRulesDescription,
+	}, alerting.NewGetEntityAlertRulesHandler(client, cfg))
+
 	// Register alerts tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "get_alerts",

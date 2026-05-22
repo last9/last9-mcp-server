@@ -27,6 +27,7 @@ const (
 	EndpointAlertsMonitor        = "/alerts/monitor"
 	EndpointEntitiesList         = "/entities/list"
 	EndpointEntityKPI            = "/entities/%s/kpis/%s"
+	EndpointEntityAlertRules     = "/entities/%s/alert-rules"
 	EndpointNotificationSettings = "/notification_settings"
 	// EndpointSuggest returns fuzzy entity-name suggestions for the did_you_mean tool.
 	EndpointSuggest = "/suggest"
