@@ -17,24 +17,39 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// AlertRuleExpressionArg holds indicator binding for an alert rule.
+// PromQL, Unit, and LookupError are resolved at query time and not part of the API response.
+type AlertRuleExpressionArg struct {
+	ID          string            `json:"id"`
+	Variables   map[string]string `json:"variables"`
+	PromQL      string            `json:"-"`
+	Unit        string            `json:"-"`
+	LookupError string            `json:"-"`
+}
+
 // AlertRule represents an alert configuration from Last9 API
 type AlertRule struct {
-	ID                           string                 `json:"id"`
-	OrganizationID               string                 `json:"organization_id"`
-	EntityID                     string                 `json:"entity_id"`
-	PrimaryIndicator             string                 `json:"primary_indicator"`
-	CreatedAt                    int64                  `json:"created_at"`
-	UpdatedAt                    int64                  `json:"updated_at"`
-	DeletedAt                    *int64                 `json:"deleted_at"`
-	ErrorSince                   *int64                 `json:"error_since"`
-	State                        string                 `json:"state"`
-	ExternalRef                  string                 `json:"external_ref"`
-	Severity                     string                 `json:"severity"`
-	Algorithm                    string                 `json:"algorithm"`
-	RuleName                     string                 `json:"rule_name"`
-	MuteUntil                    int64                  `json:"mute_until"`
-	Properties                   map[string]interface{} `json:"properties"`
-	GroupTimeseriesNotifications bool                   `json:"group_timeseries_notifications"`
+	ID                           string                            `json:"id"`
+	OrganizationID               string                            `json:"organization_id"`
+	EntityID                     string                            `json:"entity_id"`
+	PrimaryIndicator             string                            `json:"primary_indicator"`
+	Expression                   string                            `json:"expression,omitempty"`
+	Condition                    string                            `json:"condition,omitempty"`
+	AlertCondition               string                            `json:"alert_condition,omitempty"`
+	EvalWindow                   int64                             `json:"eval_window,omitempty"`
+	ExpressionArgs               map[string]AlertRuleExpressionArg `json:"expression_args,omitempty"`
+	CreatedAt                    int64                             `json:"created_at"`
+	UpdatedAt                    int64                             `json:"updated_at"`
+	DeletedAt                    *int64                            `json:"deleted_at"`
+	ErrorSince                   *int64                            `json:"error_since"`
+	State                        string                            `json:"state"`
+	ExternalRef                  string                            `json:"external_ref"`
+	Severity                     string                            `json:"severity"`
+	Algorithm                    string                            `json:"algorithm"`
+	RuleName                     string                            `json:"rule_name"`
+	MuteUntil                    int64                             `json:"mute_until"`
+	Properties                   map[string]interface{}            `json:"properties"`
+	GroupTimeseriesNotifications bool                              `json:"group_timeseries_notifications"`
 }
 
 // Alert represents an active alert instance
@@ -106,15 +121,15 @@ const GetAlertConfigDescription = `
 	Each alert rule includes:
 	- id: Unique identifier for the alert rule
 	- name: Human-readable name of the alert
-	- description: Detailed description of what the alert monitors
+	- primary_indicator: Name of the primary KPI (metric) being monitored
+	- expression: Indicator expression template (e.g. "p99_latency" or "errors / total")
+	- condition: Threshold expression applied to the evaluated result (e.g. "expr > 200")
+	- alert_condition: Firing condition over the eval window (e.g. "count_true(result) > 10")
+	- eval_window: Evaluation window in minutes
+	- indicator_kpi_ids: Maps each indicator name to its KPI definition ID (look up KPI to get raw PromQL)
 	- state: Current state of the alert rule (active, inactive, etc.)
-	- severity: Alert severity level (critical, warning, info)
-	- query: PromQL query used for the alert condition
-	- for: Duration threshold before alert fires
-	- labels: Key-value pairs for alert routing and grouping
-	- annotations: Additional metadata and descriptions
-	- group_name: Alert group this rule belongs to
-	- condition: Alert condition configuration (thresholds, operators)
+	- severity: Alert severity level
+	- algorithm: Detection algorithm (static_threshold, high_spike, inc_trend, etc.)
 	- created_at: When the alert rule was created
 	- updated_at: When the alert rule was last modified
 `
@@ -181,6 +196,8 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 				args,
 			)
 		}
+
+		resolveAlertConfigKPIs(ctx, client, cfg, filteredAlertConfig)
 
 		formattedResponse := formatAlertConfigResponse(filteredAlertConfig)
 

@@ -25,6 +25,7 @@ type alertConfigTestServerState struct {
 	entityLookupStatus int
 	entityLookupCalls  int
 	lastEntityRequest  filterAlertGroupEntitiesRequest
+	kpiResponses       map[string]kpiResponse // kpiID → response (empty = 404)
 }
 
 func TestGetAlertConfigHandler_RuleOnlyFilters(t *testing.T) {
@@ -363,9 +364,98 @@ func newAlertConfigTestServer(
 			}
 			_, _ = w.Write([]byte(`{"error":"entity lookup failed"}`))
 		default:
+			// KPI lookup: /entities/{entity_id}/kpis/{kpi_id}
+			if strings.HasPrefix(r.URL.Path, "/entities/") && strings.Contains(r.URL.Path, "/kpis/") {
+				parts := strings.Split(r.URL.Path, "/")
+				// path: ["", "entities", entityID, "kpis", kpiID]
+				if len(parts) == 5 {
+					kpiID := parts[4]
+					if kpi, ok := state.kpiResponses[kpiID]; ok {
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusOK)
+						_ = json.NewEncoder(w).Encode(kpi)
+						return
+					}
+				}
+			}
 			http.NotFound(w, r)
 		}
 	}))
+}
+
+func TestGetAlertConfigHandler_KPIResolution(t *testing.T) {
+	kpiID := "kpi-uuid-1"
+	rules := AlertConfigResponse{
+		{
+			ID:               "rule-kpi",
+			OrganizationID:   "org-1",
+			EntityID:         "entity-1",
+			PrimaryIndicator: "p99_latency",
+			Expression:       "p99_latency",
+			Condition:        "expr > 500",
+			State:            "active",
+			Severity:         "breach",
+			Algorithm:        "static_threshold",
+			RuleName:         "High P99",
+			ExpressionArgs: map[string]AlertRuleExpressionArg{
+				"p99_latency": {ID: kpiID},
+			},
+		},
+	}
+
+	t.Run("KPI resolved successfully", func(t *testing.T) {
+		state := alertConfigTestServerState{
+			alertRules:       rules,
+			entityGroups:     sampleAlertGroupEntities(),
+			alertRulesStatus: http.StatusOK,
+			kpiResponses: map[string]kpiResponse{
+				kpiID: {
+					ID:   kpiID,
+					Name: "p99_latency",
+					Definition: struct {
+						Query string `json:"query"`
+						Unit  string `json:"unit"`
+					}{
+						Query: `histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))`,
+						Unit:  "seconds",
+					},
+				},
+			},
+		}
+
+		text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{})
+		if err != nil {
+			t.Fatalf("handler returned error: %v", err)
+		}
+
+		if !strings.Contains(text, "histogram_quantile") {
+			t.Fatalf("expected PromQL in response, got:\n%s", text)
+		}
+		if !strings.Contains(text, "Unit: seconds") {
+			t.Fatalf("expected unit in response, got:\n%s", text)
+		}
+	})
+
+	t.Run("KPI lookup failure shows note", func(t *testing.T) {
+		state := alertConfigTestServerState{
+			alertRules:       rules,
+			entityGroups:     sampleAlertGroupEntities(),
+			alertRulesStatus: http.StatusOK,
+			kpiResponses:     map[string]kpiResponse{}, // kpiID not registered → 404
+		}
+
+		text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{})
+		if err != nil {
+			t.Fatalf("handler should succeed even with KPI lookup failure, got: %v", err)
+		}
+
+		if !strings.Contains(text, "lookup failed") {
+			t.Fatalf("expected lookup failure note in response, got:\n%s", text)
+		}
+		if !strings.Contains(text, "rule-kpi") {
+			t.Fatalf("expected rule still present despite KPI failure, got:\n%s", text)
+		}
+	})
 }
 
 func sampleAlertConfigRules() AlertConfigResponse {

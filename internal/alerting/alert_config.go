@@ -73,6 +73,75 @@ func validateGetAlertConfigArgs(args GetAlertConfigArgs) error {
 	return nil
 }
 
+type kpiResponse struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Definition struct {
+		Query string `json:"query"`
+		Unit  string `json:"unit"`
+	} `json:"definition"`
+}
+
+func fetchKPI(
+	ctx context.Context,
+	client *http.Client,
+	cfg models.Config,
+	entityID, kpiID string,
+) (kpiResponse, error) {
+	url := fmt.Sprintf("%s%s", cfg.APIBaseURL, fmt.Sprintf(constants.EndpointEntityKPI, entityID, kpiID))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return kpiResponse{}, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
+	httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return kpiResponse{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return kpiResponse{}, fmt.Errorf("API returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return kpiResponse{}, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var kpi kpiResponse
+	if err := json.Unmarshal(body, &kpi); err != nil {
+		return kpiResponse{}, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return kpi, nil
+}
+
+func resolveAlertConfigKPIs(
+	ctx context.Context,
+	client *http.Client,
+	cfg models.Config,
+	alertConfig AlertConfigResponse,
+) {
+	for i := range alertConfig {
+		rule := &alertConfig[i]
+		for indicatorName, arg := range rule.ExpressionArgs {
+			kpi, err := fetchKPI(ctx, client, cfg, rule.EntityID, arg.ID)
+			if err != nil {
+				arg.LookupError = err.Error()
+			} else {
+				arg.PromQL = kpi.Definition.Query
+				arg.Unit = kpi.Definition.Unit
+			}
+			rule.ExpressionArgs[indicatorName] = arg
+		}
+	}
+}
+
 func fetchAlertConfig(
 	ctx context.Context,
 	client *http.Client,
@@ -421,6 +490,35 @@ func formatAlertConfigResponse(alertConfig AlertConfigResponse) string {
 		formattedResponse += fmt.Sprintf("  ID: %s\n", rule.ID)
 		formattedResponse += fmt.Sprintf("  Rule Name: %s\n", rule.RuleName)
 		formattedResponse += fmt.Sprintf("  Primary Indicator: %s\n", rule.PrimaryIndicator)
+		if rule.Expression != "" {
+			formattedResponse += fmt.Sprintf("  Expression: %s\n", rule.Expression)
+		}
+		if rule.Condition != "" {
+			formattedResponse += fmt.Sprintf("  Condition: %s\n", rule.Condition)
+		}
+		if rule.AlertCondition != "" {
+			formattedResponse += fmt.Sprintf("  Alert Condition: %s\n", rule.AlertCondition)
+		}
+		if rule.EvalWindow > 0 {
+			formattedResponse += fmt.Sprintf("  Eval Window: %d minutes\n", rule.EvalWindow)
+		}
+		if len(rule.ExpressionArgs) > 0 {
+			formattedResponse += "  Indicators:\n"
+			for indicatorName, arg := range rule.ExpressionArgs {
+				formattedResponse += fmt.Sprintf("    %s (KPI ID: %s)\n", indicatorName, arg.ID)
+				if arg.LookupError != "" {
+					formattedResponse += fmt.Sprintf("      PromQL: [lookup failed: %s]\n", arg.LookupError)
+				} else if arg.PromQL != "" {
+					formattedResponse += fmt.Sprintf("      PromQL: %s\n", arg.PromQL)
+					if arg.Unit != "" {
+						formattedResponse += fmt.Sprintf("      Unit: %s\n", arg.Unit)
+					}
+				}
+				for k, v := range arg.Variables {
+					formattedResponse += fmt.Sprintf("      Variable %s: %s\n", k, v)
+				}
+			}
+		}
 		formattedResponse += fmt.Sprintf("  State: %s\n", rule.State)
 		formattedResponse += fmt.Sprintf("  Severity: %s\n", rule.Severity)
 		formattedResponse += fmt.Sprintf("  Algorithm: %s\n", rule.Algorithm)
