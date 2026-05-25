@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -121,6 +122,9 @@ func TestGetDashboardHandler_Integration(t *testing.T) {
 
 func TestDashboardCRUD_Integration(t *testing.T) {
 	cfg := utils.SetupTestConfigOrSkip(t)
+	if os.Getenv("LAST9_DELETE_TOKEN") == "" {
+		t.Skip("Skipping CRUD test: LAST9_DELETE_TOKEN not set (required for delete permission)")
+	}
 	deleteCfg := utils.SetupTestConfigWithTokenOrSkip(t, "LAST9_DELETE_TOKEN", cfg)
 	client := http.DefaultClient
 	ctx, cancel := context.WithTimeout(context.Background(), integrationTestTimeout)
