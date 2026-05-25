@@ -1,11 +1,13 @@
 package traces
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
@@ -50,23 +52,35 @@ func NewGetTraceAttributeValuesHandler(client *http.Client, cfg models.Config) f
 		if rawTagName == "" {
 			return nil, nil, fmt.Errorf("tag_name cannot be blank")
 		}
-		apiURL := cfg.APIBaseURL + fmt.Sprintf(constants.EndpointTraceTagValues, url.PathEscape(rawTagName))
-
 		region := cfg.Region
 		if args.Region != "" {
 			region = args.Region
 		}
-		if region != "" {
-			q := url.Values{}
-			q.Set("region", region)
-			apiURL += "?" + q.Encode()
+
+		now := time.Now()
+		q := url.Values{}
+		q.Set("region", region)
+		q.Set("start", fmt.Sprintf("%d", now.Add(-15*time.Minute).Unix()))
+		q.Set("end", fmt.Sprintf("%d", now.Unix()))
+		apiURL := cfg.APIBaseURL + fmt.Sprintf(constants.EndpointTraceTagValues, url.PathEscape(rawTagName)) + "?" + q.Encode()
+
+		// The label-values endpoint requires a POST with a pipeline body (same as series).
+		pipeline := map[string]interface{}{
+			"pipeline": []map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{}},
+			},
+		}
+		bodyBytes, err := json.Marshal(pipeline)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to marshal request body: %v", err)
 		}
 
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewBuffer(bodyBytes))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create request: %v", err)
 		}
 		httpReq.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
+		httpReq.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
 		httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
 		httpReq.Header.Set(constants.HeaderUserAgent, constants.UserAgentLast9MCP)
 
