@@ -2,6 +2,7 @@ package traces
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -67,6 +68,27 @@ func TestGetTraceAttributeValuesHandler_NonSuccessAPIStatus(t *testing.T) {
 
 func TestGetTraceAttributeValuesHandler_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Must be POST with pipeline body.
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("expected Content-Type application/json, got %q", ct)
+		}
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("expected valid JSON body, got: %v", err)
+		}
+		if _, ok := body["pipeline"]; !ok {
+			t.Errorf("expected 'pipeline' key in body, got: %v", body)
+		}
+		// region, start, end must be query params.
+		if r.URL.Query().Get("start") == "" {
+			t.Errorf("expected start query param")
+		}
+		if r.URL.Query().Get("end") == "" {
+			t.Errorf("expected end query param")
+		}
 		if !strings.Contains(r.URL.Path, "http.method") {
 			t.Errorf("expected tag name in path, got: %s", r.URL.Path)
 		}
@@ -93,8 +115,11 @@ func TestGetTraceAttributeValuesHandler_Success(t *testing.T) {
 }
 
 func TestGetTraceAttributeValuesHandler_ResourceTagNormalized(t *testing.T) {
-	// resources['department'] should be normalized to resource_department in the path.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		// resources['department'] normalizes to resource_department in the URL path.
 		if !strings.Contains(r.URL.Path, "resource_department") {
 			t.Errorf("expected resource_department in path, got: %s", r.URL.Path)
 		}
