@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func TestGetTimeRangeChunksBackward_SubFiveMinutes(t *testing.T) {
+func TestGetTimeRangeChunksBackward_SubChunk(t *testing.T) {
 	start := int64(0)
 	end := (3 * time.Minute).Milliseconds()
 
@@ -18,9 +18,9 @@ func TestGetTimeRangeChunksBackward_SubFiveMinutes(t *testing.T) {
 	}
 }
 
-func TestGetTimeRangeChunksBackward_ExactFiveMinutes(t *testing.T) {
+func TestGetTimeRangeChunksBackward_ExactChunkSize(t *testing.T) {
 	start := int64(0)
-	end := (5 * time.Minute).Milliseconds()
+	end := (30 * time.Minute).Milliseconds()
 
 	chunks := GetTimeRangeChunksBackward(start, end)
 	if len(chunks) != 1 {
@@ -33,17 +33,18 @@ func TestGetTimeRangeChunksBackward_ExactFiveMinutes(t *testing.T) {
 
 func TestGetTimeRangeChunksBackward_MultipleChunks(t *testing.T) {
 	start := int64(0)
-	end := (12 * time.Minute).Milliseconds()
+	end := (2 * time.Hour).Milliseconds()
 
 	chunks := GetTimeRangeChunksBackward(start, end)
-	if len(chunks) != 3 {
-		t.Fatalf("expected 3 chunks, got %d", len(chunks))
+	if len(chunks) != 4 {
+		t.Fatalf("expected 4 chunks, got %d", len(chunks))
 	}
 
 	expected := []TimeChunk{
-		{StartMs: (7 * time.Minute).Milliseconds(), EndMs: end},
-		{StartMs: (2 * time.Minute).Milliseconds(), EndMs: (7 * time.Minute).Milliseconds()},
-		{StartMs: start, EndMs: (2 * time.Minute).Milliseconds()},
+		{StartMs: (90 * time.Minute).Milliseconds(), EndMs: end},
+		{StartMs: (60 * time.Minute).Milliseconds(), EndMs: (90 * time.Minute).Milliseconds()},
+		{StartMs: (30 * time.Minute).Milliseconds(), EndMs: (60 * time.Minute).Milliseconds()},
+		{StartMs: start, EndMs: (30 * time.Minute).Milliseconds()},
 	}
 
 	for i, want := range expected {
@@ -55,7 +56,7 @@ func TestGetTimeRangeChunksBackward_MultipleChunks(t *testing.T) {
 
 func TestGetTimeRangeChunksBackward_UnevenRangeIsContiguous(t *testing.T) {
 	start := int64(0)
-	end := (7 * time.Minute).Milliseconds()
+	end := (40 * time.Minute).Milliseconds()
 
 	chunks := GetTimeRangeChunksBackward(start, end)
 	if len(chunks) != 2 {
@@ -66,5 +67,14 @@ func TestGetTimeRangeChunksBackward_UnevenRangeIsContiguous(t *testing.T) {
 	}
 	if chunks[0].EndMs != end || chunks[1].StartMs != start {
 		t.Fatalf("expected full range coverage, got %#v", chunks)
+	}
+}
+
+func TestGetTimeRangeChunksBackward_EmptyRange(t *testing.T) {
+	if chunks := GetTimeRangeChunksBackward(100, 100); chunks != nil {
+		t.Fatalf("expected nil for equal start/end, got %#v", chunks)
+	}
+	if chunks := GetTimeRangeChunksBackward(200, 100); chunks != nil {
+		t.Fatalf("expected nil for inverted range, got %#v", chunks)
 	}
 }

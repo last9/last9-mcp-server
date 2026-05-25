@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
@@ -113,8 +115,11 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	}, nil
 }
 
-// fetchTraceJSONQuery executes the trace query, chunking the time range into 5-minute windows
-// and merging results newest-first — mirroring the logs chunking approach.
+// fetchTraceJSONQuery executes the trace query by splitting the time range
+// via utils.GetTimeRangeChunksBackward and fanning the chunks out through
+// utils.RunChunksParallel (bounded by utils.MaxParallelChunks). Results are
+// walked in newest-first index order and truncated to the effective limit,
+// mirroring the logs chunking pipeline.
 func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, tracejsonQuery interface{}, startMs, endMs int64, args GetTracesArgs) (map[string]interface{}, error) {
 	chunkingDebug := chunkingDebugEnabled()
 	effectiveLimit := effectiveGetTracesLimit(cfg, args.Limit)
@@ -142,135 +147,92 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 
 	if chunkingDebug {
 		log.Printf(
-			"[chunking] get_traces chunking enabled chunks=%d start_ms=%d end_ms=%d requested_limit=%d effective_limit=%d",
-			len(chunks), startMs, endMs, args.Limit, effectiveLimit,
+			"[chunking] get_traces chunking enabled chunks=%d max_parallel=%d start_ms=%d end_ms=%d requested_limit=%d effective_limit=%d",
+			len(chunks), utils.MaxParallelChunks, startMs, endMs, args.Limit, effectiveLimit,
 		)
 	}
-	if args.Limit > 0 && args.Limit > effectiveLimit {
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_traces requested limit capped requested_limit=%d configured_max=%d",
-				args.Limit,
-				effectiveLimit,
-			)
-		}
-	}
+
+	results := utils.RunChunksParallel(ctx, chunks, utils.MaxParallelChunks,
+		func(ctx context.Context, _ int, chunk utils.TimeChunk) (map[string]interface{}, error) {
+			chunkCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
+			defer cancel()
+			return executeTraceJSONQuery(chunkCtx, client, cfg, tracejsonQuery, chunk.StartMs, chunk.EndMs, effectiveLimit)
+		})
 
 	var (
 		baseResponse map[string]interface{}
 		mergedItems  = make([]interface{}, 0)
 		remaining    = effectiveLimit
 		partialErr   error
+		firstErr     error
 	)
 
-	for chunkIndex, chunk := range chunks {
-		chunkLimit := remaining
+	for _, r := range results {
+		chunkNum := r.Index + 1
 
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_traces chunk request chunk=%d/%d start_ms=%d end_ms=%d chunk_limit=%d remaining_limit=%d",
-				chunkIndex+1, len(chunks), chunk.StartMs, chunk.EndMs, chunkLimit, remaining,
+		if r.Err != nil {
+			slog.Error("chunked trace query failed",
+				"tool", "get_traces",
+				"chunk_index", chunkNum,
+				"total_chunks", len(chunks),
+				"start_ms", r.Chunk.StartMs,
+				"end_ms", r.Chunk.EndMs,
+				"err", r.Err,
 			)
-		}
-
-		chunkResp, err := executeTraceJSONQuery(ctx, client, cfg, tracejsonQuery, chunk.StartMs, chunk.EndMs, chunkLimit)
-		if err != nil {
-			if chunkingDebug {
-				log.Printf(
-					"[chunking] get_traces chunk error chunk=%d/%d start_ms=%d end_ms=%d err=%v",
-					chunkIndex+1,
-					len(chunks),
-					chunk.StartMs,
-					chunk.EndMs,
-					err,
-				)
+			if firstErr == nil {
+				firstErr = r.Err
 			}
-			if baseResponse != nil {
-				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkIndex+1, len(chunks), err)
-				break
+			if partialErr == nil {
+				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkNum, len(chunks), r.Err)
 			}
-			return nil, err
-		}
-
-		items, err := extractTraceResultItems(chunkResp)
-		if err != nil {
-			if chunkingDebug {
-				log.Printf(
-					"[chunking] get_traces chunk parse error chunk=%d/%d start_ms=%d end_ms=%d err=%v",
-					chunkIndex+1,
-					len(chunks),
-					chunk.StartMs,
-					chunk.EndMs,
-					err,
-				)
-			}
-			if baseResponse != nil {
-				partialErr = fmt.Errorf("chunk %d/%d failed to parse: %w", chunkIndex+1, len(chunks), err)
-				break
-			}
-			return nil, err
-		}
-
-		returnedTraces := len(items)
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_traces chunk response chunk=%d/%d returned_traces=%d",
-				chunkIndex+1,
-				len(chunks),
-				returnedTraces,
-			)
-		}
-
-		if baseResponse == nil {
-			baseResponse = chunkResp
-		}
-
-		if len(items) == 0 {
 			continue
 		}
 
-		tracesBeforeTrim := returnedTraces
+		items, err := extractTraceResultItems(r.Value)
+		if err != nil {
+			slog.Error("chunked trace query parse failed",
+				"tool", "get_traces",
+				"chunk_index", chunkNum,
+				"total_chunks", len(chunks),
+				"err", err,
+			)
+			if firstErr == nil {
+				firstErr = err
+			}
+			if partialErr == nil {
+				partialErr = fmt.Errorf("chunk %d/%d failed to parse: %w", chunkNum, len(chunks), err)
+			}
+			continue
+		}
+
+		if baseResponse == nil {
+			baseResponse = r.Value
+		}
+
+		if len(items) == 0 || remaining <= 0 {
+			continue
+		}
+
 		if len(items) > remaining {
 			items = items[:remaining]
-		}
-		tracesAfterTrim := len(items)
-		if tracesAfterTrim != tracesBeforeTrim {
-			if chunkingDebug {
-				log.Printf(
-					"[chunking] get_traces chunk trim chunk=%d/%d kept_traces=%d dropped_traces=%d",
-					chunkIndex+1,
-					len(chunks),
-					tracesAfterTrim,
-					tracesBeforeTrim-tracesAfterTrim,
-				)
-			}
 		}
 		remaining -= len(items)
 		mergedItems = append(mergedItems, items...)
 
 		if chunkingDebug {
 			log.Printf(
-				"[chunking] get_traces chunk merged chunk=%d/%d merged_traces=%d remaining_limit=%d",
-				chunkIndex+1,
+				"[chunking] get_traces chunk result chunk=%d/%d kept_traces=%d remaining_limit=%d",
+				chunkNum,
 				len(chunks),
-				len(mergedItems),
+				len(items),
 				remaining,
 			)
-		}
-
-		if remaining <= 0 {
-			break
 		}
 	}
 
 	if baseResponse == nil {
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_traces chunking complete with empty response start_ms=%d end_ms=%d limit=%d",
-				startMs,
-				endMs,
-				args.Limit,
-			)
+		if firstErr != nil {
+			return nil, firstErr
 		}
 		return emptyTracesResponse(), nil
 	}

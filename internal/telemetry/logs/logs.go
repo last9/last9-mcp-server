@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
 	"time"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
@@ -132,8 +134,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 
 	if chunkingDebug {
 		log.Printf(
-			"[chunking] get_logs chunking enabled chunks=%d start_ms=%d end_ms=%d requested_limit=%d effective_limit=%d index=%q",
+			"[chunking] get_logs chunking enabled chunks=%d max_parallel=%d start_ms=%d end_ms=%d requested_limit=%d effective_limit=%d index=%q",
 			len(chunks),
+			utils.MaxParallelChunks,
 			startTime,
 			endTime,
 			args.Limit,
@@ -141,161 +144,104 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 			args.Index,
 		)
 	}
-	if args.Limit > 0 && args.Limit > effectiveLimit {
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_logs requested limit capped requested_limit=%d configured_max=%d",
-				args.Limit,
-				effectiveLimit,
-			)
-		}
-	}
+
+	results := utils.RunChunksParallel(ctx, chunks, utils.MaxParallelChunks,
+		func(ctx context.Context, _ int, chunk utils.TimeChunk) (map[string]interface{}, error) {
+			chunkCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
+			defer cancel()
+			return executeLogJSONQuery(chunkCtx, client, cfg, logjsonQuery, chunk.StartMs, chunk.EndMs, effectiveLimit, args.Index)
+		})
 
 	var (
 		baseResponse map[string]interface{}
 		mergedItems  []interface{}
 		remaining    = effectiveLimit
 		partialErr   error
+		firstErr     error
 	)
 
-	for chunkIndex, chunk := range chunks {
-		chunkLimit := remaining
+	for _, r := range results {
+		chunkNum := r.Index + 1
 
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_logs chunk request chunk=%d/%d start_ms=%d end_ms=%d chunk_limit=%d remaining_limit=%d",
-				chunkIndex+1,
-				len(chunks),
-				chunk.StartMs,
-				chunk.EndMs,
-				chunkLimit,
-				remaining,
+		if r.Err != nil {
+			slog.Error("chunked log query failed",
+				"tool", "get_logs",
+				"chunk_index", chunkNum,
+				"total_chunks", len(chunks),
+				"start_ms", r.Chunk.StartMs,
+				"end_ms", r.Chunk.EndMs,
+				"err", r.Err,
 			)
+			if firstErr == nil {
+				firstErr = r.Err
+			}
+			if partialErr == nil {
+				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkNum, len(chunks), r.Err)
+			}
+			continue
 		}
 
-		chunkResponse, err := executeLogJSONQuery(
-			ctx,
-			client,
-			cfg,
-			logjsonQuery,
-			chunk.StartMs,
-			chunk.EndMs,
-			chunkLimit,
-			args.Index,
-		)
+		resultType, items, err := extractResultItems(r.Value)
 		if err != nil {
-			if chunkingDebug {
-				log.Printf(
-					"[chunking] get_logs chunk error chunk=%d/%d start_ms=%d end_ms=%d err=%v",
-					chunkIndex+1,
-					len(chunks),
-					chunk.StartMs,
-					chunk.EndMs,
-					err,
-				)
-			}
-			if baseResponse != nil {
-				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkIndex+1, len(chunks), err)
-				break
-			}
-			return nil, err
-		}
-
-		resultType, items, err := extractResultItems(chunkResponse)
-		if err != nil {
-			if chunkingDebug {
-				log.Printf(
-					"[chunking] get_logs chunk parse error chunk=%d/%d start_ms=%d end_ms=%d err=%v",
-					chunkIndex+1,
-					len(chunks),
-					chunk.StartMs,
-					chunk.EndMs,
-					err,
-				)
-			}
-			if baseResponse != nil {
-				partialErr = fmt.Errorf("chunk %d/%d failed to parse: %w", chunkIndex+1, len(chunks), err)
-				break
-			}
-			return nil, err
-		}
-
-		returnedEntries := countLogEntriesInResultItems(items)
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_logs chunk response chunk=%d/%d result_type=%s stream_items=%d returned_entries=%d",
-				chunkIndex+1,
-				len(chunks),
-				resultType,
-				len(items),
-				returnedEntries,
+			slog.Error("chunked log query parse failed",
+				"tool", "get_logs",
+				"chunk_index", chunkNum,
+				"total_chunks", len(chunks),
+				"err", err,
 			)
+			if firstErr == nil {
+				firstErr = err
+			}
+			if partialErr == nil {
+				partialErr = fmt.Errorf("chunk %d/%d failed to parse: %w", chunkNum, len(chunks), err)
+			}
+			continue
 		}
 
 		if resultType != "streams" {
 			err := fmt.Errorf("chunked get_logs expected streams result, got %q", resultType)
-			if chunkingDebug {
-				log.Printf(
-					"[chunking] get_logs chunking aborted due to unexpected result_type=%s after chunk=%d/%d",
-					resultType,
-					chunkIndex+1,
-					len(chunks),
-				)
+			slog.Error("chunked log query unexpected result_type",
+				"tool", "get_logs",
+				"chunk_index", chunkNum,
+				"total_chunks", len(chunks),
+				"result_type", resultType,
+			)
+			if firstErr == nil {
+				firstErr = err
 			}
-			if baseResponse != nil {
-				partialErr = fmt.Errorf("chunk %d/%d returned unexpected result_type=%q", chunkIndex+1, len(chunks), resultType)
-				break
+			if partialErr == nil {
+				partialErr = fmt.Errorf("chunk %d/%d returned unexpected result_type=%q", chunkNum, len(chunks), resultType)
 			}
-			return nil, err
-		}
-
-		if baseResponse == nil {
-			baseResponse = chunkResponse
-		}
-
-		if len(items) == 0 {
 			continue
 		}
 
-		entriesBeforeTrim := returnedEntries
-		items = truncateResultItemsByEntryLimit(items, remaining)
-		entriesAfterTrim := countLogEntriesInResultItems(items)
-		if entriesAfterTrim != entriesBeforeTrim {
-			if chunkingDebug {
-				log.Printf(
-					"[chunking] get_logs chunk trim chunk=%d/%d kept_entries=%d dropped_entries=%d",
-					chunkIndex+1,
-					len(chunks),
-					entriesAfterTrim,
-					entriesBeforeTrim-entriesAfterTrim,
-				)
-			}
+		if baseResponse == nil {
+			baseResponse = r.Value
 		}
-		remaining -= entriesAfterTrim
 
+		if len(items) == 0 || remaining <= 0 {
+			continue
+		}
+
+		items = truncateResultItemsByEntryLimit(items, remaining)
+		kept := countLogEntriesInResultItems(items)
+		remaining -= kept
 		mergedItems = append(mergedItems, items...)
+
 		if chunkingDebug {
 			log.Printf(
-				"[chunking] get_logs chunk merged chunk=%d/%d merged_entries=%d remaining_limit=%d",
-				chunkIndex+1,
+				"[chunking] get_logs chunk result chunk=%d/%d kept_entries=%d remaining_limit=%d",
+				chunkNum,
 				len(chunks),
-				countLogEntriesInResultItems(mergedItems),
+				kept,
 				remaining,
 			)
-		}
-		if remaining <= 0 {
-			break
 		}
 	}
 
 	if baseResponse == nil {
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_logs chunking complete with empty response start_ms=%d end_ms=%d limit=%d",
-				startTime,
-				endTime,
-				args.Limit,
-			)
+		if firstErr != nil {
+			return nil, firstErr
 		}
 		return emptyStreamsResponse(), nil
 	}

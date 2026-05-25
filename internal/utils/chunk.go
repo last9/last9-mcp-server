@@ -2,7 +2,7 @@ package utils
 
 import "time"
 
-const logChunkSize = 5 * time.Minute
+const logChunkSize = 30 * time.Minute
 
 // TimeChunk represents a contiguous time slice in milliseconds.
 type TimeChunk struct {
@@ -10,8 +10,8 @@ type TimeChunk struct {
 	EndMs   int64
 }
 
-// GetTimeRangeChunksBackward splits a range into contiguous 5-minute chunks,
-// ordered from newest to oldest.
+// GetTimeRangeChunksBackward splits a range into contiguous chunks of
+// logChunkSize, ordered from newest to oldest.
 func GetTimeRangeChunksBackward(startMs, endMs int64) []TimeChunk {
 	if endMs <= startMs {
 		return nil

@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
@@ -257,15 +259,14 @@ func addServiceLogsEnvFilter(query []map[string]interface{}, env string) []map[s
 // fetchServiceLogs retrieves raw log entries for a specific service using utils package
 func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Config, service string, startTime, endTime time.Time, limit int, logjsonQuery []map[string]interface{}, index string) (*ServiceLogsResponse, error) {
 	chunks := utils.GetTimeRangeChunksBackward(startTime.UnixMilli(), endTime.UnixMilli())
-	logs := make([]LogEntry, 0, limit)
 	chunkingDebug := chunkingDebugEnabled()
-	var partialErr error
 
 	if chunkingDebug {
 		log.Printf(
-			"[chunking] get_service_logs chunking enabled service=%q chunks=%d start_ms=%d end_ms=%d limit=%d index=%q",
+			"[chunking] get_service_logs chunking enabled service=%q chunks=%d max_parallel=%d start_ms=%d end_ms=%d limit=%d index=%q",
 			service,
 			len(chunks),
+			utils.MaxParallelChunks,
 			startTime.UnixMilli(),
 			endTime.UnixMilli(),
 			limit,
@@ -273,110 +274,78 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		)
 	}
 
-	for chunkIndex, chunk := range chunks {
+	results := utils.RunChunksParallel(ctx, chunks, utils.MaxParallelChunks,
+		func(ctx context.Context, _ int, chunk utils.TimeChunk) ([]LogEntry, error) {
+			chunkCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
+			defer cancel()
+			return fetchServiceLogsChunk(chunkCtx, client, cfg, service, logjsonQuery, chunk.StartMs, chunk.EndMs, limit, index)
+		})
+
+	logs := make([]LogEntry, 0, limit)
+	var (
+		partialErr error
+		firstErr   error
+	)
+
+	for _, r := range results {
+		chunkNum := r.Index + 1
+
+		if r.Err != nil {
+			slog.Error("chunked service_logs query failed",
+				"tool", "get_service_logs",
+				"service", service,
+				"chunk_index", chunkNum,
+				"total_chunks", len(chunks),
+				"start_ms", r.Chunk.StartMs,
+				"end_ms", r.Chunk.EndMs,
+				"err", r.Err,
+			)
+			if firstErr == nil {
+				firstErr = r.Err
+			}
+			if partialErr == nil {
+				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkNum, len(chunks), r.Err)
+			}
+			continue
+		}
+
 		remaining := limit - len(logs)
 		if remaining <= 0 {
-			break
+			continue
 		}
 
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_service_logs chunk request service=%q chunk=%d/%d start_ms=%d end_ms=%d remaining_limit=%d",
-				service,
-				chunkIndex+1,
-				len(chunks),
-				chunk.StartMs,
-				chunk.EndMs,
-				remaining,
-			)
-		}
-
-		chunkLogs, err := fetchServiceLogsChunk(
-			ctx,
-			client,
-			cfg,
-			service,
-			logjsonQuery,
-			chunk.StartMs,
-			chunk.EndMs,
-			remaining,
-			index,
-		)
-		if err != nil {
-			if chunkingDebug {
-				log.Printf(
-					"[chunking] get_service_logs chunk error service=%q chunk=%d/%d start_ms=%d end_ms=%d err=%v",
-					service,
-					chunkIndex+1,
-					len(chunks),
-					chunk.StartMs,
-					chunk.EndMs,
-					err,
-				)
-			}
-			if len(logs) > 0 {
-				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkIndex+1, len(chunks), err)
-				break
-			}
-			return nil, err
-		}
-
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_service_logs chunk response service=%q chunk=%d/%d returned_entries=%d",
-				service,
-				chunkIndex+1,
-				len(chunks),
-				len(chunkLogs),
-			)
-		}
-
+		chunkLogs := r.Value
 		if len(chunkLogs) > remaining {
-			if chunkingDebug {
-				log.Printf(
-					"[chunking] get_service_logs chunk trim service=%q chunk=%d/%d kept_entries=%d dropped_entries=%d",
-					service,
-					chunkIndex+1,
-					len(chunks),
-					remaining,
-					len(chunkLogs)-remaining,
-				)
-			}
 			chunkLogs = chunkLogs[:remaining]
 		}
 		logs = append(logs, chunkLogs...)
 
 		if chunkingDebug {
 			log.Printf(
-				"[chunking] get_service_logs chunk merged service=%q chunk=%d/%d total_entries=%d remaining_limit=%d",
+				"[chunking] get_service_logs chunk result service=%q chunk=%d/%d kept_entries=%d remaining_limit=%d",
 				service,
-				chunkIndex+1,
+				chunkNum,
 				len(chunks),
-				len(logs),
+				len(chunkLogs),
 				limit-len(logs),
 			)
 		}
 	}
 
+	// If every chunk failed, surface the first error rather than an empty payload.
+	if len(logs) == 0 && firstErr != nil {
+		return nil, firstErr
+	}
+
 	if chunkingDebug {
-		if partialErr != nil {
-			log.Printf(
-				"[chunking] get_service_logs chunking partial service=%q returned_entries=%d start_ms=%d end_ms=%d err=%v",
-				service,
-				len(logs),
-				startTime.UnixMilli(),
-				endTime.UnixMilli(),
-				partialErr,
-			)
-		} else {
-			log.Printf(
-				"[chunking] get_service_logs chunking complete service=%q returned_entries=%d start_ms=%d end_ms=%d",
-				service,
-				len(logs),
-				startTime.UnixMilli(),
-				endTime.UnixMilli(),
-			)
-		}
+		log.Printf(
+			"[chunking] get_service_logs chunking complete service=%q returned_entries=%d start_ms=%d end_ms=%d partial=%t",
+			service,
+			len(logs),
+			startTime.UnixMilli(),
+			endTime.UnixMilli(),
+			partialErr != nil,
+		)
 	}
 
 	response := &ServiceLogsResponse{
