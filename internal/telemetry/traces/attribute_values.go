@@ -47,7 +47,10 @@ func NewGetTraceAttributeValuesHandler(client *http.Client, cfg models.Config) f
 		}
 
 		rawTagName := normalizeTagName(args.TagName)
-		apiURL := fmt.Sprintf("%s%s", cfg.APIBaseURL, fmt.Sprintf(constants.EndpointTraceTagValues, rawTagName))
+		if rawTagName == "" {
+			return nil, nil, fmt.Errorf("tag_name cannot be blank")
+		}
+		apiURL := cfg.APIBaseURL + fmt.Sprintf(constants.EndpointTraceTagValues, url.PathEscape(rawTagName))
 
 		region := cfg.Region
 		if args.Region != "" {
@@ -82,6 +85,9 @@ func NewGetTraceAttributeValuesHandler(client *http.Client, cfg models.Config) f
 		var apiResp traceTagValuesAPIResponse
 		if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
 			return nil, nil, fmt.Errorf("failed to decode response: %v", err)
+		}
+		if apiResp.Status != "success" {
+			return nil, nil, fmt.Errorf("API returned non-success status: %s", apiResp.Status)
 		}
 
 		attr := enrichAttribute(rawTagName)

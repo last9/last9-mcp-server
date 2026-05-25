@@ -159,10 +159,10 @@ Note that regexp parsing operators also work as regexp filters
 
 `get_trace_attributes` returns a JSON array. Each entry has a `filter_field` — use it verbatim in filter conditions. Never transform or guess field syntax.
 
-```
+```json
 {
   "name": "resource_department",
-  "filter_field": "resources['department']",   ← use this exactly
+  "filter_field": "resources['department']",
   "hint": "Example: {\"$eq\": [\"resources['department']\", \"engineering\"]}"
 }
 ```
@@ -198,6 +198,7 @@ Note that regexp parsing operators also work as regexp filters
   - `"ERROR"` ✗ wrong → `"STATUS_CODE_ERROR"` ✓ correct
 
 ### Custom Fields for user's environment:
+
 Call `get_trace_attributes` to discover available fields and get their exact `filter_field`. Use `filter_field` directly — do not transform it.
 
 **IMPORTANT**: For filtering, if a field is not available from `get_trace_attributes`, fall back to a regexp-based filter / parser instead of using conditions on attributes.

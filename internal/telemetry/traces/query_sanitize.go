@@ -132,8 +132,10 @@ func validateFilterFields(value interface{}, path string) error {
 
 // validateFieldSyntax rejects field references that use incorrect syntax forms.
 func validateFieldSyntax(field, path string) error {
-	// Double-quoted bracket syntax: attributes["..."] or resources["..."]
-	if strings.HasPrefix(field, `attributes["`) || strings.HasPrefix(field, `resources["`) {
+	// Double-quoted bracket syntax: attributes["..."], resources["..."], or events["..."]
+	if strings.HasPrefix(field, `attributes["`) ||
+		strings.HasPrefix(field, `resources["`) ||
+		strings.HasPrefix(field, `events["`) {
 		corrected := strings.ReplaceAll(field, `"`, "'")
 		return fmt.Errorf(
 			"invalid field reference %q at %s: tracejson requires single quotes — use %q instead",

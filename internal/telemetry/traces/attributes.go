@@ -28,7 +28,7 @@ resource attribute or span attribute — never guess the filter_field syntax.
 Returns a JSON array sorted by name. Each entry has:
   - name:          raw attribute name as returned by the API (e.g. "resource_department")
   - semantic_name: human-readable name with prefix stripped (e.g. "department")
-  - type:          "toplevel" | "resource" | "span"
+  - type:          "toplevel" | "resource" | "event" | "span"
   - filter_field:  exact string to use in a tracejson $eq/$contains/etc. condition
                    (e.g. "resources['department']", "attributes['http.method']", "ServiceName")
   - hint:          ready-made example condition using filter_field
