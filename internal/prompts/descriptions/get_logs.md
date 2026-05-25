@@ -244,7 +244,7 @@ To find the appropriate field name, try partial matches or matching fields which
 - "Get timeout logs" → DON'T ADD: `{"type": "aggregate"}`
 
 ### ✅ CORRECT Examples:
-- "Show me errors" → ONLY: `[{"type": "filter", "query": {"$contains": ["Body", "error"]}}]`
+- "Show me errors" → ONLY: `[{"type": "filter", "query": {"$containsWords": ["Body", "error"]}}]`
 - "How many errors?" → ADD: `[{"type": "filter"}, {"type": "aggregate"}]`
 
 ## Translation Examples (Ordered by Complexity):
@@ -257,7 +257,7 @@ These are examples of pipeline json structure and available stages and functions
   "type": "filter",
   "query": {
     "$and": [
-      {"$contains": ["Body", "error"]}
+      {"$containsWords": ["Body", "error"]}
     ]
   }
 }]
@@ -272,7 +272,7 @@ These are examples of pipeline json structure and available stages and functions
   "query": {
     "$and": [
       {"$eq": ["ServiceName", "auth"]},
-      {"$contains": ["Body", "error"]}
+      {"$containsWords": ["Body", "error"]}
     ]
   }
 }]
@@ -389,7 +389,7 @@ These are examples of pipeline json structure and available stages and functions
   "type": "filter",
   "query": {
     "$and": [
-      {"$contains": ["Body", "error"]}
+      {"$containsWords": ["Body", "error"]}
     ]
   }
 }, {
@@ -457,7 +457,7 @@ These are examples of pipeline json structure and available stages and functions
     "query": {
       "$and": [
         {"$eq": ["attributes['job']", "mysql"]},
-        {"$contains": ["Body", "error"]}
+        {"$containsWords": ["Body", "error"]}
       ]
     }
   },
@@ -536,7 +536,7 @@ These are examples of pipeline json structure and available stages and functions
   "type": "filter",
   "query": {
     "$and": [
-      {"$contains": ["Body", "restart"]},
+      {"$containsWords": ["Body", "restart"]},
       {"$neq": ["resources['k8s.pod.name']", ""]}
     ]
   }
@@ -566,8 +566,8 @@ These are examples of pipeline json structure and available stages and functions
       {"$eq": ["attributes['messaging.system']", "kafka"]},
       {"$gt": ["attributes['duration']", "500"]},
       {"$or": [
-        {"$contains": ["Body", "failed"]},
-        {"$contains": ["Body", "error"]},
+        {"$containsWords": ["Body", "failed"]},
+        {"$containsWords": ["Body", "error"]},
         {"$gte": ["attributes['http.status_code']", "400"]}
       ]}
     ]
@@ -738,11 +738,11 @@ Example interactions showing CORRECT default behavior:
   "type": "filter",
   "query": {
     "$or": [
-      {"$contains": ["Body", "login"]},
-      {"$contains": ["Body", "logout"]},
-      {"$contains": ["Body", "auth"]},
-      {"$contains": ["Body", "authentication"]},
-      {"$contains": ["Body", "failed"]},
+      {"$containsWords": ["Body", "login"]},
+      {"$containsWords": ["Body", "logout"]},
+      {"$containsWords": ["Body", "auth"]},
+      {"$containsWords": ["Body", "authentication"]},
+      {"$containsWords": ["Body", "failed"]},
       {"$eq": ["attributes['http.status_code']", "401"]}
     ]
   }
@@ -756,11 +756,11 @@ Example interactions showing CORRECT default behavior:
   "query": {
     "$and": [
       {"$or": [
-        {"$contains": ["Body", "login"]},
-        {"$contains": ["Body", "logout"]},
-        {"$contains": ["Body", "auth"]},
-        {"$contains": ["Body", "authentication"]},
-        {"$contains": ["Body", "failed"]},
+        {"$containsWords": ["Body", "login"]},
+        {"$containsWords": ["Body", "logout"]},
+        {"$containsWords": ["Body", "auth"]},
+        {"$containsWords": ["Body", "authentication"]},
+        {"$containsWords": ["Body", "failed"]},
         {"$eq": ["attributes['http.status_code']", "401"]}
       ]}
     ]
