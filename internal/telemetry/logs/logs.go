@@ -70,11 +70,12 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	if err != nil {
 		return nil, err
 	}
+	annotateEmptyLogsResult(result)
 
 	// Build deep link URL
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-	dashboardIndex := ""
 	hasExplicitIndex := strings.TrimSpace(args.Index) != ""
+	dashboardIndex := ""
 	if hasExplicitIndex {
 		resolvedIndex, err := utils.ResolveLogIndexDashboardParam(ctx, client, cfg, args.Index)
 		if err == nil {
@@ -491,12 +492,54 @@ func mapsClone(source map[string]interface{}) map[string]interface{} {
 	return cloned
 }
 
+func annotateEmptyLogsResult(result map[string]interface{}) {
+	if result == nil {
+		return
+	}
+	if _, exists := result["next_steps"]; exists {
+		return
+	}
+	data, ok := result["data"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	items, _ := data["result"].([]interface{})
+	if len(items) == 0 {
+		result["next_steps"] = emptyLogsNextSteps("")
+	}
+}
+
 func emptyStreamsResponse() map[string]interface{} {
 	return map[string]interface{}{
 		"data": map[string]interface{}{
 			"resultType": "streams",
 			"result":     []interface{}{},
 		},
+		"next_steps": emptyLogsNextSteps(""),
+	}
+}
+
+func emptyLogsNextSteps(service string) []string {
+	serviceHint := "this service"
+	if service != "" {
+		serviceHint = fmt.Sprintf("service %q", service)
+	}
+	return []string{
+		fmt.Sprintf("A drop rule may be silently filtering logs for %s — run get_drop_rules to inspect active rules and check for matches on service name or attributes.", serviceHint),
+		"Widen the time range: logs may exist outside the queried window.",
+		"Verify the service is actually emitting logs by checking get_service_summary or get_service_traces.",
+		"If using severity_filters or body_filters, try removing them to confirm logs exist at all.",
+	}
+}
+
+// serviceNotSendingLogsNextSteps is used when physical_index_service_count
+// returns no series for the service — meaning no logs are being ingested at all.
+func serviceNotSendingLogsNextSteps(service string) []string {
+	return []string{
+		fmt.Sprintf("No active log streams found for service %q in physical_index_service_count — the service may not be sending logs to Last9.", service),
+		fmt.Sprintf("A drop rule may be dropping all logs before ingestion — run get_drop_rules and check for rules matching service_name=%q.", service),
+		"Verify the service instrumentation is configured correctly and the Last9 endpoint/credentials are valid.",
+		"Check get_service_traces to confirm whether the service is visible at all.",
 	}
 }
 
