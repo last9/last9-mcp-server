@@ -17,24 +17,39 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// AlertRuleExpressionArg holds indicator binding for an alert rule.
+// PromQL, Unit, and LookupError are resolved at query time and not part of the API response.
+type AlertRuleExpressionArg struct {
+	ID          string            `json:"id"`
+	Variables   map[string]string `json:"variables"`
+	PromQL      string            `json:"-"`
+	Unit        string            `json:"-"`
+	LookupError string            `json:"-"`
+}
+
 // AlertRule represents an alert configuration from Last9 API
 type AlertRule struct {
-	ID                           string                 `json:"id"`
-	OrganizationID               string                 `json:"organization_id"`
-	EntityID                     string                 `json:"entity_id"`
-	PrimaryIndicator             string                 `json:"primary_indicator"`
-	CreatedAt                    int64                  `json:"created_at"`
-	UpdatedAt                    int64                  `json:"updated_at"`
-	DeletedAt                    *int64                 `json:"deleted_at"`
-	ErrorSince                   *int64                 `json:"error_since"`
-	State                        string                 `json:"state"`
-	ExternalRef                  string                 `json:"external_ref"`
-	Severity                     string                 `json:"severity"`
-	Algorithm                    string                 `json:"algorithm"`
-	RuleName                     string                 `json:"rule_name"`
-	MuteUntil                    int64                  `json:"mute_until"`
-	Properties                   map[string]interface{} `json:"properties"`
-	GroupTimeseriesNotifications bool                   `json:"group_timeseries_notifications"`
+	ID                           string                            `json:"id"`
+	OrganizationID               string                            `json:"organization_id"`
+	EntityID                     string                            `json:"entity_id"`
+	PrimaryIndicator             string                            `json:"primary_indicator"`
+	Expression                   string                            `json:"expression,omitempty"`
+	Condition                    string                            `json:"condition,omitempty"`
+	AlertCondition               string                            `json:"alert_condition,omitempty"`
+	EvalWindow                   int64                             `json:"eval_window,omitempty"`
+	ExpressionArgs               map[string]AlertRuleExpressionArg `json:"expression_args,omitempty"`
+	CreatedAt                    int64                             `json:"created_at"`
+	UpdatedAt                    int64                             `json:"updated_at"`
+	DeletedAt                    *int64                            `json:"deleted_at"`
+	ErrorSince                   *int64                            `json:"error_since"`
+	State                        string                            `json:"state"`
+	ExternalRef                  string                            `json:"external_ref"`
+	Severity                     string                            `json:"severity"`
+	Algorithm                    string                            `json:"algorithm"`
+	RuleName                     string                            `json:"rule_name"`
+	MuteUntil                    int64                             `json:"mute_until"`
+	Properties                   map[string]interface{}            `json:"properties"`
+	GroupTimeseriesNotifications bool                              `json:"group_timeseries_notifications"`
 }
 
 // Alert represents an active alert instance
@@ -89,8 +104,9 @@ type AlertInstance struct {
 
 const GetAlertConfigDescription = `
 	Get alert configurations (alert rules) from Last9.
-	Returns configured alert rules and supports both typed filters and free-text search.
-	Uses the datasource configured in the server config (or default if not specified).
+	Returns configured alert rules with metadata and supports both typed filters and free-text search.
+	Use this tool first to discover rules and entity IDs, then if required, use get_entity_alert_rules
+	with an entity_id to get the PromQL for the indicator and other details of the alert group (entity) of the alert rule.
 
 	Optional filters:
 	- rule_id: Exact match on alert rule ID
@@ -102,19 +118,15 @@ const GetAlertConfigDescription = `
 	- alert_group_type: Case-insensitive substring match on alert group type
 	- data_source_name: Case-insensitive substring match on alert group data source name
 	- tags: Array of case-insensitive substring matches; all provided tags must match
-	
+
 	Each alert rule includes:
 	- id: Unique identifier for the alert rule
 	- name: Human-readable name of the alert
-	- description: Detailed description of what the alert monitors
+	- primary_indicator: Name of the primary KPI (metric) being monitored
+	- entity_id: Use this with get_entity_alert_rules to fetch the full PromQL for this entity's rules
 	- state: Current state of the alert rule (active, inactive, etc.)
-	- severity: Alert severity level (critical, warning, info)
-	- query: PromQL query used for the alert condition
-	- for: Duration threshold before alert fires
-	- labels: Key-value pairs for alert routing and grouping
-	- annotations: Additional metadata and descriptions
-	- group_name: Alert group this rule belongs to
-	- condition: Alert condition configuration (thresholds, operators)
+	- severity: Alert severity level
+	- algorithm: Detection algorithm (static_threshold, high_spike, inc_trend, etc.)
 	- created_at: When the alert rule was created
 	- updated_at: When the alert rule was last modified
 `
@@ -181,6 +193,8 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 				args,
 			)
 		}
+
+		resolveAlertConfigKPIs(ctx, client, cfg, filteredAlertConfig)
 
 		formattedResponse := formatAlertConfigResponse(filteredAlertConfig)
 
