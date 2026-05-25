@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-05-25
+
+### Changed
+
+- `get_alert_config` now resolves each referenced indicator's PromQL query and unit inline, embedding them directly in the response. KPI lookup failures surface as inline notes rather than failing the entire request (#148).
+
 ## [0.7.2] - 2026-05-20
 
 ### Added
@@ -120,6 +126,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Tool improvements (#51).
 
+[0.7.3]: https://github.com/last9/last9-mcp-server/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/last9/last9-mcp-server/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/last9/last9-mcp-server/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/last9/last9-mcp-server/compare/v0.6.0...v0.7.0
