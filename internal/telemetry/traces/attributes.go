@@ -19,28 +19,44 @@ import (
 
 // GetTraceAttributesDescription describes the trace attributes tool
 const GetTraceAttributesDescription = `
-Fetches available trace attributes (series) for a specified time window.
-This tool queries the Last9 traces API to retrieve all available attribute names
-that can be used for filtering and querying traces within the specified time range.
+Fetches available trace attributes for a specified time window and returns each
+one enriched with the exact filter_field string to use in a get_traces query.
 
-The attributes returned are field names that exist in traces during the specified
-time window, which can then be used in trace queries and filters.
+Call this before building a tracejson filter whenever you need to filter by a
+resource attribute or span attribute — never guess the filter_field syntax.
+
+Returns a JSON array sorted by name. Each entry has:
+  - name:          raw attribute name as returned by the API (e.g. "resource_department")
+  - semantic_name: human-readable name with prefix stripped (e.g. "department")
+  - type:          "toplevel" | "resource" | "span"
+  - filter_field:  exact string to use in a tracejson $eq/$contains/etc. condition
+                   (e.g. "resources['department']", "attributes['http.method']", "ServiceName")
+  - hint:          ready-made example condition using filter_field
+
+Use filter_field directly — do not transform it further.
 
 Defaults to the last 15 minutes if no time window is provided.
-
-Returns an alphabetically sorted list of all available trace attributes.
 
 Time format rules:
 - Prefer lookback_minutes for relative windows.
 - Use start_time_iso/end_time_iso for absolute windows.
 - start_time_iso/end_time_iso accept RFC3339/ISO8601 (e.g. 2026-02-09T15:04:05Z).
-- Legacy format YYYY-MM-DD HH:MM:SS is accepted only for compatibility.
 `
 
 // TraceAttributesResponse represents the API response structure
 type TraceAttributesResponse struct {
 	Data   []map[string]string `json:"data"`
 	Status string              `json:"status"`
+}
+
+// TraceAttribute is an enriched attribute entry returned by get_trace_attributes.
+// filter_field is the exact string to use in a tracejson filter condition.
+type TraceAttribute struct {
+	Name         string `json:"name"`
+	SemanticName string `json:"semantic_name"`
+	Type         string `json:"type"` // "resource", "span", "event", or "toplevel"
+	FilterField  string `json:"filter_field"`
+	Hint         string `json:"hint"`
 }
 
 // GetTraceAttributesArgs represents the input arguments for the get_trace_attributes tool
@@ -222,7 +238,6 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 			return nil, nil, fmt.Errorf("API returned non-success status: %s", result.Status)
 		}
 
-		// Extract attributes as simple list
 		if len(result.Data) == 0 {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{
@@ -233,34 +248,30 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 			}, nil, nil
 		}
 
-		// Extract all attributes into a simple list
-		attributes := []string{}
+		// Build sorted list of raw names then enrich each one.
+		rawNames := make([]string, 0, len(result.Data[0]))
 		for attrName := range result.Data[0] {
-			// Skip empty attribute names
 			if attrName == "" {
 				continue
 			}
-			attributes = append(attributes, attrName)
+			rawNames = append(rawNames, attrName)
+		}
+		sort.Strings(rawNames)
+
+		enriched := make([]TraceAttribute, 0, len(rawNames))
+		for _, name := range rawNames {
+			enriched = append(enriched, enrichAttribute(name))
 		}
 
-		// Sort attributes alphabetically
-		sort.Strings(attributes)
-
-		// Format the response for display
-		summary := fmt.Sprintf("Found %d trace attributes in the time window (%s to %s):\n\n",
-			len(attributes),
-			time.Unix(startTime, 0).Format("2006-01-02 15:04:05"),
-			time.Unix(endTime, 0).Format("2006-01-02 15:04:05"))
-
-		// Build formatted output as simple list
-		for _, attr := range attributes {
-			summary += fmt.Sprintf("%s\n", attr)
+		out, err := json.Marshal(enriched)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to marshal trace attributes: %v", err)
 		}
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
-					Text: summary,
+					Text: string(out),
 				},
 			},
 		}, nil, nil

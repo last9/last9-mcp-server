@@ -7,28 +7,33 @@ import (
 )
 
 var (
-	logAttributeFieldRefPattern         = regexp.MustCompile(`^attributes\[(?:'[^'\[\]]+'|"[^"\[\]]+")\]$`)
-	logResourceAttributeFieldRefPattern = regexp.MustCompile(`^resource_attributes\[(?:'[^'\[\]]+'|"[^"\[\]]+")\]$`)
-	logKubernetesAliasPattern           = regexp.MustCompile(`^k8s(?:\.[A-Za-z0-9_/-]+)+$`)
-	logSimpleFieldRefPattern            = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	logAttributeFieldRefPattern  = regexp.MustCompile(`^attributes\['[^'\[\]]+'\]$`)
+	logResourceFieldRefPattern   = regexp.MustCompile(`^resources\['[^'\[\]]+'\]$`)
+	logKubernetesAliasPattern    = regexp.MustCompile(`^k8s(?:\.[A-Za-z0-9_/-]+)+$`)
+	logSimpleFieldRefPattern     = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
 
 var logFilterFieldOperators = map[string]int{
-	"$contains":     0,
-	"$eq":           0,
-	"$gt":           0,
-	"$gte":          0,
-	"$icontains":    0,
-	"$ieq":          0,
-	"$iregex":       0,
-	"$lt":           0,
-	"$lte":          0,
-	"$neq":          0,
-	"$notcontains":  0,
-	"$noticontains": 0,
-	"$notiregex":    0,
-	"$notregex":     0,
-	"$regex":        0,
+	"$contains":        0,
+	"$containsWords":   0,
+	"$eq":              0,
+	"$gt":              0,
+	"$gte":             0,
+	"$icontains":       0,
+	"$icontainsWords":  0,
+	"$ieq":             0,
+	"$ineq":            0,
+	"$inotcontains":    0,
+	"$inotcontainsWords": 0,
+	"$inotregex":       0,
+	"$iregex":          0,
+	"$lt":              0,
+	"$lte":             0,
+	"$neq":             0,
+	"$notcontains":     0,
+	"$notcontainsWords": 0,
+	"$notregex":        0,
+	"$regex":           0,
 }
 
 var logFilterLogicalOperators = map[string]struct{}{
@@ -110,7 +115,7 @@ func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 
 			if _, isLogicalOperator := logFilterLogicalOperators[key]; !isLogicalOperator {
 				return nil, fmt.Errorf(
-					"invalid filter condition key %q at %s: keys must be operators ($eq, $neq, $gt, $gte, $lt, $lte, $contains, $notcontains, $icontains, $noticontains, $regex, $notregex, $iregex, $notiregex, $ieq) or logical operators ($and, $or, $not); use the form {%q: [field, value]} — for example {\"$eq\": [\"ServiceName\", \"checkout\"]} — and call get_log_attributes if you need the exact field name",
+					"invalid filter condition key %q at %s: keys must be operators ($eq, $neq, $ieq, $ineq, $gt, $gte, $lt, $lte, $contains, $notcontains, $icontains, $inotcontains, $containsWords, $notcontainsWords, $icontainsWords, $inotcontainsWords, $regex, $notregex, $iregex, $inotregex) or logical operators ($and, $or, $not); use the form {%q: [field, value]} — for example {\"$eq\": [\"ServiceName\", \"checkout\"]} — and call get_log_attributes if you need the exact field name",
 					key,
 					path,
 					"$eq",
@@ -267,15 +272,27 @@ func sanitizeLogFieldRef(fieldRef, path string) (string, error) {
 	switch {
 	case trimmed == "service.name":
 		return "ServiceName", nil
+	case strings.HasPrefix(trimmed, `attributes["`) || strings.HasPrefix(trimmed, `resources["`):
+		corrected := strings.ReplaceAll(trimmed, `"`, "'")
+		return "", fmt.Errorf(
+			"invalid log field reference %q at %s: use single quotes — %q; call get_log_attributes if you need the exact field name",
+			trimmed, path, corrected,
+		)
 	case logKubernetesAliasPattern.MatchString(trimmed):
-		return fmt.Sprintf("resource_attributes['%s']", trimmed), nil
+		return fmt.Sprintf("resources['%s']", trimmed), nil
 	case isCanonicalLogFieldRef(trimmed):
 		return trimmed, nil
+	case strings.HasPrefix(trimmed, "resource_"):
+		stripped := trimmed[len("resource_"):]
+		return "", fmt.Errorf(
+			"invalid log field reference %q at %s: use resources['%s'] instead of the flat resource_ prefix; call get_log_attributes if you need the exact field name",
+			trimmed, path, stripped,
+		)
 	case logSimpleFieldRefPattern.MatchString(trimmed):
 		return trimmed, nil
 	default:
 		return "", fmt.Errorf(
-			"invalid log field reference %q at %s: use ServiceName, attributes['field'], or resource_attributes['field']; call get_log_attributes if you need the exact field name",
+			"invalid log field reference %q at %s: use ServiceName, attributes['field'], or resources['field']; call get_log_attributes if you need the exact field name",
 			trimmed,
 			path,
 		)
@@ -289,5 +306,5 @@ func isCanonicalLogFieldRef(fieldRef string) bool {
 	}
 
 	return logAttributeFieldRefPattern.MatchString(fieldRef) ||
-		logResourceAttributeFieldRefPattern.MatchString(fieldRef)
+		logResourceFieldRefPattern.MatchString(fieldRef)
 }

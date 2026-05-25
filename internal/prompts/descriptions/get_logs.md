@@ -45,8 +45,8 @@ These are instructions for constructing a natural language logs analytics querie
 - Never emit bare dotted field references such as `service.name`, `http.status_code`, or `k8s.namespace.name`.
 - Use `ServiceName` for service filters and grouping, not `service.name`.
 - Use `attributes['field.name']` for log attributes.
-- Use `resource_attributes['field.name']` for resource attributes, including Kubernetes metadata like `k8s.namespace.name`.
-- If you are not sure whether a field exists or whether environment is stored on `attributes[...]` vs `resource_attributes[...]`, use `get_log_attributes` first or broaden the query instead of guessing.
+- Use `resources['field.name']` for resource attributes, including Kubernetes metadata like `k8s.namespace.name`.
+- If you are not sure whether a field exists or whether environment is stored on `attributes[...]` vs `resources[...]`, use `get_log_attributes` first or broaden the query instead of guessing.
 
 The JSON pipeline format supports filtering, parsing, aggregation on log data.
 
@@ -90,19 +90,46 @@ The JSON pipeline format supports filtering, parsing, aggregation on log data.
   "query": {
     "$and": [...],        // AND multiple conditions
     "$or": [...],         // OR multiple conditions
-    "$eq": [field, value],     // Equals. value must be a string
-    "$neq": [field, value],    // Not equals. value must be a string
-    "$gt": [field, value],     // Greater than. value must be a string containing a number
-    "$lt": [field, value],     // Less than. value must be a string containing a number
-    "$gte": [field, value],    // Greater than or equal. value must be a string containing a number
-    "$lte": [field, value],    // Less than or equal. value must be a string containing a number
-    "$contains": [field, text], // Contains text
-    "$notcontains": [field, text], // Doesn't contain text
-    "$regex": [field, pattern], // Regex match
-    "$notregex": [field, pattern], // Regex not match
-    "$not": [condition]        // Negation
+    "$not": [condition],  // Negation
+
+    // Equality
+    "$eq":   [field, value],  // Equals (case-sensitive)
+    "$neq":  [field, value],  // Not equals (case-sensitive)
+    "$ieq":  [field, value],  // Case-insensitive equals
+    "$ineq": [field, value],  // Case-insensitive not equals
+
+    // Numeric comparison — value must be a string containing a number
+    "$gt":  [field, value],   // Greater than
+    "$lt":  [field, value],   // Less than
+    "$gte": [field, value],   // Greater than or equal
+    "$lte": [field, value],   // Less than or equal
+
+    // Substring search
+    "$contains":    [field, text],  // Contains substring (case-sensitive)
+    "$notcontains": [field, text],  // Does not contain (case-sensitive)
+    "$icontains":   [field, text],  // Case-insensitive contains
+    "$inotcontains": [field, text], // Case-insensitive does not contain
+
+    // Word-boundary search — PREFER over $contains for Body text search
+    "$containsWords":    [field, word],  // Field contains the word (word-boundary aware)
+    "$icontainsWords":   [field, word],  // Case-insensitive word-boundary match
+
+    // Regex
+    "$regex":    [field, pattern],  // Regex match
+    "$notregex": [field, pattern],  // Regex not match
+    "$iregex":   [field, pattern],  // Case-insensitive regex match
+    "$inotregex": [field, pattern]  // Case-insensitive regex not match
   }
 }
+```
+
+**Word-boundary search patterns — use these instead of `$contains` for Body searches:**
+```json
+// Contains ALL words — multiple $containsWords conditions in $and:
+{"$and": [{"$containsWords": ["Body", "timeout"]}, {"$containsWords": ["Body", "database"]}]}
+
+// Contains ANY word — multiple $containsWords conditions in $or:
+{"$or": [{"$containsWords": ["Body", "timeout"]}, {"$containsWords": ["Body", "error"]}]}
 ```
 
 ### Parse Operations:
@@ -166,21 +193,21 @@ Note that regex parsing operators also work as regex filters
 ### Standard Log Fields:
 
 - **Body**: Log message content
-- **ServiceName**: Service name. Always prefer this over similar looking attributes in `attributes` or `resource_attributes` given below
+- **ServiceName**: Service name. Always prefer this over similar looking attributes in `attributes` or `resources` given below
 - **SeverityText**: Log level (DEBUG, INFO, WARN, ERROR, FATAL)
 - **Timestamp**: Log timestamp
 - **attributes['field_name']**: Log/span attributes (OpenTelemetry semantic conventions)
-- **resource_attributes['field_name']**: Resource attributes (prefixed with `resource_`)
+- **resources['field_name']**: Resource attributes (prefixed with `resource_`)
 
 ### Invalid Field Reference Patterns:
 
 - **Never use bare dotted refs** like `service.name`, `deployment.environment`, or `k8s.namespace.name`
 - **Correct service alias**: `service.name` → `ServiceName`
-- **Correct Kubernetes alias**: `k8s.namespace.name` → `resource_attributes['k8s.namespace.name']`
-- **Correct Kubernetes alias**: `k8s.deployment.name` → `resource_attributes['k8s.deployment.name']`
+- **Correct Kubernetes alias**: `k8s.namespace.name` → `resources['k8s.namespace.name']`
+- **Correct Kubernetes alias**: `k8s.deployment.name` → `resources['k8s.deployment.name']`
 
 ### Custom Fields for user's environment:
-In addition to standard labels, the list of available customer-specific attribute labels is below. In the query, the following rule should be applied to get the attribute from the field name - if the field matches the pattern with `resource_fieldname` the attribute is `resource_attributes['fieldname']`. Otherwise it is `attributes['fieldname']`.
+In addition to standard labels, the list of available customer-specific attribute labels is below. In the query, the following rule should be applied to get the attribute from the field name - if the field matches the pattern with `resource_fieldname` the attribute is `resources['fieldname']`. Otherwise it is `attributes['fieldname']`.
 Any attribute used in the query should either be a standard attribute or available in the list below
 {{labels}}
 
@@ -303,8 +330,8 @@ These are examples of pipeline json structure and available stages and functions
     }
   ],
   "groupby": {
-    "resource_attributes['k8s.namespace.name']": "namespace",
-    "resource_attributes['k8s.deployment.name']": "deployment"
+    "resources['k8s.namespace.name']": "namespace",
+    "resources['k8s.deployment.name']": "deployment"
   }
 }]
 ```
@@ -510,7 +537,7 @@ These are examples of pipeline json structure and available stages and functions
   "query": {
     "$and": [
       {"$contains": ["Body", "restart"]},
-      {"$neq": ["resource_attributes['k8s.pod.name']", ""]}
+      {"$neq": ["resources['k8s.pod.name']", ""]}
     ]
   }
 }, {
@@ -522,8 +549,8 @@ These are examples of pipeline json structure and available stages and functions
     }
   ],
   "groupby": {
-    "resource_attributes['k8s.namespace.name']": "namespace",
-    "resource_attributes['k8s.deployment.name']": "deployment"
+    "resources['k8s.namespace.name']": "namespace",
+    "resources['k8s.deployment.name']": "deployment"
   }
 }]
 ```
@@ -619,11 +646,11 @@ These are examples of pipeline json structure and available stages and functions
 ## Translation Rules:
 
 1. **Always return valid JSON array** containing operation objects
-2. **Use proper field references**: Body, ServiceName, attributes['field'], resource_attributes['field']; never emit bare dotted refs.
+2. **Use proper field references**: Body, ServiceName, attributes['field'], resources['field']; never emit bare dotted refs.
 3. **Chain operations logically**: filter → parse → aggregate
 4. **For time-based queries**, use window_aggregate with appropriate time units.
 5. **For existence checks**, use $neq operator
-6. **For text searches**, use $contains operator
+6. **For text searches**, use `$containsWords` on `Body` (word-boundary aware, higher precision); use `$contains` for attribute substring matches
 7. **CRITICAL: When user query has no explicit logical operators (and/or), always wrap filter conditions in $and array, even for single conditions**
 8. **Group multiple conditions** with $and or $or as appropriate when explicitly specified
 10. **Use an attribute only if it exists in the standard or custom fields**. Otherwise fallback to a regex filter with field name and value eg, ".*fieldname.*[:=].*value.*"
@@ -631,7 +658,8 @@ These are examples of pipeline json structure and available stages and functions
 ## Common Natural Language Patterns:
 
 ### Basic Filter Patterns:
-- "where X contains Y" → `{"$contains": [field, value]}`
+- "where X contains Y" (Body field) → `{"$containsWords": ["Body", value]}` (word-boundary)
+- "where X contains Y" (attribute field) → `{"$contains": [field, value]}`
 - "where X equals/is Y" → `{"$eq": [field, value]}`
 - "where X is greater than Y" → `{"$gt": [field, value]}`
 - "where X exists" → `{"$neq": [field, ""]}`

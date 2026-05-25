@@ -155,31 +155,52 @@ Note that regexp parsing operators also work as regexp filters
 
 ## Field Reference Format:
 
-### Standard Trace Fields:
+### ALWAYS call get_trace_attributes before filtering on resource or span attributes
 
-- **TraceId**: Trace identifier — use for filtering or searching by trace ID
-- **SpanId**: Span identifier — use for filtering or searching by span ID
-- **ServiceName**: Service name. Always prefer this over similar looking attributes in `attributes` or `resources` given below
-- **SpanName**: Name of the span
-- **SpanKind**: Span kind. Valid values: `SPAN_KIND_CLIENT`, `SPAN_KIND_SERVER`, `SPAN_KIND_PRODUCER`, `SPAN_KIND_CONSUMER`, `SPAN_KIND_INTERNAL`
-  - CORRECT: `{"$eq": ["SpanKind", "SPAN_KIND_SERVER"]}` ← always use full prefix
-  - WRONG:   `{"$eq": ["SpanKind", "SERVER"]}` ← will return no results
-- **StatusCode**: Span status code. Valid values: `STATUS_CODE_OK`, `STATUS_CODE_ERROR`, `STATUS_CODE_UNSET`
-  - CORRECT: `{"$eq": ["StatusCode", "STATUS_CODE_ERROR"]}` ← always use full prefix
-  - WRONG:   `{"$eq": ["StatusCode", "ERROR"]}` ← will return no results
-- **StatusMessage**: Status message
-- **Timestamp**: Trace timestamp
-- **Duration**: Span duration
-- **attributes['field_name']**: Span attributes (OpenTelemetry semantic conventions)
-- **resources['field_name']**: Resource attributes (prefixed with `resource_`), extract field name by stripping resource_
+`get_trace_attributes` returns a JSON array. Each entry has a `filter_field` — use it verbatim in filter conditions. Never transform or guess field syntax.
+
+```
+{
+  "name": "resource_department",
+  "filter_field": "resources['department']",   ← use this exactly
+  "hint": "Example: {\"$eq\": [\"resources['department']\", \"engineering\"]}"
+}
+```
+
+### Field mapping priority (canonical rules — same as the frontend):
+
+| Raw API name              | filter_field to use in tracejson           |
+|---------------------------|--------------------------------------------|
+| `resource_service.name`   | `ServiceName`                              |
+| `service.name`            | `ServiceName`                              |
+| `resource_<key>`          | `resources['<key>']`                       |
+| `event_<key>`             | `events['<key>']`                          |
+| Top-level fields (below)  | field name as-is                           |
+| `grpc.status_code`        | `attributes['rpc.grpc.status_code']`       |
+| anything else             | `attributes['<raw>']`                      |
+
+**Top-level fields** (no bracket syntax needed):
+`TraceId`, `SpanId`, `ServiceName`, `SpanName`, `SpanKind`, `StatusCode`, `StatusMessage`, `Duration`, `Timestamp`, `ParentSpanId`, `TraceState`
+
+### CRITICAL — field syntax rules:
+
+- Use **single quotes** inside brackets: `resources['key']` ✓ — `resources["key"]` ✗
+- **Never** use the flat `resource_` prefix in a filter: `resource_department` ✗ → `resources['department']` ✓
+- **Never** use dot notation: `ResourceAttributes.department` ✗ → `resources['department']` ✓
+- **Never** use dot notation: `SpanAttributes.http.method` ✗ → `attributes['http.method']` ✓
+- **ServiceName** is top-level — never `resources['service.name']` ✗
+
+### Standard top-level field values:
+
+- **SpanKind** — full OTel prefix required: `SPAN_KIND_SERVER`, `SPAN_KIND_CLIENT`, `SPAN_KIND_INTERNAL`, `SPAN_KIND_CONSUMER`, `SPAN_KIND_PRODUCER`
+  - `"SERVER"` ✗ wrong → `"SPAN_KIND_SERVER"` ✓ correct
+- **StatusCode** — full OTel prefix required: `STATUS_CODE_OK`, `STATUS_CODE_ERROR`, `STATUS_CODE_UNSET`
+  - `"ERROR"` ✗ wrong → `"STATUS_CODE_ERROR"` ✓ correct
 
 ### Custom Fields for user's environment:
-In addition to standard labels, the list of available customer-specific attribute labels is below. In the query, the following rule should be applied to get the attribute from the field name - if the field matches the pattern with `resource_fieldname` the attribute is `resources['fieldname']`. Otherwise it is `attributes['fieldname']`.
-Any attribute used in the query should either be a standard attribute or available from get_trace_attributes
+Call `get_trace_attributes` to discover available fields and get their exact `filter_field`. Use `filter_field` directly — do not transform it.
 
-To find the appropriate field name, try partial matches or matching fields which have similar meaning from the above list.
-
-**IMPORTANT**:  For filtering, if a field is not available in the list above, fall back to a regexp-based filter / parser instead of using conditions on attributes
+**IMPORTANT**: For filtering, if a field is not available from `get_trace_attributes`, fall back to a regexp-based filter / parser instead of using conditions on attributes.
 
 ## Query Analysis Patterns:
 
@@ -320,6 +341,52 @@ To find the appropriate field name, try partial matches or matching fields which
   "groupby": {"ServiceName": "service"}
 }]
 ```
+
+### Example 7: Resource Attribute Filter — Wrong vs Correct
+
+**Natural Language:** "Find traces from the engineering department"
+
+❌ WRONG — flat resource_ prefix, will be rejected:
+```json
+[{
+  "type": "filter",
+  "query": {
+    "$eq": ["resource_department", "engineering"]
+  }
+}]
+```
+
+✅ CORRECT — call get_trace_attributes first to get filter_field, then use it:
+```json
+[{
+  "type": "filter",
+  "query": {
+    "$eq": ["resources['department']", "engineering"]
+  }
+}]
+```
+
+### Example 8: Combined Resource + Span Attribute + Status Filter
+
+**Natural Language:** "Find error traces from the payments service with HTTP POST requests"
+
+**Step 1:** Call `get_trace_attributes` to verify filter_fields for `resource_department`, `http.method`, etc.
+
+**Step 2:** Build the filter using the returned filter_field values:
+```json
+[{
+  "type": "filter",
+  "query": {
+    "$and": [
+      {"$eq": ["ServiceName", "payments"]},
+      {"$eq": ["StatusCode", "STATUS_CODE_ERROR"]},
+      {"$eq": ["attributes['http.request.method']", "POST"]}
+    ]
+  }
+}]
+```
+
+Note: `ServiceName` is a top-level field — never `resources['service.name']`. `http.request.method` maps to `attributes['http.request.method']` as returned by `get_trace_attributes`.
 
 ## Translation Rules:
 
