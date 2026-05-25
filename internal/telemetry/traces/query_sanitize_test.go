@@ -510,8 +510,13 @@ func TestSanitizeTraceJSONQuery_InvalidFieldReferences(t *testing.T) {
 			errContains: `resources['k8s.cluster']`,
 		},
 		{
-			name:        "double-quoted bracket syntax",
+			name:        "double-quoted bracket syntax attributes",
 			field:       `attributes["http.method"]`,
+			errContains: `single quotes`,
+		},
+		{
+			name:        "double-quoted bracket syntax events",
+			field:       `events["exception.type"]`,
 			errContains: `single quotes`,
 		},
 	}
