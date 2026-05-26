@@ -378,8 +378,8 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 			"[chunking] get_service_logs chunking complete service=%q returned_entries=%d start_ms=%d end_ms=%d partial=%t",
 			service,
 			len(logs),
-			startTime.UnixMilli(),
-			endTime.UnixMilli(),
+			startMs,
+			endMs,
 			partialErr != nil,
 		)
 	}
