@@ -141,6 +141,13 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 	// Trace pipelines never reference the Body field, so HasExpensiveBodyParsing
 	// is always false here — adaptive config falls through to the time-range
 	// rules, exactly as the frontend would treat a non-body-search query.
+	//
+	// ShouldOptimizeLineFilterQuery is intentionally left at the zero value
+	// (false). The frontend toggles it via a feature flag to engage Rule 0
+	// (1–2 parallel chunks for expensive body searches with line-filter
+	// optimization). MCP has no equivalent flag today, so Rule 0 is dormant.
+	// For traces this is doubly moot — there's no Body field — but the
+	// comment is kept for parity with the logs call sites.
 	adaptiveCfg := utils.GetAdaptiveLoadingConfig(utils.AdaptiveLoadingInput{
 		StartMs:  startMs,
 		EndMs:    endMs,
