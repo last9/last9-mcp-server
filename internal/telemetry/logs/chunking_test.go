@@ -269,8 +269,9 @@ func TestGetLogsHandlerErrorsOnNonStreamChunkResult(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected handler to fail for non-stream chunk result")
 	}
-	if err.Error() != `chunked get_logs expected streams result, got "matrix"` {
-		t.Fatalf("unexpected error: %v", err)
+	// Hard-error now carries chunk context (post-firstErr/partialErr unification).
+	if !strings.Contains(err.Error(), `chunk 1/1`) || !strings.Contains(err.Error(), `unexpected result_type="matrix"`) {
+		t.Fatalf("expected chunk-context wrapped error mentioning matrix result_type, got: %v", err)
 	}
 	if rec.count() != 1 {
 		t.Fatalf("expected a single chunk request, got %d", rec.count())

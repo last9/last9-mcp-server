@@ -180,8 +180,11 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		baseResponse map[string]interface{}
 		mergedItems  []interface{}
 		remaining    = effectiveLimit
-		partialErr   error
-		firstErr     error
+		// partialErr carries chunk context (e.g. "chunk 3/6 failed: ...") and
+		// is used both for the all-chunks-failed hard error and for the
+		// partial-result annotation when some chunks succeeded. Wrapping the
+		// underlying error via %w preserves errors.Is/As behaviour.
+		partialErr error
 	)
 
 	for _, r := range results {
@@ -196,9 +199,6 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 				"end_ms", r.Chunk.EndMs,
 				"err", r.Err,
 			)
-			if firstErr == nil {
-				firstErr = r.Err
-			}
 			if partialErr == nil {
 				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkNum, len(chunks), r.Err)
 			}
@@ -213,9 +213,6 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 				"total_chunks", len(chunks),
 				"err", err,
 			)
-			if firstErr == nil {
-				firstErr = err
-			}
 			if partialErr == nil {
 				partialErr = fmt.Errorf("chunk %d/%d failed to parse: %w", chunkNum, len(chunks), err)
 			}
@@ -223,16 +220,12 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		}
 
 		if resultType != "streams" {
-			err := fmt.Errorf("chunked get_logs expected streams result, got %q", resultType)
 			slog.Error("chunked log query unexpected result_type",
 				"tool", "get_logs",
 				"chunk_index", chunkNum,
 				"total_chunks", len(chunks),
 				"result_type", resultType,
 			)
-			if firstErr == nil {
-				firstErr = err
-			}
 			if partialErr == nil {
 				partialErr = fmt.Errorf("chunk %d/%d returned unexpected result_type=%q", chunkNum, len(chunks), resultType)
 			}
@@ -268,8 +261,8 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 	}
 
 	if baseResponse == nil {
-		if firstErr != nil {
-			return nil, firstErr
+		if partialErr != nil {
+			return nil, partialErr
 		}
 		return emptyStreamsResponse(), nil
 	}

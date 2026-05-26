@@ -308,8 +308,11 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 
 	logs := make([]LogEntry, 0, limit)
 	var (
+		// partialErr carries chunk context (e.g. "chunk 3/6 failed: ...") and
+		// is used both for the all-chunks-failed hard error and for the
+		// partial-result annotation when some chunks succeeded. Wrapping the
+		// underlying error via %w preserves errors.Is/As behaviour.
 		partialErr error
-		firstErr   error
 		anySuccess bool
 	)
 
@@ -326,9 +329,6 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 				"end_ms", r.Chunk.EndMs,
 				"err", r.Err,
 			)
-			if firstErr == nil {
-				firstErr = r.Err
-			}
 			if partialErr == nil {
 				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkNum, len(chunks), r.Err)
 			}
@@ -369,8 +369,8 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 	// Hard-error only when NO chunk succeeded. If even one chunk returned a
 	// valid (possibly empty) response, surface what we have with a partial
 	// annotation — same contract as fetchLogJSONQuery.
-	if !anySuccess && firstErr != nil {
-		return nil, firstErr
+	if !anySuccess && partialErr != nil {
+		return nil, partialErr
 	}
 
 	if chunkingDebug {

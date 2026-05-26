@@ -187,8 +187,11 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 		baseResponse map[string]interface{}
 		mergedItems  = make([]interface{}, 0)
 		remaining    = effectiveLimit
-		partialErr   error
-		firstErr     error
+		// partialErr carries chunk context (e.g. "chunk 3/6 failed: ...") and
+		// is used both for the all-chunks-failed hard error and for the
+		// partial-result annotation when some chunks succeeded. Wrapping the
+		// underlying error via %w preserves errors.Is/As behaviour.
+		partialErr error
 	)
 
 	for _, r := range results {
@@ -203,9 +206,6 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 				"end_ms", r.Chunk.EndMs,
 				"err", r.Err,
 			)
-			if firstErr == nil {
-				firstErr = r.Err
-			}
 			if partialErr == nil {
 				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkNum, len(chunks), r.Err)
 			}
@@ -220,9 +220,6 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 				"total_chunks", len(chunks),
 				"err", err,
 			)
-			if firstErr == nil {
-				firstErr = err
-			}
 			if partialErr == nil {
 				partialErr = fmt.Errorf("chunk %d/%d failed to parse: %w", chunkNum, len(chunks), err)
 			}
@@ -260,8 +257,8 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 	}
 
 	if baseResponse == nil {
-		if firstErr != nil {
-			return nil, firstErr
+		if partialErr != nil {
+			return nil, partialErr
 		}
 		return emptyTracesResponse(), nil
 	}
