@@ -225,7 +225,9 @@ func isIndexableBodyOperator(op string) bool {
 
 // collectBodyConditions returns the set of operator names that appear at
 // body-touching leaves in the condition tree. Used by
-// isOptimizedBodyFilterStage to assess whether every body filter is indexable.
+// isOptimizedBodyFilterStage to decide whether at least one body-touching
+// operator is indexable — matching the frontend's "any operator group
+// bloom-eligible" semantics.
 func collectBodyConditions(condition map[string]any) map[string]struct{} {
 	ops := make(map[string]struct{})
 	collectBodyConditionsInto(condition, ops)
