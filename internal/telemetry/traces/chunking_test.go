@@ -62,11 +62,11 @@ func TestGetTracesHandlerChunksAndHonorsLimit(t *testing.T) {
 		// 90-min range → 6 chunks of 15 min each (range/6, no body parse).
 		switch q.Get("start") + "-" + q.Get("end") {
 		case "4500-5400":
-			w.Write([]byte(traceAPIResponse(2)))
+			_, _ = w.Write([]byte(traceAPIResponse(2)))
 		case "3600-4500", "2700-3600", "1800-2700", "900-1800":
-			w.Write([]byte(traceAPIResponse(0)))
+			_, _ = w.Write([]byte(traceAPIResponse(0)))
 		case "0-900":
-			w.Write([]byte(traceAPIResponse(2)))
+			_, _ = w.Write([]byte(traceAPIResponse(2)))
 		default:
 			t.Errorf("unexpected chunk %s", q.Encode())
 			http.Error(w, "unexpected", http.StatusBadRequest)
@@ -112,11 +112,11 @@ func TestGetTracesHandlerCapsAtConfiguredMax(t *testing.T) {
 		rec.add(q)
 		switch q.Get("start") + "-" + q.Get("end") {
 		case "4500-5400":
-			w.Write([]byte(traceAPIResponse(2)))
+			_, _ = w.Write([]byte(traceAPIResponse(2)))
 		case "3600-4500", "2700-3600", "1800-2700", "900-1800":
-			w.Write([]byte(traceAPIResponse(0)))
+			_, _ = w.Write([]byte(traceAPIResponse(0)))
 		case "0-900":
-			w.Write([]byte(traceAPIResponse(2)))
+			_, _ = w.Write([]byte(traceAPIResponse(2)))
 		default:
 			t.Errorf("unexpected chunk %s", q.Encode())
 			http.Error(w, "unexpected", http.StatusBadRequest)
@@ -156,7 +156,7 @@ func TestGetTracesHandlerSingleChunkForSubThresholdRange(t *testing.T) {
 	rec := newTracesRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rec.add(r.URL.Query())
-		w.Write([]byte(traceAPIResponse(1)))
+		_, _ = w.Write([]byte(traceAPIResponse(1)))
 	}))
 	defer server.Close()
 
@@ -182,7 +182,7 @@ func TestGetTracesHandlerEmptyChunks(t *testing.T) {
 	rec := newTracesRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rec.add(r.URL.Query())
-		w.Write([]byte(`{"data":{"result":[]}}`))
+		_, _ = w.Write([]byte(`{"data":{"result":[]}}`))
 	}))
 	defer server.Close()
 
@@ -208,7 +208,7 @@ func TestGetTracesHandlerExactTraceIDUsesSingleRequest(t *testing.T) {
 	rec := newTracesRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rec.add(r.URL.Query())
-		w.Write([]byte(traceAPIResponse(1)))
+		_, _ = w.Write([]byte(traceAPIResponse(1)))
 	}))
 	defer server.Close()
 
@@ -258,11 +258,11 @@ func TestGetTracesHandlerReturnsPartialResultAfterLaterChunkError(t *testing.T) 
 		rec.add(q)
 		switch q.Get("start") + "-" + q.Get("end") {
 		case "4500-5400":
-			w.Write([]byte(traceAPIResponse(2)))
+			_, _ = w.Write([]byte(traceAPIResponse(2)))
 		case "3600-4500", "2700-3600", "1800-2700":
-			w.Write([]byte(traceAPIResponse(0)))
+			_, _ = w.Write([]byte(traceAPIResponse(0)))
 		case "900-1800":
-			w.Write([]byte(traceAPIResponse(1)))
+			_, _ = w.Write([]byte(traceAPIResponse(1)))
 		case "0-900":
 			http.Error(w, "backend error", http.StatusInternalServerError)
 		default:
