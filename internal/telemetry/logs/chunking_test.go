@@ -448,6 +448,54 @@ func TestFetchServiceLogsChunksAndHonorsEntryLimit(t *testing.T) {
 	}
 }
 
+func TestFetchServiceLogsReturnsEmptyPartialWhenAllSuccessChunksAreEmpty(t *testing.T) {
+	// Regression: previously fetchServiceLogs returned a hard error when no log
+	// entries were collected, even if most chunks succeeded with empty payloads.
+	// Now matches fetchLogJSONQuery — empty + partial annotation, not hard fail.
+	rec := newRequestRecorder()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		rec.add(q)
+		switch q.Get("start") + "-" + q.Get("end") {
+		case "4500-5400", "3600-4500", "2700-3600", "1800-2700", "900-1800":
+			_, _ = w.Write([]byte(streamsAPIResponse(nil))) // success, zero entries
+		case "0-900":
+			http.Error(w, "backend blew up", http.StatusInternalServerError)
+		default:
+			t.Errorf("unexpected chunk %s", q.Encode())
+			http.Error(w, "unexpected chunk", http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	startTime := time.Unix(0, 0).UTC()
+	endTime := startTime.Add(90 * time.Minute)
+
+	response, err := fetchServiceLogs(
+		context.Background(),
+		server.Client(),
+		testLogsConfig(server.URL),
+		"api",
+		startTime,
+		endTime,
+		10,
+		buildServiceLogsQuery("api", nil, nil),
+		"",
+	)
+	if err != nil {
+		t.Fatalf("expected partial result, got hard error: %v", err)
+	}
+	if response.Count != 0 || len(response.Logs) != 0 {
+		t.Fatalf("expected empty logs from all-empty successes, got count=%d logs=%v", response.Count, response.Logs)
+	}
+	if !response.PartialResult {
+		t.Fatalf("expected partial result flag set, got %#v", response)
+	}
+	if !strings.Contains(response.Warning, "chunk 6/") {
+		t.Fatalf("expected partial warning naming chunk 6, got %q", response.Warning)
+	}
+}
+
 func TestFetchServiceLogsReturnsPartialResultsAfterLaterChunkError(t *testing.T) {
 	rec := newRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

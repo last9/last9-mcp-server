@@ -294,6 +294,7 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 	var (
 		partialErr error
 		firstErr   error
+		anySuccess bool
 	)
 
 	for _, r := range results {
@@ -318,6 +319,11 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 			continue
 		}
 
+		// A successful chunk — even an empty one — counts as positive
+		// evidence about its window. This mirrors fetchLogJSONQuery, where
+		// a successful empty streams response sets baseResponse.
+		anySuccess = true
+
 		remaining := limit - len(logs)
 		if remaining <= 0 {
 			continue
@@ -341,8 +347,10 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		}
 	}
 
-	// If every chunk failed, surface the first error rather than an empty payload.
-	if len(logs) == 0 && firstErr != nil {
+	// Hard-error only when NO chunk succeeded. If even one chunk returned a
+	// valid (possibly empty) response, surface what we have with a partial
+	// annotation — same contract as fetchLogJSONQuery.
+	if !anySuccess && firstErr != nil {
 		return nil, firstErr
 	}
 
