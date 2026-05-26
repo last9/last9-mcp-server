@@ -26,16 +26,24 @@ These are instructions for constructing natural language trace analytics queries
 **Process Flow:**
 1. User provides natural language query about traces
 2. If the user provides an exact trace ID, call `get_service_traces` with canonical time params and stop there
-3. Otherwise, translate it to JSON pipeline format internally
-4. You immediately call the `get_traces` tool with canonical time params:
+3. Call `get_trace_attributes` to discover available span and resource attribute dimensions
+4. Use discovered attributes to build an accurate filter — in particular:
+   - If the user mentions a tenant name, map it to `resources['last9.tenant']`
+   - If the user mentions a deployment environment (prod, staging, etc.), map it to `resources['deployment.environment']`
+   - If the query scope is ambiguous (multiple tenants or environments exist in the discovered attributes but the user did not specify one), ask: "Which tenant/environment should I scope this to?"
+5. Translate the query to JSON pipeline format using the correct field references
+6. Call the `get_traces` tool with canonical time params:
    - Use `start_time_iso` + `end_time_iso` when the user gave explicit absolute dates/times
    - Otherwise use `lookback_minutes` (default: 5 when no time is specified)
-5. You analyze the results and provide insights to the user
+7. Analyze the results and provide insights to the user
 
-**CRITICAL DEFAULT TIME RULE:**
+**CRITICAL TIME PARAMETER RULES:**
 - **ALWAYS use lookback_minutes: 5 when no time range is specified**
 - **NEVER use 60 minutes unless explicitly requested**
 - **Default means 5 minutes, not 60 minutes**
+- **`start_time_iso` and `end_time_iso` are top-level request parameters — NEVER put them inside the pipeline as `Timestamp` filter conditions**
+- When the user gives absolute dates/times → set `start_time_iso` + `end_time_iso` on the tool call, leave the pipeline for data filtering only
+- `{"$gte": ["Timestamp", "..."]}` in the pipeline is WRONG for time range queries — use the request-level params instead
 
 **CRITICAL: ENUM VALUES MUST USE FULL OTEL PREFIX — ABBREVIATED FORMS RETURN ZERO RESULTS**
 - **SpanKind** — ALWAYS use the full prefix: `SPAN_KIND_SERVER`, `SPAN_KIND_CLIENT`, `SPAN_KIND_INTERNAL`, `SPAN_KIND_CONSUMER`, `SPAN_KIND_PRODUCER`
