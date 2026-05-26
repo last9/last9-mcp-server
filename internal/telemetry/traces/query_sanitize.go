@@ -1,6 +1,40 @@
 package traces
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
+
+var traceFilterFieldOperators = map[string]struct{}{
+	"$contains":          {},
+	"$containsWords":     {},
+	"$eq":                {},
+	"$exists":            {},
+	"$gt":                {},
+	"$gte":               {},
+	"$icontains":         {},
+	"$icontainsWords":    {},
+	"$ieq":               {},
+	"$ineq":              {},
+	"$inotcontains":      {},
+	"$inotcontainsWords": {},
+	"$inotregex":         {},
+	"$iregex":            {},
+	"$lt":                {},
+	"$lte":               {},
+	"$neq":               {},
+	"$notcontains":       {},
+	"$notcontainsWords":  {},
+	"$notregex":          {},
+	"$notnull":           {},
+	"$regex":             {},
+}
+
+var traceFilterLogicalOperators = map[string]struct{}{
+	"$and": {},
+	"$or":  {},
+	"$not": {},
+}
 
 // sanitizeTraceJSONQuery validates a tracejson_query pipeline before forwarding
 // to the API. It catches common LLM mistakes and returns descriptive errors so
@@ -14,12 +48,145 @@ func sanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 			return err
 		}
 
+		if stageType == "filter" || stageType == "where" {
+			if query, ok := stage["query"]; ok {
+				if err := validateTraceFilterCondition(query, path+".query"); err != nil {
+					return err
+				}
+				if err := validateFilterFields(query, path+".query"); err != nil {
+					return err
+				}
+			}
+		}
+
 		if stageType == "aggregate" {
 			if err := validateAggregateStage(stage, path); err != nil {
 				return err
 			}
 		}
 	}
+	return nil
+}
+
+func validateTraceFilterCondition(value interface{}, path string) error {
+	switch typed := value.(type) {
+	case []interface{}:
+		for i, item := range typed {
+			if err := validateTraceFilterCondition(item, fmt.Sprintf("%s[%d]", path, i)); err != nil {
+				return err
+			}
+		}
+	case map[string]interface{}:
+		for key, item := range typed {
+			if _, isField := traceFilterFieldOperators[key]; isField {
+				continue
+			}
+			if _, isLogical := traceFilterLogicalOperators[key]; isLogical {
+				if err := validateTraceFilterCondition(item, path+"."+key); err != nil {
+					return err
+				}
+				continue
+			}
+			return fmt.Errorf(
+				"invalid filter condition key %q at %s: keys must be operators ($eq, $neq, $gt, $gte, $lt, $lte, $contains, $notcontains, $icontains, $inotcontains, $icontainsWords, $inotcontainsWords, $regex, $notregex, $iregex, $inotregex, $ieq, $ineq, $notnull, $exists, $containsWords, $notcontainsWords) or logical operators ($and, $or, $not); use the form {%q: [field, value]} — for example {\"$eq\": [\"ServiceName\", \"checkout\"]}",
+				key,
+				path,
+				"$eq",
+			)
+		}
+	}
+	return nil
+}
+
+// validateFilterFields walks the query tree and checks every string field operand
+// for common LLM mistakes: flat resource_ prefix, double-quoted attribute syntax,
+// and dot-notation field names.
+func validateFilterFields(value interface{}, path string) error {
+	switch typed := value.(type) {
+	case []interface{}:
+		for i, item := range typed {
+			if err := validateFilterFields(item, fmt.Sprintf("%s[%d]", path, i)); err != nil {
+				return err
+			}
+		}
+	case map[string]interface{}:
+		for key, item := range typed {
+			if _, isLogical := traceFilterLogicalOperators[key]; isLogical {
+				if err := validateFilterFields(item, path+"."+key); err != nil {
+					return err
+				}
+				continue
+			}
+			// Field operators: args are [field, value] — check first element
+			if args, ok := item.([]interface{}); ok && len(args) > 0 {
+				if fieldStr, ok := args[0].(string); ok {
+					if err := validateFieldSyntax(fieldStr, fmt.Sprintf("%s.%s[0]", path, key)); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// validateFieldSyntax rejects field references that use incorrect syntax forms.
+func validateFieldSyntax(field, path string) error {
+	// Double-quoted bracket syntax: attributes["..."], resources["..."], or events["..."]
+	if strings.HasPrefix(field, `attributes["`) ||
+		strings.HasPrefix(field, `resources["`) ||
+		strings.HasPrefix(field, `events["`) {
+		corrected := strings.ReplaceAll(field, `"`, "'")
+		return fmt.Errorf(
+			"invalid field reference %q at %s: tracejson requires single quotes — use %q instead",
+			field, path, corrected,
+		)
+	}
+
+	// Dot-notation: ResourceAttributes.field → resources['field']
+	if strings.HasPrefix(field, "ResourceAttributes.") {
+		stripped := field[len("ResourceAttributes."):]
+		return fmt.Errorf(
+			"invalid field reference %q at %s: use resources['%s'] instead of dot notation",
+			field, path, stripped,
+		)
+	}
+
+	// Dot-notation: SpanAttributes.field → attributes['field']
+	if strings.HasPrefix(field, "SpanAttributes.") {
+		stripped := field[len("SpanAttributes."):]
+		return fmt.Errorf(
+			"invalid field reference %q at %s: use attributes['%s'] instead of dot notation",
+			field, path, stripped,
+		)
+	}
+
+	// Flat resource_ prefix: resource_department → resources['department']
+	if strings.HasPrefix(field, "resource_") {
+		if _, isTopLevel := traceTopLevelFields[field]; !isTopLevel {
+			stripped := field[len("resource_"):]
+			if stripped == "service.name" {
+				return fmt.Errorf(
+					"invalid field reference %q at %s: use \"ServiceName\" instead",
+					field, path,
+				)
+			}
+			return fmt.Errorf(
+				"invalid field reference %q at %s: use resources['%s'] instead of the flat resource_ prefix",
+				field, path, stripped,
+			)
+		}
+	}
+
+	// Flat event_ prefix: event_exception.type → events['exception.type']
+	if strings.HasPrefix(field, "event_") {
+		stripped := field[len("event_"):]
+		return fmt.Errorf(
+			"invalid field reference %q at %s: use events['%s'] instead of the flat event_ prefix",
+			field, path, stripped,
+		)
+	}
+
 	return nil
 }
 

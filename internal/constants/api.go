@@ -5,9 +5,10 @@ import "time"
 // API Endpoints
 const (
 	// Traces API endpoints
-	EndpointTracesQueryRange = "/cat/api/traces/v2/query_range/json"
-	EndpointTracesSeries     = "/cat/api/traces/v2/series/json"
-	EndpointTraceDetails     = "/cat/api/traces/%s"
+	EndpointTracesQueryRange  = "/cat/api/traces/v2/query_range/json"
+	EndpointTracesSeries      = "/cat/api/traces/v2/series/json"
+	EndpointTraceDetails      = "/cat/api/traces/%s"
+	EndpointTraceTagValues    = "/cat/api/traces/v2/label/json/%s/values"
 
 	// Logs API endpoints
 	EndpointLogsQueryRange = "/logs/api/v2/query_range/json"
