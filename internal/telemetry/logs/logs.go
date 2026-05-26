@@ -116,7 +116,12 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		return executeLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args.Limit, args.Index)
 	}
 
-	chunks := utils.GetTimeRangeChunksBackward(startTime, endTime)
+	adaptiveCfg := utils.GetAdaptiveLoadingConfig(utils.AdaptiveLoadingInput{
+		StartMs:  startTime,
+		EndMs:    endTime,
+		Pipeline: args.LogjsonQuery,
+	})
+	chunks := utils.GetAdaptiveChunks(startTime, endTime, adaptiveCfg)
 	if len(chunks) == 0 {
 		if chunkingDebug {
 			log.Printf(
@@ -134,18 +139,20 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 
 	if chunkingDebug {
 		log.Printf(
-			"[chunking] get_logs chunking enabled chunks=%d max_parallel=%d start_ms=%d end_ms=%d requested_limit=%d effective_limit=%d index=%q",
+			"[chunking] get_logs chunking enabled chunks=%d max_parallel=%d chunk_size_ms=%d start_ms=%d end_ms=%d requested_limit=%d effective_limit=%d index=%q reason=%q",
 			len(chunks),
-			utils.MaxParallelChunks,
+			adaptiveCfg.MaxParallelChunks,
+			adaptiveCfg.ChunkSizeMs,
 			startTime,
 			endTime,
 			args.Limit,
 			effectiveLimit,
 			args.Index,
+			adaptiveCfg.Reason,
 		)
 	}
 
-	results := utils.RunChunksParallel(ctx, chunks, utils.MaxParallelChunks,
+	results := utils.RunChunksParallel(ctx, chunks, adaptiveCfg.MaxParallelChunks,
 		func(ctx context.Context, _ int, chunk utils.TimeChunk) (map[string]interface{}, error) {
 			chunkCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
 			defer cancel()

@@ -5,12 +5,6 @@ import (
 	"sync"
 )
 
-// MaxParallelChunks bounds the number of upstream chunk requests that run
-// concurrently for a single tool call. Five matches the value Prathamesh
-// suggested in ENG-914 and is enough to avoid hammering the backend while
-// keeping wall-clock under typical LLM client timeouts.
-const MaxParallelChunks = 5
-
 // ChunkResult is the per-chunk outcome of RunChunksParallel. Index matches
 // the position of the chunk in the input slice so callers can walk results
 // in original (newest-first) order regardless of completion order.

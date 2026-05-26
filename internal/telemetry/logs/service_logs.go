@@ -258,23 +258,32 @@ func addServiceLogsEnvFilter(query []map[string]interface{}, env string) []map[s
 
 // fetchServiceLogs retrieves raw log entries for a specific service using utils package
 func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Config, service string, startTime, endTime time.Time, limit int, logjsonQuery []map[string]interface{}, index string) (*ServiceLogsResponse, error) {
-	chunks := utils.GetTimeRangeChunksBackward(startTime.UnixMilli(), endTime.UnixMilli())
+	startMs := startTime.UnixMilli()
+	endMs := endTime.UnixMilli()
+	adaptiveCfg := utils.GetAdaptiveLoadingConfig(utils.AdaptiveLoadingInput{
+		StartMs:  startMs,
+		EndMs:    endMs,
+		Pipeline: logjsonQuery,
+	})
+	chunks := utils.GetAdaptiveChunks(startMs, endMs, adaptiveCfg)
 	chunkingDebug := chunkingDebugEnabled()
 
 	if chunkingDebug {
 		log.Printf(
-			"[chunking] get_service_logs chunking enabled service=%q chunks=%d max_parallel=%d start_ms=%d end_ms=%d limit=%d index=%q",
+			"[chunking] get_service_logs chunking enabled service=%q chunks=%d max_parallel=%d chunk_size_ms=%d start_ms=%d end_ms=%d limit=%d index=%q reason=%q",
 			service,
 			len(chunks),
-			utils.MaxParallelChunks,
-			startTime.UnixMilli(),
-			endTime.UnixMilli(),
+			adaptiveCfg.MaxParallelChunks,
+			adaptiveCfg.ChunkSizeMs,
+			startMs,
+			endMs,
 			limit,
 			index,
+			adaptiveCfg.Reason,
 		)
 	}
 
-	results := utils.RunChunksParallel(ctx, chunks, utils.MaxParallelChunks,
+	results := utils.RunChunksParallel(ctx, chunks, adaptiveCfg.MaxParallelChunks,
 		func(ctx context.Context, _ int, chunk utils.TimeChunk) ([]LogEntry, error) {
 			chunkCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
 			defer cancel()

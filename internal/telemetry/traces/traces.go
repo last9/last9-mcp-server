@@ -115,11 +115,12 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	}, nil
 }
 
-// fetchTraceJSONQuery executes the trace query by splitting the time range
-// via utils.GetTimeRangeChunksBackward and fanning the chunks out through
-// utils.RunChunksParallel (bounded by utils.MaxParallelChunks). Results are
-// walked in newest-first index order and truncated to the effective limit,
-// mirroring the logs chunking pipeline.
+// fetchTraceJSONQuery executes the trace query by resolving an
+// AdaptiveLoadingConfig (parallelism + chunk size) for the requested window,
+// splitting via utils.GetAdaptiveChunks, and fanning the chunks out through
+// utils.RunChunksParallel. Results are walked in newest-first index order
+// and truncated to the effective limit. An exact trace_id lookup short-
+// circuits chunking entirely (see extractExactTraceIDLookup).
 func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, tracejsonQuery interface{}, startMs, endMs int64, args GetTracesArgs) (map[string]interface{}, error) {
 	chunkingDebug := chunkingDebugEnabled()
 	effectiveLimit := effectiveGetTracesLimit(cfg, args.Limit)
@@ -137,7 +138,15 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 		return executeTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startMs, endMs, effectiveLimit)
 	}
 
-	chunks := utils.GetTimeRangeChunksBackward(startMs, endMs)
+	// Trace pipelines never reference the Body field, so HasExpensiveBodyParsing
+	// is always false here — adaptive config falls through to the time-range
+	// rules, exactly as the frontend would treat a non-body-search query.
+	adaptiveCfg := utils.GetAdaptiveLoadingConfig(utils.AdaptiveLoadingInput{
+		StartMs:  startMs,
+		EndMs:    endMs,
+		Pipeline: args.TracejsonQuery,
+	})
+	chunks := utils.GetAdaptiveChunks(startMs, endMs, adaptiveCfg)
 	if len(chunks) == 0 {
 		if chunkingDebug {
 			log.Printf("[chunking] get_traces produced no chunks start_ms=%d end_ms=%d limit=%d", startMs, endMs, args.Limit)
@@ -147,12 +156,12 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 
 	if chunkingDebug {
 		log.Printf(
-			"[chunking] get_traces chunking enabled chunks=%d max_parallel=%d start_ms=%d end_ms=%d requested_limit=%d effective_limit=%d",
-			len(chunks), utils.MaxParallelChunks, startMs, endMs, args.Limit, effectiveLimit,
+			"[chunking] get_traces chunking enabled chunks=%d max_parallel=%d chunk_size_ms=%d start_ms=%d end_ms=%d requested_limit=%d effective_limit=%d reason=%q",
+			len(chunks), adaptiveCfg.MaxParallelChunks, adaptiveCfg.ChunkSizeMs, startMs, endMs, args.Limit, effectiveLimit, adaptiveCfg.Reason,
 		)
 	}
 
-	results := utils.RunChunksParallel(ctx, chunks, utils.MaxParallelChunks,
+	results := utils.RunChunksParallel(ctx, chunks, adaptiveCfg.MaxParallelChunks,
 		func(ctx context.Context, _ int, chunk utils.TimeChunk) (map[string]interface{}, error) {
 			chunkCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
 			defer cancel()
