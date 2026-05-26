@@ -16,3 +16,6 @@ var GetMetricsInstructions string
 
 //go:embed descriptions/get_exceptions.md
 var GetExceptionsInstructions string
+
+//go:embed descriptions/get_service_logs.md
+var GetServiceLogsInstructions string

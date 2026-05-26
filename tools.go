@@ -39,6 +39,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 
 	// Build enhanced descriptions for tools that have embedded instructions
 	getLogsDesc := buildEnhancedDescription(logs.GetLogsDescription, prompts.GetLogsInstructions, attrCache.GetLogAttributes())
+	getServiceLogsDesc := buildEnhancedDescription(logs.GetServiceLogsDescription, prompts.GetServiceLogsInstructions, attrCache.GetLogAttributes())
 	getTracesDesc := buildEnhancedDescription(traces.GetTracesDescription, prompts.GetTracesInstructions, nil)
 	getServiceTracesDesc := buildEnhancedDescription(traces.GetServiceTracesDescription, prompts.GetServiceTracesInstructions, nil)
 	getMetricsDesc := buildEnhancedDescription(apm.PromqlRangeQueryDetails, prompts.GetMetricsInstructions, nil)
@@ -118,7 +119,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 	// Register service logs tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "get_service_logs",
-		Description: logs.GetServiceLogsDescription,
+		Description: getServiceLogsDesc,
 	}, logs.NewGetServiceLogsHandler(client, cfg))
 
 	// Register drop rules tool
