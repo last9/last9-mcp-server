@@ -168,6 +168,14 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 		)
 	}
 
+	// Known over-fetch: each chunk asks the upstream for effectiveLimit
+	// traces, not a decrementing remaining budget. With parallel execution
+	// we can't know "remaining" until every chunk is back, so the pre-PR
+	// serial trick of passing remaining doesn't translate. The merge loop
+	// below truncates to effectiveLimit post-merge. Trade-off: backend may
+	// scan extra rows in later chunks already covered by earlier ones, in
+	// exchange for honest coverage of the full time range and consistent
+	// wall-clock regardless of where the data sits in the window.
 	results := utils.RunChunksParallel(ctx, chunks, adaptiveCfg.MaxParallelChunks,
 		func(ctx context.Context, _ int, chunk utils.TimeChunk) (map[string]interface{}, error) {
 			chunkCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)

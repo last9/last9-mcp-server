@@ -160,6 +160,15 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		)
 	}
 
+	// Known over-fetch: each chunk asks the upstream for effectiveLimit rows,
+	// not the remaining budget. With parallel execution we can't know
+	// "remaining" until every chunk is back, so the pre-PR serial trick of
+	// decrementing a remaining counter per chunk doesn't translate. The merge
+	// loop below truncates to effectiveLimit post-merge. Trade-off: upstream
+	// may scan extra rows in later chunks that an earlier chunk's data has
+	// already covered, in exchange for honest coverage of the full time range
+	// and consistent wall-clock regardless of where the data sits in the
+	// window.
 	results := utils.RunChunksParallel(ctx, chunks, adaptiveCfg.MaxParallelChunks,
 		func(ctx context.Context, _ int, chunk utils.TimeChunk) (map[string]interface{}, error) {
 			chunkCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)

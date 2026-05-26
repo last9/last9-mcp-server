@@ -291,6 +291,14 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		)
 	}
 
+	// Known over-fetch (regression from the pre-PR serial loop): each chunk
+	// asks the upstream for the full limit, not "remaining = limit - len(logs)".
+	// With parallel execution we can't know remaining until every chunk is
+	// back, so the pre-PR per-chunk decrement doesn't translate. The merge
+	// loop below truncates to limit post-merge. Trade-off: backend may scan
+	// extra rows in later chunks already covered by earlier ones, in exchange
+	// for honest coverage of the full time range and consistent wall-clock
+	// regardless of where the data sits in the window.
 	results := utils.RunChunksParallel(ctx, chunks, adaptiveCfg.MaxParallelChunks,
 		func(ctx context.Context, _ int, chunk utils.TimeChunk) ([]LogEntry, error) {
 			chunkCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
