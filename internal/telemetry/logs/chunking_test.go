@@ -7,28 +7,43 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestGetLogsHandlerChunksRawQueriesAndHonorsLimit(t *testing.T) {
-	requests := make([]url.Values, 0)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests = append(requests, r.URL.Query())
+// Adaptive sizing rules (mirroring the dashboard's getVolumeQueryChunks):
+//   - range ≤ SplitThresholdMs (1h) → exactly 1 chunk covering the full window
+//   - range > 1h, no body-parse → range/6 chunks, capped at MaxChunkSizeMs (1h)
+//
+// Test cases below use:
+//   60-min range (≤ threshold) → 1 chunk
+//   90-min range (> threshold) → 6 chunks of 15 min each, in newest-first order
+//     chunk bounds in seconds: [4500-5400], [3600-4500], [2700-3600],
+//                              [1800-2700], [900-1800], [0-900]
 
-		switch len(requests) {
-		case 1:
+func TestGetLogsHandlerChunksRawQueriesAndHonorsLimit(t *testing.T) {
+	rec := newRequestRecorder()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		rec.add(q)
+		switch q.Get("start") + "-" + q.Get("end") {
+		case "4500-5400":
 			_, _ = w.Write([]byte(streamsAPIResponse(
-				[]logValue{{Timestamp: "420000000000", Message: "latest"}, {Timestamp: "300000000000", Message: "recent"}},
+				[]logValue{{Timestamp: "5400000000000", Message: "latest"}, {Timestamp: "5100000000000", Message: "recent"}},
 			)))
-		case 2:
+		case "3600-4500", "2700-3600", "1800-2700", "900-1800":
+			_, _ = w.Write([]byte(streamsAPIResponse(nil)))
+		case "0-900":
 			_, _ = w.Write([]byte(streamsAPIResponse(
 				[]logValue{{Timestamp: "60000000000", Message: "older"}},
 			)))
 		default:
-			t.Fatalf("unexpected extra request %d", len(requests))
+			t.Errorf("unexpected chunk %s", q.Encode())
+			http.Error(w, "unexpected chunk", http.StatusBadRequest)
 		}
 	}))
 	defer server.Close()
@@ -37,34 +52,25 @@ func TestGetLogsHandlerChunksRawQueriesAndHonorsLimit(t *testing.T) {
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
 		LogjsonQuery: []map[string]interface{}{
 			{
-				"type": "filter",
-				"query": map[string]interface{}{
-					"$contains": []interface{}{"Body", "error"},
-				},
+				"type":  "filter",
+				"query": map[string]interface{}{"$contains": []interface{}{"Body", "error"}},
 			},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
-		EndTimeISO:   "1970-01-01T00:07:00Z",
+		EndTimeISO:   "1970-01-01T01:30:00Z",
 		Limit:        3,
 	})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(requests) != 2 {
-		t.Fatalf("expected 2 chunk requests, got %d", len(requests))
+	if got := rec.count(); got != 6 {
+		t.Fatalf("expected 6 chunk requests (range/6 sizing), got %d", got)
 	}
-	if got := requests[0].Get("limit"); got != "3" {
-		t.Fatalf("expected first request limit=3, got %q", got)
-	}
-	if got := requests[1].Get("limit"); got != "1" {
-		t.Fatalf("expected second request limit=1, got %q", got)
-	}
-	if got := requests[0].Get("start"); got != "120" || requests[0].Get("end") != "420" {
-		t.Fatalf("unexpected first chunk bounds: %v", requests[0])
-	}
-	if got := requests[1].Get("start"); got != "0" || requests[1].Get("end") != "120" {
-		t.Fatalf("unexpected second chunk bounds: %v", requests[1])
+	for _, q := range rec.all() {
+		if got := q.Get("limit"); got != "3" {
+			t.Fatalf("expected every chunk limit=3 (effective), got %q", got)
+		}
 	}
 
 	payload := parseToolJSONResult(t, result)
@@ -74,21 +80,24 @@ func TestGetLogsHandlerChunksRawQueriesAndHonorsLimit(t *testing.T) {
 }
 
 func TestGetLogsHandlerChunksRawQueriesWithoutLimit(t *testing.T) {
-	requests := make([]url.Values, 0)
+	rec := newRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests = append(requests, r.URL.Query())
-
-		switch len(requests) {
-		case 1:
+		q := r.URL.Query()
+		rec.add(q)
+		switch q.Get("start") + "-" + q.Get("end") {
+		case "4500-5400":
 			_, _ = w.Write([]byte(streamsAPIResponse(
-				[]logValue{{Timestamp: "420000000000", Message: "latest"}, {Timestamp: "300000000000", Message: "recent"}},
+				[]logValue{{Timestamp: "5400000000000", Message: "latest"}, {Timestamp: "5100000000000", Message: "recent"}},
 			)))
-		case 2:
+		case "3600-4500", "2700-3600", "1800-2700", "900-1800":
+			_, _ = w.Write([]byte(streamsAPIResponse(nil)))
+		case "0-900":
 			_, _ = w.Write([]byte(streamsAPIResponse(
 				[]logValue{{Timestamp: "60000000000", Message: "older"}},
 			)))
 		default:
-			t.Fatalf("unexpected extra request %d", len(requests))
+			t.Errorf("unexpected chunk %s", q.Encode())
+			http.Error(w, "unexpected chunk", http.StatusBadRequest)
 		}
 	}))
 	defer server.Close()
@@ -99,33 +108,19 @@ func TestGetLogsHandlerChunksRawQueriesWithoutLimit(t *testing.T) {
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
 		LogjsonQuery: []map[string]interface{}{
 			{
-				"type": "filter",
-				"query": map[string]interface{}{
-					"$contains": []interface{}{"Body", "error"},
-				},
+				"type":  "filter",
+				"query": map[string]interface{}{"$contains": []interface{}{"Body", "error"}},
 			},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
-		EndTimeISO:   "1970-01-01T00:07:00Z",
+		EndTimeISO:   "1970-01-01T01:30:00Z",
 	})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(requests) != 2 {
-		t.Fatalf("expected 2 chunk requests, got %d", len(requests))
-	}
-	if got := requests[0].Get("limit"); got != "3" {
-		t.Fatalf("expected first request limit=3, got %q", got)
-	}
-	if got := requests[1].Get("limit"); got != "1" {
-		t.Fatalf("expected second request limit=1, got %q", got)
-	}
-	if got := requests[0].Get("start"); got != "120" || requests[0].Get("end") != "420" {
-		t.Fatalf("unexpected first chunk bounds: %v", requests[0])
-	}
-	if got := requests[1].Get("start"); got != "0" || requests[1].Get("end") != "120" {
-		t.Fatalf("unexpected second chunk bounds: %v", requests[1])
+	if got := rec.count(); got != 6 {
+		t.Fatalf("expected 6 chunk requests, got %d", got)
 	}
 
 	payload := parseToolJSONResult(t, result)
@@ -135,21 +130,24 @@ func TestGetLogsHandlerChunksRawQueriesWithoutLimit(t *testing.T) {
 }
 
 func TestGetLogsHandlerCapsExplicitLimitAtConfiguredMax(t *testing.T) {
-	requests := make([]url.Values, 0)
+	rec := newRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests = append(requests, r.URL.Query())
-
-		switch len(requests) {
-		case 1:
+		q := r.URL.Query()
+		rec.add(q)
+		switch q.Get("start") + "-" + q.Get("end") {
+		case "4500-5400":
 			_, _ = w.Write([]byte(streamsAPIResponse(
-				[]logValue{{Timestamp: "420000000000", Message: "latest"}, {Timestamp: "300000000000", Message: "recent"}},
+				[]logValue{{Timestamp: "5400000000000", Message: "latest"}, {Timestamp: "5100000000000", Message: "recent"}},
 			)))
-		case 2:
+		case "3600-4500", "2700-3600", "1800-2700", "900-1800":
+			_, _ = w.Write([]byte(streamsAPIResponse(nil)))
+		case "0-900":
 			_, _ = w.Write([]byte(streamsAPIResponse(
 				[]logValue{{Timestamp: "60000000000", Message: "older"}},
 			)))
 		default:
-			t.Fatalf("unexpected extra request %d", len(requests))
+			t.Errorf("unexpected chunk %s", q.Encode())
+			http.Error(w, "unexpected chunk", http.StatusBadRequest)
 		}
 	}))
 	defer server.Close()
@@ -160,28 +158,25 @@ func TestGetLogsHandlerCapsExplicitLimitAtConfiguredMax(t *testing.T) {
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
 		LogjsonQuery: []map[string]interface{}{
 			{
-				"type": "filter",
-				"query": map[string]interface{}{
-					"$contains": []interface{}{"Body", "error"},
-				},
+				"type":  "filter",
+				"query": map[string]interface{}{"$contains": []interface{}{"Body", "error"}},
 			},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
-		EndTimeISO:   "1970-01-01T00:07:00Z",
+		EndTimeISO:   "1970-01-01T01:30:00Z",
 		Limit:        10,
 	})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(requests) != 2 {
-		t.Fatalf("expected 2 chunk requests, got %d", len(requests))
+	if got := rec.count(); got != 6 {
+		t.Fatalf("expected 6 chunk requests, got %d", got)
 	}
-	if got := requests[0].Get("limit"); got != "3" {
-		t.Fatalf("expected first request limit=3, got %q", got)
-	}
-	if got := requests[1].Get("limit"); got != "1" {
-		t.Fatalf("expected second request limit=1, got %q", got)
+	for _, q := range rec.all() {
+		if got := q.Get("limit"); got != "3" {
+			t.Fatalf("expected every chunk capped to limit=3, got %q", got)
+		}
 	}
 
 	payload := parseToolJSONResult(t, result)
@@ -191,9 +186,9 @@ func TestGetLogsHandlerCapsExplicitLimitAtConfiguredMax(t *testing.T) {
 }
 
 func TestGetLogsHandlerDoesNotChunkAggregateQueries(t *testing.T) {
-	requests := make([]url.Values, 0)
+	rec := newRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests = append(requests, r.URL.Query())
+		rec.add(r.URL.Query())
 		_, _ = w.Write([]byte(`{"data":{"resultType":"matrix","result":[]}}`))
 	}))
 	defer server.Close()
@@ -202,35 +197,59 @@ func TestGetLogsHandlerDoesNotChunkAggregateQueries(t *testing.T) {
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
 		LogjsonQuery: []map[string]interface{}{
 			{
-				"type": "filter",
-				"query": map[string]interface{}{
-					"$contains": []interface{}{"Body", "error"},
-				},
+				"type":  "filter",
+				"query": map[string]interface{}{"$contains": []interface{}{"Body", "error"}},
 			},
-			{
-				"type": "aggregate",
-			},
+			{"type": "aggregate"},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
-		EndTimeISO:   "1970-01-01T00:07:00Z",
+		EndTimeISO:   "1970-01-01T01:30:00Z",
 		Limit:        3,
 	})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(requests) != 1 {
-		t.Fatalf("expected aggregate query to stay single-call, got %d requests", len(requests))
+	if got := rec.count(); got != 1 {
+		t.Fatalf("expected aggregate query to stay single-call, got %d requests", got)
 	}
-	if got := requests[0].Get("start"); got != "0" || requests[0].Get("end") != "420" {
-		t.Fatalf("unexpected aggregate request bounds: %v", requests[0])
+}
+
+func TestGetLogsHandlerSingleChunkForSubThresholdRange(t *testing.T) {
+	rec := newRequestRecorder()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.add(r.URL.Query())
+		_, _ = w.Write([]byte(streamsAPIResponse(
+			[]logValue{{Timestamp: "1500000000000", Message: "single"}},
+		)))
+	}))
+	defer server.Close()
+
+	handler := NewGetLogsHandler(server.Client(), testLogsConfig(server.URL))
+	// 30 min range — below SplitThresholdMs (1h) → adaptive returns a single chunk.
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+		LogjsonQuery: []map[string]interface{}{
+			{
+				"type":  "filter",
+				"query": map[string]interface{}{"$contains": []interface{}{"Body", "error"}},
+			},
+		},
+		StartTimeISO: "1970-01-01T00:00:00Z",
+		EndTimeISO:   "1970-01-01T00:30:00Z",
+		Limit:        3,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if got := rec.count(); got != 1 {
+		t.Fatalf("expected 1 chunk for sub-threshold range, got %d", got)
 	}
 }
 
 func TestGetLogsHandlerErrorsOnNonStreamChunkResult(t *testing.T) {
-	requests := make([]url.Values, 0)
+	rec := newRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests = append(requests, r.URL.Query())
+		rec.add(r.URL.Query())
 		_, _ = w.Write([]byte(`{"data":{"resultType":"matrix","result":[]}}`))
 	}))
 	defer server.Close()
@@ -239,41 +258,42 @@ func TestGetLogsHandlerErrorsOnNonStreamChunkResult(t *testing.T) {
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
 		LogjsonQuery: []map[string]interface{}{
 			{
-				"type": "filter",
-				"query": map[string]interface{}{
-					"$contains": []interface{}{"Body", "error"},
-				},
+				"type":  "filter",
+				"query": map[string]interface{}{"$contains": []interface{}{"Body", "error"}},
 			},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
-		EndTimeISO:   "1970-01-01T00:07:00Z",
+		EndTimeISO:   "1970-01-01T00:10:00Z",
 		Limit:        3,
 	})
 	if err == nil {
 		t.Fatal("expected handler to fail for non-stream chunk result")
 	}
-	if err.Error() != `chunked get_logs expected streams result, got "matrix"` {
-		t.Fatalf("unexpected error: %v", err)
+	// Hard-error now carries chunk context (post-firstErr/partialErr unification).
+	if !strings.Contains(err.Error(), `chunk 1/1`) || !strings.Contains(err.Error(), `unexpected result_type="matrix"`) {
+		t.Fatalf("expected chunk-context wrapped error mentioning matrix result_type, got: %v", err)
 	}
-	if len(requests) != 1 {
-		t.Fatalf("expected a single chunk request, got %d", len(requests))
+	if rec.count() != 1 {
+		t.Fatalf("expected a single chunk request, got %d", rec.count())
 	}
 }
 
 func TestGetLogsHandlerTreatsMissingStreamsResultAsEmptyChunk(t *testing.T) {
-	requests := make([]url.Values, 0)
+	rec := newRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests = append(requests, r.URL.Query())
-
-		switch len(requests) {
-		case 1:
+		q := r.URL.Query()
+		rec.add(q)
+		// 90-min range → 6 chunks. Newest two return empty streams; oldest carries the entry.
+		switch q.Get("start") + "-" + q.Get("end") {
+		case "4500-5400", "3600-4500", "2700-3600", "1800-2700", "900-1800":
 			_, _ = w.Write([]byte(`{"data":{"resultType":"streams"}}`))
-		case 2:
+		case "0-900":
 			_, _ = w.Write([]byte(streamsAPIResponse(
 				[]logValue{{Timestamp: "60000000000", Message: "older"}},
 			)))
 		default:
-			t.Fatalf("unexpected extra request %d", len(requests))
+			t.Errorf("unexpected chunk %s", q.Encode())
+			http.Error(w, "unexpected chunk", http.StatusBadRequest)
 		}
 	}))
 	defer server.Close()
@@ -282,22 +302,20 @@ func TestGetLogsHandlerTreatsMissingStreamsResultAsEmptyChunk(t *testing.T) {
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
 		LogjsonQuery: []map[string]interface{}{
 			{
-				"type": "filter",
-				"query": map[string]interface{}{
-					"$contains": []interface{}{"Body", "error"},
-				},
+				"type":  "filter",
+				"query": map[string]interface{}{"$contains": []interface{}{"Body", "error"}},
 			},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
-		EndTimeISO:   "1970-01-01T00:07:00Z",
+		EndTimeISO:   "1970-01-01T01:30:00Z",
 		Limit:        3,
 	})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(requests) != 2 {
-		t.Fatalf("expected 2 chunk requests, got %d", len(requests))
+	if rec.count() != 6 {
+		t.Fatalf("expected 6 chunk requests, got %d", rec.count())
 	}
 
 	payload := parseToolJSONResult(t, result)
@@ -307,23 +325,28 @@ func TestGetLogsHandlerTreatsMissingStreamsResultAsEmptyChunk(t *testing.T) {
 }
 
 func TestGetLogsHandlerReturnsPartialResultsAfterLaterChunkParseError(t *testing.T) {
-	requests := make([]url.Values, 0)
+	rec := newRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests = append(requests, r.URL.Query())
-
-		switch len(requests) {
-		case 1:
+		q := r.URL.Query()
+		rec.add(q)
+		// 90-min range → 6 chunks; chunk 6/6 (oldest = [0,900]) returns a malformed
+		// result so partial-result annotation kicks in.
+		switch q.Get("start") + "-" + q.Get("end") {
+		case "4500-5400":
 			_, _ = w.Write([]byte(streamsAPIResponse(
-				[]logValue{{Timestamp: "780000000000", Message: "latest"}, {Timestamp: "660000000000", Message: "recent"}},
+				[]logValue{{Timestamp: "5400000000000", Message: "latest"}, {Timestamp: "5100000000000", Message: "recent"}},
 			)))
-		case 2:
+		case "3600-4500", "2700-3600", "1800-2700":
+			_, _ = w.Write([]byte(streamsAPIResponse(nil)))
+		case "900-1800":
 			_, _ = w.Write([]byte(streamsAPIResponse(
-				[]logValue{{Timestamp: "360000000000", Message: "older"}},
+				[]logValue{{Timestamp: "1200000000000", Message: "middle"}},
 			)))
-		case 3:
+		case "0-900":
 			_, _ = w.Write([]byte(`{"data":{"resultType":"streams","result":{}}}`))
 		default:
-			t.Fatalf("unexpected extra request %d", len(requests))
+			t.Errorf("unexpected chunk %s", q.Encode())
+			http.Error(w, "unexpected chunk", http.StatusBadRequest)
 		}
 	}))
 	defer server.Close()
@@ -332,22 +355,20 @@ func TestGetLogsHandlerReturnsPartialResultsAfterLaterChunkParseError(t *testing
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
 		LogjsonQuery: []map[string]interface{}{
 			{
-				"type": "filter",
-				"query": map[string]interface{}{
-					"$contains": []interface{}{"Body", "error"},
-				},
+				"type":  "filter",
+				"query": map[string]interface{}{"$contains": []interface{}{"Body", "error"}},
 			},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
-		EndTimeISO:   "1970-01-01T00:13:00Z",
+		EndTimeISO:   "1970-01-01T01:30:00Z",
 		Limit:        10,
 	})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(requests) != 3 {
-		t.Fatalf("expected 3 chunk requests, got %d", len(requests))
+	if rec.count() != 6 {
+		t.Fatalf("expected 6 chunk requests, got %d", rec.count())
 	}
 
 	payload := parseToolJSONResult(t, result)
@@ -363,34 +384,40 @@ func TestGetLogsHandlerReturnsPartialResultsAfterLaterChunkParseError(t *testing
 		t.Fatalf("expected partial_result=true, got %#v", meta["partial_result"])
 	}
 	warning, ok := meta["warning"].(string)
-	if !ok || !strings.Contains(warning, "chunk 3/3 failed to parse") {
-		t.Fatalf("expected parse warning in metadata, got %#v", meta["warning"])
+	if !ok || !strings.Contains(warning, "chunk 6/6 failed to parse") {
+		t.Fatalf("expected parse warning naming chunk 6/6, got %#v", meta["warning"])
 	}
 }
 
 func TestFetchServiceLogsChunksAndHonorsEntryLimit(t *testing.T) {
-	requests := make([]url.Values, 0)
+	rec := newRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests = append(requests, r.URL.Query())
-
-		switch len(requests) {
-		case 1:
+		q := r.URL.Query()
+		rec.add(q)
+		// 90-min range, offset by 60 seconds (testTimeStart). startMs=60000,
+		// endMs=5460000 → range 5400000ms → range/6 = 900000ms chunks
+		// Chunk bounds in seconds (newest-first):
+		//   [4560,5460], [3660,4560], [2760,3660], [1860,2760], [960,1860], [60,960]
+		switch q.Get("start") + "-" + q.Get("end") {
+		case "4560-5460":
 			_, _ = w.Write([]byte(streamsAPIResponse(
-				[]logValue{{Timestamp: "420000000000", Message: "latest"}, {Timestamp: "300000000000", Message: "recent"}},
+				[]logValue{{Timestamp: "5400000000000", Message: "latest"}, {Timestamp: "5100000000000", Message: "recent"}},
 			)))
-		case 2:
-			// Deliberately over-return to verify we trim by entry count, not stream count.
+		case "3660-4560", "2760-3660", "1860-2760", "960-1860":
+			_, _ = w.Write([]byte(streamsAPIResponse(nil)))
+		case "60-960":
 			_, _ = w.Write([]byte(streamsAPIResponse(
-				[]logValue{{Timestamp: "60000000000", Message: "older"}, {Timestamp: "30000000000", Message: "oldest"}},
+				[]logValue{{Timestamp: "120000000000", Message: "older"}, {Timestamp: "90000000000", Message: "oldest"}},
 			)))
 		default:
-			t.Fatalf("unexpected extra request %d", len(requests))
+			t.Errorf("unexpected chunk %s", q.Encode())
+			http.Error(w, "unexpected chunk", http.StatusBadRequest)
 		}
 	}))
 	defer server.Close()
 
 	startTime := time.Unix(60, 0).UTC()
-	endTime := startTime.Add(7 * time.Minute)
+	endTime := startTime.Add(90 * time.Minute)
 
 	response, err := fetchServiceLogs(
 		context.Background(),
@@ -407,14 +434,8 @@ func TestFetchServiceLogsChunksAndHonorsEntryLimit(t *testing.T) {
 		t.Fatalf("fetchServiceLogs returned error: %v", err)
 	}
 
-	if len(requests) != 2 {
-		t.Fatalf("expected 2 chunk requests, got %d", len(requests))
-	}
-	if got := requests[0].Get("limit"); got != "3" {
-		t.Fatalf("expected first request limit=3, got %q", got)
-	}
-	if got := requests[1].Get("limit"); got != "1" {
-		t.Fatalf("expected second request limit=1, got %q", got)
+	if rec.count() != 6 {
+		t.Fatalf("expected 6 chunk requests, got %d", rec.count())
 	}
 	if response.Count != 3 {
 		t.Fatalf("expected count=3, got %d", response.Count)
@@ -422,33 +443,130 @@ func TestFetchServiceLogsChunksAndHonorsEntryLimit(t *testing.T) {
 	if len(response.Logs) != 3 {
 		t.Fatalf("expected 3 logs, got %d", len(response.Logs))
 	}
+	// Newest chunk yielded 2 entries; the oldest chunk's first entry is appended.
 	if response.Logs[2].Message != "older" {
 		t.Fatalf("expected final retained log to be trimmed to 'older', got %#v", response.Logs[2])
 	}
 }
 
-func TestFetchServiceLogsReturnsPartialResultsAfterLaterChunkError(t *testing.T) {
-	requests := make([]url.Values, 0)
+func TestFetchServiceLogsHardErrorsWhenAllChunksFail(t *testing.T) {
+	// Regression: when every chunk returns an upstream error and no chunk
+	// produced a valid response, the call must surface a hard error rather
+	// than an empty partial result. Exercises the
+	// "!anySuccess && partialErr != nil" gate.
+	rec := newRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests = append(requests, r.URL.Query())
+		rec.add(r.URL.Query())
+		http.Error(w, "backend exploded", http.StatusInternalServerError)
+	}))
+	defer server.Close()
 
-		switch len(requests) {
-		case 1:
-			_, _ = w.Write([]byte(streamsAPIResponse(
-				[]logValue{{Timestamp: "780000000000", Message: "latest"}, {Timestamp: "660000000000", Message: "recent"}},
-			)))
-		case 2:
-			_, _ = w.Write([]byte(streamsAPIResponse(
-				[]logValue{{Timestamp: "360000000000", Message: "older"}},
-			)))
-		default:
+	startTime := time.Unix(0, 0).UTC()
+	endTime := startTime.Add(90 * time.Minute)
+
+	response, err := fetchServiceLogs(
+		context.Background(),
+		server.Client(),
+		testLogsConfig(server.URL),
+		"api",
+		startTime,
+		endTime,
+		10,
+		buildServiceLogsQuery("api", nil, nil),
+		"",
+	)
+	if err == nil {
+		t.Fatalf("expected hard error when every chunk fails, got response=%#v", response)
+	}
+	if response != nil {
+		t.Fatalf("expected nil response on hard error, got %#v", response)
+	}
+	// Error should carry chunk context (post firstErr/partialErr unification).
+	if !strings.Contains(err.Error(), "chunk 1/") || !strings.Contains(err.Error(), "failed") {
+		t.Fatalf("expected chunk-context wrapped error, got: %v", err)
+	}
+	// All chunks should have been attempted (parallel fan-out doesn't short-circuit
+	// on the first failure).
+	if rec.count() != 6 {
+		t.Fatalf("expected 6 chunk attempts even with all failing, got %d", rec.count())
+	}
+}
+
+func TestFetchServiceLogsReturnsEmptyPartialWhenAllSuccessChunksAreEmpty(t *testing.T) {
+	// Regression: previously fetchServiceLogs returned a hard error when no log
+	// entries were collected, even if most chunks succeeded with empty payloads.
+	// Now matches fetchLogJSONQuery — empty + partial annotation, not hard fail.
+	rec := newRequestRecorder()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		rec.add(q)
+		switch q.Get("start") + "-" + q.Get("end") {
+		case "4500-5400", "3600-4500", "2700-3600", "1800-2700", "900-1800":
+			_, _ = w.Write([]byte(streamsAPIResponse(nil))) // success, zero entries
+		case "0-900":
 			http.Error(w, "backend blew up", http.StatusInternalServerError)
+		default:
+			t.Errorf("unexpected chunk %s", q.Encode())
+			http.Error(w, "unexpected chunk", http.StatusBadRequest)
 		}
 	}))
 	defer server.Close()
 
 	startTime := time.Unix(0, 0).UTC()
-	endTime := startTime.Add(31 * time.Minute)
+	endTime := startTime.Add(90 * time.Minute)
+
+	response, err := fetchServiceLogs(
+		context.Background(),
+		server.Client(),
+		testLogsConfig(server.URL),
+		"api",
+		startTime,
+		endTime,
+		10,
+		buildServiceLogsQuery("api", nil, nil),
+		"",
+	)
+	if err != nil {
+		t.Fatalf("expected partial result, got hard error: %v", err)
+	}
+	if response.Count != 0 || len(response.Logs) != 0 {
+		t.Fatalf("expected empty logs from all-empty successes, got count=%d logs=%v", response.Count, response.Logs)
+	}
+	if !response.PartialResult {
+		t.Fatalf("expected partial result flag set, got %#v", response)
+	}
+	if !strings.Contains(response.Warning, "chunk 6/") {
+		t.Fatalf("expected partial warning naming chunk 6, got %q", response.Warning)
+	}
+}
+
+func TestFetchServiceLogsReturnsPartialResultsAfterLaterChunkError(t *testing.T) {
+	rec := newRequestRecorder()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		rec.add(q)
+		switch q.Get("start") + "-" + q.Get("end") {
+		case "4500-5400":
+			_, _ = w.Write([]byte(streamsAPIResponse(
+				[]logValue{{Timestamp: "5400000000000", Message: "latest"}, {Timestamp: "5100000000000", Message: "recent"}},
+			)))
+		case "3600-4500", "2700-3600", "1800-2700":
+			_, _ = w.Write([]byte(streamsAPIResponse(nil)))
+		case "900-1800":
+			_, _ = w.Write([]byte(streamsAPIResponse(
+				[]logValue{{Timestamp: "1200000000000", Message: "middle"}},
+			)))
+		case "0-900":
+			http.Error(w, "backend blew up", http.StatusInternalServerError)
+		default:
+			t.Errorf("unexpected chunk %s", q.Encode())
+			http.Error(w, "unexpected chunk", http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	startTime := time.Unix(0, 0).UTC()
+	endTime := startTime.Add(90 * time.Minute)
 
 	response, err := fetchServiceLogs(
 		context.Background(),
@@ -465,20 +583,62 @@ func TestFetchServiceLogsReturnsPartialResultsAfterLaterChunkError(t *testing.T)
 		t.Fatalf("fetchServiceLogs returned error: %v", err)
 	}
 
-	if len(requests) != 3 {
-		t.Fatalf("expected 3 chunk requests, got %d", len(requests))
+	if rec.count() != 6 {
+		t.Fatalf("expected 6 chunk requests, got %d", rec.count())
 	}
 	if response.Count != 3 {
 		t.Fatalf("expected count=3, got %d", response.Count)
 	}
-	if len(response.Logs) != 3 {
-		t.Fatalf("expected 3 logs, got %d", len(response.Logs))
-	}
 	if !response.PartialResult {
 		t.Fatalf("expected partial result flag, got %#v", response)
 	}
-	if !strings.Contains(response.Warning, "chunk 3/") || !strings.Contains(response.Warning, "failed") {
-		t.Fatalf("expected partial warning, got %q", response.Warning)
+	if !strings.Contains(response.Warning, "chunk 6/") || !strings.Contains(response.Warning, "failed") {
+		t.Fatalf("expected partial warning naming chunk 6, got %q", response.Warning)
+	}
+}
+
+func TestParallelChunksRespectSemaphore(t *testing.T) {
+	// 10-hour range — 10 chunks of 1h each (range/6 capped at MaxChunkSizeMs).
+	// Default adaptive rule (range < 2d) → max parallel = ParallelCallsLimit (6).
+	var (
+		inflight    atomic.Int32
+		maxObserved atomic.Int32
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cur := inflight.Add(1)
+		for {
+			prev := maxObserved.Load()
+			if cur <= prev || maxObserved.CompareAndSwap(prev, cur) {
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+		inflight.Add(-1)
+		_, _ = w.Write([]byte(streamsAPIResponse(nil)))
+	}))
+	defer server.Close()
+
+	handler := NewGetLogsHandler(server.Client(), testLogsConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+		LogjsonQuery: []map[string]interface{}{
+			{
+				"type":  "filter",
+				"query": map[string]interface{}{"$contains": []interface{}{"Body", "x"}},
+			},
+		},
+		StartTimeISO: "1970-01-01T00:00:00Z",
+		EndTimeISO:   "1970-01-01T10:00:00Z",
+		Limit:        100,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if got := maxObserved.Load(); got > 6 {
+		t.Fatalf("expected at most 6 concurrent chunks (ParallelCallsLimit), observed %d", got)
+	}
+	if maxObserved.Load() < 2 {
+		t.Fatalf("expected concurrency > 1 to validate parallel execution, observed %d", maxObserved.Load())
 	}
 }
 
@@ -531,6 +691,37 @@ func TestTruncateResultItemsByEntryLimitClonesValuesSlice(t *testing.T) {
 	if got := firstValue[1]; got != "latest" {
 		t.Fatalf("expected cloned slice to preserve original entry, got %#v", firstValue)
 	}
+}
+
+// --- helpers ---
+
+type requestRecorder struct {
+	mu   sync.Mutex
+	reqs []url.Values
+}
+
+func newRequestRecorder() *requestRecorder {
+	return &requestRecorder{}
+}
+
+func (r *requestRecorder) add(q url.Values) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.reqs = append(r.reqs, q)
+}
+
+func (r *requestRecorder) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.reqs)
+}
+
+func (r *requestRecorder) all() []url.Values {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]url.Values, len(r.reqs))
+	copy(out, r.reqs)
+	return out
 }
 
 type logValue struct {

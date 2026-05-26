@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
@@ -256,127 +258,130 @@ func addServiceLogsEnvFilter(query []map[string]interface{}, env string) []map[s
 
 // fetchServiceLogs retrieves raw log entries for a specific service using utils package
 func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Config, service string, startTime, endTime time.Time, limit int, logjsonQuery []map[string]interface{}, index string) (*ServiceLogsResponse, error) {
-	chunks := utils.GetTimeRangeChunksBackward(startTime.UnixMilli(), endTime.UnixMilli())
-	logs := make([]LogEntry, 0, limit)
+	startMs := startTime.UnixMilli()
+	endMs := endTime.UnixMilli()
+	// ShouldOptimizeLineFilterQuery is intentionally left at the zero value
+	// (false). The frontend toggles it via a feature flag to engage Rule 0
+	// (1–2 parallel chunks for expensive body searches with line-filter
+	// optimization). MCP has no equivalent flag today, so Rule 0 is dormant
+	// and expensive body-search queries fall through to the time-range rules.
+	// If we ever want to match the frontend's most aggressive throttle, wire
+	// a config / env var into this field and the adaptive cascade picks it up
+	// without further changes.
+	adaptiveCfg := utils.GetAdaptiveLoadingConfig(utils.AdaptiveLoadingInput{
+		StartMs:  startMs,
+		EndMs:    endMs,
+		Pipeline: logjsonQuery,
+	})
+	chunks := utils.GetAdaptiveChunks(startMs, endMs, adaptiveCfg)
 	chunkingDebug := chunkingDebugEnabled()
-	var partialErr error
 
 	if chunkingDebug {
 		log.Printf(
-			"[chunking] get_service_logs chunking enabled service=%q chunks=%d start_ms=%d end_ms=%d limit=%d index=%q",
+			"[chunking] get_service_logs chunking enabled service=%q chunks=%d max_parallel=%d chunk_size_ms=%d start_ms=%d end_ms=%d limit=%d index=%q reason=%q",
 			service,
 			len(chunks),
-			startTime.UnixMilli(),
-			endTime.UnixMilli(),
+			adaptiveCfg.MaxParallelChunks,
+			adaptiveCfg.ChunkSizeMs,
+			startMs,
+			endMs,
 			limit,
 			index,
+			adaptiveCfg.Reason,
 		)
 	}
 
-	for chunkIndex, chunk := range chunks {
+	// Known over-fetch (regression from the pre-PR serial loop): each chunk
+	// asks the upstream for the full limit, not "remaining = limit - len(logs)".
+	// With parallel execution we can't know remaining until every chunk is
+	// back, so the pre-PR per-chunk decrement doesn't translate. The merge
+	// loop below truncates to limit post-merge. Trade-off: backend may scan
+	// extra rows in later chunks already covered by earlier ones, in exchange
+	// for honest coverage of the full time range and consistent wall-clock
+	// regardless of where the data sits in the window.
+	results := utils.RunChunksParallel(ctx, chunks, adaptiveCfg.MaxParallelChunks,
+		func(ctx context.Context, _ int, chunk utils.TimeChunk) ([]LogEntry, error) {
+			chunkCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
+			defer cancel()
+			return fetchServiceLogsChunk(chunkCtx, client, cfg, service, logjsonQuery, chunk.StartMs, chunk.EndMs, limit, index)
+		})
+
+	logs := make([]LogEntry, 0, limit)
+	var (
+		// partialErr carries chunk context (e.g. "chunk 3/6 failed: ...") and
+		// is used both for the all-chunks-failed hard error and for the
+		// partial-result annotation when some chunks succeeded. Wrapping the
+		// underlying error via %w preserves errors.Is/As behaviour.
+		partialErr error
+		anySuccess bool
+	)
+
+	for _, r := range results {
+		chunkNum := r.Index + 1
+
+		if r.Err != nil {
+			slog.Error("chunked service_logs query failed",
+				"tool", "get_service_logs",
+				"service", service,
+				"chunk_index", chunkNum,
+				"total_chunks", len(chunks),
+				"start_ms", r.Chunk.StartMs,
+				"end_ms", r.Chunk.EndMs,
+				"err", r.Err,
+			)
+			if partialErr == nil {
+				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkNum, len(chunks), r.Err)
+			}
+			continue
+		}
+
+		// A successful chunk — even an empty one — counts as positive
+		// evidence about its window. This mirrors fetchLogJSONQuery, where
+		// a successful empty streams response sets baseResponse.
+		anySuccess = true
+
 		remaining := limit - len(logs)
-		if remaining <= 0 {
-			break
-		}
-
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_service_logs chunk request service=%q chunk=%d/%d start_ms=%d end_ms=%d remaining_limit=%d",
-				service,
-				chunkIndex+1,
-				len(chunks),
-				chunk.StartMs,
-				chunk.EndMs,
-				remaining,
-			)
-		}
-
-		chunkLogs, err := fetchServiceLogsChunk(
-			ctx,
-			client,
-			cfg,
-			service,
-			logjsonQuery,
-			chunk.StartMs,
-			chunk.EndMs,
-			remaining,
-			index,
-		)
-		if err != nil {
-			if chunkingDebug {
-				log.Printf(
-					"[chunking] get_service_logs chunk error service=%q chunk=%d/%d start_ms=%d end_ms=%d err=%v",
-					service,
-					chunkIndex+1,
-					len(chunks),
-					chunk.StartMs,
-					chunk.EndMs,
-					err,
-				)
-			}
-			if len(logs) > 0 {
-				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkIndex+1, len(chunks), err)
-				break
-			}
-			return nil, err
-		}
-
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_service_logs chunk response service=%q chunk=%d/%d returned_entries=%d",
-				service,
-				chunkIndex+1,
-				len(chunks),
-				len(chunkLogs),
-			)
-		}
-
-		if len(chunkLogs) > remaining {
-			if chunkingDebug {
-				log.Printf(
-					"[chunking] get_service_logs chunk trim service=%q chunk=%d/%d kept_entries=%d dropped_entries=%d",
-					service,
-					chunkIndex+1,
-					len(chunks),
-					remaining,
-					len(chunkLogs)-remaining,
-				)
-			}
+		chunkLogs := r.Value
+		// Track whether this chunk's results were fully truncated away so the
+		// debug log records every successful chunk, not just the ones that
+		// fit inside the limit.
+		truncatedAtLimit := remaining <= 0
+		if truncatedAtLimit {
+			chunkLogs = nil
+		} else if len(chunkLogs) > remaining {
 			chunkLogs = chunkLogs[:remaining]
 		}
 		logs = append(logs, chunkLogs...)
 
 		if chunkingDebug {
 			log.Printf(
-				"[chunking] get_service_logs chunk merged service=%q chunk=%d/%d total_entries=%d remaining_limit=%d",
+				"[chunking] get_service_logs chunk result service=%q chunk=%d/%d kept_entries=%d remaining_limit=%d truncated_at_limit=%t",
 				service,
-				chunkIndex+1,
+				chunkNum,
 				len(chunks),
-				len(logs),
+				len(chunkLogs),
 				limit-len(logs),
+				truncatedAtLimit,
 			)
 		}
 	}
 
+	// Hard-error only when NO chunk succeeded. If even one chunk returned a
+	// valid (possibly empty) response, surface what we have with a partial
+	// annotation — same contract as fetchLogJSONQuery.
+	if !anySuccess && partialErr != nil {
+		return nil, partialErr
+	}
+
 	if chunkingDebug {
-		if partialErr != nil {
-			log.Printf(
-				"[chunking] get_service_logs chunking partial service=%q returned_entries=%d start_ms=%d end_ms=%d err=%v",
-				service,
-				len(logs),
-				startTime.UnixMilli(),
-				endTime.UnixMilli(),
-				partialErr,
-			)
-		} else {
-			log.Printf(
-				"[chunking] get_service_logs chunking complete service=%q returned_entries=%d start_ms=%d end_ms=%d",
-				service,
-				len(logs),
-				startTime.UnixMilli(),
-				endTime.UnixMilli(),
-			)
-		}
+		log.Printf(
+			"[chunking] get_service_logs chunking complete service=%q returned_entries=%d start_ms=%d end_ms=%d partial=%t",
+			service,
+			len(logs),
+			startMs,
+			endMs,
+			partialErr != nil,
+		)
 	}
 
 	response := &ServiceLogsResponse{

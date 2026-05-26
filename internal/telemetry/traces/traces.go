@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
@@ -113,8 +115,12 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	}, nil
 }
 
-// fetchTraceJSONQuery executes the trace query, chunking the time range into 5-minute windows
-// and merging results newest-first — mirroring the logs chunking approach.
+// fetchTraceJSONQuery executes the trace query by resolving an
+// AdaptiveLoadingConfig (parallelism + chunk size) for the requested window,
+// splitting via utils.GetAdaptiveChunks, and fanning the chunks out through
+// utils.RunChunksParallel. Results are walked in newest-first index order
+// and truncated to the effective limit. An exact trace_id lookup short-
+// circuits chunking entirely (see extractExactTraceIDLookup).
 func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, tracejsonQuery interface{}, startMs, endMs int64, args GetTracesArgs) (map[string]interface{}, error) {
 	chunkingDebug := chunkingDebugEnabled()
 	effectiveLimit := effectiveGetTracesLimit(cfg, args.Limit)
@@ -132,7 +138,22 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 		return executeTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startMs, endMs, effectiveLimit)
 	}
 
-	chunks := utils.GetTimeRangeChunksBackward(startMs, endMs)
+	// Trace pipelines never reference the Body field, so HasExpensiveBodyParsing
+	// is always false here — adaptive config falls through to the time-range
+	// rules, exactly as the frontend would treat a non-body-search query.
+	//
+	// ShouldOptimizeLineFilterQuery is intentionally left at the zero value
+	// (false). The frontend toggles it via a feature flag to engage Rule 0
+	// (1–2 parallel chunks for expensive body searches with line-filter
+	// optimization). MCP has no equivalent flag today, so Rule 0 is dormant.
+	// For traces this is doubly moot — there's no Body field — but the
+	// comment is kept for parity with the logs call sites.
+	adaptiveCfg := utils.GetAdaptiveLoadingConfig(utils.AdaptiveLoadingInput{
+		StartMs:  startMs,
+		EndMs:    endMs,
+		Pipeline: args.TracejsonQuery,
+	})
+	chunks := utils.GetAdaptiveChunks(startMs, endMs, adaptiveCfg)
 	if len(chunks) == 0 {
 		if chunkingDebug {
 			log.Printf("[chunking] get_traces produced no chunks start_ms=%d end_ms=%d limit=%d", startMs, endMs, args.Limit)
@@ -142,12 +163,12 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 
 	if chunkingDebug {
 		log.Printf(
-			"[chunking] get_traces chunking enabled chunks=%d start_ms=%d end_ms=%d requested_limit=%d effective_limit=%d",
-			len(chunks), startMs, endMs, args.Limit, effectiveLimit,
+			"[chunking] get_traces chunking enabled chunks=%d max_parallel=%d chunk_size_ms=%d start_ms=%d end_ms=%d requested_limit=%d effective_limit=%d reason=%q",
+			len(chunks), adaptiveCfg.MaxParallelChunks, adaptiveCfg.ChunkSizeMs, startMs, endMs, args.Limit, effectiveLimit, adaptiveCfg.Reason,
 		)
-	}
-	if args.Limit > 0 && args.Limit > effectiveLimit {
-		if chunkingDebug {
+		// Preserved from the pre-refactor format so existing log greps
+		// matching `requested limit capped` keep working.
+		if args.Limit > 0 && args.Limit > effectiveLimit {
 			log.Printf(
 				"[chunking] get_traces requested limit capped requested_limit=%d configured_max=%d",
 				args.Limit,
@@ -156,121 +177,97 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 		}
 	}
 
+	// Known over-fetch: each chunk asks the upstream for effectiveLimit
+	// traces, not a decrementing remaining budget. With parallel execution
+	// we can't know "remaining" until every chunk is back, so the pre-PR
+	// serial trick of passing remaining doesn't translate. The merge loop
+	// below truncates to effectiveLimit post-merge. Trade-off: backend may
+	// scan extra rows in later chunks already covered by earlier ones, in
+	// exchange for honest coverage of the full time range and consistent
+	// wall-clock regardless of where the data sits in the window.
+	results := utils.RunChunksParallel(ctx, chunks, adaptiveCfg.MaxParallelChunks,
+		func(ctx context.Context, _ int, chunk utils.TimeChunk) (map[string]interface{}, error) {
+			chunkCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
+			defer cancel()
+			return executeTraceJSONQuery(chunkCtx, client, cfg, tracejsonQuery, chunk.StartMs, chunk.EndMs, effectiveLimit)
+		})
+
 	var (
 		baseResponse map[string]interface{}
 		mergedItems  = make([]interface{}, 0)
 		remaining    = effectiveLimit
-		partialErr   error
+		// partialErr carries chunk context (e.g. "chunk 3/6 failed: ...") and
+		// is used both for the all-chunks-failed hard error and for the
+		// partial-result annotation when some chunks succeeded. Wrapping the
+		// underlying error via %w preserves errors.Is/As behaviour.
+		partialErr error
 	)
 
-	for chunkIndex, chunk := range chunks {
-		chunkLimit := remaining
+	for _, r := range results {
+		chunkNum := r.Index + 1
 
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_traces chunk request chunk=%d/%d start_ms=%d end_ms=%d chunk_limit=%d remaining_limit=%d",
-				chunkIndex+1, len(chunks), chunk.StartMs, chunk.EndMs, chunkLimit, remaining,
+		if r.Err != nil {
+			slog.Error("chunked trace query failed",
+				"tool", "get_traces",
+				"chunk_index", chunkNum,
+				"total_chunks", len(chunks),
+				"start_ms", r.Chunk.StartMs,
+				"end_ms", r.Chunk.EndMs,
+				"err", r.Err,
 			)
-		}
-
-		chunkResp, err := executeTraceJSONQuery(ctx, client, cfg, tracejsonQuery, chunk.StartMs, chunk.EndMs, chunkLimit)
-		if err != nil {
-			if chunkingDebug {
-				log.Printf(
-					"[chunking] get_traces chunk error chunk=%d/%d start_ms=%d end_ms=%d err=%v",
-					chunkIndex+1,
-					len(chunks),
-					chunk.StartMs,
-					chunk.EndMs,
-					err,
-				)
+			if partialErr == nil {
+				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkNum, len(chunks), r.Err)
 			}
-			if baseResponse != nil {
-				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkIndex+1, len(chunks), err)
-				break
-			}
-			return nil, err
-		}
-
-		items, err := extractTraceResultItems(chunkResp)
-		if err != nil {
-			if chunkingDebug {
-				log.Printf(
-					"[chunking] get_traces chunk parse error chunk=%d/%d start_ms=%d end_ms=%d err=%v",
-					chunkIndex+1,
-					len(chunks),
-					chunk.StartMs,
-					chunk.EndMs,
-					err,
-				)
-			}
-			if baseResponse != nil {
-				partialErr = fmt.Errorf("chunk %d/%d failed to parse: %w", chunkIndex+1, len(chunks), err)
-				break
-			}
-			return nil, err
-		}
-
-		returnedTraces := len(items)
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_traces chunk response chunk=%d/%d returned_traces=%d",
-				chunkIndex+1,
-				len(chunks),
-				returnedTraces,
-			)
-		}
-
-		if baseResponse == nil {
-			baseResponse = chunkResp
-		}
-
-		if len(items) == 0 {
 			continue
 		}
 
-		tracesBeforeTrim := returnedTraces
-		if len(items) > remaining {
-			items = items[:remaining]
-		}
-		tracesAfterTrim := len(items)
-		if tracesAfterTrim != tracesBeforeTrim {
-			if chunkingDebug {
-				log.Printf(
-					"[chunking] get_traces chunk trim chunk=%d/%d kept_traces=%d dropped_traces=%d",
-					chunkIndex+1,
-					len(chunks),
-					tracesAfterTrim,
-					tracesBeforeTrim-tracesAfterTrim,
-				)
+		items, err := extractTraceResultItems(r.Value)
+		if err != nil {
+			slog.Error("chunked trace query parse failed",
+				"tool", "get_traces",
+				"chunk_index", chunkNum,
+				"total_chunks", len(chunks),
+				"err", err,
+			)
+			if partialErr == nil {
+				partialErr = fmt.Errorf("chunk %d/%d failed to parse: %w", chunkNum, len(chunks), err)
 			}
+			continue
 		}
-		remaining -= len(items)
-		mergedItems = append(mergedItems, items...)
+
+		if baseResponse == nil {
+			baseResponse = r.Value
+		}
+
+		// Track whether this chunk's results were fully truncated away so the
+		// debug log records every successful chunk, not just the ones that
+		// fit inside the limit.
+		truncatedAtLimit := remaining <= 0
+		var kept int
+		if !truncatedAtLimit && len(items) > 0 {
+			if len(items) > remaining {
+				items = items[:remaining]
+			}
+			kept = len(items)
+			remaining -= kept
+			mergedItems = append(mergedItems, items...)
+		}
 
 		if chunkingDebug {
 			log.Printf(
-				"[chunking] get_traces chunk merged chunk=%d/%d merged_traces=%d remaining_limit=%d",
-				chunkIndex+1,
+				"[chunking] get_traces chunk result chunk=%d/%d kept_traces=%d remaining_limit=%d truncated_at_limit=%t",
+				chunkNum,
 				len(chunks),
-				len(mergedItems),
+				kept,
 				remaining,
+				truncatedAtLimit,
 			)
-		}
-
-		if remaining <= 0 {
-			break
 		}
 	}
 
 	if baseResponse == nil {
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_traces chunking complete with empty response start_ms=%d end_ms=%d limit=%d",
-				startMs,
-				endMs,
-				args.Limit,
-			)
+		if partialErr != nil {
+			return nil, partialErr
 		}
 		return emptyTracesResponse(), nil
 	}
