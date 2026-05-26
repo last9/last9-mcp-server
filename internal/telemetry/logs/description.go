@@ -22,7 +22,7 @@ const GetLogsDescription = `
 	Field reference rules:
 	- Use ServiceName for service filters/grouping. Do not use bare service.name.
 	- Use attributes['field'] for log attributes.
-	- Use resource_attributes['field'] for resource attributes such as Kubernetes metadata.
+	- Use resources['field'] for resource attributes such as Kubernetes metadata.
 	- Bare dotted field references are rejected unless they are normalized aliases like service.name or k8s.*.
 
 	The logjson_query supports:

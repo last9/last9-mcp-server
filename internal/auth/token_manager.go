@@ -23,6 +23,16 @@ var (
 	httpClientOnce sync.Once
 )
 
+// HTTPError is returned when an HTTP request receives a non-200 response.
+// Callers can use errors.As to inspect the StatusCode directly.
+type HTTPError struct {
+	StatusCode int
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("unexpected status code: %d", e.StatusCode)
+}
+
 type TokenManager struct {
 	AccessToken  string
 	RefreshToken string
@@ -136,7 +146,7 @@ func RefreshAccessToken(ctx context.Context, client *http.Client, refreshToken s
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return "", &HTTPError{StatusCode: resp.StatusCode}
 	}
 
 	var result struct {

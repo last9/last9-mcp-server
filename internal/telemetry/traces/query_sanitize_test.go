@@ -345,6 +345,199 @@ func TestSanitizeTraceJSONQuery_ErrorMessages(t *testing.T) {
 	})
 }
 
+func TestSanitizeTraceJSONQuery_InvalidFilterConditionKeys(t *testing.T) {
+	tests := []struct {
+		name        string
+		stages      []map[string]interface{}
+		errContains string
+	}{
+		{
+			name: "bare service key in filter query",
+			stages: []map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{
+					"service": "gateway-k8s-hydra",
+				}},
+			},
+			errContains: `"service"`,
+		},
+		{
+			name: "bare key mixed with $and",
+			stages: []map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{
+					"$and": []interface{}{
+						map[string]interface{}{"$eq": []interface{}{"ServiceName", "api"}},
+					},
+					"service": "gateway-k8s-hydra",
+				}},
+			},
+			errContains: `"service"`,
+		},
+		{
+			name: "bare key nested inside $and",
+			stages: []map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{
+					"$and": []interface{}{
+						map[string]interface{}{"service": "gateway-k8s-hydra"},
+					},
+				}},
+			},
+			errContains: `"service"`,
+		},
+		{
+			name: "bare ServiceName key at top level",
+			stages: []map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{
+					"ServiceName": "checkout",
+				}},
+			},
+			errContains: `"ServiceName"`,
+		},
+		{
+			name: "where alias also validates filter conditions",
+			stages: []map[string]interface{}{
+				{"type": "where", "query": map[string]interface{}{
+					"service": "api",
+				}},
+			},
+			errContains: `"service"`,
+		},
+		{
+			name: "bare key nested inside $or",
+			stages: []map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{
+					"$or": []interface{}{
+						map[string]interface{}{"status": "error"},
+					},
+				}},
+			},
+			errContains: `"status"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := sanitizeTraceJSONQuery(tt.stages)
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tt.errContains)
+			}
+			if !strings.Contains(err.Error(), tt.errContains) {
+				t.Errorf("expected error to contain %q, got: %v", tt.errContains, err)
+			}
+		})
+	}
+}
+
+func TestSanitizeTraceJSONQuery_ValidFilterOperators(t *testing.T) {
+	tests := []struct {
+		name   string
+		stages []map[string]interface{}
+	}{
+		{
+			name: "all comparison operators",
+			stages: []map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{
+					"$and": []interface{}{
+						map[string]interface{}{"$gt": []interface{}{"Duration", "1000"}},
+						map[string]interface{}{"$lt": []interface{}{"Duration", "5000"}},
+						map[string]interface{}{"$gte": []interface{}{"Duration", "500"}},
+						map[string]interface{}{"$lte": []interface{}{"Duration", "9000"}},
+						map[string]interface{}{"$neq": []interface{}{"StatusCode", "STATUS_CODE_OK"}},
+					},
+				}},
+			},
+		},
+		{
+			name: "string operators",
+			stages: []map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{
+					"$or": []interface{}{
+						map[string]interface{}{"$contains": []interface{}{"SpanName", "checkout"}},
+						map[string]interface{}{"$icontains": []interface{}{"SpanName", "payment"}},
+						map[string]interface{}{"$regex": []interface{}{"SpanName", "^/api/"}},
+						map[string]interface{}{"$ieq": []interface{}{"ServiceName", "API"}},
+					},
+				}},
+			},
+		},
+		{
+			name: "$notnull operator",
+			stages: []map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{
+					"$notnull": []interface{}{"TraceId"},
+				}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := sanitizeTraceJSONQuery(tt.stages); err != nil {
+				t.Errorf("expected no error, got: %v", err)
+			}
+		})
+	}
+}
+
+func TestSanitizeTraceJSONQuery_InvalidFieldReferences(t *testing.T) {
+	tests := []struct {
+		name        string
+		field       string
+		errContains string
+	}{
+		{
+			name:        "flat resource_ prefix",
+			field:       "resource_k8s.cluster",
+			errContains: `resources['k8s.cluster']`,
+		},
+		{
+			name:        "resource_service.name should suggest ServiceName",
+			field:       "resource_service.name",
+			errContains: `"ServiceName"`,
+		},
+		{
+			name:        "flat event_ prefix",
+			field:       "event_exception.type",
+			errContains: `events['exception.type']`,
+		},
+		{
+			name:        "SpanAttributes dot notation",
+			field:       "SpanAttributes.http.method",
+			errContains: `attributes['http.method']`,
+		},
+		{
+			name:        "ResourceAttributes dot notation",
+			field:       "ResourceAttributes.k8s.cluster",
+			errContains: `resources['k8s.cluster']`,
+		},
+		{
+			name:        "double-quoted bracket syntax attributes",
+			field:       `attributes["http.method"]`,
+			errContains: `single quotes`,
+		},
+		{
+			name:        "double-quoted bracket syntax events",
+			field:       `events["exception.type"]`,
+			errContains: `single quotes`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := sanitizeTraceJSONQuery([]map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{
+					"$eq": []interface{}{tt.field, "value"},
+				}},
+			})
+			if err == nil {
+				t.Fatalf("expected error for field %q, got nil", tt.field)
+			}
+			if !strings.Contains(err.Error(), tt.errContains) {
+				t.Errorf("expected error to contain %q, got: %v", tt.errContains, err)
+			}
+		})
+	}
+}
+
 func TestSanitizeTraceJSONQuery_EdgeCases(t *testing.T) {
 	t.Run("empty pipeline passes", func(t *testing.T) {
 		if err := sanitizeTraceJSONQuery([]map[string]interface{}{}); err != nil {

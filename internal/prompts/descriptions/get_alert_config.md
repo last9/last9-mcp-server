@@ -8,7 +8,7 @@ Select the correct JSON arguments to call the `get_alert_config` tool, which ret
 
 - `rule_id` (string): **Exact** match on alert rule ID (UUID). Use when the user provides a specific rule ID.
 - `rule_name` (string): Case-insensitive substring match on rule name.
-- `severity` (string): Exact case-insensitive match. Values: `breach`, `threat`, `warning`, etc.
+- `severity` (string): Exact case-insensitive match. Values: `breach`, `threat`.
 - `rule_type` (string): Derived rule type. Values: `static` or `anomaly`.
 - `alert_group_name` (string): Case-insensitive substring match on alert group name.
 - `alert_group_type` (string): Case-insensitive substring match on alert group type.
