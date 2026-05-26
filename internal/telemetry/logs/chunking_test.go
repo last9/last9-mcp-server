@@ -449,6 +449,49 @@ func TestFetchServiceLogsChunksAndHonorsEntryLimit(t *testing.T) {
 	}
 }
 
+func TestFetchServiceLogsHardErrorsWhenAllChunksFail(t *testing.T) {
+	// Regression: when every chunk returns an upstream error and no chunk
+	// produced a valid response, the call must surface a hard error rather
+	// than an empty partial result. Exercises the
+	// "!anySuccess && partialErr != nil" gate.
+	rec := newRequestRecorder()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.add(r.URL.Query())
+		http.Error(w, "backend exploded", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	startTime := time.Unix(0, 0).UTC()
+	endTime := startTime.Add(90 * time.Minute)
+
+	response, err := fetchServiceLogs(
+		context.Background(),
+		server.Client(),
+		testLogsConfig(server.URL),
+		"api",
+		startTime,
+		endTime,
+		10,
+		buildServiceLogsQuery("api", nil, nil),
+		"",
+	)
+	if err == nil {
+		t.Fatalf("expected hard error when every chunk fails, got response=%#v", response)
+	}
+	if response != nil {
+		t.Fatalf("expected nil response on hard error, got %#v", response)
+	}
+	// Error should carry chunk context (post firstErr/partialErr unification).
+	if !strings.Contains(err.Error(), "chunk 1/") || !strings.Contains(err.Error(), "failed") {
+		t.Fatalf("expected chunk-context wrapped error, got: %v", err)
+	}
+	// All chunks should have been attempted (parallel fan-out doesn't short-circuit
+	// on the first failure).
+	if rec.count() != 6 {
+		t.Fatalf("expected 6 chunk attempts even with all failing, got %d", rec.count())
+	}
+}
+
 func TestFetchServiceLogsReturnsEmptyPartialWhenAllSuccessChunksAreEmpty(t *testing.T) {
 	// Regression: previously fetchServiceLogs returned a hard error when no log
 	// entries were collected, even if most chunks succeeded with empty payloads.

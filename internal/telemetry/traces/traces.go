@@ -166,6 +166,15 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 			"[chunking] get_traces chunking enabled chunks=%d max_parallel=%d chunk_size_ms=%d start_ms=%d end_ms=%d requested_limit=%d effective_limit=%d reason=%q",
 			len(chunks), adaptiveCfg.MaxParallelChunks, adaptiveCfg.ChunkSizeMs, startMs, endMs, args.Limit, effectiveLimit, adaptiveCfg.Reason,
 		)
+		// Preserved from the pre-refactor format so existing log greps
+		// matching `requested limit capped` keep working.
+		if args.Limit > 0 && args.Limit > effectiveLimit {
+			log.Printf(
+				"[chunking] get_traces requested limit capped requested_limit=%d configured_max=%d",
+				args.Limit,
+				effectiveLimit,
+			)
+		}
 	}
 
 	// Known over-fetch: each chunk asks the upstream for effectiveLimit

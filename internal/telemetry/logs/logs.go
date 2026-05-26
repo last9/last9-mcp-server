@@ -158,6 +158,15 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 			args.Index,
 			adaptiveCfg.Reason,
 		)
+		// Preserved from the pre-refactor format so existing log greps
+		// matching `requested limit capped` keep working.
+		if args.Limit > 0 && args.Limit > effectiveLimit {
+			log.Printf(
+				"[chunking] get_logs requested limit capped requested_limit=%d configured_max=%d",
+				args.Limit,
+				effectiveLimit,
+			)
+		}
 	}
 
 	// Known over-fetch: each chunk asks the upstream for effectiveLimit rows,

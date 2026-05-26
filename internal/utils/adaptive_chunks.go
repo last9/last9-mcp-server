@@ -253,6 +253,11 @@ func GetAdaptiveChunks(startMs, endMs int64, cfg AdaptiveLoadingConfig) []TimeCh
 // chunkSizeMs to absorb the remainder. Mirrors the backward loop in
 // adaptive-chunk-loader's caller and frontend getTimeRangeChunks.
 func splitRangeBackward(startMs, endMs, chunkSizeMs int64) []TimeChunk {
+	// Defensive only: getAdaptiveChunkSizeMs (the sole public caller's source
+	// for ChunkSizeMs) always returns >= 1 for non-empty ranges, and the
+	// SplitThresholdMs fallback there ensures ChunkSizeMs is positive even
+	// for the zero-range edge case. We keep this guard so future callers
+	// can't accidentally walk a zero-step loop.
 	if chunkSizeMs <= 0 {
 		chunkSizeMs = SplitThresholdMs
 	}
