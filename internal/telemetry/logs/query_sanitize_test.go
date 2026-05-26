@@ -57,16 +57,16 @@ func TestSanitizeLogJSONQueryNormalizesSafeAliases(t *testing.T) {
 	}
 
 	podCondition := andConditions[1].(map[string]interface{})["$neq"].([]interface{})
-	if got := podCondition[0]; got != "resource_attributes['k8s.pod.name']" {
+	if got := podCondition[0]; got != "resources['k8s.pod.name']" {
 		t.Fatalf("expected k8s.pod.name to normalize, got %#v", got)
 	}
 
 	groupBy := sanitized[1]["groupby"].(map[string]interface{})
-	if _, ok := groupBy["resource_attributes['k8s.namespace.name']"]; !ok {
-		t.Fatalf("expected namespace groupby to use resource_attributes syntax, got %#v", groupBy)
+	if _, ok := groupBy["resources['k8s.namespace.name']"]; !ok {
+		t.Fatalf("expected namespace groupby to use resources syntax, got %#v", groupBy)
 	}
-	if _, ok := groupBy["resource_attributes['k8s.deployment.name']"]; !ok {
-		t.Fatalf("expected deployment groupby to use resource_attributes syntax, got %#v", groupBy)
+	if _, ok := groupBy["resources['k8s.deployment.name']"]; !ok {
+		t.Fatalf("expected deployment groupby to use resources syntax, got %#v", groupBy)
 	}
 	if _, ok := groupBy["ServiceName"]; !ok {
 		t.Fatalf("expected canonical ServiceName groupby to be preserved, got %#v", groupBy)
@@ -86,7 +86,7 @@ func TestSanitizeLogJSONQueryPreservesCanonicalRefs(t *testing.T) {
 						"$gte": []interface{}{"attributes['http.status_code']", "500"},
 					},
 					map[string]interface{}{
-						"$neq": []interface{}{"resource_attributes['k8s.namespace.name']", ""},
+						"$neq": []interface{}{"resources['k8s.namespace.name']", ""},
 					},
 				},
 			},
@@ -259,6 +259,349 @@ func TestSanitizeLogJSONQueryRejectsGroupByCollisions(t *testing.T) {
 	}
 }
 
+func TestSanitizeLogJSONQueryRejectsDoubleQuotedBracketSyntax(t *testing.T) {
+	tests := []struct {
+		name        string
+		fieldRef    string
+		wantHint    string
+	}{
+		{
+			name:     "attributes double-quoted",
+			fieldRef: `attributes["http.method"]`,
+			wantHint: `attributes['http.method']`,
+		},
+		{
+			name:     "resources double-quoted",
+			fieldRef: `resources["k8s.namespace.name"]`,
+			wantHint: `resources['k8s.namespace.name']`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := sanitizeLogJSONQuery([]map[string]interface{}{
+				{
+					"type": "filter",
+					"query": map[string]interface{}{
+						"$and": []interface{}{
+							map[string]interface{}{
+								"$eq": []interface{}{tt.fieldRef, "value"},
+							},
+						},
+					},
+				},
+			})
+			if err == nil {
+				t.Fatalf("expected error for double-quoted field ref %q, got nil", tt.fieldRef)
+			}
+			if !strings.Contains(err.Error(), "single quotes") {
+				t.Errorf("expected error to mention single quotes, got: %v", err)
+			}
+			if !strings.Contains(err.Error(), tt.wantHint) {
+				t.Errorf("expected error to contain corrected form %q, got: %v", tt.wantHint, err)
+			}
+		})
+	}
+}
+
+func TestSanitizeLogJSONQueryRejectsFlatResourcePrefix(t *testing.T) {
+	tests := []struct {
+		name     string
+		fieldRef string
+		wantKey  string
+	}{
+		{
+			name:     "resource_department",
+			fieldRef: "resource_department",
+			wantKey:  "resources['department']",
+		},
+		{
+			name:     "resource_env",
+			fieldRef: "resource_env",
+			wantKey:  "resources['env']",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := sanitizeLogJSONQuery([]map[string]interface{}{
+				{
+					"type": "filter",
+					"query": map[string]interface{}{
+						"$and": []interface{}{
+							map[string]interface{}{
+								"$eq": []interface{}{tt.fieldRef, "value"},
+							},
+						},
+					},
+				},
+			})
+			if err == nil {
+				t.Fatalf("expected error for flat resource_ prefix %q, got nil", tt.fieldRef)
+			}
+			if !strings.Contains(err.Error(), tt.wantKey) {
+				t.Errorf("expected error to contain %q, got: %v", tt.wantKey, err)
+			}
+			if !strings.Contains(err.Error(), "get_log_attributes") {
+				t.Errorf("expected error to point to get_log_attributes, got: %v", err)
+			}
+		})
+	}
+}
+
+func TestSanitizeLogJSONQueryPreservesTopLevelFields(t *testing.T) {
+	for _, field := range []string{"Body", "SeverityText", "Timestamp"} {
+		t.Run(field, func(t *testing.T) {
+			sanitized, err := sanitizeLogJSONQuery([]map[string]interface{}{
+				{
+					"type": "filter",
+					"query": map[string]interface{}{
+						"$neq": []interface{}{field, ""},
+					},
+				},
+			})
+			if err != nil {
+				t.Fatalf("expected %q to pass unchanged, got error: %v", field, err)
+			}
+			args := sanitized[0]["query"].(map[string]interface{})["$neq"].([]interface{})
+			if got := args[0]; got != field {
+				t.Errorf("expected %q to be preserved unchanged, got %#v", field, got)
+			}
+		})
+	}
+}
+
+func TestSanitizeLogJSONQueryAcceptsAllValidOperators(t *testing.T) {
+	tests := []struct {
+		name   string
+		stages []map[string]interface{}
+	}{
+		{
+			name: "case-insensitive equality operators",
+			stages: []map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{
+					"$and": []interface{}{
+						map[string]interface{}{"$ieq": []interface{}{"ServiceName", "API"}},
+						map[string]interface{}{"$ineq": []interface{}{"ServiceName", "nginx"}},
+					},
+				}},
+			},
+		},
+		{
+			name: "case-insensitive contains operators",
+			stages: []map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{
+					"$and": []interface{}{
+						map[string]interface{}{"$icontains": []interface{}{"Body", "error"}},
+						map[string]interface{}{"$inotcontains": []interface{}{"Body", "debug"}},
+					},
+				}},
+			},
+		},
+		{
+			name: "word-boundary operators",
+			stages: []map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{
+					"$and": []interface{}{
+						map[string]interface{}{"$containsWords": []interface{}{"Body", "timeout"}},
+						map[string]interface{}{"$icontainsWords": []interface{}{"Body", "error"}},
+						map[string]interface{}{"$notcontainsWords": []interface{}{"Body", "debug"}},
+						map[string]interface{}{"$inotcontainsWords": []interface{}{"Body", "trace"}},
+					},
+				}},
+			},
+		},
+		{
+			name: "case-insensitive regex operators",
+			stages: []map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{
+					"$and": []interface{}{
+						map[string]interface{}{"$iregex": []interface{}{"Body", ".*error.*"}},
+						map[string]interface{}{"$inotregex": []interface{}{"Body", ".*debug.*"}},
+					},
+				}},
+			},
+		},
+		{
+			name: "numeric comparison operators",
+			stages: []map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{
+					"$and": []interface{}{
+						map[string]interface{}{"$gt": []interface{}{"attributes['http.status_code']", "400"}},
+						map[string]interface{}{"$lte": []interface{}{"attributes['http.status_code']", "599"}},
+					},
+				}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := sanitizeLogJSONQuery(tt.stages); err != nil {
+				t.Errorf("expected no error, got: %v", err)
+			}
+		})
+	}
+}
+
+func TestSanitizeLogJSONQueryNormalizesInsideOrAndNot(t *testing.T) {
+	t.Run("service.name inside $or normalizes to ServiceName", func(t *testing.T) {
+		sanitized, err := sanitizeLogJSONQuery([]map[string]interface{}{
+			{
+				"type": "filter",
+				"query": map[string]interface{}{
+					"$or": []interface{}{
+						map[string]interface{}{"$eq": []interface{}{"service.name", "checkout"}},
+						map[string]interface{}{"$eq": []interface{}{"service.name", "payments"}},
+					},
+				},
+			},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		orConds := sanitized[0]["query"].(map[string]interface{})["$or"].([]interface{})
+		first := orConds[0].(map[string]interface{})["$eq"].([]interface{})
+		if got := first[0]; got != "ServiceName" {
+			t.Errorf("expected service.name inside $or to normalize to ServiceName, got %#v", got)
+		}
+	})
+
+	t.Run("k8s alias inside $not normalizes", func(t *testing.T) {
+		sanitized, err := sanitizeLogJSONQuery([]map[string]interface{}{
+			{
+				"type": "filter",
+				"query": map[string]interface{}{
+					"$not": map[string]interface{}{
+						"$eq": []interface{}{"k8s.pod.name", ""},
+					},
+				},
+			},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		notCond := sanitized[0]["query"].(map[string]interface{})["$not"].(map[string]interface{})
+		args := notCond["$eq"].([]interface{})
+		if got := args[0]; got != "resources['k8s.pod.name']" {
+			t.Errorf("expected k8s alias inside $not to normalize, got %#v", got)
+		}
+	})
+
+	t.Run("resource_ prefix inside $or is rejected", func(t *testing.T) {
+		_, err := sanitizeLogJSONQuery([]map[string]interface{}{
+			{
+				"type": "filter",
+				"query": map[string]interface{}{
+					"$or": []interface{}{
+						map[string]interface{}{"$eq": []interface{}{"resource_env", "prod"}},
+					},
+				},
+			},
+		})
+		if err == nil {
+			t.Fatal("expected error for resource_ prefix inside $or, got nil")
+		}
+		if !strings.Contains(err.Error(), "resources['env']") {
+			t.Errorf("expected error to mention resources['env'], got: %v", err)
+		}
+	})
+
+	t.Run("double-quoted field inside $not is rejected", func(t *testing.T) {
+		_, err := sanitizeLogJSONQuery([]map[string]interface{}{
+			{
+				"type": "filter",
+				"query": map[string]interface{}{
+					"$not": map[string]interface{}{
+						"$eq": []interface{}{`attributes["env"]`, "prod"},
+					},
+				},
+			},
+		})
+		if err == nil {
+			t.Fatal("expected error for double-quoted field inside $not, got nil")
+		}
+		if !strings.Contains(err.Error(), "single quotes") {
+			t.Errorf("expected error to mention single quotes, got: %v", err)
+		}
+	})
+}
+
+func TestSanitizeLogJSONQueryNormalizesK8sAliasInAggregateFunctionArgs(t *testing.T) {
+	t.Run("k8s alias in $avg arg is normalized", func(t *testing.T) {
+		sanitized, err := sanitizeLogJSONQuery([]map[string]interface{}{
+			{
+				"type": "aggregate",
+				"aggregates": []interface{}{
+					map[string]interface{}{
+						"function": map[string]interface{}{
+							"$avg": []interface{}{"k8s.namespace.name"},
+						},
+						"as": "avg_ns",
+					},
+				},
+			},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		aggs := sanitized[0]["aggregates"].([]interface{})
+		fn := aggs[0].(map[string]interface{})["function"].(map[string]interface{})
+		args := fn["$avg"].([]interface{})
+		if got := args[0]; got != "resources['k8s.namespace.name']" {
+			t.Errorf("expected k8s alias in $avg to normalize, got %#v", got)
+		}
+	})
+
+	t.Run("$quantile field arg at index 1 is normalized", func(t *testing.T) {
+		sanitized, err := sanitizeLogJSONQuery([]map[string]interface{}{
+			{
+				"type": "aggregate",
+				"aggregates": []interface{}{
+					map[string]interface{}{
+						"function": map[string]interface{}{
+							"$quantile": []interface{}{0.95, "k8s.cluster.name"},
+						},
+						"as": "p95",
+					},
+				},
+			},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		aggs := sanitized[0]["aggregates"].([]interface{})
+		fn := aggs[0].(map[string]interface{})["function"].(map[string]interface{})
+		args := fn["$quantile"].([]interface{})
+		if got := args[1]; got != "resources['k8s.cluster.name']" {
+			t.Errorf("expected k8s alias at $quantile[1] to normalize, got %#v", got)
+		}
+		if got := args[0]; got != 0.95 {
+			t.Errorf("expected $quantile[0] percentile to be unchanged, got %#v", got)
+		}
+	})
+
+	t.Run("resource_ prefix in $sum arg is rejected", func(t *testing.T) {
+		_, err := sanitizeLogJSONQuery([]map[string]interface{}{
+			{
+				"type": "aggregate",
+				"aggregates": []interface{}{
+					map[string]interface{}{
+						"function": map[string]interface{}{
+							"$sum": []interface{}{"resource_bytes"},
+						},
+						"as": "total_bytes",
+					},
+				},
+			},
+		})
+		if err == nil {
+			t.Fatal("expected error for resource_ prefix in aggregate function arg, got nil")
+		}
+		if !strings.Contains(err.Error(), "resources['bytes']") {
+			t.Errorf("expected error to mention resources['bytes'], got: %v", err)
+		}
+	})
+}
+
 func TestGetLogsHandlerNormalizesAliasesBeforeAPICall(t *testing.T) {
 	requestCount := 0
 	handlerErr := make(chan error, 1)
@@ -318,7 +661,7 @@ func TestGetLogsHandlerNormalizesAliasesBeforeAPICall(t *testing.T) {
 			recordHandlerErr(fmt.Errorf("expected second pipeline stage groupby map, got %T", body.Pipeline[1]["groupby"]))
 			return
 		}
-		if _, ok := groupBy["resource_attributes['k8s.namespace.name']"]; !ok {
+		if _, ok := groupBy["resources['k8s.namespace.name']"]; !ok {
 			recordHandlerErr(fmt.Errorf("expected groupby to include normalized k8s namespace key, got %#v", groupBy))
 			return
 		}

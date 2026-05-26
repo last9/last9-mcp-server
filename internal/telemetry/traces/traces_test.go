@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -325,26 +324,8 @@ func TestExtractExactTraceIDLookup(t *testing.T) {
 
 // Integration test - requires real API credentials
 func TestGetTracesHandler_Integration(t *testing.T) {
-	testRefreshToken := os.Getenv("TEST_REFRESH_TOKEN")
-	if testRefreshToken == "" {
-		t.Skip("Skipping integration test: TEST_REFRESH_TOKEN not set")
-	}
-
-	cfg := models.Config{
-		RefreshToken:   testRefreshToken,
-		DatasourceName: os.Getenv("TEST_DATASOURCE"), // Optional: use specific datasource for testing
-	}
-	// Initialize TokenManager first
-	tokenManager, err := auth.NewTokenManager(testRefreshToken)
-	if err != nil {
-		t.Fatalf("failed to create token manager: %v", err)
-	}
-	cfg.TokenManager = tokenManager
-	if err := utils.PopulateAPICfg(&cfg); err != nil {
-		t.Fatalf("failed to populate API config: %v", err)
-	}
-
-	handler := NewGetTracesHandler(http.DefaultClient, cfg)
+	cfg := utils.SetupTestConfigOrSkip(t)
+	handler := NewGetTracesHandler(http.DefaultClient, *cfg)
 
 	tests := []struct {
 		name  string

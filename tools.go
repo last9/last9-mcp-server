@@ -183,6 +183,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Description: traces.GetTraceAttributesDescription,
 	}, traces.NewGetTraceAttributesHandler(client, cfg))
 
+	// Register trace attribute values tool
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_trace_attribute_values",
+		Description: traces.GetTraceAttributeValuesDescription,
+	}, traces.NewGetTraceAttributeValuesHandler(client, cfg))
+
 	// Register change events tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "get_change_events",

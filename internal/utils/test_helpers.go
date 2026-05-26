@@ -1,11 +1,15 @@
 package utils
 
 import (
+	"errors"
+	"math/rand/v2"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/joho/godotenv"
 
@@ -16,6 +20,14 @@ import (
 )
 
 var loadTestEnvOnce sync.Once
+
+// sharedTestConfig is initialized exactly once per test process to avoid
+// hammering the token endpoint when many integration tests run in parallel.
+var (
+	sharedTestCfg     *models.Config
+	sharedTestCfgErr  error
+	sharedTestCfgOnce sync.Once
+)
 
 func loadTestEnv() {
 	loadTestEnvOnce.Do(func() {
@@ -50,28 +62,68 @@ func resolveTestRefreshToken() string {
 // It loads .env (if present), then reads TEST_REFRESH_TOKEN or LAST9_REFRESH_TOKEN,
 // and TEST_DATASOURCE from environment variables.
 // Returns an error if no refresh token is set or if PopulateAPICfg fails.
+//
+// The underlying TokenManager is shared across the entire test process so that
+// parallel integration tests do not all race to exchange the refresh token at
+// startup (which would trigger 429 rate-limit errors on the auth endpoint).
 func SetupTestConfig() (*models.Config, error) {
-	testRefreshToken := resolveTestRefreshToken()
-	if testRefreshToken == "" {
-		return nil, &TestConfigError{Message: "TEST_REFRESH_TOKEN or LAST9_REFRESH_TOKEN not set"}
-	}
+	sharedTestCfgOnce.Do(func() {
+		testRefreshToken := resolveTestRefreshToken()
+		if testRefreshToken == "" {
+			sharedTestCfgErr = &TestConfigError{Message: "TEST_REFRESH_TOKEN or LAST9_REFRESH_TOKEN not set"}
+			return
+		}
 
-	cfg := models.Config{
-		RefreshToken:   testRefreshToken,
-		DatasourceName: os.Getenv("TEST_DATASOURCE"), // Automatically reads from environment
-	}
+		cfg := models.Config{
+			RefreshToken:   testRefreshToken,
+			DatasourceName: os.Getenv("TEST_DATASOURCE"),
+		}
 
-	tokenManager, err := auth.NewTokenManager(testRefreshToken)
-	if err != nil {
-		return nil, err
-	}
-	cfg.TokenManager = tokenManager
+		// Retry up to 5 times on 429 (rate limit). All package binaries race to
+		// exchange the refresh token when "go test ./..." starts them in parallel;
+		// a randomised initial delay + exponential back-off avoids a thundering-herd
+		// on the auth endpoint.
+		const maxAttempts = 5
+		// Initial per-binary jitter (0–2 s) staggers the first attempts.
+		time.Sleep(time.Duration(rand.N(2000)) * time.Millisecond)
+		var tokenManager *auth.TokenManager
+		for attempt := range maxAttempts {
+			var err error
+			tokenManager, err = auth.NewTokenManager(testRefreshToken)
+			if err == nil {
+				break
+			}
+			var httpErr *auth.HTTPError
+			if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusTooManyRequests {
+				sharedTestCfgErr = err
+				return
+			}
+			if attempt == maxAttempts-1 {
+				sharedTestCfgErr = &rateLimitExhaustedError{}
+				return
+			}
+			// Exponential back-off: 2s, 4s, 8s, 16s + up to 1 s jitter.
+			backoff := time.Duration(2<<uint(attempt))*time.Second +
+				time.Duration(rand.N(1000))*time.Millisecond
+			time.Sleep(backoff)
+		}
+		cfg.TokenManager = tokenManager
 
-	if err := PopulateAPICfg(&cfg); err != nil {
-		return nil, err
-	}
+		if err := PopulateAPICfg(&cfg); err != nil {
+			sharedTestCfgErr = err
+			return
+		}
 
-	return &cfg, nil
+		sharedTestCfg = &cfg
+	})
+
+	if sharedTestCfgErr != nil {
+		return nil, sharedTestCfgErr
+	}
+	// Return a shallow copy so callers can mutate fields (e.g. DatasourceName)
+	// without affecting other tests.
+	cfgCopy := *sharedTestCfg
+	return &cfgCopy, nil
 }
 
 // TestConfigError represents an error in test configuration setup
@@ -83,13 +135,22 @@ func (e *TestConfigError) Error() string {
 	return e.Message
 }
 
+// rateLimitExhaustedError is returned when token exchange retries are all
+// exhausted due to 429 responses. Tests treat this as a skip, not a failure.
+type rateLimitExhaustedError struct{}
+
+func (e *rateLimitExhaustedError) Error() string {
+	return "auth endpoint rate-limited; token exchange retries exhausted"
+}
+
 // SetupTestConfigOrSkip creates and initializes a test configuration, or skips the test if not configured.
 // This is a convenience wrapper around SetupTestConfig that handles the common skip/fail pattern.
 func SetupTestConfigOrSkip(t *testing.T) *models.Config {
 	t.Helper()
 	cfg, err := SetupTestConfig()
 	if err != nil {
-		if _, ok := err.(*TestConfigError); ok {
+		switch err.(type) {
+		case *TestConfigError, *rateLimitExhaustedError:
 			t.Skipf("Skipping integration test: %v", err)
 		}
 		t.Fatalf("failed to setup test config: %v", err)
