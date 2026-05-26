@@ -226,22 +226,26 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 			baseResponse = r.Value
 		}
 
-		if len(items) == 0 || remaining <= 0 {
-			continue
+		// Track whether this chunk's results were fully truncated away so the
+		// debug log records every successful chunk, not just the ones that
+		// fit inside the limit.
+		truncatedAtLimit := remaining <= 0
+		var kept int
+		if !truncatedAtLimit && len(items) > 0 {
+			items = truncateResultItemsByEntryLimit(items, remaining)
+			kept = countLogEntriesInResultItems(items)
+			remaining -= kept
+			mergedItems = append(mergedItems, items...)
 		}
-
-		items = truncateResultItemsByEntryLimit(items, remaining)
-		kept := countLogEntriesInResultItems(items)
-		remaining -= kept
-		mergedItems = append(mergedItems, items...)
 
 		if chunkingDebug {
 			log.Printf(
-				"[chunking] get_logs chunk result chunk=%d/%d kept_entries=%d remaining_limit=%d",
+				"[chunking] get_logs chunk result chunk=%d/%d kept_entries=%d remaining_limit=%d truncated_at_limit=%t",
 				chunkNum,
 				len(chunks),
 				kept,
 				remaining,
+				truncatedAtLimit,
 			)
 		}
 	}

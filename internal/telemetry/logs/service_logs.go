@@ -325,24 +325,27 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		anySuccess = true
 
 		remaining := limit - len(logs)
-		if remaining <= 0 {
-			continue
-		}
-
 		chunkLogs := r.Value
-		if len(chunkLogs) > remaining {
+		// Track whether this chunk's results were fully truncated away so the
+		// debug log records every successful chunk, not just the ones that
+		// fit inside the limit.
+		truncatedAtLimit := remaining <= 0
+		if truncatedAtLimit {
+			chunkLogs = nil
+		} else if len(chunkLogs) > remaining {
 			chunkLogs = chunkLogs[:remaining]
 		}
 		logs = append(logs, chunkLogs...)
 
 		if chunkingDebug {
 			log.Printf(
-				"[chunking] get_service_logs chunk result service=%q chunk=%d/%d kept_entries=%d remaining_limit=%d",
+				"[chunking] get_service_logs chunk result service=%q chunk=%d/%d kept_entries=%d remaining_limit=%d truncated_at_limit=%t",
 				service,
 				chunkNum,
 				len(chunks),
 				len(chunkLogs),
 				limit-len(logs),
+				truncatedAtLimit,
 			)
 		}
 	}

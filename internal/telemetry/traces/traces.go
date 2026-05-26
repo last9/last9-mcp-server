@@ -218,23 +218,28 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 			baseResponse = r.Value
 		}
 
-		if len(items) == 0 || remaining <= 0 {
-			continue
+		// Track whether this chunk's results were fully truncated away so the
+		// debug log records every successful chunk, not just the ones that
+		// fit inside the limit.
+		truncatedAtLimit := remaining <= 0
+		var kept int
+		if !truncatedAtLimit && len(items) > 0 {
+			if len(items) > remaining {
+				items = items[:remaining]
+			}
+			kept = len(items)
+			remaining -= kept
+			mergedItems = append(mergedItems, items...)
 		}
-
-		if len(items) > remaining {
-			items = items[:remaining]
-		}
-		remaining -= len(items)
-		mergedItems = append(mergedItems, items...)
 
 		if chunkingDebug {
 			log.Printf(
-				"[chunking] get_traces chunk result chunk=%d/%d kept_traces=%d remaining_limit=%d",
+				"[chunking] get_traces chunk result chunk=%d/%d kept_traces=%d remaining_limit=%d truncated_at_limit=%t",
 				chunkNum,
 				len(chunks),
-				len(items),
+				kept,
 				remaining,
+				truncatedAtLimit,
 			)
 		}
 	}
