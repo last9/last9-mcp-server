@@ -89,10 +89,9 @@ func TestAlertRuleStateHandler(t *testing.T) {
 
 	t.Run("ValidRequest", func(t *testing.T) {
 		args := AlertRuleStateRequest{
-			AlertRuleID: "test-rule-1",
-			StartTime:   1686072840,
-			EndTime:     1686072900,
-			Step:        60,
+			StartTime: 1718000000,
+			EndTime:   1718000060,
+			Step:      60,
 		}
 		
 		req := &mcp.CallToolRequest{}
@@ -115,9 +114,9 @@ func TestAlertRuleStateHandler(t *testing.T) {
 		if !strings.Contains(textContent.Text, "\"test-rule-1\": [") {
 			t.Errorf("Expected response to contain test-rule-1 key, got: %s", textContent.Text)
 		}
-		// Since we filtered by AlertRuleID, test-rule-2 should not be in the output
-		if strings.Contains(textContent.Text, "\"test-rule-2\": [") {
-			t.Errorf("Expected response to NOT contain test-rule-2 key due to filtering, got: %s", textContent.Text)
+		// Since we removed client-side filtering, test-rule-2 SHOULD be in the output
+		if !strings.Contains(textContent.Text, "\"test-rule-2\": [") {
+			t.Errorf("Expected response to contain test-rule-2 key, got: %s", textContent.Text)
 		}
 
 		// Verify that the response was processed and mapped to IsFiring correctly for test-rule-1
@@ -133,7 +132,9 @@ func TestAlertRuleStateHandler(t *testing.T) {
 		badHandler := NewAlertRuleStateHandler(server.Client(), badCfg)
 
 		args := AlertRuleStateRequest{
-			AlertRuleID: "test-rule",
+			StartTime: 1718000000,
+			EndTime:   1718000060,
+			Step:      60,
 		}
 
 		_, _, err := badHandler(ctx, &mcp.CallToolRequest{}, args)

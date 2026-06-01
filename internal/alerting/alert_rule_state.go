@@ -15,10 +15,9 @@ import (
 
 const GetAlertRuleStateDescription = `Gets the historical firing state of an alert rule over a specified time range.
 It returns 1 for firing and 0 for not firing at each timestamp.
-Requires an alert_rule_id, start_time (Unix timestamp), end_time (Unix timestamp), and step (resolution in seconds).`
+Requires start_time (Unix timestamp), end_time (Unix timestamp), and step (resolution in seconds).`
 
 type AlertRuleStateRequest struct {
-	AlertRuleID    string `json:"alert_rule_id,omitempty" jsonschema:"The ID of the alert rule to check (evaluated client-side)"`
 	AlertGroupID   string `json:"alert_group_id,omitempty" jsonschema:"Optional filter by alert group ID"`
 	RuleName       string `json:"rule_name,omitempty" jsonschema:"Optional regex filter by rule name"`
 	AlertGroupName string `json:"alert_group_name,omitempty" jsonschema:"Optional regex filter by alert group name"`
@@ -119,10 +118,6 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 			}
 
 			for _, rule := range alertResp.AlertRules {
-				// Exact filter by RuleID if the user specifically requested it
-				if args.AlertRuleID != "" && rule.RuleID != args.AlertRuleID {
-					continue
-				}
 
 				if _, exists := results[rule.RuleID]; !exists {
 					results[rule.RuleID] = make(map[int64]int)
