@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-06-01
+
+### Fixed
+
+- Log attribute discovery now always uses `/v1/labels`, and the environment filter uses the correct key (#156).
+
 ## [0.7.4] - 2026-05-27
 
 ### Added
@@ -156,6 +162,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Tool improvements (#51).
 
+[0.7.5]: https://github.com/last9/last9-mcp-server/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/last9/last9-mcp-server/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/last9/last9-mcp-server/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/last9/last9-mcp-server/compare/v0.7.1...v0.7.2
