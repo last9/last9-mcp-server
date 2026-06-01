@@ -158,6 +158,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Description: alerting.GetAlertsDescription,
 	}, alerting.NewGetAlertsHandler(client, cfg))
 
+	// Register get alert rule state tool
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_alert_rule_state",
+		Description: alerting.GetAlertRuleStateDescription,
+	}, alerting.NewAlertRuleStateHandler(client, cfg))
+
 	// Register get traces tool (enhanced with trace query instructions)
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "get_traces",
