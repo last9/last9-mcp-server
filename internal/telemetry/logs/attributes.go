@@ -132,9 +132,6 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(con
 			params["end_time_iso"] = args.EndTimeISO
 		}
 
-		// Default to a 15-minute window for unparameterized calls (matches the
-		// tool description/schema). MaxLogAttributeLookbackMinutes only caps
-		// explicitly-requested windows below — it is not the default.
 		const defaultLogAttributesLookback = 15
 		startTimeParsed, endTimeParsed, err := utils.GetTimeRange(params, defaultLogAttributesLookback)
 		if err != nil {
