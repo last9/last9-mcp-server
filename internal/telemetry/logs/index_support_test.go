@@ -171,10 +171,10 @@ func TestGetLogAttributesHandler_ForwardsIndex(t *testing.T) {
 			response:        `{"status":"success","data":["service","severity"]}`,
 		},
 		{
-			name:            "series api for short lookbacks",
+			name:            "labels api for short lookbacks",
 			lookbackMinutes: 15,
-			expectedPath:    "/logs/api/v2/series/json",
-			response:        `{"status":"success","data":[{"service":"api","severity":"error"}]}`,
+			expectedPath:    "/logs/api/v1/labels",
+			response:        `{"status":"success","data":["service","severity"]}`,
 		},
 	}
 
@@ -314,7 +314,7 @@ func TestGetServiceLogsHandler_ForwardsLargeLimitWhenProvided(t *testing.T) {
 
 func TestGetServiceLogsHandler_UsesFrontendParityFilters(t *testing.T) {
 	expectedQuery := buildServiceLogsQuery(
-		"l9alert-pinelabs",
+		"l9alert-demo",
 		[]string{"error", "fatal", "critical"},
 		nil,
 	)
@@ -364,7 +364,7 @@ func TestGetServiceLogsHandler_UsesFrontendParityFilters(t *testing.T) {
 
 	handler := NewGetServiceLogsHandler(server.Client(), testLogsConfig(server.URL))
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
-		Service:         "l9alert-pinelabs",
+		Service:         "l9alert-demo",
 		StartTimeISO:    "2026-03-31T07:16:38.000Z",
 		EndTimeISO:      "2026-04-01T07:16:38.907Z",
 		Limit:           100,
