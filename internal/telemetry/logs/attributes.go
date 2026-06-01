@@ -55,7 +55,10 @@ type GetLogAttributesArgs struct {
 // This is the core logic shared by both the MCP handler and the attribute cache.
 func FetchLogAttributeNames(ctx context.Context, client *http.Client, cfg models.Config) ([]string, error) {
 	now := time.Now()
-	startTime := now.Add(-utils.MaxLogAttributeLookbackMinutes * time.Minute).Unix()
+	// Use the same 15-minute default as the get_log_attributes handler. The
+	// /v1/labels endpoint returns the full label set regardless of window size,
+	// so a wider window would only add server cost without changing results.
+	startTime := now.Add(-15 * time.Minute).Unix()
 	endTime := now.Unix()
 
 	queryParams := url.Values{}
