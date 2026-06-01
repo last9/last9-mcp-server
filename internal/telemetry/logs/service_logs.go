@@ -248,7 +248,7 @@ func addServiceLogsEnvFilter(query []map[string]interface{}, env string) []map[s
 
 	clonedConditions := append([]interface{}(nil), andConditions...)
 	clonedConditions = append(clonedConditions, map[string]interface{}{
-		"$ieq": []interface{}{"attributes['deployment_environment']", trimmedEnv},
+		"$ieq": []interface{}{"resources['deployment.environment']", trimmedEnv},
 	})
 	clonedQuery["$and"] = clonedConditions
 	filterStage["query"] = clonedQuery
