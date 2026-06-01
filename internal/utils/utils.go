@@ -23,6 +23,9 @@ import (
 const (
 	// DefaultLookbackMinutes is the default lookback time in minutes (1 hour)
 	DefaultLookbackMinutes = 60
+	// MaxLogAttributeLookbackMinutes caps the time window for attribute discovery
+	// queries. Longer windows return the same label set at higher cost.
+	MaxLogAttributeLookbackMinutes = 60
 	// TokenRefreshBuffer is the percentage of token lifetime to refresh before expiry (50%)
 	TokenRefreshBufferPercent = 50
 )
