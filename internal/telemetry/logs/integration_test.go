@@ -160,10 +160,12 @@ func TestGetServiceLogsHandler_Integration_EnvFilter(t *testing.T) {
 	}
 	t.Logf("env-filtered (non-existent env) log count: %d", filteredResp.Count)
 
-	// A non-existent env must return fewer logs than unfiltered.
-	// Equal counts mean the filter is silently ignored.
-	if filteredResp.Count == allResp.Count && allResp.Count > 0 {
-		t.Errorf("env filter returned same count (%d) as unfiltered — filter is not applied", allResp.Count)
+	// A deliberately non-existent env must return exactly zero logs. Any non-zero
+	// count means the filter is not actually scoping by environment (e.g. the old
+	// attributes['deployment_environment'] key that silently matched nothing and
+	// fell through to all-env results).
+	if filteredResp.Count != 0 {
+		t.Errorf("env filter for a non-existent env returned %d logs; expected 0", filteredResp.Count)
 	}
 }
 

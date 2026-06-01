@@ -35,7 +35,10 @@ func TestAddServiceLogsEnvFilter_ValueIsPreserved(t *testing.T) {
 	base := buildServiceLogsQuery("svc", nil, nil)
 	result := addServiceLogsEnvFilter(base, "staging")
 
-	raw, _ := json.Marshal(result)
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
 	if !strings.Contains(string(raw), "staging") {
 		t.Errorf("env value 'staging' missing from filter: %s", string(raw))
 	}
@@ -45,9 +48,15 @@ func TestAddServiceLogsEnvFilter_ValueIsPreserved(t *testing.T) {
 // query unchanged — no phantom env condition is injected.
 func TestAddServiceLogsEnvFilter_EmptyEnvIsNoop(t *testing.T) {
 	base := buildServiceLogsQuery("api", nil, nil)
-	before, _ := json.Marshal(base)
+	before, err := json.Marshal(base)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
 	result := addServiceLogsEnvFilter(base, "")
-	after, _ := json.Marshal(result)
+	after, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
 
 	if string(before) != string(after) {
 		t.Errorf("empty env must not modify query\nbefore: %s\nafter:  %s", before, after)
