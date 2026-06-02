@@ -42,10 +42,7 @@ func NewGetEntityAlertRulesHandler(client *http.Client, cfg models.Config) func(
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args GetEntityAlertRulesArgs) (*mcp.CallToolResult, any, error) {
 		entityID := strings.TrimSpace(args.EntityID)
 		if entityID == "" {
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: "entity_id is required"}},
-				IsError: true,
-			}, nil, nil
+			return toolErrorResult("entity_id is required"), nil, nil
 		}
 
 		rules, err := fetchEntityAlertRules(ctx, client, cfg, entityID)

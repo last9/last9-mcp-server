@@ -170,6 +170,37 @@ func TestAlertRuleStateHandler_ForwardsFilters(t *testing.T) {
 	}
 }
 
+func TestAlertRuleStateHandler_OmitsAbsentFilters(t *testing.T) {
+	var captured url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"timestamp": 1, "window": 60, "alert_rules": []}`))
+	}))
+	defer server.Close()
+
+	handler := NewAlertRuleStateHandler(server.Client(), newAlertRuleStateTestConfig(server.URL))
+
+	// No filters set — only the always-present timestamp/window should be in the query.
+	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AlertRuleStateRequest{
+		StartTime: 1, EndTime: 61, Step: 60,
+	}); err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	for _, key := range []string{"alert_group_id", "rule_name", "alert_group_name", "label_filters", "state"} {
+		if captured.Has(key) {
+			t.Errorf("Expected %s to be absent from query when filter not set, got %q", key, captured.Get(key))
+		}
+	}
+
+	for _, key := range []string{"timestamp", "window"} {
+		if !captured.Has(key) {
+			t.Errorf("Expected %s to always be present in query", key)
+		}
+	}
+}
+
 func TestAlertRuleStateHandler_SetsAuthHeader(t *testing.T) {
 	var sawXLast9, sawAuthorization bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

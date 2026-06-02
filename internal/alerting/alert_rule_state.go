@@ -46,13 +46,6 @@ type AlertRuleStateRequest struct {
 
 const alertRuleStateMaxPoints = 100
 
-func toolErrorResult(msg string) *mcp.CallToolResult {
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: msg}},
-		IsError: true,
-	}
-}
-
 func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, AlertRuleStateRequest) (*mcp.CallToolResult, any, error) {
 	if client == nil {
 		client = http.DefaultClient
