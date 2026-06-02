@@ -406,6 +406,16 @@ Note: `ServiceName` is a top-level field — never `resources['service.name']`. 
 5. **For existence checks**, use $neq operator
 6. **For text searches**, use $contains operator
 7. **CRITICAL: When user query has no explicit logical operators (and/or), always wrap filter conditions in $and array, even for single conditions**
+
+   ❌ WRONG — bare condition without $and:
+   ```json
+   [{"type": "filter", "query": {"$eq": ["SpanKind", "SPAN_KIND_INTERNAL"]}}]
+   ```
+   ✅ CORRECT — single condition still requires $and wrapper:
+   ```json
+   [{"type": "filter", "query": {"$and": [{"$eq": ["SpanKind", "SPAN_KIND_INTERNAL"]}]}}]
+   ```
+
 8. **Group multiple conditions** with $and or $or as appropriate when explicitly specified
 9. **Use an attribute only if it exists in the standard or custom fields**. Otherwise fallback to a regex filter with field name and value eg, ".*fieldname.*[:=].*value.*"
 

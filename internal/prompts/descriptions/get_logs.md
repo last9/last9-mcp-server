@@ -682,7 +682,7 @@ These are examples of pipeline json structure and available stages and functions
 - "grouped by X" → `"groupby": {"field": "alias"}`
 
 ### Time-based Patterns:
-- "in the last hour" → Use appropriate time filters in pipeline (handled by system)
+- "in the last hour" → Use `lookback_minutes: 60` (NOT a pipeline Timestamp filter — use request-level time params)
 - "over 5 minutes" → `"window": ["5", "minutes"]`
 - "per second" → `"window": ["1", "seconds"]`
 - "hourly" → `"window": ["1", "hours"]`
