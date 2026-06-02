@@ -2,6 +2,7 @@ package alerting
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -163,4 +164,75 @@ func TestGetEntityAlertRulesHandler_Integration(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestAlertRuleStateHandler_Integration(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+	handler := NewAlertRuleStateHandler(http.DefaultClient, *cfg)
+
+	ctx, cancel := context.WithTimeout(context.Background(), integrationTestTimeout)
+	defer cancel()
+
+	// 5-minute window at 60s resolution → 6 samples (well under the 100 cap).
+	end := time.Now().Unix()
+	start := end - 5*60
+	args := AlertRuleStateRequest{
+		StartTime: start,
+		EndTime:   end,
+		Step:      60,
+	}
+
+	result, _, err := handler(ctx, &mcp.CallToolRequest{}, args)
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+	if result == nil {
+		t.Fatalf("expected non-nil result")
+	}
+	if result.IsError {
+		text := utils.GetTextContent(t, result)
+		t.Fatalf("unexpected IsError result: %s", text)
+	}
+
+	text := utils.GetTextContent(t, result)
+	t.Logf("response (truncated to 500 chars):\n%s", truncate(text, 500))
+
+	// Output must be a JSON object — map[ruleID][]Datapoint. Empty {} is valid (no rules in window).
+	var decoded map[string][]struct {
+		Timestamp int64 `json:"timestamp"`
+		IsFiring  int   `json:"is_firing"`
+	}
+	if err := json.Unmarshal([]byte(text), &decoded); err != nil {
+		t.Fatalf("expected JSON map output, got error: %v\npayload: %s", err, text)
+	}
+
+	if len(decoded) == 0 {
+		t.Skip("no alert rules surfaced in the last 5 minutes; nothing to assert on")
+	}
+
+	// Every rule's timeseries must have exactly the expected number of samples
+	// (inclusive: (end-start)/step + 1) and contiguous timestamps at `step` intervals.
+	expectedSamples := (end-start)/60 + 1
+	for ruleID, dps := range decoded {
+		if int64(len(dps)) != expectedSamples {
+			t.Errorf("rule %s: expected %d samples, got %d", ruleID, expectedSamples, len(dps))
+			continue
+		}
+		for i, dp := range dps {
+			wantT := start + int64(i)*60
+			if dp.Timestamp != wantT {
+				t.Errorf("rule %s sample %d: expected timestamp %d, got %d", ruleID, i, wantT, dp.Timestamp)
+			}
+			if dp.IsFiring != 0 && dp.IsFiring != 1 {
+				t.Errorf("rule %s sample %d: is_firing must be 0 or 1, got %d", ruleID, i, dp.IsFiring)
+			}
+		}
+	}
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }

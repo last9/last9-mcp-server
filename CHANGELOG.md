@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `get_alert_rule_state` tool for historical firing state (1/0) per alert rule over a time range, grouped by `rule_id`. Supports server-side filtering by `alert_group_id`, `rule_name`, `alert_group_name`, `label_filters`, and `state` (#159).
+
 ## [0.7.5] - 2026-06-01
 
 ### Fixed
