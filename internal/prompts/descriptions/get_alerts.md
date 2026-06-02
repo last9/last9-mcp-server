@@ -25,6 +25,9 @@ User: "get alerts for the last hour"
 User: "show me alerts from the last 90 minutes"
 → `{"window": 3600}` (cap at max — do not use 5400)
 
+User: "show me alerts from the last 2 hours"
+→ `{"window": 3600}` (cap at max — do not use 7200)
+
 User: "show alerts at 2026-03-23T11:00:00Z"
 → `{"time_iso": "2026-03-23T11:00:00Z", "window": 900}`
 
