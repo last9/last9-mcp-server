@@ -5,7 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.0] - 2026-06-08
+
+### Added
+
+- `get_log_attributes_for_pipeline` tool for pipeline-scoped log-attribute discovery. Given an in-progress pipeline (e.g. a `ServiceName` filter), it returns only the log fields actually present for that scope via `/logs/api/v2/series/json`, each enriched with the exact `filter_field` to use in a `get_logs` condition. This prevents filtering on an attribute key that is empty for the queried service (e.g. assuming `http.status_code` when the service uses `status_code`), which silently returned 0 and caused large undercounts (#160).
+- `get_alert_rule_state` tool for historical firing state (1/0) per alert rule over a time range, grouped by `rule_id`. Supports server-side filtering by `alert_group_id`, `rule_name`, `alert_group_name`, `label_filters`, and `state` (#159).
+
+## [0.7.5] - 2026-06-01
+
+### Fixed
+
+- Log attribute discovery now always uses `/v1/labels`, and the environment filter uses the correct key (#156).
 
 ## [0.7.4] - 2026-05-27
 
@@ -156,6 +167,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Tool improvements (#51).
 
+[0.7.5]: https://github.com/last9/last9-mcp-server/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/last9/last9-mcp-server/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/last9/last9-mcp-server/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/last9/last9-mcp-server/compare/v0.7.1...v0.7.2

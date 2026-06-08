@@ -277,6 +277,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_change_events`** — Deployments, config changes, rollbacks. Correlate incidents with what changed
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_alerts`** — Currently firing alerts within a time window
+- **`get_alert_rule_state`** — Historical firing state (1/0) per alert rule over a time range, grouped by `rule_id`. Filterable by alert group, rule name, label filters, and state.
 - **`get_notification_channels`** — Configured notification channels (Slack, PagerDuty, email, etc.)
 
 ### Custom Dashboards
@@ -580,6 +581,19 @@ Exactly one of `trace_id` or `service_name` is required.
 - `time_iso` (string, optional): Evaluation time in RFC3339.
 - `window` (integer, optional): Lookback in seconds. Default: 900. Range: 60–86400.
 - `lookback_minutes` (integer, optional): Range: 1–1440.
+
+### get_alert_rule_state
+
+- `start_time` (integer, required): Unix epoch start of the range (inclusive).
+- `end_time` (integer, required): Unix epoch end of the range (inclusive).
+- `step` (integer, required): Resolution in seconds between samples. The number of samples `((end_time - start_time) / step + 1)` is capped at 100.
+- `alert_group_id` (string, optional): Filter by alert group ID.
+- `rule_name` (string, optional): Regex filter on rule name.
+- `alert_group_name` (string, optional): Regex filter on alert group name.
+- `label_filters` (string, optional): Comma-separated `key=value` label filters.
+- `state` (string, optional): Filter by state (e.g. `firing`).
+
+Returns a JSON map of `rule_id -> [{timestamp, is_firing}]`. A timestamp at which a rule is absent from the upstream response is reported as `is_firing=0` — this means "not observed as firing", not a confirmed normal state.
 
 ### get_notification_channels
 
