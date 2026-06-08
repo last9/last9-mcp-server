@@ -88,12 +88,15 @@ type LogAttribute struct {
 
 // logFieldFilterField maps a raw log field name to the exact filter_field string
 // used in a logjson condition:
-//   - service  -> ServiceName
-//   - severity -> SeverityText
-//   - body     -> Body
+//   - service    -> ServiceName
+//   - severity   -> SeverityText
+//   - body       -> Body
 //   - resource_x -> resources['x']
-//   - log_x      -> attributes['x']
 //   - default    -> attributes['<name>']
+//
+// The series endpoint returns log attributes bare (only resource attributes are
+// prefixed, with resource_), so a field name keeps its full name: e.g. a real
+// attribute named log_level maps to attributes['log_level'], not attributes['level'].
 func logFieldFilterField(name string) string {
 	switch name {
 	case "service":
@@ -105,9 +108,6 @@ func logFieldFilterField(name string) string {
 	}
 	if rest, ok := strings.CutPrefix(name, "resource_"); ok {
 		return fmt.Sprintf("resources['%s']", rest)
-	}
-	if rest, ok := strings.CutPrefix(name, "log_"); ok {
-		return fmt.Sprintf("attributes['%s']", rest)
 	}
 	return fmt.Sprintf("attributes['%s']", name)
 }

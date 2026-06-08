@@ -28,6 +28,31 @@ func decodeLogAttributes(t *testing.T, res *mcp.CallToolResult) []LogAttribute {
 	return attrs
 }
 
+// TestLogFieldFilterField locks the raw-name -> filter_field convention. In
+// particular, a real attribute whose name starts with "log_" must keep its full
+// name (log_level -> attributes['log_level']), not be stripped to attributes['level'].
+func TestLogFieldFilterField(t *testing.T) {
+	cases := []struct {
+		name string
+		want string
+	}{
+		{"service", "ServiceName"},
+		{"severity", "SeverityText"},
+		{"body", "Body"},
+		{"status_code", "attributes['status_code']"},
+		{"http.status_code", "attributes['http.status_code']"},
+		{"log_level", "attributes['log_level']"}, // must NOT become attributes['level']
+		{"log_id", "attributes['log_id']"},       // must NOT become attributes['id']
+		{"resource_container_name", "resources['container_name']"},
+		{"resource_k8s.namespace.name", "resources['k8s.namespace.name']"},
+	}
+	for _, c := range cases {
+		if got := logFieldFilterField(c.name); got != c.want {
+			t.Errorf("logFieldFilterField(%q) = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
 // TestGetLogAttributesForPipeline_UsesSeriesEndpoint verifies the tool POSTs the
 // pipeline to /logs/api/v2/series/json and returns the union of field names from
 // all label-sets, each mapped to the correct filter_field.
