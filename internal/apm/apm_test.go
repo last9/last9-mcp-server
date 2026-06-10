@@ -18,7 +18,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-
 func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
 	// Mock responses should match apiPromInstantResp format (direct array)
 	throughputResp := `[
@@ -653,4 +652,124 @@ func TestNewListDatasourcesHandler(t *testing.T) {
 			t.Errorf("empty list text = %q, want []", textContent.Text)
 		}
 	})
+}
+
+func TestNewPromqlLabelValuesHandler_MatchAlias(t *testing.T) {
+	var captured []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Matches []string `json:"matches"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		captured = body.Matches
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `[]`)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{APIBaseURL: server.URL, Region: "us-east-1"}
+	cfg.TokenManager = &auth.TokenManager{
+		AccessToken: "mock-access-token-for-testing",
+		ExpiresAt:   time.Now().Add(time.Hour),
+	}
+	handler := NewPromqlLabelValuesHandler(server.Client(), cfg)
+
+	cases := []struct {
+		name string
+		args PromqlLabelValuesArgs
+		want string
+	}{
+		{"match alias used when match_query empty", PromqlLabelValuesArgs{Match: "up", Label: "job"}, "up"},
+		{"match_query wins over match", PromqlLabelValuesArgs{MatchQuery: "canonical", Match: "alias", Label: "job"}, "canonical"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			captured = nil
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, tc.args)
+			if err != nil {
+				t.Fatalf("handler error: %v", err)
+			}
+			if len(captured) == 0 || captured[0] != tc.want {
+				t.Fatalf("backend received matches %v, want [%q]", captured, tc.want)
+			}
+		})
+	}
+
+	t.Run("neither match nor match_query errors", func(t *testing.T) {
+		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, PromqlLabelValuesArgs{Label: "job"})
+		if err == nil || !strings.Contains(err.Error(), "match_query is required") {
+			t.Fatalf("expected match_query required error, got: %v", err)
+		}
+	})
+}
+
+func TestNewPromqlLabelsHandler_MatchAlias(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `[]`)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{APIBaseURL: server.URL, Region: "us-east-1"}
+	cfg.TokenManager = &auth.TokenManager{
+		AccessToken: "mock-access-token-for-testing",
+		ExpiresAt:   time.Now().Add(time.Hour),
+	}
+	handler := NewPromqlLabelsHandler(server.Client(), cfg)
+
+	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, PromqlLabelsArgs{Match: "up"}); err != nil {
+		t.Fatalf("match alias should satisfy required match query, got: %v", err)
+	}
+	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, PromqlLabelsArgs{}); err == nil {
+		t.Fatal("expected error when neither match nor match_query set")
+	}
+}
+
+func TestNewServiceSummaryHandler_ServiceFilter(t *testing.T) {
+	var queries []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Query string `json:"query"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		queries = append(queries, body.Query)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `[]`)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{APIBaseURL: server.URL, Region: "us-east-1"}
+	cfg.TokenManager = &auth.TokenManager{
+		AccessToken: "mock-access-token-for-testing",
+		ExpiresAt:   time.Now().Add(time.Hour),
+	}
+	handler := NewServiceSummaryHandler(server.Client(), cfg)
+
+	cases := []struct {
+		name string
+		args ServiceSummaryArgs
+		want string
+	}{
+		{"service_name filters queries", ServiceSummaryArgs{ServiceName: "svc1"}, "service_name=~'svc1'"},
+		{"service alias filters queries", ServiceSummaryArgs{Service: "svc2"}, "service_name=~'svc2'"},
+		{"service_name wins over service", ServiceSummaryArgs{ServiceName: "canonical", Service: "alias"}, "service_name=~'canonical'"},
+		{"omitted defaults to all services", ServiceSummaryArgs{}, "service_name=~'.*'"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			queries = nil
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, tc.args)
+			if err != nil {
+				t.Fatalf("handler error: %v", err)
+			}
+			if len(queries) == 0 {
+				t.Fatal("backend received no queries")
+			}
+			for _, q := range queries {
+				if !strings.Contains(q, tc.want) {
+					t.Fatalf("query %q missing filter %q", q, tc.want)
+				}
+			}
+		})
+	}
 }

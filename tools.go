@@ -10,6 +10,7 @@ import (
 	"last9-mcp/internal/change_events"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/paramhint"
 	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/suggest"
 	"last9-mcp/internal/telemetry/logs"
@@ -33,9 +34,18 @@ func buildEnhancedDescription(base, instructions string, labelValues []string) s
 	return desc
 }
 
+// registerTool registers a tool and records its valid parameter names so the
+// paramhint middleware can build recovery hints for schema-validation errors.
+func registerTool[In, Out any](server *last9mcp.Last9MCPServer, reg *paramhint.Registry, tool *mcp.Tool, handler mcp.ToolHandlerFor[In, Out]) error {
+	reg.Register(tool.Name, paramhint.ParamsOf[In]())
+	return last9mcp.RegisterInstrumentedTool(server, tool, handler)
+}
+
 // registerAllTools registers all tools with the MCP server using the new SDK pattern
 func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCache *attributes.AttributeCache) error {
 	client := auth.GetHTTPClient()
+	reg := paramhint.NewRegistry()
+	server.Server.AddReceivingMiddleware(paramhint.Middleware(reg))
 
 	// Build enhanced descriptions for tools that have embedded instructions
 	getLogsDesc := buildEnhancedDescription(logs.GetLogsDescription, prompts.GetLogsInstructions, attrCache.GetLogAttributes())
@@ -45,221 +55,221 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 	getMetricsDesc := buildEnhancedDescription(apm.PromqlRangeQueryDetails, prompts.GetMetricsInstructions, nil)
 
 	// Register exceptions tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_exceptions",
 		Description: prompts.GetExceptionsInstructions,
 	}, traces.NewGetExceptionsHandler(client, cfg))
 
 	// Register service summary tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_service_summary",
 		Description: apm.GetServiceSummaryDescription,
 	}, apm.NewServiceSummaryHandler(client, cfg))
 
 	// Register service environments tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_service_environments",
 		Description: apm.GetServiceEnvironmentsDescription,
 	}, apm.NewServiceEnvironmentsHandler(client, cfg))
 
 	// Register service performance details tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_service_performance_details",
 		Description: apm.GetServicePerformanceDetails,
 	}, apm.NewServicePerformanceDetailsHandler(client, cfg))
 
 	// Register service operations summary tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_service_operations_summary",
 		Description: apm.GetServiceOperationsSummaryDescription,
 	}, apm.NewServiceOperationsSummaryHandler(client, cfg))
 
 	// Register service dependency graph tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_service_dependency_graph",
 		Description: apm.GetServiceDependencyGraphDetails,
 	}, apm.NewServiceDependencyGraphHandler(client, cfg))
 
 	// Register list datasources tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "list_datasources",
 		Description: apm.ListDatasourcesDescription,
 	}, apm.NewListDatasourcesHandler(cfg))
 
 	// Register PromQL range query tool (enhanced with metrics instructions)
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "prometheus_range_query",
 		Description: getMetricsDesc,
 	}, apm.NewPromqlRangeQueryHandler(client, cfg))
 
 	// Register PromQL instant query tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "prometheus_instant_query",
 		Description: apm.PromqlInstantQueryDetails,
 	}, apm.NewPromqlInstantQueryHandler(client, cfg))
 
 	// Register PromQL label values tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "prometheus_label_values",
 		Description: apm.PromqlLabelValuesQueryDetails,
 	}, apm.NewPromqlLabelValuesHandler(client, cfg))
 
 	// Register PromQL labels tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "prometheus_labels",
 		Description: apm.PromqlLabelsQueryDetails,
 	}, apm.NewPromqlLabelsHandler(client, cfg))
 
 	// Register logs tool (enhanced with log query instructions + labels)
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_logs",
 		Description: getLogsDesc,
 	}, logs.NewGetLogsHandler(client, cfg))
 
 	// Register service logs tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_service_logs",
 		Description: getServiceLogsDesc,
 	}, logs.NewGetServiceLogsHandler(client, cfg))
 
 	// Register drop rules tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_drop_rules",
 		Description: logs.GetDropRulesDescription,
 	}, logs.NewGetDropRulesHandler(client, cfg))
 
 	// Register add drop rule tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "add_drop_rule",
 		Description: logs.AddDropRuleDescription,
 	}, logs.NewAddDropRuleHandler(client, cfg))
 
 	// Register notification channels tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_notification_channels",
 		Description: alerting.GetNotificationChannelsDescription,
 	}, alerting.NewGetNotificationChannelsHandler(client, cfg))
 
 	// Register alert config tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_alert_config",
 		Description: alerting.GetAlertConfigDescription,
 	}, alerting.NewGetAlertConfigHandler(client, cfg))
 
 	// Register entity alert rules tool (entity-scoped, includes expression_args and resolved PromQL)
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_entity_alert_rules",
 		Description: alerting.GetEntityAlertRulesDescription,
 	}, alerting.NewGetEntityAlertRulesHandler(client, cfg))
 
 	// Register alerts tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_alerts",
 		Description: alerting.GetAlertsDescription,
 	}, alerting.NewGetAlertsHandler(client, cfg))
 
 	// Register get alert rule state tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_alert_rule_state",
 		Description: alerting.GetAlertRuleStateDescription,
 	}, alerting.NewAlertRuleStateHandler(client, cfg))
 
 	// Register get traces tool (enhanced with trace query instructions)
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_traces",
 		Description: getTracesDesc,
 		InputSchema: traces.GetTracesInputSchema(),
 	}, traces.NewGetTracesHandler(client, cfg))
 
 	// Register service traces tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_service_traces",
 		Description: getServiceTracesDesc,
 	}, traces.GetServiceTracesHandler(client, cfg))
 
 	// Register log attributes tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_log_attributes",
 		Description: logs.GetLogAttributesDescription,
 	}, logs.NewGetLogAttributesHandler(client, cfg))
 
 	// Register pipeline-scoped log attributes tool (discovers fields actually
 	// present for a given pipeline via the series endpoint)
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_log_attributes_for_pipeline",
 		Description: logs.GetLogAttributesForPipelineDescription,
 	}, logs.NewGetLogAttributesForPipelineHandler(client, cfg))
 
 	// Register trace attributes tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_trace_attributes",
 		Description: traces.GetTraceAttributesDescription,
 	}, traces.NewGetTraceAttributesHandler(client, cfg))
 
 	// Register trace attribute values tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_trace_attribute_values",
 		Description: traces.GetTraceAttributeValuesDescription,
 	}, traces.NewGetTraceAttributeValuesHandler(client, cfg))
 
 	// Register change events tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_change_events",
 		Description: change_events.GetChangeEventsDescription,
 	}, change_events.NewGetChangeEventsHandler(client, cfg))
 
 	// Register database discovery tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_databases",
 		Description: apm.GetDatabasesDescription,
 	}, apm.NewGetDatabasesHandler(client, cfg))
 
 	// Register database slow queries tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_database_slow_queries",
 		Description: apm.GetDatabaseSlowQueriesDescription,
 	}, apm.NewGetDatabaseSlowQueriesHandler(client, cfg))
 
 	// Register database query patterns tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_database_queries",
 		Description: apm.GetDatabaseQueriesDescription,
 	}, apm.NewGetDatabaseQueriesHandler(client, cfg))
 
 	// Register database server-side metrics tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_database_server_metrics",
 		Description: apm.GetDatabaseServerMetricsDescription,
 	}, apm.NewGetDatabaseServerMetricsHandler(client, cfg))
 
 	// Register did_you_mean tool
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "did_you_mean",
 		Description: suggest.DidYouMeanDescription,
 	}, suggest.NewDidYouMeanHandler(client, cfg))
 
 	// Register dashboard tools
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "list_dashboards",
 		Description: dashboards.ListDashboardsDescription,
 	}, dashboards.NewListDashboardsHandler(client, cfg))
 
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_dashboard",
 		Description: dashboards.GetDashboardDescription,
 	}, dashboards.NewGetDashboardHandler(client, cfg))
 
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "create_dashboard",
 		Description: dashboards.CreateDashboardDescription,
 	}, dashboards.NewCreateDashboardHandler(client, cfg))
 
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "update_dashboard",
 		Description: dashboards.UpdateDashboardDescription,
 	}, dashboards.NewUpdateDashboardHandler(client, cfg))
 
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "delete_dashboard",
 		Description: dashboards.DeleteDashboardDescription,
 	}, dashboards.NewDeleteDashboardHandler(client, cfg))

@@ -37,6 +37,8 @@ type ServiceSummaryArgs struct {
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
 	Env             string  `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
+	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Optional service name to filter the summary by (e.g. my-api). When omitted, returns all services."`
+	Service         string  `json:"service,omitempty" jsonschema:"Alias of service_name. Ignored when service_name is set."`
 }
 
 type ServiceEnvironmentsArgs struct {
@@ -87,6 +89,7 @@ type PromqlInstantQueryArgs struct {
 
 type PromqlLabelValuesArgs struct {
 	MatchQuery      string  `json:"match_query,omitempty" jsonschema:"PromQL query to match series (e.g. up{job=\"prometheus\"})"`
+	Match           string  `json:"match,omitempty" jsonschema:"Alias of match_query (matches the Prometheus API's match parameter). Ignored when match_query is set."`
 	Label           string  `json:"label" jsonschema:"Label name to get values for (required)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
@@ -96,6 +99,7 @@ type PromqlLabelValuesArgs struct {
 
 type PromqlLabelsArgs struct {
 	MatchQuery      string  `json:"match_query,omitempty" jsonschema:"PromQL query to match series (e.g. up{job=\"prometheus\"})"`
+	Match           string  `json:"match,omitempty" jsonschema:"Alias of match_query (matches the Prometheus API's match parameter). Ignored when match_query is set."`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
@@ -162,6 +166,7 @@ const GetServiceSummaryDescription = `
 	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
 	- env: (Optional) Environment to filter by. If not provided, defaults to all environments.
+	- service_name: (Optional) Service name to filter by. Also accepted under the alias "service"; service_name wins when both are set. If not provided, returns all services.
 `
 
 func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceSummaryArgs) (*mcp.CallToolResult, any, error) {
@@ -176,13 +181,22 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 		if env == "" {
 			env = ".*" // default value
 		}
+		// Accept service filter under both service_name (canonical) and service (alias)
+		serviceFilter := args.ServiceName
+		if serviceFilter == "" {
+			serviceFilter = args.Service
+		}
+		if serviceFilter == "" {
+			serviceFilter = ".*" // default value
+		}
 		// get the value of service througputs using the query
 		// quantile_over_time(0.95, sum by (service_name)(trace_endpoint_count{service_name=~'.*', env=~'prod', span_kind=~'SPAN_KIND_SERVER|SPAN_KIND_CLIENT'})[30m])
 		// add the filter values in the promql from the filterParams
 		// Build PromQL filter string from filterParams
 		// Build PromQL query
 		promql := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (service_name)(trace_endpoint_count{env=~'%s', span_kind='SPAN_KIND_SERVER'}[%dm]))",
+			"quantile_over_time(0.95, sum by (service_name)(trace_endpoint_count{service_name=~'%s', env=~'%s', span_kind='SPAN_KIND_SERVER'}[%dm]))",
+			serviceFilter,
 			env,
 			int((endTimeParam-startTimeParam)/60),
 		)
@@ -232,7 +246,8 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 		}
 		// Make another prom_query_instant call for response time
 		respTimePromql := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (service_name)(trace_service_response_time{quantile=\"p95\", env=~'%s'}[%dm]))",
+			"quantile_over_time(0.95, sum by (service_name)(trace_service_response_time{quantile=\"p95\", service_name=~'%s', env=~'%s'}[%dm]))",
+			serviceFilter,
 			env,
 			int((endTimeParam-startTimeParam)/60),
 		)
@@ -270,7 +285,8 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 		}
 		// Make another prom_query_instant call for error rate
 		errorRateQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (service_name)(trace_endpoint_count{env=~'%s', span_kind=~'SPAN_KIND_SERVER', http_status_code=~\"5.*\"}[%dm]))",
+			"quantile_over_time(0.95, sum by (service_name)(trace_endpoint_count{service_name=~'%s', env=~'%s', span_kind=~'SPAN_KIND_SERVER', http_status_code=~\"5.*\"}[%dm]))",
+			serviceFilter,
 			env,
 			int((endTimeParam-startTimeParam)/60),
 		)
@@ -2097,7 +2113,7 @@ const PromqlLabelValuesQueryDetails = `
 	This works similar to the prometheus /label_values call
 	It returns an array of values for the label.
 	Parameters:
-	- match_query: (Required) A valid promql filter query
+	- match_query: (Required) A valid promql filter query. Also accepted under the alias "match"; match_query wins when both are set.
 	- label: (Required) Name of the label to return values for
 	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
 	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
@@ -2113,6 +2129,9 @@ const PromqlLabelValuesQueryDetails = `
 func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlLabelValuesArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args PromqlLabelValuesArgs) (*mcp.CallToolResult, any, error) {
 		query := args.MatchQuery
+		if query == "" {
+			query = args.Match
+		}
 		if query == "" {
 			return nil, nil, fmt.Errorf("match_query is required")
 		}
@@ -2164,7 +2183,7 @@ const PromqlLabelsQueryDetails = `
 	This works similar to the prometheus /labels call
 	It returns an array of labels.
 	Parameters:
-	- match_query: (Required) A valid promql filter query
+	- match_query: (Required) A valid promql filter query. Also accepted under the alias "match"; match_query wins when both are set.
 	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
 	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
@@ -2179,6 +2198,9 @@ const PromqlLabelsQueryDetails = `
 func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlLabelsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args PromqlLabelsArgs) (*mcp.CallToolResult, any, error) {
 		query := args.MatchQuery
+		if query == "" {
+			query = args.Match
+		}
 		if query == "" {
 			return nil, nil, fmt.Errorf("match_query is required")
 		}
