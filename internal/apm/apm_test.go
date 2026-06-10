@@ -843,7 +843,10 @@ func TestNewServiceSummaryHandler_ServiceFilter_Integration(t *testing.T) {
 		return
 	}
 	var all map[string]ServiceSummary
-	if err := json.Unmarshal([]byte(utils.GetTextContent(t, unfiltered)), &all); err != nil || len(all) == 0 {
+	if err := json.Unmarshal([]byte(utils.GetTextContent(t, unfiltered)), &all); err != nil {
+		t.Fatalf("unfiltered response not JSON: %v", err)
+	}
+	if len(all) == 0 {
 		t.Skip("no services in window; cannot exercise the filter")
 	}
 

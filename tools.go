@@ -40,7 +40,9 @@ func buildEnhancedDescription(base, instructions string, labelValues []string) s
 // middleware must be attached exactly once per server — attaching it inside
 // registerAllTools would stack one copy per refresh and append duplicate
 // hints — while re-registration only rewrites the same names into the
-// existing registry.
+// existing registry. Shared across all servers in the process (tests create
+// several); safe because every server registers the identical tool set and
+// Register is last-write-wins idempotent for identical inputs.
 var paramRegistry = paramhint.NewRegistry()
 
 // AttachParamHintMiddleware wires the -32602 enrichment middleware to a
