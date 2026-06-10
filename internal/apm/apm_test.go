@@ -775,3 +775,105 @@ func TestNewServiceSummaryHandler_ServiceFilter(t *testing.T) {
 		})
 	}
 }
+
+func TestPromqlLabelValuesHandler_MatchAlias_Integration(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+
+	handler := NewPromqlLabelValuesHandler(http.DefaultClient, *cfg)
+	ctx := context.Background()
+	req := &mcp.CallToolRequest{}
+	start := time.Now().Add(-1 * time.Hour).UTC().Format(time.RFC3339)
+	end := time.Now().UTC().Format(time.RFC3339)
+
+	canonical, _, err := handler(ctx, req, PromqlLabelValuesArgs{
+		MatchQuery: "up", Label: "job", StartTimeISO: start, EndTimeISO: end,
+	})
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+	aliased, _, err := handler(ctx, req, PromqlLabelValuesArgs{
+		Match: "up", Label: "job", StartTimeISO: start, EndTimeISO: end,
+	})
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+
+	canonicalText := utils.GetTextContent(t, canonical)
+	aliasedText := utils.GetTextContent(t, aliased)
+	if canonicalText != aliasedText {
+		t.Fatalf("alias and canonical param returned different results:\ncanonical: %s\nalias: %s", canonicalText, aliasedText)
+	}
+	t.Logf("Integration test successful: match alias returns identical results to match_query")
+}
+
+func TestPromqlLabelsHandler_MatchAlias_Integration(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+
+	handler := NewPromqlLabelsHandler(http.DefaultClient, *cfg)
+	ctx := context.Background()
+	req := &mcp.CallToolRequest{}
+	result, _, err := handler(ctx, req, PromqlLabelsArgs{
+		Match:        "up",
+		StartTimeISO: time.Now().Add(-1 * time.Hour).UTC().Format(time.RFC3339),
+		EndTimeISO:   time.Now().UTC().Format(time.RFC3339),
+	})
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+	text := utils.GetTextContent(t, result)
+	if text == "" {
+		t.Fatal("expected non-empty labels response via match alias")
+	}
+	t.Logf("Integration test successful: match alias accepted by prometheus_labels")
+}
+
+func TestNewServiceSummaryHandler_ServiceFilter_Integration(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+
+	handler := NewServiceSummaryHandler(http.DefaultClient, *cfg)
+	ctx := context.Background()
+	req := &mcp.CallToolRequest{}
+	args := ServiceSummaryArgs{
+		StartTimeISO: time.Now().Add(-60 * time.Minute).UTC().Format(time.RFC3339),
+		EndTimeISO:   time.Now().UTC().Format(time.RFC3339),
+	}
+
+	unfiltered, _, err := handler(ctx, req, args)
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+	var all map[string]ServiceSummary
+	if err := json.Unmarshal([]byte(utils.GetTextContent(t, unfiltered)), &all); err != nil || len(all) == 0 {
+		t.Skip("no services in window; cannot exercise the filter")
+	}
+
+	var target string
+	for name := range all {
+		if name != "" {
+			target = name
+			break
+		}
+	}
+	if target == "" {
+		t.Skip("only empty service names in window")
+	}
+
+	args.ServiceName = target
+	filtered, _, err := handler(ctx, req, args)
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+	var got map[string]ServiceSummary
+	if err := json.Unmarshal([]byte(utils.GetTextContent(t, filtered)), &got); err != nil {
+		t.Fatalf("filtered response not JSON: %v", err)
+	}
+	for name := range got {
+		if name != target {
+			t.Fatalf("filter service_name=%q leaked service %q", target, name)
+		}
+	}
+	if _, ok := got[target]; !ok {
+		t.Fatalf("filter service_name=%q returned no entry for it: %v", target, got)
+	}
+	t.Logf("Integration test successful: filter restricted summary to %q (%d of %d services)", target, len(got), len(all))
+}
