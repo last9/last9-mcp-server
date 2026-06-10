@@ -3,6 +3,7 @@ package logs
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -61,13 +62,18 @@ func TestGetLogAttributesForPipeline_UsesSeriesEndpoint(t *testing.T) {
 	var capturedBody map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if !strings.Contains(r.URL.Path, "/logs/api/v2/series/json") {
+			// Body-sampling request — irrelevant to this test, return no rows.
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[]}}`))
+			return
+		}
 		capturedPath = r.URL.Path
 		capturedMethod = r.Method
 		raw, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(raw, &capturedBody)
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
 		// Two label-sets with overlapping + distinct keys to exercise the union.
 		_, _ = w.Write([]byte(`{"status":"success","data":[` +
 			`{"service":"checkout-service","status_code":"500","resource_k8s.namespace.name":"prod"},` +
@@ -134,6 +140,226 @@ func TestGetLogAttributesForPipeline_RequiresPipeline(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "pipeline parameter is required") {
 		t.Errorf("expected pipeline-required error, got: %v", err)
+	}
+}
+
+// bodySamplingServer builds an httptest server that serves a fixed series
+// response and a fixed query_range (body-sampling) response, capturing the
+// sampling request's pipeline, limit, and time window.
+func bodySamplingServer(t *testing.T, seriesJSON string, sampleLines []string, capture *sampleCapture) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "/logs/api/v2/series/json") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(seriesJSON))
+			return
+		}
+		if capture != nil {
+			capture.requested = true
+			capture.limit = r.URL.Query().Get("limit")
+			capture.start = r.URL.Query().Get("start")
+			capture.end = r.URL.Query().Get("end")
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, &capture.body)
+		}
+		w.WriteHeader(http.StatusOK)
+		values := make([]string, 0, len(sampleLines))
+		for i, line := range sampleLines {
+			enc, _ := json.Marshal(line)
+			values = append(values, `["`+fmt.Sprintf("%d", 1700000000000000000+i)+`",`+string(enc)+`]`)
+		}
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{},"values":[` +
+			strings.Join(values, ",") + `]}]}}`))
+	}))
+}
+
+type sampleCapture struct {
+	requested         bool
+	limit, start, end string
+	body              map[string]any
+}
+
+func attrByName(attrs []LogAttribute, name string) *LogAttribute {
+	for i := range attrs {
+		if attrs[i].Name == name {
+			return &attrs[i]
+		}
+	}
+	return nil
+}
+
+// TestGetLogAttributesForPipeline_BodyDerivedFields verifies that top-level keys
+// of a JSON Body are reported as derived fields with source "body", a
+// sample_coverage ratio, and a hint embedding the required parse stage — while
+// keys already present as indexed attributes are reported once (indexed wins).
+func TestGetLogAttributesForPipeline_BodyDerivedFields(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"gw","status_code":"500"}]}`
+	samples := []string{
+		`{"uri":"/v1/orders","status_code":500,"http_method":"GET"}`,
+		`{"uri":"/v2/carts"}`,
+	}
+	var cap sampleCapture
+	server := bodySamplingServer(t, series, samples, &cap)
+	defer server.Close()
+
+	cfg := testAttrConfig(server.URL)
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+
+	pipeline := []map[string]interface{}{
+		{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "gw"}}},
+	}
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline:        pipeline,
+		LookbackMinutes: 30,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	attrs := decodeLogAttributes(t, res)
+
+	// Sampling request shape: caller's pipeline forwarded, bounded limit.
+	if !cap.requested {
+		t.Fatal("expected a body-sampling query_range request")
+	}
+	if cap.limit != "5" {
+		t.Errorf("expected sampling limit 5, got %q", cap.limit)
+	}
+	if cap.body == nil || cap.body["pipeline"] == nil {
+		t.Errorf("expected caller's pipeline forwarded in sampling request, got: %v", cap.body)
+	}
+
+	// Indexed key that also appears in Body: reported once, as indexed.
+	var statusCount int
+	for _, a := range attrs {
+		if a.Name == "status_code" {
+			statusCount++
+			if a.Source == "body" {
+				t.Errorf("status_code must stay indexed (indexed wins), got source %q", a.Source)
+			}
+		}
+	}
+	if statusCount != 1 {
+		t.Errorf("expected exactly 1 status_code entry, got %d", statusCount)
+	}
+
+	// Body-derived keys with coverage.
+	uri := attrByName(attrs, "uri")
+	if uri == nil {
+		t.Fatalf("expected body-derived field 'uri', got: %v", attrs)
+	}
+	if uri.Source != "body" {
+		t.Errorf("uri: expected source \"body\", got %q", uri.Source)
+	}
+	if uri.SampleCoverage != "2/2" {
+		t.Errorf("uri: expected sample_coverage \"2/2\", got %q", uri.SampleCoverage)
+	}
+	if uri.FilterField != "attributes['uri']" {
+		t.Errorf("uri: expected filter_field attributes['uri'], got %q", uri.FilterField)
+	}
+	for _, frag := range []string{`"type":"parse"`, `"field":"Body"`, `attributes['uri']`} {
+		if !strings.Contains(uri.Hint, frag) {
+			t.Errorf("uri hint missing %q; hint: %s", frag, uri.Hint)
+		}
+	}
+
+	method := attrByName(attrs, "http_method")
+	if method == nil || method.Source != "body" || method.SampleCoverage != "1/2" {
+		t.Errorf("expected http_method body-derived with coverage 1/2, got: %+v", method)
+	}
+}
+
+// TestGetLogAttributesForPipeline_BodyNotJSON verifies plain-text bodies yield
+// no derived fields and no error.
+func TestGetLogAttributesForPipeline_BodyNotJSON(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"gw","status_code":"500"}]}`
+	samples := []string{`100.65.18.112 GET /v1/orders 500`, `plain text line`}
+	server := bodySamplingServer(t, series, samples, nil)
+	defer server.Close()
+
+	cfg := testAttrConfig(server.URL)
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	for _, a := range decodeLogAttributes(t, res) {
+		if a.Source == "body" {
+			t.Errorf("expected no body-derived fields for non-JSON bodies, got: %+v", a)
+		}
+	}
+}
+
+// TestGetLogAttributesForPipeline_SamplingFailureGraceful verifies a failing
+// sampling request degrades to the indexed-only response without error.
+func TestGetLogAttributesForPipeline_SamplingFailureGraceful(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "/logs/api/v2/series/json") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"success","data":[{"service":"gw","status_code":"500"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"boom"}`))
+	}))
+	defer server.Close()
+
+	cfg := testAttrConfig(server.URL)
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("expected graceful degradation, got error: %v", err)
+	}
+	attrs := decodeLogAttributes(t, res)
+	if len(attrs) != 2 {
+		t.Fatalf("expected the 2 indexed attributes, got: %v", attrs)
+	}
+}
+
+// TestGetLogAttributesForPipeline_BodyKeyCap verifies body-derived keys are
+// capped at 20, ranked by sample frequency then name.
+func TestGetLogAttributesForPipeline_BodyKeyCap(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"gw"}]}`
+	wide := map[string]int{}
+	var sb strings.Builder
+	sb.WriteString(`{"frequent":1`)
+	for i := 0; i < 24; i++ {
+		fmt.Fprintf(&sb, `,"key_%02d":%d`, i, i)
+	}
+	sb.WriteString(`}`)
+	_ = wide
+	samples := []string{sb.String(), `{"frequent":2}`}
+	server := bodySamplingServer(t, series, samples, nil)
+	defer server.Close()
+
+	cfg := testAttrConfig(server.URL)
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	var derived []LogAttribute
+	for _, a := range decodeLogAttributes(t, res) {
+		if a.Source == "body" {
+			derived = append(derived, a)
+		}
+	}
+	if len(derived) != 20 {
+		t.Fatalf("expected body-derived keys capped at 20, got %d", len(derived))
+	}
+	// Highest-frequency key (present in both samples) must survive the cap.
+	if attrByName(derived, "frequent") == nil {
+		t.Error("expected highest-frequency key 'frequent' to survive the cap")
 	}
 }
 

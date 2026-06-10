@@ -79,11 +79,121 @@ type logSeriesResponse struct {
 
 // LogAttribute is an enriched attribute entry returned by
 // get_log_attributes_for_pipeline. filter_field is the exact string to use in a
-// logjson filter condition.
+// logjson filter condition. Body-derived entries (source "body") exist only
+// inside the log Body as JSON: their filter_field is valid only after the parse
+// stage shown in the hint, and sample_coverage reports in how many of the
+// sampled rows the key appeared.
 type LogAttribute struct {
-	Name        string `json:"name"`
-	FilterField string `json:"filter_field"`
-	Hint        string `json:"hint"`
+	Name           string `json:"name"`
+	FilterField    string `json:"filter_field"`
+	Hint           string `json:"hint"`
+	Source         string `json:"source,omitempty"`
+	SampleCoverage string `json:"sample_coverage,omitempty"`
+}
+
+const (
+	// bodySampleLimit bounds the raw-log sample used to discover Body-derived keys.
+	bodySampleLimit = 5
+	// maxBodyDerivedKeys caps how many Body-derived keys are reported, ranked by
+	// sample frequency — a wide structured Body must not flood the response.
+	maxBodyDerivedKeys = 20
+)
+
+// sampleBodyDerivedAttributes fetches up to bodySampleLimit raw rows for the
+// pipeline and derives attributes from the top-level keys of rows whose Body is
+// a JSON object. Keys already present in indexed are skipped (indexed wins).
+// Any failure degrades to nil — Body discovery is best-effort and never blocks
+// the indexed-attribute response.
+func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg models.Config, pipeline []map[string]interface{}, startSec, endSec int64, index string, indexed map[string]struct{}) []LogAttribute {
+	result, err := executeLogJSONQuery(ctx, client, cfg, pipeline, startSec*1000, endSec*1000, bodySampleLimit, index)
+	if err != nil {
+		return nil
+	}
+	lines := extractSampleBodyLines(result)
+	if len(lines) == 0 {
+		return nil
+	}
+
+	freq := map[string]int{}
+	for _, line := range lines {
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(line), &obj); err != nil {
+			continue
+		}
+		for key := range obj {
+			if key == "" {
+				continue
+			}
+			if _, exists := indexed[key]; exists {
+				continue
+			}
+			freq[key]++
+		}
+	}
+	if len(freq) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(freq))
+	for key := range freq {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if freq[keys[i]] != freq[keys[j]] {
+			return freq[keys[i]] > freq[keys[j]]
+		}
+		return keys[i] < keys[j]
+	})
+	if len(keys) > maxBodyDerivedKeys {
+		keys = keys[:maxBodyDerivedKeys]
+	}
+	sort.Strings(keys)
+
+	out := make([]LogAttribute, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, LogAttribute{
+			Name:           key,
+			FilterField:    fmt.Sprintf("attributes['%s']", key),
+			Hint:           fmt.Sprintf(`[{"type":"parse","parser":"json","field":"Body","labels":{"%s":"%s"}},{"type":"filter","query":{"$eq":["attributes['%s']","<value>"]}}]`, key, key, key),
+			Source:         "body",
+			SampleCoverage: fmt.Sprintf("%d/%d", freq[key], len(lines)),
+		})
+	}
+	return out
+}
+
+// extractSampleBodyLines pulls the raw Body line of each sampled log entry from
+// a query_range streams response (data.result[].values[][1]).
+func extractSampleBodyLines(result map[string]interface{}) []string {
+	data, ok := result["data"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	items, ok := data["result"].([]interface{})
+	if !ok {
+		return nil
+	}
+	var lines []string
+	for _, item := range items {
+		entry, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		values, ok := entry["values"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, pair := range values {
+			tuple, ok := pair.([]interface{})
+			if !ok || len(tuple) < 2 {
+				continue
+			}
+			if line, ok := tuple[1].(string); ok && line != "" {
+				lines = append(lines, line)
+			}
+		}
+	}
+	return lines
 }
 
 // logFieldFilterField maps a raw log field name to the exact filter_field string
@@ -232,7 +342,9 @@ func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Confi
 		}
 
 		out := make([]LogAttribute, 0, len(names))
+		indexed := make(map[string]struct{}, len(names))
 		for _, name := range names {
+			indexed[name] = struct{}{}
 			filterField := logFieldFilterField(name)
 			out = append(out, LogAttribute{
 				Name:        name,
@@ -240,6 +352,10 @@ func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Confi
 				Hint:        fmt.Sprintf("{\"$eq\":[\"%s\",\"<value>\"]}", filterField),
 			})
 		}
+
+		// Best-effort: also surface fields that exist only inside the log Body
+		// as JSON — they need a parse stage (carried in the hint) before use.
+		out = append(out, sampleBodyDerivedAttributes(ctx, client, cfg, args.Pipeline, startTime, endTime, normalizedIndex, indexed)...)
 
 		payload, err := json.MarshalIndent(out, "", "  ")
 		if err != nil {
