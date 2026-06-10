@@ -10,13 +10,17 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // Registry maps tool names to their valid top-level parameter names.
+// Registration re-runs periodically (description refresh loop in main), so
+// writes can race in-flight reads from the middleware — guard both.
 type Registry struct {
+	mu     sync.RWMutex
 	params map[string][]string
 }
 
@@ -28,7 +32,9 @@ func NewRegistry() *Registry {
 func (r *Registry) Register(toolName string, params []string) {
 	sorted := append([]string(nil), params...)
 	sort.Strings(sorted)
+	r.mu.Lock()
 	r.params[toolName] = sorted
+	r.mu.Unlock()
 }
 
 // ParamsOf derives the top-level parameter names from a tool's typed
@@ -128,7 +134,9 @@ func min3(a, b, c int) int {
 // Hint builds the recovery hint for a failed tools/call, or "" when the
 // error is not an unknown-parameter rejection or the tool is unregistered.
 func (r *Registry) Hint(toolName, errText string) string {
+	r.mu.RLock()
 	valid, ok := r.params[toolName]
+	r.mu.RUnlock()
 	if !ok || len(valid) == 0 {
 		return ""
 	}

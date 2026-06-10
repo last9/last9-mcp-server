@@ -43,9 +43,14 @@ func newTestSession(t *testing.T) *mcp.ClientSession {
 		t.Fatalf("failed to create server: %v", err)
 	}
 
+	AttachParamHintMiddleware(server)
 	attrCache := attributes.NewAttributeCache(backend.Client(), cfg)
-	if err := registerAllTools(server, cfg, attrCache); err != nil {
-		t.Fatalf("failed to register tools: %v", err)
+	// Register twice to mirror the production description-refresh loop
+	// (main.go re-runs registerAllTools every 2h): hints must not duplicate.
+	for i := 0; i < 2; i++ {
+		if err := registerAllTools(server, cfg, attrCache); err != nil {
+			t.Fatalf("failed to register tools: %v", err)
+		}
 	}
 
 	ctx := context.Background()
@@ -150,6 +155,9 @@ func TestToolCall_UnknownParamHint(t *testing.T) {
 		}
 		if !strings.Contains(msg, "Valid parameters") {
 			t.Fatalf("expected valid parameter list in error, got: %s", msg)
+		}
+		if n := strings.Count(msg, "Valid parameters"); n != 1 {
+			t.Fatalf("hint duplicated %d times (middleware stacked across re-registration?): %s", n, msg)
 		}
 	})
 

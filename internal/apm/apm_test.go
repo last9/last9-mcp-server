@@ -734,7 +734,9 @@ func TestNewServiceSummaryHandler_ServiceFilter(t *testing.T) {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		queries = append(queries, body.Query)
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `[]`)
+		// Non-empty result so the handler proceeds past the throughput query
+		// and issues all three queries (empty throughput short-circuits).
+		io.WriteString(w, `[{"metric":{"service_name":"svc1"},"value":[1687600000,"10"]}]`)
 	}))
 	defer server.Close()
 
@@ -762,8 +764,8 @@ func TestNewServiceSummaryHandler_ServiceFilter(t *testing.T) {
 			if err != nil {
 				t.Fatalf("handler error: %v", err)
 			}
-			if len(queries) == 0 {
-				t.Fatal("backend received no queries")
+			if len(queries) != 3 {
+				t.Fatalf("expected 3 queries (throughput, response time, error rate), got %d: %v", len(queries), queries)
 			}
 			for _, q := range queries {
 				if !strings.Contains(q, tc.want) {

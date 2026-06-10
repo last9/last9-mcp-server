@@ -34,6 +34,21 @@ func buildEnhancedDescription(base, instructions string, labelValues []string) s
 	return desc
 }
 
+// paramRegistry is shared between tool registration (writes) and the
+// paramhint middleware (reads). Package-level because registerAllTools
+// re-runs every 2h to refresh tool descriptions (see main.go): the
+// middleware must be attached exactly once per server — attaching it inside
+// registerAllTools would stack one copy per refresh and append duplicate
+// hints — while re-registration only rewrites the same names into the
+// existing registry.
+var paramRegistry = paramhint.NewRegistry()
+
+// AttachParamHintMiddleware wires the -32602 enrichment middleware to a
+// server. Call exactly once per server, before serving.
+func AttachParamHintMiddleware(server *last9mcp.Last9MCPServer) {
+	server.Server.AddReceivingMiddleware(paramhint.Middleware(paramRegistry))
+}
+
 // registerTool registers a tool and records its valid parameter names so the
 // paramhint middleware can build recovery hints for schema-validation errors.
 func registerTool[In, Out any](server *last9mcp.Last9MCPServer, reg *paramhint.Registry, tool *mcp.Tool, handler mcp.ToolHandlerFor[In, Out]) error {
@@ -44,8 +59,7 @@ func registerTool[In, Out any](server *last9mcp.Last9MCPServer, reg *paramhint.R
 // registerAllTools registers all tools with the MCP server using the new SDK pattern
 func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCache *attributes.AttributeCache) error {
 	client := auth.GetHTTPClient()
-	reg := paramhint.NewRegistry()
-	server.Server.AddReceivingMiddleware(paramhint.Middleware(reg))
+	reg := paramRegistry
 
 	// Build enhanced descriptions for tools that have embedded instructions
 	getLogsDesc := buildEnhancedDescription(logs.GetLogsDescription, prompts.GetLogsInstructions, attrCache.GetLogAttributes())
