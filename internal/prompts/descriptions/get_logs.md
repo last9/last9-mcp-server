@@ -29,6 +29,9 @@ These are instructions for constructing a natural language logs analytics querie
    - If the user mentions a deployment environment (prod, staging, etc.), map it to `resources['deployment.environment']`
    - If the query scope is ambiguous (multiple tenants or environments exist in the discovered attributes but the user did not specify one), ask: "Which tenant/environment should I scope this to?"
    - **When filtering on any field-level value:** `get_log_attributes` returns the global catalog, which can list keys that are empty for your scope and near-duplicate names that coexist. Do NOT assume a key name. After adding your scoping filter stage(s) — commonly a service, but it may be a namespace, environment, host, or any combination — call `get_log_attributes_for_pipeline` with that pipeline and use only the `filter_field` it returns for fields present within that scope. (Example: HTTP status is keyed `status_code` on some sources and `http.status_code` on others — neither is a safe default.)
+   - **Body-derived fields (`source: "body"`):** discovery may report fields that exist only inside the log `Body` as JSON. Their `filter_field` is valid ONLY after the parse stage shown in that entry's `hint` — copy the hint's parse stage into your pipeline before any filter or groupby that references the field. Prefer keys with full `sample_coverage` (e.g. `5/5`); a sparse key (e.g. `1/5`) is absent on most rows of this scope and will dominate results with empty values.
+   - **Service name variants:** when the user names a workload generically rather than an exact service, do not assume a single `ServiceName`. Enumerate variants first — e.g. aggregate logs grouped by `ServiceName` over the scope window — and OR every variant that belongs to the workload (canary/primary siblings split the same traffic; counting one of them undercounts). Scope to a single service only when the user named it exactly.
+   - **Severity is not an HTTP-error proxy:** access logs commonly carry INFO severity even for 5xx responses, and `SeverityText` can be empty. For HTTP error questions, filter on the discovered status field — never on severity.
 4. Translate the query to JSON pipeline format using the correct field references
 5. Call the `get_logs` tool with canonical time params:
    - Use `start_time_iso` + `end_time_iso` when the user gave explicit absolute dates/times
@@ -381,7 +384,7 @@ These are examples of pipeline json structure and available stages and functions
   }
 ]
 ```
-**NOTE:** Parse always comes BEFORE the filter that references extracted fields. The filter cannot use fields that haven't been parsed yet.
+**NOTE:** Parse always comes BEFORE the filter that references extracted fields. The filter cannot use fields that haven't been parsed yet. The same rule applies to aggregations: a groupby on a Body-derived field needs the parse stage earlier in the pipeline — grouping by an unparsed field silently collapses everything into a single empty-valued bucket.
 
 ### Example 6: Aggregation - Average
 **Natural Language:** "What is the average response time grouped by service?"
