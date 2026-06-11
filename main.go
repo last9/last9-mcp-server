@@ -86,6 +86,15 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 }
 
 func main() {
+	// dump-tools runs before config parsing: it needs no credentials
+	// and must work in CI and eval harnesses without a refresh token.
+	if len(os.Args) > 1 && os.Args[1] == "dump-tools" {
+		if err := dumpTools(os.Stdout); err != nil {
+			log.Fatalf("dump-tools failed: %v", err)
+		}
+		return
+	}
+
 	log.Printf("Starting Last9 MCP Server v%s", Version)
 
 	// Load .env file if it exists (ignore errors if file doesn't exist)
