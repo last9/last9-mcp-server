@@ -269,6 +269,147 @@ func TestGetLogAttributesForPipeline_BodyDerivedFields(t *testing.T) {
 	}
 }
 
+// TestGetLogAttributesForPipeline_GloballySorted locks the documented contract:
+// the combined indexed + body-derived array is sorted by name.
+func TestGetLogAttributesForPipeline_GloballySorted(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"gw","status_code":"500"}]}`
+	samples := []string{`{"uri":"/v1/a","latency":12}`}
+	server := bodySamplingServer(t, series, samples, nil)
+	defer server.Close()
+
+	cfg := testAttrConfig(server.URL)
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	attrs := decodeLogAttributes(t, res)
+	for i := 1; i < len(attrs); i++ {
+		if attrs[i-1].Name > attrs[i].Name {
+			t.Fatalf("result not sorted by name: %q before %q", attrs[i-1].Name, attrs[i].Name)
+		}
+	}
+}
+
+// TestGetLogAttributesForPipeline_SamplingUsesRegionOverride verifies the body
+// sampling request honors the args.Region override, like the series request.
+func TestGetLogAttributesForPipeline_SamplingUsesRegionOverride(t *testing.T) {
+	var sampleRegion string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if strings.Contains(r.URL.Path, "/logs/api/v2/series/json") {
+			_, _ = w.Write([]byte(`{"status":"success","data":[{"service":"gw"}]}`))
+			return
+		}
+		sampleRegion = r.URL.Query().Get("region")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[]}}`))
+	}))
+	defer server.Close()
+
+	cfg := testAttrConfig(server.URL)
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+		Region:   "eu-west-1",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if sampleRegion != "eu-west-1" {
+		t.Errorf("sampling request region = %q, want eu-west-1 (args.Region override)", sampleRegion)
+	}
+}
+
+// TestGetLogAttributesForPipeline_UnsafeBodyKeysSkipped verifies keys that
+// cannot be safely embedded in a JSON hint or attributes['<key>'] accessor are
+// dropped rather than emitted broken.
+func TestGetLogAttributesForPipeline_UnsafeBodyKeysSkipped(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"gw"}]}`
+	samples := []string{`{"good_key":1,"bad\"quote":2,"bad'apostrophe":3,"bad key":4}`}
+	server := bodySamplingServer(t, series, samples, nil)
+	defer server.Close()
+
+	cfg := testAttrConfig(server.URL)
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	attrs := decodeLogAttributes(t, res)
+	if attrByName(attrs, "good_key") == nil {
+		t.Error("expected safe key 'good_key' to be reported")
+	}
+	for _, bad := range []string{`bad"quote`, `bad'apostrophe`, "bad key"} {
+		if attrByName(attrs, bad) != nil {
+			t.Errorf("unsafe key %q must be skipped, not emitted into hints/accessors", bad)
+		}
+	}
+	// The surviving hint must be valid JSON.
+	good := attrByName(attrs, "good_key")
+	var hintPipeline []map[string]interface{}
+	if err := json.Unmarshal([]byte(good.Hint), &hintPipeline); err != nil {
+		t.Errorf("body-derived hint is not valid JSON: %v\nhint: %s", err, good.Hint)
+	}
+}
+
+// TestGetLogAttributesForPipeline_BodyKeyDistinctFromMappedIndexed verifies a
+// Body key colliding with a special-mapped indexed name (severity ->
+// SeverityText) is still reported: the two are different fields with different
+// filter_fields, so "indexed wins" only applies to true attribute duplicates.
+func TestGetLogAttributesForPipeline_BodyKeyDistinctFromMappedIndexed(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"gw","severity":"INFO","status_code":"500"}]}`
+	samples := []string{`{"severity":"warn","status_code":500}`}
+	server := bodySamplingServer(t, series, samples, nil)
+	defer server.Close()
+
+	cfg := testAttrConfig(server.URL)
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	attrs := decodeLogAttributes(t, res)
+
+	// severity: indexed maps to SeverityText; the Body's own severity field is
+	// attributes['severity'] post-parse — a distinct field that must be reported.
+	var severityFFs []string
+	for _, a := range attrs {
+		if a.Name == "severity" {
+			severityFFs = append(severityFFs, a.FilterField)
+		}
+	}
+	want := map[string]bool{"SeverityText": false, "attributes['severity']": false}
+	for _, ff := range severityFFs {
+		if _, ok := want[ff]; ok {
+			want[ff] = true
+		}
+	}
+	for ff, seen := range want {
+		if !seen {
+			t.Errorf("expected a severity entry with filter_field %q; got %v", ff, severityFFs)
+		}
+	}
+
+	// status_code: indexed filter_field IS attributes['status_code'] — true
+	// duplicate, body copy stays suppressed.
+	var statusCount int
+	for _, a := range attrs {
+		if a.Name == "status_code" {
+			statusCount++
+		}
+	}
+	if statusCount != 1 {
+		t.Errorf("expected exactly 1 status_code entry (true duplicate), got %d", statusCount)
+	}
+}
+
 // TestGetLogAttributesForPipeline_BodyNotJSON verifies plain-text bodies yield
 // no derived fields and no error.
 func TestGetLogAttributesForPipeline_BodyNotJSON(t *testing.T) {

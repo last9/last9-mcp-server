@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -108,12 +109,34 @@ const (
 	maxBodyDerivedKeys = 20
 )
 
+// safeBodyKeyPattern accepts only keys that embed safely into both the JSON
+// hint and the attributes['<key>'] accessor. Keys with quotes, spaces, or
+// backslashes would emit broken hints the model copies verbatim — skip them.
+var safeBodyKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.@/-]*$`)
+
+// bodyDerivedHint renders the two-stage example (parse Body, then filter on the
+// materialized key) via json.Marshal so key content can never break the JSON.
+func bodyDerivedHint(key string) string {
+	stages := []map[string]interface{}{
+		{"type": "parse", "parser": "json", "field": "Body", "labels": map[string]string{key: key}},
+		{"type": "filter", "query": map[string]interface{}{"$eq": []string{fmt.Sprintf("attributes['%s']", key), "<value>"}}},
+	}
+	b, err := json.Marshal(stages)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
 // sampleBodyDerivedAttributes fetches up to bodySampleLimit raw rows for the
 // pipeline and derives attributes from the top-level keys of rows whose Body is
-// a JSON object. Keys already present in indexed are skipped (indexed wins).
-// Any failure degrades to nil — Body discovery is best-effort and never blocks
-// the indexed-attribute response.
-func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg models.Config, pipeline []map[string]interface{}, startSec, endSec int64, index string, indexed map[string]struct{}) []LogAttribute {
+// a JSON object. Any failure degrades to nil — Body discovery is best-effort
+// and never blocks the indexed-attribute response (the call is also bounded by
+// PerChunkHTTPTimeout so a slow raw-log scan cannot stall discovery).
+func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg models.Config, pipeline []map[string]interface{}, startSec, endSec int64, index string) []LogAttribute {
+	ctx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
+	defer cancel()
+
 	result, err := executeLogJSONQuery(ctx, client, cfg, pipeline, startSec*1000, endSec*1000, bodySampleLimit, index)
 	if err != nil {
 		return nil
@@ -130,10 +153,7 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 			continue
 		}
 		for key := range obj {
-			if key == "" {
-				continue
-			}
-			if _, exists := indexed[key]; exists {
+			if !safeBodyKeyPattern.MatchString(key) {
 				continue
 			}
 			freq[key]++
@@ -156,14 +176,13 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 	if len(keys) > maxBodyDerivedKeys {
 		keys = keys[:maxBodyDerivedKeys]
 	}
-	sort.Strings(keys)
 
 	out := make([]LogAttribute, 0, len(keys))
 	for _, key := range keys {
 		out = append(out, LogAttribute{
 			Name:           key,
 			FilterField:    fmt.Sprintf("attributes['%s']", key),
-			Hint:           fmt.Sprintf(`[{"type":"parse","parser":"json","field":"Body","labels":{"%s":"%s"}},{"type":"filter","query":{"$eq":["attributes['%s']","<value>"]}}]`, key, key, key),
+			Hint:           bodyDerivedHint(key),
 			Source:         "body",
 			SampleCoverage: fmt.Sprintf("%d/%d", freq[key], len(lines)),
 		})
@@ -172,14 +191,11 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 }
 
 // extractSampleBodyLines pulls the raw Body line of each sampled log entry from
-// a query_range streams response (data.result[].values[][1]).
+// a query_range streams response (data.result[].values[][1]). It reuses
+// extractResultItems so both readers of the query_range shape stay in sync.
 func extractSampleBodyLines(result map[string]interface{}) []string {
-	data, ok := result["data"].(map[string]interface{})
-	if !ok {
-		return nil
-	}
-	items, ok := data["result"].([]interface{})
-	if !ok {
+	_, items, err := extractResultItems(result)
+	if err != nil {
 		return nil
 	}
 	var lines []string
@@ -345,16 +361,26 @@ func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Confi
 			queryParams.Set("index", normalizedIndex)
 		}
 
+		// Best-effort, in parallel with the series fetch: fields that exist only
+		// inside the log Body as JSON — they need a parse stage (carried in the
+		// hint) before use. The sampling honors the same region override.
+		samplingCfg := cfg
+		samplingCfg.Region = region
+		bodyCh := make(chan []LogAttribute, 1)
+		go func() {
+			bodyCh <- sampleBodyDerivedAttributes(ctx, client, samplingCfg, args.Pipeline, startTime, endTime, normalizedIndex)
+		}()
+
 		names, err := fetchLogSeriesFieldNames(ctx, client, cfg, args.Pipeline, queryParams)
 		if err != nil {
 			return nil, nil, err
 		}
 
 		out := make([]LogAttribute, 0, len(names))
-		indexed := make(map[string]struct{}, len(names))
+		indexedFilterFields := make(map[string]struct{}, len(names))
 		for _, name := range names {
-			indexed[name] = struct{}{}
 			filterField := logFieldFilterField(name)
+			indexedFilterFields[filterField] = struct{}{}
 			out = append(out, LogAttribute{
 				Name:        name,
 				FilterField: filterField,
@@ -362,9 +388,17 @@ func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Confi
 			})
 		}
 
-		// Best-effort: also surface fields that exist only inside the log Body
-		// as JSON — they need a parse stage (carried in the hint) before use.
-		out = append(out, sampleBodyDerivedAttributes(ctx, client, cfg, args.Pipeline, startTime, endTime, normalizedIndex, indexed)...)
+		// Merge: drop a body-derived entry only when an indexed entry already
+		// exposes the SAME filter_field (true duplicate). A body key that merely
+		// shares a name with a special-mapped indexed field (severity ->
+		// SeverityText) is a different field and stays.
+		for _, attr := range <-bodyCh {
+			if _, dup := indexedFilterFields[attr.FilterField]; dup {
+				continue
+			}
+			out = append(out, attr)
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 
 		payload, err := json.MarshalIndent(out, "", "  ")
 		if err != nil {
