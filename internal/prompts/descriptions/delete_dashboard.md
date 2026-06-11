@@ -1,0 +1,1 @@
+Delete a custom dashboard by ID. Readonly system dashboards cannot be deleted.

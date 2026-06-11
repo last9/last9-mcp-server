@@ -150,25 +150,6 @@ func resolveInstantQueryTime(timeISO string, lookbackMinutes float64) (int64, er
 	return time.Now().UTC().Unix(), nil
 }
 
-const GetServiceSummaryDescription = `
-	Get service summary over a given time range.
-	Includes service name, environment, throughput, error rate, and response time.
-	All values are p95 quantiles over the time range.
-	Response times are in milliseconds. Throughput and error rates are in requests per minute (rpm).
-	Each service includes:
-	- service name
-	- environment
-	- throughput in requests per minute (rpm)
-	- error rate in requests per minute (rpm)
-	- p95 response time in milliseconds
-	Parameters:
-	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
-	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
-	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
-	- env: (Optional) Environment to filter by. If not provided, defaults to all environments.
-	- service_name: (Optional) Service name to filter by. Also accepted under the alias "service"; service_name wins when both are set. If not provided, returns all services.
-`
-
 func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceSummaryArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args ServiceSummaryArgs) (*mcp.CallToolResult, any, error) {
 		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
@@ -341,48 +322,6 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 		}, nil, nil
 	}
 }
-
-const GetServicePerformanceDetails = `
-	Get service performance metrics over a given time range.
-	Returns the following information
-		- service name
-		- environment
-		- throughput in rpm
-		- error rate in rpm for 4xx and 5xx errors
-		- error percentage
-		- p50, p90, p95, avg, and max response times in seconds
-		- apdex score
-		- availability in percentage
-		- top 10 web operations by response time
-		- top 10 operations by error rate
-		- top 10 errors or exceptions by count for the service
-	The details for the operations in the "top 10 web operations by response time" and "top 10 operations by error rate" can be fetched using the "get_service_operation_details" tool.
-	This tool can be used to get all perforamnce and debugging details for a service over a time range.
-	It can also be used to get a summary for performance bottlenecks and errors / exceptions in a service.
-	Some fields are in the promql resonse format. Sample response:
-	[{"metric":{"service_name":"svc1","env":"prod"},"values":[[1700000000,"0.5"]]},{"metric":{"service_name":"svc2","env":"prod"},"values":[[1700000001,"0.1"]]}]
-	where the "metric" key is a dict of metadata, the first value in "values" is the timestamp in seconds and the second value is the value of the metric.
-	The fields in the response are:
-	- service_name: Name of the service.
-	- env: Environment of the service.
-	- throughput: Throughput in requests per minute (rpm) by status code. The format of this is in promql response format.
-	- error_rate: Error rate in requests per minute (rpm) by status code. The format of this is in promql response format.
-	- error_percentage: Error percentage in requests by status code. The format of this is in promql response format.
-	- response_times: Response times in seconds by quantile (p50, p90, p95, avg, max). The format of this is in promql response format.
-	- apdex_score: Apdex score over the time range. The format of this is in promql response format.
-	- availability: Availability in percentage over the time range. The format of this is in promql response format.
-	- top_operations: Top operations by response time and error rate. The format of this is a dict of operations and their throuputs
-	- top_errors: Top errors or exceptions by count. The format of this is a dict of errors and their counts.
-	- top_operations.by_response_time: Top 10 operations by response time. The format of this is a list of dicts with operation name and response time.
-	- top_operations.by_error_rate: Top 10 operations by error rate. The format of this is a list of dicts with operation name and error count.
-	- top_errors: Top 10 errors or exceptions by count. The format of this is a list of dicts with exception type (or http error code) and count. 
-	Parameters:
-	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
-	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
-	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
-	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
-	- If unsure of the service_name or env spelling, call "did_you_mean" first.
-`
 
 type TimeSeriesPoint struct {
 	Timestamp uint64  `json:"timestamp"`
@@ -769,40 +708,6 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}, nil, nil
 	}
 }
-
-const GetServiceOperationsSummaryDescription = `
-	Get a summary of operations inside a service over a given time range.
-	Returns a list of operations with their details.
-	These include operations like HTTP endpoints, database queries, messaging producer and http client calls.
-	Includes service name, environment, throughput, error rate, and response time for each operation.
-	All values are p95 quantiles over the time range.
-	Response times are in milliseconds. Throughput and error rates are in requests per minute (rpm).
-	Each operation includes:
-		- operation name
-		- service name
-		- environment
-		- throughput in requests per minute (rpm)
-		- error rate in requests per minute (rpm)
-		- response time in milliseconds (p95, p90, p50 quantiles, avg, and max)
-		- error percentage
-	Database operations contain additional fields:
-		- db_system: Database system (e.g., mysql, postgres, etc.)
-		- net_peer_name: Database host or connection string
-	Messaging operations contain additional fields:
-		- messaging_system: Messaging system (e.g., kafka, rabbitmq, etc.)
-		- net_peer_name: Messaging host or connection string
-	HTTP client operations contain additional fields:
-		- http_method: HTTP method (e.g., GET, POST, etc.)
-		- net_peer_name: HTTP host or connection string
-	
-	Parameters:
-	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
-	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
-	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
-	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
-	- service_name: (Required) Service name to filter by. Defaults to all services.
-	- If unsure of the service_name or env spelling, call "did_you_mean" first.
-`
 
 func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceOperationsSummaryArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args ServiceOperationsSummaryArgs) (*mcp.CallToolResult, any, error) {
@@ -1361,34 +1266,6 @@ type ServiceDependencyGraphDetails struct {
 	Databases        map[string]RedMetrics `json:"databases"`
 }
 
-const GetServiceDependencyGraphDetails = `
-	Get details of the throughput, response times and error rates of
-	incoming, outgoing and infrastructure components like messaging and databases
-	of a service.
-	This tool can be used to get a detailed dependency graph of a service and help
-	in analysis of cascading effect of errors and performance issues.
-	It returns a structured response with the following fields:
-	- service name
-	- environment
-	- throughput in requests per minute (rpm)
-	- error rate in requests per minute (rpm)
-	- p95 response time in milliseconds
-	- p90 response time in milliseconds
-	- p50 response time in milliseconds
-	- avg response time in milliseconds
-	- max response time in milliseconds
-	- error percentage
-	The detailed metrics, error rates and operation details of incoming and outgoing dependencies
-	can be obtained by using the get_service_details tool.
-	Parameters:
-	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
-	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
-	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
-	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
-	- service_name: (Required) Name of the service to get the dependency graph for.
-	- If unsure of the service_name or env spelling, call "did_you_mean" first.
-	`
-
 func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceDependencyGraphArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args ServiceDependencyGraphArgs) (*mcp.CallToolResult, any, error) {
 		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
@@ -1843,38 +1720,6 @@ func resolveDatasourceCfg(cfg models.Config, datasourceName string) (models.Conf
 	return cfg, nil
 }
 
-const PromqlRangeQueryDetails = `
-	Perform a Prometheus range query to get metrics data.
-	This tool can be used to query Prometheus for metrics data over a specified time range.
-	It is recommended to initially check the the available labels on the promql metric using the prometheus_labels tool
-	for filtering by a specific environment. Labels like "env", "environment" or "development_environment"
-	are common. To get possible values of a label, the prometheus_label_values tool can be used.
-	It returns a structured response with the following fields:
-	- metric: A map of metric labels and their values.
-	- value: A list of lists. Each item in the list has timestamp as the first element
-		and the value as the second.
-	Example:
-	[ {
-		"metric": {
-			"__name__": "http_request_duration_seconds",
-			"method": "GET",
-			"status": "200"
-		},
-		"value": [
-			[1700000000, "0.123"],
-			[1700000060, "0.456"],
-			...
-		]
-	}]
-	The response will contain the metrics data for the specified query.
-	Parameters:
-	- query: (Required) The Prometheus query to execute.
-	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
-	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
-	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
-	- datasource: (Optional) Name of the datasource to query. If omitted, uses the default configured datasource.
-	`
-
 func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlRangeQueryArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args PromqlRangeQueryArgs) (*mcp.CallToolResult, any, error) {
 		query := args.Query
@@ -1919,36 +1764,6 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 	}
 }
 
-// handler for prometheus instant query
-const PromqlInstantQueryDetails = `
-	Perform a Prometheus instant query to get metrics data.
-	Typically, the query should have rollup functions like sum_over_time, avg_over_time, quantile_over_time, etc
-	over a time window. For example: avg_over_time(trace_endpoint_count{env="prod"}[1h])
-	This tool can be used to query Prometheus for metrics data at a specific point in time.
-	It is recommended to initially check the the available labels on the promql metric using the prometheus_labels tool
-	for filtering by a specific environment. Labels like "env", "environment" or "development_environment"
-	are common. To get possible values of a label, the prometheus_label_values tool can be used.
-	It returns a structured response with the following fields:
-	- metric: A map of metric labels and their values.
-	- value: A list of lists. Each item in the list has timestamp as the first element
-		and the value as the second.
-	Response Example:
-	[ {
-		"metric": {
-			"__name__": "http_request_duration_seconds",
-			"method": "GET",
-			"status": "200"
-		},
-		"value": [1700000000, "0.123"]
-	}]
-	The response will contain the metrics data for the specified query.
-	Parameters:
-	- query: (Required) The Prometheus query to execute.
-	- time_iso: (Optional) The point in time to query in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
-	- lookback_minutes: (Optional) Number of minutes to look back from now when time_iso is omitted.
-	- datasource: (Optional) Name of the datasource to query. If omitted, uses the default configured datasource.
-`
-
 func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlInstantQueryArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args PromqlInstantQueryArgs) (*mcp.CallToolResult, any, error) {
 		query := args.Query
@@ -1991,20 +1806,6 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 		}, nil, nil
 	}
 }
-
-// tool handler to get label values for a given label name and filter prometheus query
-// handler for prometheus instant query
-const GetServiceEnvironmentsDescription = `
-	Return the environments available for the services. This tool returns an array of environments. These env can act as
-	label or argument values for other tools.
-	Parameters:
-	- service: (Optional) Service name to filter environments for (e.g. my-api). When omitted, returns environments across all services.
-	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
-	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
-	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
-
-	Returns an array of environments.
-`
 
 const GetServiceDependencyGraphDescription = `
 	Get the service dependency graph showing relationships between services.
@@ -2106,26 +1907,6 @@ func NewServiceEnvironmentsHandler(client *http.Client, cfg models.Config) func(
 	}
 }
 
-// tool handler to get label values for a given label name and filter prometheus query
-// handler for prometheus instant query
-const PromqlLabelValuesQueryDetails = `
-	Return the label values for a particular label and promql filter query.
-	This works similar to the prometheus /label_values call
-	It returns an array of values for the label.
-	Parameters:
-	- match_query: (Required) A valid promql filter query. Also accepted under the alias "match"; match_query wins when both are set.
-	- label: (Required) Name of the label to return values for
-	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
-	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
-	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
-	- datasource: (Optional) Name of the datasource to query. If omitted, uses the default configured datasource.
-
-	match_query should be a well formed, valid promql query
-	It is encouraged to not use default
-	values of start_time and end_time and use values that are appropriate for the
-	use case
-`
-
 func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlLabelValuesArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args PromqlLabelValuesArgs) (*mcp.CallToolResult, any, error) {
 		query := args.MatchQuery
@@ -2176,25 +1957,6 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 	}
 }
 
-// tool handler to get label values for a given label name and filter prometheus query
-// handler for prometheus instant query
-const PromqlLabelsQueryDetails = `
-	Return the labels for a given  promql match query.
-	This works similar to the prometheus /labels call
-	It returns an array of labels.
-	Parameters:
-	- match_query: (Required) A valid promql filter query. Also accepted under the alias "match"; match_query wins when both are set.
-	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
-	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
-	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
-	- datasource: (Optional) Name of the datasource to query. If omitted, uses the default configured datasource.
-
-	match_query should be a well formed, valid promql query
-	It is encouraged to not use default
-	values of start_time and end_time and use values that are appropriate for the
-	use case
-`
-
 func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlLabelsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args PromqlLabelsArgs) (*mcp.CallToolResult, any, error) {
 		query := args.MatchQuery
@@ -2243,17 +2005,6 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 
 // ListDatasourcesArgs has no required parameters.
 type ListDatasourcesArgs struct{}
-
-const ListDatasourcesDescription = `
-	List all available datasources configured for this organization.
-	Use this tool to discover valid datasource names before passing them to
-	prometheus_range_query, prometheus_instant_query, prometheus_label_values,
-	or prometheus_labels via the datasource parameter.
-
-	Returns an array of objects, each with:
-	- name: the datasource name to use in the datasource parameter
-	- is_default: true for the datasource that is used when no datasource is specified
-`
 
 // NewListDatasourcesHandler returns a handler that serves the datasource list from
 // the in-memory cache populated at startup — no extra API call is made.
