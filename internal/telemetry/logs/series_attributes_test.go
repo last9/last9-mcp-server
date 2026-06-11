@@ -199,8 +199,8 @@ func TestGetLogAttributesForPipeline_BodyDerivedFields(t *testing.T) {
 		`{"uri":"/v1/orders","status_code":500,"http_method":"GET"}`,
 		`{"uri":"/v2/carts"}`,
 	}
-	var cap sampleCapture
-	server := bodySamplingServer(t, series, samples, &cap)
+	var capture sampleCapture
+	server := bodySamplingServer(t, series, samples, &capture)
 	defer server.Close()
 
 	cfg := testAttrConfig(server.URL)
@@ -219,14 +219,14 @@ func TestGetLogAttributesForPipeline_BodyDerivedFields(t *testing.T) {
 	attrs := decodeLogAttributes(t, res)
 
 	// Sampling request shape: caller's pipeline forwarded, bounded limit.
-	if !cap.requested {
+	if !capture.requested {
 		t.Fatal("expected a body-sampling query_range request")
 	}
-	if cap.limit != "5" {
-		t.Errorf("expected sampling limit 5, got %q", cap.limit)
+	if capture.limit != "5" {
+		t.Errorf("expected sampling limit 5, got %q", capture.limit)
 	}
-	if cap.body == nil || cap.body["pipeline"] == nil {
-		t.Errorf("expected caller's pipeline forwarded in sampling request, got: %v", cap.body)
+	if capture.body == nil || capture.body["pipeline"] == nil {
+		t.Errorf("expected caller's pipeline forwarded in sampling request, got: %v", capture.body)
 	}
 
 	// Indexed key that also appears in Body: reported once, as indexed.
@@ -468,14 +468,12 @@ func TestGetLogAttributesForPipeline_SamplingFailureGraceful(t *testing.T) {
 // capped at 20, ranked by sample frequency then name.
 func TestGetLogAttributesForPipeline_BodyKeyCap(t *testing.T) {
 	series := `{"status":"success","data":[{"service":"gw"}]}`
-	wide := map[string]int{}
 	var sb strings.Builder
 	sb.WriteString(`{"frequent":1`)
 	for i := 0; i < 24; i++ {
 		fmt.Fprintf(&sb, `,"key_%02d":%d`, i, i)
 	}
 	sb.WriteString(`}`)
-	_ = wide
 	samples := []string{sb.String(), `{"frequent":2}`}
 	server := bodySamplingServer(t, series, samples, nil)
 	defer server.Close()
