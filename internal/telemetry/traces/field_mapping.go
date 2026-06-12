@@ -11,8 +11,7 @@ var traceTopLevelFields = map[string]struct{}{
 // enrichAttribute converts a raw attribute name from the traces series API into
 // a TraceAttribute with an LLM-ready filter_field and usage hint.
 //
-// Priority order mirrors the frontend's mapTracesSeriesFieldName in
-// dashboard/app/src/App/scenes/Traces/utils.ts:
+// Priority order:
 //  1. resource_service.name / service.name  → ServiceName (top-level special case)
 //  2. resource_* prefix                     → resources['<stripped>']
 //  3. event_* prefix                        → events['<stripped>']

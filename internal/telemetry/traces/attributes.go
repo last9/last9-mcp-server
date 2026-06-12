@@ -126,6 +126,8 @@ func fetchTraceTagNames(ctx context.Context, client *http.Client, cfg models.Con
 		return nil, fmt.Errorf("API returned status %d: %v", resp.StatusCode, errorBody)
 	}
 
+	// This endpoint returns a bare {scopes:[...]} object with no status envelope,
+	// so there is no status field to check (unlike the series endpoints).
 	var result traceTagsScopesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %v", err)
