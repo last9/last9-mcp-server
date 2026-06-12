@@ -45,8 +45,7 @@ In `internal/constants/api.go`, add `EndpointTraceTags` to the Traces block so i
 	EndpointTracesSeries      = "/cat/api/traces/v2/series/json"
 	EndpointTraceDetails      = "/cat/api/traces/%s"
 	EndpointTraceTagValues    = "/cat/api/traces/v2/label/json/%s/values"
-	// EndpointTraceTags is the global trace tag catalog (scopes with prefixes
-	// stripped). Mirrors the dashboard's getTraceTags call.
+	// EndpointTraceTags is the global trace tag catalog (scopes with prefixes stripped).
 	EndpointTraceTags         = "/cat/api/search/tags"
 ```
 
