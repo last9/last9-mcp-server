@@ -5,12 +5,12 @@ import "time"
 // API Endpoints
 const (
 	// Traces API endpoints
-	EndpointTracesQueryRange  = "/cat/api/traces/v2/query_range/json"
-	EndpointTracesSeries      = "/cat/api/traces/v2/series/json"
-	EndpointTraceDetails      = "/cat/api/traces/%s"
-	EndpointTraceTagValues    = "/cat/api/traces/v2/label/json/%s/values"
+	EndpointTracesQueryRange = "/cat/api/traces/v2/query_range/json"
+	EndpointTracesSeries     = "/cat/api/traces/v2/series/json"
+	EndpointTraceDetails     = "/cat/api/traces/%s"
+	EndpointTraceTagValues   = "/cat/api/traces/v2/label/json/%s/values"
 	// EndpointTraceTags is the global trace tag catalog (scopes with prefixes stripped).
-	EndpointTraceTags         = "/cat/api/search/tags"
+	EndpointTraceTags = "/cat/api/search/tags"
 
 	// Logs API endpoints
 	EndpointLogsQueryRange = "/logs/api/v2/query_range/json"
