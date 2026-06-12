@@ -134,3 +134,31 @@ func TestGetTraceAttributeValuesHandler_ResourceTagNormalized(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestGetTraceAttributeValuesHandler_ForwardsPipeline(t *testing.T) {
+	var capturedPipeline []interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if p, ok := body["pipeline"].([]interface{}); ok {
+			capturedPipeline = p
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `{"status":"success","data":["GET"]}`)
+	}))
+	defer server.Close()
+
+	handler := NewGetTraceAttributeValuesHandler(server.Client(), newTestCfg(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeValuesArgs{
+		TagName: "http.method",
+		Pipeline: []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "checkout"}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(capturedPipeline) != 1 {
+		t.Fatalf("expected the provided 1-stage pipeline to be forwarded, got: %v", capturedPipeline)
+	}
+}
