@@ -18,8 +18,8 @@
 | File | Responsibility | Action |
 |------|----------------|--------|
 | `internal/constants/api.go` | API endpoint + header constants | Modify (add `EndpointTraceTags`) |
-| `internal/telemetry/traces/series_attributes.go` | Pipeline-scoped trace attributes tool + series fetch helper | Create |
-| `internal/telemetry/traces/series_attributes_test.go` | Tests for the pipeline tool; shared `decodeTraceAttributes` helper | Create |
+| `internal/telemetry/traces/attributes_for_pipeline.go` | Pipeline-scoped trace attributes tool + series fetch helper | Create |
+| `internal/telemetry/traces/attributes_for_pipeline_test.go` | Tests for the pipeline tool; shared `decodeTraceAttributes` helper | Create |
 | `internal/telemetry/traces/attributes.go` | Global trace attributes tool (now `/search/tags`) + tag fetch helper | Modify |
 | `internal/telemetry/traces/attributes_test.go` | Tests for the global tool against a scopes payload | Create |
 | `internal/telemetry/traces/attribute_values.go` | Distinct values for a tag; gains optional pipeline | Modify |
@@ -67,14 +67,14 @@ git commit -m "feat(traces): add /search/tags endpoint constant (ENG-1250)"
 ## Task 2: New tool `get_trace_attributes_for_pipeline`
 
 **Files:**
-- Create: `internal/telemetry/traces/series_attributes.go`
-- Create: `internal/telemetry/traces/series_attributes_test.go`
+- Create: `internal/telemetry/traces/attributes_for_pipeline.go`
+- Create: `internal/telemetry/traces/attributes_for_pipeline_test.go`
 
 This task is self-contained — it does not modify `attributes.go`. It reuses `TraceAttributesResponse`, `TraceAttribute`, and `enrichAttribute` from the existing package.
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `internal/telemetry/traces/series_attributes_test.go`:
+Create `internal/telemetry/traces/attributes_for_pipeline_test.go`:
 
 ```go
 package traces
@@ -212,7 +212,7 @@ Expected: compile error / FAIL — `NewGetTraceAttributesForPipelineHandler` and
 
 - [ ] **Step 3: Write the implementation**
 
-Create `internal/telemetry/traces/series_attributes.go`:
+Create `internal/telemetry/traces/attributes_for_pipeline.go`:
 
 ```go
 package traces
@@ -396,7 +396,7 @@ Expected: PASS (3 tests).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add internal/telemetry/traces/series_attributes.go internal/telemetry/traces/series_attributes_test.go
+git add internal/telemetry/traces/attributes_for_pipeline.go internal/telemetry/traces/attributes_for_pipeline_test.go
 git commit -m "feat(traces): add get_trace_attributes_for_pipeline tool (ENG-1250)"
 ```
 
@@ -599,7 +599,7 @@ Time format rules:
 `
 
 // TraceAttributesResponse represents the traces series API response structure.
-// Kept here because the pipeline tool (series_attributes.go) reuses it.
+// Kept here because the pipeline tool (attributes_for_pipeline.go) reuses it.
 type TraceAttributesResponse struct {
 	Data   []map[string]string `json:"data"`
 	Status string              `json:"status"`
@@ -757,7 +757,7 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 }
 ```
 
-> This drops the `bytes` import the old version used (the global tool no longer POSTs). `TraceAttributesResponse` and `TraceAttribute` stay in this file — `series_attributes.go` and `attribute_values.go` depend on them.
+> This drops the `bytes` import the old version used (the global tool no longer POSTs). `TraceAttributesResponse` and `TraceAttribute` stay in this file — `attributes_for_pipeline.go` and `attribute_values.go` depend on them.
 
 - [ ] **Step 4: Run the full traces package tests**
 
@@ -937,6 +937,6 @@ Expected: no diagnostics.
 ## Self-Review Notes
 
 - **Spec coverage:** Change 1 (pipeline tool) → Tasks 2–3; Change 2 (global → `/search/tags`, incl. `FetchTraceAttributeNames` repoint and `EndpointTraceTags`) → Tasks 1, 4; Change 3 (optional pipeline on values) → Task 5; testing section → tests embedded in Tasks 2, 4, 5 + Task 6 sweep.
-- **Type consistency:** `fetchTraceSeriesAttributeNames` (series, Task 2) vs `fetchTraceTagNames` + `reprefixTraceTag` (tags, Task 4) are distinct, non-colliding names. `TraceAttribute` / `TraceAttributesResponse` defined once in `attributes.go`, reused by `series_attributes.go` and `attribute_values.go`. `decodeTraceAttributes` defined once (Task 2), reused in Task 4. `newTestCfg` defined once (existing `attribute_values_test.go`), reused everywhere — never redefined.
+- **Type consistency:** `fetchTraceSeriesAttributeNames` (series, Task 2) vs `fetchTraceTagNames` + `reprefixTraceTag` (tags, Task 4) are distinct, non-colliding names. `TraceAttribute` / `TraceAttributesResponse` defined once in `attributes.go`, reused by `attributes_for_pipeline.go` and `attribute_values.go`. `decodeTraceAttributes` defined once (Task 2), reused in Task 4. `newTestCfg` defined once (existing `attribute_values_test.go`), reused everywhere — never redefined.
 - **Behavior preserved:** `enrichAttribute`, `normalizeTagName`, and the JSON output shape of all three tools are unchanged, so no consumer breaks. The existing `TestGetTraceAttributesHandler_InvalidTimeOrder` still passes because time validation runs before any HTTP call.
 - **Cache:** `FetchTraceAttributeNames` is repointed to `/search/tags` (spec's recommended-consistency option); it has no reader today, so this is risk-free and keeps a single source of truth for global trace names.
