@@ -48,13 +48,6 @@ Time format rules:
 - start_time_iso/end_time_iso accept RFC3339/ISO8601 (e.g. 2026-02-09T15:04:05Z).
 `
 
-// TraceAttributesResponse represents the traces series API response structure.
-// Kept here because the pipeline tool (attributes_for_pipeline.go) reuses it.
-type TraceAttributesResponse struct {
-	Data   []map[string]string `json:"data"`
-	Status string              `json:"status"`
-}
-
 // TraceAttribute is an enriched attribute entry returned by the trace attribute
 // tools. filter_field is the exact string to use in a tracejson filter condition.
 type TraceAttribute struct {

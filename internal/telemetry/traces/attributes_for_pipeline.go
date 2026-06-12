@@ -60,6 +60,12 @@ type GetTraceAttributesForPipelineArgs struct {
 	Region          string                   `json:"region,omitempty" jsonschema:"Region to query (optional). Defaults to configured region."`
 }
 
+// TraceAttributesResponse represents the traces series API response structure.
+type TraceAttributesResponse struct {
+	Data   []map[string]string `json:"data"`
+	Status string              `json:"status"`
+}
+
 // fetchTraceSeriesAttributeNames POSTs the given pipeline to the traces series
 // endpoint and returns the union of attribute names present across all returned
 // label-sets, sorted.
