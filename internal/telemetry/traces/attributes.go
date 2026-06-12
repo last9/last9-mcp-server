@@ -66,9 +66,9 @@ type GetTraceAttributesArgs struct {
 	Region          string `json:"region,omitempty" jsonschema:"Region to query (optional). Defaults to configured region."`
 }
 
-// traceTagsScopesResponse is the /cat/api/search/tags response: attributes grouped
+// traceTagsAPIResponse is the /cat/api/search/tags response: attributes grouped
 // by scope, with the scope prefix already stripped from each tag name.
-type traceTagsScopesResponse struct {
+type traceTagsAPIResponse struct {
 	Scopes []struct {
 		Name string   `json:"name"` // "span" | "resource" | "event"
 		Tags []string `json:"tags"`
@@ -121,7 +121,7 @@ func fetchTraceTagNames(ctx context.Context, client *http.Client, cfg models.Con
 
 	// This endpoint returns a bare {scopes:[...]} object with no status envelope,
 	// so there is no status field to check (unlike the series endpoints).
-	var result traceTagsScopesResponse
+	var result traceTagsAPIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %v", err)
 	}
