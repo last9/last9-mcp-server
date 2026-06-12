@@ -1,0 +1,1 @@
+Update a custom dashboard by ID. Same envelope as create. Readonly system dashboards return an error.

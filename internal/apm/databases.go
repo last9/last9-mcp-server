@@ -20,20 +20,6 @@ import (
 
 // --- get_databases tool ---
 
-const GetDatabasesDescription = `Discover all databases across your infrastructure with key performance metrics.
-
-Returns a list of databases detected from trace data, including database type, host,
-throughput (queries/min), p95 latency, error rate, and how many services use each database.
-
-This tool uses OpenTelemetry trace metrics (trace_client_count, trace_client_duration) to identify
-databases from spans with db_system set.
-
-Parameters:
-- env: (Optional) Filter by deployment environment (e.g. "production"). Default: all environments.
-- lookback_minutes: (Optional) Time window in minutes (default: 60).
-- start_time_iso: (Optional) Start time in RFC3339 format. Overrides lookback_minutes.
-- end_time_iso: (Optional) End time in RFC3339 format.`
-
 type GetDatabasesArgs struct {
 	Env             string  `json:"env,omitempty" jsonschema:"Deployment environment to filter by (e.g. production)"`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60, minimum: 1)"`
@@ -213,27 +199,6 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 
 // --- get_database_slow_queries tool ---
 
-const GetDatabaseSlowQueriesDescription = `Find slow database queries from traces and logs.
-
-Retrieves the slowest database operations by searching trace spans where db_system is set,
-ordered by duration (descending). These are actual observed query executions captured by
-OpenTelemetry instrumentation.
-
-For each slow query, returns: trace ID (for drill-down), service name, operation/query pattern,
-duration, database system, status, and timestamp.
-
-Parameters:
-- db_system: (Optional) Filter by database system (e.g. "postgresql", "mysql", "mongodb", "redis").
-- host: (Optional) Filter by database host (net_peer_name from traces).
-- service_name: (Optional) Filter by calling service name.
-- env: (Optional) Filter by deployment environment.
-- min_duration_ms: (Optional) Minimum query duration in milliseconds to include (default: 0, returns slowest first).
-- lookback_minutes: (Optional) Time window in minutes (default: 60).
-- start_time_iso: (Optional) Start time in RFC3339 format.
-- end_time_iso: (Optional) End time in RFC3339 format.
-- limit: (Optional) Maximum number of slow queries to return (default: 20).
-- If unsure of the db_system, host, or service_name spelling, call "did_you_mean" first.`
-
 type GetDatabaseSlowQueriesArgs struct {
 	DBSystem        string  `json:"db_system,omitempty" jsonschema:"Database system filter (e.g. postgresql, mysql, mongodb, redis)"`
 	Host            string  `json:"host,omitempty" jsonschema:"Database host filter (net_peer_name)"`
@@ -247,7 +212,7 @@ type GetDatabaseSlowQueriesArgs struct {
 }
 
 type SlowQuery struct {
-	Source      string  `json:"source"`                // "trace" or "log"
+	Source      string  `json:"source"` // "trace" or "log"
 	TraceID     string  `json:"trace_id,omitempty"`
 	SpanID      string  `json:"span_id,omitempty"`
 	ServiceName string  `json:"service_name"`
@@ -438,27 +403,6 @@ func NewGetDatabaseSlowQueriesHandler(client *http.Client, cfg models.Config) fu
 
 // --- get_database_queries tool ---
 
-const GetDatabaseQueriesDescription = `Get top query patterns for a specific database, aggregated by operation.
-
-Shows the most active and slowest query patterns hitting a database, grouped by span_name
-(which typically contains the SQL operation or query fingerprint). For each pattern, returns
-throughput (calls/min), average latency, p95 latency, and error rate.
-
-This is useful for identifying:
-- Hot queries (high throughput) that dominate database load
-- Slow query patterns (high p95 latency) that need optimization
-- Failing queries (high error rate) that indicate bugs or schema issues
-
-Parameters:
-- db_system: (Required) Database system (e.g. "postgresql", "mysql", "mongodb", "redis").
-- host: (Optional) Database host to filter by (net_peer_name).
-- env: (Optional) Deployment environment filter.
-- lookback_minutes: (Optional) Time window in minutes (default: 60).
-- start_time_iso: (Optional) Start time in RFC3339 format.
-- end_time_iso: (Optional) End time in RFC3339 format.
-- sort_by: (Optional) Sort by "throughput" (default), "latency", or "errors".
-- If unsure of the db_system or host spelling, call "did_you_mean" first.`
-
 type GetDatabaseQueriesArgs struct {
 	DBSystem        string  `json:"db_system" jsonschema:"Database system (required, e.g. postgresql, mysql, mongodb, redis)"`
 	Host            string  `json:"host,omitempty" jsonschema:"Database host filter (net_peer_name)"`
@@ -470,11 +414,11 @@ type GetDatabaseQueriesArgs struct {
 }
 
 type QueryPattern struct {
-	SpanName   string  `json:"span_name"`
+	SpanName    string  `json:"span_name"`
 	CallsPerMin float64 `json:"calls_per_min"`
-	AvgLatency float64 `json:"avg_latency_ms"`
-	P95Latency float64 `json:"p95_latency_ms"`
-	ErrorRate  float64 `json:"error_rate_pct"`
+	AvgLatency  float64 `json:"avg_latency_ms"`
+	P95Latency  float64 `json:"p95_latency_ms"`
+	ErrorRate   float64 `json:"error_rate_pct"`
 }
 
 func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetDatabaseQueriesArgs) (*mcp.CallToolResult, any, error) {
@@ -691,29 +635,6 @@ func fetchPromToSpanNameMap(ctx context.Context, client *http.Client, cfg models
 }
 
 // --- get_database_server_metrics tool ---
-
-const GetDatabaseServerMetricsDescription = `Discover and query server-side database metrics from Prometheus exporters.
-
-Detects which database exporters are running (postgres_exporter, mysqld_exporter, redis_exporter,
-oracle_exporter, mongodb_exporter, etc.) by probing for known metric prefixes, then queries key
-health metrics for each detected database.
-
-Server-side metrics provide a different perspective than client-side traces:
-- Connection pool utilization (active, idle, max connections)
-- Cache/buffer hit ratios
-- Replication lag
-- Lock contention
-- Disk I/O and tablespace usage
-- Query throughput from the server perspective
-
-Parameters:
-- db_system: (Optional) Focus on a specific database type (e.g. "postgresql", "mysql", "oracle", "redis", "mongodb", "mssql", "elasticsearch", "aerospike"). If omitted, discovers all available exporters.
-- lookback_minutes: (Optional) Time window in minutes (default: 60).
-- start_time_iso: (Optional) Start time in RFC3339 format.
-- end_time_iso: (Optional) End time in RFC3339 format.
-
-Example metrics:
-- Aerospike: open_connections, memory_free_pct, namespace_memory_free_pct, namespace_memory_used_bytes, reads_per_sec, writes_per_sec, errors_per_sec, disk_available_pct.`
 
 type GetDatabaseServerMetricsArgs struct {
 	DBSystem        string  `json:"db_system,omitempty" jsonschema:"Focus on a specific database type (e.g. postgresql, mysql, oracle, redis, mongodb, mssql, elasticsearch, aerospike). Aerospike metrics include open_connections, memory_free_pct, namespace_memory_free_pct, namespace_memory_used_bytes, reads_per_sec, writes_per_sec, errors_per_sec, disk_available_pct"`
@@ -1308,7 +1229,6 @@ func extractSlowQueries(rawResult map[string]any) []SlowQuery {
 	}
 	return queries
 }
-
 
 // fetchPromAndPopulate runs a PromQL instant query and populates DatabaseSummary entries
 // keyed by "db_system|net_peer_name".

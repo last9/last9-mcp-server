@@ -1,37 +1,27 @@
-# get_alert_config Tool Arguments
 
-## Purpose
+	Get alert configurations (alert rules) from Last9.
+	Returns configured alert rules with metadata and supports both typed filters and free-text search.
+	Use this tool first to discover rules and entity IDs, then if required, use get_entity_alert_rules
+	with an entity_id to get the PromQL for the indicator and other details of the alert group (entity) of the alert rule.
 
-Select the correct JSON arguments to call the `get_alert_config` tool, which returns alert rule configurations from Last9.
+	Optional filters:
+	- rule_id: Exact match on alert rule ID
+	- search_term: Case-insensitive substring search across rule name, alert group name/type, data source name, and tags
+	- rule_name: Case-insensitive substring match on rule name
+	- severity: Exact case-insensitive match
+	- rule_type: Exact case-insensitive match on derived rule type ("static" or "anomaly")
+	- alert_group_name: Case-insensitive substring match on alert group name
+	- alert_group_type: Case-insensitive substring match on alert group type
+	- data_source_name: Case-insensitive substring match on alert group data source name
+	- tags: Array of case-insensitive substring matches; all provided tags must match
 
-## Parameters (all optional)
-
-- `rule_id` (string): **Exact** match on alert rule ID (UUID). Use when the user provides a specific rule ID.
-- `rule_name` (string): Case-insensitive substring match on rule name.
-- `severity` (string): Exact case-insensitive match. Values: `breach`, `threat`.
-- `rule_type` (string): Derived rule type. Values: `static` or `anomaly`.
-- `alert_group_name` (string): Case-insensitive substring match on alert group name.
-- `alert_group_type` (string): Case-insensitive substring match on alert group type.
-- `data_source_name` (string): Case-insensitive substring match on data source name.
-- `tags` (string[]): Array of tag substring filters (AND semantics).
-- `search_term` (string): Broad search across rule name, alert group name/type, data source, and tags.
-
-## Examples
-
-User: "get alert config for rule ff000725-eb50-4642-b448-5cde395905df"
-→ `{"rule_id": "ff000725-eb50-4642-b448-5cde395905df"}`
-
-User: "show all breach severity alert rules"
-→ `{"severity": "breach"}`
-
-User: "find static alert rules"
-→ `{"rule_type": "static"}`
-
-User: "show alert rules for the payments alert group"
-→ `{"alert_group_name": "payments"}`
-
-User: "search for latency alerts"
-→ `{"search_term": "latency"}`
-
-User: "find anomaly alerts tagged with prod"
-→ `{"rule_type": "anomaly", "tags": ["prod"]}`
+	Each alert rule includes:
+	- id: Unique identifier for the alert rule
+	- name: Human-readable name of the alert
+	- primary_indicator: Name of the primary KPI (metric) being monitored
+	- entity_id: Use this with get_entity_alert_rules to fetch the full PromQL for this entity's rules
+	- state: Current state of the alert rule (active, inactive, etc.)
+	- severity: Alert severity level
+	- algorithm: Detection algorithm (static_threshold, high_spike, inc_trend, etc.)
+	- created_at: When the alert rule was created
+	- updated_at: When the alert rule was last modified
