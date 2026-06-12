@@ -48,9 +48,11 @@ func dumpTools(w io.Writer) error {
 
 	ctx := context.Background()
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
-	if _, err := server.Server.Connect(ctx, serverTransport, nil); err != nil {
+	serverSession, err := server.Server.Connect(ctx, serverTransport, nil)
+	if err != nil {
 		return fmt.Errorf("failed to connect server: %w", err)
 	}
+	defer serverSession.Close()
 	client := mcp.NewClient(&mcp.Implementation{Name: "dump-tools", Version: Version}, nil)
 	session, err := client.Connect(ctx, clientTransport, nil)
 	if err != nil {

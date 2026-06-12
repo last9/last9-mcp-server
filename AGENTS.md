@@ -18,7 +18,9 @@ For a new tool `get_foo`:
    ```
 3. Register in `tools.go` with `registerTool(server, reg, &mcp.Tool{Name: "get_foo", Description: prompts.GetFooDescription}, foo.NewGetFooHandler(client, cfg))`. The `registerTool` wrapper records parameter names for the paramhint middleware — do not call `RegisterInstrumentedTool` directly.
 
-Tools whose descriptions are enhanced at runtime (`buildEnhancedDescription`: base + appended instructions + `{{labels}}` substitution) use two files: `<tool>_base.md` (base) and `<tool>.md` (appended instructions). Only do this when the description needs runtime substitution; otherwise one file.
+Tools whose descriptions are enhanced at runtime (`buildEnhancedDescription`: base + appended instructions + `{{labels}}` substitution) use two files: `<tool>_base.md` (base) and `<tool>.md` (appended instructions). Only do this when the description needs runtime substitution; otherwise one file. (Grandfathered asymmetries: `prometheus_range_query_base.md` pairs with `get_metrics.md`; `get_exceptions` uses an `Instructions`-suffixed var as its plain description.)
+
+Some description files intentionally end without a trailing newline — editors or formatters that auto-append one silently change the served description and break `dump-tools` snapshot diffs. Preserve file bytes exactly when editing.
 
 Why markdown-only: Go constants are invisible to the eval harness and docs tooling, and a parallel `.md` copy drifts (a stale `get_alerts.md` once taught models a `window` param shape the server rejected). `go:embed` makes the file the single source; a bad path fails the build.
 
@@ -32,7 +34,7 @@ Why markdown-only: Go constants are invisible to the eval harness and docs tooli
 
 - `go run . dump-tools` prints the served tools/list (`{"tools": [...]}`, name-sorted) with no credentials — the canonical snapshot for evals and docs.
 - Session-level tests in `schema_validation_test.go` run the server over in-memory transports and exercise real SDK validation (direct handler calls bypass it). Add a case there when changing schemas or aliases.
-- Eval harness lives at `~/Projects/last9-mcp-evals`; run suites against this checkout with `--tools-json=$(pwd)/tools.json` after `go build -o last9-mcp . && ./last9-mcp dump-tools > tools.json`.
+- Eval harness: the last9-mcp-evals repo. Run suites against this checkout with `--tools-json=$(pwd)/tools.json` after `go build -o last9-mcp . && ./last9-mcp dump-tools > tools.json` (flag lands in last9-mcp-evals#12; until merged use `--use-server`).
 
 ### Description content rules
 

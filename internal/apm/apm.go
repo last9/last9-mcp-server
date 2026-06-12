@@ -1807,62 +1807,6 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 	}
 }
 
-const GetServiceDependencyGraphDescription = `
-	Get the service dependency graph showing relationships between services.
-	Parameters:
-	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
-	- start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)
-	- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)
-	- env: (Optional) Environment to filter by
-	- service_name: (Optional) Service name to focus on in the dependency graph
-
-	Returns the dependency graph data.
-`
-
-const GetPromqlRangeQueryDescription = `
-	Execute a PromQL range query against the metrics data.
-	Parameters:
-	- query: PromQL query to execute
-	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
-	- start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)
-	- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)
-
-	Returns time series data for the specified time range.
-`
-
-const GetPromqlInstantQueryDescription = `
-	Execute a PromQL instant query against the metrics data.
-	Parameters:
-	- query: PromQL query to execute
-	- time_iso: (Optional) Evaluation time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)
-	- lookback_minutes: (Optional) Number of minutes to look back from now when time_iso is omitted.
-
-	Returns instant query results.
-`
-
-const GetPromqlLabelValuesDescription = `
-	Get label values for a specific label name in PromQL.
-	Parameters:
-	- label: Label name to get values for
-	- match_query: (Optional) PromQL query to match series
-	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
-	- start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)
-	- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)
-
-	Returns available values for the specified label.
-`
-
-const GetPromqlLabelsDescription = `
-	Get available labels from PromQL metrics.
-	Parameters:
-	- match_query: (Optional) PromQL query to match series
-	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
-	- start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)
-	- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)
-
-	Returns available label names.
-`
-
 // tool handler to make the query
 // sum by (env)(last_over_time(domain_attributes_count))
 // iterate over the values of `env` label and return the unique values
