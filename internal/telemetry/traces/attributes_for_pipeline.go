@@ -60,8 +60,8 @@ type GetTraceAttributesForPipelineArgs struct {
 	Region          string                   `json:"region,omitempty" jsonschema:"Region to query (optional). Defaults to configured region."`
 }
 
-// TraceAttributesResponse represents the traces series API response structure.
-type TraceAttributesResponse struct {
+// traceAttributesResponse represents the traces series API response structure.
+type traceAttributesResponse struct {
 	Data   []map[string]string `json:"data"`
 	Status string              `json:"status"`
 }
@@ -103,7 +103,7 @@ func fetchTraceSeriesAttributeNames(ctx context.Context, client *http.Client, cf
 		return nil, fmt.Errorf("API returned status %d: %v", resp.StatusCode, errorBody)
 	}
 
-	var result TraceAttributesResponse
+	var result traceAttributesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %v", err)
 	}
