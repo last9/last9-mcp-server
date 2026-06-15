@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `get_trace_attributes_for_pipeline` tool for pipeline-scoped trace-attribute discovery. Given an in-progress pipeline (e.g. a `ServiceName` filter), it returns only the trace attributes actually present for that scope via `/cat/api/traces/v2/series/json`, each enriched with the exact `filter_field` to use in a `get_traces` condition. This prevents filtering on an attribute key that is empty for the queried scope (e.g. assuming `http.status_code` when the service uses `http.response.status_code`), which silently returns 0 — the trace-side counterpart of `get_log_attributes_for_pipeline` (#166).
+- `get_trace_attribute_values` now accepts an optional `pipeline` to scope the returned values to a filtered slice of spans; omit it for global values (#166).
+
+### Changed
+
+- `get_trace_attributes` (global catalog) now sources attributes from the trace tag catalog (`/cat/api/search/tags`) instead of an empty-pipeline series call, so it returns the full global attribute set rather than a subset. Output shape is unchanged (#166).
+
 ## [0.8.0] - 2026-06-08
 
 ### Added
