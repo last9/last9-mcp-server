@@ -26,7 +26,7 @@ These are instructions for constructing natural language trace analytics queries
 **Process Flow:**
 1. User provides natural language query about traces
 2. If the user provides an exact trace ID, call `get_service_traces` with canonical time params and stop there
-3. Call `get_trace_attributes` to discover available span and resource attribute dimensions
+3. Call `get_trace_attributes` to discover the global catalog of candidate span and resource attribute dimensions (narrow to the real fields for your scope in step 4)
 4. Use discovered attributes to build an accurate filter — in particular:
    - If the user mentions a tenant name, map it to `resources['last9.tenant']`
    - If the user mentions a deployment environment (prod, staging, etc.), map it to `resources['deployment.environment']`

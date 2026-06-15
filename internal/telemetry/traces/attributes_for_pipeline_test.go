@@ -81,6 +81,19 @@ func TestGetTraceAttributesForPipeline_UsesSeriesEndpoint(t *testing.T) {
 	if capturedBody == nil || capturedBody["pipeline"] == nil {
 		t.Fatalf("expected pipeline forwarded in request body, got: %v", capturedBody)
 	}
+	// Assert the caller's filter stage was forwarded verbatim, not dropped or replaced.
+	stages, ok := capturedBody["pipeline"].([]interface{})
+	if !ok || len(stages) != 1 {
+		t.Fatalf("expected the provided 1-stage pipeline to be forwarded, got: %v", capturedBody["pipeline"])
+	}
+	stage, ok := stages[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected forwarded stage to be an object, got: %T", stages[0])
+	}
+	query, ok := stage["query"].(map[string]interface{})
+	if !ok || query["$eq"] == nil {
+		t.Errorf("expected the caller's $eq filter to be forwarded, got stage: %v", stage)
+	}
 
 	got := map[string]string{}
 	for _, a := range decodeTraceAttributes(t, res) {
