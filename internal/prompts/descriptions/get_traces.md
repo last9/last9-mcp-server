@@ -287,15 +287,22 @@ Call `get_trace_attributes` to discover available fields and get their exact `fi
 
 ### Example 4: Span Duration Filter (FILTER ONLY - NO AGGREGATION)
 
+**CRITICAL: `Duration` is in NANOSECONDS.** Convert the user's unit before filtering:
+- milliseconds → multiply by 1,000,000 (1000ms = `1000000000`)
+- seconds → multiply by 1,000,000,000 (1s = `1000000000`)
+- microseconds → multiply by 1,000 (500µs = `500000`)
+
+Filtering `Duration > "1000"` means 1000 **nanoseconds** (1µs), which matches nearly every span — never use the raw millisecond number.
+
 **Natural Language:** "Get slow spans taking more than 1000ms"
-**JSON:**
+**JSON:** (1000ms = 1000000000ns)
 
 ```json
 [{
   "type": "filter",
   "query": {
     "$and": [
-      {"$gt": ["Duration", "1000"]}
+      {"$gt": ["Duration", "1000000000"]}
     ]
   }
 }]
