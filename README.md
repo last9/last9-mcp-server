@@ -262,7 +262,8 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 - **`get_logs`** — Full JSON pipeline log queries (aggregations, filters, field extraction)
 - **`get_service_logs`** — Raw log lines for a service, filterable by severity and body content
-- **`get_log_attributes`** — Available attributes in the log schema for a time window
+- **`get_log_attributes`** — Global catalog of attributes in the log schema for a time window
+- **`get_log_attributes_for_pipeline`** — Log fields actually present for an in-progress pipeline (scoped discovery), each with its exact `filter_field`
 - **`get_drop_rules`** — Log drop rules from [Last9 Control Plane](https://last9.io/control-plane)
 - **`add_drop_rule`** — Create a new drop rule to cut log volume at the source
 
@@ -521,6 +522,14 @@ Multiple filter types combine with AND. Each array uses OR internally.
 
 ### get_log_attributes
 
+- `lookback_minutes` (integer, optional): Default: 15.
+- `start_time_iso` / `end_time_iso` (string, optional)
+- `region` (string, optional)
+- `index` (string, optional)
+
+### get_log_attributes_for_pipeline
+
+- `pipeline` (array, required): Prior filter stages to scope discovery, e.g. `[{"type":"filter","query":{"$eq":["ServiceName","<service>"]}}]`.
 - `lookback_minutes` (integer, optional): Default: 15.
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `region` (string, optional)
