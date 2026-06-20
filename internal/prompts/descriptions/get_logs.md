@@ -28,6 +28,7 @@ These are instructions for constructing a natural language logs analytics querie
    - If the user mentions a tenant name, map it to `resources['last9.tenant']`
    - If the user mentions a deployment environment (prod, staging, etc.), map it to `resources['deployment.environment']`
    - If the query scope is ambiguous (multiple tenants or environments exist in the discovered attributes but the user did not specify one), ask: "Which tenant/environment should I scope this to?"
+   - **When filtering on any field-level value:** `get_log_attributes` returns the global catalog, which can list keys that are empty for your scope and near-duplicate names that coexist. Do NOT assume a key name. After adding your scoping filter stage(s) — commonly a service, but it may be a namespace, environment, host, or any combination — call `get_log_attributes_for_pipeline` with that pipeline and use only the `filter_field` it returns for fields present within that scope. (Example: HTTP status is keyed `status_code` on some sources and `http.status_code` on others — neither is a safe default.)
 4. Translate the query to JSON pipeline format using the correct field references
 5. Call the `get_logs` tool with canonical time params:
    - Use `start_time_iso` + `end_time_iso` when the user gave explicit absolute dates/times
@@ -310,6 +311,17 @@ These are examples of pipeline json structure and available stages and functions
 
 ### Example 3: Status Code Filter (FILTER ONLY - NO AGGREGATION)
 **Natural Language:** "Get 5xx errors from the logs"
+
+> **Field names are not universal — confirm before filtering.** The same logical
+> value can be keyed differently across sources (HTTP status is `status_code` on
+> some and `http.status_code` on others), and the global `get_log_attributes`
+> catalog may list keys that are empty for your scope. Filtering on a key that
+> is not populated silently returns 0. Add your scoping filter stage(s) (commonly a
+> service, but it may be a namespace/environment/host/etc.), call
+> `get_log_attributes_for_pipeline`, and use the `filter_field` it returns. The
+> field shown in the example below is illustrative — substitute the one your
+> discovery step reports.
+
 **JSON:**
 ```json
 [{

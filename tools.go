@@ -183,6 +183,13 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Description: logs.GetLogAttributesDescription,
 	}, logs.NewGetLogAttributesHandler(client, cfg))
 
+	// Register pipeline-scoped log attributes tool (discovers fields actually
+	// present for a given pipeline via the series endpoint)
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_log_attributes_for_pipeline",
+		Description: logs.GetLogAttributesForPipelineDescription,
+	}, logs.NewGetLogAttributesForPipelineHandler(client, cfg))
+
 	// Register trace attributes tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "get_trace_attributes",
@@ -245,11 +252,13 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "create_dashboard",
 		Description: dashboards.CreateDashboardDescription,
+		InputSchema: dashboards.GetCreateDashboardInputSchema(),
 	}, dashboards.NewCreateDashboardHandler(client, cfg))
 
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "update_dashboard",
 		Description: dashboards.UpdateDashboardDescription,
+		InputSchema: dashboards.GetUpdateDashboardInputSchema(),
 	}, dashboards.NewUpdateDashboardHandler(client, cfg))
 
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{

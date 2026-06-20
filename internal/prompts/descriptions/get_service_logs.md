@@ -14,6 +14,8 @@ Use this tool to fetch raw log entries for a single service using simple filters
 
 Before using `body_filters`, call `get_log_attributes` to discover what structured attributes are available for the service. If the value you are filtering on is stored as a structured attribute, **prefer an attribute filter via `get_logs`** over a body text search.
 
+**Do not assume an attribute's key name** — which fields exist and how they're keyed depend on the scope you've filtered to (for example, HTTP status is keyed `status_code` on some sources and `http.status_code` on others; neither is a safe default). To get the field that is actually present for your scope, build a pipeline scoped to this service (e.g. `{"$eq":["ServiceName","<service>"]}`, plus any other filters such as namespace or environment), call `get_log_attributes_for_pipeline`, then use the `filter_field` it returns.
+
 Structured attribute queries are:
 - **Faster**: indexed, not a full-text scan
 - **More precise**: exact value match, not partial text
