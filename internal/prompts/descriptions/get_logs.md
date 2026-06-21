@@ -15,11 +15,10 @@ These are instructions for constructing a natural language logs analytics querie
 - If the user asks "how many", "count", "average", "sum" → Then add aggregation
 - Most log queries are simple filtering - do NOT assume aggregation is needed
 
-**CRITICAL: AGGREGATION MUST ALWAYS BE PRECEDED BY FILTER**
-- The first stage in any pipeline MUST be a filter operation
-- If no specific filter is needed for aggregation, create a match-all filter using correct body or service filters as per labels
-- Use filter to match all logs with non-empty body or all services before aggregating
-- NEVER start a pipeline with aggregate or window_aggregate operations directly
+**CRITICAL: PIPELINE ORDERING**
+- The first stage MUST be a **scope filter** (service, time, tenant, environment, host — or a match-all on non-empty Body / all services when no narrower scope applies). NEVER start with aggregate or window_aggregate.
+- **Canonical order:** scope filter(s) → parse (whenever a later stage references a field that lives inside the JSON Body) → filter/groupby on parsed or indexed fields → aggregate.
+- A parse stage that materializes a Body-derived field MUST come before any filter or groupby that references that field. This refines, not contradicts, the scope-filter-first rule: the scope filter is still first; parse sits between it and any stage that uses the parsed field.
 
 **Process Flow:**
 1. User provides natural language query about logs
@@ -675,7 +674,7 @@ These are examples of pipeline json structure and available stages and functions
 
 1. **Always return valid JSON array** containing operation objects
 2. **Use proper field references**: Body, ServiceName, attributes['field'], resources['field']; never emit bare dotted refs.
-3. **Chain operations logically**: filter → parse → aggregate
+3. **Chain operations logically**: scope filter → parse → filter/groupby → aggregate (parse before any stage that references a Body-derived field)
 4. **For time-based queries**, use window_aggregate with appropriate time units.
 5. **For existence checks**, use $neq operator
 6. **For text searches**, use `$containsWords` on `Body` (word-boundary aware, higher precision); use `$contains` for attribute substring matches
