@@ -26,11 +26,12 @@ These are instructions for constructing natural language trace analytics queries
 **Process Flow:**
 1. User provides natural language query about traces
 2. If the user provides an exact trace ID, call `get_service_traces` with canonical time params and stop there
-3. Call `get_trace_attributes` to discover available span and resource attribute dimensions
+3. Call `get_trace_attributes` to discover the global catalog of candidate span and resource attribute dimensions (narrow to the real fields for your scope in step 4)
 4. Use discovered attributes to build an accurate filter — in particular:
    - If the user mentions a tenant name, map it to `resources['last9.tenant']`
    - If the user mentions a deployment environment (prod, staging, etc.), map it to `resources['deployment.environment']`
    - If the query scope is ambiguous (multiple tenants or environments exist in the discovered attributes but the user did not specify one), ask: "Which tenant/environment should I scope this to?"
+   - **When filtering on any field-level value:** `get_trace_attributes` returns the global catalog, which can list keys that are empty for your scope and near-duplicate names that coexist. Do NOT assume a key name. After adding your scoping filter stage(s) — commonly a service, but it may be a namespace, environment, host, or any combination — call `get_trace_attributes_for_pipeline` with that pipeline and use only the `filter_field` it returns for attributes present within that scope. (Example: HTTP status is keyed `http.status_code` on some sources and `http.response.status_code` on others — neither is a safe default.)
 5. Translate the query to JSON pipeline format using the correct field references
 6. Call the `get_traces` tool with canonical time params:
    - Use `start_time_iso` + `end_time_iso` when the user gave explicit absolute dates/times
@@ -163,9 +164,11 @@ Note that regexp parsing operators also work as regexp filters
 
 ## Field Reference Format:
 
-### ALWAYS call get_trace_attributes before filtering on resource or span attributes
+### ALWAYS discover attributes before filtering on resource or span attributes
 
-`get_trace_attributes` returns a JSON array. Each entry has a `filter_field` — use it verbatim in filter conditions. Never transform or guess field syntax.
+`get_trace_attributes` returns the global JSON array catalog. Each entry has a `filter_field` — use it verbatim in filter conditions. Never transform or guess field syntax.
+
+Once you have a scoping filter (a service, namespace, environment, etc.), prefer `get_trace_attributes_for_pipeline` with that pipeline: it returns only the attributes actually present for that slice of spans, so you do not filter on a key that is empty for your scope (which silently returns 0). Use only the `filter_field` values it reports.
 
 ```json
 {
@@ -386,7 +389,7 @@ Filtering `Duration > "1000"` means 1000 **nanoseconds** (1µs), which matches n
 
 **Natural Language:** "Find error traces from the payments service with HTTP POST requests"
 
-**Step 1:** Call `get_trace_attributes` to verify filter_fields for `resource_department`, `http.method`, etc.
+**Step 1:** Scope first (here, `ServiceName`), then call `get_trace_attributes_for_pipeline` with that filter stage to get the exact filter_fields actually present for this service — e.g. whether HTTP status is `attributes['http.status_code']` or `attributes['http.response.status_code']`. Fall back to the global `get_trace_attributes` only when you have no scoping filter yet.
 
 **Step 2:** Build the filter using the returned filter_field values:
 ```json

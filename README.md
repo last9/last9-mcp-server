@@ -262,7 +262,8 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 - **`get_logs`** — Full JSON pipeline log queries (aggregations, filters, field extraction)
 - **`get_service_logs`** — Raw log lines for a service, filterable by severity and body content
-- **`get_log_attributes`** — Available attributes in the log schema for a time window
+- **`get_log_attributes`** — Global catalog of attributes in the log schema for a time window
+- **`get_log_attributes_for_pipeline`** — Log fields actually present for an in-progress pipeline (scoped discovery), each with its exact `filter_field`
 - **`get_drop_rules`** — Log drop rules from [Last9 Control Plane](https://last9.io/control-plane)
 - **`add_drop_rule`** — Create a new drop rule to cut log volume at the source
 
@@ -270,7 +271,9 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 - **`get_traces`** — JSON pipeline trace queries for broad searches and aggregations
 - **`get_service_traces`** — Traces by exact trace ID or service name. Use this when you have a trace ID — it's faster
-- **`get_trace_attributes`** — Available attributes in the trace schema
+- **`get_trace_attributes`** — Global catalog of attributes in the trace schema
+- **`get_trace_attributes_for_pipeline`** — Attributes actually present for an in-progress pipeline (scoped discovery), each with its exact `filter_field`
+- **`get_trace_attribute_values`** — Distinct values for a trace attribute, optionally scoped to a pipeline
 
 ### Change Events & Alerts
 
@@ -524,6 +527,14 @@ Multiple filter types combine with AND. Each array uses OR internally.
 - `region` (string, optional)
 - `index` (string, optional)
 
+### get_log_attributes_for_pipeline
+
+- `pipeline` (array, required): Prior filter stages to scope discovery, e.g. `[{"type":"filter","query":{"$eq":["ServiceName","<service>"]}}]`.
+- `lookback_minutes` (integer, optional): Default: 15.
+- `start_time_iso` / `end_time_iso` (string, optional)
+- `region` (string, optional)
+- `index` (string, optional)
+
 ### get_drop_rules
 
 No parameters.
@@ -557,6 +568,19 @@ Exactly one of `trace_id` or `service_name` is required.
 
 - `lookback_minutes` (integer, optional): Default: 15.
 - `start_time_iso` / `end_time_iso` (string, optional)
+- `region` (string, optional)
+
+### get_trace_attributes_for_pipeline
+
+- `pipeline` (array, required): Prior filter stages to scope discovery, e.g. `[{"type":"filter","query":{"$eq":["ServiceName","<service>"]}}]`.
+- `lookback_minutes` (integer, optional): Default: 15.
+- `start_time_iso` / `end_time_iso` (string, optional)
+- `region` (string, optional)
+
+### get_trace_attribute_values
+
+- `tag_name` (string, required): Attribute name from `get_trace_attributes` (e.g. `resource_department` or `attributes['http.method']`).
+- `pipeline` (array, optional): Prior filter stages to scope the values; omit for global values.
 - `region` (string, optional)
 
 ### get_change_events
