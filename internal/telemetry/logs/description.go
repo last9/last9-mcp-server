@@ -19,6 +19,14 @@ const GetLogsDescription = `
 	- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 	- index: (Optional) Explicit log index to query. Accepted values are physical_index:<name> and rehydration_index:<block_name>. Omit it when the user did not specify an index.
 
+	Service and index discovery:
+	- For log-based service inventory, query the metric physical_index_service_count with prometheus_instant_query before searching logs broadly.
+	- Use a query such as sum by (name, service_name, env) (physical_index_service_count{destination="logs"}) to find services, environments, and physical index names that are actively sending logs.
+	- The physical index name is exposed in the metric label named "name". If name="default", omit the index parameter when calling log tools.
+	- For non-default physical index names selected by the user, pass index as physical_index:<name>.
+	- If the backend rejects physical index filtering, retry without index and mention that explicit physical index filtering is unavailable for that backend.
+	- Avoid broad multi-service body searches. First choose a service/env/index from inventory, then aggregate by severity or pattern, then drill into raw samples.
+
 	Field reference rules:
 	- Use ServiceName for service filters/grouping. Do not use bare service.name.
 	- Use attributes['field'] for log attributes.

@@ -40,6 +40,15 @@ Structured attribute queries are:
 - `env` (optional): Deployment environment string.
 - `index` (optional): Explicit log index in the form `physical_index:<name>` or `rehydration_index:<block_name>`.
 
+## Log service inventory and index selection
+
+- When the user has not named an exact service, do not use this raw-log tool for broad discovery.
+- Use `prometheus_instant_query` first with `sum by (name, service_name, env) (physical_index_service_count{destination="logs"})`.
+- Use `service_name` as the service argument, `env` as the environment when present, and `name` as the physical index name.
+- If `name="default"`, omit the `index` parameter. For a non-default physical index selected by the user, use `index: "physical_index:<name>"`.
+- If the backend rejects explicit physical index filtering, retry without `index` and tell the user that explicit physical index filtering is unavailable for that backend.
+- Prefer `get_logs` for aggregate counts. Use this tool after the service/env/index and pattern are already narrowed, and request a small `limit` for samples.
+
 ## Rules
 
 - Output a JSON object of tool arguments, not a query pipeline.

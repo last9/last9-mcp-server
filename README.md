@@ -262,7 +262,8 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 - **`get_logs`** — Full JSON pipeline log queries (aggregations, filters, field extraction)
 - **`get_service_logs`** — Raw log lines for a service, filterable by severity and body content
-- **`get_log_attributes`** — Available attributes in the log schema for a time window
+- **`get_log_attributes`** — Global catalog of attributes in the log schema for a time window
+- **`get_log_attributes_for_pipeline`** — Log fields actually present for an in-progress pipeline (scoped discovery), each with its exact `filter_field`
 - **`get_drop_rules`** — Log drop rules from [Last9 Control Plane](https://last9.io/control-plane)
 - **`add_drop_rule`** — Create a new drop rule to cut log volume at the source
 
@@ -270,7 +271,9 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 - **`get_traces`** — JSON pipeline trace queries for broad searches and aggregations
 - **`get_service_traces`** — Traces by exact trace ID or service name. Use this when you have a trace ID — it's faster
-- **`get_trace_attributes`** — Available attributes in the trace schema
+- **`get_trace_attributes`** — Global catalog of attributes in the trace schema
+- **`get_trace_attributes_for_pipeline`** — Attributes actually present for an in-progress pipeline (scoped discovery), each with its exact `filter_field`
+- **`get_trace_attribute_values`** — Distinct values for a trace attribute, optionally scoped to a pipeline
 
 ### Change Events & Alerts
 
@@ -504,6 +507,14 @@ LAST9_HTTP=true ./last9-mcp-server
 - `limit` (integer, optional): Server default: 5000.
 - `index` (string, optional): `physical_index:<name>` or `rehydration_index:<block_name>`.
 
+For log-based service inventory, query `physical_index_service_count` first:
+
+```promql
+sum by (name, service_name, env) (physical_index_service_count{destination="logs"})
+```
+
+Use `service_name` as `ServiceName`, `env` as the environment when present, and `name` as the physical index name. If `name="default"`, omit `index`; for a non-default physical index selected by the user, pass `index: "physical_index:<name>"`. If the backend rejects explicit physical index filtering, retry without `index` and report that explicit physical index filtering is unavailable for that backend.
+
 ### get_service_logs
 
 - `service` (string, required)
@@ -516,9 +527,18 @@ LAST9_HTTP=true ./last9-mcp-server
 - `index` (string, optional)
 
 Multiple filter types combine with AND. Each array uses OR internally.
+Use `get_logs` for broad aggregate counts first; use `get_service_logs` only after narrowing to a service/env/index and a small sample set.
 
 ### get_log_attributes
 
+- `lookback_minutes` (integer, optional): Default: 15.
+- `start_time_iso` / `end_time_iso` (string, optional)
+- `region` (string, optional)
+- `index` (string, optional)
+
+### get_log_attributes_for_pipeline
+
+- `pipeline` (array, required): Prior filter stages to scope discovery, e.g. `[{"type":"filter","query":{"$eq":["ServiceName","<service>"]}}]`.
 - `lookback_minutes` (integer, optional): Default: 15.
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `region` (string, optional)
@@ -557,6 +577,19 @@ Exactly one of `trace_id` or `service_name` is required.
 
 - `lookback_minutes` (integer, optional): Default: 15.
 - `start_time_iso` / `end_time_iso` (string, optional)
+- `region` (string, optional)
+
+### get_trace_attributes_for_pipeline
+
+- `pipeline` (array, required): Prior filter stages to scope discovery, e.g. `[{"type":"filter","query":{"$eq":["ServiceName","<service>"]}}]`.
+- `lookback_minutes` (integer, optional): Default: 15.
+- `start_time_iso` / `end_time_iso` (string, optional)
+- `region` (string, optional)
+
+### get_trace_attribute_values
+
+- `tag_name` (string, required): Attribute name from `get_trace_attributes` (e.g. `resource_department` or `attributes['http.method']`).
+- `pipeline` (array, optional): Prior filter stages to scope the values; omit for global values.
 - `region` (string, optional)
 
 ### get_change_events

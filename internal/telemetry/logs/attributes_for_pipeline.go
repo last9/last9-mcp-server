@@ -67,6 +67,9 @@ Index rules:
 - Pass index only when the user explicitly names a log index.
 - Accepted values are physical_index:<name> and rehydration_index:<block_name>.
 - Omit index when the user did not specify one.
+- For log-based service inventory, physical_index_service_count exposes the physical index name in the metric label named "name"; use sum by (name, service_name, env) (physical_index_service_count{destination="logs"}).
+- If the inventory result has name="default", omit index. For a non-default physical index selected by the user, use physical_index:<name>.
+- If the backend rejects physical index filtering, retry without index and mention that explicit physical index filtering is unavailable for that backend.
 `
 
 // GetLogAttributesForPipelineArgs represents the input arguments for the
