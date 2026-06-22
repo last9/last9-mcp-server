@@ -507,6 +507,14 @@ LAST9_HTTP=true ./last9-mcp-server
 - `limit` (integer, optional): Server default: 5000.
 - `index` (string, optional): `physical_index:<name>` or `rehydration_index:<block_name>`.
 
+For log-based service inventory, query `physical_index_service_count` first:
+
+```promql
+sum by (name, service_name, env) (physical_index_service_count{destination="logs"})
+```
+
+Use `service_name` as `ServiceName`, `env` as the environment when present, and `name` as the physical index name. If `name="default"`, omit `index`; for a non-default physical index selected by the user, pass `index: "physical_index:<name>"`. If the backend rejects explicit physical index filtering, retry without `index` and report that explicit physical index filtering is unavailable for that backend.
+
 ### get_service_logs
 
 - `service` (string, required)
@@ -519,6 +527,7 @@ LAST9_HTTP=true ./last9-mcp-server
 - `index` (string, optional)
 
 Multiple filter types combine with AND. Each array uses OR internally.
+Use `get_logs` for broad aggregate counts first; use `get_service_logs` only after narrowing to a service/env/index and a small sample set.
 
 ### get_log_attributes
 

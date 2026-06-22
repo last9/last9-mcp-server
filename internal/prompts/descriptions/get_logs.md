@@ -35,6 +35,15 @@ These are instructions for constructing a natural language logs analytics querie
    - Otherwise use `lookback_minutes` (default: 5 when no time is specified)
 6. Analyze the results and provide insights to the user
 
+**LOG SERVICE INVENTORY BEFORE BROAD SEARCH:**
+- When the user has not named an exact service, do not start with a global body search.
+- Use `prometheus_instant_query` against `physical_index_service_count` to discover log-sending services first.
+- Query pattern: `sum by (name, service_name, env) (physical_index_service_count{destination="logs"})`.
+- `service_name` is the service to use as `ServiceName` in log filters; `env` is the environment when present; `name` is the physical index name.
+- If `name="default"`, omit the `index` parameter on log tools. For a non-default physical index selected by the user, pass `index: "physical_index:<name>"`.
+- If a backend rejects explicit physical index filtering, retry without `index` and tell the user that explicit physical index filtering is unavailable for that backend.
+- After inventory, query one service/env/index at a time. Aggregate by `SeverityText`, a structured attribute, or a specific pattern before fetching raw lines.
+
 **CRITICAL TIME PARAMETER RULES:**
 - **ALWAYS use lookback_minutes: 5 when no time range is specified**
 - **NEVER use 60 minutes unless explicitly requested**
@@ -48,6 +57,8 @@ These are instructions for constructing a natural language logs analytics querie
 - Accepted `index` values are `physical_index:<name>` and `rehydration_index:<block_name>`.
 - If the user says "rehydration index X", use `rehydration_index:X`.
 - If the user says "physical index X" or just "index X", use `physical_index:X`.
+- If the index came from `physical_index_service_count`, use the metric label `name` as the physical index name.
+- Do not pass `index` for the default physical index (`name="default"`); omit the parameter instead.
 - Do not guess or invent an `index`; omit it entirely when the user did not specify one.
 
 **CRITICAL ATTRIBUTE DISCOVERY RULES:**
