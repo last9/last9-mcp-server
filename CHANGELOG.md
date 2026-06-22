@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_trace_attributes` (global catalog) now sources attributes from the trace tag catalog (`/cat/api/search/tags`) instead of an empty-pipeline series call, so it returns the full global attribute set rather than a subset. Output shape is unchanged (#166).
 - `get_trace_attribute_values` now accepts an optional `pipeline` to scope the returned values to a filtered slice of spans; omit it for global values (#166).
 
+## [0.8.1] - 2026-06-18
+
+### Fixed
+
+- Dashboard create and update tools now expose `dashboard` and `metadata` inputs as JSON objects in their MCP schemas, allowing clients to pass dashboard definitions directly.
+
 ## [0.8.0] - 2026-06-08
 
 ### Added
