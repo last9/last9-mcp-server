@@ -61,17 +61,34 @@ These are instructions for constructing a natural language logs analytics querie
 - Do not pass `index` for the default physical index (`name="default"`); omit the parameter instead.
 - Do not guess or invent an `index`; omit it entirely when the user did not specify one.
 
-**CRITICAL DEFAULT TIME RULE:**
-- **ALWAYS use lookback_minutes: 5 when no time range is specified**
-- **NEVER use 60 minutes unless explicitly requested**
-- **Default means 5 minutes, not 60 minutes**
+**CRITICAL ATTRIBUTE DISCOVERY RULES:**
+- **ALWAYS call `get_log_attributes` BEFORE building a filter on any attribute you did not observe in a previous result.**
+- Do NOT guess attribute names. Attributes like `hook_event`, `http.status_code`, `env`, `region` may or may not exist — verify first.
+- The only fields you may use without discovery are: `ServiceName`, `Body`, `Timestamp`, `SeverityText`.
+
+❌ WRONG — guessing attribute name without discovery:
+```json
+// User asks: "logs from my-service with hook event Stop"
+// Bad: assumes 'Stop' is in Body, or guesses attribute name
+[{"type": "filter", "query": {"$contains": ["Body", "Stop"]}}]
+```
+
+✅ CORRECT — discover first, then filter:
+```
+Step 1: call get_log_attributes(service="my-service")
+        → see "hook_event" in the returned attributes list
+Step 2: call get_logs with:
+[{"type": "filter", "query": {"$and": [
+  {"$eq": ["ServiceName", "my-service"]},
+  {"$eq": ["attributes['hook_event']", "Stop"]}
+]}}]
+```
 
 **CRITICAL FIELD REFERENCE RULES:**
 - Never emit bare dotted field references such as `service.name`, `http.status_code`, or `k8s.namespace.name`.
 - Use `ServiceName` for service filters and grouping, not `service.name`.
 - Use `attributes['field.name']` for log attributes.
 - Use `resources['field.name']` for resource attributes, including Kubernetes metadata like `k8s.namespace.name`.
-- If you are not sure whether a field exists or whether environment is stored on `attributes[...]` vs `resources[...]`, use `get_log_attributes` first or broaden the query instead of guessing.
 
 The JSON pipeline format supports filtering, parsing, aggregation on log data.
 

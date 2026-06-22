@@ -86,7 +86,7 @@ Use `get_logs` instead:
 
 ```json
 {
-  "service": "l9alert-pinelabs",
+  "service": "my-service",
   "start_time_iso": "2026-03-31T07:16:38.000Z",
   "end_time_iso": "2026-04-01T07:16:38.907Z",
   "limit": 100,
