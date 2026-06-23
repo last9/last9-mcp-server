@@ -17,11 +17,22 @@
 	- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
 	- index: (Optional) Explicit log index to query. Accepted values are physical_index:<name> and rehydration_index:<block_name>. Omit it when the user did not specify an index.
 
+	Service and index discovery:
+	- For log-based service inventory, query the metric physical_index_service_count with prometheus_instant_query before searching logs broadly.
+	- Use a query such as sum by (name, service_name, env) (physical_index_service_count{destination="logs"}) to find services, environments, and physical index names that are actively sending logs.
+	- The physical index name is exposed in the metric label named "name". If name="default", omit the index parameter when calling log tools.
+	- For non-default physical index names selected by the user, pass index as physical_index:<name>.
+	- If the backend rejects physical index filtering, retry without index and mention that explicit physical index filtering is unavailable for that backend.
+	- Avoid broad multi-service body searches. First choose a service/env/index from inventory, then aggregate by severity or pattern, then drill into raw samples.
+
 	Field reference rules:
 	- Use ServiceName for service filters/grouping. Do not use bare service.name.
 	- Use attributes['field'] for log attributes.
 	- Use resources['field'] for resource attributes such as Kubernetes metadata.
 	- Bare dotted field references are rejected unless they are normalized aliases like service.name or k8s.*.
+	- Fields reported by get_log_attributes_for_pipeline with source "body" exist only inside the log Body as JSON: copy the parse stage from their hint into the pipeline BEFORE any filter or groupby referencing them — an unparsed body field silently yields empty values (a groupby collapses to one empty bucket).
+	- When the user names a workload generically rather than an exact service, enumerate ServiceName variants first (e.g. aggregate grouped by ServiceName) and OR all variants of the workload — canary/primary siblings split traffic, so a single service undercounts.
+	- Severity is not a proxy for HTTP errors: access logs are commonly INFO even for 5xx and SeverityText can be empty. Filter on the discovered status field for HTTP error questions.
 
 	The logjson_query supports:
 	- Filter operations: Filter logs based on conditions

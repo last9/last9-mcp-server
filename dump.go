@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"time"
 
 	"last9-mcp/internal/attributes"
 	"last9-mcp/internal/auth"
@@ -33,6 +34,9 @@ import (
 // files.
 func dumpTools(w io.Writer) error {
 	cfg := models.Config{}
+	// Purely defensive: registration and tools/list never dereference the
+	// token manager (only tools/call handlers do), but set it so a future
+	// handler constructor that touches it can't nil-panic on this path.
 	cfg.TokenManager = &auth.TokenManager{}
 
 	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
@@ -46,7 +50,11 @@ func dumpTools(w io.Writer) error {
 	}
 	fmt.Fprintln(os.Stderr, "note: label cache is cold; {{labels}} placeholders substitute to empty (deterministic default snapshot)")
 
-	ctx := context.Background()
+	// The round-trip is over in-memory transports and won't hang in practice,
+	// but a timeout makes a wedged tools/list fail loudly in CI rather than
+	// hanging the gate.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
 	serverSession, err := server.Server.Connect(ctx, serverTransport, nil)
 	if err != nil {

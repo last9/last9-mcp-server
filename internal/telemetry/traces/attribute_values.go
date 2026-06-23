@@ -15,10 +15,28 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+const GetTraceAttributeValuesDescription = `
+Fetches the distinct values for a single trace attribute/tag.
+
+Use this after get_trace_attributes to see what values exist for a given field —
+for example, all deployment environments, team names, or HTTP methods.
+
+Accepts the tag name in any of these forms:
+  - raw API name:    resource_department, event_exception.type
+  - filter syntax:  resources['department'], events['exception.type'], or attributes['http.method']
+
+Returns the canonical filter_field ready to use in a get_traces tracejson query,
+plus an example condition.
+
+Optionally pass a pipeline to scope the returned values to a filtered slice of
+spans (same pipeline shape as get_traces). Omit it for global values.
+`
+
 // GetTraceAttributeValuesArgs is the input for get_trace_attribute_values.
 type GetTraceAttributeValuesArgs struct {
-	TagName string `json:"tag_name" jsonschema:"required,The attribute name from get_trace_attributes (e.g. resource_department or attributes['http.method'])"`
-	Region  string `json:"region,omitempty" jsonschema:"Region to query (optional). Defaults to configured region."`
+	TagName  string                   `json:"tag_name" jsonschema:"required,The attribute name from get_trace_attributes (e.g. resource_department or attributes['http.method'])"`
+	Region   string                   `json:"region,omitempty" jsonschema:"Region to query (optional). Defaults to configured region."`
+	Pipeline []map[string]interface{} `json:"pipeline,omitempty" jsonschema:"Optional pipeline of prior filter stages to scope values to a slice, e.g. [{\"type\":\"filter\",\"query\":{\"$eq\":[\"ServiceName\",\"<service>\"]}}]. Omit for global values."`
 }
 
 // traceTagValuesAPIResponse is the raw API shape.
@@ -51,11 +69,14 @@ func NewGetTraceAttributeValuesHandler(client *http.Client, cfg models.Config) f
 		apiURL := cfg.APIBaseURL + fmt.Sprintf(constants.EndpointTraceTagValues, url.PathEscape(rawTagName)) + "?" + q.Encode()
 
 		// The label-values endpoint requires a POST with a pipeline body (same as series).
-		pipeline := map[string]interface{}{
-			"pipeline": []map[string]interface{}{
+		// Scope to the caller's pipeline when provided; otherwise discover globally.
+		stages := args.Pipeline
+		if len(stages) == 0 {
+			stages = []map[string]interface{}{
 				{"type": "filter", "query": map[string]interface{}{}},
-			},
+			}
 		}
+		pipeline := map[string]interface{}{"pipeline": stages}
 		bodyBytes, err := json.Marshal(pipeline)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal request body: %v", err)

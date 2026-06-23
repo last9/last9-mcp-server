@@ -222,6 +222,20 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Description: prompts.GetTraceAttributesDescription,
 	}, traces.NewGetTraceAttributesHandler(client, cfg))
 
+	// Register pipeline-scoped trace attributes tool (discovers attributes actually
+	// present for a given pipeline via the series endpoint)
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_trace_attributes_for_pipeline",
+		Description: traces.GetTraceAttributesForPipelineDescription,
+	}, traces.NewGetTraceAttributesForPipelineHandler(client, cfg))
+
+	// Register pipeline-scoped trace attributes tool (discovers attributes actually
+	// present for a given pipeline via the series endpoint)
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_trace_attributes_for_pipeline",
+		Description: traces.GetTraceAttributesForPipelineDescription,
+	}, traces.NewGetTraceAttributesForPipelineHandler(client, cfg))
+
 	// Register trace attribute values tool
 	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_trace_attribute_values",
@@ -278,11 +292,13 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 	registerTool(server, reg, &mcp.Tool{
 		Name:        "create_dashboard",
 		Description: prompts.CreateDashboardDescription,
+		InputSchema: dashboards.GetCreateDashboardInputSchema(),
 	}, dashboards.NewCreateDashboardHandler(client, cfg))
 
 	registerTool(server, reg, &mcp.Tool{
 		Name:        "update_dashboard",
 		Description: prompts.UpdateDashboardDescription,
+		InputSchema: dashboards.GetUpdateDashboardInputSchema(),
 	}, dashboards.NewUpdateDashboardHandler(client, cfg))
 
 	registerTool(server, reg, &mcp.Tool{
