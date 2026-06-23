@@ -224,16 +224,9 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 
 	// Register pipeline-scoped trace attributes tool (discovers attributes actually
 	// present for a given pipeline via the series endpoint)
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	registerTool(server, reg, &mcp.Tool{
 		Name:        "get_trace_attributes_for_pipeline",
-		Description: traces.GetTraceAttributesForPipelineDescription,
-	}, traces.NewGetTraceAttributesForPipelineHandler(client, cfg))
-
-	// Register pipeline-scoped trace attributes tool (discovers attributes actually
-	// present for a given pipeline via the series endpoint)
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
-		Name:        "get_trace_attributes_for_pipeline",
-		Description: traces.GetTraceAttributesForPipelineDescription,
+		Description: prompts.GetTraceAttributesForPipelineDescription,
 	}, traces.NewGetTraceAttributesForPipelineHandler(client, cfg))
 
 	// Register trace attribute values tool

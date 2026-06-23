@@ -80,6 +80,9 @@ var GetTraceAttributesDescription string
 //go:embed descriptions/get_trace_attribute_values.md
 var GetTraceAttributeValuesDescription string
 
+//go:embed descriptions/get_trace_attributes_for_pipeline.md
+var GetTraceAttributesForPipelineDescription string
+
 //go:embed descriptions/get_change_events.md
 var GetChangeEventsDescription string
 
