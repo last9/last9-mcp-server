@@ -1,12 +1,18 @@
 
-Fetches available trace attributes for a specified time window and returns each
-one enriched with the exact filter_field string to use in a get_traces query.
+Fetches the GLOBAL catalog of available trace attributes for a time window and
+returns each one enriched with the exact filter_field string to use in a
+get_traces query.
+
+This is the global tag catalog. A key it lists can still be empty for a specific
+slice of spans — when you have already narrowed with a pipeline, prefer
+get_trace_attributes_for_pipeline, which reports only attributes actually present
+for that scope.
 
 Call this before building a tracejson filter whenever you need to filter by a
 resource attribute or span attribute — never guess the filter_field syntax.
 
-Returns a JSON array sorted by name. Each entry has:
-  - name:          raw attribute name as returned by the API (e.g. "resource_department")
+Returns a JSON array. Each entry has:
+  - name:          raw attribute name (e.g. "resource_department")
   - semantic_name: human-readable name with prefix stripped (e.g. "department")
   - type:          "toplevel" | "resource" | "event" | "span"
   - filter_field:  exact string to use in a tracejson $eq/$contains/etc. condition

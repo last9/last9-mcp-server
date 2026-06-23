@@ -10,3 +10,6 @@ Accepts the tag name in any of these forms:
 
 Returns the canonical filter_field ready to use in a get_traces tracejson query,
 plus an example condition.
+
+Optionally pass a pipeline to scope the returned values to a filtered slice of
+spans (same pipeline shape as get_traces). Omit it for global values.

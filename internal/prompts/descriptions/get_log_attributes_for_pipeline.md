@@ -22,6 +22,15 @@ Returns a JSON array sorted by name. Each entry has:
   - filter_field: exact string to use in a get_logs $eq/$gte/etc. condition
                   (e.g. "attributes['status_code']", "ServiceName", "resources['k8s.namespace.name']")
   - hint:         ready-made example condition using filter_field
+  - source:       "body" when the field exists only INSIDE the log Body as JSON
+                  (absent for indexed attributes). A body-derived field is usable
+                  ONLY after the parse stage shown in its hint — copy that parse
+                  stage into your pipeline before any filter or groupby that
+                  references the field; without it the filter/groupby silently
+                  sees empty values.
+  - sample_coverage: for body-derived fields, in how many sampled rows the key
+                  appeared (e.g. "5/5"). Prefer full-coverage keys; a sparse key
+                  (e.g. "1/5") is absent on most rows of this scope.
 
 Use filter_field directly — do not transform it further.
 
@@ -37,3 +46,6 @@ Index rules:
 - Pass index only when the user explicitly names a log index.
 - Accepted values are physical_index:<name> and rehydration_index:<block_name>.
 - Omit index when the user did not specify one.
+- For log-based service inventory, physical_index_service_count exposes the physical index name in the metric label named "name"; use sum by (name, service_name, env) (physical_index_service_count{destination="logs"}).
+- If the inventory result has name="default", omit index. For a non-default physical index selected by the user, use physical_index:<name>.
+- If the backend rejects physical index filtering, retry without index and mention that explicit physical index filtering is unavailable for that backend.

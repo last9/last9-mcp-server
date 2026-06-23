@@ -28,6 +28,11 @@ Parameters:
 - index: (Optional) Explicit log index to query. Accepted values are physical_index:<name> and rehydration_index:<block_name>. Omit it when the user did not specify an index.
 - If the user says "rehydration index X", use rehydration_index:X.
 - If the user says "physical index X" or just "index X", use physical_index:X.
+- For log-based service inventory, use prometheus_instant_query with physical_index_service_count before querying logs broadly.
+- Inventory query pattern: sum by (name, service_name, env) (physical_index_service_count{destination="logs"}). The "name" label is the physical index name.
+- If the inventory result has name="default", omit the index parameter. For a non-default physical index selected by the user, pass index as physical_index:<name>.
+- If the backend rejects physical index filtering, retry without index and mention that explicit physical index filtering is unavailable for that backend.
+- Avoid broad multi-service body searches with this raw-log tool. Pick one service/env/index first; use get_logs for aggregate counts, then use this tool for a few samples.
 
 Returns a list of log entries with full details including message content, timestamps, severity, and attributes.
 
