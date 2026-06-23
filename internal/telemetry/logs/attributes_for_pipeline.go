@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -42,6 +43,15 @@ Returns a JSON array sorted by name. Each entry has:
   - filter_field: exact string to use in a get_logs $eq/$gte/etc. condition
                   (e.g. "attributes['status_code']", "ServiceName", "resources['k8s.namespace.name']")
   - hint:         ready-made example condition using filter_field
+  - source:       "body" when the field exists only INSIDE the log Body as JSON
+                  (absent for indexed attributes). A body-derived field is usable
+                  ONLY after the parse stage shown in its hint — copy that parse
+                  stage into your pipeline before any filter or groupby that
+                  references the field; without it the filter/groupby silently
+                  sees empty values.
+  - sample_coverage: for body-derived fields, in how many sampled rows the key
+                  appeared (e.g. "5/5"). Prefer full-coverage keys; a sparse key
+                  (e.g. "1/5") is absent on most rows of this scope.
 
 Use filter_field directly — do not transform it further.
 
@@ -82,11 +92,136 @@ type logSeriesResponse struct {
 
 // LogAttribute is an enriched attribute entry returned by
 // get_log_attributes_for_pipeline. filter_field is the exact string to use in a
-// logjson filter condition.
+// logjson filter condition. Body-derived entries (source "body") exist only
+// inside the log Body as JSON: their filter_field is valid only after the parse
+// stage shown in the hint, and sample_coverage reports in how many of the
+// sampled rows the key appeared.
 type LogAttribute struct {
-	Name        string `json:"name"`
-	FilterField string `json:"filter_field"`
-	Hint        string `json:"hint"`
+	Name           string `json:"name"`
+	FilterField    string `json:"filter_field"`
+	Hint           string `json:"hint"`
+	Source         string `json:"source,omitempty"`
+	SampleCoverage string `json:"sample_coverage,omitempty"`
+}
+
+const (
+	// bodySampleLimit bounds the raw-log sample used to discover Body-derived keys.
+	bodySampleLimit = 5
+	// maxBodyDerivedKeys caps how many Body-derived keys are reported, ranked by
+	// sample frequency — a wide structured Body must not flood the response.
+	maxBodyDerivedKeys = 20
+)
+
+// safeBodyKeyPattern accepts only keys that embed safely into both the JSON
+// hint and the attributes['<key>'] accessor. Keys with quotes, spaces, or
+// backslashes would emit broken hints the model copies verbatim — skip them.
+var safeBodyKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.@/-]*$`)
+
+// bodyDerivedHint renders the two-stage example (parse Body, then filter on the
+// materialized key) via json.Marshal so key content can never break the JSON.
+func bodyDerivedHint(key string) string {
+	stages := []map[string]interface{}{
+		{"type": "parse", "parser": "json", "field": "Body", "labels": map[string]string{key: key}},
+		{"type": "filter", "query": map[string]interface{}{"$eq": []string{fmt.Sprintf("attributes['%s']", key), "<value>"}}},
+	}
+	b, err := json.Marshal(stages)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// sampleBodyDerivedAttributes fetches up to bodySampleLimit raw rows for the
+// pipeline and derives attributes from the top-level keys of rows whose Body is
+// a JSON object. Any failure degrades to nil — Body discovery is best-effort
+// and never blocks the indexed-attribute response (the call is also bounded by
+// PerChunkHTTPTimeout so a slow raw-log scan cannot stall discovery).
+func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg models.Config, pipeline []map[string]interface{}, startSec, endSec int64, index string) []LogAttribute {
+	ctx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
+	defer cancel()
+
+	result, err := executeLogJSONQuery(ctx, client, cfg, pipeline, startSec*1000, endSec*1000, bodySampleLimit, index)
+	if err != nil {
+		return nil
+	}
+	lines := extractSampleBodyLines(result)
+	if len(lines) == 0 {
+		return nil
+	}
+
+	freq := map[string]int{}
+	for _, line := range lines {
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(line), &obj); err != nil {
+			continue
+		}
+		for key := range obj {
+			if !safeBodyKeyPattern.MatchString(key) {
+				continue
+			}
+			freq[key]++
+		}
+	}
+	if len(freq) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(freq))
+	for key := range freq {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if freq[keys[i]] != freq[keys[j]] {
+			return freq[keys[i]] > freq[keys[j]]
+		}
+		return keys[i] < keys[j]
+	})
+	if len(keys) > maxBodyDerivedKeys {
+		keys = keys[:maxBodyDerivedKeys]
+	}
+
+	out := make([]LogAttribute, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, LogAttribute{
+			Name:           key,
+			FilterField:    fmt.Sprintf("attributes['%s']", key),
+			Hint:           bodyDerivedHint(key),
+			Source:         "body",
+			SampleCoverage: fmt.Sprintf("%d/%d", freq[key], len(lines)),
+		})
+	}
+	return out
+}
+
+// extractSampleBodyLines pulls the raw Body line of each sampled log entry from
+// a query_range streams response (data.result[].values[][1]). It reuses
+// extractResultItems so both readers of the query_range shape stay in sync.
+func extractSampleBodyLines(result map[string]interface{}) []string {
+	_, items, err := extractResultItems(result)
+	if err != nil {
+		return nil
+	}
+	var lines []string
+	for _, item := range items {
+		entry, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		values, ok := entry["values"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, pair := range values {
+			tuple, ok := pair.([]interface{})
+			if !ok || len(tuple) < 2 {
+				continue
+			}
+			if line, ok := tuple[1].(string); ok && line != "" {
+				lines = append(lines, line)
+			}
+		}
+	}
+	return lines
 }
 
 // logFieldFilterField maps a raw log field name to the exact filter_field string
@@ -229,20 +364,44 @@ func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Confi
 			queryParams.Set("index", normalizedIndex)
 		}
 
+		// Best-effort, in parallel with the series fetch: fields that exist only
+		// inside the log Body as JSON — they need a parse stage (carried in the
+		// hint) before use. The sampling honors the same region override.
+		samplingCfg := cfg
+		samplingCfg.Region = region
+		bodyCh := make(chan []LogAttribute, 1)
+		go func() {
+			bodyCh <- sampleBodyDerivedAttributes(ctx, client, samplingCfg, args.Pipeline, startTime, endTime, normalizedIndex)
+		}()
+
 		names, err := fetchLogSeriesFieldNames(ctx, client, cfg, args.Pipeline, queryParams)
 		if err != nil {
 			return nil, nil, err
 		}
 
 		out := make([]LogAttribute, 0, len(names))
+		indexedFilterFields := make(map[string]struct{}, len(names))
 		for _, name := range names {
 			filterField := logFieldFilterField(name)
+			indexedFilterFields[filterField] = struct{}{}
 			out = append(out, LogAttribute{
 				Name:        name,
 				FilterField: filterField,
 				Hint:        fmt.Sprintf("{\"$eq\":[\"%s\",\"<value>\"]}", filterField),
 			})
 		}
+
+		// Merge: drop a body-derived entry only when an indexed entry already
+		// exposes the SAME filter_field (true duplicate). A body key that merely
+		// shares a name with a special-mapped indexed field (severity ->
+		// SeverityText) is a different field and stays.
+		for _, attr := range <-bodyCh {
+			if _, dup := indexedFilterFields[attr.FilterField]; dup {
+				continue
+			}
+			out = append(out, attr)
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 
 		payload, err := json.MarshalIndent(out, "", "  ")
 		if err != nil {

@@ -15,11 +15,10 @@ These are instructions for constructing a natural language logs analytics querie
 - If the user asks "how many", "count", "average", "sum" → Then add aggregation
 - Most log queries are simple filtering - do NOT assume aggregation is needed
 
-**CRITICAL: AGGREGATION MUST ALWAYS BE PRECEDED BY FILTER**
-- The first stage in any pipeline MUST be a filter operation
-- If no specific filter is needed for aggregation, create a match-all filter using correct body or service filters as per labels
-- Use filter to match all logs with non-empty body or all services before aggregating
-- NEVER start a pipeline with aggregate or window_aggregate operations directly
+**CRITICAL: PIPELINE ORDERING**
+- The first stage MUST be a **scope filter** (service, time, tenant, environment, host — or a match-all on non-empty Body / all services when no narrower scope applies). NEVER start with aggregate or window_aggregate.
+- **Canonical order:** scope filter(s) → parse (whenever a later stage references a field that lives inside the JSON Body) → filter/groupby on parsed or indexed fields → aggregate.
+- A parse stage that materializes a Body-derived field MUST come before any filter or groupby that references that field. This refines, not contradicts, the scope-filter-first rule: the scope filter is still first; parse sits between it and any stage that uses the parsed field.
 
 **Process Flow:**
 1. User provides natural language query about logs
@@ -29,6 +28,9 @@ These are instructions for constructing a natural language logs analytics querie
    - If the user mentions a deployment environment (prod, staging, etc.), map it to `resources['deployment.environment']`
    - If the query scope is ambiguous (multiple tenants or environments exist in the discovered attributes but the user did not specify one), ask: "Which tenant/environment should I scope this to?"
    - **When filtering on any field-level value:** `get_log_attributes` returns the global catalog, which can list keys that are empty for your scope and near-duplicate names that coexist. Do NOT assume a key name. After adding your scoping filter stage(s) — commonly a service, but it may be a namespace, environment, host, or any combination — call `get_log_attributes_for_pipeline` with that pipeline and use only the `filter_field` it returns for fields present within that scope. (Example: HTTP status is keyed `status_code` on some sources and `http.status_code` on others — neither is a safe default.)
+   - **Body-derived fields (`source: "body"`):** discovery may report fields that exist only inside the log `Body` as JSON. Their `filter_field` is valid ONLY after the parse stage shown in that entry's `hint` — copy the hint's parse stage into your pipeline before any filter or groupby that references the field. Prefer keys with full `sample_coverage` (e.g. `5/5`); a sparse key (e.g. `1/5`) is absent on most rows of this scope and will dominate results with empty values.
+   - **Service name variants:** when the user names a workload generically rather than an exact service, do not assume a single `ServiceName`. Enumerate variants first — e.g. aggregate logs grouped by `ServiceName` over the scope window — and OR every variant that belongs to the workload (canary/primary siblings split the same traffic; counting one of them undercounts). Scope to a single service only when the user named it exactly.
+   - **Severity is not an HTTP-error proxy:** access logs commonly carry INFO severity even for 5xx responses, and `SeverityText` can be empty. For HTTP error questions, filter on the discovered status field — never on severity.
 4. Translate the query to JSON pipeline format using the correct field references
 5. Call the `get_logs` tool with canonical time params:
    - Use `start_time_iso` + `end_time_iso` when the user gave explicit absolute dates/times
@@ -409,7 +411,7 @@ These are examples of pipeline json structure and available stages and functions
   }
 ]
 ```
-**NOTE:** Parse always comes BEFORE the filter that references extracted fields. The filter cannot use fields that haven't been parsed yet.
+**NOTE:** Parse always comes BEFORE the filter that references extracted fields. The filter cannot use fields that haven't been parsed yet. The same rule applies to aggregations: a groupby on a Body-derived field needs the parse stage earlier in the pipeline — grouping by an unparsed field silently collapses everything into a single empty-valued bucket.
 
 ### Example 6: Aggregation - Average
 **Natural Language:** "What is the average response time grouped by service?"
@@ -700,7 +702,7 @@ These are examples of pipeline json structure and available stages and functions
 
 1. **Always return valid JSON array** containing operation objects
 2. **Use proper field references**: Body, ServiceName, attributes['field'], resources['field']; never emit bare dotted refs.
-3. **Chain operations logically**: filter → parse → aggregate
+3. **Chain operations logically**: scope filter → parse → filter/groupby → aggregate (parse before any stage that references a Body-derived field)
 4. **For time-based queries**, use window_aggregate with appropriate time units.
 5. **For existence checks**, use $neq operator
 6. **For text searches**, use `$containsWords` on `Body` (word-boundary aware, higher precision); use `$contains` for attribute substring matches

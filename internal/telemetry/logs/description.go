@@ -32,6 +32,9 @@ const GetLogsDescription = `
 	- Use attributes['field'] for log attributes.
 	- Use resources['field'] for resource attributes such as Kubernetes metadata.
 	- Bare dotted field references are rejected unless they are normalized aliases like service.name or k8s.*.
+	- Fields reported by get_log_attributes_for_pipeline with source "body" exist only inside the log Body as JSON: copy the parse stage from their hint into the pipeline BEFORE any filter or groupby referencing them — an unparsed body field silently yields empty values (a groupby collapses to one empty bucket).
+	- When the user names a workload generically rather than an exact service, enumerate ServiceName variants first (e.g. aggregate grouped by ServiceName) and OR all variants of the workload — canary/primary siblings split traffic, so a single service undercounts.
+	- Severity is not a proxy for HTTP errors: access logs are commonly INFO even for 5xx and SeverityText can be empty. Filter on the discovered status field for HTTP error questions.
 
 	The logjson_query supports:
 	- Filter operations: Filter logs based on conditions
