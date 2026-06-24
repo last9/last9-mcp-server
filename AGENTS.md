@@ -16,7 +16,7 @@ For a new tool `get_foo`:
    //go:embed descriptions/get_foo.md
    var GetFooDescription string
    ```
-3. Register in `tools.go` with `registerTool(server, reg, &mcp.Tool{Name: "get_foo", Description: prompts.GetFooDescription}, foo.NewGetFooHandler(client, cfg))`. The `registerTool` wrapper records parameter names for the paramhint middleware — do not call `RegisterInstrumentedTool` directly.
+3. Register in `tools.go` with `last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{Name: "get_foo", Description: prompts.GetFooDescription}, foo.NewGetFooHandler(client, cfg))`.
 
 Tools whose descriptions are enhanced at runtime (`buildEnhancedDescription`: base + appended instructions + `{{labels}}` substitution) use two files: `<tool>_base.md` (base) and `<tool>.md` (appended instructions). Only do this when the description needs runtime substitution; otherwise one file. (Grandfathered asymmetries: `prometheus_range_query_base.md` pairs with `get_metrics.md`; `get_exceptions` uses an `Instructions`-suffixed var as its plain description.)
 
@@ -27,13 +27,12 @@ Why markdown-only: Go constants are invisible to the eval harness and docs tooli
 ### Argument structs
 
 - JSON tags: `snake_case`, `omitempty` on optionals. `jsonschema:` tag carries the param description; prefix required params' description with `(Required)`.
-- Naming: service filters use `service_name` (canonical). When an ecosystem prior or sibling-tool inconsistency makes another name likely (e.g. Prometheus's `match`), add an alias field and coalesce in the handler — canonical wins when both set. See `PromqlLabelValuesArgs.Match` and `ServiceSummaryArgs.Service`.
-- The SDK infers `additionalProperties: false` from the struct; unknown keys are rejected before the handler runs. The paramhint middleware (`internal/paramhint`) appends valid-param lists and one did-you-mean suggestion to those errors — keep it wired via `registerTool`.
+- The SDK infers `additionalProperties: false` from the struct; unknown keys are rejected before the handler runs.
 
 ### Verifying description/schema changes
 
 - `go run . dump-tools` prints the served tools/list (`{"tools": [...]}`, name-sorted) with no credentials — the canonical snapshot for evals and docs.
-- Session-level tests in `schema_validation_test.go` run the server over in-memory transports and exercise real SDK validation (direct handler calls bypass it). Add a case there when changing schemas or aliases.
+- Session-level tests in `schema_validation_test.go` run the server over in-memory transports and exercise real SDK validation (direct handler calls bypass it). Add a case there when changing schemas.
 - Eval harness: the last9-mcp-evals repo. Run suites against this checkout with `--tools-json=$(pwd)/tools.json` after `go build -o last9-mcp . && ./last9-mcp dump-tools > tools.json` (flag lands in last9-mcp-evals#12; until merged use `--use-server`).
 
 ### Description content rules
