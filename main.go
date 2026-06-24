@@ -185,10 +185,6 @@ func main() {
 		}
 	}
 
-	// Attach -32602 param-hint middleware once; registerAllTools re-runs on
-	// refresh and must not stack additional copies.
-	AttachParamHintMiddleware(server)
-
 	// Register all tools
 	if err := registerAllTools(server, cfg, attrCache); err != nil {
 		log.Fatalf("failed to register tools: %v", err)

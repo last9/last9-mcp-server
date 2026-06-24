@@ -43,7 +43,6 @@ func newTestSession(t *testing.T) *mcp.ClientSession {
 		t.Fatalf("failed to create server: %v", err)
 	}
 
-	AttachParamHintMiddleware(server)
 	attrCache := attributes.NewAttributeCache(backend.Client(), cfg)
 	// Register twice to mirror the production description-refresh loop
 	// (main.go re-runs registerAllTools every 2h): hints must not duplicate.
