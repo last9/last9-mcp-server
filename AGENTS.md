@@ -32,7 +32,6 @@ Why markdown-only: Go constants are invisible to the eval harness and docs tooli
 ### Verifying description/schema changes
 
 - `go run . dump-tools` prints the served tools/list (`{"tools": [...]}`, name-sorted) with no credentials — the canonical snapshot for evals and docs.
-- Session-level tests in `schema_validation_test.go` run the server over in-memory transports and exercise real SDK validation (direct handler calls bypass it). Add a case there when changing schemas.
 - Eval harness: the last9-mcp-evals repo. Run suites against this checkout with `--tools-json=$(pwd)/tools.json` after `go build -o last9-mcp . && ./last9-mcp dump-tools > tools.json` (flag lands in last9-mcp-evals#12; until merged use `--use-server`).
 
 ### Description content rules
