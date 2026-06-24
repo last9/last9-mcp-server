@@ -18,7 +18,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-
 func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
 	// Mock responses should match apiPromInstantResp format (direct array)
 	throughputResp := `[

@@ -27,13 +27,6 @@ const (
 	LimitDefault                  = 10
 )
 
-// GetServiceTracesDescription provides the short summary used ahead of the
-// embedded markdown instructions for the tool description.
-const GetServiceTracesDescription = `Retrieve traces from Last9 by exact trace ID or by service name.
-
-Prefer this tool over ` + "`get_traces`" + ` whenever you already have an exact ` + "`trace_id`" + `.
-- If unsure of the service_name or env spelling, call "did_you_mean" first.`
-
 // GetServiceTracesArgs defines the input structure for getting traces by service or ID
 type GetServiceTracesArgs struct {
 	TraceID         string  `json:"trace_id,omitempty" jsonschema:"Specific trace ID to retrieve"`

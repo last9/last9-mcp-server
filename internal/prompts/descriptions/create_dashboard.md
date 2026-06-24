@@ -1,0 +1,1 @@
+Create a custom dashboard. Body uses API envelope {dashboard, metadata}. Panels use queries[] with nested legend; metadata uses _category and _type.

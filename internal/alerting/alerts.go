@@ -102,60 +102,6 @@ type AlertInstance struct {
 	Since             int64                  `json:"since"`
 }
 
-const GetAlertConfigDescription = `
-	Get alert configurations (alert rules) from Last9.
-	Returns configured alert rules with metadata and supports both typed filters and free-text search.
-	Use this tool first to discover rules and entity IDs, then if required, use get_entity_alert_rules
-	with an entity_id to get the PromQL for the indicator and other details of the alert group (entity) of the alert rule.
-
-	Optional filters:
-	- rule_id: Exact match on alert rule ID
-	- search_term: Case-insensitive substring search across rule name, alert group name/type, data source name, and tags
-	- rule_name: Case-insensitive substring match on rule name
-	- severity: Exact case-insensitive match
-	- rule_type: Exact case-insensitive match on derived rule type ("static" or "anomaly")
-	- alert_group_name: Case-insensitive substring match on alert group name
-	- alert_group_type: Case-insensitive substring match on alert group type
-	- data_source_name: Case-insensitive substring match on alert group data source name
-	- tags: Array of case-insensitive substring matches; all provided tags must match
-
-	Each alert rule includes:
-	- id: Unique identifier for the alert rule
-	- name: Human-readable name of the alert
-	- primary_indicator: Name of the primary KPI (metric) being monitored
-	- entity_id: Use this with get_entity_alert_rules to fetch the full PromQL for this entity's rules
-	- state: Current state of the alert rule (active, inactive, etc.)
-	- severity: Alert severity level
-	- algorithm: Detection algorithm (static_threshold, high_spike, inc_trend, etc.)
-	- created_at: When the alert rule was created
-	- updated_at: When the alert rule was last modified
-`
-
-const GetAlertsDescription = `
-	Get currently active alerts from Last9 monitoring system.
-	Returns all alerts that are currently firing or have fired recently within the specified time window.
-	Parameters:
-	- time_iso: Evaluation time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Preferred over timestamp.
-	- timestamp: Unix timestamp for the query time (deprecated alias, defaults to current time)
-	- window: Time window in seconds to look back for alerts (defaults to 900 seconds = 15 minutes, range: 1-3600)
-	- lookback_minutes: Relative time window in minutes (range: 1-60). Used only when window is not provided.
-	
-	Uses the datasource configured in the server config (or default if not specified).
-	
-	Each alert includes:
-	- id: Unique identifier for this alert instance
-	- rule_id: ID of the alert rule that triggered this alert
-	- rule_name: Name of the alert rule
-	- state: Current state (firing, resolved, pending)
-	- severity: Alert severity level
-	- starts_at: When this alert instance started firing
-	- ends_at: When this alert instance was resolved (if resolved)
-	- labels: Key-value pairs for alert identification and routing
-	- annotations: Additional context and descriptions
-	- generator_url: URL to the source of the alert
-	- fingerprint: Unique fingerprint for this alert instance
-`
-
 type GetAlertConfigArgs struct {
 	RuleID         string   `json:"rule_id,omitempty" jsonschema:"Exact match on alert rule ID (optional)"`
 	SearchTerm     string   `json:"search_term,omitempty" jsonschema:"Case-insensitive substring search across rule name and alert group metadata (optional)"`

@@ -1,0 +1,1 @@
+List custom dashboards in the Last9 organization. Returns JSON array of dashboard summaries (id, name, metadata).
