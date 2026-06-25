@@ -7,14 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-25
+
 ### Added
 
 - `get_trace_attributes_for_pipeline` tool for pipeline-scoped trace-attribute discovery. Given an in-progress pipeline (e.g. a `ServiceName` filter), it returns only the trace attributes actually present for that scope via `/cat/api/traces/v2/series/json`, each enriched with the exact `filter_field` to use in a `get_traces` condition. This prevents filtering on an attribute key that is empty for the queried scope (e.g. assuming `http.status_code` when the service uses `http.response.status_code`), which silently returns 0 — the trace-side counterpart of `get_log_attributes_for_pipeline` (#166).
+- `dump-tools` subcommand prints the served `tools/list` result (`{"tools": [...]}`, sorted by name) by round-tripping a real request over in-memory transports, with no refresh token, credentials, or network needed. Output matches what clients receive (including `inputSchema` and annotations), making it a deterministic, credential-free tool snapshot for the eval harness and docs tooling (#164).
+- `get_log_attributes_for_pipeline` now surfaces fields that exist only inside a JSON log Body (e.g. `uri` on access logs) by sampling raw rows for the scoped pipeline, reporting them as `source=body` entries with a `sample_coverage` ratio and a ready-made two-stage parse hint. Indexed attributes win name collisions; sampling failures degrade to the indexed-only response (#163).
 
 ### Changed
 
 - `get_trace_attributes` (global catalog) now sources attributes from the trace tag catalog (`/cat/api/search/tags`) instead of an empty-pipeline series call, so it returns the full global attribute set rather than a subset. Output shape is unchanged (#166).
 - `get_trace_attribute_values` now accepts an optional `pipeline` to scope the returned values to a filtered slice of spans; omit it for global values (#166).
+- All tool description text is now embedded markdown under `internal/prompts/descriptions/` via `go:embed`, standardizing the single source of truth for descriptions across every tool (#165).
+- Log tool descriptions now mandate attribute discovery before filtering in `get_logs`, with explicit discover-then-filter examples, and teach parse-then-group, service-variant enumeration, and the severity trap for Body-derived discovery (#155, #163, #167).
 
 ## [0.8.1] - 2026-06-18
 
