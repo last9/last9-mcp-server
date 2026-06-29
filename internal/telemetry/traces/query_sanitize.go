@@ -2,6 +2,7 @@ package traces
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -56,6 +57,12 @@ func sanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 				if err := validateFilterFields(query, path+".query"); err != nil {
 					return err
 				}
+				// tracejson requires the top-level filter query to be wrapped in a
+				// logical operator. Models (especially weaker ones) frequently emit a
+				// bare single condition like {"$eq": [...]}, which the spec rejects.
+				// Normalize it to {"$and": [{"$eq": [...]}]} so the forwarded query is
+				// always valid regardless of how the model phrased it.
+				stage["query"] = wrapTopLevelFilterQuery(query)
 			}
 		}
 
@@ -66,6 +73,38 @@ func sanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 		}
 	}
 	return nil
+}
+
+// wrapTopLevelFilterQuery ensures the top-level filter query is wrapped in a
+// logical operator, as the tracejson spec requires. A query that is already a
+// single logical operator ($and/$or/$not) is returned unchanged; anything else
+// — one or more bare field operators — is wrapped in $and, with each condition
+// becoming its own element. Keys are sorted so the output is deterministic.
+func wrapTopLevelFilterQuery(query interface{}) interface{} {
+	queryMap, ok := query.(map[string]interface{})
+	if !ok || len(queryMap) == 0 {
+		return query
+	}
+
+	if len(queryMap) == 1 {
+		for key := range queryMap {
+			if _, isLogical := traceFilterLogicalOperators[key]; isLogical {
+				return queryMap
+			}
+		}
+	}
+
+	keys := make([]string, 0, len(queryMap))
+	for key := range queryMap {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	conditions := make([]interface{}, 0, len(keys))
+	for _, key := range keys {
+		conditions = append(conditions, map[string]interface{}{key: queryMap[key]})
+	}
+	return map[string]interface{}{"$and": conditions}
 }
 
 func validateTraceFilterCondition(value interface{}, path string) error {
