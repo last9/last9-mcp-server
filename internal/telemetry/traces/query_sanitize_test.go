@@ -1,6 +1,7 @@
 package traces
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -572,6 +573,114 @@ func TestSanitizeTraceJSONQuery_EdgeCases(t *testing.T) {
 		}
 		if err := sanitizeTraceJSONQuery(stages); err != nil {
 			t.Errorf("non-map aggregate entry should pass sanitizer, got: %v", err)
+		}
+	})
+}
+
+func TestSanitizeTraceJSONQuery_WrapsTopLevelFilterInAnd(t *testing.T) {
+	t.Run("bare single field operator is wrapped in $and", func(t *testing.T) {
+		stages := []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{
+				"$eq": []interface{}{"SpanKind", "SPAN_KIND_INTERNAL"},
+			}},
+		}
+		if err := sanitizeTraceJSONQuery(stages); err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		want := map[string]interface{}{
+			"$and": []interface{}{
+				map[string]interface{}{"$eq": []interface{}{"SpanKind", "SPAN_KIND_INTERNAL"}},
+			},
+		}
+		if got := stages[0]["query"]; !reflect.DeepEqual(got, want) {
+			t.Errorf("query not wrapped in $and:\n got: %#v\nwant: %#v", got, want)
+		}
+	})
+
+	t.Run("where stage is wrapped too", func(t *testing.T) {
+		stages := []map[string]interface{}{
+			{"type": "where", "query": map[string]interface{}{
+				"$eq": []interface{}{"ServiceName", "checkout"},
+			}},
+		}
+		if err := sanitizeTraceJSONQuery(stages); err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		query, ok := stages[0]["query"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("query is not a map: %#v", stages[0]["query"])
+		}
+		if _, ok := query["$and"]; !ok {
+			t.Errorf("expected $and wrapper, got: %#v", query)
+		}
+	})
+
+	t.Run("multiple bare field operators are each wrapped in $and (sorted)", func(t *testing.T) {
+		stages := []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{
+				"$eq":  []interface{}{"ServiceName", "checkout"},
+				"$neq": []interface{}{"StatusCode", "STATUS_CODE_OK"},
+			}},
+		}
+		if err := sanitizeTraceJSONQuery(stages); err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		want := map[string]interface{}{
+			"$and": []interface{}{
+				map[string]interface{}{"$eq": []interface{}{"ServiceName", "checkout"}},
+				map[string]interface{}{"$neq": []interface{}{"StatusCode", "STATUS_CODE_OK"}},
+			},
+		}
+		if got := stages[0]["query"]; !reflect.DeepEqual(got, want) {
+			t.Errorf("multiple conditions not wrapped deterministically:\n got: %#v\nwant: %#v", got, want)
+		}
+	})
+
+	t.Run("already-wrapped $and is left unchanged", func(t *testing.T) {
+		inner := []interface{}{
+			map[string]interface{}{"$eq": []interface{}{"SpanKind", "SPAN_KIND_INTERNAL"}},
+		}
+		stages := []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{"$and": inner}},
+		}
+		if err := sanitizeTraceJSONQuery(stages); err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		want := map[string]interface{}{"$and": inner}
+		if got := stages[0]["query"]; !reflect.DeepEqual(got, want) {
+			t.Errorf("already-wrapped query should be unchanged:\n got: %#v\nwant: %#v", got, want)
+		}
+	})
+
+	t.Run("top-level $or is left unchanged", func(t *testing.T) {
+		or := []interface{}{
+			map[string]interface{}{"$eq": []interface{}{"SpanKind", "SPAN_KIND_CLIENT"}},
+			map[string]interface{}{"$eq": []interface{}{"SpanKind", "SPAN_KIND_SERVER"}},
+		}
+		stages := []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{"$or": or}},
+		}
+		if err := sanitizeTraceJSONQuery(stages); err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		query := stages[0]["query"].(map[string]interface{})
+		if _, ok := query["$or"]; !ok {
+			t.Errorf("top-level $or should be preserved, got: %#v", query)
+		}
+		if _, ok := query["$and"]; ok {
+			t.Errorf("top-level $or should not be re-wrapped in $and, got: %#v", query)
+		}
+	})
+
+	t.Run("empty query map is left unchanged", func(t *testing.T) {
+		stages := []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{}},
+		}
+		if err := sanitizeTraceJSONQuery(stages); err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if got := stages[0]["query"]; !reflect.DeepEqual(got, map[string]interface{}{}) {
+			t.Errorf("empty query should be unchanged, got: %#v", got)
 		}
 	})
 }

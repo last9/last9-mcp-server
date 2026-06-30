@@ -370,17 +370,21 @@ Filtering `Duration > "1000"` means 1000 **nanoseconds** (1µs), which matches n
 [{
   "type": "filter",
   "query": {
-    "$eq": ["resource_department", "engineering"]
+    "$and": [
+      {"$eq": ["resource_department", "engineering"]}
+    ]
   }
 }]
 ```
 
-✅ CORRECT — call get_trace_attributes first to get filter_field, then use it:
+✅ CORRECT — call get_trace_attributes first to get filter_field, then use it (note: a single condition is still wrapped in `$and` — see Rule 7):
 ```json
 [{
   "type": "filter",
   "query": {
-    "$eq": ["resources['department']", "engineering"]
+    "$and": [
+      {"$eq": ["resources['department']", "engineering"]}
+    ]
   }
 }]
 ```
