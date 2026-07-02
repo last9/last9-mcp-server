@@ -681,3 +681,29 @@ func TestNewListDatasourcesHandler(t *testing.T) {
 		}
 	})
 }
+
+func TestFirstNonEmpty(t *testing.T) {
+	if got := firstNonEmpty("", "up"); got != "up" {
+		t.Fatalf("firstNonEmpty(\"\",\"up\") = %q, want \"up\"", got)
+	}
+	if got := firstNonEmpty("canonical", "alias"); got != "canonical" {
+		t.Fatalf("firstNonEmpty canonical-wins failed: got %q", got)
+	}
+	if got := firstNonEmpty("", ""); got != "" {
+		t.Fatalf("firstNonEmpty(\"\",\"\") = %q, want \"\"", got)
+	}
+}
+
+func TestPromqlLabelArgs_AcceptMatchAlias(t *testing.T) {
+	for _, rt := range []reflect.Type{
+		reflect.TypeOf(PromqlLabelsArgs{}),
+		reflect.TypeOf(PromqlLabelValuesArgs{}),
+	} {
+		if present, _ := jsonParam(rt, "match_query"); !present {
+			t.Fatalf("%s must keep canonical \"match_query\"", rt.Name())
+		}
+		if present, _ := jsonParam(rt, "match"); !present {
+			t.Fatalf("%s must accept alias \"match\"", rt.Name())
+		}
+	}
+}
