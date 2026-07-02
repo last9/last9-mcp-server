@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -181,6 +182,33 @@ func TestGetServiceDependencies(t *testing.T) {
 	var details ServiceDependencyGraphDetails
 	if err := json.Unmarshal([]byte(text), &details); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+}
+
+// jsonParam reports whether a struct exposes a JSON property `name`, and
+// whether it is optional (has the `omitempty` option).
+func jsonParam(rt reflect.Type, name string) (present, optional bool) {
+	for i := 0; i < rt.NumField(); i++ {
+		parts := strings.Split(rt.Field(i).Tag.Get("json"), ",")
+		if parts[0] == name {
+			present = true
+			for _, p := range parts[1:] {
+				if p == "omitempty" {
+					optional = true
+				}
+			}
+		}
+	}
+	return
+}
+
+func TestServiceEnvironmentsArgs_UsesServiceName(t *testing.T) {
+	rt := reflect.TypeOf(ServiceEnvironmentsArgs{})
+	if present, _ := jsonParam(rt, "service_name"); !present {
+		t.Fatal("ServiceEnvironmentsArgs must expose canonical param \"service_name\"")
+	}
+	if p, _ := jsonParam(rt, "service"); p {
+		t.Fatal("legacy param \"service\" must be removed")
 	}
 }
 
@@ -652,4 +680,30 @@ func TestNewListDatasourcesHandler(t *testing.T) {
 			t.Errorf("empty list text = %q, want []", textContent.Text)
 		}
 	})
+}
+
+func TestFirstNonEmpty(t *testing.T) {
+	if got := firstNonEmpty("", "up"); got != "up" {
+		t.Fatalf("firstNonEmpty(\"\",\"up\") = %q, want \"up\"", got)
+	}
+	if got := firstNonEmpty("canonical", "alias"); got != "canonical" {
+		t.Fatalf("firstNonEmpty canonical-wins failed: got %q", got)
+	}
+	if got := firstNonEmpty("", ""); got != "" {
+		t.Fatalf("firstNonEmpty(\"\",\"\") = %q, want \"\"", got)
+	}
+}
+
+func TestPromqlLabelArgs_AcceptMatchAlias(t *testing.T) {
+	for _, rt := range []reflect.Type{
+		reflect.TypeOf(PromqlLabelsArgs{}),
+		reflect.TypeOf(PromqlLabelValuesArgs{}),
+	} {
+		if present, _ := jsonParam(rt, "match_query"); !present {
+			t.Fatalf("%s must keep canonical \"match_query\"", rt.Name())
+		}
+		if present, _ := jsonParam(rt, "match"); !present {
+			t.Fatalf("%s must accept alias \"match\"", rt.Name())
+		}
+	}
 }

@@ -38,8 +38,8 @@ type GetChangeEventsArgs struct {
 	StartTimeISO    string `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
 	EndTimeISO      string `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
 	LookbackMinutes int    `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1)"`
-	Service         string `json:"service,omitempty" jsonschema:"Service name filter (optional)"`
-	Environment     string `json:"environment,omitempty" jsonschema:"Environment filter (optional)"`
+	ServiceName     string `json:"service_name,omitempty" jsonschema:"Service name filter (optional)"`
+	Env             string `json:"env,omitempty" jsonschema:"Environment filter (optional)"`
 	EventName       string `json:"event_name,omitempty" jsonschema:"Exact event type filter (optional). Use available_event_names from a previous call."`
 }
 
@@ -72,12 +72,12 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 		// Build label filters for the Prometheus query
 		var labelFilters []string
 
-		if args.Service != "" {
-			labelFilters = append(labelFilters, fmt.Sprintf(`service_name="%s"`, args.Service))
+		if args.ServiceName != "" {
+			labelFilters = append(labelFilters, fmt.Sprintf(`service_name="%s"`, args.ServiceName))
 		}
 
-		if args.Environment != "" {
-			labelFilters = append(labelFilters, fmt.Sprintf(`env="%s"`, args.Environment))
+		if args.Env != "" {
+			labelFilters = append(labelFilters, fmt.Sprintf(`env="%s"`, args.Env))
 		}
 
 		// Use event_name parameter directly - the AI should provide the exact event type

@@ -98,12 +98,12 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 
 	handler := NewGetExceptionsHandler(server.Client(), cfg)
 	args := GetExceptionsArgs{
-		StartTimeISO:          startTime.Format(time.RFC3339),
-		EndTimeISO:            endTime.Format(time.RFC3339),
-		ServiceName:           "checkout",
-		SpanName:              "POST /orders",
-		DeploymentEnvironment: "prod",
-		Limit:                 10,
+		StartTimeISO: startTime.Format(time.RFC3339),
+		EndTimeISO:   endTime.Format(time.RFC3339),
+		ServiceName:  "checkout",
+		SpanName:     "POST /orders",
+		Env:          "prod",
+		Limit:        10,
 	}
 
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
@@ -205,9 +205,9 @@ func TestGetExceptionsHandler_UsesDashboardShapeForEnvOnlyFilters(t *testing.T) 
 
 	handler := NewGetExceptionsHandler(server.Client(), cfg)
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetExceptionsArgs{
-		StartTimeISO:          startTime.Format(time.RFC3339),
-		EndTimeISO:            endTime.Format(time.RFC3339),
-		DeploymentEnvironment: "alpha",
+		StartTimeISO: startTime.Format(time.RFC3339),
+		EndTimeISO:   endTime.Format(time.RFC3339),
+		Env:          "alpha",
 	})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -274,10 +274,10 @@ func TestGetExceptionsHandler_EscapesHyphenatedServiceNamesLikeFrontend(t *testi
 
 	handler := NewGetExceptionsHandler(server.Client(), cfg)
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetExceptionsArgs{
-		StartTimeISO:          startTime.Format(time.RFC3339),
-		EndTimeISO:            endTime.Format(time.RFC3339),
-		ServiceName:           "last9-api",
-		DeploymentEnvironment: "prod",
+		StartTimeISO: startTime.Format(time.RFC3339),
+		EndTimeISO:   endTime.Format(time.RFC3339),
+		ServiceName:  "last9-api",
+		Env:          "prod",
 	})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
