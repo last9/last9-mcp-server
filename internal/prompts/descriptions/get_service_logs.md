@@ -63,7 +63,7 @@ Structured attribute queries are:
 
 ```json
 {
-  "service": "auth-sanic",
+  "service_name": "auth-sanic",
   "env": "production",
   "lookback_minutes": 60,
   "body_filters": ["401", "unauthorized", "authentication failed"]
@@ -79,7 +79,7 @@ Use `get_logs` instead:
 ```json
 {
   "logjson_query": [{"type": "filter", "query": {"$eq": ["attributes['http_status_code']", "401"]}}],
-  "service": "auth-sanic",
+  "service_name": "auth-sanic",
   "lookback_minutes": 5
 }
 ```
@@ -88,7 +88,7 @@ Use `get_logs` instead:
 
 ```json
 {
-  "service": "my-service",
+  "service_name": "my-service",
   "start_time_iso": "2026-03-31T07:16:38.000Z",
   "end_time_iso": "2026-04-01T07:16:38.907Z",
   "limit": 100,
@@ -100,7 +100,7 @@ Use `get_logs` instead:
 
 ```json
 {
-  "service": "db-proxy",
+  "service_name": "db-proxy",
   "lookback_minutes": 10,
   "body_filters": ["connection reset by peer"]
 }
