@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The HTTP (Streamable HTTP) server now runs the MCP handler in **stateless** mode. Session state was previously held per-instance in memory, so running more than one replica behind a load balancer caused intermittent `404 "session not found"` when a follow-up request (`tools/list`, `tools/call`) was routed to a different instance than the one that handled `initialize` — surfacing in clients as "tools fetch failed / no capabilities" plus reconnect storms. Stateless mode lets any instance serve any request, enabling safe horizontal scaling. Transport-contract change: the server no longer validates the `Mcp-Session-Id` header, and `GET /mcp` (the server→client SSE notification stream) now returns `405`. All tools are independent request/response queries and use neither server-initiated notifications nor session-scoped state (#174).
 
+### Fixed
+
+- Malformed tool-call input (unknown parameter name, wrong value type) now surfaces to the model as a tool-call error (`CallToolResult.isError`) instead of a swallowed JSON-RPC `-32602` protocol error, letting the agent self-correct instead of burning the call. Achieved by bumping `modelcontextprotocol/go-sdk` v1.4.1 → v1.5.0, which adopts the SEP-1303 input-validation contract (#173).
+
 ## [0.9.0] - 2026-06-25
 
 ### Added
