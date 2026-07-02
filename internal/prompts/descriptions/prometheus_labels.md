@@ -3,7 +3,7 @@
 	This works similar to the prometheus /labels call
 	It returns an array of labels.
 	Parameters:
-	- match_query: (Required) A valid promql filter query (also accepted as "match")
+	- match_query: (Required) A valid promql filter query
 	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
 	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
