@@ -31,7 +31,7 @@ Structured attribute queries are:
 
 ## Parameters
 
-- `service` (required): Service name to query.
+- `service_name` (required): Service name to query.
 - `start_time_iso` / `end_time_iso` (optional): Absolute time range in RFC3339 / ISO8601 format. Use these when the user gives explicit timestamps or dates.
 - `lookback_minutes` (optional): Relative time range only when the user did not give explicit timestamps.
 - `limit` (optional): Maximum number of log entries to return.
