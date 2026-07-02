@@ -6,7 +6,7 @@ require (
 	github.com/google/jsonschema-go v0.4.2
 	github.com/joho/godotenv v1.5.1
 	github.com/last9/mcp-go-sdk v0.1.2
-	github.com/modelcontextprotocol/go-sdk v1.4.1
+	github.com/modelcontextprotocol/go-sdk v1.5.0
 	github.com/peterbourgon/ff/v3 v3.4.0
 	go.opentelemetry.io/contrib/bridges/otelslog v0.17.0
 	go.opentelemetry.io/otel v1.43.0
