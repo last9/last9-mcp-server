@@ -37,8 +37,8 @@ Parameters:
 - start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Defaults to now - lookback_minutes.
 - end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to now.
 - lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60 minutes.
-- service: (Optional) Name of the service to filter change events for
-- environment: (Optional) Environment to filter by
+- service_name: (Optional) Name of the service to filter change events for
+- env: (Optional) Environment to filter by
 - event_name: (Optional) Name of the change event to filter by (use available_event_names to see valid values)
 
 Time format rules:

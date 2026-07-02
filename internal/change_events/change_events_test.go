@@ -31,14 +31,14 @@ func TestGetChangeEventsHandler_Integration(t *testing.T) {
 			name: "Get change events with service filter",
 			args: GetChangeEventsArgs{
 				LookbackMinutes: 30,
-				Service:         "test-service",
+				ServiceName:     "test-service",
 			},
 		},
 		{
 			name: "Get change events with environment filter",
 			args: GetChangeEventsArgs{
 				LookbackMinutes: 60,
-				Environment:     "prod",
+				Env:             "prod",
 			},
 		},
 	}
