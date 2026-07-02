@@ -232,7 +232,7 @@ func TestGetServiceLogsHandler_ExplicitIndexOverridesFallback(t *testing.T) {
 
 	handler := NewGetServiceLogsHandler(server.Client(), testLogsConfig(server.URL))
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
-		Service:         "api",
+		ServiceName:     "api",
 		LookbackMinutes: 5,
 		Index:           "physical_index:payments",
 	})
@@ -265,7 +265,7 @@ func TestGetServiceLogsHandler_OmitsIndexWhenNotProvided(t *testing.T) {
 
 	handler := NewGetServiceLogsHandler(server.Client(), testLogsConfig(server.URL))
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
-		Service:         "api",
+		ServiceName:     "api",
 		LookbackMinutes: 5,
 	})
 	if err != nil {
@@ -302,7 +302,7 @@ func TestGetServiceLogsHandler_ForwardsLargeLimitWhenProvided(t *testing.T) {
 
 	handler := NewGetServiceLogsHandler(server.Client(), testLogsConfig(server.URL))
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
-		Service:         "api",
+		ServiceName:     "api",
 		LookbackMinutes: 5,
 		Limit:           2500,
 		Index:           "physical_index:payments",
@@ -364,7 +364,7 @@ func TestGetServiceLogsHandler_UsesFrontendParityFilters(t *testing.T) {
 
 	handler := NewGetServiceLogsHandler(server.Client(), testLogsConfig(server.URL))
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
-		Service:         "l9alert-demo",
+		ServiceName:     "l9alert-demo",
 		StartTimeISO:    "2026-03-31T07:16:38.000Z",
 		EndTimeISO:      "2026-04-01T07:16:38.907Z",
 		Limit:           100,
@@ -407,7 +407,7 @@ func TestGetServiceLogsHandler_AppliesEnvFilterToFetchAndDeepLink(t *testing.T) 
 
 	handler := NewGetServiceLogsHandler(server.Client(), testLogsConfig(server.URL))
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
-		Service:         "api",
+		ServiceName:     "api",
 		LookbackMinutes: 5,
 		SeverityFilters: []string{"error"},
 		BodyFilters:     []string{"timeout"},

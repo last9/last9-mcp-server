@@ -40,7 +40,7 @@ type LogEntry struct {
 
 // GetServiceLogsArgs represents the input arguments for the get_service_logs tool
 type GetServiceLogsArgs struct {
-	Service         string   `json:"service" jsonschema:"Service name to retrieve logs for (e.g. api)"`
+	ServiceName     string   `json:"service_name" jsonschema:"Name of the service to retrieve logs for (e.g. api) (required)"`
 	StartTimeISO    string   `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2023-10-01T10:00:00Z). If not provided lookback_minutes is used"`
 	EndTimeISO      string   `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2023-10-01T11:00:00Z). If not provided current time is used"`
 	LookbackMinutes int      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time if start_time_iso not provided (default: 60, minimum: 1)"`
@@ -55,7 +55,7 @@ type GetServiceLogsArgs struct {
 func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetServiceLogsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetServiceLogsArgs) (*mcp.CallToolResult, any, error) {
 		// Validate required parameters
-		if args.Service == "" {
+		if args.ServiceName == "" {
 			return nil, nil, fmt.Errorf("service parameter is required")
 		}
 
@@ -90,14 +90,14 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("invalid index: %w", err)
 		}
 
-		logjsonQuery := buildServiceLogsQuery(args.Service, args.SeverityFilters, args.BodyFilters)
+		logjsonQuery := buildServiceLogsQuery(args.ServiceName, args.SeverityFilters, args.BodyFilters)
 		if args.Env != "" {
 			logjsonQuery = addServiceLogsEnvFilter(logjsonQuery, args.Env)
 		}
 
 		// Fetch raw logs using the existing logs API approach. When index is omitted,
 		// keep the query on the no-index path that matches the live dashboard/API.
-		logs, err := fetchServiceLogs(ctx, client, cfg, args.Service, startTime, endTime, limit, logjsonQuery, normalizedIndex)
+		logs, err := fetchServiceLogs(ctx, client, cfg, args.ServiceName, startTime, endTime, limit, logjsonQuery, normalizedIndex)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}

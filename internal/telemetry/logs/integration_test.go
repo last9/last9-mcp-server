@@ -119,7 +119,7 @@ func TestGetServiceLogsHandler_Integration_EnvFilter(t *testing.T) {
 
 	// First fetch logs without env filter to confirm there are logs for this service.
 	resultAll, _, err := handler(ctx, &mcp.CallToolRequest{}, GetServiceLogsArgs{
-		Service:         "last9-mcp",
+		ServiceName:     "last9-mcp",
 		LookbackMinutes: 60,
 		Limit:           5,
 	})
@@ -144,7 +144,7 @@ func TestGetServiceLogsHandler_Integration_EnvFilter(t *testing.T) {
 	defer cancel2()
 
 	resultFiltered, _, err := handler(ctx2, &mcp.CallToolRequest{}, GetServiceLogsArgs{
-		Service:         "last9-mcp",
+		ServiceName:     "last9-mcp",
 		LookbackMinutes: 60,
 		Limit:           5,
 		Env:             "this-env-does-not-exist-xyz123",
@@ -179,7 +179,7 @@ func TestGetServiceLogsHandler_Integration_Basic(t *testing.T) {
 	defer cancel()
 
 	result, _, err := handler(ctx, &mcp.CallToolRequest{}, GetServiceLogsArgs{
-		Service:         "last9-mcp",
+		ServiceName:     "last9-mcp",
 		LookbackMinutes: 60,
 		Limit:           10,
 	})
