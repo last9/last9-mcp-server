@@ -22,7 +22,7 @@ end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:
 service_name: (Optional) Filter exceptions by service name (e.g. api-service).
 span_name: (Optional) The name of the span to get the data for. This is often the API endpoint name or controller name.
 env: (Optional) Filter exceptions by environment (e.g. production, staging).
-- If unsure of the service_name or deployment_environment spelling, call "did_you_mean" first.
+- If unsure of the service_name or env spelling, call "did_you_mean" first.
 
 Time format rules:
 - Prefer lookback_minutes for relative windows.
