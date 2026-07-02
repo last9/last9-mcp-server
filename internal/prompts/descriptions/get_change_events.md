@@ -30,7 +30,7 @@ Common event types (check available_event_names for actual values):
 Best practices:
 1. First call without event_name to get available_event_names
 2. Use exact event name from available_event_names for the event_name parameter
-3. Combine with other filters (service, environment, time) for precise results
+3. Combine with other filters (service_name, env, time) for precise results
 4. Use available_event_names to discover what event types are available in the system
 
 Parameters:
@@ -46,4 +46,4 @@ Time format rules:
 - Use start_time_iso/end_time_iso for absolute windows.
 - Legacy format YYYY-MM-DD HH:MM:SS is accepted only for compatibility.
 - If both lookback_minutes and absolute times are provided, absolute times take precedence.
-- If unsure of the service or environment name, call "did_you_mean" first to find the correct spelling.
+- If unsure of the service_name or env value, call "did_you_mean" first to find the correct spelling.

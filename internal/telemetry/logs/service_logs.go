@@ -56,7 +56,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetServiceLogsArgs) (*mcp.CallToolResult, any, error) {
 		// Validate required parameters
 		if args.ServiceName == "" {
-			return nil, nil, fmt.Errorf("service parameter is required")
+			return nil, nil, fmt.Errorf("service_name is required")
 		}
 
 		// Set default values
