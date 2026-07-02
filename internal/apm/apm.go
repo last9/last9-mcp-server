@@ -43,7 +43,7 @@ type ServiceEnvironmentsArgs struct {
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
-	Service         string  `json:"service,omitempty" jsonschema:"Optional service name to filter environments for (e.g. my-api). When omitted, returns environments across all services."`
+	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Optional service name to filter environments for (e.g. my-api). When omitted, returns environments across all services."`
 }
 
 type ServicePerformanceDetailsArgs struct {
@@ -1803,8 +1803,8 @@ func NewServiceEnvironmentsHandler(client *http.Client, cfg models.Config) func(
 		}
 
 		var matchQuery string
-		if args.Service != "" {
-			matchQuery = fmt.Sprintf("domain_attributes_count{span_kind='SPAN_KIND_SERVER',service_name=%q}", args.Service)
+		if args.ServiceName != "" {
+			matchQuery = fmt.Sprintf("domain_attributes_count{span_kind='SPAN_KIND_SERVER',service_name=%q}", args.ServiceName)
 		} else {
 			matchQuery = "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}"
 		}

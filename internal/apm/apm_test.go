@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -181,6 +182,33 @@ func TestGetServiceDependencies(t *testing.T) {
 	var details ServiceDependencyGraphDetails
 	if err := json.Unmarshal([]byte(text), &details); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+}
+
+// jsonParam reports whether a struct exposes a JSON property `name`, and
+// whether it is optional (has the `omitempty` option).
+func jsonParam(rt reflect.Type, name string) (present, optional bool) {
+	for i := 0; i < rt.NumField(); i++ {
+		parts := strings.Split(rt.Field(i).Tag.Get("json"), ",")
+		if parts[0] == name {
+			present = true
+			for _, p := range parts[1:] {
+				if p == "omitempty" {
+					optional = true
+				}
+			}
+		}
+	}
+	return
+}
+
+func TestServiceEnvironmentsArgs_UsesServiceName(t *testing.T) {
+	rt := reflect.TypeOf(ServiceEnvironmentsArgs{})
+	if present, _ := jsonParam(rt, "service_name"); !present {
+		t.Fatal("ServiceEnvironmentsArgs must expose canonical param \"service_name\"")
+	}
+	if p, _ := jsonParam(rt, "service"); p {
+		t.Fatal("legacy param \"service\" must be removed")
 	}
 }
 
