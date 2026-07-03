@@ -366,7 +366,7 @@ curl -s -X POST http://localhost:8080/mcp \
       "params": {
         "name": "get_service_logs",
         "arguments": {
-          "service": "your-service-name",
+          "service_name": "your-service-name",
           "lookback_minutes": 30,
           "limit": 10
         }

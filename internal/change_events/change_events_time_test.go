@@ -109,3 +109,48 @@ func TestGetChangeEventsHandler_ExplicitRangePrecedence(t *testing.T) {
 		}
 	}
 }
+
+// Verifies the renamed input fields (service_name, env) actually reach the
+// backend PromQL as service_name="..."/env="..." — the rename is only correct
+// if the handler wires the new fields into the query, not just the schema.
+func TestGetChangeEventsHandler_FiltersUseCanonicalLabels(t *testing.T) {
+	var capturedQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = r.Body.Close()
+		var req struct {
+			Query string `json:"query"`
+		}
+		_ = json.Unmarshal(body, &req)
+		if req.Query != "" {
+			capturedQuery = req.Query
+		}
+		w.Header().Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
+		_, _ = io.WriteString(w, `[]`)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-token",
+			ExpiresAt:   time.Now().Add(24 * time.Hour),
+		},
+	}
+
+	handler := NewGetChangeEventsHandler(server.Client(), cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetChangeEventsArgs{
+		ServiceName:     "checkout",
+		Env:             "prod",
+		LookbackMinutes: 30,
+	})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if !strings.Contains(capturedQuery, `service_name="checkout"`) {
+		t.Fatalf("expected service_name=\"checkout\" filter in query, got: %s", capturedQuery)
+	}
+	if !strings.Contains(capturedQuery, `env="prod"`) {
+		t.Fatalf("expected env=\"prod\" filter in query, got: %s", capturedQuery)
+	}
+}
