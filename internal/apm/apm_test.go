@@ -707,3 +707,42 @@ func TestPromqlLabelArgs_AcceptMatchAlias(t *testing.T) {
 		}
 	}
 }
+
+// Verifies the renamed input field (service_name) actually reaches the backend
+// label-values match query as service_name="..." — the rename is only correct
+// if the handler wires the new field into the query, not just the schema.
+func TestServiceEnvironmentsHandler_FilterUsesServiceName(t *testing.T) {
+	var captured []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = r.Body.Close()
+		var req struct {
+			Matches []string `json:"matches"`
+		}
+		_ = json.Unmarshal(body, &req)
+		if len(req.Matches) > 0 {
+			captured = req.Matches
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `["prod"]`)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+		Region:     "us-east-1",
+	}
+
+	handler := NewServiceEnvironmentsHandler(server.Client(), cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServiceEnvironmentsArgs{
+		ServiceName:     "checkout",
+		LookbackMinutes: 30,
+	})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if len(captured) == 0 || !strings.Contains(captured[0], `service_name="checkout"`) {
+		t.Fatalf("expected service_name=\"checkout\" in matches, got: %v", captured)
+	}
+}
