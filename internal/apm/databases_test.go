@@ -3,6 +3,7 @@ package apm
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -114,6 +115,63 @@ func TestGetDatabasesHandler_NoDatabases(t *testing.T) {
 	text := result.Content[0].(*mcp.TextContent).Text
 	if !strings.Contains(text, "No databases found") {
 		t.Errorf("expected 'No databases found' message, got: %s", text)
+	}
+}
+
+// TestGetDatabasesHandler_LatencyQuery_NoUnitMultiplier is a regression test
+// for a unit bug: the latency PromQL query multiplied trace_client_duration
+// by 1000, but that metric is already in milliseconds (confirmed against
+// apm.go's identical trace_client_duration quantile queries, which apply no
+// multiplier). The bug inflated p95_latency_ms by 1000x on the real backend
+// (e.g. a real 30s redis block showed as 30,010,484ms instead of ~30,010ms).
+//
+// The multiplication happens in the PromQL expression evaluated by the
+// metrics backend, not in Go arithmetic — a mock HTTP server can't evaluate
+// PromQL, so the only way to catch this is asserting on the query text sent.
+func TestGetDatabasesHandler_LatencyQuery_NoUnitMultiplier(t *testing.T) {
+	var capturedQueries []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Query string `json:"query"`
+		}
+		bodyBytes, _ := io.ReadAll(r.Body)
+		json.Unmarshal(bodyBytes, &body)
+		capturedQueries = append(capturedQueries, body.Query)
+
+		w.WriteHeader(http.StatusOK)
+		response := []map[string]any{
+			{
+				"metric": map[string]string{"db_system": "redis", "net_peer_name": "redis-cache.internal"},
+				"value":  []any{1700000000, "10.0"},
+			},
+		}
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	handler := NewGetDatabasesHandler(server.Client(), testDBConfig(server.URL))
+	now := time.Now().UTC()
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
+		StartTimeISO: now.Add(-60 * time.Minute).Format(time.RFC3339),
+		EndTimeISO:   now.Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	found := false
+	for _, q := range capturedQueries {
+		if !strings.Contains(q, "trace_client_duration") {
+			continue
+		}
+		found = true
+		if strings.Contains(q, "* 1000") {
+			t.Errorf("latency query multiplies by 1000, but trace_client_duration is already in ms: %s", q)
+		}
+	}
+	if !found {
+		t.Fatal("expected a trace_client_duration query to be issued")
 	}
 }
 
