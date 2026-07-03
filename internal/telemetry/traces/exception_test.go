@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -527,4 +528,27 @@ func TestGetExceptionsHandler_DoesNotCapLargeLimit(t *testing.T) {
 		t.Fatalf("unexpected last exception count: got %d, want 1", got)
 	}
 
+}
+
+// jsonParam reports whether a struct exposes a JSON property `name`.
+func jsonParam(rt reflect.Type, name string) (present bool) {
+	for i := 0; i < rt.NumField(); i++ {
+		if strings.Split(rt.Field(i).Tag.Get("json"), ",")[0] == name {
+			return true
+		}
+	}
+	return false
+}
+
+func TestGetExceptionsArgs_UsesCanonicalNames(t *testing.T) {
+	rt := reflect.TypeOf(GetExceptionsArgs{})
+	if !jsonParam(rt, "env") {
+		t.Fatal("GetExceptionsArgs must expose canonical input param \"env\"")
+	}
+	if jsonParam(rt, "deployment_environment") {
+		t.Fatal("legacy input param \"deployment_environment\" must be removed")
+	}
+	if !jsonParam(rt, "service_name") {
+		t.Fatal("GetExceptionsArgs must keep \"service_name\"")
+	}
 }
