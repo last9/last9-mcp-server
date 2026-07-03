@@ -64,8 +64,8 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 		{
 			name:      "unknown parameter name",
 			tool:      "prometheus_labels",
-			arguments: map[string]any{"match": "up"},
-			wantText:  "match",
+			arguments: map[string]any{"selector": "up"},
+			wantText:  "selector",
 		},
 		{
 			name:      "wrong value type",

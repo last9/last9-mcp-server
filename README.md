@@ -366,7 +366,7 @@ curl -s -X POST http://localhost:8080/mcp \
       "params": {
         "name": "get_service_logs",
         "arguments": {
-          "service": "your-service-name",
+          "service_name": "your-service-name",
           "lookback_minutes": 30,
           "limit": 10
         }
@@ -408,7 +408,7 @@ LAST9_HTTP=true ./last9-mcp-server
 - `start_time_iso` / `end_time_iso` (string, optional): Absolute time range.
 - `service_name` (string, optional): Filter by service.
 - `span_name` (string, optional): Filter by span name.
-- `deployment_environment` (string, optional): Filter by environment.
+- `env` (string, optional): Filter by environment.
 
 ### get_service_summary
 
@@ -517,7 +517,7 @@ Use `service_name` as `ServiceName`, `env` as the environment when present, and 
 
 ### get_service_logs
 
-- `service` (string, required)
+- `service_name` (string, required)
 - `lookback_minutes` (integer, optional): Default: 60.
 - `limit` (integer, optional): Default: 20.
 - `env` (string, optional)
@@ -596,8 +596,8 @@ Exactly one of `trace_id` or `service_name` is required.
 
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `lookback_minutes` (integer, optional): Default: 60.
-- `service` (string, optional)
-- `environment` (string, optional)
+- `service_name` (string, optional)
+- `env` (string, optional)
 - `event_name` (string, optional): Call without this first to get `available_event_names`.
 
 ### get_alert_config

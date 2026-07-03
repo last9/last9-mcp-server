@@ -4,12 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"reflect"
+	"strings"
 	"testing"
 
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// jsonParam reports whether a struct exposes a JSON property `name`.
+func jsonParam(rt reflect.Type, name string) (present bool) {
+	for i := 0; i < rt.NumField(); i++ {
+		if strings.Split(rt.Field(i).Tag.Get("json"), ",")[0] == name {
+			return true
+		}
+	}
+	return false
+}
 
 // Integration test for get_change_events tool
 func TestGetChangeEventsHandler_Integration(t *testing.T) {
@@ -31,14 +43,14 @@ func TestGetChangeEventsHandler_Integration(t *testing.T) {
 			name: "Get change events with service filter",
 			args: GetChangeEventsArgs{
 				LookbackMinutes: 30,
-				Service:         "test-service",
+				ServiceName:     "test-service",
 			},
 		},
 		{
 			name: "Get change events with environment filter",
 			args: GetChangeEventsArgs{
 				LookbackMinutes: 60,
-				Environment:     "prod",
+				Env:             "prod",
 			},
 		},
 	}
@@ -71,5 +83,19 @@ func TestGetChangeEventsHandler_Integration(t *testing.T) {
 			t.Logf("Integration test successful: %d change event(s), %d available event name(s)",
 				count, availableEventNames)
 		})
+	}
+}
+
+func TestGetChangeEventsArgs_UsesCanonicalNames(t *testing.T) {
+	rt := reflect.TypeOf(GetChangeEventsArgs{})
+	for _, canon := range []string{"service_name", "env"} {
+		if !jsonParam(rt, canon) {
+			t.Fatalf("GetChangeEventsArgs must expose canonical param %q", canon)
+		}
+	}
+	for _, legacy := range []string{"service", "environment"} {
+		if jsonParam(rt, legacy) {
+			t.Fatalf("legacy param %q must be removed", legacy)
+		}
 	}
 }
