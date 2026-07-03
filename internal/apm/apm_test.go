@@ -732,6 +732,10 @@ func TestServiceEnvironmentsHandler_FilterUsesServiceName(t *testing.T) {
 	cfg := models.Config{
 		APIBaseURL: server.URL,
 		Region:     "us-east-1",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-token",
+			ExpiresAt:   time.Now().Add(24 * time.Hour),
+		},
 	}
 
 	handler := NewServiceEnvironmentsHandler(server.Client(), cfg)
