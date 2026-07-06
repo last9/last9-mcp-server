@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -118,60 +120,110 @@ func TestGetDatabasesHandler_NoDatabases(t *testing.T) {
 	}
 }
 
-// TestGetDatabasesHandler_LatencyQuery_NoUnitMultiplier is a regression test
-// for a unit bug: the latency PromQL query multiplied trace_client_duration
-// by 1000, but that metric is already in milliseconds (confirmed against
-// apm.go's identical trace_client_duration quantile queries, which apply no
-// multiplier). The bug inflated p95_latency_ms by 1000x on the real backend
-// (e.g. a real 30s redis block showed as 30,010,484ms instead of ~30,010ms).
+// latencyUnitMultiplierRE matches a "* 1000" multiplier applied to a query,
+// tolerating whitespace and a trailing decimal (e.g. "*1000", "* 1000.0").
+// The trailing \b prevents matching larger literals like "* 10000".
+var latencyUnitMultiplierRE = regexp.MustCompile(`\*\s*1000\b`)
+
+// TestDatabaseLatencyQueries_NoUnitMultiplier is a regression test for a unit
+// bug: the latency PromQL queries multiplied trace_client_duration by 1000, but
+// that metric is already in milliseconds (confirmed against apm.go's identical
+// trace_client_duration quantile queries, which apply no multiplier). The bug
+// inflated p95_latency_ms / avg_latency_ms by 1000x on the real backend (e.g. a
+// real 30s redis block showed as 30,010,484ms instead of ~30,010ms).
 //
-// The multiplication happens in the PromQL expression evaluated by the
-// metrics backend, not in Go arithmetic — a mock HTTP server can't evaluate
-// PromQL, so the only way to catch this is asserting on the query text sent.
-func TestGetDatabasesHandler_LatencyQuery_NoUnitMultiplier(t *testing.T) {
-	var capturedQueries []string
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Query string `json:"query"`
-		}
-		bodyBytes, _ := io.ReadAll(r.Body)
-		json.Unmarshal(bodyBytes, &body)
-		capturedQueries = append(capturedQueries, body.Query)
-
-		w.WriteHeader(http.StatusOK)
-		response := []map[string]any{
-			{
-				"metric": map[string]string{"db_system": "redis", "net_peer_name": "redis-cache.internal"},
-				"value":  []any{1700000000, "10.0"},
-			},
-		}
-		json.NewEncoder(w).Encode(response)
-	}))
-	defer server.Close()
-
-	handler := NewGetDatabasesHandler(server.Client(), testDBConfig(server.URL))
+// The multiplication happens in the PromQL expression evaluated by the metrics
+// backend, not in Go arithmetic — a mock HTTP server can't evaluate PromQL, so
+// the only way to catch this is asserting on the query text sent. The bug lived
+// in 3 queries across both DB handlers, so both are covered here.
+func TestDatabaseLatencyQueries_NoUnitMultiplier(t *testing.T) {
 	now := time.Now().UTC()
-	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
-		StartTimeISO: now.Add(-60 * time.Minute).Format(time.RFC3339),
-		EndTimeISO:   now.Format(time.RFC3339),
-	})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
+	tests := []struct {
+		name string
+		run  func(client *http.Client, cfg models.Config) error
+	}{
+		{
+			name: "get_databases",
+			run: func(client *http.Client, cfg models.Config) error {
+				_, _, err := NewGetDatabasesHandler(client, cfg)(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
+					StartTimeISO: now.Add(-60 * time.Minute).Format(time.RFC3339),
+					EndTimeISO:   now.Format(time.RFC3339),
+				})
+				return err
+			},
+		},
+		{
+			name: "get_database_queries",
+			run: func(client *http.Client, cfg models.Config) error {
+				_, _, err := NewGetDatabaseQueriesHandler(client, cfg)(context.Background(), &mcp.CallToolRequest{}, GetDatabaseQueriesArgs{
+					DBSystem:     "redis",
+					StartTimeISO: now.Add(-60 * time.Minute).Format(time.RFC3339),
+					EndTimeISO:   now.Format(time.RFC3339),
+				})
+				return err
+			},
+		},
 	}
 
-	found := false
-	for _, q := range capturedQueries {
-		if !strings.Contains(q, "trace_client_duration") {
-			continue
-		}
-		found = true
-		if strings.Contains(q, "* 1000") {
-			t.Errorf("latency query multiplies by 1000, but trace_client_duration is already in ms: %s", q)
-		}
-	}
-	if !found {
-		t.Fatal("expected a trace_client_duration query to be issued")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var (
+				mu              sync.Mutex
+				capturedQueries []string
+			)
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body struct {
+					Query string `json:"query"`
+				}
+				bodyBytes, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("failed to read request body: %v", err)
+					return
+				}
+				if err := json.Unmarshal(bodyBytes, &body); err != nil {
+					t.Errorf("failed to unmarshal request body %q: %v", bodyBytes, err)
+					return
+				}
+
+				mu.Lock()
+				capturedQueries = append(capturedQueries, body.Query)
+				mu.Unlock()
+
+				w.WriteHeader(http.StatusOK)
+				// Include labels for both handlers' grouping (db_system/net_peer_name
+				// for get_databases, span_name for get_database_queries) so each
+				// issues its latency queries.
+				response := []map[string]any{
+					{
+						"metric": map[string]string{"db_system": "redis", "net_peer_name": "redis-cache.internal", "span_name": "GET"},
+						"value":  []any{1700000000, "10.0"},
+					},
+				}
+				json.NewEncoder(w).Encode(response)
+			}))
+			defer server.Close()
+
+			if err := tt.run(server.Client(), testDBConfig(server.URL)); err != nil {
+				t.Fatalf("handler returned error: %v", err)
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+			found := false
+			for _, q := range capturedQueries {
+				if !strings.Contains(q, "trace_client_duration") {
+					continue
+				}
+				found = true
+				if latencyUnitMultiplierRE.MatchString(q) {
+					t.Errorf("latency query multiplies by 1000, but trace_client_duration is already in ms: %s", q)
+				}
+			}
+			if !found {
+				t.Fatal("expected a trace_client_duration query to be issued")
+			}
+		})
 	}
 }
 

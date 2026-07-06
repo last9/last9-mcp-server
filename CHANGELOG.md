@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `get_databases` and `get_database_queries` reported database latency 1000x too high. Their PromQL queries multiplied `trace_client_duration` by 1000 on the assumption it was in seconds, but the metric is already in milliseconds — so `p95_latency_ms` / `avg_latency_ms` were inflated by three orders of magnitude (e.g. a real ~30s Redis blocking read surfaced as `p95_latency_ms: 30010484`, ~8.3 hours). Removed the multiplier; the values now match their `_ms` unit and the frontend's own database queries. Consumers that anchored dashboards or thresholds on the old inflated numbers will see values drop 1000x (#177).
 - Malformed tool-call input (unknown parameter name, wrong value type) now surfaces to the model as a tool-call error (`CallToolResult.isError`) instead of a swallowed JSON-RPC `-32602` protocol error, letting the agent self-correct instead of burning the call. Achieved by bumping `modelcontextprotocol/go-sdk` v1.4.1 → v1.5.0, which adopts the SEP-1303 input-validation contract (#173).
 
 ## [0.9.0] - 2026-06-25
