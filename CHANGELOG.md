@@ -7,15 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-06
+
 ### Changed
 
 - The HTTP (Streamable HTTP) server now runs the MCP handler in **stateless** mode. Session state was previously held per-instance in memory, so running more than one replica behind a load balancer caused intermittent `404 "session not found"` when a follow-up request (`tools/list`, `tools/call`) was routed to a different instance than the one that handled `initialize` — surfacing in clients as "tools fetch failed / no capabilities" plus reconnect storms. Stateless mode lets any instance serve any request, enabling safe horizontal scaling. Transport-contract change: the server no longer validates the `Mcp-Session-Id` header, and `GET /mcp` (the server→client SSE notification stream) now returns `405`. All tools are independent request/response queries and use neither server-initiated notifications nor session-scoped state (#174).
 - Normalized MCP tool parameter names to canonical spellings so agents guess them correctly more often: `get_service_logs`, `get_service_environments`, and `get_change_events` now take `service_name` (was `service`); `get_change_events` and `get_exceptions` now take `env` (was `environment` / `deployment_environment`). The old spellings are removed — a call using them returns a recoverable `isError` rather than silently failing. `prometheus_labels` / `prometheus_label_values` additionally accept `match` as an alias of `match_query` (#176).
+- Bumped `golang.org/x/net` 0.52.0 → 0.55.0 (#175).
 
 ### Fixed
 
 - `get_databases` and `get_database_queries` reported database latency 1000x too high. Their PromQL queries multiplied `trace_client_duration` by 1000 on the assumption it was in seconds, but the metric is already in milliseconds — so `p95_latency_ms` / `avg_latency_ms` were inflated by three orders of magnitude (e.g. a real ~30s Redis blocking read surfaced as `p95_latency_ms: 30010484`, ~8.3 hours). Removed the multiplier; the values now match their `_ms` unit and the frontend's own database queries. Consumers that anchored dashboards or thresholds on the old inflated numbers will see values drop 1000x (#177).
 - Malformed tool-call input (unknown parameter name, wrong value type) now surfaces to the model as a tool-call error (`CallToolResult.isError`) instead of a swallowed JSON-RPC `-32602` protocol error, letting the agent self-correct instead of burning the call. Achieved by bumping `modelcontextprotocol/go-sdk` v1.4.1 → v1.5.0, which adopts the SEP-1303 input-validation contract (#173).
+- Single-condition trace filters in `get_traces` are now always wrapped in the `$and` logical operator that the tracejson spec requires. A bare top-level condition like `{"$eq": ["SpanKind", "SPAN_KIND_INTERNAL"]}` was forwarded unwrapped and rejected by the API; the server now normalizes one or more bare top-level field operators to `{"$and": [...]}` (keys sorted for deterministic output), while leaving a query already wrapped in `$and` / `$or` / `$not` untouched. The `get_traces` description's Example 7 was also corrected to model the wrapped form so weaker models emit valid queries directly (#172).
+- `get_alerts` now instructs the model to cap `window` at its 3600-second (1-hour) maximum when the user asks for a longer period, instead of emitting the raw computed value (e.g. `5400` for "90 minutes", `7200` for "2 hours") which the server hard-rejects with `window must be between 1 and 3600 seconds` — turning a valid intent into an error. Description-only change (#171).
 
 ## [0.9.0] - 2026-06-25
 
