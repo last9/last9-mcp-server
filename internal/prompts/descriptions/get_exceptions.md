@@ -12,8 +12,17 @@ Investigation flow — follow this exactly:
    - env = exception.deployment_environment (if present)
    - If you somehow have a trace_id, use get_service_traces with trace_id instead of service_name.
      Never use get_traces for trace_id lookups.
-3. STOP. Report findings to the user. Do NOT call get_traces, get_service_logs,
-   or get_logs after this — those calls are unnecessary and will time out.
+3. Decide whether exceptions are the ANSWER or a SYMPTOM before reporting:
+   - Exceptions here are SPAN-DERIVED. For a well trace-instrumented service they are usually
+     the answer — report findings and stop.
+   - For a LOG-HEAVY or severity-less service (check log presence:
+     `physical_index_service_count{destination="logs", service_name="<svc>"}` via
+     prometheus_instant_query), span exceptions often show downstream SYMPTOMS
+     (retry storms, connection-pool timeouts) while the ROOT CAUSE exists only in log
+     bodies (e.g. an un-instrumented dependency failing). Do NOT stop — continue to logs.
+   - When continuing to logs, use AGGREGATE/COUNT pipelines in get_logs
+     (filter service → parse level → filter ERROR → groupby logger → count): cheap and
+     wide-window-safe. NEVER chain into broad raw log pulls from here — those time out.
 
 limit: (Optional) The maximum number of exceptions to return. Defaults to 20.
 lookback_minutes: (Recommended) Number of minutes to look back from now. Default: 60 minutes.

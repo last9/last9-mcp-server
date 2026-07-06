@@ -115,3 +115,12 @@ traces_output.json
 
 # Local planning docs
 docs
+
+# Codex config (contains local secrets — never commit)
+.codex/
+
+# Agent/tool local dirs (never commit)
+.superpowers/
+.cursor/
+.worktrees/
+.aider*
