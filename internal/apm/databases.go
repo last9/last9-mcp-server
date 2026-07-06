@@ -64,7 +64,7 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 			baseFilter, durationMin, durationMin,
 		)
 		latencyQuery := fmt.Sprintf(
-			`max by(db_system, net_peer_name)(avg_over_time(trace_client_duration{%s, quantile="p95"}[%dm])) * 1000`,
+			`max by(db_system, net_peer_name)(avg_over_time(trace_client_duration{%s, quantile="p95"}[%dm]))`,
 			baseFilter, durationMin,
 		)
 		errorCountQuery := fmt.Sprintf(
@@ -461,11 +461,11 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 
 		// 2. Remaining metrics in parallel (avg latency, p95 latency, error count, total count)
 		avgLatencyQuery := fmt.Sprintf(
-			`avg by(span_name)(avg_over_time(trace_client_duration{%s, quantile="p50"}[%dm])) * 1000`,
+			`avg by(span_name)(avg_over_time(trace_client_duration{%s, quantile="p50"}[%dm]))`,
 			baseFilter, durationMin,
 		)
 		p95LatencyQuery := fmt.Sprintf(
-			`avg by(span_name)(avg_over_time(trace_client_duration{%s, quantile="p95"}[%dm])) * 1000`,
+			`avg by(span_name)(avg_over_time(trace_client_duration{%s, quantile="p95"}[%dm]))`,
 			baseFilter, durationMin,
 		)
 		errorCountQuery := fmt.Sprintf(
