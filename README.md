@@ -325,43 +325,22 @@ Server starts at `http://localhost:8080/mcp`.
 
 ### Test with curl
 
-MCP Streamable HTTP requires an initialize handshake first. Don't set `Mcp-Session-Id` on the first request.
+The Streamable HTTP handler runs in **stateless** mode, so any request is served independently. An `initialize` handshake and an `Mcp-Session-Id` header are optional — clients that send them still work (the header is accepted and ignored), and clients can also skip straight to `tools/list` / `tools/call`. Every tool is an independent request/response query; the server issues no server→client notifications, so `GET /mcp` (the SSE stream) returns `405`.
 
 ```bash
-# Step 1: Initialize
-SESSION_ID=$(curl -si -X POST http://localhost:8080/mcp \
+# List tools — a session handshake is optional in stateless mode
+curl -s -X POST http://localhost:8080/mcp \
     -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
+    -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}'
+
+# Call a tool
+curl -s -X POST http://localhost:8080/mcp \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
     -d '{
       "jsonrpc": "2.0",
-      "id": 1,
-      "method": "initialize",
-      "params": {
-        "protocolVersion": "2024-11-05",
-        "capabilities": {},
-        "clientInfo": {"name": "curl-test", "version": "1.0"}
-      }
-    }' | grep -i "^Mcp-Session-Id:" | awk '{print $2}' | tr -d '\r')
-echo "Session: $SESSION_ID"
-
-# Step 2: Send initialized notification
-curl -s -X POST http://localhost:8080/mcp \
-    -H "Content-Type: application/json" \
-    -H "Mcp-Session-Id: $SESSION_ID" \
-    -d '{"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}'
-
-# Step 3: List tools
-curl -s -X POST http://localhost:8080/mcp \
-    -H "Content-Type: application/json" \
-    -H "Mcp-Session-Id: $SESSION_ID" \
-    -d '{"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}'
-
-# Step 4: Call a tool
-curl -s -X POST http://localhost:8080/mcp \
-    -H "Content-Type: application/json" \
-    -H "Mcp-Session-Id: $SESSION_ID" \
-    -d '{
-      "jsonrpc": "2.0",
-      "id": 3,
+      "id": 2,
       "method": "tools/call",
       "params": {
         "name": "get_service_logs",
