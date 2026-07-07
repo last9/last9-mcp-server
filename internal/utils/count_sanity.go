@@ -101,8 +101,13 @@ func collectServiceNameEquals(condition interface{}, out map[string]struct{}) {
 }
 
 // SumAggregateCount sums the count values across the groups/buckets of a log
-// aggregate API response. It returns false when the response can't be
-// parsed as an aggregate result (guardrail must skip, not fail, in that case).
+// aggregate API response. Rows are shaped {"metric": {...}, "values": []} —
+// "metric" holds the aggregate's `as`-aliased count(s) as JSON numbers
+// alongside any group-by labels/`__ts__` as strings; "values" is unused here
+// (that's a Prometheus instant-query shape, not this API's). Any numeric
+// field in "metric" counts; group-by/`__ts__` strings are skipped. It returns
+// false when no row yields a numeric field (guardrail must skip, not
+// miscount, in that case).
 func SumAggregateCount(response map[string]interface{}) (float64, bool) {
 	data, ok := response["data"].(map[string]interface{})
 	if !ok {
@@ -123,17 +128,14 @@ func SumAggregateCount(response map[string]interface{}) (float64, bool) {
 		if !ok {
 			continue
 		}
-		if point, ok := item["value"].([]interface{}); ok && len(point) == 2 {
-			sum += promNumberFromAny(point[1])
-			found = true
+		metric, ok := item["metric"].(map[string]interface{})
+		if !ok {
+			continue
 		}
-		if points, ok := item["values"].([]interface{}); ok {
-			for _, rawPoint := range points {
-				point, ok := rawPoint.([]interface{})
-				if !ok || len(point) != 2 {
-					continue
-				}
-				sum += promNumberFromAny(point[1])
+		for _, value := range metric {
+			switch value.(type) {
+			case float64, json.Number:
+				sum += promNumberFromAny(value)
 				found = true
 			}
 		}

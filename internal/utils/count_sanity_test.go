@@ -42,7 +42,30 @@ func countAggregatePipeline(serviceEqValues ...string) []map[string]interface{} 
 	}
 }
 
+// aggregateCountResponse builds the real log-API aggregate response shape:
+// each row is {"metric": {<as-alias>: <count number>, ...labels as strings},
+// "values": []}. Verified against live backend responses.
 func aggregateCountResponse(matchedCount int) map[string]interface{} {
+	return map[string]interface{}{
+		"data": map[string]interface{}{
+			"resultType": "matrix",
+			"result": []interface{}{
+				map[string]interface{}{
+					"metric": map[string]interface{}{
+						"_count": float64(matchedCount),
+					},
+					"values": []interface{}{},
+				},
+			},
+		},
+	}
+}
+
+// oldPromShapeAggregateResponse mirrors the Prometheus instant-query
+// "value":[ts,val] shape this guardrail originally (wrongly) assumed for
+// aggregate rows. It carries no numeric "metric" field, so it must fail
+// closed rather than be miscounted as zero matches.
+func oldPromShapeAggregateResponse(matchedCount int) map[string]interface{} {
 	return map[string]interface{}{
 		"data": map[string]interface{}{
 			"resultType": "matrix",
@@ -196,5 +219,23 @@ func TestAppendCountSanity_PromErrorLeavesResponseUntouched(t *testing.T) {
 
 	if _, ok := got["l9_sanity"]; ok {
 		t.Fatal("expected no l9_sanity block when the baseline prometheus query fails")
+	}
+}
+
+func TestAppendCountSanity_OldPromShapeFailsClosed(t *testing.T) {
+	srv, calls := promVolumeServer(t, 1000)
+	defer srv.Close()
+
+	cfg := sanityTestCfg(t, srv.URL)
+	pipeline := countAggregatePipeline("orders-service")
+	response := oldPromShapeAggregateResponse(750)
+
+	got := AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 480*60*1000, response)
+
+	if _, ok := got["l9_sanity"]; ok {
+		t.Fatal("expected no l9_sanity block for a row with no numeric metric field (old, wrong shape)")
+	}
+	if *calls != 0 {
+		t.Errorf("expected no prometheus call when the matched count can't be parsed, got %d", *calls)
 	}
 }
