@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"last9-mcp/internal/constants"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -261,9 +263,9 @@ func TestSanitizeLogJSONQueryRejectsGroupByCollisions(t *testing.T) {
 
 func TestSanitizeLogJSONQueryRejectsDoubleQuotedBracketSyntax(t *testing.T) {
 	tests := []struct {
-		name        string
-		fieldRef    string
-		wantHint    string
+		name     string
+		fieldRef string
+		wantHint string
 	}{
 		{
 			name:     "attributes double-quoted",
@@ -619,6 +621,15 @@ func TestGetLogsHandlerNormalizesAliasesBeforeAPICall(t *testing.T) {
 			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
 		}()
 
+		// The count-sanity guardrail (single service + $count aggregate)
+		// fires here and issues a second request, a baseline prometheus
+		// instant query, at a different path on this same test server. Only
+		// the logs query_range request carries a "pipeline" body to assert
+		// on; let the baseline request through untouched.
+		if r.URL.Path != constants.EndpointLogsQueryRange {
+			return
+		}
+
 		var body struct {
 			Pipeline []map[string]interface{} `json:"pipeline"`
 		}
@@ -706,8 +717,11 @@ func TestGetLogsHandlerNormalizesAliasesBeforeAPICall(t *testing.T) {
 		t.Fatal(err)
 	default:
 	}
-	if requestCount != 1 {
-		t.Fatalf("expected exactly one API request, got %d", requestCount)
+	// 2 requests: the logs query_range call, plus the count-sanity
+	// guardrail's baseline prometheus instant query (this pipeline has a
+	// single ServiceName filter and a $count aggregate).
+	if requestCount != 2 {
+		t.Fatalf("expected exactly two API requests (logs + count-sanity baseline), got %d", requestCount)
 	}
 }
 
