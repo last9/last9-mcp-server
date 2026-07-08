@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strconv"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
 )
 
@@ -49,9 +51,46 @@ func isCountFunction(rawFunction interface{}) bool {
 	return hasCount
 }
 
+// ExtractCountAliases returns the `as` alias(es) for all $count aggregates in
+// pipeline aggregate/window_aggregate stages.
+func ExtractCountAliases(pipeline []map[string]interface{}) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, stage := range pipeline {
+		stageType, _ := stage["type"].(string)
+
+		switch stageType {
+		case "aggregate":
+			aggregates, ok := stage["aggregates"].([]interface{})
+			if !ok {
+				continue
+			}
+			for _, rawAggregate := range aggregates {
+				aggregate, ok := rawAggregate.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if !isCountFunction(aggregate["function"]) {
+					continue
+				}
+				if as, ok := aggregate["as"].(string); ok && as != "" {
+					out[as] = struct{}{}
+				}
+			}
+		case "window_aggregate":
+			if !isCountFunction(stage["function"]) {
+				continue
+			}
+			if as, ok := stage["as"].(string); ok && as != "" {
+				out[as] = struct{}{}
+			}
+		}
+	}
+	return out
+}
+
 // ExtractSingleServiceName scans a pipeline's filter stages (including inside
-// $and/$or/$not) for $eq conditions on the ServiceName field. It returns the
-// value and true only when exactly one distinct service name is present.
+// $and/$or) for $eq conditions on the ServiceName field. It returns the value
+// and true only when exactly one distinct service name is present.
 func ExtractSingleServiceName(pipeline []map[string]interface{}) (string, bool) {
 	services := map[string]struct{}{}
 
@@ -89,7 +128,7 @@ func collectServiceNameEquals(condition interface{}, out map[string]struct{}) {
 				if service, ok := args[1].(string); ok {
 					out[service] = struct{}{}
 				}
-			case "$and", "$or", "$not":
+			case "$and", "$or":
 				collectServiceNameEquals(value, out)
 			}
 		}
@@ -108,7 +147,10 @@ func collectServiceNameEquals(condition interface{}, out map[string]struct{}) {
 // field in "metric" counts; group-by/`__ts__` strings are skipped. It returns
 // false when no row yields a numeric field (guardrail must skip, not
 // miscount, in that case).
-func SumAggregateCount(response map[string]interface{}) (float64, bool) {
+func SumAggregateCount(response map[string]interface{}, countAliases map[string]struct{}) (float64, bool) {
+	if len(countAliases) == 0 {
+		return 0, false
+	}
 	data, ok := response["data"].(map[string]interface{})
 	if !ok {
 		return 0, false
@@ -118,7 +160,7 @@ func SumAggregateCount(response map[string]interface{}) (float64, bool) {
 		return 0, false
 	}
 	if len(result) == 0 {
-		return 0, true
+		return 0, false
 	}
 
 	var sum float64
@@ -132,7 +174,10 @@ func SumAggregateCount(response map[string]interface{}) (float64, bool) {
 		if !ok {
 			continue
 		}
-		for _, value := range metric {
+		for k, value := range metric {
+			if _, ok := countAliases[k]; !ok {
+				continue
+			}
 			switch value.(type) {
 			case float64, json.Number:
 				sum += promNumberFromAny(value)
@@ -157,8 +202,7 @@ func promNumberFromAny(raw interface{}) float64 {
 			return f
 		}
 	case string:
-		var f float64
-		if _, err := fmt.Sscanf(value, "%g", &f); err == nil {
+		if f, err := strconv.ParseFloat(value, 64); err == nil {
 			return f
 		}
 	}
@@ -180,13 +224,21 @@ func AppendCountSanity(ctx context.Context, client *http.Client, cfg models.Conf
 		return response
 	}
 
+	countAliases := ExtractCountAliases(pipeline)
+	if len(countAliases) == 0 {
+		return response
+	}
+
 	service, ok := ExtractSingleServiceName(pipeline)
 	if !ok {
 		return response
 	}
 
-	matchedCount, ok := SumAggregateCount(response)
+	matchedCount, ok := SumAggregateCount(response, countAliases)
 	if !ok {
+		return response
+	}
+	if matchedCount <= 0 {
 		return response
 	}
 
@@ -196,7 +248,9 @@ func AppendCountSanity(ctx context.Context, client *http.Client, cfg models.Conf
 	}
 	promql := fmt.Sprintf(`sum(sum_over_time(physical_index_service_count{service_name=%q}[%dm]))`, service, windowMinutes)
 
-	resp, err := MakePromInstantAPIQuery(ctx, client, promql, endMs/1000, cfg)
+	instantCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
+	defer cancel()
+	resp, err := MakePromInstantAPIQuery(instantCtx, client, promql, endMs/1000, cfg)
 	if err != nil {
 		return response
 	}

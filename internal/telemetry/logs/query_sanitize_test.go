@@ -618,7 +618,9 @@ func TestGetLogsHandlerNormalizesAliasesBeforeAPICall(t *testing.T) {
 		defer func() {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
+			// Return a minimal aggregate row so the count-sanity guardrail can
+			// parse matchedCount and fire the baseline request.
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"log_count":1},"values":[]}]}}`))
 		}()
 
 		// The count-sanity guardrail (single service + $count aggregate)
