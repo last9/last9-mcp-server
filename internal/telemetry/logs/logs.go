@@ -113,7 +113,14 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 				args.Index,
 			)
 		}
-		return executeLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args.Limit, args.Index)
+		result, err := executeLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args.Limit, args.Index)
+		if err != nil {
+			return nil, err
+		}
+		if stages, ok := logjsonQuery.([]map[string]interface{}); ok {
+			result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
+		}
+		return result, nil
 	}
 
 	// ShouldOptimizeLineFilterQuery is intentionally left at the zero value
