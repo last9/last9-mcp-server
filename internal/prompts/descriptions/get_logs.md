@@ -15,6 +15,21 @@ These are instructions for constructing a natural language logs analytics querie
 - If the user asks "how many", "count", "average", "sum" → Then add aggregation
 - Most log queries are simple filtering - do NOT assume aggregation is needed
 
+**CRITICAL: INCIDENT INVESTIGATION = AGGREGATE FIRST, RAW LINES LAST**
+For error investigation, trend, onset, or blast-radius questions over any window wider than a few
+minutes, aggregation IS the requested shape — raw fetches over wide windows time out AND give wrong
+onset conclusions (a narrow raw sample is not a trend):
+1. **Discover error signatures** (do not guess strings):
+   scope filter → parse (level from Body if needed) → filter level/severity in (ERROR, FATAL, CRITICAL) →
+   aggregate `$count` grouped by logger/exception-class. The data ranks its own top errors.
+2. **Count by ERROR SIGNATURE, never by bare component/logger name without the ERROR gate** —
+   a logger name matches its INFO lines too and can overcount the real errors by ~100-1000×.
+3. **Trend/onset:** `window_aggregate` with `$count` over the full window (cheap, safe).
+4. **Sanity-check** any error count against the service's APM error rate
+   (`get_service_summary`): a count orders-of-magnitude above it usually means the filter
+   matched non-error noise — re-narrow and re-count.
+5. Fetch raw lines LAST, only 1–3 exemplars of the top-ranked signatures.
+
 **CRITICAL: PIPELINE ORDERING**
 - The first stage MUST be a **scope filter** (service, time, tenant, environment, host — or a match-all on non-empty Body / all services when no narrower scope applies). NEVER start with aggregate or window_aggregate.
 - **Canonical order:** scope filter(s) → parse (whenever a later stage references a field that lives inside the JSON Body) → filter/groupby on parsed or indexed fields → aggregate.
