@@ -20,7 +20,7 @@ For error investigation, trend, onset, or blast-radius questions over any window
 minutes, aggregation IS the requested shape — raw fetches over wide windows time out AND give wrong
 onset conclusions (a narrow raw sample is not a trend):
 1. **Discover error signatures** (do not guess strings):
-   scope filter → parse (level from Body if needed) → filter level/severity == ERROR →
+   scope filter → parse (level from Body if needed) → filter level/severity in (ERROR, FATAL, CRITICAL) →
    aggregate `$count` grouped by logger/exception-class. The data ranks its own top errors.
 2. **Count by ERROR SIGNATURE, never by bare component/logger name without the ERROR gate** —
    a logger name matches its INFO lines too and can overcount the real errors by ~100-1000×.

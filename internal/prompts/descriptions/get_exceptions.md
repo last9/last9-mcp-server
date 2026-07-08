@@ -20,9 +20,10 @@ Investigation flow — follow this exactly:
      prometheus_instant_query), span exceptions often show downstream SYMPTOMS
      (retry storms, connection-pool timeouts) while the ROOT CAUSE exists only in log
      bodies (e.g. an un-instrumented dependency failing). Do NOT stop — continue to logs.
-   - When continuing to logs, use AGGREGATE/COUNT pipelines in get_logs
-     (filter service → parse level → filter ERROR → groupby logger → count): cheap and
-     wide-window-safe. NEVER chain into broad raw log pulls from here — those time out.
+   - When continuing to logs, use ONLY `get_logs` aggregate/count pipelines
+     (filter service → parse level → filter severity in (ERROR, FATAL, CRITICAL) →
+     aggregate `$count` grouped by logger): cheap and wide-window-safe.
+     Do NOT use `get_service_logs` or raw `get_logs` fetches here — those time out.
 
 limit: (Optional) The maximum number of exceptions to return. Defaults to 20.
 lookback_minutes: (Recommended) Number of minutes to look back from now. Default: 60 minutes.
