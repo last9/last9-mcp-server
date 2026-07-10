@@ -1,7 +1,9 @@
-Get raw log entries for a specific service over a time range.
+Get a small sample of raw log entries for a specific service over a time range.
 
-This tool retrieves actual log entries for a specified service, including log messages, timestamps, severity levels, and other metadata.
-It's useful for debugging issues, monitoring service behavior, and analyzing specific log patterns.
+This tool retrieves example log entries for a specified service, including log messages, timestamps, severity levels, and other metadata.
+It is only for raw-row drilldown after the service, time window, and pattern are already narrowed.
+Do not use this tool for counts, totals, breakdowns, rankings, trends, HTTP status questions, body-field parsing, or aggregate/root-cause answers; use get_logs for those workflows.
+If a get_logs aggregate query fails, fix or simplify the get_logs pipeline instead of falling back to this raw-sample tool.
 
 Filtering behavior:
 - severity_filters: Array of severity patterns (e.g., ["error", "warn"]) - uses OR logic (matches any pattern)
@@ -16,7 +18,7 @@ Examples:
 3. service="db" + severity_filters=["error", "critical"] + body_filters=["connection", "deadlock"]
    → finds error/critical logs containing "connection" OR "deadlock" for the "db" service
 
-Note: This tool returns raw log entries.
+Note: This tool returns raw log entries, not aggregate answers.
 
 Parameters:
 - service: (Required) Name of the service to get logs for
@@ -32,7 +34,7 @@ Parameters:
 - Inventory query pattern: sum by (name, service_name, env) (physical_index_service_count{destination="logs"}). The "name" label is the physical index name.
 - If the inventory result has name="default", omit the index parameter. For a non-default physical index selected by the user, pass index as physical_index:<name>.
 - If the backend rejects physical index filtering, retry without index and mention that explicit physical index filtering is unavailable for that backend.
-- Avoid broad multi-service body searches with this raw-log tool. Pick one service/env/index first; use get_logs for aggregate counts, then use this tool for a few samples.
+- Avoid broad multi-service body searches with this raw-log tool. Pick one service/env/index first; use get_logs for aggregate counts, totals, trends, rankings, and parsed-body queries, then use this tool only for a few samples.
 
 Returns a list of log entries with full details including message content, timestamps, severity, and attributes.
 
