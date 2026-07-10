@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -357,13 +358,17 @@ func TestGetLogAttributesForPipeline_UnsafeBodyKeysSkipped(t *testing.T) {
 	}
 }
 
-// TestGetLogAttributesForPipeline_BodyKeyDistinctFromMappedIndexed verifies a
-// Body key colliding with a special-mapped indexed name (severity ->
-// SeverityText) is still reported: the two are different fields with different
-// filter_fields, so "indexed wins" only applies to true attribute duplicates.
-func TestGetLogAttributesForPipeline_BodyKeyDistinctFromMappedIndexed(t *testing.T) {
+// TestGetLogAttributesForPipeline_SeverityFamilyDedup verifies that a
+// body-derived severity-family field (level/severity) is suppressed when an
+// indexed severity-family field is already present — semantic dedup, not just
+// exact filter_field match. Indexed severity is the directly-filterable signal;
+// a parallel body-derived level that needs a regexp/json parse is inferior.
+func TestGetLogAttributesForPipeline_SeverityFamilyDedup(t *testing.T) {
 	series := `{"status":"success","data":[{"service":"gw","severity":"INFO","status_code":"500"}]}`
-	samples := []string{`{"severity":"warn","status_code":500}`}
+	samples := []string{
+		`trace_id= span_id= [main] 2026-07-08 08:34:00.267 INFO  com.example.Foo - starting up`,
+		`{"severity":"warn","status_code":500,"uri":"/v1/a"}`,
+	}
 	server := bodySamplingServer(t, series, samples, nil)
 	defer server.Close()
 
@@ -377,24 +382,24 @@ func TestGetLogAttributesForPipeline_BodyKeyDistinctFromMappedIndexed(t *testing
 	}
 	attrs := decodeLogAttributes(t, res)
 
-	// severity: indexed maps to SeverityText; the Body's own severity field is
-	// attributes['severity'] post-parse — a distinct field that must be reported.
-	var severityFFs []string
+	// Indexed severity -> SeverityText must be present.
+	var sawIndexedSeverity bool
 	for _, a := range attrs {
-		if a.Name == "severity" {
-			severityFFs = append(severityFFs, a.FilterField)
+		if a.Name == "severity" && a.FilterField == "SeverityText" && a.Source != "body" {
+			sawIndexedSeverity = true
+		}
+		if a.Source == "body" && isSeverityFamilyName(a.Name) {
+			t.Errorf("body-derived severity-family field %q must be suppressed when indexed severity exists; got %+v", a.Name, a)
 		}
 	}
-	want := map[string]bool{"SeverityText": false, "attributes['severity']": false}
-	for _, ff := range severityFFs {
-		if _, ok := want[ff]; ok {
-			want[ff] = true
-		}
+	if !sawIndexedSeverity {
+		t.Fatal("expected indexed severity (SeverityText) to remain")
 	}
-	for ff, seen := range want {
-		if !seen {
-			t.Errorf("expected a severity entry with filter_field %q; got %v", ff, severityFFs)
-		}
+
+	// Non-severity body key from the JSON sample must still surface (JSON path
+	// wins the cascade for this mixed sample).
+	if uri := attrByName(attrs, "uri"); uri == nil || uri.Source != "body" {
+		t.Errorf("expected non-severity body key 'uri' to remain, got: %v", attrs)
 	}
 
 	// status_code: indexed filter_field IS attributes['status_code'] — true
@@ -430,6 +435,224 @@ func TestGetLogAttributesForPipeline_BodyNotJSON(t *testing.T) {
 	for _, a := range decodeLogAttributes(t, res) {
 		if a.Source == "body" {
 			t.Errorf("expected no body-derived fields for non-JSON bodies, got: %+v", a)
+		}
+	}
+}
+
+// TestGetLogAttributesForPipeline_LogfmtBody verifies logfmt-encoded Bodies
+// (key=value pairs, not JSON) surface their keys as body-derived fields with
+// a logfmt parse hint.
+func TestGetLogAttributesForPipeline_LogfmtBody(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"foo-service"}]}`
+	samples := []string{
+		`level=info msg="hi" status=200`,
+		`level=error msg="boom" status=500`,
+	}
+	server := bodySamplingServer(t, series, samples, nil)
+	defer server.Close()
+
+	cfg := testAttrConfig(server.URL)
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	attrs := decodeLogAttributes(t, res)
+
+	level := attrByName(attrs, "level")
+	if level == nil || level.Source != "body" {
+		t.Fatalf("expected body-derived 'level', got: %v", attrs)
+	}
+	if level.SampleCoverage != "2/2" {
+		t.Errorf("level: expected sample_coverage 2/2, got %q", level.SampleCoverage)
+	}
+	if !strings.Contains(level.Hint, `"parser":"logfmt"`) {
+		t.Errorf("level hint missing logfmt parser: %s", level.Hint)
+	}
+
+	status := attrByName(attrs, "status")
+	if status == nil || status.Source != "body" {
+		t.Fatalf("expected body-derived 'status', got: %v", attrs)
+	}
+	if !strings.Contains(status.Hint, `"parser":"logfmt"`) || !strings.Contains(status.Hint, "attributes['status']") {
+		t.Errorf("status hint missing logfmt parser/filter field: %s", status.Hint)
+	}
+
+	// "msg" contains a quoted value with a space; it must still be captured
+	// since the key itself is safe.
+	if attrByName(attrs, "msg") == nil {
+		t.Errorf("expected body-derived 'msg', got: %v", attrs)
+	}
+}
+
+// TestGetLogAttributesForPipeline_PlaintextInlineLevel verifies a plaintext
+// Body with an inline, timestamp-anchored severity token (neither JSON nor
+// logfmt) surfaces "level" via a regexp parse hint whose pattern actually
+// matches the sampled lines.
+func TestGetLogAttributesForPipeline_PlaintextInlineLevel(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"foo-service"}]}`
+	samples := []string{
+		`trace_id= span_id= [main] 2026-07-08 08:34:00.267 INFO  com.example.Foo - starting up`,
+		`trace_id= span_id= [main] 2026-07-08 08:34:01.900 ERROR com.example.Foo - failed to connect`,
+	}
+	server := bodySamplingServer(t, series, samples, nil)
+	defer server.Close()
+
+	cfg := testAttrConfig(server.URL)
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	attrs := decodeLogAttributes(t, res)
+
+	level := attrByName(attrs, "level")
+	if level == nil {
+		t.Fatalf("expected body-derived 'level', got: %v", attrs)
+	}
+	if level.Source != "body" {
+		t.Errorf("level: expected source \"body\", got %q", level.Source)
+	}
+	if level.SampleCoverage != "2/2" {
+		t.Errorf("level: expected sample_coverage 2/2, got %q", level.SampleCoverage)
+	}
+	if level.FilterField != "attributes['level']" {
+		t.Errorf("level: expected filter_field attributes['level'], got %q", level.FilterField)
+	}
+
+	// Extract the pattern from the hint and confirm it actually matches an
+	// ERROR line from the sample, and that the hint is a ready-to-use
+	// two-stage parse+filter pipeline.
+	var stages []map[string]interface{}
+	if err := json.Unmarshal([]byte(level.Hint), &stages); err != nil {
+		t.Fatalf("level hint is not valid JSON: %v\nhint: %s", err, level.Hint)
+	}
+	if len(stages) != 2 || stages[0]["type"] != "parse" || stages[0]["parser"] != "regexp" || stages[1]["type"] != "filter" {
+		t.Fatalf("expected a 2-stage parse+filter pipeline, got: %s", level.Hint)
+	}
+	pattern, _ := stages[0]["pattern"].(string)
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		t.Fatalf("hint pattern does not compile: %v (%s)", err, pattern)
+	}
+	m := re.FindStringSubmatch(samples[1])
+	if m == nil {
+		t.Fatalf("hint pattern %q did not match sample ERROR line: %s", pattern, samples[1])
+	}
+	idx := re.SubexpIndex("level")
+	if idx < 0 || !strings.EqualFold(m[idx], "ERROR") {
+		t.Errorf("hint pattern did not capture level=ERROR, got match: %v", m)
+	}
+	// Filter stage must use the <value> placeholder (not a hardcoded severity
+	// that may be absent from the sample). The pattern string itself may still
+	// contain ERROR as a regex alternation — that is fine.
+	filterQuery, _ := stages[1]["query"].(map[string]interface{})
+	eq, _ := filterQuery["$eq"].([]interface{})
+	if len(eq) < 2 || eq[1] != "<value>" {
+		t.Errorf("level filter hint must use <value> placeholder, got: %v", eq)
+	}
+}
+
+// TestGetLogAttributesForPipeline_PlaintextLowercaseLevel verifies the
+// timestamp-anchored pattern is case-insensitive (common in Go/Python/Node).
+func TestGetLogAttributesForPipeline_PlaintextLowercaseLevel(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"foo-service"}]}`
+	samples := []string{`2026-07-08 12:00:00.123 error something failed`}
+	server := bodySamplingServer(t, series, samples, nil)
+	defer server.Close()
+
+	cfg := testAttrConfig(server.URL)
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	attrs := decodeLogAttributes(t, res)
+	level := attrByName(attrs, "level")
+	if level == nil || level.Source != "body" {
+		t.Fatalf("expected body-derived 'level' for lowercase severity, got: %v", attrs)
+	}
+}
+
+// TestGetLogAttributesForPipeline_PlaintextBracketOrStartLevel verifies the
+// conservative non-timestamp fallback: severity at line-start or in [].
+func TestGetLogAttributesForPipeline_PlaintextBracketOrStartLevel(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"foo-service"}]}`
+	samples := []string{`[ERROR] failed to connect`, `INFO starting worker`}
+	server := bodySamplingServer(t, series, samples, nil)
+	defer server.Close()
+
+	cfg := testAttrConfig(server.URL)
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	level := attrByName(decodeLogAttributes(t, res), "level")
+	if level == nil || level.Source != "body" {
+		t.Fatalf("expected body-derived 'level' for bracket/start severity, got: %v", decodeLogAttributes(t, res))
+	}
+	if !strings.Contains(level.Hint, `"parser":"regexp"`) {
+		t.Errorf("level hint missing regexp parser: %s", level.Hint)
+	}
+}
+
+// TestGetLogAttributesForPipeline_UnstructuredNoLevel verifies a plaintext
+// Body with no logfmt pairs and no recognizable severity token yields no
+// fabricated body-derived fields — including URL path segments and prose that
+// contain severity words mid-line (the old bare-token false-positive surface).
+func TestGetLogAttributesForPipeline_UnstructuredNoLevel(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"foo-service"}]}`
+	samples := []string{
+		`100.65.18.112 GET /v1/INFO 200`,
+		`no ERROR occurred during the run`,
+		`just some free text here`,
+	}
+	server := bodySamplingServer(t, series, samples, nil)
+	defer server.Close()
+
+	cfg := testAttrConfig(server.URL)
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	for _, a := range decodeLogAttributes(t, res) {
+		if a.Source == "body" {
+			t.Errorf("expected no fabricated body-derived fields, got: %+v", a)
+		}
+	}
+}
+
+// TestGetLogAttributesForPipeline_LogfmtProseRejected verifies incidental
+// key=value fragments in prose are not classified as logfmt.
+func TestGetLogAttributesForPipeline_LogfmtProseRejected(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"foo-service"}]}`
+	samples := []string{`set a=1 where b=2 in prose`}
+	server := bodySamplingServer(t, series, samples, nil)
+	defer server.Close()
+
+	cfg := testAttrConfig(server.URL)
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	for _, a := range decodeLogAttributes(t, res) {
+		if a.Source == "body" {
+			t.Errorf("prose with incidental key=value must not yield body-derived fields, got: %+v", a)
 		}
 	}
 }
