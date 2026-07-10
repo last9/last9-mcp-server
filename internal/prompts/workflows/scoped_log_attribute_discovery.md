@@ -20,9 +20,9 @@ Steps:
 6. Use `get_logs` for final counts, breakdowns, totals, and aggregates. Do not
    call `get_service_logs` for aggregate answers; it fetches raw samples and is
    not the answer path for this workflow.
-7. Forbidden tool for this workflow: `get_service_logs`. If you need examples,
-   prefer a narrowed `get_logs` query after the aggregate answer is already
-   known. Do not use raw examples to decide the count query.
+7. Forbidden tool for this workflow: `get_service_logs`. Never call it in this
+   workflow, even if a `get_logs` attempt fails or returns an unexpected shape.
+   Fix or simplify the `get_logs` pipeline and retry `get_logs` instead.
 
 The final query must be scoped to the target service and return the requested
 count or grouped count, not a broad raw sample.

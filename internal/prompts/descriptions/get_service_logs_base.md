@@ -13,8 +13,8 @@ Filtering behavior:
 Examples:
 1. service="api" + severity_filters=["error"] + body_filters=["timeout"]
    → finds error logs containing "timeout" for the "api" service
-2. service="web" + body_filters=["timeout", "failed", "error 500"]
-   → finds logs containing "timeout" OR "failed" OR "error 500" for the "web" service
+2. service="web" + body_filters=["timeout", "connection reset by peer"]
+   → finds logs containing "timeout" OR "connection reset by peer" for the "web" service
 3. service="db" + severity_filters=["error", "critical"] + body_filters=["connection", "deadlock"]
    → finds error/critical logs containing "connection" OR "deadlock" for the "db" service
 
