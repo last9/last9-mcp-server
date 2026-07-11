@@ -6,60 +6,112 @@ import (
 	"time"
 )
 
-func summarizeWindow(buckets []bucket, queryStep time.Duration) WindowSummary {
-	summary := WindowSummary{ObservedPoints: len(buckets)}
-	if len(buckets) == 0 || queryStep <= 0 {
+func summarizeWindow(buckets []bucket, queryStep time.Duration, expectedPoints int) WindowSummary {
+	summary := WindowSummary{}
+	if queryStep <= 0 || expectedPoints <= 0 {
 		return summary
 	}
-
-	summary.ExpectedPoints = expectedPointCount(buckets, queryStep)
-	if summary.ExpectedPoints > 0 {
-		summary.Coverage = float64(summary.ObservedPoints) / float64(summary.ExpectedPoints)
-	}
+	summary.Evidence = newWindowEvidence(expectedPoints)
 
 	latencies := make([]float64, 0, len(buckets))
-	var weightedApdex float64
+	var weightedApdex, apdexRequestTotal, reliabilityRequests, reliabilityErrors float64
 	for _, point := range buckets {
-		summary.RequestTotal += point.Requests
-		summary.ErrorTotal += point.Errors
-		weightedApdex += point.Apdex * point.Requests
-		latencies = append(latencies, point.P95LatencyMS)
+		requestValid := isFinite(point.Requests)
+		errorValid := isFinite(point.Errors)
+
+		if requestValid {
+			summary.RequestTotal += point.Requests
+			summary.Evidence.Requests.ObservedPoints++
+		} else {
+			summary.Evidence.Requests.ExcludedValues++
+		}
+		if errorValid {
+			summary.ErrorTotal += point.Errors
+			summary.Evidence.Errors.ObservedPoints++
+		} else {
+			summary.Evidence.Errors.ExcludedValues++
+		}
+		if requestValid && errorValid {
+			reliabilityRequests += point.Requests
+			reliabilityErrors += point.Errors
+			summary.Evidence.ErrorPercentage.ObservedPoints++
+		} else {
+			summary.Evidence.ErrorPercentage.ExcludedValues++
+		}
+
+		switch {
+		case point.Apdex == nil:
+			summary.Evidence.Apdex.MissingValues++
+		case !isFinite(*point.Apdex) || !requestValid:
+			summary.Evidence.Apdex.ExcludedValues++
+		default:
+			weightedApdex += *point.Apdex * point.Requests
+			apdexRequestTotal += point.Requests
+			summary.Evidence.Apdex.ObservedPoints++
+		}
+
+		switch {
+		case point.P95LatencyMS == nil:
+			summary.Evidence.P95Latency.MissingValues++
+		case !isFinite(*point.P95LatencyMS):
+			summary.Evidence.P95Latency.ExcludedValues++
+		default:
+			latencies = append(latencies, *point.P95LatencyMS)
+			summary.Evidence.P95Latency.ObservedPoints++
+		}
 	}
 
-	durationMinutes := float64(summary.ExpectedPoints) * queryStep.Minutes()
+	durationMinutes := float64(expectedPoints) * queryStep.Minutes()
 	if durationMinutes > 0 {
 		summary.RequestRPM = summary.RequestTotal / durationMinutes
 		summary.ErrorRPM = summary.ErrorTotal / durationMinutes
 	}
-	if summary.RequestTotal > 0 {
-		summary.ErrorPercentage = summary.ErrorTotal / summary.RequestTotal * 100
-		summary.Apdex = weightedApdex / summary.RequestTotal
+	if reliabilityRequests > 0 {
+		summary.ErrorPercentage = reliabilityErrors / reliabilityRequests * 100
 	}
-	summary.P95Latency = distribution(latencies)
-	summary.Distribution = summary.P95Latency
+	if apdexRequestTotal > 0 {
+		apdex := weightedApdex / apdexRequestTotal
+		summary.Apdex = &apdex
+	}
+	if len(latencies) > 0 {
+		latencyDistribution := distribution(latencies)
+		summary.P95Latency = &latencyDistribution
+		summary.Distribution = latencyDistribution
+	}
+	summary.Evidence = withCoverage(summary.Evidence)
 	return summary
 }
 
-func expectedPointCount(buckets []bucket, queryStep time.Duration) int {
-	if len(buckets) == 0 {
-		return 0
+func newWindowEvidence(expectedPoints int) WindowEvidence {
+	evidence := MetricEvidence{ExpectedPoints: expectedPoints}
+	return WindowEvidence{
+		Requests:        evidence,
+		Errors:          evidence,
+		ErrorPercentage: evidence,
+		Apdex:           evidence,
+		P95Latency:      evidence,
 	}
-	minTime, maxTime := buckets[0].Timestamp, buckets[0].Timestamp
-	if minTime.IsZero() {
-		return len(buckets)
+}
+
+func withCoverage(evidence WindowEvidence) WindowEvidence {
+	evidence.Selected = calculateCoverage(evidence.Selected)
+	evidence.Requests = calculateCoverage(evidence.Requests)
+	evidence.Errors = calculateCoverage(evidence.Errors)
+	evidence.ErrorPercentage = calculateCoverage(evidence.ErrorPercentage)
+	evidence.Apdex = calculateCoverage(evidence.Apdex)
+	evidence.P95Latency = calculateCoverage(evidence.P95Latency)
+	return evidence
+}
+
+func calculateCoverage(evidence MetricEvidence) MetricEvidence {
+	if evidence.ExpectedPoints > 0 {
+		evidence.Coverage = math.Min(1, float64(evidence.ObservedPoints)/float64(evidence.ExpectedPoints))
 	}
-	for _, point := range buckets[1:] {
-		if point.Timestamp.IsZero() {
-			return len(buckets)
-		}
-		if point.Timestamp.Before(minTime) {
-			minTime = point.Timestamp
-		}
-		if point.Timestamp.After(maxTime) {
-			maxTime = point.Timestamp
-		}
-	}
-	return int(maxTime.Sub(minTime)/queryStep) + 1
+	return evidence
+}
+
+func isFinite(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
 func distribution(values []float64) Distribution {
@@ -94,6 +146,8 @@ func quantile(sorted []float64, q float64) float64 {
 }
 
 func compareSignal(definition SignalDefinition, current, baseline WindowSummary) SignalComparison {
+	current = finiteWindowSummary(current)
+	baseline = finiteWindowSummary(baseline)
 	comparison := SignalComparison{
 		Definition:     definition,
 		Current:        current,
@@ -103,17 +157,19 @@ func compareSignal(definition SignalDefinition, current, baseline WindowSummary)
 		Classification: "stable",
 	}
 	if baseline.Value != 0 {
-		relative := comparison.AbsoluteDelta / math.Abs(baseline.Value) * 100
+		relative := comparison.AbsoluteDelta / math.Abs(baseline.Value)
 		comparison.RelativeDelta = &relative
 	}
 
-	comparison.EvidenceQuality = classifyEvidence(current, baseline)
-	if current.ObservedPoints == 0 || baseline.ObservedPoints == 0 {
+	currentEvidence := selectedEvidence(definition.Name, current.Evidence)
+	baselineEvidence := selectedEvidence(definition.Name, baseline.Evidence)
+	comparison.EvidenceQuality = classifyEvidence(currentEvidence, baselineEvidence)
+	if currentEvidence.ObservedPoints == 0 || baselineEvidence.ObservedPoints == 0 {
 		comparison.Classification = "non_comparable"
 		switch {
-		case current.ObservedPoints > 0 && baseline.ObservedPoints == 0:
+		case currentEvidence.ObservedPoints > 0 && baselineEvidence.ObservedPoints == 0:
 			comparison.PresenceChange = "newly_observed"
-		case current.ObservedPoints == 0 && baseline.ObservedPoints > 0:
+		case currentEvidence.ObservedPoints == 0 && baselineEvidence.ObservedPoints > 0:
 			comparison.PresenceChange = "no_longer_observed"
 		}
 		return comparison
@@ -143,7 +199,27 @@ func compareSignal(definition SignalDefinition, current, baseline WindowSummary)
 	return comparison
 }
 
-func classifyEvidence(current, baseline WindowSummary) EvidenceQuality {
+func selectedEvidence(signalName string, evidence WindowEvidence) MetricEvidence {
+	if evidence.Selected.ExpectedPoints != 0 || evidence.Selected.ObservedPoints != 0 || evidence.Selected.ExcludedValues != 0 {
+		return evidence.Selected
+	}
+	switch signalName {
+	case "request_rpm", "requests", "throughput":
+		return evidence.Requests
+	case "error_rpm", "errors":
+		return evidence.Errors
+	case "error_percentage":
+		return evidence.ErrorPercentage
+	case "apdex":
+		return evidence.Apdex
+	case "p95_latency", "p95_latency_ms":
+		return evidence.P95Latency
+	default:
+		return evidence.Selected
+	}
+}
+
+func classifyEvidence(current, baseline MetricEvidence) EvidenceQuality {
 	if current.ObservedPoints == 0 || baseline.ObservedPoints == 0 {
 		return EvidenceQuality{Level: "non_comparable", Reasons: []string{"series_missing_in_one_or_both_windows"}}
 	}
@@ -152,10 +228,49 @@ func classifyEvidence(current, baseline WindowSummary) EvidenceQuality {
 	}
 	if current.ExpectedPoints <= 0 || baseline.ExpectedPoints <= 0 ||
 		current.ObservedPoints != current.ExpectedPoints || baseline.ObservedPoints != baseline.ExpectedPoints ||
-		current.ExpectedPoints != baseline.ExpectedPoints {
+		current.ExpectedPoints != baseline.ExpectedPoints || current.ExcludedValues > 0 || baseline.ExcludedValues > 0 {
 		return EvidenceQuality{Level: "sparse", Reasons: []string{"incomplete_or_unaligned_coverage"}}
 	}
 	return EvidenceQuality{Level: "sufficient", Reasons: []string{"complete_aligned_coverage"}}
+}
+
+func finiteWindowSummary(summary WindowSummary) WindowSummary {
+	if !isFinite(summary.Value) {
+		summary.Value = 0
+		summary.Evidence.Selected.ExcludedValues++
+		summary.Evidence.Selected.ObservedPoints = 0
+	}
+	if !isFinite(summary.RequestTotal) {
+		summary.RequestTotal = 0
+	}
+	if !isFinite(summary.ErrorTotal) {
+		summary.ErrorTotal = 0
+	}
+	if !isFinite(summary.RequestRPM) {
+		summary.RequestRPM = 0
+	}
+	if !isFinite(summary.ErrorRPM) {
+		summary.ErrorRPM = 0
+	}
+	if !isFinite(summary.ErrorPercentage) {
+		summary.ErrorPercentage = 0
+	}
+	if summary.Apdex != nil && !isFinite(*summary.Apdex) {
+		summary.Apdex = nil
+	}
+	if summary.P95Latency != nil && !finiteDistribution(*summary.P95Latency) {
+		summary.P95Latency = nil
+	}
+	if !finiteDistribution(summary.Distribution) {
+		summary.Distribution = Distribution{}
+		summary.Evidence.Selected.ExcludedValues++
+		summary.Evidence.Selected.ObservedPoints = 0
+	}
+	return summary
+}
+
+func finiteDistribution(value Distribution) bool {
+	return isFinite(value.Q25) && isFinite(value.Median) && isFinite(value.Q75) && isFinite(value.IQR) && isFinite(value.Peak)
 }
 
 func valueDirection(current, baseline float64) string {
