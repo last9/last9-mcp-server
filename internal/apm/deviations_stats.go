@@ -16,43 +16,47 @@ func summarizeWindow(buckets []bucket, queryStep time.Duration, expectedPoints i
 	latencies := make([]float64, 0, len(buckets))
 	var weightedApdex, apdexRequestTotal, reliabilityRequests, reliabilityErrors float64
 	for _, point := range buckets {
-		requestValid := isFinite(point.Requests)
-		errorValid := isFinite(point.Errors)
+		requestValid := point.Requests != nil && isFinite(*point.Requests)
+		errorValid := point.Errors != nil && isFinite(*point.Errors)
 
-		if requestValid {
-			summary.RequestTotal += point.Requests
-			summary.Evidence.Requests.ObservedPoints++
-		} else {
+		switch {
+		case point.Requests == nil:
+		case !requestValid:
 			summary.Evidence.Requests.ExcludedValues++
+		default:
+			summary.RequestTotal += *point.Requests
+			summary.Evidence.Requests.ObservedPoints++
 		}
-		if errorValid {
-			summary.ErrorTotal += point.Errors
-			summary.Evidence.Errors.ObservedPoints++
-		} else {
+		switch {
+		case point.Errors == nil:
+		case !errorValid:
 			summary.Evidence.Errors.ExcludedValues++
+		default:
+			summary.ErrorTotal += *point.Errors
+			summary.Evidence.Errors.ObservedPoints++
 		}
-		if requestValid && errorValid {
-			reliabilityRequests += point.Requests
-			reliabilityErrors += point.Errors
+
+		switch {
+		case requestValid && *point.Requests > 0 && errorValid:
+			reliabilityRequests += *point.Requests
+			reliabilityErrors += *point.Errors
 			summary.Evidence.ErrorPercentage.ObservedPoints++
-		} else {
+		case point.Requests != nil && point.Errors != nil:
 			summary.Evidence.ErrorPercentage.ExcludedValues++
 		}
 
 		switch {
 		case point.Apdex == nil:
-			summary.Evidence.Apdex.MissingValues++
 		case !isFinite(*point.Apdex) || !requestValid:
 			summary.Evidence.Apdex.ExcludedValues++
 		default:
-			weightedApdex += *point.Apdex * point.Requests
-			apdexRequestTotal += point.Requests
+			weightedApdex += *point.Apdex * *point.Requests
+			apdexRequestTotal += *point.Requests
 			summary.Evidence.Apdex.ObservedPoints++
 		}
 
 		switch {
 		case point.P95LatencyMS == nil:
-			summary.Evidence.P95Latency.MissingValues++
 		case !isFinite(*point.P95LatencyMS):
 			summary.Evidence.P95Latency.ExcludedValues++
 		default:
@@ -67,7 +71,8 @@ func summarizeWindow(buckets []bucket, queryStep time.Duration, expectedPoints i
 		summary.ErrorRPM = summary.ErrorTotal / durationMinutes
 	}
 	if reliabilityRequests > 0 {
-		summary.ErrorPercentage = reliabilityErrors / reliabilityRequests * 100
+		errorPercentage := reliabilityErrors / reliabilityRequests * 100
+		summary.ErrorPercentage = &errorPercentage
 	}
 	if apdexRequestTotal > 0 {
 		apdex := weightedApdex / apdexRequestTotal
@@ -107,6 +112,7 @@ func calculateCoverage(evidence MetricEvidence) MetricEvidence {
 	if evidence.ExpectedPoints > 0 {
 		evidence.Coverage = math.Min(1, float64(evidence.ObservedPoints)/float64(evidence.ExpectedPoints))
 	}
+	evidence.MissingValues = max(evidence.ExpectedPoints-evidence.ObservedPoints-evidence.ExcludedValues, 0)
 	return evidence
 }
 
@@ -200,7 +206,8 @@ func compareSignal(definition SignalDefinition, current, baseline WindowSummary)
 }
 
 func selectedEvidence(signalName string, evidence WindowEvidence) MetricEvidence {
-	if evidence.Selected.ExpectedPoints != 0 || evidence.Selected.ObservedPoints != 0 || evidence.Selected.ExcludedValues != 0 {
+	if evidence.Selected.ExpectedPoints != 0 || evidence.Selected.ObservedPoints != 0 ||
+		evidence.Selected.MissingValues != 0 || evidence.Selected.ExcludedValues != 0 {
 		return evidence.Selected
 	}
 	switch signalName {
@@ -252,8 +259,8 @@ func finiteWindowSummary(summary WindowSummary) WindowSummary {
 	if !isFinite(summary.ErrorRPM) {
 		summary.ErrorRPM = 0
 	}
-	if !isFinite(summary.ErrorPercentage) {
-		summary.ErrorPercentage = 0
+	if summary.ErrorPercentage != nil && !isFinite(*summary.ErrorPercentage) {
+		summary.ErrorPercentage = nil
 	}
 	if summary.Apdex != nil && !isFinite(*summary.Apdex) {
 		summary.Apdex = nil

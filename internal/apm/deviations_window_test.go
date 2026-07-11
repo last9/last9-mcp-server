@@ -100,6 +100,83 @@ func TestResolveDeviationWindowsExplicitBaseline(t *testing.T) {
 	}
 }
 
+func TestResolveDeviationWindowsExplicitBaselineWithDefaultCurrent(t *testing.T) {
+	now := time.Date(2026, 7, 11, 10, 7, 32, 0, time.UTC)
+	got, err := resolveDeviationWindows(DeviationArgs{
+		BaselineStartISO: "2026-07-10T07:00:00Z",
+		BaselineEndISO:   "2026-07-10T08:00:00Z",
+	}, now, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.EffectiveCurrentStart != time.Date(2026, 7, 11, 9, 8, 0, 0, time.UTC) ||
+		got.EffectiveCurrentEnd != time.Date(2026, 7, 11, 10, 7, 0, 0, time.UTC) {
+		t.Fatalf("unexpected effective current: %+v", got)
+	}
+	if got.EffectiveBaselineStart != time.Date(2026, 7, 10, 7, 1, 0, 0, time.UTC) ||
+		got.EffectiveBaselineEnd != time.Date(2026, 7, 10, 8, 0, 0, 0, time.UTC) {
+		t.Fatalf("explicit baseline did not receive whole-bucket offset: %+v", got)
+	}
+	if bucketCapacity(TimeWindow{Start: got.EffectiveCurrentStart, End: got.EffectiveCurrentEnd}, time.Minute) !=
+		bucketCapacity(TimeWindow{Start: got.EffectiveBaselineStart, End: got.EffectiveBaselineEnd}, time.Minute) {
+		t.Fatalf("effective populations differ: %+v", got)
+	}
+}
+
+func TestResolveDeviationWindowsCapsIncompleteExplicitCurrent(t *testing.T) {
+	now := time.Date(2026, 7, 11, 10, 7, 32, 0, time.UTC)
+	tests := []struct {
+		name string
+		args DeviationArgs
+		want TimeWindow
+	}{
+		{
+			name: "previous period baseline",
+			args: DeviationArgs{StartTimeISO: "2026-07-11T10:00:00Z", EndTimeISO: "2026-07-11T10:10:00Z"},
+			want: TimeWindow{Start: time.Date(2026, 7, 11, 9, 50, 0, 0, time.UTC), End: time.Date(2026, 7, 11, 9, 57, 0, 0, time.UTC)},
+		},
+		{
+			name: "explicit baseline",
+			args: DeviationArgs{
+				StartTimeISO:     "2026-07-11T10:00:00Z",
+				EndTimeISO:       "2026-07-11T10:10:00Z",
+				BaselineStartISO: "2026-07-10T07:00:00Z",
+				BaselineEndISO:   "2026-07-10T07:10:00Z",
+			},
+			want: TimeWindow{Start: time.Date(2026, 7, 10, 7, 0, 0, 0, time.UTC), End: time.Date(2026, 7, 10, 7, 7, 0, 0, time.UTC)},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveDeviationWindows(tt.args, now, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.EffectiveCurrentStart != time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC) ||
+				got.EffectiveCurrentEnd != time.Date(2026, 7, 11, 10, 7, 0, 0, time.UTC) {
+				t.Fatalf("explicit current was not capped in place: %+v", got)
+			}
+			if got.EffectiveBaselineStart != tt.want.Start || got.EffectiveBaselineEnd != tt.want.End {
+				t.Fatalf("unexpected effective baseline: %+v", got)
+			}
+			if got.ExcludedCurrentPoints != 3 || got.ExcludedBaselinePoints != 3 {
+				t.Fatalf("unexpected excluded counts: %+v", got)
+			}
+		})
+	}
+}
+
+func TestResolveDeviationWindowsRejectsExplicitCurrentWithoutCompletedBuckets(t *testing.T) {
+	now := time.Date(2026, 7, 11, 10, 7, 32, 0, time.UTC)
+	_, err := resolveDeviationWindows(DeviationArgs{
+		StartTimeISO: "2026-07-11T10:08:00Z",
+		EndTimeISO:   "2026-07-11T10:10:00Z",
+	}, now, time.Minute)
+	if err == nil {
+		t.Fatal("expected explicit current with no completed buckets to fail")
+	}
+}
+
 func TestResolveDeviationWindowsRejectsPartialPairs(t *testing.T) {
 	now := time.Date(2026, 7, 11, 10, 7, 32, 0, time.UTC)
 	for _, args := range []DeviationArgs{

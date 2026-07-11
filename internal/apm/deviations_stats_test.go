@@ -15,8 +15,8 @@ func completeEvidence(points int) MetricEvidence {
 }
 
 func TestSummarizeWindowUsesRatioOfTotals(t *testing.T) {
-	got := summarizeWindow([]bucket{{Requests: 1, Errors: 1}, {Requests: 999, Errors: 0}}, time.Minute, 2)
-	if got.ErrorPercentage != 0.1 {
+	got := summarizeWindow([]bucket{{Requests: float64Pointer(1), Errors: float64Pointer(1)}, {Requests: float64Pointer(999), Errors: float64Pointer(0)}}, time.Minute, 2)
+	if got.ErrorPercentage == nil || *got.ErrorPercentage != 0.1 {
 		t.Fatalf("error percentage = %v, want 0.1", got.ErrorPercentage)
 	}
 	if got.RequestRPM != 500 || got.ErrorRPM != 0.5 {
@@ -26,8 +26,8 @@ func TestSummarizeWindowUsesRatioOfTotals(t *testing.T) {
 
 func TestSummarizeWindowUsesRequestWeightedApdex(t *testing.T) {
 	got := summarizeWindow([]bucket{
-		{Requests: 1, Apdex: float64Pointer(1)},
-		{Requests: 99, Apdex: float64Pointer(0.5)},
+		{Requests: float64Pointer(1), Apdex: float64Pointer(1)},
+		{Requests: float64Pointer(99), Apdex: float64Pointer(0.5)},
 	}, time.Minute, 2)
 	if got.Apdex == nil || *got.Apdex != 0.505 {
 		t.Fatalf("weighted Apdex = %v, want 0.505", got.Apdex)
@@ -36,8 +36,8 @@ func TestSummarizeWindowUsesRequestWeightedApdex(t *testing.T) {
 
 func TestSummarizeWindowDoesNotTreatMissingApdexAsZero(t *testing.T) {
 	got := summarizeWindow([]bucket{
-		{Requests: 10, Apdex: float64Pointer(0.8)},
-		{Requests: 90, Apdex: nil},
+		{Requests: float64Pointer(10), Apdex: float64Pointer(0.8)},
+		{Requests: float64Pointer(90), Apdex: nil},
 	}, time.Minute, 2)
 	if got.Apdex == nil || *got.Apdex != 0.8 {
 		t.Fatalf("Apdex = %v, want 0.8 from observed value only", got.Apdex)
@@ -49,10 +49,10 @@ func TestSummarizeWindowDoesNotTreatMissingApdexAsZero(t *testing.T) {
 
 func TestSummarizeWindowCalculatesLatencyDistribution(t *testing.T) {
 	got := summarizeWindow([]bucket{
-		{Requests: 1, P95LatencyMS: float64Pointer(10)},
-		{Requests: 1, P95LatencyMS: float64Pointer(20)},
-		{Requests: 1, P95LatencyMS: float64Pointer(30)},
-		{Requests: 1, P95LatencyMS: float64Pointer(100)},
+		{Requests: float64Pointer(1), P95LatencyMS: float64Pointer(10)},
+		{Requests: float64Pointer(1), P95LatencyMS: float64Pointer(20)},
+		{Requests: float64Pointer(1), P95LatencyMS: float64Pointer(30)},
+		{Requests: float64Pointer(1), P95LatencyMS: float64Pointer(100)},
 	}, time.Minute, 4)
 
 	if got.P95Latency == nil || got.P95Latency.Median != 25 || got.P95Latency.Peak != 100 {
@@ -68,8 +68,8 @@ func TestSummarizeWindowUsesExplicitExpectedPopulationForGaps(t *testing.T) {
 		name    string
 		buckets []bucket
 	}{
-		{"leading gap", []bucket{{Timestamp: time.Unix(60, 0), Requests: 30}, {Timestamp: time.Unix(120, 0), Requests: 30}}},
-		{"trailing gap", []bucket{{Timestamp: time.Unix(0, 0), Requests: 30}, {Timestamp: time.Unix(60, 0), Requests: 30}}},
+		{"leading gap", []bucket{{Timestamp: time.Unix(60, 0), Requests: float64Pointer(30), Errors: float64Pointer(0)}, {Timestamp: time.Unix(120, 0), Requests: float64Pointer(30), Errors: float64Pointer(0)}}},
+		{"trailing gap", []bucket{{Timestamp: time.Unix(0, 0), Requests: float64Pointer(30), Errors: float64Pointer(0)}, {Timestamp: time.Unix(60, 0), Requests: float64Pointer(30), Errors: float64Pointer(0)}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -80,14 +80,52 @@ func TestSummarizeWindowUsesExplicitExpectedPopulationForGaps(t *testing.T) {
 			if got.RequestRPM != 20 {
 				t.Fatalf("request RPM = %v, want 20 over expected 3-minute duration", got.RequestRPM)
 			}
+			if got.Evidence.Requests.MissingValues != 1 || got.Evidence.Errors.MissingValues != 1 {
+				t.Fatalf("leading/trailing gaps were not counted as missing: %+v", got.Evidence)
+			}
 		})
+	}
+}
+
+func TestSummarizeWindowTracksMissingRequestAndErrorValues(t *testing.T) {
+	got := summarizeWindow([]bucket{{Requests: nil, Errors: nil}}, time.Minute, 1)
+	if got.Evidence.Requests.MissingValues != 1 || got.Evidence.Requests.ExcludedValues != 0 {
+		t.Fatalf("unexpected request evidence: %+v", got.Evidence.Requests)
+	}
+	if got.Evidence.Errors.MissingValues != 1 || got.Evidence.Errors.ExcludedValues != 0 {
+		t.Fatalf("unexpected error evidence: %+v", got.Evidence.Errors)
+	}
+	if _, err := json.Marshal(got); err != nil {
+		t.Fatalf("missing values must produce finite JSON: %v", err)
+	}
+}
+
+func TestSummarizeWindowLeavesErrorPercentageUndefinedWithoutPositiveRequests(t *testing.T) {
+	got := summarizeWindow([]bucket{
+		{Requests: float64Pointer(0), Errors: float64Pointer(0)},
+		{Requests: float64Pointer(0), Errors: float64Pointer(1)},
+	}, time.Minute, 2)
+	if got.ErrorPercentage != nil {
+		t.Fatalf("error percentage = %v, want undefined", *got.ErrorPercentage)
+	}
+	if got.Evidence.ErrorPercentage.ObservedPoints != 0 {
+		t.Fatalf("zero-request reliability must have no observed evidence: %+v", got.Evidence.ErrorPercentage)
+	}
+}
+
+func TestCompareSignalTreatsUndefinedReliabilityAsNonComparable(t *testing.T) {
+	current := summarizeWindow([]bucket{{Requests: float64Pointer(0), Errors: float64Pointer(0)}}, time.Minute, 1)
+	baseline := summarizeWindow([]bucket{{Requests: float64Pointer(0), Errors: float64Pointer(0)}}, time.Minute, 1)
+	got := compareSignal(SignalDefinition{Name: "error_percentage", HigherIsWorse: true}, current, baseline)
+	if got.Classification != "non_comparable" || got.EvidenceQuality.Level != "non_comparable" {
+		t.Fatalf("undefined reliability was treated as numeric: %+v", got)
 	}
 }
 
 func TestSummarizeWindowExcludesNonFiniteValues(t *testing.T) {
 	got := summarizeWindow([]bucket{
-		{Requests: 10, Errors: 1, Apdex: float64Pointer(0.9), P95LatencyMS: float64Pointer(10)},
-		{Requests: math.NaN(), Errors: math.Inf(1), Apdex: float64Pointer(math.NaN()), P95LatencyMS: float64Pointer(math.Inf(-1))},
+		{Requests: float64Pointer(10), Errors: float64Pointer(1), Apdex: float64Pointer(0.9), P95LatencyMS: float64Pointer(10)},
+		{Requests: float64Pointer(math.NaN()), Errors: float64Pointer(math.Inf(1)), Apdex: float64Pointer(math.NaN()), P95LatencyMS: float64Pointer(math.Inf(-1))},
 	}, time.Minute, 2)
 
 	if got.RequestTotal != 10 || got.ErrorTotal != 1 || got.Apdex == nil || *got.Apdex != 0.9 {
@@ -99,6 +137,9 @@ func TestSummarizeWindowExcludesNonFiniteValues(t *testing.T) {
 	if got.Evidence.Requests.ExcludedValues != 1 || got.Evidence.Errors.ExcludedValues != 1 ||
 		got.Evidence.Apdex.ExcludedValues != 1 || got.Evidence.P95Latency.ExcludedValues != 1 {
 		t.Fatalf("missing excluded-value counts: %+v", got.Evidence)
+	}
+	if got.Evidence.Requests.MissingValues != 0 || got.Evidence.Errors.MissingValues != 0 {
+		t.Fatalf("present non-finite values were also counted as missing: %+v", got.Evidence)
 	}
 	payload, err := json.Marshal(got)
 	if err != nil {
@@ -143,16 +184,16 @@ func TestCompareSignalUsesMetricSpecificEvidence(t *testing.T) {
 
 func TestCompareSignalSelectsSummarizedMetricEvidence(t *testing.T) {
 	current := summarizeWindow([]bucket{
-		{Requests: 1, Apdex: float64Pointer(0.8)},
-		{Requests: 1, Apdex: float64Pointer(0.81)},
-		{Requests: 1, Apdex: float64Pointer(0.82)},
-		{Requests: 1, Apdex: float64Pointer(0.83)},
+		{Requests: float64Pointer(1), Apdex: float64Pointer(0.8)},
+		{Requests: float64Pointer(1), Apdex: float64Pointer(0.81)},
+		{Requests: float64Pointer(1), Apdex: float64Pointer(0.82)},
+		{Requests: float64Pointer(1), Apdex: float64Pointer(0.83)},
 	}, time.Minute, 4)
 	baseline := summarizeWindow([]bucket{
-		{Requests: 1, Apdex: float64Pointer(0.9)},
-		{Requests: 1, Apdex: float64Pointer(0.91)},
-		{Requests: 1, Apdex: float64Pointer(0.92)},
-		{Requests: 1, Apdex: float64Pointer(0.93)},
+		{Requests: float64Pointer(1), Apdex: float64Pointer(0.9)},
+		{Requests: float64Pointer(1), Apdex: float64Pointer(0.91)},
+		{Requests: float64Pointer(1), Apdex: float64Pointer(0.92)},
+		{Requests: float64Pointer(1), Apdex: float64Pointer(0.93)},
 	}, time.Minute, 4)
 	current.Value, baseline.Value = *current.Apdex, *baseline.Apdex
 	current.Distribution = Distribution{Q25: 0.8, Median: 0.815, Q75: 0.83}

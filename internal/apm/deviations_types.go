@@ -85,7 +85,7 @@ type WindowSummary struct {
 	ErrorTotal      float64        `json:"error_total"`
 	RequestRPM      float64        `json:"request_rpm"`
 	ErrorRPM        float64        `json:"error_rpm"`
-	ErrorPercentage float64        `json:"error_percentage"`
+	ErrorPercentage *float64       `json:"error_percentage,omitempty"`
 	Apdex           *float64       `json:"apdex,omitempty"`
 	P95Latency      *Distribution  `json:"p95_latency,omitempty"`
 	Distribution    Distribution   `json:"distribution"`
@@ -148,8 +148,8 @@ type DeviationResponse struct {
 
 type bucket struct {
 	Timestamp    time.Time
-	Requests     float64
-	Errors       float64
+	Requests     *float64
+	Errors       *float64
 	Apdex        *float64
 	P95LatencyMS *float64
 }

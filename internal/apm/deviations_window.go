@@ -63,32 +63,36 @@ func resolveDeviationWindows(args DeviationArgs, now time.Time, queryStep time.D
 	if timeSource != "explicit" {
 		effectiveCurrent.Start = ceilTime(requestedCurrent.Start, queryStep)
 		effectiveCurrent.End = requestedCurrent.End.UTC().Truncate(queryStep)
-		completedEnd := now.UTC().Truncate(queryStep)
-		if effectiveCurrent.End.After(completedEnd) {
-			effectiveCurrent.End = completedEnd
-		}
-		if !effectiveCurrent.End.After(effectiveCurrent.Start) {
-			return DeviationWindows{}, fmt.Errorf("requested window contains no completed buckets")
-		}
 	}
-
-	startOffset := effectiveCurrent.Start.Sub(requestedCurrent.Start)
-	endOffset := requestedCurrent.End.Sub(effectiveCurrent.End)
-	effectiveBaseline := TimeWindow{
-		Start: requestedBaseline.Start.Add(startOffset),
-		End:   requestedBaseline.End.Add(-endOffset),
+	completedEnd := now.UTC().Truncate(queryStep)
+	if effectiveCurrent.End.After(completedEnd) {
+		effectiveCurrent.End = completedEnd
 	}
-	if baselineMode == "explicit" {
-		if startOffset != 0 || endOffset != 0 {
-			return DeviationWindows{}, fmt.Errorf("explicit baseline requires an aligned current window")
-		}
-		effectiveBaseline = requestedBaseline
+	if !effectiveCurrent.End.After(effectiveCurrent.Start) {
+		return DeviationWindows{}, fmt.Errorf("requested window contains no completed buckets")
 	}
 
 	requestedCurrentCapacity := bucketCapacity(requestedCurrent, queryStep)
 	requestedBaselineCapacity := bucketCapacity(requestedBaseline, queryStep)
 	effectiveCurrentCapacity := bucketCapacity(effectiveCurrent, queryStep)
+	trailingExcludedBuckets := int(requestedCurrent.End.UTC().Truncate(queryStep).Sub(effectiveCurrent.End) / queryStep)
+	leadingExcludedBuckets := requestedCurrentCapacity - effectiveCurrentCapacity - trailingExcludedBuckets
+	if leadingExcludedBuckets < 0 {
+		leadingExcludedBuckets = 0
+	}
+
+	effectiveBaseline := TimeWindow{
+		Start: ceilTime(requestedBaseline.Start, queryStep),
+		End:   requestedBaseline.End.UTC().Truncate(queryStep).Add(-time.Duration(trailingExcludedBuckets) * queryStep),
+	}
+	if baselineMode == "explicit" {
+		effectiveBaseline.Start = requestedBaseline.Start.Add(time.Duration(leadingExcludedBuckets) * queryStep)
+		effectiveBaseline.End = requestedBaseline.End.Add(-time.Duration(trailingExcludedBuckets) * queryStep)
+	}
 	effectiveBaselineCapacity := bucketCapacity(effectiveBaseline, queryStep)
+	if effectiveBaselineCapacity == 0 || effectiveBaselineCapacity != effectiveCurrentCapacity {
+		return DeviationWindows{}, fmt.Errorf("current and baseline effective windows must contain equal completed buckets")
+	}
 
 	return DeviationWindows{
 		TimeSource:             timeSource,
