@@ -39,9 +39,18 @@ const (
 )
 
 type deviationQuery struct {
-	Name  string
-	Field deviationField
-	Text  string
+	Name          string
+	Field         deviationField
+	Text          string
+	CandidateMask string
+}
+
+type deviationQueryPlan struct {
+	CandidateMask string
+	CurrentEnd    time.Time
+	BaselineEnd   time.Time
+	Current       []deviationQuery
+	Baseline      []deviationQuery
 }
 
 type deviationVector struct {
@@ -72,9 +81,14 @@ type deviationQueryResult struct {
 }
 
 type deviationQueryError struct {
-	Window  string
-	Signal  string
-	Message string
+	Window      string
+	Signal      string
+	Kind        string
+	Field       string
+	ServiceName string
+	Env         string
+	SpanName    string
+	Message     string
 }
 
 type deviationQueryExecution struct {
@@ -125,18 +139,48 @@ func (runner httpDeviationQueryRunner) Query(ctx context.Context, query string, 
 	return vectors, nil
 }
 
-func buildServiceRollupQueries(scope deviationQueryScope, window TimeWindow, step time.Duration) []deviationQuery {
-	return buildDeviationRollupQueries(scope, window, step, false)
+func buildServiceRollupQueries(scope deviationQueryScope, current, baseline TimeWindow, step time.Duration) deviationQueryPlan {
+	return buildDeviationRollupQueryPlan(scope, current, baseline, step, false)
 }
 
-func buildOperationRollupQueries(scope deviationQueryScope, window TimeWindow, step time.Duration) []deviationQuery {
-	return buildDeviationRollupQueries(scope, window, step, true)
-}
-
-func buildDeviationRollupQueries(scope deviationQueryScope, window TimeWindow, step time.Duration, operations bool) []deviationQuery {
-	if scope.Limit <= 0 || step <= 0 || !window.End.After(window.Start) {
-		return nil
+func buildOperationRollupQueries(scope deviationQueryScope, current, baseline TimeWindow, step time.Duration) deviationQueryPlan {
+	if scope.ServiceName == "" {
+		return deviationQueryPlan{}
 	}
+	return buildDeviationRollupQueryPlan(scope, current, baseline, step, true)
+}
+
+func buildDeviationRollupQueryPlan(scope deviationQueryScope, current, baseline TimeWindow, step time.Duration, operations bool) deviationQueryPlan {
+	if scope.Limit <= 0 || step <= 0 || !validDeviationWindow(current) || !validDeviationWindow(baseline) {
+		return deviationQueryPlan{}
+	}
+	mask := buildDeviationCandidateMask(scope, current, baseline, step, operations)
+	if mask == "" {
+		return deviationQueryPlan{}
+	}
+	return deviationQueryPlan{
+		CandidateMask: mask,
+		CurrentEnd:    current.End,
+		BaselineEnd:   baseline.End,
+		Current:       buildDeviationWindowQueries(scope, current, step, operations, mask),
+		Baseline:      buildDeviationWindowQueries(scope, baseline, step, operations, mask),
+	}
+}
+
+func buildDeviationCandidateMask(scope deviationQueryScope, current, baseline TimeWindow, step time.Duration, operations bool) string {
+	if scope.Limit <= 0 || step <= 0 || !validDeviationWindow(current) || !validDeviationWindow(baseline) || (operations && scope.ServiceName == "") {
+		return ""
+	}
+	groupLabels := deviationGroupLabels(operations)
+	group := strings.Join(groupLabels, ", ")
+	requestExpression := deviationRequestExpression(scope, group)
+	currentTotal := fmt.Sprintf("sum_over_time(%s)", deviationSubquery(requestExpression, current, step))
+	baselineTotal := fmt.Sprintf("sum_over_time(%s)", deviationSubquery(requestExpression, baseline, step))
+	combined := fmt.Sprintf("((%s + %s) or %s or %s)", currentTotal, baselineTotal, currentTotal, baselineTotal)
+	return fmt.Sprintf("topk(%d, %s)", scope.Limit, combined)
+}
+
+func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, step time.Duration, operations bool, candidateMask string) []deviationQuery {
 	groupLabels := []string{"service_name", "env"}
 	apdexMetric := "trace_service_apdex_score"
 	if operations {
@@ -144,13 +188,6 @@ func buildDeviationRollupQueries(scope deviationQueryScope, window TimeWindow, s
 		apdexMetric = "trace_endpoint_apdex_score"
 	}
 	group := strings.Join(groupLabels, ", ")
-	rangeSeconds := int64(window.End.Sub(window.Start) / time.Second)
-	stepSeconds := int64(step / time.Second)
-	if rangeSeconds <= 0 || stepSeconds <= 0 {
-		return nil
-	}
-	grid := fmt.Sprintf("[%ds:%ds]", rangeSeconds, stepSeconds)
-
 	baseMatchers := []string{`span_kind="SPAN_KIND_SERVER"`}
 	if scope.ServiceName != "" {
 		baseMatchers = append(baseMatchers, fmt.Sprintf(`service_name="%s"`, escapePromQLLabel(scope.ServiceName)))
@@ -160,7 +197,7 @@ func buildDeviationRollupQueries(scope deviationQueryScope, window TimeWindow, s
 	}
 	requestSelector := fmt.Sprintf("trace_endpoint_count{%s}", strings.Join(baseMatchers, ","))
 	requestExpression := fmt.Sprintf("sum by (%s) (%s)", group, requestSelector)
-	requestGrid := fmt.Sprintf("(%s)%s", requestExpression, grid)
+	requestGrid := deviationSubquery(requestExpression, window, step)
 	requestTotal := fmt.Sprintf("sum_over_time(%s)", requestGrid)
 
 	errorSelectors := []string{
@@ -168,40 +205,80 @@ func buildDeviationRollupQueries(scope deviationQueryScope, window TimeWindow, s
 		requestSelectorWithMatcher(baseMatchers, `http_status_code=~"5..|429"`),
 		requestSelectorWithMatcher(baseMatchers, `grpc_status_code!~"^(|0|OK)$"`),
 	}
-	errorExpression := fmt.Sprintf("sum by (%s) ((%s))", group, strings.Join(errorSelectors, ") or ("))
-	errorGrid := fmt.Sprintf("(%s)%s", errorExpression, grid)
+	errorUnion := fmt.Sprintf("sum by (%s) ((%s))", group, strings.Join(errorSelectors, ") or ("))
+	errorExpression := fmt.Sprintf("(%s) or on (%s) (%s * 0)", errorUnion, group, requestExpression)
+	errorGrid := deviationSubquery(errorExpression, window, step)
 
-	latencyMatchers := append(append([]string(nil), baseMatchers...), `quantile="p95"`)
-	latencyExpression := fmt.Sprintf("sum by (%s) (trace_endpoint_duration{%s})", group, strings.Join(latencyMatchers, ","))
-	latencyGrid := fmt.Sprintf("(%s)%s", latencyExpression, grid)
+	identityMatchers := baseMatchers[1:]
+	latencyMatchers := append(append([]string(nil), identityMatchers...), `quantile="p95"`)
+	var latencyExpression string
+	if operations {
+		latencyMatchers = append([]string{`span_kind="SPAN_KIND_SERVER"`}, latencyMatchers...)
+		latencyExpression = fmt.Sprintf("sum by (%s) (trace_endpoint_duration{%s})", group, strings.Join(latencyMatchers, ","))
+	} else {
+		latencyExpression = fmt.Sprintf("sum by (%s) (trace_service_response_time{%s} * 1000)", group, strings.Join(latencyMatchers, ","))
+	}
+	latencyGrid := deviationSubquery(latencyExpression, window, step)
 
-	apdexSelector := fmt.Sprintf("%s{%s}", apdexMetric, strings.Join(baseMatchers, ","))
+	apdexSelector := fmt.Sprintf("%s{%s}", apdexMetric, strings.Join(identityMatchers, ","))
 	apdexExpression := fmt.Sprintf("sum by (%s) (%s)", group, apdexSelector)
 	matching := strings.Join(groupLabels, ", ")
-	apdexNumeratorGrid := fmt.Sprintf("(%s * on (%s) %s)%s", apdexExpression, matching, requestExpression, grid)
-	apdexGrid := fmt.Sprintf("(%s)%s", apdexExpression, grid)
+	alignedApdex := fmt.Sprintf("(%s and on (%s) %s)", apdexExpression, matching, requestExpression)
+	alignedRequests := fmt.Sprintf("(%s and on (%s) %s)", requestExpression, matching, apdexExpression)
+	apdexNumerator := fmt.Sprintf("%s * on (%s) %s", alignedApdex, matching, alignedRequests)
+	apdexNumeratorGrid := deviationSubquery(apdexNumerator, window, step)
+	alignedRequestGrid := deviationSubquery(alignedRequests, window, step)
 
-	candidates := fmt.Sprintf("topk(%d, %s)", scope.Limit, requestTotal)
 	limit := func(expression string) string {
-		if expression == requestTotal {
-			return candidates
-		}
-		return fmt.Sprintf("(%s) and on (%s) (%s)", expression, matching, candidates)
+		return fmt.Sprintf("(%s) and on (%s) (%s)", expression, matching, candidateMask)
 	}
-	return []deviationQuery{
+	queries := []deviationQuery{
 		{Name: "requests_sum", Field: deviationFieldRequestTotal, Text: limit(requestTotal)},
 		{Name: "requests_count", Field: deviationFieldRequestCount, Text: limit(fmt.Sprintf("count_over_time(%s)", requestGrid))},
 		{Name: "errors_sum", Field: deviationFieldErrorTotal, Text: limit(fmt.Sprintf("sum_over_time(%s)", errorGrid))},
 		{Name: "errors_count", Field: deviationFieldErrorCount, Text: limit(fmt.Sprintf("count_over_time(%s)", errorGrid))},
 		{Name: "apdex_numerator", Field: deviationFieldApdexNumerator, Text: limit(fmt.Sprintf("sum_over_time(%s)", apdexNumeratorGrid))},
-		{Name: "apdex_denominator", Field: deviationFieldApdexDenominator, Text: limit(requestTotal)},
-		{Name: "apdex_count", Field: deviationFieldApdexCount, Text: limit(fmt.Sprintf("count_over_time(%s)", apdexGrid))},
+		{Name: "apdex_denominator", Field: deviationFieldApdexDenominator, Text: limit(fmt.Sprintf("sum_over_time(%s)", alignedRequestGrid))},
+		{Name: "apdex_count", Field: deviationFieldApdexCount, Text: limit(fmt.Sprintf("count_over_time(%s)", alignedRequestGrid))},
 		{Name: "latency_q25", Field: deviationFieldLatencyQ25, Text: limit(fmt.Sprintf("quantile_over_time(0.25, %s)", latencyGrid))},
 		{Name: "latency_median", Field: deviationFieldLatencyMedian, Text: limit(fmt.Sprintf("quantile_over_time(0.5, %s)", latencyGrid))},
 		{Name: "latency_q75", Field: deviationFieldLatencyQ75, Text: limit(fmt.Sprintf("quantile_over_time(0.75, %s)", latencyGrid))},
 		{Name: "latency_max", Field: deviationFieldLatencyMax, Text: limit(fmt.Sprintf("max_over_time(%s)", latencyGrid))},
 		{Name: "latency_count", Field: deviationFieldLatencyCount, Text: limit(fmt.Sprintf("count_over_time(%s)", latencyGrid))},
 	}
+	for index := range queries {
+		queries[index].CandidateMask = candidateMask
+	}
+	return queries
+}
+
+func deviationGroupLabels(operations bool) []string {
+	labels := []string{"service_name", "env"}
+	if operations {
+		labels = append(labels, "span_name")
+	}
+	return labels
+}
+
+func deviationRequestExpression(scope deviationQueryScope, group string) string {
+	matchers := []string{`span_kind="SPAN_KIND_SERVER"`}
+	if scope.ServiceName != "" {
+		matchers = append(matchers, fmt.Sprintf(`service_name="%s"`, escapePromQLLabel(scope.ServiceName)))
+	}
+	if scope.Env != "" {
+		matchers = append(matchers, fmt.Sprintf(`env="%s"`, escapePromQLLabel(scope.Env)))
+	}
+	return fmt.Sprintf("sum by (%s) (trace_endpoint_count{%s})", group, strings.Join(matchers, ","))
+}
+
+func deviationSubquery(expression string, window TimeWindow, step time.Duration) string {
+	rangeSeconds := int64(window.End.Sub(window.Start) / time.Second)
+	stepSeconds := int64(step / time.Second)
+	return fmt.Sprintf("(%s)[%ds:%ds] @ %d", expression, rangeSeconds, stepSeconds, window.End.Unix())
+}
+
+func validDeviationWindow(window TimeWindow) bool {
+	return window.End.After(window.Start)
 }
 
 func requestSelectorWithMatcher(base []string, matcher string) string {
@@ -212,27 +289,29 @@ func requestSelectorWithMatcher(base []string, matcher string) string {
 func executeDeviationQueries(
 	ctx context.Context,
 	runner deviationQueryRunner,
-	currentEnd time.Time,
-	currentQueries []deviationQuery,
-	baselineEnd time.Time,
-	baselineQueries []deviationQuery,
+	plan deviationQueryPlan,
 ) deviationQueryExecution {
 	type windowResult struct {
-		window string
-		result deviationQueryResult
-		errors []deviationQueryError
+		window     string
+		result     deviationQueryResult
+		errors     []deviationQueryError
+		attempted  int
+		successful int
 	}
 	results := make(chan windowResult, 2)
 	run := func(window string, end time.Time, queries []deviationQuery) {
-		result, queryErrors := executeDeviationQueryGroup(ctx, runner, window, end, queries)
-		results <- windowResult{window: window, result: result, errors: queryErrors}
+		result, queryErrors, successful := executeDeviationQueryGroup(ctx, runner, window, end, queries)
+		results <- windowResult{window: window, result: result, errors: queryErrors, attempted: len(queries), successful: successful}
 	}
-	go run("current", currentEnd, currentQueries)
-	go run("baseline", baselineEnd, baselineQueries)
+	go run("current", plan.CurrentEnd, plan.Current)
+	go run("baseline", plan.BaselineEnd, plan.Baseline)
 
 	execution := deviationQueryExecution{}
+	var attempted, successful int
 	for range 2 {
 		result := <-results
+		attempted += result.attempted
+		successful += result.successful
 		if result.window == "current" {
 			execution.Current = result.result
 		} else {
@@ -248,11 +327,13 @@ func executeDeviationQueries(
 	})
 	if err := ctx.Err(); err != nil {
 		execution.Err = err
+	} else if attempted > 0 && successful == 0 {
+		execution.Err = fmt.Errorf("all metric queries failed")
 	}
 	return execution
 }
 
-func executeDeviationQueryGroup(ctx context.Context, runner deviationQueryRunner, window string, end time.Time, queries []deviationQuery) (deviationQueryResult, []deviationQueryError) {
+func executeDeviationQueryGroup(ctx context.Context, runner deviationQueryRunner, window string, end time.Time, queries []deviationQuery) (deviationQueryResult, []deviationQueryError, int) {
 	type queryResult struct {
 		query   deviationQuery
 		vectors []deviationVector
@@ -269,12 +350,17 @@ func executeDeviationQueryGroup(ctx context.Context, runner deviationQueryRunner
 
 	responses := make(map[string][]deviationVector, len(queries))
 	queryErrors := make([]deviationQueryError, 0)
+	successful := 0
 	for range queries {
 		result := <-results
 		if result.err != nil {
-			queryErrors = append(queryErrors, deviationQueryError{Window: window, Signal: result.query.Name, Message: "query failed"})
+			queryErrors = append(queryErrors, deviationQueryError{
+				Window: window, Signal: result.query.Name, Kind: "query_failed",
+				Field: string(result.query.Field), Message: "query failed",
+			})
 			continue
 		}
+		successful++
 		responses[result.query.Name] = result.vectors
 	}
 	records, parseErrors := parseDeviationQueryValues(queries, responses)
@@ -282,7 +368,7 @@ func executeDeviationQueryGroup(ctx context.Context, runner deviationQueryRunner
 		parseError.Window = window
 		queryErrors = append(queryErrors, parseError)
 	}
-	return deviationQueryResult{Records: records}, queryErrors
+	return deviationQueryResult{Records: records}, queryErrors, successful
 }
 
 func parseDeviationQueryValues(queries []deviationQuery, responses map[string][]deviationVector) ([]deviationAggregate, []deviationQueryError) {
@@ -293,9 +379,19 @@ func parseDeviationQueryValues(queries []deviationQuery, responses map[string][]
 			serviceName := vector.Metric["service_name"]
 			env := vector.Metric["env"]
 			spanName := vector.Metric["span_name"]
-			value, err := finitePromValue(vector.Value)
-			if err != nil || serviceName == "" {
-				parseErrors = append(parseErrors, deviationQueryError{Signal: query.Name, Message: "invalid aggregate result"})
+			errorEvidence := deviationQueryError{
+				Signal: query.Name, Field: string(query.Field), ServiceName: serviceName,
+				Env: env, SpanName: spanName, Message: "invalid aggregate result",
+			}
+			if serviceName == "" {
+				errorEvidence.Kind = "missing_identity"
+				parseErrors = append(parseErrors, errorEvidence)
+				continue
+			}
+			value, kind := finitePromValue(vector.Value)
+			if kind != "" {
+				errorEvidence.Kind = kind
+				parseErrors = append(parseErrors, errorEvidence)
 				continue
 			}
 			key := serviceName + "\x00" + env + "\x00" + spanName
@@ -317,13 +413,17 @@ func parseDeviationQueryValues(queries []deviationQuery, responses map[string][]
 	for _, key := range keys {
 		output = append(output, *records[key])
 	}
-	sort.Slice(parseErrors, func(i, j int) bool { return parseErrors[i].Signal < parseErrors[j].Signal })
+	sort.Slice(parseErrors, func(i, j int) bool {
+		left := parseErrors[i].Signal + "\x00" + parseErrors[i].ServiceName + "\x00" + parseErrors[i].Env + "\x00" + parseErrors[i].SpanName + "\x00" + parseErrors[i].Kind
+		right := parseErrors[j].Signal + "\x00" + parseErrors[j].ServiceName + "\x00" + parseErrors[j].Env + "\x00" + parseErrors[j].SpanName + "\x00" + parseErrors[j].Kind
+		return left < right
+	})
 	return output, parseErrors
 }
 
-func finitePromValue(value []any) (float64, error) {
+func finitePromValue(value []any) (float64, string) {
 	if len(value) != 2 {
-		return 0, fmt.Errorf("expected timestamp and value")
+		return 0, "malformed_value"
 	}
 	var parsed float64
 	var err error
@@ -335,10 +435,13 @@ func finitePromValue(value []any) (float64, error) {
 	default:
 		err = fmt.Errorf("unsupported value type")
 	}
-	if err != nil || !isFinite(parsed) {
-		return 0, fmt.Errorf("invalid finite value")
+	if err != nil {
+		return 0, "malformed_value"
 	}
-	return parsed, nil
+	if !isFinite(parsed) {
+		return 0, "non_finite_value"
+	}
+	return parsed, ""
 }
 
 func setDeviationField(record *deviationAggregate, field deviationField, value float64) {
