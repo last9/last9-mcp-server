@@ -59,3 +59,18 @@ func TestAPMServiceDeviationsDescription(t *testing.T) {
 		}
 	}
 }
+
+func TestAPMServiceDeviationsDescriptionDefaultsAndPartialResults(t *testing.T) {
+	description := strings.ToLower(prompts.GetAPMServiceDeviationsDescription)
+	for _, phrase := range []string{
+		"max_services` and `max_operations` each default to 10 and cannot exceed 10",
+		"partial_errors",
+		"successful evidence remains usable",
+		"explicitly qualify conclusions",
+		"all metric queries fail, the tool returns an error",
+	} {
+		if !strings.Contains(description, phrase) {
+			t.Errorf("description missing exact contract wording %q", phrase)
+		}
+	}
+}

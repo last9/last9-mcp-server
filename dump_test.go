@@ -3,9 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
+
+	"last9-mcp/internal/apm"
 )
 
 func TestDumpTools(t *testing.T) {
@@ -66,17 +69,69 @@ func TestDumpTools(t *testing.T) {
 	if strings.TrimSpace(deviations.Description) == "" {
 		t.Fatal("get_apm_service_deviations has an empty description")
 	}
-	schema, err := json.Marshal(deviations.InputSchema)
+	servedSchema, err := json.Marshal(deviations.InputSchema)
 	if err != nil {
 		t.Fatalf("marshal get_apm_service_deviations inputSchema: %v", err)
 	}
-	for _, field := range []string{
-		"service_name", "env", "datasource", "start_time_iso", "end_time_iso",
-		"lookback_minutes", "baseline_start_time_iso", "baseline_end_time_iso",
-		"max_services", "max_operations",
-	} {
-		if !bytes.Contains(schema, []byte(`"`+field+`"`)) {
-			t.Errorf("get_apm_service_deviations inputSchema missing %q", field)
+	var served map[string]interface{}
+	if err := json.Unmarshal(servedSchema, &served); err != nil {
+		t.Fatalf("unmarshal served get_apm_service_deviations inputSchema: %v", err)
+	}
+	wantBytes, err := json.Marshal(apm.GetAPMServiceDeviationsInputSchema())
+	if err != nil {
+		t.Fatalf("marshal canonical get_apm_service_deviations inputSchema: %v", err)
+	}
+	var want map[string]interface{}
+	if err := json.Unmarshal(wantBytes, &want); err != nil {
+		t.Fatalf("unmarshal canonical get_apm_service_deviations inputSchema: %v", err)
+	}
+	if !reflect.DeepEqual(served, want) {
+		t.Fatalf("served get_apm_service_deviations schema differs from canonical schema\nserved: %#v\nwant: %#v", served, want)
+	}
+	if served["additionalProperties"] != false {
+		t.Fatalf("additionalProperties = %v, want false", served["additionalProperties"])
+	}
+	if _, exists := served["required"]; exists {
+		t.Fatal("served schema must not have a top-level required list")
+	}
+	properties := served["properties"].(map[string]interface{})
+	if len(properties) != 10 {
+		t.Fatalf("served schema has %d properties, want 10", len(properties))
+	}
+	for name, value := range properties {
+		property := value.(map[string]interface{})
+		if description, _ := property["description"].(string); strings.TrimSpace(description) == "" {
+			t.Errorf("served property %q has an empty description", name)
 		}
+	}
+	for _, name := range []string{"start_time_iso", "end_time_iso", "baseline_start_time_iso", "baseline_end_time_iso"} {
+		if properties[name].(map[string]interface{})["format"] != "date-time" {
+			t.Errorf("served property %q is missing date-time format", name)
+		}
+	}
+	for _, name := range []string{"max_services", "max_operations"} {
+		property := properties[name].(map[string]interface{})
+		if property["minimum"] != float64(1) || property["maximum"] != float64(10) || property["default"] != float64(10) {
+			t.Errorf("served property %q has incorrect bounds/default: %#v", name, property)
+		}
+	}
+	if properties["lookback_minutes"].(map[string]interface{})["minimum"] != float64(1) {
+		t.Error("served lookback_minutes minimum must be 1")
+	}
+	wantDependent := map[string]interface{}{
+		"start_time_iso":          []interface{}{"end_time_iso"},
+		"end_time_iso":            []interface{}{"start_time_iso"},
+		"baseline_start_time_iso": []interface{}{"baseline_end_time_iso"},
+		"baseline_end_time_iso":   []interface{}{"baseline_start_time_iso"},
+	}
+	if !reflect.DeepEqual(served["dependentRequired"], wantDependent) {
+		t.Fatalf("served dependentRequired = %#v, want %#v", served["dependentRequired"], wantDependent)
+	}
+	wantAllOf := []interface{}{
+		map[string]interface{}{"not": map[string]interface{}{"required": []interface{}{"lookback_minutes", "start_time_iso"}}},
+		map[string]interface{}{"not": map[string]interface{}{"required": []interface{}{"lookback_minutes", "end_time_iso"}}},
+	}
+	if !reflect.DeepEqual(served["allOf"], wantAllOf) {
+		t.Fatalf("served allOf = %#v, want %#v", served["allOf"], wantAllOf)
 	}
 }

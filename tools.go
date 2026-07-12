@@ -60,6 +60,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "get_apm_service_deviations",
 		Description: prompts.GetAPMServiceDeviationsDescription,
+		InputSchema: apm.GetAPMServiceDeviationsInputSchema(),
 	}, apm.NewAPMServiceDeviationsHandler(client, cfg))
 
 	// Register service environments tool
