@@ -134,7 +134,7 @@ func newAPMServiceDeviationsHandler(client *http.Client, baseCfg models.Config, 
 
 		result := buildDeviationResult(args, queryCfg, windows, execution)
 		limitDeviationResult(&result, maxServices)
-		if args.ServiceName != "" && len(result.Services) == 0 {
+		if args.ServiceName != "" && len(result.Services) == 0 && len(result.TelemetryChanges) == 0 {
 			present, detectErr := deps.hasAnyAPMTelemetry(ctx, runner, args, windows)
 			if detectErr != nil {
 				return nil, nil, detectErr
@@ -403,7 +403,7 @@ func addAggregateDistribution(target map[string]Distribution, name string, q25, 
 	if q25 == nil || median == nil || q75 == nil || !isFinite(*q25) || !isFinite(*median) || !isFinite(*q75) {
 		return
 	}
-	target[name] = Distribution{Q25: *q25, Median: *median, Q75: *q75, IQR: *q75 - *q25, Peak: *q75}
+	target[name] = Distribution{Q25: *q25, Median: *median, Q75: *q75, IQR: *q75 - *q25}
 }
 
 func aggregateCount(value *float64, expected int) int {
@@ -483,6 +483,7 @@ func signalSummary(name string, source aggregateWindowSummary) WindowSummary {
 	} else {
 		result.Distribution = distribution
 	}
+	result.Evidence.Selected = calculateCoverage(result.Evidence.Selected)
 	return result
 }
 
@@ -528,7 +529,14 @@ func sortDeviationResult(result *apmDeviationResult) {
 		sortLeaderboard(board.Regressions)
 		sortLeaderboard(board.Improvements)
 	}
-	sortLeaderboard(result.ThroughputShifts)
+	sort.SliceStable(result.ThroughputShifts, func(i, j int) bool {
+		left := math.Abs(result.ThroughputShifts[i].Comparison.AbsoluteDelta)
+		right := math.Abs(result.ThroughputShifts[j].Comparison.AbsoluteDelta)
+		if left != right {
+			return left > right
+		}
+		return identityLess(result.ThroughputShifts[i].ServiceName, result.ThroughputShifts[i].Env, result.ThroughputShifts[j].ServiceName, result.ThroughputShifts[j].Env)
+	})
 }
 
 func limitDeviationResult(result *apmDeviationResult, limit int) {
@@ -776,7 +784,10 @@ func exclusionsFor(errors []deviationQueryError, window string, identity deviati
 		if item.Window != window || item.Kind == "query_failed" {
 			continue
 		}
-		if item.ServiceName != "" && (item.ServiceName != identity.ServiceName || item.Env != identity.Env || item.SpanName != identity.SpanName) {
+		if item.ServiceName == "" {
+			continue
+		}
+		if item.ServiceName != identity.ServiceName || item.Env != identity.Env || item.SpanName != identity.SpanName {
 			continue
 		}
 		result[deviationField(item.Field)]++

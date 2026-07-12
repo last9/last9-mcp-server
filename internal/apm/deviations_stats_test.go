@@ -263,6 +263,80 @@ func TestCompareSignalClassifiesRegressionImprovementAndStable(t *testing.T) {
 	}
 }
 
+func TestCompareSignalRequiresPrimaryAndDistributionDirectionAgreement(t *testing.T) {
+	tests := []struct {
+		name       string
+		definition SignalDefinition
+		current    WindowSummary
+		baseline   WindowSummary
+		want       string
+	}{
+		{
+			name:       "error percentage redistribution disagrees",
+			definition: SignalDefinition{Name: "error_percentage", HigherIsWorse: true},
+			current:    comparisonWindow(1, Distribution{Q25: 9, Median: 10, Q75: 11}),
+			baseline:   comparisonWindow(2, Distribution{Q25: 1, Median: 2, Q75: 3}),
+			want:       "stable",
+		},
+		{
+			name:       "Apdex redistribution disagrees",
+			definition: SignalDefinition{Name: "apdex", HigherIsWorse: false},
+			current:    comparisonWindow(0.95, Distribution{Q25: 0.68, Median: 0.7, Q75: 0.72}),
+			baseline:   comparisonWindow(0.9, Distribution{Q25: 0.88, Median: 0.9, Q75: 0.92}),
+			want:       "stable",
+		},
+		{
+			name:       "zero primary delta stays stable",
+			definition: SignalDefinition{Name: "error_percentage", HigherIsWorse: true},
+			current:    comparisonWindow(2, Distribution{Q25: 9, Median: 10, Q75: 11}),
+			baseline:   comparisonWindow(2, Distribution{Q25: 1, Median: 2, Q75: 3}),
+			want:       "stable",
+		},
+		{
+			name:       "agreeing reliability regression",
+			definition: SignalDefinition{Name: "error_percentage", HigherIsWorse: true},
+			current:    comparisonWindow(10, Distribution{Q25: 9, Median: 10, Q75: 11}),
+			baseline:   comparisonWindow(2, Distribution{Q25: 1, Median: 2, Q75: 3}),
+			want:       "regression",
+		},
+		{
+			name:       "agreeing Apdex improvement",
+			definition: SignalDefinition{Name: "apdex", HigherIsWorse: false},
+			current:    comparisonWindow(0.97, Distribution{Q25: 0.95, Median: 0.97, Q75: 0.99}),
+			baseline:   comparisonWindow(0.9, Distribution{Q25: 0.88, Median: 0.9, Q75: 0.92}),
+			want:       "improvement",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := compareSignal(tt.definition, tt.current, tt.baseline); got.Classification != tt.want {
+				t.Fatalf("classification = %q, direction=%q delta=%v, want %q", got.Classification, got.Direction, got.AbsoluteDelta, tt.want)
+			}
+		})
+	}
+}
+
+func TestDistributionJSONOmitsUnmeasuredPeak(t *testing.T) {
+	nonLatency, err := json.Marshal(Distribution{Q25: 1, Median: 2, Q75: 3, IQR: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(nonLatency), `"peak"`) {
+		t.Fatalf("non-latency distribution fabricated peak: %s", nonLatency)
+	}
+	latency, err := json.Marshal(Distribution{Q25: 10, Median: 20, Q75: 30, IQR: 20, Peak: 80})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(latency), `"peak":80`) {
+		t.Fatalf("measured latency peak missing: %s", latency)
+	}
+}
+
+func comparisonWindow(value float64, values Distribution) WindowSummary {
+	return WindowSummary{Value: value, Distribution: values, Evidence: WindowEvidence{Selected: completeEvidence(4)}}
+}
+
 func TestDeviationResponseJSONContract(t *testing.T) {
 	entry := LeaderboardEntry{
 		ServiceName:    "checkout",

@@ -59,7 +59,7 @@ type Distribution struct {
 	Median float64 `json:"median"`
 	Q75    float64 `json:"q75"`
 	IQR    float64 `json:"iqr"`
-	Peak   float64 `json:"peak"`
+	Peak   float64 `json:"peak,omitempty"`
 }
 
 type MetricEvidence struct {

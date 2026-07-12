@@ -192,10 +192,15 @@ func compareSignal(definition SignalDefinition, current, baseline WindowSummary)
 	if !upwardCandidate && !downwardCandidate {
 		return comparison
 	}
+	primaryUpward := comparison.AbsoluteDelta > 0
+	primaryDownward := comparison.AbsoluteDelta < 0
+	if (upwardCandidate && !primaryUpward) || (downwardCandidate && !primaryDownward) {
+		return comparison
+	}
 
-	worsened := upwardCandidate
+	worsened := primaryUpward
 	if !definition.HigherIsWorse {
-		worsened = downwardCandidate
+		worsened = primaryDownward
 	}
 	if worsened {
 		comparison.Classification = "regression"

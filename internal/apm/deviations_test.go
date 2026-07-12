@@ -219,6 +219,70 @@ func TestAPMServiceDeviationsHandlerImprovementAndTelemetryChanges(t *testing.T)
 	}
 }
 
+func TestAPMServiceDeviationsHandlerKeepsNamedOneWindowServerTelemetry(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		current    []deviationAggregate
+		baseline   []deviationAggregate
+		wantChange string
+	}{
+		{name: "current only", current: []deviationAggregate{aggregate("api", "prod", "", 60, 6, 0, 6, 54, 60, 6, 40, 50, 60, 70, 6)}, wantChange: "newly_observed"},
+		{name: "baseline only", baseline: []deviationAggregate{aggregate("api", "prod", "", 60, 6, 0, 6, 54, 60, 6, 40, 50, 60, 70, 6)}, wantChange: "no_longer_observed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			deps := testDeviationHandlerDeps()
+			deps.execute = func(context.Context, deviationQueryRunner, deviationQueryPlan) deviationQueryExecution {
+				return deviationQueryExecution{Current: deviationQueryResult{Records: tc.current}, Baseline: deviationQueryResult{Records: tc.baseline}}
+			}
+			presenceCalls := 0
+			deps.hasAnyAPMTelemetry = func(context.Context, deviationQueryRunner, DeviationArgs, DeviationWindows) (bool, error) {
+				presenceCalls++
+				return true, nil
+			}
+			args := sixMinuteDeviationArgs()
+			args.ServiceName = "api"
+			args.Env = "prod"
+			response := callDeviationHandler(t, newAPMServiceDeviationsHandler(http.DefaultClient, models.Config{}, deps), args)
+			if response.Outcome != "telemetry_changed" || len(response.TelemetryChanges) != 1 || response.TelemetryChanges[0].Change != tc.wantChange {
+				t.Fatalf("one-window telemetry response = %+v", response)
+			}
+			if presenceCalls != 0 {
+				t.Fatalf("unsupported-workload detection ran %d times", presenceCalls)
+			}
+		})
+	}
+}
+
+func TestServiceAndOperationRedistributionDisagreementDoesNotClassify(t *testing.T) {
+	baseline := aggregate("api", "prod", "", 600, 6, 12, 6, 540, 600, 6, 80, 100, 120, 130, 6)
+	current := aggregate("api", "prod", "", 1200, 6, 12, 6, 1140, 1200, 6, 80, 100, 120, 130, 6)
+	setAggregateDistributions(&baseline, Distribution{}, Distribution{}, Distribution{Q25: 1, Median: 2, Q75: 3}, Distribution{Q25: 0.88, Median: 0.9, Q75: 0.92})
+	setAggregateDistributions(&current, Distribution{}, Distribution{}, Distribution{Q25: 8, Median: 9, Q75: 10}, Distribution{Q25: 0.7, Median: 0.72, Q75: 0.74})
+
+	deps := testDeviationHandlerDeps()
+	deps.execute = func(context.Context, deviationQueryRunner, deviationQueryPlan) deviationQueryExecution {
+		return deviationQueryExecution{Current: deviationQueryResult{Records: []deviationAggregate{current}}, Baseline: deviationQueryResult{Records: []deviationAggregate{baseline}}}
+	}
+	args := sixMinuteDeviationArgs()
+	args.ServiceName = "api"
+	response := callDeviationHandler(t, newAPMServiceDeviationsHandler(http.DefaultClient, models.Config{}, deps), args)
+	if len(response.Leaderboards.Reliability.Regressions)+len(response.Leaderboards.Experience.Regressions) != 0 {
+		t.Fatalf("service redistribution disagreement classified: %+v", response.Leaderboards)
+	}
+
+	windows, err := resolveDeviationWindows(args, time.Date(2026, 7, 11, 10, 7, 0, 0, time.UTC), time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current.SpanName, baseline.SpanName = "GET /orders", "GET /orders"
+	serviceResult := apmDeviationResult{DeviationResponse: DeviationResponse{Leaderboards: emptyLeaderboards(), Services: []ServiceDeviation{{ServiceName: "api", Env: "prod"}}}}
+	serviceResult.Leaderboards.Reliability.Regressions = []LeaderboardEntry{{ServiceName: "api", Env: "prod", Comparison: SignalComparison{Definition: SignalDefinition{Name: "error_percentage"}, Classification: "regression"}}}
+	execution := deviationQueryExecution{Current: deviationQueryResult{Records: []deviationAggregate{current}}, Baseline: deviationQueryResult{Records: []deviationAggregate{baseline}}}
+	if got := correlateOperations(serviceResult, execution, windows, 10); len(got) != 0 {
+		t.Fatalf("operation redistribution disagreement classified: %+v", got)
+	}
+}
+
 func TestAPMServiceDeviationsHandlerUnsupportedWorkloadShape(t *testing.T) {
 	deps := testDeviationHandlerDeps()
 	deps.execute = func(_ context.Context, _ deviationQueryRunner, _ deviationQueryPlan) deviationQueryExecution {
@@ -441,6 +505,69 @@ func TestErrorPercentageEvidenceRequiresAlignedRequestAndErrorCoverage(t *testin
 	excluded := summaryFromAggregate(record, true, 6, time.Minute, map[deviationField]int{deviationFieldErrorTotal: 1})
 	if excluded.Evidence.ErrorPercentage.ExcludedValues == 0 || excluded.Evidence.ErrorPercentage.Coverage >= 1 {
 		t.Fatalf("excluded error values did not make reliability sparse: %+v", excluded.Evidence.ErrorPercentage)
+	}
+}
+
+func TestSignalSummaryRecalculatesDistributionExclusionEvidence(t *testing.T) {
+	record := aggregate("api", "prod", "", 600, 6, 6, 6, 540, 600, 6, 80, 100, 120, 130, 6)
+	record.ErrorPercentageQ25 = nil
+	summary := summaryFromAggregate(record, true, 6, time.Minute, map[deviationField]int{deviationFieldErrorPercentageDistribution: 1})
+	selected := signalSummary("error_percentage", summary)
+	if selected.Evidence.Selected.ObservedPoints != 0 || selected.Evidence.Selected.Coverage != 0 || selected.Evidence.Selected.MissingValues != 5 || selected.Evidence.Selected.ExcludedValues != 1 {
+		t.Fatalf("selected distribution evidence was not recalculated: %+v", selected.Evidence.Selected)
+	}
+	payload, err := json.Marshal(selected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Evidence struct {
+			Selected MetricEvidence `json:"selected"`
+		} `json:"evidence"`
+	}
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Evidence.Selected.Coverage != 0 || decoded.Evidence.Selected.ObservedPoints != 0 {
+		t.Fatalf("public JSON retained stale selected coverage: %s", payload)
+	}
+}
+
+func TestThroughputOrderingUsesAbsoluteDeltaAndDrivesFleetFollowup(t *testing.T) {
+	entry := func(service string, absolute, relative float64) LeaderboardEntry {
+		return LeaderboardEntry{
+			ServiceName: service, Env: "prod", SignalCategory: "throughput",
+			Comparison: SignalComparison{Definition: SignalDefinition{Name: "request_rpm"}, AbsoluteDelta: absolute, RelativeDelta: &relative, Classification: "shift"},
+		}
+	}
+	result := apmDeviationResult{DeviationResponse: DeviationResponse{
+		Scope: "fleet", Outcome: "deviations_detected", Leaderboards: emptyLeaderboards(),
+		ThroughputShifts: []LeaderboardEntry{entry("small-relative-large", 100, 0.1), entry("large-relative-small", 10, 2)},
+		Windows:          DeviationWindows{RequestedCurrentStart: time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC), RequestedCurrentEnd: time.Date(2026, 7, 11, 11, 0, 0, 0, time.UTC)},
+	}}
+	sortDeviationResult(&result)
+	if result.ThroughputShifts[0].ServiceName != "small-relative-large" {
+		t.Fatalf("throughput ordering used relative delta: %+v", result.ThroughputShifts)
+	}
+	followups := recommendedDeviationFollowups(result, DeviationArgs{})
+	if len(followups) != 1 || followups[0].Arguments["service_name"] != "small-relative-large" {
+		t.Fatalf("fleet follow-up ignored corrected throughput order: %+v", followups)
+	}
+}
+
+func TestMissingIdentityParseErrorDoesNotMakeEveryServiceSparse(t *testing.T) {
+	errorWithoutIdentity := deviationQueryError{Window: "current", Signal: "request_distribution", Field: string(deviationFieldRequestDistribution), Kind: "missing_identity"}
+	for _, service := range []string{"api", "worker"} {
+		record := aggregate(service, "prod", "", 600, 6, 6, 6, 540, 600, 6, 80, 100, 120, 130, 6)
+		exclusions := exclusionsFor([]deviationQueryError{errorWithoutIdentity}, "current", record)
+		if len(exclusions) != 0 {
+			t.Fatalf("missing identity error mapped to %q: %+v", service, exclusions)
+		}
+		summary := summaryFromAggregate(record, true, 6, time.Minute, exclusions)
+		selected := signalSummary("request_rpm", summary)
+		if selected.Evidence.Selected.Coverage != 1 || selected.Evidence.Selected.ExcludedValues != 0 {
+			t.Fatalf("valid service %q became sparse: %+v", service, selected.Evidence.Selected)
+		}
 	}
 }
 
