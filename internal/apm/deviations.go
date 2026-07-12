@@ -3,6 +3,7 @@ package apm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -71,6 +72,13 @@ type apmDeviationResult struct {
 	DashboardURL          string                  `json:"dashboard_url"`
 }
 
+type aggregateWindowSummary struct {
+	WindowSummary
+	Distributions          map[string]Distribution
+	DistributionExclusions map[string]int
+	ValidSignals           map[string]bool
+}
+
 // NewAPMServiceDeviationsHandler compares bounded APM RED aggregates across equal windows.
 func NewAPMServiceDeviationsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, DeviationArgs) (*mcp.CallToolResult, any, error) {
 	return newAPMServiceDeviationsHandler(client, cfg, deviationHandlerDeps{
@@ -112,6 +120,16 @@ func newAPMServiceDeviationsHandler(client *http.Client, baseCfg models.Config, 
 		}
 		if err := ctx.Err(); err != nil {
 			return nil, nil, err
+		}
+		recordCount := len(execution.Current.Records) + len(execution.Baseline.Records)
+		if recordCount == 0 && len(execution.Errors) > 0 {
+			if hasInvalidAggregateErrors(execution.Errors) {
+				return nil, nil, fmt.Errorf("metric queries returned no valid aggregate values")
+			}
+			return nil, nil, fmt.Errorf("metric queries returned no valid RED measurements")
+		}
+		if recordCount > 0 && !executionHasValidREDMeasurement(execution) {
+			return nil, nil, fmt.Errorf("metric queries returned no valid RED measurements")
 		}
 
 		result := buildDeviationResult(args, queryCfg, windows, execution)
@@ -280,53 +298,112 @@ func unionAggregateKeys(left, right map[string]deviationAggregate) []string {
 	return keys
 }
 
-func summaryFromAggregate(record deviationAggregate, present bool, expected int, step time.Duration, exclusions map[deviationField]int) WindowSummary {
-	summary := WindowSummary{Evidence: newWindowEvidence(expected)}
-	if !present {
-		summary.Evidence = withCoverage(summary.Evidence)
-		return summary
+func summaryFromAggregate(record deviationAggregate, present bool, expected int, step time.Duration, exclusions map[deviationField]int) aggregateWindowSummary {
+	result := aggregateWindowSummary{
+		WindowSummary:          WindowSummary{Evidence: newWindowEvidence(expected)},
+		Distributions:          make(map[string]Distribution),
+		DistributionExclusions: make(map[string]int),
+		ValidSignals:           make(map[string]bool),
 	}
-	setEvidence := func(target *MetricEvidence, value *float64, field deviationField) {
-		target.ExcludedValues = exclusions[field]
-		if value != nil {
-			target.ObservedPoints = aggregateCount(value, expected)
+	if !present {
+		result.Evidence = withCoverage(result.Evidence)
+		return result
+	}
+	setEvidence := func(target *MetricEvidence, count *float64, valid bool, excluded int) {
+		target.ExcludedValues = excluded
+		if valid {
+			target.ObservedPoints = max(aggregateCount(count, expected)-excluded, 0)
 		}
 	}
-	setEvidence(&summary.Evidence.Requests, record.RequestCount, deviationFieldRequestCount)
-	summary.Evidence.Requests.ExcludedValues += exclusions[deviationFieldRequestTotal]
-	setEvidence(&summary.Evidence.Errors, record.ErrorCount, deviationFieldErrorCount)
-	summary.Evidence.Errors.ExcludedValues += exclusions[deviationFieldErrorTotal]
-	setEvidence(&summary.Evidence.Apdex, record.ApdexCount, deviationFieldApdexCount)
-	summary.Evidence.Apdex.ExcludedValues += exclusions[deviationFieldApdexNumerator] + exclusions[deviationFieldApdexDenominator]
-	setEvidence(&summary.Evidence.P95Latency, record.LatencyCount, deviationFieldLatencyCount)
-	summary.Evidence.P95Latency.ExcludedValues += exclusions[deviationFieldLatencyQ25] + exclusions[deviationFieldLatencyMedian] + exclusions[deviationFieldLatencyQ75] + exclusions[deviationFieldLatencyMax]
-	summary.Evidence.ErrorPercentage = summary.Evidence.Requests
-	summary.Evidence.ErrorPercentage.ExcludedValues += exclusions[deviationFieldErrorTotal]
-	if record.RequestTotal != nil {
-		summary.RequestTotal = *record.RequestTotal
+	requestValid := validAggregatePair(record.RequestTotal, record.RequestCount)
+	errorValid := validAggregatePair(record.ErrorTotal, record.ErrorCount)
+	apdexValid := validApdexAggregate(record)
+	latencyValid := validLatencyAggregate(record)
+	setEvidence(&result.Evidence.Requests, record.RequestCount, requestValid, exclusions[deviationFieldRequestTotal]+exclusions[deviationFieldRequestCount])
+	setEvidence(&result.Evidence.Errors, record.ErrorCount, errorValid, exclusions[deviationFieldErrorTotal]+exclusions[deviationFieldErrorCount])
+	setEvidence(&result.Evidence.Apdex, record.ApdexCount, apdexValid, exclusions[deviationFieldApdexNumerator]+exclusions[deviationFieldApdexDenominator]+exclusions[deviationFieldApdexCount])
+	setEvidence(&result.Evidence.P95Latency, record.LatencyCount, latencyValid, exclusions[deviationFieldLatencyQ25]+exclusions[deviationFieldLatencyMedian]+exclusions[deviationFieldLatencyQ75]+exclusions[deviationFieldLatencyMax]+exclusions[deviationFieldLatencyCount])
+
+	reliabilityValid := requestValid && errorValid && *record.RequestTotal > 0
+	reliabilityExcluded := result.Evidence.Requests.ExcludedValues + result.Evidence.Errors.ExcludedValues
+	setEvidence(&result.Evidence.ErrorPercentage, minimumAggregateCount(record.RequestCount, record.ErrorCount), reliabilityValid, reliabilityExcluded)
+	if reliabilityValid {
+		result.Evidence.ErrorPercentage.ObservedPoints = max(min(aggregateCount(record.RequestCount, expected), aggregateCount(record.ErrorCount, expected))-reliabilityExcluded, 0)
 	}
-	if record.ErrorTotal != nil {
-		summary.ErrorTotal = *record.ErrorTotal
+
+	if requestValid {
+		result.RequestTotal = *record.RequestTotal
 	}
 	minutes := float64(expected) * step.Minutes()
-	if minutes > 0 {
-		summary.RequestRPM = summary.RequestTotal / minutes
-		summary.ErrorRPM = summary.ErrorTotal / minutes
+	if requestValid && minutes > 0 {
+		result.RequestRPM = result.RequestTotal / minutes
+		result.ValidSignals["request_rpm"] = true
 	}
-	if record.RequestTotal != nil && *record.RequestTotal > 0 && record.ErrorTotal != nil {
+	if errorValid {
+		result.ErrorTotal = *record.ErrorTotal
+		if minutes > 0 {
+			result.ErrorRPM = result.ErrorTotal / minutes
+			result.ValidSignals["error_throughput_rpm"] = true
+		}
+	}
+	if reliabilityValid {
 		value := *record.ErrorTotal / *record.RequestTotal * 100
-		summary.ErrorPercentage = &value
+		result.ErrorPercentage = &value
+		result.ValidSignals["error_percentage"] = true
 	}
-	if record.ApdexNumerator != nil && record.ApdexDenominator != nil && *record.ApdexDenominator > 0 {
+	if apdexValid {
 		value := *record.ApdexNumerator / *record.ApdexDenominator
-		summary.Apdex = &value
+		result.Apdex = &value
+		result.ValidSignals["apdex"] = true
 	}
-	if record.LatencyQ25 != nil && record.LatencyMedian != nil && record.LatencyQ75 != nil && record.LatencyMax != nil {
+	if latencyValid {
 		d := Distribution{Q25: *record.LatencyQ25, Median: *record.LatencyMedian, Q75: *record.LatencyQ75, IQR: *record.LatencyQ75 - *record.LatencyQ25, Peak: *record.LatencyMax}
-		summary.P95Latency = &d
+		result.P95Latency = &d
+		result.ValidSignals["p95_latency_ms"] = true
 	}
-	summary.Evidence = withCoverage(summary.Evidence)
-	return summary
+	addAggregateDistribution(result.Distributions, "request_rpm", record.RequestQ25, record.RequestMedian, record.RequestQ75)
+	addAggregateDistribution(result.Distributions, "error_throughput_rpm", record.ErrorThroughputQ25, record.ErrorThroughputMedian, record.ErrorThroughputQ75)
+	addAggregateDistribution(result.Distributions, "error_percentage", record.ErrorPercentageQ25, record.ErrorPercentageMedian, record.ErrorPercentageQ75)
+	addAggregateDistribution(result.Distributions, "apdex", record.ApdexQ25, record.ApdexMedian, record.ApdexQ75)
+	result.DistributionExclusions["request_rpm"] = exclusions[deviationFieldRequestDistribution]
+	result.DistributionExclusions["error_throughput_rpm"] = exclusions[deviationFieldErrorThroughputDistribution]
+	result.DistributionExclusions["error_percentage"] = exclusions[deviationFieldErrorPercentageDistribution]
+	result.DistributionExclusions["apdex"] = exclusions[deviationFieldApdexDistribution]
+	if result.P95Latency != nil {
+		result.Distributions["p95_latency_ms"] = *result.P95Latency
+	}
+	result.Evidence = withCoverage(result.Evidence)
+	return result
+}
+
+func validAggregatePair(value, count *float64) bool {
+	return value != nil && count != nil && isFinite(*value) && isFinite(*count) && *count > 0
+}
+
+func validApdexAggregate(record deviationAggregate) bool {
+	return record.ApdexNumerator != nil && record.ApdexDenominator != nil && record.ApdexCount != nil &&
+		isFinite(*record.ApdexNumerator) && isFinite(*record.ApdexDenominator) && isFinite(*record.ApdexCount) &&
+		*record.ApdexDenominator > 0 && *record.ApdexCount > 0
+}
+
+func validLatencyAggregate(record deviationAggregate) bool {
+	return record.LatencyQ25 != nil && record.LatencyMedian != nil && record.LatencyQ75 != nil && record.LatencyMax != nil && record.LatencyCount != nil &&
+		isFinite(*record.LatencyQ25) && isFinite(*record.LatencyMedian) && isFinite(*record.LatencyQ75) && isFinite(*record.LatencyMax) && isFinite(*record.LatencyCount) && *record.LatencyCount > 0
+}
+
+func minimumAggregateCount(left, right *float64) *float64 {
+	if left == nil || right == nil || !isFinite(*left) || !isFinite(*right) {
+		return nil
+	}
+	value := math.Min(*left, *right)
+	return &value
+}
+
+func addAggregateDistribution(target map[string]Distribution, name string, q25, median, q75 *float64) {
+	if q25 == nil || median == nil || q75 == nil || !isFinite(*q25) || !isFinite(*median) || !isFinite(*q75) {
+		return
+	}
+	target[name] = Distribution{Q25: *q25, Median: *median, Q75: *q75, IQR: *q75 - *q25, Peak: *q75}
 }
 
 func aggregateCount(value *float64, expected int) int {
@@ -336,13 +413,17 @@ func aggregateCount(value *float64, expected int) int {
 	return min(int(math.Round(*value)), expected)
 }
 
-func compareAggregateSignals(current, baseline WindowSummary) []SignalComparison {
+func compareAggregateSignals(current, baseline aggregateWindowSummary) []SignalComparison {
 	definitions := deviationSignalDefinitions()
 	comparisons := make([]SignalComparison, 0, len(definitions))
 	for _, definition := range definitions {
 		currentSignal := signalSummary(definition.Name, current)
 		baselineSignal := signalSummary(definition.Name, baseline)
-		comparisons = append(comparisons, compareSignal(definition, currentSignal, baselineSignal))
+		comparison := compareSignal(definition, currentSignal, baselineSignal)
+		if definition.Name == "request_rpm" && (comparison.Classification == "regression" || comparison.Classification == "improvement") {
+			comparison.Classification = "shift"
+		}
+		comparisons = append(comparisons, comparison)
 	}
 	return comparisons
 }
@@ -357,8 +438,8 @@ func deviationSignalDefinitions() []SignalDefinition {
 	}
 }
 
-func signalSummary(name string, source WindowSummary) WindowSummary {
-	result := source
+func signalSummary(name string, source aggregateWindowSummary) WindowSummary {
+	result := source.WindowSummary
 	var value float64
 	var evidence MetricEvidence
 	switch name {
@@ -391,8 +472,16 @@ func signalSummary(name string, source WindowSummary) WindowSummary {
 	}
 	result.Value = value
 	result.Evidence.Selected = evidence
-	if name != "p95_latency_ms" {
-		result.Distribution = Distribution{Q25: value, Median: value, Q75: value, Peak: value}
+	distributionExclusions := source.DistributionExclusions[name]
+	result.Evidence.Selected.ExcludedValues += distributionExclusions
+	result.Evidence.Selected.ObservedPoints = max(result.Evidence.Selected.ObservedPoints-distributionExclusions, 0)
+	distribution, hasDistribution := source.Distributions[name]
+	if !source.ValidSignals[name] || !hasDistribution {
+		result.Evidence.Selected.ObservedPoints = 0
+		result.Evidence.Selected.MissingValues = max(result.Evidence.Selected.ExpectedPoints-result.Evidence.Selected.ExcludedValues, 0)
+		result.Distribution = Distribution{}
+	} else {
+		result.Distribution = distribution
 	}
 	return result
 }
@@ -403,7 +492,7 @@ func addServiceComparisons(result *apmDeviationResult, service ServiceDeviation)
 		switch comparison.Definition.Name {
 		case "request_rpm":
 			entry.SignalCategory = "throughput"
-			if comparison.Classification == "regression" || comparison.Classification == "improvement" {
+			if comparison.Classification == "shift" {
 				result.ThroughputShifts = append(result.ThroughputShifts, entry)
 			}
 		case "error_percentage":
@@ -537,7 +626,7 @@ func correlateOperations(serviceResult apmDeviationResult, execution deviationQu
 	regressedSignals := make(map[string]struct{})
 	for _, board := range []SignalLeaderboard{serviceResult.Leaderboards.Reliability, serviceResult.Leaderboards.Experience, serviceResult.Leaderboards.SustainedLatency} {
 		for _, entry := range board.Regressions {
-			regressedSignals[entry.Comparison.Definition.Name] = struct{}{}
+			regressedSignals[entry.ServiceName+"\x00"+entry.Env+"\x00"+entry.Comparison.Definition.Name] = struct{}{}
 		}
 	}
 	result := make([]operationCorrelation, 0)
@@ -553,7 +642,7 @@ func correlateOperations(serviceResult apmDeviationResult, execution deviationQu
 			if comparison.Classification != "regression" {
 				continue
 			}
-			if _, wanted := regressedSignals[comparison.Definition.Name]; !wanted {
+			if _, wanted := regressedSignals[cur.ServiceName+"\x00"+cur.Env+"\x00"+comparison.Definition.Name]; !wanted {
 				continue
 			}
 			share := 0.0
@@ -586,7 +675,7 @@ func correlateOperations(serviceResult apmDeviationResult, execution deviationQu
 }
 
 func recommendedDeviationFollowups(result apmDeviationResult, args DeviationArgs) []deviationFollowup {
-	if result.Outcome == "stable" || result.Outcome == "no_data" || result.Outcome == "unsupported_workload_shape" {
+	if result.Outcome == "stable" || result.Outcome == "no_data" {
 		return []deviationFollowup{}
 	}
 	base := map[string]string{
@@ -601,6 +690,25 @@ func recommendedDeviationFollowups(result apmDeviationResult, args DeviationArgs
 	}
 	if result.Datasource != "" {
 		base["datasource"] = result.Datasource
+	}
+	if result.Outcome == "unsupported_workload_shape" {
+		return []deviationFollowup{{
+			Tool: "get_service_traces", Reason: "Inspect the named workload's trace shapes and span kinds without inferring causality.", Arguments: base,
+		}}
+	}
+	if result.Scope == "fleet" {
+		identity, ok := leadingDeviationIdentity(result)
+		if !ok {
+			return []deviationFollowup{}
+		}
+		base["service_name"] = identity.ServiceName
+		base["env"] = identity.Env
+		maxOperations := args.MaxOperations
+		if maxOperations == 0 {
+			maxOperations = deviationResultCap
+		}
+		base["max_operations"] = fmt.Sprintf("%d", maxOperations)
+		return []deviationFollowup{{Tool: "get_apm_service_deviations", Reason: "Continue from the leading fleet deviation into a bounded service and operation comparison.", Arguments: base}}
 	}
 	followups := make([]deviationFollowup, 0, 3)
 	add := func(tool, reason string) {
@@ -624,6 +732,25 @@ func recommendedDeviationFollowups(result apmDeviationResult, args DeviationArgs
 		followups = followups[:4]
 	}
 	return followups
+}
+
+func leadingDeviationIdentity(result apmDeviationResult) (LeaderboardEntry, bool) {
+	ordered := [][]LeaderboardEntry{
+		result.Leaderboards.Reliability.Regressions, result.Leaderboards.Reliability.Improvements,
+		result.Leaderboards.Experience.Regressions, result.Leaderboards.Experience.Improvements,
+		result.Leaderboards.SustainedLatency.Regressions, result.Leaderboards.SustainedLatency.Improvements,
+		result.ThroughputShifts,
+	}
+	for _, entries := range ordered {
+		if len(entries) > 0 {
+			return entries[0], true
+		}
+	}
+	if len(result.TelemetryChanges) > 0 {
+		change := result.TelemetryChanges[0]
+		return LeaderboardEntry{ServiceName: change.ServiceName, Env: change.Env}, true
+	}
+	return LeaderboardEntry{}, false
 }
 
 func publicDeviationErrors(errors []deviationQueryError) []deviationPartialError {
@@ -688,10 +815,37 @@ func hasAnyAPMTelemetry(ctx context.Context, runner deviationQueryRunner, args D
 	if args.Env != "" {
 		matchers = append(matchers, fmt.Sprintf(`env="%s"`, escapePromQLLabel(args.Env)))
 	}
-	query := fmt.Sprintf("sum(trace_endpoint_count{%s})", strings.Join(matchers, ","))
+	selector := strings.Join(matchers, ",")
+	families := []string{"trace_endpoint_count", "trace_client_count", "domain_attributes_count"}
+	windowsToCheck := []TimeWindow{effectiveCurrentWindow(windows), effectiveBaselineWindow(windows)}
+	checks := make([]string, 0, len(families)*len(windowsToCheck))
+	for _, window := range windowsToCheck {
+		for _, family := range families {
+			expression := fmt.Sprintf("sum by (service_name, env) (%s{%s})", family, selector)
+			checks = append(checks, fmt.Sprintf("sum(count_over_time(%s))", deviationSubquery(expression, window, windows.QueryStep)))
+		}
+	}
+	query := strings.Join(checks, " or ")
 	vectors, err := runner.Query(ctx, query, windows.EffectiveCurrentEnd)
 	if err != nil {
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return false, err
+		}
 		return false, fmt.Errorf("workload telemetry check failed")
 	}
 	return len(vectors) > 0, nil
+}
+
+func executionHasValidREDMeasurement(execution deviationQueryExecution) bool {
+	for _, records := range [][]deviationAggregate{execution.Current.Records, execution.Baseline.Records} {
+		for _, record := range records {
+			if validAggregatePair(record.RequestTotal, record.RequestCount) || validAggregatePair(record.ErrorTotal, record.ErrorCount) || validApdexAggregate(record) || validLatencyAggregate(record) {
+				return true
+			}
+		}
+	}
+	return false
 }

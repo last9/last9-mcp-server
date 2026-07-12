@@ -24,18 +24,22 @@ type deviationQueryScope struct {
 type deviationField string
 
 const (
-	deviationFieldRequestTotal     deviationField = "request_total"
-	deviationFieldRequestCount     deviationField = "request_count"
-	deviationFieldErrorTotal       deviationField = "error_total"
-	deviationFieldErrorCount       deviationField = "error_count"
-	deviationFieldApdexNumerator   deviationField = "apdex_numerator"
-	deviationFieldApdexDenominator deviationField = "apdex_denominator"
-	deviationFieldApdexCount       deviationField = "apdex_count"
-	deviationFieldLatencyQ25       deviationField = "latency_q25"
-	deviationFieldLatencyMedian    deviationField = "latency_median"
-	deviationFieldLatencyQ75       deviationField = "latency_q75"
-	deviationFieldLatencyMax       deviationField = "latency_max"
-	deviationFieldLatencyCount     deviationField = "latency_count"
+	deviationFieldRequestTotal                deviationField = "request_total"
+	deviationFieldRequestCount                deviationField = "request_count"
+	deviationFieldErrorTotal                  deviationField = "error_total"
+	deviationFieldErrorCount                  deviationField = "error_count"
+	deviationFieldApdexNumerator              deviationField = "apdex_numerator"
+	deviationFieldApdexDenominator            deviationField = "apdex_denominator"
+	deviationFieldApdexCount                  deviationField = "apdex_count"
+	deviationFieldRequestDistribution         deviationField = "request_distribution"
+	deviationFieldErrorThroughputDistribution deviationField = "error_throughput_distribution"
+	deviationFieldErrorPercentageDistribution deviationField = "error_percentage_distribution"
+	deviationFieldApdexDistribution           deviationField = "apdex_distribution"
+	deviationFieldLatencyQ25                  deviationField = "latency_q25"
+	deviationFieldLatencyMedian               deviationField = "latency_median"
+	deviationFieldLatencyQ75                  deviationField = "latency_q75"
+	deviationFieldLatencyMax                  deviationField = "latency_max"
+	deviationFieldLatencyCount                deviationField = "latency_count"
 )
 
 type deviationQuery struct {
@@ -59,21 +63,33 @@ type deviationVector struct {
 }
 
 type deviationAggregate struct {
-	ServiceName      string
-	Env              string
-	SpanName         string
-	RequestTotal     *float64
-	RequestCount     *float64
-	ErrorTotal       *float64
-	ErrorCount       *float64
-	ApdexNumerator   *float64
-	ApdexDenominator *float64
-	ApdexCount       *float64
-	LatencyQ25       *float64
-	LatencyMedian    *float64
-	LatencyQ75       *float64
-	LatencyMax       *float64
-	LatencyCount     *float64
+	ServiceName           string
+	Env                   string
+	SpanName              string
+	RequestTotal          *float64
+	RequestCount          *float64
+	ErrorTotal            *float64
+	ErrorCount            *float64
+	ApdexNumerator        *float64
+	ApdexDenominator      *float64
+	ApdexCount            *float64
+	RequestQ25            *float64
+	RequestMedian         *float64
+	RequestQ75            *float64
+	ErrorThroughputQ25    *float64
+	ErrorThroughputMedian *float64
+	ErrorThroughputQ75    *float64
+	ErrorPercentageQ25    *float64
+	ErrorPercentageMedian *float64
+	ErrorPercentageQ75    *float64
+	ApdexQ25              *float64
+	ApdexMedian           *float64
+	ApdexQ75              *float64
+	LatencyQ25            *float64
+	LatencyMedian         *float64
+	LatencyQ75            *float64
+	LatencyMax            *float64
+	LatencyCount          *float64
 }
 
 type deviationQueryResult struct {
@@ -228,6 +244,12 @@ func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, s
 	apdexNumerator := fmt.Sprintf("%s * on (%s) %s", alignedApdex, matching, alignedRequests)
 	apdexNumeratorGrid := deviationSubquery(apdexNumerator, window, step)
 	alignedRequestGrid := deviationSubquery(alignedRequests, window, step)
+	stepMinutes := strconv.FormatFloat(step.Minutes(), 'f', -1, 64)
+	requestRPMGrid := deviationSubquery(fmt.Sprintf("(%s / %s)", requestExpression, stepMinutes), window, step)
+	errorRPMGrid := deviationSubquery(fmt.Sprintf("(%s / %s)", errorExpression, stepMinutes), window, step)
+	errorPercentageExpression := fmt.Sprintf("(((%s / %s) * 100) and on (%s) (%s > 0))", errorExpression, requestExpression, matching, requestExpression)
+	errorPercentageGrid := deviationSubquery(errorPercentageExpression, window, step)
+	apdexDistributionGrid := deviationSubquery(alignedApdex, window, step)
 
 	limit := func(expression string) string {
 		return fmt.Sprintf("(%s) and on (%s) (%s)", expression, matching, candidateMask)
@@ -240,6 +262,10 @@ func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, s
 		{Name: "apdex_numerator", Field: deviationFieldApdexNumerator, Text: limit(fmt.Sprintf("sum_over_time(%s)", apdexNumeratorGrid))},
 		{Name: "apdex_denominator", Field: deviationFieldApdexDenominator, Text: limit(fmt.Sprintf("sum_over_time(%s)", alignedRequestGrid))},
 		{Name: "apdex_count", Field: deviationFieldApdexCount, Text: limit(fmt.Sprintf("count_over_time(%s)", alignedRequestGrid))},
+		{Name: "request_distribution", Field: deviationFieldRequestDistribution, Text: limit(deviationDistributionQuery(requestRPMGrid))},
+		{Name: "error_throughput_distribution", Field: deviationFieldErrorThroughputDistribution, Text: limit(deviationDistributionQuery(errorRPMGrid))},
+		{Name: "error_percentage_distribution", Field: deviationFieldErrorPercentageDistribution, Text: limit(deviationDistributionQuery(errorPercentageGrid))},
+		{Name: "apdex_distribution", Field: deviationFieldApdexDistribution, Text: limit(deviationDistributionQuery(apdexDistributionGrid))},
 		{Name: "latency_q25", Field: deviationFieldLatencyQ25, Text: limit(fmt.Sprintf("quantile_over_time(0.25, %s)", latencyGrid))},
 		{Name: "latency_median", Field: deviationFieldLatencyMedian, Text: limit(fmt.Sprintf("quantile_over_time(0.5, %s)", latencyGrid))},
 		{Name: "latency_q75", Field: deviationFieldLatencyQ75, Text: limit(fmt.Sprintf("quantile_over_time(0.75, %s)", latencyGrid))},
@@ -250,6 +276,22 @@ func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, s
 		queries[index].CandidateMask = candidateMask
 	}
 	return queries
+}
+
+func deviationDistributionQuery(grid string) string {
+	parts := []struct {
+		quantile  string
+		statistic string
+	}{
+		{quantile: "0.25", statistic: "q25"},
+		{quantile: "0.5", statistic: "median"},
+		{quantile: "0.75", statistic: "q75"},
+	}
+	queries := make([]string, 0, len(parts))
+	for _, part := range parts {
+		queries = append(queries, fmt.Sprintf(`label_replace(quantile_over_time(%s, %s), "deviation_stat", "%s", "", "")`, part.quantile, grid, part.statistic))
+	}
+	return strings.Join(queries, " or ")
 }
 
 func deviationGroupLabels(operations bool) []string {
@@ -329,6 +371,8 @@ func executeDeviationQueries(
 		execution.Err = err
 	} else if attempted > 0 && successful == 0 {
 		execution.Err = fmt.Errorf("all metric queries failed")
+	} else if len(execution.Current.Records) == 0 && len(execution.Baseline.Records) == 0 && hasInvalidAggregateErrors(execution.Errors) {
+		execution.Err = fmt.Errorf("metric queries returned no valid aggregate values")
 	}
 	return execution
 }
@@ -394,13 +438,22 @@ func parseDeviationQueryValues(queries []deviationQuery, responses map[string][]
 				parseErrors = append(parseErrors, errorEvidence)
 				continue
 			}
+			statistic := vector.Metric["deviation_stat"]
+			if isDeviationDistributionField(query.Field) && !validDeviationStatistic(statistic) {
+				errorEvidence.Kind = "invalid_statistic"
+				parseErrors = append(parseErrors, errorEvidence)
+				continue
+			}
 			key := serviceName + "\x00" + env + "\x00" + spanName
 			record := records[key]
 			if record == nil {
 				record = &deviationAggregate{ServiceName: serviceName, Env: env, SpanName: spanName}
 				records[key] = record
 			}
-			setDeviationField(record, query.Field, value)
+			if !setDeviationField(record, query.Field, statistic, value) {
+				errorEvidence.Kind = "invalid_statistic"
+				parseErrors = append(parseErrors, errorEvidence)
+			}
 		}
 	}
 
@@ -419,6 +472,19 @@ func parseDeviationQueryValues(queries []deviationQuery, responses map[string][]
 		return left < right
 	})
 	return output, parseErrors
+}
+
+func isDeviationDistributionField(field deviationField) bool {
+	switch field {
+	case deviationFieldRequestDistribution, deviationFieldErrorThroughputDistribution, deviationFieldErrorPercentageDistribution, deviationFieldApdexDistribution:
+		return true
+	default:
+		return false
+	}
+}
+
+func validDeviationStatistic(statistic string) bool {
+	return statistic == "q25" || statistic == "median" || statistic == "q75"
 }
 
 func finitePromValue(value []any) (float64, string) {
@@ -444,7 +510,7 @@ func finitePromValue(value []any) (float64, string) {
 	return parsed, ""
 }
 
-func setDeviationField(record *deviationAggregate, field deviationField, value float64) {
+func setDeviationField(record *deviationAggregate, field deviationField, statistic string, value float64) bool {
 	pointer := func() *float64 { result := value; return &result }
 	switch field {
 	case deviationFieldRequestTotal:
@@ -461,6 +527,14 @@ func setDeviationField(record *deviationAggregate, field deviationField, value f
 		record.ApdexDenominator = pointer()
 	case deviationFieldApdexCount:
 		record.ApdexCount = pointer()
+	case deviationFieldRequestDistribution:
+		return setDeviationDistributionField(statistic, pointer, &record.RequestQ25, &record.RequestMedian, &record.RequestQ75)
+	case deviationFieldErrorThroughputDistribution:
+		return setDeviationDistributionField(statistic, pointer, &record.ErrorThroughputQ25, &record.ErrorThroughputMedian, &record.ErrorThroughputQ75)
+	case deviationFieldErrorPercentageDistribution:
+		return setDeviationDistributionField(statistic, pointer, &record.ErrorPercentageQ25, &record.ErrorPercentageMedian, &record.ErrorPercentageQ75)
+	case deviationFieldApdexDistribution:
+		return setDeviationDistributionField(statistic, pointer, &record.ApdexQ25, &record.ApdexMedian, &record.ApdexQ75)
 	case deviationFieldLatencyQ25:
 		record.LatencyQ25 = pointer()
 	case deviationFieldLatencyMedian:
@@ -471,5 +545,31 @@ func setDeviationField(record *deviationAggregate, field deviationField, value f
 		record.LatencyMax = pointer()
 	case deviationFieldLatencyCount:
 		record.LatencyCount = pointer()
+	default:
+		return false
 	}
+	return true
+}
+
+func setDeviationDistributionField(statistic string, pointer func() *float64, q25, median, q75 **float64) bool {
+	switch statistic {
+	case "q25":
+		*q25 = pointer()
+	case "median":
+		*median = pointer()
+	case "q75":
+		*q75 = pointer()
+	default:
+		return false
+	}
+	return true
+}
+
+func hasInvalidAggregateErrors(errors []deviationQueryError) bool {
+	for _, item := range errors {
+		if item.Kind != "query_failed" {
+			return true
+		}
+	}
+	return false
 }

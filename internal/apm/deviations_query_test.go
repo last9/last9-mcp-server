@@ -50,8 +50,36 @@ func TestServiceQueriesUseCanonicalServiceLatencyInMilliseconds(t *testing.T) {
 			t.Errorf("forbidden query fragment %q", forbidden)
 		}
 	}
-	if got := len(queries); got != 12 {
-		t.Fatalf("query count = %d, want 12 compact rollups", got)
+	if got := len(queries); got != 16 {
+		t.Fatalf("query count = %d, want 16 compact rollups", got)
+	}
+}
+
+func TestSignalDistributionQueriesCombineStatisticsWithoutExtraFanout(t *testing.T) {
+	current, baseline := deviationTestWindows()
+	queries := buildServiceRollupQueries(deviationQueryScope{ServiceName: "api", Env: "prod", Limit: 3}, current, baseline, time.Minute).Current
+
+	for _, name := range []string{"request_distribution", "error_throughput_distribution", "error_percentage_distribution", "apdex_distribution"} {
+		query := queryTextByName(t, queries, name)
+		for _, want := range []string{
+			"quantile_over_time(0.25", "quantile_over_time(0.5", "quantile_over_time(0.75",
+			`label_replace(`, `"deviation_stat"`, `"q25"`, `"median"`, `"q75"`, " or ",
+		} {
+			if !strings.Contains(query, want) {
+				t.Errorf("%s missing %q: %s", name, want, query)
+			}
+		}
+	}
+
+	errorPercentage := queryTextByName(t, queries, "error_percentage_distribution")
+	for _, want := range []string{"* 0", "trace_endpoint_count", "> 0", "* 100"} {
+		if !strings.Contains(errorPercentage, want) {
+			t.Errorf("error percentage distribution is not request aligned and zero-error aware; missing %q: %s", want, errorPercentage)
+		}
+	}
+	apdex := queryTextByName(t, queries, "apdex_distribution")
+	if !strings.Contains(apdex, "trace_service_apdex_score") || !strings.Contains(apdex, "and on (service_name, env)") {
+		t.Fatalf("Apdex distribution does not use the aligned Apdex population: %s", apdex)
 	}
 }
 
@@ -220,6 +248,50 @@ func TestParseDeviationQueryValuesPreservesIdentityFieldAndKind(t *testing.T) {
 	malformed := findDeviationError(t, parseErrors, "malformed_value")
 	if malformed.ServiceName != "b" || malformed.SpanName != "GET /b" {
 		t.Fatalf("malformed value evidence was lost: %+v", malformed)
+	}
+}
+
+func TestParseDeviationQueryValuesDecodesCombinedStatisticsDeterministically(t *testing.T) {
+	queries := []deviationQuery{
+		{Name: "request_distribution", Field: deviationFieldRequestDistribution},
+		{Name: "error_percentage_distribution", Field: deviationFieldErrorPercentageDistribution},
+	}
+	responses := map[string][]deviationVector{
+		"request_distribution": {
+			{Metric: map[string]string{"service_name": "api", "env": "prod", "deviation_stat": "q75"}, Value: []any{1.0, "12"}},
+			{Metric: map[string]string{"service_name": "api", "env": "prod", "deviation_stat": "q25"}, Value: []any{1.0, "8"}},
+			{Metric: map[string]string{"service_name": "api", "env": "prod", "deviation_stat": "median"}, Value: []any{1.0, "10"}},
+		},
+		"error_percentage_distribution": {
+			{Metric: map[string]string{"service_name": "api", "env": "prod", "deviation_stat": "median"}, Value: []any{1.0, "1.5"}},
+			{Metric: map[string]string{"service_name": "api", "env": "prod", "deviation_stat": "unknown"}, Value: []any{1.0, "9"}},
+		},
+	}
+
+	records, parseErrors := parseDeviationQueryValues(queries, responses)
+	if len(records) != 1 {
+		t.Fatalf("records = %+v", records)
+	}
+	got := records[0]
+	if got.RequestQ25 == nil || *got.RequestQ25 != 8 || got.RequestMedian == nil || *got.RequestMedian != 10 || got.RequestQ75 == nil || *got.RequestQ75 != 12 {
+		t.Fatalf("request distribution was not decoded: %+v", got)
+	}
+	if got.ErrorPercentageMedian == nil || *got.ErrorPercentageMedian != 1.5 {
+		t.Fatalf("error percentage median missing: %+v", got)
+	}
+	if len(parseErrors) != 1 || parseErrors[0].Kind != "invalid_statistic" {
+		t.Fatalf("unknown statistic was not rejected: %+v", parseErrors)
+	}
+}
+
+func TestExecuteDeviationQueriesReturnsErrorForMalformedOnlyResponses(t *testing.T) {
+	runner := deviationQueryRunnerFunc(func(context.Context, string, time.Time) ([]deviationVector, error) {
+		return []deviationVector{{Metric: map[string]string{"service_name": "api", "env": "prod"}, Value: []any{1.0, "NaN"}}}, nil
+	})
+	queries := []deviationQuery{{Name: "requests_sum", Field: deviationFieldRequestTotal, Text: "requests"}}
+	got := executeDeviationQueries(context.Background(), runner, deviationQueryPlan{CurrentEnd: time.Now(), BaselineEnd: time.Now(), Current: queries, Baseline: queries})
+	if got.Err == nil || got.Err.Error() != "metric queries returned no valid aggregate values" {
+		t.Fatalf("malformed-only error = %v, execution=%+v", got.Err, got)
 	}
 }
 

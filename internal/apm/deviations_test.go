@@ -91,6 +91,51 @@ func TestAPMServiceDeviationsHandlerFleetKeepsEnvironmentsSeparateAndStable(t *t
 	}
 }
 
+func TestAPMServiceDeviationsHandlerSuppressesStableSignalJitter(t *testing.T) {
+	baseline := aggregate("api", "prod", "", 600, 6, 12, 6, 540, 600, 6, 95, 100, 105, 110, 6)
+	current := aggregate("api", "prod", "", 618, 6, 13, 6, 548, 618, 6, 98, 103, 108, 112, 6)
+	setAggregateDistributions(&baseline,
+		Distribution{Q25: 95, Median: 100, Q75: 105}, Distribution{Q25: 1.5, Median: 2, Q75: 2.5},
+		Distribution{Q25: 0.7, Median: 1, Q75: 1.4}, Distribution{Q25: 0.88, Median: 0.9, Q75: 0.92})
+	setAggregateDistributions(&current,
+		Distribution{Q25: 98, Median: 103, Q75: 108}, Distribution{Q25: 1.7, Median: 2.1, Q75: 2.6},
+		Distribution{Q25: 0.8, Median: 1.1, Q75: 1.5}, Distribution{Q25: 0.89, Median: 0.9, Q75: 0.91})
+
+	deps := testDeviationHandlerDeps()
+	queryCalls := 0
+	deps.execute = func(_ context.Context, _ deviationQueryRunner, _ deviationQueryPlan) deviationQueryExecution {
+		queryCalls++
+		return deviationQueryExecution{Current: deviationQueryResult{Records: []deviationAggregate{current}}, Baseline: deviationQueryResult{Records: []deviationAggregate{baseline}}}
+	}
+	args := sixMinuteDeviationArgs()
+	args.ServiceName = "api"
+	response := callDeviationHandler(t, newAPMServiceDeviationsHandler(http.DefaultClient, models.Config{}, deps), args)
+	if response.Outcome != "stable" || len(response.ThroughputShifts) != 0 || len(response.OperationCorrelations) != 0 || queryCalls != 1 {
+		t.Fatalf("stable jitter produced investigation evidence: outcome=%q throughput=%+v operations=%+v calls=%d", response.Outcome, response.ThroughputShifts, response.OperationCorrelations, queryCalls)
+	}
+	if len(response.Leaderboards.Reliability.Regressions)+len(response.Leaderboards.Reliability.Improvements)+len(response.Leaderboards.Experience.Regressions)+len(response.Leaderboards.Experience.Improvements) != 0 {
+		t.Fatalf("stable RED jitter entered leaderboards: %+v", response.Leaderboards)
+	}
+}
+
+func TestAPMServiceDeviationsHandlerClassifiesMaterialThroughputAsShift(t *testing.T) {
+	baseline := aggregate("api", "prod", "", 600, 6, 6, 6, 540, 600, 6, 95, 100, 105, 110, 6)
+	current := aggregate("api", "prod", "", 1200, 6, 12, 6, 1080, 1200, 6, 95, 100, 105, 110, 6)
+	setAggregateDistributions(&baseline, Distribution{Q25: 90, Median: 100, Q75: 110}, Distribution{}, Distribution{}, Distribution{})
+	setAggregateDistributions(&current, Distribution{Q25: 190, Median: 200, Q75: 210}, Distribution{}, Distribution{}, Distribution{})
+	deps := testDeviationHandlerDeps()
+	deps.execute = func(context.Context, deviationQueryRunner, deviationQueryPlan) deviationQueryExecution {
+		return deviationQueryExecution{Current: deviationQueryResult{Records: []deviationAggregate{current}}, Baseline: deviationQueryResult{Records: []deviationAggregate{baseline}}}
+	}
+	response := callDeviationHandler(t, newAPMServiceDeviationsHandler(http.DefaultClient, models.Config{}, deps), sixMinuteDeviationArgs())
+	if len(response.ThroughputShifts) != 1 || response.ThroughputShifts[0].Comparison.Classification != "shift" || response.ThroughputShifts[0].Comparison.Direction != "increased" {
+		t.Fatalf("throughput comparison = %+v", response.ThroughputShifts)
+	}
+	if len(response.Leaderboards.Reliability.Regressions)+len(response.Leaderboards.Experience.Improvements) != 0 {
+		t.Fatalf("throughput was treated as health: %+v", response.Leaderboards)
+	}
+}
+
 func TestAPMServiceDeviationsHandlerServiceRegressionCorrelatesOperations(t *testing.T) {
 	deps := testDeviationHandlerDeps()
 	calls := 0
@@ -189,6 +234,213 @@ func TestAPMServiceDeviationsHandlerUnsupportedWorkloadShape(t *testing.T) {
 	}
 	if len(response.Leaderboards.Reliability.Regressions) != 0 || len(response.Services) != 0 {
 		t.Fatalf("unsupported workload was classified: %+v", response)
+	}
+	if len(response.RecommendedFollowups) != 1 || response.RecommendedFollowups[0].Tool != "get_service_traces" || response.RecommendedFollowups[0].Arguments["service_name"] != "processor" {
+		t.Fatalf("unsupported workload follow-up = %+v", response.RecommendedFollowups)
+	}
+}
+
+func TestAPMServiceDeviationsHandlerRejectsIncompleteOrMalformedAggregates(t *testing.T) {
+	t.Run("count only", func(t *testing.T) {
+		count := 6.0
+		record := deviationAggregate{ServiceName: "api", Env: "prod", RequestCount: &count}
+		deps := testDeviationHandlerDeps()
+		deps.execute = func(context.Context, deviationQueryRunner, deviationQueryPlan) deviationQueryExecution {
+			return deviationQueryExecution{Current: deviationQueryResult{Records: []deviationAggregate{record}}, Baseline: deviationQueryResult{Records: []deviationAggregate{record}}}
+		}
+		_, _, err := newAPMServiceDeviationsHandler(http.DefaultClient, models.Config{}, deps)(context.Background(), &mcp.CallToolRequest{}, sixMinuteDeviationArgs())
+		if err == nil || err.Error() != "metric queries returned no valid RED measurements" {
+			t.Fatalf("count-only error = %v", err)
+		}
+	})
+
+	t.Run("malformed only", func(t *testing.T) {
+		deps := testDeviationHandlerDeps()
+		deps.execute = func(context.Context, deviationQueryRunner, deviationQueryPlan) deviationQueryExecution {
+			return deviationQueryExecution{Errors: []deviationQueryError{{Window: "current", Signal: "requests_sum", Field: string(deviationFieldRequestTotal), Kind: "non_finite_value"}}}
+		}
+		_, _, err := newAPMServiceDeviationsHandler(http.DefaultClient, models.Config{}, deps)(context.Background(), &mcp.CallToolRequest{}, sixMinuteDeviationArgs())
+		if err == nil || err.Error() != "metric queries returned no valid aggregate values" {
+			t.Fatalf("malformed-only error = %v", err)
+		}
+	})
+
+	t.Run("one valid signal", func(t *testing.T) {
+		current := aggregate("api", "prod", "", 120, 6, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0)
+		baseline := aggregate("api", "prod", "", 60, 6, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0)
+		current.ErrorTotal, current.ErrorCount, current.ApdexNumerator, current.ApdexDenominator, current.ApdexCount = nil, nil, nil, nil, nil
+		baseline.ErrorTotal, baseline.ErrorCount, baseline.ApdexNumerator, baseline.ApdexDenominator, baseline.ApdexCount = nil, nil, nil, nil, nil
+		current.LatencyQ25, current.LatencyMedian, current.LatencyQ75, current.LatencyMax, current.LatencyCount = nil, nil, nil, nil, nil
+		baseline.LatencyQ25, baseline.LatencyMedian, baseline.LatencyQ75, baseline.LatencyMax, baseline.LatencyCount = nil, nil, nil, nil, nil
+		deps := testDeviationHandlerDeps()
+		deps.execute = func(context.Context, deviationQueryRunner, deviationQueryPlan) deviationQueryExecution {
+			return deviationQueryExecution{
+				Current: deviationQueryResult{Records: []deviationAggregate{current}}, Baseline: deviationQueryResult{Records: []deviationAggregate{baseline}},
+				Errors: []deviationQueryError{{Window: "current", Signal: "errors_sum", Field: string(deviationFieldErrorTotal), Kind: "query_failed"}},
+			}
+		}
+		response := callDeviationHandler(t, newAPMServiceDeviationsHandler(http.DefaultClient, models.Config{}, deps), sixMinuteDeviationArgs())
+		if len(response.PartialErrors) != 1 || len(response.Warnings) == 0 {
+			t.Fatalf("partial valid signal was not returned with warnings: %+v", response)
+		}
+	})
+
+	t.Run("successful empty", func(t *testing.T) {
+		deps := testDeviationHandlerDeps()
+		deps.execute = func(context.Context, deviationQueryRunner, deviationQueryPlan) deviationQueryExecution {
+			return deviationQueryExecution{}
+		}
+		response := callDeviationHandler(t, newAPMServiceDeviationsHandler(http.DefaultClient, models.Config{}, deps), DeviationArgs{})
+		if response.Outcome != "no_data" {
+			t.Fatalf("empty successful outcome = %q", response.Outcome)
+		}
+	})
+}
+
+func TestAPMWorkloadPresenceChecksBothWindowsAndFamilies(t *testing.T) {
+	windows, err := resolveDeviationWindows(sixMinuteDeviationArgs(), time.Date(2026, 7, 11, 10, 7, 0, 0, time.UTC), time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name    string
+		vectors []deviationVector
+		want    bool
+	}{
+		{name: "client only", vectors: []deviationVector{{Metric: map[string]string{"family": "trace_client_count"}, Value: []any{1.0, "1"}}}, want: true},
+		{name: "baseline only", vectors: []deviationVector{{Metric: map[string]string{"window": "baseline"}, Value: []any{1.0, "1"}}}, want: true},
+		{name: "earlier current window", vectors: []deviationVector{{Metric: map[string]string{"window": "current"}, Value: []any{1.0, "1"}}}, want: true},
+		{name: "absent", vectors: []deviationVector{}, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			runner := deviationQueryRunnerFunc(func(_ context.Context, query string, end time.Time) ([]deviationVector, error) {
+				calls++
+				for _, want := range []string{"trace_endpoint_count", "trace_client_count", "domain_attributes_count", strconvUnix(windows.EffectiveCurrentEnd), strconvUnix(windows.EffectiveBaselineEnd), `service_name="processor"`, `env="prod"`} {
+					if !strings.Contains(query, want) {
+						t.Errorf("presence query missing %q: %s", want, query)
+					}
+				}
+				if !end.Equal(windows.EffectiveCurrentEnd) {
+					t.Errorf("query end = %s", end)
+				}
+				return tc.vectors, nil
+			})
+			got, err := hasAnyAPMTelemetry(context.Background(), runner, DeviationArgs{ServiceName: "processor", Env: "prod"}, windows)
+			if err != nil || got != tc.want || calls != 1 {
+				t.Fatalf("presence = %t, err=%v, calls=%d", got, err, calls)
+			}
+		})
+	}
+}
+
+func TestAPMWorkloadPresencePreservesErrorsAndCancellation(t *testing.T) {
+	windows, err := resolveDeviationWindows(sixMinuteDeviationArgs(), time.Date(2026, 7, 11, 10, 7, 0, 0, time.UTC), time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := errors.New("upstream unavailable")
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{name: "upstream", err: upstream},
+		{name: "cancelled", err: context.Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := deviationQueryRunnerFunc(func(context.Context, string, time.Time) ([]deviationVector, error) { return nil, tc.err })
+			_, gotErr := hasAnyAPMTelemetry(context.Background(), runner, DeviationArgs{ServiceName: "processor"}, windows)
+			if tc.err == context.Canceled {
+				if !errors.Is(gotErr, context.Canceled) {
+					t.Fatalf("cancellation = %v", gotErr)
+				}
+			} else if gotErr == nil || gotErr.Error() != "workload telemetry check failed" {
+				t.Fatalf("upstream error = %v", gotErr)
+			}
+		})
+	}
+}
+
+func TestAPMServiceDeviationsHandlerFleetFollowupSelectsLeadingIdentity(t *testing.T) {
+	baseline := aggregate("api", "prod", "", 600, 6, 6, 6, 570, 600, 6, 80, 100, 120, 130, 6)
+	current := aggregate("api", "prod", "", 600, 6, 60, 6, 420, 600, 6, 80, 100, 120, 130, 6)
+	deps := testDeviationHandlerDeps()
+	deps.execute = func(context.Context, deviationQueryRunner, deviationQueryPlan) deviationQueryExecution {
+		return deviationQueryExecution{Current: deviationQueryResult{Records: []deviationAggregate{current}}, Baseline: deviationQueryResult{Records: []deviationAggregate{baseline}}}
+	}
+	args := sixMinuteDeviationArgs()
+	args.Datasource = "primary"
+	args.MaxOperations = 4
+	response := callDeviationHandler(t, newAPMServiceDeviationsHandler(http.DefaultClient, models.Config{}, deps), args)
+	if len(response.RecommendedFollowups) != 1 || response.RecommendedFollowups[0].Tool != "get_apm_service_deviations" {
+		t.Fatalf("fleet follow-ups = %+v", response.RecommendedFollowups)
+	}
+	followup := response.RecommendedFollowups[0]
+	if followup.Arguments["service_name"] != "api" || followup.Arguments["env"] != "prod" || followup.Arguments["datasource"] != "primary" || followup.Arguments["max_operations"] != "4" {
+		t.Fatalf("fleet transition lost scope: %+v", followup)
+	}
+	for _, item := range response.RecommendedFollowups {
+		if item.Tool == "get_service_logs" && item.Arguments["service_name"] == "" {
+			t.Fatalf("fleet emitted unscoped log follow-up: %+v", item)
+		}
+	}
+}
+
+func TestOperationCorrelationMatchesServiceEnvironmentAndSignal(t *testing.T) {
+	windows, err := resolveDeviationWindows(sixMinuteDeviationArgs(), time.Date(2026, 7, 11, 10, 7, 0, 0, time.UTC), time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	regression := func(env string) LeaderboardEntry {
+		return LeaderboardEntry{ServiceName: "api", Env: env, Comparison: SignalComparison{Definition: SignalDefinition{Name: "error_percentage"}, Classification: "regression"}}
+	}
+	currentProd := aggregate("api", "prod", "GET /prod", 300, 6, 60, 6, 0, 0, 0, 0, 0, 0, 0, 0)
+	baselineProd := aggregate("api", "prod", "GET /prod", 300, 6, 3, 6, 0, 0, 0, 0, 0, 0, 0, 0)
+	currentStaging := aggregate("api", "staging", "GET /staging", 300, 6, 60, 6, 0, 0, 0, 0, 0, 0, 0, 0)
+	baselineStaging := aggregate("api", "staging", "GET /staging", 300, 6, 3, 6, 0, 0, 0, 0, 0, 0, 0, 0)
+	execution := deviationQueryExecution{Current: deviationQueryResult{Records: []deviationAggregate{currentProd, currentStaging}}, Baseline: deviationQueryResult{Records: []deviationAggregate{baselineProd, baselineStaging}}}
+
+	for _, tc := range []struct{ env, operation string }{{"prod", "GET /prod"}, {"staging", "GET /staging"}} {
+		result := apmDeviationResult{DeviationResponse: DeviationResponse{Leaderboards: emptyLeaderboards(), Services: []ServiceDeviation{{ServiceName: "api", Env: tc.env, Signals: []SignalComparison{{Definition: SignalDefinition{Name: "request_rpm"}, Current: WindowSummary{RequestTotal: 300}}}}}}}
+		result.Leaderboards.Reliability.Regressions = []LeaderboardEntry{regression(tc.env)}
+		got := correlateOperations(result, execution, windows, 10)
+		if len(got) != 1 || got[0].Env != tc.env || got[0].Operation != tc.operation {
+			t.Fatalf("%s correlation crossed environment: %+v", tc.env, got)
+		}
+	}
+}
+
+func TestOperationCorrelationSuppressesStableJitter(t *testing.T) {
+	windows, err := resolveDeviationWindows(sixMinuteDeviationArgs(), time.Date(2026, 7, 11, 10, 7, 0, 0, time.UTC), time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := aggregate("api", "prod", "GET /orders", 300, 6, 18, 6, 0, 0, 0, 0, 0, 0, 0, 0)
+	baseline := aggregate("api", "prod", "GET /orders", 300, 6, 15, 6, 0, 0, 0, 0, 0, 0, 0, 0)
+	setAggregateDistributions(&baseline, Distribution{}, Distribution{}, Distribution{Q25: 4, Median: 5, Q75: 6}, Distribution{})
+	setAggregateDistributions(&current, Distribution{}, Distribution{}, Distribution{Q25: 4.5, Median: 6, Q75: 7}, Distribution{})
+	result := apmDeviationResult{DeviationResponse: DeviationResponse{Leaderboards: emptyLeaderboards(), Services: []ServiceDeviation{{ServiceName: "api", Env: "prod"}}}}
+	result.Leaderboards.Reliability.Regressions = []LeaderboardEntry{{ServiceName: "api", Env: "prod", Comparison: SignalComparison{Definition: SignalDefinition{Name: "error_percentage"}, Classification: "regression"}}}
+	execution := deviationQueryExecution{Current: deviationQueryResult{Records: []deviationAggregate{current}}, Baseline: deviationQueryResult{Records: []deviationAggregate{baseline}}}
+	if got := correlateOperations(result, execution, windows, 10); len(got) != 0 {
+		t.Fatalf("stable operation jitter was correlated: %+v", got)
+	}
+}
+
+func TestErrorPercentageEvidenceRequiresAlignedRequestAndErrorCoverage(t *testing.T) {
+	record := aggregate("api", "prod", "", 600, 6, 6, 3, 540, 600, 6, 80, 100, 120, 130, 6)
+	summary := summaryFromAggregate(record, true, 6, time.Minute, nil)
+	if summary.Evidence.ErrorPercentage.ObservedPoints != 3 || summary.Evidence.ErrorPercentage.Coverage != 0.5 {
+		t.Fatalf("reliability evidence ignored sparse errors: %+v", summary.Evidence.ErrorPercentage)
+	}
+	comparison := signalSummary("error_percentage", summary)
+	if comparison.Evidence.Selected.Coverage != 0.5 {
+		t.Fatalf("selected reliability evidence = %+v", comparison.Evidence.Selected)
+	}
+
+	excluded := summaryFromAggregate(record, true, 6, time.Minute, map[deviationField]int{deviationFieldErrorTotal: 1})
+	if excluded.Evidence.ErrorPercentage.ExcludedValues == 0 || excluded.Evidence.ErrorPercentage.Coverage >= 1 {
+		t.Fatalf("excluded error values did not make reliability sparse: %+v", excluded.Evidence.ErrorPercentage)
 	}
 }
 
@@ -335,8 +587,8 @@ func TestAPMServiceDeviationsHandlerUsesResolvedDatasourceHTTPPath(t *testing.T)
 	if response.Datasource != "selected" {
 		t.Fatalf("datasource = %q", response.Datasource)
 	}
-	if calls.Load() != 24 {
-		t.Fatalf("HTTP calls = %d, want 24 compact current/baseline rollups", calls.Load())
+	if calls.Load() != 32 {
+		t.Fatalf("HTTP calls = %d, want 32 compact current/baseline rollups", calls.Load())
 	}
 }
 
@@ -358,13 +610,37 @@ func testDeviationHandlerDeps() deviationHandlerDeps {
 }
 
 func aggregate(service, env, span string, requests, requestCount, errors, errorCount, apdexNumerator, apdexDenominator, apdexCount, q25, median, q75, peak, latencyCount float64) deviationAggregate {
-	return deviationAggregate{
+	record := deviationAggregate{
 		ServiceName: service, Env: env, SpanName: span,
 		RequestTotal: &requests, RequestCount: &requestCount,
 		ErrorTotal: &errors, ErrorCount: &errorCount,
 		ApdexNumerator: &apdexNumerator, ApdexDenominator: &apdexDenominator, ApdexCount: &apdexCount,
 		LatencyQ25: &q25, LatencyMedian: &median, LatencyQ75: &q75, LatencyMax: &peak, LatencyCount: &latencyCount,
 	}
+	requestRPM := requests / 6
+	errorRPM := errors / 6
+	errorPercentage := 0.0
+	if requests > 0 {
+		errorPercentage = errors / requests * 100
+	}
+	apdex := 0.0
+	if apdexDenominator > 0 {
+		apdex = apdexNumerator / apdexDenominator
+	}
+	setAggregateDistributions(&record,
+		Distribution{Q25: requestRPM, Median: requestRPM, Q75: requestRPM},
+		Distribution{Q25: errorRPM, Median: errorRPM, Q75: errorRPM},
+		Distribution{Q25: errorPercentage, Median: errorPercentage, Q75: errorPercentage},
+		Distribution{Q25: apdex, Median: apdex, Q75: apdex},
+	)
+	return record
+}
+
+func setAggregateDistributions(record *deviationAggregate, requests, errors, errorPercentage, apdex Distribution) {
+	record.RequestQ25, record.RequestMedian, record.RequestQ75 = &requests.Q25, &requests.Median, &requests.Q75
+	record.ErrorThroughputQ25, record.ErrorThroughputMedian, record.ErrorThroughputQ75 = &errors.Q25, &errors.Median, &errors.Q75
+	record.ErrorPercentageQ25, record.ErrorPercentageMedian, record.ErrorPercentageQ75 = &errorPercentage.Q25, &errorPercentage.Median, &errorPercentage.Q75
+	record.ApdexQ25, record.ApdexMedian, record.ApdexQ75 = &apdex.Q25, &apdex.Median, &apdex.Q75
 }
 
 func sixMinuteDeviationArgs() DeviationArgs {
