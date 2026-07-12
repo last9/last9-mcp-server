@@ -1,0 +1,19 @@
+Compare APM performance across a current window and an equal-duration baseline window. Use this tool for questions such as what regressed, improved, or changed; incident-versus-prior-period comparisons; recovery or post-mitigation verification; and fleet deviation discovery.
+
+Use `get_service_summary` for a one-window snapshot of current performance. Use `get_apm_service_deviations` when the question requires an equal-duration baseline comparison.
+
+## Scope and inputs
+
+- Omit `service_name` for fleet scope. Provide `service_name` for one service and its operation correlations. Environments remain separate and are never merged; optionally use `env` to select one environment.
+- V1 supports server-request workloads. A named non-server workload may return `unsupported_workload_shape`.
+- The current window defaults to the last 60 minutes. Set `lookback_minutes`, or provide `start_time_iso` and `end_time_iso` for an explicit current window.
+- The baseline defaults to the immediately preceding equal-duration period. To compare another equal-duration period, provide both `baseline_start_time_iso` and `baseline_end_time_iso`.
+- `datasource` optionally selects one datasource for the comparison. Do not combine data across datasources in one call.
+- `max_services` and `max_operations` bound returned results. Each defaults to 5 and cannot exceed 10.
+
+## Interpreting results
+
+- `regressions` and `improvements` are separate. Throughput movement is reported as a contextual shift, not inherently as good or bad.
+- Telemetry changes identify identities present in only one window.
+- Evidence quality is categorical and reflects data coverage. A stable result has empty deviation leaderboards; do not manufacture a change when none is returned.
+- Operation correlations and structured, non-executing follow-ups help narrow an investigation. Correlation is supporting evidence only and does not establish contribution, attribution, cause, or root cause. Corroborate conclusions with traces, logs, and change events.

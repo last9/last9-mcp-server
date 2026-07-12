@@ -23,6 +23,9 @@ var GetServiceLogsInstructions string
 //go:embed descriptions/get_service_summary.md
 var GetServiceSummaryDescription string
 
+//go:embed descriptions/get_apm_service_deviations.md
+var GetAPMServiceDeviationsDescription string
+
 //go:embed descriptions/get_service_environments.md
 var GetServiceEnvironmentsDescription string
 

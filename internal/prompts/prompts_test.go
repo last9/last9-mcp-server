@@ -30,3 +30,32 @@ func TestGetServiceLogsInstructionsContainsDisambiguation(t *testing.T) {
 		}
 	}
 }
+
+func TestAPMServiceDeviationsDescription(t *testing.T) {
+	description := strings.ToLower(prompts.GetAPMServiceDeviationsDescription)
+	checks := []struct {
+		phrase string
+		reason string
+	}{
+		{"equal-duration baseline", "must describe comparative rather than snapshot behavior"},
+		{"get_service_summary", "must disambiguate one-window snapshots"},
+		{"service_name", "must explain fleet and service scope"},
+		{"environments remain separate", "must prevent merged environment conclusions"},
+		{"server-request workloads", "must state the V1 workload boundary"},
+		{"unsupported_workload_shape", "must name the unsupported workload outcome"},
+		{"datasource", "must document datasource selection"},
+		{"baseline_start_time_iso", "must document explicit baseline windows"},
+		{"max_services", "must document fleet result bounds"},
+		{"max_operations", "must document operation result bounds"},
+		{"regressions", "must describe regression results"},
+		{"improvements", "must describe improvement results"},
+		{"stable", "must describe stable results"},
+		{"evidence quality", "must describe categorical evidence quality"},
+		{"does not establish contribution, attribution, cause, or root cause", "must prevent causal overclaiming"},
+	}
+	for _, check := range checks {
+		if !strings.Contains(description, check.phrase) {
+			t.Errorf("description missing %q: %s", check.phrase, check.reason)
+		}
+	}
+}

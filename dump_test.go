@@ -28,8 +28,8 @@ func TestDumpTools(t *testing.T) {
 	// All registered tools must be covered — the whole point of dump-tools.
 	// A loose floor would let a regression silently drop tools. Tighten this
 	// when the committed snapshot + CI equality gate supersedes it.
-	if len(out.Tools) < 37 {
-		t.Fatalf("expected at least 37 tools, got %d", len(out.Tools))
+	if len(out.Tools) < 38 {
+		t.Fatalf("expected at least 38 tools, got %d", len(out.Tools))
 	}
 	if !sort.SliceIsSorted(out.Tools, func(i, j int) bool { return out.Tools[i].Name < out.Tools[j].Name }) {
 		t.Fatal("tools are not sorted by name (output must be deterministic for snapshot diffing)")
@@ -56,5 +56,27 @@ func TestDumpTools(t *testing.T) {
 	// enhancement substitutes it (empty on a cold cache).
 	if strings.Contains(out.Tools[byName["get_logs"]].Description, "{{labels}}") {
 		t.Fatal("get_logs description still contains unsubstituted {{labels}} placeholder")
+	}
+
+	deviationsIndex, ok := byName["get_apm_service_deviations"]
+	if !ok {
+		t.Fatal("tool \"get_apm_service_deviations\" missing from dump")
+	}
+	deviations := out.Tools[deviationsIndex]
+	if strings.TrimSpace(deviations.Description) == "" {
+		t.Fatal("get_apm_service_deviations has an empty description")
+	}
+	schema, err := json.Marshal(deviations.InputSchema)
+	if err != nil {
+		t.Fatalf("marshal get_apm_service_deviations inputSchema: %v", err)
+	}
+	for _, field := range []string{
+		"service_name", "env", "datasource", "start_time_iso", "end_time_iso",
+		"lookback_minutes", "baseline_start_time_iso", "baseline_end_time_iso",
+		"max_services", "max_operations",
+	} {
+		if !bytes.Contains(schema, []byte(`"`+field+`"`)) {
+			t.Errorf("get_apm_service_deviations inputSchema missing %q", field)
+		}
 	}
 }
