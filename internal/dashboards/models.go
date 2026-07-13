@@ -34,6 +34,9 @@ type CreateDashboardSnapshotArgs struct {
 	PanelData           json.RawMessage `json:"panel_data" jsonschema:"(Required) Frozen panel query results keyed by panel id"`
 }
 
+// Note: variables is optional in the MCP schema but always sent on the wire as {}
+// when omitted — the v4 API currently 500s if the field is absent.
+
 type ListDashboardSnapshotsArgs struct {
 	DashboardID string `json:"dashboard_id" jsonschema:"(Required) Dashboard UUID whose snapshots to list"`
 }

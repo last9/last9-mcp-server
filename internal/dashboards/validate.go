@@ -166,3 +166,11 @@ func validateCreateSnapshotArgs(args CreateDashboardSnapshotArgs) error {
 	}
 	return validateExpiresAt(args.ExpiresAt)
 }
+
+// normalizeCreateSnapshotArgs fills API-required defaults the wire format rejects when omitted.
+// Prod currently 500s when variables is absent (nil after decode); send {}.
+func normalizeCreateSnapshotArgs(args *CreateDashboardSnapshotArgs) {
+	if len(args.Variables) == 0 {
+		args.Variables = json.RawMessage(`{}`)
+	}
+}

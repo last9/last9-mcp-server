@@ -667,7 +667,7 @@ Returns the full frozen snapshot including `dashboard_definition`, `panel_data`,
 - `panel_data` (object, required): Frozen panel query results keyed by panel id.
 - `description` (string, optional): Snapshot description.
 - `expires_at` (integer, optional): Unix expiry timestamp in seconds; must be in the future. Omit for no expiry.
-- `variables` (object, optional): Selected dashboard variable values at capture time.
+- `variables` (object, optional): Selected dashboard variable values at capture time. When omitted, the server sends `{}` (the v4 API currently 500s if the field is absent).
 - `region` (string, optional): Region used when capturing panel data.
 
 Prefer UI capture when panel query results are unavailable — create requires a full live capture payload.

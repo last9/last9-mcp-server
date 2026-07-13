@@ -19,6 +19,7 @@ func NewCreateDashboardSnapshotHandler(client *http.Client, cfg models.Config) f
 		if err := validateCreateSnapshotArgs(args); err != nil {
 			return nil, nil, err
 		}
+		normalizeCreateSnapshotArgs(&args)
 
 		payload, err := json.Marshal(args)
 		if err != nil {
