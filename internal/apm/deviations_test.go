@@ -326,6 +326,31 @@ func TestAPMServiceDeviationsHandlerUnsupportedWorkloadShape(t *testing.T) {
 	}
 }
 
+func TestAPMServiceDeviationsHandlerSoftensPresenceCheckError(t *testing.T) {
+	upstream := errors.New("upstream unavailable")
+	deps := testDeviationHandlerDeps()
+	deps.execute = func(_ context.Context, _ deviationQueryRunner, _ deviationQueryPlan) deviationQueryExecution {
+		return deviationQueryExecution{}
+	}
+	deps.hasAnyAPMTelemetry = func(context.Context, deviationQueryRunner, DeviationArgs, DeviationWindows) (bool, error) {
+		return false, upstream
+	}
+	handler := newAPMServiceDeviationsHandler(http.DefaultClient, models.Config{}, deps)
+	response := callDeviationHandler(t, handler, DeviationArgs{ServiceName: "processor"})
+	if response.Outcome != "no_data" {
+		t.Fatalf("outcome = %q, want no_data", response.Outcome)
+	}
+	found := false
+	for _, w := range response.Warnings {
+		if strings.Contains(w, "Workload telemetry presence could not be confirmed") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing presence-check warning in %v", response.Warnings)
+	}
+}
+
 func TestAPMServiceDeviationsHandlerRejectsIncompleteOrMalformedAggregates(t *testing.T) {
 	t.Run("count only", func(t *testing.T) {
 		count := 6.0

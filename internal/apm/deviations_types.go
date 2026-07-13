@@ -147,10 +147,3 @@ type DeviationResponse struct {
 	Warnings         []string              `json:"warnings,omitempty"`
 }
 
-type bucket struct {
-	Timestamp    time.Time
-	Requests     *float64
-	Errors       *float64
-	Apdex        *float64
-	P95LatencyMS *float64
-}

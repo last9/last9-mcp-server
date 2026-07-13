@@ -160,9 +160,14 @@ func newAPMServiceDeviationsHandler(client *http.Client, baseCfg models.Config, 
 		if args.ServiceName != "" && len(result.Services) == 0 && len(result.TelemetryChanges) == 0 {
 			present, detectErr := deps.hasAnyAPMTelemetry(ctx, runner, args, windows)
 			if detectErr != nil {
-				return nil, nil, detectErr
-			}
-			if present {
+				if err := ctx.Err(); err != nil {
+					return nil, nil, err
+				}
+				if errors.Is(detectErr, context.Canceled) || errors.Is(detectErr, context.DeadlineExceeded) {
+					return nil, nil, detectErr
+				}
+				result.Warnings = append(result.Warnings, "Workload telemetry presence could not be confirmed; comparison evidence remains empty.")
+			} else if present {
 				result.Outcome = "unsupported_workload_shape"
 				result.Warnings = append(result.Warnings, "The named workload has APM telemetry but no server-request series supported by this comparison.")
 			}

@@ -28,9 +28,12 @@ func TestResolveDeviationWindowsPreviousPeriod(t *testing.T) {
 		got.EffectiveCurrentEnd != time.Date(2026, 7, 11, 10, 7, 0, 0, time.UTC) {
 		t.Fatalf("unexpected effective current window: %+v", got)
 	}
-	if got.EffectiveBaselineStart != time.Date(2026, 7, 11, 8, 8, 0, 0, time.UTC) ||
-		got.EffectiveBaselineEnd != time.Date(2026, 7, 11, 9, 7, 0, 0, time.UTC) {
+	if got.EffectiveBaselineStart != time.Date(2026, 7, 11, 8, 9, 0, 0, time.UTC) ||
+		got.EffectiveBaselineEnd != time.Date(2026, 7, 11, 9, 8, 0, 0, time.UTC) {
 		t.Fatalf("baseline offsets were not mapped: %+v", got)
+	}
+	if !got.EffectiveBaselineEnd.Equal(got.EffectiveCurrentStart) {
+		t.Fatalf("previous_period baseline End must equal effective current Start (no gap): %+v", got)
 	}
 	if got.ExcludedCurrentPoints != 1 || got.ExcludedBaselinePoints != 1 {
 		t.Fatalf("excluded counts = current:%d baseline:%d", got.ExcludedCurrentPoints, got.ExcludedBaselinePoints)
@@ -56,8 +59,8 @@ func TestResolveDeviationWindowsRelativeLookback(t *testing.T) {
 		got.EffectiveCurrentEnd != time.Date(2026, 7, 11, 10, 7, 0, 0, time.UTC) {
 		t.Fatalf("unexpected effective current: %+v", got)
 	}
-	if got.EffectiveBaselineStart != time.Date(2026, 7, 11, 9, 38, 0, 0, time.UTC) ||
-		got.EffectiveBaselineEnd != time.Date(2026, 7, 11, 9, 52, 0, 0, time.UTC) {
+	if got.EffectiveBaselineStart != time.Date(2026, 7, 11, 9, 39, 0, 0, time.UTC) ||
+		got.EffectiveBaselineEnd != time.Date(2026, 7, 11, 9, 53, 0, 0, time.UTC) {
 		t.Fatalf("unexpected effective baseline: %+v", got)
 	}
 }
@@ -133,7 +136,7 @@ func TestResolveDeviationWindowsCapsIncompleteExplicitCurrent(t *testing.T) {
 		{
 			name: "previous period baseline",
 			args: DeviationArgs{StartTimeISO: "2026-07-11T10:00:00Z", EndTimeISO: "2026-07-11T10:10:00Z"},
-			want: TimeWindow{Start: time.Date(2026, 7, 11, 9, 50, 0, 0, time.UTC), End: time.Date(2026, 7, 11, 9, 57, 0, 0, time.UTC)},
+			want: TimeWindow{Start: time.Date(2026, 7, 11, 9, 53, 0, 0, time.UTC), End: time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC)},
 		},
 		{
 			name: "explicit baseline",
@@ -161,6 +164,9 @@ func TestResolveDeviationWindowsCapsIncompleteExplicitCurrent(t *testing.T) {
 			}
 			if got.ExcludedCurrentPoints != 3 || got.ExcludedBaselinePoints != 3 {
 				t.Fatalf("unexpected excluded counts: %+v", got)
+			}
+			if tt.args.BaselineStartISO == "" && !got.EffectiveBaselineEnd.Equal(got.EffectiveCurrentStart) {
+				t.Fatalf("previous_period baseline End must equal effective current Start (no gap): baseline=%s current=%s", got.EffectiveBaselineEnd, got.EffectiveCurrentStart)
 			}
 		})
 	}
@@ -231,8 +237,8 @@ func TestResolveDeviationWindowsAlignsBothWindowsToCompletedBuckets(t *testing.T
 		got.EffectiveCurrentEnd != time.Date(2026, 7, 11, 10, 7, 0, 0, time.UTC) {
 		t.Fatalf("unexpected effective current window: %+v", got)
 	}
-	if got.EffectiveBaselineStart != time.Date(2026, 7, 11, 9, 48, 0, 0, time.UTC) ||
-		got.EffectiveBaselineEnd != time.Date(2026, 7, 11, 9, 57, 0, 0, time.UTC) {
+	if got.EffectiveBaselineStart != time.Date(2026, 7, 11, 9, 49, 0, 0, time.UTC) ||
+		got.EffectiveBaselineEnd != time.Date(2026, 7, 11, 9, 58, 0, 0, time.UTC) {
 		t.Fatalf("unexpected effective baseline window: %+v", got)
 	}
 	if got.QueryStep != time.Minute {

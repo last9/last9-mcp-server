@@ -75,19 +75,24 @@ func resolveDeviationWindows(args DeviationArgs, now time.Time, queryStep time.D
 	requestedCurrentCapacity := bucketCapacity(requestedCurrent, queryStep)
 	requestedBaselineCapacity := bucketCapacity(requestedBaseline, queryStep)
 	effectiveCurrentCapacity := bucketCapacity(effectiveCurrent, queryStep)
-	trailingExcludedBuckets := int(requestedCurrent.End.UTC().Truncate(queryStep).Sub(effectiveCurrent.End) / queryStep)
-	leadingExcludedBuckets := requestedCurrentCapacity - effectiveCurrentCapacity - trailingExcludedBuckets
-	if leadingExcludedBuckets < 0 {
-		leadingExcludedBuckets = 0
-	}
 
-	effectiveBaseline := TimeWindow{
-		Start: ceilTime(requestedBaseline.Start, queryStep),
-		End:   requestedBaseline.End.UTC().Truncate(queryStep).Add(-time.Duration(trailingExcludedBuckets) * queryStep),
-	}
+	var effectiveBaseline TimeWindow
 	if baselineMode == "explicit" {
-		effectiveBaseline.Start = requestedBaseline.Start.Add(time.Duration(leadingExcludedBuckets) * queryStep)
-		effectiveBaseline.End = requestedBaseline.End.Add(-time.Duration(trailingExcludedBuckets) * queryStep)
+		trailingExcludedBuckets := int(requestedCurrent.End.UTC().Truncate(queryStep).Sub(effectiveCurrent.End) / queryStep)
+		leadingExcludedBuckets := requestedCurrentCapacity - effectiveCurrentCapacity - trailingExcludedBuckets
+		if leadingExcludedBuckets < 0 {
+			leadingExcludedBuckets = 0
+		}
+		effectiveBaseline = TimeWindow{
+			Start: requestedBaseline.Start.Add(time.Duration(leadingExcludedBuckets) * queryStep),
+			End:   requestedBaseline.End.Add(-time.Duration(trailingExcludedBuckets) * queryStep),
+		}
+	} else {
+		effectiveDuration := effectiveCurrent.End.Sub(effectiveCurrent.Start)
+		effectiveBaseline = TimeWindow{
+			Start: effectiveCurrent.Start.Add(-effectiveDuration),
+			End:   effectiveCurrent.Start,
+		}
 	}
 	effectiveBaselineCapacity := bucketCapacity(effectiveBaseline, queryStep)
 	if effectiveBaselineCapacity == 0 || effectiveBaselineCapacity != effectiveCurrentCapacity {

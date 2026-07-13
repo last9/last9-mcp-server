@@ -377,6 +377,8 @@ func executeDeviationQueries(
 	return execution
 }
 
+const maxConcurrentDeviationQueries = 8
+
 func executeDeviationQueryGroup(ctx context.Context, runner deviationQueryRunner, window string, end time.Time, queries []deviationQuery) (deviationQueryResult, []deviationQueryError, int) {
 	type queryResult struct {
 		query   deviationQuery
@@ -384,9 +386,12 @@ func executeDeviationQueryGroup(ctx context.Context, runner deviationQueryRunner
 		err     error
 	}
 	results := make(chan queryResult, len(queries))
+	sem := make(chan struct{}, maxConcurrentDeviationQueries)
 	for _, query := range queries {
 		query := query
 		go func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			vectors, err := runner.Query(ctx, query.Text, end)
 			results <- queryResult{query: query, vectors: vectors, err: err}
 		}()
