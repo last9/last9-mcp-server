@@ -15,6 +15,21 @@ These are instructions for constructing a natural language logs analytics querie
 - If the user asks "how many", "count", "average", "sum" → Then add aggregation
 - Most log queries are simple filtering - do NOT assume aggregation is needed
 
+**CRITICAL: INCIDENT INVESTIGATION = AGGREGATE FIRST, RAW LINES LAST**
+For error investigation, trend, onset, or blast-radius questions over any window wider than a few
+minutes, aggregation IS the requested shape — raw fetches over wide windows time out AND give wrong
+onset conclusions (a narrow raw sample is not a trend):
+1. **Discover error signatures** (do not guess strings):
+   scope filter → parse (level from Body if needed) → filter level/severity in (ERROR, FATAL, CRITICAL) →
+   aggregate `$count` grouped by logger/exception-class. The data ranks its own top errors.
+2. **Count by ERROR SIGNATURE, never by bare component/logger name without the ERROR gate** —
+   a logger name matches its INFO lines too and can overcount the real errors by ~100-1000×.
+3. **Trend/onset:** `window_aggregate` with `$count` over the full window (cheap, safe).
+4. **Sanity-check** any error count against the service's APM error rate
+   (`get_service_summary`): a count orders-of-magnitude above it usually means the filter
+   matched non-error noise — re-narrow and re-count.
+5. Fetch raw lines LAST, only 1–3 exemplars of the top-ranked signatures.
+
 **CRITICAL: PIPELINE ORDERING**
 - The first stage MUST be a **scope filter** (service, time, tenant, environment, host — or a match-all on non-empty Body / all services when no narrower scope applies). NEVER start with aggregate or window_aggregate.
 - **Canonical order:** scope filter(s) → parse (whenever a later stage references a field that lives inside the JSON Body) → filter/groupby on parsed or indexed fields → aggregate.
@@ -28,7 +43,7 @@ These are instructions for constructing a natural language logs analytics querie
    - If the user mentions a deployment environment (prod, staging, etc.), map it to `resources['deployment.environment']`
    - If the query scope is ambiguous (multiple tenants or environments exist in the discovered attributes but the user did not specify one), ask: "Which tenant/environment should I scope this to?"
    - **When filtering on any field-level value:** `get_log_attributes` returns the global catalog, which can list keys that are empty for your scope and near-duplicate names that coexist. Do NOT assume a key name. After adding your scoping filter stage(s) — commonly a service, but it may be a namespace, environment, host, or any combination — call `get_log_attributes_for_pipeline` with that pipeline and use only the `filter_field` it returns for fields present within that scope. (Example: HTTP status is keyed `status_code` on some sources and `http.status_code` on others — neither is a safe default.)
-   - **Body-derived fields (`source: "body"`):** discovery may report fields that exist only inside the log `Body` as JSON. Their `filter_field` is valid ONLY after the parse stage shown in that entry's `hint` — copy the hint's parse stage into your pipeline before any filter or groupby that references the field. Prefer keys with full `sample_coverage` (e.g. `5/5`); a sparse key (e.g. `1/5`) is absent on most rows of this scope and will dominate results with empty values.
+   - **Body-derived fields (`source: "body"`):** discovery may report fields that exist only inside the log `Body` (JSON, logfmt, or plaintext matched by regexp). Their `filter_field` is valid ONLY after the parse stage shown in that entry's `hint` — copy the hint's parse stage (including its `parser`) into your pipeline before any filter or groupby that references the field. Prefer keys with full `sample_coverage` (e.g. `5/5`); a sparse key (e.g. `1/5`) is absent on most rows of this scope and will dominate results with empty values. Prefer indexed `SeverityText`/`severity`/`level` over inventing a Body parse for level when discovery already returned an indexed severity-family field.
    - **Service name variants:** when the user names a workload generically rather than an exact service, do not assume a single `ServiceName`. Enumerate variants first — e.g. aggregate logs grouped by `ServiceName` over the scope window — and OR every variant that belongs to the workload (canary/primary siblings split the same traffic; counting one of them undercounts). Scope to a single service only when the user named it exactly.
    - **Severity is not an HTTP-error proxy:** access logs commonly carry INFO severity even for 5xx responses, and `SeverityText` can be empty. For HTTP error questions, filter on the discovered status field — never on severity.
 4. Translate the query to JSON pipeline format using the correct field references

@@ -77,6 +77,137 @@ func bodyDerivedHint(key string) string {
 	return string(b)
 }
 
+// logfmtBodyDerivedHint renders the two-stage example for a Body that is
+// logfmt-encoded (key=value pairs) rather than JSON.
+func logfmtBodyDerivedHint(key string) string {
+	stages := []map[string]interface{}{
+		{"type": "parse", "parser": "logfmt", "field": "Body"},
+		{"type": "filter", "query": map[string]interface{}{"$eq": []string{fmt.Sprintf("attributes['%s']", key), "<value>"}}},
+	}
+	b, err := json.Marshal(stages)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// regexpBodyDerivedHint renders the two-stage example for a Body field
+// extracted via a regexp capture group (plaintext logs with no structured
+// encoding, e.g. an inline severity token).
+func regexpBodyDerivedHint(pattern, key, exampleValue string) string {
+	stages := []map[string]interface{}{
+		{"type": "parse", "parser": "regexp", "field": "Body", "pattern": pattern},
+		{"type": "filter", "query": map[string]interface{}{"$eq": []string{fmt.Sprintf("attributes['%s']", key), exampleValue}}},
+	}
+	b, err := json.Marshal(stages)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// logfmtKVPattern extracts key=value pairs from a logfmt-style line, e.g.
+// `level=info msg="hi there" status=200`. Classification also requires the
+// matched pairs to dominate the line (see isLogfmtLine) so incidental
+// `a=1 … b=2` in prose is not treated as logfmt.
+var logfmtKVPattern = regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_.]*)=("(?:[^"\\]|\\.)*"|\S+)`)
+
+// minLogfmtKVPairs is the minimum distinct key=value pairs required before a
+// line is even considered for logfmt classification.
+const minLogfmtKVPairs = 2
+
+// minLogfmtDominance is the minimum fraction of non-whitespace characters that
+// must be covered by key=value matches for a line to count as logfmt.
+const minLogfmtDominance = 0.5
+
+// parseLogfmtKV returns the distinct keys present as key=value pairs in line.
+func parseLogfmtKV(line string) []string {
+	matches := logfmtKVPattern.FindAllStringSubmatch(line, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	keys := make([]string, 0, len(matches))
+	for _, m := range matches {
+		key := m[1]
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+// isLogfmtLine reports whether line looks like real logfmt rather than prose
+// that happens to contain a couple of key=value fragments. Requires at least
+// minLogfmtKVPairs distinct keys whose matches cover >= minLogfmtDominance of
+// the line's non-whitespace content.
+func isLogfmtLine(line string) bool {
+	keys := parseLogfmtKV(line)
+	if len(keys) < minLogfmtKVPairs {
+		return false
+	}
+	spans := logfmtKVPattern.FindAllStringIndex(line, -1)
+	matchedLen := 0
+	for _, span := range spans {
+		matchedLen += span[1] - span[0]
+	}
+	nonSpace := 0
+	for i := 0; i < len(line); i++ {
+		switch line[i] {
+		case ' ', '\t', '\n', '\r':
+		default:
+			nonSpace++
+		}
+	}
+	if nonSpace == 0 {
+		return false
+	}
+	return float64(matchedLen)/float64(nonSpace) >= minLogfmtDominance
+}
+
+// Well-known plaintext severity/level patterns, tried in priority order.
+// Both are case-insensitive. levelTimestampPattern anchors on a preceding
+// HH:MM:SS(.mmm) timestamp (common in Java/Log4j-style lines).
+// levelBracketOrStartPattern is the conservative fallback: severity only at
+// line-start (optional leading whitespace) or inside []. A bare
+// word-boundary match anywhere in the line is intentionally NOT used — it
+// fabricates level from URL path segments (`/v1/INFO`) and prose
+// (`no ERROR occurred`).
+const (
+	levelTimestampPattern      = `(?i)\d{2}:\d{2}:\d{2}[.,]\d+\s+(?P<level>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\b`
+	levelBracketOrStartPattern = `(?i)(?:^\s*|\[)(?P<level>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)(?:\]|\b)`
+)
+
+var (
+	levelTimestampRegexp      = regexp.MustCompile(levelTimestampPattern)
+	levelBracketOrStartRegexp = regexp.MustCompile(levelBracketOrStartPattern)
+)
+
+// severityFamilyNames are indexed / body-derived names that all represent the
+// same semantic "how severe is this log" signal. Body-derived level/severity
+// is suppressed when any of these is already indexed (see merge below).
+var severityFamilyNames = map[string]struct{}{
+	"severity":     {},
+	"severitytext": {},
+	"level":        {},
+}
+
+func isSeverityFamilyName(name string) bool {
+	_, ok := severityFamilyNames[strings.ToLower(name)]
+	return ok
+}
+
+func hasIndexedSeverityFamily(indexedNames []string) bool {
+	for _, name := range indexedNames {
+		if isSeverityFamilyName(name) {
+			return true
+		}
+	}
+	return false
+}
+
 // sampleBodyDerivedAttributes fetches up to bodySampleLimit raw rows for the
 // pipeline and derives attributes from the top-level keys of rows whose Body is
 // a JSON object. Any failure degrades to nil — Body discovery is best-effort
@@ -95,48 +226,126 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 		return nil
 	}
 
-	freq := map[string]int{}
+	freq := map[string]int{}       // JSON body-derived key frequency
+	logfmtFreq := map[string]int{} // logfmt body-derived key frequency
+	var levelTSCount, levelBracketCount int
+
+	// Cascade is result-level, not per-line: the first format that produces
+	// any keys for the sample wins (JSON → logfmt → plaintext level). One
+	// stray JSON/logfmt line in an otherwise-plaintext sample therefore
+	// suppresses downstream detection for the whole sample. Acceptable for
+	// a 5-line best-effort probe; callers that need mixed-format discovery
+	// should scope the pipeline tighter.
 	for _, line := range lines {
 		var obj map[string]json.RawMessage
-		if err := json.Unmarshal([]byte(line), &obj); err != nil {
+		if err := json.Unmarshal([]byte(line), &obj); err == nil {
+			for key := range obj {
+				if !safeBodyKeyPattern.MatchString(key) {
+					continue
+				}
+				freq[key]++
+			}
 			continue
 		}
-		for key := range obj {
-			if !safeBodyKeyPattern.MatchString(key) {
-				continue
+
+		// Not JSON: try logfmt (key=value pairs that dominate the line).
+		if isLogfmtLine(line) {
+			for _, key := range parseLogfmtKV(line) {
+				if !safeBodyKeyPattern.MatchString(key) {
+					continue
+				}
+				logfmtFreq[key]++
 			}
-			freq[key]++
+			continue
+		}
+
+		// Not logfmt either: fall back to a well-known plaintext-inline
+		// severity token, preferring a timestamp-anchored match.
+		if levelTimestampRegexp.MatchString(line) {
+			levelTSCount++
+		} else if levelBracketOrStartRegexp.MatchString(line) {
+			levelBracketCount++
 		}
 	}
-	if len(freq) == 0 {
-		return nil
-	}
 
-	keys := make([]string, 0, len(freq))
-	for key := range freq {
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		if freq[keys[i]] != freq[keys[j]] {
-			return freq[keys[i]] > freq[keys[j]]
+	// JSON path (unchanged, first priority): the original body-derived
+	// discovery for structured JSON bodies.
+	if len(freq) > 0 {
+		keys := make([]string, 0, len(freq))
+		for key := range freq {
+			keys = append(keys, key)
 		}
-		return keys[i] < keys[j]
-	})
-	if len(keys) > maxBodyDerivedKeys {
-		keys = keys[:maxBodyDerivedKeys]
-	}
-
-	out := make([]LogAttribute, 0, len(keys))
-	for _, key := range keys {
-		out = append(out, LogAttribute{
-			Name:           key,
-			FilterField:    fmt.Sprintf("attributes['%s']", key),
-			Hint:           bodyDerivedHint(key),
-			Source:         "body",
-			SampleCoverage: fmt.Sprintf("%d/%d", freq[key], len(lines)),
+		sort.Slice(keys, func(i, j int) bool {
+			if freq[keys[i]] != freq[keys[j]] {
+				return freq[keys[i]] > freq[keys[j]]
+			}
+			return keys[i] < keys[j]
 		})
+		if len(keys) > maxBodyDerivedKeys {
+			keys = keys[:maxBodyDerivedKeys]
+		}
+
+		out := make([]LogAttribute, 0, len(keys))
+		for _, key := range keys {
+			out = append(out, LogAttribute{
+				Name:           key,
+				FilterField:    fmt.Sprintf("attributes['%s']", key),
+				Hint:           bodyDerivedHint(key),
+				Source:         "body",
+				SampleCoverage: fmt.Sprintf("%d/%d", freq[key], len(lines)),
+			})
+		}
+		return out
 	}
-	return out
+
+	// logfmt fallback: no line was JSON, but at least one line matched
+	// logfmt key=value pairs.
+	if len(logfmtFreq) > 0 {
+		keys := make([]string, 0, len(logfmtFreq))
+		for key := range logfmtFreq {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(i, j int) bool {
+			if logfmtFreq[keys[i]] != logfmtFreq[keys[j]] {
+				return logfmtFreq[keys[i]] > logfmtFreq[keys[j]]
+			}
+			return keys[i] < keys[j]
+		})
+		if len(keys) > maxBodyDerivedKeys {
+			keys = keys[:maxBodyDerivedKeys]
+		}
+
+		out := make([]LogAttribute, 0, len(keys))
+		for _, key := range keys {
+			out = append(out, LogAttribute{
+				Name:           key,
+				FilterField:    fmt.Sprintf("attributes['%s']", key),
+				Hint:           logfmtBodyDerivedHint(key),
+				Source:         "body",
+				SampleCoverage: fmt.Sprintf("%d/%d", logfmtFreq[key], len(lines)),
+			})
+		}
+		return out
+	}
+
+	// plaintext-inline fallback: neither JSON nor logfmt, but a severity
+	// token was found in at least one sampled line. Conservative — only
+	// surface "level" when the pattern actually matched a sampled line.
+	if levelTSCount > 0 || levelBracketCount > 0 {
+		pattern, count := levelBracketOrStartPattern, levelBracketCount
+		if levelTSCount > 0 {
+			pattern, count = levelTimestampPattern, levelTSCount
+		}
+		return []LogAttribute{{
+			Name:           "level",
+			FilterField:    "attributes['level']",
+			Hint:           regexpBodyDerivedHint(pattern, "level", "<value>"),
+			Source:         "body",
+			SampleCoverage: fmt.Sprintf("%d/%d", count, len(lines)),
+		}}
+	}
+
+	return nil
 }
 
 // extractSampleBodyLines pulls the raw Body line of each sampled log entry from
@@ -327,6 +536,7 @@ func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Confi
 
 		out := make([]LogAttribute, 0, len(names))
 		indexedFilterFields := make(map[string]struct{}, len(names))
+		indexedHasSeverity := hasIndexedSeverityFamily(names)
 		for _, name := range names {
 			filterField := logFieldFilterField(name)
 			indexedFilterFields[filterField] = struct{}{}
@@ -337,12 +547,18 @@ func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Confi
 			})
 		}
 
-		// Merge: drop a body-derived entry only when an indexed entry already
-		// exposes the SAME filter_field (true duplicate). A body key that merely
-		// shares a name with a special-mapped indexed field (severity ->
-		// SeverityText) is a different field and stays.
+		// Merge: drop a body-derived entry when (a) an indexed entry already
+		// exposes the SAME filter_field (true duplicate), or (b) it is a
+		// severity-family name (level/severity/SeverityText) and any indexed
+		// severity-family field is already present. Indexed severity is the
+		// directly-filterable signal the product UI renders; a parallel
+		// body-derived level that requires a regexp parse is inferior and
+		// must not be advertised alongside it.
 		for _, attr := range <-bodyCh {
 			if _, dup := indexedFilterFields[attr.FilterField]; dup {
+				continue
+			}
+			if indexedHasSeverity && isSeverityFamilyName(attr.Name) {
 				continue
 			}
 			out = append(out, attr)

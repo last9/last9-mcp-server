@@ -22,12 +22,16 @@ Returns a JSON array sorted by name. Each entry has:
   - filter_field: exact string to use in a get_logs $eq/$gte/etc. condition
                   (e.g. "attributes['status_code']", "ServiceName", "resources['k8s.namespace.name']")
   - hint:         ready-made example condition using filter_field
-  - source:       "body" when the field exists only INSIDE the log Body as JSON
-                  (absent for indexed attributes). A body-derived field is usable
-                  ONLY after the parse stage shown in its hint — copy that parse
-                  stage into your pipeline before any filter or groupby that
+  - source:       "body" when the field exists only INSIDE the log Body
+                  (absent for indexed attributes). Body encoding may be JSON,
+                  logfmt, or a plaintext-inline pattern — the hint's parse stage
+                  names the correct parser (json / logfmt / regexp). A
+                  body-derived field is usable ONLY after that parse stage —
+                  copy it into your pipeline before any filter or groupby that
                   references the field; without it the filter/groupby silently
-                  sees empty values.
+                  sees empty values. Prefer an indexed severity/SeverityText/
+                  level field when present; do not add a body-derived level
+                  parse when discovery already returned an indexed severity.
   - sample_coverage: for body-derived fields, in how many sampled rows the key
                   appeared (e.g. "5/5"). Prefer full-coverage keys; a sparse key
                   (e.g. "1/5") is absent on most rows of this scope.
