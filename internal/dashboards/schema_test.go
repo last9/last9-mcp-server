@@ -134,3 +134,42 @@ func TestUpdateDashboardInputSchema_RequiresIDAndDashboard(t *testing.T) {
 		t.Fatal("expected update args without id to fail validation")
 	}
 }
+
+func TestCreateDashboardSnapshotInputSchema_ValidatesObjects(t *testing.T) {
+	validArgs := map[string]any{
+		"dashboard_id": "dash-1",
+		"name":         "Freeze",
+		"time_range": map[string]any{
+			"from": 1710000000,
+			"to":   1710003600,
+		},
+		"dashboard_definition": map[string]any{"name": "Dash", "panels": []any{}},
+		"panel_data":           map[string]any{"panel-a": []any{}},
+	}
+	if err := validateInputSchema(t, GetCreateDashboardSnapshotInputSchema(), validArgs); err != nil {
+		t.Fatalf("expected snapshot args to validate: %v", err)
+	}
+}
+
+func TestCreateDashboardSnapshotInputSchema_RejectsMissingRequired(t *testing.T) {
+	args := map[string]any{
+		"dashboard_id": "dash-1",
+		"name":         "Freeze",
+	}
+	if err := validateInputSchema(t, GetCreateDashboardSnapshotInputSchema(), args); err == nil {
+		t.Fatal("expected missing required object fields to fail validation")
+	}
+}
+
+func TestCreateDashboardSnapshotInputSchema_RejectsRawMessageByteArray(t *testing.T) {
+	args := map[string]any{
+		"dashboard_id":         "dash-1",
+		"name":                 "Freeze",
+		"time_range":           map[string]any{"from": 1, "to": 2},
+		"dashboard_definition": []any{123, 34, 110, 97, 109, 101, 34},
+		"panel_data":           map[string]any{},
+	}
+	if err := validateInputSchema(t, GetCreateDashboardSnapshotInputSchema(), args); err == nil {
+		t.Fatal("expected byte-array dashboard_definition to fail validation")
+	}
+}

@@ -14,6 +14,10 @@ import (
 
 const maxAPIErrorBodyBytes = 4096
 
+// maxAPISuccessBodyBytes aligns with the monorepo dashboard snapshot create
+// render guard (25 MiB uncompressed). Caps all dashboard/snapshot success bodies.
+var maxAPISuccessBodyBytes int64 = 25 * 1024 * 1024
+
 func doJSONRequest(ctx context.Context, client *http.Client, cfg models.Config, method, url string, body []byte) ([]byte, int, error) {
 	accessToken := cfg.TokenManager.GetAccessToken(ctx)
 
@@ -37,9 +41,13 @@ func doJSONRequest(ctx context.Context, client *http.Client, cfg models.Config, 
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	limited := io.LimitReader(resp.Body, maxAPISuccessBodyBytes+1)
+	respBody, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, resp.StatusCode, fmt.Errorf("failed to read response: %w", err)
+	}
+	if int64(len(respBody)) > maxAPISuccessBodyBytes {
+		return nil, resp.StatusCode, fmt.Errorf("dashboard API response exceeds %d bytes; open the UI link instead", maxAPISuccessBodyBytes)
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {

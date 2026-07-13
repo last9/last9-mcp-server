@@ -1,0 +1,1 @@
+Create a frozen dashboard snapshot with captured panel data for a point-in-time view. Requires dashboard_definition and panel_data from a live capture; prefer UI capture when panel query results are unavailable.

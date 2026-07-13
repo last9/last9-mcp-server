@@ -116,6 +116,18 @@ var UpdateDashboardDescription string
 //go:embed descriptions/delete_dashboard.md
 var DeleteDashboardDescription string
 
+//go:embed descriptions/create_dashboard_snapshot.md
+var CreateDashboardSnapshotDescription string
+
+//go:embed descriptions/list_dashboard_snapshots.md
+var ListDashboardSnapshotsDescription string
+
+//go:embed descriptions/get_dashboard_snapshot.md
+var GetDashboardSnapshotDescription string
+
+//go:embed descriptions/delete_dashboard_snapshot.md
+var DeleteDashboardSnapshotDescription string
+
 //go:embed descriptions/get_logs_base.md
 var GetLogsDescription string
 
