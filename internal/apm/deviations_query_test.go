@@ -36,8 +36,11 @@ func TestServiceQueriesUseCanonicalServiceLatencyInMilliseconds(t *testing.T) {
 		}
 	}
 	latency := queryTextByName(t, queries, "latency_median")
-	if !strings.Contains(latency, `trace_service_response_time{`) || !strings.Contains(latency, `quantile="p95"`) || !strings.Contains(latency, "* 1000") {
-		t.Fatalf("service latency must use canonical p95 converted to milliseconds: %s", latency)
+	if !strings.Contains(latency, `trace_service_response_time{`) || !strings.Contains(latency, `quantile="p95"`) {
+		t.Fatalf("service latency must use canonical p95 milliseconds: %s", latency)
+	}
+	if strings.Contains(latency, "* 1000") {
+		t.Fatalf("service latency is already milliseconds and must not be converted again: %s", latency)
 	}
 	if strings.Contains(latency, "trace_endpoint_duration") {
 		t.Fatalf("service latency must not aggregate endpoint percentiles: %s", latency)

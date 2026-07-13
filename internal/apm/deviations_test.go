@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -512,6 +513,66 @@ func TestOperationCorrelationSuppressesStableJitter(t *testing.T) {
 	}
 }
 
+func TestOperationApdexReconciliationReportsCoverageAndResidual(t *testing.T) {
+	deps := testDeviationHandlerDeps()
+	calls := 0
+	deps.execute = func(_ context.Context, _ deviationQueryRunner, _ deviationQueryPlan) deviationQueryExecution {
+		calls++
+		if calls == 1 {
+			return deviationQueryExecution{
+				Current: deviationQueryResult{Records: []deviationAggregate{
+					aggregate("api", "prod", "", 1200, 6, 10, 6, 800, 1000, 6, 100, 120, 140, 160, 6),
+				}},
+				Baseline: deviationQueryResult{Records: []deviationAggregate{
+					aggregate("api", "prod", "", 1500, 6, 10, 6, 900, 1000, 6, 100, 120, 140, 160, 6),
+				}},
+			}
+		}
+		return deviationQueryExecution{
+			Current: deviationQueryResult{Records: []deviationAggregate{
+				aggregate("api", "prod", "GET /a", 900, 6, 6, 6, 420, 600, 6, 100, 120, 140, 160, 6),
+				aggregate("api", "prod", "GET /b", 300, 6, 2, 6, 180, 200, 6, 100, 120, 140, 160, 6),
+			}},
+			Baseline: deviationQueryResult{Records: []deviationAggregate{
+				aggregate("api", "prod", "GET /a", 1000, 6, 5, 6, 450, 500, 6, 100, 120, 140, 160, 6),
+				aggregate("api", "prod", "GET /b", 500, 6, 3, 6, 270, 300, 6, 100, 120, 140, 160, 6),
+			}},
+		}
+	}
+
+	args := sixMinuteDeviationArgs()
+	args.ServiceName = "api"
+	args.Env = "prod"
+	result, _, err := newAPMServiceDeviationsHandler(http.DefaultClient, models.Config{}, deps)(context.Background(), &mcp.CallToolRequest{}, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(deviationResultText(t, result)), &payload); err != nil {
+		t.Fatal(err)
+	}
+	raw, ok := payload["operation_apdex_reconciliations"].([]any)
+	if !ok || len(raw) != 1 {
+		t.Fatalf("operation Apdex reconciliation missing: %+v", payload["operation_apdex_reconciliations"])
+	}
+	reconciliation := raw[0].(map[string]any)
+	for field, want := range map[string]float64{
+		"current_request_coverage":  0.8,
+		"baseline_request_coverage": 0.8,
+		"service_apdex_delta":       -0.1,
+		"observed_operation_delta":  -0.12,
+		"unexplained_delta":         0.02,
+	} {
+		if got := reconciliation[field].(float64); math.Abs(got-want) > 1e-9 {
+			t.Errorf("%s = %v, want %v", field, got, want)
+		}
+	}
+	contributions, ok := reconciliation["contributions"].([]any)
+	if !ok || len(contributions) != 2 {
+		t.Fatalf("contributions = %+v, want two comparable operations", reconciliation["contributions"])
+	}
+}
+
 func TestErrorPercentageEvidenceRequiresAlignedRequestAndErrorCoverage(t *testing.T) {
 	record := aggregate("api", "prod", "", 600, 6, 6, 3, 540, 600, 6, 80, 100, 120, 130, 6)
 	summary := summaryFromAggregate(record, true, 6, time.Minute, nil)
@@ -644,7 +705,7 @@ func TestAPMServiceDeviationsHandlerWindowsLinkAndRedaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := deviationResultText(t, result)
-	for _, forbidden := range []string{"promql", "metrics.example.test", "<test-password>", "victoria", "confidence", "root cause", "attribution"} {
+	for _, forbidden := range []string{"promql", "metrics.example.test", "<test-password>", "storage engine", "confidence", "root cause", "attribution"} {
 		if strings.Contains(strings.ToLower(text), forbidden) {
 			t.Fatalf("response leaked forbidden %q: %s", forbidden, text)
 		}

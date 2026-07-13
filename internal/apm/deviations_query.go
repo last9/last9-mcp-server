@@ -232,7 +232,7 @@ func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, s
 		latencyMatchers = append([]string{`span_kind="SPAN_KIND_SERVER"`}, latencyMatchers...)
 		latencyExpression = fmt.Sprintf("sum by (%s) (trace_endpoint_duration{%s})", group, strings.Join(latencyMatchers, ","))
 	} else {
-		latencyExpression = fmt.Sprintf("sum by (%s) (trace_service_response_time{%s} * 1000)", group, strings.Join(latencyMatchers, ","))
+		latencyExpression = fmt.Sprintf("sum by (%s) (trace_service_response_time{%s})", group, strings.Join(latencyMatchers, ","))
 	}
 	latencyGrid := deviationSubquery(latencyExpression, window, step)
 

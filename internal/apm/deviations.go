@@ -21,6 +21,7 @@ const (
 	deviationResultCap             = 10
 	deviationQueryStep             = time.Minute
 	operationCorrelationDisclaimer = "Correlated operation movement is supporting evidence only; it does not establish contribution, attribution, cause, or root cause."
+	operationApdexDisclaimer       = "Request-weighted operation deltas explain only the reported coverage; unexplained_delta includes unreported operations and metric-population differences and is not causal attribution."
 )
 
 type deviationHandlerDeps struct {
@@ -54,6 +55,27 @@ type operationCorrelation struct {
 	Interpretation string           `json:"interpretation"`
 }
 
+type operationApdexContribution struct {
+	Operation            string  `json:"operation"`
+	CurrentRequestShare  float64 `json:"current_request_share"`
+	BaselineRequestShare float64 `json:"baseline_request_share"`
+	CurrentApdex         float64 `json:"current_apdex"`
+	BaselineApdex        float64 `json:"baseline_apdex"`
+	WeightedApdexDelta   float64 `json:"weighted_apdex_delta"`
+}
+
+type operationApdexReconciliation struct {
+	ServiceName             string                       `json:"service_name"`
+	Env                     string                       `json:"env,omitempty"`
+	CurrentRequestCoverage  float64                      `json:"current_request_coverage"`
+	BaselineRequestCoverage float64                      `json:"baseline_request_coverage"`
+	ServiceApdexDelta       float64                      `json:"service_apdex_delta"`
+	ObservedOperationDelta  float64                      `json:"observed_operation_delta"`
+	UnexplainedDelta        float64                      `json:"unexplained_delta"`
+	Contributions           []operationApdexContribution `json:"contributions"`
+	Interpretation          string                       `json:"interpretation"`
+}
+
 type deviationProvenance struct {
 	MetricDefinitions     []SignalDefinition `json:"metric_definitions"`
 	ErrorDefinition       string             `json:"error_definition"`
@@ -65,11 +87,12 @@ type deviationProvenance struct {
 
 type apmDeviationResult struct {
 	DeviationResponse
-	OperationCorrelations []operationCorrelation  `json:"operation_correlations"`
-	RecommendedFollowups  []deviationFollowup     `json:"recommended_followups"`
-	PartialErrors         []deviationPartialError `json:"partial_errors,omitempty"`
-	Provenance            deviationProvenance     `json:"provenance"`
-	DashboardURL          string                  `json:"dashboard_url"`
+	OperationCorrelations         []operationCorrelation         `json:"operation_correlations"`
+	OperationApdexReconciliations []operationApdexReconciliation `json:"operation_apdex_reconciliations"`
+	RecommendedFollowups          []deviationFollowup            `json:"recommended_followups"`
+	PartialErrors                 []deviationPartialError        `json:"partial_errors,omitempty"`
+	Provenance                    deviationProvenance            `json:"provenance"`
+	DashboardURL                  string                         `json:"dashboard_url"`
 }
 
 type aggregateWindowSummary struct {
@@ -157,6 +180,7 @@ func newAPMServiceDeviationsHandler(client *http.Client, baseCfg models.Config, 
 			} else {
 				result.PartialErrors = append(result.PartialErrors, publicDeviationErrors(opExecution.Errors)...)
 				result.OperationCorrelations = correlateOperations(result, opExecution, windows, maxOperations)
+				result.OperationApdexReconciliations = reconcileOperationApdex(result, opExecution, windows, maxOperations)
 			}
 		}
 		result.RecommendedFollowups = recommendedDeviationFollowups(result, args)
@@ -211,7 +235,7 @@ func buildDeviationResult(args DeviationArgs, cfg models.Config, windows Deviati
 			Services: []ServiceDeviation{}, TelemetryChanges: []TelemetryChange{}, ThroughputShifts: []LeaderboardEntry{}, Outcome: "stable",
 			Leaderboards: emptyLeaderboards(),
 		},
-		OperationCorrelations: []operationCorrelation{}, RecommendedFollowups: []deviationFollowup{},
+		OperationCorrelations: []operationCorrelation{}, OperationApdexReconciliations: []operationApdexReconciliation{}, RecommendedFollowups: []deviationFollowup{},
 		PartialErrors: publicDeviationErrors(execution.Errors), Provenance: deviationMeasurementProvenance(),
 	}
 
@@ -354,6 +378,7 @@ func summaryFromAggregate(record deviationAggregate, present bool, expected int,
 	if apdexValid {
 		value := *record.ApdexNumerator / *record.ApdexDenominator
 		result.Apdex = &value
+		result.ApdexRequestTotal = *record.ApdexDenominator
 		result.ValidSignals["apdex"] = true
 	}
 	if latencyValid {
@@ -679,6 +704,96 @@ func correlateOperations(serviceResult apmDeviationResult, execution deviationQu
 	if len(result) > limit {
 		result = result[:limit]
 	}
+	return result
+}
+
+func reconcileOperationApdex(serviceResult apmDeviationResult, execution deviationQueryExecution, windows DeviationWindows, limit int) []operationApdexReconciliation {
+	type serviceApdexBasis struct {
+		serviceName      string
+		env              string
+		currentRequests  float64
+		baselineRequests float64
+		currentApdex     float64
+		baselineApdex    float64
+	}
+
+	bases := make(map[string]serviceApdexBasis)
+	for _, service := range serviceResult.Services {
+		for _, signal := range service.Signals {
+			if signal.Definition.Name != "apdex" || signal.Current.ApdexRequestTotal <= 0 || signal.Baseline.ApdexRequestTotal <= 0 ||
+				signal.Current.Evidence.Selected.ObservedPoints == 0 || signal.Baseline.Evidence.Selected.ObservedPoints == 0 {
+				continue
+			}
+			key := service.ServiceName + "\x00" + service.Env
+			bases[key] = serviceApdexBasis{
+				serviceName: service.ServiceName, env: service.Env,
+				currentRequests: signal.Current.ApdexRequestTotal, baselineRequests: signal.Baseline.ApdexRequestTotal,
+				currentApdex: signal.Current.Value, baselineApdex: signal.Baseline.Value,
+			}
+		}
+	}
+
+	current := aggregateMap(execution.Current.Records)
+	baseline := aggregateMap(execution.Baseline.Records)
+	expectedCurrent := bucketCapacity(effectiveCurrentWindow(windows), windows.QueryStep)
+	expectedBaseline := bucketCapacity(effectiveBaselineWindow(windows), windows.QueryStep)
+	reconciliations := make(map[string]*operationApdexReconciliation)
+	for _, key := range unionAggregateKeys(current, baseline) {
+		cur, curOK := current[key]
+		base, baseOK := baseline[key]
+		if !curOK || !baseOK || cur.SpanName == "" {
+			continue
+		}
+		basisKey := cur.ServiceName + "\x00" + cur.Env
+		basis, ok := bases[basisKey]
+		if !ok {
+			continue
+		}
+		curSummary := summaryFromAggregate(cur, true, expectedCurrent, windows.QueryStep, exclusionsFor(execution.Errors, "current", cur))
+		baseSummary := summaryFromAggregate(base, true, expectedBaseline, windows.QueryStep, exclusionsFor(execution.Errors, "baseline", base))
+		if curSummary.Apdex == nil || baseSummary.Apdex == nil || curSummary.ApdexRequestTotal <= 0 || baseSummary.ApdexRequestTotal <= 0 {
+			continue
+		}
+		currentShare := curSummary.ApdexRequestTotal / basis.currentRequests
+		baselineShare := baseSummary.ApdexRequestTotal / basis.baselineRequests
+		weightedDelta := currentShare**curSummary.Apdex - baselineShare**baseSummary.Apdex
+		reconciliation := reconciliations[basisKey]
+		if reconciliation == nil {
+			reconciliation = &operationApdexReconciliation{
+				ServiceName: basis.serviceName, Env: basis.env,
+				ServiceApdexDelta: basis.currentApdex - basis.baselineApdex,
+				Contributions:     []operationApdexContribution{}, Interpretation: operationApdexDisclaimer,
+			}
+			reconciliations[basisKey] = reconciliation
+		}
+		reconciliation.CurrentRequestCoverage += currentShare
+		reconciliation.BaselineRequestCoverage += baselineShare
+		reconciliation.ObservedOperationDelta += weightedDelta
+		reconciliation.Contributions = append(reconciliation.Contributions, operationApdexContribution{
+			Operation: cur.SpanName, CurrentRequestShare: currentShare, BaselineRequestShare: baselineShare,
+			CurrentApdex: *curSummary.Apdex, BaselineApdex: *baseSummary.Apdex, WeightedApdexDelta: weightedDelta,
+		})
+	}
+
+	result := make([]operationApdexReconciliation, 0, len(reconciliations))
+	for _, reconciliation := range reconciliations {
+		sort.SliceStable(reconciliation.Contributions, func(i, j int) bool {
+			left := math.Abs(reconciliation.Contributions[i].WeightedApdexDelta)
+			right := math.Abs(reconciliation.Contributions[j].WeightedApdexDelta)
+			if left != right {
+				return left > right
+			}
+			return reconciliation.Contributions[i].Operation < reconciliation.Contributions[j].Operation
+		})
+		if len(reconciliation.Contributions) > limit {
+			reconciliation.Contributions = reconciliation.Contributions[:limit]
+		}
+		reconciliation.UnexplainedDelta = reconciliation.ServiceApdexDelta - reconciliation.ObservedOperationDelta
+		result = append(result, *reconciliation)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return identityLess(result[i].ServiceName, result[i].Env, result[j].ServiceName, result[j].Env)
+	})
 	return result
 }
 

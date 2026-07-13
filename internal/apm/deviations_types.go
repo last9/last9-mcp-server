@@ -80,16 +80,17 @@ type WindowEvidence struct {
 }
 
 type WindowSummary struct {
-	Value           float64        `json:"value"`
-	RequestTotal    float64        `json:"request_total"`
-	ErrorTotal      float64        `json:"error_total"`
-	RequestRPM      float64        `json:"request_rpm"`
-	ErrorRPM        float64        `json:"error_rpm"`
-	ErrorPercentage *float64       `json:"error_percentage,omitempty"`
-	Apdex           *float64       `json:"apdex,omitempty"`
-	P95Latency      *Distribution  `json:"p95_latency,omitempty"`
-	Distribution    Distribution   `json:"distribution"`
-	Evidence        WindowEvidence `json:"evidence"`
+	Value             float64        `json:"value"`
+	RequestTotal      float64        `json:"request_total"`
+	ErrorTotal        float64        `json:"error_total"`
+	RequestRPM        float64        `json:"request_rpm"`
+	ErrorRPM          float64        `json:"error_rpm"`
+	ErrorPercentage   *float64       `json:"error_percentage,omitempty"`
+	Apdex             *float64       `json:"apdex,omitempty"`
+	ApdexRequestTotal float64        `json:"apdex_request_total,omitempty"`
+	P95Latency        *Distribution  `json:"p95_latency,omitempty"`
+	Distribution      Distribution   `json:"distribution"`
+	Evidence          WindowEvidence `json:"evidence"`
 }
 
 type SignalComparison struct {

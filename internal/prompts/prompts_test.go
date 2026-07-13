@@ -53,6 +53,9 @@ func TestAPMServiceDeviationsDescription(t *testing.T) {
 		{"improvements", "must describe improvement results"},
 		{"stable", "must describe stable results"},
 		{"evidence quality", "must describe categorical evidence quality"},
+		{"operation_apdex_reconciliations", "must explain request-weighted operation evidence"},
+		{"unexplained_delta", "must preserve incomplete operation coverage as an explicit residual"},
+		{"reported coverage", "must prevent treating partial operation evidence as complete"},
 		{"does not establish contribution, attribution, cause, or root cause", "must prevent causal overclaiming"},
 	}
 	for _, check := range checks {
