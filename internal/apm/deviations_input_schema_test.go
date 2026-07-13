@@ -85,8 +85,11 @@ func TestAPMServiceDeviationsInputSchemaStructure(t *testing.T) {
 	}
 
 	lookback := properties["lookback_minutes"].(map[string]interface{})
-	if lookback["type"] != "number" || lookback["minimum"] != float64(1) || lookback["default"] != float64(60) {
+	if lookback["type"] != "number" || lookback["minimum"] != float64(1) {
 		t.Errorf("lookback_minutes constraints = %#v", lookback)
+	}
+	if _, exists := lookback["default"]; exists {
+		t.Error("lookback_minutes schema default must be omitted so explicit timestamps are not combined with an injected lookback")
 	}
 	for _, name := range []string{"max_services", "max_operations"} {
 		property := properties[name].(map[string]interface{})

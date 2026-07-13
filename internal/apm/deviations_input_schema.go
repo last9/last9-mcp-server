@@ -35,7 +35,6 @@ func GetAPMServiceDeviationsInputSchema() map[string]interface{} {
 			"lookback_minutes": map[string]interface{}{
 				"type":        "number",
 				"minimum":     float64(1),
-				"default":     float64(60),
 				"description": "Current-window duration in minutes, minimum 1 and default 60. Mutually exclusive with start_time_iso and end_time_iso.",
 			},
 			"baseline_start_time_iso": map[string]interface{}{
