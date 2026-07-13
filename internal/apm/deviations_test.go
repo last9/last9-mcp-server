@@ -53,6 +53,27 @@ func TestAPMServiceDeviationsHandlerValidatesCapsAndDatasource(t *testing.T) {
 	}
 }
 
+func TestAPMServiceDeviationsHandlerRejectsLookbackWithExplicitWindowBeforeQuery(t *testing.T) {
+	deps := testDeviationHandlerDeps()
+	queryCalls := 0
+	deps.execute = func(context.Context, deviationQueryRunner, deviationQueryPlan) deviationQueryExecution {
+		queryCalls++
+		return deviationQueryExecution{}
+	}
+	handler := newAPMServiceDeviationsHandler(http.DefaultClient, models.Config{}, deps)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, DeviationArgs{
+		LookbackMinutes: 60,
+		StartTimeISO:    "2026-07-11T08:00:00Z",
+		EndTimeISO:      "2026-07-11T09:00:00Z",
+	})
+	if err == nil || !strings.Contains(err.Error(), "explicit current timestamps cannot be combined with lookback_minutes") {
+		t.Fatalf("error = %v, want lookback/explicit-window conflict", err)
+	}
+	if queryCalls != 0 {
+		t.Fatalf("query executions = %d, want 0", queryCalls)
+	}
+}
+
 func TestAPMServiceDeviationsHandlerFleetKeepsEnvironmentsSeparateAndStable(t *testing.T) {
 	deps := testDeviationHandlerDeps()
 	var calls []deviationQueryPlan

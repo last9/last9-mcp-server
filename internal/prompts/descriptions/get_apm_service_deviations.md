@@ -2,6 +2,8 @@ Compare APM performance across a current window and an equal-duration baseline w
 
 Use `get_service_summary` for a one-window snapshot of current performance. Use `get_apm_service_deviations` when the question requires an equal-duration baseline comparison.
 
+For a comparative question, call this tool first and by itself. Do not batch speculative corroboration or duplicate comparison calls. Inspect the returned outcome and evidence before deciding whether the user explicitly requested any deeper investigation.
+
 ## Scope and inputs
 
 - Omit `service_name` for fleet scope. Provide `service_name` for one service and its operation correlations. Environments remain separate and are never merged; optionally use `env` to select one environment.
@@ -15,6 +17,7 @@ Use `get_service_summary` for a one-window snapshot of current performance. Use 
 
 - `regressions` and `improvements` are separate. Throughput movement is reported as a contextual shift, not inherently as good or bad.
 - Telemetry changes identify identities present in only one window.
-- Evidence quality is categorical and reflects data coverage. A stable result has empty deviation leaderboards; do not manufacture a change when none is returned.
+- Evidence quality is categorical and reflects data coverage. When reporting a material deviation, state the returned evidence quality or limitations. A stable result has empty deviation leaderboards; do not manufacture a change when none is returned.
+- Treat `stable`, `no_data`, and `unsupported_workload_shape` as terminal comparison outcomes. Answer from that result and do not automatically call follow-up tools unless the user explicitly requested a deeper investigation.
 - `partial_errors` or warnings mean successful evidence remains usable, but explicitly qualify conclusions with the missing evidence. If all metric queries fail, the tool returns an error rather than a partial result.
 - Operation correlations and structured, non-executing follow-ups help narrow an investigation. Correlation is supporting evidence only and does not establish contribution, attribution, cause, or root cause. Corroborate conclusions with traces, logs, and change events.

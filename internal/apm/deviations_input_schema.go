@@ -2,7 +2,9 @@ package apm
 
 // GetAPMServiceDeviationsInputSchema returns the MCP-facing JSON Schema for
 // get_apm_service_deviations. Window duration equality is validated by the
-// handler because JSON Schema cannot express timestamp arithmetic.
+// handler because JSON Schema cannot express timestamp arithmetic. The handler
+// also enforces lookback/current-window exclusivity because common model tool
+// APIs reject the allOf/not shape needed to encode that constraint.
 func GetAPMServiceDeviationsInputSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":                 "object",
@@ -66,18 +68,6 @@ func GetAPMServiceDeviationsInputSchema() map[string]interface{} {
 			"end_time_iso":            []string{"start_time_iso"},
 			"baseline_start_time_iso": []string{"baseline_end_time_iso"},
 			"baseline_end_time_iso":   []string{"baseline_start_time_iso"},
-		},
-		"allOf": []interface{}{
-			map[string]interface{}{
-				"not": map[string]interface{}{
-					"required": []string{"lookback_minutes", "start_time_iso"},
-				},
-			},
-			map[string]interface{}{
-				"not": map[string]interface{}{
-					"required": []string{"lookback_minutes", "end_time_iso"},
-				},
-			},
 		},
 	}
 }

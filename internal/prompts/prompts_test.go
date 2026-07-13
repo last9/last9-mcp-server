@@ -39,6 +39,8 @@ func TestAPMServiceDeviationsDescription(t *testing.T) {
 	}{
 		{"equal-duration baseline", "must describe comparative rather than snapshot behavior"},
 		{"get_service_summary", "must disambiguate one-window snapshots"},
+		{"call this tool first and by itself", "must prevent speculative parallel investigation"},
+		{"do not batch speculative corroboration", "must require inspecting the comparison before follow-ups"},
 		{"service_name", "must explain fleet and service scope"},
 		{"environments remain separate", "must prevent merged environment conclusions"},
 		{"server-request workloads", "must state the V1 workload boundary"},
@@ -67,6 +69,9 @@ func TestAPMServiceDeviationsDescriptionDefaultsAndPartialResults(t *testing.T) 
 		"partial_errors",
 		"successful evidence remains usable",
 		"explicitly qualify conclusions",
+		"state the returned evidence quality or limitations",
+		"stable`, `no_data`, and `unsupported_workload_shape` as terminal",
+		"do not automatically call follow-up tools",
 		"all metric queries fail, the tool returns an error",
 	} {
 		if !strings.Contains(description, phrase) {

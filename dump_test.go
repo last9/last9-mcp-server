@@ -127,11 +127,7 @@ func TestDumpTools(t *testing.T) {
 	if !reflect.DeepEqual(served["dependentRequired"], wantDependent) {
 		t.Fatalf("served dependentRequired = %#v, want %#v", served["dependentRequired"], wantDependent)
 	}
-	wantAllOf := []interface{}{
-		map[string]interface{}{"not": map[string]interface{}{"required": []interface{}{"lookback_minutes", "start_time_iso"}}},
-		map[string]interface{}{"not": map[string]interface{}{"required": []interface{}{"lookback_minutes", "end_time_iso"}}},
-	}
-	if !reflect.DeepEqual(served["allOf"], wantAllOf) {
-		t.Fatalf("served allOf = %#v, want %#v", served["allOf"], wantAllOf)
+	if _, exists := served["allOf"]; exists {
+		t.Fatal("served schema must omit provider-incompatible allOf")
 	}
 }

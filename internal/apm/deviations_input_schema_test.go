@@ -110,12 +110,8 @@ func TestAPMServiceDeviationsInputSchemaStructure(t *testing.T) {
 			t.Errorf("dependentRequired[%q] = %#v, want [%q]", field, dependent[field], pair)
 		}
 	}
-	wantAllOf := []interface{}{
-		map[string]interface{}{"not": map[string]interface{}{"required": []string{"lookback_minutes", "start_time_iso"}}},
-		map[string]interface{}{"not": map[string]interface{}{"required": []string{"lookback_minutes", "end_time_iso"}}},
-	}
-	if !reflect.DeepEqual(schema["allOf"], wantAllOf) {
-		t.Fatalf("allOf = %#v, want %#v", schema["allOf"], wantAllOf)
+	if _, exists := schema["allOf"]; exists {
+		t.Fatal("allOf must be omitted because common model tool APIs reject it; the handler enforces lookback/time exclusivity")
 	}
 }
 
@@ -125,6 +121,9 @@ func TestAPMServiceDeviationsInputSchemaValidation(t *testing.T) {
 		{"lookback_minutes": 60.5, "max_services": 10, "max_operations": 1},
 		{"start_time_iso": "2026-07-12T08:00:00Z", "end_time_iso": "2026-07-12T09:00:00Z"},
 		{"baseline_start_time_iso": "2026-07-11T06:00:00Z", "baseline_end_time_iso": "2026-07-11T08:00:00Z"},
+		// Common model tool APIs reject allOf, so this cross-field conflict is
+		// intentionally left to the handler's runtime validation.
+		{"lookback_minutes": 60, "start_time_iso": "2026-07-12T08:00:00Z", "end_time_iso": "2026-07-12T09:00:00Z"},
 	}
 	for _, args := range valid {
 		if err := validateDeviationInputSchema(t, args); err != nil {
@@ -138,7 +137,6 @@ func TestAPMServiceDeviationsInputSchemaValidation(t *testing.T) {
 		{"end_time_iso": "2026-07-12T09:00:00Z"},
 		{"baseline_start_time_iso": "2026-07-11T08:00:00Z"},
 		{"baseline_end_time_iso": "2026-07-11T09:00:00Z"},
-		{"lookback_minutes": 60, "start_time_iso": "2026-07-12T08:00:00Z", "end_time_iso": "2026-07-12T09:00:00Z"},
 		{"lookback_minutes": 0},
 		{"max_services": 11},
 		{"max_operations": 0},
