@@ -17,11 +17,11 @@ func TestGetDashboardSnapshotHandler_GETsByID(t *testing.T) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"id":                    "snap-1",
-			"name":                  "Freeze",
-			"dashboard_definition":  map[string]any{"name": "Dash"},
-			"panel_data":            map[string]any{},
-			"time_range":            map[string]any{"from": 1, "to": 2},
+			"id":                   "snap-1",
+			"name":                 "Freeze",
+			"dashboard_definition": map[string]any{"name": "Dash"},
+			"panel_data":           map[string]any{},
+			"time_range":           map[string]any{"from": 1, "to": 2},
 		})
 	}))
 	defer srv.Close()

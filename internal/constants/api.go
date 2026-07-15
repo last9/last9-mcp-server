@@ -39,9 +39,9 @@ const (
 	EndpointSuggest = "/suggest"
 
 	// Dashboard API endpoints (v4)
-	EndpointDashboards           = "/dashboards"
-	EndpointDashboardByID        = "/dashboards/%s" // fmt with id; GET requires ?region=
-	EndpointDashboardSnapshots   = "/dashboards/snapshots"
+	EndpointDashboards            = "/dashboards"
+	EndpointDashboardByID         = "/dashboards/%s" // fmt with id; GET requires ?region=
+	EndpointDashboardSnapshots    = "/dashboards/snapshots"
 	EndpointDashboardSnapshotByID = "/dashboards/snapshots/%s"
 
 	// DefaultHTTPTimeout is the fixed timeout used for outbound API calls and HTTP server read/write operations.
