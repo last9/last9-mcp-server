@@ -131,18 +131,6 @@ func TestRegisterAllTools_ExposesDashboardObjectSchemas(t *testing.T) {
 		t.Fatalf("update_dashboard InputSchema mismatch:\ngot  %v\nwant %v", got, want)
 	}
 
-	snapTool := toolByName(t, list.Tools, "create_dashboard_snapshot")
-	snapSchema := schemaAsMap(t, snapTool.InputSchema)
-	for _, field := range []string{"time_range", "dashboard_definition", "panel_data"} {
-		prop, ok := snapSchema["properties"].(map[string]any)[field].(map[string]any)
-		if !ok || prop["type"] != "object" {
-			t.Fatalf("%s %s type: want object, got %v", snapTool.Name, field, prop)
-		}
-	}
-	if got, want := snapSchema, schemaAsMap(t, dashboards.GetCreateDashboardSnapshotInputSchema()); !reflect.DeepEqual(got, want) {
-		t.Fatalf("create_dashboard_snapshot InputSchema mismatch:\ngot  %v\nwant %v", got, want)
-	}
-
 	for _, name := range []string{"list_dashboard_snapshots", "get_dashboard_snapshot", "delete_dashboard_snapshot"} {
 		_ = toolByName(t, list.Tools, name)
 	}

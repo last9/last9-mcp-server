@@ -274,12 +274,6 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 	}, dashboards.NewDeleteDashboardHandler(client, cfg))
 
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
-		Name:        "create_dashboard_snapshot",
-		Description: prompts.CreateDashboardSnapshotDescription,
-		InputSchema: dashboards.GetCreateDashboardSnapshotInputSchema(),
-	}, dashboards.NewCreateDashboardSnapshotHandler(client, cfg))
-
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "list_dashboard_snapshots",
 		Description: prompts.ListDashboardSnapshotsDescription,
 	}, dashboards.NewListDashboardSnapshotsHandler(client, cfg))

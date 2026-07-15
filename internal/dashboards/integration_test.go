@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -242,28 +243,30 @@ func TestDashboardSnapshotCRUD_Integration(t *testing.T) {
 	now := time.Now().Unix()
 	expires := now + 3600
 	snapName := fmt.Sprintf("mcp-snapshot-%d", suffix)
-	createSnapResult, _, err := NewCreateDashboardSnapshotHandler(client, *cfg)(ctx, &mcp.CallToolRequest{}, CreateDashboardSnapshotArgs{
-		DashboardID:         dashboardID,
-		Name:                snapName,
-		Description:         "mcp e2e snapshot",
-		ExpiresAt:           &expires,
-		TimeRange:           json.RawMessage(fmt.Sprintf(`{"from":%d,"to":%d}`, now-3600, now)),
-		Variables:           json.RawMessage(`{}`),
-		Region:              cfg.Region,
-		DashboardDefinition: getEnvelope.Dashboard,
-		PanelData:           json.RawMessage(`{}`),
+	// create_dashboard_snapshot is not exposed as an MCP tool (server-side capture
+	// pending — ENG-1492). Seed a snapshot directly via the v4 API so the shipped
+	// list/get/delete tools still get real end-to-end coverage.
+	seedBody, err := json.Marshal(map[string]any{
+		"dashboard_id":         dashboardID,
+		"name":                 snapName,
+		"description":          "mcp e2e snapshot",
+		"expires_at":           expires,
+		"time_range":           json.RawMessage(fmt.Sprintf(`{"from":%d,"to":%d}`, now-3600, now)),
+		"variables":            json.RawMessage(`{}`),
+		"region":               cfg.Region,
+		"dashboard_definition": getEnvelope.Dashboard,
+		"panel_data":           json.RawMessage(`{}`),
 	})
+	if err != nil {
+		t.Fatalf("marshal seed snapshot: %v", err)
+	}
+	seedResp, _, err := doJSONRequest(ctx, client, *cfg, http.MethodPost, cfg.APIBaseURL+constants.EndpointDashboardSnapshots, seedBody)
 	if utils.CheckAPIError(t, err) {
 		return
 	}
-	createSnapText := utils.GetTextContent(t, createSnapResult)
-	snapshotID := snapshotIDFromResponse([]byte(createSnapText))
+	snapshotID := snapshotIDFromResponse(seedResp)
 	if snapshotID == "" {
-		t.Fatalf("create snapshot missing id: %s", createSnapText)
-	}
-	wantSnapRef := "/v2/organizations/" + cfg.OrgSlug + "/dashboards/snapshots/" + snapshotID
-	if ref, ok := createSnapResult.Meta["reference_url"].(string); !ok || ref != wantSnapRef {
-		t.Fatalf("create snapshot reference_url %q want %q", createSnapResult.Meta["reference_url"], wantSnapRef)
+		t.Fatalf("seed snapshot missing id: %s", string(seedResp))
 	}
 	t.Cleanup(func() {
 		_, _, _ = NewDeleteDashboardSnapshotHandler(client, *deleteCfg)(context.Background(), &mcp.CallToolRequest{}, DeleteDashboardSnapshotArgs{ID: snapshotID})
@@ -299,6 +302,10 @@ func TestDashboardSnapshotCRUD_Integration(t *testing.T) {
 	}
 	if len(snap.DashboardDefinition) == 0 || len(snap.PanelData) == 0 || len(snap.TimeRange) == 0 {
 		t.Fatalf("get snapshot missing frozen fields: %+v", snap)
+	}
+	wantSnapRef := "/v2/organizations/" + cfg.OrgSlug + "/dashboards/snapshots/" + snapshotID
+	if ref, ok := getSnapResult.Meta["reference_url"].(string); !ok || ref != wantSnapRef {
+		t.Fatalf("get snapshot reference_url %q want %q", getSnapResult.Meta["reference_url"], wantSnapRef)
 	}
 
 	deleteResult, _, err := NewDeleteDashboardSnapshotHandler(client, *deleteCfg)(ctx, &mcp.CallToolRequest{}, DeleteDashboardSnapshotArgs{ID: snapshotID})

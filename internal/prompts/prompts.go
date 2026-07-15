@@ -116,9 +116,6 @@ var UpdateDashboardDescription string
 //go:embed descriptions/delete_dashboard.md
 var DeleteDashboardDescription string
 
-//go:embed descriptions/create_dashboard_snapshot.md
-var CreateDashboardSnapshotDescription string
-
 //go:embed descriptions/list_dashboard_snapshots.md
 var ListDashboardSnapshotsDescription string
 

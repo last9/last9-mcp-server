@@ -292,7 +292,6 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`delete_dashboard`** — Delete a custom dashboard by ID
 - **`list_dashboard_snapshots`** — Frozen point-in-time snapshots for a dashboard (metadata only)
 - **`get_dashboard_snapshot`** — Full frozen snapshot including panel data for RCA / shareable views
-- **`create_dashboard_snapshot`** — Create a snapshot from a live capture payload (`dashboard_definition` + `panel_data`)
 - **`delete_dashboard_snapshot`** — Delete a frozen snapshot by ID
 
 ### Fuzzy Name Resolution
@@ -657,20 +656,6 @@ Returns metadata only (`id`, `name`, `expires_at`, etc.). Use `get_dashboard_sna
 - `id` (string, required): Snapshot UUID.
 
 Returns the full frozen snapshot including `dashboard_definition`, `panel_data`, `time_range`, and `variables`.
-
-### create_dashboard_snapshot
-
-- `dashboard_id` (string, required): Dashboard UUID to snapshot.
-- `name` (string, required): Snapshot name.
-- `time_range` (object, required): Absolute range with `from`/`to` Unix seconds.
-- `dashboard_definition` (object, required): Frozen dashboard definition (same shape as `get_dashboard`'s `dashboard` field).
-- `panel_data` (object, required): Frozen panel query results keyed by panel id.
-- `description` (string, optional): Snapshot description.
-- `expires_at` (integer, optional): Unix expiry timestamp in seconds; must be in the future. Omit for no expiry.
-- `variables` (object, optional): Selected dashboard variable values at capture time. When omitted, the server sends `{}` (the v4 API currently 500s if the field is absent).
-- `region` (string, optional): Region used when capturing panel data.
-
-Prefer UI capture when panel query results are unavailable — create requires a full live capture payload.
 
 ### delete_dashboard_snapshot
 

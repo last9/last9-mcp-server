@@ -5,12 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 )
-
-// maxSnapshotExpiresAtSkew rejects clearly non-second timestamps (e.g. JS Date.now() ms).
-// Unix seconds for year ~33658 is still below 1e12; milliseconds today are ~1.7e12.
-const maxSnapshotExpiresAtUnixSeconds = int64(1_000_000_000_000)
 
 func validateID(id string) error {
 	if strings.TrimSpace(id) == "" {
@@ -109,68 +104,4 @@ func validateJSONObject(field string, raw json.RawMessage, required bool) error 
 		return fmt.Errorf("%s must be a JSON object", field)
 	}
 	return nil
-}
-
-func validateSnapshotTimeRange(raw json.RawMessage) error {
-	if err := validateJSONObject("time_range", raw, true); err != nil {
-		return err
-	}
-	var tr struct {
-		From *int64 `json:"from"`
-		To   *int64 `json:"to"`
-	}
-	if err := json.Unmarshal(raw, &tr); err != nil {
-		return errors.New("time_range must be a JSON object with from/to Unix seconds")
-	}
-	if tr.From == nil || tr.To == nil {
-		return errors.New("time_range.from and time_range.to are required Unix seconds")
-	}
-	if *tr.From >= *tr.To {
-		return errors.New("time_range.from must be less than time_range.to")
-	}
-	return nil
-}
-
-func validateExpiresAt(expiresAt *int64) error {
-	if expiresAt == nil {
-		return nil
-	}
-	now := time.Now().Unix()
-	if *expiresAt <= now {
-		return errors.New("expires_at must be in the future")
-	}
-	if *expiresAt >= maxSnapshotExpiresAtUnixSeconds {
-		return errors.New("expires_at must be Unix seconds, not milliseconds")
-	}
-	return nil
-}
-
-func validateCreateSnapshotArgs(args CreateDashboardSnapshotArgs) error {
-	if strings.TrimSpace(args.DashboardID) == "" {
-		return errors.New("dashboard_id is required")
-	}
-	if strings.TrimSpace(args.Name) == "" {
-		return errors.New("name is required")
-	}
-	if err := validateSnapshotTimeRange(args.TimeRange); err != nil {
-		return err
-	}
-	if err := validateJSONObject("dashboard_definition", args.DashboardDefinition, true); err != nil {
-		return err
-	}
-	if err := validateJSONObject("panel_data", args.PanelData, true); err != nil {
-		return err
-	}
-	if err := validateJSONObject("variables", args.Variables, false); err != nil {
-		return err
-	}
-	return validateExpiresAt(args.ExpiresAt)
-}
-
-// normalizeCreateSnapshotArgs fills API-required defaults the wire format rejects when omitted.
-// Prod currently 500s when variables is absent (nil after decode); send {}.
-func normalizeCreateSnapshotArgs(args *CreateDashboardSnapshotArgs) {
-	if len(args.Variables) == 0 {
-		args.Variables = json.RawMessage(`{}`)
-	}
 }
