@@ -13,6 +13,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+type GetDashboardSnapshotArgs struct {
+	ID string `json:"id" jsonschema:"(Required) Snapshot UUID"`
+}
+
 func NewGetDashboardSnapshotHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetDashboardSnapshotArgs) (*mcp.CallToolResult, any, error) {
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args GetDashboardSnapshotArgs) (*mcp.CallToolResult, any, error) {

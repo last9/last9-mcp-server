@@ -14,6 +14,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+type DeleteDashboardSnapshotArgs struct {
+	ID string `json:"id" jsonschema:"(Required) Snapshot UUID"`
+}
+
 func NewDeleteDashboardSnapshotHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, DeleteDashboardSnapshotArgs) (*mcp.CallToolResult, any, error) {
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args DeleteDashboardSnapshotArgs) (*mcp.CallToolResult, any, error) {
