@@ -14,8 +14,10 @@ import (
 
 const maxAPIErrorBodyBytes = 4096
 
-// maxAPISuccessBodyBytes aligns with the monorepo dashboard snapshot create
-// render guard (25 MiB uncompressed). Caps all dashboard/snapshot success bodies.
+// maxAPISuccessBodyBytes caps dashboard/snapshot success bodies. get_dashboard_snapshot
+// returns the full frozen snapshot (dashboard_definition + panel_data), which can be large;
+// past this cap we return an "open the UI link" error instead of dumping MBs into the client.
+// 25 MiB matches the monorepo's snapshot size ceiling.
 var maxAPISuccessBodyBytes int64 = 25 * 1024 * 1024
 
 func doJSONRequest(ctx context.Context, client *http.Client, cfg models.Config, method, url string, body []byte) ([]byte, int, error) {
