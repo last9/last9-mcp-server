@@ -1,0 +1,12 @@
+{
+  "manifest_version": "investigation-feature-flags/v1",
+  "flags": [
+    { "name": "investigation.backend.attribute_deviations_v2", "default": false, "owner": "trace-api" },
+    { "name": "investigation.backend.direct_child_dependencies_v1", "default": false, "owner": "trace-api" },
+    { "name": "investigation.mcp.atomic_deviations", "default": false, "owner": "mcp" },
+    { "name": "investigation.supervisor.workflow_v1", "default": false, "owner": "supervisor" },
+    { "name": "investigation.dashboard.page_v1", "default": false, "owner": "dashboard" },
+    { "name": "investigation.assistant.projection_v1", "default": false, "owner": "dashboard" },
+    { "name": "investigation.recommendation.approval_v1", "default": false, "owner": "supervisor" }
+  ]
+}

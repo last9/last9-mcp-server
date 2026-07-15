@@ -1,0 +1,31 @@
+{
+  "contract_version": "investigation-evidence/v1",
+  "analysis_version": "trace-attribute-deviations/v1",
+  "request": {
+    "scope": { "service_name": "checkout", "environment": "production", "operation": "POST /checkout" },
+    "requested_window": { "start": "2026-07-15T08:25:00Z", "end": "2026-07-15T08:40:00Z", "boundary": "half-open" },
+    "effective_window": { "start": "2026-07-15T08:25:00Z", "end": "2026-07-15T08:40:00Z", "boundary": "half-open" },
+    "comparison_mode": "latency",
+    "latency_threshold_ms": 500
+  },
+  "evidence": {
+    "partial": false,
+    "truncated": false,
+    "warnings": [],
+    "partial_errors": [],
+    "target_count": 240,
+    "control_count": 920,
+    "provenance": { "source": "trace-analytics", "observed_at": "2026-07-15T08:41:00Z", "query_id": "seed-deviation-001" }
+  },
+  "interpretation": {
+    "evidence_quality": "medium",
+    "claim_type": "correlation",
+    "summary": "pricing-service version 1.14.0 is 31.5 percentage points more common in the slow cohort.",
+    "limitations": ["Association is not proof of cause."]
+  },
+  "data": {
+    "deviations": [{ "attribute": "service.version", "value": "1.14.0", "target_count": 156, "control_count": 307, "target_share": 0.65, "control_share": 0.335, "percentage_point_delta": 31.5, "score": 31.5, "rank": 1 }],
+    "representative_traces": [{ "trace_id": "seed-trace-confirming-01", "relation": "confirming", "duration_ms": 1450 }]
+  },
+  "follow_ups": ["Inspect a confirming and contradicting trace before recommending action."]
+}

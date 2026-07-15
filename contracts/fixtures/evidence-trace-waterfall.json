@@ -1,0 +1,31 @@
+{
+  "contract_version": "investigation-evidence/v1",
+  "analysis_version": "trace-waterfall/v1",
+  "request": {
+    "scope": { "service_name": "checkout", "environment": "production", "operation": "POST /checkout" },
+    "requested_window": { "start": "2026-07-15T08:30:00Z", "end": "2026-07-15T08:45:00Z", "boundary": "half-open" },
+    "effective_window": { "start": "2026-07-15T08:30:00Z", "end": "2026-07-15T08:45:00Z", "boundary": "half-open" },
+    "trace_id": "seed-trace-confirming-01"
+  },
+  "evidence": {
+    "partial": false,
+    "truncated": false,
+    "warnings": [],
+    "returned_spans": 3,
+    "provenance": { "source": "trace-details", "observed_at": "2026-07-15T08:41:05Z", "query_id": "seed-waterfall-001" }
+  },
+  "interpretation": {
+    "evidence_quality": "medium",
+    "claim_type": "contribution",
+    "summary": "The pricing call contributes 820 ms of the observed checkout trace duration.",
+    "limitations": ["Contribution is not proof of incident cause.", "No critical path is claimed."]
+  },
+  "data": {
+    "summary": { "duration_ms": 1450, "span_count": 3, "service_count": 2, "error_count": 1, "max_depth": 1 },
+    "spans": [
+      { "span_id": "root", "parent_span_id": null, "service": "checkout", "operation": "POST /checkout", "start_offset_ms": 0, "duration_ms": 1450, "self_time_ms": 630, "depth": 0 },
+      { "span_id": "pricing", "parent_span_id": "root", "service": "pricing-service", "operation": "GET /price", "start_offset_ms": 120, "duration_ms": 820, "self_time_ms": 820, "depth": 1 },
+      { "span_id": "audit", "parent_span_id": "root", "service": "checkout", "operation": "publish audit", "start_offset_ms": 980, "duration_ms": 80, "self_time_ms": 80, "depth": 1 }
+    ]
+  }
+}
