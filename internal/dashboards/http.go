@@ -14,10 +14,12 @@ import (
 
 const maxAPIErrorBodyBytes = 4096
 
-// maxAPISuccessBodyBytes caps dashboard/snapshot success bodies at 5 MiB.
-// get_dashboard_snapshot returns the full frozen snapshot (dashboard_definition +
-// panel_data), which can be large; past this cap we return an "open the UI link"
-// error instead of dumping MBs into the client.
+// maxAPISuccessBodyBytes caps every dashboard/snapshot success body — doJSONRequest
+// is shared by all dashboard tools (list/get/create/update/delete + the snapshot
+// tools). get_dashboard_snapshot is the main driver (it returns the full frozen
+// snapshot: dashboard_definition + panel_data), but a large get_dashboard hits the
+// same cap. Past this we return an "open the UI link" error instead of dumping MBs
+// into the client. 5 MiB comfortably exceeds normal dashboard/snapshot payloads.
 var maxAPISuccessBodyBytes int64 = 5 * 1024 * 1024
 
 func doJSONRequest(ctx context.Context, client *http.Client, cfg models.Config, method, url string, body []byte) ([]byte, int, error) {
