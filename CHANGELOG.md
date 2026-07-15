@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `list_dashboard_snapshots`, `get_dashboard_snapshot`, and `delete_dashboard_snapshot` MCP tools for frozen point-in-time dashboard snapshots (Last9 v4 `/dashboards/snapshots` API). `list` returns snapshot metadata for a dashboard (`id`, `name`, `expires_at`, …); `get` returns the full frozen snapshot including `dashboard_definition`, `panel_data`, `time_range`, and `variables`; `delete` removes a snapshot by ID. Snapshot creation is intentionally not exposed yet: it would require the caller to supply the full frozen `dashboard_definition` + `panel_data` capture payload, which is unsafe for an MCP/LLM client — deferred until a server-side capture endpoint exists (ENG-1492) (#185).
+- `list_dashboard_snapshots`, `get_dashboard_snapshot`, and `delete_dashboard_snapshot` MCP tools for frozen point-in-time dashboard snapshots. `list` returns snapshot metadata for a dashboard (`id`, `name`, `expires_at`, …); `get` returns the full frozen snapshot including `dashboard_definition`, `panel_data`, `time_range`, and `variables`; `delete` removes a snapshot by ID (#185).
 
 ## [0.11.0] - 2026-07-10
 
