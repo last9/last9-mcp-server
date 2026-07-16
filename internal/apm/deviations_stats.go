@@ -136,7 +136,7 @@ func selectedEvidence(signalName string, evidence WindowEvidence) MetricEvidence
 	switch signalName {
 	case "request_rpm", "requests", "throughput":
 		return evidence.Requests
-	case "error_rpm", "errors":
+	case "error_throughput_rpm", "error_rpm", "errors":
 		return evidence.Errors
 	case "error_percentage":
 		return evidence.ErrorPercentage
