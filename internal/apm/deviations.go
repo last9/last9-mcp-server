@@ -440,11 +440,7 @@ func aggregateCount(value *float64, expected int) int {
 	if value == nil || !isFinite(*value) || *value <= 0 {
 		return 0
 	}
-	// Observed points are capped at expected so the strict-equality coverage gate in
-	// classifyEvidence stays well-defined. Note the cap can mask a gap: a subquery that
-	// returns one extra boundary sample while missing one interior bucket nets to expected
-	// and reports full coverage. Verify count_over_time cardinality against live data before
-	// relaxing the coverage gate.
+	// Cap at expected so the strict-equality coverage gate stays well-defined.
 	return min(int(math.Round(*value)), expected)
 }
 
