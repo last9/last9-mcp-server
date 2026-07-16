@@ -30,3 +30,55 @@ func TestGetServiceLogsInstructionsContainsDisambiguation(t *testing.T) {
 		}
 	}
 }
+
+func TestAPMServiceDeviationsDescription(t *testing.T) {
+	description := strings.ToLower(prompts.GetAPMServiceDeviationsDescription)
+	checks := []struct {
+		phrase string
+		reason string
+	}{
+		{"equal-duration baseline", "must describe comparative rather than snapshot behavior"},
+		{"get_service_summary", "must disambiguate one-window snapshots"},
+		{"call this tool first and by itself", "must prevent speculative parallel investigation"},
+		{"do not batch speculative corroboration", "must require inspecting the comparison before follow-ups"},
+		{"service_name", "must explain fleet and service scope"},
+		{"environments remain separate", "must prevent merged environment conclusions"},
+		{"server-request workloads", "must state the V1 workload boundary"},
+		{"unsupported_workload_shape", "must name the unsupported workload outcome"},
+		{"datasource", "must document datasource selection"},
+		{"baseline_start_time_iso", "must document explicit baseline windows"},
+		{"max_services", "must document fleet result bounds"},
+		{"max_operations", "must document operation result bounds"},
+		{"regressions", "must describe regression results"},
+		{"improvements", "must describe improvement results"},
+		{"stable", "must describe stable results"},
+		{"evidence quality", "must describe categorical evidence quality"},
+		{"operation_apdex_reconciliations", "must explain request-weighted operation evidence"},
+		{"unexplained_delta", "must preserve incomplete operation coverage as an explicit residual"},
+		{"reported coverage", "must prevent treating partial operation evidence as complete"},
+		{"does not establish contribution, attribution, cause, or root cause", "must prevent causal overclaiming"},
+	}
+	for _, check := range checks {
+		if !strings.Contains(description, check.phrase) {
+			t.Errorf("description missing %q: %s", check.phrase, check.reason)
+		}
+	}
+}
+
+func TestAPMServiceDeviationsDescriptionDefaultsAndPartialResults(t *testing.T) {
+	description := strings.ToLower(prompts.GetAPMServiceDeviationsDescription)
+	for _, phrase := range []string{
+		"max_services` and `max_operations` each default to 10 and cannot exceed 10",
+		"partial_errors",
+		"successful evidence remains usable",
+		"explicitly qualify conclusions",
+		"state the returned evidence quality or limitations",
+		"stable`, `no_data`, and `unsupported_workload_shape` as terminal",
+		"do not automatically call follow-up tools",
+		"all metric queries fail, the tool returns an error",
+	} {
+		if !strings.Contains(description, phrase) {
+			t.Errorf("description missing exact contract wording %q", phrase)
+		}
+	}
+}

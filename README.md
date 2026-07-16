@@ -236,6 +236,7 @@ The NPM route is easier on Windows — no path management.
 - **`get_service_performance_details`** — Full breakdown: throughput, error rate, p50/p90/p95/avg/max, apdex, availability
 - **`get_service_operations_summary`** — Operations grouped by HTTP endpoints, DB calls, messaging, HTTP clients
 - **`get_service_dependency_graph`** — Dependency map with throughput, latency, and error rates for upstream/downstream/infra
+- **`get_apm_service_deviations`** — Compare a current window against an equal-duration baseline: regressions/improvements, Apdex reconciliation, and a terminal outcome (fleet or single service)
 - **`get_exceptions`** — Server-side exceptions with service and span filters
 
 ### Database Observability
@@ -423,6 +424,16 @@ LAST9_HTTP=true ./last9-mcp-server
 - `lookback_minutes` (integer, optional): Default: 60.
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `env` (string, optional): Defaults to `prod`.
+
+### get_apm_service_deviations
+
+- `service_name` (string, optional): Omit for fleet scope; provide for one service and its operation correlations.
+- `lookback_minutes` (integer, optional): Current window. Default: 60.
+- `start_time_iso` / `end_time_iso` (string, optional): Explicit current window.
+- `baseline_start_time_iso` / `baseline_end_time_iso` (string, optional): Explicit baseline. Defaults to the immediately preceding equal-duration window.
+- `datasource` (string, optional): Restrict the comparison to one datasource.
+- `env` (string, optional): Defaults to `prod`.
+- `max_services` / `max_operations` (integer, optional): Default 10, max 10 each.
 
 ### get_databases
 
