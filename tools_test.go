@@ -130,4 +130,8 @@ func TestRegisterAllTools_ExposesDashboardObjectSchemas(t *testing.T) {
 	if got, want := schemaAsMap(t, toolByName(t, list.Tools, "update_dashboard").InputSchema), schemaAsMap(t, dashboards.GetUpdateDashboardInputSchema()); !reflect.DeepEqual(got, want) {
 		t.Fatalf("update_dashboard InputSchema mismatch:\ngot  %v\nwant %v", got, want)
 	}
+
+	for _, name := range []string{"list_dashboard_snapshots", "get_dashboard_snapshot", "delete_dashboard_snapshot"} {
+		_ = toolByName(t, list.Tools, name)
+	}
 }

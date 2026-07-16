@@ -307,5 +307,20 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Description: prompts.DeleteDashboardDescription,
 	}, dashboards.NewDeleteDashboardHandler(client, cfg))
 
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "list_dashboard_snapshots",
+		Description: prompts.ListDashboardSnapshotsDescription,
+	}, dashboards.NewListDashboardSnapshotsHandler(client, cfg))
+
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_dashboard_snapshot",
+		Description: prompts.GetDashboardSnapshotDescription,
+	}, dashboards.NewGetDashboardSnapshotHandler(client, cfg))
+
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "delete_dashboard_snapshot",
+		Description: prompts.DeleteDashboardSnapshotDescription,
+	}, dashboards.NewDeleteDashboardSnapshotHandler(client, cfg))
+
 	return nil
 }
