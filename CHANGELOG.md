@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_apm_service_deviations` MCP tool comparing a current window against an equal-duration baseline (fleet or single service). Returns `regressions`/`improvements` leaderboards, `evidence_quality`, an Apdex reconciliation, and a terminal `outcome`. Arithmetic is computed server-side; correlations are supporting evidence only. V1 supports server-request workloads (#184).
 - `list_dashboard_snapshots`, `get_dashboard_snapshot`, and `delete_dashboard_snapshot` MCP tools for frozen point-in-time dashboard snapshots. `list` returns snapshot metadata for a dashboard (`id`, `name`, `expires_at`, …); `get` returns the full frozen snapshot including `dashboard_definition`, `panel_data`, `time_range`, and `variables`; `delete` removes a snapshot by ID (#185).
 
 ## [0.11.0] - 2026-07-10
