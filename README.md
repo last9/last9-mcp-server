@@ -290,6 +290,9 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`create_dashboard`** — Create a new custom dashboard with panels, queries, and metadata
 - **`update_dashboard`** — Update an existing dashboard by ID (readonly system dashboards return an error)
 - **`delete_dashboard`** — Delete a custom dashboard by ID
+- **`list_dashboard_snapshots`** — Frozen point-in-time snapshots for a dashboard (metadata only)
+- **`get_dashboard_snapshot`** — Full frozen snapshot including panel data for RCA / shareable views
+- **`delete_dashboard_snapshot`** — Delete a frozen snapshot by ID
 
 ### Fuzzy Name Resolution
 
@@ -641,6 +644,22 @@ No parameters. Returns all custom dashboards in the org as a JSON array with `id
 ### delete_dashboard
 
 - `id` (string, required): Dashboard UUID to delete. Readonly system dashboards cannot be deleted.
+
+### list_dashboard_snapshots
+
+- `dashboard_id` (string, required): Dashboard UUID whose snapshots to list.
+
+Returns metadata only (`id`, `name`, `expires_at`, etc.). Use `get_dashboard_snapshot` for frozen panel data.
+
+### get_dashboard_snapshot
+
+- `id` (string, required): Snapshot UUID.
+
+Returns the full frozen snapshot including `dashboard_definition`, `panel_data`, `time_range`, and `variables`.
+
+### delete_dashboard_snapshot
+
+- `id` (string, required): Snapshot UUID to delete.
 
 </details>
 

@@ -1,0 +1,1 @@
+Get a frozen dashboard snapshot by ID, including dashboard_definition, panel_data, time_range, and variables.
