@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"strings"
 
 	"last9-mcp/internal/alerting"
@@ -33,9 +34,42 @@ func buildEnhancedDescription(base, instructions string, labelValues []string) s
 	return desc
 }
 
+func registerWorkflowPrompt(server *last9mcp.Last9MCPServer, name, title, description, text string) {
+	server.Server.AddPrompt(&mcp.Prompt{
+		Name:        name,
+		Title:       title,
+		Description: description,
+	}, func(_ context.Context, _ *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		return &mcp.GetPromptResult{
+			Description: description,
+			Messages: []*mcp.PromptMessage{
+				{Role: "user", Content: &mcp.TextContent{Text: text}},
+			},
+		}, nil
+	})
+}
+
+func registerWorkflowPrompts(server *last9mcp.Last9MCPServer) {
+	registerWorkflowPrompt(
+		server,
+		"scoped-log-attribute-discovery",
+		"Scoped Log Attribute Discovery",
+		"Discover service-scoped log fields before building aggregate log filters.",
+		prompts.ScopedLogAttributeDiscoveryWorkflow,
+	)
+	registerWorkflowPrompt(
+		server,
+		"exception-log-continuation",
+		"Exception Log Continuation",
+		"Continue exception investigations into aggregate logs to find root-cause signals.",
+		prompts.ExceptionLogContinuationWorkflow,
+	)
+}
+
 // registerAllTools registers all tools with the MCP server using the new SDK pattern
 func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCache *attributes.AttributeCache) error {
 	client := auth.GetHTTPClient()
+	registerWorkflowPrompts(server)
 
 	// Build enhanced descriptions for tools that have embedded instructions
 	getLogsDesc := buildEnhancedDescription(prompts.GetLogsDescription, prompts.GetLogsInstructions, attrCache.GetLogAttributes())

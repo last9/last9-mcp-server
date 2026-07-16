@@ -139,3 +139,9 @@ var GetServiceTracesDescription string
 
 //go:embed descriptions/prometheus_range_query_base.md
 var PromqlRangeQueryDetails string
+
+//go:embed workflows/scoped_log_attribute_discovery.md
+var ScopedLogAttributeDiscoveryWorkflow string
+
+//go:embed workflows/exception_log_continuation.md
+var ExceptionLogContinuationWorkflow string

@@ -1,4 +1,10 @@
-Use this tool to fetch raw log entries for a single service using simple filters.
+Use this tool only to fetch a small number of raw log entries for a single
+service after the query has already been narrowed.
+
+This is not the tool for counts, totals, breakdowns, rankings, trends,
+aggregate answers, HTTP status questions, body-derived field extraction, or
+root-cause ranking. For those workflows, use `get_log_attributes_for_pipeline`
+for scoped field discovery and then use `get_logs`.
 
 ## When to use `get_logs` instead
 
@@ -8,7 +14,10 @@ Use this tool to fetch raw log entries for a single service using simple filters
 
 **Decision rule:**
 - Query involves a known or discoverable structured attribute → **use `get_logs`**
-- Query is simple severity filtering or keyword/phrase match against log text → use `get_service_logs`
+- Query asks "how many", count, total, rate, trend, top, breakdown, group by, or root cause → **use `get_logs`**
+- Query needs JSON/logfmt/regexp parsing from `Body` → **use `get_logs`**
+- Query is simple severity filtering or keyword/phrase match against log text AND the user needs a few example rows → use `get_service_logs`
+- If a `get_logs` aggregate attempt fails, fix the `get_logs` pipeline syntax or simplify the pipeline. Do not fall back to `get_service_logs`; raw samples cannot answer aggregate questions.
 
 ## Check log attributes first
 
@@ -23,7 +32,7 @@ Structured attribute queries are:
 - **More precise**: exact value match, not partial text
 - **More reliable**: work even when the value is not embedded in the log message body
 
-`body_filters` is a **last resort** — use it only when no structured attribute captures the information you need.
+`body_filters` is a **last resort** — use it only when no structured attribute captures the information you need and the user needs raw example rows.
 
 ## Available structured attributes for this environment
 
@@ -47,7 +56,7 @@ Structured attribute queries are:
 - Use `service_name` as the service argument, `env` as the environment when present, and `name` as the physical index name.
 - If `name="default"`, omit the `index` parameter. For a non-default physical index selected by the user, use `index: "physical_index:<name>"`.
 - If the backend rejects explicit physical index filtering, retry without `index` and tell the user that explicit physical index filtering is unavailable for that backend.
-- Prefer `get_logs` for aggregate counts. Use this tool after the service/env/index and pattern are already narrowed, and request a small `limit` for samples.
+- Prefer `get_logs` for aggregate counts, totals, breakdowns, rankings, trends, and any parsed-body workflow. Use this tool only after the service/env/index and pattern are already narrowed, and request a small `limit` for samples.
 
 ## Rules
 
@@ -56,6 +65,7 @@ Structured attribute queries are:
 - Keep `severity_filters` and `body_filters` as arrays of strings.
 - Do not invent `index` or `env` unless the user explicitly asked for them or supplied that context.
 - **NEVER use `body_filters` for values stored as structured attributes.** Call `get_log_attributes` to check first, then use `get_logs` if an attribute exists.
+- **NEVER use this tool to answer aggregate questions.** Raw entries are examples, not counts. Use `get_logs` with `aggregate` or `window_aggregate`.
 
 ## Examples
 
