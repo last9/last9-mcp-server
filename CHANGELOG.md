@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-17
+
 ### Added
 
 - `get_apm_service_deviations` MCP tool comparing a current window against an equal-duration baseline (fleet or single service). Returns `regressions`/`improvements` leaderboards, `evidence_quality`, an Apdex reconciliation, and a terminal `outcome`. Arithmetic is computed server-side; correlations are supporting evidence only. V1 supports server-request workloads (#184).
