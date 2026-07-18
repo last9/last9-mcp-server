@@ -3,8 +3,8 @@ package traces
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"log"
 	"log/slog"
 	"net/http"
@@ -46,6 +46,9 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 		// Handle tracejson_query directly
 		result, err := handleTraceJSONQuery(ctx, client, cfg, args.TracejsonQuery, args)
 		if err != nil {
+			if isTraceUpstreamError(err) {
+				return traceToolErrorResult(err), nil, nil
+			}
 			return nil, nil, err
 		}
 		return result, nil, nil
@@ -277,23 +280,21 @@ func annotatePartialGetTracesResponse(response map[string]interface{}, err error
 func executeTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, tracejsonQuery interface{}, startMs, endMs int64, limit int) (map[string]interface{}, error) {
 	resp, err := utils.MakeTracesJSONQueryAPI(ctx, client, cfg, tracejsonQuery, startMs, endMs, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call trace JSON query API: %v", err)
+		var transportErr *utils.HTTPTransportError
+		if errors.As(err, &transportErr) {
+			return nil, newTraceTransportError()
+		}
+		return nil, fmt.Errorf("failed to prepare trace data request")
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		bodyStr := string(body)
-		if len(bodyStr) > 100 {
-			bodyStr = bodyStr[:100] + "... (truncated)"
-		}
-		return nil, fmt.Errorf("traces API request failed with status %d (endpoint: %s/cat/api/traces/v2/query_range/json). Response: %s",
-			resp.StatusCode, cfg.APIBaseURL, bodyStr)
+		return nil, newTraceHTTPError(resp)
 	}
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+		return nil, newTraceInvalidResponseError()
 	}
 	return result, nil
 }

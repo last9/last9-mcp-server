@@ -57,12 +57,12 @@ func TestGetTraceAttributeValuesHandler_NonSuccessAPIStatus(t *testing.T) {
 	defer server.Close()
 
 	handler := NewGetTraceAttributeValuesHandler(server.Client(), newTestCfg(server.URL))
-	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeValuesArgs{TagName: "http.method"})
-	if err == nil {
-		t.Fatal("expected error for non-success API status, got nil")
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeValuesArgs{TagName: "http.method"})
+	if err != nil {
+		t.Fatalf("expected tool execution error, got protocol error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "non-success status") {
-		t.Errorf("expected non-success status error, got: %v", err)
+	if result == nil || !result.IsError {
+		t.Fatalf("expected IsError=true, got %+v", result)
 	}
 }
 

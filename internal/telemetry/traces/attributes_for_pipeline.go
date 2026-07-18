@@ -59,22 +59,20 @@ func fetchTraceSeriesAttributeNames(ctx context.Context, client *http.Client, cf
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute request: %v", err)
+		return nil, newTraceTransportError()
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		var errorBody map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&errorBody)
-		return nil, fmt.Errorf("API returned status %d: %v", resp.StatusCode, errorBody)
+		return nil, newTraceHTTPError(resp)
 	}
 
 	var result traceAttributesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+		return nil, newTraceInvalidResponseError()
 	}
 	if result.Status != "success" {
-		return nil, fmt.Errorf("API returned non-success status: %s", result.Status)
+		return nil, newTraceInvalidResponseError()
 	}
 
 	seen := map[string]struct{}{}
@@ -124,6 +122,9 @@ func NewGetTraceAttributesForPipelineHandler(client *http.Client, cfg models.Con
 
 		names, err := fetchTraceSeriesAttributeNames(ctx, client, cfg, args.Pipeline, startTimeValue.Unix(), endTimeValue.Unix(), region)
 		if err != nil {
+			if isTraceUpstreamError(err) {
+				return traceToolErrorResult(err), nil, nil
+			}
 			return nil, nil, err
 		}
 

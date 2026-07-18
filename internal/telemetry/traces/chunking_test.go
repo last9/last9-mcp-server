@@ -272,15 +272,18 @@ func TestGetTracesHandlerHardErrorsWhenAllChunksFail(t *testing.T) {
 		EndTimeISO:   "1970-01-01T01:30:00Z",
 		Limit:        10,
 	})
-	if err == nil {
-		t.Fatalf("expected hard error when every chunk fails, got result=%#v", result)
+	if err != nil {
+		t.Fatalf("expected tool execution error, got protocol error: %v", err)
 	}
-	if result != nil {
-		t.Fatalf("expected nil result on hard error, got %#v", result)
+	if result == nil || !result.IsError {
+		t.Fatalf("expected IsError=true when every chunk fails, got %#v", result)
 	}
-	// Error should carry chunk context (post firstErr/partialErr unification).
-	if !strings.Contains(err.Error(), "chunk 1/") || !strings.Contains(err.Error(), "failed") {
-		t.Fatalf("expected chunk-context wrapped error, got: %v", err)
+	text := result.Content[0].(*mcp.TextContent).Text
+	if strings.Contains(text, "backend exploded") {
+		t.Fatalf("tool error leaked upstream response body: %s", text)
+	}
+	if !strings.Contains(text, "500") {
+		t.Fatalf("tool error lacks safe status context: %s", text)
 	}
 	// All 6 chunks (90-min range → 6 chunks of 15 min each) should have been
 	// attempted in parallel; failure of one chunk doesn't short-circuit the

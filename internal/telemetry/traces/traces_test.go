@@ -166,6 +166,53 @@ func TestGetTracesLimitParameter(t *testing.T) {
 	}
 }
 
+func TestGetTracesHandlerReturnsSanitizedToolError(t *testing.T) {
+	const sensitiveBody = `{"error":"private-value failed at http://upstream.invalid","credential":"secret"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = io.WriteString(w, sensitiveBody)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+		Region:     "ap-south-1",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-token",
+			ExpiresAt:   time.Now().Add(time.Hour),
+		},
+	}
+	now := time.Now().UTC()
+	result, _, err := NewGetTracesHandler(server.Client(), cfg)(
+		context.Background(),
+		&mcp.CallToolRequest{},
+		GetTracesArgs{
+			TracejsonQuery: []map[string]interface{}{{
+				"type":  "filter",
+				"query": map[string]interface{}{"$exists": []string{"ServiceName"}},
+			}},
+			StartTimeISO: now.Add(-time.Minute).Format(time.RFC3339),
+			EndTimeISO:   now.Format(time.RFC3339),
+		},
+	)
+	if err != nil {
+		t.Fatalf("expected tool execution error, got protocol error: %v", err)
+	}
+	if result == nil || !result.IsError {
+		t.Fatalf("expected IsError=true, got %+v", result)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	for _, forbidden := range []string{sensitiveBody, "private-value", "upstream.invalid", "secret", server.URL} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("tool error leaked %q: %s", forbidden, text)
+		}
+	}
+	if !strings.Contains(text, "502") {
+		t.Fatalf("tool error lacks HTTP status: %s", text)
+	}
+}
+
 func TestGetTracesHandler_ValidationErrors(t *testing.T) {
 	cfg := models.Config{
 		Region: "us-east-1",

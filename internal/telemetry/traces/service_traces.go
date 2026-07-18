@@ -239,6 +239,9 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 
 		traceResponse, err := fetchServiceTraceResponse(ctx, client, cfg, queryParams, startTime.Unix(), endTime.Unix())
 		if err != nil {
+			if isTraceUpstreamError(err) {
+				return traceToolErrorResult(err), nil, nil
+			}
 			return nil, nil, err
 		}
 
@@ -305,24 +308,17 @@ func fetchServiceQueryRangeResponse(ctx context.Context, client *http.Client, cf
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return TraceQueryResponse{}, fmt.Errorf("request failed: %w", err)
+		return TraceQueryResponse{}, newTraceTransportError()
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyStr := readTruncatedResponseBody(resp.Body)
-		return TraceQueryResponse{}, fmt.Errorf(
-			"API request failed with status %d (endpoint: %s%s). Response: %s",
-			resp.StatusCode,
-			cfg.APIBaseURL,
-			constants.EndpointTracesQueryRange,
-			bodyStr,
-		)
+		return TraceQueryResponse{}, newTraceHTTPError(resp)
 	}
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return TraceQueryResponse{}, fmt.Errorf("failed to decode response: %w", err)
+		return TraceQueryResponse{}, newTraceInvalidResponseError()
 	}
 
 	return transformToTraceQueryResponse(result), nil
@@ -341,24 +337,17 @@ func fetchTraceDetailsResponse(ctx context.Context, client *http.Client, cfg mod
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return TraceQueryResponse{}, fmt.Errorf("request failed: %w", err)
+		return TraceQueryResponse{}, newTraceTransportError()
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyStr := readTruncatedResponseBody(resp.Body)
-		return TraceQueryResponse{}, fmt.Errorf(
-			"API request failed with status %d (endpoint: %s%s). Response: %s",
-			resp.StatusCode,
-			cfg.APIBaseURL,
-			fmt.Sprintf(constants.EndpointTraceDetails, params.TraceID),
-			bodyStr,
-		)
+		return TraceQueryResponse{}, newTraceHTTPError(resp)
 	}
 
 	var result TraceDetailsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return TraceQueryResponse{}, fmt.Errorf("failed to decode response: %w", err)
+		return TraceQueryResponse{}, newTraceInvalidResponseError()
 	}
 
 	return transformTraceDetailsToTraceQueryResponse(result, params.Env), nil

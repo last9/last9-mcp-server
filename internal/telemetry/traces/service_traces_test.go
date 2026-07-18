@@ -95,6 +95,45 @@ func TestValidateGetServiceTracesArgs(t *testing.T) {
 	}
 }
 
+func TestGetServiceTracesHandlerReturnsSanitizedToolError(t *testing.T) {
+	const sensitiveBody = `{"error":"private-value failed at http://upstream.invalid:9000","token":"secret"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Request-ID", "request-123")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, sensitiveBody)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+		Region:     "ap-south-1",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-token",
+			ExpiresAt:   time.Now().Add(time.Hour),
+		},
+	}
+	result, _, err := GetServiceTracesHandler(server.Client(), cfg)(
+		context.Background(),
+		&mcp.CallToolRequest{},
+		GetServiceTracesArgs{ServiceName: "service", LookbackMinutes: 1},
+	)
+	if err != nil {
+		t.Fatalf("expected tool execution error, got protocol error: %v", err)
+	}
+	if result == nil || !result.IsError {
+		t.Fatalf("expected IsError=true, got %+v", result)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	for _, forbidden := range []string{sensitiveBody, "private-value", "upstream.invalid", "secret", server.URL} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("tool error leaked %q: %s", forbidden, text)
+		}
+	}
+	if !strings.Contains(text, "503") || !strings.Contains(text, "request-123") {
+		t.Fatalf("tool error lacks safe recovery context: %s", text)
+	}
+}
+
 func TestParseGetTracesParams(t *testing.T) {
 	cfg := models.Config{
 		Region: "us-east-1",
