@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"time"
 
 	"last9-mcp/internal/attributes"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/toolsets"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -26,30 +26,28 @@ import (
 // (e.g. mcpdiff).
 //
 // No credentials or network access required: registration never calls the
-// API. Dynamic description enhancement degrades the same way it does on a
-// cold start — the {{labels}} substitution is empty — which is the
-// deterministic "default experience" snapshot (a warning is printed to
-// stderr). External consumers (eval harness, docs generation) should treat
-// this as the canonical source instead of maintaining parallel description
-// files.
-func dumpTools(w io.Writer) error {
+// API. Descriptions do not embed org attribute catalogs. External consumers
+// (eval harness, docs generation) should treat this as the canonical source
+// instead of maintaining parallel description files.
+func dumpTools(w io.Writer, allowed toolsets.Set) error {
 	cfg := models.Config{}
 	// Purely defensive: registration and tools/list never dereference the
 	// token manager (only tools/call handlers do), but set it so a future
 	// handler constructor that touches it can't nil-panic on this path.
 	cfg.TokenManager = &auth.TokenManager{}
+	cfg.AllowedTools = allowed
 
 	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)
 	}
 
+	registerReferenceResources(server)
+
 	attrCache := attributes.NewAttributeCache(auth.GetHTTPClient(), cfg)
 	if err := registerAllTools(server, cfg, attrCache); err != nil {
 		return fmt.Errorf("failed to register tools: %w", err)
 	}
-	fmt.Fprintln(os.Stderr, "note: label cache is cold; {{labels}} placeholders substitute to empty (deterministic default snapshot)")
-
 	// The round-trip is over in-memory transports and won't hang in practice,
 	// but a timeout makes a wedged tools/list fail loudly in CI rather than
 	// hanging the gate.

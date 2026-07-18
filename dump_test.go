@@ -9,11 +9,12 @@ import (
 	"testing"
 
 	"last9-mcp/internal/apm"
+	"last9-mcp/internal/toolsets"
 )
 
 func TestDumpTools(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dumpTools(&buf); err != nil {
+	if err := dumpTools(&buf, nil); err != nil {
 		t.Fatalf("dumpTools failed: %v", err)
 	}
 
@@ -55,10 +56,17 @@ func TestDumpTools(t *testing.T) {
 		}
 	}
 
-	// The {{labels}} placeholder must never leak into served descriptions —
-	// enhancement substitutes it (empty on a cold cache).
+	// Org attribute catalogs must never appear as {{labels}} placeholders.
 	if strings.Contains(out.Tools[byName["get_logs"]].Description, "{{labels}}") {
 		t.Fatal("get_logs description still contains unsubstituted {{labels}} placeholder")
+	}
+	for _, whale := range []string{"get_logs", "get_traces", "get_service_logs"} {
+		if len(out.Tools[byName[whale]].Description) > 2000 {
+			t.Fatalf("%s served description length %d exceeds 2000-char tripwire", whale, len(out.Tools[byName[whale]].Description))
+		}
+		if !strings.Contains(out.Tools[byName[whale]].Description, "last9://reference/") {
+			t.Fatalf("%s description missing resource URI pointer", whale)
+		}
 	}
 
 	deviationsIndex, ok := byName["get_apm_service_deviations"]
@@ -129,5 +137,105 @@ func TestDumpTools(t *testing.T) {
 	}
 	if _, exists := served["allOf"]; exists {
 		t.Fatal("served schema must omit provider-incompatible allOf")
+	}
+}
+
+func descriptionTokenEstimate(descs []string) int {
+	total := 0
+	for _, d := range descs {
+		total += len(d)
+	}
+	return total / 4 // plan KTD7
+}
+
+func TestDescriptionTokenBudgets(t *testing.T) {
+	cases := []struct {
+		name    string
+		spec    string
+		ceiling int
+	}{
+		{"all", "", 12000},
+		{"investigate", "investigate", 10000},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var allowed toolsets.Set
+			var err error
+			if tc.spec != "" {
+				allowed, err = toolsets.Parse(tc.spec)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			var buf bytes.Buffer
+			if err := dumpTools(&buf, allowed); err != nil {
+				t.Fatal(err)
+			}
+			var out struct {
+				Tools []struct {
+					Name        string `json:"name"`
+					Description string `json:"description"`
+				} `json:"tools"`
+			}
+			if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+				t.Fatal(err)
+			}
+			descs := make([]string, 0, len(out.Tools))
+			byName := map[string]string{}
+			totalChars := 0
+			for _, tool := range out.Tools {
+				descs = append(descs, tool.Description)
+				byName[tool.Name] = tool.Description
+				totalChars += len(tool.Description)
+			}
+			est := descriptionTokenEstimate(descs)
+			if est > tc.ceiling {
+				t.Fatalf("description token estimate %d exceeds ceiling %d (chars=%d)", est, tc.ceiling, totalChars)
+			}
+			whale3 := len(byName["get_logs"]) + len(byName["get_traces"]) + len(byName["get_service_logs"])
+			whale2 := len(byName["get_logs"]) + len(byName["get_traces"])
+			if totalChars > 0 && whale3*2 >= totalChars {
+				t.Fatalf("three whales are majority of description chars (%d / %d)", whale3, totalChars)
+			}
+			if totalChars > 0 && whale2*2 >= totalChars {
+				t.Fatalf("get_logs+get_traces are majority of description chars (%d / %d)", whale2, totalChars)
+			}
+		})
+	}
+}
+
+func TestDumpToolsInvestigate(t *testing.T) {
+	allowed, err := toolsets.Parse("investigate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, allowed); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	byName := make(map[string]bool, len(out.Tools))
+	for _, tool := range out.Tools {
+		byName[tool.Name] = true
+	}
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "list_datasources"} {
+		if !byName[want] {
+			t.Errorf("investigate dump missing %q", want)
+		}
+	}
+	for _, deny := range []string{"get_alerts", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots"} {
+		if byName[deny] {
+			t.Errorf("investigate dump should exclude %q", deny)
+		}
+	}
+	if len(out.Tools) >= 38 {
+		t.Fatalf("investigate should expose fewer than full surface; got %d", len(out.Tools))
 	}
 }

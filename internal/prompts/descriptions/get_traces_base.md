@@ -1,34 +1,15 @@
-Query distributed traces across all services using trace JSON pipeline queries.
+Query traces with `tracejson_query` — a JSON **array of stages**. Each stage MUST set `"type"` to `filter`|`parse`|`aggregate`|`window_aggregate`. Do **not** use `"stage"` or `"conditions"`. For an exact `trace_id`, prefer `get_service_traces`.
 
-This tool provides comprehensive access to trace data for debugging performance issues, understanding request flows,
-and analyzing distributed system behavior. It accepts raw JSON pipeline queries for maximum flexibility.
+**Filter shape:**
+```json
+[{"type":"filter","query":{"$and":[{"$eq":["StatusCode","STATUS_CODE_ERROR"]}]}}]
+```
+`query` holds `$and`/`$or` of `{ "$eq"|"$neq"|"$contains"|"$exists"|"$gt"|…: [field, value] }`. Values are strings. Always wrap in `$and`. Never invent SQL. No `filter_tags`/`tags` params—filter in the pipeline only.
 
-Use this tool for broad trace searches, analytics, and aggregations. For an exact trace ID lookup, prefer
-the `get_service_traces` tool with `trace_id` because it avoids the slower chunked query path.
+**Time (tool args):** Prefer `lookback_minutes` (default **5**, not 60). Absolute → `start_time_iso`+`end_time_iso` (RFC3339). Never put the window as a `Timestamp` filter in the pipeline.
 
-The tool uses a pipeline-based query system similar to the logs API, allowing complex filtering and aggregation
-operations on trace data.
+**Fields:** Top-level: `TraceId`, `SpanId`, `ServiceName`, `SpanName`, `SpanKind`, `StatusCode`, `Duration`, `Timestamp`, `ParentSpanId`. SpanKind/StatusCode need full OTel prefixes (`SPAN_KIND_SERVER`, `STATUS_CODE_ERROR`—not `SERVER`/`ERROR`). **`Duration` is nanoseconds** (1000ms = `1000000000`). Span/resource attrs → `get_trace_attributes` / `get_trace_attributes_for_pipeline`; use `attributes['key']` / `resources['key']` (never `SpanAttributes.foo`).
 
-Parameters:
-- tracejson_query: (Required) JSON pipeline query for traces. Use the tracejson_query_builder prompt to generate JSON pipeline queries from natural language
-- start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)
-- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)
-- lookback_minutes: (Optional) Number of minutes to look back from current time (default: 60)
-- limit: (Optional) Maximum number of traces to return (default: 5000)
+**Order:** filter first (match-all on `TraceId`/`SpanId` if needed before aggregate). Show/find → filter only; aggregate/window_aggregate only for counts/analysis.
 
-Time format rules:
-- Prefer lookback_minutes for relative windows (for example, last 5 or 60 minutes).
-- Use start_time_iso/end_time_iso for absolute windows.
-- Legacy format YYYY-MM-DD HH:MM:SS is accepted only for compatibility.
-- If both lookback_minutes and absolute times are provided, absolute times take precedence.
-
-Returns comprehensive trace data including trace IDs, spans, durations, timestamps, and metadata.
-
-IMPORTANT: There is no "filter_tags", "tags", or "attributes" parameter. ALL filtering — including by span tags,
-attributes, session IDs, trace metadata, or any key-value pair — must be expressed as a tracejson_query filter.
-Do NOT invent parameter names; use tracejson_query exclusively for filtering.
-
-Example tracejson_query structures:
-- Simple filter: [{"type": "filter", "query": {"$eq": ["ServiceName", "api"]}}]
-- Multiple conditions: [{"type": "filter", "query": {"$and": [{"$eq": ["ServiceName", "api"]}, {"$eq": ["StatusCode", "STATUS_CODE_ERROR"]}]}}]
-- Filter by span tag/attribute: [{"type": "filter", "query": {"$eq": ["dd_session_id", "abc123"]}}]
+Full manual: resource `last9://reference/tracejson`

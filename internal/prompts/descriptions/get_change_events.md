@@ -1,49 +1,16 @@
-Get change events from the last9_change_events prometheus metric over a given time range.
-Returns change events that occurred in the specified time window.
-Change events include deployments, configuration changes, and other system modifications.
+Change events from the `last9_change_events` Prometheus metric (deployments, config changes, rollbacks, scaling, etc.) over a time range.
 
-The response includes:
-- available_event_names: List of all available event types that can be used for filtering
-- change_events: Array of timeseries data with metric labels and timestamp-value pairs
-- count: Total number of change events returned
-- time_range: Start and end time of the query window
+Response: `available_event_names` (valid filter values), `change_events` (timeseries with metric labels + timestamp/value pairs), `count`, `time_range`.
 
-Each change event includes:
-- metric: Map of metric labels (service_name, env, event_type, message, etc.)
-- values: Array of timestamp-value pairs representing the timeseries data
+Each event has `metric` (labels: service_name, env, event_type, message, …) and `values` (timestamp/value pairs).
 
-For optimal results, first call without event_name to get available_event_names, then use the exact event name from available_event_names for the event_name parameter. This approach is more reliable and eliminates ambiguity in event type detection.
-
-Common event types (check available_event_names for actual values):
-- deployment: deployment events, releases, builds, rollouts
-- config_change: configuration changes, settings updates, parameter changes
-- rollback: rollback events, reverts, undo operations
-- scale_up/scale_down: scaling operations, capacity changes
-- restart: service restarts, reboots, reloads
-- upgrade/downgrade: version changes, updates
-- maintenance: maintenance windows, scheduled downtime
-- backup/restore: backup operations, recovery
-- health_check: health checks, monitoring, status probes
-- certificate: SSL/TLS operations, renewals, expirations
-- database: database changes, migrations, schema updates
-
-Best practices:
-1. First call without event_name to get available_event_names
-2. Use exact event name from available_event_names for the event_name parameter
-3. Combine with other filters (service_name, env, time) for precise results
-4. Use available_event_names to discover what event types are available in the system
+Workflow: first call without `event_name` to read `available_event_names`, then filter with the exact name from that list. Combine with service_name, env, and time filters as needed.
 
 Parameters:
-- start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Defaults to now - lookback_minutes.
-- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to now.
-- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60 minutes.
-- service_name: (Optional) Name of the service to filter change events for
-- env: (Optional) Environment to filter by
-- event_name: (Optional) Name of the change event to filter by (use available_event_names to see valid values)
+- `lookback_minutes`: (Optional) Minutes to look back. Default 60.
+- `start_time_iso` / `end_time_iso`: (Optional) RFC3339/ISO8601 bounds. Default start = now − lookback; end = now.
+- `service_name`, `env`, `event_name`: (Optional) Filters. Use `event_name` only after discovering values via `available_event_names`.
 
-Time format rules:
-- Prefer lookback_minutes for relative windows.
-- Use start_time_iso/end_time_iso for absolute windows.
-- Legacy format YYYY-MM-DD HH:MM:SS is accepted only for compatibility.
-- If both lookback_minutes and absolute times are provided, absolute times take precedence.
-- If unsure of the service_name or env value, call "did_you_mean" first to find the correct spelling.
+Time: prefer `lookback_minutes` for relative windows; absolute ISO bounds override lookback. Legacy `YYYY-MM-DD HH:MM:SS` accepted for compatibility.
+
+If unsure of `service_name` or `env`, call `did_you_mean` first.
