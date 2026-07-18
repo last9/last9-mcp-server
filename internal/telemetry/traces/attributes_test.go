@@ -79,3 +79,50 @@ func TestGetTraceAttributes_EmptyScopes(t *testing.T) {
 		t.Errorf("expected 'No trace attributes found' message, got: %s", text)
 	}
 }
+
+func TestGetTraceAttributes_ReturnsSanitizedToolError(t *testing.T) {
+	const sensitiveBody = `{"error":"private-value","endpoint":"http://upstream.invalid","token":"secret"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = io.WriteString(w, sensitiveBody)
+	}))
+	defer server.Close()
+
+	result, _, err := NewGetTraceAttributesHandler(server.Client(), newTestCfg(server.URL))(
+		context.Background(), &mcp.CallToolRequest{}, GetTraceAttributesArgs{},
+	)
+	if err != nil {
+		t.Fatalf("expected tool execution error, got protocol error: %v", err)
+	}
+	if result == nil || !result.IsError {
+		t.Fatalf("expected IsError=true, got %+v", result)
+	}
+	message := result.Content[0].(*mcp.TextContent).Text
+	for _, forbidden := range []string{"private-value", "upstream.invalid", "secret", server.URL} {
+		if strings.Contains(message, forbidden) {
+			t.Fatalf("tool error leaked %q: %s", forbidden, message)
+		}
+	}
+}
+
+func TestGetTraceAttributes_ReturnsToolErrorForMalformedJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `{not-json`)
+	}))
+	defer server.Close()
+
+	result, _, err := NewGetTraceAttributesHandler(server.Client(), newTestCfg(server.URL))(
+		context.Background(), &mcp.CallToolRequest{}, GetTraceAttributesArgs{},
+	)
+	if err != nil {
+		t.Fatalf("expected tool execution error, got protocol error: %v", err)
+	}
+	if result == nil || !result.IsError {
+		t.Fatalf("expected IsError=true, got %+v", result)
+	}
+	message := result.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(message, "invalid response") || strings.Contains(message, "not-json") {
+		t.Fatalf("unexpected malformed-response error: %s", message)
+	}
+}

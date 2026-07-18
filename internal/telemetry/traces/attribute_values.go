@@ -15,7 +15,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-
 // GetTraceAttributeValuesArgs is the input for get_trace_attribute_values.
 type GetTraceAttributeValuesArgs struct {
 	TagName  string                   `json:"tag_name" jsonschema:"required,The attribute name from get_trace_attributes (e.g. resource_department or attributes['http.method'])"`
@@ -77,22 +76,20 @@ func NewGetTraceAttributeValuesHandler(client *http.Client, cfg models.Config) f
 
 		resp, err := client.Do(httpReq)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to execute request: %v", err)
+			return traceToolErrorResult(newTraceTransportError()), nil, nil
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			var errBody map[string]interface{}
-			json.NewDecoder(resp.Body).Decode(&errBody)
-			return nil, nil, fmt.Errorf("API returned status %d: %v", resp.StatusCode, errBody)
+			return traceToolErrorResult(newTraceHTTPError(resp)), nil, nil
 		}
 
 		var apiResp traceTagValuesAPIResponse
 		if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-			return nil, nil, fmt.Errorf("failed to decode response: %v", err)
+			return traceToolErrorResult(newTraceInvalidResponseError()), nil, nil
 		}
 		if apiResp.Status != "success" {
-			return nil, nil, fmt.Errorf("API returned non-success status: %s", apiResp.Status)
+			return traceToolErrorResult(newTraceInvalidResponseError()), nil, nil
 		}
 
 		attr := enrichAttribute(rawTagName)

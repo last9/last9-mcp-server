@@ -3,8 +3,8 @@ package traces
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"regexp"
 	"sort"
@@ -97,18 +97,21 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 		// Frontend parity: exceptions list is fetched from prom_query_instant over trace_*_count.
 		resp, err := utils.MakePromInstantAPIQuery(ctx, client, exceptionsQuery, endTime.Unix(), cfg)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to execute exceptions instant query: %w", err)
+			var transportErr *utils.HTTPTransportError
+			if errors.As(err, &transportErr) {
+				return traceToolErrorResult(newTraceTransportError()), nil, nil
+			}
+			return nil, nil, fmt.Errorf("failed to prepare trace exception request")
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return nil, nil, fmt.Errorf("exceptions instant query failed with status %d: %s", resp.StatusCode, string(body))
+			return traceToolErrorResult(newTraceHTTPError(resp)), nil, nil
 		}
 
 		var instantSeries promInstantResponse
 		if err := json.NewDecoder(resp.Body).Decode(&instantSeries); err != nil {
-			return nil, nil, fmt.Errorf("failed to decode exceptions instant response: %w", err)
+			return traceToolErrorResult(newTraceInvalidResponseError()), nil, nil
 		}
 
 		aggregates := make([]exceptionAggregate, 0, len(instantSeries))
