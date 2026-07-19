@@ -507,7 +507,7 @@ func containsFold(value, substring string) bool {
 	return strings.Contains(strings.ToLower(value), strings.ToLower(substring))
 }
 
-func formatAlertConfigResponse(alertConfig AlertConfigResponse) string {
+func formatAlertConfigResponse(alertConfig AlertConfigResponse, entitiesByID map[string]alertGroupEntity) string {
 	formattedResponse := fmt.Sprintf("Found %d alert rules:\n\n", len(alertConfig))
 	for i, rule := range alertConfig {
 		formattedResponse += fmt.Sprintf("Alert Rule %d:\n", i+1)
@@ -558,6 +558,16 @@ func formatAlertConfigResponse(alertConfig AlertConfigResponse) string {
 		formattedResponse += fmt.Sprintf("  Severity: %s\n", rule.Severity)
 		formattedResponse += fmt.Sprintf("  Algorithm: %s\n", rule.Algorithm)
 		formattedResponse += fmt.Sprintf("  Entity ID: %s\n", rule.EntityID)
+
+		if entity, ok := entitiesByID[rule.EntityID]; ok {
+			formattedResponse += fmt.Sprintf("  Alert Group: %s\n", entity.Name)
+			if entity.DataSourceName != "" {
+				formattedResponse += fmt.Sprintf("  Data Source: %s\n", entity.DataSourceName)
+			}
+			if len(entity.Metadata.Tags) > 0 {
+				formattedResponse += fmt.Sprintf("  Tags: %s\n", strings.Join(entity.Metadata.Tags, ", "))
+			}
+		}
 
 		if rule.ErrorSince != nil {
 			errorTime := time.Unix(*rule.ErrorSince, 0).UTC().Format("2006-01-02 15:04:05 UTC")

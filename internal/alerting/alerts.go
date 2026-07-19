@@ -127,8 +127,9 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 
 		filteredAlertConfig := filterAlertConfigByRuleFields(alertConfig, args)
 
-		if len(filteredAlertConfig) > 0 && requiresAlertGroupEntityLookup(args) {
-			entitiesByID, err := fetchAlertGroupEntities(ctx, client, cfg, args)
+		entitiesByID := make(map[string]alertGroupEntity)
+		if len(filteredAlertConfig) > 0 {
+			entitiesByID, err = fetchAlertGroupEntities(ctx, client, cfg, args)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to fetch alert group entities: %w", err)
 			}
@@ -142,7 +143,7 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 
 		resolveAlertConfigKPIs(ctx, client, cfg, filteredAlertConfig)
 
-		formattedResponse := formatAlertConfigResponse(filteredAlertConfig)
+		formattedResponse := formatAlertConfigResponse(filteredAlertConfig, entitiesByID)
 
 		// Build deep link URL to alerting groups page
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
