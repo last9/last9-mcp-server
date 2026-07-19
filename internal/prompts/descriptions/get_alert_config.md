@@ -19,7 +19,10 @@
 	- id: Unique identifier for the alert rule
 	- name: Human-readable name of the alert
 	- primary_indicator: Name of the primary KPI (metric) being monitored
-	- entity_id: Use this with get_entity_alert_rules to fetch the full PromQL for this entity's rules
+	- entity_id: Use this with get_entity_alert_rules to fetch the full PromQL for this entity's rules.
+	  To find alert rules with no notification channel configured, cross-reference this entity_id
+	  against service_fqid from get_notification_channels: a rule is unconfigured if no channel's
+	  service_fqid equals its entity_id.
 	- alert_group: Human-readable name of the entity (alert group) this rule belongs to, when resolved
 	- data_source: The alert group's data source name, when set
 	- tags: The alert group's tags, comma-separated, when set
