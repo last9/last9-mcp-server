@@ -19,8 +19,9 @@ const (
 	alertGroupEntityClassGrafanaAlerts = "grafana-alerts"
 	alertGroupEntityClassAlertManager  = "alert-manager"
 
-	alertConfigRuleTypeStatic  = "static"
-	alertConfigRuleTypeAnomaly = "anomaly"
+	alertConfigRuleTypeStatic   = "static"
+	alertConfigRuleTypeAnomaly  = "anomaly"
+	alertConfigRuleTypeAdaptive = "adaptive"
 
 	entityFilterContains    = "contains"
 	entityFilterEqual       = "equal"
@@ -67,8 +68,8 @@ func validateGetAlertConfigArgs(args GetAlertConfigArgs) error {
 		return nil
 	}
 
-	if ruleType != alertConfigRuleTypeStatic && ruleType != alertConfigRuleTypeAnomaly {
-		return fmt.Errorf("rule_type must be one of %q or %q", alertConfigRuleTypeStatic, alertConfigRuleTypeAnomaly)
+	if ruleType != alertConfigRuleTypeStatic && ruleType != alertConfigRuleTypeAnomaly && ruleType != alertConfigRuleTypeAdaptive {
+		return fmt.Errorf("rule_type must be one of %q, %q, or %q", alertConfigRuleTypeStatic, alertConfigRuleTypeAnomaly, alertConfigRuleTypeAdaptive)
 	}
 
 	return nil
@@ -478,7 +479,11 @@ func matchesAlertConfigSearchTerm(
 }
 
 func alertConfigRuleType(rule AlertRule) string {
-	if strings.Contains(strings.ToLower(rule.Algorithm), alertConfigRuleTypeStatic) {
+	algorithm := strings.ToLower(rule.Algorithm)
+	if strings.Contains(algorithm, alertConfigRuleTypeAdaptive) {
+		return alertConfigRuleTypeAdaptive
+	}
+	if strings.Contains(algorithm, alertConfigRuleTypeStatic) {
 		return alertConfigRuleTypeStatic
 	}
 

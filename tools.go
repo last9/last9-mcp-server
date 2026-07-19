@@ -153,6 +153,31 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Description: prompts.GetAlertConfigDescription,
 	}, alerting.NewGetAlertConfigHandler(client, cfg))
 
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "create_alert",
+		Description: prompts.CreateAlertDescription,
+	}, alerting.NewCreateAlertHandler(client, cfg))
+
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "update_alert",
+		Description: prompts.UpdateAlertDescription,
+	}, alerting.NewUpdateAlertHandler(client, cfg))
+
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "patch_alert",
+		Description: prompts.PatchAlertDescription,
+	}, alerting.NewPatchAlertHandler(client, cfg))
+
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "delete_alert",
+		Description: prompts.DeleteAlertDescription,
+	}, alerting.NewDeleteAlertHandler(client, cfg))
+
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "recommend_alert_config",
+		Description: prompts.RecommendAlertConfigDescription,
+	}, alerting.NewRecommendAlertConfigHandler(client, cfg))
+
 	// Register entity alert rules tool (entity-scoped, includes expression_args and resolved PromQL)
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "get_entity_alert_rules",
