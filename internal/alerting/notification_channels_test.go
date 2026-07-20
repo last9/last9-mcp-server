@@ -197,6 +197,35 @@ func TestGetNotificationChannelsHandler_Services(t *testing.T) {
 	}
 }
 
+func TestGetNotificationChannelsHandler_ServiceFQID(t *testing.T) {
+	tests := []struct {
+		name        string
+		serviceFQID string
+		wantCol     string
+	}{
+		{"empty (unbound/global)", "", "-"},
+		{"set", "entity-123", "entity-123"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			channels := []NotificationChannel{
+				{ID: 1, Name: "ch", Type: "slack", ServiceFQID: tt.serviceFQID},
+			}
+			text, _, err := executeGetNotificationChannels(t, channels, http.StatusOK)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			rows := assertStableNotificationChannelsTSV(t, text, len(channels))
+			cols := rows[0]
+			if cols[10] != tt.wantCol {
+				t.Fatalf("service_fqid col: got %q, want %q", cols[10], tt.wantCol)
+			}
+		})
+	}
+}
+
 func TestGetNotificationChannelsHandler_EmptyResponse(t *testing.T) {
 	text, _, err := executeGetNotificationChannels(t, []NotificationChannel{}, http.StatusOK)
 	if err != nil {

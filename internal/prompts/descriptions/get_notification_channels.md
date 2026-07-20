@@ -9,5 +9,6 @@
 	- service_fqid: alert-group entity id this channel is bound to (empty/"-" if global or unbound).
 
 	To find alert rules with no notification channel configured: call get_alert_config to list rules
-	with their entity_id, then a rule is unconfigured if no channel here has service_fqid equal to
-	that entity_id.
+	with their entity_id, then a rule is unconfigured only if no channel here has service_fqid equal
+	to that entity_id AND no channel here has global set to true (a global channel covers every rule,
+	regardless of service_fqid).

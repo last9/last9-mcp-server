@@ -129,9 +129,12 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 
 		entitiesByID := make(map[string]alertGroupEntity)
 		if len(filteredAlertConfig) > 0 {
-			entitiesByID, err = fetchAlertGroupEntities(ctx, client, cfg, args)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to fetch alert group entities: %w", err)
+			fetchedEntities, ferr := fetchAlertGroupEntities(ctx, client, cfg, args)
+			if ferr != nil && requiresAlertGroupEntityLookup(args) {
+				return nil, nil, fmt.Errorf("failed to fetch alert group entities: %w", ferr)
+			}
+			if ferr == nil {
+				entitiesByID = fetchedEntities
 			}
 
 			filteredAlertConfig = filterAlertConfigByEntityFieldsAndSearch(

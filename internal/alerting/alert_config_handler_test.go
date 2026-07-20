@@ -288,6 +288,87 @@ func TestGetAlertConfigHandler_EntityLookupFailure(t *testing.T) {
 	}
 }
 
+func TestGetAlertConfigHandler_EntityLookupFailure_NoFilter(t *testing.T) {
+	state := alertConfigTestServerState{
+		alertRules:         sampleAlertConfigRules(),
+		entityGroups:       sampleAlertGroupEntities(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusInternalServerError,
+	}
+
+	text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{})
+	if err != nil {
+		t.Fatalf("handler should succeed when entity lookup fails but no entity-based filter is requested: %v", err)
+	}
+
+	assertAlertConfigResultIDs(t, text, []string{"rule-1", "rule-2", "rule-3"})
+	if strings.Contains(text, "Alert Group:") {
+		t.Fatalf("expected no Alert Group enrichment when entity lookup failed, got:\n%s", text)
+	}
+	if state.entityLookupCalls != 1 {
+		t.Fatalf("expected one entity lookup call, got %d", state.entityLookupCalls)
+	}
+}
+
+func TestGetAlertConfigHandler_EnrichmentFormatting(t *testing.T) {
+	t.Run("entity match includes alert group enrichment", func(t *testing.T) {
+		state := alertConfigTestServerState{
+			alertRules:         sampleAlertConfigRules(),
+			entityGroups:       sampleAlertGroupEntities(),
+			alertRulesStatus:   http.StatusOK,
+			entityLookupStatus: http.StatusOK,
+		}
+
+		text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{RuleID: "rule-1"})
+		if err != nil {
+			t.Fatalf("handler returned error: %v", err)
+		}
+
+		if !strings.Contains(text, "Alert Group: Checkout Alerts") {
+			t.Fatalf("expected Alert Group enrichment, got:\n%s", text)
+		}
+		if !strings.Contains(text, "Data Source: Grafana Prod") {
+			t.Fatalf("expected Data Source enrichment, got:\n%s", text)
+		}
+		if !strings.Contains(text, "Tags: prod, checkout") {
+			t.Fatalf("expected Tags enrichment, got:\n%s", text)
+		}
+	})
+
+	t.Run("entity no match omits alert group enrichment", func(t *testing.T) {
+		rules := AlertConfigResponse{
+			{
+				ID:               "rule-no-entity",
+				OrganizationID:   "org-1",
+				EntityID:         "entity-unknown",
+				PrimaryIndicator: "latency_ms",
+				CreatedAt:        1700000000,
+				UpdatedAt:        1700000600,
+				State:            "active",
+				Severity:         "breach",
+				Algorithm:        "static_threshold",
+				RuleName:         "No entity rule",
+			},
+		}
+
+		state := alertConfigTestServerState{
+			alertRules:         rules,
+			entityGroups:       sampleAlertGroupEntities(),
+			alertRulesStatus:   http.StatusOK,
+			entityLookupStatus: http.StatusOK,
+		}
+
+		text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{})
+		if err != nil {
+			t.Fatalf("handler returned error: %v", err)
+		}
+
+		if strings.Contains(text, "Alert Group:") {
+			t.Fatalf("expected no Alert Group line for rule with unmatched entity, got:\n%s", text)
+		}
+	})
+}
+
 func TestGetAlertConfigHandler_InvalidRuleType(t *testing.T) {
 	state := alertConfigTestServerState{
 		alertRules:         sampleAlertConfigRules(),
