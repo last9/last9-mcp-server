@@ -1,10 +1,12 @@
 # Standard MCP Server Dockerfile
 # This follows typical MCP server patterns for containerized distribution
 #
-# Multi-arch: the builder runs on the native BUILDPLATFORM and cross-compiles
-# the pure-Go (CGO_ENABLED=0) binary to the requested TARGETARCH, so the Go
-# compile is never emulated. buildx pulls the final alpine stage for the target
-# platform (its trivial apk/adduser/chown RUN steps run under QEMU).
+# Multi-arch: CI builds this once per architecture on a native runner
+# (amd64 -> ubuntu-latest, arm64 -> ubuntu-24.04-arm) and merges the results
+# into a manifest list — no QEMU emulation (see ENG-1074). On a native build
+# BUILDPLATFORM == TARGETPLATFORM, so the builder is native and the pure-Go
+# (CGO_ENABLED=0) binary is compiled for TARGETARCH without emulation. The ARGs
+# also keep a plain `docker buildx build --platform` cross-build working locally.
 FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
 
 # Install build dependencies
