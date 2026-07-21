@@ -179,6 +179,12 @@ jobs:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
+      # setup-buildx-action creates a docker-container buildkit driver (separate
+      # from the host daemon). The multi-arch push below works because the ECR
+      # login step above writes a plain base64 `auth` into ~/.docker/config.json,
+      # which build-push-action forwards into the builder. If amazon-ecr-login is
+      # ever switched to a credential-helper (credsStore) mode, that auth won't
+      # propagate to the builder and the push will start failing with 401s.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -199,6 +205,8 @@ jobs:
             VERSION=${{ steps.get_version.outputs.version }}
             COMMIT=${{ github.sha }}
             BUILD_TIME=${{ steps.build_time.outputs.build_time }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           tags: |
             652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${{ steps.extract_branch.outputs.branch_name }}
             652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${{ steps.extract_branch.outputs.branch_name }}-v${{ steps.get_version.outputs.version }}
@@ -216,6 +224,8 @@ jobs:
             VERSION=${{ needs.tag-and-release.outputs.new_version }}
             COMMIT=${{ github.sha }}
             BUILD_TIME=${{ steps.build_time.outputs.build_time }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           tags: |
             652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:v${{ needs.tag-and-release.outputs.new_version }}
             652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:latest
