@@ -6,10 +6,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func textResultWithDashboardLink(dlBuilder *deeplink.Builder, body []byte, fallbackDashboardID string) *mcp.CallToolResult {
-	dashboardID := dashboardIDFromResponse(body)
-	if dashboardID == "" {
-		dashboardID = fallbackDashboardID
+func textResultWithLink(body []byte, fallbackID string, extractID func([]byte) string, buildLink func(string) string) *mcp.CallToolResult {
+	id := extractID(body)
+	if id == "" {
+		id = fallbackID
 	}
 
 	result := &mcp.CallToolResult{
@@ -17,8 +17,16 @@ func textResultWithDashboardLink(dlBuilder *deeplink.Builder, body []byte, fallb
 			&mcp.TextContent{Text: string(body)},
 		},
 	}
-	if dashboardID != "" {
-		result.Meta = deeplink.ToMeta(dlBuilder.BuildDashboardLink(dashboardID))
+	if id != "" {
+		result.Meta = deeplink.ToMeta(buildLink(id))
 	}
 	return result
+}
+
+func textResultWithDashboardLink(dlBuilder *deeplink.Builder, body []byte, fallbackDashboardID string) *mcp.CallToolResult {
+	return textResultWithLink(body, fallbackDashboardID, dashboardIDFromResponse, dlBuilder.BuildDashboardLink)
+}
+
+func textResultWithSnapshotLink(dlBuilder *deeplink.Builder, body []byte, fallbackSnapshotID string) *mcp.CallToolResult {
+	return textResultWithLink(body, fallbackSnapshotID, snapshotIDFromResponse, dlBuilder.BuildDashboardSnapshotLink)
 }

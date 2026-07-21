@@ -26,6 +26,7 @@ Why markdown-only: Go constants are invisible to the eval harness and docs tooli
 
 ### Argument structs
 
+- Define each tool's `Args` struct in the tool's own handler file, alongside its `New<Tool>Handler` (e.g. `GetFooArgs` in `foo/get_foo.go`). This is the repo-wide convention across every package (`alerting`, `apm`, `telemetry/logs`, `telemetry/traces`, and `dashboards`' own `get.go`/`list.go`).
 - JSON tags: `snake_case`, `omitempty` on optionals. `jsonschema:` tag carries the param description; prefix required params' description with `(Required)`.
 - The SDK infers `additionalProperties: false` from the struct; unknown keys are rejected before the handler runs.
 

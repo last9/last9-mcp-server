@@ -23,6 +23,9 @@ var GetServiceLogsInstructions string
 //go:embed descriptions/get_service_summary.md
 var GetServiceSummaryDescription string
 
+//go:embed descriptions/get_apm_service_deviations.md
+var GetAPMServiceDeviationsDescription string
+
 //go:embed descriptions/get_service_environments.md
 var GetServiceEnvironmentsDescription string
 
@@ -115,6 +118,15 @@ var UpdateDashboardDescription string
 
 //go:embed descriptions/delete_dashboard.md
 var DeleteDashboardDescription string
+
+//go:embed descriptions/list_dashboard_snapshots.md
+var ListDashboardSnapshotsDescription string
+
+//go:embed descriptions/get_dashboard_snapshot.md
+var GetDashboardSnapshotDescription string
+
+//go:embed descriptions/delete_dashboard_snapshot.md
+var DeleteDashboardSnapshotDescription string
 
 //go:embed descriptions/get_logs_base.md
 var GetLogsDescription string

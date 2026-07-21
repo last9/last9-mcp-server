@@ -56,6 +56,13 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Description: prompts.GetServiceSummaryDescription,
 	}, apm.NewServiceSummaryHandler(client, cfg))
 
+	// Register APM service deviations tool
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_apm_service_deviations",
+		Description: prompts.GetAPMServiceDeviationsDescription,
+		InputSchema: apm.GetAPMServiceDeviationsInputSchema(),
+	}, apm.NewAPMServiceDeviationsHandler(client, cfg))
+
 	// Register service environments tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "get_service_environments",
@@ -272,6 +279,21 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Name:        "delete_dashboard",
 		Description: prompts.DeleteDashboardDescription,
 	}, dashboards.NewDeleteDashboardHandler(client, cfg))
+
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "list_dashboard_snapshots",
+		Description: prompts.ListDashboardSnapshotsDescription,
+	}, dashboards.NewListDashboardSnapshotsHandler(client, cfg))
+
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_dashboard_snapshot",
+		Description: prompts.GetDashboardSnapshotDescription,
+	}, dashboards.NewGetDashboardSnapshotHandler(client, cfg))
+
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "delete_dashboard_snapshot",
+		Description: prompts.DeleteDashboardSnapshotDescription,
+	}, dashboards.NewDeleteDashboardSnapshotHandler(client, cfg))
 
 	return nil
 }
