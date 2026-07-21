@@ -1,6 +1,11 @@
 # Standard MCP Server Dockerfile
 # This follows typical MCP server patterns for containerized distribution
-FROM golang:1.25-alpine AS builder
+#
+# Multi-arch: the builder runs on the native BUILDPLATFORM and cross-compiles
+# the pure-Go (CGO_ENABLED=0) binary to the requested TARGETARCH, so the Go
+# compile is never emulated. buildx pulls the final alpine stage for the target
+# platform (its trivial apk/adduser/chown RUN steps run under QEMU).
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates
@@ -19,8 +24,13 @@ ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILD_TIME=unknown
 
+# Target platform, injected automatically by buildx (defaults to the build
+# host's arch for a plain `docker build`).
+ARG TARGETOS=linux
+ARG TARGETARCH
+
 # Build the application for STDIO mode (default MCP pattern)
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo \
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -a -installsuffix cgo \
     -ldflags "-s -w -X main.Version=${VERSION} -X main.CommitSHA=${COMMIT} -X main.BuildTime=${BUILD_TIME}" \
     -o last9-mcp-server .
 
