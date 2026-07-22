@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-07-22
+
+### Changed
+
+- `mcp-server` Docker image is now multi-arch (`linux/amd64` + `linux/arm64`), built with `docker buildx` and pushed as a manifest list. Lets the image run natively on arm64/Graviton nodes without an amd64 node-selector pin (#192).
+
 ## [0.12.0] - 2026-07-17
 
 ### Added
