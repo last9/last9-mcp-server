@@ -251,6 +251,115 @@ func TestGetTracesHandlerExactTraceIDUsesSingleRequest(t *testing.T) {
 	}
 }
 
+func TestGetTracesHandlerDoesNotChunkAggregateQueries(t *testing.T) {
+	rec := newTracesRequestRecorder()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.add(r.URL.Query())
+		_, _ = w.Write([]byte(traceAPIResponse(2)))
+	}))
+	defer server.Close()
+
+	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+		TracejsonQuery: []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{"$exists": []string{"ServiceName"}}},
+			{"type": "aggregate"},
+		},
+		// 7-day window: without the aggregate guard this would chunk into
+		// many ~1h requests and concatenate per-chunk aggregate results,
+		// producing duplicate group-by keys and wrong avg/median/quantile.
+		StartTimeISO: "2026-01-01T00:00:00Z",
+		EndTimeISO:   "2026-01-08T00:00:00Z",
+		Limit:        10,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if got := rec.count(); got != 1 {
+		t.Fatalf("expected aggregate pipeline over 7-day window to issue exactly 1 request, got %d", got)
+	}
+
+	payload := parseTracesToolResult(t, result)
+	if count := countTracesInPayload(t, payload); count != 2 {
+		t.Fatalf("expected 2 traces in single-request payload, got %d", count)
+	}
+}
+
+func TestGetTracesHandlerWindowAggregateAlsoUsesSingleRequest(t *testing.T) {
+	rec := newTracesRequestRecorder()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.add(r.URL.Query())
+		_, _ = w.Write([]byte(traceAPIResponse(1)))
+	}))
+	defer server.Close()
+
+	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+		TracejsonQuery: []map[string]interface{}{
+			{"type": "window_aggregate"},
+		},
+		StartTimeISO: "2026-01-01T00:00:00Z",
+		EndTimeISO:   "2026-01-08T00:00:00Z",
+		Limit:        10,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if got := rec.count(); got != 1 {
+		t.Fatalf("expected window_aggregate pipeline over 7-day window to issue exactly 1 request, got %d", got)
+	}
+}
+
+func TestGetTracesHandlerPlainFilterOverSevenDaysStillChunks(t *testing.T) {
+	rec := newTracesRequestRecorder()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.add(r.URL.Query())
+		_, _ = w.Write([]byte(traceAPIResponse(0)))
+	}))
+	defer server.Close()
+
+	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+		TracejsonQuery: []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{"$exists": []string{"ServiceName"}}},
+		},
+		StartTimeISO: "2026-01-01T00:00:00Z",
+		EndTimeISO:   "2026-01-08T00:00:00Z",
+		Limit:        10,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if got := rec.count(); got <= 1 {
+		t.Fatalf("expected non-aggregate pipeline over 7-day window to chunk (>1 requests), got %d", got)
+	}
+}
+
+func TestGetTracesHandlerAggregateSingleRequestTimeoutHintsNarrowerWindow(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "query timeout", http.StatusRequestTimeout)
+	}))
+	defer server.Close()
+
+	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+		TracejsonQuery: []map[string]interface{}{
+			{"type": "aggregate"},
+		},
+		StartTimeISO: "2026-01-01T00:00:00Z",
+		EndTimeISO:   "2026-01-08T00:00:00Z",
+	})
+	if err == nil {
+		t.Fatalf("expected error when upstream returns 408")
+	}
+	if !strings.Contains(err.Error(), "narrow the time window") {
+		t.Fatalf("expected error to hint narrowing the time window, got: %v", err)
+	}
+}
+
 func TestGetTracesHandlerHardErrorsWhenAllChunksFail(t *testing.T) {
 	// Regression: when every chunk returns an upstream error and no chunk
 	// produced a valid response, fetchTraceJSONQuery must surface a hard
