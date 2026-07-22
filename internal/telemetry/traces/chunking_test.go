@@ -79,7 +79,7 @@ func TestGetTracesHandlerChunksAndHonorsLimit(t *testing.T) {
 		TracejsonQuery: []map[string]interface{}{
 			{
 				"type":  "filter",
-				"query": map[string]interface{}{"$exists": []string{"ServiceName"}},
+				"query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}},
 			},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
@@ -130,7 +130,7 @@ func TestGetTracesHandlerCapsAtConfiguredMax(t *testing.T) {
 	handler := NewGetTracesHandler(server.Client(), cfg)
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
 		TracejsonQuery: []map[string]interface{}{
-			{"type": "filter", "query": map[string]interface{}{"$exists": []string{"ServiceName"}}},
+			{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}}},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
 		EndTimeISO:   "1970-01-01T01:30:00Z",
@@ -164,7 +164,7 @@ func TestGetTracesHandlerSingleChunkForSubThresholdRange(t *testing.T) {
 	// 30 min range — below SplitThresholdMs → adaptive returns a single chunk.
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
 		TracejsonQuery: []map[string]interface{}{
-			{"type": "filter", "query": map[string]interface{}{"$exists": []string{"ServiceName"}}},
+			{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}}},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
 		EndTimeISO:   "1970-01-01T00:30:00Z",
@@ -189,7 +189,7 @@ func TestGetTracesHandlerEmptyChunks(t *testing.T) {
 	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
 		TracejsonQuery: []map[string]interface{}{
-			{"type": "filter", "query": map[string]interface{}{"$exists": []string{"ServiceName"}}},
+			{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}}},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
 		EndTimeISO:   "1970-01-01T00:07:00Z",
@@ -262,7 +262,7 @@ func TestGetTracesHandlerDoesNotChunkAggregateQueries(t *testing.T) {
 	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
 		TracejsonQuery: []map[string]interface{}{
-			{"type": "filter", "query": map[string]interface{}{"$exists": []string{"ServiceName"}}},
+			{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}}},
 			{"type": "aggregate"},
 		},
 		// 7-day window: without the aggregate guard this would chunk into
@@ -323,7 +323,7 @@ func TestGetTracesHandlerPlainFilterOverSevenDaysStillChunks(t *testing.T) {
 	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
 		TracejsonQuery: []map[string]interface{}{
-			{"type": "filter", "query": map[string]interface{}{"$exists": []string{"ServiceName"}}},
+			{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}}},
 		},
 		StartTimeISO: "2026-01-01T00:00:00Z",
 		EndTimeISO:   "2026-01-08T00:00:00Z",
@@ -375,7 +375,7 @@ func TestGetTracesHandlerHardErrorsWhenAllChunksFail(t *testing.T) {
 	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
 		TracejsonQuery: []map[string]interface{}{
-			{"type": "filter", "query": map[string]interface{}{"$exists": []string{"ServiceName"}}},
+			{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}}},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
 		EndTimeISO:   "1970-01-01T01:30:00Z",
@@ -423,7 +423,7 @@ func TestGetTracesHandlerReturnsPartialResultAfterLaterChunkError(t *testing.T) 
 	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
 		TracejsonQuery: []map[string]interface{}{
-			{"type": "filter", "query": map[string]interface{}{"$exists": []string{"ServiceName"}}},
+			{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}}},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
 		EndTimeISO:   "1970-01-01T01:30:00Z",
