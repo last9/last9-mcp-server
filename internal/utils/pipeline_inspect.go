@@ -22,6 +22,22 @@ import "strings"
 //  2. We only count transforms whose function is in BODY_TRANSFORM_OPERATIONS
 //     (matches the frontend list exactly: $split_into / $split / $replace_regex).
 
+// PipelineHasAggregateStage reports whether any stage in the pipeline is an
+// "aggregate" or "window_aggregate" stage. Chunking a pipeline that aggregates
+// (group-by, avg/median/quantile/stddev, etc.) and concatenating the per-chunk
+// results produces duplicate group-by keys and mathematically wrong
+// aggregates, so callers must treat true here as "run as a single request,
+// never chunk". Nil-safe.
+func PipelineHasAggregateStage(pipeline []map[string]interface{}) bool {
+	for _, stage := range pipeline {
+		switch stageType, _ := stage["type"].(string); stageType {
+		case "aggregate", "window_aggregate":
+			return true
+		}
+	}
+	return false
+}
+
 // HasJSONParsePipeline mirrors frontend hasJSONParsePipeline in
 // adaptive-chunk-loader.ts:31 — true if any stage is a JSON parse.
 func HasJSONParsePipeline(pipeline []map[string]any) bool {
