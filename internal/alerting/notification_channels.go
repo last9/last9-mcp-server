@@ -34,6 +34,7 @@ type NotificationChannel struct {
 	SnoozeUntil  *int64                       `json:"snooze_until"`
 	Priority     int                          `json:"priority"`
 	Severity     string                       `json:"severity"`
+	ServiceFQID  string                       `json:"service_fqid"`
 	SendResolved *bool                        `json:"send_resolved"`
 	Services     []notificationChannelService `json:"services"`
 }
@@ -115,7 +116,7 @@ func fetchNotificationChannels(ctx context.Context, client *http.Client, cfg mod
 func formatNotificationChannelsResponse(channels []NotificationChannel) string {
 	rows := make([]string, 0, len(channels)+2)
 	rows = append(rows, fmt.Sprintf("Found %d notification channel(s):", len(channels)))
-	rows = append(rows, "id\tname\ttype\tglobal\tin_use\tsend_resolved\tsnoozed_until\tseverity\tpriority\tservices")
+	rows = append(rows, "id\tname\ttype\tglobal\tin_use\tsend_resolved\tsnoozed_until\tseverity\tpriority\tservices\tservice_fqid")
 
 	for _, ch := range channels {
 		sendResolved := "null"
@@ -143,9 +144,15 @@ func formatNotificationChannelsResponse(channels []NotificationChannel) string {
 			services = strings.Join(parts, ",")
 		}
 
-		rows = append(rows, fmt.Sprintf("%d\t%s\t%s\t%v\t%v\t%s\t%s\t%s\t%d\t%s",
+		serviceFQID := ch.ServiceFQID
+		if serviceFQID == "" {
+			serviceFQID = "-"
+		}
+
+		rows = append(rows, fmt.Sprintf("%d\t%s\t%s\t%v\t%v\t%s\t%s\t%s\t%d\t%s\t%s",
 			ch.ID, escapeTSV(ch.Name), escapeTSV(ch.Type), ch.Global, ch.InUse,
 			escapeTSV(sendResolved), escapeTSV(snoozeUntil), escapeTSV(ch.Severity), ch.Priority, escapeTSV(services),
+			escapeTSV(serviceFQID),
 		))
 	}
 

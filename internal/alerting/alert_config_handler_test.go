@@ -114,8 +114,15 @@ func TestGetAlertConfigHandler_RuleOnlyFilters(t *testing.T) {
 			}
 
 			assertAlertConfigResultIDs(t, text, tt.expectedIDs)
-			if state.entityLookupCalls != 0 {
-				t.Fatalf("expected no entity lookup for rule-only filters, got %d call(s)", state.entityLookupCalls)
+			// Entity lookup now always runs to enrich the response (alert group
+			// name/data source/tags), as long as there are rules left after
+			// rule-field filtering — it's no longer gated on entity-based filters.
+			wantEntityLookupCalls := 0
+			if len(tt.expectedIDs) > 0 {
+				wantEntityLookupCalls = 1
+			}
+			if state.entityLookupCalls != wantEntityLookupCalls {
+				t.Fatalf("expected %d entity lookup call(s), got %d", wantEntityLookupCalls, state.entityLookupCalls)
 			}
 		})
 	}

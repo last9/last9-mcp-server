@@ -65,7 +65,7 @@ func TestGetNotificationChannelsHandler_TSVFormat(t *testing.T) {
 	}
 
 	// Header
-	wantHeader := "id\tname\ttype\tglobal\tin_use\tsend_resolved\tsnoozed_until\tseverity\tpriority\tservices"
+	wantHeader := "id\tname\ttype\tglobal\tin_use\tsend_resolved\tsnoozed_until\tseverity\tpriority\tservices\tservice_fqid"
 	if lines[1] != wantHeader {
 		t.Fatalf("header mismatch\ngot:  %s\nwant: %s", lines[1], wantHeader)
 	}
@@ -356,8 +356,8 @@ func assertStableNotificationChannelsTSV(t *testing.T, text string, wantDataRows
 	rows := make([][]string, 0, wantDataRows)
 	for i, line := range lines[2:] {
 		cols := strings.Split(line, "\t")
-		if len(cols) != 10 {
-			t.Fatalf("row %d: expected 10 TSV columns, got %d: %v", i+1, len(cols), cols)
+		if len(cols) != 11 {
+			t.Fatalf("row %d: expected 11 TSV columns, got %d: %v", i+1, len(cols), cols)
 		}
 		for _, col := range cols {
 			if strings.ContainsAny(col, "\n\r") {
