@@ -462,7 +462,7 @@ func TestSanitizeTraceJSONQuery_ValidFilterOperators(t *testing.T) {
 			},
 		},
 		{
-			name: "$notnull operator",
+			name: "$notnull operator rewritten to $neq",
 			stages: []map[string]interface{}{
 				{"type": "filter", "query": map[string]interface{}{
 					"$notnull": []interface{}{"TraceId"},
@@ -686,7 +686,7 @@ func TestSanitizeTraceJSONQuery_WrapsTopLevelFilterInAnd(t *testing.T) {
 	})
 }
 
-func TestSanitizeTraceJSONQuery_RewritesExistsOperator(t *testing.T) {
+func TestSanitizeTraceJSONQuery_RewritesBrokenExistenceOperators(t *testing.T) {
 	neq := func(field string) map[string]interface{} {
 		return map[string]interface{}{"$neq": []interface{}{field, ""}}
 	}
@@ -757,6 +757,50 @@ func TestSanitizeTraceJSONQuery_RewritesExistsOperator(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), `{"$neq": [field, ""]}`) {
 			t.Fatalf("error should teach the $neq idiom, got: %v", err)
+		}
+	})
+
+	t.Run("$notnull rewritten to $neq empty string", func(t *testing.T) {
+		stages := []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{
+				"$notnull": []interface{}{"attributes['user.id']"},
+			}},
+		}
+		if err := sanitizeTraceJSONQuery(stages); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		blob, _ := json.Marshal(stages)
+		s := string(blob)
+		if strings.Contains(s, "$notnull") {
+			t.Fatalf("$notnull survived rewrite: %s", s)
+		}
+		if !strings.Contains(s, `{"$neq":["attributes['user.id']",""]}`) {
+			t.Fatalf("missing $notnull rewrite in: %s", s)
+		}
+	})
+
+	t.Run("$exists alongside sibling $neq folds into $and", func(t *testing.T) {
+		stages := []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{
+				"$exists": []interface{}{"attributes['user.id']"},
+				"$neq":    []interface{}{"attributes['error.message']", ""},
+			}},
+		}
+		if err := sanitizeTraceJSONQuery(stages); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		blob, _ := json.Marshal(stages)
+		s := string(blob)
+		if strings.Contains(s, "$exists") {
+			t.Fatalf("$exists survived rewrite: %s", s)
+		}
+		for _, want := range []string{
+			`{"$neq":["attributes['user.id']",""]}`,
+			`{"$neq":["attributes['error.message']",""]}`,
+		} {
+			if !strings.Contains(s, want) {
+				t.Fatalf("missing condition %s in: %s", want, s)
+			}
 		}
 	})
 }

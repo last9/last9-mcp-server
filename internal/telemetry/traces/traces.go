@@ -304,7 +304,7 @@ func executeTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.
 			bodyStr = bodyStr[:100] + "... (truncated)"
 		}
 		if resp.StatusCode == http.StatusRequestTimeout {
-			return nil, fmt.Errorf("trace aggregation query timed out; narrow the time window (start_time_iso/end_time_iso) and retry (status %d, endpoint: %s/cat/api/traces/v2/query_range/json). Response: %s",
+			return nil, fmt.Errorf("trace query timed out; narrow the time window or simplify the query and retry (status %d, endpoint: %s/cat/api/traces/v2/query_range/json). Response: %s",
 				resp.StatusCode, cfg.APIBaseURL, bodyStr)
 		}
 		return nil, fmt.Errorf("traces API request failed with status %d (endpoint: %s/cat/api/traces/v2/query_range/json). Response: %s",
