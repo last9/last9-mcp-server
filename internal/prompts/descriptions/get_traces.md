@@ -451,5 +451,6 @@ When a user asks about traces:
 5. **If the user query is ambiguous**, ask for clarification instead of guessing
 6. **Use filter or aggregation** only on labels passed in prompt
 7. **Always analyze the results** and provide insights
+8. **If the response includes `_last9_mcp.partial_result: true`**, the result is incomplete — a time chunk failed. Tell the user the data is partial, then narrow the time window (`start_time_iso`/`end_time_iso`) and retry.
 
 **CRITICAL: Always execute queries with tools - never show raw JSON to users**

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `get_traces` no longer chunks `aggregate`/`window_aggregate` pipelines — long-window group-by queries run as a single request, fixing duplicate keys and wrong `avg`/`median`/`quantile` math (#195).
+- Trace filter existence checks: `$exists` and `$notnull` are rewritten to `{"$neq": [field, ""]}` before hitting the backend (previously matched all spans / no spans respectively) (#195).
+
+### Changed
+
+- `get_traces` filter schema drops `$exists`/`$notnull` in favor of the `{"$neq": [field, ""]}` idiom; trace-query 408s now return a "narrow the window" error (#195).
+
 ## [0.13.0] - 2026-07-22
 
 ### Changed
