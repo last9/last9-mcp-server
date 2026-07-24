@@ -10,6 +10,7 @@ Parameters:
 
 Rules:
 - Exactly one of `trace_id` or `service_name` required.
+- When `trace_id` is known, pass **only** `trace_id` — omit `service_name`.
 - Prefer `lookback_minutes` for relative windows; ISO bounds override lookback.
 - Legacy `YYYY-MM-DD HH:MM:SS` accepted for compatibility.
 - Empty `trace_id` result: retry with explicit `start_time_iso`/`end_time_iso` or larger `lookback_minutes`.

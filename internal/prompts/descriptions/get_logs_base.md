@@ -1,19 +1,21 @@
-Query logs with `logjson_query` — a JSON **array of stages**. Each stage MUST set `"type"` to `filter`|`parse`|`aggregate`|`window_aggregate`. Do **not** use `"stage"` or `"conditions"`.
+Query logs with `logjson_query` — JSON **array of stages**. Each stage `"type"`: `filter`|`parse`|`aggregate`|`window_aggregate`. No `"stage"`/`"conditions"`.
 
-**Filter shape:**
-```json
-[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]
-```
-`query` holds `$and`/`$or` of `{ "$eq"|"$neq"|"$contains"|"$exists"|"$gt"|"$gte"|"$lt"|"$lte": [field, value] }`. Values are strings. Always wrap in `$and` (use `$or` for service/canary variants). Never invent SQL.
+**Filter:** `{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}` — `$eq|$neq|$contains|$gt|$gte|$lt|$lte|$regex` on `[field, value]` strings. Always `$and`-wrap.
 
-**Parse / aggregate:** `{"type":"parse","parser":"json","field":"Body","labels":{}}` (or `logfmt`/`regexp`). Aggregate: `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"_count"}],"groupby":{"ServiceName":"service"}}`. Prefer **json** parse for access logs; afterward filter/groupby with `attributes['uri']` / `attributes['status_code']` (use `attributes['...']`, not bare names).
+**Parse / aggregate:** parse Body (`json`/`logfmt`/`regexp`), then filter `attributes['…']`. **Aggregate:** `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"_count"}],"groupby":{"ServiceName":"service"}}` — `function` uses `{"$count":[]}`, `{"$max":["field"]}`, or `{"$avg":["field"]}`. **window_aggregate** for trends/per-minute counts — `aggregates`+`window_minutes`, not `TimeBucket`.
 
-**HTTP access logs (critical):** Severity is NOT an HTTP-error proxy (5xx often INFO). Filter the status field — e.g. `$gte`/`$lt` on `attributes['status_code']` or `attributes['http.status_code']` for 500–599 — never `SeverityText`/`ERROR` for HTTP 5xx. Paths/URIs are usually `attributes['uri']` after a Body json parse. Discover exact keys with `get_log_attributes*`.
+**Severity-less logs:** empty `SeverityText` → parse Body `level`, gate `$eq`/`$ieq` on `ERROR` before counting.
 
-**Time (tool args):** Prefer `lookback_minutes` (default **5**, not 60). Absolute → `start_time_iso`+`end_time_iso`. Never put the window as a pipeline `Timestamp` filter.
+**Existence / attrs:** exists → `{"$neq":["field",""]}` (never `$exists`). Structured fields → `attributes['key']` — not Body `$contains`.
 
-**Fields:** Without discovery only `ServiceName`, `Body`, `Timestamp`, `SeverityText`. Free-text IDs → Body `$contains`. Org attrs → discovery `filter_field` (`attributes['key']` / `resources['key']`).
+**Scope:** tenant → `resources['last9.tenant']`; env → `resources['deployment.environment']`. User `service.name` → `ServiceName`; `k8s.*` → `resources['k8s.…']`.
 
-**Order:** scope filter first → parse before Body-derived filters/groupby → aggregate only for count/sum/avg/trend.
+**Free-text IDs** (EPL_…) → `{"$contains":["Body","…"]}` — not `ServiceName`.
 
-Full manual: resource `last9://reference/logjson`
+**HTTP 5xx:** filter status field — never `SeverityText`/`ERROR`.
+
+**Time:** `lookback_minutes` (default **5**); absolute → `start_time_iso`+`end_time_iso` — never `Timestamp` in pipeline.
+
+**l9_sanity** high ratio → re-call `get_logs` with ERROR gate.
+
+Full manual: `last9://reference/logjson`
