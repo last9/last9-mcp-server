@@ -3,22 +3,34 @@ package prompts
 import _ "embed"
 
 //go:embed descriptions/get_logs.md
-var GetLogsInstructions string
+var GetLogsInstructions string // stub; long manual is LogjsonReference
 
 //go:embed descriptions/get_traces.md
-var GetTracesInstructions string
+var GetTracesInstructions string // stub; long manual is TracejsonReference
 
 //go:embed descriptions/get_service_traces.md
 var GetServiceTracesInstructions string
 
 //go:embed descriptions/get_metrics.md
-var GetMetricsInstructions string
+var GetMetricsInstructions string // stub; long manual is MetricsReference
 
 //go:embed descriptions/get_exceptions.md
 var GetExceptionsInstructions string
 
 //go:embed descriptions/get_service_logs.md
-var GetServiceLogsInstructions string
+var GetServiceLogsInstructions string // stub; long manual is ServiceLogsReference
+
+//go:embed references/logjson.md
+var LogjsonReference string
+
+//go:embed references/tracejson.md
+var TracejsonReference string
+
+//go:embed references/service_logs.md
+var ServiceLogsReference string
+
+//go:embed references/metrics.md
+var MetricsReference string
 
 //go:embed descriptions/get_service_summary.md
 var GetServiceSummaryDescription string
