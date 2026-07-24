@@ -86,6 +86,12 @@ var GetTraceAttributeValuesDescription string
 //go:embed descriptions/get_trace_attributes_for_pipeline.md
 var GetTraceAttributesForPipelineDescription string
 
+//go:embed descriptions/get_trace_attribute_deviations.md
+var GetTraceAttributeDeviationsDescription string
+
+//go:embed descriptions/get_trace_waterfall.md
+var GetTraceWaterfallDescription string
+
 //go:embed descriptions/get_change_events.md
 var GetChangeEventsDescription string
 

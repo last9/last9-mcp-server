@@ -216,6 +216,13 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Description: prompts.GetTraceAttributeValuesDescription,
 	}, traces.NewGetTraceAttributeValuesHandler(client, cfg))
 
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_trace_attribute_deviations",
+		Description: prompts.GetTraceAttributeDeviationsDescription,
+	}, traces.NewGetTraceAttributeDeviationsHandler(client, cfg))
+
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{Name: "get_trace_waterfall", Description: prompts.GetTraceWaterfallDescription}, traces.NewGetTraceWaterfallHandler(client, cfg))
+
 	// Register change events tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
 		Name:        "get_change_events",

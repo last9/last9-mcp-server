@@ -86,16 +86,20 @@ type TraceDetailsResponse struct {
 
 // TraceDetailsSpan represents a single span from the dedicated trace details endpoint.
 type TraceDetailsSpan struct {
-	Timestamp          string            `json:"Timestamp"`
-	TraceID            string            `json:"TraceId"`
-	SpanID             string            `json:"SpanId"`
-	TraceState         string            `json:"TraceState"`
-	SpanName           string            `json:"SpanName"`
-	SpanKind           string            `json:"SpanKind"`
-	ServiceName        string            `json:"ServiceName"`
-	ResourceAttributes map[string]string `json:"ResourceAttributes"`
-	Duration           int64             `json:"Duration"`
-	StatusCode         string            `json:"StatusCode"`
+	Timestamp          string                   `json:"Timestamp"`
+	TraceID            string                   `json:"TraceId"`
+	SpanID             string                   `json:"SpanId"`
+	ParentSpanID       string                   `json:"ParentSpanId"`
+	TraceState         string                   `json:"TraceState"`
+	SpanName           string                   `json:"SpanName"`
+	SpanKind           string                   `json:"SpanKind"`
+	ServiceName        string                   `json:"ServiceName"`
+	ResourceAttributes map[string]string        `json:"ResourceAttributes"`
+	Duration           int64                    `json:"Duration"`
+	StatusCode         string                   `json:"StatusCode"`
+	SpanAttributes     map[string]interface{}   `json:"SpanAttributes,omitempty"`
+	Events             []map[string]interface{} `json:"Events,omitempty"`
+	Links              []map[string]interface{} `json:"Links,omitempty"`
 }
 
 // validateGetServiceTracesArgs validates the input arguments

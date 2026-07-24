@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://last9.io/contracts/investigation-evidence-v1.schema.json",
+  "title": "Investigation Evidence v1",
+  "type": "object",
+  "required": ["contract_version", "analysis_version", "request", "evidence", "interpretation"],
+  "properties": {
+    "contract_version": { "const": "investigation-evidence/v1" },
+    "analysis_version": { "type": "string", "pattern": "^[a-z0-9-]+/v1$" },
+    "request": { "$ref": "#/$defs/request" },
+    "evidence": { "$ref": "#/$defs/evidence" },
+    "interpretation": { "$ref": "#/$defs/interpretation" },
+    "data": { "type": "object" },
+    "follow_ups": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "window": {
+      "type": "object",
+      "required": ["start", "end", "boundary"],
+      "properties": {
+        "start": { "type": "string", "format": "date-time" },
+        "end": { "type": "string", "format": "date-time" },
+        "boundary": { "const": "half-open" }
+      },
+      "additionalProperties": true
+    },
+    "request": {
+      "type": "object",
+      "required": ["scope", "requested_window", "effective_window"],
+      "properties": {
+        "scope": {
+          "type": "object",
+          "required": ["service_name", "environment"],
+          "properties": {
+            "service_name": { "type": "string", "minLength": 1 },
+            "environment": { "type": "string", "minLength": 1 },
+            "operation": { "type": ["string", "null"] }
+          },
+          "additionalProperties": true
+        },
+        "requested_window": { "$ref": "#/$defs/window" },
+        "effective_window": { "$ref": "#/$defs/window" }
+      },
+      "additionalProperties": true
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["partial", "truncated", "warnings", "provenance"],
+      "properties": {
+        "partial": { "type": "boolean" },
+        "truncated": { "type": "boolean" },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "partial_errors": { "type": "array", "items": { "type": "object" } },
+        "provenance": {
+          "type": "object",
+          "required": ["source", "observed_at"],
+          "properties": {
+            "source": { "type": "string", "minLength": 1 },
+            "observed_at": { "type": "string", "format": "date-time" },
+            "query_id": { "type": ["string", "null"] }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "interpretation": {
+      "type": "object",
+      "required": ["evidence_quality", "claim_type", "summary", "limitations"],
+      "properties": {
+        "evidence_quality": { "enum": ["high", "medium", "low", "insufficient"] },
+        "claim_type": { "enum": ["observation", "correlation", "contribution"] },
+        "summary": { "type": "string" },
+        "limitations": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    }
+  }
+}
