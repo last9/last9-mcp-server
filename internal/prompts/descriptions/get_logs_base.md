@@ -12,10 +12,10 @@ Query logs with `logjson_query` — JSON **array of stages**. Each stage `"type"
 
 **Free-text IDs** (EPL_…) → `{"$contains":["Body","…"]}` — not `ServiceName`.
 
-**HTTP 5xx:** filter status field — never `SeverityText`/`ERROR`.
+**HTTP 5xx:** filter status field with literal code (e.g. `$eq` on `attributes['status_code']`,`"500"`) — never `SeverityText`/`ERROR`; avoid regex-only when user names a code.
 
-**Time:** `lookback_minutes` (default **5**); absolute → `start_time_iso`+`end_time_iso` — never `Timestamp` in pipeline.
+**Time:** `lookback_minutes` (default **5**). **Absolute ISO bounds** → `start_time_iso`+`end_time_iso` on the tool call — never `Timestamp`/`$gte`/`$lte` in the pipeline (pipeline filters log data only).
 
-**l9_sanity** high ratio → re-call `get_logs` with ERROR gate.
+**l9_sanity:** high `ratio` or "filter likely too broad" → next call `get_logs` with `aggregate`+`$count` and an ERROR/`SeverityText` gate — not discovery-only.
 
 Full manual: `last9://reference/logjson`
