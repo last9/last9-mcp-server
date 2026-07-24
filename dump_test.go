@@ -68,6 +68,9 @@ func TestDumpTools(t *testing.T) {
 			t.Fatalf("%s description missing resource URI pointer", whale)
 		}
 	}
+	if !strings.Contains(out.Tools[byName["prometheus_range_query"]].Description, "last9://reference/metrics") {
+		t.Fatal("prometheus_range_query description missing metrics resource URI pointer")
+	}
 
 	deviationsIndex, ok := byName["get_apm_service_deviations"]
 	if !ok {
@@ -145,7 +148,7 @@ func descriptionTokenEstimate(descs []string) int {
 	for _, d := range descs {
 		total += len(d)
 	}
-	return total / 4 // plan KTD7
+	return total / 4 // chars/4 regression heuristic — not an exact tokenizer count
 }
 
 func TestDescriptionTokenBudgets(t *testing.T) {

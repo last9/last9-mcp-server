@@ -12,7 +12,7 @@ var GetTracesInstructions string // stub; long manual is TracejsonReference
 var GetServiceTracesInstructions string
 
 //go:embed descriptions/get_metrics.md
-var GetMetricsInstructions string
+var GetMetricsInstructions string // stub; long manual is MetricsReference
 
 //go:embed descriptions/get_exceptions.md
 var GetExceptionsInstructions string
@@ -28,6 +28,9 @@ var TracejsonReference string
 
 //go:embed references/service_logs.md
 var ServiceLogsReference string
+
+//go:embed references/metrics.md
+var MetricsReference string
 
 //go:embed descriptions/get_service_summary.md
 var GetServiceSummaryDescription string

@@ -54,7 +54,7 @@ func TestReferenceResourcesAvailableUnderMetricsToolset(t *testing.T) {
 		}
 		found[res.URI] = true
 	}
-	for _, uri := range []string{resourceURILogjson, resourceURITracejson, resourceURIServiceLogs} {
+	for _, uri := range []string{resourceURILogjson, resourceURITracejson, resourceURIServiceLogs, resourceURIMetrics} {
 		if !found[uri] {
 			t.Errorf("resource %q missing under metrics toolset", uri)
 		}
@@ -66,5 +66,13 @@ func TestReferenceResourcesAvailableUnderMetricsToolset(t *testing.T) {
 	}
 	if len(read.Contents) == 0 || len(read.Contents[0].Text) < 1000 {
 		t.Fatalf("logjson resource body too short: %#v", read.Contents)
+	}
+
+	metricsRead, err := session.ReadResource(ctx, &mcp.ReadResourceParams{URI: resourceURIMetrics})
+	if err != nil {
+		t.Fatalf("resources/read metrics: %v", err)
+	}
+	if len(metricsRead.Contents) == 0 || len(metricsRead.Contents[0].Text) < 500 {
+		t.Fatalf("metrics resource body too short: %#v", metricsRead.Contents)
 	}
 }

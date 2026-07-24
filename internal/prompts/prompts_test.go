@@ -20,7 +20,6 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 		{"get_log_attributes", "must tell model to check attributes before body_filters"},
 		{"body_filters", "must explicitly label body_filters as last resort"},
 		{"last9://reference/service_logs", "must point at the service_logs resource"},
-		{"get_log_attributes", "must point at discovery before structured filters"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
@@ -49,6 +48,7 @@ func TestReferenceManualsEmbedded(t *testing.T) {
 		"logjson":      prompts.LogjsonReference,
 		"tracejson":    prompts.TracejsonReference,
 		"service_logs": prompts.ServiceLogsReference,
+		"metrics":      prompts.MetricsReference,
 	} {
 		if len(body) < 1000 {
 			t.Errorf("%s reference too short (%d chars) — embed may be wrong", name, len(body))

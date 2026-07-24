@@ -223,7 +223,7 @@ func main() {
 		log.Fatalf("failed to register tools: %v", err)
 	}
 
-	// Background goroutine to refresh attributes and re-register tools periodically
+	// Background goroutine keeps the attribute cache warm for handlers that may use it.
 	go func() {
 		ticker := time.NewTicker(2 * time.Hour)
 		defer ticker.Stop()
@@ -232,12 +232,7 @@ func main() {
 			if err := attrCache.RefreshIfStale(refreshCtx); err != nil {
 				slog.Warn("failed to refresh attribute cache", "error", err)
 			} else {
-				// Re-register tools with updated descriptions (AddTool is an upsert)
-				if err := registerAllTools(server, cfg, attrCache); err != nil {
-					slog.Warn("failed to re-register tools after cache refresh", "error", err)
-				} else {
-					slog.Info("attribute cache refreshed and tools re-registered")
-				}
+				slog.Info("attribute cache refreshed")
 			}
 			refreshCancel()
 		}

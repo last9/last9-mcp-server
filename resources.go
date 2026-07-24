@@ -13,6 +13,7 @@ const (
 	resourceURILogjson     = "last9://reference/logjson"
 	resourceURITracejson   = "last9://reference/tracejson"
 	resourceURIServiceLogs = "last9://reference/service_logs"
+	resourceURIMetrics     = "last9://reference/metrics"
 )
 
 // registerReferenceResources registers whale tool manuals as MCP resources.
@@ -28,6 +29,7 @@ func registerReferenceResources(server *last9mcp.Last9MCPServer) {
 		{resourceURILogjson, "logjson", "Full logjson pipeline reference for get_logs", prompts.LogjsonReference},
 		{resourceURITracejson, "tracejson", "Full tracejson pipeline reference for get_traces", prompts.TracejsonReference},
 		{resourceURIServiceLogs, "service_logs", "Extended guidance for get_service_logs", prompts.ServiceLogsReference},
+		{resourceURIMetrics, "metrics", "Prometheus range-query usage guide for prometheus_range_query", prompts.MetricsReference},
 	}
 
 	handler := func(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {

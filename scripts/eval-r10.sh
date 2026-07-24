@@ -17,7 +17,7 @@ if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
 fi
 
 if [[ ! -f "$ROOT/.env" ]]; then
-  echo "Missing $ROOT/.env with LAST9_REFRESH_TOKEN (needed by bin/start-local.sh)" >&2
+  echo "Missing $ROOT/.env with LAST9_REFRESH_TOKEN (needed by scripts/start-local.sh)" >&2
   exit 1
 fi
 
