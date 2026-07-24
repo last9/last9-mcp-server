@@ -115,7 +115,7 @@ func TestGetTracesLimitParameter(t *testing.T) {
 					{
 						"type": "filter",
 						"query": map[string]interface{}{
-							"$exists": []string{"ServiceName"},
+							"$neq": []interface{}{"ServiceName", ""},
 						},
 					},
 				},
@@ -352,7 +352,7 @@ func TestGetTracesHandler_Integration(t *testing.T) {
 					{
 						"type": "filter",
 						"query": map[string]interface{}{
-							"$exists": []string{"ServiceName"},
+							"$neq": []interface{}{"ServiceName", ""},
 						},
 					},
 				},

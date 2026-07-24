@@ -261,7 +261,7 @@ func NewGetDatabaseSlowQueriesHandler(client *http.Client, cfg models.Config) fu
 		} else {
 			// No specific db_system — match any span that has db.system set
 			conditions = append(conditions, map[string]any{
-				"$exists": []any{"attributes.db.system"},
+				"$neq": []any{"attributes['db.system']", ""},
 			})
 		}
 

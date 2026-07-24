@@ -102,6 +102,22 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 		return executeTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startMs, endMs, effectiveLimit)
 	}
 
+	// Aggregate pipelines (group-by, avg/median/quantile/stddev, etc.) must
+	// never be chunked: concatenating per-chunk aggregate results produces
+	// duplicate group-by keys and mathematically wrong aggregates. Run the
+	// full window as a single request instead.
+	if utils.PipelineHasAggregateStage(args.TracejsonQuery) {
+		if chunkingDebug {
+			log.Printf(
+				"[chunking] get_traces aggregate stage detected, using single request start_ms=%d end_ms=%d effective_limit=%d",
+				startMs,
+				endMs,
+				effectiveLimit,
+			)
+		}
+		return executeTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startMs, endMs, effectiveLimit)
+	}
+
 	// Trace pipelines never reference the Body field, so HasExpensiveBodyParsing
 	// is always false here — adaptive config falls through to the time-range
 	// rules, exactly as the frontend would treat a non-body-search query.
@@ -286,6 +302,10 @@ func executeTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.
 		bodyStr := string(body)
 		if len(bodyStr) > 100 {
 			bodyStr = bodyStr[:100] + "... (truncated)"
+		}
+		if resp.StatusCode == http.StatusRequestTimeout {
+			return nil, fmt.Errorf("trace query timed out; narrow the time window or simplify the query and retry (status %d, endpoint: %s/cat/api/traces/v2/query_range/json). Response: %s",
+				resp.StatusCode, cfg.APIBaseURL, bodyStr)
 		}
 		return nil, fmt.Errorf("traces API request failed with status %d (endpoint: %s/cat/api/traces/v2/query_range/json). Response: %s",
 			resp.StatusCode, cfg.APIBaseURL, bodyStr)

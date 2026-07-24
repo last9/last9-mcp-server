@@ -1,6 +1,7 @@
 package traces
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -461,7 +462,7 @@ func TestSanitizeTraceJSONQuery_ValidFilterOperators(t *testing.T) {
 			},
 		},
 		{
-			name: "$notnull operator",
+			name: "$notnull operator rewritten to $neq",
 			stages: []map[string]interface{}{
 				{"type": "filter", "query": map[string]interface{}{
 					"$notnull": []interface{}{"TraceId"},
@@ -681,6 +682,125 @@ func TestSanitizeTraceJSONQuery_WrapsTopLevelFilterInAnd(t *testing.T) {
 		}
 		if got := stages[0]["query"]; !reflect.DeepEqual(got, map[string]interface{}{}) {
 			t.Errorf("empty query should be unchanged, got: %#v", got)
+		}
+	})
+}
+
+func TestSanitizeTraceJSONQuery_RewritesBrokenExistenceOperators(t *testing.T) {
+	neq := func(field string) map[string]interface{} {
+		return map[string]interface{}{"$neq": []interface{}{field, ""}}
+	}
+
+	t.Run("top-level $exists rewritten to $neq empty string", func(t *testing.T) {
+		stages := []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{
+				"$exists": []interface{}{"attributes['mcp.session.id']"},
+			}},
+		}
+		if err := sanitizeTraceJSONQuery(stages); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Sanitizer wraps top-level conditions in $and; unwrap for the check.
+		query := stages[0]["query"].(map[string]interface{})
+		if _, hasExists := query["$exists"]; hasExists {
+			t.Fatalf("$exists survived rewrite: %#v", query)
+		}
+		want := neq("attributes['mcp.session.id']")
+		if got, hasNeq := query["$neq"]; hasNeq {
+			if !reflect.DeepEqual(map[string]interface{}{"$neq": got}, want) {
+				t.Fatalf("wrong rewrite: got %#v want %#v", query, want)
+			}
+		} else if and, ok := query["$and"].([]interface{}); !ok || !reflect.DeepEqual(and[0], want) {
+			t.Fatalf("wrong rewrite: got %#v want %#v", query, want)
+		}
+	})
+
+	t.Run("$exists nested in $and and $not rewritten", func(t *testing.T) {
+		stages := []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{
+				"$and": []interface{}{
+					map[string]interface{}{"$eq": []interface{}{"ServiceName", "api"}},
+					map[string]interface{}{"$exists": []interface{}{"attributes['user.id']"}},
+					map[string]interface{}{"$not": []interface{}{
+						map[string]interface{}{"$exists": []interface{}{"attributes['error']"}},
+					}},
+				},
+			}},
+		}
+		if err := sanitizeTraceJSONQuery(stages); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		blob, _ := json.Marshal(stages)
+		s := string(blob)
+		if strings.Contains(s, "$exists") {
+			t.Fatalf("$exists survived nested rewrite: %s", s)
+		}
+		for _, want := range []string{
+			`{"$neq":["attributes['user.id']",""]}`,
+			`{"$neq":["attributes['error']",""]}`,
+		} {
+			if !strings.Contains(s, want) {
+				t.Fatalf("missing rewrite %s in: %s", want, s)
+			}
+		}
+	})
+
+	t.Run("$exists with no args is rejected with guidance", func(t *testing.T) {
+		stages := []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{
+				"$exists": []interface{}{},
+			}},
+		}
+		err := sanitizeTraceJSONQuery(stages)
+		if err == nil {
+			t.Fatal("expected error for arg-less $exists")
+		}
+		if !strings.Contains(err.Error(), `{"$neq": [field, ""]}`) {
+			t.Fatalf("error should teach the $neq idiom, got: %v", err)
+		}
+	})
+
+	t.Run("$notnull rewritten to $neq empty string", func(t *testing.T) {
+		stages := []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{
+				"$notnull": []interface{}{"attributes['user.id']"},
+			}},
+		}
+		if err := sanitizeTraceJSONQuery(stages); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		blob, _ := json.Marshal(stages)
+		s := string(blob)
+		if strings.Contains(s, "$notnull") {
+			t.Fatalf("$notnull survived rewrite: %s", s)
+		}
+		if !strings.Contains(s, `{"$neq":["attributes['user.id']",""]}`) {
+			t.Fatalf("missing $notnull rewrite in: %s", s)
+		}
+	})
+
+	t.Run("$exists alongside sibling $neq folds into $and", func(t *testing.T) {
+		stages := []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{
+				"$exists": []interface{}{"attributes['user.id']"},
+				"$neq":    []interface{}{"attributes['error.message']", ""},
+			}},
+		}
+		if err := sanitizeTraceJSONQuery(stages); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		blob, _ := json.Marshal(stages)
+		s := string(blob)
+		if strings.Contains(s, "$exists") {
+			t.Fatalf("$exists survived rewrite: %s", s)
+		}
+		for _, want := range []string{
+			`{"$neq":["attributes['user.id']",""]}`,
+			`{"$neq":["attributes['error.message']",""]}`,
+		} {
+			if !strings.Contains(s, want) {
+				t.Fatalf("missing condition %s in: %s", want, s)
+			}
 		}
 	})
 }

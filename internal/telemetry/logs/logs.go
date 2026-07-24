@@ -23,11 +23,6 @@ import (
 const defaultGetLogsLookbackMinutes = 5
 const partialResultMetadataKey = "_last9_mcp"
 
-var nonChunkedLogQueryStageTypes = []string{
-	"aggregate",
-	"window_aggregate",
-}
-
 // GetLogsArgs represents the input arguments for the get_logs tool
 type GetLogsArgs struct {
 	LogjsonQuery    []map[string]interface{} `json:"logjson_query,omitempty" jsonschema:"JSON pipeline query for logs (required)"`
@@ -341,20 +336,17 @@ func effectiveGetLogsChunkLimit(cfg models.Config, requestedLimit int) int {
 	return requestedLimit
 }
 
+// shouldChunkGetLogsQuery returns false for pipelines containing an
+// "aggregate" or "window_aggregate" stage: chunking those and concatenating
+// per-chunk results would produce duplicate group-by keys and mathematically
+// wrong aggregates, so they must run as a single, unchunked request.
 func shouldChunkGetLogsQuery(logjsonQuery interface{}) bool {
 	stages, ok := logjsonQuery.([]map[string]interface{})
 	if !ok {
 		return false
 	}
 
-	for _, stage := range stages {
-		stageType, _ := stage["type"].(string)
-		if slices.Contains(nonChunkedLogQueryStageTypes, stageType) {
-			return false
-		}
-	}
-
-	return true
+	return !utils.PipelineHasAggregateStage(stages)
 }
 
 func executeLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, startTime, endTime int64, limit int, index string) (map[string]interface{}, error) {
