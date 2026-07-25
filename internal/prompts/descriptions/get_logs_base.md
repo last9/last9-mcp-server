@@ -18,4 +18,6 @@ Query logs with `logjson_query` — JSON **array of stages**. Each stage `"type"
 
 **l9_sanity:** high `ratio` or "filter likely too broad" → next call `get_logs` with `aggregate`+`$count` and an ERROR/`SeverityText` gate — not discovery-only.
 
+**After get_exceptions:** aggregate `get_logs` only — never `get_service_logs`.
+
 Full manual: `last9://reference/logjson`

@@ -23,7 +23,9 @@ Investigation flow — follow this exactly:
    - When continuing to logs, use ONLY `get_logs` aggregate/count pipelines
      (filter service → parse level → filter severity in (ERROR, FATAL, CRITICAL) →
      aggregate `$count` grouped by logger): cheap and wide-window-safe.
-     Do NOT use `get_service_logs` or raw `get_logs` fetches here — those time out.
+     NEVER call `get_service_logs` when continuing from exceptions — it raw-fetches
+     lines and times out over wide windows. `get_service_logs` is only for narrow,
+     severity-filtered fetches when you are NOT in an exception-investigation flow.
 
 limit: (Optional) The maximum number of exceptions to return. Defaults to 20.
 lookback_minutes: (Recommended) Number of minutes to look back from now. Default: 60 minutes.

@@ -1,3 +1,5 @@
+**Never use during or after `get_exceptions` investigation flows** — including to fetch sample lines after a `get_logs` aggregate. Use `get_logs` aggregate/count pipelines only (see `get_exceptions`). Raw line fetches time out over wide windows.
+
 Fetch raw log lines for one service (`service_name`, optional `severity_filters`, `body_filters`, `env`, `index`, `limit`).
 
 **Use this tool when:** filtering by log severity levels (`severity_filters`: error/warn/fatal) or plain-text message search (`body_filters`) for a single known service—no pipeline needed.

@@ -48,6 +48,8 @@ type ServiceSummaryArgs struct {
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
 	Env             string  `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
+	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Optional service name filter. When omitted, returns all services. For detailed single-service metrics, prefer get_service_performance_details."`
+	Service         string  `json:"service,omitempty" jsonschema:"Alias of service_name (ecosystem-prior param name); ignored when service_name is set."`
 }
 
 type ServiceEnvironmentsArgs struct {
@@ -159,6 +161,13 @@ func resolveInstantQueryTime(timeISO string, lookbackMinutes float64) (int64, er
 	return time.Now().UTC().Unix(), nil
 }
 
+func promQLServiceNameMatcher(serviceName string) string {
+	if serviceName == "" {
+		return "service_name=~'.*'"
+	}
+	return fmt.Sprintf(`service_name="%s"`, escapePromQLLabel(serviceName))
+}
+
 func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceSummaryArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args ServiceSummaryArgs) (*mcp.CallToolResult, any, error) {
 		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
@@ -171,15 +180,19 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 		if env == "" {
 			env = ".*" // default value
 		}
+		serviceFilter := firstNonEmpty(args.ServiceName, args.Service)
+		serviceMatcher := promQLServiceNameMatcher(serviceFilter)
+		windowMinutes := int((endTimeParam - startTimeParam) / 60)
 		// get the value of service througputs using the query
 		// quantile_over_time(0.95, sum by (service_name)(trace_endpoint_count{service_name=~'.*', env=~'prod', span_kind=~'SPAN_KIND_SERVER|SPAN_KIND_CLIENT'})[30m])
 		// add the filter values in the promql from the filterParams
 		// Build PromQL filter string from filterParams
 		// Build PromQL query
 		promql := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (service_name)(trace_endpoint_count{env=~'%s', span_kind='SPAN_KIND_SERVER'}[%dm]))",
+			"quantile_over_time(0.95, sum by (service_name)(trace_endpoint_count{env=~'%s', %s, span_kind='SPAN_KIND_SERVER'}[%dm]))",
 			env,
-			int((endTimeParam-startTimeParam)/60),
+			serviceMatcher,
+			windowMinutes,
 		)
 
 		// Prepare request to Prometheus (or your metrics backend)
@@ -227,9 +240,10 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 		}
 		// Make another prom_query_instant call for response time
 		respTimePromql := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (service_name)(trace_service_response_time{quantile=\"p95\", env=~'%s'}[%dm]))",
+			"quantile_over_time(0.95, sum by (service_name)(trace_service_response_time{quantile=\"p95\", env=~'%s', %s}[%dm]))",
 			env,
-			int((endTimeParam-startTimeParam)/60),
+			serviceMatcher,
+			windowMinutes,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, respTimePromql, endTimeParam, cfg)
@@ -265,9 +279,10 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 		}
 		// Make another prom_query_instant call for error rate
 		errorRateQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (service_name)(trace_endpoint_count{env=~'%s', span_kind=~'SPAN_KIND_SERVER', http_status_code=~\"5.*\"}[%dm]))",
+			"quantile_over_time(0.95, sum by (service_name)(trace_endpoint_count{env=~'%s', %s, span_kind=~'SPAN_KIND_SERVER', http_status_code=~\"5.*\"}[%dm]))",
 			env,
-			int((endTimeParam-startTimeParam)/60),
+			serviceMatcher,
+			windowMinutes,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, errorRateQuery, endTimeParam, cfg)
@@ -301,6 +316,14 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 				}
 			}
 		}
+		if serviceFilter != "" {
+			if summary, ok := promResp[serviceFilter]; ok {
+				promResp = map[string]ServiceSummary{serviceFilter: summary}
+			} else {
+				promResp = map[string]ServiceSummary{}
+			}
+		}
+
 		returnText, err := json.Marshal(promResp)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
@@ -308,7 +331,7 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 
 		// Build deep link URL
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, "", env, "")
+		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceFilter, env, "")
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),

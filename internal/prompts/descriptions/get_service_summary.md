@@ -14,3 +14,5 @@
 	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
 	- env: (Optional) Environment to filter by. If not provided, defaults to all environments.
+	- service_name: (Optional) Filter to one service. When omitted, returns all services. For detailed single-service metrics, prefer get_service_performance_details.
+	- service: (Optional) Alias of service_name (ecosystem-prior param name); ignored when service_name is set.
