@@ -23,7 +23,6 @@ import (
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"last9-mcp/internal/attributes"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
 	l9telemetry "last9-mcp/internal/telemetry"
@@ -182,12 +181,6 @@ func main() {
 		"version", Version,
 	)
 
-	// Create attribute cache and perform best-effort initial fetch
-	attrCache := attributes.NewAttributeCache(auth.GetHTTPClient(), cfg)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	attrCache.Warm(ctx)
-	cancel()
-
 	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
 	if err != nil {
 		log.Fatalf("failed to create MCP server: %v", err)
@@ -219,24 +212,9 @@ func main() {
 	registerReferenceResources(server)
 
 	// Register all tools
-	if err := registerAllTools(server, cfg, attrCache); err != nil {
+	if err := registerAllTools(server, cfg); err != nil {
 		log.Fatalf("failed to register tools: %v", err)
 	}
-
-	// Background goroutine keeps the attribute cache warm for handlers that may use it.
-	go func() {
-		ticker := time.NewTicker(2 * time.Hour)
-		defer ticker.Stop()
-		for range ticker.C {
-			refreshCtx, refreshCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			if err := attrCache.RefreshIfStale(refreshCtx); err != nil {
-				slog.Warn("failed to refresh attribute cache", "error", err)
-			} else {
-				slog.Info("attribute cache refreshed")
-			}
-			refreshCancel()
-		}
-	}()
 
 	if cfg.HTTPMode {
 		httpServer := NewHTTPServer(server, cfg)

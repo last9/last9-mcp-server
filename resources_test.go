@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"last9-mcp/internal/attributes"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/toolsets"
@@ -27,8 +26,7 @@ func TestReferenceResourcesAvailableUnderMetricsToolset(t *testing.T) {
 	registerReferenceResources(server)
 
 	cfg := models.Config{TokenManager: &auth.TokenManager{}, AllowedTools: allowed}
-	attrCache := attributes.NewAttributeCache(auth.GetHTTPClient(), cfg)
-	if err := registerAllTools(server, cfg, attrCache); err != nil {
+	if err := registerAllTools(server, cfg); err != nil {
 		t.Fatal(err)
 	}
 

@@ -8,7 +8,6 @@ import (
 	"sort"
 	"time"
 
-	"last9-mcp/internal/attributes"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/toolsets"
@@ -44,8 +43,7 @@ func dumpTools(w io.Writer, allowed toolsets.Set) error {
 
 	registerReferenceResources(server)
 
-	attrCache := attributes.NewAttributeCache(auth.GetHTTPClient(), cfg)
-	if err := registerAllTools(server, cfg, attrCache); err != nil {
+	if err := registerAllTools(server, cfg); err != nil {
 		return fmt.Errorf("failed to register tools: %w", err)
 	}
 	// The round-trip is over in-memory transports and won't hang in practice,

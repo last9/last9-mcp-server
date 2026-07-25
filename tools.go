@@ -5,7 +5,6 @@ import (
 
 	"last9-mcp/internal/alerting"
 	"last9-mcp/internal/apm"
-	"last9-mcp/internal/attributes"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/change_events"
 	"last9-mcp/internal/dashboards"
@@ -22,21 +21,25 @@ import (
 )
 
 // registerIfAllowed registers a tool only when it is in the active toolset set.
-// RegisterInstrumentedTool currently always returns nil (schema failures panic in the SDK);
-// reg() still aggregates errors for forward compatibility if the SDK starts returning them.
-func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, allowed toolsets.Set, tool *mcp.Tool, handler mcp.ToolHandlerFor[In, Out]) error {
+// The MCP SDK panics on invalid tool schemas; recover and return an error so
+// registerAllTools can fail fast instead of crashing the process.
+func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, allowed toolsets.Set, tool *mcp.Tool, handler mcp.ToolHandlerFor[In, Out]) (err error) {
 	if !allowed.Allows(tool.Name) {
 		return nil
 	}
-	if err := last9mcp.RegisterInstrumentedTool(server, tool, handler); err != nil {
-		return fmt.Errorf("register %q: %w", tool.Name, err)
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("register %q: %v", tool.Name, r)
+		}
+	}()
+	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, handler); regErr != nil {
+		return fmt.Errorf("register %q: %w", tool.Name, regErr)
 	}
 	return nil
 }
 
 // registerAllTools registers all tools with the MCP server using the new SDK pattern
-func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCache *attributes.AttributeCache) error {
-	_ = attrCache // reserved for future warm-path metadata; not injected into descriptions
+func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error {
 	client := auth.GetHTTPClient()
 
 	// Whales: short on-tool description only (manuals are MCP resources).
