@@ -75,4 +75,25 @@ func TestReferenceResourcesAvailableUnderMetricsToolset(t *testing.T) {
 	if len(metricsRead.Contents) == 0 || len(metricsRead.Contents[0].Text) < 500 {
 		t.Fatalf("metrics resource body too short: %#v", metricsRead.Contents)
 	}
+
+	traceRead, err := session.ReadResource(ctx, &mcp.ReadResourceParams{URI: resourceURITracejson})
+	if err != nil {
+		t.Fatalf("resources/read tracejson: %v", err)
+	}
+	if len(traceRead.Contents) == 0 || len(traceRead.Contents[0].Text) < 1000 {
+		t.Fatalf("tracejson resource body too short: %#v", traceRead.Contents)
+	}
+
+	serviceLogsRead, err := session.ReadResource(ctx, &mcp.ReadResourceParams{URI: resourceURIServiceLogs})
+	if err != nil {
+		t.Fatalf("resources/read service_logs: %v", err)
+	}
+	if len(serviceLogsRead.Contents) == 0 || len(serviceLogsRead.Contents[0].Text) < 500 {
+		t.Fatalf("service_logs resource body too short: %#v", serviceLogsRead.Contents)
+	}
+
+	_, err = session.ReadResource(ctx, &mcp.ReadResourceParams{URI: "last9://reference/nope"})
+	if err == nil {
+		t.Fatal("expected error for unknown resource URI")
+	}
 }

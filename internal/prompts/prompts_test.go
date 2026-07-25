@@ -7,6 +7,52 @@ import (
 	"last9-mcp/internal/prompts"
 )
 
+func TestGetLogsDescriptionCriticalRules(t *testing.T) {
+	desc := prompts.GetLogsDescription
+	if desc == "" {
+		t.Fatal("GetLogsDescription is empty — embed directive missing")
+	}
+	checks := []struct {
+		phrase string
+		reason string
+	}{
+		{"window_aggregate", "must document time-bucketed counts"},
+		{"$neq", "must document existence idiom"},
+		{"start_time_iso", "must document absolute time on tool args"},
+		{"resources['last9.tenant']", "must document tenant scoping"},
+		{"resources['deployment.environment']", "must document env scoping"},
+		{"last9://reference/logjson", "must point at the logjson resource"},
+	}
+	for _, c := range checks {
+		if !strings.Contains(desc, c.phrase) {
+			t.Errorf("GetLogsDescription missing %q: %s", c.phrase, c.reason)
+		}
+	}
+}
+
+func TestGetTracesDescriptionCriticalRules(t *testing.T) {
+	desc := prompts.GetTracesDescription
+	if desc == "" {
+		t.Fatal("GetTracesDescription is empty — embed directive missing")
+	}
+	checks := []struct {
+		phrase string
+		reason string
+	}{
+		{"$regex", "must document pattern match operator"},
+		{"$neq", "must document existence idiom"},
+		{"aggregates", "must document aggregate key name"},
+		{"groupby", "must document groupby key name"},
+		{"resources['last9.tenant']", "must document tenant scoping"},
+		{"last9://reference/tracejson", "must point at the tracejson resource"},
+	}
+	for _, c := range checks {
+		if !strings.Contains(desc, c.phrase) {
+			t.Errorf("GetTracesDescription missing %q: %s", c.phrase, c.reason)
+		}
+	}
+}
+
 func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 	desc := prompts.GetServiceLogsDescription
 	if desc == "" {

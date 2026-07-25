@@ -22,6 +22,8 @@ import (
 )
 
 // registerIfAllowed registers a tool only when it is in the active toolset set.
+// RegisterInstrumentedTool currently always returns nil (schema failures panic in the SDK);
+// reg() still aggregates errors for forward compatibility if the SDK starts returning them.
 func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, allowed toolsets.Set, tool *mcp.Tool, handler mcp.ToolHandlerFor[In, Out]) error {
 	if !allowed.Allows(tool.Name) {
 		return nil
@@ -41,7 +43,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 	getLogsDesc := prompts.GetLogsDescription
 	getServiceLogsDesc := prompts.GetServiceLogsDescription
 	getTracesDesc := prompts.GetTracesDescription
-	getServiceTracesDesc := prompts.GetServiceTracesInstructions
+	getServiceTracesDesc := prompts.GetServiceTracesDescription
 	// prometheus_range_query: short on-tool description; full guide is MCP resource.
 	getMetricsDesc := prompts.PromqlRangeQueryDetails
 

@@ -16,6 +16,8 @@ Query traces with `tracejson_query` — a JSON **array of stages**. Each stage M
 
 **Fields:** Top-level: `TraceId`, `SpanId`, `ServiceName`, `SpanName`, `SpanKind`, `StatusCode`, `Duration`, `Timestamp`, `ParentSpanId`. SpanKind/StatusCode need full OTel prefixes (`SPAN_KIND_SERVER`, `STATUS_CODE_ERROR`—not `SERVER`/`ERROR`). **`Duration` is nanoseconds** (1000ms = `1000000000`). Span/resource attrs → `get_trace_attributes*`; use `attributes['key']` / `resources['key']` (never `SpanAttributes.foo`).
 
-**Order:** filter first (match-all on `TraceId`/`SpanId` if needed before aggregate). Show/find → filter only; aggregate/window_aggregate only for counts/analysis.
+**Aggregate:** `aggregates`+`groupby` (not `aggregations`/`group_by`); each entry `{"function":{"$count":[]},"as":"name"}`.
+
+**Order:** filter first (match-all on `TraceId`/`SpanId` before aggregate). Show/find → filter only; aggregate/window_aggregate only for counts/analysis.
 
 Full manual: resource `last9://reference/tracejson`

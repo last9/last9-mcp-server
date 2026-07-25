@@ -27,6 +27,23 @@ func TestParseAllSupersedes(t *testing.T) {
 	}
 }
 
+func TestParseAllWithUnknownErrors(t *testing.T) {
+	_, err := Parse("all,nope")
+	if err == nil {
+		t.Fatal("expected error for unknown token combined with all")
+	}
+}
+
+func TestParseLogsIncludesInstantQuery(t *testing.T) {
+	set, err := Parse("logs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !set.Allows("prometheus_instant_query") {
+		t.Fatal("logs toolset must include prometheus_instant_query (referenced by logjson/service_logs resources)")
+	}
+}
+
 func TestParseInvestigate(t *testing.T) {
 	set, err := Parse("investigate")
 	if err != nil {

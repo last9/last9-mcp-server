@@ -17,6 +17,7 @@ var named = map[string][]string{
 		"get_log_attributes",
 		"get_log_attributes_for_pipeline",
 		"get_exceptions",
+		"prometheus_instant_query",
 	},
 	"traces": {
 		"get_traces",
@@ -112,6 +113,18 @@ func Parse(spec string) (Set, error) {
 	}
 	if len(tokens) == 0 {
 		return nil, nil
+	}
+
+	for _, t := range tokens {
+		if t == "all" {
+			continue
+		}
+		if t == "investigate" {
+			continue
+		}
+		if _, ok := named[t]; !ok {
+			return nil, fmt.Errorf("unknown toolset %q; valid names: %s", t, strings.Join(ValidNames(), ", "))
+		}
 	}
 
 	for _, t := range tokens {
