@@ -56,6 +56,12 @@ var GetDropRulesDescription string
 //go:embed descriptions/add_drop_rule.md
 var AddDropRuleDescription string
 
+//go:embed descriptions/get_remapping_rules.md
+var GetRemappingRulesDescription string
+
+//go:embed descriptions/add_remapping_rule.md
+var AddRemappingRuleDescription string
+
 //go:embed descriptions/get_notification_channels.md
 var GetNotificationChannelsDescription string
 

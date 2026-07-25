@@ -19,6 +19,7 @@ const (
 	RouteAlertingGroups       = "alerting/groups"
 	RouteNotificationChannels = "settings/notification-channels"
 	RouteDropRules            = "control-plane/%s/drop" // requires clusterId
+	RouteRemapping            = "control-plane/%s/remapping"
 	RouteDashboards = "dashboards"
 )
 
@@ -102,6 +103,16 @@ func (b *Builder) BuildAlertingLink(fromMs, toMs int64, severity, ruleID string)
 		params.Set("rule_id", ruleID)
 	}
 	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteAlerting, params.Encode())
+}
+
+// BuildRemappingLink creates a remapping rules dashboard deep link.
+func (b *Builder) BuildRemappingLink() string {
+	clusterID := b.clusterID
+	if clusterID == "" {
+		clusterID = "default"
+	}
+	route := fmt.Sprintf(RouteRemapping, url.PathEscape(clusterID))
+	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, route)
 }
 
 // BuildDropRulesLink creates a drop rules dashboard deep link

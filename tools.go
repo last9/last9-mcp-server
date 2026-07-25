@@ -11,6 +11,7 @@ import (
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/prompts"
+	"last9-mcp/internal/remapping"
 	"last9-mcp/internal/suggest"
 	"last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/telemetry/traces"
@@ -140,6 +141,17 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Name:        "add_drop_rule",
 		Description: prompts.AddDropRuleDescription,
 	}, logs.NewAddDropRuleHandler(client, cfg))
+
+	// Register remapping rules tools
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "get_remapping_rules",
+		Description: prompts.GetRemappingRulesDescription,
+	}, remapping.NewGetRemappingRulesHandler(client, cfg))
+
+	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+		Name:        "add_remapping_rule",
+		Description: prompts.AddRemappingRuleDescription,
+	}, remapping.NewAddRemappingRuleHandler(client, cfg))
 
 	// Register notification channels tool
 	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
