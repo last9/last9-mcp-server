@@ -113,7 +113,7 @@ func fetchTraceTagNames(ctx context.Context, client *http.Client, cfg models.Con
 }
 
 // FetchTraceAttributeNames fetches global trace attribute names from the API and
-// returns them as a sorted, prefixed string slice. Shared with the attribute cache.
+// returns them as a sorted, prefixed string slice.
 func FetchTraceAttributeNames(ctx context.Context, client *http.Client, cfg models.Config) ([]string, error) {
 	now := time.Now()
 	return fetchTraceTagNames(ctx, client, cfg, now.Add(-15*time.Minute).Unix(), now.Unix(), cfg.Region)
