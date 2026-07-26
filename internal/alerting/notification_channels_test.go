@@ -31,6 +31,9 @@ func TestGetNotificationChannelsHandler_Integration(t *testing.T) {
 	if !strings.Contains(text, "id\tname\ttype\t") {
 		t.Fatalf("expected TSV header row in response, got:\n%s", text)
 	}
+	if !strings.Contains(text, "service_fqid") {
+		t.Fatalf("expected service_fqid column in TSV header, got:\n%s", text)
+	}
 	t.Logf("Integration test successful:\n%s", text)
 }
 
