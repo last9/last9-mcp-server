@@ -2,7 +2,10 @@
 	Get notification channel configurations from Last9.
 	Returns all notification channels configured in the organization as a TSV table.
 
-	Columns: id, name, type, global, in_use, send_resolved, snoozed_until, severity, priority, services
+	Columns: id, name, type, global, in_use, send_resolved, snoozed_until, severity, priority, services, service_fqid
 	- send_resolved: true/false/null (null = not explicitly configured)
 	- snoozed_until: UTC timestamp if snoozed, else "-"
+	- severity: breach or threat for this binding row (which alert severities route to this channel)
 	- services: comma-separated namespace/name pairs, "-" if global
+	- service_fqid: alert-group entity id this channel is bound to (empty/"-" if global or unbound).
+	  Rows include per-entity mapped channels (exact=true API), not only org-wide masters.

@@ -31,6 +31,9 @@ func TestGetNotificationChannelsHandler_Integration(t *testing.T) {
 	if !strings.Contains(text, "id\tname\ttype\t") {
 		t.Fatalf("expected TSV header row in response, got:\n%s", text)
 	}
+	if !strings.Contains(text, "service_fqid") {
+		t.Fatalf("expected service_fqid column in TSV header, got:\n%s", text)
+	}
 	t.Logf("Integration test successful:\n%s", text)
 }
 
@@ -65,7 +68,7 @@ func TestGetNotificationChannelsHandler_TSVFormat(t *testing.T) {
 	}
 
 	// Header
-	wantHeader := "id\tname\ttype\tglobal\tin_use\tsend_resolved\tsnoozed_until\tseverity\tpriority\tservices"
+	wantHeader := "id\tname\ttype\tglobal\tin_use\tsend_resolved\tsnoozed_until\tseverity\tpriority\tservices\tservice_fqid"
 	if lines[1] != wantHeader {
 		t.Fatalf("header mismatch\ngot:  %s\nwant: %s", lines[1], wantHeader)
 	}
@@ -83,6 +86,43 @@ func TestGetNotificationChannelsHandler_TSVFormat(t *testing.T) {
 	}
 	if cols[9] != "-" {
 		t.Fatalf("services: got %q, want %q (global, no services)", cols[9], "-")
+	}
+}
+
+func TestFormatNotificationChannelSummary(t *testing.T) {
+	if got := formatNotificationChannelSummary(nil); got != "Not configured" {
+		t.Fatalf("empty bindings: got %q", got)
+	}
+
+	bindings := []NotificationChannel{
+		{Type: "email", Severity: "breach", Name: "ops"},
+		{Type: "slack", Severity: "threat", Name: "alerts"},
+		{Type: "slack", Severity: "breach", Name: "alerts"},
+	}
+	if got := formatNotificationChannelSummary(bindings); got != "slack, email" {
+		t.Fatalf("summary order: got %q, want slack, email", got)
+	}
+}
+
+func TestFormatNotificationChannelBindingDetails(t *testing.T) {
+	snooze := int64(1700000000)
+	bindings := []NotificationChannel{
+		{Type: "slack", Name: "track-alerts", Severity: "threat"},
+		{Type: "slack", Name: "track-alerts", Severity: "breach"},
+		{Type: "email", Name: "ops", Severity: "breach", SnoozeUntil: &snooze, InUse: false},
+	}
+	got := formatNotificationChannelBindingDetails(bindings)
+	if !strings.Contains(got, "slack / track-alerts (threat)") {
+		t.Fatalf("missing threat binding: %s", got)
+	}
+	if !strings.Contains(got, "slack / track-alerts (breach)") {
+		t.Fatalf("missing breach binding: %s", got)
+	}
+	if !strings.Contains(got, "email / ops (breach)") {
+		t.Fatalf("missing email binding: %s", got)
+	}
+	if !strings.Contains(got, "[snoozed until") || !strings.Contains(got, "[not in use]") {
+		t.Fatalf("expected snooze/in_use flags: %s", got)
 	}
 }
 
@@ -192,6 +232,35 @@ func TestGetNotificationChannelsHandler_Services(t *testing.T) {
 			cols := rows[0]
 			if cols[9] != tt.wantCol {
 				t.Fatalf("services col: got %q, want %q", cols[9], tt.wantCol)
+			}
+		})
+	}
+}
+
+func TestGetNotificationChannelsHandler_ServiceFQID(t *testing.T) {
+	tests := []struct {
+		name        string
+		serviceFQID string
+		wantCol     string
+	}{
+		{"empty (unbound/global)", "", "-"},
+		{"set", "entity-123", "entity-123"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			channels := []NotificationChannel{
+				{ID: 1, Name: "ch", Type: "slack", ServiceFQID: tt.serviceFQID},
+			}
+			text, _, err := executeGetNotificationChannels(t, channels, http.StatusOK)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			rows := assertStableNotificationChannelsTSV(t, text, len(channels))
+			cols := rows[0]
+			if cols[10] != tt.wantCol {
+				t.Fatalf("service_fqid col: got %q, want %q", cols[10], tt.wantCol)
 			}
 		})
 	}
@@ -356,8 +425,8 @@ func assertStableNotificationChannelsTSV(t *testing.T, text string, wantDataRows
 	rows := make([][]string, 0, wantDataRows)
 	for i, line := range lines[2:] {
 		cols := strings.Split(line, "\t")
-		if len(cols) != 10 {
-			t.Fatalf("row %d: expected 10 TSV columns, got %d: %v", i+1, len(cols), cols)
+		if len(cols) != 11 {
+			t.Fatalf("row %d: expected 11 TSV columns, got %d: %v", i+1, len(cols), cols)
 		}
 		for _, col := range cols {
 			if strings.ContainsAny(col, "\n\r") {
