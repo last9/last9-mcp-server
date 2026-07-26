@@ -11,10 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `get_alert_config` server-side notification-channel filters matching Alert Studio dashboard semantics: `only_without_notification_channel` (dashboard "Not configured"), `notification_channel_types`, `notification_channel_names`, and `notification_channel_severities` (breach/threat on the same binding row). Every rule now includes `Notification Channels` and `Notification Channel Bindings` lines aligned with the rules-table column; alert group `name`, `data_source`, and `tags` are included when resolved (#191).
 - `get_notification_channels` TSV output now includes `service_fqid`, the per-entity alert-group binding id (#191).
+- `get_service_summary` accepts optional `service_name` filter (alias `service`) so ecosystem-prior param names are absorbed and per-service health asks work without param rejection.
 
 ### Fixed
 
 - `get_notification_channels` / `get_alert_config` channel binding fetches use `?exact=true` on `/notification_settings` so per-entity mapped channels load (without it, only global/master rows returned and binding filters falsely reported every rule as unconfigured) (#191).
+- `get_apm_service_deviations` terminal outcomes (`stable`, `no_data`, `unsupported_workload_shape`) now echo an explicit stop warning in `warnings` so agents do not keep calling follow-up tools after a completed comparison.
+- `get_notification_channels` / `get_service_summary` param aliases (`match`, `service`) and exception→logs guardrails for agentic evals (`get_exceptions` / `get_logs` / `get_service_logs` descriptions).
 - `get_traces` no longer chunks `aggregate`/`window_aggregate` pipelines — long-window group-by queries run as a single request, fixing duplicate keys and wrong `avg`/`median`/`quantile` math (#195).
 - Trace filter existence checks: `$exists` and `$notnull` are rewritten to `{"$neq": [field, ""]}` before hitting the backend (previously matched all spans / no spans respectively) (#195).
 

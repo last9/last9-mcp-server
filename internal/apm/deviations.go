@@ -194,6 +194,7 @@ func newAPMServiceDeviationsHandler(client *http.Client, baseCfg models.Config, 
 		if len(result.PartialErrors) > 0 {
 			result.Warnings = uniqueSorted(append(result.Warnings, "Some metric signals were unavailable; conclusions use the successful measurements only."))
 		}
+		appendTerminalComparisonGuidance(&result)
 
 		builder := deeplink.NewBuilder(queryCfg.OrgSlug, queryCfg.ClusterID)
 		result.DashboardURL = builder.BuildAPMServiceLink(
@@ -804,6 +805,25 @@ func reconcileOperationApdex(serviceResult apmDeviationResult, execution deviati
 		return identityLess(result[i].ServiceName, result[i].Env, result[j].ServiceName, result[j].Env)
 	})
 	return result
+}
+
+func terminalComparisonWarning(outcome string) string {
+	switch outcome {
+	case "stable":
+		return "Comparison complete (outcome=stable): no material RED deviation returned. Answer from this result and do not call follow-up tools unless the user explicitly requested deeper investigation."
+	case "no_data":
+		return "Comparison complete (outcome=no_data): insufficient comparison evidence. Answer from this result and do not call follow-up tools unless the user explicitly requested deeper investigation."
+	case "unsupported_workload_shape":
+		return "Comparison complete (outcome=unsupported_workload_shape): server-request comparison is not supported for this workload. Explain that limitation and stop; do not call follow-up tools unless the user explicitly requested deeper investigation."
+	default:
+		return ""
+	}
+}
+
+func appendTerminalComparisonGuidance(result *apmDeviationResult) {
+	if warning := terminalComparisonWarning(result.Outcome); warning != "" {
+		result.Warnings = uniqueSorted(append(result.Warnings, warning))
+	}
 }
 
 func recommendedDeviationFollowups(result apmDeviationResult, args DeviationArgs) []deviationFollowup {
