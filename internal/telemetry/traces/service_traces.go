@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -308,7 +307,7 @@ func fetchServiceQueryRangeResponse(ctx context.Context, client *http.Client, cf
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return TraceQueryResponse{}, newTraceTransportError()
+		return TraceQueryResponse{}, newTraceTransportError(err)
 	}
 	defer resp.Body.Close()
 
@@ -318,7 +317,7 @@ func fetchServiceQueryRangeResponse(ctx context.Context, client *http.Client, cf
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return TraceQueryResponse{}, newTraceInvalidResponseError()
+		return TraceQueryResponse{}, newTraceInvalidResponseError(err)
 	}
 
 	return transformToTraceQueryResponse(result), nil
@@ -337,17 +336,20 @@ func fetchTraceDetailsResponse(ctx context.Context, client *http.Client, cfg mod
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return TraceQueryResponse{}, newTraceTransportError()
+		return TraceQueryResponse{}, newTraceTransportError(err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound {
+			return TraceQueryResponse{}, newTraceNotFoundTraceError()
+		}
 		return TraceQueryResponse{}, newTraceHTTPError(resp)
 	}
 
 	var result TraceDetailsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return TraceQueryResponse{}, newTraceInvalidResponseError()
+		return TraceQueryResponse{}, newTraceInvalidResponseError(err)
 	}
 
 	return transformTraceDetailsToTraceQueryResponse(result, params.Env), nil
@@ -505,15 +507,6 @@ func traceDetailsMatchesEnv(span TraceDetailsSpan, env string) bool {
 	}
 
 	return false
-}
-
-func readTruncatedResponseBody(body io.Reader) string {
-	respBody, _ := io.ReadAll(body)
-	bodyStr := string(respBody)
-	if len(bodyStr) > 100 {
-		return bodyStr[:100] + "... (truncated)"
-	}
-	return bodyStr
 }
 
 // Helper function to safely extract string values from map

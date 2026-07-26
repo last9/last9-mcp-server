@@ -115,7 +115,7 @@ func TestGetTracesLimitParameter(t *testing.T) {
 					{
 						"type": "filter",
 						"query": map[string]interface{}{
-							"$exists": []string{"ServiceName"},
+							"$neq": []interface{}{"ServiceName", ""},
 						},
 					},
 				},
@@ -190,7 +190,7 @@ func TestGetTracesHandlerReturnsSanitizedToolError(t *testing.T) {
 		GetTracesArgs{
 			TracejsonQuery: []map[string]interface{}{{
 				"type":  "filter",
-				"query": map[string]interface{}{"$exists": []string{"ServiceName"}},
+				"query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "svc"}},
 			}},
 			StartTimeISO: now.Add(-time.Minute).Format(time.RFC3339),
 			EndTimeISO:   now.Format(time.RFC3339),
@@ -399,7 +399,7 @@ func TestGetTracesHandler_Integration(t *testing.T) {
 					{
 						"type": "filter",
 						"query": map[string]interface{}{
-							"$exists": []string{"ServiceName"},
+							"$neq": []interface{}{"ServiceName", ""},
 						},
 					},
 				},

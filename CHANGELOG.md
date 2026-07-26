@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `get_alert_config` server-side notification-channel filters matching Alert Studio dashboard semantics: `only_without_notification_channel` (dashboard "Not configured"), `notification_channel_types`, `notification_channel_names`, and `notification_channel_severities` (breach/threat on the same binding row). Every rule now includes `Notification Channels` and `Notification Channel Bindings` lines aligned with the rules-table column; alert group `name`, `data_source`, and `tags` are included when resolved (#191).
+- `get_notification_channels` TSV output now includes `service_fqid`, the per-entity alert-group binding id (#191).
+
+### Fixed
+
+- `get_notification_channels` / `get_alert_config` channel binding fetches use `?exact=true` on `/notification_settings` so per-entity mapped channels load (without it, only global/master rows returned and binding filters falsely reported every rule as unconfigured) (#191).
+- `get_traces` no longer chunks `aggregate`/`window_aggregate` pipelines — long-window group-by queries run as a single request, fixing duplicate keys and wrong `avg`/`median`/`quantile` math (#195).
+- Trace filter existence checks: `$exists` and `$notnull` are rewritten to `{"$neq": [field, ""]}` before hitting the backend (previously matched all spans / no spans respectively) (#195).
+
+### Changed
+
+- Trace tools (`get_traces`, `get_service_traces`, `get_trace_attributes`, `get_trace_attribute_values`, `get_trace_attributes_for_pipeline`, `get_exceptions`) now return recoverable tool errors (`isError: true`) with sanitized messages instead of JSON-RPC protocol errors when upstream trace calls fail. Upstream response bodies, URLs, and credentials are no longer echoed into model context; pipeline-validation `400`/`422` responses still include the upstream rejection text plus a schema hint pointing at `get_trace_attributes_for_pipeline` (#188).
+- `get_traces` filter schema drops `$exists`/`$notnull` in favor of the `{"$neq": [field, ""]}` idiom; trace-query 408s now return a "narrow the window" error (#195).
+
+
+## [0.13.0] - 2026-07-22
+
+### Changed
+
+- `mcp-server` Docker image is now multi-arch (`linux/amd64` + `linux/arm64`), built with `docker buildx` and pushed as a manifest list. Lets the image run natively on arm64/Graviton nodes without an amd64 node-selector pin (#192).
+
 ## [0.12.0] - 2026-07-17
 
 ### Added

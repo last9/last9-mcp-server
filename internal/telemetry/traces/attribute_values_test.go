@@ -64,6 +64,10 @@ func TestGetTraceAttributeValuesHandler_NonSuccessAPIStatus(t *testing.T) {
 	if result == nil || !result.IsError {
 		t.Fatalf("expected IsError=true, got %+v", result)
 	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, `status "error"`) {
+		t.Fatalf("expected non-success API status in error, got: %s", text)
+	}
 }
 
 func TestGetTraceAttributeValuesHandler_Success(t *testing.T) {

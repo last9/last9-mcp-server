@@ -76,7 +76,7 @@ func NewGetTraceAttributeValuesHandler(client *http.Client, cfg models.Config) f
 
 		resp, err := client.Do(httpReq)
 		if err != nil {
-			return traceToolErrorResult(newTraceTransportError()), nil, nil
+			return traceToolErrorResult(newTraceTransportError(err)), nil, nil
 		}
 		defer resp.Body.Close()
 
@@ -86,10 +86,10 @@ func NewGetTraceAttributeValuesHandler(client *http.Client, cfg models.Config) f
 
 		var apiResp traceTagValuesAPIResponse
 		if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-			return traceToolErrorResult(newTraceInvalidResponseError()), nil, nil
+			return traceToolErrorResult(newTraceInvalidResponseError(err)), nil, nil
 		}
 		if apiResp.Status != "success" {
-			return traceToolErrorResult(newTraceInvalidResponseError()), nil, nil
+			return traceToolErrorResult(newTraceAPIStatusError(apiResp.Status)), nil, nil
 		}
 
 		attr := enrichAttribute(rawTagName)

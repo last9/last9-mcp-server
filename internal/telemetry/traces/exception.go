@@ -99,9 +99,9 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 		if err != nil {
 			var transportErr *utils.HTTPTransportError
 			if errors.As(err, &transportErr) {
-				return traceToolErrorResult(newTraceTransportError()), nil, nil
+				return traceToolErrorResult(newTraceTransportError(transportErr)), nil, nil
 			}
-			return nil, nil, fmt.Errorf("failed to prepare trace exception request")
+			return nil, nil, fmt.Errorf("failed to prepare trace exception request: %w", err)
 		}
 		defer resp.Body.Close()
 
@@ -111,7 +111,7 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 
 		var instantSeries promInstantResponse
 		if err := json.NewDecoder(resp.Body).Decode(&instantSeries); err != nil {
-			return traceToolErrorResult(newTraceInvalidResponseError()), nil, nil
+			return traceToolErrorResult(newTraceInvalidResponseError(err)), nil, nil
 		}
 
 		aggregates := make([]exceptionAggregate, 0, len(instantSeries))

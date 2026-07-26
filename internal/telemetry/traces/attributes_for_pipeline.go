@@ -59,7 +59,7 @@ func fetchTraceSeriesAttributeNames(ctx context.Context, client *http.Client, cf
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return nil, newTraceTransportError()
+		return nil, newTraceTransportError(err)
 	}
 	defer resp.Body.Close()
 
@@ -69,10 +69,10 @@ func fetchTraceSeriesAttributeNames(ctx context.Context, client *http.Client, cf
 
 	var result traceAttributesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, newTraceInvalidResponseError()
+		return nil, newTraceInvalidResponseError(err)
 	}
 	if result.Status != "success" {
-		return nil, newTraceInvalidResponseError()
+		return nil, newTraceAPIStatusError(result.Status)
 	}
 
 	seen := map[string]struct{}{}

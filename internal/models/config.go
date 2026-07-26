@@ -1,6 +1,9 @@
 package models
 
-import "last9-mcp/internal/auth"
+import (
+	"last9-mcp/internal/auth"
+	"last9-mcp/internal/toolsets"
+)
 
 const DefaultMaxGetLogsEntries = 5000
 const DefaultMaxGetTracesEntries = 5000
@@ -53,6 +56,11 @@ type Config struct {
 	Datasources []DatasourceInfo
 
 	TokenManager *auth.TokenManager // Manages authentication tokens
+
+	// Toolsets is the raw CLI/env spec (comma-separated). Empty means all tools.
+	Toolsets string
+	// AllowedTools is the expanded allow-list from Toolsets. nil means all tools.
+	AllowedTools toolsets.Set
 }
 
 // ResolveDatasource looks up a datasource by name from the cached list.

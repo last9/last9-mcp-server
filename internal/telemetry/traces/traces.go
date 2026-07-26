@@ -105,6 +105,22 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 		return executeTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startMs, endMs, effectiveLimit)
 	}
 
+	// Aggregate pipelines (group-by, avg/median/quantile/stddev, etc.) must
+	// never be chunked: concatenating per-chunk aggregate results produces
+	// duplicate group-by keys and mathematically wrong aggregates. Run the
+	// full window as a single request instead.
+	if utils.PipelineHasAggregateStage(args.TracejsonQuery) {
+		if chunkingDebug {
+			log.Printf(
+				"[chunking] get_traces aggregate stage detected, using single request start_ms=%d end_ms=%d effective_limit=%d",
+				startMs,
+				endMs,
+				effectiveLimit,
+			)
+		}
+		return executeTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startMs, endMs, effectiveLimit)
+	}
+
 	// Trace pipelines never reference the Body field, so HasExpensiveBodyParsing
 	// is always false here — adaptive config falls through to the time-range
 	// rules, exactly as the frontend would treat a non-body-search query.
@@ -180,7 +196,7 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 				"total_chunks", len(chunks),
 				"start_ms", r.Chunk.StartMs,
 				"end_ms", r.Chunk.EndMs,
-				"err", r.Err,
+				"err", traceLogCause(r.Err),
 			)
 			if partialErr == nil {
 				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkNum, len(chunks), r.Err)
@@ -282,9 +298,9 @@ func executeTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.
 	if err != nil {
 		var transportErr *utils.HTTPTransportError
 		if errors.As(err, &transportErr) {
-			return nil, newTraceTransportError()
+			return nil, newTraceTransportError(transportErr)
 		}
-		return nil, fmt.Errorf("failed to prepare trace data request")
+		return nil, fmt.Errorf("failed to prepare trace data request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -294,7 +310,7 @@ func executeTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, newTraceInvalidResponseError()
+		return nil, newTraceInvalidResponseError(err)
 	}
 	return result, nil
 }
