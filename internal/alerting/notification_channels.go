@@ -69,8 +69,11 @@ func NewGetNotificationChannelsHandler(client *http.Client, cfg models.Config) f
 }
 
 func fetchNotificationChannels(ctx context.Context, client *http.Client, cfg models.Config) ([]NotificationChannel, error) {
-	url := cfg.APIBaseURL + constants.EndpointNotificationSettings
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	// Dashboard Alert Studio loads channels with exact=true, which returns per-entity
+	// mapped rows (valid service_fqid). Without exact, the API returns master/global
+	// channels only — binding filters would falsely report every rule as unconfigured.
+	fullURL := cfg.APIBaseURL + constants.EndpointNotificationSettings + "?exact=true"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

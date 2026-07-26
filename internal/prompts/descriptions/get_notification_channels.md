@@ -7,3 +7,4 @@
 	- snoozed_until: UTC timestamp if snoozed, else "-"
 	- services: comma-separated namespace/name pairs, "-" if global
 	- service_fqid: alert-group entity id this channel is bound to (empty/"-" if global or unbound).
+	  Rows include per-entity mapped channels (exact=true API), not only org-wide masters.
