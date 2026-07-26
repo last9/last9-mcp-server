@@ -14,16 +14,15 @@
 	- alert_group_type: Case-insensitive substring match on alert group type
 	- data_source_name: Case-insensitive substring match on alert group data source name
 	- tags: Array of case-insensitive substring matches; all provided tags must match
+	- only_without_notification_channel: If true, return only rules whose alert group has no per-entity
+	  notification channel binding (dashboard "Not configured" filter). Joins notification channels
+	  server-side; org-wide global channels are listed in the response but do not satisfy this filter.
 
 	Each alert rule includes:
 	- id: Unique identifier for the alert rule
 	- name: Human-readable name of the alert
 	- primary_indicator: Name of the primary KPI (metric) being monitored
-	- entity_id: Use this with get_entity_alert_rules to fetch the full PromQL for this entity's rules.
-	  To find alert rules with no notification channel configured (dashboard "Not configured" filter),
-	  cross-reference this entity_id against service_fqid from get_notification_channels: a rule is
-	  unconfigured if no channel's service_fqid equals its entity_id. Global/org-wide channels
-	  (global: true, service_fqid empty or "-") do not count as configured for a specific alert group.
+	- entity_id: Use this with get_entity_alert_rules to fetch the full PromQL for this entity's rules
 	- alert_group: Human-readable name of the entity (alert group) this rule belongs to, when resolved
 	- data_source: The alert group's data source name, when set
 	- tags: The alert group's tags, comma-separated, when set

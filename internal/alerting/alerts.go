@@ -111,7 +111,8 @@ type GetAlertConfigArgs struct {
 	AlertGroupName string   `json:"alert_group_name,omitempty" jsonschema:"Case-insensitive substring match on alert group name (optional)"`
 	AlertGroupType string   `json:"alert_group_type,omitempty" jsonschema:"Case-insensitive substring match on alert group type (optional)"`
 	DataSourceName string   `json:"data_source_name,omitempty" jsonschema:"Case-insensitive substring match on alert group data source name (optional)"`
-	Tags           []string `json:"tags,omitempty" jsonschema:"Alert group tag filters combined with AND semantics (optional)"`
+	Tags                           []string `json:"tags,omitempty" jsonschema:"Alert group tag filters combined with AND semantics (optional)"`
+	OnlyWithoutNotificationChannel bool     `json:"only_without_notification_channel,omitempty" jsonschema:"If true, return only rules whose alert group has no per-entity notification channel binding (dashboard Not configured). Server-side join with notification channels; global org-wide channels are listed in the response but do not satisfy this filter."`
 }
 
 func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetAlertConfigArgs) (*mcp.CallToolResult, any, error) {
@@ -120,12 +121,28 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, err
 		}
 
+		var (
+			configuredEntityIDs map[string]bool
+			globalChannelAdvisory string
+		)
+		if args.OnlyWithoutNotificationChannel {
+			channels, chErr := fetchNotificationChannels(ctx, client, cfg)
+			if chErr != nil {
+				return nil, nil, fmt.Errorf("failed to fetch notification channels: %w", chErr)
+			}
+			configuredEntityIDs = entityIDsWithPerEntityNotificationChannel(channels)
+			globalChannelAdvisory = formatGlobalNotificationChannelAdvisory(channels)
+		}
+
 		alertConfig, err := fetchAlertConfig(ctx, client, cfg)
 		if err != nil {
 			return nil, nil, err
 		}
 
 		filteredAlertConfig := filterAlertConfigByRuleFields(alertConfig, args)
+		if args.OnlyWithoutNotificationChannel {
+			filteredAlertConfig = filterAlertRulesWithoutNotificationChannel(filteredAlertConfig, configuredEntityIDs)
+		}
 
 		entitiesByID := make(map[string]alertGroupEntity)
 		if len(filteredAlertConfig) > 0 {
@@ -144,9 +161,14 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			)
 		}
 
-		resolveAlertConfigKPIs(ctx, client, cfg, filteredAlertConfig)
+		if !args.OnlyWithoutNotificationChannel {
+			resolveAlertConfigKPIs(ctx, client, cfg, filteredAlertConfig)
+		}
 
-		formattedResponse := formatAlertConfigResponse(filteredAlertConfig, entitiesByID)
+		formattedResponse := formatAlertConfigResponse(filteredAlertConfig, entitiesByID, args.OnlyWithoutNotificationChannel)
+		if args.OnlyWithoutNotificationChannel {
+			formattedResponse = globalChannelAdvisory + "\n" + formattedResponse
+		}
 
 		// Build deep link URL to alerting groups page
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)

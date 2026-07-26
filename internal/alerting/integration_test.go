@@ -51,69 +51,31 @@ func TestGetAlertConfigHandler_Integration_Basic(t *testing.T) {
 	}
 }
 
-func TestAlertChannelBindingReport_Integration(t *testing.T) {
+func TestGetAlertConfigHandler_Integration_OnlyWithoutNotificationChannel(t *testing.T) {
 	cfg := utils.SetupTestConfigOrSkip(t)
+	handler := NewGetAlertConfigHandler(http.DefaultClient, *cfg)
+
 	ctx, cancel := context.WithTimeout(context.Background(), integrationTestTimeout)
 	defer cancel()
 
-	chResult, _, err := NewGetNotificationChannelsHandler(http.DefaultClient, *cfg)(
-		ctx, &mcp.CallToolRequest{}, GetNotificationChannelsArgs{},
-	)
+	result, _, err := handler(ctx, &mcp.CallToolRequest{}, GetAlertConfigArgs{
+		OnlyWithoutNotificationChannel: true,
+	})
 	if utils.CheckAPIError(t, err) {
 		return
 	}
-	chText := utils.GetTextContent(t, chResult)
 
-	configuredEntityIDs := make(map[string]bool)
-	for _, line := range strings.Split(chText, "\n") {
-		if !strings.Contains(line, "\t") || strings.HasPrefix(line, "id\t") || strings.HasPrefix(line, "Found ") {
-			continue
-		}
-		cols := strings.Split(line, "\t")
-		if len(cols) < 11 {
-			continue
-		}
-		if fqid := strings.TrimSpace(cols[10]); fqid != "" && fqid != "-" {
-			configuredEntityIDs[fqid] = true
-		}
+	text := utils.GetTextContent(t, result)
+	t.Logf("response (truncated):\n%s", truncate(text, 1200))
+
+	if !strings.Contains(text, "Global notification channels:") {
+		t.Fatalf("expected global channel advisory line, got:\n%s", text)
 	}
-
-	cfgResult, _, err := NewGetAlertConfigHandler(http.DefaultClient, *cfg)(
-		ctx, &mcp.CallToolRequest{}, GetAlertConfigArgs{},
-	)
-	if utils.CheckAPIError(t, err) {
-		return
+	if !strings.Contains(text, "no per-entity notification channel configured") {
+		t.Fatalf("expected unconfigured filter header, got:\n%s", text)
 	}
-	cfgText := utils.GetTextContent(t, cfgResult)
-	t.Logf("notification channels (truncated):\n%s", truncate(chText, 800))
-	t.Logf("alert config (truncated):\n%s", truncate(cfgText, 800))
-
-	if strings.Contains(cfgText, "Found 0 alert rules") {
-		t.Skip("no alert rules in org; skipping binding report")
-	}
-
-	var (
-		totalRules        int
-		unconfiguredRules int
-	)
-	for _, line := range strings.Split(cfgText, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "Alert Rule ") {
-			totalRules++
-		}
-		if strings.HasPrefix(trimmed, "Entity ID:") {
-			entityID := strings.TrimSpace(strings.TrimPrefix(trimmed, "Entity ID:"))
-			if !configuredEntityIDs[entityID] {
-				unconfiguredRules++
-			}
-		}
-	}
-
-	t.Logf("binding report: %d rules, %d with per-entity channel binding, %d unconfigured (dashboard Not configured semantics)",
-		totalRules, totalRules-unconfiguredRules, unconfiguredRules)
-
-	if !strings.Contains(chText, "service_fqid") {
-		t.Fatalf("notification channels response missing service_fqid column")
+	if strings.Contains(text, "Found 0 alert rules:\n") {
+		t.Fatalf("unexpected default header when filter is active, got:\n%s", text)
 	}
 }
 

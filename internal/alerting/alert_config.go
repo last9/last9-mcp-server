@@ -507,8 +507,19 @@ func containsFold(value, substring string) bool {
 	return strings.Contains(strings.ToLower(value), strings.ToLower(substring))
 }
 
-func formatAlertConfigResponse(alertConfig AlertConfigResponse, entitiesByID map[string]alertGroupEntity) string {
-	formattedResponse := fmt.Sprintf("Found %d alert rules:\n\n", len(alertConfig))
+func formatAlertConfigResponse(
+	alertConfig AlertConfigResponse,
+	entitiesByID map[string]alertGroupEntity,
+	onlyWithoutNotificationChannel bool,
+) string {
+	header := fmt.Sprintf("Found %d alert rules:\n\n", len(alertConfig))
+	if onlyWithoutNotificationChannel {
+		header = fmt.Sprintf(
+			"Found %d alert rule(s) with no per-entity notification channel configured:\n\n",
+			len(alertConfig),
+		)
+	}
+	formattedResponse := header
 	for i, rule := range alertConfig {
 		formattedResponse += fmt.Sprintf("Alert Rule %d:\n", i+1)
 		formattedResponse += fmt.Sprintf("  ID: %s\n", rule.ID)

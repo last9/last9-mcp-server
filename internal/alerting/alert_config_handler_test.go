@@ -19,13 +19,15 @@ import (
 )
 
 type alertConfigTestServerState struct {
-	alertRules         AlertConfigResponse
-	entityGroups       []groupedAlertGroupEntitiesResponse
-	alertRulesStatus   int
-	entityLookupStatus int
-	entityLookupCalls  int
-	lastEntityRequest  filterAlertGroupEntitiesRequest
-	kpiResponses       map[string]kpiResponse // kpiID → response (empty = 404)
+	alertRules                 AlertConfigResponse
+	entityGroups               []groupedAlertGroupEntitiesResponse
+	notificationChannels       []NotificationChannel
+	alertRulesStatus           int
+	entityLookupStatus         int
+	notificationChannelsStatus int
+	entityLookupCalls          int
+	lastEntityRequest          filterAlertGroupEntitiesRequest
+	kpiResponses               map[string]kpiResponse // kpiID → response (empty = 404)
 }
 
 func TestGetAlertConfigHandler_RuleOnlyFilters(t *testing.T) {
@@ -310,6 +312,39 @@ func TestGetAlertConfigHandler_EntityLookupFailure_NoFilter(t *testing.T) {
 	}
 }
 
+func TestGetAlertConfigHandler_OnlyWithoutNotificationChannel(t *testing.T) {
+	state := alertConfigTestServerState{
+		alertRules:         sampleAlertConfigRules(),
+		entityGroups:       sampleAlertGroupEntities(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusOK,
+		notificationChannels: []NotificationChannel{
+			{ID: 1, Name: "Org Slack", Type: "slack", Global: true},
+			{ID: 2, Name: "Checkout Slack", Type: "slack", ServiceFQID: "entity-1"},
+		},
+	}
+
+	text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{
+		OnlyWithoutNotificationChannel: true,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if !strings.Contains(text, "Global notification channels: 1 org-wide channel(s) configured (Org Slack)") {
+		t.Fatalf("expected global channel advisory, got:\n%s", text)
+	}
+	if !strings.Contains(text, "no per-entity notification channel configured") {
+		t.Fatalf("expected unconfigured header, got:\n%s", text)
+	}
+	if !strings.Contains(text, "ID: rule-2") || !strings.Contains(text, "ID: rule-3") {
+		t.Fatalf("expected rule-2 and rule-3, got:\n%s", text)
+	}
+	if strings.Contains(text, "ID: rule-1") {
+		t.Fatalf("rule-1 should be excluded (entity-1 has channel binding), got:\n%s", text)
+	}
+}
+
 func TestGetAlertConfigHandler_EnrichmentFormatting(t *testing.T) {
 	t.Run("entity match includes alert group enrichment", func(t *testing.T) {
 		state := alertConfigTestServerState{
@@ -423,6 +458,18 @@ func newAlertConfigTestServer(
 
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case constants.EndpointNotificationSettings:
+			w.Header().Set("Content-Type", "application/json")
+			status := state.notificationChannelsStatus
+			if status == 0 {
+				status = http.StatusOK
+			}
+			w.WriteHeader(status)
+			if status == http.StatusOK {
+				_ = json.NewEncoder(w).Encode(state.notificationChannels)
+				return
+			}
+			_, _ = w.Write([]byte(`{"error":"notification channels failed"}`))
 		case constants.EndpointAlertRules:
 			w.Header().Set("Content-Type", "application/json")
 			status := state.alertRulesStatus

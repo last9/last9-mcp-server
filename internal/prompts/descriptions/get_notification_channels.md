@@ -7,8 +7,3 @@
 	- snoozed_until: UTC timestamp if snoozed, else "-"
 	- services: comma-separated namespace/name pairs, "-" if global
 	- service_fqid: alert-group entity id this channel is bound to (empty/"-" if global or unbound).
-
-	To find alert rules with no notification channel configured (dashboard "Not configured" filter):
-	call get_alert_config to list rules with their entity_id; a rule is unconfigured if no channel
-	here has service_fqid equal to that entity_id. Global/org-wide channels (global: true,
-	service_fqid empty or "-") do not count as configured for a specific alert group.

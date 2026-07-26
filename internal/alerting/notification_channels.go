@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -161,4 +162,47 @@ func formatNotificationChannelsResponse(channels []NotificationChannel) string {
 
 func escapeTSV(value string) string {
 	return notificationChannelsTSVEscaper.Replace(value)
+}
+
+func entityIDsWithPerEntityNotificationChannel(channels []NotificationChannel) map[string]bool {
+	configured := make(map[string]bool)
+	for _, ch := range channels {
+		fqid := strings.TrimSpace(ch.ServiceFQID)
+		if fqid != "" {
+			configured[fqid] = true
+		}
+	}
+	return configured
+}
+
+func filterAlertRulesWithoutNotificationChannel(
+	rules AlertConfigResponse,
+	configuredEntityIDs map[string]bool,
+) AlertConfigResponse {
+	filtered := make(AlertConfigResponse, 0, len(rules))
+	for _, rule := range rules {
+		if configuredEntityIDs[rule.EntityID] {
+			continue
+		}
+		filtered = append(filtered, rule)
+	}
+	return filtered
+}
+
+func formatGlobalNotificationChannelAdvisory(channels []NotificationChannel) string {
+	names := make([]string, 0)
+	for _, ch := range channels {
+		if ch.Global && strings.TrimSpace(ch.Name) != "" {
+			names = append(names, ch.Name)
+		}
+	}
+	sort.Strings(names)
+	if len(names) == 0 {
+		return "Global notification channels: none."
+	}
+	return fmt.Sprintf(
+		"Global notification channels: %d org-wide channel(s) configured (%s). These do not count as per-alert-group binding (dashboard \"Not configured\" semantics).",
+		len(names),
+		strings.Join(names, ", "),
+	)
 }
