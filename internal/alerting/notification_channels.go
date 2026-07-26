@@ -167,72 +167,76 @@ func escapeTSV(value string) string {
 	return notificationChannelsTSVEscaper.Replace(value)
 }
 
-type entityNotificationChannels struct {
-	types map[string]struct{}
-	names map[string]struct{}
+type perEntityChannelBinding struct {
+	channelType string
+	name        string
+	severity    string
 }
 
-func buildEntityNotificationChannelIndex(channels []NotificationChannel) map[string]entityNotificationChannels {
-	index := make(map[string]entityNotificationChannels)
+func buildEntityNotificationChannelIndex(channels []NotificationChannel) map[string][]perEntityChannelBinding {
+	index := make(map[string][]perEntityChannelBinding)
 	for _, ch := range channels {
 		entityID := strings.TrimSpace(ch.ServiceFQID)
 		if entityID == "" {
 			continue
 		}
-		entry := index[entityID]
-		if entry.types == nil {
-			entry.types = make(map[string]struct{})
-			entry.names = make(map[string]struct{})
-		}
-		channelType := strings.ToLower(strings.TrimSpace(ch.Type))
-		if channelType != "" {
-			entry.types[channelType] = struct{}{}
-		}
-		channelName := strings.TrimSpace(ch.Name)
-		if channelName != "" {
-			entry.names[channelName] = struct{}{}
-		}
-		index[entityID] = entry
+		index[entityID] = append(index[entityID], perEntityChannelBinding{
+			channelType: strings.ToLower(strings.TrimSpace(ch.Type)),
+			name:        strings.TrimSpace(ch.Name),
+			severity:    strings.ToLower(strings.TrimSpace(ch.Severity)),
+		})
 	}
 	return index
 }
 
-func entityHasPerEntityNotificationChannel(entityID string, index map[string]entityNotificationChannels) bool {
-	entry, ok := index[entityID]
-	return ok && len(entry.types) > 0
+func entityHasPerEntityBindings(entityID string, index map[string][]perEntityChannelBinding) bool {
+	return len(index[entityID]) > 0
 }
 
-func matchesNotificationChannelTypes(entityID string, index map[string]entityNotificationChannels, types []string) bool {
-	entry, ok := index[entityID]
-	if !ok || len(entry.types) == 0 {
+func entityMatchesChannelFilters(
+	entityID string,
+	index map[string][]perEntityChannelBinding,
+	channelTypes []string,
+	channelNames []string,
+	channelSeverities []string,
+) bool {
+	bindings := index[entityID]
+	if len(bindings) == 0 {
 		return false
 	}
-	for _, wantType := range types {
-		wantType = strings.ToLower(strings.TrimSpace(wantType))
-		if wantType == "" {
+
+	wantTypes := normalizeNotificationChannelTypes(channelTypes)
+	wantNames := normalizeStringSlice(channelNames)
+	wantSeverities := normalizeNotificationChannelSeverities(channelSeverities)
+
+	for _, binding := range bindings {
+		if len(wantTypes) > 0 && !containsString(wantTypes, binding.channelType) {
 			continue
 		}
-		if _, ok := entry.types[wantType]; ok {
+		if len(wantNames) > 0 && !anyStringEqualFold(wantNames, binding.name) {
+			continue
+		}
+		if len(wantSeverities) > 0 && !containsString(wantSeverities, binding.severity) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func containsString(values []string, value string) bool {
+	for _, v := range values {
+		if v == value {
 			return true
 		}
 	}
 	return false
 }
 
-func matchesNotificationChannelNames(entityID string, index map[string]entityNotificationChannels, names []string) bool {
-	entry, ok := index[entityID]
-	if !ok || len(entry.names) == 0 {
-		return false
-	}
-	for _, wantName := range names {
-		wantName = strings.TrimSpace(wantName)
-		if wantName == "" {
-			continue
-		}
-		for haveName := range entry.names {
-			if strings.EqualFold(haveName, wantName) {
-				return true
-			}
+func anyStringEqualFold(want []string, have string) bool {
+	for _, w := range want {
+		if strings.EqualFold(w, have) {
+			return true
 		}
 	}
 	return false
@@ -240,35 +244,30 @@ func matchesNotificationChannelNames(entityID string, index map[string]entityNot
 
 func filterAlertRulesByNotificationChannels(
 	rules AlertConfigResponse,
-	channelIndex map[string]entityNotificationChannels,
+	channelIndex map[string][]perEntityChannelBinding,
 	channelTypes []string,
 	channelNames []string,
+	channelSeverities []string,
 	onlyWithout bool,
 ) AlertConfigResponse {
 	normalizedTypes := normalizeNotificationChannelTypes(channelTypes)
 	normalizedNames := normalizeStringSlice(channelNames)
-	if !onlyWithout && len(normalizedTypes) == 0 && len(normalizedNames) == 0 {
+	normalizedSeverities := normalizeNotificationChannelSeverities(channelSeverities)
+	hasChannelFilter := len(normalizedTypes) > 0 || len(normalizedNames) > 0 || len(normalizedSeverities) > 0
+	if !onlyWithout && !hasChannelFilter {
 		return rules
 	}
 
 	filtered := make(AlertConfigResponse, 0, len(rules))
 	for _, rule := range rules {
 		entityID := rule.EntityID
-		hasBindings := entityHasPerEntityNotificationChannel(entityID, channelIndex)
+		hasBindings := entityHasPerEntityBindings(entityID, channelIndex)
 
 		matchesWithout := onlyWithout && !hasBindings
-		matchesType := len(normalizedTypes) > 0 && matchesNotificationChannelTypes(entityID, channelIndex, normalizedTypes)
-		matchesName := len(normalizedNames) > 0 && matchesNotificationChannelNames(entityID, channelIndex, normalizedNames)
+		matchesChannelFilter := hasChannelFilter &&
+			entityMatchesChannelFilters(entityID, channelIndex, channelTypes, channelNames, channelSeverities)
 
-		channelTypeClause := len(normalizedTypes) == 0 && !onlyWithout
-		if len(normalizedTypes) > 0 || onlyWithout {
-			channelTypeClause = matchesWithout || matchesType
-		}
-
-		if !channelTypeClause {
-			continue
-		}
-		if len(normalizedNames) > 0 && !matchesName {
+		if !matchesWithout && !matchesChannelFilter {
 			continue
 		}
 
@@ -286,10 +285,20 @@ func normalizeNotificationChannelTypes(types []string) []string {
 	return out
 }
 
+func normalizeNotificationChannelSeverities(severities []string) []string {
+	normalized := normalizeStringSlice(severities)
+	out := make([]string, 0, len(normalized))
+	for _, s := range normalized {
+		out = append(out, strings.ToLower(s))
+	}
+	return out
+}
+
 func requiresNotificationChannelJoin(args GetAlertConfigArgs) bool {
 	return args.OnlyWithoutNotificationChannel ||
 		len(normalizeNotificationChannelTypes(args.NotificationChannelTypes)) > 0 ||
-		len(normalizeStringSlice(args.NotificationChannelNames)) > 0
+		len(normalizeStringSlice(args.NotificationChannelNames)) > 0 ||
+		len(normalizeNotificationChannelSeverities(args.NotificationChannelSeverities)) > 0
 }
 
 func formatGlobalNotificationChannelAdvisory(channels []NotificationChannel) string {

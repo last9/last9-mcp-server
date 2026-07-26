@@ -62,6 +62,12 @@ type filterAlertGroupEntitiesRequest struct {
 }
 
 func validateGetAlertConfigArgs(args GetAlertConfigArgs) error {
+	for _, severity := range normalizeNotificationChannelSeverities(args.NotificationChannelSeverities) {
+		if severity != "breach" && severity != "threat" {
+			return fmt.Errorf("notification_channel_severities entries must be %q or %q", "breach", "threat")
+		}
+	}
+
 	ruleType := strings.ToLower(strings.TrimSpace(args.RuleType))
 	if ruleType == "" {
 		return nil

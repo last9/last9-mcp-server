@@ -352,8 +352,8 @@ func TestGetAlertConfigHandler_NotificationChannelTypeFilter(t *testing.T) {
 		alertRulesStatus:   http.StatusOK,
 		entityLookupStatus: http.StatusOK,
 		notificationChannels: []NotificationChannel{
-			{ID: 1, Name: "Checkout Slack", Type: "slack", ServiceFQID: "entity-1"},
-			{ID: 2, Name: "Payments Email", Type: "email", ServiceFQID: "entity-2"},
+			{ID: 1, Name: "Checkout Slack", Type: "slack", Severity: "breach", ServiceFQID: "entity-1"},
+			{ID: 2, Name: "Payments Email", Type: "email", Severity: "threat", ServiceFQID: "entity-2"},
 		},
 	}
 
@@ -379,8 +379,8 @@ func TestGetAlertConfigHandler_NotificationChannelNameFilter(t *testing.T) {
 		alertRulesStatus:   http.StatusOK,
 		entityLookupStatus: http.StatusOK,
 		notificationChannels: []NotificationChannel{
-			{ID: 1, Name: "Checkout Slack", Type: "slack", ServiceFQID: "entity-1"},
-			{ID: 2, Name: "Payments Email", Type: "email", ServiceFQID: "entity-2"},
+			{ID: 1, Name: "Checkout Slack", Type: "slack", Severity: "breach", ServiceFQID: "entity-1"},
+			{ID: 2, Name: "Payments Email", Type: "email", Severity: "threat", ServiceFQID: "entity-2"},
 		},
 	}
 
@@ -396,6 +396,70 @@ func TestGetAlertConfigHandler_NotificationChannelNameFilter(t *testing.T) {
 	}
 	if strings.Contains(text, "ID: rule-1") || strings.Contains(text, "ID: rule-3") {
 		t.Fatalf("expected only rule-2, got:\n%s", text)
+	}
+}
+
+func TestGetAlertConfigHandler_NotificationChannelSeverityFilter(t *testing.T) {
+	state := alertConfigTestServerState{
+		alertRules:         sampleAlertConfigRules(),
+		entityGroups:       sampleAlertGroupEntities(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusOK,
+		notificationChannels: []NotificationChannel{
+			{ID: 1, Name: "Checkout Slack Breach", Type: "slack", Severity: "breach", ServiceFQID: "entity-1"},
+			{ID: 2, Name: "Checkout Slack Threat", Type: "slack", Severity: "threat", ServiceFQID: "entity-1"},
+			{ID: 3, Name: "Payments Email", Type: "email", Severity: "threat", ServiceFQID: "entity-2"},
+		},
+	}
+
+	t.Run("severity only", func(t *testing.T) {
+		text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{
+			NotificationChannelSeverities: []string{"threat"},
+		})
+		if err != nil {
+			t.Fatalf("handler returned error: %v", err)
+		}
+		if !strings.Contains(text, "ID: rule-1") || !strings.Contains(text, "ID: rule-2") {
+			t.Fatalf("expected rule-1 and rule-2, got:\n%s", text)
+		}
+		if strings.Contains(text, "ID: rule-3") {
+			t.Fatalf("expected rule-3 excluded, got:\n%s", text)
+		}
+	})
+
+	t.Run("type and severity on same binding", func(t *testing.T) {
+		text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{
+			NotificationChannelTypes:      []string{"slack"},
+			NotificationChannelSeverities: []string{"breach"},
+		})
+		if err != nil {
+			t.Fatalf("handler returned error: %v", err)
+		}
+		if !strings.Contains(text, "ID: rule-1") {
+			t.Fatalf("expected rule-1 only, got:\n%s", text)
+		}
+		if strings.Contains(text, "ID: rule-2") {
+			t.Fatalf("slack+threat on entity-1 should not match slack+breach, got:\n%s", text)
+		}
+	})
+}
+
+func TestGetAlertConfigHandler_InvalidNotificationChannelSeverity(t *testing.T) {
+	state := alertConfigTestServerState{
+		alertRules:         sampleAlertConfigRules(),
+		entityGroups:       sampleAlertGroupEntities(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusOK,
+	}
+
+	_, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{
+		NotificationChannelSeverities: []string{"critical"},
+	})
+	if err == nil {
+		t.Fatal("expected invalid notification_channel_severities to return an error")
+	}
+	if !strings.Contains(err.Error(), "notification_channel_severities") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

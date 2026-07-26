@@ -21,7 +21,12 @@
 	  listed type (case-insensitive, e.g. slack, email, pagerduty, generic_webhook). OR-combined with
 	  only_without_notification_channel when both are set.
 	- notification_channel_names: Include rules whose alert group has a per-entity channel with any
-	  listed name (case-insensitive exact match). AND-combined with the channel type / unconfigured filters.
+	  listed name (case-insensitive exact match). AND-combined with other notification_channel_* filters
+	  on the same binding row.
+	- notification_channel_severities: Include rules whose alert group has a per-entity channel with any
+	  listed severity (breach or threat). AND-combined with notification_channel_types and
+	  notification_channel_names on the same binding row. OR-combined with only_without_notification_channel
+	  when both are set.
 
 	Each alert rule includes:
 	- id: Unique identifier for the alert rule

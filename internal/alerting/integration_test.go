@@ -79,6 +79,32 @@ func TestGetAlertConfigHandler_Integration_OnlyWithoutNotificationChannel(t *tes
 	}
 }
 
+func TestGetAlertConfigHandler_Integration_NotificationChannelSeverityFilter(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+	handler := NewGetAlertConfigHandler(http.DefaultClient, *cfg)
+
+	ctx, cancel := context.WithTimeout(context.Background(), integrationTestTimeout)
+	defer cancel()
+
+	result, _, err := handler(ctx, &mcp.CallToolRequest{}, GetAlertConfigArgs{
+		NotificationChannelTypes:      []string{"slack"},
+		NotificationChannelSeverities: []string{"breach"},
+	})
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+
+	text := utils.GetTextContent(t, result)
+	t.Logf("response (truncated):\n%s", truncate(text, 1200))
+
+	if strings.Contains(text, "Found 0 alert rules") {
+		t.Skip("no slack+breach channel bindings in org; skipping")
+	}
+	if !strings.Contains(text, "ID:") {
+		t.Fatalf("expected at least one matching rule, got:\n%s", text)
+	}
+}
+
 func TestGetAlertConfigHandler_Integration_KPIResolution(t *testing.T) {
 	cfg := utils.SetupTestConfigOrSkip(t)
 	handler := NewGetAlertConfigHandler(http.DefaultClient, *cfg)
