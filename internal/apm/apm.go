@@ -320,7 +320,13 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 			if summary, ok := promResp[serviceFilter]; ok {
 				promResp = map[string]ServiceSummary{serviceFilter: summary}
 			} else {
-				promResp = map[string]ServiceSummary{}
+				return &mcp.CallToolResult{
+					Content: []mcp.Content{
+						&mcp.TextContent{
+							Text: fmt.Sprintf("No service found matching service_name=%q for the given parameters", serviceFilter),
+						},
+					},
+				}, nil, nil
 			}
 		}
 

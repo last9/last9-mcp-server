@@ -108,6 +108,9 @@ func TestAPMServiceDeviationsHandlerFleetKeepsEnvironmentsSeparateAndStable(t *t
 	if response.Outcome != "stable" || len(response.RecommendedFollowups) != 0 {
 		t.Fatalf("stable outcome forced follow-up: %+v", response)
 	}
+	if !strings.Contains(strings.Join(response.Warnings, " "), "outcome=stable") {
+		t.Fatalf("expected terminal stable warning, got: %+v", response.Warnings)
+	}
 	if len(response.Leaderboards.Reliability.Regressions) != 0 || len(response.ThroughputShifts) != 0 {
 		t.Fatalf("stable response contains deviations: %+v", response.Leaderboards)
 	}
@@ -321,8 +324,11 @@ func TestAPMServiceDeviationsHandlerUnsupportedWorkloadShape(t *testing.T) {
 	if len(response.Leaderboards.Reliability.Regressions) != 0 || len(response.Services) != 0 {
 		t.Fatalf("unsupported workload was classified: %+v", response)
 	}
-	if len(response.RecommendedFollowups) != 1 || response.RecommendedFollowups[0].Tool != "get_service_traces" || response.RecommendedFollowups[0].Arguments["service_name"] != "processor" {
-		t.Fatalf("unsupported workload follow-up = %+v", response.RecommendedFollowups)
+	if len(response.RecommendedFollowups) != 0 {
+		t.Fatalf("unsupported workload follow-up = %+v, want none (terminal outcome)", response.RecommendedFollowups)
+	}
+	if !strings.Contains(strings.Join(response.Warnings, " "), "unsupported_workload_shape") {
+		t.Fatalf("expected terminal warning in warnings, got: %+v", response.Warnings)
 	}
 }
 

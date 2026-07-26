@@ -827,7 +827,7 @@ func appendTerminalComparisonGuidance(result *apmDeviationResult) {
 }
 
 func recommendedDeviationFollowups(result apmDeviationResult, args DeviationArgs) []deviationFollowup {
-	if result.Outcome == "stable" || result.Outcome == "no_data" {
+	if result.Outcome == "stable" || result.Outcome == "no_data" || result.Outcome == "unsupported_workload_shape" {
 		return []deviationFollowup{}
 	}
 	base := map[string]string{
@@ -842,11 +842,6 @@ func recommendedDeviationFollowups(result apmDeviationResult, args DeviationArgs
 	}
 	if result.Datasource != "" {
 		base["datasource"] = result.Datasource
-	}
-	if result.Outcome == "unsupported_workload_shape" {
-		return []deviationFollowup{{
-			Tool: "get_service_traces", Reason: "Inspect the named workload's trace shapes and span kinds without inferring causality.", Arguments: base,
-		}}
 	}
 	if result.Scope == "fleet" {
 		identity, ok := leadingDeviationIdentity(result)
