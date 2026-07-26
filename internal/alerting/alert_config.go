@@ -516,6 +516,8 @@ func containsFold(value, substring string) bool {
 func formatAlertConfigResponse(
 	alertConfig AlertConfigResponse,
 	entitiesByID map[string]alertGroupEntity,
+	entityChannelsByID map[string][]NotificationChannel,
+	notificationChannelsErr string,
 	onlyWithoutNotificationChannel bool,
 ) string {
 	header := fmt.Sprintf("Found %d alert rules:\n\n", len(alertConfig))
@@ -584,6 +586,20 @@ func formatAlertConfigResponse(
 			if len(entity.Metadata.Tags) > 0 {
 				formattedResponse += fmt.Sprintf("  Tags: %s\n", strings.Join(entity.Metadata.Tags, ", "))
 			}
+		}
+
+		if notificationChannelsErr != "" {
+			formattedResponse += fmt.Sprintf(
+				"  Notification Channels: [lookup failed: %s]\n",
+				notificationChannelsErr,
+			)
+		} else {
+			bindings := entityChannelsByID[rule.EntityID]
+			formattedResponse += fmt.Sprintf(
+				"  Notification Channels: %s\n",
+				formatNotificationChannelSummary(bindings),
+			)
+			formattedResponse += formatNotificationChannelBindingDetails(bindings)
 		}
 
 		if rule.ErrorSince != nil {

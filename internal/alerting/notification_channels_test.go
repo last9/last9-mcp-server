@@ -89,6 +89,43 @@ func TestGetNotificationChannelsHandler_TSVFormat(t *testing.T) {
 	}
 }
 
+func TestFormatNotificationChannelSummary(t *testing.T) {
+	if got := formatNotificationChannelSummary(nil); got != "Not configured" {
+		t.Fatalf("empty bindings: got %q", got)
+	}
+
+	bindings := []NotificationChannel{
+		{Type: "email", Severity: "breach", Name: "ops"},
+		{Type: "slack", Severity: "threat", Name: "alerts"},
+		{Type: "slack", Severity: "breach", Name: "alerts"},
+	}
+	if got := formatNotificationChannelSummary(bindings); got != "slack, email" {
+		t.Fatalf("summary order: got %q, want slack, email", got)
+	}
+}
+
+func TestFormatNotificationChannelBindingDetails(t *testing.T) {
+	snooze := int64(1700000000)
+	bindings := []NotificationChannel{
+		{Type: "slack", Name: "track-alerts", Severity: "threat"},
+		{Type: "slack", Name: "track-alerts", Severity: "breach"},
+		{Type: "email", Name: "ops", Severity: "breach", SnoozeUntil: &snooze, InUse: false},
+	}
+	got := formatNotificationChannelBindingDetails(bindings)
+	if !strings.Contains(got, "slack / track-alerts (threat)") {
+		t.Fatalf("missing threat binding: %s", got)
+	}
+	if !strings.Contains(got, "slack / track-alerts (breach)") {
+		t.Fatalf("missing breach binding: %s", got)
+	}
+	if !strings.Contains(got, "email / ops (breach)") {
+		t.Fatalf("missing email binding: %s", got)
+	}
+	if !strings.Contains(got, "[snoozed until") || !strings.Contains(got, "[not in use]") {
+		t.Fatalf("expected snooze/in_use flags: %s", got)
+	}
+}
+
 func TestGetNotificationChannelsHandler_SendResolvedVariants(t *testing.T) {
 	boolTrue := true
 	boolFalse := false

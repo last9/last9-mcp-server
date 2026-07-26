@@ -126,17 +126,25 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 
 		var (
 			channelIndex                map[string][]perEntityChannelBinding
+			entityChannelsByID          map[string][]NotificationChannel
 			globalChannelAdvisory       string
 			notificationChannelReport   bool
+			notificationChannelsErr     string
 		)
-		if requiresNotificationChannelJoin(args) {
-			channels, chErr := fetchNotificationChannels(ctx, client, cfg)
-			if chErr != nil {
+
+		channels, chErr := fetchNotificationChannels(ctx, client, cfg)
+		if chErr != nil {
+			if requiresNotificationChannelJoin(args) {
 				return nil, nil, fmt.Errorf("failed to fetch notification channels: %w", chErr)
 			}
+			notificationChannelsErr = chErr.Error()
+		} else {
 			channelIndex = buildEntityNotificationChannelIndex(channels)
+			entityChannelsByID = groupPerEntityNotificationChannels(channels)
 			globalChannelAdvisory = formatGlobalNotificationChannelAdvisory(channels)
-			notificationChannelReport = args.OnlyWithoutNotificationChannel
+			if requiresNotificationChannelJoin(args) {
+				notificationChannelReport = args.OnlyWithoutNotificationChannel
+			}
 		}
 
 		alertConfig, err := fetchAlertConfig(ctx, client, cfg)
@@ -145,7 +153,7 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 		}
 
 		filteredAlertConfig := filterAlertConfigByRuleFields(alertConfig, args)
-		if requiresNotificationChannelJoin(args) {
+		if requiresNotificationChannelJoin(args) && channelIndex != nil {
 			filteredAlertConfig = filterAlertRulesByNotificationChannels(
 				filteredAlertConfig,
 				channelIndex,
@@ -177,7 +185,13 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			resolveAlertConfigKPIs(ctx, client, cfg, filteredAlertConfig)
 		}
 
-		formattedResponse := formatAlertConfigResponse(filteredAlertConfig, entitiesByID, notificationChannelReport)
+		formattedResponse := formatAlertConfigResponse(
+			filteredAlertConfig,
+			entitiesByID,
+			entityChannelsByID,
+			notificationChannelsErr,
+			notificationChannelReport,
+		)
 		if notificationChannelReport {
 			formattedResponse = globalChannelAdvisory + "\n" + formattedResponse
 		}

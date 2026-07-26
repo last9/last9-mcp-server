@@ -49,6 +49,9 @@ func TestGetAlertConfigHandler_Integration_Basic(t *testing.T) {
 	if !strings.Contains(text, "Alert Group:") {
 		t.Fatalf("expected 'Alert Group:' enrichment in response, got:\n%s", text)
 	}
+	if !strings.Contains(text, "Notification Channels:") {
+		t.Fatalf("expected 'Notification Channels:' enrichment in response, got:\n%s", text)
+	}
 }
 
 func TestGetAlertConfigHandler_Integration_OnlyWithoutNotificationChannel(t *testing.T) {

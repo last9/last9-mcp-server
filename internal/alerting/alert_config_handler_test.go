@@ -343,6 +343,34 @@ func TestGetAlertConfigHandler_OnlyWithoutNotificationChannel(t *testing.T) {
 	if strings.Contains(text, "ID: rule-1") {
 		t.Fatalf("rule-1 should be excluded (entity-1 has channel binding), got:\n%s", text)
 	}
+	if !strings.Contains(text, "Notification Channels: Not configured") {
+		t.Fatalf("expected Not configured on unconfigured rules, got:\n%s", text)
+	}
+}
+
+func TestGetAlertConfigHandler_NotificationChannelEnrichmentOnRule(t *testing.T) {
+	state := alertConfigTestServerState{
+		alertRules:         sampleAlertConfigRules(),
+		entityGroups:       sampleAlertGroupEntities(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusOK,
+		notificationChannels: []NotificationChannel{
+			{ID: 1, Name: "Checkout Slack", Type: "slack", Severity: "breach", ServiceFQID: "entity-1"},
+			{ID: 2, Name: "Checkout Slack", Type: "slack", Severity: "threat", ServiceFQID: "entity-1"},
+		},
+	}
+
+	text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{RuleID: "rule-1"})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if !strings.Contains(text, "Notification Channels: slack") {
+		t.Fatalf("expected slack in summary, got:\n%s", text)
+	}
+	if !strings.Contains(text, "slack / Checkout Slack (threat)") ||
+		!strings.Contains(text, "slack / Checkout Slack (breach)") {
+		t.Fatalf("expected binding detail lines, got:\n%s", text)
+	}
 }
 
 func TestGetAlertConfigHandler_NotificationChannelTypeFilter(t *testing.T) {
@@ -509,6 +537,9 @@ func TestGetAlertConfigHandler_EnrichmentFormatting(t *testing.T) {
 		}
 		if !strings.Contains(text, "Tags: prod, checkout") {
 			t.Fatalf("expected Tags enrichment, got:\n%s", text)
+		}
+		if !strings.Contains(text, "Notification Channels: Not configured") {
+			t.Fatalf("expected Not configured notification channels, got:\n%s", text)
 		}
 	})
 

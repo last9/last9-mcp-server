@@ -173,6 +173,153 @@ type perEntityChannelBinding struct {
 	severity    string
 }
 
+func groupPerEntityNotificationChannels(channels []NotificationChannel) map[string][]NotificationChannel {
+	grouped := make(map[string][]NotificationChannel)
+	for _, ch := range channels {
+		entityID := strings.TrimSpace(ch.ServiceFQID)
+		if entityID == "" {
+			continue
+		}
+		grouped[entityID] = append(grouped[entityID], ch)
+	}
+	return grouped
+}
+
+// dashboardChannelTypeOrder matches Alert Studio rules table icon order.
+var dashboardChannelTypeOrder = []string{
+	"opsgenie",
+	"pagerduty",
+	"slack",
+	"generic_webhook",
+	"email",
+}
+
+func formatNotificationChannelSummary(bindings []NotificationChannel) string {
+	if len(bindings) == 0 {
+		return "Not configured"
+	}
+
+	typesPresent := make(map[string]struct{})
+	for _, ch := range bindings {
+		channelType := strings.ToLower(strings.TrimSpace(ch.Type))
+		if channelType != "" {
+			typesPresent[channelType] = struct{}{}
+		}
+	}
+	if len(typesPresent) == 0 {
+		return "Not configured"
+	}
+
+	orderedTypes := make([]string, 0, len(typesPresent))
+	for _, channelType := range dashboardChannelTypeOrder {
+		if _, ok := typesPresent[channelType]; ok {
+			orderedTypes = append(orderedTypes, channelType)
+			delete(typesPresent, channelType)
+		}
+	}
+	remaining := make([]string, 0, len(typesPresent))
+	for channelType := range typesPresent {
+		remaining = append(remaining, channelType)
+	}
+	sort.Strings(remaining)
+	orderedTypes = append(orderedTypes, remaining...)
+
+	return strings.Join(orderedTypes, ", ")
+}
+
+func formatNotificationChannelBindingDetails(bindings []NotificationChannel) string {
+	if len(bindings) == 0 {
+		return ""
+	}
+
+	lines := make([]string, 0, len(bindings))
+	// Dashboard tooltip order: threat before breach per channel type icon.
+	severityOrder := []string{"threat", "breach"}
+	for _, channelType := range orderedChannelTypesFromBindings(bindings) {
+		channelsOfType := filterBindingsByType(bindings, channelType)
+		for _, severity := range severityOrder {
+			for _, ch := range filterBindingsBySeverity(channelsOfType, severity) {
+				lines = append(lines, formatNotificationChannelBindingLine(ch))
+			}
+		}
+	}
+
+	if len(lines) == 0 {
+		return ""
+	}
+	return "  Notification Channel Bindings:\n" + strings.Join(lines, "\n") + "\n"
+}
+
+func orderedChannelTypesFromBindings(bindings []NotificationChannel) []string {
+	typesPresent := make(map[string]struct{})
+	for _, ch := range bindings {
+		channelType := strings.ToLower(strings.TrimSpace(ch.Type))
+		if channelType != "" {
+			typesPresent[channelType] = struct{}{}
+		}
+	}
+
+	ordered := make([]string, 0, len(typesPresent))
+	for _, channelType := range dashboardChannelTypeOrder {
+		if _, ok := typesPresent[channelType]; ok {
+			ordered = append(ordered, channelType)
+			delete(typesPresent, channelType)
+		}
+	}
+	remaining := make([]string, 0, len(typesPresent))
+	for channelType := range typesPresent {
+		remaining = append(remaining, channelType)
+	}
+	sort.Strings(remaining)
+	return append(ordered, remaining...)
+}
+
+func filterBindingsByType(bindings []NotificationChannel, channelType string) []NotificationChannel {
+	out := make([]NotificationChannel, 0)
+	for _, ch := range bindings {
+		if strings.EqualFold(strings.TrimSpace(ch.Type), channelType) {
+			out = append(out, ch)
+		}
+	}
+	return out
+}
+
+func filterBindingsBySeverity(bindings []NotificationChannel, severity string) []NotificationChannel {
+	out := make([]NotificationChannel, 0)
+	for _, ch := range bindings {
+		if strings.EqualFold(strings.TrimSpace(ch.Severity), severity) {
+			out = append(out, ch)
+		}
+	}
+	return out
+}
+
+func formatNotificationChannelBindingLine(ch NotificationChannel) string {
+	name := strings.TrimSpace(ch.Name)
+	if name == "" {
+		name = "(unnamed)"
+	}
+	channelType := strings.TrimSpace(ch.Type)
+	severity := strings.TrimSpace(ch.Severity)
+	suffix := ""
+	if ch.SnoozeUntil != nil && *ch.SnoozeUntil > 0 {
+		suffix = fmt.Sprintf(
+			" [snoozed until %s]",
+			time.Unix(*ch.SnoozeUntil, 0).UTC().Format("2006-01-02 15:04:05 UTC"),
+		)
+	}
+	if !ch.InUse {
+		suffix += " [not in use]"
+	}
+	return fmt.Sprintf(
+		"    %s / %s (%s)%s",
+		channelType,
+		name,
+		severity,
+		suffix,
+	)
+}
+
 func buildEntityNotificationChannelIndex(channels []NotificationChannel) map[string][]perEntityChannelBinding {
 	index := make(map[string][]perEntityChannelBinding)
 	for _, ch := range channels {

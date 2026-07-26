@@ -28,7 +28,14 @@
 	  notification_channel_names on the same binding row. OR-combined with only_without_notification_channel
 	  when both are set.
 
-	Each alert rule includes:
+	Each alert rule includes notification channel status for its alert group (dashboard Alert Studio
+	rules table column): Notification Channels shows configured types in dashboard order (opsgenie,
+	pagerduty, slack, generic_webhook, email) or "Not configured" when no per-entity binding exists.
+	Notification Channel Bindings lists each binding row (type, name, severity) with snooze/in_use flags
+	when set. Global org-wide channels do not appear here; they are listed only in the global advisory
+	when using only_without_notification_channel.
+
+	Each alert rule also includes:
 	- id: Unique identifier for the alert rule
 	- name: Human-readable name of the alert
 	- primary_indicator: Name of the primary KPI (metric) being monitored
