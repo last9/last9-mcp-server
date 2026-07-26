@@ -164,29 +164,129 @@ func escapeTSV(value string) string {
 	return notificationChannelsTSVEscaper.Replace(value)
 }
 
-func entityIDsWithPerEntityNotificationChannel(channels []NotificationChannel) map[string]bool {
-	configured := make(map[string]bool)
-	for _, ch := range channels {
-		fqid := strings.TrimSpace(ch.ServiceFQID)
-		if fqid != "" {
-			configured[fqid] = true
-		}
-	}
-	return configured
+type entityNotificationChannels struct {
+	types map[string]struct{}
+	names map[string]struct{}
 }
 
-func filterAlertRulesWithoutNotificationChannel(
-	rules AlertConfigResponse,
-	configuredEntityIDs map[string]bool,
-) AlertConfigResponse {
-	filtered := make(AlertConfigResponse, 0, len(rules))
-	for _, rule := range rules {
-		if configuredEntityIDs[rule.EntityID] {
+func buildEntityNotificationChannelIndex(channels []NotificationChannel) map[string]entityNotificationChannels {
+	index := make(map[string]entityNotificationChannels)
+	for _, ch := range channels {
+		entityID := strings.TrimSpace(ch.ServiceFQID)
+		if entityID == "" {
 			continue
 		}
+		entry := index[entityID]
+		if entry.types == nil {
+			entry.types = make(map[string]struct{})
+			entry.names = make(map[string]struct{})
+		}
+		channelType := strings.ToLower(strings.TrimSpace(ch.Type))
+		if channelType != "" {
+			entry.types[channelType] = struct{}{}
+		}
+		channelName := strings.TrimSpace(ch.Name)
+		if channelName != "" {
+			entry.names[channelName] = struct{}{}
+		}
+		index[entityID] = entry
+	}
+	return index
+}
+
+func entityHasPerEntityNotificationChannel(entityID string, index map[string]entityNotificationChannels) bool {
+	entry, ok := index[entityID]
+	return ok && len(entry.types) > 0
+}
+
+func matchesNotificationChannelTypes(entityID string, index map[string]entityNotificationChannels, types []string) bool {
+	entry, ok := index[entityID]
+	if !ok || len(entry.types) == 0 {
+		return false
+	}
+	for _, wantType := range types {
+		wantType = strings.ToLower(strings.TrimSpace(wantType))
+		if wantType == "" {
+			continue
+		}
+		if _, ok := entry.types[wantType]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesNotificationChannelNames(entityID string, index map[string]entityNotificationChannels, names []string) bool {
+	entry, ok := index[entityID]
+	if !ok || len(entry.names) == 0 {
+		return false
+	}
+	for _, wantName := range names {
+		wantName = strings.TrimSpace(wantName)
+		if wantName == "" {
+			continue
+		}
+		for haveName := range entry.names {
+			if strings.EqualFold(haveName, wantName) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func filterAlertRulesByNotificationChannels(
+	rules AlertConfigResponse,
+	channelIndex map[string]entityNotificationChannels,
+	channelTypes []string,
+	channelNames []string,
+	onlyWithout bool,
+) AlertConfigResponse {
+	normalizedTypes := normalizeNotificationChannelTypes(channelTypes)
+	normalizedNames := normalizeStringSlice(channelNames)
+	if !onlyWithout && len(normalizedTypes) == 0 && len(normalizedNames) == 0 {
+		return rules
+	}
+
+	filtered := make(AlertConfigResponse, 0, len(rules))
+	for _, rule := range rules {
+		entityID := rule.EntityID
+		hasBindings := entityHasPerEntityNotificationChannel(entityID, channelIndex)
+
+		matchesWithout := onlyWithout && !hasBindings
+		matchesType := len(normalizedTypes) > 0 && matchesNotificationChannelTypes(entityID, channelIndex, normalizedTypes)
+		matchesName := len(normalizedNames) > 0 && matchesNotificationChannelNames(entityID, channelIndex, normalizedNames)
+
+		channelTypeClause := len(normalizedTypes) == 0 && !onlyWithout
+		if len(normalizedTypes) > 0 || onlyWithout {
+			channelTypeClause = matchesWithout || matchesType
+		}
+
+		if !channelTypeClause {
+			continue
+		}
+		if len(normalizedNames) > 0 && !matchesName {
+			continue
+		}
+
 		filtered = append(filtered, rule)
 	}
 	return filtered
+}
+
+func normalizeNotificationChannelTypes(types []string) []string {
+	normalized := normalizeStringSlice(types)
+	out := make([]string, 0, len(normalized))
+	for _, t := range normalized {
+		out = append(out, strings.ToLower(t))
+	}
+	return out
+}
+
+func requiresNotificationChannelJoin(args GetAlertConfigArgs) bool {
+	return args.OnlyWithoutNotificationChannel ||
+		len(normalizeNotificationChannelTypes(args.NotificationChannelTypes)) > 0 ||
+		len(normalizeStringSlice(args.NotificationChannelNames)) > 0
 }
 
 func formatGlobalNotificationChannelAdvisory(channels []NotificationChannel) string {

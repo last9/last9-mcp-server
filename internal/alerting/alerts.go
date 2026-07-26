@@ -111,8 +111,10 @@ type GetAlertConfigArgs struct {
 	AlertGroupName string   `json:"alert_group_name,omitempty" jsonschema:"Case-insensitive substring match on alert group name (optional)"`
 	AlertGroupType string   `json:"alert_group_type,omitempty" jsonschema:"Case-insensitive substring match on alert group type (optional)"`
 	DataSourceName string   `json:"data_source_name,omitempty" jsonschema:"Case-insensitive substring match on alert group data source name (optional)"`
-	Tags                           []string `json:"tags,omitempty" jsonschema:"Alert group tag filters combined with AND semantics (optional)"`
-	OnlyWithoutNotificationChannel bool     `json:"only_without_notification_channel,omitempty" jsonschema:"If true, return only rules whose alert group has no per-entity notification channel binding (dashboard Not configured). Server-side join with notification channels; global org-wide channels are listed in the response but do not satisfy this filter."`
+	Tags                     []string `json:"tags,omitempty" jsonschema:"Alert group tag filters combined with AND semantics (optional)"`
+	OnlyWithoutNotificationChannel bool     `json:"only_without_notification_channel,omitempty" jsonschema:"If true, include rules whose alert group has no per-entity notification channel binding (dashboard Not configured). OR-combined with notification_channel_types when both are set. Global org-wide channels do not satisfy per-entity filters."`
+	NotificationChannelTypes       []string `json:"notification_channel_types,omitempty" jsonschema:"Include rules whose alert group has a per-entity channel binding with any listed type (case-insensitive, e.g. slack, email, pagerduty, generic_webhook). OR-combined with only_without_notification_channel when both are set."`
+	NotificationChannelNames       []string `json:"notification_channel_names,omitempty" jsonschema:"Include rules whose alert group has a per-entity channel binding with any listed channel name (case-insensitive exact match). AND-combined with notification_channel_types / only_without_notification_channel."`
 }
 
 func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetAlertConfigArgs) (*mcp.CallToolResult, any, error) {
@@ -122,16 +124,18 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 		}
 
 		var (
-			configuredEntityIDs map[string]bool
+			channelIndex          map[string]entityNotificationChannels
 			globalChannelAdvisory string
+			notificationChannelReport bool
 		)
-		if args.OnlyWithoutNotificationChannel {
+		if requiresNotificationChannelJoin(args) {
 			channels, chErr := fetchNotificationChannels(ctx, client, cfg)
 			if chErr != nil {
 				return nil, nil, fmt.Errorf("failed to fetch notification channels: %w", chErr)
 			}
-			configuredEntityIDs = entityIDsWithPerEntityNotificationChannel(channels)
+			channelIndex = buildEntityNotificationChannelIndex(channels)
 			globalChannelAdvisory = formatGlobalNotificationChannelAdvisory(channels)
+			notificationChannelReport = args.OnlyWithoutNotificationChannel
 		}
 
 		alertConfig, err := fetchAlertConfig(ctx, client, cfg)
@@ -140,8 +144,14 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 		}
 
 		filteredAlertConfig := filterAlertConfigByRuleFields(alertConfig, args)
-		if args.OnlyWithoutNotificationChannel {
-			filteredAlertConfig = filterAlertRulesWithoutNotificationChannel(filteredAlertConfig, configuredEntityIDs)
+		if requiresNotificationChannelJoin(args) {
+			filteredAlertConfig = filterAlertRulesByNotificationChannels(
+				filteredAlertConfig,
+				channelIndex,
+				args.NotificationChannelTypes,
+				args.NotificationChannelNames,
+				args.OnlyWithoutNotificationChannel,
+			)
 		}
 
 		entitiesByID := make(map[string]alertGroupEntity)
@@ -161,12 +171,12 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			)
 		}
 
-		if !args.OnlyWithoutNotificationChannel {
+		if !notificationChannelReport {
 			resolveAlertConfigKPIs(ctx, client, cfg, filteredAlertConfig)
 		}
 
-		formattedResponse := formatAlertConfigResponse(filteredAlertConfig, entitiesByID, args.OnlyWithoutNotificationChannel)
-		if args.OnlyWithoutNotificationChannel {
+		formattedResponse := formatAlertConfigResponse(filteredAlertConfig, entitiesByID, notificationChannelReport)
+		if notificationChannelReport {
 			formattedResponse = globalChannelAdvisory + "\n" + formattedResponse
 		}
 

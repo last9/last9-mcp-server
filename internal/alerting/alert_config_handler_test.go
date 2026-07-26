@@ -345,6 +345,84 @@ func TestGetAlertConfigHandler_OnlyWithoutNotificationChannel(t *testing.T) {
 	}
 }
 
+func TestGetAlertConfigHandler_NotificationChannelTypeFilter(t *testing.T) {
+	state := alertConfigTestServerState{
+		alertRules:         sampleAlertConfigRules(),
+		entityGroups:       sampleAlertGroupEntities(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusOK,
+		notificationChannels: []NotificationChannel{
+			{ID: 1, Name: "Checkout Slack", Type: "slack", ServiceFQID: "entity-1"},
+			{ID: 2, Name: "Payments Email", Type: "email", ServiceFQID: "entity-2"},
+		},
+	}
+
+	text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{
+		NotificationChannelTypes: []string{"slack"},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if !strings.Contains(text, "ID: rule-1") {
+		t.Fatalf("expected rule-1 (slack on entity-1), got:\n%s", text)
+	}
+	if strings.Contains(text, "ID: rule-2") || strings.Contains(text, "ID: rule-3") {
+		t.Fatalf("expected only rule-1, got:\n%s", text)
+	}
+}
+
+func TestGetAlertConfigHandler_NotificationChannelNameFilter(t *testing.T) {
+	state := alertConfigTestServerState{
+		alertRules:         sampleAlertConfigRules(),
+		entityGroups:       sampleAlertGroupEntities(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusOK,
+		notificationChannels: []NotificationChannel{
+			{ID: 1, Name: "Checkout Slack", Type: "slack", ServiceFQID: "entity-1"},
+			{ID: 2, Name: "Payments Email", Type: "email", ServiceFQID: "entity-2"},
+		},
+	}
+
+	text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{
+		NotificationChannelNames: []string{"Payments Email"},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if !strings.Contains(text, "ID: rule-2") {
+		t.Fatalf("expected rule-2, got:\n%s", text)
+	}
+	if strings.Contains(text, "ID: rule-1") || strings.Contains(text, "ID: rule-3") {
+		t.Fatalf("expected only rule-2, got:\n%s", text)
+	}
+}
+
+func TestGetAlertConfigHandler_NotificationChannelTypeAndUnconfiguredOR(t *testing.T) {
+	state := alertConfigTestServerState{
+		alertRules:         sampleAlertConfigRules(),
+		entityGroups:       sampleAlertGroupEntities(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusOK,
+		notificationChannels: []NotificationChannel{
+			{ID: 1, Name: "Checkout Slack", Type: "slack", ServiceFQID: "entity-1"},
+		},
+	}
+
+	text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{
+		OnlyWithoutNotificationChannel: true,
+		NotificationChannelTypes:       []string{"slack"},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if !strings.Contains(text, "ID: rule-1") || !strings.Contains(text, "ID: rule-2") || !strings.Contains(text, "ID: rule-3") {
+		t.Fatalf("expected rule-1 (slack) and unconfigured rule-2/rule-3, got:\n%s", text)
+	}
+}
+
 func TestGetAlertConfigHandler_EnrichmentFormatting(t *testing.T) {
 	t.Run("entity match includes alert group enrichment", func(t *testing.T) {
 		state := alertConfigTestServerState{
