@@ -128,7 +128,7 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			channelIndex                map[string][]perEntityChannelBinding
 			entityChannelsByID          map[string][]NotificationChannel
 			globalChannelAdvisory       string
-			notificationChannelReport   bool
+			unconfiguredOnlyHeader      bool
 			notificationChannelsErr     string
 		)
 
@@ -142,8 +142,8 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			channelIndex = buildEntityNotificationChannelIndex(channels)
 			entityChannelsByID = groupPerEntityNotificationChannels(channels)
 			globalChannelAdvisory = formatGlobalNotificationChannelAdvisory(channels)
-			if requiresNotificationChannelJoin(args) {
-				notificationChannelReport = args.OnlyWithoutNotificationChannel
+			if args.OnlyWithoutNotificationChannel && !hasActiveNotificationChannelFilters(args) {
+				unconfiguredOnlyHeader = true
 			}
 		}
 
@@ -181,7 +181,7 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			)
 		}
 
-		if !notificationChannelReport {
+		if !args.OnlyWithoutNotificationChannel {
 			resolveAlertConfigKPIs(ctx, client, cfg, filteredAlertConfig)
 		}
 
@@ -190,9 +190,9 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			entitiesByID,
 			entityChannelsByID,
 			notificationChannelsErr,
-			notificationChannelReport,
+			unconfiguredOnlyHeader,
 		)
-		if notificationChannelReport {
+		if args.OnlyWithoutNotificationChannel {
 			formattedResponse = globalChannelAdvisory + "\n" + formattedResponse
 		}
 

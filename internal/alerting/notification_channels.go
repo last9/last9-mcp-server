@@ -443,7 +443,11 @@ func normalizeNotificationChannelSeverities(severities []string) []string {
 
 func requiresNotificationChannelJoin(args GetAlertConfigArgs) bool {
 	return args.OnlyWithoutNotificationChannel ||
-		len(normalizeNotificationChannelTypes(args.NotificationChannelTypes)) > 0 ||
+		hasActiveNotificationChannelFilters(args)
+}
+
+func hasActiveNotificationChannelFilters(args GetAlertConfigArgs) bool {
+	return len(normalizeNotificationChannelTypes(args.NotificationChannelTypes)) > 0 ||
 		len(normalizeStringSlice(args.NotificationChannelNames)) > 0 ||
 		len(normalizeNotificationChannelSeverities(args.NotificationChannelSeverities)) > 0
 }

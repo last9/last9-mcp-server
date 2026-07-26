@@ -513,6 +513,12 @@ func TestGetAlertConfigHandler_NotificationChannelTypeAndUnconfiguredOR(t *testi
 	if !strings.Contains(text, "ID: rule-1") || !strings.Contains(text, "ID: rule-2") || !strings.Contains(text, "ID: rule-3") {
 		t.Fatalf("expected rule-1 (slack) and unconfigured rule-2/rule-3, got:\n%s", text)
 	}
+	if strings.Contains(text, "no per-entity notification channel configured") {
+		t.Fatalf("OR filter must use default header, not unconfigured-only header, got:\n%s", text)
+	}
+	if !strings.Contains(text, "Found 3 alert rules:") {
+		t.Fatalf("expected default count header for OR filter, got:\n%s", text)
+	}
 }
 
 func TestGetAlertConfigHandler_EnrichmentFormatting(t *testing.T) {
