@@ -18,6 +18,8 @@ const tracePipelineSchemaHint = `Pipeline stage schema: every stage needs "type"
 
 var traceRequestIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
 
+var traceAPIStatusPattern = regexp.MustCompile(`^[a-z_]{1,32}$`)
+
 type traceUpstreamError struct {
 	statusCode int
 	requestID  string
@@ -64,6 +66,14 @@ func traceUpstreamStatusMessage(statusCode int) string {
 }
 
 func newTraceHTTPError(response *http.Response) error {
+	return newTraceHTTPErrorWithHint(response, "")
+}
+
+func newTracePipelineHTTPError(response *http.Response) error {
+	return newTraceHTTPErrorWithHint(response, tracePipelineSchemaHint)
+}
+
+func newTraceHTTPErrorWithHint(response *http.Response, hint string) error {
 	status := response.StatusCode
 	err := &traceUpstreamError{
 		statusCode: status,
@@ -71,7 +81,10 @@ func newTraceHTTPError(response *http.Response) error {
 	}
 	if status == http.StatusBadRequest || status == http.StatusUnprocessableEntity {
 		body := readLimitedResponseBody(response.Body, 4<<10)
-		err.message = fmt.Sprintf("Review the tool arguments and retry. Upstream response: %s\n\n%s", body, tracePipelineSchemaHint)
+		err.message = fmt.Sprintf("Review the tool arguments and retry. Upstream response: %s", body)
+		if hint != "" {
+			err.message += "\n\n" + hint
+		}
 		return err
 	}
 	drainResponseBody(response.Body)
@@ -86,6 +99,10 @@ func newTraceNotFoundTraceError() error {
 }
 
 func newTraceAPIStatusError(status string) error {
+	status = strings.TrimSpace(status)
+	if !traceAPIStatusPattern.MatchString(status) {
+		return newTraceInvalidResponseError(nil)
+	}
 	return &traceUpstreamError{
 		message: fmt.Sprintf("The trace API returned status %q; review the tool arguments and retry.", status),
 	}

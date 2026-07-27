@@ -64,7 +64,7 @@ func fetchTraceSeriesAttributeNames(ctx context.Context, client *http.Client, cf
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, newTraceHTTPError(resp)
+		return nil, newTracePipelineHTTPError(resp)
 	}
 
 	var result traceAttributesResponse

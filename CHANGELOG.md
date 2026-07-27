@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Trace tools (`get_traces`, `get_service_traces`, `get_trace_attributes`, `get_trace_attribute_values`, `get_trace_attributes_for_pipeline`, `get_exceptions`) now return recoverable tool errors (`isError: true`) with sanitized messages instead of JSON-RPC protocol errors when upstream trace calls fail. Upstream response bodies, URLs, and credentials are no longer echoed into model context; pipeline-validation `400`/`422` responses still include the upstream rejection text plus a schema hint pointing at `get_trace_attributes_for_pipeline` (#188).
+- Trace tools (`get_traces`, `get_service_traces`, `get_trace_attributes`, `get_trace_attribute_values`, `get_trace_attributes_for_pipeline`, `get_exceptions`) now return recoverable tool errors (`isError: true`) with sanitized messages instead of JSON-RPC protocol errors when upstream trace calls fail. Upstream response bodies, URLs, and credentials are no longer echoed into model context; `400`/`422` responses still include the upstream rejection text, and the calls that carry a caller-supplied pipeline also get a schema hint pointing at `get_trace_attributes_for_pipeline` (#188).
 - `get_traces` filter schema drops `$exists`/`$notnull` in favor of the `{"$neq": [field, ""]}` idiom; trace-query 408s now return a "narrow the window" error (#195).
 
 

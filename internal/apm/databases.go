@@ -318,7 +318,7 @@ func NewGetDatabaseSlowQueriesHandler(client *http.Client, cfg models.Config) fu
 			if err != nil {
 				var transportErr *utils.HTTPTransportError
 				if errors.As(err, &transportErr) {
-					traceErr = fmt.Errorf("failed to query slow database traces: trace service could not be reached")
+					traceErr = errors.New("failed to query slow database traces: trace service could not be reached")
 					return
 				}
 				traceErr = fmt.Errorf("failed to query slow database traces: %w", err)
