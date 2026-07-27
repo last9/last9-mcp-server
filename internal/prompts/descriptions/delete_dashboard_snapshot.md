@@ -1,0 +1,1 @@
+Delete a frozen dashboard snapshot by ID.

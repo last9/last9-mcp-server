@@ -1,0 +1,1 @@
+List frozen snapshots for a dashboard. Requires dashboard_id. Returns metadata only (id, name, expires_at); use get_dashboard_snapshot for panel_data.

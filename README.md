@@ -218,6 +218,7 @@ The NPM route is easier on Windows — no path management.
 | `LAST9_REFRESH_TOKEN`        | *(required)*         | Refresh token from [API Access](https://app.last9.io/settings/api-access) |
 | `LAST9_DATASOURCE`           | org default          | Datasource/cluster name — useful when you have multiple Levitate clusters |
 | `LAST9_API_HOST`             | `app.last9.io`       | Override the API host |
+| `LAST9_TOOLSETS`             | all tools            | Comma-separated toolsets to expose (`logs`, `traces`, `metrics`, `alerts`, `dashboards`, `investigate`, `all`). Alias: `LAST9_MCP_TOOLSETS` |
 | `LAST9_MAX_GET_LOGS_ENTRIES` | `5000`               | Max entries for chunked `get_logs` requests |
 | `LAST9_DEBUG_CHUNKING`       | `false`              | Set `true` to log chunk-planning details for `get_logs`, `get_service_logs`, `get_traces` |
 | `LAST9_DISABLE_TELEMETRY`    | `true`               | Set `false` to enable internal OTel tracing |
@@ -236,6 +237,7 @@ The NPM route is easier on Windows — no path management.
 - **`get_service_performance_details`** — Full breakdown: throughput, error rate, p50/p90/p95/avg/max, apdex, availability
 - **`get_service_operations_summary`** — Operations grouped by HTTP endpoints, DB calls, messaging, HTTP clients
 - **`get_service_dependency_graph`** — Dependency map with throughput, latency, and error rates for upstream/downstream/infra
+- **`get_apm_service_deviations`** — Compare a current window against an equal-duration baseline: regressions/improvements, Apdex reconciliation, and a terminal outcome (fleet or single service)
 - **`get_exceptions`** — Server-side exceptions with service and span filters
 
 ### Database Observability
@@ -290,6 +292,9 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`create_dashboard`** — Create a new custom dashboard with panels, queries, and metadata
 - **`update_dashboard`** — Update an existing dashboard by ID (readonly system dashboards return an error)
 - **`delete_dashboard`** — Delete a custom dashboard by ID
+- **`list_dashboard_snapshots`** — Frozen point-in-time snapshots for a dashboard (metadata only)
+- **`get_dashboard_snapshot`** — Full frozen snapshot including panel data for RCA / shareable views
+- **`delete_dashboard_snapshot`** — Delete a frozen snapshot by ID
 
 ### Fuzzy Name Resolution
 
@@ -301,7 +306,9 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 **Deep links on every response.** Every tool returns a `deep_link` field — a direct URL into the Last9 dashboard for that exact query and time range. The agent can hand you the link; you click it; you're there.
 
-**Live attribute caching.** At startup, the server fetches the actual log and trace attribute names from your data and embeds them into tool descriptions. This means the AI assistant knows what fields exist in your schema, not just a generic list. The cache refreshes every 2 hours.
+**Toolsets.** By default the server exposes every tool. Automation hosts that only need investigation (logs/traces/metrics) can set `LAST9_TOOLSETS=investigate` (or pass `--toolsets=investigate`) so `tools/list` stays small without client-side mass-disable. Named packs: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `investigate`, `all`. Unknown names fail fast. The `metrics` pack alone does **not** include `list_datasources` or `did_you_mean` — use `investigate` (or combine toolsets) when you need those discovery helpers.
+
+**Tool reference resources.** Long logjson/tracejson/service-logs/metrics manuals are MCP resources (`last9://reference/logjson`, `last9://reference/tracejson`, `last9://reference/service_logs`, `last9://reference/metrics`), not always-on tool description text. Critical query rules stay on the tool description so agents that never call `resources/read` still get correct construction guidance. Discover org-specific fields with `get_log_attributes` / `get_log_attributes_for_pipeline` (and the trace equivalents)—they are not injected into descriptions.
 
 **Chunked large results.** `get_logs` and `get_traces` handle large result sets through chunking rather than truncating. The default limit is 5000 entries for logs; configurable via `LAST9_MAX_GET_LOGS_ENTRIES`.
 
@@ -420,6 +427,16 @@ LAST9_HTTP=true ./last9-mcp-server
 - `lookback_minutes` (integer, optional): Default: 60.
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `env` (string, optional): Defaults to `prod`.
+
+### get_apm_service_deviations
+
+- `service_name` (string, optional): Omit for fleet scope; provide for one service and its operation correlations.
+- `lookback_minutes` (integer, optional): Current window. Default: 60.
+- `start_time_iso` / `end_time_iso` (string, optional): Explicit current window.
+- `baseline_start_time_iso` / `baseline_end_time_iso` (string, optional): Explicit baseline. Defaults to the immediately preceding equal-duration window.
+- `datasource` (string, optional): Restrict the comparison to one datasource.
+- `env` (string, optional): Defaults to `prod`.
+- `max_services` / `max_operations` (integer, optional): Default 10, max 10 each.
 
 ### get_databases
 
@@ -641,6 +658,22 @@ No parameters. Returns all custom dashboards in the org as a JSON array with `id
 ### delete_dashboard
 
 - `id` (string, required): Dashboard UUID to delete. Readonly system dashboards cannot be deleted.
+
+### list_dashboard_snapshots
+
+- `dashboard_id` (string, required): Dashboard UUID whose snapshots to list.
+
+Returns metadata only (`id`, `name`, `expires_at`, etc.). Use `get_dashboard_snapshot` for frozen panel data.
+
+### get_dashboard_snapshot
+
+- `id` (string, required): Snapshot UUID.
+
+Returns the full frozen snapshot including `dashboard_definition`, `panel_data`, `time_range`, and `variables`.
+
+### delete_dashboard_snapshot
+
+- `id` (string, required): Snapshot UUID to delete.
 
 </details>
 

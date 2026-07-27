@@ -2,26 +2,26 @@ package prompts
 
 import _ "embed"
 
-//go:embed descriptions/get_logs.md
-var GetLogsInstructions string
-
-//go:embed descriptions/get_traces.md
-var GetTracesInstructions string
-
-//go:embed descriptions/get_service_traces.md
-var GetServiceTracesInstructions string
-
-//go:embed descriptions/get_metrics.md
-var GetMetricsInstructions string
-
 //go:embed descriptions/get_exceptions.md
 var GetExceptionsInstructions string
 
-//go:embed descriptions/get_service_logs.md
-var GetServiceLogsInstructions string
+//go:embed references/logjson.md
+var LogjsonReference string
+
+//go:embed references/tracejson.md
+var TracejsonReference string
+
+//go:embed references/service_logs.md
+var ServiceLogsReference string
+
+//go:embed references/metrics.md
+var MetricsReference string
 
 //go:embed descriptions/get_service_summary.md
 var GetServiceSummaryDescription string
+
+//go:embed descriptions/get_apm_service_deviations.md
+var GetAPMServiceDeviationsDescription string
 
 //go:embed descriptions/get_service_environments.md
 var GetServiceEnvironmentsDescription string
@@ -121,6 +121,15 @@ var UpdateDashboardDescription string
 
 //go:embed descriptions/delete_dashboard.md
 var DeleteDashboardDescription string
+
+//go:embed descriptions/list_dashboard_snapshots.md
+var ListDashboardSnapshotsDescription string
+
+//go:embed descriptions/get_dashboard_snapshot.md
+var GetDashboardSnapshotDescription string
+
+//go:embed descriptions/delete_dashboard_snapshot.md
+var DeleteDashboardSnapshotDescription string
 
 //go:embed descriptions/get_logs_base.md
 var GetLogsDescription string

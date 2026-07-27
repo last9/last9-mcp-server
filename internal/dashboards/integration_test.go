@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -199,4 +200,128 @@ func TestDashboardCRUD_Integration(t *testing.T) {
 		t.Fatalf("expected not found after delete, got: %v", err)
 	}
 	t.Logf("dashboard CRUD ok id=%s", dashboardID)
+}
+
+func TestDashboardSnapshotCRUD_Integration(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+	deleteCfg := utils.SetupTestConfigWithTokenOrSkip(t, "LAST9_DELETE_TOKEN", cfg)
+	client := http.DefaultClient
+	ctx, cancel := context.WithTimeout(context.Background(), integrationTestTimeout)
+	defer cancel()
+
+	suffix := time.Now().UnixNano()
+	dashName := fmt.Sprintf("mcp-snap-e2e-%d", suffix)
+	createDash, meta := minimalDashboardPayload(dashName)
+	createResult, _, err := NewCreateDashboardHandler(client, *cfg)(ctx, &mcp.CallToolRequest{}, CreateDashboardArgs{
+		DashboardRequest: DashboardRequest{Dashboard: createDash, Metadata: meta},
+	})
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+	dashboardID := dashboardIDFromResponse([]byte(utils.GetTextContent(t, createResult)))
+	if dashboardID == "" {
+		t.Fatalf("create response missing dashboard.id: %s", utils.GetTextContent(t, createResult))
+	}
+	t.Cleanup(func() {
+		_, _, _ = NewDeleteDashboardHandler(client, *deleteCfg)(context.Background(), &mcp.CallToolRequest{}, DeleteDashboardArgs{ID: dashboardID})
+	})
+
+	getResult, _, err := NewGetDashboardHandler(client, *cfg)(ctx, &mcp.CallToolRequest{}, GetDashboardArgs{ID: dashboardID})
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+	var getEnvelope struct {
+		Dashboard json.RawMessage `json:"dashboard"`
+	}
+	if err := json.Unmarshal([]byte(utils.GetTextContent(t, getResult)), &getEnvelope); err != nil {
+		t.Fatalf("decode get dashboard: %v", err)
+	}
+	if len(getEnvelope.Dashboard) == 0 {
+		t.Fatal("get dashboard returned empty dashboard object")
+	}
+
+	now := time.Now().Unix()
+	expires := now + 3600
+	snapName := fmt.Sprintf("mcp-snapshot-%d", suffix)
+	// create_dashboard_snapshot is not exposed as an MCP tool (server-side capture
+	// pending — ENG-1492). Seed a snapshot directly via the v4 API so the shipped
+	// list/get/delete tools still get real end-to-end coverage.
+	seedBody, err := json.Marshal(map[string]any{
+		"dashboard_id":         dashboardID,
+		"name":                 snapName,
+		"description":          "mcp e2e snapshot",
+		"expires_at":           expires,
+		"time_range":           json.RawMessage(fmt.Sprintf(`{"from":%d,"to":%d}`, now-3600, now)),
+		"variables":            json.RawMessage(`{}`),
+		"region":               cfg.Region,
+		"dashboard_definition": getEnvelope.Dashboard,
+		"panel_data":           json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("marshal seed snapshot: %v", err)
+	}
+	seedResp, _, err := doJSONRequest(ctx, client, *cfg, http.MethodPost, cfg.APIBaseURL+constants.EndpointDashboardSnapshots, seedBody)
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+	snapshotID := snapshotIDFromResponse(seedResp)
+	if snapshotID == "" {
+		t.Fatalf("seed snapshot missing id: %s", string(seedResp))
+	}
+	t.Cleanup(func() {
+		_, _, _ = NewDeleteDashboardSnapshotHandler(client, *deleteCfg)(context.Background(), &mcp.CallToolRequest{}, DeleteDashboardSnapshotArgs{ID: snapshotID})
+	})
+
+	listResult, _, err := NewListDashboardSnapshotsHandler(client, *cfg)(ctx, &mcp.CallToolRequest{}, ListDashboardSnapshotsArgs{
+		DashboardID: dashboardID,
+	})
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+	listText := utils.GetTextContent(t, listResult)
+	if !strings.Contains(listText, snapshotID) || !strings.Contains(listText, snapName) {
+		t.Fatalf("list snapshots missing created snapshot: %s", listText)
+	}
+
+	getSnapResult, _, err := NewGetDashboardSnapshotHandler(client, *cfg)(ctx, &mcp.CallToolRequest{}, GetDashboardSnapshotArgs{ID: snapshotID})
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+	var snap struct {
+		ID                  string          `json:"id"`
+		Name                string          `json:"name"`
+		DashboardDefinition json.RawMessage `json:"dashboard_definition"`
+		PanelData           json.RawMessage `json:"panel_data"`
+		TimeRange           json.RawMessage `json:"time_range"`
+	}
+	if err := json.Unmarshal([]byte(utils.GetTextContent(t, getSnapResult)), &snap); err != nil {
+		t.Fatalf("decode get snapshot: %v", err)
+	}
+	if snap.ID != snapshotID || snap.Name != snapName {
+		t.Fatalf("get snapshot id/name got %q/%q want %q/%q", snap.ID, snap.Name, snapshotID, snapName)
+	}
+	if len(snap.DashboardDefinition) == 0 || len(snap.PanelData) == 0 || len(snap.TimeRange) == 0 {
+		t.Fatalf("get snapshot missing frozen fields: %+v", snap)
+	}
+	wantSnapRef := "/v2/organizations/" + cfg.OrgSlug + "/dashboards/snapshots/" + snapshotID
+	if ref, ok := getSnapResult.Meta["reference_url"].(string); !ok || ref != wantSnapRef {
+		t.Fatalf("get snapshot reference_url %q want %q", getSnapResult.Meta["reference_url"], wantSnapRef)
+	}
+
+	deleteResult, _, err := NewDeleteDashboardSnapshotHandler(client, *deleteCfg)(ctx, &mcp.CallToolRequest{}, DeleteDashboardSnapshotArgs{ID: snapshotID})
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+	if !strings.Contains(utils.GetTextContent(t, deleteResult), snapshotID) {
+		t.Fatalf("delete response missing id: %s", utils.GetTextContent(t, deleteResult))
+	}
+
+	_, _, err = NewGetDashboardSnapshotHandler(client, *cfg)(ctx, &mcp.CallToolRequest{}, GetDashboardSnapshotArgs{ID: snapshotID})
+	if err == nil {
+		t.Fatal("expected error fetching deleted snapshot")
+	}
+	if !strings.Contains(err.Error(), "404") && !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected not found after delete, got: %v", err)
+	}
+	t.Logf("dashboard snapshot CRUD ok dashboard=%s snapshot=%s", dashboardID, snapshotID)
 }

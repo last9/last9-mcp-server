@@ -163,6 +163,11 @@ func (b *Builder) BuildDashboardLink(dashboardID string) string {
 	return fmt.Sprintf("/v2/organizations/%s/%s/%s", b.orgSlug, RouteDashboards, url.PathEscape(dashboardID))
 }
 
+// BuildDashboardSnapshotLink creates a deep link to a frozen dashboard snapshot by ID.
+func (b *Builder) BuildDashboardSnapshotLink(snapshotID string) string {
+	return fmt.Sprintf("/v2/organizations/%s/%s/snapshots/%s", b.orgSlug, RouteDashboards, url.PathEscape(snapshotID))
+}
+
 // ToMeta converts a dashboard URL to MCP Meta format
 func ToMeta(dashboardURL string) mcp.Meta {
 	return mcp.Meta{
