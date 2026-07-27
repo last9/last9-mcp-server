@@ -19,6 +19,16 @@ import (
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 )
 
+// HTTPTransportError identifies a failure from http.Client.Do after a request
+// was successfully prepared. Callers can distinguish it from local validation,
+// marshaling, and request-construction failures without parsing error text.
+type HTTPTransportError struct {
+	Err error
+}
+
+func (err *HTTPTransportError) Error() string { return "HTTP request failed: " + err.Err.Error() }
+func (err *HTTPTransportError) Unwrap() error { return err.Err }
+
 // Constants for time-related values
 const (
 	// DefaultLookbackMinutes is the default lookback time in minutes (1 hour)
@@ -329,7 +339,7 @@ func MakeTracesJSONQueryAPI(ctx context.Context, client *http.Client, cfg models
 	// Execute
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed (URL: %s): %w", fullURL, err)
+		return nil, &HTTPTransportError{Err: err}
 	}
 
 	return resp, nil

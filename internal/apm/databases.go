@@ -3,6 +3,7 @@ package apm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -315,18 +316,19 @@ func NewGetDatabaseSlowQueriesHandler(client *http.Client, cfg models.Config) fu
 			defer sqWg.Done()
 			resp, err := utils.MakeTracesJSONQueryAPI(ctx, client, cfg, pipeline, startMs, endMs, limit)
 			if err != nil {
+				var transportErr *utils.HTTPTransportError
+				if errors.As(err, &transportErr) {
+					traceErr = errors.New("failed to query slow database traces: trace service could not be reached")
+					return
+				}
 				traceErr = fmt.Errorf("failed to query slow database traces: %w", err)
 				return
 			}
 			defer resp.Body.Close()
 
 			if resp.StatusCode != http.StatusOK {
-				body, _ := io.ReadAll(resp.Body)
-				bodyStr := string(body)
-				if len(bodyStr) > 200 {
-					bodyStr = bodyStr[:200] + "..."
-				}
-				traceErr = fmt.Errorf("traces API returned status %d: %s", resp.StatusCode, bodyStr)
+				_, _ = io.CopyN(io.Discard, resp.Body, 4<<10)
+				traceErr = fmt.Errorf("traces API returned status %d", resp.StatusCode)
 				return
 			}
 
