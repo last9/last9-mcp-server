@@ -10,6 +10,7 @@ import (
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -33,16 +34,16 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 	}
 	return func(ctx context.Context, req *mcp.CallToolRequest, args AlertRuleStateRequest) (*mcp.CallToolResult, any, error) {
 		if args.StartTime >= args.EndTime {
-			return toolErrorResult("start_time must be less than end_time"), nil, nil
+			return utils.ToolErrorResult("start_time must be less than end_time"), nil, nil
 		}
 		if args.Step <= 0 {
-			return toolErrorResult("step must be greater than 0"), nil, nil
+			return utils.ToolErrorResult("step must be greater than 0"), nil, nil
 		}
 
 		// Inclusive sample count: t iterates start, start+step, ..., end.
 		points := (args.EndTime-args.StartTime)/args.Step + 1
 		if points > alertRuleStateMaxPoints {
-			return toolErrorResult(fmt.Sprintf("time range and step result in too many points (%d). Maximum is %d", points, alertRuleStateMaxPoints)), nil, nil
+			return utils.ToolErrorResult(fmt.Sprintf("time range and step result in too many points (%d). Maximum is %d", points, alertRuleStateMaxPoints)), nil, nil
 		}
 
 		type Datapoint struct {

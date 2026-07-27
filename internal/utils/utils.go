@@ -151,11 +151,7 @@ func MakePromInstantAPIQuery(ctx context.Context, client *http.Client, promql st
 	req.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
 	req.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, &HTTPTransportError{Err: err}
-	}
-	return resp, nil
+	return client.Do(req)
 }
 
 func MakePromRangeAPIQuery(ctx context.Context, client *http.Client, promql string, startTimeParam, endTimeParam int64, cfg models.Config) (*http.Response, error) {

@@ -12,6 +12,7 @@ import (
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -27,7 +28,7 @@ func NewGetEntityAlertRulesHandler(client *http.Client, cfg models.Config) func(
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args GetEntityAlertRulesArgs) (*mcp.CallToolResult, any, error) {
 		entityID := strings.TrimSpace(args.EntityID)
 		if entityID == "" {
-			return toolErrorResult("entity_id is required"), nil, nil
+			return utils.ToolErrorResult("entity_id is required"), nil, nil
 		}
 
 		rules, err := fetchEntityAlertRules(ctx, client, cfg, entityID)

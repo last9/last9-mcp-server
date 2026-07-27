@@ -3,7 +3,6 @@ package traces
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -97,11 +96,7 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 		// Frontend parity: exceptions list is fetched from prom_query_instant over trace_*_count.
 		resp, err := utils.MakePromInstantAPIQuery(ctx, client, exceptionsQuery, endTime.Unix(), cfg)
 		if err != nil {
-			var transportErr *utils.HTTPTransportError
-			if errors.As(err, &transportErr) {
-				return traceToolErrorResult(newTraceTransportError(transportErr)), nil, nil
-			}
-			return nil, nil, fmt.Errorf("failed to prepare trace exception request: %w", err)
+			return traceToolErrorResult(newTraceTransportError(err)), nil, nil
 		}
 		defer resp.Body.Close()
 
