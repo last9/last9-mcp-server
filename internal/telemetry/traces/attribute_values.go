@@ -81,7 +81,10 @@ func NewGetTraceAttributeValuesHandler(client *http.Client, cfg models.Config) f
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			return traceToolErrorResult(newTracePipelineHTTPError(resp)), nil, nil
+			if len(args.Pipeline) > 0 {
+				return traceToolErrorResult(newTracePipelineHTTPError(resp)), nil, nil
+			}
+			return traceToolErrorResult(newTraceHTTPError(resp)), nil, nil
 		}
 
 		var apiResp traceTagValuesAPIResponse

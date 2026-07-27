@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"last9-mcp/internal/utils"
 
@@ -19,6 +20,14 @@ const tracePipelineSchemaHint = `Pipeline stage schema: every stage needs "type"
 var traceRequestIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
 
 var traceAPIStatusPattern = regexp.MustCompile(`^[a-z_]{1,32}$`)
+
+const traceUpstreamBodyLimit = 512
+
+var (
+	traceBodyURLPattern    = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s"'<>,}\]]+`)
+	traceBodyBearerPattern = regexp.MustCompile(`(?i)\bbearer\s+[^\s"',}]+`)
+	traceBodySecretPattern = regexp.MustCompile(`(?i)\b(token|api[_-]?key|secret|password|authorization)\b"?\s*[:=]\s*"?[^"',}\s]+`)
+)
 
 type traceUpstreamError struct {
 	statusCode int
@@ -55,8 +64,12 @@ func traceUpstreamStatusMessage(statusCode int) string {
 		return "Check the connection credentials and trace-data access."
 	case http.StatusNotFound:
 		return "The trace capability may be unavailable or disabled."
-	case http.StatusRequestTimeout, http.StatusTooManyRequests:
+	case http.StatusRequestTimeout:
 		return "Retry after a short delay or request a smaller time window."
+	case http.StatusTooManyRequests:
+		return "Rate limited; retry after a short delay."
+	case http.StatusNotImplemented:
+		return "The trace service does not support this operation; retrying will not help."
 	default:
 		if statusCode >= http.StatusInternalServerError {
 			return "The trace service is temporarily unavailable; retry later."
@@ -99,7 +112,7 @@ func newTraceNotFoundTraceError() error {
 }
 
 func newTraceAPIStatusError(status string) error {
-	status = strings.TrimSpace(status)
+	status = strings.ToLower(strings.TrimSpace(status))
 	if !traceAPIStatusPattern.MatchString(status) {
 		return newTraceInvalidResponseError(nil)
 	}
@@ -164,5 +177,25 @@ func readLimitedResponseBody(body io.Reader, limit int64) string {
 	var buf bytes.Buffer
 	_, _ = io.CopyN(&buf, body, limit)
 	_, _ = io.CopyN(io.Discard, body, 4<<10)
-	return buf.String()
+	return sanitizeUpstreamBody(buf.String())
+}
+
+func sanitizeUpstreamBody(raw string) string {
+	cleaned := traceBodyURLPattern.ReplaceAllString(raw, "[redacted-url]")
+	cleaned = traceBodyBearerPattern.ReplaceAllString(cleaned, "[redacted-credential]")
+	cleaned = traceBodySecretPattern.ReplaceAllString(cleaned, "[redacted-credential]")
+	cleaned = strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r == '\t' {
+			return ' '
+		}
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, cleaned)
+	cleaned = strings.Join(strings.Fields(cleaned), " ")
+	if len(cleaned) > traceUpstreamBodyLimit {
+		cleaned = strings.ToValidUTF8(cleaned[:traceUpstreamBodyLimit], "") + "… (truncated)"
+	}
+	return cleaned
 }
