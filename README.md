@@ -279,6 +279,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 ### Change Events & Alerts
 
+- **`get_change_timeline`** — One ordered incident chronology of recorded changes and observed alert episodes, with source coverage and non-causal proximity relationships
 - **`get_change_events`** — Deployments, config changes, rollbacks. Correlate incidents with what changed
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_alerts`** — Currently firing alerts within a time window
@@ -596,6 +597,16 @@ Exactly one of `trace_id` or `service_name` is required.
 - `env` (string, optional)
 - `event_name` (string, optional): Call without this first to get `available_event_names`.
 
+### get_change_timeline
+
+- `start_time_iso` / `end_time_iso` (string, optional as a pair): Explicit RFC3339 range, maximum one hour.
+- `lookback_minutes` (integer, optional): Default and maximum: 60. Ignored when explicit bounds are supplied.
+- `service_name`, `env`, `alert_group_id`, `rule_id`, `event_name` (string, optional): Exact scope filters.
+- `kinds` (array, optional): `change_event`, `alert_episode`, or both (default).
+- `max_events` (integer, optional): Default: 200. Maximum: 500.
+
+Returns the canonical ordered timeline plus per-source coverage, warnings, deterministic temporal relationships, and selective recommended follow-up tools. Proximity never establishes causality; `last_observed_at` is not a resolution timestamp.
+
 ### get_alert_config
 
 - `search_term` (string, optional): Free-text search across name, group, data source, tags.
@@ -608,8 +619,8 @@ Exactly one of `trace_id` or `service_name` is required.
 ### get_alerts
 
 - `time_iso` (string, optional): Evaluation time in RFC3339.
-- `window` (integer, optional): Lookback in seconds. Default: 900. Range: 60–86400.
-- `lookback_minutes` (integer, optional): Range: 1–1440.
+- `window` (integer, optional): Lookback in seconds. Default: 900. Range: 1–3600.
+- `lookback_minutes` (integer, optional): Range: 1–60; used only when window is omitted.
 
 ### get_alert_rule_state
 

@@ -38,6 +38,7 @@ var named = map[string][]string{
 		"get_service_operations_summary",
 		"get_service_dependency_graph",
 		"get_change_events",
+		"get_change_timeline",
 		"get_databases",
 		"get_database_slow_queries",
 		"get_database_queries",
@@ -48,6 +49,7 @@ var named = map[string][]string{
 		"get_alert_config",
 		"get_entity_alert_rules",
 		"get_alert_rule_state",
+		"get_change_timeline",
 		"get_notification_channels",
 		"get_drop_rules",
 		"add_drop_rule",
@@ -68,6 +70,9 @@ var named = map[string][]string{
 var investigateExtras = []string{
 	"did_you_mean",
 	"list_datasources",
+	"get_alerts",
+	"get_alert_config",
+	"get_entity_alert_rules",
 }
 
 // ValidNames returns sorted valid toolset tokens for error messages.

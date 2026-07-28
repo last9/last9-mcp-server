@@ -31,6 +31,7 @@ const (
 	EndpointLogsSettingsRouting  = "/logs_settings/routing"
 	EndpointAlertRules           = "/alert-rules"
 	EndpointAlertsMonitor        = "/alerts/monitor"
+	EndpointChangeTimeline       = "/change_timeline"
 	EndpointEntitiesList         = "/entities/list"
 	EndpointEntityKPI            = "/entities/%s/kpis/%s"
 	EndpointEntityAlertRules     = "/entities/%s/alert-rules"

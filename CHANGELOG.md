@@ -9,11 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_change_timeline` returns recorded Change Events and observed alert episodes in one stable chronology through the canonical Last9 API contract, including source coverage, deterministic non-causal proximity relationships, and selective investigation follow-ups. The `investigate` toolset now includes this tool plus the read-only alert tools.
 - `get_alert_config` server-side notification-channel filters matching Alert Studio dashboard semantics: `only_without_notification_channel` (dashboard "Not configured"), `notification_channel_types`, `notification_channel_names`, and `notification_channel_severities` (breach/threat on the same binding row). Every rule now includes `Notification Channels` and `Notification Channel Bindings` lines aligned with the rules-table column; alert group `name`, `data_source`, and `tags` are included when resolved (#191).
 - `get_notification_channels` TSV output now includes `service_fqid`, the per-entity alert-group binding id (#191).
 
 ### Fixed
 
+- `get_change_events` now discovers canonical `event_name` values with legacy alias compatibility, escapes PromQL label values, counts event points rather than series, and reports `series_count` separately. `get_alerts` documentation now matches Alert Monitor's first/last-observed response semantics.
 - `get_notification_channels` / `get_alert_config` channel binding fetches use `?exact=true` on `/notification_settings` so per-entity mapped channels load (without it, only global/master rows returned and binding filters falsely reported every rule as unconfigured) (#191).
 - `get_traces` no longer chunks `aggregate`/`window_aggregate` pipelines — long-window group-by queries run as a single request, fixing duplicate keys and wrong `avg`/`median`/`quantile` math (#195).
 - Trace filter existence checks: `$exists` and `$notnull` are rewritten to `{"$neq": [field, ""]}` before hitting the backend (previously matched all spans / no spans respectively) (#195).
