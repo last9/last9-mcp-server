@@ -54,7 +54,7 @@ func TestGetChangeEventsHandler_ExplicitRangePrecedence(t *testing.T) {
 		Timestamp int64 `json:"timestamp"`
 		Window    int64 `json:"window"`
 	}
-	captured := make([]promReq, 0, 2)
+	captured := make([]promReq, 0, 4)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -94,8 +94,8 @@ func TestGetChangeEventsHandler_ExplicitRangePrecedence(t *testing.T) {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(captured) != 2 {
-		t.Fatalf("expected 2 upstream requests, got %d", len(captured))
+	if len(captured) != 4 {
+		t.Fatalf("expected 4 upstream requests, got %d", len(captured))
 	}
 
 	// endTimeParam = "2026-02-09T16:04:05Z" = 1770653045
@@ -107,6 +107,22 @@ func TestGetChangeEventsHandler_ExplicitRangePrecedence(t *testing.T) {
 		if req.Window != 3600 {
 			t.Fatalf("window = %d, want %d", req.Window, int64(3600))
 		}
+	}
+}
+
+func TestBuildChangeEventsQueryUsesCanonicalEventNameAndEscapesValues(t *testing.T) {
+	query := buildChangeEventsQuery(GetChangeEventsArgs{
+		ServiceName: `checkout"api`, Env: "prod", EventName: "deployment",
+	})
+
+	if !strings.Contains(query, `event_name="deployment"`) {
+		t.Fatalf("canonical event_name matcher missing: %s", query)
+	}
+	if !strings.Contains(query, `event_type="deployment"`) {
+		t.Fatalf("legacy event_type matcher missing: %s", query)
+	}
+	if !strings.Contains(query, `service_name="checkout\"api"`) {
+		t.Fatalf("service matcher was not escaped: %s", query)
 	}
 }
 

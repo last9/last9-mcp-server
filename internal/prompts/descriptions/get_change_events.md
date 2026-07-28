@@ -1,8 +1,8 @@
 Change events from the `last9_change_events` Prometheus metric (deployments, config changes, rollbacks, scaling, etc.) over a time range.
 
-Response: `available_event_names` (valid filter values), `change_events` (timeseries with metric labels + timestamp/value pairs), `count`, `time_range`.
+Response: `available_event_names` (valid canonical or legacy filter values), `change_events` (timeseries with metric labels + timestamp/value pairs), `count` (event-point count), `series_count`, and `time_range`.
 
-Each event has `metric` (labels: service_name, env, event_type, message, …) and `values` (timestamp/value pairs).
+Each event has `metric` (labels: canonical event_name/service_name/env plus source-specific attributes) and `values` (timestamp/value pairs). Legacy event_type and l9_event_name labels remain readable, but event_name is canonical.
 
 Workflow: first call without `event_name` to read `available_event_names`, then filter with the exact name from that list. Combine with service_name, env, and time filters as needed.
 

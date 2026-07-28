@@ -9,15 +9,8 @@
 	
 	Uses the datasource configured in the server config (or default if not specified).
 	
-	Each alert includes:
-	- id: Unique identifier for this alert instance
-	- rule_id: ID of the alert rule that triggered this alert
-	- rule_name: Name of the alert rule
-	- state: Current state (firing, resolved, pending)
-	- severity: Alert severity level
-	- starts_at: When this alert instance started firing
-	- ends_at: When this alert instance was resolved (if resolved)
-	- labels: Key-value pairs for alert identification and routing
-	- annotations: Additional context and descriptions
-	- generator_url: URL to the source of the alert
-	- fingerprint: Unique fingerprint for this alert instance
+	Response fields: timestamp, window, and alert_rules. Each rule includes alert_group_id/name, rule_id/name,
+	severity, state, rule_type, since (first observed firing), last_fired_at (last observed firing), and alert instances.
+	Each instance includes state, label_hash, annotations, group_labels, metric_degradation, current_value, since,
+	and last_fired_at. last_fired_at is not a confirmed resolution timestamp. For adaptive expressions,
+	current_value may be comparator/rule output (for example 1), not the underlying observed metric.
