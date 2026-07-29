@@ -11,7 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `get_alert_config` server-side notification-channel filters matching Alert Studio dashboard semantics: `only_without_notification_channel` (dashboard "Not configured"), `notification_channel_types`, `notification_channel_names`, and `notification_channel_severities` (breach/threat on the same binding row). Every rule now includes `Notification Channels` and `Notification Channel Bindings` lines aligned with the rules-table column; alert group `name`, `data_source`, and `tags` are included when resolved (#191).
 - `get_notification_channels` TSV output now includes `service_fqid`, the per-entity alert-group binding id (#191).
-- `get_service_summary` accepts optional `service_name` filter (alias `service`) so ecosystem-prior param names are absorbed and per-service health asks work without param rejection.
 
 ### Fixed
 

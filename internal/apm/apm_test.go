@@ -708,61 +708,6 @@ func TestPromqlLabelArgs_AcceptMatchAlias(t *testing.T) {
 	}
 }
 
-func TestServiceSummaryArgs_AcceptServiceAlias(t *testing.T) {
-	rt := reflect.TypeOf(ServiceSummaryArgs{})
-	if present, _ := jsonParam(rt, "service_name"); !present {
-		t.Fatal("ServiceSummaryArgs must expose canonical \"service_name\"")
-	}
-	if present, _ := jsonParam(rt, "service"); !present {
-		t.Fatal("ServiceSummaryArgs must accept alias \"service\"")
-	}
-}
-
-func TestNewServiceSummaryHandler_ServiceFilterUsesServiceAlias(t *testing.T) {
-	var captured []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		_ = r.Body.Close()
-		var req struct {
-			Query string `json:"query"`
-		}
-		_ = json.Unmarshal(body, &req)
-		if req.Query != "" {
-			captured = append(captured, req.Query)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, `[]`)
-	}))
-	defer server.Close()
-
-	cfg := models.Config{
-		APIBaseURL: server.URL,
-		Region:     "us-east-1",
-		TokenManager: &auth.TokenManager{
-			AccessToken: "test-token",
-			ExpiresAt:   time.Now().Add(24 * time.Hour),
-		},
-	}
-
-	handler := NewServiceSummaryHandler(server.Client(), cfg)
-	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServiceSummaryArgs{
-		Service:         "checkout-service",
-		LookbackMinutes: 30,
-	})
-	if err != nil {
-		t.Fatalf("handler error: %v", err)
-	}
-	if len(captured) == 0 {
-		t.Fatal("expected PromQL queries to be captured")
-	}
-	for _, query := range captured {
-		if !strings.Contains(query, `service_name="checkout-service"`) {
-			t.Fatalf("expected service_name filter in query, got: %s", query)
-		}
-	}
-}
-
 // Verifies the renamed input field (service_name) actually reaches the backend
 // label-values match query as service_name="..." — the rename is only correct
 // if the handler wires the new field into the query, not just the schema.
