@@ -185,6 +185,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to create MCP server: %v", err)
 	}
+	server.Server.AddReceivingMiddleware(cacheTTLMiddleware)
 
 	if !cfg.DisableTelemetry {
 		meter := otel.GetMeterProvider().Meter("last9-mcp")

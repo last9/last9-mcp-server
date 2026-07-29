@@ -49,6 +49,29 @@ func TestStatelessStreamableHandler(t *testing.T) {
 		}
 	})
 
+	t.Run("server/discover returns supported versions without initialize", func(t *testing.T) {
+		body := `{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/clientInfo":{"name":"test-client","version":"1.0.0"},"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}`
+		req, _ := http.NewRequest(http.MethodPost, ts.URL, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("Mcp-Protocol-Version", "2026-07-28")
+		req.Header.Set("Mcp-Method", "server/discover")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("request failed: %v", err)
+		}
+		defer resp.Body.Close()
+		respBody, _ := io.ReadAll(resp.Body)
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("got HTTP %d, want 200; body: %s", resp.StatusCode, respBody)
+		}
+		if !strings.Contains(string(respBody), "2026-07-28") {
+			t.Fatalf("response missing 2026-07-28 supported version; body: %s", respBody)
+		}
+	})
+
 	t.Run("GET SSE stream returns 405 in stateless mode", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, ts.URL, nil)
 		req.Header.Set("Accept", "text/event-stream")
