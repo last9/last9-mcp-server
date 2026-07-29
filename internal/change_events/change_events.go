@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -73,18 +74,26 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 		startTimeParam := startTime.Unix()
 		endTimeParam := endTime.Unix()
 
-		availableEventNames, discoveryWarnings := fetchAvailableEventNames(
-			ctx, client, startTimeParam, endTimeParam, cfg,
-		)
-
 		promql := buildChangeEventsQuery(args, endTimeParam-startTimeParam)
 
 		// Query a range vector at the requested end time. A Prometheus range query
 		// evaluates a sparse gauge repeatedly and can duplicate one recorded event
 		// at every step because of staleness lookback.
-		resp, err := utils.MakePromInstantAPIQuery(ctx, client, promql, endTimeParam, cfg)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to query change events: %w", err)
+		var availableEventNames, discoveryWarnings []string
+		var resp *http.Response
+		var queryErr error
+		var waitGroup sync.WaitGroup
+		waitGroup.Go(func() {
+			availableEventNames, discoveryWarnings = fetchAvailableEventNames(
+				ctx, client, startTimeParam, endTimeParam, cfg,
+			)
+		})
+		waitGroup.Go(func() {
+			resp, queryErr = utils.MakePromInstantAPIQuery(ctx, client, promql, endTimeParam, cfg)
+		})
+		waitGroup.Wait()
+		if queryErr != nil {
+			return nil, nil, fmt.Errorf("failed to query change events: %w", queryErr)
 		}
 		defer resp.Body.Close()
 
@@ -210,14 +219,12 @@ func fetchAvailableEventNames(
 	}
 	results := make([]labelResult, len(labels))
 	var waitGroup sync.WaitGroup
-	waitGroup.Add(len(labels))
 	for index, label := range labels {
-		go func() {
-			defer waitGroup.Done()
+		waitGroup.Go(func() {
 			results[index].names, results[index].err = fetchEventNamesForLabel(
 				ctx, client, label, startTime, endTime, cfg,
 			)
-		}()
+		})
 	}
 	waitGroup.Wait()
 
@@ -235,11 +242,7 @@ func fetchAvailableEventNames(
 			uniqueNames[name] = struct{}{}
 		}
 	}
-	eventNames := make([]string, 0, len(uniqueNames))
-	for name := range uniqueNames {
-		eventNames = append(eventNames, name)
-	}
-	sort.Strings(eventNames)
+	eventNames := slices.Sorted(maps.Keys(uniqueNames))
 	return eventNames, warnings
 }
 
