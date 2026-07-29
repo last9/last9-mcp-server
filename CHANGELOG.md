@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `get_change_timeline` returns recorded Change Events and observed alert episodes in one stable chronology through the canonical Last9 API contract, including source coverage, deterministic non-causal proximity relationships, and selective investigation follow-ups. The `investigate` toolset now includes this tool plus the read-only alert tools.
+- `get_change_timeline` returns recorded Change Events and observed alert episodes in one stable chronology through the canonical Last9 API contract, including source coverage, deterministic non-causal proximity relationships, and selective investigation follow-ups. The `investigate` toolset now includes this tool plus `get_alerts`, `get_alert_config`, and `get_entity_alert_rules`.
 - `get_alert_config` server-side notification-channel filters matching Alert Studio dashboard semantics: `only_without_notification_channel` (dashboard "Not configured"), `notification_channel_types`, `notification_channel_names`, and `notification_channel_severities` (breach/threat on the same binding row). Every rule now includes `Notification Channels` and `Notification Channel Bindings` lines aligned with the rules-table column; alert group `name`, `data_source`, and `tags` are included when resolved (#191).
 - `get_notification_channels` TSV output now includes `service_fqid`, the per-entity alert-group binding id (#191).
 

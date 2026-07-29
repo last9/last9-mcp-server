@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"last9-mcp/internal/apm"
+	"last9-mcp/internal/timeline"
 	"last9-mcp/internal/toolsets"
 )
 
@@ -53,6 +54,34 @@ func TestDumpTools(t *testing.T) {
 		}
 		if out.Tools[i].InputSchema == nil {
 			t.Fatalf("tool %q has no inputSchema", name)
+		}
+	}
+
+	timelineIndex, exists := byName["get_change_timeline"]
+	if !exists {
+		t.Fatal("tool \"get_change_timeline\" missing from dump")
+	}
+	timelineTool := out.Tools[timelineIndex]
+	if got, want := schemaAsMap(t, timelineTool.InputSchema), getChangeTimelineSchemaForTest(t); !reflect.DeepEqual(got, want) {
+		t.Fatalf("served get_change_timeline schema differs from canonical schema\nserved: %#v\nwant: %#v", got, want)
+	}
+	followUpArguments := map[string][]string{
+		"get_alert_config":           {"rule_id"},
+		"get_entity_alert_rules":     {"entity_id"},
+		"get_apm_service_deviations": {"service_name", "start_time_iso", "end_time_iso", "env"},
+		"get_service_logs":           {"service_name", "start_time_iso", "end_time_iso", "env"},
+		"get_service_traces":         {"service_name", "start_time_iso", "end_time_iso", "env"},
+	}
+	for toolName, argumentNames := range followUpArguments {
+		toolIndex, exists := byName[toolName]
+		if !exists {
+			t.Fatalf("recommended follow-up tool %q is not registered", toolName)
+		}
+		properties := schemaAsMap(t, out.Tools[toolIndex].InputSchema)["properties"].(map[string]any)
+		for _, argumentName := range argumentNames {
+			if _, exists := properties[argumentName]; !exists {
+				t.Errorf("recommended follow-up %s argument %q is absent from its served schema", toolName, argumentName)
+			}
 		}
 	}
 
@@ -141,6 +170,11 @@ func TestDumpTools(t *testing.T) {
 	if _, exists := served["allOf"]; exists {
 		t.Fatal("served schema must omit provider-incompatible allOf")
 	}
+}
+
+func getChangeTimelineSchemaForTest(t *testing.T) map[string]any {
+	t.Helper()
+	return schemaAsMap(t, timeline.GetChangeTimelineInputSchema())
 }
 
 func descriptionTokenEstimate(descs []string) int {

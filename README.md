@@ -600,7 +600,7 @@ Exactly one of `trace_id` or `service_name` is required.
 ### get_change_timeline
 
 - `start_time_iso` / `end_time_iso` (string, optional as a pair): Explicit RFC3339 range, maximum one hour.
-- `lookback_minutes` (integer, optional): Default and maximum: 60. Ignored when explicit bounds are supplied.
+- `lookback_minutes` (integer, optional): Default and maximum: 60. Omit when explicit bounds are supplied.
 - `service_name`, `env`, `alert_group_id`, `rule_id`, `event_name` (string, optional): Exact scope filters.
 - `kinds` (array, optional): `change_event`, `alert_episode`, or both (default).
 - `max_events` (integer, optional): Default: 200. Maximum: 500.

@@ -12,6 +12,7 @@ import (
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/toolsets"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -20,7 +21,7 @@ import (
 func TestResolveTimelineRequestExplicitRangeTakesPrecedence(t *testing.T) {
 	request, err := resolveTimelineRequest(GetChangeTimelineArgs{
 		StartTimeISO: "2026-07-28T09:30:00Z", EndTimeISO: "2026-07-28T10:30:00Z",
-		LookbackMinutes: 120,
+		LookbackMinutes: 5,
 	})
 	if err != nil {
 		t.Fatalf("resolveTimelineRequest() error = %v", err)
@@ -87,15 +88,22 @@ func TestGetChangeTimelineHandlerForwardsContractAndAddsFollowUps(t *testing.T) 
 	cfg.DatasourceName = "production"
 	handler := NewGetChangeTimelineHandler(server.Client(), cfg)
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetChangeTimelineArgs{
-		StartTimeISO: "2026-07-28T09:30:00Z", EndTimeISO: "2026-07-28T10:30:00Z",
-		ServiceName: "checkout-api", Env: "production", RuleID: "rule-1",
+		StartTimeISO: " 2026-07-28T09:30:00Z ", EndTimeISO: " 2026-07-28T10:30:00Z ",
+		ServiceName: " checkout-api ", Env: " production ", RuleID: " rule-1 ",
 		Kinds: []string{kindChangeEvent, kindAlertEpisode}, MaxEvents: 25,
 	})
 	if err != nil {
 		t.Fatalf("handler() error = %v", err)
 	}
 	assertTimelineQuery(t, captured)
-	assertTimelineOutput(t, utils.GetTextContent(t, result))
+	output := utils.GetTextContent(t, result)
+	assertTimelineOutput(t, output)
+	if !strings.Contains(output, `1753693200000000000`) || strings.Contains(output, `1.7536932e+18`) {
+		t.Fatalf("large numeric source value was not preserved exactly: %s", output)
+	}
+	if referenceURL, ok := result.Meta["reference_url"].(string); !ok || !strings.Contains(referenceURL, "rule_id=rule-1") {
+		t.Fatalf("reference_url = %#v, want scoped rule link", result.Meta["reference_url"])
+	}
 }
 
 func TestGetChangeTimelineHandlerSanitizesUpstreamError(t *testing.T) {
@@ -112,6 +120,62 @@ func TestGetChangeTimelineHandlerSanitizesUpstreamError(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "secret upstream response") {
 		t.Fatalf("error leaked upstream response: %v", err)
+	}
+}
+
+func TestGetChangeTimelineHandlerSanitizesTransportError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	apiBaseURL := server.URL
+	server.Close()
+
+	handler := NewGetChangeTimelineHandler(server.Client(), timelineTestConfig(apiBaseURL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetChangeTimelineArgs{})
+	if err == nil || !strings.Contains(err.Error(), "change timeline request failed") {
+		t.Fatalf("error = %v, want sanitized transport failure", err)
+	}
+	if strings.Contains(err.Error(), apiBaseURL) || strings.Contains(err.Error(), "start_time") {
+		t.Fatalf("transport error leaked request URL: %v", err)
+	}
+}
+
+func TestGetChangeTimelineHandlerGatesRecommendedFollowUps(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, timelineFixture)
+	}))
+	defer server.Close()
+
+	cfg := timelineTestConfig(server.URL)
+	cfg.AllowedTools = toolsets.Set{
+		"get_change_timeline": {},
+		"get_alert_config":    {},
+	}
+	result, _, err := NewGetChangeTimelineHandler(server.Client(), cfg)(
+		context.Background(), &mcp.CallToolRequest{}, GetChangeTimelineArgs{
+			RuleID: "rule-1", ServiceName: "checkout-api",
+		},
+	)
+	if err != nil {
+		t.Fatalf("handler() error = %v", err)
+	}
+	var response struct {
+		FollowUps []followUp `json:"recommended_follow_ups"`
+	}
+	if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &response); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if len(response.FollowUps) != 1 || response.FollowUps[0].Tool != "get_alert_config" {
+		t.Fatalf("follow-ups = %#v, want only get_alert_config", response.FollowUps)
+	}
+}
+
+func TestTimelineMetaOmitsAlertLinkForChangeOnly(t *testing.T) {
+	request, err := resolveTimelineRequest(GetChangeTimelineArgs{Kinds: []string{kindChangeEvent}})
+	if err != nil {
+		t.Fatalf("resolveTimelineRequest() error = %v", err)
+	}
+	if meta := timelineMeta(timelineTestConfig("unused"), request); meta != nil {
+		t.Fatalf("timelineMeta() = %#v, want nil for change-only timeline", meta)
 	}
 }
 
@@ -163,6 +227,7 @@ func assertTimelineOutput(t *testing.T, output string) {
 func timelineTestConfig(apiBaseURL string) models.Config {
 	return models.Config{
 		APIBaseURL: apiBaseURL,
+		OrgSlug:    "test-org",
 		TokenManager: &auth.TokenManager{
 			AccessToken: "test-token", ExpiresAt: time.Now().Add(time.Hour),
 		},
@@ -172,7 +237,7 @@ func timelineTestConfig(apiBaseURL string) models.Config {
 const timelineFixture = `{
   "time_range":{"start":"2026-07-28T09:30:00Z","end":"2026-07-28T10:30:00Z"},
   "scope":{"service_name":"checkout-api","env":"production"},
-  "events":[{"id":"change:1","kind":"change_event","occurred_at":"2026-07-28T10:00:00Z"}],
+  "events":[{"id":"change:1","kind":"change_event","occurred_at":"2026-07-28T10:00:00Z","details":{"source_sequence":1753693200000000000}}],
   "relationships":[],
   "coverage":{"change_events":{"status":"complete","count":1},"alerts":{"status":"complete","count":0}},
   "warnings":[]

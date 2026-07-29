@@ -23,6 +23,7 @@ const (
 	maxLookbackMinutes     = 60
 	defaultMaxEvents       = 200
 	maxEvents              = 500
+	maxTimelineResponse    = 8 << 20
 
 	kindChangeEvent  = "change_event"
 	kindAlertEpisode = "alert_episode"
@@ -36,7 +37,7 @@ var supportedKinds = map[string]struct{}{
 type GetChangeTimelineArgs struct {
 	StartTimeISO    string   `json:"start_time_iso,omitempty" jsonschema:"RFC3339 range start; must be supplied with end_time_iso and span at most one hour"`
 	EndTimeISO      string   `json:"end_time_iso,omitempty" jsonschema:"RFC3339 range end; must be supplied with start_time_iso and span at most one hour"`
-	LookbackMinutes int      `json:"lookback_minutes,omitempty" jsonschema:"Relative lookback in minutes (default 60, range 1-60); ignored when explicit bounds are supplied"`
+	LookbackMinutes int      `json:"lookback_minutes,omitempty" jsonschema:"Relative lookback in minutes (default 60, range 1-60); omit when explicit bounds are supplied"`
 	ServiceName     string   `json:"service_name,omitempty" jsonschema:"Exact canonical service filter"`
 	Env             string   `json:"env,omitempty" jsonschema:"Exact canonical environment filter"`
 	AlertGroupID    string   `json:"alert_group_id,omitempty" jsonschema:"Exact alert-group filter for alert episodes"`
@@ -79,7 +80,7 @@ func NewGetChangeTimelineHandler(
 		if err != nil {
 			return nil, nil, err
 		}
-		output, err := addFollowUps(body, request)
+		output, err := addFollowUps(body, request, cfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -91,14 +92,18 @@ func NewGetChangeTimelineHandler(
 }
 
 func timelineMeta(cfg models.Config, request timelineRequest) mcp.Meta {
+	if !containsTimelineKind(request.Kinds, kindAlertEpisode) {
+		return nil
+	}
 	builder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	dashboardURL := builder.BuildAlertingLink(
-		request.Start.UnixMilli(), request.End.UnixMilli(), "", "",
+		request.Start.UnixMilli(), request.End.UnixMilli(), "", request.Args.RuleID,
 	)
 	return deeplink.ToMeta(dashboardURL)
 }
 
 func resolveTimelineRequest(args GetChangeTimelineArgs) (timelineRequest, error) {
+	args = normalizeTimelineArgs(args)
 	hasStart := strings.TrimSpace(args.StartTimeISO) != ""
 	hasEnd := strings.TrimSpace(args.EndTimeISO) != ""
 	if hasStart != hasEnd {
@@ -120,7 +125,22 @@ func resolveTimelineRequest(args GetChangeTimelineArgs) (timelineRequest, error)
 		return timelineRequest{}, err
 	}
 	limit, err := timelineLimit(args.MaxEvents)
-	return timelineRequest{Args: args, Start: start, End: end, Kinds: kinds, Limit: limit}, err
+	if err != nil {
+		return timelineRequest{}, err
+	}
+	args.Kinds = kinds
+	return timelineRequest{Args: args, Start: start, End: end, Kinds: kinds, Limit: limit}, nil
+}
+
+func normalizeTimelineArgs(args GetChangeTimelineArgs) GetChangeTimelineArgs {
+	args.StartTimeISO = strings.TrimSpace(args.StartTimeISO)
+	args.EndTimeISO = strings.TrimSpace(args.EndTimeISO)
+	args.ServiceName = strings.TrimSpace(args.ServiceName)
+	args.Env = strings.TrimSpace(args.Env)
+	args.AlertGroupID = strings.TrimSpace(args.AlertGroupID)
+	args.RuleID = strings.TrimSpace(args.RuleID)
+	args.EventName = strings.TrimSpace(args.EventName)
+	return args
 }
 
 func timelineTimeParams(args GetChangeTimelineArgs, hasExplicitRange bool) (map[string]interface{}, error) {
@@ -170,6 +190,15 @@ func timelineLimit(requested int) (int, error) {
 	return requested, nil
 }
 
+func containsTimelineKind(kinds []string, requested string) bool {
+	for _, kind := range kinds {
+		if kind == requested {
+			return true
+		}
+	}
+	return false
+}
+
 func fetchTimeline(
 	ctx context.Context,
 	dependencies timelineDependencies,
@@ -187,15 +216,21 @@ func fetchTimeline(
 	httpRequest.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+token)
 	response, err := dependencies.client.Do(httpRequest)
 	if err != nil {
-		return nil, fmt.Errorf("change timeline request failed: %w", err)
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("change timeline request failed: %w", ctx.Err())
+		}
+		return nil, fmt.Errorf("change timeline request failed")
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("change timeline API returned status %d", response.StatusCode)
 	}
-	body, err := io.ReadAll(response.Body)
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxTimelineResponse+1))
 	if err != nil {
 		return nil, fmt.Errorf("read change timeline response: %w", err)
+	}
+	if len(body) > maxTimelineResponse {
+		return nil, fmt.Errorf("change timeline API response exceeded %d bytes", maxTimelineResponse)
 	}
 	return body, nil
 }
@@ -227,12 +262,16 @@ func setTimelineFilters(query url.Values, args GetChangeTimelineArgs) {
 	}
 }
 
-func addFollowUps(body []byte, request timelineRequest) ([]byte, error) {
-	var response map[string]any
+func addFollowUps(body []byte, request timelineRequest, cfg models.Config) ([]byte, error) {
+	var response map[string]json.RawMessage
 	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, fmt.Errorf("parse change timeline response: %w", err)
 	}
-	response["recommended_follow_ups"] = recommendedFollowUps(request)
+	followUps, err := json.Marshal(recommendedFollowUps(request, cfg))
+	if err != nil {
+		return nil, fmt.Errorf("marshal change timeline follow-ups: %w", err)
+	}
+	response["recommended_follow_ups"] = followUps
 	output, err := json.Marshal(response)
 	if err != nil {
 		return nil, fmt.Errorf("marshal change timeline response: %w", err)
@@ -240,21 +279,25 @@ func addFollowUps(body []byte, request timelineRequest) ([]byte, error) {
 	return output, nil
 }
 
-func recommendedFollowUps(request timelineRequest) []followUp {
+func recommendedFollowUps(request timelineRequest, cfg models.Config) []followUp {
 	followUps := make([]followUp, 0, 4)
-	if request.Args.RuleID != "" {
+	if request.Args.RuleID != "" && cfg.AllowedTools.Allows("get_alert_config") {
 		followUps = append(followUps, followUp{
 			Tool: "get_alert_config", Reason: "Inspect the alert rule's configured intent.",
 			Arguments: map[string]string{"rule_id": request.Args.RuleID},
 		})
-	} else if request.Args.AlertGroupID != "" {
+	} else if request.Args.AlertGroupID != "" && cfg.AllowedTools.Allows("get_entity_alert_rules") {
 		followUps = append(followUps, followUp{
 			Tool: "get_entity_alert_rules", Reason: "Inspect alert rules for the affected entity.",
 			Arguments: map[string]string{"entity_id": request.Args.AlertGroupID},
 		})
 	}
 	if request.Args.ServiceName != "" {
-		followUps = append(followUps, serviceFollowUps(request)...)
+		for _, candidate := range serviceFollowUps(request) {
+			if cfg.AllowedTools.Allows(candidate.Tool) {
+				followUps = append(followUps, candidate)
+			}
+		}
 	}
 	return followUps
 }
@@ -262,8 +305,8 @@ func recommendedFollowUps(request timelineRequest) []followUp {
 func serviceFollowUps(request timelineRequest) []followUp {
 	arguments := map[string]string{
 		"service_name":   request.Args.ServiceName,
-		"start_time_iso": request.Start.Format(time.RFC3339),
-		"end_time_iso":   request.End.Format(time.RFC3339),
+		"start_time_iso": request.Start.UTC().Format(time.RFC3339),
+		"end_time_iso":   request.End.UTC().Format(time.RFC3339),
 	}
 	if request.Args.Env != "" {
 		arguments["env"] = request.Args.Env
