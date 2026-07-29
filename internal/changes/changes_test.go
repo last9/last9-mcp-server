@@ -82,6 +82,7 @@ func TestGetChangesForwardsFederationContract(t *testing.T) {
 		"service": "checkout-api", "environment": "production", "cluster": "cluster-a",
 		"namespace": "payments", "resource_kind": "Deployment", "resource_name": "checkout-api",
 		"resource_uid": "resource-uid", "order": "asc", "cursor": "next-page", "limit": "25",
+		"region": "ap-south-1", "data_source_name": "primary",
 	} {
 		if got := query.Get(name); got != want {
 			t.Errorf("query[%s] = %q, want %q", name, got, want)
@@ -151,7 +152,7 @@ func TestGetChangesSanitizesUpstreamErrors(t *testing.T) {
 
 func changesTestConfig(apiBaseURL string) models.Config {
 	return models.Config{
-		APIBaseURL: apiBaseURL,
+		APIBaseURL: apiBaseURL, Region: "ap-south-1", DatasourceName: "primary",
 		TokenManager: &auth.TokenManager{
 			AccessToken: "test-token",
 			ExpiresAt:   time.Now().Add(time.Hour),

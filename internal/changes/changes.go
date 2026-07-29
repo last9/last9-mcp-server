@@ -145,7 +145,7 @@ func hasScope(args GetChangesArgs) bool {
 func fetchChanges(ctx context.Context, deps dependencies, args GetChangesArgs) ([]byte, error) {
 	endpoint := deps.cfg.APIBaseURL + constants.EndpointChanges
 	request, err := http.NewRequestWithContext(
-		ctx, http.MethodGet, endpoint+"?"+changesQuery(args).Encode(), nil,
+		ctx, http.MethodGet, endpoint+"?"+changesQuery(args, deps.cfg).Encode(), nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create changes request: %w", err)
@@ -183,10 +183,16 @@ func readResponse(response *http.Response) ([]byte, error) {
 	return body, nil
 }
 
-func changesQuery(args GetChangesArgs) url.Values {
+func changesQuery(args GetChangesArgs, cfg models.Config) url.Values {
 	query := url.Values{}
 	query.Set("start_time", args.StartTime)
 	query.Set("end_time", args.EndTime)
+	if cfg.Region != "" {
+		query.Set("region", cfg.Region)
+	}
+	if cfg.DatasourceName != "" {
+		query.Set("data_source_name", cfg.DatasourceName)
+	}
 	setScope(query, args)
 	setOptionalControls(query, args)
 	return query

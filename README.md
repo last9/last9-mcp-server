@@ -603,7 +603,7 @@ Exactly one of `trace_id` or `service_name` is required.
 - `service`, `environment`, `cluster`, `namespace`, `resource_kind`, `resource_name`, `resource_uid` (string, optional): Exact scope fields; provide at least one.
 - `sources` (array, optional): Defaults to `change_events` and `kubernetes_events`.
 - `categories` (array, optional): Change categories to include.
-- `order` (string, optional): `asc` (default) or `desc`.
+- `order` (string, optional): `desc` (default) or `asc`.
 - `cursor` (string, optional): Opaque cursor returned by the previous call.
 - `limit` (integer, optional): API default when omitted. Maximum: 500.
 
