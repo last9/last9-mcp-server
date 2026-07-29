@@ -23,7 +23,7 @@ const (
 
 type GetChangesArgs struct {
 	StartTime    string   `json:"start_time" jsonschema:"(Required) Absolute RFC3339 range start, inclusive"`
-	EndTime      string   `json:"end_time" jsonschema:"(Required) Absolute RFC3339 range end, exclusive"`
+	EndTime      string   `json:"end_time" jsonschema:"(Required) Absolute RFC3339 range end"`
 	Service      string   `json:"service,omitempty" jsonschema:"Exact service scope"`
 	Environment  string   `json:"environment,omitempty" jsonschema:"Exact environment scope"`
 	Cluster      string   `json:"cluster,omitempty" jsonschema:"Exact Kubernetes cluster scope"`
@@ -33,7 +33,7 @@ type GetChangesArgs struct {
 	ResourceUID  string   `json:"resource_uid,omitempty" jsonschema:"Exact Kubernetes resource UID"`
 	Sources      []string `json:"sources,omitempty" jsonschema:"Sources to query; defaults to change_events and kubernetes_events"`
 	Categories   []string `json:"categories,omitempty" jsonschema:"Change categories to include after source normalization"`
-	Order        string   `json:"order,omitempty" jsonschema:"Chronological order: asc (default) or desc"`
+	Order        string   `json:"order,omitempty" jsonschema:"Chronological order: desc (default) or asc"`
 	Cursor       string   `json:"cursor,omitempty" jsonschema:"Opaque cursor returned by a previous get_changes call"`
 	Limit        int      `json:"limit,omitempty" jsonschema:"Maximum changes to return; API default when omitted, range 1-500"`
 }
