@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `get_notification_channels` / `get_alert_config` channel binding fetches use `?exact=true` on `/notification_settings` so per-entity mapped channels load (without it, only global/master rows returned and binding filters falsely reported every rule as unconfigured) (#191).
 - `get_apm_service_deviations` terminal outcomes (`stable`, `no_data`, `unsupported_workload_shape`) now all return an empty `recommended_followups`, so agents do not keep calling follow-up tools after a completed comparison. Previously `unsupported_workload_shape` returned a `get_service_traces` follow-up that contradicted the description's stop rule.
-- Exception→logs guardrails in `get_exceptions`, `get_logs`, and `get_service_logs` descriptions for agentic continuation evals.
+- Exception→logs guidance in `get_exceptions` is now aggregate-then-read: aggregate to isolate the hot logger, then read that logger's lines with a `limit` and report the error text. Raw line fetches were previously banned outright in this flow, leaving no way to reach the log body the root cause lives in — the hazard is an unlimited fetch, not reading lines. `get_service_logs` keeps its own description unchanged; the investigation flow lives only in `get_exceptions`.
 - `get_traces` no longer chunks `aggregate`/`window_aggregate` pipelines — long-window group-by queries run as a single request, fixing duplicate keys and wrong `avg`/`median`/`quantile` math (#195).
 - Trace filter existence checks: `$exists` and `$notnull` are rewritten to `{"$neq": [field, ""]}` before hitting the backend (previously matched all spans / no spans respectively) (#195).
 
