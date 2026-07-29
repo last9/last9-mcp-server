@@ -51,6 +51,55 @@ func TestGetChangeEventsHandler_InvalidTimeOrder(t *testing.T) {
 	}
 }
 
+func TestGetChangeEventsHandler_CancelsDiscoveryOnPrimaryFailure(t *testing.T) {
+	discoveryStarted := make(chan struct{}, 1)
+	releaseDiscovery := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case constants.EndpointPromLabelValues:
+			select {
+			case discoveryStarted <- struct{}{}:
+			default:
+			}
+			select {
+			case <-r.Context().Done():
+			case <-releaseDiscovery:
+			}
+		case constants.EndpointPromQueryInstant:
+			<-discoveryStarted
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	defer close(releaseDiscovery)
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-token",
+			ExpiresAt:   time.Now().Add(time.Hour),
+		},
+	}
+	completed := make(chan error, 1)
+	go func() {
+		_, _, err := NewGetChangeEventsHandler(server.Client(), cfg)(
+			context.Background(), &mcp.CallToolRequest{}, GetChangeEventsArgs{LookbackMinutes: 5},
+		)
+		completed <- err
+	}()
+
+	select {
+	case err := <-completed:
+		if err == nil || !strings.Contains(err.Error(), "status 500") {
+			t.Fatalf("error = %v, want primary query failure", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("handler waited for best-effort discovery after primary query failure")
+	}
+}
+
 func TestGetChangeEventsHandler_ExplicitRangePrecedence(t *testing.T) {
 	type promReq struct {
 		Path      string `json:"-"`

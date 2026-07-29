@@ -79,28 +79,33 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 		// Query a range vector at the requested end time. A Prometheus range query
 		// evaluates a sparse gauge repeatedly and can duplicate one recorded event
 		// at every step because of staleness lookback.
-		var availableEventNames, discoveryWarnings []string
-		var resp *http.Response
-		var queryErr error
-		var waitGroup sync.WaitGroup
-		waitGroup.Go(func() {
-			availableEventNames, discoveryWarnings = fetchAvailableEventNames(
-				ctx, client, startTimeParam, endTimeParam, cfg,
+		type discoveryResult struct {
+			names    []string
+			warnings []string
+		}
+		discoveryCtx, cancelDiscovery := context.WithCancel(ctx)
+		defer cancelDiscovery()
+		discovery := make(chan discoveryResult, 1)
+		go func() {
+			names, warnings := fetchAvailableEventNames(
+				discoveryCtx, client, startTimeParam, endTimeParam, cfg,
 			)
-		})
-		waitGroup.Go(func() {
-			resp, queryErr = utils.MakePromInstantAPIQuery(ctx, client, promql, endTimeParam, cfg)
-		})
-		waitGroup.Wait()
+			discovery <- discoveryResult{names: names, warnings: warnings}
+		}()
+		resp, queryErr := utils.MakePromInstantAPIQuery(ctx, client, promql, endTimeParam, cfg)
 		if queryErr != nil {
+			cancelDiscovery()
 			return nil, nil, fmt.Errorf("failed to query change events: %w", queryErr)
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
+			cancelDiscovery()
 			body, _ := io.ReadAll(resp.Body)
 			return nil, nil, fmt.Errorf("change events API request failed with status %d: %s", resp.StatusCode, string(body))
 		}
+		discovered := <-discovery
+		availableEventNames, discoveryWarnings := discovered.names, discovered.warnings
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
