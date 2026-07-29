@@ -21,6 +21,15 @@ const (
 	maxChangesResponse = 8 << 20
 )
 
+var supportedSources = map[string]struct{}{
+	"change_events": {}, "kubernetes_events": {},
+}
+
+var supportedCategories = map[string]struct{}{
+	"deployment": {}, "configuration": {}, "scaling": {}, "rollback": {},
+	"restart": {}, "resource_lifecycle": {}, "other": {},
+}
+
 type GetChangesArgs struct {
 	StartTime    string   `json:"start_time" jsonschema:"(Required) Absolute RFC3339 range start, inclusive"`
 	EndTime      string   `json:"end_time" jsonschema:"(Required) Absolute RFC3339 range end"`
@@ -31,11 +40,11 @@ type GetChangesArgs struct {
 	ResourceKind string   `json:"resource_kind,omitempty" jsonschema:"Exact Kubernetes resource kind"`
 	ResourceName string   `json:"resource_name,omitempty" jsonschema:"Exact Kubernetes resource name"`
 	ResourceUID  string   `json:"resource_uid,omitempty" jsonschema:"Exact Kubernetes resource UID"`
-	Sources      []string `json:"sources,omitempty" jsonschema:"Sources to query; defaults to change_events and kubernetes_events"`
-	Categories   []string `json:"categories,omitempty" jsonschema:"Change categories to include after source normalization"`
+	Sources      []string `json:"sources,omitempty" jsonschema:"Sources: change_events and/or kubernetes_events; empty means both"`
+	Categories   []string `json:"categories,omitempty" jsonschema:"Categories: deployment, configuration, scaling, rollback, restart, resource_lifecycle, other; empty means all"`
 	Order        string   `json:"order,omitempty" jsonschema:"Chronological order: desc (default) or asc"`
-	Cursor       string   `json:"cursor,omitempty" jsonschema:"Opaque cursor returned by a previous get_changes call"`
-	Limit        int      `json:"limit,omitempty" jsonschema:"Maximum changes to return; API default when omitted, range 1-500"`
+	Cursor       string   `json:"cursor,omitempty" jsonschema:"Opaque cursor; reuse with the same range, scope, sources, categories, and order"`
+	Limit        int      `json:"limit,omitempty" jsonschema:"Maximum changes to return; default 200, range 1-500"`
 }
 
 type dependencies struct {
@@ -96,6 +105,12 @@ func validateControls(args GetChangesArgs) (GetChangesArgs, error) {
 	if args.Order != "" && args.Order != "asc" && args.Order != "desc" {
 		return args, fmt.Errorf("order must be asc or desc")
 	}
+	if err := validateSelections(args.Sources, supportedSources, "unsupported source"); err != nil {
+		return args, err
+	}
+	if err := validateSelections(args.Categories, supportedCategories, "unsupported category"); err != nil {
+		return args, err
+	}
 	if args.Limit < 0 {
 		return args, fmt.Errorf("limit must be positive")
 	}
@@ -103,6 +118,15 @@ func validateControls(args GetChangesArgs) (GetChangesArgs, error) {
 		return args, fmt.Errorf("limit must be at most %d", maxLimit)
 	}
 	return args, nil
+}
+
+func validateSelections(values []string, supported map[string]struct{}, message string) error {
+	for _, value := range values {
+		if _, ok := supported[value]; !ok {
+			return fmt.Errorf("%s: %s", message, value)
+		}
+	}
+	return nil
 }
 
 func normalizeArgs(args GetChangesArgs) GetChangesArgs {
@@ -171,6 +195,11 @@ func setHeaders(ctx context.Context, request *http.Request, cfg models.Config) {
 
 func readResponse(response *http.Response) ([]byte, error) {
 	if response.StatusCode != http.StatusOK {
+		if response.StatusCode == http.StatusBadRequest {
+			return nil, fmt.Errorf(
+				"changes API rejected the request (status 400); reuse cursors with unchanged controls or restart without a cursor",
+			)
+		}
 		return nil, fmt.Errorf("changes API returned status %d", response.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxChangesResponse+1))

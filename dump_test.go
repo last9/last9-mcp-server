@@ -61,8 +61,25 @@ func TestDumpTools(t *testing.T) {
 		t.Fatal("tool \"get_changes\" missing from dump")
 	}
 	changesSchema := schemaAsMap(t, out.Tools[changesIndex].InputSchema)
-	if required, ok := changesSchema["required"].([]any); !ok || len(required) != 2 {
+	required, ok := changesSchema["required"].([]any)
+	if !ok || !reflect.DeepEqual(required, []any{"start_time", "end_time"}) {
 		t.Fatalf("served get_changes schema must require start_time and end_time: %#v", changesSchema)
+	}
+	if changesSchema["additionalProperties"] != false {
+		t.Fatalf("served get_changes schema must reject additional properties: %#v", changesSchema)
+	}
+	changesProperties, ok := changesSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("served get_changes schema has invalid properties: %#v", changesSchema)
+	}
+	for _, name := range []string{
+		"start_time", "end_time", "service", "environment", "cluster", "namespace",
+		"resource_kind", "resource_name", "resource_uid", "sources", "categories",
+		"order", "cursor", "limit",
+	} {
+		if _, exists := changesProperties[name]; !exists {
+			t.Errorf("served get_changes schema missing property %q", name)
+		}
 	}
 	if _, exists := byName["get_change_timeline"]; exists {
 		t.Fatal("redundant get_change_timeline tool must not be served")
