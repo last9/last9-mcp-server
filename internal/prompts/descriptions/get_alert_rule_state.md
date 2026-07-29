@@ -1,6 +1,6 @@
 Gets the historical firing state of alert rules over a specified time range, grouped by rule_id.
 It polls the /alerts/monitor API at each step within the time range and returns 1 for firing and 0 otherwise at each timestamp.
-For incident chronology, prefer get_change_timeline; use this sampled tool only when the user explicitly asks for rule state at fixed steps.
+For change chronology, use get_changes; use this sampled tool only when the user explicitly asks for rule state at fixed steps.
 
 Required parameters:
 - start_time: Unix epoch start of the range (inclusive)

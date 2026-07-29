@@ -7,13 +7,13 @@ import (
 	"last9-mcp/internal/apm"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/change_events"
+	"last9-mcp/internal/changes"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/suggest"
 	"last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/telemetry/traces"
-	"last9-mcp/internal/timeline"
 	"last9-mcp/internal/toolsets"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -237,10 +237,9 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	}, change_events.NewGetChangeEventsHandler(client, cfg)))
 
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
-		Name:        "get_change_timeline",
-		Description: prompts.GetChangeTimelineDescription,
-		InputSchema: timeline.GetChangeTimelineInputSchema(),
-	}, timeline.NewGetChangeTimelineHandler(client, cfg)))
+		Name:        "get_changes",
+		Description: prompts.GetChangesDescription,
+	}, changes.NewGetChangesHandler(client, cfg)))
 
 	// Register database discovery tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{

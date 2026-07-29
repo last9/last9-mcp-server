@@ -277,9 +277,9 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_trace_attributes_for_pipeline`** — Attributes actually present for an in-progress pipeline (scoped discovery), each with its exact `filter_field`
 - **`get_trace_attribute_values`** — Distinct values for a trace attribute, optionally scoped to a pipeline
 
-### Change Events & Alerts
+### Changes & Alerts
 
-- **`get_change_timeline`** — One ordered incident chronology of recorded changes and observed alert episodes, with source coverage and non-causal proximity relationships
+- **`get_changes`** — One runtime view of explicit Change Events and inferred Kubernetes changes, with per-source coverage and classification evidence
 - **`get_change_events`** — Deployments, config changes, rollbacks. Correlate incidents with what changed
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_alerts`** — Currently firing alerts within a time window
@@ -597,15 +597,17 @@ Exactly one of `trace_id` or `service_name` is required.
 - `env` (string, optional)
 - `event_name` (string, optional): Call without this first to get `available_event_names`.
 
-### get_change_timeline
+### get_changes
 
-- `start_time_iso` / `end_time_iso` (string, optional as a pair): Explicit RFC3339 range, maximum one hour.
-- `lookback_minutes` (integer, optional): Default and maximum: 60. Omit when explicit bounds are supplied.
-- `service_name`, `env`, `alert_group_id`, `rule_id`, `event_name` (string, optional): Exact scope filters.
-- `kinds` (array, optional): `change_event`, `alert_episode`, or both (default).
-- `max_events` (integer, optional): Default: 200. Maximum: 500.
+- `start_time` / `end_time` (string, required): Absolute RFC3339 range.
+- `service`, `environment`, `cluster`, `namespace`, `resource_kind`, `resource_name`, `resource_uid` (string, optional): Exact scope fields; provide at least one.
+- `sources` (array, optional): Defaults to `change_events` and `kubernetes_events`.
+- `categories` (array, optional): Change categories to include.
+- `order` (string, optional): `asc` (default) or `desc`.
+- `cursor` (string, optional): Opaque cursor returned by the previous call.
+- `limit` (integer, optional): API default when omitted. Maximum: 500.
 
-Returns the canonical ordered timeline plus per-source coverage, warnings, deterministic temporal relationships, and selective recommended follow-up tools. Proximity never establishes causality; `last_observed_at` is not a resolution timestamp.
+Returns changes assembled at request time without a persisted ledger. Explicit Change Events and exact-rule Kubernetes classifications remain distinguishable, and each source reports its own query and configuration status. Suppressed observations and unknown events are counted but omitted.
 
 ### get_alert_config
 

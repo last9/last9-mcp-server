@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"last9-mcp/internal/apm"
-	"last9-mcp/internal/timeline"
 	"last9-mcp/internal/toolsets"
 )
 
@@ -57,32 +56,16 @@ func TestDumpTools(t *testing.T) {
 		}
 	}
 
-	timelineIndex, exists := byName["get_change_timeline"]
+	changesIndex, exists := byName["get_changes"]
 	if !exists {
-		t.Fatal("tool \"get_change_timeline\" missing from dump")
+		t.Fatal("tool \"get_changes\" missing from dump")
 	}
-	timelineTool := out.Tools[timelineIndex]
-	if got, want := schemaAsMap(t, timelineTool.InputSchema), getChangeTimelineSchemaForTest(t); !reflect.DeepEqual(got, want) {
-		t.Fatalf("served get_change_timeline schema differs from canonical schema\nserved: %#v\nwant: %#v", got, want)
+	changesSchema := schemaAsMap(t, out.Tools[changesIndex].InputSchema)
+	if required, ok := changesSchema["required"].([]any); !ok || len(required) != 2 {
+		t.Fatalf("served get_changes schema must require start_time and end_time: %#v", changesSchema)
 	}
-	followUpArguments := map[string][]string{
-		"get_alert_config":           {"rule_id"},
-		"get_entity_alert_rules":     {"entity_id"},
-		"get_apm_service_deviations": {"service_name", "start_time_iso", "end_time_iso", "env"},
-		"get_service_logs":           {"service_name", "start_time_iso", "end_time_iso", "env"},
-		"get_service_traces":         {"service_name", "start_time_iso", "end_time_iso", "env"},
-	}
-	for toolName, argumentNames := range followUpArguments {
-		toolIndex, exists := byName[toolName]
-		if !exists {
-			t.Fatalf("recommended follow-up tool %q is not registered", toolName)
-		}
-		properties := schemaAsMap(t, out.Tools[toolIndex].InputSchema)["properties"].(map[string]any)
-		for _, argumentName := range argumentNames {
-			if _, exists := properties[argumentName]; !exists {
-				t.Errorf("recommended follow-up %s argument %q is absent from its served schema", toolName, argumentName)
-			}
-		}
+	if _, exists := byName["get_change_timeline"]; exists {
+		t.Fatal("redundant get_change_timeline tool must not be served")
 	}
 
 	// Org attribute catalogs must never appear as {{labels}} placeholders.
@@ -172,11 +155,6 @@ func TestDumpTools(t *testing.T) {
 	}
 }
 
-func getChangeTimelineSchemaForTest(t *testing.T) map[string]any {
-	t.Helper()
-	return schemaAsMap(t, timeline.GetChangeTimelineInputSchema())
-}
-
 func descriptionTokenEstimate(descs []string) int {
 	total := 0
 	for _, d := range descs {
@@ -262,7 +240,7 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	for _, tool := range out.Tools {
 		byName[tool.Name] = true
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "list_datasources", "get_change_timeline", "get_alerts", "get_alert_config", "get_entity_alert_rules"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "list_datasources", "get_changes", "get_alerts", "get_alert_config", "get_entity_alert_rules"} {
 		if !byName[want] {
 			t.Errorf("investigate dump missing %q", want)
 		}
