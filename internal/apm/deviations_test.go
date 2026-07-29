@@ -108,6 +108,13 @@ func TestAPMServiceDeviationsHandlerFleetKeepsEnvironmentsSeparateAndStable(t *t
 	if response.Outcome != "stable" || len(response.RecommendedFollowups) != 0 {
 		t.Fatalf("stable outcome forced follow-up: %+v", response)
 	}
+	// Terminal outcomes are signalled by outcome + empty followups only —
+	// `warnings` must stay an evidence-quality channel and carry no stop prose.
+	for _, w := range response.Warnings {
+		if strings.Contains(w, "do not call follow-up tools") {
+			t.Fatalf("stop instruction leaked into warnings: %q", w)
+		}
+	}
 	if len(response.Leaderboards.Reliability.Regressions) != 0 || len(response.ThroughputShifts) != 0 {
 		t.Fatalf("stable response contains deviations: %+v", response.Leaderboards)
 	}
@@ -321,8 +328,17 @@ func TestAPMServiceDeviationsHandlerUnsupportedWorkloadShape(t *testing.T) {
 	if len(response.Leaderboards.Reliability.Regressions) != 0 || len(response.Services) != 0 {
 		t.Fatalf("unsupported workload was classified: %+v", response)
 	}
-	if len(response.RecommendedFollowups) != 1 || response.RecommendedFollowups[0].Tool != "get_service_traces" || response.RecommendedFollowups[0].Arguments["service_name"] != "processor" {
-		t.Fatalf("unsupported workload follow-up = %+v", response.RecommendedFollowups)
+	if len(response.RecommendedFollowups) != 0 {
+		t.Fatalf("unsupported workload follow-up = %+v, want none (terminal outcome)", response.RecommendedFollowups)
+	}
+	// The honest evidence caveat stays; the stop prose must not.
+	if !strings.Contains(strings.Join(response.Warnings, " "), "no server-request series") {
+		t.Fatalf("expected workload-shape caveat in warnings, got: %+v", response.Warnings)
+	}
+	for _, w := range response.Warnings {
+		if strings.Contains(w, "do not call follow-up tools") {
+			t.Fatalf("stop instruction leaked into warnings: %q", w)
+		}
 	}
 }
 
