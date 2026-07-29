@@ -56,6 +56,35 @@ func TestDumpTools(t *testing.T) {
 		}
 	}
 
+	changesIndex, exists := byName["get_changes"]
+	if !exists {
+		t.Fatal("tool \"get_changes\" missing from dump")
+	}
+	changesSchema := schemaAsMap(t, out.Tools[changesIndex].InputSchema)
+	required, ok := changesSchema["required"].([]any)
+	if !ok || !reflect.DeepEqual(required, []any{"start_time", "end_time"}) {
+		t.Fatalf("served get_changes schema must require start_time and end_time: %#v", changesSchema)
+	}
+	if changesSchema["additionalProperties"] != false {
+		t.Fatalf("served get_changes schema must reject additional properties: %#v", changesSchema)
+	}
+	changesProperties, ok := changesSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("served get_changes schema has invalid properties: %#v", changesSchema)
+	}
+	for _, name := range []string{
+		"start_time", "end_time", "service", "environment", "cluster", "namespace",
+		"resource_kind", "resource_name", "resource_uid", "sources", "categories",
+		"order", "cursor", "limit",
+	} {
+		if _, exists := changesProperties[name]; !exists {
+			t.Errorf("served get_changes schema missing property %q", name)
+		}
+	}
+	if _, exists := byName["get_change_timeline"]; exists {
+		t.Fatal("redundant get_change_timeline tool must not be served")
+	}
+
 	// Org attribute catalogs must never appear as {{labels}} placeholders.
 	if strings.Contains(out.Tools[byName["get_logs"]].Description, "{{labels}}") {
 		t.Fatal("get_logs description still contains unsubstituted {{labels}} placeholder")
@@ -228,12 +257,12 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	for _, tool := range out.Tools {
 		byName[tool.Name] = true
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "list_datasources"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "list_datasources", "get_changes", "get_alerts", "get_alert_config", "get_entity_alert_rules"} {
 		if !byName[want] {
 			t.Errorf("investigate dump missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots"} {
+	for _, deny := range []string{"get_alert_rule_state", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots"} {
 		if byName[deny] {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}

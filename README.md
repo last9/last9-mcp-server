@@ -277,8 +277,9 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_trace_attributes_for_pipeline`** — Attributes actually present for an in-progress pipeline (scoped discovery), each with its exact `filter_field`
 - **`get_trace_attribute_values`** — Distinct values for a trace attribute, optionally scoped to a pipeline
 
-### Change Events & Alerts
+### Changes & Alerts
 
+- **`get_changes`** — One runtime view of explicit Change Events and inferred Kubernetes changes, with per-source coverage and classification evidence
 - **`get_change_events`** — Deployments, config changes, rollbacks. Correlate incidents with what changed
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_alerts`** — Currently firing alerts within a time window
@@ -596,6 +597,18 @@ Exactly one of `trace_id` or `service_name` is required.
 - `env` (string, optional)
 - `event_name` (string, optional): Call without this first to get `available_event_names`.
 
+### get_changes
+
+- `start_time` / `end_time` (string, required): Absolute RFC3339 range.
+- `service`, `environment`, `cluster`, `namespace`, `resource_kind`, `resource_name`, `resource_uid` (string, optional): Exact scope fields; provide at least one.
+- `sources` (array, optional): Defaults to `change_events` and `kubernetes_events`.
+- `categories` (array, optional): Change categories to include.
+- `order` (string, optional): `desc` (default) or `asc`.
+- `cursor` (string, optional): Opaque cursor returned by the previous call.
+- `limit` (integer, optional): API default when omitted. Maximum: 500.
+
+Returns changes assembled at request time without a persisted ledger. Explicit Change Events and exact-rule Kubernetes classifications remain distinguishable, and each source reports its own query and configuration status. Suppressed observations and unknown events are counted but omitted.
+
 ### get_alert_config
 
 - `search_term` (string, optional): Free-text search across name, group, data source, tags.
@@ -608,8 +621,8 @@ Exactly one of `trace_id` or `service_name` is required.
 ### get_alerts
 
 - `time_iso` (string, optional): Evaluation time in RFC3339.
-- `window` (integer, optional): Lookback in seconds. Default: 900. Range: 60–86400.
-- `lookback_minutes` (integer, optional): Range: 1–1440.
+- `window` (integer, optional): Lookback in seconds. Default: 900. Range: 1–3600.
+- `lookback_minutes` (integer, optional): Range: 1–60; used only when window is omitted.
 
 ### get_alert_rule_state
 

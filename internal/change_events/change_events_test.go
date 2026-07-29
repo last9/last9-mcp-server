@@ -99,3 +99,13 @@ func TestGetChangeEventsArgs_UsesCanonicalNames(t *testing.T) {
 		}
 	}
 }
+
+func TestCountChangeEventPoints(t *testing.T) {
+	series := []TimeSeries{
+		{Values: []TimeSeriesPoint{{Timestamp: 1}, {Timestamp: 2}}},
+		{Values: []TimeSeriesPoint{{Timestamp: 3}}},
+	}
+	if count := countChangeEventPoints(series); count != 3 {
+		t.Fatalf("countChangeEventPoints() = %d, want 3", count)
+	}
+}

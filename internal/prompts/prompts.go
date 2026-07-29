@@ -86,6 +86,9 @@ var GetTraceAttributesForPipelineDescription string
 //go:embed descriptions/get_change_events.md
 var GetChangeEventsDescription string
 
+//go:embed descriptions/get_changes.md
+var GetChangesDescription string
+
 //go:embed descriptions/get_databases.md
 var GetDatabasesDescription string
 

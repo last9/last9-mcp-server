@@ -7,6 +7,7 @@ import (
 	"last9-mcp/internal/apm"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/change_events"
+	"last9-mcp/internal/changes"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/prompts"
@@ -234,6 +235,11 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Name:        "get_change_events",
 		Description: prompts.GetChangeEventsDescription,
 	}, change_events.NewGetChangeEventsHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_changes",
+		Description: prompts.GetChangesDescription,
+	}, changes.NewGetChangesHandler(client, cfg)))
 
 	// Register database discovery tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
