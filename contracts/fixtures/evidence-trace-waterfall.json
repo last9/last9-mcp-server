@@ -2,7 +2,7 @@
   "contract_version": "investigation-evidence/v1",
   "analysis_version": "trace-waterfall/v1",
   "request": {
-    "scope": { "service_name": "checkout", "environment": "production", "operation": "POST /checkout" },
+    "scope": { "trace_id": "seed-trace-confirming-01", "environment": "production" },
     "requested_window": { "start": "2026-07-15T08:30:00Z", "end": "2026-07-15T08:45:00Z", "boundary": "half-open" },
     "effective_window": { "start": "2026-07-15T08:30:00Z", "end": "2026-07-15T08:45:00Z", "boundary": "half-open" },
     "trace_id": "seed-trace-confirming-01"

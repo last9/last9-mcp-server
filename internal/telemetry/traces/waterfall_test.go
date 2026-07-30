@@ -57,8 +57,8 @@ func TestBuildTraceWaterfallOverlappingChildrenUseIntervalUnion(t *testing.T) {
 	if r.Interpretation.EvidenceQuality != evidenceQualityHigh {
 		t.Fatalf("evidence_quality=%q", r.Interpretation.EvidenceQuality)
 	}
-	// The root span's service is the closest honest scope for a trace-ID lookup.
-	if r.Request.Scope.ServiceName != "api" || r.Request.Scope.Environment != traceWaterfallAnyEnvironment {
+	// Trace-scoped: the trace ID is the scope. No service or environment is invented.
+	if r.Request.Scope.TraceID != "t" || r.Request.Scope.Environment != "" {
 		t.Fatalf("scope=%+v", r.Request.Scope)
 	}
 }

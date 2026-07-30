@@ -21,10 +21,7 @@ const (
 	traceWaterfallAnalysisVersion = "trace-waterfall/v1"
 	traceWaterfallSource          = "trace-details"
 	// Half-open [start,end), per contracts/README.md.
-	evidenceWindowBoundary = "half-open"
-	// The envelope requires a scope, but a trace-ID lookup has none. Fallbacks only.
-	traceWaterfallUnknownService     = "unknown"
-	traceWaterfallAnyEnvironment     = "unspecified"
+	evidenceWindowBoundary           = "half-open"
 	traceWaterfallMaxSpansDefault    = 500
 	traceWaterfallMaxSpansCeiling    = 1000
 	traceWaterfallTopN               = 5
@@ -83,9 +80,11 @@ type EvidenceProvenance struct {
 	QueryID    *string `json:"query_id"`
 }
 
+// WaterfallScope identifies a trace-scoped analysis. The evidence envelope also
+// allows a service_name + environment scope, which cohort analyses use instead.
 type WaterfallScope struct {
-	ServiceName string `json:"service_name"`
-	Environment string `json:"environment"`
+	TraceID     string `json:"trace_id"`
+	Environment string `json:"environment,omitempty"`
 }
 
 type WaterfallRequest struct {
@@ -246,12 +245,10 @@ func buildTraceWaterfall(in waterfallBuildInput) TraceWaterfallResponse {
 	var resp TraceWaterfallResponse
 	resp.ContractVersion = investigationEvidenceVersion
 	resp.AnalysisVersion = traceWaterfallAnalysisVersion
-	environment := in.environment
-	if environment == "" {
-		environment = traceWaterfallAnyEnvironment
-	}
+	// Trace-scoped: the scope is the trace ID, plus the environment only when the
+	// caller actually filtered by one. No service is requested, so none is reported.
 	resp.Request = WaterfallRequest{
-		Scope:           WaterfallScope{ServiceName: traceWaterfallUnknownService, Environment: environment},
+		Scope:           WaterfallScope{TraceID: in.traceID, Environment: in.environment},
 		RequestedWindow: in.requested,
 		EffectiveWindow: in.effective,
 		TraceID:         in.traceID,
@@ -424,7 +421,6 @@ func buildTraceWaterfall(in waterfallBuildInput) TraceWaterfallResponse {
 		resp.Data.Summary.Start = time.Unix(0, minStart).UTC().Format(time.RFC3339Nano)
 		resp.Data.Summary.End = time.Unix(0, maxEnd).UTC().Format(time.RFC3339Nano)
 	}
-	resp.Request.Scope.ServiceName = waterfallScopeService(roots, byID, ids)
 
 	// Judged on the fetched count: the API applied max_spans before env filtering.
 	resp.Evidence.Truncated = in.limit > 0 && in.fetchedSpans >= in.limit
@@ -460,21 +456,6 @@ func buildTraceWaterfall(in waterfallBuildInput) TraceWaterfallResponse {
 		resp.Interpretation.Limitations = append(resp.Interpretation.Limitations, "An empty waterfall is not evidence that the trace does not exist; widen the window or verify the trace ID.")
 	}
 	return resp
-}
-
-// No requested service on a trace-ID lookup: use the root span's, then any span's.
-func waterfallScopeService(roots []string, byID map[string]TraceDetailsSpan, ids []string) string {
-	for _, id := range roots {
-		if service := byID[id].ServiceName; service != "" {
-			return service
-		}
-	}
-	for _, id := range ids {
-		if service := byID[id].ServiceName; service != "" {
-			return service
-		}
-	}
-	return traceWaterfallUnknownService
 }
 
 func unionDuration(xs []spanInterval) int64 {

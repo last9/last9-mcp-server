@@ -31,11 +31,16 @@
       "properties": {
         "scope": {
           "type": "object",
-          "required": ["service_name", "environment"],
+          "comment": "Cohort analyses are scoped by service_name + environment. Trace-scoped analyses are scoped by trace_id and have no requested service. Exactly one of the two forms is required; a producer must not invent the fields of the other.",
+          "anyOf": [
+            { "required": ["service_name", "environment"] },
+            { "required": ["trace_id"] }
+          ],
           "properties": {
             "service_name": { "type": "string", "minLength": 1 },
             "environment": { "type": "string", "minLength": 1 },
-            "operation": { "type": ["string", "null"] }
+            "operation": { "type": ["string", "null"] },
+            "trace_id": { "type": "string", "minLength": 1 }
           },
           "additionalProperties": true
         },

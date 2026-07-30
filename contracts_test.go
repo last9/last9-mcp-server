@@ -278,3 +278,36 @@ func TestInvestigationWorkflowSchemaRejectsUnknownMajorVersion(t *testing.T) {
 		t.Fatalf("workflow schema must ignore additive optional fields: %v", err)
 	}
 }
+
+// The scope relaxation must stay constrained: one of the two forms is required, so a
+// producer cannot omit both and a trace-scoped payload cannot pass an empty trace_id.
+func TestEvidenceScopeRequiresOneOfTheTwoForms(t *testing.T) {
+	schema := resolveContractSchema(t, "contracts/investigation-evidence-v1.schema.json")
+	cohort := readJSONObject(t, "contracts/fixtures/evidence-trace-deviations.json")
+	traceScoped := readJSONObject(t, "contracts/fixtures/evidence-trace-waterfall.json")
+
+	if scope := object(t, object(t, cohort, "request"), "scope"); scope["service_name"] == nil {
+		t.Fatal("deviation fixture must use the service_name + environment scope")
+	}
+	if scope := object(t, object(t, traceScoped, "request"), "scope"); scope["trace_id"] == nil {
+		t.Fatal("waterfall fixture must use the trace_id scope")
+	}
+	for _, valid := range []map[string]any{cohort, traceScoped} {
+		if err := schema.Validate(valid); err != nil {
+			t.Fatalf("both scope forms must validate: %v", err)
+		}
+	}
+
+	rejected := map[string]map[string]any{
+		"neither form":        {"operation": "POST /checkout"},
+		"empty trace_id":      {"trace_id": ""},
+		"service without env": {"service_name": "checkout"},
+	}
+	for name, scope := range rejected {
+		payload := readJSONObject(t, "contracts/fixtures/evidence-trace-waterfall.json")
+		object(t, payload, "request")["scope"] = scope
+		if err := schema.Validate(payload); err == nil {
+			t.Fatalf("scope %q must be rejected", name)
+		}
+	}
+}

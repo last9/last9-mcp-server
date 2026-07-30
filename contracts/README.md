@@ -12,8 +12,9 @@ Compatibility rules:
 1. Producers emit exact major versions `investigation-evidence/v1` and `investigation-workflow/v1`.
 2. Consumers reject unknown major versions and ignore unknown optional fields within v1.
 3. Times use RFC3339, windows are half-open `[start,end)`, and public durations use milliseconds.
-4. Evidence is immutable. Workflow references use an evidence ID and SHA-256 content hash.
-5. Events are append-only and strictly increase `sequence` within an investigation.
-6. Partial, truncated, warning, limitation, and provenance metadata may not be discarded by adapters.
+4. `request.scope` takes one of two forms: `service_name` + `environment` for cohort analyses, or `trace_id` for trace-scoped analyses. A producer emits the form it was actually asked for and never invents the fields of the other.
+5. Evidence is immutable. Workflow references use an evidence ID and SHA-256 content hash.
+6. Events are append-only and strictly increase `sequence` within an investigation.
+7. Partial, truncated, warning, limitation, and provenance metadata may not be discarded by adapters.
 
 These schemas are additive foundations, not a production endpoint or supervisor implementation.
