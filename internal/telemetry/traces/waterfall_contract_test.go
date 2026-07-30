@@ -29,6 +29,53 @@ func resolvedEvidenceSchema(t *testing.T) *jsonschema.Resolved {
 	return resolved
 }
 
+const waterfallFixturePath = "../../../contracts/fixtures/evidence-trace-waterfall.json"
+
+// Canonical input behind the committed fixture. Generating it from the producer is
+// what stops a hand-written fixture holding combinations this code never emits.
+func waterfallFixtureInput() waterfallBuildInput {
+	start := time.Date(2026, 7, 15, 8, 30, 0, 0, time.UTC)
+	return waterfallBuildInput{
+		traceID:     "seed-trace-confirming-01",
+		environment: "production",
+		spans: []TraceDetailsSpan{
+			{TraceID: "seed-trace-confirming-01", SpanID: "root", SpanName: "POST /checkout", SpanKind: "SPAN_KIND_SERVER", ServiceName: "checkout", Timestamp: "2026-07-15T08:30:00Z", Duration: 1_450_000_000},
+			{TraceID: "seed-trace-confirming-01", SpanID: "pricing", ParentSpanID: "root", SpanName: "GET /price", SpanKind: "SPAN_KIND_CLIENT", ServiceName: "pricing-service", Timestamp: "2026-07-15T08:30:00.120Z", Duration: 820_000_000, StatusCode: traceWaterfallErrorStatusCode},
+			{TraceID: "seed-trace-confirming-01", SpanID: "audit", ParentSpanID: "root", SpanName: "publish audit", SpanKind: "SPAN_KIND_PRODUCER", ServiceName: "checkout", Timestamp: "2026-07-15T08:30:00.980Z", Duration: 80_000_000},
+		},
+		fetchedSpans: 3,
+		limit:        500,
+		requested:    evidenceWindow(start, start.Add(15*time.Minute)),
+		effective:    evidenceWindow(start, start.Add(15*time.Minute)),
+		observedAt:   time.Date(2026, 7, 15, 8, 41, 5, 0, time.UTC),
+	}
+}
+
+// Run with LAST9_UPDATE_FIXTURES=1 to regenerate, then refresh the content_sha256
+// entries in contracts/fixtures/workflow-cases-v1.json.
+func TestWaterfallFixtureMatchesProducerOutput(t *testing.T) {
+	generated, err := json.MarshalIndent(buildTraceWaterfall(waterfallFixtureInput()), "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	generated = append(generated, '\n')
+	path := filepath.Clean(waterfallFixturePath)
+	if os.Getenv("LAST9_UPDATE_FIXTURES") == "1" {
+		if err := os.WriteFile(path, generated, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		t.Log("fixture regenerated; refresh workflow-cases-v1.json content_sha256")
+		return
+	}
+	committed, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(committed) != string(generated) {
+		t.Fatalf("%s has drifted from producer output; regenerate with LAST9_UPDATE_FIXTURES=1", waterfallFixturePath)
+	}
+}
+
 // Validates *marshalled* output. contracts_test.go only checked hand-written fixtures,
 // so a non-conforming producer could stamp v1 and keep CI green.
 func TestTraceWaterfallOutputSatisfiesEvidenceContract(t *testing.T) {

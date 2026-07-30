@@ -2,30 +2,166 @@
   "contract_version": "investigation-evidence/v1",
   "analysis_version": "trace-waterfall/v1",
   "request": {
-    "scope": { "trace_id": "seed-trace-confirming-01", "environment": "production" },
-    "requested_window": { "start": "2026-07-15T08:30:00Z", "end": "2026-07-15T08:45:00Z", "boundary": "half-open" },
-    "effective_window": { "start": "2026-07-15T08:30:00Z", "end": "2026-07-15T08:45:00Z", "boundary": "half-open" },
-    "trace_id": "seed-trace-confirming-01"
+    "scope": {
+      "trace_id": "seed-trace-confirming-01",
+      "environment": "production"
+    },
+    "requested_window": {
+      "start": "2026-07-15T08:30:00Z",
+      "end": "2026-07-15T08:45:00Z",
+      "boundary": "half-open"
+    },
+    "effective_window": {
+      "start": "2026-07-15T08:30:00Z",
+      "end": "2026-07-15T08:45:00Z",
+      "boundary": "half-open"
+    },
+    "trace_id": "seed-trace-confirming-01",
+    "max_spans": 500
   },
   "evidence": {
     "partial": false,
     "truncated": false,
     "warnings": [],
     "returned_spans": 3,
-    "provenance": { "source": "trace-details", "observed_at": "2026-07-15T08:41:05Z", "query_id": "seed-waterfall-001" }
+    "applied_limit": 500,
+    "provenance": {
+      "source": "trace-details",
+      "observed_at": "2026-07-15T08:41:05Z",
+      "query_id": null
+    }
   },
   "interpretation": {
-    "evidence_quality": "medium",
+    "evidence_quality": "high",
     "claim_type": "contribution",
-    "summary": "The pricing call contributes 820 ms of the observed checkout trace duration.",
-    "limitations": ["Contribution is not proof of incident cause.", "No critical path is claimed."]
+    "summary": "Compact trace waterfall with interval-union self-time. Slowest spans and self-time contributors are observations, not proof of cause.",
+    "limitations": [
+      "V1 does not compute or claim a critical path."
+    ]
   },
   "data": {
-    "summary": { "duration_ms": 1450, "span_count": 3, "service_count": 2, "error_count": 1, "max_depth": 1 },
+    "summary": {
+      "start": "2026-07-15T08:30:00Z",
+      "end": "2026-07-15T08:30:01.45Z",
+      "duration_ms": 1450,
+      "span_count": 3,
+      "service_count": 2,
+      "error_count": 1,
+      "max_depth": 1,
+      "root_span_ids": [
+        "root"
+      ]
+    },
     "spans": [
-      { "span_id": "root", "parent_span_id": null, "service": "checkout", "operation": "POST /checkout", "start_offset_ms": 0, "duration_ms": 1450, "self_time_ms": 630, "depth": 0 },
-      { "span_id": "pricing", "parent_span_id": "root", "service": "pricing-service", "operation": "GET /price", "start_offset_ms": 120, "duration_ms": 820, "self_time_ms": 820, "depth": 1 },
-      { "span_id": "audit", "parent_span_id": "root", "service": "checkout", "operation": "publish audit", "start_offset_ms": 980, "duration_ms": 80, "self_time_ms": 80, "depth": 1 }
+      {
+        "span_id": "root",
+        "service": "checkout",
+        "operation": "POST /checkout",
+        "kind": "SPAN_KIND_SERVER",
+        "status": "",
+        "start_offset_ms": 0,
+        "duration_ms": 1450,
+        "self_time_ms": 550,
+        "depth": 0
+      },
+      {
+        "span_id": "pricing",
+        "parent_span_id": "root",
+        "service": "pricing-service",
+        "operation": "GET /price",
+        "kind": "SPAN_KIND_CLIENT",
+        "status": "STATUS_CODE_ERROR",
+        "start_offset_ms": 120,
+        "duration_ms": 820,
+        "self_time_ms": 820,
+        "depth": 1
+      },
+      {
+        "span_id": "audit",
+        "parent_span_id": "root",
+        "service": "checkout",
+        "operation": "publish audit",
+        "kind": "SPAN_KIND_PRODUCER",
+        "status": "",
+        "start_offset_ms": 980,
+        "duration_ms": 80,
+        "self_time_ms": 80,
+        "depth": 1
+      }
+    ],
+    "slowest_spans": [
+      {
+        "span_id": "root",
+        "service": "checkout",
+        "operation": "POST /checkout",
+        "kind": "SPAN_KIND_SERVER",
+        "status": "",
+        "start_offset_ms": 0,
+        "duration_ms": 1450,
+        "self_time_ms": 550,
+        "depth": 0
+      },
+      {
+        "span_id": "pricing",
+        "parent_span_id": "root",
+        "service": "pricing-service",
+        "operation": "GET /price",
+        "kind": "SPAN_KIND_CLIENT",
+        "status": "STATUS_CODE_ERROR",
+        "start_offset_ms": 120,
+        "duration_ms": 820,
+        "self_time_ms": 820,
+        "depth": 1
+      },
+      {
+        "span_id": "audit",
+        "parent_span_id": "root",
+        "service": "checkout",
+        "operation": "publish audit",
+        "kind": "SPAN_KIND_PRODUCER",
+        "status": "",
+        "start_offset_ms": 980,
+        "duration_ms": 80,
+        "self_time_ms": 80,
+        "depth": 1
+      }
+    ],
+    "largest_self_time_contributors": [
+      {
+        "span_id": "pricing",
+        "parent_span_id": "root",
+        "service": "pricing-service",
+        "operation": "GET /price",
+        "kind": "SPAN_KIND_CLIENT",
+        "status": "STATUS_CODE_ERROR",
+        "start_offset_ms": 120,
+        "duration_ms": 820,
+        "self_time_ms": 820,
+        "depth": 1
+      },
+      {
+        "span_id": "root",
+        "service": "checkout",
+        "operation": "POST /checkout",
+        "kind": "SPAN_KIND_SERVER",
+        "status": "",
+        "start_offset_ms": 0,
+        "duration_ms": 1450,
+        "self_time_ms": 550,
+        "depth": 0
+      },
+      {
+        "span_id": "audit",
+        "parent_span_id": "root",
+        "service": "checkout",
+        "operation": "publish audit",
+        "kind": "SPAN_KIND_PRODUCER",
+        "status": "",
+        "start_offset_ms": 980,
+        "duration_ms": 80,
+        "self_time_ms": 80,
+        "depth": 1
+      }
     ]
   }
 }

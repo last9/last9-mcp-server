@@ -169,6 +169,8 @@ func TestInvestigationWorkflowFixtures(t *testing.T) {
 	}
 }
 
+// Immutability tripwire, not conformance coverage — producer conformance lives in
+// internal/telemetry/traces/*_contract_test.go.
 func TestWorkflowEvidenceHashesMatchImmutableFixtures(t *testing.T) {
 	manifest := readJSONObject(t, "contracts/fixtures/workflow-cases-v1.json")
 	known := map[string]string{}
@@ -206,10 +208,17 @@ func TestInvestigationFeatureFlagsDefaultOffAndUnique(t *testing.T) {
 		if seen[name] || flag["default"] != false {
 			t.Fatalf("flag %s must be unique and default off", name)
 		}
+		// A flag no surface enforces is a name this repo invented.
+		if enforced, ok := flag["enforced_by"].(string); !ok || enforced == "" {
+			t.Fatalf("flag %s must record enforced_by", name)
+		}
+		if _, ok := flag["consumed_by_this_repo"].(bool); !ok {
+			t.Fatalf("flag %s must state whether this repo consumes it", name)
+		}
 		seen[name] = true
 	}
-	if len(seen) != 7 {
-		t.Fatalf("got %d flags, want 7", len(seen))
+	if !seen["trace_attribute_deviations"] {
+		t.Fatalf("manifest must record the deviations gate; got %v", seen)
 	}
 }
 

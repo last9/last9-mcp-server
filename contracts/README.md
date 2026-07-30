@@ -4,8 +4,11 @@ These artifacts are the repository-neutral compatibility fixtures for ENG-1488.
 
 - `investigation-evidence-v1.schema.json` defines the shared evidence envelope.
 - `investigation-workflow-v1.schema.json` defines supervisor state and events.
-- `feature-flags-v1.json` reserves default-off rollout controls.
+- `feature-flags-v1.json` records rollout gates that exist and names the surface enforcing each. Nothing here reads it; it does not gate registration.
 - `fixtures/` contains deterministic examples consumed by compatibility tests.
+  - `evidence-trace-waterfall.json` is generated from the producer — regenerate with `LAST9_UPDATE_FIXTURES=1 go test ./internal/telemetry/traces/ -run TestWaterfallFixtureMatchesProducerOutput`, then refresh the `content_sha256` values in `workflow-cases-v1.json`.
+  - `evidence-attribute-deviations-endpoint.json` is a verbatim copy of the deviations endpoint's example response. It is the shared artifact that keeps `get_trace_attribute_deviations`'s description honest; refresh it when the endpoint's response changes.
+  - `evidence-trace-deviations.json` is a hand-written cross-surface seed, not producer output.
 
 Compatibility rules:
 

@@ -14,7 +14,7 @@
           "budget": { "tool_calls_used": 5, "tool_calls_max": 12 },
           "evidence_refs": [
             { "evidence_id": "E-deviation-001", "content_sha256": "65ba219ebeddd496d1b3108faea903b4c42a65967affb5d831785ba4178dc1df", "contract_version": "investigation-evidence/v1", "analysis_version": "trace-attribute-deviations/v1" },
-            { "evidence_id": "E-waterfall-001", "content_sha256": "f344d10522b36a582e7b41a14292d0650127abb532dbf66296e9ed13c041190e", "contract_version": "investigation-evidence/v1", "analysis_version": "trace-waterfall/v1" }
+            { "evidence_id": "E-waterfall-001", "content_sha256": "a6055166ce4954bb39cf4473d694c7bf6946072b99501c13e9885b9f8794a93e", "contract_version": "investigation-evidence/v1", "analysis_version": "trace-waterfall/v1" }
           ],
           "hypotheses": [{ "statement": "The pricing deployment is associated with the checkout regression.", "quality": "medium", "supporting_evidence_refs": ["E-deviation-001", "E-waterfall-001"] }],
           "contradictions": [{ "statement": "Traffic volume remained within its normal band.", "evidence_refs": ["E-deviation-001"] }],
@@ -26,7 +26,7 @@
         "events": [
           { "investigation_id": "seed-supported-001", "sequence": 1, "timestamp": "2026-07-15T08:42:00Z", "phase": "created", "status": "started", "message": "Investigation started.", "new_evidence_refs": [], "budget_remaining": { "tool_calls": 12 } },
           { "investigation_id": "seed-supported-001", "sequence": 2, "timestamp": "2026-07-15T08:43:00Z", "phase": "comparing_trace_cohorts", "status": "completed", "message": "Trace cohorts compared.", "new_evidence_refs": [{ "evidence_id": "E-deviation-001", "content_sha256": "65ba219ebeddd496d1b3108faea903b4c42a65967affb5d831785ba4178dc1df", "contract_version": "investigation-evidence/v1", "analysis_version": "trace-attribute-deviations/v1" }], "budget_remaining": { "tool_calls": 8 } },
-          { "investigation_id": "seed-supported-001", "sequence": 3, "timestamp": "2026-07-15T08:46:00Z", "phase": "terminal", "status": "terminal", "message": "A supported action is awaiting explicit approval.", "new_evidence_refs": [{ "evidence_id": "E-waterfall-001", "content_sha256": "f344d10522b36a582e7b41a14292d0650127abb532dbf66296e9ed13c041190e", "contract_version": "investigation-evidence/v1", "analysis_version": "trace-waterfall/v1" }], "budget_remaining": { "tool_calls": 7 }, "recoverable_user_action": "approve_or_dismiss" }
+          { "investigation_id": "seed-supported-001", "sequence": 3, "timestamp": "2026-07-15T08:46:00Z", "phase": "terminal", "status": "terminal", "message": "A supported action is awaiting explicit approval.", "new_evidence_refs": [{ "evidence_id": "E-waterfall-001", "content_sha256": "a6055166ce4954bb39cf4473d694c7bf6946072b99501c13e9885b9f8794a93e", "contract_version": "investigation-evidence/v1", "analysis_version": "trace-waterfall/v1" }], "budget_remaining": { "tool_calls": 7 }, "recoverable_user_action": "approve_or_dismiss" }
         ]
       }
     },
