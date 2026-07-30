@@ -33,11 +33,6 @@ const (
 	deviationMinimumCohortMin     = 20
 	deviationValueSupportDefault  = 20
 	deviationValueSupportMin      = 10
-	// Not caller-settable; sent at the endpoint's ceiling — narrowing shrinks results.
-	deviationMaxValuesPerAttribute    = 50
-	deviationRepresentativesPerResult = 3
-	// Auto-discovery ceiling: the endpoint's tuned default, not the max of 8 (cost scales).
-	deviationDiscoveryCandidates = 3
 )
 
 type GetTraceAttributeDeviationsArgs struct {
@@ -93,10 +88,10 @@ type deviationAPICandidates struct {
 type deviationAPILimits struct {
 	MinimumCohortSize         int `json:"minimum_cohort_size"`
 	MinimumValueSupport       int `json:"minimum_value_support"`
-	MaximumCandidates         int `json:"maximum_candidates"`
-	MaximumValuesPerAttribute int `json:"maximum_values_per_attribute"`
+	MaximumCandidates         int `json:"maximum_candidates,omitempty"`
+	MaximumValuesPerAttribute int `json:"maximum_values_per_attribute,omitempty"`
 	MaximumRankedResults      int `json:"maximum_ranked_results"`
-	RepresentativesPerResult  int `json:"representatives_per_result"`
+	RepresentativesPerResult  int `json:"representatives_per_result,omitempty"`
 }
 
 func NewGetTraceAttributeDeviationsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTraceAttributeDeviationsArgs) (*mcp.CallToolResult, any, error) {
@@ -163,18 +158,11 @@ func deviationLimits(args GetTraceAttributeDeviationsArgs) (deviationAPILimits, 
 	} else if limit < 1 || limit > deviationRankedResultsMax {
 		return deviationAPILimits{}, fmt.Errorf("limit must be between 1 and %d", deviationRankedResultsMax)
 	}
-	// Auto-discover still needs a ceiling, not zero.
-	maximumCandidates := len(args.CandidateAttributes)
-	if maximumCandidates == 0 {
-		maximumCandidates = deviationDiscoveryCandidates
-	}
 	return deviationAPILimits{
-		MinimumCohortSize:         cohort,
-		MinimumValueSupport:       support,
-		MaximumCandidates:         maximumCandidates,
-		MaximumValuesPerAttribute: deviationMaxValuesPerAttribute,
-		MaximumRankedResults:      limit,
-		RepresentativesPerResult:  deviationRepresentativesPerResult,
+		MinimumCohortSize:    cohort,
+		MinimumValueSupport:  support,
+		MaximumCandidates:    len(args.CandidateAttributes),
+		MaximumRankedResults: limit,
 	}, nil
 }
 

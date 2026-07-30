@@ -134,14 +134,11 @@ func TestDeviationLimitsApplyDocumentedDefaultsAndBounds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Must equal the endpoint's defaults: narrower shrinks results, wider is rejected.
+	// Only limits this tool chooses are sent; the endpoint owns the rest.
 	want := deviationAPILimits{
-		MinimumCohortSize:         100,
-		MinimumValueSupport:       20,
-		MaximumCandidates:         3,
-		MaximumValuesPerAttribute: 50,
-		MaximumRankedResults:      10,
-		RepresentativesPerResult:  3,
+		MinimumCohortSize:    100,
+		MinimumValueSupport:  20,
+		MaximumRankedResults: 10,
 	}
 	if request.Limits != want {
 		t.Fatalf("limits=%+v, want %+v", request.Limits, want)
@@ -194,5 +191,41 @@ func deviationTestConfig(baseURL string) models.Config {
 			AccessToken: "test-token",
 			ExpiresAt:   time.Now().Add(time.Hour),
 		},
+	}
+}
+
+// Endpoint-owned budgets must be omitted, not pinned to its current tuning.
+func TestDeviationDiscoveryOmitsEndpointOwnedLimits(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	request, err := buildDeviationAPIRequest(GetTraceAttributeDeviationsArgs{
+		ComparisonMode: "errors", ServiceName: "checkout", Environment: "production",
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, absent := range []string{"maximum_candidates", "maximum_values_per_attribute", "representatives_per_result"} {
+		if strings.Contains(string(body), absent) {
+			t.Fatalf("%s must be omitted on the discovery path: %s", absent, body)
+		}
+	}
+
+	// An explicit candidate list is a caller-chosen count, so it is sent.
+	explicit, err := buildDeviationAPIRequest(GetTraceAttributeDeviationsArgs{
+		ComparisonMode: "errors", ServiceName: "checkout", Environment: "production",
+		CandidateAttributes: []string{"a", "b"},
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err = json.Marshal(explicit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"maximum_candidates":2`) {
+		t.Fatalf("explicit candidate count must be sent: %s", body)
 	}
 }
