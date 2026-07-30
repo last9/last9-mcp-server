@@ -1,6 +1,7 @@
 package traces
 
 import (
+	"encoding/json"
 	"math"
 	"strings"
 	"testing"
@@ -193,6 +194,49 @@ func TestBuildTraceWaterfallWarningOrderIsDeterministic(t *testing.T) {
 			if got[j] != want[j] {
 				t.Fatalf("warning order changed on run %d: %v vs %v", i, got, want)
 			}
+		}
+	}
+}
+
+// Without the warning, a typo and a truncated-away span are indistinguishable.
+func TestBuildTraceWaterfallWarnsOnUnmatchedSelectedSpan(t *testing.T) {
+	spans := []TraceDetailsSpan{
+		{TraceID: "t", SpanID: "a", ServiceName: "api", Timestamp: "2026-07-15T00:00:00Z", Duration: 10_000_000},
+	}
+	r := buildTraceWaterfall(waterfallTestInput(spans, 500, "does-not-exist"))
+	if r.Data.SelectedSpan != nil {
+		t.Fatal("selected_span must stay absent when nothing matches")
+	}
+	if !hasWarning(r.Evidence.Warnings, "selected_span_id not found in returned spans: does-not-exist") {
+		t.Fatalf("warnings=%v", r.Evidence.Warnings)
+	}
+	// A request the tool could not fully answer is not high-quality evidence.
+	if r.Interpretation.EvidenceQuality == evidenceQualityHigh {
+		t.Fatalf("evidence_quality=%q", r.Interpretation.EvidenceQuality)
+	}
+
+	matched := buildTraceWaterfall(waterfallTestInput(spans, 500, "a"))
+	if matched.Data.SelectedSpan == nil {
+		t.Fatal("selected_span must be present when the ID matches")
+	}
+	if hasWarning(matched.Evidence.Warnings, "selected_span_id not found") {
+		t.Fatalf("warnings=%v", matched.Evidence.Warnings)
+	}
+}
+
+func TestBuildTraceWaterfallOmitsEmptySummaryBounds(t *testing.T) {
+	b, err := json.Marshal(buildTraceWaterfall(waterfallTestInput(nil, 500, "")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(b, &payload); err != nil {
+		t.Fatal(err)
+	}
+	summary := payload["data"].(map[string]any)["summary"].(map[string]any)
+	for _, key := range []string{"start", "end"} {
+		if _, present := summary[key]; present {
+			t.Fatalf("summary.%s must be omitted when no bounds exist: %s", key, b)
 		}
 	}
 }

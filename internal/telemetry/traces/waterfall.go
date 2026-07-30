@@ -33,6 +33,8 @@ const (
 	evidenceQualityInsufficient      = "insufficient"
 	traceWaterfallTruncationWarning  = "result reached max_spans; child spans may be missing and self_time_ms may be overstated"
 	traceWaterfallEmptyResultWarning = "no spans found for this trace_id in the requested window"
+	// Trailing space: the offending span ID is appended.
+	traceWaterfallSelectedSpanMissingWarning = "selected_span_id not found in returned spans: "
 )
 
 type GetTraceWaterfallArgs struct {
@@ -112,9 +114,11 @@ type WaterfallInterpretation struct {
 	Limitations     []string `json:"limitations"`
 }
 
+// Start/End are omitted when no span had parseable bounds: a consumer parsing them
+// as date-time breaks on "" but not on an absent key.
 type WaterfallSummary struct {
-	Start        string   `json:"start"`
-	End          string   `json:"end"`
+	Start        string   `json:"start,omitempty"`
+	End          string   `json:"end,omitempty"`
 	DurationMs   float64  `json:"duration_ms"`
 	SpanCount    int      `json:"span_count"`
 	ServiceCount int      `json:"service_count"`
@@ -168,7 +172,9 @@ func NewGetTraceWaterfallHandler(client *http.Client, cfg models.Config) func(co
 		if err != nil {
 			return nil, nil, err
 		}
-		qp := &GetTracesQueryParams{TraceID: args.TraceID, Region: cfg.Region, Limit: maxSpans, Env: args.Environment}
+		// No Env: the trace-details URL has no environment parameter, so filtering
+		// happens client-side below via traceDetailsMatchesEnv.
+		qp := &GetTracesQueryParams{TraceID: args.TraceID, Region: cfg.Region, Limit: maxSpans}
 		u, err := buildTraceDetailsRequestURL(cfg, qp, start.Unix(), end.Unix())
 		if err != nil {
 			return nil, nil, err
@@ -429,6 +435,12 @@ func buildTraceWaterfall(in waterfallBuildInput) TraceWaterfallResponse {
 	resp.Evidence.ReturnedSpans = len(resp.Data.Spans)
 	// Spans dropped while building are partial; ones the caller's env filter removed are not.
 	resp.Evidence.Partial = resp.Evidence.Truncated || len(byID) < len(in.spans)
+
+	// Otherwise a wrong ID and a span with no attributes look identical: both
+	// simply omit selected_span.
+	if in.selectedID != "" && resp.Data.SelectedSpan == nil {
+		warnings = append(warnings, traceWaterfallSelectedSpanMissingWarning+in.selectedID)
+	}
 
 	resp.Interpretation.ClaimType = traceWaterfallClaimContribution
 	switch {
