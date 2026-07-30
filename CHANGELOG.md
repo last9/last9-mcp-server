@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_trace_waterfall` MCP tool returning one exact trace as a bounded parent/child waterfall: millisecond timing, interval-union self-time, slowest spans, largest self-time contributors, and optional selected-span attributes/events/links. Truncation, cycles, duplicate spans, orphans and unparseable timestamps are reported as warnings with a matching `evidence_quality`; an empty result is `insufficient`, not a negative finding. No critical path is computed or claimed (#186).
+- `get_trace_attribute_deviations` MCP tool ranking attribute values that differ between two bounded span cohorts — slow vs fast, error vs non-error, or two equal-duration windows. Returns full-denominator shares, percentage-point deltas, and representative trace IDs; results describe correlation, not cause. Requires the companion trace-analysis capability to be enabled (#186).
 - `get_alert_config` server-side notification-channel filters matching Alert Studio dashboard semantics: `only_without_notification_channel` (dashboard "Not configured"), `notification_channel_types`, `notification_channel_names`, and `notification_channel_severities` (breach/threat on the same binding row). Every rule now includes `Notification Channels` and `Notification Channel Bindings` lines aligned with the rules-table column; alert group `name`, `data_source`, and `tags` are included when resolved (#191).
 - `get_notification_channels` TSV output now includes `service_fqid`, the per-entity alert-group binding id (#191).
 
