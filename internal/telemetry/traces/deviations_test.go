@@ -151,7 +151,7 @@ func TestDeviationLimitsApplyDocumentedDefaultsAndBounds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if explicit.Limits.MaximumCandidates != 2 || explicit.Limits.MinimumCohortSize != 50 ||
+	if explicit.Limits.MinimumCohortSize != 50 ||
 		explicit.Limits.MinimumValueSupport != 15 || explicit.Limits.MaximumRankedResults != 5 {
 		t.Fatalf("limits=%+v", explicit.Limits)
 	}
@@ -180,6 +180,66 @@ func TestDeviationLimitsRejectOutOfRangeArguments(t *testing.T) {
 				t.Fatalf("expected %q error, got %v", c.wantErr, err)
 			}
 		})
+	}
+}
+
+func TestDeviationBaselineAcceptsSameFormatsAsTarget(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	base := GetTraceAttributeDeviationsArgs{
+		ComparisonMode: "time", ServiceName: "checkout", Environment: "production",
+		StartTimeISO: "2026-07-15 11:45:00", EndTimeISO: "2026-07-15 12:00:00",
+	}
+	for _, layout := range []struct{ name, start, end string }{
+		{"space separated", "2026-07-15 11:00:00", "2026-07-15 11:15:00"},
+		{"rfc3339", "2026-07-15T11:00:00Z", "2026-07-15T11:15:00Z"},
+		{"rfc3339 nano", "2026-07-15T11:00:00.000000000Z", "2026-07-15T11:15:00.000000000Z"},
+	} {
+		t.Run(layout.name, func(t *testing.T) {
+			args := base
+			args.BaselineStartISO, args.BaselineEndISO = layout.start, layout.end
+			request, err := buildDeviationAPIRequest(args, now)
+			if err != nil {
+				t.Fatalf("baseline %q rejected while the same format is valid in start_time_iso: %v", layout.start, err)
+			}
+			if !request.Comparison.Control.Start.Equal(time.Date(2026, 7, 15, 11, 0, 0, 0, time.UTC)) {
+				t.Fatalf("control start=%v", request.Comparison.Control.Start)
+			}
+		})
+	}
+}
+
+// Without the value, a caller cannot tell which format was wanted.
+func TestDeviationBaselineErrorNamesTheReceivedValue(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	_, err := buildDeviationAPIRequest(GetTraceAttributeDeviationsArgs{
+		ComparisonMode: "time", ServiceName: "checkout", Environment: "production",
+		BaselineStartISO: "15/07/2026", BaselineEndISO: "2026-07-15T11:15:00Z",
+	}, now)
+	if err == nil {
+		t.Fatal("expected an unparseable baseline to fail")
+	}
+	for _, want := range []string{"baseline_start_time_iso", `"15/07/2026"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q must contain %s", err, want)
+		}
+	}
+}
+
+// The waterfall path rejects a negative lookback; this one used to drop it and fall
+// through to the default window.
+func TestDeviationLookbackMinutesRejectsOutOfRangeValues(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	base := GetTraceAttributeDeviationsArgs{ComparisonMode: "errors", ServiceName: "checkout", Environment: "production"}
+	for _, lookback := range []int{-1, -60, 60} {
+		args := base
+		args.LookbackMinutes = lookback
+		_, err := buildDeviationAPIRequest(args, now)
+		if err == nil {
+			t.Fatalf("lookback_minutes=%d must be rejected", lookback)
+		}
+		if !strings.Contains(err.Error(), "lookback_minutes") {
+			t.Fatalf("lookback_minutes=%d error %q must name the argument", lookback, err)
+		}
 	}
 }
 
@@ -213,7 +273,7 @@ func TestDeviationDiscoveryOmitsEndpointOwnedLimits(t *testing.T) {
 		}
 	}
 
-	// An explicit candidate list is a caller-chosen count, so it is sent.
+	// Omitted on the explicit path too: the endpoint can count the list it was sent.
 	explicit, err := buildDeviationAPIRequest(GetTraceAttributeDeviationsArgs{
 		ComparisonMode: "errors", ServiceName: "checkout", Environment: "production",
 		CandidateAttributes: []string{"a", "b"},
@@ -225,7 +285,9 @@ func TestDeviationDiscoveryOmitsEndpointOwnedLimits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), `"maximum_candidates":2`) {
-		t.Fatalf("explicit candidate count must be sent: %s", body)
+	for _, absent := range []string{"maximum_candidates", "maximum_values_per_attribute", "representatives_per_result"} {
+		if strings.Contains(string(body), absent) {
+			t.Fatalf("%s must be omitted on the explicit path: %s", absent, body)
+		}
 	}
 }

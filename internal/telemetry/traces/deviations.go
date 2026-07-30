@@ -33,6 +33,7 @@ const (
 	deviationMinimumCohortMin     = 20
 	deviationValueSupportDefault  = 20
 	deviationValueSupportMin      = 10
+	deviationLookbackMaxMinutes   = 15
 )
 
 type GetTraceAttributeDeviationsArgs struct {
@@ -85,13 +86,12 @@ type deviationAPICandidates struct {
 	AutoDiscover bool     `json:"auto_discover"`
 }
 
+// Candidate, per-attribute value, and representative budgets are omitted so the
+// endpoint applies its own defaults.
 type deviationAPILimits struct {
-	MinimumCohortSize         int `json:"minimum_cohort_size"`
-	MinimumValueSupport       int `json:"minimum_value_support"`
-	MaximumCandidates         int `json:"maximum_candidates,omitempty"`
-	MaximumValuesPerAttribute int `json:"maximum_values_per_attribute,omitempty"`
-	MaximumRankedResults      int `json:"maximum_ranked_results"`
-	RepresentativesPerResult  int `json:"representatives_per_result,omitempty"`
+	MinimumCohortSize    int `json:"minimum_cohort_size"`
+	MinimumValueSupport  int `json:"minimum_value_support"`
+	MaximumRankedResults int `json:"maximum_ranked_results"`
 }
 
 func NewGetTraceAttributeDeviationsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTraceAttributeDeviationsArgs) (*mcp.CallToolResult, any, error) {
@@ -161,7 +161,6 @@ func deviationLimits(args GetTraceAttributeDeviationsArgs) (deviationAPILimits, 
 	return deviationAPILimits{
 		MinimumCohortSize:    cohort,
 		MinimumValueSupport:  support,
-		MaximumCandidates:    len(args.CandidateAttributes),
 		MaximumRankedResults: limit,
 	}, nil
 }
@@ -174,15 +173,18 @@ func deviationTargetWindow(args GetTraceAttributeDeviationsArgs, now time.Time) 
 	if args.EndTimeISO != "" {
 		params["end_time_iso"] = args.EndTimeISO
 	}
-	if args.LookbackMinutes > 0 {
+	if args.LookbackMinutes != 0 {
+		if args.LookbackMinutes < 0 || args.LookbackMinutes > deviationLookbackMaxMinutes {
+			return deviationAPIWindow{}, fmt.Errorf("lookback_minutes must be between 1 and %d, got %d", deviationLookbackMaxMinutes, args.LookbackMinutes)
+		}
 		params["lookback_minutes"] = args.LookbackMinutes
 	}
-	start, end, err := utils.GetTimeRangeAt(params, 15, now)
+	start, end, err := utils.GetTimeRangeAt(params, deviationLookbackMaxMinutes, now)
 	if err != nil {
 		return deviationAPIWindow{}, err
 	}
 	if end.Sub(start) > maxDeviationWindow {
-		return deviationAPIWindow{}, fmt.Errorf("effective window must not exceed 15 minutes")
+		return deviationAPIWindow{}, fmt.Errorf("the effective window from start_time_iso/end_time_iso must not exceed %d minutes, got %s", deviationLookbackMaxMinutes, end.Sub(start))
 	}
 	return deviationAPIWindow{Start: start, End: end}, nil
 }
@@ -191,13 +193,18 @@ func deviationControlWindow(args GetTraceAttributeDeviationsArgs, mode string, t
 	if mode != "time" {
 		return target, nil
 	}
-	start, err := time.Parse(time.RFC3339, args.BaselineStartISO)
+	// Same parser as the target window: a format valid in start_time_iso must not
+	// be rejected in its baseline sibling.
+	start, err := utils.ParseToolTimestamp(args.BaselineStartISO)
 	if err != nil {
-		return deviationAPIWindow{}, fmt.Errorf("baseline_start_time_iso must be RFC3339")
+		return deviationAPIWindow{}, fmt.Errorf("baseline_start_time_iso %q is not a supported timestamp: %w", args.BaselineStartISO, err)
 	}
-	end, err := time.Parse(time.RFC3339, args.BaselineEndISO)
-	if err != nil || !end.After(start) {
-		return deviationAPIWindow{}, fmt.Errorf("baseline_end_time_iso must be RFC3339 and after baseline_start_time_iso")
+	end, err := utils.ParseToolTimestamp(args.BaselineEndISO)
+	if err != nil {
+		return deviationAPIWindow{}, fmt.Errorf("baseline_end_time_iso %q is not a supported timestamp: %w", args.BaselineEndISO, err)
+	}
+	if !end.After(start) {
+		return deviationAPIWindow{}, fmt.Errorf("baseline_end_time_iso %q must be after baseline_start_time_iso %q", args.BaselineEndISO, args.BaselineStartISO)
 	}
 	control := deviationAPIWindow{Start: start, End: end}
 	if end.Sub(start) != target.End.Sub(target.Start) {
@@ -264,5 +271,29 @@ func callAttributeDeviationsAPI(ctx context.Context, client *http.Client, cfg mo
 	if !json.Valid(responseBody) {
 		return nil, newTraceInvalidResponseError(nil)
 	}
+	if err := checkDeviationResponseContract(responseBody); err != nil {
+		return nil, err
+	}
 	return responseBody, nil
+}
+
+// The handler forwards this body verbatim, so a payload that is not the promised
+// envelope would have the model reasoning over fields that do not exist.
+func checkDeviationResponseContract(body []byte) error {
+	var envelope struct {
+		ContractVersion string `json:"contract_version"`
+		AnalysisVersion string `json:"analysis_version"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return newTraceInvalidResponseError(err)
+	}
+	if envelope.ContractVersion != investigationEvidenceVersion {
+		return newTraceInvalidResponseError(fmt.Errorf(
+			"expected contract_version %q, got %q", investigationEvidenceVersion, envelope.ContractVersion))
+	}
+	if envelope.AnalysisVersion != attributeDeviationsVersion {
+		return newTraceInvalidResponseError(fmt.Errorf(
+			"expected analysis_version %q, got %q", attributeDeviationsVersion, envelope.AnalysisVersion))
+	}
+	return nil
 }
