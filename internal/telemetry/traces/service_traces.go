@@ -566,5 +566,6 @@ func parseTimestampToUnix(timestamp string) int64 {
 	if !ok {
 		return 0
 	}
-	return nanos / int64(time.Second)
+	// time.Unix floors; integer division truncates toward zero (differs pre-epoch).
+	return time.Unix(0, nanos).Unix()
 }

@@ -205,9 +205,10 @@ func NewGetTraceWaterfallHandler(client *http.Client, cfg models.Config) func(co
 			fetchedSpans: len(raw.Traces),
 			limit:        maxSpans,
 			selectedID:   args.SelectedSpanID,
-			requested:    evidenceWindow(start, end),
-			effective:    evidenceWindow(start, end),
-			observedAt:   time.Now().UTC(),
+			// Equal because this path never clamps; the envelope requires both fields.
+			requested:  evidenceWindow(start, end),
+			effective:  evidenceWindow(start, end),
+			observedAt: time.Now().UTC(),
 		})
 		b, err := json.Marshal(resp)
 		if err != nil {
@@ -245,8 +246,6 @@ func buildTraceWaterfall(in waterfallBuildInput) TraceWaterfallResponse {
 	var resp TraceWaterfallResponse
 	resp.ContractVersion = investigationEvidenceVersion
 	resp.AnalysisVersion = traceWaterfallAnalysisVersion
-	// Trace-scoped: the scope is the trace ID, plus the environment only when the
-	// caller actually filtered by one. No service is requested, so none is reported.
 	resp.Request = WaterfallRequest{
 		Scope:           WaterfallScope{TraceID: in.traceID, Environment: in.environment},
 		RequestedWindow: in.requested,
