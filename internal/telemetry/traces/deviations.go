@@ -24,6 +24,22 @@ const (
 	maxDeviationWindow          = 15 * time.Minute
 )
 
+// Request bounds, mirroring the endpoint's v1 limits so bad values fail here by name.
+const (
+	deviationMaxCandidates        = 8
+	deviationRankedResultsDefault = 10
+	deviationRankedResultsMax     = 10
+	deviationMinimumCohortDefault = 100
+	deviationMinimumCohortMin     = 20
+	deviationValueSupportDefault  = 20
+	deviationValueSupportMin      = 10
+	// Not caller-settable; sent at the endpoint's ceiling — narrowing shrinks results.
+	deviationMaxValuesPerAttribute    = 50
+	deviationRepresentativesPerResult = 3
+	// Auto-discovery ceiling: the endpoint's tuned default, not the max of 8 (cost scales).
+	deviationDiscoveryCandidates = 3
+)
+
 type GetTraceAttributeDeviationsArgs struct {
 	ComparisonMode      string                   `json:"comparison_mode" jsonschema:"(Required) Cohort comparison: latency, errors, or time"`
 	ServiceName         string                   `json:"service_name" jsonschema:"(Required) Exact service name to analyze"`
@@ -117,7 +133,49 @@ func buildDeviationAPIRequest(args GetTraceAttributeDeviationsArgs, now time.Tim
 	if err != nil {
 		return deviationAPIRequest{}, err
 	}
-	return newDeviationAPIRequest(args, mode, target, control, threshold), nil
+	limits, err := deviationLimits(args)
+	if err != nil {
+		return deviationAPIRequest{}, err
+	}
+	return newDeviationAPIRequest(args, mode, target, control, threshold, limits), nil
+}
+
+// deviationLimits defaults zero values and rejects out-of-range ones instead of clamping.
+func deviationLimits(args GetTraceAttributeDeviationsArgs) (deviationAPILimits, error) {
+	if len(args.CandidateAttributes) > deviationMaxCandidates {
+		return deviationAPILimits{}, fmt.Errorf("candidate_attributes accepts at most %d attributes, got %d", deviationMaxCandidates, len(args.CandidateAttributes))
+	}
+	cohort := args.MinimumCohortSize
+	if cohort == 0 {
+		cohort = deviationMinimumCohortDefault
+	} else if cohort < deviationMinimumCohortMin {
+		return deviationAPILimits{}, fmt.Errorf("minimum_cohort_size must be at least %d", deviationMinimumCohortMin)
+	}
+	support := args.MinimumValueSupport
+	if support == 0 {
+		support = deviationValueSupportDefault
+	} else if support < deviationValueSupportMin {
+		return deviationAPILimits{}, fmt.Errorf("minimum_value_support must be at least %d", deviationValueSupportMin)
+	}
+	limit := args.Limit
+	if limit == 0 {
+		limit = deviationRankedResultsDefault
+	} else if limit < 1 || limit > deviationRankedResultsMax {
+		return deviationAPILimits{}, fmt.Errorf("limit must be between 1 and %d", deviationRankedResultsMax)
+	}
+	// Auto-discover still needs a ceiling, not zero.
+	maximumCandidates := len(args.CandidateAttributes)
+	if maximumCandidates == 0 {
+		maximumCandidates = deviationDiscoveryCandidates
+	}
+	return deviationAPILimits{
+		MinimumCohortSize:         cohort,
+		MinimumValueSupport:       support,
+		MaximumCandidates:         maximumCandidates,
+		MaximumValuesPerAttribute: deviationMaxValuesPerAttribute,
+		MaximumRankedResults:      limit,
+		RepresentativesPerResult:  deviationRepresentativesPerResult,
+	}, nil
 }
 
 func deviationTargetWindow(args GetTraceAttributeDeviationsArgs, now time.Time) (deviationAPIWindow, error) {
@@ -176,13 +234,13 @@ func deviationLatencyThreshold(mode string, value float64) (*float64, error) {
 	return nil, nil
 }
 
-func newDeviationAPIRequest(args GetTraceAttributeDeviationsArgs, mode string, target, control deviationAPIWindow, threshold *float64) deviationAPIRequest {
+func newDeviationAPIRequest(args GetTraceAttributeDeviationsArgs, mode string, target, control deviationAPIWindow, threshold *float64, limits deviationAPILimits) deviationAPIRequest {
 	return deviationAPIRequest{
 		ContractVersion: attributeDeviationsVersion,
 		Scope:           deviationAPIScope{ServiceName: args.ServiceName, Environment: args.Environment, Operation: args.Operation, Filters: args.Filters},
 		Comparison:      deviationAPIComparison{Mode: mode, Target: target, Control: control, LatencyThresholdMs: threshold},
 		Candidates:      deviationAPICandidates{Attributes: args.CandidateAttributes, AutoDiscover: len(args.CandidateAttributes) == 0},
-		Limits:          deviationAPILimits{MinimumCohortSize: args.MinimumCohortSize, MinimumValueSupport: args.MinimumValueSupport, MaximumCandidates: len(args.CandidateAttributes), MaximumRankedResults: args.Limit},
+		Limits:          limits,
 	}
 }
 
@@ -204,18 +262,19 @@ func callAttributeDeviationsAPI(ctx context.Context, client *http.Client, cfg mo
 	request.Header.Set(constants.HeaderUserAgent, constants.UserAgentLast9MCP)
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("attribute deviations API request failed: %w", err)
+		return nil, newTraceTransportError(err)
 	}
 	defer response.Body.Close()
+	// Status before body: newTraceHTTPError echoes only 400/422 (sanitized), drains 5xx.
+	if response.StatusCode != http.StatusOK {
+		return nil, newTraceHTTPError(response)
+	}
 	responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, 4<<20))
 	if readErr != nil {
-		return nil, readErr
-	}
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("attribute deviations API returned status %d: %s", response.StatusCode, strings.TrimSpace(string(responseBody)))
+		return nil, newTraceInvalidResponseError(readErr)
 	}
 	if !json.Valid(responseBody) {
-		return nil, fmt.Errorf("attribute deviations API returned invalid JSON")
+		return nil, newTraceInvalidResponseError(nil)
 	}
 	return responseBody, nil
 }
