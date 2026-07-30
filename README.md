@@ -276,6 +276,8 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_trace_attributes`** — Global catalog of attributes in the trace schema
 - **`get_trace_attributes_for_pipeline`** — Attributes actually present for an in-progress pipeline (scoped discovery), each with its exact `filter_field`
 - **`get_trace_attribute_values`** — Distinct values for a trace attribute, optionally scoped to a pipeline
+- **`get_trace_attribute_deviations`** — Ranks attribute values that differ between two bounded span cohorts (slow vs fast, error vs non-error, or two time windows). Correlation, not cause
+- **`get_trace_waterfall`** — One exact trace as a parent/child waterfall with interval-union self-time, slowest spans, and graph warnings
 
 ### Change Events & Alerts
 
@@ -587,6 +589,35 @@ Exactly one of `trace_id` or `service_name` is required.
 - `tag_name` (string, required): Attribute name from `get_trace_attributes` (e.g. `resource_department` or `attributes['http.method']`).
 - `pipeline` (array, optional): Prior filter stages to scope the values; omit for global values.
 - `region` (string, optional)
+
+### get_trace_attribute_deviations
+
+- `comparison_mode` (string, required): `latency`, `errors`, or `time`.
+- `service_name` (string, required)
+- `environment` (string, required): Exact `deployment.environment` value.
+- `operation` (string, optional)
+- `filters` (array, optional): Trace JSON filter conditions.
+- `candidate_attributes` (array, optional): Maximum 8; omit for bounded discovery.
+- `latency_threshold_ms` (number, optional): Required for `latency` mode; rejected for other modes.
+- `start_time_iso` / `end_time_iso` (string, optional)
+- `lookback_minutes` (integer, optional): Default: 15. Maximum: 15.
+- `baseline_start_time_iso` / `baseline_end_time_iso` (string, optional): Required for `time` mode; non-overlapping and equal in duration to the target window.
+- `minimum_cohort_size` (integer, optional): Default: 100. Minimum: 20.
+- `minimum_value_support` (integer, optional): Default: 20. Minimum: 10.
+- `limit` (integer, optional): Default: 10. Maximum: 10.
+
+Requires the companion backend capability to be enabled.
+
+### get_trace_waterfall
+
+- `trace_id` (string, required)
+- `environment` (string, optional)
+- `start_time_iso` / `end_time_iso` (string, optional)
+- `lookback_minutes` (integer, optional): Default: 4320 (72 hours).
+- `selected_span_id` (string, optional): Returns attributes, events, and links for that span only.
+- `max_spans` (integer, optional): Default: 500. Maximum: 1000.
+
+Returns an `investigation-evidence/v1` envelope; the waterfall is under `data`.
 
 ### get_change_events
 
