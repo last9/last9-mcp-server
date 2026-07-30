@@ -15,6 +15,29 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+const (
+	// Only stamp this once the payload satisfies contracts/investigation-evidence-v1.schema.json.
+	investigationEvidenceVersion  = "investigation-evidence/v1"
+	traceWaterfallAnalysisVersion = "trace-waterfall/v1"
+	traceWaterfallSource          = "trace-details"
+	// Half-open [start,end), per contracts/README.md.
+	evidenceWindowBoundary = "half-open"
+	// The envelope requires a scope, but a trace-ID lookup has none. Fallbacks only.
+	traceWaterfallUnknownService     = "unknown"
+	traceWaterfallAnyEnvironment     = "unspecified"
+	traceWaterfallMaxSpansDefault    = 500
+	traceWaterfallMaxSpansCeiling    = 1000
+	traceWaterfallTopN               = 5
+	traceWaterfallErrorStatusCode    = "STATUS_CODE_ERROR"
+	traceWaterfallClaimObservation   = "observation"
+	traceWaterfallClaimContribution  = "contribution"
+	evidenceQualityHigh              = "high"
+	evidenceQualityMedium            = "medium"
+	evidenceQualityInsufficient      = "insufficient"
+	traceWaterfallTruncationWarning  = "result reached max_spans; child spans may be missing and self_time_ms may be overstated"
+	traceWaterfallEmptyResultWarning = "no spans found for this trace_id in the requested window"
+)
+
 type GetTraceWaterfallArgs struct {
 	TraceID         string `json:"trace_id" jsonschema:"(Required) Exact trace ID"`
 	Environment     string `json:"environment,omitempty" jsonschema:"Optional exact deployment.environment value"`
@@ -46,34 +69,77 @@ type WaterfallSelectedSpan struct {
 	Links              []map[string]interface{} `json:"links,omitempty"`
 }
 
-type TraceWaterfallResponse struct {
-	ContractVersion string `json:"contract_version"`
-	TraceID         string `json:"trace_id"`
-	Summary         struct {
-		Start        string   `json:"start"`
-		End          string   `json:"end"`
-		DurationMs   float64  `json:"duration_ms"`
-		SpanCount    int      `json:"span_count"`
-		ServiceCount int      `json:"service_count"`
-		ErrorCount   int      `json:"error_count"`
-		MaxDepth     int      `json:"max_depth"`
-		RootSpanIDs  []string `json:"root_span_ids"`
-	} `json:"summary"`
-	Evidence struct {
-		ReturnedSpans int      `json:"returned_spans"`
-		AppliedLimit  int      `json:"applied_limit"`
-		Truncated     bool     `json:"truncated"`
-		Warnings      []string `json:"warnings"`
-	} `json:"evidence"`
+// EvidenceWindow is a half-open [start,end) window.
+type EvidenceWindow struct {
+	Start    string `json:"start"`
+	End      string `json:"end"`
+	Boundary string `json:"boundary"`
+}
+
+// EvidenceProvenance records the evidence source and observation time.
+type EvidenceProvenance struct {
+	Source     string  `json:"source"`
+	ObservedAt string  `json:"observed_at"`
+	QueryID    *string `json:"query_id"`
+}
+
+type WaterfallScope struct {
+	ServiceName string `json:"service_name"`
+	Environment string `json:"environment"`
+}
+
+type WaterfallRequest struct {
+	Scope           WaterfallScope `json:"scope"`
+	RequestedWindow EvidenceWindow `json:"requested_window"`
+	EffectiveWindow EvidenceWindow `json:"effective_window"`
+	TraceID         string         `json:"trace_id"`
+	MaxSpans        int            `json:"max_spans"`
+	SelectedSpanID  string         `json:"selected_span_id,omitempty"`
+}
+
+type WaterfallEvidence struct {
+	Partial       bool               `json:"partial"`
+	Truncated     bool               `json:"truncated"`
+	Warnings      []string           `json:"warnings"`
+	ReturnedSpans int                `json:"returned_spans"`
+	AppliedLimit  int                `json:"applied_limit"`
+	Provenance    EvidenceProvenance `json:"provenance"`
+}
+
+type WaterfallInterpretation struct {
+	EvidenceQuality string   `json:"evidence_quality"`
+	ClaimType       string   `json:"claim_type"`
+	Summary         string   `json:"summary"`
+	Limitations     []string `json:"limitations"`
+}
+
+type WaterfallSummary struct {
+	Start        string   `json:"start"`
+	End          string   `json:"end"`
+	DurationMs   float64  `json:"duration_ms"`
+	SpanCount    int      `json:"span_count"`
+	ServiceCount int      `json:"service_count"`
+	ErrorCount   int      `json:"error_count"`
+	MaxDepth     int      `json:"max_depth"`
+	RootSpanIDs  []string `json:"root_span_ids"`
+}
+
+type WaterfallData struct {
+	Summary                     WaterfallSummary       `json:"summary"`
 	Spans                       []WaterfallSpan        `json:"spans"`
 	SlowestSpans                []WaterfallSpan        `json:"slowest_spans"`
 	LargestSelfTimeContributors []WaterfallSpan        `json:"largest_self_time_contributors"`
 	SelectedSpan                *WaterfallSelectedSpan `json:"selected_span,omitempty"`
-	Interpretation              struct {
-		EvidenceQuality string   `json:"evidence_quality"`
-		Summary         string   `json:"summary"`
-		Limitations     []string `json:"limitations"`
-	} `json:"interpretation"`
+}
+
+// TraceWaterfallResponse is an investigation-evidence/v1 envelope; keep the contract test green.
+type TraceWaterfallResponse struct {
+	ContractVersion string                  `json:"contract_version"`
+	AnalysisVersion string                  `json:"analysis_version"`
+	Request         WaterfallRequest        `json:"request"`
+	Evidence        WaterfallEvidence       `json:"evidence"`
+	Interpretation  WaterfallInterpretation `json:"interpretation"`
+	Data            WaterfallData           `json:"data"`
 }
 
 func NewGetTraceWaterfallHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTraceWaterfallArgs) (*mcp.CallToolResult, any, error) {
@@ -81,12 +147,12 @@ func NewGetTraceWaterfallHandler(client *http.Client, cfg models.Config) func(co
 		if args.TraceID == "" {
 			return nil, nil, fmt.Errorf("trace_id is required")
 		}
-		max := args.MaxSpans
-		if max == 0 {
-			max = 500
+		maxSpans := args.MaxSpans
+		if maxSpans == 0 {
+			maxSpans = traceWaterfallMaxSpansDefault
 		}
-		if max < 1 || max > 1000 {
-			return nil, nil, fmt.Errorf("max_spans must be between 1 and 1000")
+		if maxSpans < 1 || maxSpans > traceWaterfallMaxSpansCeiling {
+			return nil, nil, fmt.Errorf("max_spans must be between 1 and %d", traceWaterfallMaxSpansCeiling)
 		}
 		lookback := args.LookbackMinutes
 		if lookback == 0 {
@@ -103,7 +169,7 @@ func NewGetTraceWaterfallHandler(client *http.Client, cfg models.Config) func(co
 		if err != nil {
 			return nil, nil, err
 		}
-		qp := &GetTracesQueryParams{TraceID: args.TraceID, Region: cfg.Region, Limit: max, Env: args.Environment}
+		qp := &GetTracesQueryParams{TraceID: args.TraceID, Region: cfg.Region, Limit: maxSpans, Env: args.Environment}
 		u, err := buildTraceDetailsRequestURL(cfg, qp, start.Unix(), end.Unix())
 		if err != nil {
 			return nil, nil, err
@@ -114,15 +180,18 @@ func NewGetTraceWaterfallHandler(client *http.Client, cfg models.Config) func(co
 		}
 		httpResp, err := client.Do(req)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, newTraceTransportError(err)
 		}
 		defer httpResp.Body.Close()
+		if httpResp.StatusCode == http.StatusNotFound {
+			return nil, nil, newTraceNotFoundTraceError()
+		}
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("trace details API returned status %d", httpResp.StatusCode)
+			return nil, nil, newTraceHTTPError(httpResp)
 		}
 		var raw TraceDetailsResponse
 		if err := json.NewDecoder(httpResp.Body).Decode(&raw); err != nil {
-			return nil, nil, err
+			return nil, nil, newTraceInvalidResponseError(err)
 		}
 		filtered := make([]TraceDetailsSpan, 0, len(raw.Traces))
 		for _, s := range raw.Traces {
@@ -130,7 +199,17 @@ func NewGetTraceWaterfallHandler(client *http.Client, cfg models.Config) func(co
 				filtered = append(filtered, s)
 			}
 		}
-		resp := buildTraceWaterfall(args.TraceID, filtered, max, args.SelectedSpanID)
+		resp := buildTraceWaterfall(waterfallBuildInput{
+			traceID:      args.TraceID,
+			environment:  args.Environment,
+			spans:        filtered,
+			fetchedSpans: len(raw.Traces),
+			limit:        maxSpans,
+			selectedID:   args.SelectedSpanID,
+			requested:    evidenceWindow(start, end),
+			effective:    evidenceWindow(start, end),
+			observedAt:   time.Now().UTC(),
+		})
 		b, err := json.Marshal(resp)
 		if err != nil {
 			return nil, nil, err
@@ -142,15 +221,53 @@ func NewGetTraceWaterfallHandler(client *http.Client, cfg models.Config) func(co
 
 type spanInterval struct{ start, end int64 }
 
-func buildTraceWaterfall(traceID string, raw []TraceDetailsSpan, limit int, selectedID string) TraceWaterfallResponse {
+// fetchedSpans is the pre-env-filter count: the set the API applied the limit to.
+type waterfallBuildInput struct {
+	traceID      string
+	environment  string
+	spans        []TraceDetailsSpan
+	fetchedSpans int
+	limit        int
+	selectedID   string
+	requested    EvidenceWindow
+	effective    EvidenceWindow
+	observedAt   time.Time
+}
+
+func evidenceWindow(start, end time.Time) EvidenceWindow {
+	return EvidenceWindow{
+		Start:    start.UTC().Format(time.RFC3339Nano),
+		End:      end.UTC().Format(time.RFC3339Nano),
+		Boundary: evidenceWindowBoundary,
+	}
+}
+
+func buildTraceWaterfall(in waterfallBuildInput) TraceWaterfallResponse {
 	var resp TraceWaterfallResponse
-	resp.ContractVersion = "investigation-evidence/v1"
-	resp.TraceID = traceID
-	resp.Evidence.AppliedLimit = limit
-	resp.Evidence.Truncated = len(raw) >= limit
+	resp.ContractVersion = investigationEvidenceVersion
+	resp.AnalysisVersion = traceWaterfallAnalysisVersion
+	environment := in.environment
+	if environment == "" {
+		environment = traceWaterfallAnyEnvironment
+	}
+	resp.Request = WaterfallRequest{
+		Scope:           WaterfallScope{ServiceName: traceWaterfallUnknownService, Environment: environment},
+		RequestedWindow: in.requested,
+		EffectiveWindow: in.effective,
+		TraceID:         in.traceID,
+		MaxSpans:        in.limit,
+		SelectedSpanID:  in.selectedID,
+	}
+	resp.Evidence.AppliedLimit = in.limit
+	resp.Evidence.Provenance = EvidenceProvenance{
+		Source:     traceWaterfallSource,
+		ObservedAt: in.observedAt.UTC().Format(time.RFC3339Nano),
+	}
+
 	warnings := []string{}
 	byID := map[string]TraceDetailsSpan{}
-	for _, s := range raw {
+	startNano := map[string]int64{}
+	for _, s := range in.spans {
 		if s.SpanID == "" {
 			warnings = append(warnings, "span with empty span ID excluded")
 			continue
@@ -159,11 +276,25 @@ func buildTraceWaterfall(traceID string, raw []TraceDetailsSpan, limit int, sele
 			warnings = append(warnings, "duplicate span ID: "+s.SpanID)
 			continue
 		}
+		// Excluding beats deriving a bogus offset and self time from instant zero.
+		st, ok := parseTraceTimestampNano(s.Timestamp)
+		if !ok {
+			warnings = append(warnings, "span with unparseable timestamp excluded: "+s.SpanID)
+			continue
+		}
 		byID[s.SpanID] = s
+		startNano[s.SpanID] = st
 	}
+	ids := make([]string, 0, len(byID))
+	for id := range byID {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
 	children := map[string][]string{}
 	roots := []string{}
-	for id, s := range byID {
+	for _, id := range ids {
+		s := byID[id]
 		if s.ParentSpanID == "" {
 			roots = append(roots, id)
 		} else if _, ok := byID[s.ParentSpanID]; !ok {
@@ -174,17 +305,25 @@ func buildTraceWaterfall(traceID string, raw []TraceDetailsSpan, limit int, sele
 		}
 	}
 	sort.Strings(roots)
-	minStart, maxEnd := int64(0), int64(0)
-	for _, s := range byID {
-		st := parseRFCNano(s.Timestamp)
-		en := st + s.Duration
-		if minStart == 0 || st < minStart {
+
+	// Tracked explicitly: instant zero is legal, so it cannot mean "unset".
+	haveBounds := false
+	var minStart, maxEnd int64
+	for _, id := range ids {
+		st := startNano[id]
+		en := st + byID[id].Duration
+		if !haveBounds {
+			minStart, maxEnd, haveBounds = st, en, true
+			continue
+		}
+		if st < minStart {
 			minStart = st
 		}
 		if en > maxEnd {
 			maxEnd = en
 		}
 	}
+
 	depth := map[string]int{}
 	visiting := map[string]bool{}
 	var visit func(string, int)
@@ -208,12 +347,11 @@ func buildTraceWaterfall(traceID string, raw []TraceDetailsSpan, limit int, sele
 		visit(r, 0)
 	}
 	remaining := make([]string, 0)
-	for id := range byID {
+	for _, id := range ids {
 		if _, ok := depth[id]; !ok {
 			remaining = append(remaining, id)
 		}
 	}
-	sort.Strings(remaining)
 	for _, id := range remaining {
 		if _, ok := depth[id]; ok {
 			continue
@@ -221,14 +359,16 @@ func buildTraceWaterfall(traceID string, raw []TraceDetailsSpan, limit int, sele
 		warnings = append(warnings, "disconnected graph component at span: "+id)
 		visit(id, 0)
 	}
+
 	services := map[string]bool{}
-	for id, s := range byID {
-		st := parseRFCNano(s.Timestamp)
+	for _, id := range ids {
+		s := byID[id]
+		st := startNano[id]
 		own := spanInterval{st, st + s.Duration}
 		intervals := []spanInterval{}
 		for _, cid := range children[id] {
 			c := byID[cid]
-			cs := parseRFCNano(c.Timestamp)
+			cs := startNano[cid]
 			ce := cs + c.Duration
 			if cs < own.start || ce > own.end {
 				warnings = append(warnings, "child interval outside parent: "+cid)
@@ -248,55 +388,95 @@ func buildTraceWaterfall(traceID string, raw []TraceDetailsSpan, limit int, sele
 			self = 0
 		}
 		w := WaterfallSpan{SpanID: id, ParentSpanID: s.ParentSpanID, Service: s.ServiceName, Operation: s.SpanName, Kind: s.SpanKind, Status: s.StatusCode, StartOffsetMs: float64(st-minStart) / 1e6, DurationMs: float64(s.Duration) / 1e6, SelfTimeMs: float64(self) / 1e6, Depth: depth[id]}
-		resp.Spans = append(resp.Spans, w)
-		services[s.ServiceName] = true
-		if s.StatusCode == "STATUS_CODE_ERROR" {
-			resp.Summary.ErrorCount++
+		resp.Data.Spans = append(resp.Data.Spans, w)
+		if s.ServiceName != "" {
+			services[s.ServiceName] = true
 		}
-		if depth[id] > resp.Summary.MaxDepth {
-			resp.Summary.MaxDepth = depth[id]
+		if s.StatusCode == traceWaterfallErrorStatusCode {
+			resp.Data.Summary.ErrorCount++
 		}
-		if id == selectedID {
-			resp.SelectedSpan = &WaterfallSelectedSpan{SpanID: id, ResourceAttributes: s.ResourceAttributes, SpanAttributes: s.SpanAttributes, Events: s.Events, Links: s.Links}
+		if depth[id] > resp.Data.Summary.MaxDepth {
+			resp.Data.Summary.MaxDepth = depth[id]
+		}
+		if id == in.selectedID {
+			resp.Data.SelectedSpan = &WaterfallSelectedSpan{SpanID: id, ResourceAttributes: s.ResourceAttributes, SpanAttributes: s.SpanAttributes, Events: s.Events, Links: s.Links}
 		}
 	}
-	sort.Slice(resp.Spans, func(i, j int) bool {
-		if resp.Spans[i].StartOffsetMs != resp.Spans[j].StartOffsetMs {
-			return resp.Spans[i].StartOffsetMs < resp.Spans[j].StartOffsetMs
+	sort.Slice(resp.Data.Spans, func(i, j int) bool {
+		if resp.Data.Spans[i].StartOffsetMs != resp.Data.Spans[j].StartOffsetMs {
+			return resp.Data.Spans[i].StartOffsetMs < resp.Data.Spans[j].StartOffsetMs
 		}
-		return resp.Spans[i].SpanID < resp.Spans[j].SpanID
+		return resp.Data.Spans[i].SpanID < resp.Data.Spans[j].SpanID
 	})
-	resp.SlowestSpans = topWaterfall(resp.Spans, func(s WaterfallSpan) float64 { return s.DurationMs })
-	resp.LargestSelfTimeContributors = topWaterfall(resp.Spans, func(s WaterfallSpan) float64 { return s.SelfTimeMs })
-	resp.Summary.SpanCount = len(resp.Spans)
-	resp.Summary.ServiceCount = len(services)
-	resp.Summary.RootSpanIDs = roots
-	resp.Summary.DurationMs = float64(maxEnd-minStart) / 1e6
-	if minStart > 0 {
-		resp.Summary.Start = time.Unix(0, minStart).UTC().Format(time.RFC3339Nano)
-		resp.Summary.End = time.Unix(0, maxEnd).UTC().Format(time.RFC3339Nano)
+	if resp.Data.Spans == nil {
+		resp.Data.Spans = []WaterfallSpan{}
 	}
-	resp.Evidence.ReturnedSpans = len(resp.Spans)
+	resp.Data.SlowestSpans = topWaterfall(resp.Data.Spans, func(s WaterfallSpan) float64 { return s.DurationMs })
+	resp.Data.LargestSelfTimeContributors = topWaterfall(resp.Data.Spans, func(s WaterfallSpan) float64 { return s.SelfTimeMs })
+	resp.Data.Summary.SpanCount = len(resp.Data.Spans)
+	resp.Data.Summary.ServiceCount = len(services)
+	resp.Data.Summary.RootSpanIDs = roots
+	if resp.Data.Summary.RootSpanIDs == nil {
+		resp.Data.Summary.RootSpanIDs = []string{}
+	}
+	if haveBounds {
+		resp.Data.Summary.DurationMs = float64(maxEnd-minStart) / 1e6
+		resp.Data.Summary.Start = time.Unix(0, minStart).UTC().Format(time.RFC3339Nano)
+		resp.Data.Summary.End = time.Unix(0, maxEnd).UTC().Format(time.RFC3339Nano)
+	}
+	resp.Request.Scope.ServiceName = waterfallScopeService(roots, byID, ids)
+
+	// Judged on the fetched count: the API applied max_spans before env filtering.
+	resp.Evidence.Truncated = in.limit > 0 && in.fetchedSpans >= in.limit
+	if resp.Evidence.Truncated {
+		warnings = append(warnings, traceWaterfallTruncationWarning)
+	}
+	resp.Evidence.ReturnedSpans = len(resp.Data.Spans)
+	// Spans dropped while building are partial; ones the caller's env filter removed are not.
+	resp.Evidence.Partial = resp.Evidence.Truncated || len(byID) < len(in.spans)
+
+	resp.Interpretation.ClaimType = traceWaterfallClaimContribution
+	switch {
+	case len(resp.Data.Spans) == 0:
+		warnings = append(warnings, traceWaterfallEmptyResultWarning)
+		resp.Interpretation.EvidenceQuality = evidenceQualityInsufficient
+		resp.Interpretation.ClaimType = traceWaterfallClaimObservation
+	case resp.Evidence.Truncated || len(warnings) > 0:
+		resp.Interpretation.EvidenceQuality = evidenceQualityMedium
+	default:
+		resp.Interpretation.EvidenceQuality = evidenceQualityHigh
+	}
+
+	// Sorted so identical input yields identical bytes; contracts/README.md hashes evidence.
+	sort.Strings(warnings)
 	resp.Evidence.Warnings = warnings
-	resp.Interpretation.EvidenceQuality = "high"
-	if resp.Evidence.Truncated || len(warnings) > 0 {
-		resp.Interpretation.EvidenceQuality = "medium"
-	}
+
 	resp.Interpretation.Summary = "Compact trace waterfall with interval-union self-time. Slowest spans and self-time contributors are observations, not proof of cause."
 	resp.Interpretation.Limitations = []string{"V1 does not compute or claim a critical path."}
-	if resp.Spans == nil {
-		resp.Spans = []WaterfallSpan{}
+	if resp.Evidence.Truncated {
+		resp.Interpretation.Limitations = append(resp.Interpretation.Limitations, "Truncated result: a parent's self_time_ms may absorb the duration of children that were not returned.")
+	}
+	if len(resp.Data.Spans) == 0 {
+		resp.Interpretation.Limitations = append(resp.Interpretation.Limitations, "An empty waterfall is not evidence that the trace does not exist; widen the window or verify the trace ID.")
 	}
 	return resp
 }
 
-func parseRFCNano(v string) int64 {
-	t, err := time.Parse(time.RFC3339Nano, v)
-	if err != nil {
-		return 0
+// No requested service on a trace-ID lookup: use the root span's, then any span's.
+func waterfallScopeService(roots []string, byID map[string]TraceDetailsSpan, ids []string) string {
+	for _, id := range roots {
+		if service := byID[id].ServiceName; service != "" {
+			return service
+		}
 	}
-	return t.UnixNano()
+	for _, id := range ids {
+		if service := byID[id].ServiceName; service != "" {
+			return service
+		}
+	}
+	return traceWaterfallUnknownService
 }
+
 func unionDuration(xs []spanInterval) int64 {
 	if len(xs) == 0 {
 		return 0
@@ -316,6 +496,7 @@ func unionDuration(xs []spanInterval) int64 {
 	}
 	return total + cur.end - cur.start
 }
+
 func topWaterfall(all []WaterfallSpan, value func(WaterfallSpan) float64) []WaterfallSpan {
 	out := append([]WaterfallSpan{}, all...)
 	sort.Slice(out, func(i, j int) bool {
@@ -325,8 +506,8 @@ func topWaterfall(all []WaterfallSpan, value func(WaterfallSpan) float64) []Wate
 		}
 		return out[i].SpanID < out[j].SpanID
 	})
-	if len(out) > 5 {
-		out = out[:5]
+	if len(out) > traceWaterfallTopN {
+		out = out[:traceWaterfallTopN]
 	}
 	return out
 }
