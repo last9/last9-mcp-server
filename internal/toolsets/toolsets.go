@@ -25,6 +25,8 @@ var named = map[string][]string{
 		"get_trace_attributes",
 		"get_trace_attributes_for_pipeline",
 		"get_trace_attribute_values",
+		"get_trace_attribute_deviations",
+		"get_trace_waterfall",
 	},
 	"metrics": {
 		"prometheus_range_query",

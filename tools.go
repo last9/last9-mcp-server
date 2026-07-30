@@ -229,12 +229,17 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: prompts.GetTraceAttributeValuesDescription,
 	}, traces.NewGetTraceAttributeValuesHandler(client, cfg)))
 
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{
+	// Register bounded cohort attribute deviation tool
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_trace_attribute_deviations",
 		Description: prompts.GetTraceAttributeDeviationsDescription,
-	}, traces.NewGetTraceAttributeDeviationsHandler(client, cfg))
+	}, traces.NewGetTraceAttributeDeviationsHandler(client, cfg)))
 
-	last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{Name: "get_trace_waterfall", Description: prompts.GetTraceWaterfallDescription}, traces.NewGetTraceWaterfallHandler(client, cfg))
+	// Register exact-trace waterfall tool
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_trace_waterfall",
+		Description: prompts.GetTraceWaterfallDescription,
+	}, traces.NewGetTraceWaterfallHandler(client, cfg)))
 
 	// Register change events tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
