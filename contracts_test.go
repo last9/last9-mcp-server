@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -214,23 +213,68 @@ func TestInvestigationFeatureFlagsDefaultOffAndUnique(t *testing.T) {
 	}
 }
 
-func TestInvestigationVersionCompatibility(t *testing.T) {
-	acceptsEvidence := func(version string) bool { return version == evidenceV1 }
-	acceptsWorkflow := func(version string) bool { return version == workflowV1 }
-	if !acceptsEvidence(evidenceV1) || !acceptsWorkflow(workflowV1) {
-		t.Fatal("v1 must be accepted")
+// Rules 1-2 in contracts/README.md are enforced by the schemas themselves: the version
+// is a const and additionalProperties is open. Exercises those, not a local predicate.
+func TestInvestigationSchemasRejectUnknownMajorVersions(t *testing.T) {
+	cases := []struct {
+		schemaPath  string
+		payloadPath string
+		versionKey  string
+		v1          string
+		v2          string
+	}{
+		{
+			schemaPath:  "contracts/investigation-evidence-v1.schema.json",
+			payloadPath: "contracts/fixtures/evidence-trace-deviations.json",
+			versionKey:  "contract_version",
+			v1:          evidenceV1,
+			v2:          "investigation-evidence/v2",
+		},
 	}
-	if acceptsEvidence("investigation-evidence/v2") || acceptsWorkflow("investigation-workflow/v2") {
-		t.Fatal("unknown major versions must be rejected")
+	for _, c := range cases {
+		schema := resolveContractSchema(t, c.schemaPath)
+		payload := readJSONObject(t, c.payloadPath)
+		if payload[c.versionKey] != c.v1 {
+			t.Fatalf("%s: %s=%v", c.payloadPath, c.versionKey, payload[c.versionKey])
+		}
+		if err := schema.Validate(payload); err != nil {
+			t.Fatalf("%s must validate against %s: %v", c.payloadPath, c.schemaPath, err)
+		}
+
+		// Unknown major version is rejected.
+		payload[c.versionKey] = c.v2
+		if err := schema.Validate(payload); err == nil {
+			t.Fatalf("%s must reject %s=%s", c.schemaPath, c.versionKey, c.v2)
+		}
+		payload[c.versionKey] = c.v1
+
+		// Unknown optional fields are ignored.
+		payload["future_optional_field"] = map[string]any{"safe": true}
+		if err := schema.Validate(payload); err != nil {
+			t.Fatalf("%s must ignore additive optional fields: %v", c.schemaPath, err)
+		}
 	}
-	fixture := readJSONObject(t, "contracts/fixtures/evidence-trace-deviations.json")
-	fixture["future_optional_field"] = map[string]any{"safe": true}
-	keys := make([]string, 0, len(fixture))
-	for key := range fixture {
-		keys = append(keys, key)
+}
+
+// The workflow schema pins its own version constant and must behave the same way.
+func TestInvestigationWorkflowSchemaRejectsUnknownMajorVersion(t *testing.T) {
+	schema := resolveContractSchema(t, "contracts/investigation-workflow-v1.schema.json")
+	manifest := readJSONObject(t, "contracts/fixtures/workflow-cases-v1.json")
+	cases := array(t, manifest, "cases")
+	if len(cases) == 0 {
+		t.Fatal("expected at least one workflow case")
 	}
-	sort.Strings(keys)
-	if fixture["contract_version"] != evidenceV1 {
-		t.Fatal("additive optional field changed compatibility")
+	workflow := object(t, cases[0].(map[string]any), "workflow")
+	if err := schema.Validate(workflow); err != nil {
+		t.Fatalf("workflow fixture must validate: %v", err)
+	}
+	workflow["workflow_version"] = "investigation-workflow/v2"
+	if err := schema.Validate(workflow); err == nil {
+		t.Fatal("workflow schema must reject an unknown major version")
+	}
+	workflow["workflow_version"] = workflowV1
+	workflow["future_optional_field"] = true
+	if err := schema.Validate(workflow); err != nil {
+		t.Fatalf("workflow schema must ignore additive optional fields: %v", err)
 	}
 }
