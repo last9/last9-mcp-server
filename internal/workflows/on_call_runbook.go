@@ -42,8 +42,11 @@ func onCallRunbookHandler(_ context.Context, req *mcp.GetPromptRequest) (*mcp.Ge
 	if req.Params != nil {
 		args = req.Params.Arguments
 	}
-	if canon, ok := canonicalSymptoms[strings.ToLower(strings.TrimSpace(args["symptom"]))]; ok {
-		args["symptom"] = canon
+	// args != nil guards the write: a nil map read is fine, a nil map write panics.
+	if args != nil {
+		if canon, ok := canonicalSymptoms[strings.ToLower(strings.TrimSpace(args["symptom"]))]; ok {
+			args["symptom"] = canon
+		}
 	}
 	return renderWorkflow(onCallRunbookName, onCallRunbookDescription,
 		prompts.OnCallRunbookWorkflow, args, onCallRunbookArgs)
