@@ -62,6 +62,33 @@ func TestOnCallRunbookRoutesBySymptom(t *testing.T) {
 	}
 }
 
+func TestOnCallRunbookNormalizesSymptom(t *testing.T) {
+	// Case, whitespace, and obvious synonyms must route, not fall through to
+	// the unknown branch.
+	cases := map[string]string{
+		"Latency":    "get_apm_service_deviations",
+		"ERRORS":     "get_exceptions",
+		"  error  ":  "get_exceptions",
+		"exceptions": "get_exceptions",
+		"DB":         "get_database_slow_queries",
+	}
+	for symptom, want := range cases {
+		res, err := OnCallRunbook.Handler(context.Background(), &mcp.GetPromptRequest{
+			Params: &mcp.GetPromptParams{Arguments: map[string]string{"symptom": symptom, "time": "1h", "service": "checkout"}},
+		})
+		if err != nil {
+			t.Fatalf("symptom %q: unexpected error: %v", symptom, err)
+		}
+		got := res.Messages[0].Content.(*mcp.TextContent).Text
+		if !strings.Contains(got, want) {
+			t.Errorf("symptom %q should route to contain %q:\n%s", symptom, want, got)
+		}
+		if strings.Contains(got, "Unknown symptom") {
+			t.Errorf("symptom %q should have normalized, not hit the unknown branch", symptom)
+		}
+	}
+}
+
 func TestOnCallRunbookFleetTriageWhenNoService(t *testing.T) {
 	res, err := OnCallRunbook.Handler(context.Background(), &mcp.GetPromptRequest{
 		Params: &mcp.GetPromptParams{Arguments: map[string]string{"symptom": "latency", "time": "1h"}},

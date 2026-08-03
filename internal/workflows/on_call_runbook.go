@@ -2,6 +2,7 @@ package workflows
 
 import (
 	"context"
+	"strings"
 
 	"last9-mcp/internal/prompts"
 
@@ -21,10 +22,30 @@ var onCallRunbookArgs = []*mcp.PromptArgument{
 	{Name: "env", Description: "Deployment environment", Required: false},
 }
 
+// canonicalSymptoms folds the case, plural, and short forms an LLM is likely
+// to pass (from a user's sentence) onto the three values the template routes
+// on. Anything not listed keeps its original value and hits the template's
+// "unknown" branch, which starts with get_alerts rather than misrouting.
+var canonicalSymptoms = map[string]string{
+	"latency":    "latency",
+	"slow":       "latency",
+	"slowness":   "latency",
+	"errors":     "errors",
+	"error":      "errors",
+	"exception":  "errors",
+	"exceptions": "errors",
+	"database":   "database",
+	"db":         "database",
+	"sql":        "database",
+}
+
 func onCallRunbookHandler(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	var args map[string]string
 	if req.Params != nil {
 		args = req.Params.Arguments
+	}
+	if canon, ok := canonicalSymptoms[strings.ToLower(strings.TrimSpace(args["symptom"]))]; ok {
+		args["symptom"] = canon
 	}
 	return renderWorkflow(onCallRunbookName, onCallRunbookDescription,
 		prompts.OnCallRunbookWorkflow, args, onCallRunbookArgs)

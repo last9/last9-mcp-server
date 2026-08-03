@@ -2,7 +2,6 @@ package workflows
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -28,6 +27,9 @@ func handlerText(t *testing.T, w Workflow) string {
 	return tc.Text
 }
 
+// TestWorkflowMetadata covers the two parameter-less workflows. The
+// parameterized ones assert their own metadata (including arguments) in their
+// per-workflow test files.
 func TestWorkflowMetadata(t *testing.T) {
 	cases := []struct {
 		w     Workflow
@@ -51,7 +53,7 @@ func TestWorkflowMetadata(t *testing.T) {
 			t.Errorf("%s: Handler is nil", c.name)
 		}
 		if c.w.Arguments != nil {
-			t.Errorf("%s: Arguments = %v, want nil (current workflows are parameter-less)", c.name, c.w.Arguments)
+			t.Errorf("%s: Arguments = %v, want nil (this workflow takes no arguments)", c.name, c.w.Arguments)
 		}
 	}
 }
@@ -79,39 +81,5 @@ func TestWorkflowPromptsContainRoutingGuards(t *testing.T) {
 		if !strings.Contains(c.text, c.phrase) {
 			t.Errorf("%s workflow prompt missing %q", c.name, c.phrase)
 		}
-	}
-}
-
-// Locks the read-side parameter wiring: handler reads req.Params.Arguments,
-// errors when the required arg is missing, renders when present.
-func TestParameterizedHandlerReadPath(t *testing.T) {
-	demo := func(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-		service := ""
-		if req.Params != nil {
-			service = req.Params.Arguments["service"]
-		}
-		if strings.TrimSpace(service) == "" {
-			return nil, fmt.Errorf("required argument %q is missing", "service")
-		}
-		return &mcp.GetPromptResult{
-			Messages: []*mcp.PromptMessage{
-				{Role: "user", Content: &mcp.TextContent{Text: "service=" + service}},
-			},
-		}, nil
-	}
-
-	if _, err := demo(context.Background(), &mcp.GetPromptRequest{Params: &mcp.GetPromptParams{}}); err == nil {
-		t.Error("expected error when required argument 'service' is missing, got nil")
-	}
-
-	res, err := demo(context.Background(), &mcp.GetPromptRequest{
-		Params: &mcp.GetPromptParams{Arguments: map[string]string{"service": "checkout-api"}},
-	})
-	if err != nil {
-		t.Fatalf("unexpected error with argument present: %v", err)
-	}
-	tc := res.Messages[0].Content.(*mcp.TextContent)
-	if tc.Text != "service=checkout-api" {
-		t.Errorf("rendered text = %q, want %q", tc.Text, "service=checkout-api")
 	}
 }
