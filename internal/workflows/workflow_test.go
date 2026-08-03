@@ -73,7 +73,7 @@ func TestWorkflowPromptsContainRoutingGuards(t *testing.T) {
 		phrase string
 	}{
 		{"scoped log attribute discovery", prompts.ScopedLogAttributeDiscoveryWorkflow, "Forbidden tool for this workflow: `get_service_logs`"},
-		{"exception root cause investigation", prompts.ExceptionRootCauseInvestigationWorkflow, "Start with `get_exceptions`"},
+		{"exception root cause investigation", prompts.ExceptionRootCauseInvestigationWorkflow, "AGGREGATE FIRST"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(c.text, c.phrase) {
