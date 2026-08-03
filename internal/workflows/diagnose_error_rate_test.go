@@ -50,3 +50,26 @@ func TestDiagnoseErrorRateAggregatesFirst(t *testing.T) {
 		t.Errorf("template must instruct aggregate-first:\n%s", got)
 	}
 }
+
+func TestDiagnoseErrorRateRendersEnvBranches(t *testing.T) {
+	with, err := DiagnoseErrorRate.Handler(context.Background(), &mcp.GetPromptRequest{
+		Params: &mcp.GetPromptParams{Arguments: map[string]string{"service": "checkout", "time": "1h", "env": "prod"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := with.Messages[0].Content.(*mcp.TextContent).Text
+	if !strings.Contains(got, `env "prod"`) || !strings.Contains(got, "env=prod") {
+		t.Errorf("env-present render missing env interpolation:\n%s", got)
+	}
+	without, err := DiagnoseErrorRate.Handler(context.Background(), &mcp.GetPromptRequest{
+		Params: &mcp.GetPromptParams{Arguments: map[string]string{"service": "checkout", "time": "1h"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got2 := without.Messages[0].Content.(*mcp.TextContent).Text
+	if !strings.Contains(got2, "Resolve env first") {
+		t.Errorf("env-absent render should trigger discovery branch:\n%s", got2)
+	}
+}
