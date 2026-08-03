@@ -16,14 +16,15 @@ const (
 )
 
 var onCallRunbookArgs = []*mcp.PromptArgument{
-	{Name: "symptom", Description: "One of: latency, errors, database, unknown", Required: true},
+	{Name: "symptom", Description: "latency, errors, or database (synonyms fold in: slow→latency, db→database); anything else triages via get_alerts", Required: true},
 	{Name: "time", Description: "Time window to investigate, e.g. 1h or an absolute range; mapped to each tool's own time params", Required: true},
 	{Name: "service", Description: "Service to triage; fleet-wide triage (get_alerts, get_service_summary) if omitted", Required: false},
 	{Name: "env", Description: "Deployment environment", Required: false},
 }
 
 // canonicalSymptoms folds case/plural/short variants onto the three values the
-// template routes on. Unlisted values fall through to the "unknown" branch.
+// template routes on. Unlisted values fall through to the "unknown" branch,
+// never a wrong one.
 var canonicalSymptoms = map[string]string{
 	"latency":    "latency",
 	"slow":       "latency",
