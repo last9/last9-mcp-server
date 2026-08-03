@@ -80,11 +80,9 @@ func dumpTools(w io.Writer, allowed toolsets.Set) error {
 	return enc.Encode(map[string]any{"tools": tools})
 }
 
-// dumpPrompts registers every workflow prompt exactly as the serving path does
-// and writes the prompts/list result ({"prompts": [...]}, sorted by name) to w
-// by round-tripping a real prompts/list over in-memory transports. No
-// credentials or network access required. Mirrors dumpTools; prompts are not
-// toolset-gated, so there is no --toolsets knob here.
+// dumpPrompts writes the prompts/list result ({"prompts": [...]}, sorted by
+// name) to w by round-tripping over in-memory transports — same pattern as
+// dumpTools. No credentials needed; prompts aren't toolset-gated (no --toolsets).
 func dumpPrompts(w io.Writer) error {
 	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
 	if err != nil {
