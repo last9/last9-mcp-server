@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- MCP **workflow prompts** on `prompts/list` / `prompts/get`: six structured investigation templates — `scoped-log-attribute-discovery`, `exception-root-cause-investigation`, `investigate-latency-spike`, `diagnose-error-rate`, `analyze-slow-queries`, and `on-call-runbook`. The four investigation templates take typed arguments (`service`, `time`, `env`, `db_system`, `host`, `symptom`) rendered into the prompt via `text/template` — required args are validated (missing → error) and optional args gate `{{if}}` discovery branches; prompt bodies are embedded markdown. Prompts register alongside reference resources, are not toolset-gated, and do not appear in `tools/list`. A new credential-free `dump-prompts` subcommand prints the served prompt list and argument schemas, mirroring `dump-tools` (#183).
+
 ## [0.14.0] - 2026-08-03
 
 ### Added
