@@ -25,7 +25,6 @@ type GetLogAttributesArgs struct {
 }
 
 // FetchLogAttributeNames fetches log attribute names from the API and returns them as a string slice.
-// This is the core logic shared by both the MCP handler and the attribute cache.
 func FetchLogAttributeNames(ctx context.Context, client *http.Client, cfg models.Config) ([]string, error) {
 	now := time.Now()
 	startTime := now.Add(-15 * time.Minute).Unix()

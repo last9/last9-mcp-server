@@ -10,7 +10,6 @@ var traceFilterFieldOperators = map[string]struct{}{
 	"$contains":          {},
 	"$containsWords":     {},
 	"$eq":                {},
-	"$exists":            {},
 	"$gt":                {},
 	"$gte":               {},
 	"$icontains":         {},
@@ -27,9 +26,10 @@ var traceFilterFieldOperators = map[string]struct{}{
 	"$notcontains":       {},
 	"$notcontainsWords":  {},
 	"$notregex":          {},
-	"$notnull":           {},
 	"$regex":             {},
 }
+
+var brokenExistenceOperators = []string{"$exists", "$notnull"}
 
 var traceFilterLogicalOperators = map[string]struct{}{
 	"$and": {},
@@ -51,6 +51,11 @@ func sanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 
 		if stageType == "filter" || stageType == "where" {
 			if query, ok := stage["query"]; ok {
+				// The backend has no $exists operator (unknown ops compile to
+				// `1=1`) and $notnull compiles to `!= null` (matches nothing in
+				// ClickHouse). Rewrite both to the working idiom before
+				// validation ever sees them. Recurses through $and/$or/$not.
+				rewriteBrokenExistenceOperators(query)
 				if err := validateTraceFilterCondition(query, path+".query"); err != nil {
 					return err
 				}
@@ -107,6 +112,53 @@ func wrapTopLevelFilterQuery(query interface{}) interface{} {
 	return map[string]interface{}{"$and": conditions}
 }
 
+// rewriteBrokenExistenceOperators walks a filter condition tree and rewrites
+// $exists and $notnull leaves in place to {"$neq": [field, ""]}. Recurses
+// through $and/$or/$not so nested conditions are covered.
+func rewriteBrokenExistenceOperators(value interface{}) {
+	switch typed := value.(type) {
+	case []interface{}:
+		for _, item := range typed {
+			rewriteBrokenExistenceOperators(item)
+		}
+	case map[string]interface{}:
+		rewriteBrokenExistenceOperatorsInMap(typed)
+		for key, item := range typed {
+			if _, isLogical := traceFilterLogicalOperators[key]; isLogical {
+				rewriteBrokenExistenceOperators(item)
+			}
+		}
+	}
+}
+
+func rewriteBrokenExistenceOperatorsInMap(m map[string]interface{}) {
+	for _, op := range brokenExistenceOperators {
+		item, ok := m[op]
+		if !ok {
+			continue
+		}
+		args, ok := item.([]interface{})
+		if !ok || len(args) == 0 {
+			continue
+		}
+		delete(m, op)
+		existence := map[string]interface{}{"$neq": []interface{}{args[0], ""}}
+		if len(m) == 0 {
+			m["$neq"] = existence["$neq"]
+			continue
+		}
+		conditions := make([]interface{}, 0, len(m)+1)
+		for k, v := range m {
+			conditions = append(conditions, map[string]interface{}{k: v})
+		}
+		conditions = append(conditions, existence)
+		for k := range m {
+			delete(m, k)
+		}
+		m["$and"] = conditions
+	}
+}
+
 func validateTraceFilterCondition(value interface{}, path string) error {
 	switch typed := value.(type) {
 	case []interface{}:
@@ -127,7 +179,7 @@ func validateTraceFilterCondition(value interface{}, path string) error {
 				continue
 			}
 			return fmt.Errorf(
-				"invalid filter condition key %q at %s: keys must be operators ($eq, $neq, $gt, $gte, $lt, $lte, $contains, $notcontains, $icontains, $inotcontains, $icontainsWords, $inotcontainsWords, $regex, $notregex, $iregex, $inotregex, $ieq, $ineq, $notnull, $exists, $containsWords, $notcontainsWords) or logical operators ($and, $or, $not); use the form {%q: [field, value]} — for example {\"$eq\": [\"ServiceName\", \"checkout\"]}",
+				"invalid filter condition key %q at %s: keys must be operators ($eq, $neq, $gt, $gte, $lt, $lte, $contains, $notcontains, $icontains, $inotcontains, $icontainsWords, $inotcontainsWords, $regex, $notregex, $iregex, $inotregex, $ieq, $ineq, $containsWords, $notcontainsWords) or logical operators ($and, $or, $not); use the form {%q: [field, value]} — for example {\"$eq\": [\"ServiceName\", \"checkout\"]}. For existence checks use {\"$neq\": [field, \"\"]} — there is no $exists or $notnull operator.",
 				key,
 				path,
 				"$eq",

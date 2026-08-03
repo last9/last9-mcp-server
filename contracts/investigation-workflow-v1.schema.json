@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://last9.io/contracts/investigation-workflow-v1.schema.json",
+  "title": "Investigation Workflow v1",
+  "type": "object",
+  "required": ["workflow_version", "investigation", "events"],
+  "properties": {
+    "workflow_version": { "const": "investigation-workflow/v1" },
+    "investigation": { "$ref": "#/$defs/investigation" },
+    "events": { "type": "array", "items": { "$ref": "#/$defs/event" } }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "evidence_ref": {
+      "type": "object",
+      "required": ["evidence_id", "content_sha256", "contract_version", "analysis_version"],
+      "properties": {
+        "evidence_id": { "type": "string", "minLength": 1 },
+        "content_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "contract_version": { "const": "investigation-evidence/v1" },
+        "analysis_version": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "investigation": {
+      "type": "object",
+      "required": ["investigation_id", "mode", "status", "phase", "scope", "budget", "evidence_refs", "hypotheses", "contradictions", "recommendations", "terminal_outcome", "created_at", "updated_at"],
+      "properties": {
+        "investigation_id": { "type": "string", "minLength": 1 },
+        "mode": { "enum": ["live", "post_incident"] },
+        "status": { "enum": ["running", "terminal", "cancelled"] },
+        "phase": { "enum": ["created", "resolving_scope", "establishing_deviation", "comparing_trace_cohorts", "selecting_representatives", "explaining_traces", "inspecting_dependencies", "correlating_logs", "reconciling_evidence", "forming_recommendation", "terminal"] },
+        "scope": { "type": "object" },
+        "budget": { "type": "object" },
+        "evidence_refs": { "type": "array", "items": { "$ref": "#/$defs/evidence_ref" } },
+        "hypotheses": { "type": "array", "items": { "type": "object" } },
+        "contradictions": { "type": "array", "items": { "type": "object" } },
+        "recommendations": { "type": "array", "items": { "type": "object" } },
+        "terminal_outcome": { "enum": [null, "supported_action", "needs_more_evidence", "unproven", "invalid_scope", "partial"] },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": true
+    },
+    "event": {
+      "type": "object",
+      "required": ["investigation_id", "sequence", "timestamp", "phase", "status", "message", "new_evidence_refs", "budget_remaining"],
+      "properties": {
+        "investigation_id": { "type": "string" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "phase": { "type": "string" },
+        "status": { "enum": ["started", "completed", "skipped", "terminal", "cancelled"] },
+        "message": { "type": "string" },
+        "new_evidence_refs": { "type": "array", "items": { "$ref": "#/$defs/evidence_ref" } },
+        "budget_remaining": { "type": "object" },
+        "recoverable_user_action": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    }
+  }
+}

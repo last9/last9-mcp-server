@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -86,16 +85,20 @@ type TraceDetailsResponse struct {
 
 // TraceDetailsSpan represents a single span from the dedicated trace details endpoint.
 type TraceDetailsSpan struct {
-	Timestamp          string            `json:"Timestamp"`
-	TraceID            string            `json:"TraceId"`
-	SpanID             string            `json:"SpanId"`
-	TraceState         string            `json:"TraceState"`
-	SpanName           string            `json:"SpanName"`
-	SpanKind           string            `json:"SpanKind"`
-	ServiceName        string            `json:"ServiceName"`
-	ResourceAttributes map[string]string `json:"ResourceAttributes"`
-	Duration           int64             `json:"Duration"`
-	StatusCode         string            `json:"StatusCode"`
+	Timestamp          string                   `json:"Timestamp"`
+	TraceID            string                   `json:"TraceId"`
+	SpanID             string                   `json:"SpanId"`
+	ParentSpanID       string                   `json:"ParentSpanId"`
+	TraceState         string                   `json:"TraceState"`
+	SpanName           string                   `json:"SpanName"`
+	SpanKind           string                   `json:"SpanKind"`
+	ServiceName        string                   `json:"ServiceName"`
+	ResourceAttributes map[string]string        `json:"ResourceAttributes"`
+	Duration           int64                    `json:"Duration"`
+	StatusCode         string                   `json:"StatusCode"`
+	SpanAttributes     map[string]interface{}   `json:"SpanAttributes,omitempty"`
+	Events             []map[string]interface{} `json:"Events,omitempty"`
+	Links              []map[string]interface{} `json:"Links,omitempty"`
 }
 
 // validateGetServiceTracesArgs validates the input arguments
@@ -239,6 +242,9 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 
 		traceResponse, err := fetchServiceTraceResponse(ctx, client, cfg, queryParams, startTime.Unix(), endTime.Unix())
 		if err != nil {
+			if isTraceUpstreamError(err) {
+				return traceToolErrorResult(err), nil, nil
+			}
 			return nil, nil, err
 		}
 
@@ -305,24 +311,17 @@ func fetchServiceQueryRangeResponse(ctx context.Context, client *http.Client, cf
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return TraceQueryResponse{}, fmt.Errorf("request failed: %w", err)
+		return TraceQueryResponse{}, newTraceTransportError(err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyStr := readTruncatedResponseBody(resp.Body)
-		return TraceQueryResponse{}, fmt.Errorf(
-			"API request failed with status %d (endpoint: %s%s). Response: %s",
-			resp.StatusCode,
-			cfg.APIBaseURL,
-			constants.EndpointTracesQueryRange,
-			bodyStr,
-		)
+		return TraceQueryResponse{}, newTraceHTTPError(resp)
 	}
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return TraceQueryResponse{}, fmt.Errorf("failed to decode response: %w", err)
+		return TraceQueryResponse{}, newTraceInvalidResponseError(err)
 	}
 
 	return transformToTraceQueryResponse(result), nil
@@ -341,24 +340,20 @@ func fetchTraceDetailsResponse(ctx context.Context, client *http.Client, cfg mod
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return TraceQueryResponse{}, fmt.Errorf("request failed: %w", err)
+		return TraceQueryResponse{}, newTraceTransportError(err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyStr := readTruncatedResponseBody(resp.Body)
-		return TraceQueryResponse{}, fmt.Errorf(
-			"API request failed with status %d (endpoint: %s%s). Response: %s",
-			resp.StatusCode,
-			cfg.APIBaseURL,
-			fmt.Sprintf(constants.EndpointTraceDetails, params.TraceID),
-			bodyStr,
-		)
+		if resp.StatusCode == http.StatusNotFound {
+			return TraceQueryResponse{}, newTraceNotFoundTraceError()
+		}
+		return TraceQueryResponse{}, newTraceHTTPError(resp)
 	}
 
 	var result TraceDetailsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return TraceQueryResponse{}, fmt.Errorf("failed to decode response: %w", err)
+		return TraceQueryResponse{}, newTraceInvalidResponseError(err)
 	}
 
 	return transformTraceDetailsToTraceQueryResponse(result, params.Env), nil
@@ -518,15 +513,6 @@ func traceDetailsMatchesEnv(span TraceDetailsSpan, env string) bool {
 	return false
 }
 
-func readTruncatedResponseBody(body io.Reader) string {
-	respBody, _ := io.ReadAll(body)
-	bodyStr := string(respBody)
-	if len(bodyStr) > 100 {
-		return bodyStr[:100] + "... (truncated)"
-	}
-	return bodyStr
-}
-
 // Helper function to safely extract string values from map
 func extractString(m map[string]interface{}, key string) string {
 	if val, ok := m[key].(string); ok {
@@ -549,21 +535,37 @@ func extractInt64(m map[string]interface{}, key string) int64 {
 	}
 }
 
-// Helper function to parse ISO timestamp strings to Unix timestamp
-func parseTimestampToUnix(timestamp string) int64 {
+// Span timestamp forms the trace APIs emit; zone-less layouts are parsed as UTC.
+var traceTimestampLayouts = []string{
+	time.RFC3339Nano,
+	time.RFC3339,
+	"2006-01-02T15:04:05.999999999",
+	"2006-01-02 15:04:05.999999999",
+	"2006-01-02 15:04:05.999999999 -0700 MST",
+	"2006-01-02 15:04:05.999999999 -07:00",
+}
+
+// parseTraceTimestampNano parses a span timestamp to Unix nanoseconds. Check the bool,
+// not for 0 — the Unix epoch is a valid instant.
+func parseTraceTimestampNano(timestamp string) (int64, bool) {
+	timestamp = strings.TrimSpace(timestamp)
 	if timestamp == "" {
+		return 0, false
+	}
+	for _, layout := range traceTimestampLayouts {
+		if t, err := time.ParseInLocation(layout, timestamp, time.UTC); err == nil {
+			return t.UnixNano(), true
+		}
+	}
+	return 0, false
+}
+
+// Helper function to parse ISO timestamp strings to Unix timestamp (seconds).
+func parseTimestampToUnix(timestamp string) int64 {
+	nanos, ok := parseTraceTimestampNano(timestamp)
+	if !ok {
 		return 0
 	}
-
-	// Try parsing with nanoseconds first (RFC3339Nano format)
-	if t, err := time.Parse(time.RFC3339Nano, timestamp); err == nil {
-		return t.Unix()
-	}
-
-	// Fallback to standard RFC3339 format
-	if t, err := time.Parse(time.RFC3339, timestamp); err == nil {
-		return t.Unix()
-	}
-
-	return 0
+	// time.Unix floors; integer division truncates toward zero (differs pre-epoch).
+	return time.Unix(0, nanos).Unix()
 }

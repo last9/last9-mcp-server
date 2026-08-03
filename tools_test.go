@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
-	"last9-mcp/internal/attributes"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/models"
@@ -90,6 +90,27 @@ func assertRegisteredDashboardSchema(t *testing.T, tool *mcp.Tool, required []st
 	}
 }
 
+func TestRegisterIfAllowedConvertsSchemaPanicToError(t *testing.T) {
+	server, err := last9mcp.NewServerWithOptions("test-last9-mcp", "test", last9mcp.WithSkipProviderInit())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Shutdown(context.Background())
+
+	type badIn struct {
+		Ch chan int `json:"ch"`
+	}
+	err = registerIfAllowed(server, nil, &mcp.Tool{Name: "bad_tool", Description: "bad"}, func(_ context.Context, _ *mcp.CallToolRequest, _ badIn) (*mcp.CallToolResult, any, error) {
+		return nil, nil, nil
+	})
+	if err == nil {
+		t.Fatal("expected registration error for invalid tool schema")
+	}
+	if !strings.Contains(err.Error(), "bad_tool") {
+		t.Fatalf("error should name tool: %v", err)
+	}
+}
+
 func TestRegisterAllTools_ExposesDashboardObjectSchemas(t *testing.T) {
 	server, err := last9mcp.NewServerWithOptions("test-last9-mcp", "test", last9mcp.WithSkipProviderInit())
 	if err != nil {
@@ -98,7 +119,7 @@ func TestRegisterAllTools_ExposesDashboardObjectSchemas(t *testing.T) {
 	defer server.Shutdown(context.Background())
 
 	cfg := testToolRegistrationConfig()
-	if err := registerAllTools(server, cfg, attributes.NewAttributeCache(nil, cfg)); err != nil {
+	if err := registerAllTools(server, cfg); err != nil {
 		t.Fatal(err)
 	}
 

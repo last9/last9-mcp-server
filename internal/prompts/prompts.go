@@ -2,26 +2,26 @@ package prompts
 
 import _ "embed"
 
-//go:embed descriptions/get_logs.md
-var GetLogsInstructions string
-
-//go:embed descriptions/get_traces.md
-var GetTracesInstructions string
-
-//go:embed descriptions/get_service_traces.md
-var GetServiceTracesInstructions string
-
-//go:embed descriptions/get_metrics.md
-var GetMetricsInstructions string
-
 //go:embed descriptions/get_exceptions.md
 var GetExceptionsInstructions string
 
-//go:embed descriptions/get_service_logs.md
-var GetServiceLogsInstructions string
+//go:embed references/logjson.md
+var LogjsonReference string
+
+//go:embed references/tracejson.md
+var TracejsonReference string
+
+//go:embed references/service_logs.md
+var ServiceLogsReference string
+
+//go:embed references/metrics.md
+var MetricsReference string
 
 //go:embed descriptions/get_service_summary.md
 var GetServiceSummaryDescription string
+
+//go:embed descriptions/get_apm_service_deviations.md
+var GetAPMServiceDeviationsDescription string
 
 //go:embed descriptions/get_service_environments.md
 var GetServiceEnvironmentsDescription string
@@ -82,6 +82,12 @@ var GetTraceAttributeValuesDescription string
 
 //go:embed descriptions/get_trace_attributes_for_pipeline.md
 var GetTraceAttributesForPipelineDescription string
+
+//go:embed descriptions/get_trace_attribute_deviations.md
+var GetTraceAttributeDeviationsDescription string
+
+//go:embed descriptions/get_trace_waterfall.md
+var GetTraceWaterfallDescription string
 
 //go:embed descriptions/get_change_events.md
 var GetChangeEventsDescription string

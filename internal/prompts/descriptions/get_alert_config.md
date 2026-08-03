@@ -14,12 +14,35 @@
 	- alert_group_type: Case-insensitive substring match on alert group type
 	- data_source_name: Case-insensitive substring match on alert group data source name
 	- tags: Array of case-insensitive substring matches; all provided tags must match
+	- only_without_notification_channel: Include rules whose alert group has no per-entity channel
+	  binding (dashboard "Not configured"). OR-combined with notification_channel_types when both
+	  are set. Global org-wide channels do not satisfy per-entity filters; listed when this filter is used.
+	- notification_channel_types: Include rules whose alert group has a per-entity channel with any
+	  listed type (case-insensitive, e.g. slack, email, pagerduty, generic_webhook). OR-combined with
+	  only_without_notification_channel when both are set.
+	- notification_channel_names: Include rules whose alert group has a per-entity channel with any
+	  listed name (case-insensitive exact match). AND-combined with other notification_channel_* filters
+	  on the same binding row.
+	- notification_channel_severities: Include rules whose alert group has a per-entity channel with any
+	  listed severity (breach or threat). AND-combined with notification_channel_types and
+	  notification_channel_names on the same binding row. OR-combined with only_without_notification_channel
+	  when both are set.
 
-	Each alert rule includes:
+	Each alert rule includes notification channel status for its alert group (dashboard Alert Studio
+	rules table column): Notification Channels shows configured types in dashboard order (opsgenie,
+	pagerduty, slack, generic_webhook, email) or "Not configured" when no per-entity binding exists.
+	Notification Channel Bindings lists each binding row (type, name, severity) with snooze/in_use flags
+	when set. Global org-wide channels do not appear here; they are listed only in the global advisory
+	when using only_without_notification_channel.
+
+	Each alert rule also includes:
 	- id: Unique identifier for the alert rule
 	- name: Human-readable name of the alert
 	- primary_indicator: Name of the primary KPI (metric) being monitored
 	- entity_id: Use this with get_entity_alert_rules to fetch the full PromQL for this entity's rules
+	- alert_group: Human-readable name of the entity (alert group) this rule belongs to, when resolved
+	- data_source: The alert group's data source name, when set
+	- tags: The alert group's tags, comma-separated, when set
 	- state: Current state of the alert rule (active, inactive, etc.)
 	- severity: Alert severity level
 	- algorithm: Detection algorithm (static_threshold, high_spike, inc_trend, etc.)

@@ -3,8 +3,8 @@ package traces
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"log"
 	"log/slog"
 	"net/http"
@@ -46,6 +46,9 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 		// Handle tracejson_query directly
 		result, err := handleTraceJSONQuery(ctx, client, cfg, args.TracejsonQuery, args)
 		if err != nil {
+			if isTraceUpstreamError(err) {
+				return traceToolErrorResult(err), nil, nil
+			}
 			return nil, nil, err
 		}
 		return result, nil, nil
@@ -94,6 +97,22 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 			log.Printf(
 				"[chunking] get_traces exact trace_id lookup detected trace_id=%s using single request start_ms=%d end_ms=%d effective_limit=%d",
 				traceID,
+				startMs,
+				endMs,
+				effectiveLimit,
+			)
+		}
+		return executeTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startMs, endMs, effectiveLimit)
+	}
+
+	// Aggregate pipelines (group-by, avg/median/quantile/stddev, etc.) must
+	// never be chunked: concatenating per-chunk aggregate results produces
+	// duplicate group-by keys and mathematically wrong aggregates. Run the
+	// full window as a single request instead.
+	if utils.PipelineHasAggregateStage(args.TracejsonQuery) {
+		if chunkingDebug {
+			log.Printf(
+				"[chunking] get_traces aggregate stage detected, using single request start_ms=%d end_ms=%d effective_limit=%d",
 				startMs,
 				endMs,
 				effectiveLimit,
@@ -177,7 +196,7 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 				"total_chunks", len(chunks),
 				"start_ms", r.Chunk.StartMs,
 				"end_ms", r.Chunk.EndMs,
-				"err", r.Err,
+				"err", traceLogCause(r.Err),
 			)
 			if partialErr == nil {
 				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkNum, len(chunks), r.Err)
@@ -277,23 +296,21 @@ func annotatePartialGetTracesResponse(response map[string]interface{}, err error
 func executeTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, tracejsonQuery interface{}, startMs, endMs int64, limit int) (map[string]interface{}, error) {
 	resp, err := utils.MakeTracesJSONQueryAPI(ctx, client, cfg, tracejsonQuery, startMs, endMs, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call trace JSON query API: %v", err)
+		var transportErr *utils.HTTPTransportError
+		if errors.As(err, &transportErr) {
+			return nil, newTraceTransportError(transportErr)
+		}
+		return nil, fmt.Errorf("failed to prepare trace data request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		bodyStr := string(body)
-		if len(bodyStr) > 100 {
-			bodyStr = bodyStr[:100] + "... (truncated)"
-		}
-		return nil, fmt.Errorf("traces API request failed with status %d (endpoint: %s/cat/api/traces/v2/query_range/json). Response: %s",
-			resp.StatusCode, cfg.APIBaseURL, bodyStr)
+		return nil, newTracePipelineHTTPError(resp)
 	}
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+		return nil, newTraceInvalidResponseError(err)
 	}
 	return result, nil
 }

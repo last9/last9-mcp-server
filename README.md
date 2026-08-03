@@ -218,6 +218,7 @@ The NPM route is easier on Windows — no path management.
 | `LAST9_REFRESH_TOKEN`        | *(required)*         | Refresh token from [API Access](https://app.last9.io/settings/api-access) |
 | `LAST9_DATASOURCE`           | org default          | Datasource/cluster name — useful when you have multiple Levitate clusters |
 | `LAST9_API_HOST`             | `app.last9.io`       | Override the API host |
+| `LAST9_TOOLSETS`             | all tools            | Comma-separated toolsets to expose (`logs`, `traces`, `metrics`, `alerts`, `dashboards`, `investigate`, `all`). Alias: `LAST9_MCP_TOOLSETS` |
 | `LAST9_MAX_GET_LOGS_ENTRIES` | `5000`               | Max entries for chunked `get_logs` requests |
 | `LAST9_DEBUG_CHUNKING`       | `false`              | Set `true` to log chunk-planning details for `get_logs`, `get_service_logs`, `get_traces` |
 | `LAST9_DISABLE_TELEMETRY`    | `true`               | Set `false` to enable internal OTel tracing |
@@ -236,6 +237,7 @@ The NPM route is easier on Windows — no path management.
 - **`get_service_performance_details`** — Full breakdown: throughput, error rate, p50/p90/p95/avg/max, apdex, availability
 - **`get_service_operations_summary`** — Operations grouped by HTTP endpoints, DB calls, messaging, HTTP clients
 - **`get_service_dependency_graph`** — Dependency map with throughput, latency, and error rates for upstream/downstream/infra
+- **`get_apm_service_deviations`** — Compare a current window against an equal-duration baseline: regressions/improvements, Apdex reconciliation, and a terminal outcome (fleet or single service)
 - **`get_exceptions`** — Server-side exceptions with service and span filters
 
 ### Database Observability
@@ -274,6 +276,8 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_trace_attributes`** — Global catalog of attributes in the trace schema
 - **`get_trace_attributes_for_pipeline`** — Attributes actually present for an in-progress pipeline (scoped discovery), each with its exact `filter_field`
 - **`get_trace_attribute_values`** — Distinct values for a trace attribute, optionally scoped to a pipeline
+- **`get_trace_attribute_deviations`** — Ranks attribute values that differ between two bounded span cohorts (slow vs fast, error vs non-error, or two time windows). Correlation, not cause
+- **`get_trace_waterfall`** — One exact trace as a parent/child waterfall with interval-union self-time, slowest spans, and graph warnings
 
 ### Change Events & Alerts
 
@@ -304,7 +308,9 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 **Deep links on every response.** Every tool returns a `deep_link` field — a direct URL into the Last9 dashboard for that exact query and time range. The agent can hand you the link; you click it; you're there.
 
-**Live attribute caching.** At startup, the server fetches the actual log and trace attribute names from your data and embeds them into tool descriptions. This means the AI assistant knows what fields exist in your schema, not just a generic list. The cache refreshes every 2 hours.
+**Toolsets.** By default the server exposes every tool. Automation hosts that only need investigation (logs/traces/metrics) can set `LAST9_TOOLSETS=investigate` (or pass `--toolsets=investigate`) so `tools/list` stays small without client-side mass-disable. Named packs: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `investigate`, `all`. Unknown names fail fast. The `metrics` pack alone does **not** include `list_datasources` or `did_you_mean` — use `investigate` (or combine toolsets) when you need those discovery helpers.
+
+**Tool reference resources.** Long logjson/tracejson/service-logs/metrics manuals are MCP resources (`last9://reference/logjson`, `last9://reference/tracejson`, `last9://reference/service_logs`, `last9://reference/metrics`), not always-on tool description text. Critical query rules stay on the tool description so agents that never call `resources/read` still get correct construction guidance. Discover org-specific fields with `get_log_attributes` / `get_log_attributes_for_pipeline` (and the trace equivalents)—they are not injected into descriptions.
 
 **Chunked large results.** `get_logs` and `get_traces` handle large result sets through chunking rather than truncating. The default limit is 5000 entries for logs; configurable via `LAST9_MAX_GET_LOGS_ENTRIES`.
 
@@ -423,6 +429,16 @@ LAST9_HTTP=true ./last9-mcp-server
 - `lookback_minutes` (integer, optional): Default: 60.
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `env` (string, optional): Defaults to `prod`.
+
+### get_apm_service_deviations
+
+- `service_name` (string, optional): Omit for fleet scope; provide for one service and its operation correlations.
+- `lookback_minutes` (integer, optional): Current window. Default: 60.
+- `start_time_iso` / `end_time_iso` (string, optional): Explicit current window.
+- `baseline_start_time_iso` / `baseline_end_time_iso` (string, optional): Explicit baseline. Defaults to the immediately preceding equal-duration window.
+- `datasource` (string, optional): Restrict the comparison to one datasource.
+- `env` (string, optional): Defaults to `prod`.
+- `max_services` / `max_operations` (integer, optional): Default 10, max 10 each.
 
 ### get_databases
 
@@ -573,6 +589,35 @@ Exactly one of `trace_id` or `service_name` is required.
 - `tag_name` (string, required): Attribute name from `get_trace_attributes` (e.g. `resource_department` or `attributes['http.method']`).
 - `pipeline` (array, optional): Prior filter stages to scope the values; omit for global values.
 - `region` (string, optional)
+
+### get_trace_attribute_deviations
+
+- `comparison_mode` (string, required): `latency`, `errors`, or `time`.
+- `service_name` (string, required)
+- `environment` (string, required): Exact `deployment.environment` value.
+- `operation` (string, optional)
+- `filters` (array, optional): Trace JSON filter conditions.
+- `candidate_attributes` (array, optional): Maximum 8; omit for bounded discovery.
+- `latency_threshold_ms` (number, optional): Required for `latency` mode; rejected for other modes.
+- `start_time_iso` / `end_time_iso` (string, optional)
+- `lookback_minutes` (integer, optional): Default: 15. Maximum: 15.
+- `baseline_start_time_iso` / `baseline_end_time_iso` (string, optional): Required for `time` mode; non-overlapping and equal in duration to the target window.
+- `minimum_cohort_size` (integer, optional): Default: 100. Minimum: 20.
+- `minimum_value_support` (integer, optional): Default: 20. Minimum: 10.
+- `limit` (integer, optional): Default: 10. Maximum: 10.
+
+Requires the companion backend capability to be enabled.
+
+### get_trace_waterfall
+
+- `trace_id` (string, required)
+- `environment` (string, optional)
+- `start_time_iso` / `end_time_iso` (string, optional)
+- `lookback_minutes` (integer, optional): Default: 4320 (72 hours).
+- `selected_span_id` (string, optional): Returns attributes, events, and links for that span only.
+- `max_spans` (integer, optional): Default: 500. Maximum: 1000.
+
+Returns an `investigation-evidence/v1` envelope; the waterfall is under `data`.
 
 ### get_change_events
 

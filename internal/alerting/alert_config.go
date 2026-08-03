@@ -62,6 +62,12 @@ type filterAlertGroupEntitiesRequest struct {
 }
 
 func validateGetAlertConfigArgs(args GetAlertConfigArgs) error {
+	for _, severity := range normalizeNotificationChannelSeverities(args.NotificationChannelSeverities) {
+		if severity != "breach" && severity != "threat" {
+			return fmt.Errorf("notification_channel_severities entries must be %q or %q", "breach", "threat")
+		}
+	}
+
 	ruleType := strings.ToLower(strings.TrimSpace(args.RuleType))
 	if ruleType == "" {
 		return nil
@@ -507,8 +513,21 @@ func containsFold(value, substring string) bool {
 	return strings.Contains(strings.ToLower(value), strings.ToLower(substring))
 }
 
-func formatAlertConfigResponse(alertConfig AlertConfigResponse) string {
-	formattedResponse := fmt.Sprintf("Found %d alert rules:\n\n", len(alertConfig))
+func formatAlertConfigResponse(
+	alertConfig AlertConfigResponse,
+	entitiesByID map[string]alertGroupEntity,
+	entityChannelsByID map[string][]NotificationChannel,
+	notificationChannelsErr string,
+	onlyWithoutNotificationChannel bool,
+) string {
+	header := fmt.Sprintf("Found %d alert rules:\n\n", len(alertConfig))
+	if onlyWithoutNotificationChannel {
+		header = fmt.Sprintf(
+			"Found %d alert rule(s) with no per-entity notification channel configured:\n\n",
+			len(alertConfig),
+		)
+	}
+	formattedResponse := header
 	for i, rule := range alertConfig {
 		formattedResponse += fmt.Sprintf("Alert Rule %d:\n", i+1)
 		formattedResponse += fmt.Sprintf("  ID: %s\n", rule.ID)
@@ -558,6 +577,30 @@ func formatAlertConfigResponse(alertConfig AlertConfigResponse) string {
 		formattedResponse += fmt.Sprintf("  Severity: %s\n", rule.Severity)
 		formattedResponse += fmt.Sprintf("  Algorithm: %s\n", rule.Algorithm)
 		formattedResponse += fmt.Sprintf("  Entity ID: %s\n", rule.EntityID)
+
+		if entity, ok := entitiesByID[rule.EntityID]; ok {
+			formattedResponse += fmt.Sprintf("  Alert Group: %s\n", entity.Name)
+			if entity.DataSourceName != "" {
+				formattedResponse += fmt.Sprintf("  Data Source: %s\n", entity.DataSourceName)
+			}
+			if len(entity.Metadata.Tags) > 0 {
+				formattedResponse += fmt.Sprintf("  Tags: %s\n", strings.Join(entity.Metadata.Tags, ", "))
+			}
+		}
+
+		if notificationChannelsErr != "" {
+			formattedResponse += fmt.Sprintf(
+				"  Notification Channels: [lookup failed: %s]\n",
+				notificationChannelsErr,
+			)
+		} else {
+			bindings := entityChannelsByID[rule.EntityID]
+			formattedResponse += fmt.Sprintf(
+				"  Notification Channels: %s\n",
+				formatNotificationChannelSummary(bindings),
+			)
+			formattedResponse += formatNotificationChannelBindingDetails(bindings)
+		}
 
 		if rule.ErrorSince != nil {
 			errorTime := time.Unix(*rule.ErrorSince, 0).UTC().Format("2006-01-02 15:04:05 UTC")

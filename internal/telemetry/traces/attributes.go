@@ -16,7 +16,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-
 // TraceAttribute is an enriched attribute entry returned by the trace attribute
 // tools. filter_field is the exact string to use in a tracejson filter condition.
 type TraceAttribute struct {
@@ -78,21 +77,19 @@ func fetchTraceTagNames(ctx context.Context, client *http.Client, cfg models.Con
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute request: %v", err)
+		return nil, newTraceTransportError(err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		var errorBody map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&errorBody)
-		return nil, fmt.Errorf("API returned status %d: %v", resp.StatusCode, errorBody)
+		return nil, newTraceHTTPError(resp)
 	}
 
 	// This endpoint returns a bare {scopes:[...]} object with no status envelope,
 	// so there is no status field to check (unlike the series endpoints).
 	var result traceTagsAPIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+		return nil, newTraceInvalidResponseError(err)
 	}
 
 	seen := map[string]struct{}{}
@@ -113,7 +110,7 @@ func fetchTraceTagNames(ctx context.Context, client *http.Client, cfg models.Con
 }
 
 // FetchTraceAttributeNames fetches global trace attribute names from the API and
-// returns them as a sorted, prefixed string slice. Shared with the attribute cache.
+// returns them as a sorted, prefixed string slice.
 func FetchTraceAttributeNames(ctx context.Context, client *http.Client, cfg models.Config) ([]string, error) {
 	now := time.Now()
 	return fetchTraceTagNames(ctx, client, cfg, now.Add(-15*time.Minute).Unix(), now.Unix(), cfg.Region)
@@ -144,6 +141,9 @@ func NewGetTraceAttributesHandler(client *http.Client, cfg models.Config) func(c
 
 		names, err := fetchTraceTagNames(ctx, client, cfg, startTimeValue.Unix(), endTimeValue.Unix(), region)
 		if err != nil {
+			if isTraceUpstreamError(err) {
+				return traceToolErrorResult(err), nil, nil
+			}
 			return nil, nil, err
 		}
 

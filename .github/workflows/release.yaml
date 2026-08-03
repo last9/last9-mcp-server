@@ -134,13 +134,25 @@ jobs:
         if: steps.npm_check.outputs.exists == 'false'
         run: npm publish --access public --provenance
 
-  publish-docker:
+  # Multi-arch image build WITHOUT qemu (ENG-1074: qemu cross-arch docker
+  # builds reliably time out on hosted runners). Instead: build each arch on a
+  # native runner (D3 pattern, ENG-1049), push per-arch staging tags, then merge
+  # into manifest lists in the docker-manifest job below.
+  build-docker:
     needs: tag-and-release
     if: |
       always() &&
       (needs.tag-and-release.outputs.version_changed == 'true' ||
        (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-')))
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest    # GitHub-hosted native amd64
+          - arch: arm64
+            runner: ubuntu-24.04-arm # GitHub-hosted native arm64 (no qemu)
+    runs-on: ${{ matrix.runner }}
     permissions:
       id-token: write
       contents: read
@@ -148,21 +160,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Get version from package.json
-        id: get_version
+      - name: Resolve version + build metadata
+        id: meta
         run: |
-          VERSION=$(jq -r .version package.json)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Get build time
-        id: build_time
-        run: echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
-
-      - name: Extract branch name
-        id: extract_branch
-        run: |
-          BRANCH_NAME=${GITHUB_REF#refs/heads/}
-          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          if [ "${{ needs.tag-and-release.outputs.version_changed }}" = "true" ]; then
+            VERSION="${{ needs.tag-and-release.outputs.new_version }}"
+          else
+            VERSION="$(jq -r .version package.json)"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          echo "sha_short=$(echo "${GITHUB_SHA}" | cut -c1-7)" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -173,39 +181,83 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Push to Amazon ECR (Release Branch)
-        if: |
-          github.event_name == 'push' &&
-          startsWith(github.ref, 'refs/heads/release-')
+      # Native build: matrix.arch always equals the runner's own arch, so
+      # `--platform linux/${arch}` and the resulting binary are native — nothing
+      # is emulated. Pushed under a per-arch staging tag keyed on the commit sha;
+      # the docker-manifest job merges the two into the real tags.
+      - name: Build and push (${{ matrix.arch }})
         env:
-          VERSION: ${{ steps.get_version.outputs.version }}
-          COMMIT: ${{ github.sha }}
-          BRANCH: ${{ steps.extract_branch.outputs.branch_name }}
-          BUILD_TIME: ${{ steps.build_time.outputs.build_time }}
+          DOCKER_BUILDKIT: "1"
+          REPO: 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server
+          VERSION: ${{ steps.meta.outputs.version }}
+          BUILD_TIME: ${{ steps.meta.outputs.build_time }}
+          SHA_SHORT: ${{ steps.meta.outputs.sha_short }}
         run: |
+          STAGING="${REPO}:sha-${SHA_SHORT}-${{ matrix.arch }}"
           docker build -f Dockerfile \
+            --platform "linux/${{ matrix.arch }}" \
             --build-arg VERSION="${VERSION}" \
-            --build-arg COMMIT="${COMMIT}" \
+            --build-arg COMMIT="${GITHUB_SHA}" \
             --build-arg BUILD_TIME="${BUILD_TIME}" \
-            -t 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build .
-          docker tag 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${BRANCH}
-          docker tag 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${BRANCH}-v${VERSION}
-          docker push 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${BRANCH}
-          docker push 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:${BRANCH}-v${VERSION}
+            --build-arg TARGETARCH="${{ matrix.arch }}" \
+            -t "${STAGING}" .
+          docker push "${STAGING}"
 
-      - name: Push to Amazon ECR (Main Branch)
-        if: needs.tag-and-release.outputs.version_changed == 'true'
-        env:
-          VERSION: ${{ needs.tag-and-release.outputs.new_version }}
-          COMMIT: ${{ github.sha }}
-          BUILD_TIME: ${{ steps.build_time.outputs.build_time }}
+  # Merge the per-arch staging images into one manifest list per final tag.
+  # `imagetools create` is a registry-side operation (reads the two arch
+  # manifests, writes an OCI index) — no build, no qemu, no builder needed.
+  docker-manifest:
+    needs: [tag-and-release, build-docker]
+    if: |
+      always() &&
+      needs.build-docker.result == 'success' &&
+      (needs.tag-and-release.outputs.version_changed == 'true' ||
+       (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-')))
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve final tags
+        id: tags
         run: |
-          docker build -f Dockerfile \
-            --build-arg VERSION="${VERSION}" \
-            --build-arg COMMIT="${COMMIT}" \
-            --build-arg BUILD_TIME="${BUILD_TIME}" \
-            -t 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build .
-          for tag in v${VERSION} latest; do
-            docker tag 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:build 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:$tag
-            docker push 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server:$tag
+          echo "sha_short=$(echo "${GITHUB_SHA}" | cut -c1-7)" >> "$GITHUB_OUTPUT"
+          if [ "${{ needs.tag-and-release.outputs.version_changed }}" = "true" ]; then
+            VERSION="${{ needs.tag-and-release.outputs.new_version }}"
+            echo "final_tags=v${VERSION} latest" >> "$GITHUB_OUTPUT"
+          else
+            VERSION="$(jq -r .version package.json)"
+            BRANCH="${GITHUB_REF#refs/heads/}"
+            echo "final_tags=${BRANCH} ${BRANCH}-v${VERSION}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-south-1
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Create and push multi-arch manifests
+        env:
+          REPO: 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server
+          SHA_SHORT: ${{ steps.tags.outputs.sha_short }}
+        run: |
+          for TAG in ${{ steps.tags.outputs.final_tags }}; do
+            docker buildx imagetools create \
+              -t "${REPO}:${TAG}" \
+              "${REPO}:sha-${SHA_SHORT}-amd64" \
+              "${REPO}:sha-${SHA_SHORT}-arm64"
           done
+
+      - name: Verify manifest list
+        env:
+          REPO: 652845092827.dkr.ecr.ap-south-1.amazonaws.com/mcp-server
+        run: |
+          FIRST="$(echo '${{ steps.tags.outputs.final_tags }}' | awk '{print $1}')"
+          docker buildx imagetools inspect "${REPO}:${FIRST}"
