@@ -79,3 +79,45 @@ func dumpTools(w io.Writer, allowed toolsets.Set) error {
 	enc.SetIndent("", "  ")
 	return enc.Encode(map[string]any{"tools": tools})
 }
+
+// dumpPrompts registers every workflow prompt exactly as the serving path does
+// and writes the prompts/list result ({"prompts": [...]}, sorted by name) to w
+// by round-tripping a real prompts/list over in-memory transports. No
+// credentials or network access required. Mirrors dumpTools; prompts are not
+// toolset-gated, so there is no --toolsets knob here.
+func dumpPrompts(w io.Writer) error {
+	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
+	if err != nil {
+		return fmt.Errorf("failed to create server: %w", err)
+	}
+	registerReferenceResources(server)
+	workflows.Register(server)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverSession, err := server.Server.Connect(ctx, serverTransport, nil)
+	if err != nil {
+		return fmt.Errorf("failed to connect server: %w", err)
+	}
+	defer serverSession.Close()
+	client := mcp.NewClient(&mcp.Implementation{Name: "dump-prompts", Version: Version}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		return fmt.Errorf("failed to connect client: %w", err)
+	}
+	defer session.Close()
+
+	var promptList []*mcp.Prompt
+	for prompt, err := range session.Prompts(ctx, nil) {
+		if err != nil {
+			return fmt.Errorf("failed to list prompts: %w", err)
+		}
+		promptList = append(promptList, prompt)
+	}
+	sort.Slice(promptList, func(i, j int) bool { return promptList[i].Name < promptList[j].Name })
+
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(map[string]any{"prompts": promptList})
+}

@@ -126,6 +126,13 @@ func main() {
 		return
 	}
 
+	if len(os.Args) > 1 && os.Args[1] == "dump-prompts" {
+		if err := dumpPrompts(os.Stdout); err != nil {
+			log.Fatalf("dump-prompts failed: %v", err)
+		}
+		return
+	}
+
 	log.Printf("Starting Last9 MCP Server v%s", Version)
 
 	// Load .env file if it exists (ignore errors if file doesn't exist)
