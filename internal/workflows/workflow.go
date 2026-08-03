@@ -29,5 +29,5 @@ func registerWorkflowPrompt(server *last9mcp.Last9MCPServer, w Workflow) {
 // declaring a Workflow value and listing it here.
 func Register(server *last9mcp.Last9MCPServer) {
 	registerWorkflowPrompt(server, ScopedLogAttributeDiscovery)
-	registerWorkflowPrompt(server, ExceptionLogContinuation)
+	registerWorkflowPrompt(server, ExceptionRootCauseInvestigation)
 }

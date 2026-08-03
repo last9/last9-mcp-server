@@ -35,7 +35,7 @@ func TestWorkflowMetadata(t *testing.T) {
 		title string
 	}{
 		{ScopedLogAttributeDiscovery, "scoped-log-attribute-discovery", "Scoped Log Attribute Discovery"},
-		{ExceptionLogContinuation, "exception-log-continuation", "Exception Log Continuation"},
+		{ExceptionRootCauseInvestigation, "exception-root-cause-investigation", "Exception Root Cause Investigation"},
 	}
 	for _, c := range cases {
 		if c.w.Name != c.name {
@@ -60,8 +60,8 @@ func TestWorkflowHandlerReturnsEmbeddedText(t *testing.T) {
 	if got := handlerText(t, ScopedLogAttributeDiscovery); got != prompts.ScopedLogAttributeDiscoveryWorkflow {
 		t.Errorf("scoped-log-attribute-discovery handler text does not match embedded prompt")
 	}
-	if got := handlerText(t, ExceptionLogContinuation); got != prompts.ExceptionLogContinuationWorkflow {
-		t.Errorf("exception-log-continuation handler text does not match embedded prompt")
+	if got := handlerText(t, ExceptionRootCauseInvestigation); got != prompts.ExceptionRootCauseInvestigationWorkflow {
+		t.Errorf("exception-root-cause-investigation handler text does not match embedded prompt")
 	}
 }
 
@@ -73,7 +73,7 @@ func TestWorkflowPromptsContainRoutingGuards(t *testing.T) {
 		phrase string
 	}{
 		{"scoped log attribute discovery", prompts.ScopedLogAttributeDiscoveryWorkflow, "Forbidden tool for this workflow: `get_service_logs`"},
-		{"exception log continuation", prompts.ExceptionLogContinuationWorkflow, "Start with `get_exceptions`"},
+		{"exception root cause investigation", prompts.ExceptionRootCauseInvestigationWorkflow, "Start with `get_exceptions`"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(c.text, c.phrase) {

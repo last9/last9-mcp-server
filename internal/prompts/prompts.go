@@ -149,5 +149,5 @@ var PromqlRangeQueryDetails string
 //go:embed workflows/scoped_log_attribute_discovery.md
 var ScopedLogAttributeDiscoveryWorkflow string
 
-//go:embed workflows/exception_log_continuation.md
-var ExceptionLogContinuationWorkflow string
+//go:embed workflows/exception_root_cause_investigation.md
+var ExceptionRootCauseInvestigationWorkflow string
