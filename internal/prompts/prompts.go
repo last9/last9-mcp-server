@@ -160,3 +160,6 @@ var DiagnoseErrorRateWorkflow string
 
 //go:embed workflows/analyze_slow_queries.md
 var AnalyzeSlowQueriesWorkflow string
+
+//go:embed workflows/on_call_runbook.md
+var OnCallRunbookWorkflow string
