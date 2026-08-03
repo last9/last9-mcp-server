@@ -151,3 +151,6 @@ var ScopedLogAttributeDiscoveryWorkflow string
 
 //go:embed workflows/exception_root_cause_investigation.md
 var ExceptionRootCauseInvestigationWorkflow string
+
+//go:embed workflows/investigate_latency_spike.md
+var InvestigateLatencySpikeWorkflow string

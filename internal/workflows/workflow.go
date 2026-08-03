@@ -30,4 +30,5 @@ func registerWorkflowPrompt(server *last9mcp.Last9MCPServer, w Workflow) {
 func Register(server *last9mcp.Last9MCPServer) {
 	registerWorkflowPrompt(server, ScopedLogAttributeDiscovery)
 	registerWorkflowPrompt(server, ExceptionRootCauseInvestigation)
+	registerWorkflowPrompt(server, InvestigateLatencySpike)
 }
