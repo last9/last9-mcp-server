@@ -1,8 +1,7 @@
 Workflow: diagnose an elevated error rate in {{.service}}{{if .env}} (env "{{.env}}"){{end}} over {{.time}}.
 
 Steps:
-1. {{if not .env}}Resolve env first: call get_service_environments for {{.service}} and pick the affected one.
-{{end}}Call get_service_performance_details (service_name={{.service}}{{if .env}}, env={{.env}}{{end}}) over {{.time}} to confirm the error-rate rise and find the failing operation.
+1. {{if not .env}}Resolve env first — call get_service_environments for {{.service}} and pick the affected one — then call {{else}}Call {{end}}get_service_performance_details (service_name={{.service}}{{if .env}}, env={{.env}}{{end}}) over {{.time}} to confirm the error-rate rise and find the failing operation.
 2. Call get_exceptions for {{.service}} to identify the dominant exception type and its time bounds.
 3. Call get_service_traces for representative failing traces of that operation.
 4. AGGREGATE FIRST: call get_logs with a count pipeline (filter the service, gate on ERROR/FATAL severity, aggregate $count grouped by logger) before reading any raw lines.

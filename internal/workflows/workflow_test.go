@@ -10,6 +10,26 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// lineStartingWith returns the one rendered line whose trimmed text begins
+// with prefix, failing unless exactly one such line exists. Used to assert a
+// step's two tool calls stay in a single numbered list item (no bare,
+// unnumbered continuation line that markdown would fold into the same item).
+func lineStartingWith(t *testing.T, text, prefix string) string {
+	t.Helper()
+	var found string
+	n := 0
+	for _, ln := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(ln), prefix) {
+			found = ln
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("want exactly one line starting %q, found %d in:\n%s", prefix, n, text)
+	}
+	return found
+}
+
 // handlerText calls a workflow's handler and returns the single message's text.
 func handlerText(t *testing.T, w Workflow) string {
 	t.Helper()
