@@ -77,9 +77,8 @@ func TestDiagnoseErrorRateRendersEnvBranches(t *testing.T) {
 	if !strings.Contains(got2, "Resolve env first") {
 		t.Errorf("env-absent render should trigger discovery branch:\n%s", got2)
 	}
-	// env absent: both the discovery call and the perf-details call must stay
-	// inside the one numbered step, or markdown collapses the second into an
-	// unnumbered continuation and the sequence stops being unambiguous.
+	// env absent: both calls must stay in the one numbered step, else markdown
+	// folds the second into an unnumbered continuation.
 	step1 := lineStartingWith(t, got2, "1.")
 	if !strings.Contains(step1, "get_service_environments") || !strings.Contains(step1, "get_service_performance_details") {
 		t.Errorf("env-absent step 1 must sequence both calls in one list item:\n%s", got2)

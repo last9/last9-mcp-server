@@ -22,10 +22,8 @@ var onCallRunbookArgs = []*mcp.PromptArgument{
 	{Name: "env", Description: "Deployment environment", Required: false},
 }
 
-// canonicalSymptoms folds the case, plural, and short forms an LLM is likely
-// to pass (from a user's sentence) onto the three values the template routes
-// on. Anything not listed keeps its original value and hits the template's
-// "unknown" branch, which starts with get_alerts rather than misrouting.
+// canonicalSymptoms folds case/plural/short variants onto the three values the
+// template routes on. Unlisted values fall through to the "unknown" branch.
 var canonicalSymptoms = map[string]string{
 	"latency":    "latency",
 	"slow":       "latency",

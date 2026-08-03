@@ -10,10 +10,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// lineStartingWith returns the one rendered line whose trimmed text begins
-// with prefix, failing unless exactly one such line exists. Used to assert a
-// step's two tool calls stay in a single numbered list item (no bare,
-// unnumbered continuation line that markdown would fold into the same item).
+// lineStartingWith returns the single rendered line whose trimmed text starts
+// with prefix (fails otherwise) — used to assert a step's calls stay in one
+// numbered list item.
 func lineStartingWith(t *testing.T, text, prefix string) string {
 	t.Helper()
 	var found string
@@ -47,9 +46,8 @@ func handlerText(t *testing.T, w Workflow) string {
 	return tc.Text
 }
 
-// TestWorkflowMetadata covers the two parameter-less workflows. The
-// parameterized ones assert their own metadata (including arguments) in their
-// per-workflow test files.
+// TestWorkflowMetadata covers the two parameter-less workflows; the
+// parameterized ones assert their own metadata in per-workflow files.
 func TestWorkflowMetadata(t *testing.T) {
 	cases := []struct {
 		w     Workflow
