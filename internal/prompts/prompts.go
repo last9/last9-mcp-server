@@ -154,3 +154,6 @@ var ExceptionRootCauseInvestigationWorkflow string
 
 //go:embed workflows/investigate_latency_spike.md
 var InvestigateLatencySpikeWorkflow string
+
+//go:embed workflows/diagnose_error_rate.md
+var DiagnoseErrorRateWorkflow string
