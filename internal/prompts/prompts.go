@@ -157,3 +157,6 @@ var InvestigateLatencySpikeWorkflow string
 
 //go:embed workflows/diagnose_error_rate.md
 var DiagnoseErrorRateWorkflow string
+
+//go:embed workflows/analyze_slow_queries.md
+var AnalyzeSlowQueriesWorkflow string

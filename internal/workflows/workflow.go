@@ -32,4 +32,5 @@ func Register(server *last9mcp.Last9MCPServer) {
 	registerWorkflowPrompt(server, ExceptionRootCauseInvestigation)
 	registerWorkflowPrompt(server, InvestigateLatencySpike)
 	registerWorkflowPrompt(server, DiagnoseErrorRate)
+	registerWorkflowPrompt(server, AnalyzeSlowQueries)
 }
