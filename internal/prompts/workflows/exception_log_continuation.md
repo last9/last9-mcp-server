@@ -1,23 +1,13 @@
-Workflow: exception-to-log-root-cause continuation.
+Workflow: exception root-cause investigation.
 
-Use this workflow when investigating exceptions where span errors may be a
-downstream symptom rather than the root cause.
+Use this workflow when investigating server-side exceptions, especially when
+span errors may be a downstream symptom rather than the root cause.
 
-Steps:
-1. Use `get_exceptions` to identify the service, exception type, and time
-   bounds.
-2. Use `get_service_traces` only to inspect representative traces.
-3. Continue into `get_logs` with an aggregate `logjson_query` over the same
-   service and time window to rank error signatures or body-level failure
-   messages.
-
-Rules:
-- Do not call `get_service_logs`; it fetches raw samples and can miss the
-  ranked root-cause pattern.
-- Use `get_logs` for log continuation.
-- The `get_logs` query should include a service scope and an aggregate or
-  `window_aggregate` stage before any raw-log drilldown.
-- If severity may be empty or unreliable, aggregate on body-derived signatures
-  or message patterns instead of relying only on `SeverityText`.
-- Only answer once you have checked whether logs contain the root-cause signal
-  behind the span exceptions.
+Start with `get_exceptions` and follow the investigation flow documented in its
+tool description end-to-end — that description is the single source of truth for
+this flow. In short: identify the service and exception type, inspect
+representative traces with `get_service_traces`, then decide whether the
+exceptions are the answer or a symptom. For a log-heavy or severity-less
+service, do not stop at the span exceptions — continue into logs (aggregate
+first to isolate the hot logger, then read that logger's lines with a `limit`)
+and report the actual root-cause error text.
