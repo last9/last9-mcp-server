@@ -8,7 +8,7 @@ import (
 )
 
 func TestRenderWorkflowErrorsOnMissingRequired(t *testing.T) {
-	_, err := renderWorkflow("t", "d", "hello {{.service}}", map[string]string{"time": "1h"}, []string{"service", "time"})
+	_, err := renderWorkflow("t", "d", "hello {{.service}}", map[string]string{"time": "1h"}, []*mcp.PromptArgument{{Name: "service", Required: true}, {Name: "time", Required: true}})
 	if err == nil {
 		t.Fatal("expected error when required arg 'service' is missing, got nil")
 	}
@@ -18,14 +18,34 @@ func TestRenderWorkflowErrorsOnMissingRequired(t *testing.T) {
 }
 
 func TestRenderWorkflowErrorsOnBlankRequired(t *testing.T) {
-	_, err := renderWorkflow("t", "d", "x", map[string]string{"service": "   "}, []string{"service"})
+	_, err := renderWorkflow("t", "d", "x", map[string]string{"service": "   "}, []*mcp.PromptArgument{{Name: "service", Required: true}})
 	if err == nil {
 		t.Fatal("expected error when required arg is blank, got nil")
 	}
 }
 
+func TestRenderWorkflowIgnoresMissingOptional(t *testing.T) {
+	// A declared arg with Required:false that is absent must not error.
+	_, err := renderWorkflow("t", "d", "x", map[string]string{}, []*mcp.PromptArgument{
+		{Name: "time", Required: true},
+		{Name: "env", Required: false},
+	})
+	if err == nil {
+		t.Fatal("expected error: required 'time' is missing")
+	}
+	if !strings.Contains(err.Error(), "time") {
+		t.Errorf("error %q should name 'time', not the optional 'env'", err.Error())
+	}
+	if _, err := renderWorkflow("t", "d", "x", map[string]string{"time": "1h"}, []*mcp.PromptArgument{
+		{Name: "time", Required: true},
+		{Name: "env", Required: false},
+	}); err != nil {
+		t.Errorf("unexpected error when only optional 'env' is absent: %v", err)
+	}
+}
+
 func TestRenderWorkflowInterpolatesArgs(t *testing.T) {
-	res, err := renderWorkflow("t", "desc", "svc={{.service}} win={{.time}}", map[string]string{"service": "checkout", "time": "1h"}, []string{"service", "time"})
+	res, err := renderWorkflow("t", "desc", "svc={{.service}} win={{.time}}", map[string]string{"service": "checkout", "time": "1h"}, []*mcp.PromptArgument{{Name: "service", Required: true}, {Name: "time", Required: true}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

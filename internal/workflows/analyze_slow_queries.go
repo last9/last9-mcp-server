@@ -26,7 +26,7 @@ func analyzeSlowQueriesHandler(_ context.Context, req *mcp.GetPromptRequest) (*m
 		args = req.Params.Arguments
 	}
 	return renderWorkflow(analyzeSlowQueriesName, analyzeSlowQueriesDescription,
-		prompts.AnalyzeSlowQueriesWorkflow, args, []string{"time"})
+		prompts.AnalyzeSlowQueriesWorkflow, args, analyzeSlowQueriesArgs)
 }
 
 var AnalyzeSlowQueries = Workflow{

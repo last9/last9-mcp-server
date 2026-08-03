@@ -26,7 +26,7 @@ func investigateLatencySpikeHandler(_ context.Context, req *mcp.GetPromptRequest
 		args = req.Params.Arguments
 	}
 	return renderWorkflow(investigateLatencySpikeName, investigateLatencySpikeDescription,
-		prompts.InvestigateLatencySpikeWorkflow, args, []string{"service", "time"})
+		prompts.InvestigateLatencySpikeWorkflow, args, investigateLatencySpikeArgs)
 }
 
 var InvestigateLatencySpike = Workflow{

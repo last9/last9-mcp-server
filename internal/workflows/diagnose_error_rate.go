@@ -26,7 +26,7 @@ func diagnoseErrorRateHandler(_ context.Context, req *mcp.GetPromptRequest) (*mc
 		args = req.Params.Arguments
 	}
 	return renderWorkflow(diagnoseErrorRateName, diagnoseErrorRateDescription,
-		prompts.DiagnoseErrorRateWorkflow, args, []string{"service", "time"})
+		prompts.DiagnoseErrorRateWorkflow, args, diagnoseErrorRateArgs)
 }
 
 var DiagnoseErrorRate = Workflow{

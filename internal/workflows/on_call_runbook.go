@@ -27,7 +27,7 @@ func onCallRunbookHandler(_ context.Context, req *mcp.GetPromptRequest) (*mcp.Ge
 		args = req.Params.Arguments
 	}
 	return renderWorkflow(onCallRunbookName, onCallRunbookDescription,
-		prompts.OnCallRunbookWorkflow, args, []string{"symptom", "time"})
+		prompts.OnCallRunbookWorkflow, args, onCallRunbookArgs)
 }
 
 var OnCallRunbook = Workflow{
