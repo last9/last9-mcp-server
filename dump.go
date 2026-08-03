@@ -11,6 +11,7 @@ import (
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/toolsets"
+	"last9-mcp/internal/workflows"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -42,6 +43,7 @@ func dumpTools(w io.Writer, allowed toolsets.Set) error {
 	}
 
 	registerReferenceResources(server)
+	workflows.Register(server)
 
 	if err := registerAllTools(server, cfg); err != nil {
 		return fmt.Errorf("failed to register tools: %w", err)
