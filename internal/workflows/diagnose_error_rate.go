@@ -23,14 +23,16 @@ func diagnoseErrorRateHandler(_ context.Context, req *mcp.GetPromptRequest) (*mc
 		prompts.DiagnoseErrorRateWorkflow, args, []string{"service", "time"})
 }
 
+var diagnoseErrorRateArgs = []*mcp.PromptArgument{
+	{Name: "service", Description: "Service to investigate", Required: true},
+	{Name: "time", Description: "Time window to investigate, e.g. 1h or an absolute range; mapped to each tool's own time params", Required: true},
+	{Name: "env", Description: "Deployment environment; discovered via get_service_environments if omitted", Required: false},
+}
+
 var DiagnoseErrorRate = Workflow{
 	Name:        diagnoseErrorRateName,
 	Title:       diagnoseErrorRateTitle,
 	Description: diagnoseErrorRateDescription,
-	Arguments: []*mcp.PromptArgument{
-		{Name: "service", Description: "Service to investigate", Required: true},
-		{Name: "time", Description: "Time window to investigate, e.g. 1h or an absolute range; mapped to each tool's own time params", Required: true},
-		{Name: "env", Description: "Deployment environment; discovered via get_service_environments if omitted", Required: false},
-	},
-	Handler: diagnoseErrorRateHandler,
+	Arguments:   diagnoseErrorRateArgs,
+	Handler:     diagnoseErrorRateHandler,
 }

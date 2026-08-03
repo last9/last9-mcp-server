@@ -23,15 +23,17 @@ func onCallRunbookHandler(_ context.Context, req *mcp.GetPromptRequest) (*mcp.Ge
 		prompts.OnCallRunbookWorkflow, args, []string{"symptom", "time"})
 }
 
+var onCallRunbookArgs = []*mcp.PromptArgument{
+	{Name: "symptom", Description: "One of: latency, errors, database, unknown", Required: true},
+	{Name: "time", Description: "Time window to investigate, e.g. 1h or an absolute range; mapped to each tool's own time params", Required: true},
+	{Name: "service", Description: "Service to triage; fleet-wide triage (get_alerts, get_service_summary) if omitted", Required: false},
+	{Name: "env", Description: "Deployment environment", Required: false},
+}
+
 var OnCallRunbook = Workflow{
 	Name:        onCallRunbookName,
 	Title:       onCallRunbookTitle,
 	Description: onCallRunbookDescription,
-	Arguments: []*mcp.PromptArgument{
-		{Name: "symptom", Description: "One of: latency, errors, database, unknown", Required: true},
-		{Name: "time", Description: "Time window to investigate, e.g. 1h or an absolute range; mapped to each tool's own time params", Required: true},
-		{Name: "service", Description: "Service to triage; fleet-wide triage (get_alerts, get_service_summary) if omitted", Required: false},
-		{Name: "env", Description: "Deployment environment", Required: false},
-	},
-	Handler: onCallRunbookHandler,
+	Arguments:   onCallRunbookArgs,
+	Handler:     onCallRunbookHandler,
 }

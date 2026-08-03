@@ -23,14 +23,16 @@ func analyzeSlowQueriesHandler(_ context.Context, req *mcp.GetPromptRequest) (*m
 		prompts.AnalyzeSlowQueriesWorkflow, args, []string{"time"})
 }
 
+var analyzeSlowQueriesArgs = []*mcp.PromptArgument{
+	{Name: "time", Description: "Time window to investigate, e.g. 1h or an absolute range; mapped to each tool's own time params", Required: true},
+	{Name: "db_system", Description: "Database system filter (e.g. postgresql, mysql, mongodb, redis); surveys all systems if omitted", Required: false},
+	{Name: "host", Description: "Database host filter (net_peer_name)", Required: false},
+}
+
 var AnalyzeSlowQueries = Workflow{
 	Name:        analyzeSlowQueriesName,
 	Title:       analyzeSlowQueriesTitle,
 	Description: analyzeSlowQueriesDescription,
-	Arguments: []*mcp.PromptArgument{
-		{Name: "time", Description: "Time window to investigate, e.g. 1h or an absolute range; mapped to each tool's own time params", Required: true},
-		{Name: "db_system", Description: "Database system filter (e.g. postgresql, mysql, mongodb, redis); surveys all systems if omitted", Required: false},
-		{Name: "host", Description: "Database host filter (net_peer_name)", Required: false},
-	},
-	Handler: analyzeSlowQueriesHandler,
+	Arguments:   analyzeSlowQueriesArgs,
+	Handler:     analyzeSlowQueriesHandler,
 }
