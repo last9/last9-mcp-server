@@ -32,8 +32,8 @@ func TestDumpTools(t *testing.T) {
 	// All registered tools must be covered — the whole point of dump-tools.
 	// A loose floor would let a regression silently drop tools. Tighten this
 	// when the committed snapshot + CI equality gate supersedes it.
-	if len(out.Tools) < 38 {
-		t.Fatalf("expected at least 38 tools, got %d", len(out.Tools))
+	if len(out.Tools) < 40 {
+		t.Fatalf("expected at least 40 tools, got %d", len(out.Tools))
 	}
 	if !sort.SliceIsSorted(out.Tools, func(i, j int) bool { return out.Tools[i].Name < out.Tools[j].Name }) {
 		t.Fatal("tools are not sorted by name (output must be deterministic for snapshot diffing)")
