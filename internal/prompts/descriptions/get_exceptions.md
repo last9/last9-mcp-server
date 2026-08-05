@@ -30,8 +30,9 @@ Investigation flow — follow this exactly:
      is in the log body, not in the count: a logger name and an occurrence count
      locate the problem but do not explain it. Filter to that logger and always pass
      a `limit` — a handful of lines is enough to read the error, and an unlimited
-     raw fetch is what times out. Use `get_service_logs` or a non-aggregate
-     `get_logs`. Report the actual error text you read.
+     raw fetch is what times out. Use a non-aggregate `get_logs` pipeline with a
+     small `limit` — not `get_service_logs` during or after exception investigation.
+     Report the actual error text you read.
 
 limit: (Optional) The maximum number of exceptions to return. Defaults to 20.
 lookback_minutes: (Recommended) Number of minutes to look back from now. Default: 60 minutes.

@@ -27,10 +27,11 @@ Steps:
    Never raw-fetch lines before this aggregate — an unnarrowed fetch times out
    over wide windows.
 6. Once the aggregate isolates the hot logger, READ THE LINES: filter to that
-   logger and always pass a `limit` (a handful of lines is enough). Use
-   `get_service_logs` or a non-aggregate `get_logs` for this bounded read.
-   Report the actual root-cause error text you read — the count locates the
-   problem, the lines explain it.
+   logger and always pass a `limit` (a handful of lines is enough). Use a
+   non-aggregate `get_logs` pipeline for this bounded read — never
+   `get_service_logs` during or after this investigation flow. Report the
+   actual root-cause error text you read — the count locates the problem, the
+   lines explain it.
 
 When `error_detection.recommended_ingest_fix` is present in the profile,
 include it in the investigation report.
