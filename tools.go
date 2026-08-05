@@ -277,6 +277,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: prompts.DidYouMeanDescription,
 	}, suggest.NewDidYouMeanHandler(client, cfg)))
 
+	// Register service profile tool
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_service_profile",
+		Description: prompts.GetServiceProfileDescription,
+	}, apm.NewGetServiceProfileHandler(client, cfg)))
+
 	// Register dashboard tools
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "list_dashboards",
