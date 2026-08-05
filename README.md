@@ -1,5 +1,7 @@
 # Last9 MCP Server
 
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2Flast9%2Flast9-mcp-server.svg)](https://mcptoplist.com/server/glama%2Flast9%2Flast9-mcp-server)
+
 ![last9 mcp demo](mcp-demo.gif)
 
 Your AI agent doesn't know what's broken in production. This fixes that.
