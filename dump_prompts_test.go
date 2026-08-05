@@ -2,8 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"strings"
 	"testing"
+
+	"last9-mcp/internal/workflows"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestDumpPromptsListsSixPrompts(t *testing.T) {
@@ -60,5 +66,19 @@ func TestDumpPromptsListsSixPrompts(t *testing.T) {
 				t.Error("investigate-latency-spike must advertise required arg 'service'")
 			}
 		}
+	}
+}
+
+func TestDumpPromptsExceptionWorkflowIncludesProfileStep(t *testing.T) {
+	res, err := workflows.ExceptionRootCauseInvestigation.Handler(context.Background(), &mcp.GetPromptRequest{})
+	if err != nil {
+		t.Fatalf("exception-root-cause-investigation handler: %v", err)
+	}
+	if len(res.Messages) != 1 {
+		t.Fatalf("got %d messages, want 1", len(res.Messages))
+	}
+	got := res.Messages[0].Content.(*mcp.TextContent).Text
+	if !strings.Contains(got, "get_service_profile") {
+		t.Errorf("exception-root-cause-investigation prompt must include get_service_profile:\n%s", got)
 	}
 }
