@@ -49,6 +49,18 @@ func TestEnrichAttribute(t *testing.T) {
 	}
 }
 
+func TestSpanAttributeField(t *testing.T) {
+	if got := SpanAttributeField("db.system"); got != `attributes['db.system']` {
+		t.Fatalf("SpanAttributeField(db.system) = %q, want attributes['db.system']", got)
+	}
+}
+
+func TestResourceAttributeField(t *testing.T) {
+	if got := ResourceAttributeField("deployment.environment"); got != `resources['deployment.environment']` {
+		t.Fatalf("ResourceAttributeField(deployment.environment) = %q, want resources['deployment.environment']", got)
+	}
+}
+
 func TestNormalizeTagName(t *testing.T) {
 	tests := []struct {
 		input string

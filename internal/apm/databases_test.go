@@ -339,6 +339,146 @@ func TestGetDatabaseSlowQueriesHandler(t *testing.T) {
 	}
 }
 
+func TestBuildDatabaseSlowQueryTracePipeline_UsesBracketNotation(t *testing.T) {
+	t.Run("with db_system host env service and min duration", func(t *testing.T) {
+		pipeline, err := buildDatabaseSlowQueryTracePipeline(GetDatabaseSlowQueriesArgs{
+			DBSystem:      "postgresql",
+			Host:          "db.example.com",
+			ServiceName:   "checkout",
+			Env:           "prod",
+			MinDurationMs: 100,
+		})
+		if err != nil {
+			t.Fatalf("buildDatabaseSlowQueryTracePipeline() error = %v", err)
+		}
+
+		rawQuery, err := json.Marshal(pipeline[0]["query"])
+		if err != nil {
+			t.Fatalf("failed to marshal pipeline query: %v", err)
+		}
+		query := string(rawQuery)
+
+		for _, want := range []string{
+			`attributes['db.system']`,
+			`attributes['net.peer.name']`,
+			`resources['deployment.environment']`,
+			"postgresql",
+			"db.example.com",
+			"checkout",
+			"prod",
+			"100000000",
+		} {
+			if !strings.Contains(query, want) {
+				t.Fatalf("expected pipeline to include %q, got %s", want, query)
+			}
+		}
+
+		for _, bad := range []string{
+			"attributes.db.system",
+			"attributes.net.peer.name",
+			"resource.attributes.deployment.environment",
+		} {
+			if strings.Contains(query, bad) {
+				t.Fatalf("pipeline should not include legacy dot notation %q, got %s", bad, query)
+			}
+		}
+	})
+
+	t.Run("without db_system matches any span with db.system set", func(t *testing.T) {
+		pipeline, err := buildDatabaseSlowQueryTracePipeline(GetDatabaseSlowQueriesArgs{
+			LookbackMinutes: 30,
+		})
+		if err != nil {
+			t.Fatalf("buildDatabaseSlowQueryTracePipeline() error = %v", err)
+		}
+
+		rawQuery, err := json.Marshal(pipeline[0]["query"])
+		if err != nil {
+			t.Fatalf("failed to marshal pipeline query: %v", err)
+		}
+		query := string(rawQuery)
+
+		if !strings.Contains(query, `{"$neq":["attributes['db.system']",""]}`) &&
+			!strings.Contains(query, `"$neq":["attributes['db.system']",""]`) {
+			t.Fatalf("expected $neq on attributes['db.system'], got %s", query)
+		}
+		if strings.Contains(query, "attributes.db.system") {
+			t.Fatalf("pipeline should not include legacy dot notation, got %s", query)
+		}
+	})
+}
+
+func TestGetDatabaseSlowQueriesHandler_TracePipelineUsesBracketNotation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/cat/api/traces/v2/query_range/json") {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("failed to read request body: %v", err)
+			}
+
+			var req struct {
+				Pipeline []struct {
+					Query map[string]any `json:"query"`
+				} `json:"pipeline"`
+			}
+			if err := json.Unmarshal(body, &req); err != nil {
+				t.Fatalf("failed to unmarshal request body: %v", err)
+			}
+			if len(req.Pipeline) != 1 {
+				t.Fatalf("expected exactly one pipeline stage, got %d", len(req.Pipeline))
+			}
+
+			rawQuery, err := json.Marshal(req.Pipeline[0].Query)
+			if err != nil {
+				t.Fatalf("failed to marshal stage query: %v", err)
+			}
+			query := string(rawQuery)
+
+			if !strings.Contains(query, `attributes['db.system']`) {
+				t.Fatalf("expected attributes['db.system'] in pipeline, got %s", query)
+			}
+			if !strings.Contains(query, `attributes['net.peer.name']`) {
+				t.Fatalf("expected attributes['net.peer.name'] in pipeline, got %s", query)
+			}
+			if !strings.Contains(query, `resources['deployment.environment']`) {
+				t.Fatalf("expected resources['deployment.environment'] in pipeline, got %s", query)
+			}
+			for _, bad := range []string{
+				"attributes.db.system",
+				"attributes.net.peer.name",
+				"resource.attributes.deployment.environment",
+			} {
+				if strings.Contains(query, bad) {
+					t.Fatalf("pipeline should not include legacy dot notation %q, got %s", bad, query)
+				}
+			}
+
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"result": []any{}},
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"result": []any{}},
+		})
+	}))
+	defer server.Close()
+
+	handler := NewGetDatabaseSlowQueriesHandler(server.Client(), testDBConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabaseSlowQueriesArgs{
+		DBSystem:        "postgresql",
+		Host:            "db.example.com",
+		Env:             "prod",
+		LookbackMinutes: 30,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+}
+
 func TestGetDatabaseSlowQueriesHandler_NoResults(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

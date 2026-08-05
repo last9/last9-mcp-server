@@ -56,6 +56,7 @@ func sanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 				// ClickHouse). Rewrite both to the working idiom before
 				// validation ever sees them. Recurses through $and/$or/$not.
 				rewriteBrokenExistenceOperators(query)
+				rewriteLegacyDotNotationFields(query)
 				if err := validateTraceFilterCondition(query, path+".query"); err != nil {
 					return err
 				}
@@ -279,6 +280,62 @@ func validateFieldSyntax(field, path string) error {
 	}
 
 	return nil
+}
+
+// SanitizeTraceJSONPipeline validates and normalizes a trace pipeline before
+// forwarding to the traces API. Normalizations are applied in place.
+func SanitizeTraceJSONPipeline(stages []map[string]any) error {
+	converted := make([]map[string]interface{}, len(stages))
+	for i, stage := range stages {
+		converted[i] = stage
+	}
+	if err := sanitizeTraceJSONQuery(converted); err != nil {
+		return err
+	}
+	for i := range stages {
+		stages[i] = converted[i]
+	}
+	return nil
+}
+
+// rewriteLegacyDotNotationFields walks a filter condition tree and rewrites
+// legacy dot-notation map attribute references to bracket syntax in place.
+func rewriteLegacyDotNotationFields(value interface{}) {
+	switch typed := value.(type) {
+	case []interface{}:
+		for _, item := range typed {
+			rewriteLegacyDotNotationFields(item)
+		}
+	case map[string]interface{}:
+		for key, item := range typed {
+			if _, isLogical := traceFilterLogicalOperators[key]; isLogical {
+				rewriteLegacyDotNotationFields(item)
+				continue
+			}
+			if args, ok := item.([]interface{}); ok && len(args) > 0 {
+				if fieldStr, ok := args[0].(string); ok {
+					args[0] = normalizeTraceFilterField(fieldStr)
+				}
+			}
+		}
+	}
+}
+
+// normalizeTraceFilterField converts legacy dot-notation field references to
+// ClickHouse Map bracket syntax. Already-correct bracket forms pass through.
+func normalizeTraceFilterField(field string) string {
+	if strings.HasPrefix(field, `attributes['`) ||
+		strings.HasPrefix(field, `resources['`) ||
+		strings.HasPrefix(field, `events['`) {
+		return field
+	}
+	if strings.HasPrefix(field, "resource.attributes.") {
+		return ResourceAttributeField(field[len("resource.attributes."):])
+	}
+	if strings.HasPrefix(field, "attributes.") {
+		return SpanAttributeField(field[len("attributes."):])
+	}
+	return field
 }
 
 func validateStageKeys(stage map[string]interface{}, stageType, path string) error {

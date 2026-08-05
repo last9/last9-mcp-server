@@ -89,6 +89,16 @@ func enrichAttribute(raw string) TraceAttribute {
 	}
 }
 
+// SpanAttributeField returns the tracejson filter field for a span attribute key.
+func SpanAttributeField(key string) string {
+	return enrichAttribute(key).FilterField
+}
+
+// ResourceAttributeField returns the tracejson filter field for a resource attribute key.
+func ResourceAttributeField(key string) string {
+	return enrichAttribute("resource_" + key).FilterField
+}
+
 // normalizeTagName converts a filter_field syntax string or raw API tag name
 // into the raw API tag name expected by the tag-values endpoint.
 //

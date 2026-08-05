@@ -804,3 +804,83 @@ func TestSanitizeTraceJSONQuery_RewritesBrokenExistenceOperators(t *testing.T) {
 		}
 	})
 }
+
+func TestSanitizeTraceJSONQuery_RewritesLegacyDotNotationFields(t *testing.T) {
+	t.Run("attributes.db.system rewritten to bracket syntax", func(t *testing.T) {
+		stages := []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{
+				"$eq": []interface{}{"attributes.db.system", "postgresql"},
+			}},
+		}
+		if err := sanitizeTraceJSONQuery(stages); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		blob, _ := json.Marshal(stages)
+		s := string(blob)
+		if !strings.Contains(s, `attributes['db.system']`) {
+			t.Fatalf("missing bracket rewrite in: %s", s)
+		}
+		if strings.Contains(s, "attributes.db.system") {
+			t.Fatalf("legacy dot notation survived rewrite: %s", s)
+		}
+	})
+
+	t.Run("resource.attributes.deployment.environment rewritten", func(t *testing.T) {
+		stages := []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{
+				"$and": []interface{}{
+					map[string]interface{}{"$eq": []interface{}{"attributes.net.peer.name", "db.example.com"}},
+					map[string]interface{}{"$eq": []interface{}{"resource.attributes.deployment.environment", "prod"}},
+				},
+			}},
+		}
+		if err := sanitizeTraceJSONQuery(stages); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		blob, _ := json.Marshal(stages)
+		s := string(blob)
+		for _, want := range []string{
+			`attributes['net.peer.name']`,
+			`resources['deployment.environment']`,
+		} {
+			if !strings.Contains(s, want) {
+				t.Fatalf("missing rewrite %q in: %s", want, s)
+			}
+		}
+		for _, bad := range []string{
+			"attributes.net.peer.name",
+			"resource.attributes.deployment.environment",
+		} {
+			if strings.Contains(s, bad) {
+				t.Fatalf("legacy dot notation %q survived rewrite: %s", bad, s)
+			}
+		}
+	})
+}
+
+func TestSanitizeTraceJSONPipeline_RewritesLegacyDotNotationInPlace(t *testing.T) {
+	pipeline := []map[string]any{
+		{
+			"type": "filter",
+			"query": map[string]any{
+				"$eq": []any{"attributes.db.system", "postgresql"},
+			},
+		},
+	}
+
+	if err := SanitizeTraceJSONPipeline(pipeline); err != nil {
+		t.Fatalf("SanitizeTraceJSONPipeline() error = %v", err)
+	}
+
+	rawQuery, err := json.Marshal(pipeline[0]["query"])
+	if err != nil {
+		t.Fatalf("failed to marshal sanitized query: %v", err)
+	}
+	query := string(rawQuery)
+	if !strings.Contains(query, `attributes['db.system']`) {
+		t.Fatalf("expected bracket notation after sanitize, got %s", query)
+	}
+	if strings.Contains(query, "attributes.db.system") {
+		t.Fatalf("legacy dot notation survived sanitize, got %s", query)
+	}
+}
