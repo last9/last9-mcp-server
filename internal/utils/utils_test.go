@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"last9-mcp/internal/models"
 )
 
 func TestGetTimeRange_TimezoneHandling(t *testing.T) {
@@ -386,5 +388,27 @@ func TestParseToolTimestamp(t *testing.T) {
 				t.Fatalf("ParseToolTimestamp() expected UTC, got %v", parsed.Location())
 			}
 		})
+	}
+}
+
+func TestValidatePopulatedDatasourceCfg(t *testing.T) {
+	cfg := &models.Config{
+		PrometheusReadURL:  "https://prom.example",
+		PrometheusUsername: "user",
+		PrometheusPassword: "pass",
+		Region:             "us-east-1",
+		ClusterID:          "cluster-1",
+	}
+	if err := validatePopulatedDatasourceCfg(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	cfg.ClusterID = ""
+	err := validatePopulatedDatasourceCfg(cfg)
+	if err == nil {
+		t.Fatal("expected missing cluster_id error")
+	}
+	if !strings.Contains(err.Error(), "cluster_id") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

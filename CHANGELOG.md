@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `add_drop_rule` now creates drop rules via `POST /otel_settings/drop` (with `region` and `cluster_id` query params) instead of the legacy `PUT /logs_settings/routing` endpoint, which the API now rejects with 405 (#201).
+- `get_drop_rules` now lists drop rules via `GET /otel_settings/drop?region=...` instead of the legacy read path.
+- Drop-rule tools validate filter keys client-side (`attributes["..."]` / `resource.attributes["..."]`) and fail fast when the datasource is missing `cluster_id`.
 
 ### Added
 

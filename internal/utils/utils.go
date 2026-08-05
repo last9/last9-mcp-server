@@ -442,8 +442,8 @@ func PopulateAPICfg(cfg *models.Config) error {
 	cfg.Region = selectedDatasource.Region
 	cfg.ClusterID = selectedDatasource.Properties.LevitateClusterID
 
-	if cfg.PrometheusReadURL == "" || cfg.PrometheusUsername == "" || cfg.PrometheusPassword == "" || cfg.Region == "" {
-		return errors.New("selected datasource missing required properties")
+	if err := validatePopulatedDatasourceCfg(cfg); err != nil {
+		return err
 	}
 
 	// Cache all datasources so handlers can resolve per-query datasource credentials
@@ -461,5 +461,15 @@ func PopulateAPICfg(cfg *models.Config) error {
 		})
 	}
 
+	return nil
+}
+
+func validatePopulatedDatasourceCfg(cfg *models.Config) error {
+	if cfg.PrometheusReadURL == "" || cfg.PrometheusUsername == "" || cfg.PrometheusPassword == "" || cfg.Region == "" {
+		return errors.New("selected datasource missing required properties")
+	}
+	if cfg.ClusterID == "" {
+		return errors.New("selected datasource missing cluster_id")
+	}
 	return nil
 }

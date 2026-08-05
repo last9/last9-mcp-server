@@ -30,8 +30,53 @@ func testDropRuleConfig(actionURL string) models.Config {
 	}
 }
 
+func TestValidateAddDropRuleArgs(t *testing.T) {
+	if err := validateAddDropRuleArgs(AddDropRuleArgs{
+		Filters: []DropRuleFilter{{Key: `attributes["level"]`, Value: "debug"}},
+	}); err == nil {
+		t.Fatal("expected missing name error")
+	}
+
+	if err := validateAddDropRuleArgs(AddDropRuleArgs{
+		Name: "rule",
+	}); err == nil {
+		t.Fatal("expected missing filters error")
+	}
+
+	if err := validateAddDropRuleArgs(AddDropRuleArgs{
+		Name:    "rule",
+		Filters: []DropRuleFilter{{Key: `attributes["level"]`, Value: "debug"}},
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConvertDropRuleFilters(t *testing.T) {
+	filters, err := convertDropRuleFilters([]DropRuleFilter{
+		{Key: `attributes["level"]`, Value: "debug"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(filters) != 1 {
+		t.Fatalf("expected one filter, got %d", len(filters))
+	}
+	if filters[0].Operator != "equals" {
+		t.Fatalf("expected default operator equals, got %q", filters[0].Operator)
+	}
+	if filters[0].Conjunction != "and" {
+		t.Fatalf("expected default conjunction and, got %q", filters[0].Conjunction)
+	}
+
+	_, err = convertDropRuleFilters([]DropRuleFilter{
+		{Key: "service_name", Value: "checkout"},
+	})
+	if err == nil {
+		t.Fatal("expected invalid key format error")
+	}
+}
+
 func TestAddDropRuleHandlerContextCancellation(t *testing.T) {
-	// Server that blocks — proves context cancellation aborts the request.
 	blocked := make(chan struct{})
 	defer close(blocked)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -40,7 +85,7 @@ func TestAddDropRuleHandlerContextCancellation(t *testing.T) {
 	defer server.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // already cancelled
+	cancel()
 
 	handler := NewAddDropRuleHandler(server.Client(), testDropRuleConfig(server.URL))
 	_, _, err := handler(ctx, &mcp.CallToolRequest{}, AddDropRuleArgs{
@@ -239,6 +284,9 @@ func TestAddDropRuleHandlerValidation(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected validation error, got nil")
 			}
+			if !strings.Contains(err.Error(), "add_drop_rule:") {
+				t.Fatalf("expected wrapped add_drop_rule error, got %v", err)
+			}
 		})
 	}
 }
@@ -279,6 +327,62 @@ func TestAddDropRuleHandlerRequiresRegionAndCluster(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "cluster_id") {
 		t.Fatalf("expected cluster_id error, got %v", err)
+	}
+}
+
+func TestGetDropRulesHandlerUsesOTelEndpoint(t *testing.T) {
+	var capturedMethod string
+	var capturedPath string
+	var capturedQuery url.Values
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedMethod = r.Method
+		capturedPath = r.URL.Path
+		capturedQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]map[string]interface{}{{"id": "rule-1"}})
+	}))
+	defer server.Close()
+
+	cfg := testDropRuleConfig(server.URL)
+	handler := NewGetDropRulesHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDropRulesArgs{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected result, got nil")
+	}
+	if capturedMethod != http.MethodGet {
+		t.Fatalf("expected GET, got %s", capturedMethod)
+	}
+	if capturedPath != "/otel_settings/drop" {
+		t.Fatalf("expected path /otel_settings/drop, got %s", capturedPath)
+	}
+	if capturedQuery.Get("region") != cfg.Region {
+		t.Fatalf("expected region=%s, got %s", cfg.Region, capturedQuery.Get("region"))
+	}
+	if capturedQuery.Get("cluster_id") != "" {
+		t.Fatalf("did not expect cluster_id on list request, got %s", capturedQuery.Get("cluster_id"))
+	}
+}
+
+func TestGetDropRulesHandlerAPIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "bad request", http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	handler := NewGetDropRulesHandler(server.Client(), testDropRuleConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDropRulesArgs{})
+	if err == nil {
+		t.Fatal("expected API error, got nil")
+	}
+	if !strings.Contains(err.Error(), "get_drop_rules:") {
+		t.Fatalf("expected wrapped get_drop_rules error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "400") {
+		t.Fatalf("expected status in error, got %v", err)
 	}
 }
 

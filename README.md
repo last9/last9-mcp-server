@@ -544,12 +544,14 @@ Use `get_logs` for broad aggregate counts first; use `get_service_logs` only aft
 
 ### get_drop_rules
 
-No parameters.
+No parameters. Lists drop rules via `GET /otel_settings/drop?region=...`.
 
 ### add_drop_rule
 
 - `name` (string, required)
 - `filters` (array, required): Each filter: `key`, `value`, `operator` (`equals`/`not_equals`), `conjunction` (`and`).
+- Filter keys must use `attributes["key_name"]` or `resource.attributes["key_name"]` (required by last9-api).
+- Creates the rule via `POST /otel_settings/drop?region=...&cluster_id=...`.
 
 ### get_traces
 
