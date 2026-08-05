@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -44,7 +45,7 @@ func TestAddDropRuleHandlerContextCancellation(t *testing.T) {
 	_, _, err := handler(ctx, &mcp.CallToolRequest{}, AddDropRuleArgs{
 		Name: "test-rule",
 		Filters: []DropRuleFilter{
-			{Key: "service_name", Value: "test-service", Operator: "equals", Conjunction: "and"},
+			{Key: `attributes["service_name"]`, Value: "test-service", Operator: "equals", Conjunction: "and"},
 		},
 	})
 
@@ -55,24 +56,30 @@ func TestAddDropRuleHandlerContextCancellation(t *testing.T) {
 
 func TestAddDropRuleHandlerSendsCorrectPayload(t *testing.T) {
 	var capturedMethod string
+	var capturedPath string
+	var capturedQuery url.Values
 	var capturedBody map[string]interface{}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedMethod = r.Method
+		capturedPath = r.URL.Path
+		capturedQuery = r.URL.Query()
 		if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
 			http.Error(w, "bad body", http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]interface{}{"id": "rule-123"})
 	}))
 	defer server.Close()
 
-	handler := NewAddDropRuleHandler(server.Client(), testDropRuleConfig(server.URL))
+	cfg := testDropRuleConfig(server.URL)
+	handler := NewAddDropRuleHandler(server.Client(), cfg)
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AddDropRuleArgs{
 		Name: "drop-test-service",
 		Filters: []DropRuleFilter{
-			{Key: "service_name", Value: "test-service", Operator: "equals", Conjunction: "and"},
+			{Key: `attributes["service_name"]`, Value: "test-service", Operator: "equals", Conjunction: "and"},
 		},
 	})
 
@@ -82,14 +89,28 @@ func TestAddDropRuleHandlerSendsCorrectPayload(t *testing.T) {
 	if result == nil {
 		t.Fatal("expected result, got nil")
 	}
-	if capturedMethod != http.MethodPut {
-		t.Fatalf("expected PUT, got %s", capturedMethod)
+	if capturedMethod != http.MethodPost {
+		t.Fatalf("expected POST, got %s", capturedMethod)
+	}
+	if capturedPath != "/otel_settings/drop" {
+		t.Fatalf("expected path /otel_settings/drop, got %s", capturedPath)
+	}
+	if capturedQuery.Get("region") != cfg.Region {
+		t.Fatalf("expected region=%s, got %s", cfg.Region, capturedQuery.Get("region"))
+	}
+	if capturedQuery.Get("cluster_id") != cfg.ClusterID {
+		t.Fatalf("expected cluster_id=%s, got %s", cfg.ClusterID, capturedQuery.Get("cluster_id"))
 	}
 	if capturedBody["name"] != "drop-test-service" {
 		t.Fatalf("expected name=drop-test-service, got %v", capturedBody["name"])
 	}
-	if capturedBody["telemetry"] != TELEMETRY_LOGS {
-		t.Fatalf("expected telemetry=%s, got %v", TELEMETRY_LOGS, capturedBody["telemetry"])
+
+	properties, ok := capturedBody["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected properties object, got %T", capturedBody["properties"])
+	}
+	if properties["telemetry"] != TELEMETRY_LOGS {
+		t.Fatalf("expected telemetry=%s, got %v", TELEMETRY_LOGS, properties["telemetry"])
 	}
 }
 
@@ -108,7 +129,7 @@ func TestAddDropRuleHandlerValidation(t *testing.T) {
 		{
 			name: "missing rule name",
 			args: AddDropRuleArgs{
-				Filters: []DropRuleFilter{{Key: "service_name", Value: "svc"}},
+				Filters: []DropRuleFilter{{Key: `attributes["service_name"]`, Value: "svc"}},
 			},
 		},
 		{
@@ -123,7 +144,7 @@ func TestAddDropRuleHandlerValidation(t *testing.T) {
 			args: AddDropRuleArgs{
 				Name: "my-rule",
 				Filters: []DropRuleFilter{
-					{Key: "service_name", Value: "svc", Operator: "contains"},
+					{Key: `attributes["service_name"]`, Value: "svc", Operator: "contains"},
 				},
 			},
 		},
@@ -132,7 +153,7 @@ func TestAddDropRuleHandlerValidation(t *testing.T) {
 			args: AddDropRuleArgs{
 				Name: "my-rule",
 				Filters: []DropRuleFilter{
-					{Key: "service_name", Value: "svc", Conjunction: "or"},
+					{Key: `attributes["service_name"]`, Value: "svc", Conjunction: "or"},
 				},
 			},
 		},
@@ -147,7 +168,7 @@ func TestAddDropRuleHandlerValidation(t *testing.T) {
 			name: "missing filter value",
 			args: AddDropRuleArgs{
 				Name:    "my-rule",
-				Filters: []DropRuleFilter{{Key: "service_name"}},
+				Filters: []DropRuleFilter{{Key: `attributes["service_name"]`}},
 			},
 		},
 	}
@@ -159,6 +180,39 @@ func TestAddDropRuleHandlerValidation(t *testing.T) {
 				t.Fatal("expected validation error, got nil")
 			}
 		})
+	}
+}
+
+func TestAddDropRuleHandlerRequiresRegionAndCluster(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("server should not be called when config is incomplete")
+	}))
+	defer server.Close()
+
+	cfg := testDropRuleConfig(server.URL)
+	cfg.Region = ""
+	handler := NewAddDropRuleHandler(server.Client(), cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AddDropRuleArgs{
+		Name: "my-rule",
+		Filters: []DropRuleFilter{
+			{Key: `attributes["level"]`, Value: "debug"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error for missing region, got nil")
+	}
+
+	cfg = testDropRuleConfig(server.URL)
+	cfg.ClusterID = ""
+	handler = NewAddDropRuleHandler(server.Client(), cfg)
+	_, _, err = handler(context.Background(), &mcp.CallToolRequest{}, AddDropRuleArgs{
+		Name: "my-rule",
+		Filters: []DropRuleFilter{
+			{Key: `attributes["level"]`, Value: "debug"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error for missing cluster_id, got nil")
 	}
 }
 
