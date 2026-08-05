@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `add_drop_rule` now creates drop rules via `POST /otel_settings/drop` (with `region` and `cluster_id` query params) instead of the legacy `PUT /logs_settings/routing` endpoint, which the API now rejects with 405 (#TBD).
+- `add_drop_rule` now creates drop rules via `POST /otel_settings/drop` (with `region` and `cluster_id` query params) instead of the legacy `PUT /logs_settings/routing` endpoint, which the API now rejects with 405 (#201).
 
 ### Added
 

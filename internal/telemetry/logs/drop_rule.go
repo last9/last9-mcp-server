@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
@@ -20,7 +21,8 @@ import (
 // GetDropRulesArgs represents the input arguments for getting drop rules (no arguments needed)
 type GetDropRulesArgs struct{}
 
-// NewGetDropRulesHandler creates a handler for getting drop rules for logs
+// NewGetDropRulesHandler creates a handler for getting drop rules for logs.
+// Reads still use GET /logs_settings/routing (legacy read path kept by last9-api for backward compat).
 func NewGetDropRulesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetDropRulesArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetDropRulesArgs) (*mcp.CallToolResult, any, error) {
 		accessToken := cfg.TokenManager.GetAccessToken(ctx)
@@ -145,6 +147,9 @@ func validateAndConvertDropRuleFilters(args AddDropRuleArgs) ([]models.DropRuleF
 		}
 		if f.Value == "" {
 			return nil, errors.New("value must be provided")
+		}
+		if !strings.HasPrefix(f.Key, "attributes[") && !strings.HasPrefix(f.Key, "resource.attributes[") {
+			return nil, errors.New(`filter key must use attributes["..."] or resource.attributes["..."] format`)
 		}
 
 		filters = append(filters, models.DropRuleFilter{

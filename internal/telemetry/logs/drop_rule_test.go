@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -112,6 +113,56 @@ func TestAddDropRuleHandlerSendsCorrectPayload(t *testing.T) {
 	if properties["telemetry"] != TELEMETRY_LOGS {
 		t.Fatalf("expected telemetry=%s, got %v", TELEMETRY_LOGS, properties["telemetry"])
 	}
+
+	filters, ok := properties["filters"].([]interface{})
+	if !ok || len(filters) != 1 {
+		t.Fatalf("expected one filter, got %v", properties["filters"])
+	}
+	filter, ok := filters[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected filter object, got %T", filters[0])
+	}
+	if filter["key"] != `attributes["service_name"]` {
+		t.Fatalf("unexpected filter key: %v", filter["key"])
+	}
+	if filter["operator"] != "equals" {
+		t.Fatalf("unexpected filter operator: %v", filter["operator"])
+	}
+
+	action, ok := properties["action"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected action object, got %T", properties["action"])
+	}
+	if action["name"] != DROP_RULE_ACTION_NAME {
+		t.Fatalf("expected action name=%s, got %v", DROP_RULE_ACTION_NAME, action["name"])
+	}
+	if action["destination"] != "" {
+		t.Fatalf("expected empty destination, got %v", action["destination"])
+	}
+}
+
+func TestAddDropRuleHandlerAPIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}))
+	defer server.Close()
+
+	handler := NewAddDropRuleHandler(server.Client(), testDropRuleConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AddDropRuleArgs{
+		Name: "drop-test-service",
+		Filters: []DropRuleFilter{
+			{Key: `attributes["level"]`, Value: "debug"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected API error, got nil")
+	}
+	if !strings.Contains(err.Error(), "405") {
+		t.Fatalf("expected status in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "method not allowed") {
+		t.Fatalf("expected response body in error, got %v", err)
+	}
 }
 
 func TestAddDropRuleHandlerValidation(t *testing.T) {
@@ -171,6 +222,15 @@ func TestAddDropRuleHandlerValidation(t *testing.T) {
 				Filters: []DropRuleFilter{{Key: `attributes["service_name"]`}},
 			},
 		},
+		{
+			name: "invalid filter key format",
+			args: AddDropRuleArgs{
+				Name: "my-rule",
+				Filters: []DropRuleFilter{
+					{Key: "service_name", Value: "svc"},
+				},
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -201,6 +261,9 @@ func TestAddDropRuleHandlerRequiresRegionAndCluster(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing region, got nil")
 	}
+	if !strings.Contains(err.Error(), "region") {
+		t.Fatalf("expected region error, got %v", err)
+	}
 
 	cfg = testDropRuleConfig(server.URL)
 	cfg.ClusterID = ""
@@ -213,6 +276,9 @@ func TestAddDropRuleHandlerRequiresRegionAndCluster(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for missing cluster_id, got nil")
+	}
+	if !strings.Contains(err.Error(), "cluster_id") {
+		t.Fatalf("expected cluster_id error, got %v", err)
 	}
 }
 
