@@ -3,6 +3,8 @@ Returns exception type, service name, span name, occurrence count, first_seen, a
 
 IMPORTANT: trace_id is always null in this response. The data comes from aggregated metrics, not raw spans.
 
+**Profile first:** Call `get_service_profile` for this service before using this tool. Use `signal_shape` and `telemetry` for routing — see `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
+
 Investigation flow — follow this exactly:
 1. Call get_exceptions to identify which service/exception_type is problematic.
 2. Call get_service_traces with:
@@ -15,9 +17,8 @@ Investigation flow — follow this exactly:
 3. Decide whether exceptions are the ANSWER or a SYMPTOM before reporting:
    - Exceptions here are SPAN-DERIVED. For a well trace-instrumented service they are usually
      the answer — report findings and stop.
-   - For a LOG-HEAVY or severity-less service (check log presence:
-     `physical_index_service_count{destination="logs", service_name="<svc>"}` via
-     prometheus_instant_query), span exceptions often show downstream SYMPTOMS
+   - For a log-heavy or severity-less service (per `get_service_profile`
+     `signal_shape` / `telemetry`), span exceptions often show downstream SYMPTOMS
      (retry storms, connection-pool timeouts) while the ROOT CAUSE exists only in log
      bodies (e.g. an un-instrumented dependency failing). Do NOT stop — continue to logs.
    - When continuing to logs, AGGREGATE FIRST: `get_logs` with an aggregate/count
