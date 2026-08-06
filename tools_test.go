@@ -11,6 +11,7 @@ import (
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/toolsets"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
@@ -107,6 +108,41 @@ func TestPulseSchemasDoNotAcceptOrganizationScope(t *testing.T) {
 		if _, exists := properties["organization_id"]; exists {
 			t.Errorf("%s accepts caller-supplied organization_id", name)
 		}
+	}
+}
+
+func TestPulseDescriptionsComeOnlyFromMarkdown(t *testing.T) {
+	tools := registeredToolNames(t, testToolRegistrationConfig())
+	for name, description := range map[string]string{
+		"list_pulse_subscriptions": prompts.PulseSubscriptionsDescription,
+		"list_pulse_runs":          prompts.PulseReportsDescription,
+		"get_pulse_finding":        prompts.PulseReportsDescription,
+		"list_pulse_evidence":      prompts.PulseReportsDescription,
+	} {
+		if tools[name].Description != description {
+			t.Errorf("%s description contains non-markdown text", name)
+		}
+	}
+	allowed, err := toolsets.Parse("pulse_manage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := testToolRegistrationConfig()
+	config.AllowedTools = allowed
+	managed := registeredToolNames(t, config)
+	if managed["write_pulse_disposition"].Description != prompts.PulseDispositionsDescription {
+		t.Error("write_pulse_disposition description contains non-markdown text")
+	}
+}
+
+func TestGetPulseFindingSchemaNamesOccurrenceIdentifier(t *testing.T) {
+	tools := registeredToolNames(t, testToolRegistrationConfig())
+	schema := schemaAsMap(t, tools["get_pulse_finding"].InputSchema)
+	properties := schema["properties"].(map[string]any)
+	occurrence := properties["occurrence_id"].(map[string]any)
+	description, _ := occurrence["description"].(string)
+	if !strings.Contains(description, "'id' field") || !strings.Contains(description, "not 'finding_id'") {
+		t.Fatalf("occurrence_id description = %q", description)
 	}
 }
 

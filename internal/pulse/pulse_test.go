@@ -112,6 +112,57 @@ func TestCreateSubscriptionRequiresConfirmation(t *testing.T) {
 	}
 }
 
+func TestUpdateSubscriptionRequiresConfirmation(t *testing.T) {
+	requests := 0
+	client := pulseTestClient(countPulseRequests(&requests))
+	handler := NewUpdateSubscriptionHandler(client, pulseTestConfig())
+	args := UpdateSubscriptionArgs{SubscriptionID: "subscription-1", SubscriptionInput: validSubscriptionInput()}
+	_, _, err := handler(context.Background(), nil, args)
+	assertConfirmationRejected(t, requests, err)
+}
+
+func TestEnableSubscriptionRequiresConfirmation(t *testing.T) {
+	requests := 0
+	client := pulseTestClient(countPulseRequests(&requests))
+	handler := NewEnableSubscriptionHandler(client, pulseTestConfig())
+	_, _, err := handler(context.Background(), nil, SetSubscriptionEnabledArgs{SubscriptionID: "subscription-1"})
+	assertConfirmationRejected(t, requests, err)
+}
+
+func TestDisableSubscriptionRequiresConfirmation(t *testing.T) {
+	requests := 0
+	client := pulseTestClient(countPulseRequests(&requests))
+	handler := NewDisableSubscriptionHandler(client, pulseTestConfig())
+	_, _, err := handler(context.Background(), nil, SetSubscriptionEnabledArgs{SubscriptionID: "subscription-1"})
+	assertConfirmationRejected(t, requests, err)
+}
+
+func TestWriteDispositionRequiresConfirmation(t *testing.T) {
+	requests := 0
+	client := pulseTestClient(countPulseRequests(&requests))
+	handler := NewWriteDispositionHandler(client, pulseTestConfig())
+	args := WriteDispositionArgs{FindingID: "finding-1", Disposition: "expected"}
+	_, _, err := handler(context.Background(), nil, args)
+	assertConfirmationRejected(t, requests, err)
+}
+
+func countPulseRequests(requests *int) func(*http.Request) (int, string) {
+	return func(*http.Request) (int, string) {
+		(*requests)++
+		return http.StatusOK, `{}`
+	}
+}
+
+func assertConfirmationRejected(t *testing.T, requests int, err error) {
+	t.Helper()
+	if err == nil || !strings.Contains(err.Error(), "confirmed") {
+		t.Fatalf("error = %v, want confirmation error", err)
+	}
+	if requests != 0 {
+		t.Fatalf("upstream requests = %d, want 0", requests)
+	}
+}
+
 func TestRunIDCannotChangeTheOrganizationScopedPath(t *testing.T) {
 	requests := 0
 	client := pulseTestClient(func(*http.Request) (int, string) {
@@ -125,6 +176,49 @@ func TestRunIDCannotChangeTheOrganizationScopedPath(t *testing.T) {
 	}
 	if requests != 0 {
 		t.Fatalf("upstream requests = %d, want 0", requests)
+	}
+}
+
+func TestEscapedIDRejectsDotSegments(t *testing.T) {
+	for _, id := range []string{".", ".."} {
+		t.Run(id, func(t *testing.T) {
+			_, err := escapedID(id)
+			if err == nil || !strings.Contains(err.Error(), "path characters") {
+				t.Fatalf("escapedID(%q) error = %v, want invalid path error", id, err)
+			}
+		})
+	}
+}
+
+func TestListFindingsForwardsPathCursorAndLimit(t *testing.T) {
+	want := `{"findings":[],"next_cursor":"","truncated":false}`
+	client := pulseTestClient(func(r *http.Request) (int, string) {
+		if r.URL.Path != pulseBasePath+"/runs/run-1/findings" {
+			t.Errorf("request path = %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("limit") != "50" || r.URL.Query().Get("cursor") != "prior" {
+			t.Errorf("request query = %s", r.URL.RawQuery)
+		}
+		return http.StatusOK, want
+	})
+	result, _, err := NewListFindingsHandler(client, pulseTestConfig())(
+		context.Background(), nil, RunPageArgs{RunID: "run-1", Limit: 50, Cursor: "prior"})
+	if err != nil || resultText(t, result) != want {
+		t.Fatalf("result = %#v, error = %v", result, err)
+	}
+}
+
+func TestGetFindingUsesOccurrencePath(t *testing.T) {
+	client := pulseTestClient(func(r *http.Request) (int, string) {
+		if r.URL.Path != pulseBasePath+"/runs/run-1/findings/occurrence-1" {
+			t.Errorf("request path = %s", r.URL.Path)
+		}
+		return http.StatusOK, `{"finding":{"id":"occurrence-1"}}`
+	})
+	result, _, err := NewGetFindingHandler(client, pulseTestConfig())(
+		context.Background(), nil, GetFindingArgs{RunID: "run-1", OccurrenceID: "occurrence-1"})
+	if err != nil || !strings.Contains(resultText(t, result), "occurrence-1") {
+		t.Fatalf("result = %#v, error = %v", result, err)
 	}
 }
 

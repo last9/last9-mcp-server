@@ -31,7 +31,7 @@ type RunPageArgs struct {
 
 type GetFindingArgs struct {
 	RunID        string `json:"run_id" jsonschema:"(Required) Pulse run ID."`
-	OccurrenceID string `json:"occurrence_id" jsonschema:"(Required) Finding occurrence ID returned by list_pulse_findings."`
+	OccurrenceID string `json:"occurrence_id" jsonschema:"(Required) The 'id' field (not 'finding_id') of a list_pulse_findings item."`
 }
 
 func NewListRunsHandler(httpClient *http.Client, config models.Config) func(context.Context, *mcp.CallToolRequest, ListRunsArgs) (*mcp.CallToolResult, any, error) {

@@ -72,60 +72,277 @@
     "contract_version": "v1",
     "run_id": "run-fixture-v1",
     "correlation_id": "run-fixture-v1:1",
-    "outcome": "partial",
+    "outcome": "complete",
     "report": {
-      "id": "e61bfe99-c81d-4f1f-b023-d668e67729d4",
-      "outcome": "partial",
+      "id": "abbaebb7-343c-599f-b8f4-459763c5ebef",
+      "outcome": "complete",
       "summary": {
         "conclusion": "findings_detected",
-        "finding_count": 1,
-        "coverage_status": "partial"
+        "finding_count": 7,
+        "new_or_worsened_count": 7,
+        "classifications": {
+          "baseline_misalignment": 2,
+          "flapping": 2,
+          "possible_duplicate": 1,
+          "repeated_notifications": 2
+        },
+        "coverage_status": "complete",
+        "limitations": []
       },
-      "generated_at": "2026-08-05T12:01:00Z"
+      "generated_at": "2026-08-05T12:01:00+00:00"
     },
     "coverage": [
       {
-        "source": "alert_rule_state",
-        "status": "partial",
+        "source": "alert_config",
+        "status": "complete",
         "covered": {
-          "rules": 1
+          "tool": "get_alert_config",
+          "arguments": {}
+        },
+        "remaining": {},
+        "truncated": false,
+        "error_code": ""
+      },
+      {
+        "source": "alert_rule_state",
+        "status": "complete",
+        "covered": {
+          "tool": "get_alert_rule_state",
+          "arguments": {
+            "start_time": 1785931230,
+            "end_time": 1785931260,
+            "step": 1,
+            "label_filters": "environment=production,service=checkout-api"
+          }
+        },
+        "remaining": {},
+        "truncated": false,
+        "error_code": ""
+      },
+      {
+        "source": "service_baseline",
+        "status": "complete",
+        "covered": {
+          "partitions": [
+            {
+              "start_time_iso": "2026-08-05T12:00:30+00:00",
+              "end_time_iso": "2026-08-05T12:01:00+00:00",
+              "max_services": 10,
+              "max_operations": 10,
+              "service_name": "checkout-api",
+              "env": "production"
+            }
+          ]
         },
         "remaining": {
-          "reason": "source_truncated"
+          "partitions": []
         },
-        "truncated": true,
-        "error_code": "source_truncated"
+        "truncated": false,
+        "error_code": ""
       }
     ],
     "findings": [
       {
         "id": "",
         "finding_id": "",
-        "fingerprint": "86c582cdefebc686d9ec8e6af445b68da4df84ba463515501568b3354e420244",
+        "fingerprint": "354fa658fdbda5d38f495ad7db7147d2bccaf33fa952ebdc265edd450b51eaa6",
         "fingerprint_version": "v1",
         "identity_inputs": {
-          "rule_id": "rule-fixture-v1",
+          "rule_id": "rule-a",
           "category": "flapping",
           "dimension": "state_transitions"
         },
-        "rule_id": "rule-fixture-v1",
-        "rule_revision": "revision-fixture-v1",
+        "rule_id": "rule-a",
+        "rule_revision": "2026-08-04 07:00:00 UTC",
         "category": "flapping",
-        "severity": 1.5,
+        "severity": 1.25,
         "material_change": {
-          "worsened": false
+          "worsened": true,
+          "reason": "new_finding"
         },
         "evidence_summary": {
-          "transitions": 6,
-          "confidence": "medium"
+          "state_transitions": 5,
+          "threshold": 4,
+          "confidence": "high"
         },
-        "impact": "Frequent state transitions can distract responders.",
-        "recommendation": "Review persistence against the observed transitions.",
+        "impact": "Frequent state transitions can distract responders and hide sustained changes.",
+        "recommendation": "Review the evaluation window and hysteresis against the observed transitions.",
+        "recurrence_of_id": ""
+      },
+      {
+        "id": "",
+        "finding_id": "",
+        "fingerprint": "960d9b04bdd90d965bb32c88d87b30c886272be68460509badffea7c98422a02",
+        "fingerprint_version": "v1",
+        "identity_inputs": {
+          "rule_id": "rule-a",
+          "category": "possible_duplicate",
+          "dimension": "rule-a:rule-b"
+        },
+        "rule_id": "rule-a",
+        "rule_revision": "2026-08-04 07:00:00 UTC|2026-08-04 07:30:00 UTC",
+        "category": "possible_duplicate",
+        "severity": 1.25,
+        "material_change": {
+          "worsened": true,
+          "reason": "new_finding"
+        },
+        "evidence_summary": {
+          "candidate_rule_ids": [
+            "rule-a",
+            "rule-b"
+          ],
+          "firing_overlap": 1.0,
+          "threshold": 0.8,
+          "qualification": "Overlap is correlation evidence, not a shared root cause.",
+          "confidence": "high"
+        },
+        "impact": "Overlapping rules may notify responders about the same observed interval.",
+        "recommendation": "Compare both rules and consolidate or group only after operator validation.",
+        "recurrence_of_id": ""
+      },
+      {
+        "id": "",
+        "finding_id": "",
+        "fingerprint": "9c84dd4fa171e820d074ad8c97100e1101a968cdcae68b64a86253b66b2b79bf",
+        "fingerprint_version": "v1",
+        "identity_inputs": {
+          "rule_id": "rule-b",
+          "category": "flapping",
+          "dimension": "state_transitions"
+        },
+        "rule_id": "rule-b",
+        "rule_revision": "2026-08-04 07:30:00 UTC",
+        "category": "flapping",
+        "severity": 1.25,
+        "material_change": {
+          "worsened": true,
+          "reason": "new_finding"
+        },
+        "evidence_summary": {
+          "state_transitions": 5,
+          "threshold": 4,
+          "confidence": "high"
+        },
+        "impact": "Frequent state transitions can distract responders and hide sustained changes.",
+        "recommendation": "Review the evaluation window and hysteresis against the observed transitions.",
+        "recurrence_of_id": ""
+      },
+      {
+        "id": "",
+        "finding_id": "",
+        "fingerprint": "384bb4026b6efab5bba2230060132d07a3d1387841f662019214324a989ed9c4",
+        "fingerprint_version": "v1",
+        "identity_inputs": {
+          "rule_id": "rule-a",
+          "category": "repeated_notifications",
+          "dimension": "firing_episodes"
+        },
+        "rule_id": "rule-a",
+        "rule_revision": "2026-08-04 07:00:00 UTC",
+        "category": "repeated_notifications",
+        "severity": 1.0,
+        "material_change": {
+          "worsened": true,
+          "reason": "new_finding"
+        },
+        "evidence_summary": {
+          "firing_episodes": 3,
+          "threshold": 3,
+          "qualification": "Firing episodes are a notification-noise proxy; delivery events were not read.",
+          "confidence": "high"
+        },
+        "impact": "Repeated firing episodes can increase notification load.",
+        "recommendation": "Review grouping, routing, and persistence settings against the observed episodes.",
+        "recurrence_of_id": ""
+      },
+      {
+        "id": "",
+        "finding_id": "",
+        "fingerprint": "5fe8f33cadad01783a874820868c03d29213b9b513461a3984407a1df6ebe50f",
+        "fingerprint_version": "v1",
+        "identity_inputs": {
+          "rule_id": "rule-b",
+          "category": "repeated_notifications",
+          "dimension": "firing_episodes"
+        },
+        "rule_id": "rule-b",
+        "rule_revision": "2026-08-04 07:30:00 UTC",
+        "category": "repeated_notifications",
+        "severity": 1.0,
+        "material_change": {
+          "worsened": true,
+          "reason": "new_finding"
+        },
+        "evidence_summary": {
+          "firing_episodes": 3,
+          "threshold": 3,
+          "qualification": "Firing episodes are a notification-noise proxy; delivery events were not read.",
+          "confidence": "high"
+        },
+        "impact": "Repeated firing episodes can increase notification load.",
+        "recommendation": "Review grouping, routing, and persistence settings against the observed episodes.",
+        "recurrence_of_id": ""
+      },
+      {
+        "id": "",
+        "finding_id": "",
+        "fingerprint": "9e1830778286558a515b18384441311f06789bf1a76a6f61024de79413b28295",
+        "fingerprint_version": "v1",
+        "identity_inputs": {
+          "rule_id": "rule-b",
+          "category": "baseline_misalignment",
+          "dimension": "stable_service_baseline"
+        },
+        "rule_id": "rule-b",
+        "rule_revision": "2026-08-04 07:30:00 UTC",
+        "category": "baseline_misalignment",
+        "severity": 1.0,
+        "material_change": {
+          "worsened": true,
+          "reason": "new_finding"
+        },
+        "evidence_summary": {
+          "firing_episodes": 3,
+          "service_baseline": "stable",
+          "qualification": "Temporal mismatch is supporting evidence, not causality.",
+          "confidence": "high"
+        },
+        "impact": "Alert activity without a matching service shift may reduce actionability.",
+        "recommendation": "Review threshold and signal selection; keep the rule unchanged until validated.",
+        "recurrence_of_id": ""
+      },
+      {
+        "id": "",
+        "finding_id": "",
+        "fingerprint": "b0f9a59c39f3efa2a0f9f82950cd2b47f6e0c2731934767c9760e46307be304c",
+        "fingerprint_version": "v1",
+        "identity_inputs": {
+          "rule_id": "rule-a",
+          "category": "baseline_misalignment",
+          "dimension": "stable_service_baseline"
+        },
+        "rule_id": "rule-a",
+        "rule_revision": "2026-08-04 07:00:00 UTC",
+        "category": "baseline_misalignment",
+        "severity": 1.0,
+        "material_change": {
+          "worsened": true,
+          "reason": "new_finding"
+        },
+        "evidence_summary": {
+          "firing_episodes": 3,
+          "service_baseline": "stable",
+          "qualification": "Temporal mismatch is supporting evidence, not causality.",
+          "confidence": "high"
+        },
+        "impact": "Alert activity without a matching service shift may reduce actionability.",
+        "recommendation": "Review threshold and signal selection; keep the rule unchanged until validated.",
         "recurrence_of_id": ""
       }
     ],
     "source_errors": [],
-    "truncated": true
+    "truncated": false
   },
   "run": {
     "id": "run-fixture-v1",
@@ -281,4 +498,3 @@
     "created_at": "2026-08-05T12:03:00Z"
   }
 }
-

@@ -142,7 +142,7 @@ func escapedID(value string) (string, error) {
 	if strings.TrimSpace(value) == "" {
 		return "", fmt.Errorf("ID is required")
 	}
-	if strings.ContainsAny(value, "/?#") {
+	if strings.ContainsAny(value, "/?#") || value == "." || value == ".." {
 		return "", fmt.Errorf("ID contains invalid path characters")
 	}
 	return url.PathEscape(value), nil

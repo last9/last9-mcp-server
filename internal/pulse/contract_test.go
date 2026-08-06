@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-const contractFixtureSHA256 = "b503ca95c89e79d75699a4bc7e4610228eeefe2d57914a7d79abd91878278b68"
+const contractFixtureSHA256 = "25a97da2661d9c1700b194e84dbc12d22379ef7b8a060d7c030d1d7a8de8cf54"
 
 //go:embed testdata/alert_hygiene_pulse_contract_v1.json
 var contractFixtureJSON []byte
@@ -21,6 +21,8 @@ type contractFixture struct {
 	FixturePurpose    string          `json:"fixture_purpose"`
 	Subscription      json.RawMessage `json:"subscription"`
 	ReportRead        json.RawMessage `json:"report_read"`
+	FindingsPage      json.RawMessage `json:"findings_page"`
+	FindingDetail     json.RawMessage `json:"finding_detail"`
 	EvidencePage      json.RawMessage `json:"evidence_page"`
 	DispositionWrite  json.RawMessage `json:"disposition_write"`
 	DispositionRecord json.RawMessage `json:"disposition_record"`
@@ -42,8 +44,21 @@ func TestCrossSurfaceFixtureReadsCanonicalRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	findings, _, err := NewListFindingsHandler(client, config)(
+		context.Background(), nil, RunPageArgs{RunID: "run-fixture-v1", Limit: 25},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, _, err := NewGetFindingHandler(client, config)(context.Background(), nil,
+		GetFindingArgs{RunID: "run-fixture-v1", OccurrenceID: "occurrence-fixture-v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	assertJSONEqual(t, resultText(t, subscription), fixture.Subscription)
 	assertJSONEqual(t, resultText(t, report), fixture.ReportRead)
+	assertJSONEqual(t, resultText(t, findings), fixture.FindingsPage)
+	assertJSONEqual(t, resultText(t, detail), fixture.FindingDetail)
 	if string(fixture.EvidencePage) == "" || jsonContainsKey(fixture.EvidencePage, "payload") {
 		t.Fatal("safe evidence fixture is empty or exposes raw payload")
 	}
@@ -97,6 +112,13 @@ func contractClient(t *testing.T, fixture contractFixture, captured *map[string]
 			return http.StatusOK, string(fixture.Subscription)
 		case pulseBasePath + "/runs/run-fixture-v1/report":
 			return http.StatusOK, string(fixture.ReportRead)
+		case pulseBasePath + "/runs/run-fixture-v1/findings":
+			if request.URL.Query().Get("limit") != "25" {
+				t.Fatalf("findings query = %s", request.URL.RawQuery)
+			}
+			return http.StatusOK, string(fixture.FindingsPage)
+		case pulseBasePath + "/runs/run-fixture-v1/findings/occurrence-fixture-v1":
+			return http.StatusOK, string(fixture.FindingDetail)
 		case pulseBasePath + "/findings/finding-fixture-v1/disposition":
 			if captured != nil {
 				if err := json.NewDecoder(request.Body).Decode(captured); err != nil {
