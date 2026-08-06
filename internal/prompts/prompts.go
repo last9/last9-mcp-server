@@ -131,6 +131,15 @@ var GetDashboardSnapshotDescription string
 //go:embed descriptions/delete_dashboard_snapshot.md
 var DeleteDashboardSnapshotDescription string
 
+//go:embed descriptions/pulse_subscriptions.md
+var PulseSubscriptionsDescription string
+
+//go:embed descriptions/pulse_reports.md
+var PulseReportsDescription string
+
+//go:embed descriptions/pulse_dispositions.md
+var PulseDispositionsDescription string
+
 //go:embed descriptions/get_logs_base.md
 var GetLogsDescription string
 

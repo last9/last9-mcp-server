@@ -64,6 +64,23 @@ var named = map[string][]string{
 		"get_dashboard_snapshot",
 		"delete_dashboard_snapshot",
 	},
+	"pulse_read": {
+		"list_pulse_subscriptions",
+		"get_pulse_subscription",
+		"list_pulse_runs",
+		"get_pulse_run",
+		"get_pulse_report",
+		"list_pulse_findings",
+		"get_pulse_finding",
+		"list_pulse_evidence",
+	},
+	"pulse_manage": {
+		"create_pulse_subscription",
+		"update_pulse_subscription",
+		"enable_pulse_subscription",
+		"disable_pulse_subscription",
+		"write_pulse_disposition",
+	},
 }
 
 // discovery tools included in the investigate composite (R9a).
@@ -91,12 +108,16 @@ func (s Set) Allows(toolName string) bool {
 	if s == nil {
 		return true
 	}
+	if _, all := s[allToolsMarker]; all {
+		return true
+	}
 	_, ok := s[toolName]
 	return ok
 }
 
 // Parse expands a comma-separated toolset spec into allowed tool names.
-// Empty / whitespace-only → nil (all tools). "all" supersedes other tokens.
+// Empty / whitespace-only → nil (all ordinary tools). "all" supersedes other
+// tokens except pulse_manage, which must always be explicit.
 // Unknown names return an error listing ValidNames.
 func Parse(spec string) (Set, error) {
 	spec = strings.TrimSpace(spec)
@@ -129,10 +150,14 @@ func Parse(spec string) (Set, error) {
 		}
 	}
 
-	for _, t := range tokens {
-		if t == "all" {
-			return nil, nil
-		}
+	if containsToken(tokens, "all") && !containsToken(tokens, "pulse_manage") {
+		return nil, nil
+	}
+	if containsToken(tokens, "all") {
+		out := make(Set)
+		addAllMarker(out)
+		addManageGrant(out)
+		return out, nil
 	}
 
 	out := make(Set)
@@ -155,9 +180,21 @@ func Parse(spec string) (Set, error) {
 			for _, tool := range tools {
 				out[tool] = struct{}{}
 			}
+			if t == "pulse_manage" {
+				addManageGrant(out)
+			}
 		}
 	}
 	return out, nil
+}
+
+func containsToken(tokens []string, target string) bool {
+	for _, token := range tokens {
+		if token == target {
+			return true
+		}
+	}
+	return false
 }
 
 // SpecFromEnv returns the toolsets spec from environment variables.
