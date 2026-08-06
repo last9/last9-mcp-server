@@ -10,18 +10,9 @@ type DropRuleFilter struct {
 
 // DropRuleAction represents the action configuration for a drop rule.
 type DropRuleAction struct {
-	Name        string                 `json:"name"`
-	Destination string                 `json:"destination"`
-	Properties  map[string]interface{} `json:"properties"`
-}
-
-// DropRule is the flat shape returned by legacy GET /logs_settings/routing.
-// Do not use for writes; use OTelDropSettingCreateRequest with POST /otel_settings/drop.
-type DropRule struct {
-	Name      string           `json:"name"`
-	Telemetry string           `json:"telemetry"`
-	Filters   []DropRuleFilter `json:"filters"`
-	Action    DropRuleAction   `json:"action"`
+	Name        string            `json:"name"`
+	Destination string            `json:"destination"`
+	Properties  map[string]string `json:"properties"`
 }
 
 // OTelDropSettingProperties is the nested properties payload for POST /otel_settings/drop.

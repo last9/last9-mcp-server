@@ -550,7 +550,7 @@ No parameters. Lists drop rules via `GET /otel_settings/drop?region=...`.
 
 - `name` (string, required)
 - `filters` (array, required): Each filter: `key`, `value`, `operator` (`equals`/`not_equals`), `conjunction` (`and`).
-- Filter keys must use `attributes["key_name"]` or `resource.attributes["key_name"]` (required by last9-api).
+- Filter keys must use `attributes["key_name"]` or `resource.attributes["key_name"]` (required by the Last9 API).
 - Creates the rule via `POST /otel_settings/drop?region=...&cluster_id=...`.
 
 ### get_traces

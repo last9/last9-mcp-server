@@ -465,11 +465,9 @@ func PopulateAPICfg(cfg *models.Config) error {
 }
 
 func validatePopulatedDatasourceCfg(cfg *models.Config) error {
-	if cfg.PrometheusReadURL == "" || cfg.PrometheusUsername == "" || cfg.PrometheusPassword == "" || cfg.Region == "" {
+	if cfg.PrometheusReadURL == "" || cfg.PrometheusUsername == "" ||
+		cfg.PrometheusPassword == "" || cfg.Region == "" || cfg.ClusterID == "" {
 		return errors.New("selected datasource missing required properties")
-	}
-	if cfg.ClusterID == "" {
-		return errors.New("selected datasource missing cluster_id")
 	}
 	return nil
 }

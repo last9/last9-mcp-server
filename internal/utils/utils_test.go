@@ -408,7 +408,7 @@ func TestValidatePopulatedDatasourceCfg(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing cluster_id error")
 	}
-	if !strings.Contains(err.Error(), "cluster_id") {
+	if !strings.Contains(err.Error(), "missing required properties") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

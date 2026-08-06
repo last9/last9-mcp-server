@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
@@ -105,10 +104,6 @@ func convertDropRuleFilters(filters []DropRuleFilter) ([]models.DropRuleFilter, 
 		if f.Value == "" {
 			return nil, errors.New("value must be provided")
 		}
-		if !strings.HasPrefix(f.Key, "attributes[") && !strings.HasPrefix(f.Key, "resource.attributes[") {
-			return nil, errors.New(`filter key must use attributes["..."] or resource.attributes["..."] format`)
-		}
-
 		converted = append(converted, models.DropRuleFilter{
 			Key:         f.Key,
 			Value:       f.Value,
@@ -128,13 +123,17 @@ func readDropRuleAPIResponse(resp *http.Response) ([]byte, error) {
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, fmt.Errorf("drop rule API request failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
+	// json.Valid rejects an empty body, so a 201/204 would read as a failure.
+	if len(bytes.TrimSpace(respBody)) == 0 {
+		return []byte("{}"), nil
+	}
 	if !json.Valid(respBody) {
-		return nil, fmt.Errorf("drop rule API returned invalid JSON")
+		return nil, errors.New("drop rule API returned invalid JSON")
 	}
 	return respBody, nil
 }
 
-func dropRuleToolResult(cfg models.Config, responseBody []byte) (*mcp.CallToolResult, error) {
+func dropRuleToolResult(cfg models.Config, responseBody []byte) *mcp.CallToolResult {
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	dashboardURL := dlBuilder.BuildDropRulesLink()
 
@@ -145,7 +144,7 @@ func dropRuleToolResult(cfg models.Config, responseBody []byte) (*mcp.CallToolRe
 				Text: string(responseBody),
 			},
 		},
-	}, nil
+	}
 }
 
 // NewGetDropRulesHandler creates a handler for getting drop rules for logs.
@@ -176,11 +175,7 @@ func NewGetDropRulesHandler(client *http.Client, cfg models.Config) func(context
 			return nil, nil, fmt.Errorf("get_drop_rules: %w", err)
 		}
 
-		result, err := dropRuleToolResult(cfg, respBody)
-		if err != nil {
-			return nil, nil, fmt.Errorf("get_drop_rules: %w", err)
-		}
-		return result, nil, nil
+		return dropRuleToolResult(cfg, respBody), nil, nil
 	}
 }
 
@@ -211,7 +206,7 @@ func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(context.
 				Action: models.DropRuleAction{
 					Name:        DROP_RULE_ACTION_NAME,
 					Destination: "",
-					Properties:  make(map[string]interface{}),
+					Properties:  make(map[string]string),
 				},
 			},
 		}
@@ -240,10 +235,6 @@ func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(context.
 			return nil, nil, fmt.Errorf("add_drop_rule: %w", err)
 		}
 
-		result, err := dropRuleToolResult(cfg, respBody)
-		if err != nil {
-			return nil, nil, fmt.Errorf("add_drop_rule: %w", err)
-		}
-		return result, nil, nil
+		return dropRuleToolResult(cfg, respBody), nil, nil
 	}
 }

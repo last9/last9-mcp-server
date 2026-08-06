@@ -28,8 +28,7 @@ const (
 	// Organization and configuration endpoints
 	EndpointDatasources          = "/datasources"
 	EndpointOAuthAccessToken     = "/api/v4/oauth/access_token"
-	EndpointLogsSettingsRouting = "/logs_settings/routing"
-	EndpointOTelSettingsDrop    = "/otel_settings/drop"
+	EndpointOTelSettingsDrop     = "/otel_settings/drop"
 	EndpointAlertRules           = "/alert-rules"
 	EndpointAlertsMonitor        = "/alerts/monitor"
 	EndpointEntitiesList         = "/entities/list"

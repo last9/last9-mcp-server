@@ -68,11 +68,37 @@ func TestConvertDropRuleFilters(t *testing.T) {
 		t.Fatalf("expected default conjunction and, got %q", filters[0].Conjunction)
 	}
 
-	_, err = convertDropRuleFilters([]DropRuleFilter{
-		{Key: "service_name", Value: "checkout"},
-	})
-	if err == nil {
-		t.Fatal("expected invalid key format error")
+	// Key format is the API's contract; only non-empty is checked here.
+	if _, err := convertDropRuleFilters([]DropRuleFilter{
+		{Key: "", Value: "checkout"},
+	}); err == nil {
+		t.Fatal("expected missing key error")
+	}
+}
+
+func TestReadDropRuleAPIResponseEmptyBodyOnSuccess(t *testing.T) {
+	for _, status := range []int{http.StatusCreated, http.StatusNoContent, http.StatusOK} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+		}))
+
+		handler := NewAddDropRuleHandler(server.Client(), testDropRuleConfig(server.URL))
+		result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AddDropRuleArgs{
+			Name:    "drop-test-service",
+			Filters: []DropRuleFilter{{Key: `attributes["level"]`, Value: "debug"}},
+		})
+		server.Close()
+
+		if err != nil {
+			t.Fatalf("status %d: expected empty 2xx body to be a success, got %v", status, err)
+		}
+		text, ok := result.Content[0].(*mcp.TextContent)
+		if !ok {
+			t.Fatalf("status %d: expected text content, got %T", status, result.Content[0])
+		}
+		if text.Text != "{}" {
+			t.Fatalf("status %d: expected {}, got %q", status, text.Text)
+		}
 	}
 }
 
@@ -265,15 +291,6 @@ func TestAddDropRuleHandlerValidation(t *testing.T) {
 			args: AddDropRuleArgs{
 				Name:    "my-rule",
 				Filters: []DropRuleFilter{{Key: `attributes["service_name"]`}},
-			},
-		},
-		{
-			name: "invalid filter key format",
-			args: AddDropRuleArgs{
-				Name: "my-rule",
-				Filters: []DropRuleFilter{
-					{Key: "service_name", Value: "svc"},
-				},
 			},
 		},
 	}
