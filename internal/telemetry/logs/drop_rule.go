@@ -115,7 +115,9 @@ func convertDropRuleFilters(filters []DropRuleFilter) ([]models.DropRuleFilter, 
 	return converted, nil
 }
 
-func readDropRuleAPIResponse(resp *http.Response) ([]byte, error) {
+// readDropRuleAPIResponse returns emptyBody when the API answers 2xx with no
+// content, so each caller keeps the JSON shape its populated responses have.
+func readDropRuleAPIResponse(resp *http.Response, emptyBody string) ([]byte, error) {
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
@@ -125,7 +127,7 @@ func readDropRuleAPIResponse(resp *http.Response) ([]byte, error) {
 	}
 	// json.Valid rejects an empty body, so a 201/204 would read as a failure.
 	if len(bytes.TrimSpace(respBody)) == 0 {
-		return []byte("{}"), nil
+		return []byte(emptyBody), nil
 	}
 	if !json.Valid(respBody) {
 		return nil, errors.New("drop rule API returned invalid JSON")
@@ -170,7 +172,7 @@ func NewGetDropRulesHandler(client *http.Client, cfg models.Config) func(context
 		}
 		defer resp.Body.Close()
 
-		respBody, err := readDropRuleAPIResponse(resp)
+		respBody, err := readDropRuleAPIResponse(resp, "[]")
 		if err != nil {
 			return nil, nil, fmt.Errorf("get_drop_rules: %w", err)
 		}
@@ -230,7 +232,7 @@ func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(context.
 		}
 		defer resp.Body.Close()
 
-		respBody, err := readDropRuleAPIResponse(resp)
+		respBody, err := readDropRuleAPIResponse(resp, "{}")
 		if err != nil {
 			return nil, nil, fmt.Errorf("add_drop_rule: %w", err)
 		}

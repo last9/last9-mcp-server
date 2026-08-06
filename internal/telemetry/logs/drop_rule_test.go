@@ -77,27 +77,45 @@ func TestConvertDropRuleFilters(t *testing.T) {
 }
 
 func TestReadDropRuleAPIResponseEmptyBodyOnSuccess(t *testing.T) {
-	for _, status := range []int{http.StatusCreated, http.StatusNoContent, http.StatusOK} {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(status)
-		}))
+	// Each handler keeps the JSON shape its populated responses have: a list for
+	// get_drop_rules, an object for add_drop_rule.
+	call := map[string]func(*testing.T, *httptest.Server) *mcp.CallToolResult{
+		"[]": func(t *testing.T, server *httptest.Server) *mcp.CallToolResult {
+			handler := NewGetDropRulesHandler(server.Client(), testDropRuleConfig(server.URL))
+			result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDropRulesArgs{})
+			if err != nil {
+				t.Fatalf("get_drop_rules: expected empty 2xx body to be a success, got %v", err)
+			}
+			return result
+		},
+		"{}": func(t *testing.T, server *httptest.Server) *mcp.CallToolResult {
+			handler := NewAddDropRuleHandler(server.Client(), testDropRuleConfig(server.URL))
+			result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AddDropRuleArgs{
+				Name:    "drop-test-service",
+				Filters: []DropRuleFilter{{Key: `attributes["level"]`, Value: "debug"}},
+			})
+			if err != nil {
+				t.Fatalf("add_drop_rule: expected empty 2xx body to be a success, got %v", err)
+			}
+			return result
+		},
+	}
 
-		handler := NewAddDropRuleHandler(server.Client(), testDropRuleConfig(server.URL))
-		result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AddDropRuleArgs{
-			Name:    "drop-test-service",
-			Filters: []DropRuleFilter{{Key: `attributes["level"]`, Value: "debug"}},
-		})
-		server.Close()
+	for want, invoke := range call {
+		for _, status := range []int{http.StatusCreated, http.StatusNoContent, http.StatusOK} {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+			}))
+			result := invoke(t, server)
+			server.Close()
 
-		if err != nil {
-			t.Fatalf("status %d: expected empty 2xx body to be a success, got %v", status, err)
-		}
-		text, ok := result.Content[0].(*mcp.TextContent)
-		if !ok {
-			t.Fatalf("status %d: expected text content, got %T", status, result.Content[0])
-		}
-		if text.Text != "{}" {
-			t.Fatalf("status %d: expected {}, got %q", status, text.Text)
+			text, ok := result.Content[0].(*mcp.TextContent)
+			if !ok {
+				t.Fatalf("status %d: expected text content, got %T", status, result.Content[0])
+			}
+			if text.Text != want {
+				t.Fatalf("status %d: expected %s, got %q", status, want, text.Text)
+			}
 		}
 	}
 }
