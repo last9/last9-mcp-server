@@ -199,14 +199,14 @@
       {
         "id": "",
         "finding_id": "",
-        "fingerprint": "c0d3263bcdb0511909a73b82cb6fa32de04921841089f1a14e827be039e643db",
+        "fingerprint": "ce57813d30738c7edf51e680747e35fb3efbc3a99a61fc73b01e6bc89f78d83e",
         "fingerprint_version": "v1",
         "identity_inputs": {
-          "rule_id": "rule-a:rule-b",
+          "rule_id": "[\"rule-a\",\"rule-b\"]",
           "category": "possible_duplicate",
-          "dimension": "rule-a:rule-b"
+          "dimension": "[\"rule-a\",\"rule-b\"]"
         },
-        "rule_id": "rule-a:rule-b",
+        "rule_id": "[\"rule-a\",\"rule-b\"]",
         "rule_revision": "2026-08-04 07:00:00 UTC|2026-08-04 07:30:00 UTC",
         "category": "possible_duplicate",
         "severity": 1.25,
