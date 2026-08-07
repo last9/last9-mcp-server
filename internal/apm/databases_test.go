@@ -37,20 +37,40 @@ func TestGetDatabasesHandler(t *testing.T) {
 	var requestCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount.Add(1)
-		w.WriteHeader(http.StatusOK)
-
-		// Return different results depending on the query
-		response := []map[string]any{
-			{
-				"metric": map[string]string{"db_system": "postgresql", "net_peer_name": "db-primary.internal"},
-				"value":  []any{1700000000, "150.5"},
-			},
-			{
-				"metric": map[string]string{"db_system": "redis", "net_peer_name": "redis-cache.internal"},
-				"value":  []any{1700000000, "2500.0"},
-			},
+		if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/databases/discover") {
+			http.NotFound(w, r)
+			return
 		}
-		json.NewEncoder(w).Encode(response)
+		if r.Header.Get("region") != "ap-south-1" {
+			t.Errorf("expected region header, got %q", r.Header.Get("region"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]any{
+			"databases": []map[string]any{
+				{
+					"id":              "postgresql|db-primary.internal|traces",
+					"db_system":       "postgresql",
+					"host":            "db-primary.internal",
+					"throughput":      150.5,
+					"p95_latency_ms":  12.3,
+					"error_rate":      1.2,
+					"service_count":   4,
+					"metrics_only":    false,
+					"capabilities":    []string{"traces", "queries", "services", "logs", "infrastructure"},
+				},
+				{
+					"id":             "redis|redis-cache.internal|traces",
+					"db_system":      "redis",
+					"host":           "redis-cache.internal",
+					"throughput":     2500.0,
+					"p95_latency_ms": 3.1,
+					"error_rate":     0.0,
+					"service_count":  2,
+					"metrics_only":   false,
+				},
+			},
+		})
 	}))
 	defer server.Close()
 
@@ -71,16 +91,15 @@ func TestGetDatabasesHandler(t *testing.T) {
 	}
 
 	count, ok := response["count"].(float64)
-	if !ok || count == 0 {
-		t.Fatalf("expected databases in response, got count=%v", response["count"])
+	if !ok || count != 2 {
+		t.Fatalf("expected 2 databases in response, got count=%v", response["count"])
 	}
 
 	databases, ok := response["databases"].([]any)
-	if !ok || len(databases) == 0 {
+	if !ok || len(databases) != 2 {
 		t.Fatal("expected databases array in response")
 	}
 
-	// Verify first database has expected fields
 	db := databases[0].(map[string]any)
 	if db["db_system"] == nil || db["db_system"] == "" {
 		t.Error("expected db_system field")
@@ -92,17 +111,16 @@ func TestGetDatabasesHandler(t *testing.T) {
 		t.Error("expected throughput_rpm field")
 	}
 
-	// Should have made at least 4 PromQL requests (throughput, latency, error_count, total_count + service_count)
-	if rc := requestCount.Load(); rc < 4 {
-		t.Errorf("expected at least 4 PromQL requests, got %d", rc)
+	if rc := requestCount.Load(); rc != 1 {
+		t.Errorf("expected 1 discover API request, got %d", rc)
 	}
 }
 
 func TestGetDatabasesHandler_NoDatabases(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		// Return empty series
-		json.NewEncoder(w).Encode([]map[string]any{})
+		json.NewEncoder(w).Encode(map[string]any{"databases": []any{}})
 	}))
 	defer server.Close()
 
@@ -126,32 +144,14 @@ func TestGetDatabasesHandler_NoDatabases(t *testing.T) {
 var latencyUnitMultiplierRE = regexp.MustCompile(`\*\s*1000\b`)
 
 // TestDatabaseLatencyQueries_NoUnitMultiplier is a regression test for a unit
-// bug: the latency PromQL queries multiplied trace_client_duration by 1000, but
-// that metric is already in milliseconds (confirmed against apm.go's identical
-// trace_client_duration quantile queries, which apply no multiplier). The bug
-// inflated p95_latency_ms / avg_latency_ms by 1000x on the real backend (e.g. a
-// real 30s redis block showed as 30,010,484ms instead of ~30,010ms).
-//
-// The multiplication happens in the PromQL expression evaluated by the metrics
-// backend, not in Go arithmetic — a mock HTTP server can't evaluate PromQL, so
-// the only way to catch this is asserting on the query text sent. The bug lived
-// in 3 queries across both DB handlers, so both are covered here.
+// bug in get_database_queries: the latency PromQL queries multiplied
+// trace_client_duration by 1000, but that metric is already in milliseconds.
 func TestDatabaseLatencyQueries_NoUnitMultiplier(t *testing.T) {
 	now := time.Now().UTC()
 	tests := []struct {
 		name string
 		run  func(client *http.Client, cfg models.Config) error
 	}{
-		{
-			name: "get_databases",
-			run: func(client *http.Client, cfg models.Config) error {
-				_, _, err := NewGetDatabasesHandler(client, cfg)(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
-					StartTimeISO: now.Add(-60 * time.Minute).Format(time.RFC3339),
-					EndTimeISO:   now.Format(time.RFC3339),
-				})
-				return err
-			},
-		},
 		{
 			name: "get_database_queries",
 			run: func(client *http.Client, cfg models.Config) error {
@@ -517,8 +517,13 @@ func TestGetDatabasesHandler_Integration(t *testing.T) {
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
 		LookbackMinutes: 60,
 	})
-	if utils.CheckAPIError(t, err) {
-		return
+	if err != nil {
+		if strings.Contains(err.Error(), "404") {
+			t.Skip("databases/discover API not yet available on this backend")
+		}
+		if utils.CheckAPIError(t, err) {
+			return
+		}
 	}
 
 	text := utils.GetTextContent(t, result)
@@ -549,8 +554,13 @@ func TestGetDatabaseQueriesHandler_Integration(t *testing.T) {
 	dbResult, _, err := dbHandler(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
 		LookbackMinutes: 60,
 	})
-	if utils.CheckAPIError(t, err) {
-		return
+	if err != nil {
+		if strings.Contains(err.Error(), "404") {
+			t.Skip("databases/discover API not yet available on this backend")
+		}
+		if utils.CheckAPIError(t, err) {
+			return
+		}
 	}
 
 	dbText := utils.GetTextContent(t, dbResult)

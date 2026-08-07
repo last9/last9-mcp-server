@@ -44,6 +44,9 @@ const (
 	EndpointDashboardSnapshots    = "/dashboards/snapshots"
 	EndpointDashboardSnapshotByID = "/dashboards/snapshots/%s"
 
+	// Database discovery (v4)
+	EndpointDatabasesDiscover = "/databases/discover"
+
 	// DefaultHTTPTimeout is the fixed timeout used for outbound API calls and HTTP server read/write operations.
 	DefaultHTTPTimeout = 3 * time.Minute
 
@@ -57,6 +60,7 @@ const (
 	HeaderAccept          = "Accept"
 	HeaderContentType     = "Content-Type"
 	HeaderXLast9APIToken  = "X-LAST9-API-TOKEN"
+	HeaderRegion          = "region"
 	HeaderUserAgent       = "User-Agent"
 	HeaderContentTypeJSON = "application/json"
 	HeaderAcceptJSON      = "application/json"

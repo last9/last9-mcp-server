@@ -1,6 +1,7 @@
 package apm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
@@ -35,6 +37,48 @@ type DatabaseSummary struct {
 	P95Latency   float64 `json:"p95_latency_ms"`
 	ErrorRate    float64 `json:"error_rate_pct"`
 	ServiceCount int     `json:"service_count"`
+	MetricsOnly  bool    `json:"metrics_only,omitempty"`
+	ID           string  `json:"id,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
+}
+
+type discoverDatabasesRequest struct {
+	ClusterID string `json:"cluster_id"`
+	TimeRange struct {
+		From int64 `json:"from"`
+		To   int64 `json:"to"`
+	} `json:"time_range"`
+	Filters []discoverFilter `json:"filters,omitempty"`
+}
+
+type discoverFilter struct {
+	Name     string `json:"name"`
+	Operator string `json:"operator"`
+	Value    string `json:"value"`
+}
+
+type discoverDatabaseEntity struct {
+	ID           string   `json:"id"`
+	DBSystem     string   `json:"db_system"`
+	Host         string   `json:"host"`
+	Throughput   *float64 `json:"throughput"`
+	P95LatencyMs *float64 `json:"p95_latency_ms"`
+	ErrorRate    *float64 `json:"error_rate"`
+	ServiceCount *int     `json:"service_count"`
+	MetricsOnly  bool     `json:"metrics_only"`
+	Capabilities []string `json:"capabilities"`
+	Activity     *struct {
+		Value float64 `json:"value"`
+		Label string  `json:"label"`
+	} `json:"activity"`
+}
+
+type discoverDatabasesResponse struct {
+	Databases []discoverDatabaseEntity `json:"databases"`
+	Warnings  []struct {
+		Source string `json:"source"`
+		Reason string `json:"reason"`
+	} `json:"warnings"`
 }
 
 func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetDatabasesArgs) (*mcp.CallToolResult, any, error) {
@@ -44,118 +88,36 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 			return nil, nil, err
 		}
 
-		durationMin := (endTime - startTime) / 60
-		if durationMin <= 0 {
-			durationMin = 1
+		if cfg.ClusterID == "" {
+			return nil, nil, fmt.Errorf("cluster_id is not configured: set LAST9_DATASOURCE with a levitate cluster")
+		}
+		if cfg.Region == "" {
+			return nil, nil, fmt.Errorf("region is not configured: set LAST9_DATASOURCE with a region")
 		}
 
-		envFilter := ""
+		payload := discoverDatabasesRequest{ClusterID: cfg.ClusterID}
+		payload.TimeRange.From = startTime
+		payload.TimeRange.To = endTime
 		if args.Env != "" {
-			envFilter = fmt.Sprintf(`, env=~"%s"`, escapePromQLLabel(args.Env))
+			payload.Filters = []discoverFilter{{
+				Name:     "deployment_environment",
+				Operator: "=",
+				Value:    args.Env,
+			}}
 		}
 
-		baseFilter := fmt.Sprintf(
-			`span_kind=~"SPAN_KIND_CLIENT|SPAN_KIND_INTERNAL", db_system!=""%s`,
-			envFilter,
-		)
-
-		// Build all PromQL queries
-		throughputQuery := fmt.Sprintf(
-			`sum by(db_system, net_peer_name)(sum_over_time(trace_client_count{%s}[%dm])) / %d`,
-			baseFilter, durationMin, durationMin,
-		)
-		latencyQuery := fmt.Sprintf(
-			`max by(db_system, net_peer_name)(avg_over_time(trace_client_duration{%s, quantile="p95"}[%dm]))`,
-			baseFilter, durationMin,
-		)
-		errorCountQuery := fmt.Sprintf(
-			`sum by(db_system, net_peer_name)(sum_over_time(trace_client_count{%s, status_code="STATUS_CODE_ERROR"}[%dm]))`,
-			baseFilter, durationMin,
-		)
-		totalCountQuery := fmt.Sprintf(
-			`sum by(db_system, net_peer_name)(sum_over_time(trace_client_count{%s}[%dm]))`,
-			baseFilter, durationMin,
-		)
-		serviceCountQuery := fmt.Sprintf(
-			`count by(db_system, net_peer_name)(sum by(service_name, db_system, net_peer_name)(sum_over_time(trace_client_count{%s}[%dm])))`,
-			baseFilter, durationMin,
-		)
-
-		// Run all 5 PromQL queries in parallel, each writing to its own map
-		var (
-			throughputDBs   = make(map[string]*DatabaseSummary)
-			latencyDBs      = make(map[string]*DatabaseSummary)
-			serviceCountDBs = make(map[string]*DatabaseSummary)
-			errorCounts     = make(map[string]float64)
-			totalCounts     = make(map[string]float64)
-			throughputErr   error
-			warnings        []string
-			warnMu          sync.Mutex
-			wg              sync.WaitGroup
-		)
-
-		wg.Add(5)
-		go func() {
-			defer wg.Done()
-			throughputErr = fetchPromAndPopulate(ctx, client, cfg, throughputQuery, endTime, throughputDBs, func(db *DatabaseSummary, val float64) {
-				db.Throughput = val
-			})
-		}()
-		go func() {
-			defer wg.Done()
-			if err := fetchPromAndPopulate(ctx, client, cfg, latencyQuery, endTime, latencyDBs, func(db *DatabaseSummary, val float64) {
-				db.P95Latency = val
-			}); err != nil {
-				warnMu.Lock()
-				warnings = append(warnings, "p95 latency unavailable")
-				warnMu.Unlock()
-			}
-		}()
-		go func() {
-			defer wg.Done()
-			fetchPromToMap(ctx, client, cfg, errorCountQuery, endTime, errorCounts)
-		}()
-		go func() {
-			defer wg.Done()
-			fetchPromToMap(ctx, client, cfg, totalCountQuery, endTime, totalCounts)
-		}()
-		go func() {
-			defer wg.Done()
-			if err := fetchPromAndPopulate(ctx, client, cfg, serviceCountQuery, endTime, serviceCountDBs, func(db *DatabaseSummary, val float64) {
-				db.ServiceCount = int(val)
-			}); err != nil {
-				warnMu.Lock()
-				warnings = append(warnings, "service count unavailable")
-				warnMu.Unlock()
-			}
-		}()
-		wg.Wait()
-
-		if throughputErr != nil {
-			return nil, nil, fmt.Errorf("failed to fetch throughput: %w", throughputErr)
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to marshal discover request: %w", err)
 		}
 
-		// Merge results: throughput is the primary map, enrich from others
-		databases := throughputDBs
-		for key, latDB := range latencyDBs {
-			if db, ok := databases[key]; ok {
-				db.P95Latency = latDB.P95Latency
-			}
-		}
-		for key, scDB := range serviceCountDBs {
-			if db, ok := databases[key]; ok {
-				db.ServiceCount = scDB.ServiceCount
-			}
-		}
-		for key, total := range totalCounts {
-			if total > 0 {
-				if db, ok := databases[key]; ok {
-					db.ErrorRate = (errorCounts[key] / total) * 100
-				}
-			}
+		discoverResp, err := callDatabasesDiscoverAPI(ctx, client, cfg, body)
+		if err != nil {
+			return nil, nil, err
 		}
 
-		if len(databases) == 0 {
+		result := mapDiscoverEntitiesToSummaries(discoverResp.Databases)
+		if len(result) == 0 {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{Text: "No databases found for the given parameters. Ensure services are instrumented with OpenTelemetry and have db_system span attribute set."},
@@ -163,11 +125,6 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 			}, nil, nil
 		}
 
-		// Sort by throughput descending
-		result := make([]DatabaseSummary, 0, len(databases))
-		for _, db := range databases {
-			result = append(result, *db)
-		}
 		sort.Slice(result, func(i, j int) bool {
 			return result[i].Throughput > result[j].Throughput
 		})
@@ -176,7 +133,11 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 			"count":     len(result),
 			"databases": result,
 		}
-		if len(warnings) > 0 {
+		if len(discoverResp.Warnings) > 0 {
+			warnings := make([]string, 0, len(discoverResp.Warnings))
+			for _, w := range discoverResp.Warnings {
+				warnings = append(warnings, fmt.Sprintf("%s: %s", w.Source, w.Reason))
+			}
 			response["_warnings"] = warnings
 		}
 
@@ -185,7 +146,6 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
 
-		// Build deep link
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 		dashboardURL := dlBuilder.BuildDatabasesLink()
 
@@ -196,6 +156,75 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 			},
 		}, nil, nil
 	}
+}
+
+func callDatabasesDiscoverAPI(ctx context.Context, client *http.Client, cfg models.Config, body []byte) (discoverDatabasesResponse, error) {
+	var out discoverDatabasesResponse
+
+	accessToken := cfg.TokenManager.GetAccessToken(ctx)
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		cfg.APIBaseURL+constants.EndpointDatabasesDiscover,
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return out, fmt.Errorf("failed to create discover request: %w", err)
+	}
+	req.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
+	req.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+accessToken)
+	req.Header.Set(constants.HeaderRegion, cfg.Region)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return out, fmt.Errorf("database discover API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return out, fmt.Errorf("failed to read discover response: %w", err)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		msg := strings.TrimSpace(string(respBody))
+		if msg == "" {
+			msg = http.StatusText(resp.StatusCode)
+		}
+		return out, fmt.Errorf("database discover API returned status %d: %s", resp.StatusCode, msg)
+	}
+	if err := json.Unmarshal(respBody, &out); err != nil {
+		return out, fmt.Errorf("failed to decode discover response: %w", err)
+	}
+	return out, nil
+}
+
+func mapDiscoverEntitiesToSummaries(entities []discoverDatabaseEntity) []DatabaseSummary {
+	result := make([]DatabaseSummary, 0, len(entities))
+	for _, entity := range entities {
+		summary := DatabaseSummary{
+			DBSystem:     entity.DBSystem,
+			Host:         entity.Host,
+			MetricsOnly:  entity.MetricsOnly,
+			ID:           entity.ID,
+			Capabilities: entity.Capabilities,
+		}
+		if entity.Throughput != nil {
+			summary.Throughput = *entity.Throughput
+		} else if entity.Activity != nil {
+			summary.Throughput = entity.Activity.Value
+		}
+		if entity.P95LatencyMs != nil {
+			summary.P95Latency = *entity.P95LatencyMs
+		}
+		if entity.ErrorRate != nil {
+			summary.ErrorRate = *entity.ErrorRate
+		}
+		if entity.ServiceCount != nil {
+			summary.ServiceCount = *entity.ServiceCount
+		}
+		result = append(result, summary)
+	}
+	return result
 }
 
 // --- get_database_slow_queries tool ---
