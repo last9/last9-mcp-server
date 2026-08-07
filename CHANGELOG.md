@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.1-rc.1] - 2026-08-07
+
 ### Fixed
 
 - `add_drop_rule` and `get_drop_rules` use `/otel_settings/drop` instead of the legacy `logs_settings/routing` path, which the API rejects with 405 (#201).
