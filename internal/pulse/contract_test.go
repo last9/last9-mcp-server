@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-const contractFixtureSHA256 = "25a97da2661d9c1700b194e84dbc12d22379ef7b8a060d7c030d1d7a8de8cf54"
+const contractFixtureSHA256 = "71388bf62f4ee49582d6986738cb09844fa90e02c7856490d84cbd91840cdbfd"
 
 //go:embed testdata/alert_hygiene_pulse_contract_v1.json
 var contractFixtureJSON []byte

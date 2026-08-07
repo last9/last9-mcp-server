@@ -134,8 +134,38 @@ var DeleteDashboardSnapshotDescription string
 //go:embed descriptions/pulse_subscriptions.md
 var PulseSubscriptionsDescription string
 
+//go:embed descriptions/get_pulse_subscription.md
+var GetPulseSubscriptionDescription string
+
+//go:embed descriptions/create_pulse_subscription.md
+var CreatePulseSubscriptionDescription string
+
+//go:embed descriptions/update_pulse_subscription.md
+var UpdatePulseSubscriptionDescription string
+
+//go:embed descriptions/enable_pulse_subscription.md
+var EnablePulseSubscriptionDescription string
+
+//go:embed descriptions/disable_pulse_subscription.md
+var DisablePulseSubscriptionDescription string
+
 //go:embed descriptions/pulse_reports.md
 var PulseReportsDescription string
+
+//go:embed descriptions/get_pulse_run.md
+var GetPulseRunDescription string
+
+//go:embed descriptions/get_pulse_report.md
+var GetPulseReportDescription string
+
+//go:embed descriptions/list_pulse_findings.md
+var ListPulseFindingsDescription string
+
+//go:embed descriptions/get_pulse_finding.md
+var GetPulseFindingDescription string
+
+//go:embed descriptions/list_pulse_evidence.md
+var ListPulseEvidenceDescription string
 
 //go:embed descriptions/pulse_dispositions.md
 var PulseDispositionsDescription string

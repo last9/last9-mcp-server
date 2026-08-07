@@ -5,18 +5,6 @@ const (
 	allToolsMarker    = "\x00all_tools"
 )
 
-// AllowsManage requires both normal toolset membership and an explicit
-// pulse_manage token. Empty and default-all selections never grant writes.
-func AllowsManage(allowed Set, toolName string) bool {
-	if allowed == nil {
-		return false
-	}
-	if _, granted := allowed[manageGrantMarker]; !granted {
-		return false
-	}
-	return allowed.Allows(toolName)
-}
-
 // ManageOnly returns the registration view for managed tools. A non-nil empty
 // set fails closed when pulse_manage was not explicitly selected.
 func ManageOnly(allowed Set) Set {

@@ -21,7 +21,7 @@ func TestPulseManageRequiresExplicitToken(t *testing.T) {
 			t.Fatalf("Parse(%q): %v", spec, err)
 		}
 		for _, tool := range named["pulse_manage"] {
-			if !AllowsManage(allowed, tool) {
+			if !ManageOnly(allowed).Allows(tool) {
 				t.Errorf("spec %q should grant %q", spec, tool)
 			}
 		}

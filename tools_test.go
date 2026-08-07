@@ -112,27 +112,44 @@ func TestPulseSchemasDoNotAcceptOrganizationScope(t *testing.T) {
 }
 
 func TestPulseDescriptionsComeOnlyFromMarkdown(t *testing.T) {
-	tools := registeredToolNames(t, testToolRegistrationConfig())
-	for name, description := range map[string]string{
-		"list_pulse_subscriptions": prompts.PulseSubscriptionsDescription,
-		"list_pulse_runs":          prompts.PulseReportsDescription,
-		"get_pulse_finding":        prompts.PulseReportsDescription,
-		"list_pulse_evidence":      prompts.PulseReportsDescription,
-	} {
-		if tools[name].Description != description {
-			t.Errorf("%s description contains non-markdown text", name)
+	seen := make(map[string]string)
+	check := func(tools map[string]*mcp.Tool, expected map[string]string) {
+		t.Helper()
+		for name, description := range expected {
+			if tools[name].Description != description {
+				t.Errorf("%s description contains non-markdown text", name)
+			}
+			if other, exists := seen[tools[name].Description]; exists {
+				t.Errorf("%s and %s share the same description", other, name)
+			}
+			seen[tools[name].Description] = name
 		}
 	}
+
+	check(registeredToolNames(t, testToolRegistrationConfig()), map[string]string{
+		"list_pulse_subscriptions": prompts.PulseSubscriptionsDescription,
+		"get_pulse_subscription":   prompts.GetPulseSubscriptionDescription,
+		"list_pulse_runs":          prompts.PulseReportsDescription,
+		"get_pulse_run":            prompts.GetPulseRunDescription,
+		"get_pulse_report":         prompts.GetPulseReportDescription,
+		"list_pulse_findings":      prompts.ListPulseFindingsDescription,
+		"get_pulse_finding":        prompts.GetPulseFindingDescription,
+		"list_pulse_evidence":      prompts.ListPulseEvidenceDescription,
+	})
+
 	allowed, err := toolsets.Parse("pulse_manage")
 	if err != nil {
 		t.Fatal(err)
 	}
 	config := testToolRegistrationConfig()
 	config.AllowedTools = allowed
-	managed := registeredToolNames(t, config)
-	if managed["write_pulse_disposition"].Description != prompts.PulseDispositionsDescription {
-		t.Error("write_pulse_disposition description contains non-markdown text")
-	}
+	check(registeredToolNames(t, config), map[string]string{
+		"create_pulse_subscription":  prompts.CreatePulseSubscriptionDescription,
+		"update_pulse_subscription":  prompts.UpdatePulseSubscriptionDescription,
+		"enable_pulse_subscription":  prompts.EnablePulseSubscriptionDescription,
+		"disable_pulse_subscription": prompts.DisablePulseSubscriptionDescription,
+		"write_pulse_disposition":    prompts.PulseDispositionsDescription,
+	})
 }
 
 func TestGetPulseFindingSchemaNamesOccurrenceIdentifier(t *testing.T) {

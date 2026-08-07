@@ -172,38 +172,6 @@
       {
         "id": "",
         "finding_id": "",
-        "fingerprint": "960d9b04bdd90d965bb32c88d87b30c886272be68460509badffea7c98422a02",
-        "fingerprint_version": "v1",
-        "identity_inputs": {
-          "rule_id": "rule-a",
-          "category": "possible_duplicate",
-          "dimension": "rule-a:rule-b"
-        },
-        "rule_id": "rule-a",
-        "rule_revision": "2026-08-04 07:00:00 UTC|2026-08-04 07:30:00 UTC",
-        "category": "possible_duplicate",
-        "severity": 1.25,
-        "material_change": {
-          "worsened": true,
-          "reason": "new_finding"
-        },
-        "evidence_summary": {
-          "candidate_rule_ids": [
-            "rule-a",
-            "rule-b"
-          ],
-          "firing_overlap": 1.0,
-          "threshold": 0.8,
-          "qualification": "Overlap is correlation evidence, not a shared root cause.",
-          "confidence": "high"
-        },
-        "impact": "Overlapping rules may notify responders about the same observed interval.",
-        "recommendation": "Compare both rules and consolidate or group only after operator validation.",
-        "recurrence_of_id": ""
-      },
-      {
-        "id": "",
-        "finding_id": "",
         "fingerprint": "9c84dd4fa171e820d074ad8c97100e1101a968cdcae68b64a86253b66b2b79bf",
         "fingerprint_version": "v1",
         "identity_inputs": {
@@ -226,6 +194,38 @@
         },
         "impact": "Frequent state transitions can distract responders and hide sustained changes.",
         "recommendation": "Review the evaluation window and hysteresis against the observed transitions.",
+        "recurrence_of_id": ""
+      },
+      {
+        "id": "",
+        "finding_id": "",
+        "fingerprint": "c0d3263bcdb0511909a73b82cb6fa32de04921841089f1a14e827be039e643db",
+        "fingerprint_version": "v1",
+        "identity_inputs": {
+          "rule_id": "rule-a:rule-b",
+          "category": "possible_duplicate",
+          "dimension": "rule-a:rule-b"
+        },
+        "rule_id": "rule-a:rule-b",
+        "rule_revision": "2026-08-04 07:00:00 UTC|2026-08-04 07:30:00 UTC",
+        "category": "possible_duplicate",
+        "severity": 1.25,
+        "material_change": {
+          "worsened": true,
+          "reason": "new_finding"
+        },
+        "evidence_summary": {
+          "candidate_rule_ids": [
+            "rule-a",
+            "rule-b"
+          ],
+          "firing_overlap": 1.0,
+          "threshold": 0.8,
+          "qualification": "Overlap is correlation evidence, not a shared root cause.",
+          "confidence": "high"
+        },
+        "impact": "Overlapping rules may notify responders about the same observed interval.",
+        "recommendation": "Compare both rules and consolidate or group only after operator validation.",
         "recurrence_of_id": ""
       },
       {

@@ -12,50 +12,36 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func registerPulseTools(server *last9mcp.Last9MCPServer, config models.Config, client *http.Client) error {
-	registrar := &pulseRegistrar{server: server}
-	registerPulseSubscriptions(registrar, config, client)
-	registerPulseReports(registrar, config, client)
-	registerPulseDisposition(registrar, config, client)
-	return registrar.err
+func registerPulseTools(reg func(error), server *last9mcp.Last9MCPServer, config models.Config, client *http.Client) {
+	registerPulseSubscriptions(reg, server, config, client)
+	registerPulseReports(reg, server, config, client)
+	registerPulseDisposition(reg, server, config, client)
 }
 
-type pulseRegistrar struct {
-	server *last9mcp.Last9MCPServer
-	err    error
-}
-
-func registerPulseHandler[In, Out any](registrar *pulseRegistrar, allowed toolsets.Set, tool *mcp.Tool, handler mcp.ToolHandlerFor[In, Out]) {
-	if registrar.err != nil {
-		return
-	}
-	registrar.err = registerIfAllowed(registrar.server, allowed, tool, handler)
-}
-
-func registerPulseSubscriptions(registrar *pulseRegistrar, config models.Config, client *http.Client) {
+func registerPulseSubscriptions(reg func(error), server *last9mcp.Last9MCPServer, config models.Config, client *http.Client) {
 	read := config.AllowedTools
 	manage := toolsets.ManageOnly(config.AllowedTools)
-	registerPulseHandler(registrar, read, pulseReadTool("list_pulse_subscriptions", prompts.PulseSubscriptionsDescription), pulse.NewListSubscriptionsHandler(client, config))
-	registerPulseHandler(registrar, read, pulseReadTool("get_pulse_subscription", prompts.PulseSubscriptionsDescription), pulse.NewGetSubscriptionHandler(client, config))
-	registerPulseHandler(registrar, manage, pulseWriteTool("create_pulse_subscription", prompts.PulseSubscriptionsDescription), pulse.NewCreateSubscriptionHandler(client, config))
-	registerPulseHandler(registrar, manage, pulseWriteTool("update_pulse_subscription", prompts.PulseSubscriptionsDescription), pulse.NewUpdateSubscriptionHandler(client, config))
-	registerPulseHandler(registrar, manage, pulseWriteTool("enable_pulse_subscription", prompts.PulseSubscriptionsDescription), pulse.NewEnableSubscriptionHandler(client, config))
-	registerPulseHandler(registrar, manage, pulseWriteTool("disable_pulse_subscription", prompts.PulseSubscriptionsDescription), pulse.NewDisableSubscriptionHandler(client, config))
+	reg(registerIfAllowed(server, read, pulseReadTool("list_pulse_subscriptions", prompts.PulseSubscriptionsDescription), pulse.NewListSubscriptionsHandler(client, config)))
+	reg(registerIfAllowed(server, read, pulseReadTool("get_pulse_subscription", prompts.GetPulseSubscriptionDescription), pulse.NewGetSubscriptionHandler(client, config)))
+	reg(registerIfAllowed(server, manage, pulseWriteTool("create_pulse_subscription", prompts.CreatePulseSubscriptionDescription), pulse.NewCreateSubscriptionHandler(client, config)))
+	reg(registerIfAllowed(server, manage, pulseWriteTool("update_pulse_subscription", prompts.UpdatePulseSubscriptionDescription), pulse.NewUpdateSubscriptionHandler(client, config)))
+	reg(registerIfAllowed(server, manage, pulseWriteTool("enable_pulse_subscription", prompts.EnablePulseSubscriptionDescription), pulse.NewEnableSubscriptionHandler(client, config)))
+	reg(registerIfAllowed(server, manage, pulseWriteTool("disable_pulse_subscription", prompts.DisablePulseSubscriptionDescription), pulse.NewDisableSubscriptionHandler(client, config)))
 }
 
-func registerPulseReports(registrar *pulseRegistrar, config models.Config, client *http.Client) {
+func registerPulseReports(reg func(error), server *last9mcp.Last9MCPServer, config models.Config, client *http.Client) {
 	allowed := config.AllowedTools
-	registerPulseHandler(registrar, allowed, pulseReadTool("list_pulse_runs", prompts.PulseReportsDescription), pulse.NewListRunsHandler(client, config))
-	registerPulseHandler(registrar, allowed, pulseReadTool("get_pulse_run", prompts.PulseReportsDescription), pulse.NewGetRunHandler(client, config))
-	registerPulseHandler(registrar, allowed, pulseReadTool("get_pulse_report", prompts.PulseReportsDescription), pulse.NewGetReportHandler(client, config))
-	registerPulseHandler(registrar, allowed, pulseReadTool("list_pulse_findings", prompts.PulseReportsDescription), pulse.NewListFindingsHandler(client, config))
-	registerPulseHandler(registrar, allowed, pulseReadTool("get_pulse_finding", prompts.PulseReportsDescription), pulse.NewGetFindingHandler(client, config))
-	registerPulseHandler(registrar, allowed, pulseReadTool("list_pulse_evidence", prompts.PulseReportsDescription), pulse.NewListEvidenceHandler(client, config))
+	reg(registerIfAllowed(server, allowed, pulseReadTool("list_pulse_runs", prompts.PulseReportsDescription), pulse.NewListRunsHandler(client, config)))
+	reg(registerIfAllowed(server, allowed, pulseReadTool("get_pulse_run", prompts.GetPulseRunDescription), pulse.NewGetRunHandler(client, config)))
+	reg(registerIfAllowed(server, allowed, pulseReadTool("get_pulse_report", prompts.GetPulseReportDescription), pulse.NewGetReportHandler(client, config)))
+	reg(registerIfAllowed(server, allowed, pulseReadTool("list_pulse_findings", prompts.ListPulseFindingsDescription), pulse.NewListFindingsHandler(client, config)))
+	reg(registerIfAllowed(server, allowed, pulseReadTool("get_pulse_finding", prompts.GetPulseFindingDescription), pulse.NewGetFindingHandler(client, config)))
+	reg(registerIfAllowed(server, allowed, pulseReadTool("list_pulse_evidence", prompts.ListPulseEvidenceDescription), pulse.NewListEvidenceHandler(client, config)))
 }
 
-func registerPulseDisposition(registrar *pulseRegistrar, config models.Config, client *http.Client) {
+func registerPulseDisposition(reg func(error), server *last9mcp.Last9MCPServer, config models.Config, client *http.Client) {
 	tool := pulseWriteTool("write_pulse_disposition", prompts.PulseDispositionsDescription)
-	registerPulseHandler(registrar, toolsets.ManageOnly(config.AllowedTools), tool, pulse.NewWriteDispositionHandler(client, config))
+	reg(registerIfAllowed(server, toolsets.ManageOnly(config.AllowedTools), tool, pulse.NewWriteDispositionHandler(client, config)))
 }
 
 func pulseReadTool(name string, description string) *mcp.Tool {

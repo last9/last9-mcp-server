@@ -320,7 +320,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: prompts.DeleteDashboardSnapshotDescription,
 	}, dashboards.NewDeleteDashboardSnapshotHandler(client, cfg)))
 
-	reg(registerPulseTools(server, cfg, client))
+	registerPulseTools(reg, server, cfg, client)
 
 	return regErr
 }
