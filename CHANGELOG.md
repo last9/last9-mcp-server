@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-10
+
 ### Fixed
 
 - `get_database_slow_queries` trace filters now use bracket map syntax — `db_system`, `host` and `env` previously returned a 400 from the traces API. The trace pipeline sanitizer also rewrites legacy `events.`, `resources.` and `resource.` dot notation (#202).
