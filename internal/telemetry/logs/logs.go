@@ -118,18 +118,11 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		return result, nil
 	}
 
-	// ShouldOptimizeLineFilterQuery is intentionally left at the zero value
-	// (false). The frontend toggles it via a feature flag to engage Rule 0
-	// (1–2 parallel chunks for expensive body searches with line-filter
-	// optimization). MCP has no equivalent flag today, so Rule 0 is dormant
-	// and expensive body-search queries fall through to the time-range rules.
-	// If we ever want to match the frontend's most aggressive throttle, wire
-	// a config / env var into this field and the adaptive cascade picks it up
-	// without further changes.
 	adaptiveCfg := utils.GetAdaptiveLoadingConfig(utils.AdaptiveLoadingInput{
-		StartMs:  startTime,
-		EndMs:    endTime,
-		Pipeline: args.LogjsonQuery,
+		StartMs:                       startTime,
+		EndMs:                         endTime,
+		Pipeline:                      args.LogjsonQuery,
+		ShouldOptimizeLineFilterQuery: cfg.OptimizeLineFilterQueries,
 	})
 	chunks := utils.GetAdaptiveChunks(startTime, endTime, adaptiveCfg)
 	if len(chunks) == 0 {

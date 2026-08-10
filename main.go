@@ -50,6 +50,12 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	fs.Float64Var(&cfg.RequestRateLimit, "rate", 1, "Requests per second limit")
 	fs.IntVar(&cfg.RequestRateBurst, "burst", 1, "Request burst capacity")
 	fs.IntVar(&cfg.MaxGetLogsEntries, "max_get_logs_entries", models.DefaultMaxGetLogsEntries, "Maximum number of entries returned by chunked raw get_logs requests")
+	fs.BoolVar(
+		&cfg.OptimizeLineFilterQueries,
+		"optimize_line_filter_queries",
+		os.Getenv("LAST9_OPTIMIZE_LINE_FILTER_QUERIES") == "true",
+		"Enable expensive-body line-filter optimization for chunked log/trace queries",
+	)
 	fs.BoolVar(&cfg.HTTPMode, "http", false, "Run as HTTP server instead of STDIO")
 	fs.StringVar(&cfg.Port, "port", "8080", "HTTP server port")
 	fs.StringVar(&cfg.Host, "host", "localhost", "HTTP server host")

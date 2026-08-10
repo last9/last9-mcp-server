@@ -61,6 +61,10 @@ type Config struct {
 	Toolsets string
 	// AllowedTools is the expanded allow-list from Toolsets. nil means all tools.
 	AllowedTools toolsets.Set
+
+	// OptimizeLineFilterQueries enables the dashboard's expensive-body search
+	// throttle (Rule 0: 1-2 parallel chunks) for chunked log/trace queries.
+	OptimizeLineFilterQueries bool
 }
 
 // ResolveDatasource looks up a datasource by name from the cached list.

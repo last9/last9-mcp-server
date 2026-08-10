@@ -64,9 +64,9 @@ func TestFetchLogAttributeNames_UsesLabelsEndpoint(t *testing.T) {
 	}
 }
 
-// TestGetLogAttributesHandler_CapsTimeRangeAt1Hour verifies that when the caller
-// requests a window longer than 1 hour, the handler caps the API request to 1 hour.
-func TestGetLogAttributesHandler_CapsTimeRangeAt1Hour(t *testing.T) {
+// TestGetLogAttributesHandler_CapsTimeRangeAtFiveMinutes verifies that when the caller
+// requests a window longer than five minutes, the handler caps the API request.
+func TestGetLogAttributesHandler_CapsTimeRangeAtFiveMinutes(t *testing.T) {
 	var capturedStart, capturedEnd int64
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -84,7 +84,7 @@ func TestGetLogAttributesHandler_CapsTimeRangeAt1Hour(t *testing.T) {
 	cfg := testAttrConfig(server.URL)
 	handler := NewGetLogAttributesHandler(server.Client(), cfg)
 
-	// Request a 3-hour lookback — handler should cap to 1 hour internally.
+	// Request a 3-hour lookback — handler should cap to five minutes internally.
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesArgs{
 		LookbackMinutes: 180,
 	})
