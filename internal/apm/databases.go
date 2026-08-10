@@ -233,62 +233,6 @@ type SlowQuery struct {
 	RowsReturned int64  `json:"rows_returned,omitempty"`
 }
 
-func buildDatabaseSlowQueryTracePipeline(args GetDatabaseSlowQueriesArgs) ([]map[string]any, error) {
-	var conditions []any
-
-	conditions = append(conditions, map[string]any{
-		"$regex": []any{"SpanKind", "SPAN_KIND_CLIENT|SPAN_KIND_INTERNAL"},
-	})
-
-	if args.DBSystem != "" {
-		conditions = append(conditions, map[string]any{
-			"$eq": []any{traces.SpanAttributeField("db.system"), args.DBSystem},
-		})
-	} else {
-		conditions = append(conditions, map[string]any{
-			"$neq": []any{traces.SpanAttributeField("db.system"), ""},
-		})
-	}
-
-	if args.Host != "" {
-		conditions = append(conditions, map[string]any{
-			"$eq": []any{traces.SpanAttributeField("net.peer.name"), args.Host},
-		})
-	}
-
-	if args.ServiceName != "" {
-		conditions = append(conditions, map[string]any{
-			"$eq": []any{"ServiceName", args.ServiceName},
-		})
-	}
-
-	if args.Env != "" {
-		conditions = append(conditions, map[string]any{
-			"$eq": []any{traces.ResourceAttributeField("deployment.environment"), args.Env},
-		})
-	}
-
-	if args.MinDurationMs > 0 {
-		minDurationNs := int64(args.MinDurationMs * 1_000_000)
-		conditions = append(conditions, map[string]any{
-			"$gte": []any{"Duration", minDurationNs},
-		})
-	}
-
-	pipeline := []map[string]any{
-		{
-			"type":  "filter",
-			"query": map[string]any{"$and": conditions},
-		},
-	}
-
-	if err := traces.SanitizeTraceJSONQuery(pipeline); err != nil {
-		return nil, fmt.Errorf("invalid slow query trace pipeline: %w", err)
-	}
-
-	return pipeline, nil
-}
-
 func NewGetDatabaseSlowQueriesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetDatabaseSlowQueriesArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetDatabaseSlowQueriesArgs) (*mcp.CallToolResult, any, error) {
 		startTime, endTime, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
@@ -962,6 +906,62 @@ func queryPromInstantValue(ctx context.Context, client *http.Client, cfg models.
 }
 
 // --- helpers ---
+
+func buildDatabaseSlowQueryTracePipeline(args GetDatabaseSlowQueriesArgs) ([]map[string]any, error) {
+	var conditions []any
+
+	conditions = append(conditions, map[string]any{
+		"$regex": []any{"SpanKind", "SPAN_KIND_CLIENT|SPAN_KIND_INTERNAL"},
+	})
+
+	if args.DBSystem != "" {
+		conditions = append(conditions, map[string]any{
+			"$eq": []any{traces.SpanAttributeField("db.system"), args.DBSystem},
+		})
+	} else {
+		conditions = append(conditions, map[string]any{
+			"$neq": []any{traces.SpanAttributeField("db.system"), ""},
+		})
+	}
+
+	if args.Host != "" {
+		conditions = append(conditions, map[string]any{
+			"$eq": []any{traces.SpanAttributeField("net.peer.name"), args.Host},
+		})
+	}
+
+	if args.ServiceName != "" {
+		conditions = append(conditions, map[string]any{
+			"$eq": []any{"ServiceName", args.ServiceName},
+		})
+	}
+
+	if args.Env != "" {
+		conditions = append(conditions, map[string]any{
+			"$eq": []any{traces.ResourceAttributeField("deployment.environment"), args.Env},
+		})
+	}
+
+	if args.MinDurationMs > 0 {
+		minDurationNs := int64(args.MinDurationMs * 1_000_000)
+		conditions = append(conditions, map[string]any{
+			"$gte": []any{"Duration", minDurationNs},
+		})
+	}
+
+	pipeline := []map[string]any{
+		{
+			"type":  "filter",
+			"query": map[string]any{"$and": conditions},
+		},
+	}
+
+	if err := traces.SanitizeTraceJSONQuery(pipeline); err != nil {
+		return nil, fmt.Errorf("invalid slow query trace pipeline: %w", err)
+	}
+
+	return pipeline, nil
+}
 
 // fetchSlowQueryLogs queries the logs API for entries with attributes['slow_query']='true'
 // and extracts database-specific fields like plan_summary, docs_examined, etc.
