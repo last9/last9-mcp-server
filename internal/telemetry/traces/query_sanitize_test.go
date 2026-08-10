@@ -883,6 +883,12 @@ func TestSanitizeTraceJSONQuery_RewritesLegacyDotNotationFields(t *testing.T) {
 		}
 	})
 
+	t.Run("singular event. prefix rewritten", func(t *testing.T) {
+		if got := normalizeTraceFilterField("event.exception.type"); got != `events['exception.type']` {
+			t.Errorf("normalizeTraceFilterField(event.exception.type) = %q, want events['exception.type']", got)
+		}
+	})
+
 	t.Run("already-bracketed fields pass through untouched", func(t *testing.T) {
 		for _, field := range []string{
 			`attributes['db.system']`,
@@ -896,5 +902,17 @@ func TestSanitizeTraceJSONQuery_RewritesLegacyDotNotationFields(t *testing.T) {
 			}
 		}
 	})
-}
 
+	// A prefix with an empty remainder must never be rewritten: the empty key
+	// misses enrichAttribute's length guards and falls through to the span
+	// attribute branch, landing on the wrong map column.
+	t.Run("prefix-only fields are not rewritten", func(t *testing.T) {
+		for _, field := range []string{
+			"events.", "event.", "resources.", "resource.", "resource.attributes.", "attributes.",
+		} {
+			if got := normalizeTraceFilterField(field); got != field {
+				t.Errorf("normalizeTraceFilterField(%q) = %q, want unchanged", field, got)
+			}
+		}
+	})
+}

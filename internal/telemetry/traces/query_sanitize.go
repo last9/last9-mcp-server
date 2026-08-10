@@ -40,6 +40,7 @@ var traceFilterLogicalOperators = map[string]struct{}{
 // SanitizeTraceJSONQuery validates a tracejson_query pipeline before forwarding
 // to the API. It catches common LLM mistakes and returns descriptive errors so
 // the model can self-correct without waiting for a 400 from the upstream API.
+// Normalizations are applied in place — callers forward the slice they passed in.
 func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 	for i, stage := range stages {
 		stageType, _ := stage["type"].(string)
@@ -323,10 +324,18 @@ func normalizeTraceFilterField(field string) string {
 		{"resource.", ResourceAttributeField},
 		{"attributes.", SpanAttributeField},
 		{"events.", EventAttributeField},
+		{"event.", EventAttributeField},
 	} {
-		if strings.HasPrefix(field, p.prefix) {
-			return p.to(field[len(p.prefix):])
+		if !strings.HasPrefix(field, p.prefix) {
+			continue
 		}
+		// A prefix with nothing after it names no key; rewriting would pick a
+		// column from the empty remainder and land on the wrong one.
+		key := field[len(p.prefix):]
+		if key == "" {
+			return field
+		}
+		return p.to(key)
 	}
 	return field
 }
