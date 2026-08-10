@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `add_drop_rule` and `get_drop_rules` use `/otel_settings/drop` instead of the legacy `logs_settings/routing` path, which the API rejects with 405 (#201).
 - `get_database_slow_queries` trace filters now use bracket map syntax — `db_system`, `host` and `env` previously returned a 400 from the traces API. The trace pipeline sanitizer also rewrites legacy `events.`, `resources.` and `resource.` dot notation (#202).
+- `add_drop_rule` and `get_drop_rules` use `/otel_settings/drop` instead of the legacy `logs_settings/routing` path, which the API rejects with 405 (#201).
 
 ### Added
 
