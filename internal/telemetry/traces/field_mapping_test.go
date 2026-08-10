@@ -49,6 +49,39 @@ func TestEnrichAttribute(t *testing.T) {
 	}
 }
 
+func TestSpanAttributeField(t *testing.T) {
+	if got := SpanAttributeField("db.system"); got != `attributes['db.system']` {
+		t.Fatalf("SpanAttributeField(db.system) = %q, want attributes['db.system']", got)
+	}
+}
+
+func TestResourceAttributeField(t *testing.T) {
+	tests := []struct{ key, want string }{
+		{"deployment.environment", `resources['deployment.environment']`},
+		// Flat API form must not double-prefix into resources['resource_...'].
+		{"resource_deployment.environment", `resources['deployment.environment']`},
+		{"service.name", "ServiceName"},
+		{"resource_service.name", "ServiceName"},
+	}
+	for _, tt := range tests {
+		if got := ResourceAttributeField(tt.key); got != tt.want {
+			t.Errorf("ResourceAttributeField(%q) = %q, want %q", tt.key, got, tt.want)
+		}
+	}
+}
+
+func TestEventAttributeField(t *testing.T) {
+	tests := []struct{ key, want string }{
+		{"exception.type", `events['exception.type']`},
+		{"event_exception.type", `events['exception.type']`},
+	}
+	for _, tt := range tests {
+		if got := EventAttributeField(tt.key); got != tt.want {
+			t.Errorf("EventAttributeField(%q) = %q, want %q", tt.key, got, tt.want)
+		}
+	}
+}
+
 func TestNormalizeTagName(t *testing.T) {
 	tests := []struct {
 		input string

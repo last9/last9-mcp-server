@@ -14,6 +14,7 @@ import (
 
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/telemetry/traces"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -244,59 +245,9 @@ func NewGetDatabaseSlowQueriesHandler(client *http.Client, cfg models.Config) fu
 			limit = 20
 		}
 
-		// Build trace query pipeline filters.
-		// The traces API uses dot-notation for nested attributes:
-		//   - span attributes: "attributes.db.system"
-		//   - resource attributes: "resource.attributes.deployment.environment"
-		var conditions []any
-
-		// Filter by SPAN_KIND_CLIENT or SPAN_KIND_INTERNAL (DB operations)
-		conditions = append(conditions, map[string]any{
-			"$regex": []any{"SpanKind", "SPAN_KIND_CLIENT|SPAN_KIND_INTERNAL"},
-		})
-
-		if args.DBSystem != "" {
-			conditions = append(conditions, map[string]any{
-				"$eq": []any{"attributes.db.system", args.DBSystem},
-			})
-		} else {
-			// No specific db_system — match any span that has db.system set
-			conditions = append(conditions, map[string]any{
-				"$neq": []any{"attributes['db.system']", ""},
-			})
-		}
-
-		if args.Host != "" {
-			conditions = append(conditions, map[string]any{
-				"$eq": []any{"attributes.net.peer.name", args.Host},
-			})
-		}
-
-		if args.ServiceName != "" {
-			conditions = append(conditions, map[string]any{
-				"$eq": []any{"ServiceName", args.ServiceName},
-			})
-		}
-
-		if args.Env != "" {
-			conditions = append(conditions, map[string]any{
-				"$eq": []any{"resource.attributes.deployment.environment", args.Env},
-			})
-		}
-
-		if args.MinDurationMs > 0 {
-			// Duration in traces is in nanoseconds
-			minDurationNs := int64(args.MinDurationMs * 1_000_000)
-			conditions = append(conditions, map[string]any{
-				"$gte": []any{"Duration", minDurationNs},
-			})
-		}
-
-		pipeline := []map[string]any{
-			{
-				"type":  "filter",
-				"query": map[string]any{"$and": conditions},
-			},
+		pipeline, err := buildDatabaseSlowQueryTracePipeline(args)
+		if err != nil {
+			return nil, nil, err
 		}
 
 		// Use milliseconds for traces API
@@ -955,6 +906,62 @@ func queryPromInstantValue(ctx context.Context, client *http.Client, cfg models.
 }
 
 // --- helpers ---
+
+func buildDatabaseSlowQueryTracePipeline(args GetDatabaseSlowQueriesArgs) ([]map[string]any, error) {
+	var conditions []any
+
+	conditions = append(conditions, map[string]any{
+		"$regex": []any{"SpanKind", "SPAN_KIND_CLIENT|SPAN_KIND_INTERNAL"},
+	})
+
+	if args.DBSystem != "" {
+		conditions = append(conditions, map[string]any{
+			"$eq": []any{traces.SpanAttributeField("db.system"), args.DBSystem},
+		})
+	} else {
+		conditions = append(conditions, map[string]any{
+			"$neq": []any{traces.SpanAttributeField("db.system"), ""},
+		})
+	}
+
+	if args.Host != "" {
+		conditions = append(conditions, map[string]any{
+			"$eq": []any{traces.SpanAttributeField("net.peer.name"), args.Host},
+		})
+	}
+
+	if args.ServiceName != "" {
+		conditions = append(conditions, map[string]any{
+			"$eq": []any{"ServiceName", args.ServiceName},
+		})
+	}
+
+	if args.Env != "" {
+		conditions = append(conditions, map[string]any{
+			"$eq": []any{traces.ResourceAttributeField("deployment.environment"), args.Env},
+		})
+	}
+
+	if args.MinDurationMs > 0 {
+		minDurationNs := int64(args.MinDurationMs * 1_000_000)
+		conditions = append(conditions, map[string]any{
+			"$gte": []any{"Duration", minDurationNs},
+		})
+	}
+
+	pipeline := []map[string]any{
+		{
+			"type":  "filter",
+			"query": map[string]any{"$and": conditions},
+		},
+	}
+
+	if err := traces.SanitizeTraceJSONQuery(pipeline); err != nil {
+		return nil, fmt.Errorf("invalid slow query trace pipeline: %w", err)
+	}
+
+	return pipeline, nil
+}
 
 // fetchSlowQueryLogs queries the logs API for entries with attributes['slow_query']='true'
 // and extracts database-specific fields like plan_summary, docs_examined, etc.
