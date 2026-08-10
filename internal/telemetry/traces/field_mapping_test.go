@@ -56,8 +56,29 @@ func TestSpanAttributeField(t *testing.T) {
 }
 
 func TestResourceAttributeField(t *testing.T) {
-	if got := ResourceAttributeField("deployment.environment"); got != `resources['deployment.environment']` {
-		t.Fatalf("ResourceAttributeField(deployment.environment) = %q, want resources['deployment.environment']", got)
+	tests := []struct{ key, want string }{
+		{"deployment.environment", `resources['deployment.environment']`},
+		// Flat API form must not double-prefix into resources['resource_...'].
+		{"resource_deployment.environment", `resources['deployment.environment']`},
+		{"service.name", "ServiceName"},
+		{"resource_service.name", "ServiceName"},
+	}
+	for _, tt := range tests {
+		if got := ResourceAttributeField(tt.key); got != tt.want {
+			t.Errorf("ResourceAttributeField(%q) = %q, want %q", tt.key, got, tt.want)
+		}
+	}
+}
+
+func TestEventAttributeField(t *testing.T) {
+	tests := []struct{ key, want string }{
+		{"exception.type", `events['exception.type']`},
+		{"event_exception.type", `events['exception.type']`},
+	}
+	for _, tt := range tests {
+		if got := EventAttributeField(tt.key); got != tt.want {
+			t.Errorf("EventAttributeField(%q) = %q, want %q", tt.key, got, tt.want)
+		}
 	}
 }
 

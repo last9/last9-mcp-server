@@ -145,7 +145,7 @@ func TestSanitizeTraceJSONQuery_ValidPipelines(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := sanitizeTraceJSONQuery(tt.stages); err != nil {
+			if err := SanitizeTraceJSONQuery(tt.stages); err != nil {
 				t.Errorf("expected no error, got: %v", err)
 			}
 		})
@@ -262,7 +262,7 @@ func TestSanitizeTraceJSONQuery_WrongAggregateKeys(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := sanitizeTraceJSONQuery(tt.stages)
+			err := SanitizeTraceJSONQuery(tt.stages)
 			if err == nil {
 				t.Fatalf("expected error containing %q, got nil", tt.errContains)
 			}
@@ -278,7 +278,7 @@ func TestSanitizeTraceJSONQuery_ErrorMessages(t *testing.T) {
 		stages := []map[string]interface{}{
 			{"type": "aggregate", "aggregations": []interface{}{}},
 		}
-		err := sanitizeTraceJSONQuery(stages)
+		err := SanitizeTraceJSONQuery(stages)
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -295,7 +295,7 @@ func TestSanitizeTraceJSONQuery_ErrorMessages(t *testing.T) {
 		stages := []map[string]interface{}{
 			{"type": "aggregate", "group_by": []interface{}{}, "aggregates": []interface{}{}},
 		}
-		err := sanitizeTraceJSONQuery(stages)
+		err := SanitizeTraceJSONQuery(stages)
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -314,7 +314,7 @@ func TestSanitizeTraceJSONQuery_ErrorMessages(t *testing.T) {
 				},
 			},
 		}
-		err := sanitizeTraceJSONQuery(stages)
+		err := SanitizeTraceJSONQuery(stages)
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -336,7 +336,7 @@ func TestSanitizeTraceJSONQuery_ErrorMessages(t *testing.T) {
 				},
 			},
 		}
-		err := sanitizeTraceJSONQuery(stages)
+		err := SanitizeTraceJSONQuery(stages)
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -418,7 +418,7 @@ func TestSanitizeTraceJSONQuery_InvalidFilterConditionKeys(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := sanitizeTraceJSONQuery(tt.stages)
+			err := SanitizeTraceJSONQuery(tt.stages)
 			if err == nil {
 				t.Fatalf("expected error containing %q, got nil", tt.errContains)
 			}
@@ -473,7 +473,7 @@ func TestSanitizeTraceJSONQuery_ValidFilterOperators(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := sanitizeTraceJSONQuery(tt.stages); err != nil {
+			if err := SanitizeTraceJSONQuery(tt.stages); err != nil {
 				t.Errorf("expected no error, got: %v", err)
 			}
 		})
@@ -525,7 +525,7 @@ func TestSanitizeTraceJSONQuery_InvalidFieldReferences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := sanitizeTraceJSONQuery([]map[string]interface{}{
+			err := SanitizeTraceJSONQuery([]map[string]interface{}{
 				{"type": "filter", "query": map[string]interface{}{
 					"$eq": []interface{}{tt.field, "value"},
 				}},
@@ -542,7 +542,7 @@ func TestSanitizeTraceJSONQuery_InvalidFieldReferences(t *testing.T) {
 
 func TestSanitizeTraceJSONQuery_EdgeCases(t *testing.T) {
 	t.Run("empty pipeline passes", func(t *testing.T) {
-		if err := sanitizeTraceJSONQuery([]map[string]interface{}{}); err != nil {
+		if err := SanitizeTraceJSONQuery([]map[string]interface{}{}); err != nil {
 			t.Errorf("expected no error for empty pipeline, got: %v", err)
 		}
 	})
@@ -551,7 +551,7 @@ func TestSanitizeTraceJSONQuery_EdgeCases(t *testing.T) {
 		stages := []map[string]interface{}{
 			{"type": "aggregate"},
 		}
-		if err := sanitizeTraceJSONQuery(stages); err != nil {
+		if err := SanitizeTraceJSONQuery(stages); err != nil {
 			t.Errorf("missing aggregates key should pass sanitizer (upstream validates), got: %v", err)
 		}
 	})
@@ -560,7 +560,7 @@ func TestSanitizeTraceJSONQuery_EdgeCases(t *testing.T) {
 		stages := []map[string]interface{}{
 			{"type": "aggregate", "aggregates": "bad"},
 		}
-		if err := sanitizeTraceJSONQuery(stages); err != nil {
+		if err := SanitizeTraceJSONQuery(stages); err != nil {
 			t.Errorf("non-slice aggregates should pass sanitizer (upstream validates type), got: %v", err)
 		}
 	})
@@ -572,7 +572,7 @@ func TestSanitizeTraceJSONQuery_EdgeCases(t *testing.T) {
 				"aggregates": []interface{}{"not_a_map"},
 			},
 		}
-		if err := sanitizeTraceJSONQuery(stages); err != nil {
+		if err := SanitizeTraceJSONQuery(stages); err != nil {
 			t.Errorf("non-map aggregate entry should pass sanitizer, got: %v", err)
 		}
 	})
@@ -585,7 +585,7 @@ func TestSanitizeTraceJSONQuery_WrapsTopLevelFilterInAnd(t *testing.T) {
 				"$eq": []interface{}{"SpanKind", "SPAN_KIND_INTERNAL"},
 			}},
 		}
-		if err := sanitizeTraceJSONQuery(stages); err != nil {
+		if err := SanitizeTraceJSONQuery(stages); err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
 		want := map[string]interface{}{
@@ -604,7 +604,7 @@ func TestSanitizeTraceJSONQuery_WrapsTopLevelFilterInAnd(t *testing.T) {
 				"$eq": []interface{}{"ServiceName", "checkout"},
 			}},
 		}
-		if err := sanitizeTraceJSONQuery(stages); err != nil {
+		if err := SanitizeTraceJSONQuery(stages); err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
 		query, ok := stages[0]["query"].(map[string]interface{})
@@ -623,7 +623,7 @@ func TestSanitizeTraceJSONQuery_WrapsTopLevelFilterInAnd(t *testing.T) {
 				"$neq": []interface{}{"StatusCode", "STATUS_CODE_OK"},
 			}},
 		}
-		if err := sanitizeTraceJSONQuery(stages); err != nil {
+		if err := SanitizeTraceJSONQuery(stages); err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
 		want := map[string]interface{}{
@@ -644,7 +644,7 @@ func TestSanitizeTraceJSONQuery_WrapsTopLevelFilterInAnd(t *testing.T) {
 		stages := []map[string]interface{}{
 			{"type": "filter", "query": map[string]interface{}{"$and": inner}},
 		}
-		if err := sanitizeTraceJSONQuery(stages); err != nil {
+		if err := SanitizeTraceJSONQuery(stages); err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
 		want := map[string]interface{}{"$and": inner}
@@ -661,7 +661,7 @@ func TestSanitizeTraceJSONQuery_WrapsTopLevelFilterInAnd(t *testing.T) {
 		stages := []map[string]interface{}{
 			{"type": "filter", "query": map[string]interface{}{"$or": or}},
 		}
-		if err := sanitizeTraceJSONQuery(stages); err != nil {
+		if err := SanitizeTraceJSONQuery(stages); err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
 		query := stages[0]["query"].(map[string]interface{})
@@ -677,7 +677,7 @@ func TestSanitizeTraceJSONQuery_WrapsTopLevelFilterInAnd(t *testing.T) {
 		stages := []map[string]interface{}{
 			{"type": "filter", "query": map[string]interface{}{}},
 		}
-		if err := sanitizeTraceJSONQuery(stages); err != nil {
+		if err := SanitizeTraceJSONQuery(stages); err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
 		if got := stages[0]["query"]; !reflect.DeepEqual(got, map[string]interface{}{}) {
@@ -697,7 +697,7 @@ func TestSanitizeTraceJSONQuery_RewritesBrokenExistenceOperators(t *testing.T) {
 				"$exists": []interface{}{"attributes['mcp.session.id']"},
 			}},
 		}
-		if err := sanitizeTraceJSONQuery(stages); err != nil {
+		if err := SanitizeTraceJSONQuery(stages); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		// Sanitizer wraps top-level conditions in $and; unwrap for the check.
@@ -727,7 +727,7 @@ func TestSanitizeTraceJSONQuery_RewritesBrokenExistenceOperators(t *testing.T) {
 				},
 			}},
 		}
-		if err := sanitizeTraceJSONQuery(stages); err != nil {
+		if err := SanitizeTraceJSONQuery(stages); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		blob, _ := json.Marshal(stages)
@@ -751,7 +751,7 @@ func TestSanitizeTraceJSONQuery_RewritesBrokenExistenceOperators(t *testing.T) {
 				"$exists": []interface{}{},
 			}},
 		}
-		err := sanitizeTraceJSONQuery(stages)
+		err := SanitizeTraceJSONQuery(stages)
 		if err == nil {
 			t.Fatal("expected error for arg-less $exists")
 		}
@@ -766,7 +766,7 @@ func TestSanitizeTraceJSONQuery_RewritesBrokenExistenceOperators(t *testing.T) {
 				"$notnull": []interface{}{"attributes['user.id']"},
 			}},
 		}
-		if err := sanitizeTraceJSONQuery(stages); err != nil {
+		if err := SanitizeTraceJSONQuery(stages); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		blob, _ := json.Marshal(stages)
@@ -786,7 +786,7 @@ func TestSanitizeTraceJSONQuery_RewritesBrokenExistenceOperators(t *testing.T) {
 				"$neq":    []interface{}{"attributes['error.message']", ""},
 			}},
 		}
-		if err := sanitizeTraceJSONQuery(stages); err != nil {
+		if err := SanitizeTraceJSONQuery(stages); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		blob, _ := json.Marshal(stages)
@@ -812,7 +812,7 @@ func TestSanitizeTraceJSONQuery_RewritesLegacyDotNotationFields(t *testing.T) {
 				"$eq": []interface{}{"attributes.db.system", "postgresql"},
 			}},
 		}
-		if err := sanitizeTraceJSONQuery(stages); err != nil {
+		if err := SanitizeTraceJSONQuery(stages); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		blob, _ := json.Marshal(stages)
@@ -834,7 +834,7 @@ func TestSanitizeTraceJSONQuery_RewritesLegacyDotNotationFields(t *testing.T) {
 				},
 			}},
 		}
-		if err := sanitizeTraceJSONQuery(stages); err != nil {
+		if err := SanitizeTraceJSONQuery(stages); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		blob, _ := json.Marshal(stages)
@@ -856,31 +856,45 @@ func TestSanitizeTraceJSONQuery_RewritesLegacyDotNotationFields(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("events, plural resources and bare resource prefixes rewritten", func(t *testing.T) {
+		for _, tc := range []struct{ field, want string }{
+			{"events.exception.type", `events['exception.type']`},
+			{"resources.deployment.environment", `resources['deployment.environment']`},
+			{"resource.deployment.environment", `resources['deployment.environment']`},
+			{"resource.service.name", `ServiceName`},
+		} {
+			stages := []map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{
+					"$eq": []interface{}{tc.field, "x"},
+				}},
+			}
+			if err := SanitizeTraceJSONQuery(stages); err != nil {
+				t.Fatalf("%s: unexpected error: %v", tc.field, err)
+			}
+			blob, _ := json.Marshal(stages)
+			s := string(blob)
+			if !strings.Contains(s, tc.want) {
+				t.Errorf("%s: expected %q in: %s", tc.field, tc.want, s)
+			}
+			if strings.Contains(s, `"`+tc.field+`"`) {
+				t.Errorf("%s: legacy dot notation survived rewrite: %s", tc.field, s)
+			}
+		}
+	})
+
+	t.Run("already-bracketed fields pass through untouched", func(t *testing.T) {
+		for _, field := range []string{
+			`attributes['db.system']`,
+			`resources['deployment.environment']`,
+			`events['exception.type']`,
+			"ServiceName",
+			"Duration",
+		} {
+			if got := normalizeTraceFilterField(field); got != field {
+				t.Errorf("normalizeTraceFilterField(%q) = %q, want unchanged", field, got)
+			}
+		}
+	})
 }
 
-func TestSanitizeTraceJSONPipeline_RewritesLegacyDotNotationInPlace(t *testing.T) {
-	pipeline := []map[string]any{
-		{
-			"type": "filter",
-			"query": map[string]any{
-				"$eq": []any{"attributes.db.system", "postgresql"},
-			},
-		},
-	}
-
-	if err := SanitizeTraceJSONPipeline(pipeline); err != nil {
-		t.Fatalf("SanitizeTraceJSONPipeline() error = %v", err)
-	}
-
-	rawQuery, err := json.Marshal(pipeline[0]["query"])
-	if err != nil {
-		t.Fatalf("failed to marshal sanitized query: %v", err)
-	}
-	query := string(rawQuery)
-	if !strings.Contains(query, `attributes['db.system']`) {
-		t.Fatalf("expected bracket notation after sanitize, got %s", query)
-	}
-	if strings.Contains(query, "attributes.db.system") {
-		t.Fatalf("legacy dot notation survived sanitize, got %s", query)
-	}
-}

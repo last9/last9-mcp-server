@@ -282,7 +282,7 @@ func buildDatabaseSlowQueryTracePipeline(args GetDatabaseSlowQueriesArgs) ([]map
 		},
 	}
 
-	if err := traces.SanitizeTraceJSONPipeline(pipeline); err != nil {
+	if err := traces.SanitizeTraceJSONQuery(pipeline); err != nil {
 		return nil, fmt.Errorf("invalid slow query trace pipeline: %w", err)
 	}
 

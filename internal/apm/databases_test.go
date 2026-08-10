@@ -409,11 +409,21 @@ func TestBuildDatabaseSlowQueryTracePipeline_UsesBracketNotation(t *testing.T) {
 }
 
 func TestGetDatabaseSlowQueriesHandler_TracePipelineUsesBracketNotation(t *testing.T) {
+	// Assertions run on the server goroutine: Fatalf would Goexit there, and a
+	// request that never arrives would pass the test vacuously.
+	var mu sync.Mutex
+	reached := false
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/cat/api/traces/v2/query_range/json") {
+			mu.Lock()
+			reached = true
+			mu.Unlock()
+
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
-				t.Fatalf("failed to read request body: %v", err)
+				t.Errorf("failed to read request body: %v", err)
+				return
 			}
 
 			var req struct {
@@ -422,26 +432,29 @@ func TestGetDatabaseSlowQueriesHandler_TracePipelineUsesBracketNotation(t *testi
 				} `json:"pipeline"`
 			}
 			if err := json.Unmarshal(body, &req); err != nil {
-				t.Fatalf("failed to unmarshal request body: %v", err)
+				t.Errorf("failed to unmarshal request body: %v", err)
+				return
 			}
 			if len(req.Pipeline) != 1 {
-				t.Fatalf("expected exactly one pipeline stage, got %d", len(req.Pipeline))
+				t.Errorf("expected exactly one pipeline stage, got %d", len(req.Pipeline))
+				return
 			}
 
 			rawQuery, err := json.Marshal(req.Pipeline[0].Query)
 			if err != nil {
-				t.Fatalf("failed to marshal stage query: %v", err)
+				t.Errorf("failed to marshal stage query: %v", err)
+				return
 			}
 			query := string(rawQuery)
 
 			if !strings.Contains(query, `attributes['db.system']`) {
-				t.Fatalf("expected attributes['db.system'] in pipeline, got %s", query)
+				t.Errorf("expected attributes['db.system'] in pipeline, got %s", query)
 			}
 			if !strings.Contains(query, `attributes['net.peer.name']`) {
-				t.Fatalf("expected attributes['net.peer.name'] in pipeline, got %s", query)
+				t.Errorf("expected attributes['net.peer.name'] in pipeline, got %s", query)
 			}
 			if !strings.Contains(query, `resources['deployment.environment']`) {
-				t.Fatalf("expected resources['deployment.environment'] in pipeline, got %s", query)
+				t.Errorf("expected resources['deployment.environment'] in pipeline, got %s", query)
 			}
 			for _, bad := range []string{
 				"attributes.db.system",
@@ -449,7 +462,7 @@ func TestGetDatabaseSlowQueriesHandler_TracePipelineUsesBracketNotation(t *testi
 				"resource.attributes.deployment.environment",
 			} {
 				if strings.Contains(query, bad) {
-					t.Fatalf("pipeline should not include legacy dot notation %q, got %s", bad, query)
+					t.Errorf("pipeline should not include legacy dot notation %q, got %s", bad, query)
 				}
 			}
 
@@ -476,6 +489,12 @@ func TestGetDatabaseSlowQueriesHandler_TracePipelineUsesBracketNotation(t *testi
 	})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !reached {
+		t.Fatal("traces query_range endpoint was never called — pipeline assertions never ran")
 	}
 }
 

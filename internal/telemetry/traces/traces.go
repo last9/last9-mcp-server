@@ -39,7 +39,7 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 		}
 
 		// Validate the pipeline before forwarding to the API
-		if err := sanitizeTraceJSONQuery(args.TracejsonQuery); err != nil {
+		if err := SanitizeTraceJSONQuery(args.TracejsonQuery); err != nil {
 			return nil, nil, err
 		}
 

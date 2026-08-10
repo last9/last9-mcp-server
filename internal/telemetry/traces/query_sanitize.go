@@ -37,10 +37,10 @@ var traceFilterLogicalOperators = map[string]struct{}{
 	"$not": {},
 }
 
-// sanitizeTraceJSONQuery validates a tracejson_query pipeline before forwarding
+// SanitizeTraceJSONQuery validates a tracejson_query pipeline before forwarding
 // to the API. It catches common LLM mistakes and returns descriptive errors so
 // the model can self-correct without waiting for a 400 from the upstream API.
-func sanitizeTraceJSONQuery(stages []map[string]interface{}) error {
+func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 	for i, stage := range stages {
 		stageType, _ := stage["type"].(string)
 		path := fmt.Sprintf("tracejson_query[%d]", i)
@@ -282,22 +282,6 @@ func validateFieldSyntax(field, path string) error {
 	return nil
 }
 
-// SanitizeTraceJSONPipeline validates and normalizes a trace pipeline before
-// forwarding to the traces API. Normalizations are applied in place.
-func SanitizeTraceJSONPipeline(stages []map[string]any) error {
-	converted := make([]map[string]interface{}, len(stages))
-	for i, stage := range stages {
-		converted[i] = stage
-	}
-	if err := sanitizeTraceJSONQuery(converted); err != nil {
-		return err
-	}
-	for i := range stages {
-		stages[i] = converted[i]
-	}
-	return nil
-}
-
 // rewriteLegacyDotNotationFields walks a filter condition tree and rewrites
 // legacy dot-notation map attribute references to bracket syntax in place.
 func rewriteLegacyDotNotationFields(value interface{}) {
@@ -329,11 +313,20 @@ func normalizeTraceFilterField(field string) string {
 		strings.HasPrefix(field, `events['`) {
 		return field
 	}
-	if strings.HasPrefix(field, "resource.attributes.") {
-		return ResourceAttributeField(field[len("resource.attributes."):])
-	}
-	if strings.HasPrefix(field, "attributes.") {
-		return SpanAttributeField(field[len("attributes."):])
+	// Longest prefix first: resource.attributes. before resource.
+	for _, p := range []struct {
+		prefix string
+		to     func(string) string
+	}{
+		{"resource.attributes.", ResourceAttributeField},
+		{"resources.", ResourceAttributeField},
+		{"resource.", ResourceAttributeField},
+		{"attributes.", SpanAttributeField},
+		{"events.", EventAttributeField},
+	} {
+		if strings.HasPrefix(field, p.prefix) {
+			return p.to(field[len(p.prefix):])
+		}
 	}
 	return field
 }
