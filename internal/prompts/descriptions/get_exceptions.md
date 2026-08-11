@@ -3,7 +3,7 @@ Returns exception type, service name, span name, occurrence count, first_seen, a
 
 IMPORTANT: trace_id is always null in this response. The data comes from aggregated metrics, not raw spans.
 
-**Profile first:** Call `get_service_profile` for this service before using this tool. Use `signal_shape` and `telemetry` for routing — see `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
+**Profile first (service-scoped):** When investigating a specific `service_name`, call `get_service_profile` before using this tool. Use `signal_shape` and `telemetry` for routing — see `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
 
 Investigation flow — follow this exactly:
 1. Call get_exceptions to identify which service/exception_type is problematic.

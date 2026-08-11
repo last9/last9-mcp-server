@@ -32,4 +32,10 @@ func TestExceptionRootCauseInvestigationIncludesProfileStep(t *testing.T) {
 	if !strings.Contains(got, "non-aggregate `get_logs`") {
 		t.Errorf("workflow must use non-aggregate get_logs for bounded line reads:\n%s", got)
 	}
+	if !strings.Contains(got, "telemetry.traces == \"absent\"") {
+		t.Errorf("workflow must skip traces when profile reports traces absent:\n%s", got)
+	}
+	if !strings.Contains(got, "telemetry.logs == \"absent\"") {
+		t.Errorf("workflow must skip logs when profile reports logs absent:\n%s", got)
+	}
 }

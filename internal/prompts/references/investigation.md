@@ -51,7 +51,9 @@ When building log pipelines for `none` or `partial`, gate on ERROR/FATAL using t
 | `signal_shape` fully populated (`log_format != "unknown"`, `level_field` set) | Skip attribute discovery; go straight to scoped `get_logs` |
 | Results contradict profile | Apply contradiction clause (below) |
 
-### Exception root-cause routing (step 0 profile)
+### Exception root-cause routing (profile at step 2)
+
+Call modality-specific tools only when `profile.telemetry` reports them present — skip `get_service_traces` when `telemetry.traces == "absent"` and skip `get_logs` when `telemetry.logs == "absent"`.
 
 - `telemetry.traces == "present"` AND `severity_set == "all"` → exceptions are likely the answer; report and stop.
 - `telemetry.logs == "present"` AND (`severity_set` in (`none`, `partial`) OR `telemetry.traces == "absent"`) → exceptions are likely symptoms; continue to logs.

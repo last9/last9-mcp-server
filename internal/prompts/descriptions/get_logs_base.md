@@ -1,6 +1,6 @@
 Query logs with `logjson_query` — JSON **array of stages**. Each stage `"type"`: `filter`|`parse`|`aggregate`|`window_aggregate`. No `"stage"`/`"conditions"`.
 
-**Profile first:** `get_service_profile` → `signal_shape`/`telemetry`; `last9://reference/investigation`.
+**Profile first (service-scoped):** When the query filters a known service (`ServiceName` / `service.name`), call `get_service_profile` → use `signal_shape`/`telemetry`; `last9://reference/investigation`.
 
 **Filter:** `{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}` — `$eq|$neq|$contains|$gt|$gte|$lt|$lte|$regex` on `[field, value]` strings. Always `$and`-wrap.
 
