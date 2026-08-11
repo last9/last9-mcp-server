@@ -1,4 +1,4 @@
-Call this tool before any service-scoped investigation (logs, traces, exceptions, latency, errors). Returns a telemetry profile for one service: signal presence, severity routing, dependencies, and ingest hints.
+Call this tool before any service-scoped investigation (logs, traces, exceptions, latency, errors). Returns a telemetry profile for one service: signal presence, severity routing, and ingest hints.
 
 **Tri-state semantics:** telemetry fields use `present`, `absent`, or `unknown`. `unknown` means not yet derived — not the same as `absent`. Do not treat unknown as missing data.
 
