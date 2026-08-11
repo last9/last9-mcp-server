@@ -56,6 +56,9 @@ func TestOnCallRunbookRoutesBySymptom(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("symptom %q render should contain %q:\n%s", symptom, want, got)
 		}
+		if !strings.Contains(got, "get_service_profile") {
+			t.Errorf("symptom %q with service set should include profile bootstrap:\n%s", symptom, got)
+		}
 		if strings.Contains(got, "fleet triage") {
 			t.Errorf("symptom %q with service set should NOT include fleet triage", symptom)
 		}
@@ -96,7 +99,11 @@ func TestOnCallRunbookFleetTriageWhenNoService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got := res.Messages[0].Content.(*mcp.TextContent).Text; !strings.Contains(got, "fleet triage") {
+	got := res.Messages[0].Content.(*mcp.TextContent).Text
+	if !strings.Contains(got, "fleet triage") {
 		t.Errorf("no-service render should start with fleet triage:\n%s", got)
+	}
+	if !strings.Contains(got, "get_service_profile") {
+		t.Errorf("no-service render should call profile after fleet triage:\n%s", got)
 	}
 }

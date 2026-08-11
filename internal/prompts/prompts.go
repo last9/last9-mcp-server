@@ -17,6 +17,9 @@ var ServiceLogsReference string
 //go:embed references/metrics.md
 var MetricsReference string
 
+//go:embed references/investigation.md
+var InvestigationReference string
+
 //go:embed descriptions/get_service_summary.md
 var GetServiceSummaryDescription string
 

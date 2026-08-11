@@ -1,5 +1,7 @@
 Compare APM performance across a current window and an equal-duration baseline window. Use this tool for questions such as what regressed, improved, or changed; incident-versus-prior-period comparisons; recovery or post-mitigation verification; and fleet deviation discovery.
 
+**Profile first:** Call `get_service_profile` for this service before using this tool. Use `signal_shape` and `telemetry` for routing — see `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
+
 Use `get_service_summary` for a one-window snapshot of current performance. Use `get_apm_service_deviations` when the question requires an equal-duration baseline comparison.
 
 For a comparative question, call this tool first and by itself. Do not batch speculative corroboration or duplicate comparison calls. Inspect the returned outcome and evidence before deciding whether the user explicitly requested any deeper investigation.

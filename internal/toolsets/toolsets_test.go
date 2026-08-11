@@ -44,6 +44,18 @@ func TestParseLogsIncludesInstantQuery(t *testing.T) {
 	}
 }
 
+func TestParseDomainToolsetsIncludeServiceProfile(t *testing.T) {
+	for _, spec := range []string{"logs", "traces", "metrics"} {
+		set, err := Parse(spec)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", spec, err)
+		}
+		if !set.Allows("get_service_profile") {
+			t.Errorf("%s toolset must include get_service_profile (profile-first firing rules on domain tools)", spec)
+		}
+	}
+}
+
 func TestParseInvestigate(t *testing.T) {
 	set, err := Parse("investigate")
 	if err != nil {
