@@ -20,6 +20,8 @@ Critical rules:
 - request_count is an interval total, not rpm and not a p95.
 - throughput_rpm is request_count / window minutes, not a p95.
 - HTTP 4xx, HTTP 5xx, and gRPC counts are never added together. 429 is 4xx here (get_apm_service_deviations treats 429 with 5xx).
+- grpc_error_count requires a present non-empty grpc_status_code that is not 0/OK. Series that omit the label stay 0 (HTTP-only spans).
+- Dashboard links use a literal env only for exact `^name$` (or a meta-free name). Regex env_scope such as `.*` or `prod|staging` is not copied into the UI filter.
 - A missing class is 0, not omitted. Zeros mean no matching class in this window.
 - Empty rows stay empty: do not widen the interval, change status class, or invent placeholder names.
 - Ranking is APM/server-span only. Log-only services are absent, not zero.
