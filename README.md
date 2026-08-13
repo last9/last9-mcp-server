@@ -401,7 +401,7 @@ LAST9_HTTP=true ./last9-mcp-server
 ### get_service_summary
 
 - `start_time_iso` / `end_time_iso` (string, optional)
-- `env` (string, optional): Defaults to `prod`.
+- `env` (string, optional): Defaults to `.*`.
 
 ### get_service_environments
 

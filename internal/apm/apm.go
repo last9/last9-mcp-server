@@ -2,11 +2,15 @@ package apm
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"last9-mcp/internal/deeplink"
@@ -27,9 +31,47 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
-type ServiceSummary struct {
-	Throughput, ErrorRate, ResponseTime float64
-	ServiceName, Env                    string
+const (
+	serviceSummaryDefaultEnv     = ".*"
+	serviceSummaryDefaultLimit   = 10
+	serviceSummaryMaxLimit       = 100
+	serviceSummarySpanKind       = `span_kind="SPAN_KIND_SERVER"`
+	serviceSummaryGRPCMatcher    = `grpc_status_code!~"^(|0|OK)$"`
+	serviceSummaryCoverage       = "Ranking covers APM server-span metrics only. Log-only services are absent from rows, not listed as zero."
+	serviceSummaryEmptyHint      = "No APM server-span series matched this interval and env_scope. rows is empty; the interval was not widened and no placeholder service names were added."
+	serviceSummarySortRequest    = "request_count"
+	serviceSummarySortRPM        = "throughput_rpm"
+	serviceSummarySort4xx        = "http_4xx_count"
+	serviceSummarySort5xx        = "http_5xx_count"
+	serviceSummarySortGRPC       = "grpc_error_count"
+	serviceSummaryAllowedSortBy  = "request_count, throughput_rpm, http_4xx_count, http_5xx_count, grpc_error_count"
+	serviceSummaryFingerprintEnv = "<env>"
+)
+
+type ServiceSummaryRow struct {
+	Rank           int     `json:"rank"`
+	Service        string  `json:"service"`
+	Env            string  `json:"env"`
+	RequestCount   float64 `json:"request_count"`
+	ThroughputRPM  float64 `json:"throughput_rpm"`
+	HTTP4xxCount   float64 `json:"http_4xx_count"`
+	HTTP5xxCount   float64 `json:"http_5xx_count"`
+	GRPCErrorCount float64 `json:"grpc_error_count"`
+}
+
+type ServiceSummaryResult struct {
+	Rows             []ServiceSummaryRow `json:"rows"`
+	SortBy           string              `json:"sort_by"`
+	Limit            int                 `json:"limit"`
+	RowCount         int                 `json:"row_count"`
+	Truncated        bool                `json:"truncated"`
+	StartTime        string              `json:"start_time"`
+	EndTime          string              `json:"end_time"`
+	EnvScope         string              `json:"env_scope"`
+	SortKeyUnit      string              `json:"sort_key_unit"`
+	QueryFingerprint string              `json:"query_fingerprint"`
+	Coverage         string              `json:"coverage"`
+	Hint             string              `json:"hint,omitempty"`
 }
 
 type apiPromInstantResp []struct {
@@ -44,10 +86,12 @@ type apiPromRangeResp []struct {
 
 // Input structs for MCP SDK handlers
 type ServiceSummaryArgs struct {
-	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
-	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
+	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start of the interval in RFC3339/ISO8601 (e.g. 2024-06-01T12:00:00Z). When both start and end are set they beat lookback."`
+	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End of the interval in RFC3339/ISO8601 (e.g. 2024-06-01T13:00:00Z). When both start and end are set they beat lookback. A single bound fills the other with lookback_minutes."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
-	Env             string  `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
+	Env             string  `json:"env,omitempty" jsonschema:"Environment PromQL regex (default: .*). Exact one-env match needs anchors (e.g. ^prod$)."`
+	SortBy          string  `json:"sort_by,omitempty" jsonschema:"Sort key. Allowed: request_count (default), throughput_rpm, http_4xx_count, http_5xx_count, grpc_error_count. Unknown values including errors, error_rate, and 5xx are rejected."`
+	Limit           int     `json:"limit,omitempty" jsonschema:"Max ranked rows. Omit or 0 means 10. Other values below 1 are an error. Values above 100 clamp to 100."`
 }
 
 type ServiceEnvironmentsArgs struct {
@@ -160,155 +204,92 @@ func resolveInstantQueryTime(timeISO string, lookbackMinutes float64) (int64, er
 }
 
 func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceSummaryArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, args ServiceSummaryArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, args ServiceSummaryArgs) (*mcp.CallToolResult, any, error) {
+		sortBy, sortKeyUnit, err := resolveServiceSummarySortBy(args.SortBy)
+		if err != nil {
+			return nil, nil, err
+		}
+		limit, err := resolveServiceSummaryLimit(args.Limit)
+		if err != nil {
+			return nil, nil, err
+		}
+
 		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		// Accept env from parameters if provided
-		env := args.Env
-		if env == "" {
-			env = ".*" // default value
-		}
-		// get the value of service througputs using the query
-		// quantile_over_time(0.95, sum by (service_name)(trace_endpoint_count{service_name=~'.*', env=~'prod', span_kind=~'SPAN_KIND_SERVER|SPAN_KIND_CLIENT'})[30m])
-		// add the filter values in the promql from the filterParams
-		// Build PromQL filter string from filterParams
-		// Build PromQL query
-		promql := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (service_name)(trace_endpoint_count{env=~'%s', span_kind='SPAN_KIND_SERVER'}[%dm]))",
-			env,
-			int((endTimeParam-startTimeParam)/60),
-		)
+		envScope, envMatcher := serviceSummaryEnvMatcher(args.Env)
+		windowMin := intervalMinutes(startTimeParam, endTimeParam)
 
-		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, promql, endTimeParam, cfg)
-		if err != nil {
-			return nil, nil, err
-		}
-		defer httpResp.Body.Close()
-
-		var promResp map[string]ServiceSummary
-		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service summary: %s", httpResp.Status)
+		queries := []struct {
+			field string
+			text  string
+		}{
+			{serviceSummarySortRequest, serviceSummaryCountQuery(envMatcher, windowMin, "")},
+			{serviceSummarySort4xx, serviceSummaryCountQuery(envMatcher, windowMin, `http_status_code=~"4.*"`)},
+			{serviceSummarySort5xx, serviceSummaryCountQuery(envMatcher, windowMin, `http_status_code=~"5.*"`)},
+			{serviceSummarySortGRPC, serviceSummaryCountQuery(envMatcher, windowMin, serviceSummaryGRPCMatcher)},
 		}
 
-		// Extract service summary map from PromQL response
-		var thrResp apiPromInstantResp
-		if err := json.NewDecoder(httpResp.Body).Decode(&thrResp); err != nil {
-			return nil, nil, err
-		}
-
-		promResp = make(map[string]ServiceSummary)
-		for _, r := range thrResp {
-			serviceName := r.Metric["service_name"]
-
-			valStr, _ := r.Value[1].(string)
-			val, _ := strconv.ParseFloat(valStr, 64)
-
-			promResp[serviceName] = ServiceSummary{
-				ServiceName:  serviceName,
-				Env:          env,
-				Throughput:   val,
-				ErrorRate:    0, // Placeholder, set if available
-				ResponseTime: 0, // Placeholder, set if available
+		joined := map[string]*ServiceSummaryRow{}
+		for _, q := range queries {
+			series, err := fetchPromInstantSeries(ctx, client, cfg, q.text, endTimeParam)
+			if err != nil {
+				return nil, nil, err
+			}
+			if err := mergeServiceSummarySeries(joined, series, q.field); err != nil {
+				return nil, nil, err
 			}
 		}
-		// If no services found, return empty result
-		if len(promResp) == 0 {
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{
-					&mcp.TextContent{
-						Text: "No services found for the given parameters",
-					},
-				},
-			}, nil, nil
-		}
-		// Make another prom_query_instant call for response time
-		respTimePromql := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (service_name)(trace_service_response_time{quantile=\"p95\", env=~'%s'}[%dm]))",
-			env,
-			int((endTimeParam-startTimeParam)/60),
-		)
-		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, respTimePromql, endTimeParam, cfg)
-		if err != nil {
-			return nil, nil, err
-		}
-		defer httpResp.Body.Close()
-		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service summary: %s", httpResp.Status)
+
+		rows := make([]ServiceSummaryRow, 0, len(joined))
+		for _, row := range joined {
+			row.ThroughputRPM = row.RequestCount / float64(windowMin)
+			rows = append(rows, *row)
 		}
 
-		var respTimeRaw apiPromInstantResp
-		if err := json.NewDecoder(httpResp.Body).Decode(&respTimeRaw); err != nil {
-			return nil, nil, err
-		}
-
-		for _, r := range respTimeRaw {
-			serviceName := r.Metric["service_name"]
-			valStr, _ := r.Value[1].(string)
-			val, _ := strconv.ParseFloat(valStr, 64)
-			if summary, ok := promResp[serviceName]; ok {
-				summary.ResponseTime = val
-				promResp[serviceName] = summary
-			} else {
-				promResp[serviceName] = ServiceSummary{
-					ServiceName:  serviceName,
-					Env:          env,
-					Throughput:   0,
-					ErrorRate:    0,
-					ResponseTime: val,
-				}
+		sort.SliceStable(rows, func(i, j int) bool {
+			vi := serviceSummarySortValue(rows[i], sortBy)
+			vj := serviceSummarySortValue(rows[j], sortBy)
+			if vi != vj {
+				return vi > vj
 			}
+			return identityLess(rows[i].Service, rows[i].Env, rows[j].Service, rows[j].Env)
+		})
+
+		truncated := len(rows) > limit
+		if truncated {
+			rows = rows[:limit]
 		}
-		// Make another prom_query_instant call for error rate
-		errorRateQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (service_name)(trace_endpoint_count{env=~'%s', span_kind=~'SPAN_KIND_SERVER', http_status_code=~\"5.*\"}[%dm]))",
-			env,
-			int((endTimeParam-startTimeParam)/60),
-		)
-		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, errorRateQuery, endTimeParam, cfg)
-		if err != nil {
-			return nil, nil, err
-		}
-		defer httpResp.Body.Close()
-		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service summary: %s", httpResp.Status)
+		for i := range rows {
+			rows[i].Rank = i + 1
 		}
 
-		var errRateRaw apiPromInstantResp
-		if err := json.NewDecoder(httpResp.Body).Decode(&errRateRaw); err != nil {
-			return nil, nil, err
+		result := ServiceSummaryResult{
+			Rows:             rows,
+			SortBy:           sortBy,
+			Limit:            limit,
+			RowCount:         len(rows),
+			Truncated:        truncated,
+			StartTime:        time.Unix(startTimeParam, 0).UTC().Format(time.RFC3339),
+			EndTime:          time.Unix(endTimeParam, 0).UTC().Format(time.RFC3339),
+			EnvScope:         envScope,
+			SortKeyUnit:      sortKeyUnit,
+			QueryFingerprint: serviceSummaryFingerprint(windowMin),
+			Coverage:         serviceSummaryCoverage,
+		}
+		if len(rows) == 0 {
+			result.Hint = serviceSummaryEmptyHint
 		}
 
-		for _, r := range errRateRaw {
-			serviceName := r.Metric["service_name"]
-			valStr, _ := r.Value[1].(string)
-			val, _ := strconv.ParseFloat(valStr, 64)
-			if summary, ok := promResp[serviceName]; ok {
-				summary.ErrorRate = val
-				promResp[serviceName] = summary
-			} else {
-				promResp[serviceName] = ServiceSummary{
-					ServiceName:  serviceName,
-					Env:          env,
-					Throughput:   0,
-					ErrorRate:    val,
-					ResponseTime: 0,
-				}
-			}
-		}
-		returnText, err := json.Marshal(promResp)
+		returnText, err := json.Marshal(result)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
 
-		// Build deep link URL
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, "", env, "")
+		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, "", envScope, "")
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
@@ -318,6 +299,163 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 				},
 			},
 		}, nil, nil
+	}
+}
+
+func resolveServiceSummarySortBy(sortBy string) (string, string, error) {
+	if sortBy == "" {
+		return serviceSummarySortRequest, "count", nil
+	}
+	units := map[string]string{
+		serviceSummarySortRequest: "count",
+		serviceSummarySortRPM:     "rpm",
+		serviceSummarySort4xx:     "count",
+		serviceSummarySort5xx:     "count",
+		serviceSummarySortGRPC:    "count",
+	}
+	unit, ok := units[sortBy]
+	if !ok {
+		return "", "", fmt.Errorf("sort_by %q is not allowed; use one of: %s", sortBy, serviceSummaryAllowedSortBy)
+	}
+	return sortBy, unit, nil
+}
+
+func resolveServiceSummaryLimit(limit int) (int, error) {
+	if limit == 0 {
+		return serviceSummaryDefaultLimit, nil
+	}
+	if limit < 1 {
+		return 0, fmt.Errorf("limit must be omitted, 0 (default %d), or >= 1; got %d", serviceSummaryDefaultLimit, limit)
+	}
+	if limit > serviceSummaryMaxLimit {
+		return serviceSummaryMaxLimit, nil
+	}
+	return limit, nil
+}
+
+func serviceSummaryEnvMatcher(env string) (scope, matcher string) {
+	if env == "" {
+		env = serviceSummaryDefaultEnv
+	}
+	scope = env
+	if env == serviceSummaryDefaultEnv {
+		return scope, `env=~".*"`
+	}
+	return scope, fmt.Sprintf(`env=~"%s"`, escapePromQLLabel(env))
+}
+
+func serviceSummaryCountQuery(envMatcher string, windowMin int, extraMatcher string) string {
+	matchers := envMatcher + "," + serviceSummarySpanKind
+	if extraMatcher != "" {
+		matchers += "," + extraMatcher
+	}
+	return fmt.Sprintf("sum by (service_name, env)(sum_over_time(trace_endpoint_count{%s}[%dm]))", matchers, windowMin)
+}
+
+func serviceSummaryFingerprint(windowMin int) string {
+	envMatcher := fmt.Sprintf(`env=~"%s"`, serviceSummaryFingerprintEnv)
+	material := strings.Join([]string{
+		serviceSummaryCountQuery(envMatcher, windowMin, ""),
+		serviceSummaryCountQuery(envMatcher, windowMin, `http_status_code=~"4.*"`),
+		serviceSummaryCountQuery(envMatcher, windowMin, `http_status_code=~"5.*"`),
+		serviceSummaryCountQuery(envMatcher, windowMin, serviceSummaryGRPCMatcher),
+	}, "\n")
+	sum := sha256.Sum256([]byte(material))
+	return hex.EncodeToString(sum[:])
+}
+
+func intervalMinutes(startUnix, endUnix int64) int {
+	start := time.Unix(startUnix, 0).UTC()
+	end := time.Unix(endUnix, 0).UTC()
+	d := end.Sub(start)
+	minutes := int(d.Minutes())
+	if d%time.Minute != 0 {
+		minutes++
+	}
+	if minutes <= 0 {
+		minutes = 1
+	}
+	return minutes
+}
+
+func fetchPromInstantSeries(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64) (apiPromInstantResp, error) {
+	httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, query, endTime, cfg)
+	if err != nil {
+		return nil, err
+	}
+	defer httpResp.Body.Close()
+	if httpResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to get service summary: %s", httpResp.Status)
+	}
+	var parsed apiPromInstantResp
+	if err := json.NewDecoder(httpResp.Body).Decode(&parsed); err != nil {
+		return nil, err
+	}
+	return parsed, nil
+}
+
+func mergeServiceSummarySeries(joined map[string]*ServiceSummaryRow, series apiPromInstantResp, field string) error {
+	for _, r := range series {
+		serviceName := r.Metric["service_name"]
+		if serviceName == "" {
+			continue
+		}
+		val, err := parsePromInstantValue(r.Value)
+		if err != nil {
+			return err
+		}
+		env := r.Metric["env"]
+		key := serviceName + "\x00" + env
+		row, ok := joined[key]
+		if !ok {
+			row = &ServiceSummaryRow{Service: serviceName, Env: env}
+			joined[key] = row
+		}
+		switch field {
+		case serviceSummarySortRequest:
+			row.RequestCount = val
+		case serviceSummarySort4xx:
+			row.HTTP4xxCount = val
+		case serviceSummarySort5xx:
+			row.HTTP5xxCount = val
+		case serviceSummarySortGRPC:
+			row.GRPCErrorCount = val
+		default:
+			return fmt.Errorf("unknown service summary field %q", field)
+		}
+	}
+	return nil
+}
+
+func parsePromInstantValue(value []any) (float64, error) {
+	if len(value) < 2 {
+		return 0, fmt.Errorf("prometheus instant sample is missing a value")
+	}
+	valStr, ok := value[1].(string)
+	if !ok {
+		return 0, fmt.Errorf("prometheus instant sample value is not a string")
+	}
+	val, err := strconv.ParseFloat(valStr, 64)
+	if err != nil {
+		return 0, fmt.Errorf("prometheus instant sample value %q is not a number: %w", valStr, err)
+	}
+	return val, nil
+}
+
+func serviceSummarySortValue(row ServiceSummaryRow, sortBy string) float64 {
+	switch sortBy {
+	case serviceSummarySortRequest:
+		return row.RequestCount
+	case serviceSummarySortRPM:
+		return row.ThroughputRPM
+	case serviceSummarySort4xx:
+		return row.HTTP4xxCount
+	case serviceSummarySort5xx:
+		return row.HTTP5xxCount
+	case serviceSummarySortGRPC:
+		return row.GRPCErrorCount
+	default:
+		return row.RequestCount
 	}
 }
 

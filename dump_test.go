@@ -56,6 +56,32 @@ func TestDumpTools(t *testing.T) {
 		}
 	}
 
+	summary := out.Tools[byName["get_service_summary"]]
+	if strings.Contains(summary.Description, "ErrorRate") {
+		t.Fatal("get_service_summary description still mentions ErrorRate")
+	}
+	if strings.Contains(summary.Description, "last9://reference/") {
+		t.Fatal("get_service_summary must not be a whale with a last9://reference/ pointer")
+	}
+	if !strings.Contains(summary.Description, "http_5xx_count") {
+		t.Fatal("get_service_summary description missing http_5xx_count language map")
+	}
+	summarySchema, err := json.Marshal(summary.InputSchema)
+	if err != nil {
+		t.Fatalf("marshal get_service_summary inputSchema: %v", err)
+	}
+	var summaryProps struct {
+		Properties map[string]any `json:"properties"`
+	}
+	if err := json.Unmarshal(summarySchema, &summaryProps); err != nil {
+		t.Fatalf("unmarshal get_service_summary inputSchema: %v", err)
+	}
+	for _, name := range []string{"sort_by", "limit"} {
+		if _, ok := summaryProps.Properties[name]; !ok {
+			t.Fatalf("get_service_summary schema missing %q", name)
+		}
+	}
+
 	// Org attribute catalogs must never appear as {{labels}} placeholders.
 	if strings.Contains(out.Tools[byName["get_logs"]].Description, "{{labels}}") {
 		t.Fatal("get_logs description still contains unsubstituted {{labels}} placeholder")

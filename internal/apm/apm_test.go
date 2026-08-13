@@ -3,6 +3,7 @@ package apm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,89 +20,441 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
-	// Mock responses should match apiPromInstantResp format (direct array)
-	throughputResp := `[
-				{
-					"metric": {"service_name": "svc1"},
-					"value": [1687600000, "10"]
-				}
-	]`
-	responseTimeResp := `[
-				{
-					"metric": {"service_name": "svc1"},
-					"value": [1687600000, "1.1"]
-				}
-	]`
-	errorRateResp := `[
-				{
-					"metric": {"service_name": "svc1"},
-					"value": [1687600000, "0.5"]
-				}
-	]`
+type summaryPromSample struct {
+	service string
+	env     string
+	value   string
+}
 
-	callCount := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify we're hitting the prom_query_instant endpoint
-		if !strings.Contains(r.URL.Path, "/prom_query_instant") {
-			t.Errorf("Expected request to /prom_query_instant, got %s", r.URL.Path)
+type summaryPromFixture struct {
+	request []summaryPromSample
+	http4xx []summaryPromSample
+	http5xx []summaryPromSample
+	grpc    []summaryPromSample
+	fail5xx bool
+}
+
+func TestNewServiceSummaryHandler_RanksByRequestCount(t *testing.T) {
+	startTime := time.Date(2026, 8, 13, 11, 20, 0, 0, time.UTC)
+	endTime := startTime.Add(20 * time.Minute)
+
+	queries, result := runServiceSummaryHandler(t, summaryPromFixture{
+		request: []summaryPromSample{
+			{service: "beta", env: "prod", value: "100"},
+			{service: "alpha", env: "prod", value: "50"},
+			{service: "alpha", env: "staging", value: "200"},
+		},
+		http5xx: []summaryPromSample{
+			{service: "beta", env: "prod", value: "90"},
+		},
+	}, ServiceSummaryArgs{
+		StartTimeISO: startTime.Format(time.RFC3339),
+		EndTimeISO:   endTime.Format(time.RFC3339),
+		Env:          ".*",
+	})
+
+	assertServiceSummaryQueryShape(t, queries)
+	if result.SortBy != "request_count" {
+		t.Fatalf("sort_by = %q, want request_count", result.SortBy)
+	}
+	if result.SortKeyUnit != "count" {
+		t.Fatalf("sort_key_unit = %q, want count", result.SortKeyUnit)
+	}
+	if result.Limit != 10 {
+		t.Fatalf("limit = %d, want 10", result.Limit)
+	}
+	if result.EnvScope != ".*" {
+		t.Fatalf("env_scope = %q, want .*", result.EnvScope)
+	}
+	if result.StartTime != startTime.Format(time.RFC3339) || result.EndTime != endTime.Format(time.RFC3339) {
+		t.Fatalf("interval = %s/%s, want %s/%s", result.StartTime, result.EndTime, startTime.Format(time.RFC3339), endTime.Format(time.RFC3339))
+	}
+	if result.Coverage != serviceSummaryCoverage {
+		t.Fatalf("coverage = %q", result.Coverage)
+	}
+	if result.QueryFingerprint == "" {
+		t.Fatal("query_fingerprint is empty")
+	}
+	if strings.Contains(result.QueryFingerprint, "alpha") || strings.Contains(result.QueryFingerprint, "prod") {
+		t.Fatalf("query_fingerprint leaked label values: %s", result.QueryFingerprint)
+	}
+	got := summaryRowKeys(result.Rows)
+	want := []string{"alpha/staging", "beta/prod", "alpha/prod"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("default sort order = %v, want %v (request_count, not 5xx)", got, want)
+	}
+	if result.Rows[0].RequestCount != 200 || result.Rows[0].ThroughputRPM != 10 {
+		t.Fatalf("alpha/staging counts = %+v, want request_count=200 throughput_rpm=10", result.Rows[0])
+	}
+	if result.Rows[1].HTTP5xxCount != 90 {
+		t.Fatalf("beta/prod http_5xx_count = %v, want 90", result.Rows[1].HTTP5xxCount)
+	}
+	if result.Rows[1].Env != "prod" {
+		t.Fatalf("row env = %q, want series label prod not filter string", result.Rows[1].Env)
+	}
+}
+
+func TestNewServiceSummaryHandler_HTTP5xxRankingIsStable(t *testing.T) {
+	startTime := time.Date(2026, 8, 13, 11, 20, 0, 0, time.UTC)
+	endTime := startTime.Add(20 * time.Minute)
+	fx := summaryPromFixture{
+		request: []summaryPromSample{
+			{service: "alpha", env: "prod", value: "1000"},
+			{service: "noisy-client", env: "prod", value: "800"},
+			{service: "failing-api", env: "prod", value: "40"},
+			{service: "failing-api", env: "staging", value: "40"},
+		},
+		http4xx: []summaryPromSample{
+			{service: "noisy-client", env: "prod", value: "500"},
+			{service: "failing-api", env: "prod", value: "1"},
+		},
+		http5xx: []summaryPromSample{
+			{service: "failing-api", env: "prod", value: "30"},
+			{service: "failing-api", env: "staging", value: "30"},
+			{service: "alpha", env: "prod", value: "2"},
+		},
+	}
+	args := ServiceSummaryArgs{
+		StartTimeISO: startTime.Format(time.RFC3339),
+		EndTimeISO:   endTime.Format(time.RFC3339),
+		SortBy:       "http_5xx_count",
+		Limit:        10,
+	}
+
+	_, first := runServiceSummaryHandler(t, fx, args)
+	_, second := runServiceSummaryHandler(t, fx, args)
+
+	got := summaryRowKeys(first.Rows)
+	want := []string{"failing-api/prod", "failing-api/staging", "alpha/prod", "noisy-client/prod"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("5xx ranking = %v, want %v", got, want)
+	}
+	if first.Rows[0].HTTP4xxCount != 1 {
+		t.Fatalf("5xx leader http_4xx_count = %v, want 1 (4xx must not promote noisy-client)", first.Rows[0].HTTP4xxCount)
+	}
+	if summaryRowKeys(second.Rows)[0] != want[0] || !reflect.DeepEqual(summaryRowKeys(second.Rows), got) {
+		t.Fatalf("repeated 5xx ranking diverged: first=%v second=%v", got, summaryRowKeys(second.Rows))
+	}
+	if first.Rows[3].HTTP5xxCount != 0 {
+		t.Fatalf("noisy-client http_5xx_count = %v, want 0", first.Rows[3].HTTP5xxCount)
+	}
+}
+
+func TestNewServiceSummaryHandler_RejectsUnknownSortBy(t *testing.T) {
+	handler := NewServiceSummaryHandler(http.DefaultClient, models.Config{
+		TokenManager: &auth.TokenManager{AccessToken: "t", ExpiresAt: time.Now().Add(time.Hour)},
+	})
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServiceSummaryArgs{SortBy: "errors"})
+	if err == nil {
+		t.Fatal("expected sort_by=errors to fail")
+	}
+	if !strings.Contains(err.Error(), "request_count") || !strings.Contains(err.Error(), "http_5xx_count") {
+		t.Fatalf("error %q does not list allowed sort_by keys", err)
+	}
+}
+
+func TestNewServiceSummaryHandler_EmptyRowsStayEmpty(t *testing.T) {
+	var queries []string
+	result := runServiceSummaryHandlerWithQueries(t, summaryPromFixture{}, ServiceSummaryArgs{
+		StartTimeISO: time.Date(2026, 8, 13, 11, 20, 0, 0, time.UTC).Format(time.RFC3339),
+		EndTimeISO:   time.Date(2026, 8, 13, 11, 40, 0, 0, time.UTC).Format(time.RFC3339),
+	}, &queries)
+
+	if result.RowCount != 0 || len(result.Rows) != 0 {
+		t.Fatalf("rows = %+v, want empty", result.Rows)
+	}
+	if result.Rows == nil {
+		t.Fatal("rows must be [] not null")
+	}
+	if result.Hint == "" {
+		t.Fatal("empty result must include a hint")
+	}
+	if strings.Contains(strings.ToLower(result.Hint), "unknown") {
+		t.Fatalf("hint must not invent placeholder names: %s", result.Hint)
+	}
+	if len(queries) != 4 {
+		t.Fatalf("empty vectors still issue 4 queries, got %d (must not retry a wider window)", len(queries))
+	}
+	for _, q := range queries {
+		if strings.Contains(q, "[40m]") || strings.Contains(q, "[60m]") {
+			t.Fatalf("empty result widened the window: %s", q)
 		}
-		callCount++
-		w.Header().Set("Content-Type", "application/json")
-		switch callCount {
-		case 1:
-			w.WriteHeader(http.StatusOK)
-			io.WriteString(w, throughputResp)
-		case 2:
-			w.WriteHeader(http.StatusOK)
-			io.WriteString(w, responseTimeResp)
-		case 3:
-			w.WriteHeader(http.StatusOK)
-			io.WriteString(w, errorRateResp)
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
+	}
+}
+
+func TestNewServiceSummaryHandler_FailsWholeCallOnClassError(t *testing.T) {
+	startTime := time.Date(2026, 8, 13, 11, 20, 0, 0, time.UTC)
+	endTime := startTime.Add(20 * time.Minute)
+	server, queries := newServiceSummaryPromServer(t, summaryPromFixture{
+		request: []summaryPromSample{{service: "alpha", env: "prod", value: "10"}},
+		fail5xx: true,
+	})
 	defer server.Close()
 
-	cfg := models.Config{
-		APIBaseURL: server.URL,
-		Region:     "us-east-1",
+	handler := NewServiceSummaryHandler(server.Client(), testSummaryConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServiceSummaryArgs{
+		StartTimeISO: startTime.Format(time.RFC3339),
+		EndTimeISO:   endTime.Format(time.RFC3339),
+	})
+	if err == nil {
+		t.Fatal("expected 5xx Prom failure to fail the whole call")
 	}
-	// Create a mock TokenManager for testing
-	cfg.TokenManager = &auth.TokenManager{
-		AccessToken: "mock-access-token-for-testing",
-		ExpiresAt:   time.Now().Add(365 * 24 * time.Hour), // Valid for 1 year
+	if !strings.Contains(err.Error(), "500") {
+		t.Fatalf("error %q should surface the non-OK Prom status", err)
 	}
-	handler := NewServiceSummaryHandler(server.Client(), cfg)
+	for _, q := range *queries {
+		if strings.Contains(q, serviceSummaryGRPCMatcher) {
+			t.Fatal("gRPC query must not run after a 5xx Prom failure")
+		}
+	}
+}
 
-	args := ServiceSummaryArgs{
-		StartTimeISO: time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
-		EndTimeISO:   time.Now().UTC().Format(time.RFC3339),
-		Env:          "test",
+func TestNewServiceSummaryHandler_FivexxOnlySeriesKeepsZeroRequestCount(t *testing.T) {
+	_, result := runServiceSummaryHandler(t, summaryPromFixture{
+		http5xx: []summaryPromSample{{service: "orphan", env: "prod", value: "7"}},
+	}, ServiceSummaryArgs{
+		StartTimeISO: time.Date(2026, 8, 13, 11, 20, 0, 0, time.UTC).Format(time.RFC3339),
+		EndTimeISO:   time.Date(2026, 8, 13, 11, 40, 0, 0, time.UTC).Format(time.RFC3339),
+		SortBy:       "http_5xx_count",
+	})
+	if len(result.Rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(result.Rows))
+	}
+	if result.Rows[0].Service != "orphan" || result.Rows[0].RequestCount != 0 || result.Rows[0].HTTP5xxCount != 7 {
+		t.Fatalf("unexpected 5xx-only row: %+v", result.Rows[0])
+	}
+	if result.Rows[0].ThroughputRPM != 0 {
+		t.Fatalf("throughput_rpm = %v, want 0", result.Rows[0].ThroughputRPM)
+	}
+}
+
+func TestNewServiceSummaryHandler_LimitClampAndFourxxIncludes429(t *testing.T) {
+	request := make([]summaryPromSample, 0, 101)
+	for i := 0; i < 101; i++ {
+		request = append(request, summaryPromSample{
+			service: fmt.Sprintf("svc-%03d", i),
+			env:     "prod",
+			value:   fmt.Sprintf("%d", 101-i),
+		})
+	}
+	_, omitted := runServiceSummaryHandler(t, summaryPromFixture{request: request}, ServiceSummaryArgs{
+		StartTimeISO: time.Date(2026, 8, 13, 11, 20, 0, 0, time.UTC).Format(time.RFC3339),
+		EndTimeISO:   time.Date(2026, 8, 13, 11, 40, 0, 0, time.UTC).Format(time.RFC3339),
+	})
+	if omitted.Limit != 10 || omitted.RowCount != 10 || !omitted.Truncated {
+		t.Fatalf("omit limit: limit=%d row_count=%d truncated=%v, want 10/10/true", omitted.Limit, omitted.RowCount, omitted.Truncated)
 	}
 
-	ctx := context.Background()
-	req := &mcp.CallToolRequest{}
-	result, _, err := handler(ctx, req, args)
+	_, clamped := runServiceSummaryHandler(t, summaryPromFixture{request: request}, ServiceSummaryArgs{
+		StartTimeISO: time.Date(2026, 8, 13, 11, 20, 0, 0, time.UTC).Format(time.RFC3339),
+		EndTimeISO:   time.Date(2026, 8, 13, 11, 40, 0, 0, time.UTC).Format(time.RFC3339),
+		Limit:        101,
+	})
+	if clamped.Limit != 100 || clamped.RowCount != 100 || !clamped.Truncated {
+		t.Fatalf("limit 101: limit=%d row_count=%d truncated=%v, want 100/100/true", clamped.Limit, clamped.RowCount, clamped.Truncated)
+	}
+
+	queries, fourxx := runServiceSummaryHandler(t, summaryPromFixture{
+		request: []summaryPromSample{{service: "edge", env: "prod", value: "10"}},
+		http4xx: []summaryPromSample{{service: "edge", env: "prod", value: "3"}},
+	}, ServiceSummaryArgs{
+		StartTimeISO: time.Date(2026, 8, 13, 11, 20, 0, 0, time.UTC).Format(time.RFC3339),
+		EndTimeISO:   time.Date(2026, 8, 13, 11, 40, 0, 0, time.UTC).Format(time.RFC3339),
+		SortBy:       "http_4xx_count",
+	})
+	if fourxx.Rows[0].HTTP4xxCount != 3 {
+		t.Fatalf("http_4xx_count = %v, want 3", fourxx.Rows[0].HTTP4xxCount)
+	}
+	var saw4xx, saw5xx bool
+	for _, q := range queries {
+		if strings.Contains(q, `http_status_code=~"4.*"`) {
+			saw4xx = true
+			if strings.Contains(q, `http_status_code=~"5.*"`) {
+				t.Fatalf("4xx query must not also match 5xx: %s", q)
+			}
+		}
+		if strings.Contains(q, `http_status_code=~"5.*"`) {
+			saw5xx = true
+			if strings.Contains(q, `http_status_code=~"4.*"`) {
+				t.Fatalf("5xx query must not also match 4xx: %s", q)
+			}
+		}
+	}
+	if !saw4xx || !saw5xx {
+		t.Fatalf("missing class matchers in queries: %v", queries)
+	}
+}
+
+func TestNewServiceSummaryHandler_RejectsInvalidLimit(t *testing.T) {
+	handler := NewServiceSummaryHandler(http.DefaultClient, models.Config{
+		TokenManager: &auth.TokenManager{AccessToken: "t", ExpiresAt: time.Now().Add(time.Hour)},
+	})
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServiceSummaryArgs{Limit: -1})
+	if err == nil {
+		t.Fatal("expected limit=-1 to fail")
+	}
+}
+
+func TestNewServiceSummaryHandler_SkipsEmptyServiceName(t *testing.T) {
+	_, result := runServiceSummaryHandler(t, summaryPromFixture{
+		request: []summaryPromSample{
+			{service: "", env: "prod", value: "99"},
+			{service: "kept", env: "prod", value: "1"},
+		},
+	}, ServiceSummaryArgs{
+		StartTimeISO: time.Date(2026, 8, 13, 11, 20, 0, 0, time.UTC).Format(time.RFC3339),
+		EndTimeISO:   time.Date(2026, 8, 13, 11, 40, 0, 0, time.UTC).Format(time.RFC3339),
+	})
+	if len(result.Rows) != 1 || result.Rows[0].Service != "kept" {
+		t.Fatalf("rows = %+v, want only kept", result.Rows)
+	}
+}
+
+func runServiceSummaryHandler(t *testing.T, fx summaryPromFixture, args ServiceSummaryArgs) ([]string, ServiceSummaryResult) {
+	t.Helper()
+	var queries []string
+	result := runServiceSummaryHandlerWithQueries(t, fx, args, &queries)
+	return queries, result
+}
+
+func runServiceSummaryHandlerWithQueries(t *testing.T, fx summaryPromFixture, args ServiceSummaryArgs, queries *[]string) ServiceSummaryResult {
+	t.Helper()
+	server, recorded := newServiceSummaryPromServer(t, fx)
+	defer server.Close()
+	handler := NewServiceSummaryHandler(server.Client(), testSummaryConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
-
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
+	*queries = append(*queries, *recorded...)
+	text := utils.GetTextContent(t, result)
+	var payload ServiceSummaryResult
+	if err := json.Unmarshal([]byte(text), &payload); err != nil {
+		t.Fatalf("failed to unmarshal envelope: %v\n%s", err, text)
 	}
-
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
+	if strings.Contains(text, "ErrorRate") {
+		t.Fatalf("response still contains ErrorRate: %s", text)
 	}
+	return payload
+}
 
-	var summaries map[string]ServiceSummary
-	if err := json.Unmarshal([]byte(textContent.Text), &summaries); err != nil {
-		t.Fatalf("failed to unmarshal response: %v", err)
+func newServiceSummaryPromServer(t *testing.T, fx summaryPromFixture) (*httptest.Server, *[]string) {
+	t.Helper()
+	var queries []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/prom_query_instant") {
+			t.Errorf("Expected request to /prom_query_instant, got %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var reqBody map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			t.Errorf("failed to decode instant request body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		query := fmt.Sprintf("%v", reqBody["query"])
+		queries = append(queries, query)
+
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(query, `http_status_code=~"5.*"`):
+			if fx.fail5xx {
+				w.WriteHeader(http.StatusInternalServerError)
+				io.WriteString(w, `{"error":"prom down"}`)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, promInstantJSON(t, fx.http5xx))
+		case strings.Contains(query, `http_status_code=~"4.*"`):
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, promInstantJSON(t, fx.http4xx))
+		case strings.Contains(query, serviceSummaryGRPCMatcher):
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, promInstantJSON(t, fx.grpc))
+		default:
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, promInstantJSON(t, fx.request))
+		}
+	}))
+	return server, &queries
+}
+
+func testSummaryConfig(apiBaseURL string) models.Config {
+	return models.Config{
+		APIBaseURL: apiBaseURL,
+		Region:     "us-east-1",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "mock-access-token-for-testing",
+			ExpiresAt:   time.Now().Add(365 * 24 * time.Hour),
+		},
 	}
+}
 
+func promInstantJSON(t *testing.T, samples []summaryPromSample) string {
+	t.Helper()
+	if samples == nil {
+		return "[]"
+	}
+	type row struct {
+		Metric map[string]string `json:"metric"`
+		Value  []any             `json:"value"`
+	}
+	out := make([]row, 0, len(samples))
+	for _, sample := range samples {
+		metric := map[string]string{}
+		if sample.service != "" {
+			metric["service_name"] = sample.service
+		}
+		if sample.env != "" {
+			metric["env"] = sample.env
+		}
+		out = append(out, row{Metric: metric, Value: []any{1687600000, sample.value}})
+	}
+	body, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("marshal prom fixture: %v", err)
+	}
+	return string(body)
+}
+
+func summaryRowKeys(rows []ServiceSummaryRow) []string {
+	keys := make([]string, 0, len(rows))
+	for _, row := range rows {
+		keys = append(keys, row.Service+"/"+row.Env)
+	}
+	return keys
+}
+
+func assertServiceSummaryQueryShape(t *testing.T, queries []string) {
+	t.Helper()
+	if len(queries) != 4 {
+		t.Fatalf("expected 4 instant queries, got %d: %v", len(queries), queries)
+	}
+	var sawGRPC bool
+	for _, q := range queries {
+		if !strings.Contains(q, "sum_over_time") {
+			t.Fatalf("query missing sum_over_time: %s", q)
+		}
+		if !strings.Contains(q, "sum by (service_name, env)") {
+			t.Fatalf("query missing grouping: %s", q)
+		}
+		if strings.Contains(q, "topk") {
+			t.Fatalf("query must not use topk: %s", q)
+		}
+		if strings.Contains(q, "quantile_over_time") {
+			t.Fatalf("query must not use quantile_over_time: %s", q)
+		}
+		if !strings.Contains(q, `span_kind="SPAN_KIND_SERVER"`) {
+			t.Fatalf("query missing exact server span_kind: %s", q)
+		}
+		if strings.Contains(q, serviceSummaryGRPCMatcher) {
+			sawGRPC = true
+		}
+	}
+	if !sawGRPC {
+		t.Fatalf("gRPC matcher missing from queries: %v", queries)
+	}
 }
 
 func TestGetServicePerformanceDetails(t *testing.T) {
@@ -455,11 +808,11 @@ func TestNewServiceSummaryHandler_Integration(t *testing.T) {
 
 	text := utils.GetTextContent(t, result)
 
-	var summaries map[string]ServiceSummary
-	if err := json.Unmarshal([]byte(text), &summaries); err != nil {
+	var payload ServiceSummaryResult
+	if err := json.Unmarshal([]byte(text), &payload); err != nil {
 		t.Logf("Integration test successful. Response is formatted text (not JSON)")
 	} else {
-		t.Logf("Integration test successful: found %d service summary/ies", len(summaries))
+		t.Logf("Integration test successful: found %d ranked row(s)", payload.RowCount)
 	}
 }
 
