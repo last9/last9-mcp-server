@@ -748,3 +748,68 @@ func TestGetLogAttributesForPipeline_EmptyData(t *testing.T) {
 		t.Errorf("expected empty attribute list, got: %v", attrs)
 	}
 }
+
+// TestGetLogAttributesForPipeline_InvalidPipelineRejectsBeforeHTTP verifies that
+// invalid pipelines (SpanKind filter, window_minutes WA) are rejected by
+// prepareLogJSONQuery before any HTTP request is made.
+func TestGetLogAttributesForPipeline_InvalidPipelineRejectsBeforeHTTP(t *testing.T) {
+	cases := []struct {
+		name      string
+		pipeline  []map[string]interface{}
+		errSubstr string
+	}{
+		{
+			name: "SpanKind filter",
+			pipeline: []map[string]interface{}{
+				{
+					"type": "filter",
+					"query": map[string]interface{}{
+						"$and": []interface{}{
+							map[string]interface{}{"$eq": []interface{}{"SpanKind", "SPAN_KIND_SERVER"}},
+						},
+					},
+				},
+			},
+			errSubstr: "SpanKind",
+		},
+		{
+			name: "window_minutes on window_aggregate",
+			pipeline: []map[string]interface{}{
+				{
+					"type":           "window_aggregate",
+					"function":       map[string]interface{}{"$count": []interface{}{}},
+					"as":             "errors",
+					"window_minutes": 1,
+				},
+			},
+			errSubstr: "window_minutes",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			requestCount := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requestCount++
+				http.Error(w, "should not be called", http.StatusBadRequest)
+			}))
+			defer server.Close()
+
+			cfg := testAttrConfig(server.URL)
+			handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+				Pipeline: c.pipeline,
+			})
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if c.errSubstr != "" && !strings.Contains(err.Error(), c.errSubstr) {
+				t.Errorf("error %q missing expected substring %q", err.Error(), c.errSubstr)
+			}
+			if requestCount != 0 {
+				t.Errorf("expected 0 HTTP requests for invalid pipeline, got %d", requestCount)
+			}
+		})
+	}
+}

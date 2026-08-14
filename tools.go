@@ -135,6 +135,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_logs",
 		Description: getLogsDesc,
+		InputSchema: logs.GetLogsInputSchema(),
 	}, logs.NewGetLogsHandler(client, cfg)))
 
 	// Register service logs tool

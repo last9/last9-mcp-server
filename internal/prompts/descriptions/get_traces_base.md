@@ -12,7 +12,7 @@ Query traces with `tracejson_query` — a JSON **array of stages**. Each stage M
 
 **Scope:** tenant name → `resources['last9.tenant']`; deployment env → `resources['deployment.environment']`.
 
-**Time (tool args):** Prefer `lookback_minutes` (default **5**). Absolute → `start_time_iso`+`end_time_iso` (RFC3339). Never put the window as a `Timestamp` filter in the pipeline.
+**Time (tool args):** Prefer `lookback_minutes` (default **60**). Absolute → `start_time_iso`+`end_time_iso` (RFC3339). Never put the window as a `Timestamp` filter in the pipeline.
 
 **Fields:** Top-level: `TraceId`, `SpanId`, `ServiceName`, `SpanName`, `SpanKind`, `StatusCode`, `Duration`, `Timestamp`, `ParentSpanId`. SpanKind/StatusCode need full OTel prefixes (`SPAN_KIND_SERVER`, `STATUS_CODE_ERROR`—not `SERVER`/`ERROR`). **`Duration` is nanoseconds** (1000ms = `1000000000`). Span/resource attrs → `get_trace_attributes*`; use `attributes['key']` / `resources['key']` (never `SpanAttributes.foo`).
 

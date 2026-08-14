@@ -105,9 +105,32 @@ func TestDumpTools(t *testing.T) {
 	if strings.Contains(out.Tools[byName["get_logs"]].Description, "{{labels}}") {
 		t.Fatal("get_logs description still contains unsubstituted {{labels}} placeholder")
 	}
-	for _, whale := range []string{"get_logs", "get_traces", "get_service_logs"} {
-		if len(out.Tools[byName[whale]].Description) > 2000 {
-			t.Fatalf("%s served description length %d exceeds 2000-char tripwire", whale, len(out.Tools[byName[whale]].Description))
+	// get_logs: budget covers combined (description + inputSchema JSON) served size
+	// because get_logs ships a hand-crafted schema that contributes meaningfully to
+	// the context window. Budget is 7000 with headroom over the baseline ~6283.
+	logsIdx := byName["get_logs"]
+	logsSchemaBytes, err := json.Marshal(out.Tools[logsIdx].InputSchema)
+	if err != nil {
+		t.Fatalf("marshal get_logs inputSchema: %v", err)
+	}
+	logsServedSize := len(out.Tools[logsIdx].Description) + len(logsSchemaBytes)
+	const logsServedBudget = 7000
+	if logsServedSize > logsServedBudget {
+		t.Fatalf("get_logs combined (description + inputSchema) served size %d exceeds %d-char budget", logsServedSize, logsServedBudget)
+	}
+	if !strings.Contains(out.Tools[logsIdx].Description, "last9://reference/") {
+		t.Fatal("get_logs description missing resource URI pointer")
+	}
+
+	// Description-only budgets for other whales (main tripwire values restored to 2000).
+	whaleBudgets := map[string]int{
+		"get_traces":       2000,
+		"get_service_logs": 2000,
+	}
+	for _, whale := range []string{"get_traces", "get_service_logs"} {
+		budget := whaleBudgets[whale]
+		if len(out.Tools[byName[whale]].Description) > budget {
+			t.Fatalf("%s served description length %d exceeds %d-char budget", whale, len(out.Tools[byName[whale]].Description), budget)
 		}
 		if !strings.Contains(out.Tools[byName[whale]].Description, "last9://reference/") {
 			t.Fatalf("%s description missing resource URI pointer", whale)

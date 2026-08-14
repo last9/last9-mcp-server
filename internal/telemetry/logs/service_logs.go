@@ -18,7 +18,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-
 // ServiceLogsResponse represents the response structure for service logs
 type ServiceLogsResponse struct {
 	Service       string     `json:"service"`

@@ -477,6 +477,11 @@ func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Confi
 			return nil, nil, fmt.Errorf("pipeline parameter is required. Provide at least one filter stage to scope discovery, e.g. [{\"type\":\"filter\",\"query\":{\"$eq\":[\"ServiceName\",\"<service>\"]}}]")
 		}
 
+		validatedPipeline, err := prepareLogJSONQuery(args.Pipeline, "pipeline")
+		if err != nil {
+			return nil, nil, err
+		}
+
 		params := make(map[string]interface{})
 		if args.LookbackMinutes > 0 {
 			params["lookback_minutes"] = args.LookbackMinutes
@@ -526,10 +531,10 @@ func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Confi
 		samplingCfg.Region = region
 		bodyCh := make(chan []LogAttribute, 1)
 		go func() {
-			bodyCh <- sampleBodyDerivedAttributes(ctx, client, samplingCfg, args.Pipeline, startTime, endTime, normalizedIndex)
+			bodyCh <- sampleBodyDerivedAttributes(ctx, client, samplingCfg, validatedPipeline, startTime, endTime, normalizedIndex)
 		}()
 
-		names, err := fetchLogSeriesFieldNames(ctx, client, cfg, args.Pipeline, queryParams)
+		names, err := fetchLogSeriesFieldNames(ctx, client, cfg, validatedPipeline, queryParams)
 		if err != nil {
 			return nil, nil, err
 		}

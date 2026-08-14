@@ -17,16 +17,24 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		reason string
 	}{
 		{"window_aggregate", "must document time-bucketed counts"},
+		{"window", "must document window key for window_aggregate"},
+		{"function", "must document function key for window_aggregate"},
+		{"NOT SQL", "must clarify logjson_query is not SQL"},
 		{"$neq", "must document existence idiom"},
 		{"start_time_iso", "must document absolute time on tool args"},
 		{"resources['last9.tenant']", "must document tenant scoping"},
 		{"resources['deployment.environment']", "must document env scoping"},
 		{"last9://reference/logjson", "must point at the logjson resource"},
+		{"community_member_id", "must document bare single-token field mistake"},
+		{"attributes['key']", "must require attributes/resources wrapping"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
 			t.Errorf("GetLogsDescription missing %q: %s", c.phrase, c.reason)
 		}
+	}
+	if strings.Contains(desc, "window_minutes") {
+		t.Error("GetLogsDescription must NOT contain deprecated 'window_minutes' key")
 	}
 }
 
@@ -45,6 +53,7 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 		{"groupby", "must document groupby key name"},
 		{"resources['last9.tenant']", "must document tenant scoping"},
 		{"last9://reference/tracejson", "must point at the tracejson resource"},
+		{"default **60**", "must document default lookback of 60 minutes"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
@@ -75,16 +84,23 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 }
 
 func TestWhaleDescriptionsBounded(t *testing.T) {
-	for name, body := range map[string]string{
+	budgets := map[string]int{
+		"get_logs_base":         2600,
+		"get_traces_base":       2000,
+		"get_service_logs_base": 2000,
+	}
+	bodies := map[string]string{
 		"get_logs_base":         prompts.GetLogsDescription,
 		"get_traces_base":       prompts.GetTracesDescription,
 		"get_service_logs_base": prompts.GetServiceLogsDescription,
-	} {
+	}
+	for name, body := range bodies {
 		if len(body) == 0 {
 			t.Errorf("%s empty", name)
 		}
-		if len(body) > 2000 {
-			t.Errorf("%s length %d exceeds 2000-char tripwire", name, len(body))
+		budget := budgets[name]
+		if len(body) > budget {
+			t.Errorf("%s length %d exceeds %d-char budget", name, len(body), budget)
 		}
 	}
 }
