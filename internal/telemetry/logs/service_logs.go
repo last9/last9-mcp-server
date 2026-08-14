@@ -39,15 +39,25 @@ type LogEntry struct {
 
 // GetServiceLogsArgs represents the input arguments for the get_service_logs tool
 type GetServiceLogsArgs struct {
-	ServiceName     string   `json:"service_name" jsonschema:"Name of the service to retrieve logs for (e.g. api) (required)"`
-	StartTimeISO    string   `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2023-10-01T10:00:00Z). If not provided lookback_minutes is used"`
-	EndTimeISO      string   `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2023-10-01T11:00:00Z). If not provided current time is used"`
-	LookbackMinutes int      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time if start_time_iso not provided (default: 60, minimum: 1)"`
-	Limit           int      `json:"limit,omitempty" jsonschema:"Maximum number of log entries to return (optional, default: 20)"`
-	SeverityFilters []string `json:"severity_filters,omitempty" jsonschema:"Array of severity patterns to match (uses OR logic) (e.g. [error warn])"`
-	BodyFilters     []string `json:"body_filters,omitempty" jsonschema:"Array of message content patterns to match (uses OR logic) (e.g. [timeout failed])"`
-	Env             string   `json:"env,omitempty" jsonschema:"Environment to filter by. Empty string if environment is unknown (e.g. production)"`
-	Index           string   `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Omit this when the user did not specify an index."`
+	ServiceName      string                      `json:"service_name" jsonschema:"Name of the service to retrieve logs for (e.g. api) (required)"`
+	StartTimeISO     string                      `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2023-10-01T10:00:00Z). If not provided lookback_minutes is used"`
+	EndTimeISO       string                      `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2023-10-01T11:00:00Z). If not provided current time is used"`
+	LookbackMinutes  int                         `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time if start_time_iso not provided (default: 60, minimum: 1)"`
+	Limit            int                         `json:"limit,omitempty" jsonschema:"Maximum number of log entries to return (optional, default: 20)"`
+	SeverityFilters  []string                    `json:"severity_filters,omitempty" jsonschema:"Array of severity patterns to match (uses OR logic) (e.g. [error warn])"`
+	BodyFilters      []string                    `json:"body_filters,omitempty" jsonschema:"Array of message content patterns to match (uses OR logic) (e.g. [timeout failed])"`
+	HTTPStatusClass  string                      `json:"http_status_class,omitempty" jsonschema:"HTTP status class to match: 2xx, 3xx, 4xx, or 5xx. Discovers the status field unless http_status_field is set."`
+	HTTPStatusCode   string                      `json:"http_status_code,omitempty" jsonschema:"Exact HTTP status code (e.g. 500, 401). Discovers the status field unless http_status_field is set. Takes precedence over http_status_class."`
+	HTTPStatusField  string                      `json:"http_status_field,omitempty" jsonschema:"Explicit logjson field for HTTP status (e.g. attributes['http.status_code']). Required when discovery finds zero or multiple status-like fields."`
+	AttributeFilters []ServiceLogAttributeFilter `json:"attribute_filters,omitempty" jsonschema:"Equality filters on named log attributes. Each entry is field plus value. field uses logjson syntax such as attributes['user_id']. Unknown org fields are allowed; invalid syntax is rejected."`
+	Env              string                      `json:"env,omitempty" jsonschema:"Environment to filter by. Empty string if environment is unknown (e.g. production)"`
+	Index            string                      `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Omit this when the user did not specify an index."`
+}
+
+// ServiceLogAttributeFilter is a structured equality filter compiled into logjson.
+type ServiceLogAttributeFilter struct {
+	Field string `json:"field" jsonschema:"(Required) logjson field, e.g. attributes['user_id'] or resources['k8s.namespace.name']"`
+	Value string `json:"value" jsonschema:"(Required) exact value matched with $eq"`
 }
 
 // NewGetServiceLogsHandler creates a new handler for the get_service_logs tool
@@ -89,10 +99,16 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("invalid index: %w", err)
 		}
 
+		extraConditions, parseStages, err := compileServiceLogsStructuredFilters(ctx, client, cfg, args, startTime, endTime, normalizedIndex)
+		if err != nil {
+			return nil, nil, err
+		}
+
 		logjsonQuery := buildServiceLogsQuery(args.ServiceName, args.SeverityFilters, args.BodyFilters)
 		if args.Env != "" {
 			logjsonQuery = addServiceLogsEnvFilter(logjsonQuery, args.Env)
 		}
+		logjsonQuery = applyServiceLogsStructuredFilters(logjsonQuery, extraConditions, parseStages)
 
 		// Fetch raw logs using the existing logs API approach. When index is omitted,
 		// keep the query on the no-index path that matches the live dashboard/API.

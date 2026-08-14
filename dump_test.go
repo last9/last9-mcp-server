@@ -150,6 +150,17 @@ func TestDumpTools(t *testing.T) {
 		}
 	}
 
+	svcLogsDesc := out.Tools[byName["get_service_logs"]].Description
+	if strings.Contains(svcLogsDesc, "Prefer `get_logs` instead when") {
+		t.Fatal("get_service_logs must not tell agents to prefer get_logs for HTTP status")
+	}
+	if strings.Contains(strings.ToLower(svcLogsDesc), "use `get_logs` + discovered status") {
+		t.Fatal("get_service_logs must not send HTTP-status search to get_logs")
+	}
+	if !strings.Contains(svcLogsDesc, "http_status") {
+		t.Fatal("get_service_logs description must document HTTP status filters")
+	}
+
 	tracesDesc := out.Tools[byName["get_traces"]].Description
 	if strings.Contains(tracesDesc, "default **5**") {
 		t.Fatal("get_traces lookback default must match GetTracesArgs (60), not 5")

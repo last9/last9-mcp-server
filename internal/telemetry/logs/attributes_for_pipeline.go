@@ -469,6 +469,52 @@ func fetchLogSeriesFieldNames(ctx context.Context, client *http.Client, cfg mode
 	return names, nil
 }
 
+// discoverLogAttributes returns indexed plus body-derived attributes for a
+// pipeline, using the same merge rules as get_log_attributes_for_pipeline.
+func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.Config, pipeline []map[string]interface{}, startSec, endSec int64, index string, queryParams url.Values) ([]LogAttribute, error) {
+	bodyCh := make(chan []LogAttribute, 1)
+	go func() {
+		bodyCh <- sampleBodyDerivedAttributes(ctx, client, cfg, pipeline, startSec, endSec, index)
+	}()
+
+	names, err := fetchLogSeriesFieldNames(ctx, client, cfg, pipeline, queryParams)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]LogAttribute, 0, len(names))
+	indexedFilterFields := make(map[string]struct{}, len(names))
+	indexedHasSeverity := hasIndexedSeverityFamily(names)
+	for _, name := range names {
+		filterField := logFieldFilterField(name)
+		indexedFilterFields[filterField] = struct{}{}
+		out = append(out, LogAttribute{
+			Name:        name,
+			FilterField: filterField,
+			Hint:        fmt.Sprintf("{\"$eq\":[\"%s\",\"<value>\"]}", filterField),
+		})
+	}
+
+	// Merge: drop a body-derived entry when (a) an indexed entry already
+	// exposes the SAME filter_field (true duplicate), or (b) it is a
+	// severity-family name (level/severity/SeverityText) and any indexed
+	// severity-family field is already present. Indexed severity is the
+	// directly-filterable signal the product UI renders; a parallel
+	// body-derived level that requires a regexp parse is inferior and
+	// must not be advertised alongside it.
+	for _, attr := range <-bodyCh {
+		if _, dup := indexedFilterFields[attr.FilterField]; dup {
+			continue
+		}
+		if indexedHasSeverity && isSeverityFamilyName(attr.Name) {
+			continue
+		}
+		out = append(out, attr)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
 // NewGetLogAttributesForPipelineHandler creates a handler that returns the log
 // attributes present for a given pipeline, each enriched with its filter_field.
 func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetLogAttributesForPipelineArgs) (*mcp.CallToolResult, any, error) {
@@ -524,51 +570,12 @@ func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Confi
 			queryParams.Set("index", normalizedIndex)
 		}
 
-		// Best-effort, in parallel with the series fetch: fields that exist only
-		// inside the log Body as JSON — they need a parse stage (carried in the
-		// hint) before use. The sampling honors the same region override.
 		samplingCfg := cfg
 		samplingCfg.Region = region
-		bodyCh := make(chan []LogAttribute, 1)
-		go func() {
-			bodyCh <- sampleBodyDerivedAttributes(ctx, client, samplingCfg, validatedPipeline, startTime, endTime, normalizedIndex)
-		}()
-
-		names, err := fetchLogSeriesFieldNames(ctx, client, cfg, validatedPipeline, queryParams)
+		out, err := discoverLogAttributes(ctx, client, samplingCfg, validatedPipeline, startTime, endTime, normalizedIndex, queryParams)
 		if err != nil {
 			return nil, nil, err
 		}
-
-		out := make([]LogAttribute, 0, len(names))
-		indexedFilterFields := make(map[string]struct{}, len(names))
-		indexedHasSeverity := hasIndexedSeverityFamily(names)
-		for _, name := range names {
-			filterField := logFieldFilterField(name)
-			indexedFilterFields[filterField] = struct{}{}
-			out = append(out, LogAttribute{
-				Name:        name,
-				FilterField: filterField,
-				Hint:        fmt.Sprintf("{\"$eq\":[\"%s\",\"<value>\"]}", filterField),
-			})
-		}
-
-		// Merge: drop a body-derived entry when (a) an indexed entry already
-		// exposes the SAME filter_field (true duplicate), or (b) it is a
-		// severity-family name (level/severity/SeverityText) and any indexed
-		// severity-family field is already present. Indexed severity is the
-		// directly-filterable signal the product UI renders; a parallel
-		// body-derived level that requires a regexp parse is inferior and
-		// must not be advertised alongside it.
-		for _, attr := range <-bodyCh {
-			if _, dup := indexedFilterFields[attr.FilterField]; dup {
-				continue
-			}
-			if indexedHasSeverity && isSeverityFamilyName(attr.Name) {
-				continue
-			}
-			out = append(out, attr)
-		}
-		sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 
 		payload, err := json.MarshalIndent(out, "", "  ")
 		if err != nil {
