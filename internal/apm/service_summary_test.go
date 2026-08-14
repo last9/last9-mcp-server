@@ -69,6 +69,9 @@ func TestNewServiceSummaryHandler_RanksByRequestCount(t *testing.T) {
 	if result.StartTime != startTime.Format(time.RFC3339) || result.EndTime != endTime.Format(time.RFC3339) {
 		t.Fatalf("interval = %s/%s, want %s/%s", result.StartTime, result.EndTime, startTime.Format(time.RFC3339), endTime.Format(time.RFC3339))
 	}
+	if result.WindowMinutes != 20 {
+		t.Fatalf("window_minutes = %d, want 20", result.WindowMinutes)
+	}
 	if result.Coverage != serviceSummaryCoverage {
 		t.Fatalf("coverage = %q", result.Coverage)
 	}
@@ -371,18 +374,65 @@ func TestNewServiceSummaryHandler_EnvMatcherQuoting(t *testing.T) {
 	}
 }
 
-func TestServiceSummaryCatalogEnv(t *testing.T) {
+func TestServiceSummaryDeeplinkEnv(t *testing.T) {
 	cases := map[string]string{
 		"":             "",
 		".*":           "",
-		"prod":         "prod",
-		"^prod$":       "prod",
+		"prod":         "",
+		"^prod$":       "^prod$",
 		"prod|staging": "",
-		"^prod.*$":     "",
+		"^prod.*$":     "^prod.*$",
 	}
 	for in, want := range cases {
-		if got := serviceSummaryCatalogEnv(in); got != want {
-			t.Errorf("serviceSummaryCatalogEnv(%q) = %q, want %q", in, got, want)
+		if got := serviceSummaryDeeplinkEnv(in); got != want {
+			t.Errorf("serviceSummaryDeeplinkEnv(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestIntervalMinutesRoundsUp(t *testing.T) {
+	end := time.Date(2026, 8, 13, 11, 20, 0, 0, time.UTC).Unix()
+	cases := []struct {
+		name  string
+		start int64
+		want  int
+	}{
+		{name: "exact minutes", start: end - 20*60, want: 20},
+		{name: "zero length", start: end, want: 1},
+		{name: "ninety seconds", start: end - 90, want: 2},
+		{name: "one second", start: end - 1, want: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := intervalMinutes(tc.start, end); got != tc.want {
+				t.Fatalf("intervalMinutes(%d,%d) = %d, want %d", tc.start, end, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNewServiceSummaryHandler_StampsQueriedWindow(t *testing.T) {
+	endTime := time.Date(2026, 8, 13, 11, 20, 0, 0, time.UTC)
+	startTime := endTime.Add(-90 * time.Second)
+	fx := summaryPromFixture{request: []summaryPromSample{{service: "svc", env: "prod", value: "30"}}}
+
+	queries, result := runServiceSummaryHandler(t, fx, ServiceSummaryArgs{
+		StartTimeISO: startTime.Format(time.RFC3339),
+		EndTimeISO:   endTime.Format(time.RFC3339),
+	})
+	if result.WindowMinutes != 2 {
+		t.Fatalf("window_minutes = %d, want 2", result.WindowMinutes)
+	}
+	wantStart := endTime.Add(-2 * time.Minute).Format(time.RFC3339)
+	if result.StartTime != wantStart || result.EndTime != endTime.Format(time.RFC3339) {
+		t.Fatalf("stamped interval = %s/%s, want %s/%s", result.StartTime, result.EndTime, wantStart, endTime.Format(time.RFC3339))
+	}
+	if result.Rows[0].ThroughputRPM != 15 {
+		t.Fatalf("throughput_rpm = %v, want 30/2=15", result.Rows[0].ThroughputRPM)
+	}
+	for _, q := range queries {
+		if !strings.Contains(q, "[2m]") {
+			t.Fatalf("expected [2m] range in query, got %s", q)
 		}
 	}
 }
@@ -420,6 +470,15 @@ func TestNewServiceSummaryHandler_DeeplinkOmitsRegexEnv(t *testing.T) {
 	})
 	if strings.Contains(pattern, "deployment_environment") {
 		t.Fatalf("regex env must not be passed as a literal catalog filter: %s", pattern)
+	}
+
+	unanchored := runServiceSummaryMetaURL(t, fx, ServiceSummaryArgs{
+		StartTimeISO: start.Format(time.RFC3339),
+		EndTimeISO:   end.Format(time.RFC3339),
+		Env:          "prod",
+	})
+	if strings.Contains(unanchored, "deployment_environment") {
+		t.Fatalf("unanchored env must not become an exact catalog filter: %s", unanchored)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -114,6 +115,32 @@ func (b *Builder) BuildDropRulesLink() string {
 	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, route)
 }
 
+// apmCatalogEnvRegexMeta are characters that make an env argument a pattern,
+// not a single catalog filter value.
+const apmCatalogEnvRegexMeta = `.*+?()[]{}|\^$`
+
+// APMCatalogEnv returns a UI-safe exact environment name for service-catalog
+// filters, or "" when the argument is empty, a wildcard, or a regex pattern.
+// Anchored exact matches (^name$) are stripped to name. Plain meta-free tokens
+// (exact env args from other APM tools) pass through.
+func APMCatalogEnv(env string) string {
+	env = strings.TrimSpace(env)
+	if env == "" || env == ".*" {
+		return ""
+	}
+	if len(env) >= 3 && strings.HasPrefix(env, "^") && strings.HasSuffix(env, "$") {
+		inner := env[1 : len(env)-1]
+		if inner == "" || strings.ContainsAny(inner, apmCatalogEnvRegexMeta) {
+			return ""
+		}
+		return inner
+	}
+	if strings.ContainsAny(env, apmCatalogEnvRegexMeta) {
+		return ""
+	}
+	return env
+}
+
 // BuildAPMServiceLink creates a deep link to the APM service catalog page with the service name in the path
 // and environment filter as a JSON array
 func (b *Builder) BuildAPMServiceLink(fromMs, toMs int64, serviceName, env, tab string) string {
@@ -124,8 +151,8 @@ func (b *Builder) BuildAPMServiceLink(fromMs, toMs int64, serviceName, env, tab 
 	if b.clusterID != "" {
 		params.Set("cluster", b.clusterID)
 	}
-	if env != "" && env != ".*" {
-		if filterValue, err := json.Marshal([]string{fmt.Sprintf(`deployment_environment="%s"`, env)}); err == nil {
+	if catalogEnv := APMCatalogEnv(env); catalogEnv != "" {
+		if filterValue, err := json.Marshal([]string{fmt.Sprintf(`deployment_environment="%s"`, catalogEnv)}); err == nil {
 			params.Set("filter", string(filterValue))
 		}
 	}

@@ -81,6 +81,15 @@ func TestDumpTools(t *testing.T) {
 			t.Fatalf("get_service_summary schema missing %q", name)
 		}
 	}
+	sortBy, _ := summaryProps.Properties["sort_by"].(map[string]any)
+	enum, _ := sortBy["enum"].([]any)
+	if len(enum) != 5 {
+		t.Fatalf("sort_by enum = %#v, want 5 values", enum)
+	}
+	limitProp, _ := summaryProps.Properties["limit"].(map[string]any)
+	if limitProp["minimum"] != float64(0) || limitProp["maximum"] != float64(100) {
+		t.Fatalf("limit bounds = min %#v max %#v, want 0/100", limitProp["minimum"], limitProp["maximum"])
+	}
 
 	// Org attribute catalogs must never appear as {{labels}} placeholders.
 	if strings.Contains(out.Tools[byName["get_logs"]].Description, "{{labels}}") {

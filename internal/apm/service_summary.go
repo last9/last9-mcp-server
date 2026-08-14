@@ -33,7 +33,6 @@ const (
 	serviceSummarySort5xx        = "http_5xx_count"
 	serviceSummarySortGRPC       = "grpc_error_count"
 	serviceSummaryFingerprintEnv = "<env>"
-	serviceSummaryRegexMeta      = `.*+?()[]{}|\^$`
 )
 
 type ServiceSummaryRow struct {
@@ -55,6 +54,7 @@ type ServiceSummaryResult struct {
 	Truncated        bool                `json:"truncated"`
 	StartTime        string              `json:"start_time"`
 	EndTime          string              `json:"end_time"`
+	WindowMinutes    int                 `json:"window_minutes"`
 	EnvScope         string              `json:"env_scope"`
 	SortKeyUnit      string              `json:"sort_key_unit"`
 	QueryFingerprint string              `json:"query_fingerprint"`
@@ -67,7 +67,7 @@ type ServiceSummaryArgs struct {
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End of the interval in RFC3339/ISO8601 (e.g. 2024-06-01T13:00:00Z). When both start and end are set they beat lookback. A single bound fills the other with lookback_minutes."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
 	Env             string  `json:"env,omitempty" jsonschema:"Environment PromQL regex (default: .*). Exact one-env match needs anchors (e.g. ^prod$)."`
-	SortBy          string  `json:"sort_by,omitempty" jsonschema:"Sort key. Allowed: request_count (default), throughput_rpm, http_4xx_count, http_5xx_count, grpc_error_count. Unknown values including errors, error_rate, and 5xx are rejected."`
+	SortBy          string  `json:"sort_by,omitempty" jsonschema:"Sort key. Allowed: request_count (default), throughput_rpm, http_4xx_count, http_5xx_count, grpc_error_count. throughput_rpm ranks identically to request_count. Unknown values including errors, error_rate, and 5xx are rejected."`
 	Limit           int     `json:"limit,omitempty" jsonschema:"Max ranked rows. Omit or 0 means 10. Other values below 1 are an error. Values above 100 clamp to 100."`
 }
 
@@ -116,6 +116,9 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 
 		envScope, envMatcher := serviceSummaryEnvMatcher(args.Env)
 		windowMin := intervalMinutes(startTimeParam, endTimeParam)
+		// Stamp the interval that was actually summed (PromQL [Nm] rounds up),
+		// not only the caller-requested bounds.
+		queriedStart := endTimeParam - int64(windowMin)*60
 
 		joined := map[string]*ServiceSummaryRow{}
 		for _, class := range serviceSummaryQueried {
@@ -157,8 +160,9 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 			Limit:            limit,
 			RowCount:         len(rows),
 			Truncated:        truncated,
-			StartTime:        time.Unix(startTimeParam, 0).UTC().Format(time.RFC3339),
+			StartTime:        time.Unix(queriedStart, 0).UTC().Format(time.RFC3339),
 			EndTime:          time.Unix(endTimeParam, 0).UTC().Format(time.RFC3339),
+			WindowMinutes:    windowMin,
 			EnvScope:         envScope,
 			SortKeyUnit:      sortSpec.unit,
 			QueryFingerprint: serviceSummaryFingerprint(windowMin),
@@ -174,7 +178,9 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 		}
 
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, "", serviceSummaryCatalogEnv(envScope), "")
+		// Only anchored ^name$ becomes a catalog filter; unanchored PromQL
+		// (e.g. prod matching production) must not stamp an exact UI filter.
+		dashboardURL := dlBuilder.BuildAPMServiceLink(queriedStart*1000, endTimeParam*1000, "", serviceSummaryDeeplinkEnv(envScope), "")
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
@@ -253,19 +259,15 @@ func serviceSummaryFingerprint(windowMin int) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func serviceSummaryCatalogEnv(scope string) string {
-	switch scope {
-	case "", serviceSummaryDefaultEnv:
+// serviceSummaryDeeplinkEnv passes only anchored ^name$ scopes into the
+// catalog link. Unanchored tokens stay out so rows (PromQL regex) and the UI
+// filter do not describe different sets; BuildAPMServiceLink still strips
+// anchors and rejects regex patterns for other callers.
+func serviceSummaryDeeplinkEnv(scope string) string {
+	if len(scope) < 3 || !strings.HasPrefix(scope, "^") || !strings.HasSuffix(scope, "$") {
 		return ""
 	}
-	inner := scope
-	if strings.HasPrefix(scope, "^") && strings.HasSuffix(scope, "$") && len(scope) >= 2 {
-		inner = strings.TrimSuffix(strings.TrimPrefix(scope, "^"), "$")
-	}
-	if inner == "" || strings.ContainsAny(inner, serviceSummaryRegexMeta) {
-		return ""
-	}
-	return inner
+	return scope
 }
 
 func intervalMinutes(startUnix, endUnix int64) int {
