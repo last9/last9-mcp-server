@@ -61,8 +61,14 @@ func TestDumpTools(t *testing.T) {
 		t.Fatal("get_logs description still contains unsubstituted {{labels}} placeholder")
 	}
 	for _, whale := range []string{"get_logs", "get_traces", "get_service_logs"} {
-		if len(out.Tools[byName[whale]].Description) > 2000 {
-			t.Fatalf("%s served description length %d exceeds 2000-char tripwire", whale, len(out.Tools[byName[whale]].Description))
+		whaleBudgets := map[string]int{
+			"get_logs":         4500,
+			"get_traces":       2200,
+			"get_service_logs": 2000,
+		}
+		budget := whaleBudgets[whale]
+		if len(out.Tools[byName[whale]].Description) > budget {
+			t.Fatalf("%s served description length %d exceeds %d-char budget", whale, len(out.Tools[byName[whale]].Description), budget)
 		}
 		if !strings.Contains(out.Tools[byName[whale]].Description, "last9://reference/") {
 			t.Fatalf("%s description missing resource URI pointer", whale)

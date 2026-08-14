@@ -3,6 +3,7 @@ package logs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -756,5 +757,332 @@ func TestGetLogsHandlerRejectsUnsupportedDottedRefsBeforeAPICall(t *testing.T) {
 	}
 	if requestCount != 0 {
 		t.Fatalf("expected no API requests for invalid field refs, got %d", requestCount)
+	}
+}
+
+// TestPrepareLogJSONQueryValidation covers the fail-closed validation rules
+// introduced by prepareLogJSONQuery / validateLogJSONQuery.
+func TestPrepareLogJSONQueryValidation(t *testing.T) {
+	type tc struct {
+		name      string
+		stages    []map[string]interface{}
+		wantErr   bool
+		errSubstr string
+	}
+
+	cases := []tc{
+		{
+			name: "canonical window_aggregate accepted",
+			stages: []map[string]interface{}{
+				{
+					"type":  "filter",
+					"query": map[string]interface{}{"$and": []interface{}{map[string]interface{}{"$eq": []interface{}{"SeverityText", "ERROR"}}}},
+				},
+				{
+					"type":     "window_aggregate",
+					"function": map[string]interface{}{"$count": []interface{}{}},
+					"as":       "errors",
+					"window":   []interface{}{"1", "minutes"},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "window_minutes on window_aggregate rejected",
+			stages: []map[string]interface{}{
+				{
+					"type":           "window_aggregate",
+					"function":       map[string]interface{}{"$count": []interface{}{}},
+					"as":             "errors",
+					"window_minutes": 1,
+				},
+			},
+			wantErr:   true,
+			errSubstr: "window_minutes",
+		},
+		{
+			name: "aggregates on window_aggregate rejected",
+			stages: []map[string]interface{}{
+				{
+					"type": "window_aggregate",
+					"aggregates": []interface{}{
+						map[string]interface{}{"function": map[string]interface{}{"$count": []interface{}{}}, "as": "c"},
+					},
+					"as":     "errors",
+					"window": []interface{}{"1", "minutes"},
+				},
+			},
+			wantErr:   true,
+			errSubstr: "aggregates",
+		},
+		{
+			name: "format on parse stage rejected",
+			stages: []map[string]interface{}{
+				{
+					"type":   "parse",
+					"format": "json",
+					"field":  "Body",
+				},
+			},
+			wantErr:   true,
+			errSubstr: "format",
+		},
+		{
+			name: "missing parser on parse stage rejected",
+			stages: []map[string]interface{}{
+				{
+					"type":  "parse",
+					"field": "Body",
+				},
+			},
+			wantErr:   true,
+			errSubstr: "parser",
+		},
+		{
+			name: "SpanKind filter rejected",
+			stages: []map[string]interface{}{
+				{
+					"type": "filter",
+					"query": map[string]interface{}{
+						"$and": []interface{}{
+							map[string]interface{}{"$eq": []interface{}{"SpanKind", "SPAN_KIND_SERVER"}},
+						},
+					},
+				},
+			},
+			wantErr:   true,
+			errSubstr: "SpanKind",
+		},
+		{
+			name: "StatusCode filter rejected",
+			stages: []map[string]interface{}{
+				{
+					"type": "filter",
+					"query": map[string]interface{}{
+						"$and": []interface{}{
+							map[string]interface{}{"$eq": []interface{}{"StatusCode", "STATUS_CODE_ERROR"}},
+						},
+					},
+				},
+			},
+			wantErr:   true,
+			errSubstr: "StatusCode",
+		},
+		{
+			name: "valid parse with parser accepted",
+			stages: []map[string]interface{}{
+				{
+					"type":   "parse",
+					"parser": "json",
+					"field":  "Body",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "service.name alias still normalizes via prepare (sanitize runs after validate)",
+			stages: []map[string]interface{}{
+				{
+					"type": "filter",
+					"query": map[string]interface{}{
+						"$and": []interface{}{
+							map[string]interface{}{"$eq": []interface{}{"service.name", "api"}},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			result, err := prepareLogJSONQuery(c.stages, "logjson_query")
+			if c.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if c.errSubstr != "" && !strings.Contains(err.Error(), c.errSubstr) {
+					t.Errorf("error %q missing expected substring %q", err.Error(), c.errSubstr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result == nil {
+				t.Fatal("expected non-nil result")
+			}
+		})
+	}
+}
+
+// TestPrepareLogJSONQueryErrorsNoQueryBuilder asserts that the empty-query path
+// in NewGetLogsHandler no longer references the logjson_query_builder prompt.
+func TestPrepareLogJSONQueryErrorsNoQueryBuilder(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "should not be called", http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	handler := NewGetLogsHandler(server.Client(), testLogsConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{})
+	if err == nil {
+		t.Fatal("expected error for empty logjson_query")
+	}
+	if strings.Contains(err.Error(), "query_builder") {
+		t.Errorf("empty logjson_query error must not reference 'query_builder', got: %q", err.Error())
+	}
+}
+
+func TestUnknownKeyTipsAreStageSpecific(t *testing.T) {
+	_, err := prepareLogJSONQuery([]map[string]interface{}{
+		{"type": "parse", "format": "json", "field": "Body"},
+	}, "logjson_query")
+	if err == nil {
+		t.Fatal("expected parse format rejection")
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "window_aggregate uses") {
+		t.Errorf("parse unknown-key error must not include window_aggregate tip, got: %q", msg)
+	}
+	if !strings.Contains(msg, "never \"format\"") {
+		t.Errorf("parse format error should mention never format, got: %q", msg)
+	}
+
+	_, err = prepareLogJSONQuery([]map[string]interface{}{
+		{
+			"type":           "window_aggregate",
+			"function":       map[string]interface{}{"$count": []interface{}{}},
+			"as":             "errors",
+			"window_minutes": 1,
+		},
+	}, "logjson_query")
+	if err == nil {
+		t.Fatal("expected window_minutes rejection")
+	}
+	msg = err.Error()
+	if !strings.Contains(msg, "window_aggregate uses") {
+		t.Errorf("window_aggregate unknown-key error should include WA tip, got: %q", msg)
+	}
+}
+
+func TestPrepareLogJSONQuerySanitizeUsesPathPrefix(t *testing.T) {
+	_, err := prepareLogJSONQuery([]map[string]interface{}{
+		{
+			"type": "filter",
+			"query": map[string]interface{}{
+				"$and": []interface{}{
+					map[string]interface{}{"$eq": []interface{}{`attributes["http.status_code"]`, "500"}},
+				},
+			},
+		},
+	}, "pipeline")
+	if err == nil {
+		t.Fatal("expected sanitize rejection for double-quoted attribute ref")
+	}
+	if !strings.Contains(err.Error(), "pipeline[0]") {
+		t.Errorf("sanitize failure for attrs tool must use pipeline path prefix, got: %q", err.Error())
+	}
+	if strings.Contains(err.Error(), "logjson_query[0]") {
+		t.Errorf("sanitize failure must not hardcode logjson_query when prefix is pipeline, got: %q", err.Error())
+	}
+}
+
+func TestPrepareLogJSONQueryWrapsBareFilterInAnd(t *testing.T) {
+	result, err := prepareLogJSONQuery([]map[string]interface{}{
+		{
+			"type": "filter",
+			"query": map[string]interface{}{
+				"$eq": []interface{}{"SeverityText", "ERROR"},
+			},
+		},
+	}, "logjson_query")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	query := result[0]["query"].(map[string]interface{})
+	andConditions, ok := query["$and"].([]interface{})
+	if !ok {
+		t.Fatalf("expected top-level $and wrap, got %#v", query)
+	}
+	if len(andConditions) != 1 {
+		t.Fatalf("expected 1 $and condition, got %#v", andConditions)
+	}
+	cond := andConditions[0].(map[string]interface{})
+	if _, ok := cond["$eq"]; !ok {
+		t.Fatalf("expected wrapped $eq condition, got %#v", cond)
+	}
+}
+
+func TestPrepareLogJSONQueryRejectsBareSingleTokenField(t *testing.T) {
+	_, err := prepareLogJSONQuery([]map[string]interface{}{
+		{
+			"type": "filter",
+			"query": map[string]interface{}{
+				"$and": []interface{}{
+					map[string]interface{}{"$eq": []interface{}{"community_member_id", "81453836"}},
+				},
+			},
+		},
+	}, "logjson_query")
+	if err == nil {
+		t.Fatal("expected bare community_member_id to be rejected")
+	}
+	if !strings.Contains(err.Error(), "community_member_id") {
+		t.Errorf("error should mention field name, got: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "attributes['community_member_id']") {
+		t.Errorf("error should suggest attributes['…'] form, got: %q", err.Error())
+	}
+}
+
+func TestPrepareLogJSONQueryTypedValidationError(t *testing.T) {
+	_, err := prepareLogJSONQuery([]map[string]interface{}{
+		{
+			"type":           "window_aggregate",
+			"function":       map[string]interface{}{"$count": []interface{}{}},
+			"as":             "errors",
+			"window_minutes": 1,
+		},
+	}, "logjson_query")
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	var typed *LogPipelineValidationError
+	if !errors.As(err, &typed) {
+		t.Fatalf("expected *LogPipelineValidationError, got %T (%v)", err, err)
+	}
+	if typed.Category != LogValidationUnknownStageKey {
+		t.Errorf("category=%q, want %q", typed.Category, LogValidationUnknownStageKey)
+	}
+	if typed.Path == "" {
+		t.Error("typed error Path must be non-empty")
+	}
+	if !strings.Contains(typed.Message, "window_minutes") {
+		t.Errorf("message should mention window_minutes, got: %q", typed.Message)
+	}
+}
+
+func TestPrepareLogJSONQueryTypedWrongDomainField(t *testing.T) {
+	_, err := prepareLogJSONQuery([]map[string]interface{}{
+		{
+			"type": "filter",
+			"query": map[string]interface{}{
+				"$and": []interface{}{
+					map[string]interface{}{"$eq": []interface{}{"SpanKind", "SPAN_KIND_SERVER"}},
+				},
+			},
+		},
+	}, "pipeline")
+	if err == nil {
+		t.Fatal("expected SpanKind rejection")
+	}
+	var typed *LogPipelineValidationError
+	if !errors.As(err, &typed) {
+		t.Fatalf("expected *LogPipelineValidationError, got %T", err)
+	}
+	if typed.Category != LogValidationWrongDomainField {
+		t.Errorf("category=%q, want %q", typed.Category, LogValidationWrongDomainField)
 	}
 }

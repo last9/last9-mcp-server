@@ -146,3 +146,129 @@ func TestGetLogsArgs_LookbackDescriptionMatchesPromptDefault(t *testing.T) {
 		t.Fatalf("lookback_minutes.description should not advertise default: 60, got %q", description)
 	}
 }
+
+// TestGetLogsInputSchema_Structure verifies the hand-crafted GetLogsInputSchema
+// conforms to the expected shape: logjson_query required, oneOf stages,
+// window_aggregate has additionalProperties:false.
+func TestGetLogsInputSchema_Structure(t *testing.T) {
+	schema := GetLogsInputSchema()
+
+	// logjson_query must be in required.
+	required, ok := schema["required"].([]string)
+	if !ok {
+		t.Fatal("schema required is not []string")
+	}
+	foundRequired := false
+	for _, r := range required {
+		if r == "logjson_query" {
+			foundRequired = true
+			break
+		}
+	}
+	if !foundRequired {
+		t.Error("logjson_query must be in required")
+	}
+
+	// logjson_query must have items.oneOf with at least 4 stage schemas.
+	props, ok := schema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatal("schema properties is not a map")
+	}
+	lq, ok := props["logjson_query"].(map[string]interface{})
+	if !ok {
+		t.Fatal("logjson_query property missing")
+	}
+	items, ok := lq["items"].(map[string]interface{})
+	if !ok {
+		t.Fatal("logjson_query items not an object")
+	}
+	oneOf, ok := items["oneOf"].([]interface{})
+	if !ok {
+		t.Fatal("logjson_query items.oneOf missing or not a slice")
+	}
+	if len(oneOf) < 4 {
+		t.Errorf("expected at least 4 stage schemas in oneOf, got %d", len(oneOf))
+	}
+
+	// Find window_aggregate stage schema and verify additionalProperties: false.
+	found := false
+	for _, stageRaw := range oneOf {
+		stageMap, ok := stageRaw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		stageProps, ok := stageMap["properties"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		typeField, ok := stageProps["type"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		enum, ok := typeField["enum"].([]string)
+		if !ok {
+			continue
+		}
+		for _, e := range enum {
+			if e == "window_aggregate" {
+				found = true
+				if stageMap["additionalProperties"] != false {
+					t.Error("window_aggregate stage schema must have additionalProperties: false")
+				}
+				// verify required fields
+				waRequired, ok := stageMap["required"].([]string)
+				if !ok {
+					t.Error("window_aggregate required is not []string")
+					break
+				}
+				requiredSet := map[string]bool{}
+				for _, r := range waRequired {
+					requiredSet[r] = true
+				}
+				for _, field := range []string{"type", "function", "as", "window"} {
+					if !requiredSet[field] {
+						t.Errorf("window_aggregate required must include %q", field)
+					}
+				}
+				break
+			}
+		}
+	}
+	if !found {
+		t.Error("window_aggregate stage schema not found in oneOf")
+	}
+
+	if schema["additionalProperties"] != false {
+		t.Error("root GetLogsInputSchema must set additionalProperties: false")
+	}
+}
+
+func TestGetLogsInputSchema_RejectsUnknownTopLevelKeys(t *testing.T) {
+	raw, err := json.Marshal(GetLogsInputSchema())
+	if err != nil {
+		t.Fatalf("marshal schema: %v", err)
+	}
+	var parsed jsonschema.Schema
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatalf("unmarshal schema: %v", err)
+	}
+	resolved, err := parsed.Resolve(nil)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	validPipeline := []interface{}{
+		map[string]interface{}{
+			"type":  "filter",
+			"query": map[string]interface{}{"$and": []interface{}{map[string]interface{}{"$eq": []interface{}{"SeverityText", "ERROR"}}}},
+		},
+	}
+
+	err = resolved.Validate(map[string]interface{}{
+		"logjson_query":  validPipeline,
+		"window_minutes": 5,
+	})
+	if err == nil {
+		t.Fatal("expected top-level window_minutes to be rejected by additionalProperties:false")
+	}
+}

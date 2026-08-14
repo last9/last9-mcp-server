@@ -51,11 +51,18 @@ var logAggregateFieldArgIndexes = map[string][]int{
 }
 
 func sanitizeLogJSONQuery(stages []map[string]interface{}) ([]map[string]interface{}, error) {
+	return sanitizeLogJSONQueryPrefixed(stages, "logjson_query")
+}
+
+func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix string) ([]map[string]interface{}, error) {
+	if pathPrefix == "" {
+		pathPrefix = "logjson_query"
+	}
 	sanitized := make([]map[string]interface{}, 0, len(stages))
 
 	for stageIndex, stage := range stages {
 		sanitizedStage := make(map[string]interface{}, len(stage))
-		stagePath := fmt.Sprintf("logjson_query[%d]", stageIndex)
+		stagePath := fmt.Sprintf("%s[%d]", pathPrefix, stageIndex)
 
 		for key, value := range stage {
 			var (
@@ -289,7 +296,13 @@ func sanitizeLogFieldRef(fieldRef, path string) (string, error) {
 			trimmed, path, stripped,
 		)
 	case logSimpleFieldRefPattern.MatchString(trimmed):
-		return trimmed, nil
+		// Bare single-token names (e.g. community_member_id) look plausible but
+		// are invalid unless they are a known top-level log field. Fail closed with
+		// the attributes['…'] form so models can self-correct (ENG-1410).
+		return "", fmt.Errorf(
+			"invalid log field reference %q at %s: never emit bare field names (dotted or single-token) — use attributes['%s'] or resources['%s']; only ServiceName, Body, SeverityText, Timestamp may be bare; call get_log_attributes if you need the exact field name",
+			trimmed, path, trimmed, trimmed,
+		)
 	default:
 		return "", fmt.Errorf(
 			"invalid log field reference %q at %s: use ServiceName, attributes['field'], or resources['field']; call get_log_attributes if you need the exact field name",

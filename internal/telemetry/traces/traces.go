@@ -35,7 +35,7 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetTracesArgs) (*mcp.CallToolResult, any, error) {
 		// Check if tracejson_query is provided
 		if len(args.TracejsonQuery) == 0 {
-			return nil, nil, fmt.Errorf("tracejson_query parameter is required. Use the tracejson_query_builder prompt to generate JSON pipeline queries from natural language")
+			return nil, nil, fmt.Errorf("tracejson_query parameter is required. tracejson_query is a JSON array of stages (filter/parse/aggregate/window_aggregate) — see last9://reference/tracejson")
 		}
 
 		// Validate the pipeline before forwarding to the API
