@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"last9-mcp/internal/apm"
+	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/toolsets"
 )
 
@@ -140,6 +141,71 @@ func TestDumpTools(t *testing.T) {
 		t.Fatal("prometheus_range_query description missing metrics resource URI pointer")
 	}
 
+	logsDesc := out.Tools[byName["get_logs"]].Description
+	if strings.Contains(logsDesc, "window_minutes") {
+		t.Fatal("get_logs description must not teach window_minutes; window_aggregate uses function/as/window")
+	}
+	for _, needle := range []string{`"function"`, `"as"`, `"window"`} {
+		if !strings.Contains(logsDesc, needle) {
+			t.Fatalf("get_logs description missing last9/api window_aggregate key %s", needle)
+		}
+	}
+
+	tracesDesc := out.Tools[byName["get_traces"]].Description
+	if strings.Contains(tracesDesc, "window_minutes") {
+		t.Fatal("get_traces description must not teach window_minutes; window_aggregate uses function/as/window")
+	}
+	for _, needle := range []string{`"function"`, `"as"`, `"window"`} {
+		if !strings.Contains(tracesDesc, needle) {
+			t.Fatalf("get_traces description missing last9/api window_aggregate key %s", needle)
+		}
+	}
+	if strings.Contains(tracesDesc, "default **5**") {
+		t.Fatal("get_traces lookback default must match GetTracesArgs (60), not 5")
+	}
+	if !strings.Contains(tracesDesc, "default **60**") {
+		t.Fatal("get_traces description missing lookback default 60")
+	}
+
+	svcLogsDesc := out.Tools[byName["get_service_logs"]].Description
+	if strings.Contains(svcLogsDesc, "Prefer `get_logs` instead when") {
+		t.Fatal("get_service_logs must not tell agents to prefer get_logs for HTTP status")
+	}
+	if strings.Contains(strings.ToLower(svcLogsDesc), "use `get_logs` + discovered status") {
+		t.Fatal("get_service_logs must not send HTTP-status search to get_logs")
+	}
+	if !strings.Contains(svcLogsDesc, "http_status") {
+		t.Fatal("get_service_logs description must document HTTP status filters")
+	}
+
+	excIdx, ok := byName["get_exceptions"]
+	if !ok {
+		t.Fatal("tool \"get_exceptions\" missing from dump")
+	}
+	excDesc := out.Tools[excIdx].Description
+	if !strings.Contains(excDesc, "get_service_logs") || !strings.Contains(excDesc, "http_status") {
+		t.Fatal("get_exceptions must route HTTP-status log search to get_service_logs")
+	}
+	if strings.Contains(excDesc, "write a `get_logs` pipeline") && !strings.Contains(excDesc, "Do not write a `get_logs` pipeline") {
+		t.Fatal("get_exceptions must not send HTTP-status log search to get_logs")
+	}
+
+	if !strings.Contains(logsDesc, "get_service_logs") {
+		t.Fatal("get_logs whale must name get_service_logs as the structured HTTP-status alternative")
+	}
+
+	perfIdx, ok := byName["get_service_performance_details"]
+	if !ok {
+		t.Fatal("tool \"get_service_performance_details\" missing from dump")
+	}
+	perfDesc := out.Tools[perfIdx].Description
+	if strings.Contains(perfDesc, "get_service_operation_details") {
+		t.Fatal("get_service_performance_details names nonexistent get_service_operation_details")
+	}
+	if !strings.Contains(perfDesc, "get_service_operations_summary") {
+		t.Fatal("get_service_performance_details must point at get_service_operations_summary")
+	}
+
 	deviationsIndex, ok := byName["get_apm_service_deviations"]
 	if !ok {
 		t.Fatal("tool \"get_apm_service_deviations\" missing from dump")
@@ -244,5 +310,18 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	}
 	if len(out.Tools) >= 38 {
 		t.Fatalf("investigate should expose fewer than full surface; got %d", len(out.Tools))
+	}
+}
+
+func TestOnCallRunbookRoutesHTTPStatusToServiceLogs(t *testing.T) {
+	runbook := prompts.OnCallRunbookWorkflow
+	if !strings.Contains(runbook, "get_service_logs") {
+		t.Fatal("on_call_runbook must name get_service_logs for status-class log search")
+	}
+	if !strings.Contains(runbook, "http_status_class") {
+		t.Fatal("on_call_runbook must send HTTP-status log search to get_service_logs, not logjson")
+	}
+	if strings.Contains(runbook, "write logjson") && !strings.Contains(runbook, "do not write logjson") {
+		t.Fatal("on_call_runbook must not tell the agent to write logjson for service 5xx")
 	}
 }
