@@ -15,6 +15,7 @@ import (
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/otelids"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -112,6 +113,12 @@ func validateGetServiceTracesArgs(args GetServiceTracesArgs) error {
 		return errors.New("cannot specify both trace_id and service_name - use only one")
 	}
 
+	if args.TraceID != "" {
+		if _, err := otelids.NormalizeTraceID(args.TraceID); err != nil {
+			return err
+		}
+	}
+
 	// Validate lookback only. Limit is optional and forwarded as provided.
 	if args.LookbackMinutes != 0 && args.LookbackMinutes < 1 {
 		return errors.New("lookback_minutes must be at least 1")
@@ -138,6 +145,11 @@ func parseGetServiceTraceParams(args GetServiceTracesArgs, cfg models.Config) (*
 	}
 
 	if args.TraceID != "" {
+		normalized, err := otelids.NormalizeTraceID(args.TraceID)
+		if err != nil {
+			return nil, err
+		}
+		queryParams.TraceID = normalized
 		queryParams.LookbackMinutes = TraceIDLookbackMinutesDefault
 	}
 

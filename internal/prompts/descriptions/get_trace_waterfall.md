@@ -3,7 +3,7 @@
 Retrieves one exact trace and returns a bounded parent-child waterfall with millisecond timing, interval-correct self-time, graph warnings, slowest spans, largest self-time contributors, and optional selected-span details.
 
 Parameters:
-- `trace_id` (required): exact trace ID.
+- `trace_id` (required): exact 32-character hexadecimal OpenTelemetry trace ID. A 16-character span ID is rejected locally and is not sent upstream.
 - `environment`: optional exact deployment environment.
 - `start_time_iso` / `end_time_iso`: optional RFC3339 bounds.
 - `lookback_minutes`: default 4320 for exact lookup.
