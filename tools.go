@@ -67,6 +67,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_service_summary",
 		Description: prompts.GetServiceSummaryDescription,
+		InputSchema: apm.GetServiceSummaryInputSchema(),
 	}, apm.NewServiceSummaryHandler(client, cfg)))
 
 	// Register APM service deviations tool

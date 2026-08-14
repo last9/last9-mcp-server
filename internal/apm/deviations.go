@@ -196,7 +196,7 @@ func newAPMServiceDeviationsHandler(client *http.Client, baseCfg models.Config, 
 		}
 		builder := deeplink.NewBuilder(queryCfg.OrgSlug, queryCfg.ClusterID)
 		result.DashboardURL = builder.BuildAPMServiceLink(
-			windows.RequestedCurrentStart.UnixMilli(), windows.RequestedCurrentEnd.UnixMilli(), args.ServiceName, args.Env, "",
+			windows.RequestedCurrentStart.UnixMilli(), windows.RequestedCurrentEnd.UnixMilli(), args.ServiceName, deeplink.APMCatalogEnvExact(args.Env), "",
 		)
 		payload, err := json.Marshal(result)
 		if err != nil {
