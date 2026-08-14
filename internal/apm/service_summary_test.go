@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"last9-mcp/internal/auth"
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -229,6 +230,9 @@ func TestNewServiceSummaryHandler_FailsWholeCallOnClassError(t *testing.T) {
 	if !strings.Contains(err.Error(), "500") {
 		t.Fatalf("error %q should surface the non-OK Prom status", err)
 	}
+	if !strings.Contains(err.Error(), "http_5xx_count") {
+		t.Fatalf("error %q should name the failing class key", err)
+	}
 	for _, q := range *queries {
 		if strings.Contains(q, serviceSummaryGRPCMatcher) {
 			t.Fatal("gRPC query must not run after a 5xx Prom failure")
@@ -268,8 +272,8 @@ func TestNewServiceSummaryHandler_LimitClampAndRanks(t *testing.T) {
 		StartTimeISO: time.Date(2026, 8, 13, 11, 20, 0, 0, time.UTC).Format(time.RFC3339),
 		EndTimeISO:   time.Date(2026, 8, 13, 11, 40, 0, 0, time.UTC).Format(time.RFC3339),
 	})
-	if omitted.Limit != 10 || omitted.RowCount != 10 || !omitted.Truncated {
-		t.Fatalf("omit limit: limit=%d row_count=%d truncated=%v, want 10/10/true", omitted.Limit, omitted.RowCount, omitted.Truncated)
+	if omitted.Limit != 10 || omitted.RowCount != 10 || omitted.MatchedCount != 101 || !omitted.Truncated {
+		t.Fatalf("omit limit: limit=%d row_count=%d matched_count=%d truncated=%v, want 10/10/101/true", omitted.Limit, omitted.RowCount, omitted.MatchedCount, omitted.Truncated)
 	}
 	assertConsecutiveRanks(t, omitted.Rows)
 
@@ -278,8 +282,8 @@ func TestNewServiceSummaryHandler_LimitClampAndRanks(t *testing.T) {
 		EndTimeISO:   time.Date(2026, 8, 13, 11, 40, 0, 0, time.UTC).Format(time.RFC3339),
 		Limit:        101,
 	})
-	if clamped.Limit != 100 || clamped.RowCount != 100 || !clamped.Truncated {
-		t.Fatalf("limit 101: limit=%d row_count=%d truncated=%v, want 100/100/true", clamped.Limit, clamped.RowCount, clamped.Truncated)
+	if clamped.Limit != 100 || clamped.RowCount != 100 || clamped.MatchedCount != 101 || !clamped.Truncated {
+		t.Fatalf("limit 101: limit=%d row_count=%d matched_count=%d truncated=%v, want 100/100/101/true", clamped.Limit, clamped.RowCount, clamped.MatchedCount, clamped.Truncated)
 	}
 	assertConsecutiveRanks(t, clamped.Rows)
 }
@@ -374,18 +378,18 @@ func TestNewServiceSummaryHandler_EnvMatcherQuoting(t *testing.T) {
 	}
 }
 
-func TestServiceSummaryDeeplinkEnv(t *testing.T) {
+func TestAPMCatalogEnvFromRegexViaSummary(t *testing.T) {
 	cases := map[string]string{
 		"":             "",
 		".*":           "",
 		"prod":         "",
-		"^prod$":       "^prod$",
+		"^prod$":       "prod",
 		"prod|staging": "",
-		"^prod.*$":     "^prod.*$",
+		"^prod.*$":     "",
 	}
 	for in, want := range cases {
-		if got := serviceSummaryDeeplinkEnv(in); got != want {
-			t.Errorf("serviceSummaryDeeplinkEnv(%q) = %q, want %q", in, got, want)
+		if got := deeplink.APMCatalogEnvFromRegex(in); got != want {
+			t.Errorf("APMCatalogEnvFromRegex(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

@@ -25,7 +25,7 @@ Critical rules:
 - A missing class is 0, not omitted. Zeros mean no matching class in this window.
 - Empty rows stay empty: do not widen the interval, change status class, or invent placeholder names.
 - Ranking is APM/server-span only. Log-only services are absent, not zero.
-- If truncated is true, raise limit (max 100) and recall.
+- If truncated is true, matched_count is the full ranked total before the limit cut — raise limit toward min(matched_count, 100) and recall.
 
 Time:
 - When both start_time_iso and end_time_iso are set, they define the interval and beat lookback.
@@ -36,7 +36,7 @@ Time:
 env is a PromQL regex (default .*). Exact one-env match needs anchors (e.g. ^prod$). Unanchored prod also matches production.
 
 Response envelope (besides rows):
-- truncated, limit, row_count — pagination of the ranked list
+- truncated, limit, row_count, matched_count — row_count is rows returned; matched_count is the pre-truncation total
 - sort_by, sort_key_unit — active sort key and its unit (count or rpm)
 - start_time, end_time, window_minutes — queried interval (see Time)
 - env_scope — the env regex used for PromQL

@@ -119,30 +119,42 @@ func (b *Builder) BuildDropRulesLink() string {
 // not a single catalog filter value.
 const apmCatalogEnvRegexMeta = `.*+?()[]{}|\^$`
 
-// APMCatalogEnv returns a UI-safe exact environment name for service-catalog
-// filters, or "" when the argument is empty, a wildcard, or a regex pattern.
-// Anchored exact matches (^name$) are stripped to name. Plain meta-free tokens
-// (exact env args from other APM tools) pass through.
-func APMCatalogEnv(env string) string {
+// APMCatalogEnvExact returns a catalog filter for callers that pass an exact
+// environment name (not a PromQL regex). Only empty and ".*" are screened out;
+// names with "." or other metacharacters (e.g. k8s.prod) pass through as literals.
+func APMCatalogEnvExact(env string) string {
 	env = strings.TrimSpace(env)
 	if env == "" || env == ".*" {
-		return ""
-	}
-	if len(env) >= 3 && strings.HasPrefix(env, "^") && strings.HasSuffix(env, "$") {
-		inner := env[1 : len(env)-1]
-		if inner == "" || strings.ContainsAny(inner, apmCatalogEnvRegexMeta) {
-			return ""
-		}
-		return inner
-	}
-	if strings.ContainsAny(env, apmCatalogEnvRegexMeta) {
 		return ""
 	}
 	return env
 }
 
+// APMCatalogEnvFromRegex returns a catalog filter for callers whose env is a
+// PromQL regex. Only anchored exact matches (^name$ with a meta-free name)
+// become a literal; wildcards, unanchored tokens, and patterns yield "".
+func APMCatalogEnvFromRegex(env string) string {
+	env = strings.TrimSpace(env)
+	if len(env) < 3 || !strings.HasPrefix(env, "^") || !strings.HasSuffix(env, "$") {
+		return ""
+	}
+	inner := env[1 : len(env)-1]
+	if inner == "" || strings.ContainsAny(inner, apmCatalogEnvRegexMeta) {
+		return ""
+	}
+	return inner
+}
+
+// APMCatalogEnv is an alias of APMCatalogEnvFromRegex kept for older call sites.
+// Prefer APMCatalogEnvExact or APMCatalogEnvFromRegex explicitly.
+func APMCatalogEnv(env string) string {
+	return APMCatalogEnvFromRegex(env)
+}
+
 // BuildAPMServiceLink creates a deep link to the APM service catalog page with the service name in the path
-// and environment filter as a JSON array
+// and environment filter as a JSON array. env is treated as an exact environment
+// name (see APMCatalogEnvExact). Regex callers must pre-sanitize with
+// APMCatalogEnvFromRegex and pass the resulting literal (or "").
 func (b *Builder) BuildAPMServiceLink(fromMs, toMs int64, serviceName, env, tab string) string {
 	params := url.Values{}
 	params.Set("live", "true")
@@ -151,7 +163,7 @@ func (b *Builder) BuildAPMServiceLink(fromMs, toMs int64, serviceName, env, tab 
 	if b.clusterID != "" {
 		params.Set("cluster", b.clusterID)
 	}
-	if catalogEnv := APMCatalogEnv(env); catalogEnv != "" {
+	if catalogEnv := APMCatalogEnvExact(env); catalogEnv != "" {
 		if filterValue, err := json.Marshal([]string{fmt.Sprintf(`deployment_environment="%s"`, catalogEnv)}); err == nil {
 			params.Set("filter", string(filterValue))
 		}

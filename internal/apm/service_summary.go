@@ -51,6 +51,7 @@ type ServiceSummaryResult struct {
 	SortBy           string              `json:"sort_by"`
 	Limit            int                 `json:"limit"`
 	RowCount         int                 `json:"row_count"`
+	MatchedCount     int                 `json:"matched_count"`
 	Truncated        bool                `json:"truncated"`
 	StartTime        string              `json:"start_time"`
 	EndTime          string              `json:"end_time"`
@@ -122,7 +123,7 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 
 		joined := map[string]*ServiceSummaryRow{}
 		for _, class := range serviceSummaryQueried {
-			series, err := fetchPromInstantSeries(ctx, client, cfg, class.query(envMatcher, windowMin), endTimeParam)
+			series, err := fetchPromInstantSeries(ctx, client, cfg, class.key, class.query(envMatcher, windowMin), endTimeParam)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -146,7 +147,8 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 			return identityLess(rows[i].Service, rows[i].Env, rows[j].Service, rows[j].Env)
 		})
 
-		truncated := len(rows) > limit
+		matchedCount := len(rows)
+		truncated := matchedCount > limit
 		if truncated {
 			rows = rows[:limit]
 		}
@@ -159,6 +161,7 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 			SortBy:           sortSpec.key,
 			Limit:            limit,
 			RowCount:         len(rows),
+			MatchedCount:     matchedCount,
 			Truncated:        truncated,
 			StartTime:        time.Unix(queriedStart, 0).UTC().Format(time.RFC3339),
 			EndTime:          time.Unix(endTimeParam, 0).UTC().Format(time.RFC3339),
@@ -178,9 +181,8 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 		}
 
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		// Only anchored ^name$ becomes a catalog filter; unanchored PromQL
-		// (e.g. prod matching production) must not stamp an exact UI filter.
-		dashboardURL := dlBuilder.BuildAPMServiceLink(queriedStart*1000, endTimeParam*1000, "", serviceSummaryDeeplinkEnv(envScope), "")
+		// Regex env → literal only for ^name$; BuildAPMServiceLink treats env as exact.
+		dashboardURL := dlBuilder.BuildAPMServiceLink(queriedStart*1000, endTimeParam*1000, "", deeplink.APMCatalogEnvFromRegex(envScope), "")
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
@@ -234,11 +236,7 @@ func serviceSummaryEnvMatcher(env string) (scope, matcher string) {
 	if env == "" {
 		env = serviceSummaryDefaultEnv
 	}
-	scope = env
-	if env == serviceSummaryDefaultEnv {
-		return scope, `env=~".*"`
-	}
-	return scope, fmt.Sprintf(`env=~"%s"`, escapePromQLLabel(env))
+	return env, fmt.Sprintf(`env=~"%s"`, escapePromQLLabel(env))
 }
 
 func serviceSummaryCountQuery(envMatcher string, windowMin int, extraMatcher string) string {
@@ -259,17 +257,6 @@ func serviceSummaryFingerprint(windowMin int) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// serviceSummaryDeeplinkEnv passes only anchored ^name$ scopes into the
-// catalog link. Unanchored tokens stay out so rows (PromQL regex) and the UI
-// filter do not describe different sets; BuildAPMServiceLink still strips
-// anchors and rejects regex patterns for other callers.
-func serviceSummaryDeeplinkEnv(scope string) string {
-	if len(scope) < 3 || !strings.HasPrefix(scope, "^") || !strings.HasSuffix(scope, "$") {
-		return ""
-	}
-	return scope
-}
-
 func intervalMinutes(startUnix, endUnix int64) int {
 	start := time.Unix(startUnix, 0).UTC()
 	end := time.Unix(endUnix, 0).UTC()
@@ -284,18 +271,18 @@ func intervalMinutes(startUnix, endUnix int64) int {
 	return minutes
 }
 
-func fetchPromInstantSeries(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64) (apiPromInstantResp, error) {
+func fetchPromInstantSeries(ctx context.Context, client *http.Client, cfg models.Config, classKey, query string, endTime int64) (apiPromInstantResp, error) {
 	httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, query, endTime, cfg)
 	if err != nil {
 		return nil, err
 	}
 	defer httpResp.Body.Close()
 	if httpResp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to get service summary: %s", httpResp.Status)
+		return nil, fmt.Errorf("failed to get service summary %s: %s", classKey, httpResp.Status)
 	}
 	var parsed apiPromInstantResp
 	if err := json.NewDecoder(httpResp.Body).Decode(&parsed); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode service summary %s: %w", classKey, err)
 	}
 	return parsed, nil
 }
