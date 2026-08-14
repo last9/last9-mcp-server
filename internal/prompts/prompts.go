@@ -146,6 +146,18 @@ var GetServiceTracesDescription string
 //go:embed descriptions/prometheus_range_query_base.md
 var PromqlRangeQueryDetails string
 
+//go:embed descriptions/get_profile_services.md
+var GetProfileServicesDescription string
+
+//go:embed descriptions/get_flamegraph.md
+var GetFlamegraphDescription string
+
+//go:embed descriptions/get_top_functions.md
+var GetTopFunctionsDescription string
+
+//go:embed descriptions/get_profile_summary.md
+var GetProfileSummaryDescription string
+
 //go:embed workflows/scoped_log_attribute_discovery.md
 var ScopedLogAttributeDiscoveryWorkflow string
 

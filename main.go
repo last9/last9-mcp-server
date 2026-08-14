@@ -53,7 +53,7 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	fs.BoolVar(&cfg.HTTPMode, "http", false, "Run as HTTP server instead of STDIO")
 	fs.StringVar(&cfg.Port, "port", "8080", "HTTP server port")
 	fs.StringVar(&cfg.Host, "host", "localhost", "HTTP server host")
-	fs.StringVar(&cfg.Toolsets, "toolsets", toolsets.SpecFromEnv(), "Comma-separated MCP toolsets to expose (logs,traces,metrics,alerts,dashboards,investigate,all). Empty or all = full surface")
+	fs.StringVar(&cfg.Toolsets, "toolsets", toolsets.SpecFromEnv(), "Comma-separated MCP toolsets to expose (logs,traces,metrics,alerts,dashboards,profiles,investigate,all). Empty or all = full surface")
 	versionFlag := fs.Bool("version", false, "Print version information")
 
 	var configFile string
