@@ -64,9 +64,9 @@ func (h *HTTPServer) Start() error {
 	mux := http.NewServeMux()
 
 	// See newStatelessStreamableHandler for why the handler runs in stateless mode.
-	httpHandler := newStatelessStreamableHandler(func(req *http.Request) *mcp.Server {
-		return h.server.Server
-	})
+	// Use the instrumented SDK helper so HTTP telemetry is attributed to the
+	// streamable transport rather than an empty transport.
+	httpHandler := h.server.NewStreamableHTTPHandler(&mcp.StreamableHTTPOptions{Stateless: true})
 
 	// Register handlers on both root and /mcp paths for maximum client flexibility
 	mux.Handle("/", httpHandler)    // Root endpoint for standard MCP clients
