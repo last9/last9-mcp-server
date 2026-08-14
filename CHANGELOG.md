@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Continuous profiling MCP tools backed by `POST /profiles/api/v1/query_range/json` (same contract as the Profiling UI): `get_profile_services` (service index), `get_flamegraph` (nested tree), `get_top_functions` (self-sample ranking), and `get_profile_summary` (short NL triage). New `profiles` toolset; also included in `investigate`. Tenants without profiling enabled get a clear error asking them to contact the Last9 team (#214).
+
 ## [0.15.0] - 2026-08-10
 
 ### Fixed
