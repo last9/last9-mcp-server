@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"unicode"
 
 	"last9-mcp/internal/utils"
 
@@ -21,13 +20,7 @@ var traceRequestIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
 
 var traceAPIStatusPattern = regexp.MustCompile(`^[a-z_]{1,32}$`)
 
-const traceUpstreamBodyLimit = 512
-
-var (
-	traceBodyURLPattern    = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s"'<>,}\]]+`)
-	traceBodyBearerPattern = regexp.MustCompile(`(?i)\bbearer\s+[^\s"',}]+`)
-	traceBodySecretPattern = regexp.MustCompile(`(?i)\b(token|api[_-]?key|secret|password|authorization)\b"?\s*[:=]\s*"?[^"',}\s]+`)
-)
+const traceUpstreamBodyLimit = utils.UpstreamBodyLimit
 
 type traceUpstreamError struct {
 	statusCode int
@@ -181,21 +174,5 @@ func readLimitedResponseBody(body io.Reader, limit int64) string {
 }
 
 func sanitizeUpstreamBody(raw string) string {
-	cleaned := traceBodyURLPattern.ReplaceAllString(raw, "[redacted-url]")
-	cleaned = traceBodyBearerPattern.ReplaceAllString(cleaned, "[redacted-credential]")
-	cleaned = traceBodySecretPattern.ReplaceAllString(cleaned, "[redacted-credential]")
-	cleaned = strings.Map(func(r rune) rune {
-		if r == '\n' || r == '\r' || r == '\t' {
-			return ' '
-		}
-		if unicode.IsControl(r) {
-			return -1
-		}
-		return r
-	}, cleaned)
-	cleaned = strings.Join(strings.Fields(cleaned), " ")
-	if len(cleaned) > traceUpstreamBodyLimit {
-		cleaned = strings.ToValidUTF8(cleaned[:traceUpstreamBodyLimit], "") + "… (truncated)"
-	}
-	return cleaned
+	return utils.SanitizeUpstreamBody(raw)
 }

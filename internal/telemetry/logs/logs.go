@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"log/slog"
 	"net/http"
@@ -357,8 +356,7 @@ func executeLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("logs API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, utils.NewUpstreamHTTPError(resp, "logs query")
 	}
 
 	var result map[string]interface{}

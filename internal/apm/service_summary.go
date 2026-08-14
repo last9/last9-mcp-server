@@ -286,7 +286,7 @@ func fetchPromInstantSeries(ctx context.Context, client *http.Client, cfg models
 	}
 	defer httpResp.Body.Close()
 	if httpResp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to get service summary %s: %s", classKey, httpResp.Status)
+		return nil, promErr(httpResp, "service summary "+classKey)
 	}
 	var parsed apiPromInstantResp
 	if err := json.NewDecoder(httpResp.Body).Decode(&parsed); err != nil {
