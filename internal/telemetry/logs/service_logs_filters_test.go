@@ -82,14 +82,23 @@ func TestApplyServiceLogsStructuredFilters_MissingAndIsError(t *testing.T) {
 }
 
 func TestIsHTTPStatusLikeAttributeRejectsJobStatusCode(t *testing.T) {
-	if isHTTPStatusLikeAttribute(LogAttribute{Name: "job_status_code", FilterField: "attributes['job_status_code']"}) {
-		t.Fatal("job_status_code must not count as HTTP status")
+	cases := []struct {
+		name string
+		attr LogAttribute
+		want bool
+	}{
+		{name: "bare status_code", attr: LogAttribute{Name: "status_code", FilterField: "attributes['status_code']"}, want: true},
+		{name: "http.status_code", attr: LogAttribute{Name: "http.status_code", FilterField: "attributes['http.status_code']"}, want: true},
+		{name: "job_status_code", attr: LogAttribute{Name: "job_status_code", FilterField: "attributes['job_status_code']"}, want: false},
+		{name: "job.status_code", attr: LogAttribute{Name: "job.status_code", FilterField: "attributes['job.status_code']"}, want: false},
+		{name: "db.status_code", attr: LogAttribute{Name: "db.status_code", FilterField: "attributes['db.status_code']"}, want: false},
 	}
-	if !isHTTPStatusLikeAttribute(LogAttribute{Name: "status_code", FilterField: "attributes['status_code']"}) {
-		t.Fatal("status_code should count as HTTP status")
-	}
-	if !isHTTPStatusLikeAttribute(LogAttribute{Name: "http.status_code", FilterField: "attributes['http.status_code']"}) {
-		t.Fatal("http.status_code should count as HTTP status")
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isHTTPStatusLikeAttribute(tt.attr); got != tt.want {
+				t.Fatalf("isHTTPStatusLikeAttribute(%q) = %v, want %v", tt.attr.Name, got, tt.want)
+			}
+		})
 	}
 }
 

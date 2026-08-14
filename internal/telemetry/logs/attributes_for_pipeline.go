@@ -407,7 +407,12 @@ func logFieldFilterField(name string) string {
 
 // fetchLogSeriesFieldNames POSTs the given pipeline to /logs/api/v2/series/json
 // and returns the union of field names present across all returned label-sets.
+// Bounded by PerChunkHTTPTimeout so a slow series call cannot stall
+// get_service_logs / attribute discovery before the real query starts.
 func fetchLogSeriesFieldNames(ctx context.Context, client *http.Client, cfg models.Config, pipeline []map[string]interface{}, queryParams url.Values) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
+	defer cancel()
+
 	apiURL := fmt.Sprintf("%s%s?%s", cfg.APIBaseURL, constants.EndpointLogsSeries, queryParams.Encode())
 
 	requestBody := map[string]interface{}{

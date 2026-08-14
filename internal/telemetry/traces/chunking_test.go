@@ -411,7 +411,7 @@ func TestGetTracesHandlerHardErrorsWhenAllChunksFail(t *testing.T) {
 	}
 }
 
-func TestGetTracesHandlerReturnsPartialResultAfterLaterChunkError(t *testing.T) {
+func TestGetTracesHandlerReturnsErrorAfterLaterChunkError(t *testing.T) {
 	rec := newTracesRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()

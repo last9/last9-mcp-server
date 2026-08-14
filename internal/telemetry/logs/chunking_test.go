@@ -488,10 +488,9 @@ func TestFetchServiceLogsHardErrorsWhenAllChunksFail(t *testing.T) {
 	}
 }
 
-func TestFetchServiceLogsReturnsEmptyPartialWhenAllSuccessChunksAreEmpty(t *testing.T) {
-	// Regression: previously fetchServiceLogs returned a hard error when no log
-	// entries were collected, even if most chunks succeeded with empty payloads.
-	// Now matches fetchLogJSONQuery — empty + partial annotation, not hard fail.
+func TestFetchServiceLogsReturnsErrorWhenLaterChunkFailsAfterEmptySuccesses(t *testing.T) {
+	// A later chunk hole is a tool error even when earlier chunks succeeded with
+	// empty payloads — not an empty partial_result.
 	rec := newRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()

@@ -193,9 +193,6 @@ func httpStatusAttributeBase(s string) string {
 	s = strings.TrimPrefix(s, "attributes['")
 	s = strings.TrimPrefix(s, "resources['")
 	s = strings.TrimSuffix(s, "']")
-	if i := strings.LastIndexAny(s, "./"); i >= 0 {
-		s = s[i+1:]
-	}
 	return strings.ReplaceAll(s, "-", "_")
 }
 

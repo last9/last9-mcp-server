@@ -9,16 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `get_logs` fail-closed logjson validation with self-correcting tips (wrong keys/types, bare fields, NOT-SQL, bad parse/`window_aggregate` shapes); whale description aligned with API `window_aggregate`; missing parse `field` defaults to `Body`; `TraceId`/`SpanId`/`ParentSpanId` allowed for log↔trace correlation; dotted parse labels accepted; `tracejson.md` lookback default corrected to 60 (#212).
 - Log-query `400`/`422` responses now use the shared upstream sanitizer (URL/credential redaction, 512-byte truncation with `… (truncated)`) instead of echoing the raw body. `get_logs` / `get_service_logs` also append the pipeline schema hint pointing at `get_log_attributes_for_pipeline` (#213).
+- `get_logs` fail-closed logjson validation with self-correcting tips (wrong keys/types, bare fields, NOT-SQL, bad parse/`window_aggregate` shapes); whale description aligned with API `window_aggregate`; missing parse `field` defaults to `Body`; `TraceId`/`SpanId`/`ParentSpanId` allowed for log↔trace correlation; dotted parse labels accepted; `tracejson.md` lookback default corrected to 60 (#212).
 
 ### Changed
 
+- **Breaking:** a failed later time-chunk on `get_logs`, `get_service_logs`, or `get_traces` is a tool error. The previous `partial_result` / `_last9_mcp` merge-and-continue envelope is gone; clients that treated a truncated merge as success must handle the error. Declared truncation (`get_trace_waterfall` evidence, `get_apm_service_deviations` `partial_errors`) is unchanged (#213).
+- `get_service_logs` accepts `http_status_class`, `http_status_code`, optional `http_status_field`, and `attribute_filters`, and echoes the resolved status field as `http_status_field`. Known-service HTTP status search should use this tool, not `get_logs` (#213).
+- `get_service_performance_details` now records per-section PromQL HTTP failures in a new `partial_errors` field and still returns surviving metrics. Transport errors still fail the whole tool (#213).
 - `get_logs` InputSchema uses a permissive stage `anyOf` (plus catch-all) so handler validation tips reach the model instead of opaque SDK `anyOf` errors (#212).
 - **Breaking:** `get_service_summary` response shape is now a ranked `{rows: [...]}` envelope with snake_case fields (`request_count`, `throughput_rpm`, `http_4xx_count`, `http_5xx_count`, `grpc_error_count`) instead of a `map[string]ServiceSummary` with PascalCase keys (`ErrorRate`, etc.). Rows are `(service, env)` pairs sorted and limited server-side; clients that unmarshal the old map shape will fail and should be updated (#210).
-- **Breaking:** a failed later time-chunk on `get_logs`, `get_service_logs`, or `get_traces` is a tool error. The previous `partial_result` / `_last9_mcp` merge-and-continue envelope is gone; clients that treated a truncated merge as success must handle the error. Declared truncation (`get_trace_waterfall` evidence, `get_apm_service_deviations` / `get_service_performance_details` `partial_errors`) is unchanged (#213).
-- `get_service_logs` accepts `http_status_class`, `http_status_code`, optional `http_status_field`, and `attribute_filters`, and echoes the resolved status field as `http_status_field`. Known-service HTTP status search should use this tool, not `get_logs` (#213).
-- `get_service_performance_details` records per-section PromQL HTTP failures in `partial_errors` and still returns surviving metrics. Transport errors still fail the whole tool (#213).
 
 ## [0.15.0] - 2026-08-10
 
