@@ -297,7 +297,12 @@ func TestGetTracesHandlerWindowAggregateAlsoUsesSingleRequest(t *testing.T) {
 	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
 		TracejsonQuery: []map[string]interface{}{
-			{"type": "window_aggregate"},
+			{
+				"type":     "window_aggregate",
+				"function": map[string]interface{}{"$count": []interface{}{}},
+				"as":       "rate",
+				"window":   []interface{}{"5", "minutes"},
+			},
 		},
 		StartTimeISO: "2026-01-01T00:00:00Z",
 		EndTimeISO:   "2026-01-08T00:00:00Z",

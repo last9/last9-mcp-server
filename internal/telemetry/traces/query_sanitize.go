@@ -340,6 +340,45 @@ func normalizeTraceFilterField(field string) string {
 	return field
 }
 
+const (
+	traceCategoryUnknownStageType     = "unknown_stage_type"
+	traceCategoryUnknownStageKey      = "unknown_stage_key"
+	traceCategoryWindowAggregateShape = "window_aggregate_shape"
+)
+
+type tracePipelineError struct {
+	category string
+	path     string
+	msg      string
+}
+
+func (e *tracePipelineError) Error() string {
+	return fmt.Sprintf("%s (category=%s path=%s)", e.msg, e.category, e.path)
+}
+
+func (e *tracePipelineError) Category() string { return e.category }
+func (e *tracePipelineError) Path() string     { return e.path }
+
+// traceAllowedStageTypes is the last9/api tracejson stage set, including
+// traces-only transform and select. Unknown types fail closed locally.
+var traceAllowedStageTypes = map[string]struct{}{
+	"filter":           {},
+	"where":            {},
+	"parse":            {},
+	"transform":        {},
+	"select":           {},
+	"aggregate":        {},
+	"window_aggregate": {},
+}
+
+var windowAggregateAllowedKeys = map[string]struct{}{
+	"type":     {},
+	"function": {},
+	"as":       {},
+	"window":   {},
+	"groupby":  {},
+}
+
 func validateStageKeys(stage map[string]interface{}, stageType, path string) error {
 	if _, bad := stage["aggregations"]; bad {
 		return fmt.Errorf(
@@ -354,6 +393,62 @@ func validateStageKeys(stage map[string]interface{}, stageType, path string) err
 				"Example: \"groupby\": {\"ServiceName\": \"service\", \"SpanName\": \"span\"}",
 			path, stageType,
 		)
+	}
+
+	if _, ok := traceAllowedStageTypes[stageType]; !ok {
+		return &tracePipelineError{
+			category: traceCategoryUnknownStageType,
+			path:     path,
+			msg:      fmt.Sprintf("unknown trace pipeline stage type %q; allowed: filter, where, parse, transform, select, aggregate, window_aggregate", stageType),
+		}
+	}
+
+	if stageType == "window_aggregate" {
+		if err := validateWindowAggregateStage(stage, path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateWindowAggregateStage(stage map[string]interface{}, path string) error {
+	for key := range stage {
+		if _, ok := windowAggregateAllowedKeys[key]; ok {
+			continue
+		}
+		if key == "aggregates" || key == "window_minutes" {
+			return &tracePipelineError{
+				category: traceCategoryWindowAggregateShape,
+				path:     path,
+				msg:      `window_aggregate accepts only {"type":"window_aggregate","function":{...},"as":"...","window":["N","minutes"]}`,
+			}
+		}
+		return &tracePipelineError{
+			category: traceCategoryUnknownStageKey,
+			path:     path,
+			msg:      fmt.Sprintf("unknown key %q on window_aggregate stage", key),
+		}
+	}
+	if _, ok := stage["function"]; !ok {
+		return &tracePipelineError{
+			category: traceCategoryWindowAggregateShape,
+			path:     path,
+			msg:      `window_aggregate requires "function", "as", and "window"`,
+		}
+	}
+	if _, ok := stage["as"]; !ok {
+		return &tracePipelineError{
+			category: traceCategoryWindowAggregateShape,
+			path:     path,
+			msg:      `window_aggregate requires "function", "as", and "window"`,
+		}
+	}
+	if _, ok := stage["window"]; !ok {
+		return &tracePipelineError{
+			category: traceCategoryWindowAggregateShape,
+			path:     path,
+			msg:      `window_aggregate requires "function", "as", and "window"`,
+		}
 	}
 	return nil
 }
