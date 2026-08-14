@@ -41,6 +41,12 @@ func GetLogsInputSchema() map[string]interface{} {
 	}
 }
 
+// logjsonQuerySchema returns the JSON Schema for the logjson_query array.
+// The anyOf branches are descriptive guidance — they do NOT own rejection.
+// The permissive catch-all at the end ensures that wrong types, unknown enums,
+// and partial stages (e.g. SQL strings as query, type "sort", parser "grok",
+// function as string) pass schema validation and reach validateLogJSONQuery,
+// which returns actionable tip errors instead of opaque anyOf failures.
 func logjsonQuerySchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":        "array",
@@ -51,6 +57,7 @@ func logjsonQuerySchema() map[string]interface{} {
 				logParseStageSchema(),
 				logAggregateStageSchema(),
 				logWindowAggregateStageSchema(),
+				map[string]interface{}{"type": "object"}, // catch-all: wrong types/enums reach validate tips
 			},
 		},
 	}

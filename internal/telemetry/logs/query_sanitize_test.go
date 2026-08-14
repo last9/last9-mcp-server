@@ -1422,3 +1422,102 @@ func TestPrepareLogJSONQueryParseFieldNoCallerMutation(t *testing.T) {
 		t.Errorf("caller's original map was mutated: got field=%v", original["field"])
 	}
 }
+
+// TestPrepareLogJSONQueryCatchAllTips verifies that inputs which pass schema
+// validation via the catch-all anyOf branch are still rejected by
+// validateLogJSONQuery with actionable tips — and never produce "anonymous
+// schema" error messages that the model cannot act on.
+func TestPrepareLogJSONQueryCatchAllTips(t *testing.T) {
+	type tc struct {
+		name      string
+		stages    []map[string]interface{}
+		errSubstr string
+	}
+
+	cases := []tc{
+		{
+			name: "filter query as SQL string",
+			stages: []map[string]interface{}{
+				{"type": "filter", "query": "SELECT * FROM logs WHERE SeverityText = 'ERROR'"},
+			},
+			errSubstr: "NOT SQL",
+		},
+		{
+			name: "type sort (unknown stage type)",
+			stages: []map[string]interface{}{
+				{"type": "sort"},
+			},
+			errSubstr: "unknown stage type",
+		},
+		{
+			name: "stage with no type field",
+			stages: []map[string]interface{}{
+				{"stage": "filter", "query": map[string]interface{}{"$and": []interface{}{}}},
+			},
+			errSubstr: "missing or non-string",
+		},
+		{
+			name: "parser grok (invalid parser value)",
+			stages: []map[string]interface{}{
+				{"type": "parse", "parser": "grok"},
+			},
+			errSubstr: "grok",
+		},
+		{
+			name: "function as string on window_aggregate",
+			stages: []map[string]interface{}{
+				{"type": "window_aggregate", "function": "$count", "as": "errors", "window": []interface{}{"1", "minutes"}},
+			},
+			errSubstr: "function",
+		},
+		{
+			name: "window as string on window_aggregate",
+			stages: []map[string]interface{}{
+				{"type": "window_aggregate", "function": map[string]interface{}{"$count": []interface{}{}}, "as": "errors", "window": "1m"},
+			},
+			errSubstr: "window",
+		},
+		{
+			name: "groupby as array on aggregate",
+			stages: []map[string]interface{}{
+				{
+					"type": "aggregate",
+					"aggregates": []interface{}{
+						map[string]interface{}{"function": map[string]interface{}{"$count": []interface{}{}}, "as": "c"},
+					},
+					"groupby": []interface{}{"ServiceName"},
+				},
+			},
+			errSubstr: "groupby",
+		},
+		{
+			name: "groupby as string on window_aggregate",
+			stages: []map[string]interface{}{
+				{
+					"type":     "window_aggregate",
+					"function": map[string]interface{}{"$count": []interface{}{}},
+					"as":       "errors",
+					"window":   []interface{}{"1", "minutes"},
+					"groupby":  "ServiceName",
+				},
+			},
+			errSubstr: "groupby",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := prepareLogJSONQuery(c.stages, "logjson_query")
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			msg := err.Error()
+			if !strings.Contains(msg, c.errSubstr) {
+				t.Errorf("error %q missing expected substring %q", msg, c.errSubstr)
+			}
+			if strings.Contains(msg, "anonymous schema") {
+				t.Errorf("error must not contain 'anonymous schema' (opaque validator message leaking through): %q", msg)
+			}
+		})
+	}
+}

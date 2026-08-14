@@ -310,7 +310,14 @@ func validateGroupByForTraceFields(stage map[string]interface{}, stagePath strin
 	}
 	groupBy, ok := raw.(map[string]interface{})
 	if !ok {
-		return nil
+		return newLogValidationError(
+			LogValidationInvalidField,
+			stagePath+".groupby",
+			fmt.Sprintf(
+				"groupby at %s must be an object like {\"ServiceName\":\"service\"}, not %T",
+				stagePath+".groupby", raw,
+			),
+		)
 	}
 	for fieldRef := range groupBy {
 		if _, isTraceOnly := traceOnlyLogFields[fieldRef]; isTraceOnly {
@@ -431,8 +438,8 @@ func walkFilterForTraceFields(node interface{}, path string) error {
 	return nil
 }
 
-// validateFilterStage checks that a filter stage has a non-nil "query" key and
-// then delegates trace-field checks to validateFilterStageForTraceFields.
+// validateFilterStage checks that a filter stage has a non-nil "query" key
+// that is a condition object (map), then delegates trace-field checks.
 func validateFilterStage(stage map[string]interface{}, stagePath string) error {
 	if stage["query"] == nil {
 		return newLogValidationError(
@@ -440,6 +447,16 @@ func validateFilterStage(stage map[string]interface{}, stagePath string) error {
 			stagePath+".query",
 			fmt.Sprintf(
 				"filter stage at %s missing required \"query\" key — use \"query\" not \"conditions\"",
+				stagePath,
+			),
+		)
+	}
+	if _, ok := stage["query"].(map[string]interface{}); !ok {
+		return newLogValidationError(
+			LogValidationInvalidField,
+			stagePath+".query",
+			fmt.Sprintf(
+				"filter stage at %s: \"query\" must be a condition object (NOT SQL / not a string) — example: {\"query\":{\"$and\":[{\"$eq\":[\"SeverityText\",\"ERROR\"]}]}}",
 				stagePath,
 			),
 		)

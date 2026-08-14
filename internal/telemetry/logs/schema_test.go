@@ -169,7 +169,8 @@ func TestGetLogsInputSchema_Structure(t *testing.T) {
 		t.Error("logjson_query must be in required")
 	}
 
-	// logjson_query must have items.anyOf with at least 4 stage schemas.
+	// logjson_query must have items.anyOf with at least 5 schemas:
+	// the 4 stage schemas + the permissive catch-all {"type":"object"}.
 	props, ok := schema["properties"].(map[string]interface{})
 	if !ok {
 		t.Fatal("schema properties is not a map")
@@ -186,8 +187,8 @@ func TestGetLogsInputSchema_Structure(t *testing.T) {
 	if !ok {
 		t.Fatal("logjson_query items.anyOf missing or not a slice")
 	}
-	if len(anyOf) < 4 {
-		t.Errorf("expected at least 4 stage schemas in anyOf, got %d", len(anyOf))
+	if len(anyOf) < 5 {
+		t.Errorf("expected at least 5 schemas in anyOf (4 stage schemas + catch-all), got %d", len(anyOf))
 	}
 
 	// Find window_aggregate stage schema and verify its required fields.
@@ -389,6 +390,54 @@ func TestGetLogsInputSchema_RejectsUnknownTopLevelKeys(t *testing.T) {
 						"alias":    "count",
 					},
 				},
+			},
+		},
+		// New catch-all cases: wrong query type, unknown stage type, missing type,
+		// invalid parser, function as string, window as string — all must pass
+		// schema so validateLogJSONQuery can return actionable tips.
+		{
+			name: "filter query as SQL string passes schema (validate owns NOT SQL tip)",
+			stage: map[string]interface{}{
+				"type":  "filter",
+				"query": "SELECT * FROM logs WHERE SeverityText = 'ERROR'",
+			},
+		},
+		{
+			name: "type sort passes schema (validate owns unknown stage type tip)",
+			stage: map[string]interface{}{
+				"type": "sort",
+			},
+		},
+		{
+			name: "stage with no type passes schema (validate owns missing type tip)",
+			stage: map[string]interface{}{
+				"stage": "filter",
+				"query": map[string]interface{}{"$and": []interface{}{}},
+			},
+		},
+		{
+			name: "parser grok passes schema (validate owns invalid parser tip)",
+			stage: map[string]interface{}{
+				"type":   "parse",
+				"parser": "grok",
+			},
+		},
+		{
+			name: "function as string passes schema (validate owns function-must-be-object tip)",
+			stage: map[string]interface{}{
+				"type":     "window_aggregate",
+				"function": "$count",
+				"as":       "errors",
+				"window":   []interface{}{"1", "minutes"},
+			},
+		},
+		{
+			name: "window as string passes schema (validate owns window-must-be-array tip)",
+			stage: map[string]interface{}{
+				"type":     "window_aggregate",
+				"function": map[string]interface{}{"$count": []interface{}{}},
+				"as":       "errors",
+				"window":   "1m",
 			},
 		},
 	}
