@@ -1,7 +1,7 @@
 Retrieve traces by exact `trace_id` or by `service_name`. Prefer over `get_traces` when you have an exact trace ID.
 
 Parameters:
-- `trace_id` (optional): Specific trace ID. Mutually exclusive with `service_name`.
+- `trace_id` (optional): Specific 32-character hexadecimal OpenTelemetry trace ID. Mutually exclusive with `service_name`. A 16-character span ID is rejected locally.
 - `service_name` (optional): Service to query. Mutually exclusive with `trace_id`.
 - `lookback_minutes` (optional): Minutes to look back. Default 4320 for `trace_id`, 60 for `service_name`.
 - `start_time_iso` / `end_time_iso` (optional): RFC3339/ISO8601 bounds.

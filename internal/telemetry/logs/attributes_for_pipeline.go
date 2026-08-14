@@ -477,6 +477,12 @@ func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Confi
 			return nil, nil, fmt.Errorf("pipeline parameter is required. Provide at least one filter stage to scope discovery, e.g. [{\"type\":\"filter\",\"query\":{\"$eq\":[\"ServiceName\",\"<service>\"]}}]")
 		}
 
+		sanitizedPipeline, err := sanitizeLogJSONQuery(args.Pipeline)
+		if err != nil {
+			return nil, nil, err
+		}
+		args.Pipeline = sanitizedPipeline
+
 		params := make(map[string]interface{})
 		if args.LookbackMinutes > 0 {
 			params["lookback_minutes"] = args.LookbackMinutes

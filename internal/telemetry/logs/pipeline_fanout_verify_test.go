@@ -2,9 +2,11 @@ package logs
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -25,23 +27,11 @@ func countingLogsServer(t *testing.T) (*httptest.Server, *atomic.Int32) {
 	return server, &n
 }
 
-func waitForRequests(t *testing.T, n *atomic.Int32, want int32) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if n.Load() >= want {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
-
-// TestENG1729_SanitizeAcceptsTraceDomainAndMalformedStages documents that
-// sanitizeLogJSONQuery is not fail-closed for the four hosted shapes.
-func TestENG1729_SanitizeAcceptsTraceDomainAndMalformedStages(t *testing.T) {
+func TestSanitizeLogJSONQueryRejectsHostedMalformedShapes(t *testing.T) {
 	cases := []struct {
-		name   string
-		stages []map[string]interface{}
+		name     string
+		stages   []map[string]interface{}
+		category string
 	}{
 		{
 			name: "SpanKind filter is a traces field",
@@ -52,12 +42,14 @@ func TestENG1729_SanitizeAcceptsTraceDomainAndMalformedStages(t *testing.T) {
 					},
 				}},
 			},
+			category: logCategoryTraceFieldOnLogs,
 		},
 		{
 			name: "parse uses format instead of parser",
 			stages: []map[string]interface{}{
 				{"type": "parse", "format": "json"},
 			},
+			category: logCategoryParseMissingParser,
 		},
 		{
 			name: "window_aggregate uses aggregates+window_minutes",
@@ -68,29 +60,50 @@ func TestENG1729_SanitizeAcceptsTraceDomainAndMalformedStages(t *testing.T) {
 					"window_minutes": 5,
 				},
 			},
+			category: logCategoryWindowAggregateShape,
 		},
 		{
-			name: "unknown stage key is copied through",
+			name: "unknown stage key is rejected",
 			stages: []map[string]interface{}{
 				{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "checkout"}}, "bogus": true},
 			},
+			category: logCategoryUnknownStageKey,
+		},
+		{
+			name: "unknown stage type is rejected",
+			stages: []map[string]interface{}{
+				{"type": "trace_filter"},
+			},
+			category: logCategoryUnknownStageType,
 		},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := sanitizeLogJSONQuery(tt.stages); err != nil {
-				t.Fatalf("sanitize currently fails closed for %s: %v", tt.name, err)
+			_, err := sanitizeLogJSONQuery(tt.stages)
+			if err == nil {
+				t.Fatal("expected fail-closed validation")
+			}
+			var pipeErr *logPipelineError
+			if !errors.As(err, &pipeErr) {
+				if tt.category == logCategoryParseMissingParser && strings.Contains(err.Error(), "parser") {
+					return
+				}
+				t.Fatalf("want logPipelineError, got %T %v", err, err)
+			}
+			if pipeErr.Category() != tt.category && !(tt.category == logCategoryParseMissingParser && pipeErr.Category() == logCategoryUnknownStageKey) {
+				t.Fatalf("category=%s want %s err=%v", pipeErr.Category(), tt.category, err)
+			}
+			if pipeErr.Path() == "" {
+				t.Fatal("expected JSON path on validation error")
 			}
 		})
 	}
 }
 
-// TestENG1729_SpanKindDiscoveryFansOutTwoUpstreamRequests records the hosted
-// fan-out: invalid discovery launches body sampling in parallel with series.
-func TestENG1729_SpanKindDiscoveryFansOutTwoUpstreamRequests(t *testing.T) {
+func TestGetLogAttributesForPipeline_InvalidInputMakesZeroUpstreamRequests(t *testing.T) {
 	server, n := countingLogsServer(t)
 	handler := NewGetLogAttributesForPipelineHandler(server.Client(), testAttrConfig(server.URL))
-	_, _, _ = handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
 		Pipeline: []map[string]interface{}{
 			{"type": "filter", "query": map[string]interface{}{
 				"$and": []interface{}{
@@ -99,13 +112,15 @@ func TestENG1729_SpanKindDiscoveryFansOutTwoUpstreamRequests(t *testing.T) {
 			}},
 		},
 	})
-	waitForRequests(t, n, 2)
-	if got := n.Load(); got != 2 {
-		t.Fatalf("ENG-1729 leak changed: SpanKind discovery made %d upstream requests, want 2 (current bug) / 0 (fixed)", got)
+	if err == nil {
+		t.Fatal("expected local validation error")
+	}
+	if got := n.Load(); got != 0 {
+		t.Fatalf("SpanKind discovery made %d upstream requests, want 0", got)
 	}
 }
 
-func TestENG1729_MalformedGetLogsHitsUpstream(t *testing.T) {
+func TestGetLogs_InvalidPipelinesMakeZeroUpstreamRequests(t *testing.T) {
 	cases := []struct {
 		name  string
 		query []map[string]interface{}
@@ -133,13 +148,62 @@ func TestENG1729_MalformedGetLogsHitsUpstream(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			server, n := countingLogsServer(t)
 			handler := NewGetLogsHandler(server.Client(), testLogsConfig(server.URL))
-			_, _, _ = handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
 				LogjsonQuery:    tt.query,
 				LookbackMinutes: 5,
 			})
-			if got := n.Load(); got < 1 {
-				t.Fatalf("%s: expected at least 1 upstream request on current main, got %d", tt.name, got)
+			if err == nil {
+				t.Fatal("expected local validation error")
+			}
+			if got := n.Load(); got != 0 {
+				t.Fatalf("%s made %d upstream requests, want 0", tt.name, got)
 			}
 		})
+	}
+}
+
+func TestGetLogs_CanonicalWindowAggregateStillQueries(t *testing.T) {
+	server, n := countingLogsServer(t)
+	handler := NewGetLogsHandler(server.Client(), testLogsConfig(server.URL))
+	_, _, _ = handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+		LogjsonQuery: []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{"$and": []interface{}{map[string]interface{}{"$eq": []interface{}{"ServiceName", "checkout"}}}}},
+			{"type": "window_aggregate", "function": map[string]interface{}{"$count": []interface{}{}}, "as": "rate", "window": []interface{}{"5", "minutes"}},
+		},
+		LookbackMinutes: 5,
+	})
+	if got := n.Load(); got < 1 {
+		t.Fatalf("canonical window_aggregate should still query upstream, got %d", got)
+	}
+}
+
+func TestGetLogAttributesForPipeline_ValidPipelineStillSamples(t *testing.T) {
+	var n atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "/logs/api/v2/series/json") {
+			_, _ = io.WriteString(w, `{"status":"success","data":[{"service":"checkout"}]}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"status":"success","data":{"resultType":"streams","result":[]}}`)
+	}))
+	t.Cleanup(server.Close)
+
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), testAttrConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "checkout"}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("valid pipeline: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && n.Load() < 2 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := n.Load(); got != 2 {
+		t.Fatalf("valid discovery should keep parallel series+sample, got %d", got)
 	}
 }

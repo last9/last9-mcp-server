@@ -10,6 +10,7 @@ import (
 
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/otelids"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -38,12 +39,12 @@ const (
 )
 
 type GetTraceWaterfallArgs struct {
-	TraceID         string `json:"trace_id" jsonschema:"(Required) Exact trace ID"`
+	TraceID         string `json:"trace_id" jsonschema:"(Required) Exact 32-character hexadecimal OpenTelemetry trace ID"`
 	Environment     string `json:"environment,omitempty" jsonschema:"Optional exact deployment.environment value"`
 	StartTimeISO    string `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339"`
 	EndTimeISO      string `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339"`
 	LookbackMinutes int    `json:"lookback_minutes,omitempty" jsonschema:"Lookback ending now; default 4320 minutes"`
-	SelectedSpanID  string `json:"selected_span_id,omitempty" jsonschema:"Optional span ID whose attributes, events, and links should be returned"`
+	SelectedSpanID  string `json:"selected_span_id,omitempty" jsonschema:"Optional 16-character hexadecimal span ID whose attributes, events, and links should be returned"`
 	MaxSpans        int    `json:"max_spans,omitempty" jsonschema:"Maximum spans; default 500, maximum 1000"`
 }
 
@@ -147,8 +148,17 @@ type TraceWaterfallResponse struct {
 
 func NewGetTraceWaterfallHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTraceWaterfallArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args GetTraceWaterfallArgs) (*mcp.CallToolResult, any, error) {
-		if args.TraceID == "" {
-			return nil, nil, fmt.Errorf("trace_id is required")
+		traceID, err := otelids.NormalizeTraceID(args.TraceID)
+		if err != nil {
+			return nil, nil, err
+		}
+		args.TraceID = traceID
+		if args.SelectedSpanID != "" {
+			spanID, err := otelids.NormalizeSpanID(args.SelectedSpanID)
+			if err != nil {
+				return nil, nil, err
+			}
+			args.SelectedSpanID = spanID
 		}
 		maxSpans := args.MaxSpans
 		if maxSpans == 0 {

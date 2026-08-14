@@ -200,7 +200,7 @@ func TestGetLogsHandlerDoesNotChunkAggregateQueries(t *testing.T) {
 				"type":  "filter",
 				"query": map[string]interface{}{"$contains": []interface{}{"Body", "error"}},
 			},
-			{"type": "aggregate"},
+			{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{"function": map[string]interface{}{"$count": []interface{}{}}, "as": "_count"}}},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
 		EndTimeISO:   "1970-01-01T01:30:00Z",
