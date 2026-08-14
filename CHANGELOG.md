@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `create_dashboard` / `update_dashboard` descriptions now distinguish **net-new** vs **refine**: create once, then `update_dashboard` with the returned id. Successful create appends a second text part (`To refine this dashboard, call update_dashboard with id=…`) so the raw API JSON in `Content[0]` stays intact.
+
 ### Changed
 
 - **Breaking:** `get_service_summary` response shape is now a ranked `{rows: [...]}` envelope with snake_case fields (`request_count`, `throughput_rpm`, `http_4xx_count`, `http_5xx_count`, `grpc_error_count`) instead of a `map[string]ServiceSummary` with PascalCase keys (`ErrorRate`, etc.). Rows are `(service, env)` pairs sorted and limited server-side; clients that unmarshal the old map shape will fail and should be updated (#210).

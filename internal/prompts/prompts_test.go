@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"last9-mcp/internal/prompts"
+	"last9-mcp/internal/writeintent"
 )
 
 func TestGetLogsDescriptionCriticalRules(t *testing.T) {
@@ -150,6 +151,36 @@ func TestAPMServiceDeviationsDescriptionDefaultsAndPartialResults(t *testing.T) 
 	} {
 		if !strings.Contains(description, phrase) {
 			t.Errorf("description missing exact contract wording %q", phrase)
+		}
+	}
+}
+
+func TestWriteToolDescriptionSteerability(t *testing.T) {
+	pairs := []struct {
+		pair   writeintent.Pair
+		create string
+		update string
+	}{
+		{writeintent.Dashboard, prompts.CreateDashboardDescription, prompts.UpdateDashboardDescription},
+	}
+	for _, tc := range pairs {
+		if tc.create == "" || tc.update == "" {
+			t.Fatalf("%s description empty — embed missing", tc.pair.Resource)
+		}
+		for _, p := range writeintent.CreateDescriptionPhrases(tc.pair) {
+			if !strings.Contains(tc.create, p.Text) {
+				t.Errorf("create_%s missing %q: %s", tc.pair.Resource, p.Text, p.Reason)
+			}
+		}
+		for _, p := range writeintent.UpdateDescriptionPhrases(tc.pair) {
+			if !strings.Contains(tc.update, p.Text) {
+				t.Errorf("update_%s missing %q: %s", tc.pair.Resource, p.Text, p.Reason)
+			}
+		}
+		for _, p := range writeintent.ForbiddenCreatePhrases() {
+			if strings.Contains(tc.create, p.Text) {
+				t.Errorf("create_%s must not contain %q: %s", tc.pair.Resource, p.Text, p.Reason)
+			}
 		}
 	}
 }

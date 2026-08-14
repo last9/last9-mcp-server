@@ -291,8 +291,8 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 - **`list_dashboards`** — All custom dashboards in your org: IDs, names, and metadata
 - **`get_dashboard`** — Full dashboard definition by ID, including panels and queries
-- **`create_dashboard`** — Create a new custom dashboard with panels, queries, and metadata
-- **`update_dashboard`** — Update an existing dashboard by ID (readonly system dashboards return an error)
+- **`create_dashboard`** — Create a net-new custom dashboard once (panels, queries, metadata). After the id is returned, refine with `update_dashboard`.
+- **`update_dashboard`** — Refine an existing dashboard by ID (full replacement; readonly system dashboards return an error)
 - **`delete_dashboard`** — Delete a custom dashboard by ID
 - **`list_dashboard_snapshots`** — Frozen point-in-time snapshots for a dashboard (metadata only)
 - **`get_dashboard_snapshot`** — Full frozen snapshot including panel data for RCA / shareable views
@@ -681,10 +681,14 @@ No parameters. Returns all custom dashboards in the org as a JSON array with `id
 
 ### create_dashboard
 
+Net-new only. After this call returns `dashboard.id`, refine with `update_dashboard` — do not create again to add, trim, or fix panels.
+
 - `dashboard` (object, required): Dashboard definition with `name` and `panels[]`. Each panel requires `name`, `version`, `layout` (`x`, `y`, `w`, `h`), `visualization.type`, and `queries[]`.
 - `metadata` (object, optional): Dashboard metadata — `_category` and `_type` fields (e.g. `{"_category":"custom","_type":"metrics"}`).
 
 ### update_dashboard
+
+Prefer this after create. Full replacement by id (same body as create).
 
 - `id` (string, required): Dashboard UUID to update.
 - `dashboard` (object, required): Full replacement dashboard body (same shape as create).
