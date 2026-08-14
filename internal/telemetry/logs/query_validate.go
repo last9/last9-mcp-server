@@ -18,9 +18,9 @@ var validNamedCaptureName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 const (
 	LogValidationUnknownStageType = "unknown_stage_type"
 	LogValidationUnknownStageKey  = "unknown_stage_key"
-	LogValidationMissingRequired     = "missing_required"
-	LogValidationInvalidField        = "invalid_field"
-	LogValidationWrongDomainField    = "wrong_domain_field"
+	LogValidationMissingRequired  = "missing_required"
+	LogValidationInvalidField     = "invalid_field"
+	LogValidationWrongDomainField = "wrong_domain_field"
 )
 
 // LogPipelineValidationError is a fail-closed validation failure with a stable
@@ -49,14 +49,13 @@ func newLogValidationError(category, path, message string) error {
 // traceOnlyLogFields are span/trace fields that have no meaning as top-level
 // log filters. Accepting them silently produces zero results; rejecting them
 // surfaces the model error before the API call.
+// TraceId, SpanId, ParentSpanId are intentionally excluded — they are valid
+// log fields used for log↔trace correlation queries.
 var traceOnlyLogFields = map[string]struct{}{
-	"SpanKind":     {},
-	"StatusCode":   {},
-	"Duration":     {},
-	"SpanName":     {},
-	"TraceId":      {},
-	"SpanId":       {},
-	"ParentSpanId": {},
+	"SpanKind":   {},
+	"StatusCode": {},
+	"Duration":   {},
+	"SpanName":   {},
 }
 
 // validParserValues are the accepted values for the parse stage "parser" key.
@@ -111,6 +110,16 @@ func prepareLogJSONQuery(stages []map[string]interface{}, pathPrefix string) ([]
 		return nil, err
 	}
 
+	// Default missing or blank parse field to "Body" after validation so the
+	// schema can leave "field" optional while the API always receives a value.
+	for _, stage := range stages {
+		if stageType, _ := stage["type"].(string); stageType == "parse" {
+			if field, _ := stage["field"].(string); strings.TrimSpace(field) == "" {
+				stage["field"] = "Body"
+			}
+		}
+	}
+
 	sanitized, err := sanitizeLogJSONQueryPrefixed(stages, pathPrefix)
 	if err != nil {
 		return nil, err
@@ -158,6 +167,8 @@ func wrapTopLevelLogFilterQuery(query interface{}) interface{} {
 }
 
 // validateLogJSONQuery performs structural validation before the HTTP fan-out.
+// Stage ordering (filter → parse → aggregate/window_aggregate) is documented in
+// the whale description and logjson reference but is not enforced here (MVP).
 func validateLogJSONQuery(stages []map[string]interface{}, pathPrefix string) error {
 	for i, stage := range stages {
 		stagePath := fmt.Sprintf("%s[%d]", pathPrefix, i)
@@ -239,23 +250,14 @@ func validateParseStage(stage map[string]interface{}, stagePath string) error {
 		)
 	}
 
-	field, _ := stage["field"].(string)
-	if strings.TrimSpace(field) == "" {
-		return newLogValidationError(
-			LogValidationMissingRequired,
-			stagePath+".field",
-			fmt.Sprintf("parse stage at %s missing required \"field\" key — usually \"field\":\"Body\"", stagePath),
-		)
-	}
-
 	if labels, ok := stage["labels"].(map[string]interface{}); ok {
 		for labelKey := range labels {
-			if !validNamedCaptureName.MatchString(labelKey) {
+			if !safeBodyKeyPattern.MatchString(labelKey) {
 				return newLogValidationError(
 					LogValidationInvalidField,
 					stagePath+".labels."+labelKey,
 					fmt.Sprintf(
-						"parse labels key %q at %s is invalid — use a plain identifier like merchant (letters/digits/underscore); never \"$merchant\" or dotted names",
+						"parse labels key %q at %s is invalid — use a safe key (letters/digits/underscore/dot/@/-); never \"$merchant\" or keys with spaces, quotes, or backslashes",
 						labelKey, stagePath+".labels",
 					),
 				)
@@ -363,11 +365,15 @@ func validateWindowAggregateStage(stage map[string]interface{}, stagePath string
 		)
 	}
 	window, ok := rawWindow.([]interface{})
-	if !ok || len(window) != 2 {
+	gotLen := 0
+	if ok {
+		gotLen = len(window)
+	}
+	if !ok || gotLen != 2 {
 		return newLogValidationError(
 			LogValidationInvalidField,
 			stagePath+".window",
-			fmt.Sprintf("window_aggregate at %s: \"window\" must be an array of exactly 2 elements [duration, unit] — example: [\"1\",\"minutes\"]; got %T len=%d", stagePath, rawWindow, windowLen(rawWindow)),
+			fmt.Sprintf("window_aggregate at %s: \"window\" must be an array of exactly 2 elements [duration, unit] — example: [\"1\",\"minutes\"]; got %T len=%d", stagePath, rawWindow, gotLen),
 		)
 	}
 	return nil
@@ -435,11 +441,4 @@ func stageKeyList(allowed map[string]struct{}) string {
 	}
 	sort.Strings(keys)
 	return strings.Join(keys, ", ")
-}
-
-func windowLen(v interface{}) int {
-	if arr, ok := v.([]interface{}); ok {
-		return len(arr)
-	}
-	return 0
 }

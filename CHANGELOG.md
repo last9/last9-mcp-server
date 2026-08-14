@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `get_logs` whale description (`get_logs_base.md`) now aligns with `window_aggregate` behavior: stage schema uses `anyOf` (not `oneOf`), stage-level `additionalProperties: false` is removed, and parse/window_aggregate schema `required` is only `type` so handler tips (`window_minutes`, `format`, …) remain reachable after SDK schema validation (#212).
+- `get_logs` parse stage `field` now defaults to `"Body"` when omitted, eliminating a common model mistake without a hard error (#212).
+- `TraceId`, `SpanId`, and `ParentSpanId` are now accepted as valid log field references (canonical fields for log↔trace correlation); previously they were incorrectly rejected as trace-only fields (#212).
+- `get_logs` parse stage `labels` keys now allow dotted names (e.g. `http.status_code`) — previously only plain identifiers were accepted, breaking JSON body-derived attribute hints (#212).
+- Sanitize-layer validation errors now use typed `LogPipelineValidationError` (with stable `Category` and `Path` fields) for model self-correction, matching the validate layer (#212).
+- `tracejson.md` reference corrected: `lookback_minutes` default changed from 5 to 60, matching `get_traces_base.md` and eliminating the internal contradiction (#212).
+
+### Changed
+
+- `get_logs` InputSchema uses `anyOf` for stage discriminator instead of `oneOf`; stage-level `additionalProperties: false` removed (root remains false). This widens schema validation to let handler-level tip errors fire correctly (#212).
+
 ## [0.15.0] - 2026-08-10
 
 ### Fixed

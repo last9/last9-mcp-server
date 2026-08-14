@@ -148,8 +148,8 @@ func TestGetLogsArgs_LookbackDescriptionMatchesPromptDefault(t *testing.T) {
 }
 
 // TestGetLogsInputSchema_Structure verifies the hand-crafted GetLogsInputSchema
-// conforms to the expected shape: logjson_query required, oneOf stages,
-// window_aggregate has additionalProperties:false.
+// conforms to the expected shape: logjson_query required, anyOf stages,
+// root has additionalProperties:false (stage level does not).
 func TestGetLogsInputSchema_Structure(t *testing.T) {
 	schema := GetLogsInputSchema()
 
@@ -169,7 +169,7 @@ func TestGetLogsInputSchema_Structure(t *testing.T) {
 		t.Error("logjson_query must be in required")
 	}
 
-	// logjson_query must have items.oneOf with at least 4 stage schemas.
+	// logjson_query must have items.anyOf with at least 4 stage schemas.
 	props, ok := schema["properties"].(map[string]interface{})
 	if !ok {
 		t.Fatal("schema properties is not a map")
@@ -182,17 +182,19 @@ func TestGetLogsInputSchema_Structure(t *testing.T) {
 	if !ok {
 		t.Fatal("logjson_query items not an object")
 	}
-	oneOf, ok := items["oneOf"].([]interface{})
+	anyOf, ok := items["anyOf"].([]interface{})
 	if !ok {
-		t.Fatal("logjson_query items.oneOf missing or not a slice")
+		t.Fatal("logjson_query items.anyOf missing or not a slice")
 	}
-	if len(oneOf) < 4 {
-		t.Errorf("expected at least 4 stage schemas in oneOf, got %d", len(oneOf))
+	if len(anyOf) < 4 {
+		t.Errorf("expected at least 4 stage schemas in anyOf, got %d", len(anyOf))
 	}
 
-	// Find window_aggregate stage schema and verify additionalProperties: false.
+	// Find window_aggregate stage schema and verify its required fields.
+	// Stage-level additionalProperties: false is intentionally absent so handler
+	// tips (e.g. for window_minutes misuse) are reachable after schema validation.
 	found := false
-	for _, stageRaw := range oneOf {
+	for _, stageRaw := range anyOf {
 		stageMap, ok := stageRaw.(map[string]interface{})
 		if !ok {
 			continue
@@ -212,10 +214,11 @@ func TestGetLogsInputSchema_Structure(t *testing.T) {
 		for _, e := range enum {
 			if e == "window_aggregate" {
 				found = true
-				if stageMap["additionalProperties"] != false {
-					t.Error("window_aggregate stage schema must have additionalProperties: false")
+				// Stage-level additionalProperties: false is intentionally removed.
+				if stageMap["additionalProperties"] == false {
+					t.Error("window_aggregate stage schema must NOT have additionalProperties: false at stage level (handler tips must be reachable)")
 				}
-				// verify required fields
+				// Schema only requires "type"; validate owns function/as/window tips.
 				waRequired, ok := stageMap["required"].([]string)
 				if !ok {
 					t.Error("window_aggregate required is not []string")
@@ -225,9 +228,12 @@ func TestGetLogsInputSchema_Structure(t *testing.T) {
 				for _, r := range waRequired {
 					requiredSet[r] = true
 				}
-				for _, field := range []string{"type", "function", "as", "window"} {
-					if !requiredSet[field] {
-						t.Errorf("window_aggregate required must include %q", field)
+				if !requiredSet["type"] {
+					t.Error("window_aggregate required must include \"type\"")
+				}
+				for _, field := range []string{"function", "as", "window"} {
+					if requiredSet[field] {
+						t.Errorf("window_aggregate schema must not require %q (validate owns tips)", field)
 					}
 				}
 				break
@@ -235,7 +241,7 @@ func TestGetLogsInputSchema_Structure(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("window_aggregate stage schema not found in oneOf")
+		t.Error("window_aggregate stage schema not found in anyOf")
 	}
 
 	if schema["additionalProperties"] != false {
@@ -270,5 +276,102 @@ func TestGetLogsInputSchema_RejectsUnknownTopLevelKeys(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected top-level window_minutes to be rejected by additionalProperties:false")
+	}
+
+	// One valid document per stage type must pass schema validation.
+	validStages := []struct {
+		name  string
+		stage map[string]interface{}
+	}{
+		{
+			name: "filter",
+			stage: map[string]interface{}{
+				"type":  "filter",
+				"query": map[string]interface{}{"$and": []interface{}{map[string]interface{}{"$eq": []interface{}{"SeverityText", "ERROR"}}}},
+			},
+		},
+		{
+			name: "parse without field",
+			stage: map[string]interface{}{
+				"type":   "parse",
+				"parser": "json",
+			},
+		},
+		{
+			name: "aggregate",
+			stage: map[string]interface{}{
+				"type": "aggregate",
+				"aggregates": []interface{}{
+					map[string]interface{}{
+						"function": map[string]interface{}{"$count": []interface{}{}},
+						"as":       "log_count",
+					},
+				},
+			},
+		},
+		{
+			name: "window_aggregate",
+			stage: map[string]interface{}{
+				"type":     "window_aggregate",
+				"function": map[string]interface{}{"$count": []interface{}{}},
+				"as":       "errors",
+				"window":   []interface{}{"1", "minutes"},
+			},
+		},
+	}
+	for _, tt := range validStages {
+		t.Run(tt.name+" valid document passes", func(t *testing.T) {
+			err := resolved.Validate(map[string]interface{}{
+				"logjson_query": []interface{}{tt.stage},
+			})
+			if err != nil {
+				t.Errorf("valid %s stage document should pass schema validation: %v", tt.name, err)
+			}
+		})
+	}
+
+	// Flagship wrong-key mistakes must pass schema so handler tips are reachable.
+	tipReachable := []struct {
+		name  string
+		stage map[string]interface{}
+	}{
+		{
+			name: "window_minutes instead of window",
+			stage: map[string]interface{}{
+				"type":           "window_aggregate",
+				"function":       map[string]interface{}{"$count": []interface{}{}},
+				"as":             "errors",
+				"window_minutes": 1,
+			},
+		},
+		{
+			name: "format instead of parser",
+			stage: map[string]interface{}{
+				"type":   "parse",
+				"format": "json",
+				"field":  "Body",
+			},
+		},
+		{
+			name: "aggregates on window_aggregate",
+			stage: map[string]interface{}{
+				"type": "window_aggregate",
+				"aggregates": []interface{}{
+					map[string]interface{}{"function": map[string]interface{}{"$count": []interface{}{}}, "as": "c"},
+				},
+				"as":     "errors",
+				"window": []interface{}{"1", "minutes"},
+			},
+		},
+	}
+	for _, tt := range tipReachable {
+		t.Run(tt.name+" passes schema", func(t *testing.T) {
+			err := resolved.Validate(map[string]interface{}{
+				"logjson_query": []interface{}{tt.stage},
+			})
+			if err != nil {
+				t.Errorf("%s should pass schema so validate tips are reachable: %v", tt.name, err)
+			}
+		})
 	}
 }

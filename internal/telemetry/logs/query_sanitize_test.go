@@ -1037,15 +1037,15 @@ func TestPrepareLogJSONQueryRejectsBareSingleTokenField(t *testing.T) {
 	}
 }
 
-func TestPrepareLogJSONQueryRequiresParseField(t *testing.T) {
-	_, err := prepareLogJSONQuery([]map[string]interface{}{
+func TestPrepareLogJSONQueryDefaultsMissingParseField(t *testing.T) {
+	result, err := prepareLogJSONQuery([]map[string]interface{}{
 		{"type": "parse", "parser": "json"},
 	}, "logjson_query")
-	if err == nil {
-		t.Fatal("expected missing field rejection")
+	if err != nil {
+		t.Fatalf("missing parse field should default to Body, got error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "field") {
-		t.Errorf("error should mention field, got: %q", err.Error())
+	if result[0]["field"] != "Body" {
+		t.Errorf("expected field to default to Body, got %v", result[0]["field"])
 	}
 }
 
@@ -1220,5 +1220,78 @@ func TestPrepareLogJSONQueryTypedWrongDomainField(t *testing.T) {
 	}
 	if typed.Category != LogValidationWrongDomainField {
 		t.Errorf("category=%q, want %q", typed.Category, LogValidationWrongDomainField)
+	}
+}
+
+// TestPrepareLogJSONQueryAcceptsTraceIdFilter verifies that TraceId, SpanId, and
+// ParentSpanId are accepted as log field references for log↔trace correlation.
+func TestPrepareLogJSONQueryAcceptsTraceIdFilter(t *testing.T) {
+	for _, field := range []string{"TraceId", "SpanId", "ParentSpanId"} {
+		t.Run(field, func(t *testing.T) {
+			_, err := prepareLogJSONQuery([]map[string]interface{}{
+				{
+					"type": "filter",
+					"query": map[string]interface{}{
+						"$and": []interface{}{
+							map[string]interface{}{"$neq": []interface{}{field, ""}},
+						},
+					},
+				},
+				{
+					"type": "aggregate",
+					"aggregates": []interface{}{
+						map[string]interface{}{
+							"function": map[string]interface{}{"$count": []interface{}{}},
+							"as":       "log_count",
+						},
+					},
+				},
+			}, "logjson_query")
+			if err != nil {
+				t.Fatalf("%s filter should be accepted for log-trace correlation, got: %v", field, err)
+			}
+		})
+	}
+}
+
+// TestPrepareLogJSONQueryAcceptsDottedParseLabelKey verifies that dotted label
+// keys like http.status_code are accepted in parse stage labels (safeBodyKeyPattern).
+func TestPrepareLogJSONQueryAcceptsDottedParseLabelKey(t *testing.T) {
+	_, err := prepareLogJSONQuery([]map[string]interface{}{
+		{
+			"type":   "parse",
+			"parser": "json",
+			"field":  "Body",
+			"labels": map[string]interface{}{"http.status_code": "status_code"},
+		},
+	}, "logjson_query")
+	if err != nil {
+		t.Fatalf("dotted label key http.status_code should be accepted, got: %v", err)
+	}
+}
+
+// TestPrepareLogJSONQueryRoundTripBodyDerivedHint verifies that the two-stage
+// pipeline shape emitted by bodyDerivedHint (parse json + filter on derived attr)
+// passes prepareLogJSONQuery without error when a dotted key is used.
+func TestPrepareLogJSONQueryRoundTripBodyDerivedHint(t *testing.T) {
+	stages := []map[string]interface{}{
+		{
+			"type":   "parse",
+			"parser": "json",
+			"field":  "Body",
+			"labels": map[string]interface{}{"http.status_code": "http.status_code"},
+		},
+		{
+			"type": "filter",
+			"query": map[string]interface{}{
+				"$and": []interface{}{
+					map[string]interface{}{"$eq": []interface{}{"attributes['http.status_code']", "500"}},
+				},
+			},
+		},
+	}
+	_, err := prepareLogJSONQuery(stages, "logjson_query")
+	if err != nil {
+		t.Fatalf("body-derived hint round-trip should pass: %v", err)
 	}
 }

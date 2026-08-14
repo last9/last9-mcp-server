@@ -53,7 +53,7 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 		{"groupby", "must document groupby key name"},
 		{"resources['last9.tenant']", "must document tenant scoping"},
 		{"last9://reference/tracejson", "must point at the tracejson resource"},
-		{"60", "must document default lookback of 60 minutes"},
+		{"default **60**", "must document default lookback of 60 minutes"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
@@ -85,7 +85,7 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 
 func TestWhaleDescriptionsBounded(t *testing.T) {
 	budgets := map[string]int{
-		"get_logs_base":         4500,
+		"get_logs_base":         2600,
 		"get_traces_base":       2200,
 		"get_service_logs_base": 2000,
 	}

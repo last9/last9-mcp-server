@@ -60,12 +60,12 @@ func TestDumpTools(t *testing.T) {
 	if strings.Contains(out.Tools[byName["get_logs"]].Description, "{{labels}}") {
 		t.Fatal("get_logs description still contains unsubstituted {{labels}} placeholder")
 	}
+	whaleBudgets := map[string]int{
+		"get_logs":         2600,
+		"get_traces":       2200,
+		"get_service_logs": 2000,
+	}
 	for _, whale := range []string{"get_logs", "get_traces", "get_service_logs"} {
-		whaleBudgets := map[string]int{
-			"get_logs":         4500,
-			"get_traces":       2200,
-			"get_service_logs": 2000,
-		}
 		budget := whaleBudgets[whale]
 		if len(out.Tools[byName[whale]].Description) > budget {
 			t.Fatalf("%s served description length %d exceeds %d-char budget", whale, len(out.Tools[byName[whale]].Description), budget)

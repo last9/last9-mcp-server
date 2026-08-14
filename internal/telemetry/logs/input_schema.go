@@ -6,8 +6,10 @@ func logStringEnum(values ...string) map[string]interface{} {
 
 // GetLogsInputSchema returns a hand-crafted JSON Schema for the get_logs tool.
 // This replaces the auto-generated schema from GetLogsArgs so that logjson_query
-// items have a detailed oneOf definition — constraining the LLM to use correct
-// stage shapes and preventing wrong-key mistakes (window_minutes, format, etc.).
+// items have a detailed anyOf definition guiding stage shapes. Schema stays
+// deliberately loose on stage required/additionalProperties so wrong-key
+// mistakes (window_minutes, format, …) reach validateLogJSONQuery tip errors
+// instead of an opaque anyOf failure from the SDK.
 func GetLogsInputSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
@@ -34,7 +36,7 @@ func GetLogsInputSchema() map[string]interface{} {
 				"description": "Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Omit when the user did not specify an index.",
 			},
 		},
-		"required":              []string{"logjson_query"},
+		"required":             []string{"logjson_query"},
 		"additionalProperties": false,
 	}
 }
@@ -44,7 +46,7 @@ func logjsonQuerySchema() map[string]interface{} {
 		"type":        "array",
 		"description": "JSON pipeline query for logs. An ordered list of stages: filter → parse → aggregate/window_aggregate. NOT SQL, NOT a query string. Each stage is an object with a 'type' field.",
 		"items": map[string]interface{}{
-			"oneOf": []interface{}{
+			"anyOf": []interface{}{
 				logFilterStageSchema(),
 				logParseStageSchema(),
 				logAggregateStageSchema(),
@@ -78,15 +80,16 @@ func logParseStageSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":        "object",
 		"description": "Parse stage: extracts fields from Body using json, logfmt, or regexp parsers. Never use 'format' — key is 'parser'.",
-		"required":    []string{"type", "parser"},
+		// Only "type" is schema-required; validateLogJSONQuery owns "parser" so a
+		// {"type":"parse","format":"json"} mistake reaches the format tip.
+		"required": []string{"type"},
 		"properties": map[string]interface{}{
 			"type":    logStringEnum("parse"),
 			"parser":  logStringEnum("json", "logfmt", "regexp"),
-			"field":   map[string]interface{}{"type": "string", "description": "Field to parse (typically Body)."},
+			"field":   map[string]interface{}{"type": "string", "description": "Field to parse (typically Body). Defaults to Body when omitted."},
 			"pattern": map[string]interface{}{"type": "string", "description": "Regexp pattern with named capture groups (regexp parser only)."},
 			"labels":  map[string]interface{}{"type": "object", "description": "Field mappings for json/logfmt parsing."},
 		},
-		"additionalProperties": false,
 	}
 }
 
@@ -105,7 +108,6 @@ func logAggregateStageSchema() map[string]interface{} {
 				"description": "Output field name. Use 'as', NOT 'alias'.",
 			},
 		},
-		"additionalProperties": false,
 	}
 
 	return map[string]interface{}{
@@ -123,7 +125,6 @@ func logAggregateStageSchema() map[string]interface{} {
 				"description": "Group-by fields as {\"FieldName\": \"alias\"}.",
 			},
 		},
-		"additionalProperties": false,
 	}
 }
 
@@ -131,7 +132,9 @@ func logWindowAggregateStageSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":        "object",
 		"description": "Window aggregate stage: time-bucketed counts/trends. CRITICAL: use 'function'+'as'+'window' — NOT 'aggregates', NOT 'window_minutes', NOT 'TimeBucket'.",
-		"required":    []string{"type", "function", "as", "window"},
+		// Only "type" is schema-required; validateLogJSONQuery owns function/as/window
+		// so {"type":"window_aggregate","window_minutes":1,...} reaches the tip.
+		"required": []string{"type"},
 		"properties": map[string]interface{}{
 			"type": logStringEnum("window_aggregate"),
 			"function": map[string]interface{}{
@@ -151,6 +154,5 @@ func logWindowAggregateStageSchema() map[string]interface{} {
 				"description": "Optional group-by fields as {\"FieldName\": \"alias\"}.",
 			},
 		},
-		"additionalProperties": false,
 	}
 }

@@ -35,13 +35,11 @@ These are instructions for constructing natural language trace analytics queries
 5. Translate the query to JSON pipeline format using the correct field references
 6. Call the `get_traces` tool with canonical time params:
    - Use `start_time_iso` + `end_time_iso` when the user gave explicit absolute dates/times
-   - Otherwise use `lookback_minutes` (default: 5 when no time is specified)
+   - Otherwise use `lookback_minutes` (default: 60 when no time is specified)
 7. Analyze the results and provide insights to the user
 
 **CRITICAL TIME PARAMETER RULES:**
-- **ALWAYS use lookback_minutes: 5 when no time range is specified**
-- **NEVER use 60 minutes unless explicitly requested**
-- **Default means 5 minutes, not 60 minutes**
+- **ALWAYS use lookback_minutes: 60 when no time range is specified**
 - **`start_time_iso` and `end_time_iso` are top-level request parameters — NEVER put them inside the pipeline as `Timestamp` filter conditions**
 - When the user gives absolute dates/times → set `start_time_iso` + `end_time_iso` on the tool call, leave the pipeline for data filtering only
 - `{"$gte": ["Timestamp", "..."]}` in the pipeline is WRONG for time range queries — use the request-level params instead
@@ -426,14 +424,13 @@ Note: `ServiceName` is a top-level field — never `resources['service.name']`. 
 ## Default Parameters:
 
 **CRITICAL TIME LOOKBACK RULES:**
-- **DEFAULT IS ALWAYS 5 MINUTES when no time is specified**
-- When the user says "recent" or doesn't specify a time range → **USE 5 MINUTES**
-- For "last hour" or similar → use 60 minutes
+- **DEFAULT IS ALWAYS 60 MINUTES when no time is specified**
+- When the user says "recent" or doesn't specify a time range → **USE 60 MINUTES**
 - For specific timeframes → use the specified duration
 
 **MANDATORY time window parsing:**
-- NO TIME SPECIFIED → **5 minutes (NOT 60!)**
-- "recent", "latest", "current" → **5 minutes**
+- NO TIME SPECIFIED → **60 minutes**
+- "recent", "latest", "current" → **60 minutes**
 
 **ISO TIME FALLBACK RULE:**
 - If you receive a lookback-related validation error,
@@ -444,7 +441,7 @@ Note: `ServiceName` is a top-level field — never `resources['service.name']`. 
 ## Execution Instructions:
 
 When a user asks about traces:
-1. **CRITICAL: When no time is specified, MUST use lookback_minutes: 5 (NOT 60!)**
+1. **CRITICAL: When no time is specified, MUST use lookback_minutes: 60**
 2. **CRITICAL: When using window_aggregate without explicit time range, set lookback_minutes equal to window duration**
 3. **Never return raw JSON** to the user
 4. **Use type specified in the JSON query** (filter, parse, aggregate, window_aggregate), don't use anything else.
