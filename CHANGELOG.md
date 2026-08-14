@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `get_logs` InputSchema uses `anyOf` for stage discriminator instead of `oneOf`; stage-level `additionalProperties: false` removed (root remains false). This widens schema validation to let handler-level tip errors fire correctly (#212).
+- **Breaking:** `get_service_summary` response shape is now a ranked `{rows: [...]}` envelope with snake_case fields (`request_count`, `throughput_rpm`, `http_4xx_count`, `http_5xx_count`, `grpc_error_count`) instead of a `map[string]ServiceSummary` with PascalCase keys (`ErrorRate`, etc.). Rows are `(service, env)` pairs sorted and limited server-side; clients that unmarshal the old map shape will fail and should be updated (#210).
 
 ## [0.15.0] - 2026-08-10
 

@@ -56,6 +56,51 @@ func TestDumpTools(t *testing.T) {
 		}
 	}
 
+	summary := out.Tools[byName["get_service_summary"]]
+	if strings.Contains(summary.Description, "ErrorRate") {
+		t.Fatal("get_service_summary description still mentions ErrorRate")
+	}
+	if strings.Contains(summary.Description, "last9://reference/") {
+		t.Fatal("get_service_summary must not be a whale with a last9://reference/ pointer")
+	}
+	if !strings.Contains(summary.Description, "http_5xx_count") {
+		t.Fatal("get_service_summary description missing http_5xx_count language map")
+	}
+	summarySchema, err := json.Marshal(summary.InputSchema)
+	if err != nil {
+		t.Fatalf("marshal get_service_summary inputSchema: %v", err)
+	}
+	var summaryProps struct {
+		Properties map[string]any `json:"properties"`
+	}
+	if err := json.Unmarshal(summarySchema, &summaryProps); err != nil {
+		t.Fatalf("unmarshal get_service_summary inputSchema: %v", err)
+	}
+	for _, name := range []string{"sort_by", "limit"} {
+		if _, ok := summaryProps.Properties[name]; !ok {
+			t.Fatalf("get_service_summary schema missing %q", name)
+		}
+	}
+	sortBy, _ := summaryProps.Properties["sort_by"].(map[string]any)
+	enum, _ := sortBy["enum"].([]any)
+	wantKeys := []string{"request_count", "throughput_rpm", "http_4xx_count", "http_5xx_count", "grpc_error_count"}
+	if len(enum) != len(wantKeys) {
+		t.Fatalf("sort_by enum = %#v, want %v", enum, wantKeys)
+	}
+	for i, want := range wantKeys {
+		got, _ := enum[i].(string)
+		if got != want {
+			t.Fatalf("sort_by enum[%d] = %q, want %q (full=%#v)", i, got, want, enum)
+		}
+	}
+	limitProp, _ := summaryProps.Properties["limit"].(map[string]any)
+	if _, ok := limitProp["minimum"]; ok {
+		t.Fatalf("limit must not set schema minimum (handler defaults 0); got %#v", limitProp["minimum"])
+	}
+	if _, ok := limitProp["maximum"]; ok {
+		t.Fatalf("limit must not set schema maximum (handler clamps); got %#v", limitProp["maximum"])
+	}
+
 	// Org attribute catalogs must never appear as {{labels}} placeholders.
 	if strings.Contains(out.Tools[byName["get_logs"]].Description, "{{labels}}") {
 		t.Fatal("get_logs description still contains unsubstituted {{labels}} placeholder")

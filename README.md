@@ -232,7 +232,7 @@ The NPM route is easier on Windows — no path management.
 
 ### Service Health
 
-- **`get_service_summary`** — Throughput, error rate, p95 response time across all services
+- **`get_service_summary`** — Ranked fleet `(service, env)` rows: interval request_count, throughput_rpm, HTTP 4xx/5xx counts, and gRPC error counts
 - **`get_service_environments`** — Available environments for your services. Run this first — other APM tools need `env` from here
 - **`get_service_performance_details`** — Full breakdown: throughput, error rate, p50/p90/p95/avg/max, apdex, availability
 - **`get_service_operations_summary`** — Operations grouped by HTTP endpoints, DB calls, messaging, HTTP clients
@@ -401,7 +401,9 @@ LAST9_HTTP=true ./last9-mcp-server
 ### get_service_summary
 
 - `start_time_iso` / `end_time_iso` (string, optional)
-- `env` (string, optional): Defaults to `prod`.
+- `env` (string, optional): PromQL regex. Defaults to `.*`. Exact match needs anchors (e.g. `^prod$`).
+- `sort_by` (string, optional): `request_count` (default), `throughput_rpm`, `http_4xx_count`, `http_5xx_count`, or `grpc_error_count`.
+- `limit` (integer, optional): Max ranked rows. Omit or 0 means 10; values above 100 clamp to 100.
 
 ### get_service_environments
 

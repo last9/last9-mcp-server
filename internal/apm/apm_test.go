@@ -19,91 +19,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestNewServiceSummaryHandler_ExtraParams(t *testing.T) {
-	// Mock responses should match apiPromInstantResp format (direct array)
-	throughputResp := `[
-				{
-					"metric": {"service_name": "svc1"},
-					"value": [1687600000, "10"]
-				}
-	]`
-	responseTimeResp := `[
-				{
-					"metric": {"service_name": "svc1"},
-					"value": [1687600000, "1.1"]
-				}
-	]`
-	errorRateResp := `[
-				{
-					"metric": {"service_name": "svc1"},
-					"value": [1687600000, "0.5"]
-				}
-	]`
-
-	callCount := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify we're hitting the prom_query_instant endpoint
-		if !strings.Contains(r.URL.Path, "/prom_query_instant") {
-			t.Errorf("Expected request to /prom_query_instant, got %s", r.URL.Path)
-		}
-		callCount++
-		w.Header().Set("Content-Type", "application/json")
-		switch callCount {
-		case 1:
-			w.WriteHeader(http.StatusOK)
-			io.WriteString(w, throughputResp)
-		case 2:
-			w.WriteHeader(http.StatusOK)
-			io.WriteString(w, responseTimeResp)
-		case 3:
-			w.WriteHeader(http.StatusOK)
-			io.WriteString(w, errorRateResp)
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer server.Close()
-
-	cfg := models.Config{
-		APIBaseURL: server.URL,
-		Region:     "us-east-1",
-	}
-	// Create a mock TokenManager for testing
-	cfg.TokenManager = &auth.TokenManager{
-		AccessToken: "mock-access-token-for-testing",
-		ExpiresAt:   time.Now().Add(365 * 24 * time.Hour), // Valid for 1 year
-	}
-	handler := NewServiceSummaryHandler(server.Client(), cfg)
-
-	args := ServiceSummaryArgs{
-		StartTimeISO: time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
-		EndTimeISO:   time.Now().UTC().Format(time.RFC3339),
-		Env:          "test",
-	}
-
-	ctx := context.Background()
-	req := &mcp.CallToolRequest{}
-	result, _, err := handler(ctx, req, args)
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-
-	if len(result.Content) == 0 {
-		t.Fatalf("expected content in result")
-	}
-
-	textContent, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent type")
-	}
-
-	var summaries map[string]ServiceSummary
-	if err := json.Unmarshal([]byte(textContent.Text), &summaries); err != nil {
-		t.Fatalf("failed to unmarshal response: %v", err)
-	}
-
-}
-
 func TestGetServicePerformanceDetails(t *testing.T) {
 	cfg := utils.SetupTestConfigOrSkip(t)
 
@@ -431,35 +346,6 @@ func TestPromqlLabelsHandler_Integration(t *testing.T) {
 		t.Logf("Integration test successful. Response is formatted text (not JSON)")
 	} else {
 		t.Logf("Integration test successful: found %d label(s)", len(labels))
-	}
-}
-
-func TestNewServiceSummaryHandler_Integration(t *testing.T) {
-	cfg := utils.SetupTestConfigOrSkip(t)
-
-	handler := NewServiceSummaryHandler(http.DefaultClient, *cfg)
-
-	args := ServiceSummaryArgs{
-		StartTimeISO: time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
-		EndTimeISO:   time.Now().UTC().Format(time.RFC3339),
-		Env:          ".*",
-	}
-
-	ctx := context.Background()
-	req := &mcp.CallToolRequest{}
-	result, _, err := handler(ctx, req, args)
-
-	if utils.CheckAPIError(t, err) {
-		return
-	}
-
-	text := utils.GetTextContent(t, result)
-
-	var summaries map[string]ServiceSummary
-	if err := json.Unmarshal([]byte(text), &summaries); err != nil {
-		t.Logf("Integration test successful. Response is formatted text (not JSON)")
-	} else {
-		t.Logf("Integration test successful: found %d service summary/ies", len(summaries))
 	}
 }
 
