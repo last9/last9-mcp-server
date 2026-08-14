@@ -145,12 +145,6 @@ func APMCatalogEnvFromRegex(env string) string {
 	return inner
 }
 
-// APMCatalogEnv is an alias of APMCatalogEnvFromRegex kept for older call sites.
-// Prefer APMCatalogEnvExact or APMCatalogEnvFromRegex explicitly.
-func APMCatalogEnv(env string) string {
-	return APMCatalogEnvFromRegex(env)
-}
-
 // BuildAPMServiceLink creates a deep link to the APM service catalog page with the service name in the path
 // and environment filter as a JSON array. env is treated as an exact environment
 // name (see APMCatalogEnvExact). Regex callers must pre-sanitize with
