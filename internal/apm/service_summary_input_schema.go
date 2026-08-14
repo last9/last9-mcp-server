@@ -1,8 +1,10 @@
 package apm
 
 // GetServiceSummaryInputSchema returns the MCP-facing JSON Schema for
-// get_service_summary. Enum and numeric bounds keep models from round-tripping
-// rejected sort_by values or out-of-range limits; the handler still validates.
+// get_service_summary. sort_by is an enum so models cannot round-trip rejected
+// keys. limit bounds are enforced in the handler (0 → default, >100 clamps)
+// rather than schema minimum/maximum, so LLM callers that send oversized
+// limits still get a usable clamped result.
 func GetServiceSummaryInputSchema() map[string]interface{} {
 	sortKeys := make([]interface{}, 0, len(serviceSummarySortSpecs))
 	for _, spec := range serviceSummarySortSpecs {
@@ -27,7 +29,7 @@ func GetServiceSummaryInputSchema() map[string]interface{} {
 			},
 			"env": map[string]interface{}{
 				"type":        "string",
-				"description": "Environment PromQL regex (default: .*). Exact one-env match needs anchors (e.g. ^prod$).",
+				"description": "Environment PromQL regex (default: .*). Exact one-env match needs anchors (e.g. ^prod$). Invalid regex is rejected before querying.",
 			},
 			"sort_by": map[string]interface{}{
 				"type":        "string",
@@ -36,8 +38,6 @@ func GetServiceSummaryInputSchema() map[string]interface{} {
 			},
 			"limit": map[string]interface{}{
 				"type":        "integer",
-				"minimum":     float64(0),
-				"maximum":     float64(serviceSummaryMaxLimit),
 				"description": "Max ranked rows. Omit or 0 means 10. Other values below 1 are an error. Values above 100 clamp to 100.",
 			},
 		},

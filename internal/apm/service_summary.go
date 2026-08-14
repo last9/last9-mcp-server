@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,7 +27,7 @@ const (
 	serviceSummaryMaxLimit       = 100
 	serviceSummarySpanKind       = `span_kind="SPAN_KIND_SERVER"`
 	serviceSummaryGRPCMatcher    = `grpc_status_code!="",grpc_status_code!~"^(0|OK)$"`
-	serviceSummaryCoverage       = "Ranking covers APM server-span metrics only. Log-only services are absent from rows, not listed as zero."
+	serviceSummaryCoverage       = "Ranking covers APM server-span metrics only. Log-only services are absent from rows, not listed as zero. Dual-instrumented services (multiple l9_source series for the same service and env) are summed together, so request_count and class counts can be inflated versus a single instrumentation source."
 	serviceSummaryEmptyHint      = "No APM server-span series matched this interval and env_scope. rows is empty; the interval was not widened and no placeholder service names were added."
 	serviceSummarySortRequest    = "request_count"
 	serviceSummarySortRPM        = "throughput_rpm"
@@ -67,7 +69,7 @@ type ServiceSummaryArgs struct {
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start of the interval in RFC3339/ISO8601 (e.g. 2024-06-01T12:00:00Z). When both start and end are set they beat lookback."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End of the interval in RFC3339/ISO8601 (e.g. 2024-06-01T13:00:00Z). When both start and end are set they beat lookback. A single bound fills the other with lookback_minutes."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
-	Env             string  `json:"env,omitempty" jsonschema:"Environment PromQL regex (default: .*). Exact one-env match needs anchors (e.g. ^prod$)."`
+	Env             string  `json:"env,omitempty" jsonschema:"Environment PromQL regex (default: .*). Exact one-env match needs anchors (e.g. ^prod$). Invalid regex is rejected before querying."`
 	SortBy          string  `json:"sort_by,omitempty" jsonschema:"Sort key. Allowed: request_count (default), throughput_rpm, http_4xx_count, http_5xx_count, grpc_error_count. throughput_rpm ranks identically to request_count. Unknown values including errors, error_rate, and 5xx are rejected."`
 	Limit           int     `json:"limit,omitempty" jsonschema:"Max ranked rows. Omit or 0 means 10. Other values below 1 are an error. Values above 100 clamp to 100."`
 }
@@ -85,10 +87,10 @@ type serviceSummarySortSpec struct {
 }
 
 var serviceSummaryQueried = []serviceSummaryClass{
-	{serviceSummarySortRequest, "", func(r *ServiceSummaryRow, v float64) { r.RequestCount = v }},
-	{serviceSummarySort4xx, `http_status_code=~"4.*"`, func(r *ServiceSummaryRow, v float64) { r.HTTP4xxCount = v }},
-	{serviceSummarySort5xx, `http_status_code=~"5.*"`, func(r *ServiceSummaryRow, v float64) { r.HTTP5xxCount = v }},
-	{serviceSummarySortGRPC, serviceSummaryGRPCMatcher, func(r *ServiceSummaryRow, v float64) { r.GRPCErrorCount = v }},
+	{serviceSummarySortRequest, "", func(r *ServiceSummaryRow, v float64) { r.RequestCount += v }},
+	{serviceSummarySort4xx, `http_status_code=~"4.*"`, func(r *ServiceSummaryRow, v float64) { r.HTTP4xxCount += v }},
+	{serviceSummarySort5xx, `http_status_code=~"5.*"`, func(r *ServiceSummaryRow, v float64) { r.HTTP5xxCount += v }},
+	{serviceSummarySortGRPC, serviceSummaryGRPCMatcher, func(r *ServiceSummaryRow, v float64) { r.GRPCErrorCount += v }},
 }
 
 var serviceSummarySortSpecs = []serviceSummarySortSpec{
@@ -115,7 +117,10 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, err
 		}
 
-		envScope, envMatcher := serviceSummaryEnvMatcher(args.Env)
+		envScope, envMatcher, err := serviceSummaryEnvMatcher(args.Env)
+		if err != nil {
+			return nil, nil, err
+		}
 		windowMin := intervalMinutes(startTimeParam, endTimeParam)
 		// Stamp the interval that was actually summed (PromQL [Nm] rounds up),
 		// not only the caller-requested bounds.
@@ -232,11 +237,14 @@ func resolveServiceSummaryLimit(limit int) (int, error) {
 	return limit, nil
 }
 
-func serviceSummaryEnvMatcher(env string) (scope, matcher string) {
+func serviceSummaryEnvMatcher(env string) (scope, matcher string, err error) {
 	if env == "" {
 		env = serviceSummaryDefaultEnv
 	}
-	return env, fmt.Sprintf(`env=~"%s"`, escapePromQLLabel(env))
+	if _, err := regexp.Compile(env); err != nil {
+		return "", "", fmt.Errorf("env %q is not a valid regular expression: %w", env, err)
+	}
+	return env, fmt.Sprintf(`env=~"%s"`, escapePromQLLabel(env)), nil
 }
 
 func serviceSummaryCountQuery(envMatcher string, windowMin int, extraMatcher string) string {
@@ -296,6 +304,11 @@ func mergeServiceSummarySeries(joined map[string]*ServiceSummaryRow, series apiP
 		val, err := parsePromInstantValue(r.Value)
 		if err != nil {
 			return err
+		}
+		if math.IsNaN(val) || math.IsInf(val, 0) {
+			// Non-finite samples are not rankable; skip rather than failing the
+			// whole fleet response or poisoning sort order.
+			continue
 		}
 		env := r.Metric["env"]
 		key := serviceName + "\x00" + env

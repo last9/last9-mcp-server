@@ -25,6 +25,7 @@ Critical rules:
 - A missing class is 0, not omitted. Zeros mean no matching class in this window.
 - Empty rows stay empty: do not widen the interval, change status class, or invent placeholder names.
 - Ranking is APM/server-span only. Log-only services are absent, not zero.
+- Dual-instrumented services (multiple l9_source series for the same service+env) are summed; counts can be inflated versus a single source.
 - If truncated is true, matched_count is the full ranked total before the limit cut — raise limit toward min(matched_count, 100) and recall.
 
 Time:
@@ -33,14 +34,14 @@ Time:
 - Prefer lookback_minutes for relative windows.
 - Response start_time/end_time/window_minutes describe the PromQL range actually summed (minutes rounded up). A 90s request becomes window_minutes=2.
 
-env is a PromQL regex (default .*). Exact one-env match needs anchors (e.g. ^prod$). Unanchored prod also matches production.
+env is a PromQL regex (default .*). Exact one-env match needs anchors (e.g. ^prod$). Unanchored prod also matches production. Invalid regex is rejected before querying.
 
 Response envelope (besides rows):
 - truncated, limit, row_count, matched_count — row_count is rows returned; matched_count is the pre-truncation total
 - sort_by, sort_key_unit — active sort key and its unit (count or rpm)
 - start_time, end_time, window_minutes — queried interval (see Time)
 - env_scope — the env regex used for PromQL
-- coverage — states that ranking is APM server-span only
+- coverage — states APM server-span-only ranking and dual l9_source inflation caveat
 - query_fingerprint — hash of the PromQL shapes (no label values); for provenance, not for ranking
 - hint — present only when rows is empty
 

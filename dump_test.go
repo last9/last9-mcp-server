@@ -83,12 +83,22 @@ func TestDumpTools(t *testing.T) {
 	}
 	sortBy, _ := summaryProps.Properties["sort_by"].(map[string]any)
 	enum, _ := sortBy["enum"].([]any)
-	if len(enum) != 5 {
-		t.Fatalf("sort_by enum = %#v, want 5 values", enum)
+	wantKeys := []string{"request_count", "throughput_rpm", "http_4xx_count", "http_5xx_count", "grpc_error_count"}
+	if len(enum) != len(wantKeys) {
+		t.Fatalf("sort_by enum = %#v, want %v", enum, wantKeys)
+	}
+	for i, want := range wantKeys {
+		got, _ := enum[i].(string)
+		if got != want {
+			t.Fatalf("sort_by enum[%d] = %q, want %q (full=%#v)", i, got, want, enum)
+		}
 	}
 	limitProp, _ := summaryProps.Properties["limit"].(map[string]any)
-	if limitProp["minimum"] != float64(0) || limitProp["maximum"] != float64(100) {
-		t.Fatalf("limit bounds = min %#v max %#v, want 0/100", limitProp["minimum"], limitProp["maximum"])
+	if _, ok := limitProp["minimum"]; ok {
+		t.Fatalf("limit must not set schema minimum (handler defaults 0); got %#v", limitProp["minimum"])
+	}
+	if _, ok := limitProp["maximum"]; ok {
+		t.Fatalf("limit must not set schema maximum (handler clamps); got %#v", limitProp["maximum"])
 	}
 
 	// Org attribute catalogs must never appear as {{labels}} placeholders.

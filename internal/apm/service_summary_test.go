@@ -330,6 +330,52 @@ func TestNewServiceSummaryHandler_RejectsInvalidLimit(t *testing.T) {
 	}
 }
 
+func TestNewServiceSummaryHandler_RejectsInvalidEnvRegex(t *testing.T) {
+	handler := NewServiceSummaryHandler(http.DefaultClient, models.Config{
+		TokenManager: &auth.TokenManager{AccessToken: "t", ExpiresAt: time.Now().Add(time.Hour)},
+	})
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServiceSummaryArgs{
+		LookbackMinutes: 15,
+		Env:             "[",
+	})
+	if err == nil {
+		t.Fatal("expected invalid env regex to fail")
+	}
+	if !strings.Contains(err.Error(), "env") || !strings.Contains(err.Error(), "regular expression") {
+		t.Fatalf("error %q should mention env regex", err)
+	}
+}
+
+func TestNewServiceSummaryHandler_SkipsNonFiniteSamples(t *testing.T) {
+	_, result := runServiceSummaryHandler(t, summaryPromFixture{
+		request: []summaryPromSample{
+			{service: "bad", env: "prod", value: "NaN"},
+			{service: "good", env: "prod", value: "42"},
+			{service: "inf", env: "prod", value: "+Inf"},
+		},
+	}, ServiceSummaryArgs{
+		StartTimeISO: time.Date(2026, 8, 13, 11, 20, 0, 0, time.UTC).Format(time.RFC3339),
+		EndTimeISO:   time.Date(2026, 8, 13, 11, 40, 0, 0, time.UTC).Format(time.RFC3339),
+	})
+	if len(result.Rows) != 1 || result.Rows[0].Service != "good" || result.Rows[0].RequestCount != 42 {
+		t.Fatalf("rows = %+v, want only finite good/prod=42", result.Rows)
+	}
+}
+
+func TestMergeServiceSummarySeries_AccumulatesDuplicates(t *testing.T) {
+	joined := map[string]*ServiceSummaryRow{}
+	series := apiPromInstantResp{
+		{Metric: map[string]string{"service_name": "svc", "env": "prod"}, Value: []any{0.0, "10"}},
+		{Metric: map[string]string{"service_name": "svc", "env": "prod"}, Value: []any{0.0, "3"}},
+	}
+	if err := mergeServiceSummarySeries(joined, series, func(r *ServiceSummaryRow, v float64) { r.RequestCount += v }); err != nil {
+		t.Fatal(err)
+	}
+	if got := joined["svc\x00prod"].RequestCount; got != 13 {
+		t.Fatalf("request_count = %v, want accumulated 13", got)
+	}
+}
+
 func TestNewServiceSummaryHandler_SkipsEmptyServiceName(t *testing.T) {
 	_, result := runServiceSummaryHandler(t, summaryPromFixture{
 		request: []summaryPromSample{
