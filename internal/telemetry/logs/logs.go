@@ -20,7 +20,6 @@ import (
 )
 
 const defaultGetLogsLookbackMinutes = 5
-const partialResultMetadataKey = "_last9_mcp"
 
 // GetLogsArgs represents the input arguments for the get_logs tool
 type GetLogsArgs struct {
@@ -285,20 +284,8 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 	data["result"] = mergedItems
 	data["resultType"] = "streams"
 	if partialErr != nil {
-		annotatePartialGetLogsResponse(baseResponse, partialErr, len(chunks), countLogEntriesInResultItems(mergedItems))
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_logs chunking partial chunks=%d returned_entries=%d start_ms=%d end_ms=%d err=%v",
-				len(chunks),
-				countLogEntriesInResultItems(mergedItems),
-				startTime,
-				endTime,
-				partialErr,
-			)
-		}
-		return baseResponse, nil
+		return nil, fmt.Errorf("%w (window start_ms=%d end_ms=%d)", partialErr, startTime, endTime)
 	}
-
 	if chunkingDebug {
 		log.Printf(
 			"[chunking] get_logs chunking complete chunks=%d returned_entries=%d start_ms=%d end_ms=%d",
@@ -310,15 +297,6 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 	}
 
 	return baseResponse, nil
-}
-
-func annotatePartialGetLogsResponse(response map[string]interface{}, err error, totalChunks, returnedEntries int) {
-	response[partialResultMetadataKey] = map[string]interface{}{
-		"partial_result":   true,
-		"warning":          fmt.Sprintf("Returning partial results: %v", err),
-		"total_chunks":     totalChunks,
-		"returned_entries": returnedEntries,
-	}
 }
 
 func effectiveGetLogsChunkLimit(cfg models.Config, requestedLimit int) int {

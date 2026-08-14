@@ -277,7 +277,6 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		// partial-result annotation when some chunks succeeded. Wrapping the
 		// underlying error via %w preserves errors.Is/As behaviour.
 		partialErr error
-		anySuccess bool
 	)
 
 	for _, r := range results {
@@ -298,11 +297,6 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 			}
 			continue
 		}
-
-		// A successful chunk — even an empty one — counts as positive
-		// evidence about its window. This mirrors fetchLogJSONQuery, where
-		// a successful empty streams response sets baseResponse.
-		anySuccess = true
 
 		remaining := limit - len(logs)
 		chunkLogs := r.Value
@@ -330,37 +324,27 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		}
 	}
 
-	// Hard-error only when NO chunk succeeded. If even one chunk returned a
-	// valid (possibly empty) response, surface what we have with a partial
-	// annotation — same contract as fetchLogJSONQuery.
-	if !anySuccess && partialErr != nil {
-		return nil, partialErr
+	if partialErr != nil {
+		return nil, fmt.Errorf("%w (window start_ms=%d end_ms=%d)", partialErr, startMs, endMs)
 	}
 
 	if chunkingDebug {
 		log.Printf(
-			"[chunking] get_service_logs chunking complete service=%q returned_entries=%d start_ms=%d end_ms=%d partial=%t",
+			"[chunking] get_service_logs chunking complete service=%q returned_entries=%d start_ms=%d end_ms=%d",
 			service,
 			len(logs),
 			startMs,
 			endMs,
-			partialErr != nil,
 		)
 	}
 
-	response := &ServiceLogsResponse{
+	return &ServiceLogsResponse{
 		Service:   service,
 		StartTime: startTime.Format(time.RFC3339),
 		EndTime:   endTime.Format(time.RFC3339),
 		Count:     len(logs),
 		Logs:      logs,
-	}
-	if partialErr != nil {
-		response.PartialResult = true
-		response.Warning = fmt.Sprintf("Returning partial results: %v", partialErr)
-	}
-
-	return response, nil
+	}, nil
 }
 
 func fetchServiceLogsChunk(ctx context.Context, client *http.Client, cfg models.Config, service string, logjsonQuery []map[string]interface{}, startTimeMs, endTimeMs int64, limit int, index string) ([]LogEntry, error) {

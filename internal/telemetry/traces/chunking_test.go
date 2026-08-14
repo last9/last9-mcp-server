@@ -437,31 +437,20 @@ func TestGetTracesHandlerReturnsPartialResultAfterLaterChunkError(t *testing.T) 
 		Limit:        10,
 	})
 	if err != nil {
-		t.Fatalf("handler returned error on partial: %v", err)
+		t.Fatalf("expected tool execution error, got protocol error: %v", err)
 	}
-
+	if result == nil || !result.IsError {
+		t.Fatalf("expected IsError=true when a chunk fails, got %#v", result)
+	}
 	if rec.count() != 6 {
 		t.Fatalf("expected 6 chunk requests, got %d", rec.count())
 	}
-
-	payload := parseTracesToolResult(t, result)
-	if count := countTracesInPayload(t, payload); count != 3 {
-		t.Fatalf("expected 3 traces in partial result, got %d", count)
+	text := result.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, "chunk 6/6 failed") {
+		t.Fatalf("expected chunk 6/6 failure in error, got %q", text)
 	}
-
-	meta, ok := payload[partialResultMetadataKey].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected partial metadata in payload, got %#v", payload[partialResultMetadataKey])
-	}
-	if partial, ok := meta["partial_result"].(bool); !ok || !partial {
-		t.Fatalf("expected partial_result=true, got %#v", meta["partial_result"])
-	}
-	warning, ok := meta["warning"].(string)
-	if !ok || !strings.Contains(warning, "chunk 6/6 failed") {
-		t.Fatalf("expected chunk 6/6 failure in warning, got %q", warning)
-	}
-	if strings.Contains(warning, "backend error") {
-		t.Fatalf("partial-result warning leaked upstream body: %q", warning)
+	if strings.Contains(text, "backend error") {
+		t.Fatalf("error leaked upstream body: %q", text)
 	}
 }
 

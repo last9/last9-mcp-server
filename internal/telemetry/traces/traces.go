@@ -28,8 +28,6 @@ type GetTracesArgs struct {
 	Limit           int                      `json:"limit,omitempty" jsonschema:"Maximum number of traces to return (optional, default: 5000)"`
 }
 
-const partialResultMetadataKey = "_last9_mcp"
-
 // NewGetTracesHandler creates a handler for getting traces using tracejson_query parameter
 func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTracesArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetTracesArgs) (*mcp.CallToolResult, any, error) {
@@ -262,18 +260,9 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 	data["result"] = mergedItems
 
 	if partialErr != nil {
-		annotatePartialGetTracesResponse(baseResponse, partialErr, len(chunks), len(mergedItems))
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_traces chunking partial chunks=%d returned_traces=%d start_ms=%d end_ms=%d err=%v",
-				len(chunks),
-				len(mergedItems),
-				startMs,
-				endMs,
-				partialErr,
-			)
-		}
-	} else if chunkingDebug {
+		return nil, fmt.Errorf("%w (window start_ms=%d end_ms=%d)", partialErr, startMs, endMs)
+	}
+	if chunkingDebug {
 		log.Printf(
 			"[chunking] get_traces chunking complete chunks=%d returned_traces=%d start_ms=%d end_ms=%d",
 			len(chunks), len(mergedItems), startMs, endMs,
@@ -281,15 +270,6 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 	}
 
 	return baseResponse, nil
-}
-
-func annotatePartialGetTracesResponse(response map[string]interface{}, err error, totalChunks, returnedTraces int) {
-	response[partialResultMetadataKey] = map[string]interface{}{
-		"partial_result":  true,
-		"warning":         fmt.Sprintf("Returning partial results: %v", err),
-		"total_chunks":    totalChunks,
-		"returned_traces": returnedTraces,
-	}
 }
 
 // executeTraceJSONQuery performs a single API call for a given time window.
