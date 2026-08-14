@@ -7,14 +7,16 @@ the Profiling UI.
 Critical rules:
 - service is required. Discover candidates with get_profile_services first.
 - Default profile_type is cpu. Always pin a type; never omit it when comparing
-  windows or you will mix units.
+  windows or you will mix units. Unknown profile_type values are rejected.
 - value = inclusive samples; self = exclusive samples on that frame.
 - truncated=true means the API row limit was hit; tighten filters or the window.
 - Prefer lookback_minutes OR explicit start_time_iso/end_time_iso; default 60m.
+- If profiling is not enabled for the account, the tool returns an error asking
+  the user to contact the Last9 team.
 
 Parameters:
 - service: (Required) ServiceName
 - env / cluster / namespace / runtime: optional filters
 - profile_type: cpu (default), alloc, or wall
-- limit: max aggregated stack rows (default 1000)
+- limit: max aggregated stack rows (default 1000, max 10000)
 - region / lookback_minutes / start_time_iso / end_time_iso

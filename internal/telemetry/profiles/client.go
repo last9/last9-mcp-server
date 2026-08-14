@@ -39,6 +39,9 @@ func MakeProfilesJSONQueryAPI(
 	if limit <= 0 {
 		limit = DefaultFlamegraphRowLimit
 	}
+	if limit > MaxFlamegraphRowLimit {
+		limit = MaxFlamegraphRowLimit
+	}
 	if strings.TrimSpace(region) == "" {
 		region = cfg.Region
 	}
@@ -100,10 +103,8 @@ func runQueryRange(
 	case http.StatusBadRequest:
 		return nil, fmt.Errorf("profiles API invalid range/query (400): %s", string(body))
 	case http.StatusNotFound:
-		// PDE-1117 / last9#11396: /profiles/api/v1 must be registered on the
-		// org-scoped Tempo proxy (same pattern as /logs/api/v2). Until that
-		// ships on the API host, callers see a gateway 404 — not a bad pipeline.
-		return nil, fmt.Errorf("profiles API 404 (Tempo proxy route missing on this API host; needs last9/last9#11396 / PDE-1117). body=%s", string(body))
+		// Tempo only registers /profiles/api/v1 when ProfilesEnabled for the tenant.
+		return nil, fmt.Errorf("profiling is not enabled for your account. Please contact the Last9 team to enable it")
 	case http.StatusRequestTimeout:
 		return nil, fmt.Errorf("profiles API timed out (408): %s", string(body))
 	default:

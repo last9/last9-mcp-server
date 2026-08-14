@@ -37,7 +37,10 @@ func NewGetProfileServicesHandler(client *http.Client, cfg models.Config) func(c
 			return nil, nil, err
 		}
 
-		filters := filtersFromArgs("", args.Env, args.Cluster, args.Namespace, args.Runtime, args.ProfileType)
+		filters, err := filtersFromArgs("", args.Env, args.Cluster, args.Namespace, args.Runtime, args.ProfileType)
+		if err != nil {
+			return nil, nil, err
+		}
 		region := args.Region
 
 		sampleRows, err := runQueryRange(ctx, client, cfg, serviceIndexSamplePipeline(filters, DefaultFlamegraphRowLimit), start, end, DefaultFlamegraphRowLimit, region)

@@ -22,14 +22,28 @@ func TestFlamegraphPipelinePinsCPUAndService(t *testing.T) {
 	}
 }
 
-func TestNormalizeProfileType(t *testing.T) {
-	if normalizeProfileType("") != ProfileTypeCPU {
-		t.Fatal("default cpu")
+func TestParseProfileType(t *testing.T) {
+	pt, err := parseProfileType("")
+	if err != nil || pt != ProfileTypeCPU {
+		t.Fatalf("default cpu: %v %v", pt, err)
 	}
-	if normalizeProfileType("ALLOC") != ProfileTypeAlloc {
-		t.Fatal("alloc")
+	pt, err = parseProfileType("ALLOC")
+	if err != nil || pt != ProfileTypeAlloc {
+		t.Fatalf("alloc: %v %v", pt, err)
 	}
-	if normalizeProfileType("nope") != ProfileTypeCPU {
-		t.Fatal("unknown falls back to cpu")
+	if _, err := parseProfileType("nope"); err == nil {
+		t.Fatal("expected error for unknown profile_type")
+	}
+}
+
+func TestClampFlamegraphLimit(t *testing.T) {
+	if clampFlamegraphLimit(0) != DefaultFlamegraphRowLimit {
+		t.Fatal("default")
+	}
+	if clampFlamegraphLimit(50000) != MaxFlamegraphRowLimit {
+		t.Fatal("cap")
+	}
+	if clampFlamegraphLimit(42) != 42 {
+		t.Fatal("passthrough")
 	}
 }

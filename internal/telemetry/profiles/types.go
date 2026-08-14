@@ -16,6 +16,9 @@ const (
 	// DefaultFlamegraphRowLimit matches FLAMEGRAPH_ROW_LIMIT in the dashboard client.
 	DefaultFlamegraphRowLimit = 1000
 
+	// MaxFlamegraphRowLimit matches the PDE-718 query_range hard cap (~10000).
+	MaxFlamegraphRowLimit = 10000
+
 	// DefaultTopFunctionsLimit is the post-fold ranking cap for get_top_functions.
 	DefaultTopFunctionsLimit = 50
 

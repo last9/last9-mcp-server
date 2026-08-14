@@ -9,6 +9,8 @@ Critical rules:
 - Use this for quick triage; use get_flamegraph for stack structure and
   get_top_functions for a longer ranked list.
 - Prefer lookback_minutes OR explicit start_time_iso/end_time_iso; default 60m.
+- If profiling is not enabled for the account, the tool returns an error asking
+  the user to contact the Last9 team.
 
 Parameters:
 - service: (Required) ServiceName

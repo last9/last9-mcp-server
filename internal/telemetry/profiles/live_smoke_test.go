@@ -18,10 +18,10 @@ import (
 
 // Live smoke against a real org. Opt-in only.
 //
-// Prod (app.last9.io) 404s until last9/last9#11396 (PDE-1117) merges — the
-// /profiles/api/v1 Tempo proxy route is only on alpha today. Point at alpha:
+// Tenants without ProfilesEnabled get a clear "profiling is not enabled" error
+// (Tempo omits /profiles/api/v1). Example:
 //
-//	LAST9_LIVE_PROFILES=1 LAST9_API_HOST=alpha.last9.io go test ./internal/telemetry/profiles/ -run TestLiveProfilesSmoke -v
+//	LAST9_LIVE_PROFILES=1 go test ./internal/telemetry/profiles/ -run TestLiveProfilesSmoke -v
 func TestLiveProfilesSmoke(t *testing.T) {
 	if os.Getenv("LAST9_LIVE_PROFILES") != "1" {
 		t.Skip("set LAST9_LIVE_PROFILES=1 to run")
@@ -40,8 +40,8 @@ func TestLiveProfilesSmoke(t *testing.T) {
 	}
 	if res.IsError {
 		text := liveText(res)
-		if strings.Contains(text, "last9/last9#11396") || strings.Contains(text, "PDE-1117") {
-			t.Skipf("profiles Tempo proxy not on this API host yet: %s", text)
+		if strings.Contains(text, "profiling is not enabled") {
+			t.Skipf("profiles unavailable on this tenant: %s", text)
 		}
 		t.Fatalf("get_profile_services soft-error: %s", text)
 	}

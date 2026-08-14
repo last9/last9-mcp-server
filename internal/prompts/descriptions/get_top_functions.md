@@ -8,7 +8,10 @@ Critical rules:
 - Optimize by self_percent / self_samples first — that is exclusive cost.
 - Default profile_type is cpu; pin the type explicitly for alloc/wall questions.
 - limit caps the ranked list after folding (default 50), not the upstream fetch.
+  total_samples is always the full-profile self total, not just the returned rows.
 - Prefer lookback_minutes OR explicit start_time_iso/end_time_iso; default 60m.
+- If profiling is not enabled for the account, the tool returns an error asking
+  the user to contact the Last9 team.
 
 Parameters:
 - service: (Required) ServiceName

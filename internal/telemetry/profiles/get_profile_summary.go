@@ -52,7 +52,10 @@ func NewGetProfileSummaryHandler(client *http.Client, cfg models.Config) func(co
 			topN = 10
 		}
 
-		filters := filtersFromArgs(args.Service, args.Env, args.Cluster, args.Namespace, args.Runtime, args.ProfileType)
+		filters, err := filtersFromArgs(args.Service, args.Env, args.Cluster, args.Namespace, args.Runtime, args.ProfileType)
+		if err != nil {
+			return nil, nil, err
+		}
 		rows, err := runQueryRange(ctx, client, cfg, flamegraphPipeline(filters, DefaultFlamegraphRowLimit), start, end, DefaultFlamegraphRowLimit, args.Region)
 		if err != nil {
 			return utils.ToolErrorResult(fmt.Sprintf("failed to fetch profile summary: %v", err)), nil, nil

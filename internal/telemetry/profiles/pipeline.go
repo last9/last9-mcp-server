@@ -1,22 +1,36 @@
 package profiles
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 type buildFilterOptions struct {
 	includeProfileType bool
 }
 
-func normalizeProfileType(raw string) ProfileType {
+func parseProfileType(raw string) (ProfileType, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case string(ProfileTypeAlloc):
-		return ProfileTypeAlloc
+		return ProfileTypeAlloc, nil
 	case string(ProfileTypeWall):
-		return ProfileTypeWall
+		return ProfileTypeWall, nil
 	case string(ProfileTypeCPU), "":
-		return ProfileTypeCPU
+		return ProfileTypeCPU, nil
 	default:
-		return ProfileTypeCPU
+		return "", fmt.Errorf("profile_type must be cpu, alloc, or wall (got %q)", raw)
 	}
+}
+
+// clampFlamegraphLimit applies default (1000) and PDE-718 hard cap (10000).
+func clampFlamegraphLimit(limit int) int {
+	if limit <= 0 {
+		return DefaultFlamegraphRowLimit
+	}
+	if limit > MaxFlamegraphRowLimit {
+		return MaxFlamegraphRowLimit
+	}
+	return limit
 }
 
 func buildFilterConditions(filters ProfileFilters, opts buildFilterOptions) []any {

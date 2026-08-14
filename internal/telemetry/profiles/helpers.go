@@ -44,13 +44,17 @@ func jsonResult(v any) (*mcp.CallToolResult, error) {
 	}, nil
 }
 
-func filtersFromArgs(service, env, cluster, namespace, runtime, profileType string) ProfileFilters {
+func filtersFromArgs(service, env, cluster, namespace, runtime, profileType string) (ProfileFilters, error) {
+	pt, err := parseProfileType(profileType)
+	if err != nil {
+		return ProfileFilters{}, err
+	}
 	return ProfileFilters{
 		Service:     strings.TrimSpace(service),
 		Env:         strings.TrimSpace(env),
 		Cluster:     strings.TrimSpace(cluster),
 		Namespace:   strings.TrimSpace(namespace),
 		Runtime:     strings.TrimSpace(runtime),
-		ProfileType: normalizeProfileType(profileType),
-	}
+		ProfileType: pt,
+	}, nil
 }

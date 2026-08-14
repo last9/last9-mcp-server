@@ -22,7 +22,7 @@ type GetFlamegraphArgs struct {
 	Runtime         string `json:"runtime,omitempty" jsonschema:"Filter by telemetry.sdk.language"`
 	ProfileType     string `json:"profile_type,omitempty" jsonschema:"Profile type: cpu (default), alloc, or wall. Prefer cpu unless the user asks for alloc/wall."`
 	Region          string `json:"region,omitempty" jsonschema:"Optional region override; defaults to the configured datasource region"`
-	Limit           int    `json:"limit,omitempty" jsonschema:"Max aggregated stack rows from the API (default: 1000)"`
+	Limit           int    `json:"limit,omitempty" jsonschema:"Max aggregated stack rows from the API (default: 1000, max: 10000)"`
 	LookbackMinutes int    `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back from now (default: 60, minimum: 1)"`
 	StartTimeISO    string `json:"start_time_iso,omitempty" jsonschema:"(Optional) Start time in RFC3339/ISO8601 format"`
 	EndTimeISO      string `json:"end_time_iso,omitempty" jsonschema:"(Optional) End time in RFC3339/ISO8601 format"`
@@ -44,12 +44,12 @@ func NewGetFlamegraphHandler(client *http.Client, cfg models.Config) func(contex
 			return nil, nil, err
 		}
 
-		limit := args.Limit
-		if limit <= 0 {
-			limit = DefaultFlamegraphRowLimit
-		}
+		limit := clampFlamegraphLimit(args.Limit)
 
-		filters := filtersFromArgs(args.Service, args.Env, args.Cluster, args.Namespace, args.Runtime, args.ProfileType)
+		filters, err := filtersFromArgs(args.Service, args.Env, args.Cluster, args.Namespace, args.Runtime, args.ProfileType)
+		if err != nil {
+			return nil, nil, err
+		}
 		rows, err := runQueryRange(ctx, client, cfg, flamegraphPipeline(filters, limit), start, end, limit, args.Region)
 		if err != nil {
 			return utils.ToolErrorResult(fmt.Sprintf("failed to fetch flamegraph: %v", err)), nil, nil
@@ -58,14 +58,14 @@ func NewGetFlamegraphHandler(client *http.Client, cfg models.Config) func(contex
 		flameRows := mapFlamegraphRows(rows)
 		tree := BuildFlameTree(flameRows)
 		result, err := jsonResult(map[string]any{
-			"service":      filters.Service,
-			"profile_type": string(filters.ProfileType),
-			"start":        start.UTC().Format(time.RFC3339),
-			"end":          end.UTC().Format(time.RFC3339),
-			"row_count":    len(flameRows),
-			"truncated":    len(flameRows) >= limit,
+			"service":       filters.Service,
+			"profile_type":  string(filters.ProfileType),
+			"start":         start.UTC().Format(time.RFC3339),
+			"end":           end.UTC().Format(time.RFC3339),
+			"row_count":     len(flameRows),
+			"truncated":     len(flameRows) >= limit,
 			"total_samples": tree.Value,
-			"flamegraph":   tree,
+			"flamegraph":    tree,
 		})
 		return result, nil, err
 	}

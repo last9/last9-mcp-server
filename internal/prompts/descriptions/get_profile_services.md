@@ -11,8 +11,9 @@ Critical rules:
   with allocation bytes into one meaningless ranking.
 - Prefer lookback_minutes OR an explicit start_time_iso/end_time_iso pair;
   default lookback is 60 minutes.
-- Empty services means no profile samples in range (or profiles ingest is off
-  for the tenant) — do not invent services.
+- Empty services means no profile samples in range — do not invent services.
+- If profiling is not enabled for the account, the tool returns an error asking
+  the user to contact the Last9 team.
 
 Parameters:
 - env / cluster / namespace / runtime: optional resource filters
