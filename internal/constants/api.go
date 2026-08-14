@@ -51,7 +51,7 @@ const (
 	DefaultHTTPTimeout = 3 * time.Minute
 
 	// PerChunkHTTPTimeout bounds a single chunked upstream call so one slow
-	// chunk can't stall the whole tool invocation. ENG-914.
+	// chunk can't stall the whole tool invocation.
 	PerChunkHTTPTimeout = 30 * time.Second
 )
 
