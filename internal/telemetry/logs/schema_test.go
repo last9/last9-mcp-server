@@ -363,6 +363,34 @@ func TestGetLogsInputSchema_RejectsUnknownTopLevelKeys(t *testing.T) {
 				"window": []interface{}{"1", "minutes"},
 			},
 		},
+		{
+			name: "conditions instead of query on filter",
+			stage: map[string]interface{}{
+				"type":       "filter",
+				"conditions": map[string]interface{}{"$and": []interface{}{}},
+			},
+		},
+		{
+			name: "aggs instead of aggregates on aggregate",
+			stage: map[string]interface{}{
+				"type": "aggregate",
+				"aggs": []interface{}{
+					map[string]interface{}{"function": map[string]interface{}{"$count": []interface{}{}}, "as": "c"},
+				},
+			},
+		},
+		{
+			name: "alias instead of as in aggregate item",
+			stage: map[string]interface{}{
+				"type": "aggregate",
+				"aggregates": []interface{}{
+					map[string]interface{}{
+						"function": map[string]interface{}{"$count": []interface{}{}},
+						"alias":    "count",
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tipReachable {
 		t.Run(tt.name+" passes schema", func(t *testing.T) {

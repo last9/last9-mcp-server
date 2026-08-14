@@ -91,6 +91,14 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 			sanitizedStage[key] = sanitizedValue
 		}
 
+		// Default missing or blank parse "field" to "Body" on the rebuilt copy so
+		// the API always receives a value without mutating the caller's original map.
+		if stageType, _ := sanitizedStage["type"].(string); stageType == "parse" {
+			if field, _ := sanitizedStage["field"].(string); strings.TrimSpace(field) == "" {
+				sanitizedStage["field"] = "Body"
+			}
+		}
+
 		sanitized = append(sanitized, sanitizedStage)
 	}
 

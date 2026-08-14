@@ -60,7 +60,9 @@ func logFilterStageSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":        "object",
 		"description": "Filter stage: narrows the dataset by condition. Always wrap in $and.",
-		"required":    []string{"type", "query"},
+		// Only "type" is schema-required; validateLogJSONQuery owns "query" tips so
+		// {"type":"filter","conditions":{...}} mistakes reach the conditions tip.
+		"required": []string{"type"},
 		"properties": map[string]interface{}{
 			"type": logStringEnum("filter"),
 			"query": map[string]interface{}{
@@ -94,10 +96,11 @@ func logParseStageSchema() map[string]interface{} {
 }
 
 func logAggregateStageSchema() map[string]interface{} {
+	// No required on aggregateFuncSchema; validateLogJSONQuery owns function/as/alias
+	// tips so {"function":{...},"alias":"count"} mistakes reach the alias tip.
 	aggregateFuncSchema := map[string]interface{}{
 		"type":        "object",
 		"description": "Aggregate entry. Use 'aggregates' (plural) and 'as'. Function MUST be an object like {\"$count\": []} — never a string.",
-		"required":    []string{"function", "as"},
 		"properties": map[string]interface{}{
 			"function": map[string]interface{}{
 				"type":        "object",
@@ -113,7 +116,9 @@ func logAggregateStageSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":        "object",
 		"description": "Aggregate stage. Use 'aggregates' (NOT 'aggregations') and 'groupby' (NOT 'group_by').",
-		"required":    []string{"type", "aggregates"},
+		// Only "type" is schema-required; validateLogJSONQuery owns "aggregates" tips
+		// so {"type":"aggregate","aggs":[...]} mistakes reach the aggs tip.
+		"required": []string{"type"},
 		"properties": map[string]interface{}{
 			"type": logStringEnum("aggregate"),
 			"aggregates": map[string]interface{}{

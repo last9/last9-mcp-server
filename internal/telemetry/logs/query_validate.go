@@ -105,19 +105,10 @@ func prepareLogJSONQuery(stages []map[string]interface{}, pathPrefix string) ([]
 		pathPrefix = "logjson_query"
 	}
 
-	// Validate first (fail-closed), then sanitize field refs, then $and-wrap.
+	// Validate first (fail-closed), then sanitize field refs (which also defaults
+	// missing parse "field" to "Body" on rebuilt copies), then $and-wrap.
 	if err := validateLogJSONQuery(stages, pathPrefix); err != nil {
 		return nil, err
-	}
-
-	// Default missing or blank parse field to "Body" after validation so the
-	// schema can leave "field" optional while the API always receives a value.
-	for _, stage := range stages {
-		if stageType, _ := stage["type"].(string); stageType == "parse" {
-			if field, _ := stage["field"].(string); strings.TrimSpace(field) == "" {
-				stage["field"] = "Body"
-			}
-		}
 	}
 
 	sanitized, err := sanitizeLogJSONQueryPrefixed(stages, pathPrefix)
@@ -204,6 +195,12 @@ func validateLogJSONQuery(stages []map[string]interface{}, pathPrefix string) er
 				if stageType == "parse" && key == "format" {
 					msg += `; use "parser": "json"|"logfmt"|"regexp" (never "format")`
 				}
+				if stageType == "filter" && key == "conditions" {
+					msg += `; use "query" not "conditions"`
+				}
+				if stageType == "aggregate" && key == "aggs" {
+					msg += `; use "aggregates" (plural), not "aggs" or "aggregations"`
+				}
 				return newLogValidationError(LogValidationUnknownStageKey, stagePath+"."+key, msg)
 			}
 		}
@@ -221,11 +218,11 @@ func validateLogJSONQuery(stages []map[string]interface{}, pathPrefix string) er
 				return err
 			}
 		case "aggregate":
-			if err := validateGroupByForTraceFields(stage, stagePath); err != nil {
+			if err := validateAggregateStage(stage, stagePath); err != nil {
 				return err
 			}
 		case "filter":
-			if err := validateFilterStageForTraceFields(stage, stagePath); err != nil {
+			if err := validateFilterStage(stage, stagePath); err != nil {
 				return err
 			}
 		}
@@ -432,6 +429,115 @@ func walkFilterForTraceFields(node interface{}, path string) error {
 		}
 	}
 	return nil
+}
+
+// validateFilterStage checks that a filter stage has a non-nil "query" key and
+// then delegates trace-field checks to validateFilterStageForTraceFields.
+func validateFilterStage(stage map[string]interface{}, stagePath string) error {
+	if stage["query"] == nil {
+		return newLogValidationError(
+			LogValidationMissingRequired,
+			stagePath+".query",
+			fmt.Sprintf(
+				"filter stage at %s missing required \"query\" key — use \"query\" not \"conditions\"",
+				stagePath,
+			),
+		)
+	}
+	return validateFilterStageForTraceFields(stage, stagePath)
+}
+
+// allowedAggregateItemKeys are the only keys permitted inside each aggregates[] item.
+var allowedAggregateItemKeys = map[string]struct{}{
+	"function": {},
+	"as":       {},
+}
+
+// validateAggregateStage checks that "aggregates" is a non-empty array of valid
+// items (each with "function" and "as"), then delegates groupby checks.
+func validateAggregateStage(stage map[string]interface{}, stagePath string) error {
+	rawAggs := stage["aggregates"]
+	if rawAggs == nil {
+		return newLogValidationError(
+			LogValidationMissingRequired,
+			stagePath+".aggregates",
+			fmt.Sprintf(
+				"aggregate stage at %s missing required \"aggregates\" key — use \"aggregates\" (plural), not \"aggs\" or \"aggregations\"",
+				stagePath,
+			),
+		)
+	}
+	aggs, ok := rawAggs.([]interface{})
+	if !ok || len(aggs) == 0 {
+		return newLogValidationError(
+			LogValidationMissingRequired,
+			stagePath+".aggregates",
+			fmt.Sprintf(
+				"aggregate stage at %s: \"aggregates\" must be a non-empty array — use \"aggregates\" (plural), not \"aggs\" or \"aggregations\"",
+				stagePath,
+			),
+		)
+	}
+
+	for i, rawItem := range aggs {
+		itemPath := fmt.Sprintf("%s.aggregates[%d]", stagePath, i)
+		itemMap, ok := rawItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// Reject unknown keys in each item.
+		for key := range itemMap {
+			if _, ok := allowedAggregateItemKeys[key]; !ok {
+				msg := fmt.Sprintf(
+					"unknown key %q in aggregates item at %s — allowed keys are \"function\" and \"as\"",
+					key, itemPath,
+				)
+				if key == "alias" {
+					msg += `; use "as", not "alias"`
+				}
+				return newLogValidationError(LogValidationUnknownStageKey, itemPath+"."+key, msg)
+			}
+		}
+
+		// Require "function" as an object.
+		fn := itemMap["function"]
+		if fn == nil {
+			return newLogValidationError(
+				LogValidationMissingRequired,
+				itemPath+".function",
+				fmt.Sprintf(
+					"aggregates item at %s missing required \"function\" key — example: {\"function\":{\"$count\":[]},\"as\":\"count\"}",
+					itemPath,
+				),
+			)
+		}
+		if _, ok := fn.(map[string]interface{}); !ok {
+			return newLogValidationError(
+				LogValidationInvalidField,
+				itemPath+".function",
+				fmt.Sprintf(
+					"aggregates item at %s: \"function\" must be an object like {\"$count\":[]}, not a %T",
+					itemPath, fn,
+				),
+			)
+		}
+
+		// Require "as" as a non-empty string.
+		as, _ := itemMap["as"].(string)
+		if strings.TrimSpace(as) == "" {
+			return newLogValidationError(
+				LogValidationMissingRequired,
+				itemPath+".as",
+				fmt.Sprintf(
+					"aggregates item at %s missing required \"as\" key (output field name) — use \"as\", not \"alias\"",
+					itemPath,
+				),
+			)
+		}
+	}
+
+	return validateGroupByForTraceFields(stage, stagePath)
 }
 
 func stageKeyList(allowed map[string]struct{}) string {

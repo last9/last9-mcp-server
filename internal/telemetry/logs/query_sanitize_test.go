@@ -1295,3 +1295,130 @@ func TestPrepareLogJSONQueryRoundTripBodyDerivedHint(t *testing.T) {
 		t.Fatalf("body-derived hint round-trip should pass: %v", err)
 	}
 }
+
+// TestPrepareLogJSONQueryFilterQueryRequired verifies that a filter stage missing
+// "query" is rejected with a tip mentioning "conditions".
+func TestPrepareLogJSONQueryFilterQueryRequired(t *testing.T) {
+	_, err := prepareLogJSONQuery([]map[string]interface{}{
+		{"type": "filter"},
+	}, "logjson_query")
+	if err == nil {
+		t.Fatal("expected error for filter stage missing query")
+	}
+	if !strings.Contains(err.Error(), "query") {
+		t.Errorf("error should mention \"query\", got: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "conditions") {
+		t.Errorf("error should tip \"conditions\", got: %q", err.Error())
+	}
+}
+
+// TestPrepareLogJSONQueryConditionsRejectsWithTip verifies that "conditions" (a
+// common wrong key) is rejected before validation with a clear tip.
+func TestPrepareLogJSONQueryConditionsRejectsWithTip(t *testing.T) {
+	_, err := prepareLogJSONQuery([]map[string]interface{}{
+		{
+			"type":       "filter",
+			"conditions": map[string]interface{}{"$and": []interface{}{}},
+		},
+	}, "logjson_query")
+	if err == nil {
+		t.Fatal("expected error for filter with conditions instead of query")
+	}
+	if !strings.Contains(err.Error(), "conditions") {
+		t.Errorf("error should mention \"conditions\", got: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "query") {
+		t.Errorf("error should tip to use \"query\", got: %q", err.Error())
+	}
+}
+
+// TestPrepareLogJSONQueryAggregatesRequired verifies that an aggregate stage
+// missing "aggregates" is rejected with tips for "aggs"/"aggregations".
+func TestPrepareLogJSONQueryAggregatesRequired(t *testing.T) {
+	_, err := prepareLogJSONQuery([]map[string]interface{}{
+		{"type": "aggregate"},
+	}, "logjson_query")
+	if err == nil {
+		t.Fatal("expected error for aggregate stage missing aggregates")
+	}
+	if !strings.Contains(err.Error(), "aggregates") {
+		t.Errorf("error should mention \"aggregates\", got: %q", err.Error())
+	}
+}
+
+// TestPrepareLogJSONQueryAggsRejectsWithTip verifies that "aggs" is rejected
+// with a tip to use "aggregates".
+func TestPrepareLogJSONQueryAggsRejectsWithTip(t *testing.T) {
+	_, err := prepareLogJSONQuery([]map[string]interface{}{
+		{
+			"type": "aggregate",
+			"aggs": []interface{}{
+				map[string]interface{}{
+					"function": map[string]interface{}{"$count": []interface{}{}},
+					"as":       "c",
+				},
+			},
+		},
+	}, "logjson_query")
+	if err == nil {
+		t.Fatal("expected error for aggregate with aggs instead of aggregates")
+	}
+	if !strings.Contains(err.Error(), "aggs") {
+		t.Errorf("error should mention \"aggs\", got: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "aggregates") {
+		t.Errorf("error should tip to use \"aggregates\", got: %q", err.Error())
+	}
+}
+
+// TestPrepareLogJSONQueryAliasRejectsWithTip verifies that "alias" in an
+// aggregates item is rejected with a tip to use "as".
+func TestPrepareLogJSONQueryAliasRejectsWithTip(t *testing.T) {
+	_, err := prepareLogJSONQuery([]map[string]interface{}{
+		{
+			"type": "aggregate",
+			"aggregates": []interface{}{
+				map[string]interface{}{
+					"function": map[string]interface{}{"$count": []interface{}{}},
+					"alias":    "count",
+				},
+			},
+		},
+	}, "logjson_query")
+	if err == nil {
+		t.Fatal("expected error for aggregate item with alias instead of as")
+	}
+	if !strings.Contains(err.Error(), "alias") {
+		t.Errorf("error should mention \"alias\", got: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "as") {
+		t.Errorf("error should tip to use \"as\", got: %q", err.Error())
+	}
+}
+
+// TestPrepareLogJSONQueryParseFieldNoCallerMutation verifies that the caller's
+// original stage map is NOT mutated when "field" is defaulted to "Body".
+func TestPrepareLogJSONQueryParseFieldNoCallerMutation(t *testing.T) {
+	original := map[string]interface{}{
+		"type":   "parse",
+		"parser": "json",
+		// no "field" key — should be defaulted in returned pipeline only
+	}
+	stages := []map[string]interface{}{original}
+
+	result, err := prepareLogJSONQuery(stages, "logjson_query")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Returned pipeline must have "field" defaulted to "Body".
+	if result[0]["field"] != "Body" {
+		t.Errorf("expected returned stage to have field=Body, got %v", result[0]["field"])
+	}
+
+	// Caller's original map must NOT have been mutated.
+	if _, mutated := original["field"]; mutated {
+		t.Errorf("caller's original map was mutated: got field=%v", original["field"])
+	}
+}
