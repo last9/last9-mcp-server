@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"last9-mcp/internal/prompts"
-	"last9-mcp/internal/writeintent"
 )
 
 func TestGetLogsDescriptionCriticalRules(t *testing.T) {
@@ -156,31 +155,46 @@ func TestAPMServiceDeviationsDescriptionDefaultsAndPartialResults(t *testing.T) 
 }
 
 func TestWriteToolDescriptionSteerability(t *testing.T) {
-	pairs := []struct {
-		pair   writeintent.Pair
-		create string
-		update string
-	}{
-		{writeintent.Dashboard, prompts.CreateDashboardDescription, prompts.UpdateDashboardDescription},
+	create := prompts.CreateDashboardDescription
+	update := prompts.UpdateDashboardDescription
+	if create == "" || update == "" {
+		t.Fatal("dashboard write descriptions empty — embed missing")
 	}
-	for _, tc := range pairs {
-		if tc.create == "" || tc.update == "" {
-			t.Fatalf("%s description empty — embed missing", tc.pair.Resource)
+	for _, c := range []struct {
+		phrase string
+		reason string
+	}{
+		{"net-new", "must name net-new write intent"},
+		{"Create once", "must say create once"},
+		{"update_dashboard", "must name the refine tool"},
+		{"do not call create_dashboard again", "must forbid same-turn re-create"},
+		{"dashboard.id", "must keep the returned id"},
+	} {
+		if !strings.Contains(create, c.phrase) {
+			t.Errorf("CreateDashboardDescription missing %q: %s", c.phrase, c.reason)
 		}
-		for _, p := range writeintent.CreateDescriptionPhrases(tc.pair) {
-			if !strings.Contains(tc.create, p.Text) {
-				t.Errorf("create_%s missing %q: %s", tc.pair.Resource, p.Text, p.Reason)
-			}
+	}
+	for _, c := range []struct {
+		phrase string
+		reason string
+	}{
+		{"Prefer this tool", "refine is the default after create"},
+		{"after create", "must sequence after create"},
+		{"existing dashboard id", "must pass the known id"},
+		{"do not call create_dashboard", "must not create-for-refine"},
+		{"full replacement", "must state PUT is a full replacement"},
+	} {
+		if !strings.Contains(update, c.phrase) {
+			t.Errorf("UpdateDashboardDescription missing %q: %s", c.phrase, c.reason)
 		}
-		for _, p := range writeintent.UpdateDescriptionPhrases(tc.pair) {
-			if !strings.Contains(tc.update, p.Text) {
-				t.Errorf("update_%s missing %q: %s", tc.pair.Resource, p.Text, p.Reason)
-			}
-		}
-		for _, p := range writeintent.ForbiddenCreatePhrases() {
-			if strings.Contains(tc.create, p.Text) {
-				t.Errorf("create_%s must not contain %q: %s", tc.pair.Resource, p.Text, p.Reason)
-			}
+	}
+	for _, phrase := range []string{
+		"list_dashboards first",
+		"call list_dashboards before",
+		"list existing dashboards first",
+	} {
+		if strings.Contains(create, phrase) {
+			t.Errorf("CreateDashboardDescription must not contain %q", phrase)
 		}
 	}
 }

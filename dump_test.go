@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"last9-mcp/internal/apm"
+	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/toolsets"
-	"last9-mcp/internal/writeintent"
 )
 
 func TestDumpTools(t *testing.T) {
@@ -243,24 +243,10 @@ func TestDumpToolsDashboardWriteSteer(t *testing.T) {
 	for _, tool := range out.Tools {
 		byName[tool.Name] = tool.Description
 	}
-	create := byName[writeintent.Dashboard.CreateTool]
-	update := byName[writeintent.Dashboard.UpdateTool]
-	if create == "" || update == "" {
-		t.Fatalf("dump missing %s or %s", writeintent.Dashboard.CreateTool, writeintent.Dashboard.UpdateTool)
+	if got, want := byName["create_dashboard"], prompts.CreateDashboardDescription; got != want {
+		t.Errorf("served create_dashboard description != embed\ngot:  %q\nwant: %q", got, want)
 	}
-	for _, p := range writeintent.CreateDescriptionPhrases(writeintent.Dashboard) {
-		if !strings.Contains(create, p.Text) {
-			t.Errorf("served %s missing %q: %s", writeintent.Dashboard.CreateTool, p.Text, p.Reason)
-		}
-	}
-	for _, p := range writeintent.UpdateDescriptionPhrases(writeintent.Dashboard) {
-		if !strings.Contains(update, p.Text) {
-			t.Errorf("served %s missing %q: %s", writeintent.Dashboard.UpdateTool, p.Text, p.Reason)
-		}
-	}
-	for _, p := range writeintent.ForbiddenCreatePhrases() {
-		if strings.Contains(create, p.Text) {
-			t.Errorf("served %s must not contain %q: %s", writeintent.Dashboard.CreateTool, p.Text, p.Reason)
-		}
+	if got, want := byName["update_dashboard"], prompts.UpdateDashboardDescription; got != want {
+		t.Errorf("served update_dashboard description != embed\ngot:  %q\nwant: %q", got, want)
 	}
 }

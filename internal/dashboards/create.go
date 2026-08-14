@@ -7,7 +7,6 @@ import (
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
-	"last9-mcp/internal/writeintent"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -33,7 +32,13 @@ func NewCreateDashboardHandler(client *http.Client, cfg models.Config) func(cont
 			return nil, nil, mapDashboardAPIError(err)
 		}
 
-		result := textResultWithDashboardLink(dlBuilder, body, "")
-		return writeintent.Annotate(result, writeintent.Dashboard, dashboardIDFromResponse(body)), nil, nil
+		id := dashboardIDFromResponse(body)
+		result := textResultWithDashboardLink(dlBuilder, body, id)
+		if id != "" {
+			result.Content = append(result.Content, &mcp.TextContent{
+				Text: "To refine this dashboard, call update_dashboard with id=" + id + ". Do not call create_dashboard again.",
+			})
+		}
+		return result, nil, nil
 	}
 }
