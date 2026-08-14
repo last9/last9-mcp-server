@@ -22,7 +22,7 @@ func parseProfileType(raw string) (ProfileType, error) {
 	}
 }
 
-// clampFlamegraphLimit applies default (1000) and PDE-718 hard cap (10000).
+// clampFlamegraphLimit applies default (1000) and hard cap (10000).
 func clampFlamegraphLimit(limit int) int {
 	if limit <= 0 {
 		return DefaultFlamegraphRowLimit

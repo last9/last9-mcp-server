@@ -14,8 +14,7 @@ import (
 	"last9-mcp/internal/auth"
 )
 
-// Compares path variants. Opt-in. Prefer LAST9_API_HOST=alpha.last9.io until
-// last9/last9#11396 lands on app.last9.io.
+// Compares path variants. Opt-in via LAST9_LIVE_PROFILES=1.
 func TestLiveProfilesPathProbe(t *testing.T) {
 	if os.Getenv("LAST9_LIVE_PROFILES") != "1" {
 		t.Skip("opt-in")

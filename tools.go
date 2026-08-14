@@ -278,7 +278,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: prompts.DidYouMeanDescription,
 	}, suggest.NewDidYouMeanHandler(client, cfg)))
 
-	// Continuous profiling tools (ENG-1067 / PDE-718 query_range/json)
+	// Continuous profiling tools (query_range/json)
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_profile_services",
 		Description: prompts.GetProfileServicesDescription,

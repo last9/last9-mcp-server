@@ -18,7 +18,7 @@ const (
 	// Used for pipeline-scoped attribute discovery.
 	EndpointLogsSeries = "/logs/api/v2/series/json"
 
-	// Profiles API endpoints (continuous profiling / flamegraphs — PDE-718).
+	// Profiles API endpoints (continuous profiling / flamegraphs).
 	EndpointProfilesQueryRange = "/profiles/api/v1/query_range/json"
 
 	// Prometheus API endpoints
