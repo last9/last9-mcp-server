@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"last9-mcp/internal/apm"
+	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/toolsets"
 )
 
@@ -161,6 +162,22 @@ func TestDumpTools(t *testing.T) {
 		t.Fatal("get_service_logs description must document HTTP status filters")
 	}
 
+	excIdx, ok := byName["get_exceptions"]
+	if !ok {
+		t.Fatal("tool \"get_exceptions\" missing from dump")
+	}
+	excDesc := out.Tools[excIdx].Description
+	if !strings.Contains(excDesc, "get_service_logs") || !strings.Contains(excDesc, "http_status") {
+		t.Fatal("get_exceptions must route HTTP-status log search to get_service_logs")
+	}
+	if strings.Contains(excDesc, "write a `get_logs` pipeline") && !strings.Contains(excDesc, "Do not write a `get_logs` pipeline") {
+		t.Fatal("get_exceptions must not send HTTP-status log search to get_logs")
+	}
+
+	if !strings.Contains(logsDesc, "get_service_logs") {
+		t.Fatal("get_logs whale must name get_service_logs as the structured HTTP-status alternative")
+	}
+
 	tracesDesc := out.Tools[byName["get_traces"]].Description
 	if strings.Contains(tracesDesc, "default **5**") {
 		t.Fatal("get_traces lookback default must match GetTracesArgs (60), not 5")
@@ -285,5 +302,18 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	}
 	if len(out.Tools) >= 38 {
 		t.Fatalf("investigate should expose fewer than full surface; got %d", len(out.Tools))
+	}
+}
+
+func TestOnCallRunbookRoutesHTTPStatusToServiceLogs(t *testing.T) {
+	runbook := prompts.OnCallRunbookWorkflow
+	if !strings.Contains(runbook, "get_service_logs") {
+		t.Fatal("on_call_runbook must name get_service_logs for status-class log search")
+	}
+	if !strings.Contains(runbook, "http_status_class") {
+		t.Fatal("on_call_runbook must send HTTP-status log search to get_service_logs, not logjson")
+	}
+	if strings.Contains(runbook, "write logjson") && !strings.Contains(runbook, "do not write logjson") {
+		t.Fatal("on_call_runbook must not tell the agent to write logjson for service 5xx")
 	}
 }

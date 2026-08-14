@@ -1,4 +1,4 @@
-Query traces with `tracejson_query` — a JSON **array of stages**. Each stage MUST set `"type"` to `filter`|`parse`|`aggregate`|`window_aggregate`. Do **not** use `"stage"` or `"conditions"`. For an exact `trace_id`, prefer `get_service_traces`.
+Query traces with `tracejson_query` — a JSON **array of stages**. Each stage MUST set `"type"` to `filter`|`parse`|`aggregate`|`window_aggregate`. Do **not** use `"stage"` or `"conditions"`. For an exact `trace_id` or recent traces of one service, prefer `get_service_traces`.
 
 **Filter shape:**
 ```json

@@ -19,7 +19,7 @@
 
 **Free-text IDs** (EPL_…) → `{"$contains":["Body","…"]}` — not `ServiceName`.
 
-**HTTP 5xx:** filter status field with literal code (e.g. `$eq` on `attributes['status_code']`, `"500"`) — never `SeverityText`/`ERROR`; avoid regex-only when user names a code.
+**HTTP 5xx:** known service → `get_service_logs` (`http_status_class`/`http_status_code`). Ad-hoc: `$eq` on discovered status field — never `SeverityText`.
 
 **Time:** `lookback_minutes` (default **5**). **Absolute ISO bounds** → `start_time_iso`+`end_time_iso` on the tool call — never `Timestamp`/`$gte`/`$lte` in the pipeline.
 
