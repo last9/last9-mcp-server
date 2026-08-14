@@ -59,3 +59,4 @@ Why markdown-only: Go constants are invisible to the eval harness and docs tooli
 - Avoid attribute-name allowlists models could over-anchor on; point to discovery tools instead.
 - When two params overlap (e.g. a seconds window and a minutes lookback), say explicitly which one to prefer and the valid range of each.
 - Critical query-construction rules for whales must remain on the tool description even when the long manual is a resource.
+- Write-pair tools (`create_*` / `update_*`) must state **net-new** vs **refine** in the description: create once, keep the returned id, refine with update. Do not require list-before-create unless product asks. Put this copy in the description markdown, not in Go schema strings.

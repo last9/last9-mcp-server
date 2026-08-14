@@ -52,6 +52,18 @@ _Avoid_: `{{labels}}` full-catalog injection into served tool descriptions; attr
 The `dump-tools` output with unset toolsets (`all` surface). Eval harness and CI contract diffs use this. `dump-tools` also honors toolset selection.
 _Avoid_: a separate hand-maintained tools.json that drifts from the server
 
+**Net-new**:
+A write against a resource that has no identity yet. The only legal tool is the pair's create tool (e.g. `create_dashboard`). Valid even if the agent never listed existing resources.
+_Avoid_: treating “create” as the way to add a panel; requiring `list_dashboards` before the first create
+
+**Refine**:
+A write against a resource whose id is already known (returned this turn, or known earlier). The only legal tool is the pair's update tool (e.g. `update_dashboard` with that id). Panel/layout/query edits in the same turn are refine, not net-new.
+_Avoid_: a second `create_dashboard` to “fix” or trim panels; upsert as a single tool (HITL must distinguish new vs mutate)
+
+**Write pair**:
+A `(create_*, update_*)` couple for one resource kind. Today: dashboard. A future alert pair or `patch_*` sibling belongs on the same pair, not as a merged upsert.
+_Avoid_: one-shot writes that have no update (`add_drop_rule`); snapshot tools (no create on the MCP surface)
+
 ## Decisions recorded
 
 - ENG-1510 — toolsets hard-filter `tools/list`; whale manuals move to MCP resources
