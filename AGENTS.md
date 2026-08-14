@@ -30,7 +30,7 @@ Why markdown-only: Go constants are invisible to the eval harness and docs tooli
 
 ### Toolsets
 
-- CLI/env: `--toolsets` / `LAST9_TOOLSETS` (alias `LAST9_MCP_TOOLSETS`). Comma-separated: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `investigate`, `all`.
+- CLI/env: `--toolsets` / `LAST9_TOOLSETS` (alias `LAST9_MCP_TOOLSETS`). Comma-separated: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `investigate`, `all`.
 - Empty / unset / `all` → full surface. Unknown names fail fast with the valid list. Membership lives in `internal/toolsets`.
 - `dump-tools` honors the same flags/env (loads `.env` first). Canonical snapshot is unset/`all`.
 
