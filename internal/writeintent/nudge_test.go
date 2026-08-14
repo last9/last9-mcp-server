@@ -60,3 +60,29 @@ func TestAnnotateNilResult(t *testing.T) {
 		t.Fatal("nil result must stay nil")
 	}
 }
+
+func TestAnnotateNilContentStillAppends(t *testing.T) {
+	result := &mcp.CallToolResult{}
+	got := Annotate(result, Dashboard, "abc")
+	if len(got.Content) != 1 {
+		t.Fatalf("Content len %d, want 1", len(got.Content))
+	}
+	text, ok := got.Content[0].(*mcp.TextContent)
+	if !ok || !strings.Contains(text.Text, "id=abc") {
+		t.Fatalf("Content[0] = %#v", got.Content[0])
+	}
+}
+
+func TestRefineNudgeUsesPairFields(t *testing.T) {
+	alert := Pair{
+		Resource:   "alert",
+		CreateTool: "create_alert",
+		UpdateTool: "update_alert",
+		IDField:    "id",
+	}
+	got := RefineNudge(alert, "a-1")
+	want := "To refine this alert, call update_alert with id=a-1. Do not call create_alert again."
+	if got != want {
+		t.Fatalf("RefineNudge = %q, want %q", got, want)
+	}
+}

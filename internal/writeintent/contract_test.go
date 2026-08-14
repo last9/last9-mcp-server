@@ -27,6 +27,12 @@ func TestDescriptionPhraseListsCoverPairTools(t *testing.T) {
 	}
 }
 
+func TestForbiddenCreatePhrasesNonEmpty(t *testing.T) {
+	if len(ForbiddenCreatePhrases()) == 0 {
+		t.Fatal("ForbiddenCreatePhrases must not be empty")
+	}
+}
+
 func joinPhrases(phrases []Phrase) string {
 	var b strings.Builder
 	for _, p := range phrases {

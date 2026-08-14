@@ -10,6 +10,7 @@ import (
 
 	"last9-mcp/internal/apm"
 	"last9-mcp/internal/toolsets"
+	"last9-mcp/internal/writeintent"
 )
 
 func TestDumpTools(t *testing.T) {
@@ -221,5 +222,45 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	}
 	if len(out.Tools) >= 38 {
 		t.Fatalf("investigate should expose fewer than full surface; got %d", len(out.Tools))
+	}
+}
+
+func TestDumpToolsDashboardWriteSteer(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, nil); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	byName := make(map[string]string, len(out.Tools))
+	for _, tool := range out.Tools {
+		byName[tool.Name] = tool.Description
+	}
+	create := byName[writeintent.Dashboard.CreateTool]
+	update := byName[writeintent.Dashboard.UpdateTool]
+	if create == "" || update == "" {
+		t.Fatalf("dump missing %s or %s", writeintent.Dashboard.CreateTool, writeintent.Dashboard.UpdateTool)
+	}
+	for _, p := range writeintent.CreateDescriptionPhrases(writeintent.Dashboard) {
+		if !strings.Contains(create, p.Text) {
+			t.Errorf("served %s missing %q: %s", writeintent.Dashboard.CreateTool, p.Text, p.Reason)
+		}
+	}
+	for _, p := range writeintent.UpdateDescriptionPhrases(writeintent.Dashboard) {
+		if !strings.Contains(update, p.Text) {
+			t.Errorf("served %s missing %q: %s", writeintent.Dashboard.UpdateTool, p.Text, p.Reason)
+		}
+	}
+	for _, p := range writeintent.ForbiddenCreatePhrases() {
+		if strings.Contains(create, p.Text) {
+			t.Errorf("served %s must not contain %q: %s", writeintent.Dashboard.CreateTool, p.Text, p.Reason)
+		}
 	}
 }
