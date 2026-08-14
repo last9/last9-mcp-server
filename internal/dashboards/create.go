@@ -7,6 +7,7 @@ import (
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/writeintent"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -32,6 +33,7 @@ func NewCreateDashboardHandler(client *http.Client, cfg models.Config) func(cont
 			return nil, nil, mapDashboardAPIError(err)
 		}
 
-		return textResultWithDashboardLink(dlBuilder, body, ""), nil, nil
+		result := textResultWithDashboardLink(dlBuilder, body, "")
+		return writeintent.Annotate(result, writeintent.Dashboard, dashboardIDFromResponse(body)), nil, nil
 	}
 }
