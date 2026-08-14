@@ -83,6 +83,12 @@ var GetTraceAttributeValuesDescription string
 //go:embed descriptions/get_trace_attributes_for_pipeline.md
 var GetTraceAttributesForPipelineDescription string
 
+//go:embed descriptions/get_trace_attribute_deviations.md
+var GetTraceAttributeDeviationsDescription string
+
+//go:embed descriptions/get_trace_waterfall.md
+var GetTraceWaterfallDescription string
+
 //go:embed descriptions/get_change_events.md
 var GetChangeEventsDescription string
 
@@ -139,3 +145,21 @@ var GetServiceTracesDescription string
 
 //go:embed descriptions/prometheus_range_query_base.md
 var PromqlRangeQueryDetails string
+
+//go:embed workflows/scoped_log_attribute_discovery.md
+var ScopedLogAttributeDiscoveryWorkflow string
+
+//go:embed workflows/exception_root_cause_investigation.md
+var ExceptionRootCauseInvestigationWorkflow string
+
+//go:embed workflows/investigate_latency_spike.md
+var InvestigateLatencySpikeWorkflow string
+
+//go:embed workflows/diagnose_error_rate.md
+var DiagnoseErrorRateWorkflow string
+
+//go:embed workflows/analyze_slow_queries.md
+var AnalyzeSlowQueriesWorkflow string
+
+//go:embed workflows/on_call_runbook.md
+var OnCallRunbookWorkflow string

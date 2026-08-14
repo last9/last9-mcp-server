@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 
@@ -19,60 +20,10 @@ import (
 // GetDropRulesArgs represents the input arguments for getting drop rules (no arguments needed)
 type GetDropRulesArgs struct{}
 
-// NewGetDropRulesHandler creates a handler for getting drop rules for logs
-func NewGetDropRulesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetDropRulesArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, args GetDropRulesArgs) (*mcp.CallToolResult, any, error) {
-		accessToken := cfg.TokenManager.GetAccessToken(ctx)
-
-		u, err := url.Parse(cfg.APIBaseURL + constants.EndpointLogsSettingsRouting)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to parse URL: %w", err)
-		}
-
-		httpReq, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create request: %w", err)
-		}
-
-		// Use the new access token
-		httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+accessToken)
-
-		// Execute request
-		resp, err := client.Do(httpReq)
-		if err != nil {
-			return nil, nil, fmt.Errorf("request failed: %w", err)
-		}
-		defer resp.Body.Close()
-
-		var result interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return nil, nil, fmt.Errorf("failed to decode response: %w", err)
-		}
-
-		jsonData, err := json.Marshal(result)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
-		}
-
-		// Build deep link URL for drop rules
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardURL := dlBuilder.BuildDropRulesLink()
-
-		return &mcp.CallToolResult{
-			Meta: deeplink.ToMeta(dashboardURL),
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: string(jsonData),
-				},
-			},
-		}, nil, nil
-	}
-}
-
-// DropRuleFilter represents a filter for drop rules
+// DropRuleFilter represents a filter for drop rules in MCP tool arguments.
 type DropRuleFilter struct {
-	Key         string `json:"key" jsonschema:"The field to filter on (e.g. service level severity)"`
-	Value       string `json:"value" jsonschema:"The value to match against (e.g. test-service)"`
+	Key         string `json:"key" jsonschema:"The field to filter on (e.g. attributes[\"level\"], resource.attributes[\"service.name\"])"`
+	Value       string `json:"value" jsonschema:"The value to match against (e.g. debug)"`
 	Operator    string `json:"operator" jsonschema:"The operator to use for comparison (default: equals, options: equals, not_equals)"`
 	Conjunction string `json:"conjunction" jsonschema:"How to combine with other filters (default: and, options: and)"`
 }
@@ -83,120 +34,209 @@ type AddDropRuleArgs struct {
 	Filters []DropRuleFilter `json:"filters" jsonschema:"Array of filter conditions to match logs for dropping"`
 }
 
+func dropOTelSettingsListURL(cfg models.Config) (*url.URL, error) {
+	if cfg.Region == "" {
+		return nil, errors.New("region is not configured")
+	}
+
+	u, err := url.Parse(cfg.APIBaseURL + constants.EndpointOTelSettingsDrop)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse URL: %w", err)
+	}
+
+	q := u.Query()
+	q.Set("region", cfg.Region)
+	u.RawQuery = q.Encode()
+	return u, nil
+}
+
+func dropOTelSettingsCreateURL(cfg models.Config) (*url.URL, error) {
+	if cfg.Region == "" {
+		return nil, errors.New("region is not configured")
+	}
+	if cfg.ClusterID == "" {
+		return nil, errors.New("cluster_id is not configured")
+	}
+
+	u, err := url.Parse(cfg.APIBaseURL + constants.EndpointOTelSettingsDrop)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse URL: %w", err)
+	}
+
+	q := u.Query()
+	q.Set("region", cfg.Region)
+	q.Set("cluster_id", cfg.ClusterID)
+	u.RawQuery = q.Encode()
+	return u, nil
+}
+
+func validateAddDropRuleArgs(args AddDropRuleArgs) error {
+	if args.Name == "" {
+		return errors.New("rule name is required")
+	}
+	if len(args.Filters) == 0 {
+		return errors.New("filters must be provided")
+	}
+	return nil
+}
+
+func convertDropRuleFilters(filters []DropRuleFilter) ([]models.DropRuleFilter, error) {
+	var converted []models.DropRuleFilter
+	for _, f := range filters {
+		operator := f.Operator
+		if operator == "" {
+			operator = "equals"
+		}
+		conjunction := f.Conjunction
+		if conjunction == "" {
+			conjunction = "and"
+		}
+
+		if operator != "equals" && operator != "not_equals" {
+			return nil, fmt.Errorf("invalid operator: %s. Must be one of: [equals, not_equals]", operator)
+		}
+		if conjunction != "and" {
+			return nil, fmt.Errorf("invalid conjunction: %s. Must be: [and]", conjunction)
+		}
+		if f.Key == "" {
+			return nil, errors.New("key must be provided")
+		}
+		if f.Value == "" {
+			return nil, errors.New("value must be provided")
+		}
+		converted = append(converted, models.DropRuleFilter{
+			Key:         f.Key,
+			Value:       f.Value,
+			Operator:    operator,
+			Conjunction: conjunction,
+		})
+	}
+
+	return converted, nil
+}
+
+// readDropRuleAPIResponse returns emptyBody when the API answers 2xx with no
+// content, so each caller keeps the JSON shape its populated responses have.
+func readDropRuleAPIResponse(resp *http.Response, emptyBody string) ([]byte, error) {
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("drop rule API request failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+	// json.Valid rejects an empty body, so a 201/204 would read as a failure.
+	if len(bytes.TrimSpace(respBody)) == 0 {
+		return []byte(emptyBody), nil
+	}
+	if !json.Valid(respBody) {
+		return nil, errors.New("drop rule API returned invalid JSON")
+	}
+	return respBody, nil
+}
+
+func dropRuleToolResult(cfg models.Config, responseBody []byte) *mcp.CallToolResult {
+	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
+	dashboardURL := dlBuilder.BuildDropRulesLink()
+
+	return &mcp.CallToolResult{
+		Meta: deeplink.ToMeta(dashboardURL),
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(responseBody),
+			},
+		},
+	}
+}
+
+// NewGetDropRulesHandler creates a handler for getting drop rules for logs.
+func NewGetDropRulesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetDropRulesArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args GetDropRulesArgs) (*mcp.CallToolResult, any, error) {
+		accessToken := cfg.TokenManager.GetAccessToken(ctx)
+
+		u, err := dropOTelSettingsListURL(cfg)
+		if err != nil {
+			return nil, nil, fmt.Errorf("get_drop_rules: %w", err)
+		}
+
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+		if err != nil {
+			return nil, nil, fmt.Errorf("get_drop_rules: failed to create request: %w", err)
+		}
+
+		httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+accessToken)
+
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			return nil, nil, fmt.Errorf("get_drop_rules: request failed: %w", err)
+		}
+		defer resp.Body.Close()
+
+		respBody, err := readDropRuleAPIResponse(resp, "[]")
+		if err != nil {
+			return nil, nil, fmt.Errorf("get_drop_rules: %w", err)
+		}
+
+		return dropRuleToolResult(cfg, respBody), nil, nil
+	}
+}
+
 // NewAddDropRuleHandler creates a handler for adding new drop rules for logs
 func NewAddDropRuleHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, AddDropRuleArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args AddDropRuleArgs) (*mcp.CallToolResult, any, error) {
 		accessToken := cfg.TokenManager.GetAccessToken(ctx)
 
-		u, err := url.Parse(cfg.APIBaseURL + constants.EndpointLogsSettingsRouting)
+		u, err := dropOTelSettingsCreateURL(cfg)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to parse URL: %w", err)
+			return nil, nil, fmt.Errorf("add_drop_rule: %w", err)
 		}
 
-		// Validate required parameters
-		if args.Name == "" {
-			return nil, nil, errors.New("rule name is required")
+		if err := validateAddDropRuleArgs(args); err != nil {
+			return nil, nil, fmt.Errorf("add_drop_rule: %w", err)
 		}
 
-		if len(args.Filters) == 0 {
-			return nil, nil, errors.New("filters must be provided")
+		filters, err := convertDropRuleFilters(args.Filters)
+		if err != nil {
+			return nil, nil, fmt.Errorf("add_drop_rule: %w", err)
 		}
 
-		// Convert filters and validate
-		var filters []models.DropRuleFilter
-		for _, f := range args.Filters {
-			// Set defaults if not provided
-			operator := f.Operator
-			if operator == "" {
-				operator = "equals"
-			}
-			conjunction := f.Conjunction
-			if conjunction == "" {
-				conjunction = "and"
-			}
-
-			// Validate operator
-			if operator != "equals" && operator != "not_equals" {
-				return nil, nil, fmt.Errorf("invalid operator: %s. Must be one of: [equals, not_equals]", operator)
-			}
-
-			// Validate conjunction
-			if conjunction != "and" {
-				return nil, nil, fmt.Errorf("invalid conjunction: %s. Must be: [and]", conjunction)
-			}
-
-			// Validate key and value
-			if f.Key == "" {
-				return nil, nil, errors.New("key must be provided")
-			}
-			if f.Value == "" {
-				return nil, nil, errors.New("value must be provided")
-			}
-
-			filter := models.DropRuleFilter{
-				Key:         f.Key,
-				Value:       f.Value,
-				Operator:    operator,
-				Conjunction: conjunction,
-			}
-			filters = append(filters, filter)
-		}
-
-		// Create the complete drop rule
-		dropRule := models.DropRule{
-			Name:      args.Name,
-			Telemetry: TELEMETRY_LOGS,
-			Filters:   filters,
-			Action: models.DropRuleAction{
-				Name:       DROP_RULE_ACTION_NAME,
-				Properties: make(map[string]interface{}),
+		payload := models.OTelDropSettingCreateRequest{
+			Name: args.Name,
+			Properties: models.OTelDropSettingProperties{
+				Telemetry: TELEMETRY_LOGS,
+				Filters:   filters,
+				Action: models.DropRuleAction{
+					Name:        DROP_RULE_ACTION_NAME,
+					Destination: "",
+					Properties:  make(map[string]string),
+				},
 			},
 		}
 
-		// Marshal the drop rule
-		jsonData, err := json.Marshal(dropRule)
+		jsonData, err := json.Marshal(payload)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to marshal drop rule: %w", err)
+			return nil, nil, fmt.Errorf("add_drop_rule: failed to marshal drop rule: %w", err)
 		}
 
-		// Create request
-		httpReq, err := http.NewRequestWithContext(ctx, "PUT", u.String(), bytes.NewReader(jsonData))
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(jsonData))
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create request: %w", err)
+			return nil, nil, fmt.Errorf("add_drop_rule: failed to create request: %w", err)
 		}
 
-		// Use the new access token
 		httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+accessToken)
 		httpReq.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
 
-		// Execute request
 		resp, err := client.Do(httpReq)
 		if err != nil {
-			return nil, nil, fmt.Errorf("request failed: %w", err)
+			return nil, nil, fmt.Errorf("add_drop_rule: request failed: %w", err)
 		}
 		defer resp.Body.Close()
 
-		var result interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return nil, nil, fmt.Errorf("failed to decode response: %w", err)
-		}
-
-		responseData, err := json.Marshal(result)
+		respBody, err := readDropRuleAPIResponse(resp, "{}")
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
+			return nil, nil, fmt.Errorf("add_drop_rule: %w", err)
 		}
 
-		// Build deep link URL for drop rules
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardURL := dlBuilder.BuildDropRulesLink()
-
-		return &mcp.CallToolResult{
-			Meta: deeplink.ToMeta(dashboardURL),
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: string(responseData),
-				},
-			},
-		}, nil, nil
+		return dropRuleToolResult(cfg, respBody), nil, nil
 	}
 }

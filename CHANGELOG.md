@@ -7,23 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- `get_alert_config` server-side notification-channel filters matching Alert Studio dashboard semantics: `only_without_notification_channel` (dashboard "Not configured"), `notification_channel_types`, `notification_channel_names`, and `notification_channel_severities` (breach/threat on the same binding row). Every rule now includes `Notification Channels` and `Notification Channel Bindings` lines aligned with the rules-table column; alert group `name`, `data_source`, and `tags` are included when resolved (#191).
-- `get_notification_channels` TSV output now includes `service_fqid`, the per-entity alert-group binding id (#191).
+## [0.15.0] - 2026-08-10
 
 ### Fixed
 
+- `get_database_slow_queries` trace filters now use bracket map syntax — `db_system`, `host` and `env` previously returned a 400 from the traces API. The trace pipeline sanitizer also rewrites legacy `events.`, `resources.` and `resource.` dot notation (#202).
+- `add_drop_rule` and `get_drop_rules` use `/otel_settings/drop` instead of the legacy `logs_settings/routing` path, which the API rejects with 405 (#201).
+
+### Added
+
+- MCP **workflow prompts** on `prompts/list` / `prompts/get`: six structured investigation templates — `scoped-log-attribute-discovery`, `exception-root-cause-investigation`, `investigate-latency-spike`, `diagnose-error-rate`, `analyze-slow-queries`, and `on-call-runbook`. The last four take arguments to scope the investigation. New `dump-prompts` subcommand lists the served prompts and their argument schemas (#183).
+
+## [0.14.0] - 2026-08-03
+
+### Added
+
+- `get_trace_waterfall` MCP tool returning one exact trace as a bounded parent/child waterfall: millisecond timing, interval-union self-time, slowest spans, largest self-time contributors, and optional selected-span attributes/events/links. Truncation, cycles, duplicate spans, orphans and unparseable timestamps are reported as warnings with a matching `evidence_quality`; an empty result is `insufficient`, not a negative finding. No critical path is computed or claimed (#186).
+- `get_trace_attribute_deviations` MCP tool ranking attribute values that differ between two bounded span cohorts — slow vs fast, error vs non-error, or two equal-duration windows. Returns full-denominator shares, percentage-point deltas, and representative trace IDs; results describe correlation, not cause. Requires the companion trace-analysis capability to be enabled (#186).
+- `get_alert_config` server-side notification-channel filters matching Alert Studio dashboard semantics: `only_without_notification_channel` (dashboard "Not configured"), `notification_channel_types`, `notification_channel_names`, and `notification_channel_severities` (breach/threat on the same binding row). Every rule now includes `Notification Channels` and `Notification Channel Bindings` lines aligned with the rules-table column; alert group `name`, `data_source`, and `tags` are included when resolved (#191).
+- `get_notification_channels` TSV output now includes `service_fqid`, the per-entity alert-group binding id (#191).
+- Named **toolsets** that hard-filter which tools appear in `tools/list`, selected via `--toolsets` or `LAST9_TOOLSETS` (alias `LAST9_MCP_TOOLSETS`). Valid names are `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `investigate`, and `all`; the value is comma-separated, and unset/empty/`all` serves the full surface as before. Unknown names fail fast at startup with the valid list rather than silently falling back. Lets an operator stop paying description tokens for tools a client never calls — an automation host pinned to `investigate` loads a fraction of the full surface. `dump-tools` honors the same flag and env var (#189).
+- MCP **reference resources** under `last9://reference/*` (`logjson`, `tracejson`, `service_logs`, `metrics`) carrying the full query manuals for the large-description tools. Clients fetch them on demand via `resources/list` / `resources/read` (#189).
+
+### Fixed
+
+- `get_apm_service_deviations` terminal outcomes (`stable`, `no_data`, `unsupported_workload_shape`) now all return an empty `recommended_followups`, so agents do not keep calling follow-up tools after a completed comparison. Previously `unsupported_workload_shape` returned a `get_service_traces` follow-up that contradicted the description's stop rule (#197).
+- Exception→logs guidance in `get_exceptions` is now aggregate-then-read: aggregate to isolate the hot logger, then read that logger's lines with a `limit` and report the error text. Raw line fetches were previously banned outright in this flow, leaving no way to reach the log body the root cause lives in — the hazard is an unlimited fetch, not reading lines. `get_logs` and `get_service_logs` keep their own descriptions; the investigation flow lives only in `get_exceptions` (#197).
 - `get_notification_channels` / `get_alert_config` channel binding fetches use `?exact=true` on `/notification_settings` so per-entity mapped channels load (without it, only global/master rows returned and binding filters falsely reported every rule as unconfigured) (#191).
-- `get_apm_service_deviations` terminal outcomes (`stable`, `no_data`, `unsupported_workload_shape`) now all return an empty `recommended_followups`, so agents do not keep calling follow-up tools after a completed comparison. Previously `unsupported_workload_shape` returned a `get_service_traces` follow-up that contradicted the description's stop rule.
-- Exception→logs guidance in `get_exceptions` is now aggregate-then-read: aggregate to isolate the hot logger, then read that logger's lines with a `limit` and report the error text. Raw line fetches were previously banned outright in this flow, leaving no way to reach the log body the root cause lives in — the hazard is an unlimited fetch, not reading lines. `get_logs` and `get_service_logs` keep their own descriptions; the investigation flow lives only in `get_exceptions`.
 - `get_traces` no longer chunks `aggregate`/`window_aggregate` pipelines — long-window group-by queries run as a single request, fixing duplicate keys and wrong `avg`/`median`/`quantile` math (#195).
 - Trace filter existence checks: `$exists` and `$notnull` are rewritten to `{"$neq": [field, ""]}` before hitting the backend (previously matched all spans / no spans respectively) (#195).
 
 ### Changed
 
 - Trace tools (`get_traces`, `get_service_traces`, `get_trace_attributes`, `get_trace_attribute_values`, `get_trace_attributes_for_pipeline`, `get_exceptions`) now return recoverable tool errors (`isError: true`) with sanitized messages instead of JSON-RPC protocol errors when upstream trace calls fail. Upstream response bodies, URLs, and credentials are no longer echoed into model context; `400`/`422` responses still include the upstream rejection text, and the calls that carry a caller-supplied pipeline also get a schema hint pointing at `get_trace_attributes_for_pipeline` (#188).
+- Progressive disclosure for the large-description tools (`get_logs`, `get_traces`, `get_service_logs`, `prometheus_range_query`): each now serves a short description carrying the firing blurb plus the critical query-construction rules, and points at its `last9://reference/...` resource for the full manual. Behavior change for clients that scraped the whole query manual out of `tools/list` — the rules needed to build a correct query stay on the tool, but the exhaustive DSL reference must now be read as a resource (#189).
+- Org attribute catalogs are no longer injected into served tool descriptions. Descriptions point at the discovery tools (`get_log_attributes_for_pipeline`, `get_trace_attributes_for_pipeline`) instead, so the served surface no longer varies by org and models stop over-anchoring on a snapshot of attribute names (#189).
 - `get_traces` filter schema drops `$exists`/`$notnull` in favor of the `{"$neq": [field, ""]}` idiom; trace-query 408s now return a "narrow the window" error (#195).
+- Bumped `google.golang.org/grpc` 1.80.0 → 1.82.1 (#194).
 
 ## [0.13.0] - 2026-07-22
 

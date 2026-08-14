@@ -37,10 +37,11 @@ var traceFilterLogicalOperators = map[string]struct{}{
 	"$not": {},
 }
 
-// sanitizeTraceJSONQuery validates a tracejson_query pipeline before forwarding
+// SanitizeTraceJSONQuery validates a tracejson_query pipeline before forwarding
 // to the API. It catches common LLM mistakes and returns descriptive errors so
 // the model can self-correct without waiting for a 400 from the upstream API.
-func sanitizeTraceJSONQuery(stages []map[string]interface{}) error {
+// Normalizations are applied in place — callers forward the slice they passed in.
+func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 	for i, stage := range stages {
 		stageType, _ := stage["type"].(string)
 		path := fmt.Sprintf("tracejson_query[%d]", i)
@@ -56,6 +57,7 @@ func sanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 				// ClickHouse). Rewrite both to the working idiom before
 				// validation ever sees them. Recurses through $and/$or/$not.
 				rewriteBrokenExistenceOperators(query)
+				rewriteLegacyDotNotationFields(query)
 				if err := validateTraceFilterCondition(query, path+".query"); err != nil {
 					return err
 				}
@@ -279,6 +281,63 @@ func validateFieldSyntax(field, path string) error {
 	}
 
 	return nil
+}
+
+// rewriteLegacyDotNotationFields walks a filter condition tree and rewrites
+// legacy dot-notation map attribute references to bracket syntax in place.
+func rewriteLegacyDotNotationFields(value interface{}) {
+	switch typed := value.(type) {
+	case []interface{}:
+		for _, item := range typed {
+			rewriteLegacyDotNotationFields(item)
+		}
+	case map[string]interface{}:
+		for key, item := range typed {
+			if _, isLogical := traceFilterLogicalOperators[key]; isLogical {
+				rewriteLegacyDotNotationFields(item)
+				continue
+			}
+			if args, ok := item.([]interface{}); ok && len(args) > 0 {
+				if fieldStr, ok := args[0].(string); ok {
+					args[0] = normalizeTraceFilterField(fieldStr)
+				}
+			}
+		}
+	}
+}
+
+// normalizeTraceFilterField converts legacy dot-notation field references to
+// ClickHouse Map bracket syntax. Already-correct bracket forms pass through.
+func normalizeTraceFilterField(field string) string {
+	if strings.HasPrefix(field, `attributes['`) ||
+		strings.HasPrefix(field, `resources['`) ||
+		strings.HasPrefix(field, `events['`) {
+		return field
+	}
+	// Longest prefix first: resource.attributes. before resource.
+	for _, p := range []struct {
+		prefix string
+		to     func(string) string
+	}{
+		{"resource.attributes.", ResourceAttributeField},
+		{"resources.", ResourceAttributeField},
+		{"resource.", ResourceAttributeField},
+		{"attributes.", SpanAttributeField},
+		{"events.", EventAttributeField},
+		{"event.", EventAttributeField},
+	} {
+		if !strings.HasPrefix(field, p.prefix) {
+			continue
+		}
+		// A prefix with nothing after it names no key; rewriting would pick a
+		// column from the empty remainder and land on the wrong one.
+		key := field[len(p.prefix):]
+		if key == "" {
+			return field
+		}
+		return p.to(key)
+	}
+	return field
 }
 
 func validateStageKeys(stage map[string]interface{}, stageType, path string) error {

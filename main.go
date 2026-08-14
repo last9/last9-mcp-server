@@ -28,6 +28,7 @@ import (
 	l9telemetry "last9-mcp/internal/telemetry"
 	"last9-mcp/internal/toolsets"
 	"last9-mcp/internal/utils"
+	"last9-mcp/internal/workflows"
 )
 
 // Version information
@@ -125,6 +126,13 @@ func main() {
 		return
 	}
 
+	if len(os.Args) > 1 && os.Args[1] == "dump-prompts" {
+		if err := dumpPrompts(os.Stdout); err != nil {
+			log.Fatalf("dump-prompts failed: %v", err)
+		}
+		return
+	}
+
 	log.Printf("Starting Last9 MCP Server v%s", Version)
 
 	// Load .env file if it exists (ignore errors if file doesn't exist)
@@ -211,6 +219,7 @@ func main() {
 	}
 
 	registerReferenceResources(server)
+	workflows.Register(server)
 
 	// Register all tools
 	if err := registerAllTools(server, cfg); err != nil {

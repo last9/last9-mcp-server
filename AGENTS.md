@@ -16,7 +16,9 @@ For a new tool `get_foo`:
    //go:embed descriptions/get_foo.md
    var GetFooDescription string
    ```
-3. Register in `tools.go` with `last9mcp.RegisterInstrumentedTool(server, &mcp.Tool{Name: "get_foo", Description: prompts.GetFooDescription}, foo.NewGetFooHandler(client, cfg))`.
+3. Register in `tools.go` with `reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{Name: "get_foo", Description: prompts.GetFooDescription}, foo.NewGetFooHandler(client, cfg)))`, and add `get_foo` to its domain in `internal/toolsets/toolsets.go`.
+
+   Never call `last9mcp.RegisterInstrumentedTool` directly from `tools.go`. `registerIfAllowed` is what enforces `--toolsets` filtering, surfaces registration errors instead of discarding them, and recovers the SDK's panic on an invalid tool schema. A tool registered directly leaks into every toolset — verify with `go run . dump-tools --toolsets=<other-domain>` that the new tool is absent.
 
 **Progressive disclosure (whales):** `get_logs`, `get_traces`, `get_service_logs`, and `prometheus_range_query` serve a short description (`*_base.md`) with firing blurb + critical rules + a `last9://reference/...` pointer. Full manuals live in `internal/prompts/references/` (`logjson.md`, `tracejson.md`, `service_logs.md`, `metrics.md`), embedded and registered as MCP resources in `resources.go`. Do not concatenate long manuals back into `tools/list`. Do not inject org attribute catalogs into descriptions — point at discovery tools.
 
@@ -41,7 +43,6 @@ Why markdown-only: Go constants are invisible to the eval harness and docs tooli
 ### Verifying description/schema changes
 
 - `go run . dump-tools` prints the served tools/list (`{"tools": [...]}`, name-sorted) with no credentials — the canonical snapshot for evals and docs. Use `--toolsets=investigate` to measure the automation surface.
-- Description-token budget gates: `go test . -run TestDescriptionTokenBudgets` (`all` ≤ ~12k, `investigate` ≤ ~10k desc tokens via chars/4 — a regression heuristic, not an exact tokenizer count).
 - Eval harness: the last9-mcp-evals repo. Point it at this checkout with `LAST9_MCP_SERVER_PATH=$(pwd)` and prefer `--use-server` so suites see served short descriptions + resources rather than stale markdown paths. Example:
   ```bash
   ./scripts/eval-r10.sh

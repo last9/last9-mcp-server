@@ -48,17 +48,14 @@ _Avoid_: treating every slightly long description as a whale; `get_service_trace
 Learning which log/trace field names exist for an org. Done via dedicated discovery tools (`get_log_attributes`, `get_log_attributes_for_pipeline`, and trace analogues) — not by injecting the full catalog into the tool description.
 _Avoid_: `{{labels}}` full-catalog injection into served tool descriptions; attribute-name allowlists in descriptions
 
-**Description token budget**:
-Acceptance ceilings on sum of served tool description sizes (not full JSON including schemas), measured via `dump-tools`: **all** surface ≤ ~12k tokens; **investigate** toolset ≤ ~10k tokens (vs ~28k all today).
-_Avoid_: gating only on full `tools/list` JSON bytes (schemas move independently)
-
 **Canonical tool snapshot**:
-The `dump-tools` output with unset toolsets (`all` surface). Eval harness and CI contract diffs use this. `dump-tools` also honors toolset selection so the `investigate` budget can be measured.
+The `dump-tools` output with unset toolsets (`all` surface). Eval harness and CI contract diffs use this. `dump-tools` also honors toolset selection.
 _Avoid_: a separate hand-maintained tools.json that drifts from the server
 
 ## Decisions recorded
 
 - ENG-1510 — toolsets hard-filter `tools/list`; whale manuals move to MCP resources
+- ENG-1489 — the aggregate description-token gate (`TestDescriptionTokenBudgets`, `all` ≤ ~12k / `investigate` ≤ ~10k via chars/4) was **deliberately removed**, not lost. A chars/4 ceiling on the summed surface fails whenever a correct description grows, and correctness of a description outranks its size: a wrong unit or a stale warning string changes model behavior, while a few hundred extra chars do not. Per-tool size stays bounded by whale progressive disclosure, toolset filtering, and reference resources. There is deliberately no aggregate ceiling — a description-heavy change is reviewed on whether every claim is true and load-bearing, not against a number.
 
 ## Flagged ambiguities
 
@@ -70,8 +67,6 @@ Dev: An automation host is paying tens of thousands of tokens just to list tools
 Expert: Put them on the **investigate** toolset so the **served tool surface** drops. Unset still means **default served surface** = all.  
 Dev: And we still need get_logs to stop inventing SQL.  
 Expert: Keep **critical rules** in the **tool description**; move the DSL manual to **tool reference**.  
-Dev: What about the description token budget?  
-Expert: Gate on description size — **all** under ~12k tokens, **investigate** under ~10k.  
 Dev: Where does the logjson manual go?  
 Expert: A **tool reference** resource. Keep **critical rules** on the **tool description**; put ranges on the **parameter schema description**.  
 Dev: Is get_service_logs a whale too?  
