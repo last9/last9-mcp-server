@@ -9,16 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `get_logs` whale description (`get_logs_base.md`) now aligns with `window_aggregate` behavior: stage schema uses `anyOf` (not `oneOf`), stage-level `additionalProperties: false` is removed, and parse/window_aggregate schema `required` is only `type` so handler tips (`window_minutes`, `format`, …) remain reachable after SDK schema validation (#212).
-- `get_logs` parse stage `field` now defaults to `"Body"` when omitted, eliminating a common model mistake without a hard error (#212).
-- `TraceId`, `SpanId`, and `ParentSpanId` are now accepted as valid log field references (canonical fields for log↔trace correlation); previously they were incorrectly rejected as trace-only fields (#212).
-- `get_logs` parse stage `labels` keys now allow dotted names (e.g. `http.status_code`) — previously only plain identifiers were accepted, breaking JSON body-derived attribute hints (#212).
-- Sanitize-layer validation errors now use typed `LogPipelineValidationError` (with stable `Category` and `Path` fields) for model self-correction, matching the validate layer (#212).
-- `tracejson.md` reference corrected: `lookback_minutes` default changed from 5 to 60, matching `get_traces_base.md` and eliminating the internal contradiction (#212).
+- `get_logs` fail-closed logjson validation with self-correcting tips (wrong keys/types, bare fields, NOT-SQL, bad parse/`window_aggregate` shapes); whale description aligned with API `window_aggregate`; missing parse `field` defaults to `Body`; `TraceId`/`SpanId`/`ParentSpanId` allowed for log↔trace correlation; dotted parse labels accepted; `tracejson.md` lookback default corrected to 60 (#212).
 
 ### Changed
 
-- `get_logs` InputSchema uses `anyOf` for stage discriminator instead of `oneOf`; stage-level `additionalProperties: false` removed (root remains false). This widens schema validation to let handler-level tip errors fire correctly (#212).
+- `get_logs` InputSchema uses a permissive stage `anyOf` (plus catch-all) so handler validation tips reach the model instead of opaque SDK `anyOf` errors (#212).
 - **Breaking:** `get_service_summary` response shape is now a ranked `{rows: [...]}` envelope with snake_case fields (`request_count`, `throughput_rpm`, `http_4xx_count`, `http_5xx_count`, `grpc_error_count`) instead of a `map[string]ServiceSummary` with PascalCase keys (`ErrorRate`, etc.). Rows are `(service, env)` pairs sorted and limited server-side; clients that unmarshal the old map shape will fail and should be updated (#210).
 
 ## [0.15.0] - 2026-08-10
