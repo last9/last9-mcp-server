@@ -151,6 +151,22 @@ func TestDumpTools(t *testing.T) {
 		}
 	}
 
+	tracesDesc := out.Tools[byName["get_traces"]].Description
+	if strings.Contains(tracesDesc, "window_minutes") {
+		t.Fatal("get_traces description must not teach window_minutes; window_aggregate uses function/as/window")
+	}
+	for _, needle := range []string{`"function"`, `"as"`, `"window"`} {
+		if !strings.Contains(tracesDesc, needle) {
+			t.Fatalf("get_traces description missing last9/api window_aggregate key %s", needle)
+		}
+	}
+	if strings.Contains(tracesDesc, "default **5**") {
+		t.Fatal("get_traces lookback default must match GetTracesArgs (60), not 5")
+	}
+	if !strings.Contains(tracesDesc, "default **60**") {
+		t.Fatal("get_traces description missing lookback default 60")
+	}
+
 	svcLogsDesc := out.Tools[byName["get_service_logs"]].Description
 	if strings.Contains(svcLogsDesc, "Prefer `get_logs` instead when") {
 		t.Fatal("get_service_logs must not tell agents to prefer get_logs for HTTP status")
@@ -176,14 +192,6 @@ func TestDumpTools(t *testing.T) {
 
 	if !strings.Contains(logsDesc, "get_service_logs") {
 		t.Fatal("get_logs whale must name get_service_logs as the structured HTTP-status alternative")
-	}
-
-	tracesDesc := out.Tools[byName["get_traces"]].Description
-	if strings.Contains(tracesDesc, "default **5**") {
-		t.Fatal("get_traces lookback default must match GetTracesArgs (60), not 5")
-	}
-	if !strings.Contains(tracesDesc, "default **60**") {
-		t.Fatal("get_traces description missing lookback default 60")
 	}
 
 	perfIdx, ok := byName["get_service_performance_details"]

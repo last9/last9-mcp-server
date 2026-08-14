@@ -234,7 +234,8 @@ type ServicePerformanceDetails struct {
 		ByResponseTime []map[string]float64 `json:"by_response_time"`
 		ByErrorRate    []map[string]int64   `json:"by_error_rate"`
 	} `json:"top_operations"`
-	TopErrors []map[string]int64 `json:"top_errors"`
+	TopErrors     []map[string]int64 `json:"top_errors"`
+	PartialErrors []string           `json:"partial_errors,omitempty"`
 }
 
 func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServicePerformanceDetailsArgs) (*mcp.CallToolResult, any, error) {
@@ -275,9 +276,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		defer httpResp.Body.Close()
 
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, promErr(httpResp, "service performance details")
-		}
-		{
+			details.PartialErrors = append(details.PartialErrors, promErr(httpResp, "service performance details apdex").Error())
+		} else {
 			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to read response body: %w", err)
@@ -301,9 +301,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		defer httpResp.Body.Close()
 
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, promErr(httpResp, "service performance details")
-		}
-		{
+			details.PartialErrors = append(details.PartialErrors, promErr(httpResp, "service performance details response_times").Error())
+		} else {
 			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to read response body: %w", err)
@@ -327,9 +326,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		defer httpResp.Body.Close()
 
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, promErr(httpResp, "service performance details")
-		}
-		{
+			details.PartialErrors = append(details.PartialErrors, promErr(httpResp, "service performance details availability").Error())
+		} else {
 			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to read response body: %w", err)
@@ -353,9 +351,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		defer httpResp.Body.Close()
 
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, promErr(httpResp, "service performance details")
-		}
-		{
+			details.PartialErrors = append(details.PartialErrors, promErr(httpResp, "service performance details throughput").Error())
+		} else {
 			// read response body to byte array
 			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
@@ -380,9 +377,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		defer httpResp.Body.Close()
 
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, promErr(httpResp, "service performance details")
-		}
-		{
+			details.PartialErrors = append(details.PartialErrors, promErr(httpResp, "service performance details error_rate").Error())
+		} else {
 			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to read response body: %w", err)
@@ -405,9 +401,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		defer httpResp.Body.Close()
 
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, promErr(httpResp, "service performance details")
-		}
-		{
+			details.PartialErrors = append(details.PartialErrors, promErr(httpResp, "service performance details error_percent").Error())
+		} else {
 			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to read response body: %w", err)
@@ -430,9 +425,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		defer httpResp.Body.Close()
 
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, promErr(httpResp, "service performance details")
-		}
-		{
+			details.PartialErrors = append(details.PartialErrors, promErr(httpResp, "service performance details top_operations_by_response_time").Error())
+		} else {
 			var topErrResp apiPromInstantResp
 			if err := json.NewDecoder(httpResp.Body).Decode(&topErrResp); err == nil {
 				details.TopOperations.ByResponseTime = make([]map[string]float64, 0)
@@ -472,9 +466,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		defer httpResp.Body.Close()
 
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, promErr(httpResp, "service performance details")
-		}
-		{
+			details.PartialErrors = append(details.PartialErrors, promErr(httpResp, "service performance details top_operations_by_error_rate").Error())
+		} else {
 			var topErrResp apiPromInstantResp
 			if err := json.NewDecoder(httpResp.Body).Decode(&topErrResp); err == nil {
 				details.TopOperations.ByErrorRate = make([]map[string]int64, 0)
@@ -513,9 +506,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, promErr(httpResp, "service performance details")
-		}
-		{
+			details.PartialErrors = append(details.PartialErrors, promErr(httpResp, "service performance details top_errors").Error())
+		} else {
 			var topErrResp apiPromInstantResp
 			if err := json.NewDecoder(httpResp.Body).Decode(&topErrResp); err == nil {
 				details.TopErrors = make([]map[string]int64, 0)
@@ -1740,7 +1732,7 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return promToolError(httpResp, "Prometheus range query")
+			return promToolError(httpResp, "Prometheus label values")
 		}
 		// return the response body string as the content without parsing
 		responseBodyBytes, err := io.ReadAll(httpResp.Body)
@@ -1783,7 +1775,7 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return promToolError(httpResp, "Prometheus range query")
+			return promToolError(httpResp, "Prometheus labels")
 		}
 		// return the response body string as the content without parsing
 		responseBodyBytes, err := io.ReadAll(httpResp.Body)

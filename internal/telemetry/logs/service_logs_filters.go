@@ -19,12 +19,12 @@ var (
 	httpStatusCodePattern  = regexp.MustCompile(`^[1-5][0-9]{2}$`)
 )
 
-func compileServiceLogsStructuredFilters(ctx context.Context, client *http.Client, cfg models.Config, args GetServiceLogsArgs, startTime, endTime time.Time, index string) ([]map[string]interface{}, []map[string]interface{}, error) {
+func compileServiceLogsStructuredFilters(ctx context.Context, client *http.Client, cfg models.Config, args GetServiceLogsArgs, startTime, endTime time.Time, index string) ([]map[string]interface{}, []map[string]interface{}, string, error) {
 	extra := make([]map[string]interface{}, 0, len(args.AttributeFilters)+1)
 	for i, filter := range args.AttributeFilters {
 		field, err := compileServiceLogAttributeField(filter.Field, fmt.Sprintf("attribute_filters[%d].field", i))
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, "", err
 		}
 		extra = append(extra, map[string]interface{}{
 			"$eq": []interface{}{field, filter.Value},
@@ -35,16 +35,16 @@ func compileServiceLogsStructuredFilters(ctx context.Context, client *http.Clien
 	code := strings.TrimSpace(args.HTTPStatusCode)
 	if class == "" && code == "" {
 		if strings.TrimSpace(args.HTTPStatusField) != "" {
-			return nil, nil, fmt.Errorf("http_status_field requires http_status_class or http_status_code")
+			return nil, nil, "", fmt.Errorf("http_status_field requires http_status_class or http_status_code")
 		}
-		return extra, nil, nil
+		return extra, nil, "", nil
 	}
 
 	if class != "" && !httpStatusClassPattern.MatchString(class) {
-		return nil, nil, fmt.Errorf("invalid http_status_class %q: use 2xx, 3xx, 4xx, or 5xx", class)
+		return nil, nil, "", fmt.Errorf("invalid http_status_class %q: use 2xx, 3xx, 4xx, or 5xx", class)
 	}
 	if code != "" && !httpStatusCodePattern.MatchString(code) {
-		return nil, nil, fmt.Errorf("invalid http_status_code %q: use a 3-digit HTTP status such as 500 or 401", code)
+		return nil, nil, "", fmt.Errorf("invalid http_status_code %q: use a 3-digit HTTP status such as 500 or 401", code)
 	}
 
 	explicitField := strings.TrimSpace(args.HTTPStatusField)
@@ -56,17 +56,21 @@ func compileServiceLogsStructuredFilters(ctx context.Context, client *http.Clien
 	if explicitField != "" {
 		statusField, err = compileServiceLogAttributeField(explicitField, "http_status_field")
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, "", err
 		}
 	} else {
 		statusField, parseStages, err = resolveHTTPStatusField(ctx, client, cfg, args, startTime, endTime, index)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, "", err
 		}
 	}
 
-	extra = append(extra, httpStatusCondition(statusField, class, code))
-	return extra, parseStages, nil
+	cond, err := httpStatusCondition(statusField, class, code)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	extra = append(extra, cond)
+	return extra, parseStages, statusField, nil
 }
 
 func compileServiceLogAttributeField(field, path string) (string, error) {
@@ -93,16 +97,19 @@ func compileServiceLogAttributeField(field, path string) (string, error) {
 	return "", fmt.Errorf("invalid log field reference %q at %s: use ServiceName, attributes['field'], or resources['field']", field, path)
 }
 
-func httpStatusCondition(field, class, code string) map[string]interface{} {
+func httpStatusCondition(field, class, code string) (map[string]interface{}, error) {
 	if httpStatusCodePattern.MatchString(code) {
 		return map[string]interface{}{
 			"$eq": []interface{}{field, code},
-		}
+		}, nil
 	}
-	digit := httpStatusClassPattern.FindStringSubmatch(class)[1]
+	parts := httpStatusClassPattern.FindStringSubmatch(class)
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("invalid http_status_class %q: use 2xx, 3xx, 4xx, or 5xx", class)
+	}
 	return map[string]interface{}{
-		"$regex": []interface{}{field, "^" + digit},
-	}
+		"$regex": []interface{}{field, "^" + parts[1]},
+	}, nil
 }
 
 func resolveHTTPStatusField(ctx context.Context, client *http.Client, cfg models.Config, args GetServiceLogsArgs, startTime, endTime time.Time, index string) (string, []map[string]interface{}, error) {
@@ -163,22 +170,33 @@ func isHTTPStatusLikeAttribute(attr LogAttribute) bool {
 	if strings.Contains(combined, "grpc") {
 		return false
 	}
-	needles := []string{
-		"http.response.status_code",
-		"http_response_status_code",
-		"http.status_code",
-		"http_status_code",
-		"http.status",
-		"http_status",
-		"status_code",
-		"statuscode",
+	if strings.Contains(n, "http") && strings.Contains(n, "status") {
+		return true
 	}
-	for _, needle := range needles {
-		if n == needle || strings.Contains(n, needle) || strings.Contains(f, needle) {
-			return true
-		}
+	if strings.Contains(f, "http") && strings.Contains(f, "status") {
+		return true
 	}
-	return false
+	base := httpStatusAttributeBase(attr.Name)
+	if base == "" {
+		base = httpStatusAttributeBase(attr.FilterField)
+	}
+	switch base {
+	case "status_code", "statuscode", "status":
+		return true
+	default:
+		return false
+	}
+}
+
+func httpStatusAttributeBase(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.TrimPrefix(s, "attributes['")
+	s = strings.TrimPrefix(s, "resources['")
+	s = strings.TrimSuffix(s, "']")
+	if i := strings.LastIndexAny(s, "./"); i >= 0 {
+		s = s[i+1:]
+	}
+	return strings.ReplaceAll(s, "-", "_")
 }
 
 func parseStagesFromAttributeHint(attr LogAttribute) []map[string]interface{} {
@@ -198,24 +216,29 @@ func parseStagesFromAttributeHint(attr LogAttribute) []map[string]interface{} {
 	return out
 }
 
-func applyServiceLogsStructuredFilters(query []map[string]interface{}, extra []map[string]interface{}, parseStages []map[string]interface{}) []map[string]interface{} {
+func applyServiceLogsStructuredFilters(query []map[string]interface{}, extra []map[string]interface{}, parseStages []map[string]interface{}) ([]map[string]interface{}, error) {
 	if len(extra) == 0 && len(parseStages) == 0 {
-		return query
+		return query, nil
+	}
+	if len(query) == 0 {
+		return nil, fmt.Errorf("internal error: service log query is missing the service filter; cannot apply status/attribute filters")
+	}
+
+	out := make([]map[string]interface{}, len(query))
+	for i, stage := range query {
+		out[i] = mapsClone(stage)
 	}
 
 	if len(parseStages) == 0 {
-		if len(query) == 0 {
-			return query
-		}
-		filterStage := mapsClone(query[0])
+		filterStage := mapsClone(out[0])
 		queryMap, ok := filterStage["query"].(map[string]interface{})
 		if !ok {
-			return query
+			return nil, fmt.Errorf("internal error: service log query filter is missing query; cannot apply status/attribute filters")
 		}
 		clonedQuery := mapsClone(queryMap)
 		andConditions, ok := clonedQuery["$and"].([]interface{})
 		if !ok {
-			return query
+			return nil, fmt.Errorf("internal error: service log query filter is missing $and; cannot apply status/attribute filters")
 		}
 		clonedConditions := append([]interface{}(nil), andConditions...)
 		for _, cond := range extra {
@@ -223,11 +246,10 @@ func applyServiceLogsStructuredFilters(query []map[string]interface{}, extra []m
 		}
 		clonedQuery["$and"] = clonedConditions
 		filterStage["query"] = clonedQuery
-		query[0] = filterStage
-		return query
+		out[0] = filterStage
+		return out, nil
 	}
 
-	out := append([]map[string]interface{}{}, query...)
 	out = append(out, parseStages...)
 	if len(extra) > 0 {
 		conds := make([]interface{}, 0, len(extra))
@@ -241,5 +263,5 @@ func applyServiceLogsStructuredFilters(query []map[string]interface{}, extra []m
 			},
 		})
 	}
-	return out
+	return out, nil
 }

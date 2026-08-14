@@ -332,7 +332,7 @@ func TestGetLogsHandlerTreatsMissingStreamsResultAsEmptyChunk(t *testing.T) {
 	}
 }
 
-func TestGetLogsHandlerReturnsPartialResultsAfterLaterChunkParseError(t *testing.T) {
+func TestGetLogsHandlerReturnsErrorAfterLaterChunkParseError(t *testing.T) {
 	rec := newRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -536,7 +536,7 @@ func TestFetchServiceLogsReturnsEmptyPartialWhenAllSuccessChunksAreEmpty(t *test
 	}
 }
 
-func TestFetchServiceLogsReturnsPartialResultsAfterLaterChunkError(t *testing.T) {
+func TestFetchServiceLogsReturnsErrorAfterLaterChunkError(t *testing.T) {
 	rec := newRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()

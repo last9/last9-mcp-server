@@ -19,10 +19,11 @@ func TestGetLogsRelays400BodyAndDrains502(t *testing.T) {
 		forbid     string
 	}{
 		{
-			name:       "400 includes parse body",
+			name:       "400 includes parse body and redacts URL",
 			status:     http.StatusBadRequest,
-			body:       `{"error":"invalid json pipeline: unknown stage"}`,
+			body:       `{"error":"invalid json pipeline: unknown stage","url":"https://internal.example/query?token=SECRET"}`,
 			wantSubstr: "unknown stage",
+			forbid:     "https://",
 		},
 		{
 			name:       "502 omits body",
@@ -56,6 +57,17 @@ func TestGetLogsRelays400BodyAndDrains502(t *testing.T) {
 			}
 			if tt.forbid != "" && strings.Contains(got, tt.forbid) {
 				t.Fatalf("error leaked %q: %s", tt.forbid, got)
+			}
+			if tt.status == http.StatusBadRequest {
+				if !strings.Contains(got, "[redacted-url]") {
+					t.Fatalf("expected URL redaction in 400 error, got %s", got)
+				}
+				if !strings.Contains(got, "get_log_attributes_for_pipeline") {
+					t.Fatalf("expected pipeline schema hint, got %s", got)
+				}
+				if strings.Contains(got, "SECRET") {
+					t.Fatalf("400 body leaked SECRET: %s", got)
+				}
 			}
 		})
 	}

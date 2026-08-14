@@ -697,7 +697,7 @@ func TestPromqlRangeQueryRelays400AndDrains502(t *testing.T) {
 	}
 }
 
-func TestServicePerformanceDetailsAnyPromFailureIsError(t *testing.T) {
+func TestServicePerformanceDetailsPromFailureRecordsPartialErrors(t *testing.T) {
 	var n atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if n.Add(1) == 1 {
@@ -719,15 +719,24 @@ func TestServicePerformanceDetailsAnyPromFailureIsError(t *testing.T) {
 		},
 	}
 	handler := NewServicePerformanceDetailsHandler(server.Client(), cfg)
-	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServicePerformanceDetailsArgs{
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServicePerformanceDetailsArgs{
 		ServiceName:     "checkout",
 		Env:             "prod",
 		LookbackMinutes: 15,
 	})
-	if err == nil {
-		t.Fatal("expected error when a PromQL call fails")
+	if err != nil {
+		t.Fatalf("HTTP PromQL failures should stay in partial_errors, got Go error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "bad selector") {
-		t.Fatalf("expected 400 body in error, got %v", err)
+	text := utils.GetTextContent(t, result)
+	var details ServicePerformanceDetails
+	if err := json.Unmarshal([]byte(text), &details); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	joined := strings.Join(details.PartialErrors, "\n")
+	if !strings.Contains(joined, "bad selector") {
+		t.Fatalf("expected sanitized 400 body in partial_errors, got %#v", details.PartialErrors)
+	}
+	if details.ServiceName != "checkout" {
+		t.Fatalf("surviving payload missing service_name, got %#v", details)
 	}
 }

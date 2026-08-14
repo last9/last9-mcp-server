@@ -20,13 +20,12 @@ import (
 
 // ServiceLogsResponse represents the response structure for service logs
 type ServiceLogsResponse struct {
-	Service       string     `json:"service"`
-	StartTime     string     `json:"start_time"`
-	EndTime       string     `json:"end_time"`
-	Count         int        `json:"count"`
-	Logs          []LogEntry `json:"logs"`
-	PartialResult bool       `json:"partial_result,omitempty"`
-	Warning       string     `json:"warning,omitempty"`
+	Service         string     `json:"service"`
+	StartTime       string     `json:"start_time"`
+	EndTime         string     `json:"end_time"`
+	Count           int        `json:"count"`
+	Logs            []LogEntry `json:"logs"`
+	HTTPStatusField string     `json:"http_status_field,omitempty"`
 }
 
 // LogEntry represents a single log entry
@@ -99,7 +98,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("invalid index: %w", err)
 		}
 
-		extraConditions, parseStages, err := compileServiceLogsStructuredFilters(ctx, client, cfg, args, startTime, endTime, normalizedIndex)
+		extraConditions, parseStages, statusField, err := compileServiceLogsStructuredFilters(ctx, client, cfg, args, startTime, endTime, normalizedIndex)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -108,7 +107,10 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		if args.Env != "" {
 			logjsonQuery = addServiceLogsEnvFilter(logjsonQuery, args.Env)
 		}
-		logjsonQuery = applyServiceLogsStructuredFilters(logjsonQuery, extraConditions, parseStages)
+		logjsonQuery, err = applyServiceLogsStructuredFilters(logjsonQuery, extraConditions, parseStages)
+		if err != nil {
+			return nil, nil, err
+		}
 
 		// Fetch raw logs using the existing logs API approach. When index is omitted,
 		// keep the query on the no-index path that matches the live dashboard/API.
@@ -116,6 +118,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
+		logs.HTTPStatusField = statusField
 
 		// Format response as JSON for better readability
 		responseJSON, err := json.MarshalIndent(logs, "", "  ")

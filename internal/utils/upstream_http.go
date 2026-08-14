@@ -42,16 +42,21 @@ func SanitizeUpstreamBody(raw string) string {
 
 // NewUpstreamHTTPError maps a non-OK HTTP response to a tool-facing error.
 // 400/422 bodies are sanitized and included. 5xx bodies are drained and omitted.
-func NewUpstreamHTTPError(resp *http.Response, op string) error {
+// Optional hint is appended after 400/422 bodies (e.g. pipeline schema reminder).
+func NewUpstreamHTTPError(resp *http.Response, op string, hint ...string) error {
 	if resp == nil {
 		return fmt.Errorf("%s failed: empty upstream response", op)
 	}
 	status := resp.StatusCode
 	if status == http.StatusBadRequest || status == http.StatusUnprocessableEntity {
-		body := readLimitedResponseBody(resp.Body, 4<<10)
-		return fmt.Errorf("%s failed with HTTP %d. Review the tool arguments and retry. Upstream response: %s", op, status, body)
+		body := ReadLimitedResponseBody(resp.Body, 4<<10)
+		msg := fmt.Sprintf("%s failed with HTTP %d. Review the tool arguments and retry. Upstream response: %s", op, status, body)
+		if len(hint) > 0 && strings.TrimSpace(hint[0]) != "" {
+			msg += "\n\n" + hint[0]
+		}
+		return fmt.Errorf("%s", msg)
 	}
-	drainResponseBody(resp.Body)
+	DrainResponseBody(resp.Body)
 	return fmt.Errorf("%s failed with HTTP %d. %s", op, status, upstreamStatusAdvice(status))
 }
 
@@ -73,14 +78,14 @@ func upstreamStatusAdvice(statusCode int) string {
 	}
 }
 
-func drainResponseBody(body io.Reader) {
+func DrainResponseBody(body io.Reader) {
 	if body == nil {
 		return
 	}
 	_, _ = io.CopyN(io.Discard, body, 4<<10)
 }
 
-func readLimitedResponseBody(body io.Reader, limit int64) string {
+func ReadLimitedResponseBody(body io.Reader, limit int64) string {
 	if body == nil {
 		return ""
 	}

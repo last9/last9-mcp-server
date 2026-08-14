@@ -55,7 +55,10 @@ func TestApplyServiceLogsStructuredFilters_CompilesEquality(t *testing.T) {
 	extra := []map[string]interface{}{
 		{"$eq": []interface{}{"attributes['user_id']", "abc"}},
 	}
-	got := applyServiceLogsStructuredFilters(base, extra, nil)
+	got, err := applyServiceLogsStructuredFilters(base, extra, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	raw, err := json.Marshal(got)
 	if err != nil {
 		t.Fatal(err)
@@ -66,6 +69,27 @@ func TestApplyServiceLogsStructuredFilters_CompilesEquality(t *testing.T) {
 	}
 	if strings.Contains(s, `"type":"parse"`) {
 		t.Fatalf("indexed attribute filter must not add parse: %s", s)
+	}
+}
+
+func TestApplyServiceLogsStructuredFilters_MissingAndIsError(t *testing.T) {
+	_, err := applyServiceLogsStructuredFilters(nil, []map[string]interface{}{
+		{"$eq": []interface{}{"attributes['status_code']", "500"}},
+	}, nil)
+	if err == nil {
+		t.Fatal("expected error when filters cannot be applied")
+	}
+}
+
+func TestIsHTTPStatusLikeAttributeRejectsJobStatusCode(t *testing.T) {
+	if isHTTPStatusLikeAttribute(LogAttribute{Name: "job_status_code", FilterField: "attributes['job_status_code']"}) {
+		t.Fatal("job_status_code must not count as HTTP status")
+	}
+	if !isHTTPStatusLikeAttribute(LogAttribute{Name: "status_code", FilterField: "attributes['status_code']"}) {
+		t.Fatal("status_code should count as HTTP status")
+	}
+	if !isHTTPStatusLikeAttribute(LogAttribute{Name: "http.status_code", FilterField: "attributes['http.status_code']"}) {
+		t.Fatal("http.status_code should count as HTTP status")
 	}
 }
 
@@ -116,6 +140,9 @@ func TestGetServiceLogs_HTTP5xxUsesDiscoveredField(t *testing.T) {
 	payload := parseServiceLogsToolResult(t, result)
 	if payload["count"] != float64(1) {
 		t.Fatalf("expected 1 log, got %#v", payload["count"])
+	}
+	if payload["http_status_field"] != "attributes['status_code']" {
+		t.Fatalf("expected discovered http_status_field in response, got %#v", payload["http_status_field"])
 	}
 }
 

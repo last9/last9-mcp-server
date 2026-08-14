@@ -1,10 +1,8 @@
 package traces
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -19,8 +17,6 @@ const tracePipelineSchemaHint = `Pipeline stage schema: every stage needs "type"
 var traceRequestIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
 
 var traceAPIStatusPattern = regexp.MustCompile(`^[a-z_]{1,32}$`)
-
-const traceUpstreamBodyLimit = utils.UpstreamBodyLimit
 
 type traceUpstreamError struct {
 	statusCode int
@@ -86,14 +82,14 @@ func newTraceHTTPErrorWithHint(response *http.Response, hint string) error {
 		requestID:  traceRequestID(response.Header),
 	}
 	if status == http.StatusBadRequest || status == http.StatusUnprocessableEntity {
-		body := readLimitedResponseBody(response.Body, 4<<10)
+		body := utils.ReadLimitedResponseBody(response.Body, 4<<10)
 		err.message = fmt.Sprintf("Review the tool arguments and retry. Upstream response: %s", body)
 		if hint != "" {
 			err.message += "\n\n" + hint
 		}
 		return err
 	}
-	drainResponseBody(response.Body)
+	utils.DrainResponseBody(response.Body)
 	return err
 }
 
@@ -154,25 +150,4 @@ func traceLogCause(err error) error {
 		return upstreamErr.cause
 	}
 	return err
-}
-
-func drainResponseBody(body io.Reader) {
-	if body == nil {
-		return
-	}
-	_, _ = io.CopyN(io.Discard, body, 4<<10)
-}
-
-func readLimitedResponseBody(body io.Reader, limit int64) string {
-	if body == nil {
-		return ""
-	}
-	var buf bytes.Buffer
-	_, _ = io.CopyN(&buf, body, limit)
-	_, _ = io.CopyN(io.Discard, body, 4<<10)
-	return sanitizeUpstreamBody(buf.String())
-}
-
-func sanitizeUpstreamBody(raw string) string {
-	return utils.SanitizeUpstreamBody(raw)
 }

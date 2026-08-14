@@ -11,7 +11,7 @@ import (
 func TestNewUpstreamHTTPErrorRelays400Body(t *testing.T) {
 	resp := &http.Response{
 		StatusCode: http.StatusBadRequest,
-		Body:       io.NopCloser(strings.NewReader(`{"error":"parse error: unexpected identifier"}`)),
+		Body:       io.NopCloser(strings.NewReader(`{"error":"parse error: unexpected identifier","url":"https://internal.example/v1?token=SECRET"}`)),
 	}
 	err := NewUpstreamHTTPError(resp, "Prometheus range query")
 	if err == nil {
@@ -23,6 +23,30 @@ func TestNewUpstreamHTTPErrorRelays400Body(t *testing.T) {
 	}
 	if !strings.Contains(got, "HTTP 400") {
 		t.Fatalf("status missing from error: %s", got)
+	}
+	if !strings.Contains(got, "[redacted-url]") {
+		t.Fatalf("expected URL redaction, got %s", got)
+	}
+	if strings.Contains(got, "https://") || strings.Contains(got, "SECRET") {
+		t.Fatalf("400 body leaked internals: %s", got)
+	}
+}
+
+func TestNewUpstreamHTTPErrorTruncatesAndHints(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Body:       io.NopCloser(strings.NewReader(`{"error":"` + strings.Repeat("x", 800) + `"}`)),
+	}
+	err := NewUpstreamHTTPError(resp, "logs query", LogsPipelineSchemaHint)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	got := err.Error()
+	if !strings.Contains(got, "… (truncated)") {
+		t.Fatalf("expected truncation marker, got %s", got)
+	}
+	if !strings.Contains(got, "get_log_attributes_for_pipeline") {
+		t.Fatalf("expected pipeline hint, got %s", got)
 	}
 }
 

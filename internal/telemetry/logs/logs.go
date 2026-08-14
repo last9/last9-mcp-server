@@ -334,7 +334,7 @@ func executeLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, utils.NewUpstreamHTTPError(resp, "logs query")
+		return nil, utils.NewUpstreamHTTPError(resp, "logs query", utils.LogsPipelineSchemaHint)
 	}
 
 	var result map[string]interface{}
