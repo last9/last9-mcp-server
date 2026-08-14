@@ -2,9 +2,16 @@ package logs
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 )
+
+// namedCapturePattern extracts (?P<name>…) groups from a regexp parse pattern.
+var namedCapturePattern = regexp.MustCompile(`\(\?P<([^>]+)>`)
+
+// validNamedCaptureName is the Go regexp named-group alphabet (no `$`, hyphens, etc.).
+var validNamedCaptureName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // Validation error categories for fail-closed log pipeline checks.
 // Stable strings — safe for metrics labels; never include customer payloads.
@@ -199,6 +206,13 @@ func validateLogJSONQuery(stages []map[string]interface{}, pathPrefix string) er
 			if err := validateWindowAggregateStage(stage, stagePath); err != nil {
 				return err
 			}
+			if err := validateGroupByForTraceFields(stage, stagePath); err != nil {
+				return err
+			}
+		case "aggregate":
+			if err := validateGroupByForTraceFields(stage, stagePath); err != nil {
+				return err
+			}
 		case "filter":
 			if err := validateFilterStageForTraceFields(stage, stagePath); err != nil {
 				return err
@@ -223,6 +237,93 @@ func validateParseStage(stage map[string]interface{}, stagePath string) error {
 			stagePath+".parser",
 			fmt.Sprintf("invalid parser %q at %s — must be one of: json, logfmt, regexp (never \"format\")", parser, stagePath),
 		)
+	}
+
+	field, _ := stage["field"].(string)
+	if strings.TrimSpace(field) == "" {
+		return newLogValidationError(
+			LogValidationMissingRequired,
+			stagePath+".field",
+			fmt.Sprintf("parse stage at %s missing required \"field\" key — usually \"field\":\"Body\"", stagePath),
+		)
+	}
+
+	if labels, ok := stage["labels"].(map[string]interface{}); ok {
+		for labelKey := range labels {
+			if !validNamedCaptureName.MatchString(labelKey) {
+				return newLogValidationError(
+					LogValidationInvalidField,
+					stagePath+".labels."+labelKey,
+					fmt.Sprintf(
+						"parse labels key %q at %s is invalid — use a plain identifier like merchant (letters/digits/underscore); never \"$merchant\" or dotted names",
+						labelKey, stagePath+".labels",
+					),
+				)
+			}
+		}
+	}
+
+	if parser == "regexp" {
+		pattern, _ := stage["pattern"].(string)
+		if strings.TrimSpace(pattern) == "" {
+			return newLogValidationError(
+				LogValidationMissingRequired,
+				stagePath+".pattern",
+				fmt.Sprintf("regexp parse stage at %s missing required \"pattern\" with named captures like (?P<level>ERROR|WARN)", stagePath),
+			)
+		}
+		if err := validateRegexpNamedCaptures(pattern, stagePath+".pattern"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateRegexpNamedCaptures(pattern, path string) error {
+	matches := namedCapturePattern.FindAllStringSubmatch(pattern, -1)
+	if len(matches) == 0 {
+		return newLogValidationError(
+			LogValidationInvalidField,
+			path,
+			fmt.Sprintf("regexp pattern at %s has no named captures — use (?P<name>…) groups (name must match [A-Za-z_][A-Za-z0-9_]*)", path),
+		)
+	}
+	for _, m := range matches {
+		name := m[1]
+		if !validNamedCaptureName.MatchString(name) {
+			return newLogValidationError(
+				LogValidationInvalidField,
+				path,
+				fmt.Sprintf(
+					"invalid regexp named capture %q at %s — Go named groups must match [A-Za-z_][A-Za-z0-9_]* (got (?P<%s>…); never include \"$\"). Example: (?P<merchant>\\\\S+)",
+					name, path, name,
+				),
+			)
+		}
+	}
+	return nil
+}
+
+func validateGroupByForTraceFields(stage map[string]interface{}, stagePath string) error {
+	raw, ok := stage["groupby"]
+	if !ok || raw == nil {
+		return nil
+	}
+	groupBy, ok := raw.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	for fieldRef := range groupBy {
+		if _, isTraceOnly := traceOnlyLogFields[fieldRef]; isTraceOnly {
+			return newLogValidationError(
+				LogValidationWrongDomainField,
+				stagePath+".groupby."+fieldRef,
+				fmt.Sprintf(
+					"groupby at %s uses trace-only field %q — not valid in logs; use ServiceName, SeverityText, attributes['…'], or resources['…']",
+					stagePath+".groupby", fieldRef,
+				),
+			)
+		}
 	}
 	return nil
 }

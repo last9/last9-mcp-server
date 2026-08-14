@@ -1037,6 +1037,142 @@ func TestPrepareLogJSONQueryRejectsBareSingleTokenField(t *testing.T) {
 	}
 }
 
+func TestPrepareLogJSONQueryRequiresParseField(t *testing.T) {
+	_, err := prepareLogJSONQuery([]map[string]interface{}{
+		{"type": "parse", "parser": "json"},
+	}, "logjson_query")
+	if err == nil {
+		t.Fatal("expected missing field rejection")
+	}
+	if !strings.Contains(err.Error(), "field") {
+		t.Errorf("error should mention field, got: %q", err.Error())
+	}
+}
+
+func TestPrepareLogJSONQueryRejectsBadRegexpNamedCapture(t *testing.T) {
+	_, err := prepareLogJSONQuery([]map[string]interface{}{
+		{
+			"type":    "parse",
+			"parser":  "regexp",
+			"field":   "Body",
+			"pattern": `merchant_name (?P<$merchant>\S+)`,
+			"labels":  map[string]interface{}{"merchant": "Body"},
+		},
+	}, "logjson_query")
+	if err == nil {
+		t.Fatal("expected bad named capture rejection")
+	}
+	if !strings.Contains(err.Error(), "$merchant") && !strings.Contains(err.Error(), "named capture") {
+		t.Errorf("error should mention invalid named capture, got: %q", err.Error())
+	}
+}
+
+func TestPrepareLogJSONQueryRejectsDollarLabelKey(t *testing.T) {
+	_, err := prepareLogJSONQuery([]map[string]interface{}{
+		{
+			"type":   "parse",
+			"parser": "json",
+			"field":  "Body",
+			"labels": map[string]interface{}{"$merchant": "merchant"},
+		},
+	}, "logjson_query")
+	if err == nil {
+		t.Fatal("expected invalid labels key rejection")
+	}
+	if !strings.Contains(err.Error(), "$merchant") {
+		t.Errorf("error should mention $merchant, got: %q", err.Error())
+	}
+}
+
+func TestPrepareLogJSONQueryRejectsSpanNameGroupBy(t *testing.T) {
+	_, err := prepareLogJSONQuery([]map[string]interface{}{
+		{
+			"type": "aggregate",
+			"aggregates": []interface{}{
+				map[string]interface{}{
+					"function": map[string]interface{}{"$count": []interface{}{}},
+					"as":       "error_count",
+				},
+			},
+			"groupby": map[string]interface{}{"SpanName": "span_name"},
+		},
+	}, "logjson_query")
+	if err == nil {
+		t.Fatal("expected SpanName groupby rejection")
+	}
+	if !strings.Contains(err.Error(), "SpanName") {
+		t.Errorf("error should mention SpanName, got: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "trace-only") {
+		t.Errorf("error should say trace-only, got: %q", err.Error())
+	}
+}
+
+func TestPrepareLogJSONQueryCoercesNumericFilterValues(t *testing.T) {
+	result, err := prepareLogJSONQuery([]map[string]interface{}{
+		{
+			"type": "filter",
+			"query": map[string]interface{}{
+				"$and": []interface{}{
+					map[string]interface{}{"$eq": []interface{}{"attributes['status_code']", float64(500)}},
+				},
+			},
+		},
+	}, "logjson_query")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	query := result[0]["query"].(map[string]interface{})
+	andConditions := query["$and"].([]interface{})
+	eqArgs := andConditions[0].(map[string]interface{})["$eq"].([]interface{})
+	if got, ok := eqArgs[1].(string); !ok || got != "500" {
+		t.Fatalf("expected numeric 500 coerced to string \"500\", got %#v", eqArgs[1])
+	}
+}
+
+func TestPrepareLogJSONQueryAcceptsCanonicalParseThenFilter(t *testing.T) {
+	_, err := prepareLogJSONQuery([]map[string]interface{}{
+		{
+			"type": "filter",
+			"query": map[string]interface{}{
+				"$and": []interface{}{
+					map[string]interface{}{"$eq": []interface{}{"ServiceName", "orders-api"}},
+				},
+			},
+		},
+		{
+			"type":   "parse",
+			"parser": "json",
+			"field":  "Body",
+			"labels": map[string]interface{}{
+				"status_code": "status_code",
+				"uri":         "uri",
+			},
+		},
+		{
+			"type": "filter",
+			"query": map[string]interface{}{
+				"$and": []interface{}{
+					map[string]interface{}{"$eq": []interface{}{"attributes['status_code']", float64(500)}},
+				},
+			},
+		},
+		{
+			"type": "aggregate",
+			"aggregates": []interface{}{
+				map[string]interface{}{
+					"function": map[string]interface{}{"$count": []interface{}{}},
+					"as":       "_count",
+				},
+			},
+			"groupby": map[string]interface{}{"attributes['uri']": "uri"},
+		},
+	}, "logjson_query")
+	if err != nil {
+		t.Fatalf("canonical parse+filter+aggregate pipeline should pass after coerce+field require, got: %v", err)
+	}
+}
+
 func TestPrepareLogJSONQueryTypedValidationError(t *testing.T) {
 	_, err := prepareLogJSONQuery([]map[string]interface{}{
 		{

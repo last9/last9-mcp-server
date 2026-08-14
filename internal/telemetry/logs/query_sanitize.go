@@ -1,8 +1,10 @@
 package logs
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -166,7 +168,54 @@ func sanitizeLogFieldOperatorArgs(value interface{}, fieldArgIndex int, path str
 		return nil, err
 	}
 	sanitized[fieldArgIndex] = next
+
+	// last9/api logjson requires comparison values as strings. JSON numbers/bools
+	// from model tool calls (e.g. 500 instead of "500") produce opaque
+	// "invalid JSON pipeline" 400s — coerce in place.
+	valueIndex := fieldArgIndex + 1
+	if valueIndex < len(sanitized) {
+		coerced, err := coerceLogFilterValueToString(sanitized[valueIndex], fmt.Sprintf("%s[%d]", path, valueIndex))
+		if err != nil {
+			return nil, err
+		}
+		sanitized[valueIndex] = coerced
+	}
 	return sanitized, nil
+}
+
+func coerceLogFilterValueToString(value interface{}, path string) (string, error) {
+	switch typed := value.(type) {
+	case string:
+		return typed, nil
+	case float64:
+		if typed == float64(int64(typed)) {
+			return strconv.FormatInt(int64(typed), 10), nil
+		}
+		return strconv.FormatFloat(typed, 'g', -1, 64), nil
+	case float32:
+		f := float64(typed)
+		if f == float64(int64(f)) {
+			return strconv.FormatInt(int64(f), 10), nil
+		}
+		return strconv.FormatFloat(f, 'g', -1, 32), nil
+	case int:
+		return strconv.Itoa(typed), nil
+	case int64:
+		return strconv.FormatInt(typed, 10), nil
+	case int32:
+		return strconv.FormatInt(int64(typed), 10), nil
+	case json.Number:
+		return typed.String(), nil
+	case bool:
+		return strconv.FormatBool(typed), nil
+	case nil:
+		return "", nil
+	default:
+		return "", fmt.Errorf(
+			"invalid filter value at %s: expected a string (got %T %#v) — use {\"$eq\":[\"attributes['status_code']\",\"500\"]} with a string value",
+			path, value, value,
+		)
+	}
 }
 
 func sanitizeLogAggregates(value interface{}, path string) (interface{}, error) {
@@ -289,6 +338,11 @@ func sanitizeLogFieldRef(fieldRef, path string) (string, error) {
 		return fmt.Sprintf("resources['%s']", trimmed), nil
 	case isCanonicalLogFieldRef(trimmed):
 		return trimmed, nil
+	case isTraceOnlyLogField(trimmed):
+		return "", fmt.Errorf(
+			"invalid log field reference %q at %s: %q is a trace-only field and is not valid in logs — use ServiceName, SeverityText, Body, attributes['…'], or resources['…']; call get_log_attributes if you need the exact field name",
+			trimmed, path, trimmed,
+		)
 	case strings.HasPrefix(trimmed, "resource_"):
 		stripped := trimmed[len("resource_"):]
 		return "", fmt.Errorf(
@@ -320,4 +374,9 @@ func isCanonicalLogFieldRef(fieldRef string) bool {
 
 	return logAttributeFieldRefPattern.MatchString(fieldRef) ||
 		logResourceFieldRefPattern.MatchString(fieldRef)
+}
+
+func isTraceOnlyLogField(fieldRef string) bool {
+	_, ok := traceOnlyLogFields[fieldRef]
+	return ok
 }
