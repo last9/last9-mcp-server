@@ -140,6 +140,36 @@ func TestDumpTools(t *testing.T) {
 		t.Fatal("prometheus_range_query description missing metrics resource URI pointer")
 	}
 
+	logsDesc := out.Tools[byName["get_logs"]].Description
+	if strings.Contains(logsDesc, "window_minutes") {
+		t.Fatal("get_logs description must not teach window_minutes; window_aggregate uses function/as/window")
+	}
+	for _, needle := range []string{`"function"`, `"as"`, `"window"`} {
+		if !strings.Contains(logsDesc, needle) {
+			t.Fatalf("get_logs description missing last9/api window_aggregate key %s", needle)
+		}
+	}
+
+	tracesDesc := out.Tools[byName["get_traces"]].Description
+	if strings.Contains(tracesDesc, "default **5**") {
+		t.Fatal("get_traces lookback default must match GetTracesArgs (60), not 5")
+	}
+	if !strings.Contains(tracesDesc, "default **60**") {
+		t.Fatal("get_traces description missing lookback default 60")
+	}
+
+	perfIdx, ok := byName["get_service_performance_details"]
+	if !ok {
+		t.Fatal("tool \"get_service_performance_details\" missing from dump")
+	}
+	perfDesc := out.Tools[perfIdx].Description
+	if strings.Contains(perfDesc, "get_service_operation_details") {
+		t.Fatal("get_service_performance_details names nonexistent get_service_operation_details")
+	}
+	if !strings.Contains(perfDesc, "get_service_operations_summary") {
+		t.Fatal("get_service_performance_details must point at get_service_operations_summary")
+	}
+
 	deviationsIndex, ok := byName["get_apm_service_deviations"]
 	if !ok {
 		t.Fatal("tool \"get_apm_service_deviations\" missing from dump")
