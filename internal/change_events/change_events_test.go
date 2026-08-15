@@ -99,3 +99,47 @@ func TestGetChangeEventsArgs_UsesCanonicalNames(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildChangeEventsPromQL(t *testing.T) {
+	excludes := backupEventExclude + "," + scheduledSearchExclude
+	metric := func(matchers string) string {
+		return `last9_change_events{` + matchers + `}`
+	}
+
+	unfiltered := buildChangeEventsPromQL("", "", "")
+	if unfiltered != metric(excludes) {
+		t.Fatalf("unfiltered:\n got %s\nwant %s", unfiltered, metric(excludes))
+	}
+
+	envOnly := buildChangeEventsPromQL("", "uat", "")
+	wantEnv := metric(excludes+`,deployment_environment="uat"`) + " or " +
+		metric(excludes+`,deployment_environment="",env="uat"`)
+	if envOnly != wantEnv {
+		t.Fatalf("env filter:\n got %s\nwant %s", envOnly, wantEnv)
+	}
+
+	svcOnly := buildChangeEventsPromQL("checkout", "", "")
+	wantSvc := metric(excludes+`,service="checkout"`) + " or " +
+		metric(excludes+`,service="",service_name="checkout"`)
+	if svcOnly != wantSvc {
+		t.Fatalf("service filter:\n got %s\nwant %s", svcOnly, wantSvc)
+	}
+
+	eventOnly := buildChangeEventsPromQL("", "", "deployment")
+	wantEvent := metric(excludes+`,event_name="deployment"`) + " or " +
+		metric(excludes+`,event_name="",event_type="deployment"`)
+	if eventOnly != wantEvent {
+		t.Fatalf("event filter:\n got %s\nwant %s", eventOnly, wantEvent)
+	}
+
+	both := buildChangeEventsPromQL("checkout", "uat", "")
+	wantBoth := strings.Join([]string{
+		metric(excludes + `,service="checkout",deployment_environment="uat"`),
+		metric(excludes + `,service="checkout",deployment_environment="",env="uat"`),
+		metric(excludes + `,service="",service_name="checkout",deployment_environment="uat"`),
+		metric(excludes + `,service="",service_name="checkout",deployment_environment="",env="uat"`),
+	}, " or ")
+	if both != wantBoth {
+		t.Fatalf("service+env:\n got %s\nwant %s", both, wantBoth)
+	}
+}
