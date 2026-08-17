@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
@@ -41,21 +42,26 @@ type logSeriesResponse struct {
 // logjson filter condition. Body-derived entries (source "body") exist only
 // inside the log Body as JSON: their filter_field is valid only after the parse
 // stage shown in the hint, and sample_coverage reports in how many of the
-// sampled rows the key appeared. sample_body is set for the severity-token
-// entry (a sample line alongside the level regexp hint) and for the
-// plaintext fallback entry (Body has no recognized JSON/logfmt/severity
-// structure): a sample line so the model can anchor a $regex to the real
-// shape instead of guessing a parser. sample_body is real customer log
-// content with URLs and obvious credentials stripped (via
-// utils.SanitizeUpstreamBody) and whitespace collapsed — NOT PII-redacted;
-// treat it as customer data.
+// sampled rows the key appeared. sample_bodies is set for the severity-token
+// entry (exactly one sample line, the one that matched the emitted pattern)
+// and for the plaintext fallback entry (Body has no recognized
+// JSON/logfmt/severity structure): up to 3 DISTINCT sample lines so the model
+// can anchor a $regex to the real shape(s) instead of guessing a parser off a
+// single, possibly-outlier line. Each line is transformed by
+// sampleBodyForModel: real customer log content — NOT PII-redacted, treat it
+// as customer data — with newline/tab/carriage-return ESCAPED as literal
+// two-character sequences (never real line breaks), credential VALUES
+// redacted (key preserved), full URLs replaced with a marker, and
+// byte-truncated with a marker on long lines. sample_notes reports which of
+// those transforms fired, deduplicated across the returned lines.
 type LogAttribute struct {
-	Name           string `json:"name"`
-	FilterField    string `json:"filter_field"`
-	Hint           string `json:"hint"`
-	Source         string `json:"source,omitempty"`
-	SampleCoverage string `json:"sample_coverage,omitempty"`
-	SampleBody     string `json:"sample_body,omitempty"`
+	Name           string   `json:"name"`
+	FilterField    string   `json:"filter_field"`
+	Hint           string   `json:"hint"`
+	Source         string   `json:"source,omitempty"`
+	SampleCoverage string   `json:"sample_coverage,omitempty"`
+	SampleBodies   []string `json:"sample_bodies,omitempty"`
+	SampleNotes    []string `json:"sample_notes,omitempty"`
 }
 
 const (
@@ -64,7 +70,132 @@ const (
 	// maxBodyDerivedKeys caps how many Body-derived keys are reported, ranked by
 	// sample frequency — a wide structured Body must not flood the response.
 	maxBodyDerivedKeys = 20
+	// maxSampleBodies caps how many distinct sample lines the plaintext
+	// fallback entry carries — one line risks the model anchoring a regex to
+	// an outlier shape in a mixed-format service.
+	maxSampleBodies = 3
 )
+
+// sampleBodyURLPattern/sampleBodyBearerPattern/sampleBodyCredentialPattern
+// mirror utils.SanitizeUpstreamBody's redaction patterns but are kept as a
+// separate, purpose-built copy for sampleBodyForModel: unlike the upstream
+// error-body sanitizer, this transform must preserve byte fidelity (no
+// whitespace collapsing) and preserve credential KEYS (redact only the
+// value), so it cannot share an implementation with SanitizeUpstreamBody.
+var (
+	sampleBodyURLPattern        = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s"'<>,}\]]+`)
+	sampleBodyBearerPattern     = regexp.MustCompile(`(?i)\b(bearer)\s+[^\s"',}]+`)
+	sampleBodyCredentialPattern = regexp.MustCompile(`(?i)\b(token|api[_-]?key|secret|password|authorization)\b("?\s*[:=]\s*"?)[^"',}\s]+`)
+	sampleBodyEscaper           = strings.NewReplacer("\n", "\\n", "\t", "\\t", "\r", "\\r")
+)
+
+// sampleBodyForModel transforms a raw sampled log line into a value safe to
+// return to the model as a regex-anchoring example, while preserving byte
+// fidelity as much as possible — unlike utils.SanitizeUpstreamBody (written
+// for upstream error bodies), it does NOT collapse whitespace runs, and it
+// preserves credential KEYS when redacting values. notes reports which
+// transforms fired, deduplicated and in the order first triggered; notes is
+// always a non-nil (possibly empty) slice.
+func sampleBodyForModel(line string) (sample string, notes []string) {
+	seen := map[string]struct{}{}
+	addNote := func(n string) {
+		if _, ok := seen[n]; ok {
+			return
+		}
+		seen[n] = struct{}{}
+		notes = append(notes, n)
+	}
+
+	s := line
+
+	// Escape newline/tab/carriage-return VISIBLY so multi-line structure
+	// stays legible without collapsing the line — a stack trace must not
+	// become unreadable single-line mush.
+	if strings.ContainsAny(s, "\n\t\r") {
+		s = sampleBodyEscaper.Replace(s)
+		addNote("multiline-escaped")
+	}
+
+	// A whole URL is not a useful regex anchor — replace it wholesale
+	// (before credential redaction so an embedded query-string credential
+	// doesn't leave a dangling partial match).
+	if sampleBodyURLPattern.MatchString(s) {
+		s = sampleBodyURLPattern.ReplaceAllString(s, "[redacted-url]")
+		addNote("url-redacted")
+	}
+
+	// Redact credential VALUES while preserving the key + separator, so the
+	// model can still see that a token/secret param existed at all.
+	before := s
+	s = sampleBodyCredentialPattern.ReplaceAllString(s, "$1$2[redacted]")
+	s = sampleBodyBearerPattern.ReplaceAllString(s, "$1 [redacted]")
+	if s != before {
+		addNote("credential-redacted")
+	}
+
+	// Strip unicode control runes (break JSON/terminal rendering) and format
+	// runes (e.g. U+202E RLO, ZWJ) — invisible bytes that could otherwise
+	// smuggle meaning into the sample.
+	var b strings.Builder
+	b.Grow(len(s))
+	controlStripped := false
+	for _, r := range s {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			controlStripped = true
+			continue
+		}
+		b.WriteRune(r)
+	}
+	s = b.String()
+	if controlStripped {
+		addNote("control-stripped")
+	}
+
+	if len(s) > utils.UpstreamBodyLimit {
+		s = strings.ToValidUTF8(s[:utils.UpstreamBodyLimit], "") + "… (truncated)"
+		addNote("truncated")
+	}
+
+	if notes == nil {
+		notes = []string{}
+	}
+	return s, notes
+}
+
+// collectSampleBodies walks lines in order, transforms each via
+// sampleBodyForModel, skips lines that transform to empty, and returns up to
+// limit that are DISTINCT (not byte-identical after transform) — a simple
+// dedup, not shape clustering — along with the deduplicated, stable-ordered
+// union of notes across the returned lines.
+func collectSampleBodies(lines []string, limit int) (samples []string, notes []string) {
+	seenSamples := map[string]struct{}{}
+	seenNotes := map[string]struct{}{}
+	for _, line := range lines {
+		if len(samples) >= limit {
+			break
+		}
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		sample, lineNotes := sampleBodyForModel(line)
+		if sample == "" {
+			continue
+		}
+		if _, dup := seenSamples[sample]; dup {
+			continue
+		}
+		seenSamples[sample] = struct{}{}
+		samples = append(samples, sample)
+		for _, n := range lineNotes {
+			if _, ok := seenNotes[n]; ok {
+				continue
+			}
+			seenNotes[n] = struct{}{}
+			notes = append(notes, n)
+		}
+	}
+	return samples, notes
+}
 
 // safeBodyKeyPattern accepts only keys that embed safely into both the JSON
 // hint and the attributes['<key>'] accessor. Keys with quotes, spaces, or
@@ -373,18 +504,26 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 		if levelTSCount > 0 {
 			pattern, count, matchedLine = levelTimestampPattern, levelTSCount, firstLevelTSLine
 		}
-		sampleBody := utils.SanitizeUpstreamBody(matchedLine)
+		// Exactly one sample for the severity-token entry: the line that
+		// actually matched the emitted pattern, not just any sampled line.
+		sampleBody, sampleNotes := sampleBodyForModel(matchedLine)
 		if sampleBody == "" {
-			sampleBody = firstNonEmptySampleBody(lines)
+			if fallback, fallbackNotes := collectSampleBodies(lines, 1); len(fallback) > 0 {
+				sampleBody, sampleNotes = fallback[0], fallbackNotes
+			}
 		}
-		return []LogAttribute{{
+		attr := LogAttribute{
 			Name:           "level",
 			FilterField:    "attributes['level']",
 			Hint:           regexpBodyDerivedHint(pattern, "level", "<value>"),
 			Source:         "body",
 			SampleCoverage: fmt.Sprintf("%d/%d", count, len(lines)),
-			SampleBody:     sampleBody,
-		}}
+		}
+		if sampleBody != "" {
+			attr.SampleBodies = []string{sampleBody}
+			attr.SampleNotes = sampleNotes
+		}
+		return []LogAttribute{attr}
 	}
 
 	// Plaintext fallback: no recognized structure at all — the Body is
@@ -398,31 +537,18 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 	// (e.g. `[0-9]{3}`) would happily match a leading timestamp and return a
 	// confidently WRONG nonzero count, so no illustrative pattern is filled
 	// in beyond a generic placeholder.
-	if sampleBody := firstNonEmptySampleBody(lines); sampleBody != "" {
+	if samples, notes := collectSampleBodies(lines, maxSampleBodies); len(samples) > 0 {
 		return []LogAttribute{{
-			Name:        "body",
-			FilterField: "Body",
-			Source:      "body",
-			SampleBody:  sampleBody,
-			Hint:        plaintextBodyHint(),
+			Name:         "body",
+			FilterField:  "Body",
+			Source:       "body",
+			SampleBodies: samples,
+			SampleNotes:  notes,
+			Hint:         plaintextBodyHint(),
 		}}
 	}
 
 	return nil
-}
-
-// firstNonEmptySampleBody returns the redacted first non-blank line of
-// lines, or "" if every line is blank/whitespace-only.
-func firstNonEmptySampleBody(lines []string) string {
-	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		if s := utils.SanitizeUpstreamBody(line); s != "" {
-			return s
-		}
-	}
-	return ""
 }
 
 // extractSampleBodyLines pulls the raw Body line of each sampled log entry from
@@ -586,25 +712,26 @@ func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 	// must not be advertised alongside it.
 	//
 	// Exception to (a): the plaintext fallback entry (FilterField == "Body"
-	// with SampleBody != "") always duplicates the indexed "body" field (both
-	// map to filter_field "Body") — that's not a redundant copy, it's
+	// with len(SampleBodies) > 0) always duplicates the indexed "body" field
+	// (both map to filter_field "Body") — that's not a redundant copy, it's
 	// strictly more useful than the bare indexed entry. Rather than drop it,
 	// enrich the existing indexed "Body" entry in place with the fallback's
-	// Source/SampleBody/Hint so the model still sees the $regex hint and
-	// sample line, as a single entry (not two). Gated on FilterField ==
-	// "Body" specifically (not just SampleBody != "") because the severity-
-	// token entry also sets SampleBody but has FilterField
-	// "attributes['level']" — without this gate, an indexed field literally
-	// named "level" would get its bare $eq hint hijacked into a two-stage
-	// parse+filter hint pointing at Body, even though the indexed field is
-	// directly filterable.
+	// Source/SampleBodies/SampleNotes/Hint so the model still sees the
+	// $regex hint and sample lines, as a single entry (not two). Gated on
+	// FilterField == "Body" specifically (not just len(SampleBodies) > 0)
+	// because the severity-token entry also sets SampleBodies but has
+	// FilterField "attributes['level']" — without this gate, an indexed
+	// field literally named "level" would get its bare $eq hint hijacked
+	// into a two-stage parse+filter hint pointing at Body, even though the
+	// indexed field is directly filterable.
 	for _, attr := range <-bodyCh {
 		if _, dup := indexedFilterFields[attr.FilterField]; dup {
-			if attr.FilterField == "Body" && attr.SampleBody != "" {
+			if attr.FilterField == "Body" && len(attr.SampleBodies) > 0 {
 				for i := range out {
 					if out[i].FilterField == attr.FilterField {
 						out[i].Source = attr.Source
-						out[i].SampleBody = attr.SampleBody
+						out[i].SampleBodies = attr.SampleBodies
+						out[i].SampleNotes = attr.SampleNotes
 						out[i].Hint = attr.Hint
 						break
 					}

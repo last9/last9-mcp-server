@@ -230,13 +230,95 @@ func resultRowsEmpty(response map[string]interface{}) bool {
 }
 
 // zeroCountSanityBlock builds the l9_sanity block emitted when a $count
-// aggregate over a pipeline that parses or filters Body yields zero matches.
-// There is nothing to compare a zero against, so no PromQL baseline fetch
-// happens for this block.
+// aggregate over a pipeline that parses or filters Body yields zero matches
+// and the volume baseline could not be used to disambiguate (service name
+// not extractable, or the baseline fetch failed) — the ambiguous fallback
+// note, unchanged from before the service_log_volume discriminator existed.
 func zeroCountSanityBlock() map[string]interface{} {
 	return map[string]interface{}{
 		"matched_count": int64(0),
-		"note": "matched_count is 0 and the pipeline parses or filters Body — this is either a genuine zero (no matching rows in this window) or the parse stage / Body regex-or-contains not matching the Body's real format; call get_log_attributes_for_pipeline and inspect sample_body to confirm the actual shape before assuming either explanation. Note an unanchored regexp capture group can also match the wrong token (e.g. a leading timestamp) and return a confidently wrong nonzero count instead.",
+		"note": "matched_count is 0 and the pipeline parses or filters Body — this is either a genuine zero (no matching rows in this window) or the parse stage / Body regex-or-contains not matching the Body's real format; call get_log_attributes_for_pipeline and inspect sample_bodies to confirm the actual shape before assuming either explanation. Note an unanchored regexp capture group can also match the wrong token (e.g. a leading timestamp) and return a confidently wrong nonzero count instead.",
+	}
+}
+
+// serviceVolumeBaseline fetches the physical_index_service_count PromQL
+// baseline for service over a window of windowMinutes ending at endMs. It is
+// shared by the nonzero ratio path and the zero-path genuine-zero check.
+// queryOK is true whenever the query executed and returned a well-formed
+// instant-vector response — INCLUDING an empty series list, which is a
+// legitimate answer meaning the service has zero log volume (a service that
+// emitted nothing has no series in physical_index_service_count at all, so
+// the PromQL response is empty rather than carrying an explicit 0 sample).
+// queryOK is false only for a genuine failure to get an answer: HTTP error
+// status, transport error, or a decode failure — callers must treat that as
+// "could not determine", never as a volume of zero.
+func serviceVolumeBaseline(ctx context.Context, client *http.Client, cfg models.Config, service string, endMs int64, windowMinutes int64) (volume float64, queryOK bool) {
+	promql := fmt.Sprintf(`sum(sum_over_time(physical_index_service_count{service_name=%q}[%dm]))`, service, windowMinutes)
+
+	instantCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
+	defer cancel()
+	resp, err := MakePromInstantAPIQuery(instantCtx, client, promql, endMs/1000, cfg)
+	if err != nil {
+		return 0, false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, false
+	}
+
+	var instant []promInstantVectorPoint
+	if err := json.NewDecoder(resp.Body).Decode(&instant); err != nil {
+		return 0, false
+	}
+
+	for _, point := range instant {
+		if len(point.Value) != 2 {
+			continue
+		}
+		volume += promNumberFromAny(point.Value[1])
+	}
+	// An empty (or all-malformed-point) series list is still a well-formed
+	// "zero volume" answer, not a failure — queryOK is true regardless of
+	// whether the loop above added anything.
+	return volume, true
+}
+
+// zeroCountSanityBlockWithBaseline builds the l9_sanity block for a zero
+// count (or empty-result) match on a pipeline that parses or filters Body.
+// It tries to disambiguate a genuine zero (the service emitted no logs in
+// this window at all) from a parse/filter mismatch (logs existed but nothing
+// matched) using the same physical_index_service_count baseline the nonzero
+// path uses. Falls back to the ambiguous zeroCountSanityBlock note when the
+// service name can't be extracted to a single value or the baseline fetch
+// fails for any reason — this must never block or fail the tool.
+func zeroCountSanityBlockWithBaseline(ctx context.Context, client *http.Client, cfg models.Config, pipeline []map[string]interface{}, startMs, endMs int64) map[string]interface{} {
+	service, ok := ExtractSingleServiceName(pipeline)
+	if !ok {
+		return zeroCountSanityBlock()
+	}
+
+	windowMinutes := (endMs - startMs) / 60000
+	if windowMinutes < 1 {
+		windowMinutes = 1
+	}
+	volume, queryOK := serviceVolumeBaseline(ctx, client, cfg, service, endMs, windowMinutes)
+	if !queryOK {
+		return zeroCountSanityBlock()
+	}
+
+	if volume == 0 {
+		return map[string]interface{}{
+			"matched_count":      int64(0),
+			"service_log_volume": float64(0),
+			"note":               "matched_count is 0 and service_log_volume is 0 — the service emitted no logs at all in this window. This is a genuine zero, not a parse/filter mismatch; there is nothing to inspect via get_log_attributes_for_pipeline for this window.",
+		}
+	}
+
+	return map[string]interface{}{
+		"matched_count":      int64(0),
+		"service_log_volume": volume,
+		"note":               "matched_count is 0 but service_log_volume shows the service emitted logs in this window — the pipeline parses or filters Body and the parse stage / Body regex-or-contains is likely not matching the Body's real format; call get_log_attributes_for_pipeline and inspect sample_bodies to confirm the actual shape. Note an unanchored regexp capture group can also match the wrong token (e.g. a leading timestamp) and return a confidently wrong nonzero count instead.",
 	}
 }
 
@@ -244,12 +326,13 @@ func zeroCountSanityBlock() map[string]interface{} {
 // comparing a $count aggregate's matched_count against the service's total
 // log volume over the same window (physical_index_service_count). It also
 // covers a zero-count case where the pipeline parses or filters Body (see
-// zeroCountSanityBlock): a zero match count then gets the same
-// self-correcting note without a PromQL baseline fetch (nothing to compare a
-// zero against), and — unlike the nonzero ratio path — does not require the
-// pipeline to scope a single service, since it never fetches a baseline. On
-// any other failure to determine a single service (nonzero path only), parse
-// the matched count, or fetch/parse the baseline, it returns response
+// zeroCountSanityBlockWithBaseline): a zero match count attempts the same
+// service_log_volume baseline to tell a genuine zero (service emitted no
+// logs at all) apart from a parse/filter mismatch (logs existed but nothing
+// matched), falling back to the ambiguous zeroCountSanityBlock note when the
+// service can't be resolved to a single value or the baseline fetch fails.
+// On any other failure to determine a single service (nonzero path only),
+// parse the matched count, or fetch/parse the baseline, it returns response
 // unchanged. Never blocks or alters the underlying result.
 func AppendCountSanity(ctx context.Context, client *http.Client, cfg models.Config, pipeline []map[string]interface{}, startMs, endMs int64, response map[string]interface{}) map[string]interface{} {
 	if !HasCountAggregateStage(pipeline) {
@@ -273,7 +356,7 @@ func AppendCountSanity(ctx context.Context, client *http.Client, cfg models.Conf
 		// genuinely empty result set — !ok also occurs when rows exist but
 		// no count alias could be parsed, which must stay untouched.
 		if touchesBody && resultRowsEmpty(response) {
-			response["l9_sanity"] = zeroCountSanityBlock()
+			response["l9_sanity"] = zeroCountSanityBlockWithBaseline(ctx, client, cfg, pipeline, startMs, endMs)
 			return response
 		}
 		return response
@@ -284,21 +367,23 @@ func AppendCountSanity(ctx context.Context, client *http.Client, cfg models.Conf
 		// wrong/silent zero" failure this guardrail exists to catch. When
 		// the pipeline parses or filters Body, the most likely explanation is
 		// that the parser/regex doesn't match the Body's real shape (e.g. a
-		// JSON parser against a plaintext Body), so flag it — but there is
-		// nothing to compare a zero against, so skip the PromQL baseline
-		// fetch entirely. Without any Body involvement (a plain filter on
-		// indexed fields matching zero rows), a true zero is unremarkable —
-		// leave response untouched exactly as before.
+		// JSON parser against a plaintext Body) — but it could also be a
+		// genuine zero, so attempt the same service_log_volume baseline the
+		// nonzero path uses to disambiguate (see
+		// zeroCountSanityBlockWithBaseline). Without any Body involvement (a
+		// plain filter on indexed fields matching zero rows), a true zero is
+		// unremarkable — leave response untouched exactly as before.
 		if !touchesBody {
 			return response
 		}
-		response["l9_sanity"] = zeroCountSanityBlock()
+		response["l9_sanity"] = zeroCountSanityBlockWithBaseline(ctx, client, cfg, pipeline, startMs, endMs)
 		return response
 	}
 
 	// Nonzero path only, from here: needs a single scoped service to fetch a
-	// PromQL baseline for the ratio. The zero paths above don't need it —
-	// they emit no ratio and do no PromQL fetch.
+	// PromQL baseline for the ratio. The zero paths above don't need a
+	// resolved service to proceed — zeroCountSanityBlockWithBaseline falls
+	// back to the ambiguous note when it can't extract one.
 	service, ok := ExtractSingleServiceName(pipeline)
 	if !ok {
 		return response
@@ -308,35 +393,8 @@ func AppendCountSanity(ctx context.Context, client *http.Client, cfg models.Conf
 	if windowMinutes < 1 {
 		windowMinutes = 1
 	}
-	promql := fmt.Sprintf(`sum(sum_over_time(physical_index_service_count{service_name=%q}[%dm]))`, service, windowMinutes)
-
-	instantCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
-	defer cancel()
-	resp, err := MakePromInstantAPIQuery(instantCtx, client, promql, endMs/1000, cfg)
-	if err != nil {
-		return response
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return response
-	}
-
-	var instant []promInstantVectorPoint
-	if err := json.NewDecoder(resp.Body).Decode(&instant); err != nil {
-		return response
-	}
-
-	var volume float64
-	found := false
-	for _, point := range instant {
-		if len(point.Value) != 2 {
-			continue
-		}
-		volume += promNumberFromAny(point.Value[1])
-		found = true
-	}
-	if !found || volume <= 0 {
+	volume, queryOK := serviceVolumeBaseline(ctx, client, cfg, service, endMs, windowMinutes)
+	if !queryOK || volume <= 0 {
 		return response
 	}
 

@@ -450,8 +450,8 @@ func TestGetLogAttributesForPipeline_BodyNotJSON(t *testing.T) {
 	if entry.Name != "body" || entry.FilterField != "Body" {
 		t.Errorf("expected fallback entry name=body filter_field=Body, got: %+v", entry)
 	}
-	if entry.SampleBody == "" {
-		t.Errorf("expected non-empty sample_body, got: %+v", entry)
+	if len(entry.SampleBodies) == 0 {
+		t.Errorf("expected non-empty sample_bodies, got: %+v", entry)
 	}
 	if !strings.Contains(entry.Hint, "$regex") {
 		t.Errorf("expected hint to contain $regex, got: %s", entry.Hint)
@@ -464,11 +464,11 @@ func TestGetLogAttributesForPipeline_BodyNotJSON(t *testing.T) {
 // TestGetLogAttributesForPipeline_IndexedLevelFieldNotHijackedBySeverityToken
 // verifies the merge's enrich exception is scoped to the plaintext Body
 // fallback entry (FilterField == "Body"), not any entry with a non-empty
-// SampleBody. A service whose indexed series contains a field literally named
-// "level" AND whose sampled Body matches a plaintext severity token must keep
-// its indexed level entry's bare $eq hint — not have it overwritten with the
-// severity-token entry's two-stage parse+filter regexp hint/Source:"body"/
-// sample_body.
+// SampleBodies. A service whose indexed series contains a field literally
+// named "level" AND whose sampled Body matches a plaintext severity token must
+// keep its indexed level entry's bare $eq hint — not have it overwritten with
+// the severity-token entry's two-stage parse+filter regexp hint/Source:"body"/
+// sample_bodies.
 func TestGetLogAttributesForPipeline_IndexedLevelFieldNotHijackedBySeverityToken(t *testing.T) {
 	series := `{"status":"success","data":[{"service":"gw","level":"INFO"}]}`
 	samples := []string{
@@ -498,8 +498,8 @@ func TestGetLogAttributesForPipeline_IndexedLevelFieldNotHijackedBySeverityToken
 	if level.Source == "body" {
 		t.Errorf("indexed level entry must not be tagged source=body, got: %+v", level)
 	}
-	if level.SampleBody != "" {
-		t.Errorf("indexed level entry must not carry sample_body, got: %+v", level)
+	if len(level.SampleBodies) != 0 {
+		t.Errorf("indexed level entry must not carry sample_bodies, got: %+v", level)
 	}
 
 	// Exactly one "level" entry — the body-derived duplicate is dropped
@@ -565,9 +565,10 @@ func TestGetLogAttributesForPipeline_LogfmtBody(t *testing.T) {
 
 // TestGetLogAttributesForPipeline_SeverityTokenSampleBodyIsMatchedLine
 // verifies that when the first non-blank sampled line does NOT carry a
-// severity token but a later line does, sample_body on the severity-token
-// entry is the line that actually matched the emitted pattern — not just the
-// first non-blank line (which could visibly contain no level at all).
+// severity token but a later line does, sample_bodies on the severity-token
+// entry is a single-element slice containing the line that actually matched
+// the emitted pattern — not just the first non-blank line (which could
+// visibly contain no level at all).
 func TestGetLogAttributesForPipeline_SeverityTokenSampleBodyIsMatchedLine(t *testing.T) {
 	series := `{"status":"success","data":[{"service":"foo-service"}]}`
 	samples := []string{
@@ -591,8 +592,8 @@ func TestGetLogAttributesForPipeline_SeverityTokenSampleBodyIsMatchedLine(t *tes
 	if level == nil {
 		t.Fatalf("expected body-derived 'level', got: %v", attrs)
 	}
-	if level.SampleBody != samples[1] {
-		t.Errorf("expected sample_body to be the line that matched the level pattern, got: %q, want: %q", level.SampleBody, samples[1])
+	if len(level.SampleBodies) != 1 || level.SampleBodies[0] != samples[1] {
+		t.Errorf("expected sample_bodies to be [the line that matched the level pattern], got: %v, want: [%q]", level.SampleBodies, samples[1])
 	}
 }
 
@@ -632,8 +633,8 @@ func TestGetLogAttributesForPipeline_PlaintextInlineLevel(t *testing.T) {
 	if level.FilterField != "attributes['level']" {
 		t.Errorf("level: expected filter_field attributes['level'], got %q", level.FilterField)
 	}
-	if level.SampleBody == "" {
-		t.Errorf("level: expected non-empty sample_body on the severity-token entry, got: %+v", level)
+	if len(level.SampleBodies) != 1 {
+		t.Errorf("level: expected exactly one sample_body on the severity-token entry, got: %+v", level)
 	}
 
 	// Extract the pattern from the hint and confirm it actually matches an
@@ -748,8 +749,8 @@ func TestGetLogAttributesForPipeline_UnstructuredNoLevel(t *testing.T) {
 	if entry == nil || entry.Source != "body" {
 		t.Fatalf("expected plaintext body fallback entry, got: %+v", attrs)
 	}
-	if entry.SampleBody == "" {
-		t.Errorf("expected non-empty sample_body, got: %+v", entry)
+	if len(entry.SampleBodies) == 0 {
+		t.Errorf("expected non-empty sample_bodies, got: %+v", entry)
 	}
 }
 
@@ -758,7 +759,7 @@ func TestGetLogAttributesForPipeline_UnstructuredNoLevel(t *testing.T) {
 // where the series catalog for a plaintext-Body service already returns a
 // "body" field (-> filter_field "Body", same as the fallback's filter_field).
 // The merge must enrich that single indexed entry with the fallback's
-// Source/SampleBody/$regex hint rather than treat it as a redundant
+// Source/SampleBodies/$regex hint rather than treat it as a redundant
 // duplicate — exactly one "Body" entry must survive, carrying the $regex
 // hint (not the bare $eq hint).
 func TestGetLogAttributesForPipeline_PlaintextFallbackSurvivesIndexedBodyDup(t *testing.T) {
@@ -787,8 +788,8 @@ func TestGetLogAttributesForPipeline_PlaintextFallbackSurvivesIndexedBodyDup(t *
 		t.Fatalf("expected exactly one filter_field=Body entry, got %d: %+v", len(bodyFieldEntries), bodyFieldEntries)
 	}
 	entry := bodyFieldEntries[0]
-	if entry.SampleBody == "" {
-		t.Errorf("expected non-empty sample_body on the merged Body entry, got: %+v", entry)
+	if len(entry.SampleBodies) == 0 {
+		t.Errorf("expected non-empty sample_bodies on the merged Body entry, got: %+v", entry)
 	}
 	if !strings.Contains(entry.Hint, "$regex") {
 		t.Errorf("expected merged Body entry hint to contain $regex, got: %s", entry.Hint)
@@ -847,12 +848,12 @@ func TestGetLogAttributesForPipeline_LogfmtProseRejected(t *testing.T) {
 		}
 	}
 	// Regression guard: no Source=="body" entry may be a fabricated
-	// parse-hint body-derived key (empty SampleBody) — a future regression
+	// parse-hint body-derived key (empty SampleBodies) — a future regression
 	// fabricating a DIFFERENTLY-NAMED logfmt key must still be caught here.
 	// The legitimate plaintext fallback entry (also Source=="body") is
-	// exempted because it carries a non-empty SampleBody.
+	// exempted because it carries non-empty SampleBodies.
 	for _, a := range attrs {
-		if a.Source == "body" && a.SampleBody == "" {
+		if a.Source == "body" && len(a.SampleBodies) == 0 {
 			t.Errorf("prose with incidental key=value must not yield any body-derived parse-hint field, got: %+v", a)
 		}
 	}
@@ -860,8 +861,8 @@ func TestGetLogAttributesForPipeline_LogfmtProseRejected(t *testing.T) {
 	if entry == nil || entry.Source != "body" {
 		t.Fatalf("expected plaintext body fallback entry, got: %+v", attrs)
 	}
-	if entry.SampleBody == "" {
-		t.Errorf("expected plaintext fallback entry to carry a non-empty sample_body, got: %+v", entry)
+	if len(entry.SampleBodies) == 0 {
+		t.Errorf("expected plaintext fallback entry to carry non-empty sample_bodies, got: %+v", entry)
 	}
 }
 
@@ -1022,14 +1023,17 @@ func TestGetLogAttributesForPipeline_InvalidPipelineRejectsBeforeHTTP(t *testing
 	}
 }
 
-// TestFirstNonEmptySampleBody_URLRedacted verifies the returned sample_body
-// runs through utils.SanitizeUpstreamBody — a scheme://URL is replaced with
-// the redaction marker and the original URL never appears. This test must
-// fail if the SanitizeUpstreamBody call is removed from
-// firstNonEmptySampleBody.
+// TestFirstNonEmptySampleBody_URLRedacted verifies the returned sample body
+// runs through sampleBodyForModel — a scheme://URL is replaced with the
+// redaction marker and the original URL never appears. This test must fail
+// if the URL redaction is removed from collectSampleBodies.
 func TestFirstNonEmptySampleBody_URLRedacted(t *testing.T) {
 	lines := []string{"GET https://example.com/secret?token=abc 200"}
-	got := firstNonEmptySampleBody(lines)
+	samples, _ := collectSampleBodies(lines, 1)
+	if len(samples) != 1 {
+		t.Fatalf("expected exactly one sample, got: %v", samples)
+	}
+	got := samples[0]
 	if !strings.Contains(got, "[redacted-url]") {
 		t.Errorf("expected sample body to contain the redacted-url marker, got: %q", got)
 	}
@@ -1039,13 +1043,13 @@ func TestFirstNonEmptySampleBody_URLRedacted(t *testing.T) {
 }
 
 // TestFirstNonEmptySampleBody_SkipsLineThatSanitizesToEmpty verifies that a
-// line which is non-blank per strings.TrimSpace but sanitizes to "" (e.g. a
+// line which is non-blank per strings.TrimSpace but transforms to "" (e.g. a
 // bare control character) is skipped in favor of a later, usable line —
 // rather than returning "" and suppressing the entry.
 func TestFirstNonEmptySampleBody_SkipsLineThatSanitizesToEmpty(t *testing.T) {
 	lines := []string{"\x01", "usable later line"}
-	got := firstNonEmptySampleBody(lines)
-	if got != "usable later line" {
-		t.Errorf("expected fallback to the later usable line, got: %q", got)
+	samples, _ := collectSampleBodies(lines, 1)
+	if len(samples) != 1 || samples[0] != "usable later line" {
+		t.Errorf("expected fallback to the later usable line, got: %v", samples)
 	}
 }
