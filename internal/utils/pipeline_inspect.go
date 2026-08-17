@@ -38,6 +38,17 @@ func PipelineHasAggregateStage(pipeline []map[string]interface{}) bool {
 	return false
 }
 
+// hasParseStage reports whether pipeline contains a stage whose "type" is
+// "parse".
+func hasParseStage(pipeline []map[string]interface{}) bool {
+	for _, stage := range pipeline {
+		if stageType, _ := stage["type"].(string); stageType == "parse" {
+			return true
+		}
+	}
+	return false
+}
+
 // HasJSONParsePipeline mirrors frontend hasJSONParsePipeline in
 // adaptive-chunk-loader.ts:31 — true if any stage is a JSON parse.
 func HasJSONParsePipeline(pipeline []map[string]any) bool {

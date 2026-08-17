@@ -41,10 +41,11 @@ type logSeriesResponse struct {
 // logjson filter condition. Body-derived entries (source "body") exist only
 // inside the log Body as JSON: their filter_field is valid only after the parse
 // stage shown in the hint, and sample_coverage reports in how many of the
-// sampled rows the key appeared. sample_body is set only for the plaintext
-// fallback entry (Body has no recognized JSON/logfmt/severity structure): a
-// redacted sample line so the model can anchor a $regex to the real shape
-// instead of guessing a parser.
+// sampled rows the key appeared. sample_body is set for the severity-token
+// entry (a redacted sample line alongside the level regexp hint) and for the
+// plaintext fallback entry (Body has no recognized JSON/logfmt/severity
+// structure): a redacted sample line so the model can anchor a $regex to the
+// real shape instead of guessing a parser.
 type LogAttribute struct {
 	Name           string `json:"name"`
 	FilterField    string `json:"filter_field"`
@@ -110,17 +111,20 @@ func regexpBodyDerivedHint(pattern, key, exampleValue string) string {
 	return string(b)
 }
 
+// plaintextBodyPatternPlaceholder is the placeholder pattern in
+// plaintextBodyHint's example — the model must replace it with a pattern
+// anchored to the real sample_body shape, never use it verbatim.
+const plaintextBodyPatternPlaceholder = "<your-pattern>"
+
 // plaintextBodyHint renders a ONE-stage example that filters Body directly
 // with $regex — no parse stage — for a Body that has no recognized
 // structure (neither JSON, logfmt, nor a severity token). Anchoring the
 // regex against the real sample_body shape (rather than guessing a parser)
 // is the point: an unanchored numeric capture like `[0-9]{3}` can match a
 // leading timestamp instead of the intended field.
-func plaintextBodyHint(pattern string) string {
+func plaintextBodyHint() string {
 	stages := []map[string]interface{}{
-		{"type": "filter", "query": map[string]interface{}{"$and": []interface{}{
-			map[string]interface{}{"$regex": []string{"Body", pattern}},
-		}}},
+		{"type": "filter", "query": map[string]interface{}{"$regex": []string{"Body", plaintextBodyPatternPlaceholder}}},
 	}
 	b, err := json.Marshal(stages)
 	if err != nil {
@@ -365,6 +369,7 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 			Hint:           regexpBodyDerivedHint(pattern, "level", "<value>"),
 			Source:         "body",
 			SampleCoverage: fmt.Sprintf("%d/%d", count, len(lines)),
+			SampleBody:     firstNonEmptySampleBody(lines),
 		}}
 	}
 
@@ -378,21 +383,29 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 	// (e.g. `[0-9]{3}`) would happily match a leading timestamp and return a
 	// confidently WRONG nonzero count, so no illustrative pattern is filled
 	// in beyond a generic placeholder.
-	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
+	if sampleBody := firstNonEmptySampleBody(lines); sampleBody != "" {
 		return []LogAttribute{{
-			Name:           "body",
-			FilterField:    "Body",
-			Source:         "body",
-			SampleCoverage: fmt.Sprintf("%d/%d", len(lines), len(lines)),
-			SampleBody:     utils.SanitizeUpstreamBody(line),
-			Hint:           plaintextBodyHint(`<your-pattern>`),
+			Name:        "body",
+			FilterField: "Body",
+			Source:      "body",
+			SampleBody:  sampleBody,
+			Hint:        plaintextBodyHint(),
 		}}
 	}
 
 	return nil
+}
+
+// firstNonEmptySampleBody returns the redacted first non-blank line of
+// lines, or "" if every line is blank/whitespace-only.
+func firstNonEmptySampleBody(lines []string) string {
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		return utils.SanitizeUpstreamBody(line)
+	}
+	return ""
 }
 
 // extractSampleBodyLines pulls the raw Body line of each sampled log entry from

@@ -545,6 +545,9 @@ func TestGetLogAttributesForPipeline_PlaintextInlineLevel(t *testing.T) {
 	if level.FilterField != "attributes['level']" {
 		t.Errorf("level: expected filter_field attributes['level'], got %q", level.FilterField)
 	}
+	if level.SampleBody == "" {
+		t.Errorf("level: expected non-empty sample_body on the severity-token entry, got: %+v", level)
+	}
 
 	// Extract the pattern from the hint and confirm it actually matches an
 	// ERROR line from the sample, and that the hint is a ready-to-use
@@ -756,9 +759,22 @@ func TestGetLogAttributesForPipeline_LogfmtProseRejected(t *testing.T) {
 			t.Errorf("prose with incidental key=value must not yield logfmt-derived field %q, got: %+v", key, attrs)
 		}
 	}
+	// Regression guard: no Source=="body" entry may be a fabricated
+	// parse-hint body-derived key (empty SampleBody) — a future regression
+	// fabricating a DIFFERENTLY-NAMED logfmt key must still be caught here.
+	// The legitimate plaintext fallback entry (also Source=="body") is
+	// exempted because it carries a non-empty SampleBody.
+	for _, a := range attrs {
+		if a.Source == "body" && a.SampleBody == "" {
+			t.Errorf("prose with incidental key=value must not yield any body-derived parse-hint field, got: %+v", a)
+		}
+	}
 	entry := attrByName(attrs, "body")
 	if entry == nil || entry.Source != "body" {
 		t.Fatalf("expected plaintext body fallback entry, got: %+v", attrs)
+	}
+	if entry.SampleBody == "" {
+		t.Errorf("expected plaintext fallback entry to carry a non-empty sample_body, got: %+v", entry)
 	}
 }
 

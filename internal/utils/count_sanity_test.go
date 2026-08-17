@@ -357,7 +357,7 @@ func TestAppendCountSanity_RatioBoundaryExactly5PctHasEmptyNote(t *testing.T) {
 	}
 }
 
-func TestAppendCountSanity_ZeroMatchedSkipsAndNoPromCall(t *testing.T) {
+func TestAppendCountSanity_ZeroMatchedNoParseStageSkipsAndNoPromCall(t *testing.T) {
 	srv, calls := promVolumeServer(t, 1000)
 	defer srv.Close()
 
@@ -452,43 +452,106 @@ func TestAppendCountSanity_ZeroMatchedWithParseStageAddsSanityNote(t *testing.T)
 	}
 }
 
-// TestAppendCountSanity_ZeroMatchedNoParseStageUntouched verifies a zero
-// count from a pipeline WITHOUT a parse stage (a plain filter matching no
-// rows) is unremarkable and leaves response untouched, same as before this
-// change — matches TestAppendCountSanity_ZeroMatchedSkipsAndNoPromCall above.
-func TestAppendCountSanity_ZeroMatchedNoParseStageUntouched(t *testing.T) {
+// TestAppendCountSanity_ZeroMatchedGroupbyEmptyResultAddsSanityNote verifies
+// the empty-result-set shape a groupby'd $count with zero matches actually
+// takes (data.result: []), as opposed to a single zero-valued row, still gets
+// the same zero-count l9_sanity block when the pipeline has a parse stage.
+func TestAppendCountSanity_ZeroMatchedGroupbyEmptyResultAddsSanityNote(t *testing.T) {
 	srv, calls := promVolumeServer(t, 1000)
 	defer srv.Close()
 
 	cfg := sanityTestCfg(t, srv.URL)
-	pipeline := countAggregatePipeline("orders-service")
-	response := aggregateCountResponse("_count", float64(0))
+	pipeline := []map[string]interface{}{
+		{
+			"type": "filter",
+			"query": map[string]interface{}{
+				"$eq": []interface{}{"ServiceName", "orders-service"},
+			},
+		},
+		{
+			"type":   "parse",
+			"parser": "json",
+			"field":  "Body",
+		},
+		{
+			"type": "aggregate",
+			"aggregates": []interface{}{
+				map[string]interface{}{
+					"function": map[string]interface{}{"$count": []interface{}{}},
+					"as":       "_count",
+				},
+			},
+			"groupby": map[string]interface{}{"ServiceName": "service"},
+		},
+	}
+	response := map[string]interface{}{
+		"data": map[string]interface{}{
+			"resultType": "matrix",
+			"result":     []interface{}{},
+		},
+	}
 
 	got := AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 480*60*1000, response)
-	if _, ok := got["l9_sanity"]; ok {
-		t.Fatal("expected no l9_sanity block for zero count without a parse stage")
+
+	sanity, ok := got["l9_sanity"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected l9_sanity block for empty result set with a parse stage, got %#v", got)
+	}
+	if sanity["matched_count"] != int64(0) {
+		t.Errorf("matched_count = %v, want 0", sanity["matched_count"])
+	}
+	if note, _ := sanity["note"].(string); note == "" {
+		t.Error("expected non-empty note for empty result set with a parse stage")
 	}
 	if *calls != 0 {
-		t.Errorf("expected no prometheus call, got %d", *calls)
+		t.Errorf("expected no prometheus baseline call for an empty result set, got %d", *calls)
 	}
 }
 
-// TestHasParseStage locks the exported helper's contract directly.
-func TestHasParseStage(t *testing.T) {
-	cases := []struct {
-		name     string
-		pipeline []map[string]interface{}
-		want     bool
-	}{
-		{"nil pipeline", nil, false},
-		{"filter only", []map[string]interface{}{{"type": "filter"}}, false},
-		{"has parse", []map[string]interface{}{{"type": "filter"}, {"type": "parse", "parser": "json"}}, true},
-		{"aggregate only", []map[string]interface{}{{"type": "aggregate"}}, false},
+// TestAppendCountSanity_UnparsableCountRowsNotEmptyResultStaysUntouched
+// verifies the CRITICAL distinction: !ok can also occur when result rows
+// exist but no row carries a parseable count alias (e.g. every "metric" field
+// is a group-by label string, not the count). That must stay untouched, not
+// be misread as the empty-result-set shape.
+func TestAppendCountSanity_UnparsableCountRowsNotEmptyResultStaysUntouched(t *testing.T) {
+	srv, calls := promVolumeServer(t, 1000)
+	defer srv.Close()
+
+	cfg := sanityTestCfg(t, srv.URL)
+	pipeline := []map[string]interface{}{
+		{
+			"type": "filter",
+			"query": map[string]interface{}{
+				"$eq": []interface{}{"ServiceName", "orders-service"},
+			},
+		},
+		{
+			"type":   "parse",
+			"parser": "json",
+			"field":  "Body",
+		},
+		{
+			"type": "aggregate",
+			"aggregates": []interface{}{
+				map[string]interface{}{
+					"function": map[string]interface{}{"$count": []interface{}{}},
+					"as":       "_count",
+				},
+			},
+		},
 	}
-	for _, c := range cases {
-		if got := HasParseStage(c.pipeline); got != c.want {
-			t.Errorf("HasParseStage(%s) = %v, want %v", c.name, got, c.want)
-		}
+	// Row exists, but "metric" carries only a string label — no numeric
+	// "_count" field to sum.
+	response := aggregateMixedMetricResponse(map[string]any{
+		"service": "orders-service",
+	})
+
+	got := AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 480*60*1000, response)
+	if _, ok := got["l9_sanity"]; ok {
+		t.Fatal("expected no l9_sanity block when rows exist but no count alias could be parsed")
+	}
+	if *calls != 0 {
+		t.Errorf("expected no prometheus call, got %d", *calls)
 	}
 }
 
