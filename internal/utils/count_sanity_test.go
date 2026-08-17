@@ -400,6 +400,98 @@ func TestAppendCountSanity_PromValueStringShape(t *testing.T) {
 	}
 }
 
+// TestAppendCountSanity_ZeroMatchedWithParseStageAddsSanityNote verifies the
+// most suspicious outcome — a zero count from a pipeline with a parse stage —
+// still gets an l9_sanity block (self-correcting note pointing at
+// get_log_attributes_for_pipeline's sample_body), without a PromQL baseline
+// fetch since there is nothing to compare a zero against.
+func TestAppendCountSanity_ZeroMatchedWithParseStageAddsSanityNote(t *testing.T) {
+	srv, calls := promVolumeServer(t, 1000)
+	defer srv.Close()
+
+	cfg := sanityTestCfg(t, srv.URL)
+	pipeline := []map[string]interface{}{
+		{
+			"type": "filter",
+			"query": map[string]interface{}{
+				"$eq": []interface{}{"ServiceName", "orders-service"},
+			},
+		},
+		{
+			"type":   "parse",
+			"parser": "json",
+			"field":  "Body",
+		},
+		{
+			"type": "aggregate",
+			"aggregates": []interface{}{
+				map[string]interface{}{
+					"function": map[string]interface{}{"$count": []interface{}{}},
+					"as":       "_count",
+				},
+			},
+		},
+	}
+	response := aggregateCountResponse("_count", float64(0))
+
+	got := AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 480*60*1000, response)
+
+	sanity, ok := got["l9_sanity"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected l9_sanity block for zero count with a parse stage, got %#v", got)
+	}
+	if sanity["matched_count"] != int64(0) {
+		t.Errorf("matched_count = %v, want 0", sanity["matched_count"])
+	}
+	note, _ := sanity["note"].(string)
+	if note == "" {
+		t.Fatal("expected non-empty note for zero count with a parse stage")
+	}
+	if *calls != 0 {
+		t.Errorf("expected no prometheus baseline call for a zero count, got %d", *calls)
+	}
+}
+
+// TestAppendCountSanity_ZeroMatchedNoParseStageUntouched verifies a zero
+// count from a pipeline WITHOUT a parse stage (a plain filter matching no
+// rows) is unremarkable and leaves response untouched, same as before this
+// change — matches TestAppendCountSanity_ZeroMatchedSkipsAndNoPromCall above.
+func TestAppendCountSanity_ZeroMatchedNoParseStageUntouched(t *testing.T) {
+	srv, calls := promVolumeServer(t, 1000)
+	defer srv.Close()
+
+	cfg := sanityTestCfg(t, srv.URL)
+	pipeline := countAggregatePipeline("orders-service")
+	response := aggregateCountResponse("_count", float64(0))
+
+	got := AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 480*60*1000, response)
+	if _, ok := got["l9_sanity"]; ok {
+		t.Fatal("expected no l9_sanity block for zero count without a parse stage")
+	}
+	if *calls != 0 {
+		t.Errorf("expected no prometheus call, got %d", *calls)
+	}
+}
+
+// TestHasParseStage locks the exported helper's contract directly.
+func TestHasParseStage(t *testing.T) {
+	cases := []struct {
+		name     string
+		pipeline []map[string]interface{}
+		want     bool
+	}{
+		{"nil pipeline", nil, false},
+		{"filter only", []map[string]interface{}{{"type": "filter"}}, false},
+		{"has parse", []map[string]interface{}{{"type": "filter"}, {"type": "parse", "parser": "json"}}, true},
+		{"aggregate only", []map[string]interface{}{{"type": "aggregate"}}, false},
+	}
+	for _, c := range cases {
+		if got := HasParseStage(c.pipeline); got != c.want {
+			t.Errorf("HasParseStage(%s) = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
 func TestAppendCountSanity_PromQueryEscapesServiceName(t *testing.T) {
 	svc := `orders"service`
 	srv, _ := promVolumeServerAssert(t, 1000, func(t *testing.T, r *http.Request) {

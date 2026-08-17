@@ -415,8 +415,11 @@ func TestGetLogAttributesForPipeline_SeverityFamilyDedup(t *testing.T) {
 	}
 }
 
-// TestGetLogAttributesForPipeline_BodyNotJSON verifies plain-text bodies yield
-// no derived fields and no error.
+// TestGetLogAttributesForPipeline_BodyNotJSON verifies a plain-text Body that
+// is neither JSON, logfmt, nor carries a severity token falls through to the
+// plaintext fallback: exactly one "body" entry with a redacted sample_body
+// and a $regex-on-Body hint (no parse stage) — never a silent zero-shape
+// response and never a fabricated parser hint.
 func TestGetLogAttributesForPipeline_BodyNotJSON(t *testing.T) {
 	series := `{"status":"success","data":[{"service":"gw","status_code":"500"}]}`
 	samples := []string{`100.65.18.112 GET /v1/orders 500`, `plain text line`}
@@ -432,10 +435,29 @@ func TestGetLogAttributesForPipeline_BodyNotJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
-	for _, a := range decodeLogAttributes(t, res) {
+	attrs := decodeLogAttributes(t, res)
+
+	var bodyEntries []LogAttribute
+	for _, a := range attrs {
 		if a.Source == "body" {
-			t.Errorf("expected no body-derived fields for non-JSON bodies, got: %+v", a)
+			bodyEntries = append(bodyEntries, a)
 		}
+	}
+	if len(bodyEntries) != 1 {
+		t.Fatalf("expected exactly one plaintext body-fallback entry, got %d: %+v", len(bodyEntries), bodyEntries)
+	}
+	entry := bodyEntries[0]
+	if entry.Name != "body" || entry.FilterField != "Body" {
+		t.Errorf("expected fallback entry name=body filter_field=Body, got: %+v", entry)
+	}
+	if entry.SampleBody == "" {
+		t.Errorf("expected non-empty sample_body, got: %+v", entry)
+	}
+	if !strings.Contains(entry.Hint, "$regex") {
+		t.Errorf("expected hint to contain $regex, got: %s", entry.Hint)
+	}
+	if strings.Contains(entry.Hint, "parser") {
+		t.Errorf("expected hint to NOT contain a parse stage, got: %s", entry.Hint)
 	}
 }
 
@@ -607,8 +629,9 @@ func TestGetLogAttributesForPipeline_PlaintextBracketOrStartLevel(t *testing.T) 
 
 // TestGetLogAttributesForPipeline_UnstructuredNoLevel verifies a plaintext
 // Body with no logfmt pairs and no recognizable severity token yields no
-// fabricated body-derived fields — including URL path segments and prose that
-// contain severity words mid-line (the old bare-token false-positive surface).
+// fabricated "level" field — including URL path segments and prose that
+// contain severity words mid-line (the old bare-token false-positive surface)
+// — and instead falls through to the plaintext $regex-on-Body fallback.
 func TestGetLogAttributesForPipeline_UnstructuredNoLevel(t *testing.T) {
 	series := `{"status":"success","data":[{"service":"foo-service"}]}`
 	samples := []string{
@@ -627,15 +650,92 @@ func TestGetLogAttributesForPipeline_UnstructuredNoLevel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
+	attrs := decodeLogAttributes(t, res)
+	if attrByName(attrs, "level") != nil {
+		t.Errorf("expected no fabricated 'level' field, got: %+v", attrs)
+	}
+	entry := attrByName(attrs, "body")
+	if entry == nil || entry.Source != "body" {
+		t.Fatalf("expected plaintext body fallback entry, got: %+v", attrs)
+	}
+	if entry.SampleBody == "" {
+		t.Errorf("expected non-empty sample_body, got: %+v", entry)
+	}
+}
+
+// TestGetLogAttributesForPipeline_PlaintextFallbackSurvivesIndexedBodyDup
+// verifies the plaintext fallback is not silently dropped in production,
+// where the series catalog for a plaintext-Body service already returns a
+// "body" field (-> filter_field "Body", same as the fallback's filter_field).
+// The merge must enrich that single indexed entry with the fallback's
+// Source/SampleBody/$regex hint rather than treat it as a redundant
+// duplicate — exactly one "Body" entry must survive, carrying the $regex
+// hint (not the bare $eq hint).
+func TestGetLogAttributesForPipeline_PlaintextFallbackSurvivesIndexedBodyDup(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"gw","body":"..."}]}`
+	samples := []string{`100.65.18.112 GET /v1/orders 500`, `plain text line`}
+	server := bodySamplingServer(t, series, samples, nil)
+	defer server.Close()
+
+	cfg := testAttrConfig(server.URL)
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	attrs := decodeLogAttributes(t, res)
+
+	var bodyFieldEntries []LogAttribute
+	for _, a := range attrs {
+		if a.FilterField == "Body" {
+			bodyFieldEntries = append(bodyFieldEntries, a)
+		}
+	}
+	if len(bodyFieldEntries) != 1 {
+		t.Fatalf("expected exactly one filter_field=Body entry, got %d: %+v", len(bodyFieldEntries), bodyFieldEntries)
+	}
+	entry := bodyFieldEntries[0]
+	if entry.SampleBody == "" {
+		t.Errorf("expected non-empty sample_body on the merged Body entry, got: %+v", entry)
+	}
+	if !strings.Contains(entry.Hint, "$regex") {
+		t.Errorf("expected merged Body entry hint to contain $regex, got: %s", entry.Hint)
+	}
+	if strings.Contains(entry.Hint, "$eq") {
+		t.Errorf("expected merged Body entry hint to NOT be the bare $eq hint, got: %s", entry.Hint)
+	}
+}
+
+// TestGetLogAttributesForPipeline_PlaintextFallbackBlankLinesSkipped verifies
+// that when every sampled line is blank/whitespace-only, the plaintext
+// fallback still yields no entry (guards against an empty sample_body).
+func TestGetLogAttributesForPipeline_PlaintextFallbackBlankLinesSkipped(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"foo-service"}]}`
+	samples := []string{" ", "   "}
+	server := bodySamplingServer(t, series, samples, nil)
+	defer server.Close()
+
+	cfg := testAttrConfig(server.URL)
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
 	for _, a := range decodeLogAttributes(t, res) {
 		if a.Source == "body" {
-			t.Errorf("expected no fabricated body-derived fields, got: %+v", a)
+			t.Errorf("expected no body-derived fields for blank-only samples, got: %+v", a)
 		}
 	}
 }
 
 // TestGetLogAttributesForPipeline_LogfmtProseRejected verifies incidental
-// key=value fragments in prose are not classified as logfmt.
+// key=value fragments in prose are not classified as logfmt (no "a"/"b" keys
+// surfaced) — the line instead falls through to the plaintext $regex-on-Body
+// fallback rather than being fabricated as logfmt fields.
 func TestGetLogAttributesForPipeline_LogfmtProseRejected(t *testing.T) {
 	series := `{"status":"success","data":[{"service":"foo-service"}]}`
 	samples := []string{`set a=1 where b=2 in prose`}
@@ -650,10 +750,15 @@ func TestGetLogAttributesForPipeline_LogfmtProseRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
-	for _, a := range decodeLogAttributes(t, res) {
-		if a.Source == "body" {
-			t.Errorf("prose with incidental key=value must not yield body-derived fields, got: %+v", a)
+	attrs := decodeLogAttributes(t, res)
+	for _, key := range []string{"a", "b"} {
+		if attrByName(attrs, key) != nil {
+			t.Errorf("prose with incidental key=value must not yield logfmt-derived field %q, got: %+v", key, attrs)
 		}
+	}
+	entry := attrByName(attrs, "body")
+	if entry == nil || entry.Source != "body" {
+		t.Fatalf("expected plaintext body fallback entry, got: %+v", attrs)
 	}
 }
 

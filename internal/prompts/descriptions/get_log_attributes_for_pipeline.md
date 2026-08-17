@@ -5,6 +5,7 @@ Scoped to your pipeline (not the global `get_log_attributes` catalog). Workflow:
 Each entry: `name`, `filter_field` (use directly, no transforms), `hint`, optional `source`/`sample_coverage`.
 - `source`=`"body"`: field only inside log Body; hint names parse stage (json/logfmt/regexp). Add that parse before filter/groupby or values are empty. Prefer indexed severity/level when present.
 - `sample_coverage`: body-field row coverage; prefer full (e.g. `"5/5"`), avoid sparse keys.
+- `sample_body`: only present when Body has no recognized JSON/logfmt/severity structure — a redacted sample line plus a `$regex`-on-Body hint. Anchor your pattern to that exact shape; do NOT use `parser:"json"` (or any parser) against it.
 
 Default window: last 15 minutes.
 

@@ -41,13 +41,17 @@ type logSeriesResponse struct {
 // logjson filter condition. Body-derived entries (source "body") exist only
 // inside the log Body as JSON: their filter_field is valid only after the parse
 // stage shown in the hint, and sample_coverage reports in how many of the
-// sampled rows the key appeared.
+// sampled rows the key appeared. sample_body is set only for the plaintext
+// fallback entry (Body has no recognized JSON/logfmt/severity structure): a
+// redacted sample line so the model can anchor a $regex to the real shape
+// instead of guessing a parser.
 type LogAttribute struct {
 	Name           string `json:"name"`
 	FilterField    string `json:"filter_field"`
 	Hint           string `json:"hint"`
 	Source         string `json:"source,omitempty"`
 	SampleCoverage string `json:"sample_coverage,omitempty"`
+	SampleBody     string `json:"sample_body,omitempty"`
 }
 
 const (
@@ -98,6 +102,25 @@ func regexpBodyDerivedHint(pattern, key, exampleValue string) string {
 	stages := []map[string]interface{}{
 		{"type": "parse", "parser": "regexp", "field": "Body", "pattern": pattern},
 		{"type": "filter", "query": map[string]interface{}{"$eq": []string{fmt.Sprintf("attributes['%s']", key), exampleValue}}},
+	}
+	b, err := json.Marshal(stages)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// plaintextBodyHint renders a ONE-stage example that filters Body directly
+// with $regex — no parse stage — for a Body that has no recognized
+// structure (neither JSON, logfmt, nor a severity token). Anchoring the
+// regex against the real sample_body shape (rather than guessing a parser)
+// is the point: an unanchored numeric capture like `[0-9]{3}` can match a
+// leading timestamp instead of the intended field.
+func plaintextBodyHint(pattern string) string {
+	stages := []map[string]interface{}{
+		{"type": "filter", "query": map[string]interface{}{"$and": []interface{}{
+			map[string]interface{}{"$regex": []string{"Body", pattern}},
+		}}},
 	}
 	b, err := json.Marshal(stages)
 	if err != nil {
@@ -345,6 +368,30 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 		}}
 	}
 
+	// Plaintext fallback: no recognized structure at all — the Body is
+	// neither JSON nor logfmt and carries no severity token, so a
+	// parser-based hint (bodyDerivedHint/logfmtBodyDerivedHint) would
+	// tell the model to guess a parser that matches nothing, producing the
+	// silent-zero failure this discovery exists to prevent. Instead, surface
+	// the real (redacted) sample line and a single-stage $regex-on-Body hint
+	// the model must anchor to that shape. An unanchored numeric capture
+	// (e.g. `[0-9]{3}`) would happily match a leading timestamp and return a
+	// confidently WRONG nonzero count, so no illustrative pattern is filled
+	// in beyond a generic placeholder.
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		return []LogAttribute{{
+			Name:           "body",
+			FilterField:    "Body",
+			Source:         "body",
+			SampleCoverage: fmt.Sprintf("%d/%d", len(lines), len(lines)),
+			SampleBody:     utils.SanitizeUpstreamBody(line),
+			Hint:           plaintextBodyHint(`<your-pattern>`),
+		}}
+	}
+
 	return nil
 }
 
@@ -507,8 +554,26 @@ func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 	// directly-filterable signal the product UI renders; a parallel
 	// body-derived level that requires a regexp parse is inferior and
 	// must not be advertised alongside it.
+	//
+	// Exception to (a): the plaintext fallback entry (SampleBody != "")
+	// always duplicates the indexed "body" field (both map to filter_field
+	// "Body") — that's not a redundant copy, it's strictly more useful than
+	// the bare indexed entry. Rather than drop it, enrich the existing
+	// indexed "Body" entry in place with the fallback's Source/SampleBody/
+	// Hint so the model still sees the $regex hint and sample line, as a
+	// single entry (not two).
 	for _, attr := range <-bodyCh {
 		if _, dup := indexedFilterFields[attr.FilterField]; dup {
+			if attr.SampleBody != "" {
+				for i := range out {
+					if out[i].FilterField == attr.FilterField {
+						out[i].Source = attr.Source
+						out[i].SampleBody = attr.SampleBody
+						out[i].Hint = attr.Hint
+						break
+					}
+				}
+			}
 			continue
 		}
 		if indexedHasSeverity && isSeverityFamilyName(attr.Name) {

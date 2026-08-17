@@ -42,6 +42,17 @@ func HasCountAggregateStage(pipeline []map[string]interface{}) bool {
 	return false
 }
 
+// HasParseStage reports whether pipeline contains a stage whose "type" is
+// "parse".
+func HasParseStage(pipeline []map[string]interface{}) bool {
+	for _, stage := range pipeline {
+		if stageType, _ := stage["type"].(string); stageType == "parse" {
+			return true
+		}
+	}
+	return false
+}
+
 func isCountFunction(rawFunction interface{}) bool {
 	function, ok := rawFunction.(map[string]interface{})
 	if !ok {
@@ -239,6 +250,23 @@ func AppendCountSanity(ctx context.Context, client *http.Client, cfg models.Conf
 		return response
 	}
 	if matchedCount <= 0 {
+		// A zero count is the most suspicious outcome of all — silently
+		// returning no l9_sanity block here is exactly the "confidently
+		// wrong/silent zero" failure this guardrail exists to catch. When
+		// the pipeline has a parse stage, the most likely explanation is
+		// that the parser doesn't match the Body's real shape (e.g. a JSON
+		// parser against a plaintext Body), so flag it — but there is
+		// nothing to compare a zero against, so skip the PromQL baseline
+		// fetch entirely. Without a parse stage in the pipeline (a plain
+		// filter matching zero rows), a true zero is unremarkable — leave
+		// response untouched exactly as before.
+		if !HasParseStage(pipeline) {
+			return response
+		}
+		response["l9_sanity"] = map[string]interface{}{
+			"matched_count": int64(0),
+			"note": "the pipeline's parse stage produced no matching rows — the parser likely does not match the Body's real format; call get_log_attributes_for_pipeline and inspect sample_body to confirm the actual shape before retrying. Note an unanchored regexp capture group can also match the wrong token (e.g. a leading timestamp) and return a confidently wrong nonzero count instead.",
+		}
 		return response
 	}
 
