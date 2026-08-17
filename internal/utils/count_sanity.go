@@ -230,26 +230,27 @@ func resultRowsEmpty(response map[string]interface{}) bool {
 }
 
 // zeroCountSanityBlock builds the l9_sanity block emitted when a $count
-// aggregate over a pipeline with a parse stage yields zero matches. There is
-// nothing to compare a zero against, so no PromQL baseline fetch happens for
-// this block.
+// aggregate over a pipeline that parses or filters Body yields zero matches.
+// There is nothing to compare a zero against, so no PromQL baseline fetch
+// happens for this block.
 func zeroCountSanityBlock() map[string]interface{} {
 	return map[string]interface{}{
 		"matched_count": int64(0),
-		"note": "matched_count is 0 and the pipeline has a parse stage — this is either a genuine zero (no matching rows in this window) or the parse stage not matching the Body's real format; call get_log_attributes_for_pipeline and inspect sample_body to confirm the actual shape before assuming either explanation. Note an unanchored regexp capture group can also match the wrong token (e.g. a leading timestamp) and return a confidently wrong nonzero count instead.",
+		"note": "matched_count is 0 and the pipeline parses or filters Body — this is either a genuine zero (no matching rows in this window) or the parse stage / Body regex-or-contains not matching the Body's real format; call get_log_attributes_for_pipeline and inspect sample_body to confirm the actual shape before assuming either explanation. Note an unanchored regexp capture group can also match the wrong token (e.g. a leading timestamp) and return a confidently wrong nonzero count instead.",
 	}
 }
 
 // AppendCountSanity attaches a top-level "l9_sanity" block to response
 // comparing a $count aggregate's matched_count against the service's total
 // log volume over the same window (physical_index_service_count). It also
-// covers a zero-count-with-parse-stage case (see zeroCountSanityBlock): a
-// zero match count when the pipeline has a parse stage gets the same
-// self-correcting note without a PromQL baseline fetch, since there is
-// nothing to compare a zero against. It is a pure guardrail add-on: on any
-// other failure to determine a single service, parse the matched count, or
-// fetch/parse the baseline, it returns response unchanged. Never blocks or
-// alters the underlying result.
+// covers a zero-count case where the pipeline parses or filters Body (see
+// zeroCountSanityBlock): a zero match count then gets the same
+// self-correcting note without a PromQL baseline fetch (nothing to compare a
+// zero against), and — unlike the nonzero ratio path — does not require the
+// pipeline to scope a single service, since it never fetches a baseline. On
+// any other failure to determine a single service (nonzero path only), parse
+// the matched count, or fetch/parse the baseline, it returns response
+// unchanged. Never blocks or alters the underlying result.
 func AppendCountSanity(ctx context.Context, client *http.Client, cfg models.Config, pipeline []map[string]interface{}, startMs, endMs int64, response map[string]interface{}) map[string]interface{} {
 	if !HasCountAggregateStage(pipeline) {
 		return response
@@ -260,21 +261,18 @@ func AppendCountSanity(ctx context.Context, client *http.Client, cfg models.Conf
 		return response
 	}
 
-	service, ok := ExtractSingleServiceName(pipeline)
-	if !ok {
-		return response
-	}
+	touchesBody := hasParseStage(pipeline) || pipelineTouchesBody(pipeline)
 
 	matchedCount, ok := SumAggregateCount(response, countAliases)
 	if !ok {
 		// SumAggregateCount also returns !ok when data.result is genuinely
 		// empty (len == 0) — the shape a groupby'd $count with zero matches
 		// actually takes (as opposed to a single zero-valued row). That's
-		// just as suspicious as an explicit zero when the pipeline has a
-		// parse stage, so flag it the same way. CRITICAL: only for a
+		// just as suspicious as an explicit zero when the pipeline parses or
+		// filters Body, so flag it the same way. CRITICAL: only for a
 		// genuinely empty result set — !ok also occurs when rows exist but
 		// no count alias could be parsed, which must stay untouched.
-		if hasParseStage(pipeline) && resultRowsEmpty(response) {
+		if touchesBody && resultRowsEmpty(response) {
 			response["l9_sanity"] = zeroCountSanityBlock()
 			return response
 		}
@@ -284,17 +282,25 @@ func AppendCountSanity(ctx context.Context, client *http.Client, cfg models.Conf
 		// A zero count is the most suspicious outcome of all — silently
 		// returning no l9_sanity block here is exactly the "confidently
 		// wrong/silent zero" failure this guardrail exists to catch. When
-		// the pipeline has a parse stage, the most likely explanation is
-		// that the parser doesn't match the Body's real shape (e.g. a JSON
-		// parser against a plaintext Body), so flag it — but there is
+		// the pipeline parses or filters Body, the most likely explanation is
+		// that the parser/regex doesn't match the Body's real shape (e.g. a
+		// JSON parser against a plaintext Body), so flag it — but there is
 		// nothing to compare a zero against, so skip the PromQL baseline
-		// fetch entirely. Without a parse stage in the pipeline (a plain
-		// filter matching zero rows), a true zero is unremarkable — leave
-		// response untouched exactly as before.
-		if !hasParseStage(pipeline) {
+		// fetch entirely. Without any Body involvement (a plain filter on
+		// indexed fields matching zero rows), a true zero is unremarkable —
+		// leave response untouched exactly as before.
+		if !touchesBody {
 			return response
 		}
 		response["l9_sanity"] = zeroCountSanityBlock()
+		return response
+	}
+
+	// Nonzero path only, from here: needs a single scoped service to fetch a
+	// PromQL baseline for the ratio. The zero paths above don't need it —
+	// they emit no ratio and do no PromQL fetch.
+	service, ok := ExtractSingleServiceName(pipeline)
+	if !ok {
 		return response
 	}
 

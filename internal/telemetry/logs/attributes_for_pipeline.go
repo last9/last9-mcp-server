@@ -42,10 +42,13 @@ type logSeriesResponse struct {
 // inside the log Body as JSON: their filter_field is valid only after the parse
 // stage shown in the hint, and sample_coverage reports in how many of the
 // sampled rows the key appeared. sample_body is set for the severity-token
-// entry (a redacted sample line alongside the level regexp hint) and for the
+// entry (a sample line alongside the level regexp hint) and for the
 // plaintext fallback entry (Body has no recognized JSON/logfmt/severity
-// structure): a redacted sample line so the model can anchor a $regex to the
-// real shape instead of guessing a parser.
+// structure): a sample line so the model can anchor a $regex to the real
+// shape instead of guessing a parser. sample_body is real customer log
+// content with URLs and obvious credentials stripped (via
+// utils.SanitizeUpstreamBody) and whitespace collapsed — NOT PII-redacted;
+// treat it as customer data.
 type LogAttribute struct {
 	Name           string `json:"name"`
 	FilterField    string `json:"filter_field"`
@@ -256,6 +259,7 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 	freq := map[string]int{}       // JSON body-derived key frequency
 	logfmtFreq := map[string]int{} // logfmt body-derived key frequency
 	var levelTSCount, levelBracketCount int
+	var firstLevelTSLine, firstLevelBracketLine string
 
 	// Cascade is result-level, not per-line: the first format that produces
 	// any keys for the sample wins (JSON → logfmt → plaintext level). One
@@ -290,8 +294,14 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 		// severity token, preferring a timestamp-anchored match.
 		if levelTimestampRegexp.MatchString(line) {
 			levelTSCount++
+			if firstLevelTSLine == "" {
+				firstLevelTSLine = line
+			}
 		} else if levelBracketOrStartRegexp.MatchString(line) {
 			levelBracketCount++
+			if firstLevelBracketLine == "" {
+				firstLevelBracketLine = line
+			}
 		}
 	}
 
@@ -359,9 +369,13 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 	// token was found in at least one sampled line. Conservative — only
 	// surface "level" when the pattern actually matched a sampled line.
 	if levelTSCount > 0 || levelBracketCount > 0 {
-		pattern, count := levelBracketOrStartPattern, levelBracketCount
+		pattern, count, matchedLine := levelBracketOrStartPattern, levelBracketCount, firstLevelBracketLine
 		if levelTSCount > 0 {
-			pattern, count = levelTimestampPattern, levelTSCount
+			pattern, count, matchedLine = levelTimestampPattern, levelTSCount, firstLevelTSLine
+		}
+		sampleBody := utils.SanitizeUpstreamBody(matchedLine)
+		if sampleBody == "" {
+			sampleBody = firstNonEmptySampleBody(lines)
 		}
 		return []LogAttribute{{
 			Name:           "level",
@@ -369,7 +383,7 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 			Hint:           regexpBodyDerivedHint(pattern, "level", "<value>"),
 			Source:         "body",
 			SampleCoverage: fmt.Sprintf("%d/%d", count, len(lines)),
-			SampleBody:     firstNonEmptySampleBody(lines),
+			SampleBody:     sampleBody,
 		}}
 	}
 
@@ -378,8 +392,9 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 	// parser-based hint (bodyDerivedHint/logfmtBodyDerivedHint) would
 	// tell the model to guess a parser that matches nothing, producing the
 	// silent-zero failure this discovery exists to prevent. Instead, surface
-	// the real (redacted) sample line and a single-stage $regex-on-Body hint
-	// the model must anchor to that shape. An unanchored numeric capture
+	// the real sample line (URLs/obvious credentials stripped, not PII-
+	// redacted — treat as customer data) and a single-stage $regex-on-Body
+	// hint the model must anchor to that shape. An unanchored numeric capture
 	// (e.g. `[0-9]{3}`) would happily match a leading timestamp and return a
 	// confidently WRONG nonzero count, so no illustrative pattern is filled
 	// in beyond a generic placeholder.
@@ -403,7 +418,9 @@ func firstNonEmptySampleBody(lines []string) string {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		return utils.SanitizeUpstreamBody(line)
+		if s := utils.SanitizeUpstreamBody(line); s != "" {
+			return s
+		}
 	}
 	return ""
 }
@@ -568,16 +585,22 @@ func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 	// body-derived level that requires a regexp parse is inferior and
 	// must not be advertised alongside it.
 	//
-	// Exception to (a): the plaintext fallback entry (SampleBody != "")
-	// always duplicates the indexed "body" field (both map to filter_field
-	// "Body") — that's not a redundant copy, it's strictly more useful than
-	// the bare indexed entry. Rather than drop it, enrich the existing
-	// indexed "Body" entry in place with the fallback's Source/SampleBody/
-	// Hint so the model still sees the $regex hint and sample line, as a
-	// single entry (not two).
+	// Exception to (a): the plaintext fallback entry (FilterField == "Body"
+	// with SampleBody != "") always duplicates the indexed "body" field (both
+	// map to filter_field "Body") — that's not a redundant copy, it's
+	// strictly more useful than the bare indexed entry. Rather than drop it,
+	// enrich the existing indexed "Body" entry in place with the fallback's
+	// Source/SampleBody/Hint so the model still sees the $regex hint and
+	// sample line, as a single entry (not two). Gated on FilterField ==
+	// "Body" specifically (not just SampleBody != "") because the severity-
+	// token entry also sets SampleBody but has FilterField
+	// "attributes['level']" — without this gate, an indexed field literally
+	// named "level" would get its bare $eq hint hijacked into a two-stage
+	// parse+filter hint pointing at Body, even though the indexed field is
+	// directly filterable.
 	for _, attr := range <-bodyCh {
 		if _, dup := indexedFilterFields[attr.FilterField]; dup {
-			if attr.SampleBody != "" {
+			if attr.FilterField == "Body" && attr.SampleBody != "" {
 				for i := range out {
 					if out[i].FilterField == attr.FilterField {
 						out[i].Source = attr.Source

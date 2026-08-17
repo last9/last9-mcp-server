@@ -461,6 +461,60 @@ func TestGetLogAttributesForPipeline_BodyNotJSON(t *testing.T) {
 	}
 }
 
+// TestGetLogAttributesForPipeline_IndexedLevelFieldNotHijackedBySeverityToken
+// verifies the merge's enrich exception is scoped to the plaintext Body
+// fallback entry (FilterField == "Body"), not any entry with a non-empty
+// SampleBody. A service whose indexed series contains a field literally named
+// "level" AND whose sampled Body matches a plaintext severity token must keep
+// its indexed level entry's bare $eq hint — not have it overwritten with the
+// severity-token entry's two-stage parse+filter regexp hint/Source:"body"/
+// sample_body.
+func TestGetLogAttributesForPipeline_IndexedLevelFieldNotHijackedBySeverityToken(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"gw","level":"INFO"}]}`
+	samples := []string{
+		`trace_id= span_id= [main] 2026-07-08 08:34:00.267 INFO com.example.Foo - starting up`,
+		`trace_id= span_id= [main] 2026-07-08 08:34:01.900 ERROR com.example.Foo - failed to connect`,
+	}
+	server := bodySamplingServer(t, series, samples, nil)
+	defer server.Close()
+
+	cfg := testAttrConfig(server.URL)
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	attrs := decodeLogAttributes(t, res)
+
+	level := attrByName(attrs, "level")
+	if level == nil {
+		t.Fatalf("expected indexed 'level' entry, got: %v", attrs)
+	}
+	if level.Hint != `{"$eq":["attributes['level']","<value>"]}` {
+		t.Errorf("indexed level entry must keep its bare $eq hint, got: %s", level.Hint)
+	}
+	if level.Source == "body" {
+		t.Errorf("indexed level entry must not be tagged source=body, got: %+v", level)
+	}
+	if level.SampleBody != "" {
+		t.Errorf("indexed level entry must not carry sample_body, got: %+v", level)
+	}
+
+	// Exactly one "level" entry — the body-derived duplicate is dropped
+	// entirely, not appended alongside the indexed one.
+	var levelCount int
+	for _, a := range attrs {
+		if a.Name == "level" {
+			levelCount++
+		}
+	}
+	if levelCount != 1 {
+		t.Errorf("expected exactly 1 'level' entry, got %d", levelCount)
+	}
+}
+
 // TestGetLogAttributesForPipeline_LogfmtBody verifies logfmt-encoded Bodies
 // (key=value pairs, not JSON) surface their keys as body-derived fields with
 // a logfmt parse hint.
@@ -506,6 +560,39 @@ func TestGetLogAttributesForPipeline_LogfmtBody(t *testing.T) {
 	// since the key itself is safe.
 	if attrByName(attrs, "msg") == nil {
 		t.Errorf("expected body-derived 'msg', got: %v", attrs)
+	}
+}
+
+// TestGetLogAttributesForPipeline_SeverityTokenSampleBodyIsMatchedLine
+// verifies that when the first non-blank sampled line does NOT carry a
+// severity token but a later line does, sample_body on the severity-token
+// entry is the line that actually matched the emitted pattern — not just the
+// first non-blank line (which could visibly contain no level at all).
+func TestGetLogAttributesForPipeline_SeverityTokenSampleBodyIsMatchedLine(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"foo-service"}]}`
+	samples := []string{
+		`just some free text with no severity token here`,
+		`trace_id= span_id= [main] 2026-07-08 08:34:01.900 ERROR com.example.Foo - failed to connect`,
+	}
+	server := bodySamplingServer(t, series, samples, nil)
+	defer server.Close()
+
+	cfg := testAttrConfig(server.URL)
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), cfg)
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	attrs := decodeLogAttributes(t, res)
+
+	level := attrByName(attrs, "level")
+	if level == nil {
+		t.Fatalf("expected body-derived 'level', got: %v", attrs)
+	}
+	if level.SampleBody != samples[1] {
+		t.Errorf("expected sample_body to be the line that matched the level pattern, got: %q, want: %q", level.SampleBody, samples[1])
 	}
 }
 
@@ -932,5 +1019,33 @@ func TestGetLogAttributesForPipeline_InvalidPipelineRejectsBeforeHTTP(t *testing
 				t.Errorf("expected 0 HTTP requests for invalid pipeline, got %d", requestCount)
 			}
 		})
+	}
+}
+
+// TestFirstNonEmptySampleBody_URLRedacted verifies the returned sample_body
+// runs through utils.SanitizeUpstreamBody — a scheme://URL is replaced with
+// the redaction marker and the original URL never appears. This test must
+// fail if the SanitizeUpstreamBody call is removed from
+// firstNonEmptySampleBody.
+func TestFirstNonEmptySampleBody_URLRedacted(t *testing.T) {
+	lines := []string{"GET https://example.com/secret?token=abc 200"}
+	got := firstNonEmptySampleBody(lines)
+	if !strings.Contains(got, "[redacted-url]") {
+		t.Errorf("expected sample body to contain the redacted-url marker, got: %q", got)
+	}
+	if strings.Contains(got, "https://example.com") {
+		t.Errorf("expected the original URL to be stripped, got: %q", got)
+	}
+}
+
+// TestFirstNonEmptySampleBody_SkipsLineThatSanitizesToEmpty verifies that a
+// line which is non-blank per strings.TrimSpace but sanitizes to "" (e.g. a
+// bare control character) is skipped in favor of a later, usable line —
+// rather than returning "" and suppressing the entry.
+func TestFirstNonEmptySampleBody_SkipsLineThatSanitizesToEmpty(t *testing.T) {
+	lines := []string{"\x01", "usable later line"}
+	got := firstNonEmptySampleBody(lines)
+	if got != "usable later line" {
+		t.Errorf("expected fallback to the later usable line, got: %q", got)
 	}
 }

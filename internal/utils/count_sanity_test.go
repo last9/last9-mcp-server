@@ -555,6 +555,258 @@ func TestAppendCountSanity_UnparsableCountRowsNotEmptyResultStaysUntouched(t *te
 	}
 }
 
+// TestAppendCountSanity_ZeroMatchedParseStageNoServiceEqAddsSanityNote
+// verifies the zero-count guardrail fires even when the pipeline does NOT
+// scope by exactly one ServiceName $eq (here: no ServiceName condition at
+// all, just a SeverityText filter) — the zero-count/empty-result checks must
+// not sit behind ExtractSingleServiceName's gate, since neither zero path
+// needs a service name (no PromQL baseline fetch happens for a zero).
+func TestAppendCountSanity_ZeroMatchedParseStageNoServiceEqAddsSanityNote(t *testing.T) {
+	srv, calls := promVolumeServer(t, 1000)
+	defer srv.Close()
+
+	cfg := sanityTestCfg(t, srv.URL)
+	pipeline := []map[string]interface{}{
+		{
+			"type": "filter",
+			"query": map[string]interface{}{
+				"$eq": []interface{}{"SeverityText", "ERROR"},
+			},
+		},
+		{
+			"type":   "parse",
+			"parser": "json",
+			"field":  "Body",
+		},
+		{
+			"type": "aggregate",
+			"aggregates": []interface{}{
+				map[string]interface{}{
+					"function": map[string]interface{}{"$count": []interface{}{}},
+					"as":       "_count",
+				},
+			},
+		},
+	}
+	response := aggregateCountResponse("_count", float64(0))
+
+	got := AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 480*60*1000, response)
+
+	sanity, ok := got["l9_sanity"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected l9_sanity block for zero count without a single ServiceName $eq, got %#v", got)
+	}
+	if sanity["matched_count"] != int64(0) {
+		t.Errorf("matched_count = %v, want 0", sanity["matched_count"])
+	}
+	if note, _ := sanity["note"].(string); note == "" {
+		t.Error("expected non-empty note")
+	}
+	if *calls != 0 {
+		t.Errorf("expected no prometheus baseline call for a zero count, got %d", *calls)
+	}
+}
+
+// TestAppendCountSanity_ZeroMatchedBodyRegexFilterNoParseStageAddsSanityNote
+// verifies the zero-count guardrail widens beyond hasParseStage: the
+// parse-free plaintext Body hint (get_log_attributes_for_pipeline's
+// recommended one-stage $regex-on-Body shape) has no parse stage at all, so a
+// zero from that shape must still get the note.
+func TestAppendCountSanity_ZeroMatchedBodyRegexFilterNoParseStageAddsSanityNote(t *testing.T) {
+	srv, calls := promVolumeServer(t, 1000)
+	defer srv.Close()
+
+	cfg := sanityTestCfg(t, srv.URL)
+	pipeline := []map[string]interface{}{
+		{
+			"type": "filter",
+			"query": map[string]interface{}{
+				"$and": []interface{}{
+					map[string]interface{}{"$eq": []interface{}{"ServiceName", "orders-service"}},
+					map[string]interface{}{"$regex": []interface{}{"Body", "timeout.*retry"}},
+				},
+			},
+		},
+		{
+			"type": "aggregate",
+			"aggregates": []interface{}{
+				map[string]interface{}{
+					"function": map[string]interface{}{"$count": []interface{}{}},
+					"as":       "_count",
+				},
+			},
+		},
+	}
+	response := aggregateCountResponse("_count", float64(0))
+
+	got := AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 480*60*1000, response)
+
+	sanity, ok := got["l9_sanity"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected l9_sanity block for zero count from a $regex-on-Body filter with no parse stage, got %#v", got)
+	}
+	if sanity["matched_count"] != int64(0) {
+		t.Errorf("matched_count = %v, want 0", sanity["matched_count"])
+	}
+	if note, _ := sanity["note"].(string); note == "" {
+		t.Error("expected non-empty note")
+	}
+	if *calls != 0 {
+		t.Errorf("expected no prometheus baseline call for a zero count, got %d", *calls)
+	}
+}
+
+// TestAppendCountSanity_ZeroMatchedGroupbyEmptyResultBodyRegexNoParseStageAddsSanityNote
+// covers item 3's test (b): groupby'd $count with zero matches (data.result:
+// []), a $regex-on-Body filter, and no parse stage — still gets the note.
+func TestAppendCountSanity_ZeroMatchedGroupbyEmptyResultBodyRegexNoParseStageAddsSanityNote(t *testing.T) {
+	srv, calls := promVolumeServer(t, 1000)
+	defer srv.Close()
+
+	cfg := sanityTestCfg(t, srv.URL)
+	pipeline := []map[string]interface{}{
+		{
+			"type": "filter",
+			"query": map[string]interface{}{
+				"$and": []interface{}{
+					map[string]interface{}{"$eq": []interface{}{"ServiceName", "orders-service"}},
+					map[string]interface{}{"$regex": []interface{}{"Body", "timeout.*retry"}},
+				},
+			},
+		},
+		{
+			"type": "aggregate",
+			"aggregates": []interface{}{
+				map[string]interface{}{
+					"function": map[string]interface{}{"$count": []interface{}{}},
+					"as":       "_count",
+				},
+			},
+			"groupby": map[string]interface{}{"ServiceName": "service"},
+		},
+	}
+	response := map[string]interface{}{
+		"data": map[string]interface{}{
+			"resultType": "matrix",
+			"result":     []interface{}{},
+		},
+	}
+
+	got := AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 480*60*1000, response)
+
+	sanity, ok := got["l9_sanity"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected l9_sanity block for empty result set from a $regex-on-Body filter with no parse stage, got %#v", got)
+	}
+	if sanity["matched_count"] != int64(0) {
+		t.Errorf("matched_count = %v, want 0", sanity["matched_count"])
+	}
+	if note, _ := sanity["note"].(string); note == "" {
+		t.Error("expected non-empty note")
+	}
+	if *calls != 0 {
+		t.Errorf("expected no prometheus baseline call for an empty result set, got %d", *calls)
+	}
+}
+
+// TestAppendCountSanity_ZeroMatchedNeitherParseStageNorBodyLeavesUntouched
+// verifies item 3's test (c): a filter with neither a parse stage nor any
+// Body condition, returning zero, must leave response untouched exactly as
+// before (unremarkable zero on indexed fields only).
+func TestAppendCountSanity_ZeroMatchedNeitherParseStageNorBodyLeavesUntouched(t *testing.T) {
+	srv, calls := promVolumeServer(t, 1000)
+	defer srv.Close()
+
+	cfg := sanityTestCfg(t, srv.URL)
+	pipeline := countAggregatePipeline("orders-service")
+	response := aggregateCountResponse("_count", float64(0))
+
+	got := AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 480*60*1000, response)
+	if _, ok := got["l9_sanity"]; ok {
+		t.Fatal("expected no l9_sanity block for a zero count with neither a parse stage nor a Body condition")
+	}
+	if *calls != 0 {
+		t.Errorf("expected no prometheus call, got %d", *calls)
+	}
+}
+
+// TestAppendCountSanity_RawJSONShape verifies at the raw-JSON level (mirroring
+// what a client actually receives) that the zero-count l9_sanity block has NO
+// "ratio"/"service_log_volume" keys, while the nonzero block still has both.
+func TestAppendCountSanity_RawJSONShape(t *testing.T) {
+	t.Run("zero count omits ratio and service_log_volume", func(t *testing.T) {
+		srv, _ := promVolumeServer(t, 1000)
+		defer srv.Close()
+		cfg := sanityTestCfg(t, srv.URL)
+		pipeline := []map[string]interface{}{
+			{
+				"type": "filter",
+				"query": map[string]interface{}{
+					"$eq": []interface{}{"ServiceName", "orders-service"},
+				},
+			},
+			{
+				"type":   "parse",
+				"parser": "json",
+				"field":  "Body",
+			},
+			{
+				"type": "aggregate",
+				"aggregates": []interface{}{
+					map[string]interface{}{
+						"function": map[string]interface{}{"$count": []interface{}{}},
+						"as":       "_count",
+					},
+				},
+			},
+		}
+		response := aggregateCountResponse("_count", float64(0))
+
+		got := AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 480*60*1000, response)
+		raw, err := json.Marshal(got["l9_sanity"])
+		if err != nil {
+			t.Fatalf("failed to marshal l9_sanity: %v", err)
+		}
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatalf("failed to unmarshal l9_sanity: %v", err)
+		}
+		if _, ok := m["ratio"]; ok {
+			t.Error("zero-count l9_sanity block must NOT have a \"ratio\" key")
+		}
+		if _, ok := m["service_log_volume"]; ok {
+			t.Error("zero-count l9_sanity block must NOT have a \"service_log_volume\" key")
+		}
+		if _, ok := m["matched_count"]; !ok {
+			t.Error("zero-count l9_sanity block must have a \"matched_count\" key")
+		}
+	})
+
+	t.Run("nonzero count has ratio and service_log_volume", func(t *testing.T) {
+		srv, _ := promVolumeServer(t, 1000)
+		defer srv.Close()
+		cfg := sanityTestCfg(t, srv.URL)
+		pipeline := countAggregatePipeline("orders-service")
+		response := aggregateCountResponse("_count", float64(750))
+
+		got := AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 480*60*1000, response)
+		raw, err := json.Marshal(got["l9_sanity"])
+		if err != nil {
+			t.Fatalf("failed to marshal l9_sanity: %v", err)
+		}
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatalf("failed to unmarshal l9_sanity: %v", err)
+		}
+		if _, ok := m["ratio"]; !ok {
+			t.Error("nonzero l9_sanity block must have a \"ratio\" key")
+		}
+		if _, ok := m["service_log_volume"]; !ok {
+			t.Error("nonzero l9_sanity block must have a \"service_log_volume\" key")
+		}
+	})
+}
+
 func TestAppendCountSanity_PromQueryEscapesServiceName(t *testing.T) {
 	svc := `orders"service`
 	srv, _ := promVolumeServerAssert(t, 1000, func(t *testing.T, r *http.Request) {
