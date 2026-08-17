@@ -57,7 +57,7 @@ func TestParseInvestigate(t *testing.T) {
 			t.Errorf("investigate missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots"} {
+	for _, deny := range []string{"get_alerts", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "get_pulse_report", "write_pulse_disposition"} {
 		if set.Allows(deny) {
 			t.Errorf("investigate should exclude %q", deny)
 		}
@@ -83,7 +83,7 @@ func TestParseUnknown(t *testing.T) {
 		t.Fatal("expected error for unknown toolset")
 	}
 	msg := err.Error()
-	for _, name := range []string{"logs", "investigate", "all"} {
+	for _, name := range []string{"logs", "investigate", "pulse_read", "pulse_manage", "all"} {
 		if !strings.Contains(msg, name) {
 			t.Errorf("error should list %q; got %q", name, msg)
 		}
