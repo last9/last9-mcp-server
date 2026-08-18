@@ -42,6 +42,47 @@ func TestSampleBodyForModel(t *testing.T) {
 		}
 	})
 
+	t.Run("bearer token redacted even behind an authorization key", func(t *testing.T) {
+		line := "auth failed Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.PAYLOAD.sig for user"
+		got, notes := sampleBodyForModel(line)
+		if strings.Contains(got, "eyJhbGciOiJIUzI1NiJ9") {
+			t.Errorf("expected bearer token value stripped, got: %q", got)
+		}
+		if !containsNote(notes, "credential-redacted") {
+			t.Errorf("expected note credential-redacted, got: %v", notes)
+		}
+	})
+
+	t.Run("bearer token redacted in key=value form", func(t *testing.T) {
+		line := "retry authorization=Bearer abc123def upstream=payments"
+		got, notes := sampleBodyForModel(line)
+		if strings.Contains(got, "abc123def") {
+			t.Errorf("expected bearer token value stripped, got: %q", got)
+		}
+		if !containsNote(notes, "credential-redacted") {
+			t.Errorf("expected note credential-redacted, got: %v", notes)
+		}
+	})
+
+	t.Run("basic credentials redacted", func(t *testing.T) {
+		line := "denied Authorization: Basic dXNlcjpwYXNzd29yZA== path=/v1/charge"
+		got, notes := sampleBodyForModel(line)
+		if strings.Contains(got, "dXNlcjpwYXNzd29yZA==") {
+			t.Errorf("expected basic credentials stripped, got: %q", got)
+		}
+		if !containsNote(notes, "credential-redacted") {
+			t.Errorf("expected note credential-redacted, got: %v", notes)
+		}
+	})
+
+	t.Run("bare bearer token without a credential key redacted", func(t *testing.T) {
+		line := "header Bearer sk-live-9f8e7d6c sent"
+		got, _ := sampleBodyForModel(line)
+		if strings.Contains(got, "sk-live-9f8e7d6c") {
+			t.Errorf("expected bearer token value stripped, got: %q", got)
+		}
+	})
+
 	t.Run("full URL redacted", func(t *testing.T) {
 		line := "outbound call to https://upstream.example.com/v1/charge failed"
 		got, notes := sampleBodyForModel(line)

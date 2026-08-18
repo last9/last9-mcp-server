@@ -237,7 +237,7 @@ func resultRowsEmpty(response map[string]interface{}) bool {
 func zeroCountSanityBlock() map[string]interface{} {
 	return map[string]interface{}{
 		"matched_count": int64(0),
-		"note": "matched_count is 0 and the pipeline parses or filters Body — this is either a genuine zero (no matching rows in this window) or the parse stage / Body regex-or-contains not matching the Body's real format; call get_log_attributes_for_pipeline and inspect sample_bodies to confirm the actual shape before assuming either explanation. Note an unanchored regexp capture group can also match the wrong token (e.g. a leading timestamp) and return a confidently wrong nonzero count instead.",
+		"note":          "matched_count is 0 and the pipeline parses or filters Body — this is either a genuine zero (no matching rows in this window) or the parse stage / Body regex-or-contains not matching the Body's real format; call get_log_attributes_for_pipeline and inspect sample_bodies to confirm the actual shape before assuming either explanation. Note an unanchored regexp capture group can also match the wrong token (e.g. a leading timestamp) and return a confidently wrong nonzero count instead.",
 	}
 }
 

@@ -83,9 +83,12 @@ const (
 // whitespace collapsing) and preserve credential KEYS (redact only the
 // value), so it cannot share an implementation with SanitizeUpstreamBody.
 var (
-	sampleBodyURLPattern        = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s"'<>,}\]]+`)
-	sampleBodyBearerPattern     = regexp.MustCompile(`(?i)\b(bearer)\s+[^\s"',}]+`)
-	sampleBodyCredentialPattern = regexp.MustCompile(`(?i)\b(token|api[_-]?key|secret|password|authorization)\b("?\s*[:=]\s*"?)[^"',}\s]+`)
+	sampleBodyURLPattern    = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s"'<>,}\]]+`)
+	sampleBodyBearerPattern = regexp.MustCompile(`(?i)\b(bearer)\s+[^\s"',}]+`)
+	// The optional non-capturing scheme keeps a `Bearer`/`Basic` prefix inside
+	// the match; without it the value class stops at the space after the key
+	// and redacts only the scheme word, leaving the token exposed.
+	sampleBodyCredentialPattern = regexp.MustCompile(`(?i)\b(` + utils.CredentialKeyAlternation + `)\b("?\s*[:=]\s*"?)(?:(?:bearer|basic)\s+)?[^"',}\s]+`)
 	sampleBodyEscaper           = strings.NewReplacer("\n", "\\n", "\t", "\\t", "\r", "\\r")
 )
 
@@ -126,9 +129,12 @@ func sampleBodyForModel(line string) (sample string, notes []string) {
 
 	// Redact credential VALUES while preserving the key + separator, so the
 	// model can still see that a token/secret param existed at all.
+	// Bearer first, matching utils.SanitizeUpstreamBody's order: the credential
+	// pass is greedy over the key, so running it first would leave a bare token
+	// behind for the bearer pass to no longer recognize.
 	before := s
-	s = sampleBodyCredentialPattern.ReplaceAllString(s, "$1$2[redacted]")
 	s = sampleBodyBearerPattern.ReplaceAllString(s, "$1 [redacted]")
+	s = sampleBodyCredentialPattern.ReplaceAllString(s, "$1$2[redacted]")
 	if s != before {
 		addNote("credential-redacted")
 	}
