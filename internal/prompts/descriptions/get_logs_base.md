@@ -23,6 +23,6 @@
 
 **Time:** `lookback_minutes` (default **5**). **Absolute ISO bounds** → `start_time_iso`+`end_time_iso` on the tool call — never `Timestamp`/`$gte`/`$lte` in the pipeline.
 
-**l9_sanity:** high `ratio` or "filter likely too broad" → next call `get_logs` with `aggregate`+`$count` and an ERROR/`SeverityText` gate. `matched_count: 0` (no `ratio`): genuine zero or parse-stage mismatch; check `sample_bodies` via get_log_attributes_for_pipeline, don't narrow.
+**l9_sanity:** high `ratio` or "filter likely too broad" → next call `get_logs` with `aggregate`+`$count` and an ERROR/`SeverityText` gate. `matched_count: 0`: check `sample_bodies`, don't narrow.
 
 Full manual: `last9://reference/logjson`
