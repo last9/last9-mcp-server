@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
@@ -41,13 +42,26 @@ type logSeriesResponse struct {
 // logjson filter condition. Body-derived entries (source "body") exist only
 // inside the log Body as JSON: their filter_field is valid only after the parse
 // stage shown in the hint, and sample_coverage reports in how many of the
-// sampled rows the key appeared.
+// sampled rows the key appeared. sample_bodies is set for the severity-token
+// entry (exactly one sample line, the one that matched the emitted pattern)
+// and for the plaintext fallback entry (Body has no recognized
+// JSON/logfmt/severity structure): up to 3 DISTINCT sample lines so the model
+// can anchor a $regex to the real shape(s) instead of guessing a parser off a
+// single, possibly-outlier line. Each line is transformed by
+// sampleBodyForModel: real customer log content — NOT PII-redacted, treat it
+// as customer data — with newline/tab/carriage-return ESCAPED as literal
+// two-character sequences (never real line breaks), credential VALUES
+// redacted (key preserved), full URLs replaced with a marker, and
+// byte-truncated with a marker on long lines. sample_notes reports which of
+// those transforms fired, deduplicated across the returned lines.
 type LogAttribute struct {
-	Name           string `json:"name"`
-	FilterField    string `json:"filter_field"`
-	Hint           string `json:"hint"`
-	Source         string `json:"source,omitempty"`
-	SampleCoverage string `json:"sample_coverage,omitempty"`
+	Name           string   `json:"name"`
+	FilterField    string   `json:"filter_field"`
+	Hint           string   `json:"hint"`
+	Source         string   `json:"source,omitempty"`
+	SampleCoverage string   `json:"sample_coverage,omitempty"`
+	SampleBodies   []string `json:"sample_bodies,omitempty"`
+	SampleNotes    []string `json:"sample_notes,omitempty"`
 }
 
 const (
@@ -56,7 +70,136 @@ const (
 	// maxBodyDerivedKeys caps how many Body-derived keys are reported, ranked by
 	// sample frequency — a wide structured Body must not flood the response.
 	maxBodyDerivedKeys = 20
+	// maxSampleBodies caps how many distinct sample lines the plaintext
+	// fallback entry carries — one line risks the model anchoring a regex to
+	// an outlier shape in a mixed-format service.
+	maxSampleBodies = 3
 )
+
+// sampleBodyURLPattern/sampleBodyBearerPattern/sampleBodyCredentialPattern
+// mirror utils.SanitizeUpstreamBody's redaction patterns but are kept as a
+// separate, purpose-built copy for sampleBodyForModel: unlike the upstream
+// error-body sanitizer, this transform must preserve byte fidelity (no
+// whitespace collapsing) and preserve credential KEYS (redact only the
+// value), so it cannot share an implementation with SanitizeUpstreamBody.
+var (
+	sampleBodyURLPattern    = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s"'<>,}\]]+`)
+	sampleBodyBearerPattern = regexp.MustCompile(`(?i)\b(bearer)\s+[^\s"',}]+`)
+	// Optional scheme absorbs a Bearer/Basic prefix: without it the value class
+	// stops at the space and redacts only the scheme word, leaking the token.
+	sampleBodyCredentialPattern = regexp.MustCompile(`(?i)\b(` + utils.CredentialKeyAlternation + `)\b("?\s*[:=]\s*"?)(?:(?:bearer|basic)\s+)?[^"',}\s]+`)
+	sampleBodyEscaper           = strings.NewReplacer("\n", "\\n", "\t", "\\t", "\r", "\\r")
+)
+
+// sampleBodyForModel transforms a raw sampled log line into a value safe to
+// return to the model as a regex-anchoring example, while preserving byte
+// fidelity as much as possible — unlike utils.SanitizeUpstreamBody (written
+// for upstream error bodies), it does NOT collapse whitespace runs, and it
+// preserves credential KEYS when redacting values. notes reports which
+// transforms fired, deduplicated and in the order first triggered; notes is
+// always a non-nil (possibly empty) slice.
+func sampleBodyForModel(line string) (sample string, notes []string) {
+	seen := map[string]struct{}{}
+	addNote := func(n string) {
+		if _, ok := seen[n]; ok {
+			return
+		}
+		seen[n] = struct{}{}
+		notes = append(notes, n)
+	}
+
+	s := line
+
+	// Escape newline/tab/carriage-return VISIBLY so multi-line structure
+	// stays legible without collapsing the line — a stack trace must not
+	// become unreadable single-line mush.
+	if strings.ContainsAny(s, "\n\t\r") {
+		s = sampleBodyEscaper.Replace(s)
+		addNote("multiline-escaped")
+	}
+
+	// A whole URL is not a useful regex anchor — replace it wholesale
+	// (before credential redaction so an embedded query-string credential
+	// doesn't leave a dangling partial match).
+	if sampleBodyURLPattern.MatchString(s) {
+		s = sampleBodyURLPattern.ReplaceAllString(s, "[redacted-url]")
+		addNote("url-redacted")
+	}
+
+	// Redact credential VALUES while preserving the key + separator, so the
+	// model can still see that a token/secret param existed at all.
+	// Bearer first, as in SanitizeUpstreamBody: the credential pass would
+	// otherwise eat the scheme word and leave the token unmatchable.
+	before := s
+	s = sampleBodyBearerPattern.ReplaceAllString(s, "$1 [redacted]")
+	s = sampleBodyCredentialPattern.ReplaceAllString(s, "$1$2[redacted]")
+	if s != before {
+		addNote("credential-redacted")
+	}
+
+	// Strip unicode control runes (break JSON/terminal rendering) and format
+	// runes (e.g. U+202E RLO, ZWJ) — invisible bytes that could otherwise
+	// smuggle meaning into the sample.
+	var b strings.Builder
+	b.Grow(len(s))
+	controlStripped := false
+	for _, r := range s {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			controlStripped = true
+			continue
+		}
+		b.WriteRune(r)
+	}
+	s = b.String()
+	if controlStripped {
+		addNote("control-stripped")
+	}
+
+	if len(s) > utils.UpstreamBodyLimit {
+		s = strings.ToValidUTF8(s[:utils.UpstreamBodyLimit], "") + "… (truncated)"
+		addNote("truncated")
+	}
+
+	if notes == nil {
+		notes = []string{}
+	}
+	return s, notes
+}
+
+// collectSampleBodies walks lines in order, transforms each via
+// sampleBodyForModel, skips lines that transform to empty, and returns up to
+// limit that are DISTINCT (not byte-identical after transform) — a simple
+// dedup, not shape clustering — along with the deduplicated, stable-ordered
+// union of notes across the returned lines.
+func collectSampleBodies(lines []string, limit int) (samples []string, notes []string) {
+	seenSamples := map[string]struct{}{}
+	seenNotes := map[string]struct{}{}
+	for _, line := range lines {
+		if len(samples) >= limit {
+			break
+		}
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		sample, lineNotes := sampleBodyForModel(line)
+		if sample == "" {
+			continue
+		}
+		if _, dup := seenSamples[sample]; dup {
+			continue
+		}
+		seenSamples[sample] = struct{}{}
+		samples = append(samples, sample)
+		for _, n := range lineNotes {
+			if _, ok := seenNotes[n]; ok {
+				continue
+			}
+			seenNotes[n] = struct{}{}
+			notes = append(notes, n)
+		}
+	}
+	return samples, notes
+}
 
 // safeBodyKeyPattern accepts only keys that embed safely into both the JSON
 // hint and the attributes['<key>'] accessor. Keys with quotes, spaces, or
@@ -98,6 +241,28 @@ func regexpBodyDerivedHint(pattern, key, exampleValue string) string {
 	stages := []map[string]interface{}{
 		{"type": "parse", "parser": "regexp", "field": "Body", "pattern": pattern},
 		{"type": "filter", "query": map[string]interface{}{"$eq": []string{fmt.Sprintf("attributes['%s']", key), exampleValue}}},
+	}
+	b, err := json.Marshal(stages)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// plaintextBodyPatternPlaceholder is the placeholder pattern in
+// plaintextBodyHint's example — the model must replace it with a pattern
+// anchored to the real sample_body shape, never use it verbatim.
+const plaintextBodyPatternPlaceholder = "<your-pattern>"
+
+// plaintextBodyHint renders a ONE-stage example that filters Body directly
+// with $regex — no parse stage — for a Body that has no recognized
+// structure (neither JSON, logfmt, nor a severity token). Anchoring the
+// regex against the real sample_body shape (rather than guessing a parser)
+// is the point: an unanchored numeric capture like `[0-9]{3}` can match a
+// leading timestamp instead of the intended field.
+func plaintextBodyHint() string {
+	stages := []map[string]interface{}{
+		{"type": "filter", "query": map[string]interface{}{"$regex": []string{"Body", plaintextBodyPatternPlaceholder}}},
 	}
 	b, err := json.Marshal(stages)
 	if err != nil {
@@ -229,6 +394,7 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 	freq := map[string]int{}       // JSON body-derived key frequency
 	logfmtFreq := map[string]int{} // logfmt body-derived key frequency
 	var levelTSCount, levelBracketCount int
+	var firstLevelTSLine, firstLevelBracketLine string
 
 	// Cascade is result-level, not per-line: the first format that produces
 	// any keys for the sample wins (JSON → logfmt → plaintext level). One
@@ -263,8 +429,14 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 		// severity token, preferring a timestamp-anchored match.
 		if levelTimestampRegexp.MatchString(line) {
 			levelTSCount++
+			if firstLevelTSLine == "" {
+				firstLevelTSLine = line
+			}
 		} else if levelBracketOrStartRegexp.MatchString(line) {
 			levelBracketCount++
+			if firstLevelBracketLine == "" {
+				firstLevelBracketLine = line
+			}
 		}
 	}
 
@@ -332,16 +504,51 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 	// token was found in at least one sampled line. Conservative — only
 	// surface "level" when the pattern actually matched a sampled line.
 	if levelTSCount > 0 || levelBracketCount > 0 {
-		pattern, count := levelBracketOrStartPattern, levelBracketCount
+		pattern, count, matchedLine := levelBracketOrStartPattern, levelBracketCount, firstLevelBracketLine
 		if levelTSCount > 0 {
-			pattern, count = levelTimestampPattern, levelTSCount
+			pattern, count, matchedLine = levelTimestampPattern, levelTSCount, firstLevelTSLine
 		}
-		return []LogAttribute{{
+		// Exactly one sample for the severity-token entry: the line that
+		// actually matched the emitted pattern, not just any sampled line.
+		sampleBody, sampleNotes := sampleBodyForModel(matchedLine)
+		if sampleBody == "" {
+			if fallback, fallbackNotes := collectSampleBodies(lines, 1); len(fallback) > 0 {
+				sampleBody, sampleNotes = fallback[0], fallbackNotes
+			}
+		}
+		attr := LogAttribute{
 			Name:           "level",
 			FilterField:    "attributes['level']",
 			Hint:           regexpBodyDerivedHint(pattern, "level", "<value>"),
 			Source:         "body",
 			SampleCoverage: fmt.Sprintf("%d/%d", count, len(lines)),
+		}
+		if sampleBody != "" {
+			attr.SampleBodies = []string{sampleBody}
+			attr.SampleNotes = sampleNotes
+		}
+		return []LogAttribute{attr}
+	}
+
+	// Plaintext fallback: no recognized structure at all — the Body is
+	// neither JSON nor logfmt and carries no severity token, so a
+	// parser-based hint (bodyDerivedHint/logfmtBodyDerivedHint) would
+	// tell the model to guess a parser that matches nothing, producing the
+	// silent-zero failure this discovery exists to prevent. Instead, surface
+	// the real sample line (URLs/obvious credentials stripped, not PII-
+	// redacted — treat as customer data) and a single-stage $regex-on-Body
+	// hint the model must anchor to that shape. An unanchored numeric capture
+	// (e.g. `[0-9]{3}`) would happily match a leading timestamp and return a
+	// confidently WRONG nonzero count, so no illustrative pattern is filled
+	// in beyond a generic placeholder.
+	if samples, notes := collectSampleBodies(lines, maxSampleBodies); len(samples) > 0 {
+		return []LogAttribute{{
+			Name:         "body",
+			FilterField:  "Body",
+			Source:       "body",
+			SampleBodies: samples,
+			SampleNotes:  notes,
+			Hint:         plaintextBodyHint(),
 		}}
 	}
 
@@ -507,8 +714,33 @@ func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 	// directly-filterable signal the product UI renders; a parallel
 	// body-derived level that requires a regexp parse is inferior and
 	// must not be advertised alongside it.
+	//
+	// Exception to (a): the plaintext fallback entry (FilterField == "Body"
+	// with len(SampleBodies) > 0) always duplicates the indexed "body" field
+	// (both map to filter_field "Body") — that's not a redundant copy, it's
+	// strictly more useful than the bare indexed entry. Rather than drop it,
+	// enrich the existing indexed "Body" entry in place with the fallback's
+	// Source/SampleBodies/SampleNotes/Hint so the model still sees the
+	// $regex hint and sample lines, as a single entry (not two). Gated on
+	// FilterField == "Body" specifically (not just len(SampleBodies) > 0)
+	// because the severity-token entry also sets SampleBodies but has
+	// FilterField "attributes['level']" — without this gate, an indexed
+	// field literally named "level" would get its bare $eq hint hijacked
+	// into a two-stage parse+filter hint pointing at Body, even though the
+	// indexed field is directly filterable.
 	for _, attr := range <-bodyCh {
 		if _, dup := indexedFilterFields[attr.FilterField]; dup {
+			if attr.FilterField == "Body" && len(attr.SampleBodies) > 0 {
+				for i := range out {
+					if out[i].FilterField == attr.FilterField {
+						out[i].Source = attr.Source
+						out[i].SampleBodies = attr.SampleBodies
+						out[i].SampleNotes = attr.SampleNotes
+						out[i].Hint = attr.Hint
+						break
+					}
+				}
+			}
 			continue
 		}
 		if indexedHasSeverity && isSeverityFamilyName(attr.Name) {

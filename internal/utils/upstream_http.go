@@ -15,8 +15,13 @@ const UpstreamBodyLimit = 512
 var (
 	upstreamBodyURLPattern    = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s"'<>,}\]]+`)
 	upstreamBodyBearerPattern = regexp.MustCompile(`(?i)\bbearer\s+[^\s"',}]+`)
-	upstreamBodySecretPattern = regexp.MustCompile(`(?i)\b(token|api[_-]?key|secret|password|authorization)\b"?\s*[:=]\s*"?[^"',}\s]+`)
+	upstreamBodySecretPattern = regexp.MustCompile(`(?i)\b(` + CredentialKeyAlternation + `)\b"?\s*[:=]\s*"?[^"',}\s]+`)
 )
+
+// CredentialKeyAlternation is shared with the log sample-body sanitizer, which
+// needs its own compiled pattern (capture groups preserve the key) but must
+// redact the same key names.
+const CredentialKeyAlternation = `token|api[_-]?key|secret|password|authorization`
 
 // SanitizeUpstreamBody redacts URLs/credentials, strips controls, and bounds size
 // so 400 bodies can be relayed to the model without leaking internals.
