@@ -42,44 +42,30 @@ func TestSampleBodyForModel(t *testing.T) {
 		}
 	})
 
-	t.Run("bearer token redacted even behind an authorization key", func(t *testing.T) {
-		line := "auth failed Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.PAYLOAD.sig for user"
-		got, notes := sampleBodyForModel(line)
-		if strings.Contains(got, "eyJhbGciOiJIUzI1NiJ9") {
-			t.Errorf("expected bearer token value stripped, got: %q", got)
+	t.Run("auth scheme credentials redacted", func(t *testing.T) {
+		// Bearer/Basic behind a credential key: the key match must not stop at
+		// the scheme word and leave the secret behind.
+		cases := map[string]string{
+			"auth failed Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.PAYLOAD.sig for user": "eyJhbGciOiJIUzI1NiJ9",
+			"retry authorization=Bearer abc123def upstream=payments":                      "abc123def",
+			"denied Authorization: Basic dXNlcjpwYXNzd29yZA== path=/v1/charge":            "dXNlcjpwYXNzd29yZA==",
+			"header Bearer sk-live-9f8e7d6c sent":                                         "sk-live-9f8e7d6c",
 		}
-		if !containsNote(notes, "credential-redacted") {
-			t.Errorf("expected note credential-redacted, got: %v", notes)
-		}
-	})
-
-	t.Run("bearer token redacted in key=value form", func(t *testing.T) {
-		line := "retry authorization=Bearer abc123def upstream=payments"
-		got, notes := sampleBodyForModel(line)
-		if strings.Contains(got, "abc123def") {
-			t.Errorf("expected bearer token value stripped, got: %q", got)
-		}
-		if !containsNote(notes, "credential-redacted") {
-			t.Errorf("expected note credential-redacted, got: %v", notes)
+		for line, secret := range cases {
+			got, notes := sampleBodyForModel(line)
+			if strings.Contains(got, secret) {
+				t.Errorf("secret %q survived in: %q", secret, got)
+			}
+			if !containsNote(notes, "credential-redacted") {
+				t.Errorf("expected note credential-redacted for %q, got: %v", line, notes)
+			}
 		}
 	})
 
-	t.Run("basic credentials redacted", func(t *testing.T) {
-		line := "denied Authorization: Basic dXNlcjpwYXNzd29yZA== path=/v1/charge"
-		got, notes := sampleBodyForModel(line)
-		if strings.Contains(got, "dXNlcjpwYXNzd29yZA==") {
-			t.Errorf("expected basic credentials stripped, got: %q", got)
-		}
-		if !containsNote(notes, "credential-redacted") {
-			t.Errorf("expected note credential-redacted, got: %v", notes)
-		}
-	})
-
-	t.Run("bare bearer token without a credential key redacted", func(t *testing.T) {
-		line := "header Bearer sk-live-9f8e7d6c sent"
-		got, _ := sampleBodyForModel(line)
-		if strings.Contains(got, "sk-live-9f8e7d6c") {
-			t.Errorf("expected bearer token value stripped, got: %q", got)
+	t.Run("bare basic keyword is not treated as a credential", func(t *testing.T) {
+		line := "basic auth failed for user bob"
+		if got, _ := sampleBodyForModel(line); got != line {
+			t.Errorf("expected prose left byte-identical, got: %q", got)
 		}
 	})
 

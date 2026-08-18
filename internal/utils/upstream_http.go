@@ -18,11 +18,9 @@ var (
 	upstreamBodySecretPattern = regexp.MustCompile(`(?i)\b(` + CredentialKeyAlternation + `)\b"?\s*[:=]\s*"?[^"',}\s]+`)
 )
 
-// CredentialKeyAlternation is the shared regexp alternation of key names whose
-// VALUES must never reach a model. Exported so the log sample-body sanitizer
-// builds its pattern from the same list — the two sanitizers cannot share a
-// compiled pattern (that one needs capture groups to preserve the key), but a
-// key added here must apply to both.
+// CredentialKeyAlternation is shared with the log sample-body sanitizer, which
+// needs its own compiled pattern (capture groups preserve the key) but must
+// redact the same key names.
 const CredentialKeyAlternation = `token|api[_-]?key|secret|password|authorization`
 
 // SanitizeUpstreamBody redacts URLs/credentials, strips controls, and bounds size

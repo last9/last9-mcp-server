@@ -85,9 +85,8 @@ const (
 var (
 	sampleBodyURLPattern    = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s"'<>,}\]]+`)
 	sampleBodyBearerPattern = regexp.MustCompile(`(?i)\b(bearer)\s+[^\s"',}]+`)
-	// The optional non-capturing scheme keeps a `Bearer`/`Basic` prefix inside
-	// the match; without it the value class stops at the space after the key
-	// and redacts only the scheme word, leaving the token exposed.
+	// Optional scheme absorbs a Bearer/Basic prefix: without it the value class
+	// stops at the space and redacts only the scheme word, leaking the token.
 	sampleBodyCredentialPattern = regexp.MustCompile(`(?i)\b(` + utils.CredentialKeyAlternation + `)\b("?\s*[:=]\s*"?)(?:(?:bearer|basic)\s+)?[^"',}\s]+`)
 	sampleBodyEscaper           = strings.NewReplacer("\n", "\\n", "\t", "\\t", "\r", "\\r")
 )
@@ -129,9 +128,8 @@ func sampleBodyForModel(line string) (sample string, notes []string) {
 
 	// Redact credential VALUES while preserving the key + separator, so the
 	// model can still see that a token/secret param existed at all.
-	// Bearer first, matching utils.SanitizeUpstreamBody's order: the credential
-	// pass is greedy over the key, so running it first would leave a bare token
-	// behind for the bearer pass to no longer recognize.
+	// Bearer first, as in SanitizeUpstreamBody: the credential pass would
+	// otherwise eat the scheme word and leave the token unmatchable.
 	before := s
 	s = sampleBodyBearerPattern.ReplaceAllString(s, "$1 [redacted]")
 	s = sampleBodyCredentialPattern.ReplaceAllString(s, "$1$2[redacted]")
