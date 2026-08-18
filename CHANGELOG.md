@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-08-16
+
 ### Fixed
 
 - `get_log_attributes_for_pipeline` now reports the Body's actual shape when it has no recognized structure. Previously a plain-text Body (neither JSON nor logfmt, no severity token) produced no Body-derived entry at all, leaving only the bare `{"$eq":["Body","<value>"]}` catalog hint — so models guessed `parser:"json"`, matched nothing, and returned a silent zero, or wrote an unanchored regexp capture that matched a leading timestamp and returned a confidently wrong count. Such services now get a single `Body` entry carrying `source:"body"`, a redacted `sample_body` sample line, and a one-stage `$regex`-on-Body hint to anchor against. The plaintext entry also survives the indexed/body merge: it enriches the existing indexed `Body` entry instead of being dropped as a duplicate `filter_field`.
