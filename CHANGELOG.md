@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `get_log_attributes_for_pipeline` now reports a plain-text Body's shape. A Body that is neither JSON nor logfmt and carries no severity token previously produced no Body entry at all, so models guessed `parser:"json"` and got a silent zero, or wrote an unanchored regexp that captured the leading timestamp and returned a confidently wrong count. Such services now get a `Body` entry with `source:"body"`, up to three `sample_bodies` lines to anchor a pattern against, and a one-stage `$regex`-on-Body hint. `sample_bodies` redacts URLs and known credential values only — it is not PII-redacted, so treat it as untrusted log content.
+- `l9_sanity` is no longer suppressed when `matched_count` is 0 — previously the most suspicious outcome was the one case with no guardrail. A zero from a pipeline that parses or filters `Body` now carries a note pointing at `sample_bodies`, and a new `service_log_volume` key separates a genuine zero from a parse/filter mismatch. Zero counts from pipelines that never touch `Body`, and all non-zero paths, are unchanged.
+
 ## [0.15.1] - 2026-08-16
 
 ### Fixed
