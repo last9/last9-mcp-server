@@ -600,17 +600,18 @@ Exactly one of `trace_id` or `service_name` is required.
 - `service_name` (string, required)
 - `environment` (string, required): Exact `deployment.environment` value.
 - `operation` (string, optional)
+- `population` (string, optional): `service` or `operation`; derived from whether `operation` is present when omitted.
 - `filters` (array, optional): Trace JSON filter conditions.
 - `candidate_attributes` (array, optional): Maximum 8; omit for bounded discovery.
-- `latency_threshold_ms` (number, optional): Required for `latency` mode; rejected for other modes.
+- `latency_threshold_ms` / `latency_percentile` (number, optional): `latency` mode requires exactly one. Percentile is greater than 0 and less than 100 and uses the same normalized population/window as the cohorts. Both are rejected for other modes.
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `lookback_minutes` (integer, optional): Default: 15. Maximum: 15.
 - `baseline_start_time_iso` / `baseline_end_time_iso` (string, optional): Required for `time` mode; non-overlapping and equal in duration to the target window.
 - `minimum_cohort_size` (integer, optional): Default: 100. Minimum: 20.
 - `minimum_value_support` (integer, optional): Default: 20. Minimum: 10.
-- `limit` (integer, optional): Default: 10. Maximum: 10.
+- `limit` (integer, optional): Default returned results: 5. Legacy requests through 10 are accepted, but responses remain capped at 5 with typed truncation metadata.
 
-Requires the companion backend capability to be enabled.
+Requires the companion backend capability to be enabled. Results include explicit cohort windows/definitions, normalized population count, candidate coverage, latency-threshold provenance, and backend duration. Text and structured MCP content carry the same validated upstream JSON bytes; unknown additive v1 fields are preserved. Unsupported/limited evidence is terminal, and clients must never reconstruct cohorts or rankings from other calls.
 
 ### get_trace_waterfall
 
@@ -621,7 +622,7 @@ Requires the companion backend capability to be enabled.
 - `selected_span_id` (string, optional): Returns attributes, events, and links for that span only.
 - `max_spans` (integer, optional): Default: 500. Maximum: 1000.
 
-Returns an `investigation-evidence/v1` envelope; the waterfall is under `data`.
+Returns an `investigation-evidence/v1` envelope; the waterfall is under `data`. Text and structured MCP content use one canonical JSON byte slice. Dynamic waterfall strings plus selected-span attributes/events/links use the deterministic `trace-evidence-sanitizer/v1`: telemetry strings are capped at 512 bytes, selected-detail collections at 64 items, upstream trace-details bodies at 16777216 bytes, and the serialized result at 524288 bytes. A maximum-shape span list is trimmed deterministically to the byte budget with typed partial/truncation metadata under `evidence.sanitization`; evidence that still cannot fit fails closed. Unsupported/limited evidence is terminal and must not be reconstructed client-side.
 
 ### get_change_events
 

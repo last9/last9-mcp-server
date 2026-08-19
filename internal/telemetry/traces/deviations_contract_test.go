@@ -1,6 +1,7 @@
 package traces
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -27,7 +28,7 @@ func deviationEndpointFixture(t *testing.T) []byte {
 	return b
 }
 
-func callDeviationsHandler(t *testing.T, status int, body []byte) (string, error) {
+func callDeviationsHandler(t *testing.T, status int, body []byte) (*mcp.CallToolResult, error) {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -41,25 +42,35 @@ func callDeviationsHandler(t *testing.T, status int, body []byte) (string, error
 		ComparisonMode: "errors", ServiceName: "checkout", Environment: "production",
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
+	return result, nil
+}
+
+func deviationResultBytes(t *testing.T, result *mcp.CallToolResult) ([]byte, []byte) {
+	t.Helper()
 	text, ok := result.Content[0].(*mcp.TextContent)
 	if !ok {
 		t.Fatalf("unexpected content type %T", result.Content[0])
 	}
-	return text.Text, nil
+	structured, ok := result.StructuredContent.(json.RawMessage)
+	if !ok {
+		t.Fatalf("StructuredContent type = %T, want json.RawMessage", result.StructuredContent)
+	}
+	return []byte(text.Text), []byte(structured)
 }
 
 // The upstream body is what reaches the model, so hold it to the same schema the
 // waterfall producer is held to.
 func TestDeviationEndpointFixtureSatisfiesEvidenceContract(t *testing.T) {
 	schema := resolvedEvidenceSchema(t)
-	forwarded, err := callDeviationsHandler(t, http.StatusOK, deviationEndpointFixture(t))
+	result, err := callDeviationsHandler(t, http.StatusOK, deviationEndpointFixture(t))
 	if err != nil {
 		t.Fatal(err)
 	}
+	forwarded, _ := deviationResultBytes(t, result)
 	var payload map[string]any
-	if err := json.Unmarshal([]byte(forwarded), &payload); err != nil {
+	if err := json.Unmarshal(forwarded, &payload); err != nil {
 		t.Fatal(err)
 	}
 	if err := schema.Validate(payload); err != nil {
@@ -77,18 +88,85 @@ func TestDeviationEndpointFixtureSatisfiesEvidenceContract(t *testing.T) {
 	}
 }
 
+func TestDeviationResultPreservesExactBytesAndUnknownAdditiveFields(t *testing.T) {
+	body := bytes.Replace(deviationEndpointFixture(t), []byte("{\n"), []byte("{\n  \"future_field\": {\"kept\": true},\n"), 1)
+	result, err := callDeviationsHandler(t, http.StatusOK, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, structured := deviationResultBytes(t, result)
+	if string(text) != string(body) || string(structured) != string(body) {
+		t.Fatalf("response bytes changed:\ntext=%q\nstructured=%q\nwant=%q", text, structured, body)
+	}
+	if !strings.Contains(string(structured), `"future_field"`) {
+		t.Fatal("unknown additive field was dropped")
+	}
+}
+
+func TestDeviationResponseWithMoreThanFiveResultsFailsClosed(t *testing.T) {
+	deviations := make([]map[string]any, 6)
+	for i := range deviations {
+		deviations[i] = map[string]any{"rank": i + 1}
+	}
+	body, err := json.Marshal(map[string]any{
+		"contract_version": investigationEvidenceVersion,
+		"analysis_version": attributeDeviationsVersion,
+		"data":             map[string]any{"deviations": deviations},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := callDeviationsHandler(t, http.StatusOK, body); err == nil {
+		t.Fatal("over-5 response must be rejected, not sliced")
+	}
+}
+
+func TestDeviationResponseMissingRequiredSectionsFailsClosed(t *testing.T) {
+	body := []byte(`{"contract_version":"investigation-evidence/v1","analysis_version":"trace-attribute-deviations/v1"}`)
+	if _, err := callDeviationsHandler(t, http.StatusOK, body); err == nil {
+		t.Fatal("version-only response must be rejected")
+	}
+}
+
+func TestDeviationResponseRejectsWrongTypedRequiredSections(t *testing.T) {
+	body := bytes.Replace(deviationEndpointFixture(t), []byte(`"request": {`), []byte(`"request": [] , "ignored_request": {`), 1)
+	if _, err := callDeviationsHandler(t, http.StatusOK, body); err == nil {
+		t.Fatal("wrong-typed request section must be rejected")
+	}
+}
+
+func TestDeviationResponseAboveBodyLimitFailsClosed(t *testing.T) {
+	body := append([]byte{}, deviationEndpointFixture(t)...)
+	body = append(body, bytes.Repeat([]byte{' '}, deviationMaxResponseBodyBytes-len(body))...)
+	body = append(body, 'x')
+	if _, err := callDeviationsHandler(t, http.StatusOK, body); err == nil {
+		t.Fatal("over-limit response must be rejected before forwarding")
+	}
+}
+
 // Each entry is a field the tool description promises the model it will receive.
 func TestDeviationDescriptionClaimsMatchEndpointFixture(t *testing.T) {
 	fixture := string(deviationEndpointFixture(t))
+	descriptionBytes, err := os.ReadFile(filepath.Clean("../../prompts/descriptions/get_trace_attribute_deviations.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	description := string(descriptionBytes)
 	for _, field := range []string{
 		`"target_share"`, `"control_share"`, `"percentage_point_delta"`,
 		// Nullable upstream, so the description must not promise a finite one.
 		`"ratio"`,
 		`"target_missing"`, `"control_missing"`, `"rank"`,
 		`"partial"`, `"truncated"`, `"warnings"`, `"evidence_quality"`,
+		`"population"`, `"target_cohort"`, `"control_cohort"`,
+		`"normalized_population_count"`, `"candidate_coverage"`,
+		`"threshold"`, `"backend_duration_ms"`,
 	} {
 		if !strings.Contains(fixture, field) {
 			t.Fatalf("description promises %s but the endpoint fixture has no such field", field)
+		}
+		if !strings.Contains(description, strings.Trim(field, `"`)) {
+			t.Fatalf("endpoint field %s is not documented in the served description", field)
 		}
 	}
 	// The description tells the model the endpoint never claims cause.
@@ -108,10 +186,18 @@ func TestDeviationDescriptionWarningStringsAreDocumented(t *testing.T) {
 		"candidate_limit_reached",
 		"minimum_cohort_size_not_met",
 		"attribute_value_limit_reached",
+		"ranked_result_limit_reduced_to_five",
 	} {
 		if !strings.Contains(string(description), warning) {
 			t.Fatalf("description must document the %q warning", warning)
 		}
+	}
+	lowerDescription := strings.ToLower(string(description))
+	if strings.Contains(lowerDescription, "fall back to get_traces") || strings.Contains(lowerDescription, "fallback to get_traces") {
+		t.Fatal("description must not reintroduce client-side cohort reconstruction")
+	}
+	if !strings.Contains(lowerDescription, "never reconstruct") {
+		t.Fatal("description must make the no-reconstruction boundary explicit")
 	}
 	// excluded_reason values, not warnings — the description must not conflate them.
 	for _, reason := range []string{
