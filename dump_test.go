@@ -42,6 +42,9 @@ func TestDumpTools(t *testing.T) {
 
 	byName := make(map[string]int)
 	for i, tool := range out.Tools {
+		if _, exists := byName[tool.Name]; exists {
+			t.Fatalf("duplicate tool name %q in dump", tool.Name)
+		}
 		byName[tool.Name] = i
 	}
 	for _, name := range []string{"get_traces", "get_service_summary", "prometheus_label_values", "get_logs"} {
@@ -288,28 +291,46 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	}
 	var out struct {
 		Tools []struct {
-			Name string `json:"name"`
+			Name        string `json:"name"`
+			InputSchema any    `json:"inputSchema"`
 		} `json:"tools"`
 	}
 	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
 		t.Fatalf("output is not valid JSON: %v", err)
 	}
-	byName := make(map[string]bool, len(out.Tools))
+	byName := make(map[string]int, len(out.Tools))
+	byTool := make(map[string]any, len(out.Tools))
 	for _, tool := range out.Tools {
-		byName[tool.Name] = true
+		byName[tool.Name]++
+		byTool[tool.Name] = tool.InputSchema
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "list_datasources"} {
-		if !byName[want] {
-			t.Errorf("investigate dump missing %q", want)
+	for _, want := range []string{"get_logs", "get_traces", "get_trace_attribute_deviations", "get_trace_waterfall", "prometheus_instant_query", "did_you_mean", "list_datasources"} {
+		if byName[want] != 1 {
+			t.Errorf("investigate dump contains %q %d times, want exactly once", want, byName[want])
 		}
 	}
 	for _, deny := range []string{"get_alerts", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots"} {
-		if byName[deny] {
+		if byName[deny] != 0 {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}
 	}
 	if len(out.Tools) >= 38 {
 		t.Fatalf("investigate should expose fewer than full surface; got %d", len(out.Tools))
+	}
+	schemaBytes, err := json.Marshal(byTool["get_trace_attribute_deviations"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal(schemaBytes, &schema); err != nil {
+		t.Fatal(err)
+	}
+	for _, property := range []string{"population", "latency_percentile"} {
+		if schema.Properties[property] == nil {
+			t.Fatalf("get_trace_attribute_deviations input schema missing %q", property)
+		}
 	}
 }
 

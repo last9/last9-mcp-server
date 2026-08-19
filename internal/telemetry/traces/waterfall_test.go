@@ -1,12 +1,24 @@
 package traces
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"io"
 	"math"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+type waterfallRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f waterfallRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
 
 var waterfallTestObservedAt = time.Date(2026, 7, 15, 0, 1, 0, 0, time.UTC)
 
@@ -33,6 +45,21 @@ func hasWarning(warnings []string, substring string) bool {
 		}
 	}
 	return false
+}
+
+func TestTraceWaterfallHandlerRejectsOversizedUpstreamBodyBeforeDecode(t *testing.T) {
+	client := &http.Client{Transport: waterfallRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewReader(bytes.Repeat([]byte{' '}, traceWaterfallMaxResponseBytes+1))),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	handler := NewGetTraceWaterfallHandler(client, deviationTestConfig("https://example.test"))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceWaterfallArgs{TraceID: "trace-1"})
+	if err == nil {
+		t.Fatalf("expected bounded-body error, got %v", err)
+	}
 }
 
 func TestBuildTraceWaterfallOverlappingChildrenUseIntervalUnion(t *testing.T) {

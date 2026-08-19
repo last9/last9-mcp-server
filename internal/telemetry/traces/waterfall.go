@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"time"
@@ -24,6 +25,7 @@ const (
 	evidenceWindowBoundary           = "half-open"
 	traceWaterfallMaxSpansDefault    = 500
 	traceWaterfallMaxSpansCeiling    = 1000
+	traceWaterfallMaxResponseBytes   = 16 << 20
 	traceWaterfallTopN               = 5
 	traceWaterfallErrorStatusCode    = "STATUS_CODE_ERROR"
 	traceWaterfallClaimObservation   = "observation"
@@ -99,12 +101,13 @@ type WaterfallRequest struct {
 }
 
 type WaterfallEvidence struct {
-	Partial       bool               `json:"partial"`
-	Truncated     bool               `json:"truncated"`
-	Warnings      []string           `json:"warnings"`
-	ReturnedSpans int                `json:"returned_spans"`
-	AppliedLimit  int                `json:"applied_limit"`
-	Provenance    EvidenceProvenance `json:"provenance"`
+	Partial       bool                 `json:"partial"`
+	Truncated     bool                 `json:"truncated"`
+	Warnings      []string             `json:"warnings"`
+	ReturnedSpans int                  `json:"returned_spans"`
+	AppliedLimit  int                  `json:"applied_limit"`
+	Provenance    EvidenceProvenance   `json:"provenance"`
+	Sanitization  EvidenceSanitization `json:"sanitization"`
 }
 
 type WaterfallInterpretation struct {
@@ -194,8 +197,15 @@ func NewGetTraceWaterfallHandler(client *http.Client, cfg models.Config) func(co
 		if httpResp.StatusCode != http.StatusOK {
 			return nil, nil, newTraceHTTPError(httpResp)
 		}
+		responseBody, err := io.ReadAll(io.LimitReader(httpResp.Body, traceWaterfallMaxResponseBytes+1))
+		if err != nil {
+			return nil, nil, newTraceInvalidResponseError(err)
+		}
+		if len(responseBody) > traceWaterfallMaxResponseBytes {
+			return nil, nil, newTraceInvalidResponseError(fmt.Errorf("trace-details response exceeds %d bytes", traceWaterfallMaxResponseBytes))
+		}
 		var raw TraceDetailsResponse
-		if err := json.NewDecoder(httpResp.Body).Decode(&raw); err != nil {
+		if err := json.Unmarshal(responseBody, &raw); err != nil {
 			return nil, nil, newTraceInvalidResponseError(err)
 		}
 		filtered := make([]TraceDetailsSpan, 0, len(raw.Traces))
@@ -216,12 +226,12 @@ func NewGetTraceWaterfallHandler(client *http.Client, cfg models.Config) func(co
 			effective:  evidenceWindow(start, end),
 			observedAt: time.Now().UTC(),
 		})
-		b, err := json.Marshal(resp)
+		b, err := marshalSanitizedTraceWaterfall(resp)
 		if err != nil {
 			return nil, nil, err
 		}
 		dl := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildTracesLink(start.UnixMilli(), end.UnixMilli(), nil, args.TraceID, "")
-		return &mcp.CallToolResult{Meta: deeplink.ToMeta(dl), Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, nil, nil
+		return newTraceWaterfallToolResult(b, deeplink.ToMeta(dl)), nil, nil
 	}
 }
 
