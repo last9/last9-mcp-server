@@ -13,6 +13,7 @@ import (
 
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -940,9 +941,9 @@ func uniqueSorted(values []string) []string {
 }
 
 func hasAnyAPMTelemetry(ctx context.Context, runner deviationQueryRunner, args DeviationArgs, windows DeviationWindows) (bool, error) {
-	matchers := []string{fmt.Sprintf(`service_name="%s"`, escapePromQLLabel(args.ServiceName))}
+	matchers := []string{fmt.Sprintf(`service_name="%s"`, utils.EscapePromQLLabel(args.ServiceName))}
 	if args.Env != "" {
-		matchers = append(matchers, fmt.Sprintf(`env="%s"`, escapePromQLLabel(args.Env)))
+		matchers = append(matchers, fmt.Sprintf(`env="%s"`, utils.EscapePromQLLabel(args.Env)))
 	}
 	selector := strings.Join(matchers, ",")
 	families := []string{"trace_endpoint_count", "trace_client_count", "domain_attributes_count"}

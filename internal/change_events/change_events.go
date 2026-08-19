@@ -122,70 +122,50 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 }
 
 const (
-	changeEventsMetric     = "last9_change_events"
-	backupEventExclude     = `event_name!~"cold_storage_logs_backup|cold_storage_logs_backup_endtime|cold_storage_logs_backup_time_taken_in_sec|manual_rehydration_event"`
-	scheduledSearchExclude = `l9_event_name!~"last9_scheduled_search"`
+	changeEventsMetric           = "last9_change_events"
+	excludeBackupEvents          = `event_name!~"cold_storage_logs_backup|cold_storage_logs_backup_endtime|cold_storage_logs_backup_time_taken_in_sec|manual_rehydration_event"`
+	excludeScheduledSearchEvents = `l9_event_name!~"last9_scheduled_search"`
 )
 
-// buildChangeEventsPromQL maps MCP-canonical params (service_name, env,
-// event_name) onto the labels last9_change_events actually stores.
-//
-// Stored series use service / deployment_environment / event_name. Some
-// tenants also copy the MCP names (service_name / env / event_type). Each
-// constraint matches the primary label, or the alias only when the primary
-// is absent — an unconditional OR would false-positive when both labels
-// exist with different values.
+// Change events store service / deployment_environment / event_name; the MCP
+// param names are just a different spelling of the first two.
 func buildChangeEventsPromQL(serviceName, env, eventName string) string {
-	sels := [][]string{{backupEventExclude, scheduledSearchExclude}}
-	sels = expandPrimaryOrAlias(sels, "service", "service_name", serviceName)
-	sels = expandPrimaryOrAlias(sels, "deployment_environment", "env", env)
-	sels = expandPrimaryOrAlias(sels, "event_name", "event_type", eventName)
-
-	out := make([]string, 0, len(sels))
-	for _, f := range sels {
-		out = append(out, changeEventsMetric+"{"+strings.Join(f, ",")+"}")
-	}
-	return strings.Join(out, " or ")
+	matchers := []string{excludeBackupEvents, excludeScheduledSearchEvents}
+	matchers = addFilter(matchers, "service", serviceName)
+	matchers = addFilter(matchers, "deployment_environment", env)
+	matchers = addFilter(matchers, "event_name", eventName)
+	return changeEventsMetric + "{" + strings.Join(matchers, ",") + "}"
 }
 
-func expandPrimaryOrAlias(sels [][]string, primary, alias, value string) [][]string {
+func addFilter(matchers []string, label, value string) []string {
 	if value == "" {
-		return sels
+		return matchers
 	}
-	out := make([][]string, 0, len(sels)*2)
-	for _, s := range sels {
-		out = append(out, append(append([]string{}, s...), fmt.Sprintf(`%s="%s"`, primary, value)))
-		out = append(out, append(append([]string{}, s...), fmt.Sprintf(`%s=""`, primary), fmt.Sprintf(`%s="%s"`, alias, value)))
-	}
-	return out
+	return append(matchers, fmt.Sprintf(`%s="%s"`, label, utils.EscapePromQLLabel(value)))
 }
 
-// fetchAvailableEventNames unions event_name and event_type values so
-// discover-then-filter works for both stored shapes.
+// Same exclusions as the query: a name this list offers must be one a filter
+// can actually match. event_name only — no other label carries an event
+// identity a filter can match.
 func fetchAvailableEventNames(ctx context.Context, client *http.Client, startTime, endTime int64, cfg models.Config) ([]string, error) {
-	unique := make(map[string]struct{})
-	for _, label := range []string{"event_name", "event_type"} {
-		names, err := fetchEventNamesForLabel(ctx, client, label, startTime, endTime, cfg)
-		if err != nil {
-			return nil, err
-		}
-		for _, name := range names {
-			if name == "" {
-				continue
-			}
-			unique[name] = struct{}{}
-		}
+	selector := changeEventsMetric + "{" + excludeBackupEvents + "," + excludeScheduledSearchEvents + "}"
+	names, err := fetchEventNamesForLabel(ctx, client, "event_name", selector, startTime, endTime, cfg)
+	if err != nil {
+		return nil, err
 	}
-	eventNames := make([]string, 0, len(unique))
-	for name := range unique {
+	eventNames := make([]string, 0, len(names))
+	for _, name := range names {
+		if name == "" {
+			continue
+		}
 		eventNames = append(eventNames, name)
 	}
 	sort.Strings(eventNames)
 	return eventNames, nil
 }
 
-func fetchEventNamesForLabel(ctx context.Context, client *http.Client, label string, startTime, endTime int64, cfg models.Config) ([]string, error) {
-	resp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, label, "last9_change_events", startTime, endTime, cfg)
+func fetchEventNamesForLabel(ctx context.Context, client *http.Client, label, selector string, startTime, endTime int64, cfg models.Config) ([]string, error) {
+	resp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, label, selector, startTime, endTime, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query event names: %w", err)
 	}

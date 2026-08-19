@@ -95,8 +95,8 @@ func TestGetChangeEventsHandler_ExplicitRangePrecedence(t *testing.T) {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(captured) != 3 {
-		t.Fatalf("expected 3 upstream requests (event_name + event_type discovery, then range), got %d", len(captured))
+	if len(captured) != 2 {
+		t.Fatalf("expected 2 upstream requests (event_name discovery, then range), got %d", len(captured))
 	}
 
 	// endTimeParam = "2026-02-09T16:04:05Z" = 1770653045
@@ -111,9 +111,8 @@ func TestGetChangeEventsHandler_ExplicitRangePrecedence(t *testing.T) {
 	}
 }
 
-// last9_change_events stores service/deployment_environment/event_name (and
-// sometimes the MCP-canonical aliases). Filtering only on env/service_name/
-// event_type returns zero series even when matching events exist.
+// Filtering on the MCP spellings alone returns zero series even when matching
+// events exist.
 func TestGetChangeEventsHandler_FiltersUseStoredMetricLabels(t *testing.T) {
 	var capturedQuery string
 	capturedLabels := map[string]bool{}
@@ -154,10 +153,12 @@ func TestGetChangeEventsHandler_FiltersUseStoredMetricLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
-	for _, want := range []string{"event_name", "event_type"} {
-		if !capturedLabels[want] {
-			t.Fatalf("available_event_names must read label %q, got %v", want, capturedLabels)
-		}
+	if !capturedLabels["event_name"] {
+		t.Fatalf("available_event_names must read label \"event_name\", got %v", capturedLabels)
+	}
+	// event_type is never stamped, so reading it surfaces unmatchable names.
+	if capturedLabels["event_type"] {
+		t.Fatalf("available_event_names must not read label \"event_type\", got %v", capturedLabels)
 	}
 	for _, want := range []string{
 		`service="checkout"`,
@@ -170,7 +171,10 @@ func TestGetChangeEventsHandler_FiltersUseStoredMetricLabels(t *testing.T) {
 	}
 }
 
-func TestGetChangeEventsHandler_MergesEventNameAndEventTypeDiscovery(t *testing.T) {
+// event_name is stamped on every series, so an event_type value could never be
+// matched by a filter.
+func TestGetChangeEventsHandler_DiscoveryReadsEventNameOnly(t *testing.T) {
+	var capturedMatches []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		_ = r.Body.Close()
@@ -180,9 +184,11 @@ func TestGetChangeEventsHandler_MergesEventNameAndEventTypeDiscovery(t *testing.
 			return
 		}
 		var req struct {
-			Label string `json:"label"`
+			Label   string   `json:"label"`
+			Matches []string `json:"matches"`
 		}
 		_ = json.Unmarshal(body, &req)
+		capturedMatches = append(capturedMatches, req.Matches...)
 		switch req.Label {
 		case "event_name":
 			_, _ = io.WriteString(w, `["deployment"]`)
@@ -217,7 +223,16 @@ func TestGetChangeEventsHandler_MergesEventNameAndEventTypeDiscovery(t *testing.
 		t.Fatalf("unmarshal: %v", err)
 	}
 	got := strings.Join(response.AvailableEventNames, ",")
-	if got != "deployment,rollback" {
-		t.Fatalf("available_event_names = %q, want deployment,rollback", got)
+	if got != "deployment" {
+		t.Fatalf("available_event_names = %q, want deployment (event_type must not be unioned)", got)
+	}
+
+	// Discovery must carry the query's exclusions, or it offers names that
+	// every filtered call then rejects.
+	joined := strings.Join(capturedMatches, " ")
+	for _, want := range []string{excludeBackupEvents, excludeScheduledSearchEvents} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("event_name discovery must apply %s, got matches %v", want, capturedMatches)
+		}
 	}
 }

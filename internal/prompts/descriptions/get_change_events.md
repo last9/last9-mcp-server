@@ -2,7 +2,7 @@ Change events from the `last9_change_events` Prometheus metric (deployments, con
 
 Response: `available_event_names` (valid filter values), `change_events` (timeseries with metric labels + timestamp/value pairs), `count`, `time_range`.
 
-Each event has `metric` (labels: service, deployment_environment, event_name, message, …) and `values` (timestamp/value pairs). Pass tool params `service_name` and `env` — they map onto those stored labels (and `service_name`/`env` when present).
+Each event has `metric` (labels: service, deployment_environment, event_name, message, …) and `values` (timestamp/value pairs). Filter with the tool's own param names (`service_name`, `env`, `event_name`) — the server maps them onto the labels the events are stored with.
 
 Workflow: first call without `event_name` to read `available_event_names`, then filter with the exact name from that list. Combine with service_name, env, and time filters as needed.
 
