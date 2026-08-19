@@ -41,7 +41,7 @@ type GetChangeEventsArgs struct {
 	LookbackMinutes int    `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1)"`
 	ServiceName     string `json:"service_name,omitempty" jsonschema:"Service name filter (optional)"`
 	Env             string `json:"env,omitempty" jsonschema:"Environment filter (optional)"`
-	EventName       string `json:"event_name,omitempty" jsonschema:"Exact event type filter (optional). Use available_event_names from a previous call."`
+	EventName       string `json:"event_name,omitempty" jsonschema:"Exact event name filter (optional). Use available_event_names from a previous call."`
 }
 
 func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetChangeEventsArgs) (*mcp.CallToolResult, any, error) {
