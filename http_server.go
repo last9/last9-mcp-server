@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -20,39 +19,16 @@ import (
 
 // HTTPServer wraps the MCP server for HTTP transport
 type HTTPServer struct {
-	server   *last9mcp.Last9MCPServer
-	config   models.Config
-	toolsMap map[string]interface{}
-	sessions map[string]*MCPSession
-	mu       sync.RWMutex
-}
-
-// MCPSession represents an MCP session state
-type MCPSession struct {
-	ID           string
-	Initialized  bool
-	Capabilities map[string]interface{}
-	CreatedAt    time.Time
+	server *last9mcp.Last9MCPServer
+	config models.Config
 }
 
 // NewHTTPServer creates a new HTTP-based MCP server
 func NewHTTPServer(server *last9mcp.Last9MCPServer, config models.Config) *HTTPServer {
 	return &HTTPServer{
-		server:   server,
-		config:   config,
-		sessions: make(map[string]*MCPSession),
+		server: server,
+		config: config,
 	}
-}
-
-// newStatelessStreamableHandler builds the MCP Streamable HTTP handler in
-// stateless mode. Otherwise session state is kept per-instance in memory, so
-// when more than one replica runs behind a load balancer a follow-up request
-// (e.g. tools/list) can be routed to a different instance than the one that
-// handled initialize and fail with "session not found" (404). All tools are
-// independent request/response queries, so a temporary per-request session is
-// sufficient and lets the server scale horizontally.
-func newStatelessStreamableHandler(getServer func(*http.Request) *mcp.Server) http.Handler {
-	return mcp.NewStreamableHTTPHandler(getServer, &mcp.StreamableHTTPOptions{Stateless: true})
 }
 
 // Start starts the HTTP server with streamable HTTP support
@@ -63,7 +39,13 @@ func (h *HTTPServer) Start() error {
 	// Create a mux to handle multiple endpoints
 	mux := http.NewServeMux()
 
-	// See newStatelessStreamableHandler for why the handler runs in stateless mode.
+	// Stateless mode: session state is otherwise kept per-instance in memory, so
+	// when more than one replica runs behind a load balancer a follow-up request
+	// (e.g. tools/list) can be routed to a different instance than the one that
+	// handled initialize and fail with "session not found" (404). All tools are
+	// independent request/response queries, so a temporary per-request session is
+	// sufficient and lets the server scale horizontally.
+	//
 	// Use the instrumented SDK helper so HTTP telemetry is attributed to the
 	// streamable transport rather than an empty transport.
 	httpHandler := h.server.NewStreamableHTTPHandler(&mcp.StreamableHTTPOptions{Stateless: true})
