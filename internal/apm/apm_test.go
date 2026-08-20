@@ -742,8 +742,10 @@ func TestServicePerformanceDetailsTooManySamplesRecordsActionablePartialErrors(t
 	joined := strings.Join(details.PartialErrors, "\n")
 	for _, want := range []string{
 		"METRICS_QUERY_TOO_MANY_SAMPLES",
-		"shorter time range",
 		"narrower filters",
+		"do not ask the user to edit PromQL",
+		"preserve the requested coverage",
+		"Never average percentile values",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("actionable partial_errors %q missing %q", joined, want)

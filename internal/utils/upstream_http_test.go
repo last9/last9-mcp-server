@@ -66,12 +66,16 @@ func TestNewUpstreamHTTPErrorMapsTooManySamplesToActionableMetricsError(t *testi
 	for _, want := range []string{
 		"HTTP 422",
 		"METRICS_QUERY_TOO_MANY_SAMPLES",
-		"shorter time range",
 		"narrower filters",
 		"service",
 		"environment",
 		"operation",
 		"label",
+		"do not ask the user to edit PromQL",
+		"split it into smaller subranges",
+		"preserve the requested coverage",
+		"Never average percentile values",
+		"Ask the user to narrow the scope only when",
 		"Do not retry the same query unchanged",
 	} {
 		if !strings.Contains(got, want) {
