@@ -18,16 +18,14 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-
 // ServiceLogsResponse represents the response structure for service logs
 type ServiceLogsResponse struct {
-	Service       string     `json:"service"`
-	StartTime     string     `json:"start_time"`
-	EndTime       string     `json:"end_time"`
-	Count         int        `json:"count"`
-	Logs          []LogEntry `json:"logs"`
-	PartialResult bool       `json:"partial_result,omitempty"`
-	Warning       string     `json:"warning,omitempty"`
+	Service         string     `json:"service"`
+	StartTime       string     `json:"start_time"`
+	EndTime         string     `json:"end_time"`
+	Count           int        `json:"count"`
+	Logs            []LogEntry `json:"logs"`
+	HTTPStatusField string     `json:"http_status_field,omitempty"`
 }
 
 // LogEntry represents a single log entry
@@ -40,15 +38,25 @@ type LogEntry struct {
 
 // GetServiceLogsArgs represents the input arguments for the get_service_logs tool
 type GetServiceLogsArgs struct {
-	ServiceName     string   `json:"service_name" jsonschema:"Name of the service to retrieve logs for (e.g. api) (required)"`
-	StartTimeISO    string   `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2023-10-01T10:00:00Z). If not provided lookback_minutes is used"`
-	EndTimeISO      string   `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2023-10-01T11:00:00Z). If not provided current time is used"`
-	LookbackMinutes int      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time if start_time_iso not provided (default: 60, minimum: 1)"`
-	Limit           int      `json:"limit,omitempty" jsonschema:"Maximum number of log entries to return (optional, default: 20)"`
-	SeverityFilters []string `json:"severity_filters,omitempty" jsonschema:"Array of severity patterns to match (uses OR logic) (e.g. [error warn])"`
-	BodyFilters     []string `json:"body_filters,omitempty" jsonschema:"Array of message content patterns to match (uses OR logic) (e.g. [timeout failed])"`
-	Env             string   `json:"env,omitempty" jsonschema:"Environment to filter by. Empty string if environment is unknown (e.g. production)"`
-	Index           string   `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Omit this when the user did not specify an index."`
+	ServiceName      string                      `json:"service_name" jsonschema:"Name of the service to retrieve logs for (e.g. api) (required)"`
+	StartTimeISO     string                      `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2023-10-01T10:00:00Z). If not provided lookback_minutes is used"`
+	EndTimeISO       string                      `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2023-10-01T11:00:00Z). If not provided current time is used"`
+	LookbackMinutes  int                         `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time if start_time_iso not provided (default: 60, minimum: 1)"`
+	Limit            int                         `json:"limit,omitempty" jsonschema:"Maximum number of log entries to return (optional, default: 20)"`
+	SeverityFilters  []string                    `json:"severity_filters,omitempty" jsonschema:"Array of severity patterns to match (uses OR logic) (e.g. [error warn])"`
+	BodyFilters      []string                    `json:"body_filters,omitempty" jsonschema:"Array of message content patterns to match (uses OR logic) (e.g. [timeout failed])"`
+	HTTPStatusClass  string                      `json:"http_status_class,omitempty" jsonschema:"HTTP status class to match: 2xx, 3xx, 4xx, or 5xx. Discovers the status field unless http_status_field is set."`
+	HTTPStatusCode   string                      `json:"http_status_code,omitempty" jsonschema:"Exact HTTP status code (e.g. 500, 401). Discovers the status field unless http_status_field is set. Takes precedence over http_status_class."`
+	HTTPStatusField  string                      `json:"http_status_field,omitempty" jsonschema:"Explicit logjson field for HTTP status (e.g. attributes['http.status_code']). Required when discovery finds zero or multiple status-like fields."`
+	AttributeFilters []ServiceLogAttributeFilter `json:"attribute_filters,omitempty" jsonschema:"Equality filters on named log attributes. Each entry is field plus value. field uses logjson syntax such as attributes['user_id']. Unknown org fields are allowed; invalid syntax is rejected."`
+	Env              string                      `json:"env,omitempty" jsonschema:"Environment to filter by. Empty string if environment is unknown (e.g. production)"`
+	Index            string                      `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Omit this when the user did not specify an index."`
+}
+
+// ServiceLogAttributeFilter is a structured equality filter compiled into logjson.
+type ServiceLogAttributeFilter struct {
+	Field string `json:"field" jsonschema:"(Required) logjson field, e.g. attributes['user_id'] or resources['k8s.namespace.name']"`
+	Value string `json:"value" jsonschema:"(Required) exact value matched with $eq"`
 }
 
 // NewGetServiceLogsHandler creates a new handler for the get_service_logs tool
@@ -90,9 +98,18 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("invalid index: %w", err)
 		}
 
+		extraConditions, parseStages, statusField, err := compileServiceLogsStructuredFilters(ctx, client, cfg, args, startTime, endTime, normalizedIndex)
+		if err != nil {
+			return nil, nil, err
+		}
+
 		logjsonQuery := buildServiceLogsQuery(args.ServiceName, args.SeverityFilters, args.BodyFilters)
 		if args.Env != "" {
 			logjsonQuery = addServiceLogsEnvFilter(logjsonQuery, args.Env)
+		}
+		logjsonQuery, err = applyServiceLogsStructuredFilters(logjsonQuery, extraConditions, parseStages)
+		if err != nil {
+			return nil, nil, err
 		}
 
 		// Fetch raw logs using the existing logs API approach. When index is omitted,
@@ -101,6 +118,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
+		logs.HTTPStatusField = statusField
 
 		// Format response as JSON for better readability
 		responseJSON, err := json.MarshalIndent(logs, "", "  ")
@@ -278,7 +296,6 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		// partial-result annotation when some chunks succeeded. Wrapping the
 		// underlying error via %w preserves errors.Is/As behaviour.
 		partialErr error
-		anySuccess bool
 	)
 
 	for _, r := range results {
@@ -299,11 +316,6 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 			}
 			continue
 		}
-
-		// A successful chunk — even an empty one — counts as positive
-		// evidence about its window. This mirrors fetchLogJSONQuery, where
-		// a successful empty streams response sets baseResponse.
-		anySuccess = true
 
 		remaining := limit - len(logs)
 		chunkLogs := r.Value
@@ -331,37 +343,27 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		}
 	}
 
-	// Hard-error only when NO chunk succeeded. If even one chunk returned a
-	// valid (possibly empty) response, surface what we have with a partial
-	// annotation — same contract as fetchLogJSONQuery.
-	if !anySuccess && partialErr != nil {
-		return nil, partialErr
+	if partialErr != nil {
+		return nil, fmt.Errorf("%w (window start_ms=%d end_ms=%d)", partialErr, startMs, endMs)
 	}
 
 	if chunkingDebug {
 		log.Printf(
-			"[chunking] get_service_logs chunking complete service=%q returned_entries=%d start_ms=%d end_ms=%d partial=%t",
+			"[chunking] get_service_logs chunking complete service=%q returned_entries=%d start_ms=%d end_ms=%d",
 			service,
 			len(logs),
 			startMs,
 			endMs,
-			partialErr != nil,
 		)
 	}
 
-	response := &ServiceLogsResponse{
+	return &ServiceLogsResponse{
 		Service:   service,
 		StartTime: startTime.Format(time.RFC3339),
 		EndTime:   endTime.Format(time.RFC3339),
 		Count:     len(logs),
 		Logs:      logs,
-	}
-	if partialErr != nil {
-		response.PartialResult = true
-		response.Warning = fmt.Sprintf("Returning partial results: %v", partialErr)
-	}
-
-	return response, nil
+	}, nil
 }
 
 func fetchServiceLogsChunk(ctx context.Context, client *http.Client, cfg models.Config, service string, logjsonQuery []map[string]interface{}, startTimeMs, endTimeMs int64, limit int, index string) ([]LogEntry, error) {

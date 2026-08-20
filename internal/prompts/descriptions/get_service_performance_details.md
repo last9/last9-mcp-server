@@ -2,7 +2,7 @@ Service performance metrics over a time range.
 
 Returns: service name, env, throughput (rpm), error rate (rpm, 4xx/5xx), error percentage, response times in seconds (p50, p90, p95, avg, max), apdex score, availability (%), top 10 operations by response time and error rate, top 10 errors/exceptions by count.
 
-Use `get_service_operation_details` for per-operation drill-down. Use for performance summaries, bottlenecks, and error overview.
+Use `get_service_operations_summary` for per-operation drill-down. Use for performance summaries, bottlenecks, and error overview.
 
 Many metric fields use PromQL timeseries format: `[{"metric":{...},"values":[[timestamp_seconds,"value"]]}]`. Top operations/errors are dicts/lists of name→value.
 

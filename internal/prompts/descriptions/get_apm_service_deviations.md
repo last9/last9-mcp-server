@@ -1,6 +1,6 @@
 Compare APM performance across a current window and an equal-duration baseline window. Use this tool for questions such as what regressed, improved, or changed; incident-versus-prior-period comparisons; recovery or post-mitigation verification; and fleet deviation discovery.
 
-Use `get_service_summary` for a one-window snapshot of current performance. Use `get_apm_service_deviations` when the question requires an equal-duration baseline comparison.
+Use `get_service_summary` for a one-window fleet ranking of interval request count, rpm, HTTP 4xx/5xx, and gRPC errors. Use `get_apm_service_deviations` when the question requires an equal-duration baseline comparison.
 
 For a comparative question, call this tool first and by itself. Do not batch speculative corroboration or duplicate comparison calls. Inspect the returned outcome and evidence before deciding whether the user explicitly requested any deeper investigation.
 
