@@ -282,6 +282,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 ### Change Events & Alerts
 
 - **`get_change_events`** — Deployments, config changes, rollbacks. Correlate incidents with what changed
+- **`get_alert_groups`** — Configured Compass alert groups with metadata labels, team, tier, and rule counts — including groups with zero rules and groups that are not firing
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_alerts`** — Currently firing alerts within a time window
 - **`get_alert_rule_state`** — Historical firing state (1/0) per alert rule over a time range, grouped by `rule_id`. Filterable by alert group, rule name, label filters, and state.
@@ -630,6 +631,16 @@ Returns an `investigation-evidence/v1` envelope; the waterfall is under `data`.
 - `service_name` (string, optional)
 - `env` (string, optional)
 - `event_name` (string, optional): Call without this first to get `available_event_names`.
+
+### get_alert_groups
+
+Configured Compass alert-group inventory for changeboard / label-coverage audits. Includes groups with zero rules and groups that are not firing. Does not return PromQL.
+
+- `alert_group_name` / `alert_group_type` / `data_source_name` (string, optional): Case-insensitive substring match.
+- `team` / `tier` (string, optional): Exact case-insensitive match on configured metadata.
+- `label_key` + `label_value` (string, optional): Must be set together. Exact match on one `metadata.labels` pair.
+
+Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `entity_class`, `team`, `tier`, `metadata.labels`, and rule counts. Empty `team` / `labels` means unset.
 
 ### get_alert_config
 
