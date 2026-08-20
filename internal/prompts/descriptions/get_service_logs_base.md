@@ -1,10 +1,12 @@
-Fetch raw log lines for one service (`service_name`, optional `severity_filters`, `body_filters`, `env`, `index`, `limit`).
+Fetch raw log lines for one service (`service_name`, optional `severity_filters`, `body_filters`, `http_status_class`/`http_status_code`, `attribute_filters`, `env`, `index`, `limit`).
 
-**Use this tool when:** filtering by log severity levels (`severity_filters`: error/warn/fatal) or plain-text message search (`body_filters`) for a single known service—no pipeline needed.
+**Use this tool when:** filtering one known service by severity, HTTP status, named attributes, or plain-text `body_filters`—no pipeline needed.
 
-**Prefer `get_logs` instead when:** filtering HTTP/gRPC status, user IDs, latency, URIs, or any structured attribute. Discover fields with `get_log_attributes` / `get_log_attributes_for_pipeline`, then call `get_logs` with a `logjson_query`. Indexed attribute filters beat `body_filters`.
+**HTTP status:** Pass `http_status_class` (`5xx`) or `http_status_code` (`500`). This tool discovers the status field for the service/env/window. If discovery finds none or more than one, pass `http_status_field` (e.g. `attributes['http.status_code']`). Severity is not an HTTP-error proxy (5xx often INFO)—do not use `severity_filters` for status.
 
-**HTTP errors:** Severity is not an HTTP-error proxy (5xx often INFO). Use `get_logs` + discovered status field—not `severity_filters`/`SeverityText`.
+**Named attributes:** `attribute_filters` is `[{field, value}]` equality. `field` uses logjson syntax (`attributes['user_id']`). Invalid syntax is rejected; unknown org fields are allowed. Discover names with `get_log_attributes` / `get_log_attributes_for_pipeline` if unsure.
+
+**Prefer `get_logs` when:** you need parse/aggregate/`window_aggregate`, or an ad-hoc pipeline.
 
 **Time:** Prefer `lookback_minutes` for relative windows; `start_time_iso`+`end_time_iso` (RFC3339) for absolute. Pass `index` only when the user names one (`physical_index:<name>` / `rehydration_index:<block>`).
 

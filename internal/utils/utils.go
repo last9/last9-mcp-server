@@ -471,3 +471,12 @@ func validatePopulatedDatasourceCfg(cfg *models.Config) error {
 	}
 	return nil
 }
+
+// EscapePromQLLabel escapes special characters in a PromQL label value so an
+// interpolated value cannot terminate the matcher and alter the selector.
+func EscapePromQLLabel(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, "\n", `\n`)
+	return s
+}

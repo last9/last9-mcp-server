@@ -27,11 +27,6 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
-type ServiceSummary struct {
-	Throughput, ErrorRate, ResponseTime float64
-	ServiceName, Env                    string
-}
-
 type apiPromInstantResp []struct {
 	Metric map[string]string `json:"metric"`
 	Value  []any             `json:"value"`
@@ -43,13 +38,6 @@ type apiPromRangeResp []struct {
 }
 
 // Input structs for MCP SDK handlers
-type ServiceSummaryArgs struct {
-	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
-	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
-	Env             string  `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
-}
-
 type ServiceEnvironmentsArgs struct {
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
@@ -159,168 +147,6 @@ func resolveInstantQueryTime(timeISO string, lookbackMinutes float64) (int64, er
 	return time.Now().UTC().Unix(), nil
 }
 
-func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceSummaryArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, args ServiceSummaryArgs) (*mcp.CallToolResult, any, error) {
-		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		// Accept env from parameters if provided
-		env := args.Env
-		if env == "" {
-			env = ".*" // default value
-		}
-		// get the value of service througputs using the query
-		// quantile_over_time(0.95, sum by (service_name)(trace_endpoint_count{service_name=~'.*', env=~'prod', span_kind=~'SPAN_KIND_SERVER|SPAN_KIND_CLIENT'})[30m])
-		// add the filter values in the promql from the filterParams
-		// Build PromQL filter string from filterParams
-		// Build PromQL query
-		promql := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (service_name)(trace_endpoint_count{env=~'%s', span_kind='SPAN_KIND_SERVER'}[%dm]))",
-			env,
-			int((endTimeParam-startTimeParam)/60),
-		)
-
-		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, promql, endTimeParam, cfg)
-		if err != nil {
-			return nil, nil, err
-		}
-		defer httpResp.Body.Close()
-
-		var promResp map[string]ServiceSummary
-		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service summary: %s", httpResp.Status)
-		}
-
-		// Extract service summary map from PromQL response
-		var thrResp apiPromInstantResp
-		if err := json.NewDecoder(httpResp.Body).Decode(&thrResp); err != nil {
-			return nil, nil, err
-		}
-
-		promResp = make(map[string]ServiceSummary)
-		for _, r := range thrResp {
-			serviceName := r.Metric["service_name"]
-
-			valStr, _ := r.Value[1].(string)
-			val, _ := strconv.ParseFloat(valStr, 64)
-
-			promResp[serviceName] = ServiceSummary{
-				ServiceName:  serviceName,
-				Env:          env,
-				Throughput:   val,
-				ErrorRate:    0, // Placeholder, set if available
-				ResponseTime: 0, // Placeholder, set if available
-			}
-		}
-		// If no services found, return empty result
-		if len(promResp) == 0 {
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{
-					&mcp.TextContent{
-						Text: "No services found for the given parameters",
-					},
-				},
-			}, nil, nil
-		}
-		// Make another prom_query_instant call for response time
-		respTimePromql := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (service_name)(trace_service_response_time{quantile=\"p95\", env=~'%s'}[%dm]))",
-			env,
-			int((endTimeParam-startTimeParam)/60),
-		)
-		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, respTimePromql, endTimeParam, cfg)
-		if err != nil {
-			return nil, nil, err
-		}
-		defer httpResp.Body.Close()
-		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service summary: %s", httpResp.Status)
-		}
-
-		var respTimeRaw apiPromInstantResp
-		if err := json.NewDecoder(httpResp.Body).Decode(&respTimeRaw); err != nil {
-			return nil, nil, err
-		}
-
-		for _, r := range respTimeRaw {
-			serviceName := r.Metric["service_name"]
-			valStr, _ := r.Value[1].(string)
-			val, _ := strconv.ParseFloat(valStr, 64)
-			if summary, ok := promResp[serviceName]; ok {
-				summary.ResponseTime = val
-				promResp[serviceName] = summary
-			} else {
-				promResp[serviceName] = ServiceSummary{
-					ServiceName:  serviceName,
-					Env:          env,
-					Throughput:   0,
-					ErrorRate:    0,
-					ResponseTime: val,
-				}
-			}
-		}
-		// Make another prom_query_instant call for error rate
-		errorRateQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (service_name)(trace_endpoint_count{env=~'%s', span_kind=~'SPAN_KIND_SERVER', http_status_code=~\"5.*\"}[%dm]))",
-			env,
-			int((endTimeParam-startTimeParam)/60),
-		)
-		// Prepare request to Prometheus (or your metrics backend)
-		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, errorRateQuery, endTimeParam, cfg)
-		if err != nil {
-			return nil, nil, err
-		}
-		defer httpResp.Body.Close()
-		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service summary: %s", httpResp.Status)
-		}
-
-		var errRateRaw apiPromInstantResp
-		if err := json.NewDecoder(httpResp.Body).Decode(&errRateRaw); err != nil {
-			return nil, nil, err
-		}
-
-		for _, r := range errRateRaw {
-			serviceName := r.Metric["service_name"]
-			valStr, _ := r.Value[1].(string)
-			val, _ := strconv.ParseFloat(valStr, 64)
-			if summary, ok := promResp[serviceName]; ok {
-				summary.ErrorRate = val
-				promResp[serviceName] = summary
-			} else {
-				promResp[serviceName] = ServiceSummary{
-					ServiceName:  serviceName,
-					Env:          env,
-					Throughput:   0,
-					ErrorRate:    val,
-					ResponseTime: 0,
-				}
-			}
-		}
-		returnText, err := json.Marshal(promResp)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
-		}
-
-		// Build deep link URL
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, "", env, "")
-
-		return &mcp.CallToolResult{
-			Meta: deeplink.ToMeta(dashboardURL),
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: string(returnText),
-				},
-			},
-		}, nil, nil
-	}
-}
-
 type TimeSeriesPoint struct {
 	Timestamp uint64  `json:"timestamp"`
 	Value     float64 `json:"value"`
@@ -408,7 +234,8 @@ type ServicePerformanceDetails struct {
 		ByResponseTime []map[string]float64 `json:"by_response_time"`
 		ByErrorRate    []map[string]int64   `json:"by_error_rate"`
 	} `json:"top_operations"`
-	TopErrors []map[string]int64 `json:"top_errors"`
+	TopErrors     []map[string]int64 `json:"top_errors"`
+	PartialErrors []string           `json:"partial_errors,omitempty"`
 }
 
 func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServicePerformanceDetailsArgs) (*mcp.CallToolResult, any, error) {
@@ -448,7 +275,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}
 		defer httpResp.Body.Close()
 
-		if httpResp.StatusCode == http.StatusOK {
+		if httpResp.StatusCode != http.StatusOK {
+			details.PartialErrors = append(details.PartialErrors, promErr(httpResp, "service performance details apdex").Error())
+		} else {
 			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to read response body: %w", err)
@@ -471,7 +300,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}
 		defer httpResp.Body.Close()
 
-		if httpResp.StatusCode == http.StatusOK {
+		if httpResp.StatusCode != http.StatusOK {
+			details.PartialErrors = append(details.PartialErrors, promErr(httpResp, "service performance details response_times").Error())
+		} else {
 			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to read response body: %w", err)
@@ -494,7 +325,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}
 		defer httpResp.Body.Close()
 
-		if httpResp.StatusCode == http.StatusOK {
+		if httpResp.StatusCode != http.StatusOK {
+			details.PartialErrors = append(details.PartialErrors, promErr(httpResp, "service performance details availability").Error())
+		} else {
 			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to read response body: %w", err)
@@ -517,7 +350,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}
 		defer httpResp.Body.Close()
 
-		if httpResp.StatusCode == http.StatusOK {
+		if httpResp.StatusCode != http.StatusOK {
+			details.PartialErrors = append(details.PartialErrors, promErr(httpResp, "service performance details throughput").Error())
+		} else {
 			// read response body to byte array
 			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
@@ -541,7 +376,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}
 		defer httpResp.Body.Close()
 
-		if httpResp.StatusCode == http.StatusOK {
+		if httpResp.StatusCode != http.StatusOK {
+			details.PartialErrors = append(details.PartialErrors, promErr(httpResp, "service performance details error_rate").Error())
+		} else {
 			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to read response body: %w", err)
@@ -563,7 +400,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}
 		defer httpResp.Body.Close()
 
-		if httpResp.StatusCode == http.StatusOK {
+		if httpResp.StatusCode != http.StatusOK {
+			details.PartialErrors = append(details.PartialErrors, promErr(httpResp, "service performance details error_percent").Error())
+		} else {
 			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to read response body: %w", err)
@@ -585,7 +424,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}
 		defer httpResp.Body.Close()
 
-		if httpResp.StatusCode == http.StatusOK {
+		if httpResp.StatusCode != http.StatusOK {
+			details.PartialErrors = append(details.PartialErrors, promErr(httpResp, "service performance details top_operations_by_response_time").Error())
+		} else {
 			var topErrResp apiPromInstantResp
 			if err := json.NewDecoder(httpResp.Body).Decode(&topErrResp); err == nil {
 				details.TopOperations.ByResponseTime = make([]map[string]float64, 0)
@@ -624,7 +465,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}
 		defer httpResp.Body.Close()
 
-		if httpResp.StatusCode == http.StatusOK {
+		if httpResp.StatusCode != http.StatusOK {
+			details.PartialErrors = append(details.PartialErrors, promErr(httpResp, "service performance details top_operations_by_error_rate").Error())
+		} else {
 			var topErrResp apiPromInstantResp
 			if err := json.NewDecoder(httpResp.Body).Decode(&topErrResp); err == nil {
 				details.TopOperations.ByErrorRate = make([]map[string]int64, 0)
@@ -662,7 +505,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			return nil, nil, err
 		}
 		defer httpResp.Body.Close()
-		if httpResp.StatusCode == http.StatusOK {
+		if httpResp.StatusCode != http.StatusOK {
+			details.PartialErrors = append(details.PartialErrors, promErr(httpResp, "service performance details top_errors").Error())
+		} else {
 			var topErrResp apiPromInstantResp
 			if err := json.NewDecoder(httpResp.Body).Decode(&topErrResp); err == nil {
 				details.TopErrors = make([]map[string]int64, 0)
@@ -694,7 +539,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 
 		// Build deep link URL
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, env, "")
+		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, deeplink.APMCatalogEnvExact(env), "")
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
@@ -735,7 +580,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service operations summary")
 		}
 		var promResp apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&promResp); err != nil {
@@ -753,7 +598,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service operations summary")
 		}
 		var respTimeRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&respTimeRaw); err != nil {
@@ -772,7 +617,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service operations summary")
 		}
 		var errorRateRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&errorRateRaw); err != nil {
@@ -790,7 +635,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service operations summary")
 		}
 		var dbThroughputRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&dbThroughputRaw); err != nil {
@@ -808,7 +653,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service operations summary")
 		}
 		var dbRespTimeRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&dbRespTimeRaw); err != nil {
@@ -842,7 +687,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service operations summary")
 		}
 		var dbErrorRateRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&dbErrorRateRaw); err != nil {
@@ -860,7 +705,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service operations summary")
 		}
 		var httpThroughputRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&httpThroughputRaw); err != nil {
@@ -878,7 +723,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service operations summary")
 		}
 		var httpRespTimeRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&httpRespTimeRaw); err != nil {
@@ -910,7 +755,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service operations summary")
 		}
 		var httpErrorRateRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&httpErrorRateRaw); err != nil {
@@ -928,7 +773,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service operations summary")
 		}
 		var messagingThroughputRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&messagingThroughputRaw); err != nil {
@@ -946,7 +791,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service operations summary")
 		}
 		var messagingRespTimeRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&messagingRespTimeRaw); err != nil {
@@ -978,7 +823,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service operations summary: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service operations summary")
 		}
 		var messagingErrorRateRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&messagingErrorRateRaw); err != nil {
@@ -1236,7 +1081,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 
 		// Build deep link URL
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, env, "operations")
+		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, deeplink.APMCatalogEnvExact(env), "operations")
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
@@ -1298,7 +1143,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service dependency graph details: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service dependency graph")
 		}
 		var incomingThroughputRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&incomingThroughputRaw); err != nil {
@@ -1315,7 +1160,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service dependency graph details: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service dependency graph")
 		}
 		var incomingRespTimeRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&incomingRespTimeRaw); err != nil {
@@ -1332,7 +1177,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service dependency graph details: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service dependency graph")
 		}
 		var incomingErrorRateRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&incomingErrorRateRaw); err != nil {
@@ -1408,7 +1253,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service dependency graph details: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service dependency graph")
 		}
 		var outgoingThroughputRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&outgoingThroughputRaw); err != nil {
@@ -1425,7 +1270,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service dependency graph details: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service dependency graph")
 		}
 		var outgoingRespTimeRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&outgoingRespTimeRaw); err != nil {
@@ -1442,7 +1287,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service dependency graph details: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service dependency graph")
 		}
 		var outgoingErrorRateRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&outgoingErrorRateRaw); err != nil {
@@ -1519,7 +1364,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service dependency graph details: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service dependency graph")
 		}
 		var infrastructureThroughputRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&infrastructureThroughputRaw); err != nil {
@@ -1536,7 +1381,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service dependency graph details: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service dependency graph")
 		}
 		var infrastructureRespTimeRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&infrastructureRespTimeRaw); err != nil {
@@ -1553,7 +1398,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 		defer httpResp.Body.Close()
 		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to get service dependency graph details: %s", httpResp.Status)
+			return nil, nil, promErr(httpResp, "service dependency graph")
 		}
 		var infrastructureErrorRateRaw apiPromInstantResp
 		if err := json.NewDecoder(httpResp.Body).Decode(&infrastructureErrorRateRaw); err != nil {
@@ -1683,7 +1528,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 
 		// Build deep link URL
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, env, "dependency")
+		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, deeplink.APMCatalogEnvExact(env), "dependency")
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
@@ -1718,6 +1563,15 @@ func resolveDatasourceCfg(cfg models.Config, datasourceName string) (models.Conf
 	return cfg, nil
 }
 
+func promToolError(resp *http.Response, op string) (*mcp.CallToolResult, any, error) {
+	err := utils.NewUpstreamHTTPError(resp, op)
+	return utils.ToolErrorResult(err.Error()), nil, nil
+}
+
+func promErr(resp *http.Response, op string) error {
+	return utils.NewUpstreamHTTPError(resp, op)
+}
+
 func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlRangeQueryArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args PromqlRangeQueryArgs) (*mcp.CallToolResult, any, error) {
 		query := args.Query
@@ -1742,10 +1596,10 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 		if httpResp == nil {
 			return nil, nil, fmt.Errorf("received nil response from Prometheus")
 		}
-		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to execute Prometheus range query: %s", httpResp.Status)
-		}
 		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return promToolError(httpResp, "Prometheus range query")
+		}
 		// return the response body string as the content without parsing
 		responseBodyBytes, err := io.ReadAll(httpResp.Body)
 		if err != nil {
@@ -1786,10 +1640,10 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 		if httpResp == nil {
 			return nil, nil, fmt.Errorf("received nil response from Prometheus")
 		}
-		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to execute Prometheus instant query: %s", httpResp.Status)
-		}
 		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return promToolError(httpResp, "Prometheus instant query")
+		}
 		responseBodyBytes, err := io.ReadAll(httpResp.Body)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
@@ -1828,10 +1682,10 @@ func NewServiceEnvironmentsHandler(client *http.Client, cfg models.Config) func(
 		if httpResp == nil {
 			return nil, nil, fmt.Errorf("received nil response from Prometheus")
 		}
-		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to execute Prometheus label values query: %s", httpResp.Status)
-		}
 		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return promToolError(httpResp, "Prometheus label values")
+		}
 		// Read the response body
 		responseBodyBytes, err := io.ReadAll(httpResp.Body)
 		if err != nil {
@@ -1876,10 +1730,10 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 		if httpResp == nil {
 			return nil, nil, fmt.Errorf("received nil response from Prometheus")
 		}
-		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to execute Prometheus range query: %s", httpResp.Status)
-		}
 		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return promToolError(httpResp, "Prometheus label values")
+		}
 		// return the response body string as the content without parsing
 		responseBodyBytes, err := io.ReadAll(httpResp.Body)
 		if err != nil {
@@ -1919,10 +1773,10 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 		if httpResp == nil {
 			return nil, nil, fmt.Errorf("received nil response from Prometheus")
 		}
-		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, fmt.Errorf("failed to execute Prometheus range query: %s", httpResp.Status)
-		}
 		defer httpResp.Body.Close()
+		if httpResp.StatusCode != http.StatusOK {
+			return promToolError(httpResp, "Prometheus labels")
+		}
 		// return the response body string as the content without parsing
 		responseBodyBytes, err := io.ReadAll(httpResp.Body)
 		if err != nil {

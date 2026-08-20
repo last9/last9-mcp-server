@@ -1,4 +1,4 @@
-Query traces with `tracejson_query` — a JSON **array of stages**. Each stage MUST set `"type"` to `filter`|`parse`|`aggregate`|`window_aggregate`. Do **not** use `"stage"` or `"conditions"`. For an exact `trace_id`, prefer `get_service_traces`.
+Query traces with `tracejson_query` — a JSON **array of stages**. Each stage MUST set `"type"` to `filter`|`parse`|`aggregate`|`window_aggregate`. Do **not** use `"stage"` or `"conditions"`. For an exact `trace_id` or recent traces of one service, prefer `get_service_traces`.
 
 **Filter shape:**
 ```json
@@ -12,12 +12,14 @@ Query traces with `tracejson_query` — a JSON **array of stages**. Each stage M
 
 **Scope:** tenant name → `resources['last9.tenant']`; deployment env → `resources['deployment.environment']`.
 
-**Time (tool args):** Prefer `lookback_minutes` (default **5**). Absolute → `start_time_iso`+`end_time_iso` (RFC3339). Never put the window as a `Timestamp` filter in the pipeline.
+**Time (tool args):** Prefer `lookback_minutes` (default **60**). Absolute → `start_time_iso`+`end_time_iso` (RFC3339). Never put the window as a `Timestamp` filter in the pipeline.
 
 **Fields:** Top-level: `TraceId`, `SpanId`, `ServiceName`, `SpanName`, `SpanKind`, `StatusCode`, `Duration`, `Timestamp`, `ParentSpanId`. SpanKind/StatusCode need full OTel prefixes (`SPAN_KIND_SERVER`, `STATUS_CODE_ERROR`—not `SERVER`/`ERROR`). **`Duration` is nanoseconds** (1000ms = `1000000000`). Span/resource attrs → `get_trace_attributes*`; use `attributes['key']` / `resources['key']` (never `SpanAttributes.foo`).
 
-**Aggregate:** `aggregates`+`groupby` (not `aggregations`/`group_by`); each entry `{"function":{"$count":[]},"as":"name"}`.
+**Aggregate:** `aggregates`+`groupby`; each `{"function":{"$count":[]},"as":"name"}`.
 
-**Order:** filter first (match-all on `TraceId`/`SpanId` before aggregate). Show/find → filter only; aggregate/window_aggregate only for counts/analysis.
+**window_aggregate:** `{"type":"window_aggregate","function":{"$count":[]},"as":"c","window":["1","minutes"]}` — not the aggregate stage.
+
+**Order:** filter first (match-all `TraceId`/`SpanId` before aggregate). Show/find → filter only; aggregate/window_aggregate for counts.
 
 Full manual: resource `last9://reference/tracejson`

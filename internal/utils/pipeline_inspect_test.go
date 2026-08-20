@@ -31,3 +31,22 @@ func TestPipelineHasAggregateStage(t *testing.T) {
 		})
 	}
 }
+
+// TestHasParseStage locks the unexported helper's contract directly.
+func TestHasParseStage(t *testing.T) {
+	cases := []struct {
+		name     string
+		pipeline []map[string]interface{}
+		want     bool
+	}{
+		{"nil pipeline", nil, false},
+		{"filter only", []map[string]interface{}{{"type": "filter"}}, false},
+		{"has parse", []map[string]interface{}{{"type": "filter"}, {"type": "parse", "parser": "json"}}, true},
+		{"aggregate only", []map[string]interface{}{{"type": "aggregate"}}, false},
+	}
+	for _, c := range cases {
+		if got := hasParseStage(c.pipeline); got != c.want {
+			t.Errorf("hasParseStage(%s) = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
