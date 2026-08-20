@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- MCP 2026-07-28 protocol support via `modelcontextprotocol/go-sdk` v1.7.0: `server/discover` without a legacy `initialize` handshake, and SEP-2549 cache TTL hints on `tools/list` / `prompts/list` (10m), `resources/list` / `resources/templates/list` (15m), `resources/read` (1h), and `server/discover` (10m). HTTP Streamable uses instrumented `last9/mcp-go-sdk` v0.1.4 so telemetry records `mcp.server.transport=streamable`, and anonymous requests get isolated per-request client IDs (#199).
+
 ### Fixed
 
 - `get_change_events`: the `service_name`, `env`, and `event_name` filters now match the labels change events are actually stored with. A filtered call previously returned nothing while the same call without filters showed the events.
