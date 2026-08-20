@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `get_alert_groups`: lists configured Compass alert groups with team, tier, metadata labels, and rule counts — including groups with zero rules and groups that are not currently firing. `get_alert_config` rule rows now also print team, tier, and labels when those fields are set.
+
 ### Fixed
 
 - `get_change_events`: the `service_name`, `env`, and `event_name` filters now match the labels change events are actually stored with. A filtered call previously returned nothing while the same call without filters showed the events.
