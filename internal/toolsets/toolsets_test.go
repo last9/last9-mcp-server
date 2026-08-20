@@ -57,7 +57,7 @@ func TestParseInvestigate(t *testing.T) {
 			t.Errorf("investigate missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots"} {
+	for _, deny := range []string{"get_alerts", "get_alert_groups", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots"} {
 		if set.Allows(deny) {
 			t.Errorf("investigate should exclude %q", deny)
 		}

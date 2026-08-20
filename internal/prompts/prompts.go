@@ -59,6 +59,9 @@ var GetNotificationChannelsDescription string
 //go:embed descriptions/get_alert_config.md
 var GetAlertConfigDescription string
 
+//go:embed descriptions/get_alert_groups.md
+var GetAlertGroupsDescription string
+
 //go:embed descriptions/get_entity_alert_rules.md
 var GetEntityAlertRulesDescription string
 

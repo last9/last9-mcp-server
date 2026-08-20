@@ -544,6 +544,15 @@ func TestGetAlertConfigHandler_EnrichmentFormatting(t *testing.T) {
 		if !strings.Contains(text, "Tags: prod, checkout") {
 			t.Fatalf("expected Tags enrichment, got:\n%s", text)
 		}
+		if !strings.Contains(text, "Team: checkout") {
+			t.Fatalf("expected Team enrichment, got:\n%s", text)
+		}
+		if !strings.Contains(text, "Tier: p1") {
+			t.Fatalf("expected Tier enrichment, got:\n%s", text)
+		}
+		if !strings.Contains(text, "Labels: domain=checkout, env=prod") {
+			t.Fatalf("expected Labels enrichment, got:\n%s", text)
+		}
 		if !strings.Contains(text, "Notification Channels: Not configured") {
 			t.Fatalf("expected Not configured notification channels, got:\n%s", text)
 		}
@@ -783,8 +792,8 @@ func TestGetAlertConfigHandler_KPIResolution(t *testing.T) {
 				Algorithm:        "static_threshold",
 				RuleName:         "High error rate",
 				ExpressionArgs: map[string]AlertRuleExpressionArg{
-					"errors_total":   {ID: kpiID},   // registered → resolves
-					"requests_total": {ID: kpiID2},  // not registered → 404
+					"errors_total":   {ID: kpiID},  // registered → resolves
+					"requests_total": {ID: kpiID2}, // not registered → 404
 				},
 			},
 		}
@@ -884,24 +893,33 @@ func sampleAlertGroupEntities() []groupedAlertGroupEntitiesResponse {
 					ID:             "entity-1",
 					Name:           "Checkout Alerts",
 					Type:           "grafana-dashboard",
+					EntityClass:    alertGroupEntityClassGrafanaAlerts,
+					Tier:           "p1",
 					DataSourceName: "Grafana Prod",
 					Metadata: alertGroupEntityMetadata{
-						Tags: []string{"prod", "checkout"},
+						Tags:   []string{"prod", "checkout"},
+						Team:   "checkout",
+						Labels: map[string]string{"env": "prod", "domain": "checkout"},
 					},
 				},
 				{
 					ID:             "entity-2",
 					Name:           "Payments Monitor",
 					Type:           "scheduled-search",
+					EntityClass:    alertGroupEntityClassAlertManager,
+					Tier:           "p2",
 					DataSourceName: "Loki Payments",
 					Metadata: alertGroupEntityMetadata{
-						Tags: []string{"payments", "staging"},
+						Tags:   []string{"payments", "staging"},
+						Team:   "payments",
+						Labels: map[string]string{"env": "staging"},
 					},
 				},
 				{
 					ID:             "entity-3",
 					Name:           "Inventory Group",
 					Type:           "alert-group",
+					EntityClass:    alertGroupEntityClassAlertManager,
 					DataSourceName: "Prometheus Inventory",
 					Metadata: alertGroupEntityMetadata{
 						Tags: []string{"inventory", "prod-east"},
