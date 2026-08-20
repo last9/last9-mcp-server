@@ -10,7 +10,10 @@ import (
 	"unicode"
 )
 
-const UpstreamBodyLimit = 512
+const (
+	UpstreamBodyLimit              = 512
+	MetricsTooManySamplesErrorCode = "METRICS_QUERY_TOO_MANY_SAMPLES"
+)
 
 var (
 	upstreamBodyURLPattern    = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s"'<>,}\]]+`)
@@ -55,6 +58,14 @@ func NewUpstreamHTTPError(resp *http.Response, op string, hint ...string) error 
 	status := resp.StatusCode
 	if status == http.StatusBadRequest || status == http.StatusUnprocessableEntity {
 		body := ReadLimitedResponseBody(resp.Body, 4<<10)
+		if status == http.StatusUnprocessableEntity && strings.Contains(strings.ToLower(body), "too many samples") {
+			return fmt.Errorf(
+				"%s failed with HTTP %d (%s). The generated metrics query would scan too many samples. Agent action required: do not ask the user to edit PromQL. Retry with narrower filters already known from the request (for example, service, environment, operation, or label). If the full time range is still required, split it into smaller subranges only when the results can be combined correctly; preserve the requested coverage and disclose any limitations. Never average percentile values across subranges. Ask the user to narrow the scope only when the requested result cannot be computed correctly. Do not retry the same query unchanged.",
+				op,
+				status,
+				MetricsTooManySamplesErrorCode,
+			)
+		}
 		msg := fmt.Sprintf("%s failed with HTTP %d. Review the tool arguments and retry. Upstream response: %s", op, status, body)
 		if len(hint) > 0 && strings.TrimSpace(hint[0]) != "" {
 			msg += "\n\n" + hint[0]
