@@ -9,6 +9,7 @@ import (
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -75,7 +76,7 @@ func TestGetAlertGroupsHandler_Filters(t *testing.T) {
 		}
 		resp := decodeAlertGroupsResponse(t, body)
 		assertAlertGroupIDs(t, resp, []string{"entity-2"})
-		assertHasEntityFilter(t, state.lastEntityRequest, entityFilterTeam, "PAYMENTS", "PAYMENTS", entityFilterEqual)
+		assertHasEntityFilter(t, state.lastEntityRequest, entityFilterTeam, "PAYMENTS", "PAYMENTS", entityFilterContains)
 	})
 
 	t.Run("tier", func(t *testing.T) {
@@ -91,7 +92,7 @@ func TestGetAlertGroupsHandler_Filters(t *testing.T) {
 		}
 		resp := decodeAlertGroupsResponse(t, body)
 		assertAlertGroupIDs(t, resp, []string{"entity-1", "entity-4"})
-		assertHasEntityFilter(t, state.lastEntityRequest, entityFilterTier, "p1", "p1", entityFilterEqual)
+		assertHasEntityFilter(t, state.lastEntityRequest, entityFilterTier, "p1", "p1", entityFilterContains)
 	})
 
 	t.Run("label pair", func(t *testing.T) {
@@ -110,7 +111,24 @@ func TestGetAlertGroupsHandler_Filters(t *testing.T) {
 		}
 		resp := decodeAlertGroupsResponse(t, body)
 		assertAlertGroupIDs(t, resp, []string{"entity-1"})
-		assertHasEntityFilter(t, state.lastEntityRequest, entityFilterLabel, "domain", "checkout", entityFilterEqual)
+		assertHasEntityFilter(t, state.lastEntityRequest, entityFilterLabel, "domain", "checkout", entityFilterContains)
+	})
+
+	t.Run("team is exact after contains", func(t *testing.T) {
+		state := alertConfigTestServerState{
+			alertRules:         sampleAlertConfigRules(),
+			entityGroups:       sampleAlertGroupsWithZeroRuleEntity(),
+			alertRulesStatus:   http.StatusOK,
+			entityLookupStatus: http.StatusOK,
+		}
+		body, _, err := executeGetAlertGroups(t, &state, GetAlertGroupsArgs{Team: "pay"})
+		if err != nil {
+			t.Fatalf("handler returned error: %v", err)
+		}
+		resp := decodeAlertGroupsResponse(t, body)
+		if resp.Count != 0 {
+			t.Fatalf("substring team=pay must not match team=payments, got %v", groupIDs(resp.Groups))
+		}
 	})
 
 	t.Run("alert group name", func(t *testing.T) {
@@ -136,13 +154,25 @@ func TestGetAlertGroupsHandler_UnpairedLabelArgs(t *testing.T) {
 		entityLookupStatus: http.StatusOK,
 	}
 
-	_, _, err := executeGetAlertGroups(t, &state, GetAlertGroupsArgs{LabelKey: "domain"})
-	if err == nil {
-		t.Fatal("expected unpaired label_key to error")
-	}
-	if err.Error() != "label_key and label_value must be set together" {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	t.Run("label_key only", func(t *testing.T) {
+		_, _, err := executeGetAlertGroups(t, &state, GetAlertGroupsArgs{LabelKey: "domain"})
+		if err == nil {
+			t.Fatal("expected unpaired label_key to error")
+		}
+		if err.Error() != "label_key and label_value must be set together" {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("label_value only", func(t *testing.T) {
+		_, _, err := executeGetAlertGroups(t, &state, GetAlertGroupsArgs{LabelValue: "checkout"})
+		if err == nil {
+			t.Fatal("expected unpaired label_value to error")
+		}
+		if err.Error() != "label_key and label_value must be set together" {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
 }
 
 func TestGetAlertGroupsHandler_UpstreamErrors(t *testing.T) {
@@ -216,19 +246,7 @@ func executeGetAlertGroups(
 		return "", result, err
 	}
 
-	return string(mustText(t, result)), result, nil
-}
-
-func mustText(t *testing.T, result *mcp.CallToolResult) string {
-	t.Helper()
-	if result == nil || len(result.Content) == 0 {
-		t.Fatal("expected text content")
-	}
-	text, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent, got %T", result.Content[0])
-	}
-	return text.Text
+	return utils.GetTextContent(t, result), result, nil
 }
 
 func decodeAlertGroupsResponse(t *testing.T, body string) alertGroupsResponse {

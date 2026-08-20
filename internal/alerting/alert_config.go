@@ -353,7 +353,7 @@ func buildAlertGroupEntityLookupFilters(query alertGroupEntityQuery) []alertGrou
 		explicitFilters = append(explicitFilters, newAlertGroupEntityFilter(
 			entityFilterTeam,
 			team,
-			entityFilterEqual,
+			entityFilterContains,
 		))
 	}
 
@@ -361,7 +361,7 @@ func buildAlertGroupEntityLookupFilters(query alertGroupEntityQuery) []alertGrou
 		explicitFilters = append(explicitFilters, newAlertGroupEntityFilter(
 			entityFilterTier,
 			tier,
-			entityFilterEqual,
+			entityFilterContains,
 		))
 	}
 
@@ -389,7 +389,7 @@ func newAlertGroupLabelFilter(key, value string) alertGroupEntityFilter {
 		FilterType:  entityFilterLabel,
 		FilterKey:   key,
 		FilterValue: value,
-		Operator:    entityFilterEqual,
+		Operator:    entityFilterContains,
 	}
 }
 
