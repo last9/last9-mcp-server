@@ -298,7 +298,7 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	for _, tool := range out.Tools {
 		byName[tool.Name] = true
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "list_datasources"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "get_service_profile", "list_datasources"} {
 		if !byName[want] {
 			t.Errorf("investigate dump missing %q", want)
 		}

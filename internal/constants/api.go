@@ -37,6 +37,8 @@ const (
 	EndpointNotificationSettings = "/notification_settings"
 	// EndpointSuggest returns fuzzy entity-name suggestions for the did_you_mean tool.
 	EndpointSuggest = "/suggest"
+	// EndpointServiceProfile derives per-service telemetry shape (POST body mirrors /suggest + region).
+	EndpointServiceProfile = "/service_profile"
 
 	// Dashboard API endpoints (v4)
 	EndpointDashboards            = "/dashboards"
