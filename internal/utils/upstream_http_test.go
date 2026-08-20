@@ -50,6 +50,39 @@ func TestNewUpstreamHTTPErrorTruncatesAndHints(t *testing.T) {
 	}
 }
 
+func TestNewUpstreamHTTPErrorMapsTooManySamplesToActionableMetricsError(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusUnprocessableEntity,
+		Body: io.NopCloser(strings.NewReader(
+			`{"error":"Too many samples queried. Please try selecting a smaller time range."}`,
+		)),
+	}
+	err := NewUpstreamHTTPError(resp, "Prometheus range query")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	got := err.Error()
+	for _, want := range []string{
+		"HTTP 422",
+		"METRICS_QUERY_TOO_MANY_SAMPLES",
+		"shorter time range",
+		"narrower filters",
+		"service",
+		"environment",
+		"operation",
+		"label",
+		"Do not retry the same query unchanged",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("custom metrics error %q missing %q", got, want)
+		}
+	}
+	if strings.Contains(got, "Upstream response") {
+		t.Fatalf("custom metrics error should replace the raw upstream response: %s", got)
+	}
+}
+
 func TestNewUpstreamHTTPErrorDrains502Body(t *testing.T) {
 	resp := &http.Response{
 		StatusCode: http.StatusBadGateway,

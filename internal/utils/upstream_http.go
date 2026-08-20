@@ -10,7 +10,10 @@ import (
 	"unicode"
 )
 
-const UpstreamBodyLimit = 512
+const (
+	UpstreamBodyLimit              = 512
+	MetricsTooManySamplesErrorCode = "METRICS_QUERY_TOO_MANY_SAMPLES"
+)
 
 var (
 	upstreamBodyURLPattern    = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s"'<>,}\]]+`)
@@ -55,6 +58,14 @@ func NewUpstreamHTTPError(resp *http.Response, op string, hint ...string) error 
 	status := resp.StatusCode
 	if status == http.StatusBadRequest || status == http.StatusUnprocessableEntity {
 		body := ReadLimitedResponseBody(resp.Body, 4<<10)
+		if status == http.StatusUnprocessableEntity && strings.Contains(strings.ToLower(body), "too many samples") {
+			return fmt.Errorf(
+				"%s failed with HTTP %d (%s). The metrics backend rejected the query because it would scan too many samples. Retry with a shorter time range or narrower filters (for example, a specific service, environment, operation, or label). Do not retry the same query unchanged.",
+				op,
+				status,
+				MetricsTooManySamplesErrorCode,
+			)
+		}
 		msg := fmt.Sprintf("%s failed with HTTP %d. Review the tool arguments and retry. Upstream response: %s", op, status, body)
 		if len(hint) > 0 && strings.TrimSpace(hint[0]) != "" {
 			msg += "\n\n" + hint[0]

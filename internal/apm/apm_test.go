@@ -652,6 +652,13 @@ func TestPromqlRangeQueryRelays400AndDrains502(t *testing.T) {
 			wantSubstr: "parse error",
 		},
 		{
+			name:       "422 too many samples gives actionable metrics error",
+			status:     http.StatusUnprocessableEntity,
+			body:       `{"error":"Too many samples queried. Please try selecting a smaller time range."}`,
+			wantSubstr: "METRICS_QUERY_TOO_MANY_SAMPLES",
+			forbid:     "Upstream response",
+		},
+		{
 			name:       "502 omits body",
 			status:     http.StatusBadGateway,
 			body:       `{"error":"gateway SECRET"}`,
@@ -697,7 +704,7 @@ func TestPromqlRangeQueryRelays400AndDrains502(t *testing.T) {
 	}
 }
 
-func TestServicePerformanceDetailsPromFailureRecordsPartialErrors(t *testing.T) {
+func TestServicePerformanceDetailsTooManySamplesRecordsActionablePartialErrors(t *testing.T) {
 	var n atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if n.Add(1) == 1 {
@@ -705,8 +712,8 @@ func TestServicePerformanceDetailsPromFailureRecordsPartialErrors(t *testing.T) 
 			_, _ = io.WriteString(w, `[]`)
 			return
 		}
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = io.WriteString(w, `{"error":"bad selector"}`)
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = io.WriteString(w, `{"error":"Too many samples queried. Please try selecting a smaller time range."}`)
 	}))
 	defer server.Close()
 
@@ -733,8 +740,14 @@ func TestServicePerformanceDetailsPromFailureRecordsPartialErrors(t *testing.T) 
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 	joined := strings.Join(details.PartialErrors, "\n")
-	if !strings.Contains(joined, "bad selector") {
-		t.Fatalf("expected sanitized 400 body in partial_errors, got %#v", details.PartialErrors)
+	for _, want := range []string{
+		"METRICS_QUERY_TOO_MANY_SAMPLES",
+		"shorter time range",
+		"narrower filters",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("actionable partial_errors %q missing %q", joined, want)
+		}
 	}
 	if details.ServiceName != "checkout" {
 		t.Fatalf("surviving payload missing service_name, got %#v", details)
