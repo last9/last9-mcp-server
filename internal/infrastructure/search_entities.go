@@ -40,13 +40,13 @@ func entityFromMetric(entityType, clusterID, org string, metric map[string]strin
 }
 
 func hostSearchEntity(clusterID, org string, metric map[string]string) (searchEntity, bool) {
-	hostID := firstNonEmpty(metric["instance_id"], metric["nodename"], metric["instance_name"], metric["instance"])
+	hostID := firstNonEmpty(metric["instance_id"], metric["nodename"], metric["instance_name"], metric["instance"], metric["host_name"])
 	if hostID == "" {
 		return searchEntity{}, false
 	}
 	attrs := omitEmptyAttrs(map[string]string{
 		"host_id":   hostID,
-		"host_name": firstNonEmpty(metric["nodename"], metric["instance_name"], hostID),
+		"host_name": firstNonEmpty(metric["host_name"], metric["nodename"], metric["instance_name"], hostID),
 		"instance":  metric["instance"],
 		"job":       metric["job"],
 	})

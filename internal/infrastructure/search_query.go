@@ -12,26 +12,31 @@ import (
 	"last9-mcp/internal/utils"
 )
 
+const maxSearchBodyBytes = 4 * 1024 * 1024
+
 type instantPoint struct {
 	Metric map[string]string `json:"metric"`
 }
 
 func fetchSearchMetrics(ctx context.Context, q searchQuery, ts int64) ([]map[string]string, bool, error) {
-	promql := searchPromQL(q.args.EntityType, q.args.Query)
+	promql, err := searchPromQL(q.args.EntityType, q.args.Query)
+	if err != nil {
+		return nil, false, err
+	}
 	resp, err := utils.MakePromInstantAPIQuery(ctx, q.client, promql, ts, q.cfg)
 	if err != nil {
 		return nil, false, fmt.Errorf("infrastructure search query failed: %w", err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAPISuccessBodyBytes+1))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxSearchBodyBytes+1))
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to read search response: %w", err)
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
 		return nil, false, fmt.Errorf("infrastructure search returned status %d: %s", resp.StatusCode, truncateAPIError(body, resp.StatusCode))
 	}
-	if int64(len(body)) > maxAPISuccessBodyBytes {
-		return nil, false, fmt.Errorf("infrastructure search response exceeds %d bytes", maxAPISuccessBodyBytes)
+	if int64(len(body)) > maxSearchBodyBytes {
+		return nil, false, fmt.Errorf("infrastructure search response exceeds %d bytes", maxSearchBodyBytes)
 	}
 	return parseInstantMetrics(body)
 }
@@ -55,17 +60,53 @@ func parseInstantMetrics(body []byte) ([]map[string]string, bool, error) {
 	return out, truncated, nil
 }
 
-func searchPromQL(entityType, query string) string {
+func searchPromQL(entityType, query string) (string, error) {
+	matcher, err := searchMatcher(entityType, query)
+	if err != nil {
+		return "", err
+	}
+	inner := wrapMetric(searchMetric(entityType), matcher)
+	return "count by (" + searchByLabels(entityType) + ") (" + inner + ")", nil
+}
+
+func searchMetric(entityType string) string {
 	switch entityType {
 	case "host":
-		return wrapMetric(`{__name__=~"node_uname_info|system_uname_info"}`, optionalRegexMatcher("nodename", query))
-	case "k8s_cluster":
-		return wrapMetric("kube_node_info", optionalRegexMatcher("cluster", query))
-	case "k8s_node":
-		return wrapMetric("kube_node_info", optionalRegexMatcher("node", query))
+		return `{__name__=~"node_uname_info|system_uname_info"}`
+	case "k8s_pod":
+		return "kube_pod_info"
 	default:
-		return wrapMetric("kube_pod_info", optionalRegexMatcher("pod", query))
+		return "kube_node_info"
 	}
+}
+
+func searchByLabels(entityType string) string {
+	switch entityType {
+	case "host":
+		return "instance_id,nodename,instance_name,instance,job,host_name"
+	case "k8s_cluster":
+		return "cluster"
+	case "k8s_node":
+		return "cluster,node"
+	default:
+		return "cluster,namespace,pod,uid,node"
+	}
+}
+
+func searchMatcher(entityType, query string) (string, error) {
+	// Host names live on several labels; Prom-side filter would miss instance_id /
+	// host_name. List all hosts and substring-filter in Go.
+	if entityType == "host" {
+		return "", nil
+	}
+	label := "node"
+	if entityType == "k8s_cluster" {
+		label = "cluster"
+	}
+	if entityType == "k8s_pod" {
+		label = "pod"
+	}
+	return optionalRegexMatcher(label, query)
 }
 
 func wrapMetric(metric, matcher string) string {
@@ -79,10 +120,23 @@ func wrapMetric(metric, matcher string) string {
 	return metric + "{" + matcher + "}"
 }
 
-func optionalRegexMatcher(label, query string) string {
+func optionalRegexMatcher(label, query string) (string, error) {
 	q := strings.TrimSpace(query)
 	if q == "" {
-		return ""
+		return "", nil
 	}
-	return fmt.Sprintf(`%s=~".*%s.*"`, label, regexp.QuoteMeta(q))
+	escaped, err := escapePromRegex(q)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(`%s=~".*%s.*"`, label, escaped), nil
+}
+
+func escapePromRegex(value string) (string, error) {
+	if strings.ContainsAny(value, "\n\r}") {
+		return "", fmt.Errorf("query contains invalid characters")
+	}
+	quoted := regexp.QuoteMeta(value)
+	replacer := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+	return replacer.Replace(quoted), nil
 }

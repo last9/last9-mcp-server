@@ -43,7 +43,7 @@ func TestSearchInfrastructureEntities_HostPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotQuery != `{__name__=~"node_uname_info|system_uname_info"}` {
+	if gotQuery != `count by (instance_id,nodename,instance_name,instance,job,host_name) ({__name__=~"node_uname_info|system_uname_info"})` {
 		t.Fatalf("promql %q", gotQuery)
 	}
 	if payload["read_url"] != "https://prom.example/read" {
@@ -85,7 +85,7 @@ func TestSearchInfrastructureEntities_FiltersAndEscapesQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotQuery != `kube_node_info{node=~".*web.*"}` {
+	if gotQuery != `count by (cluster,node) (kube_node_info{node=~".*web.*"})` {
 		t.Fatalf("promql %q", gotQuery)
 	}
 	page := decodeSearchPage(t, result)
@@ -95,10 +95,26 @@ func TestSearchInfrastructureEntities_FiltersAndEscapesQuery(t *testing.T) {
 }
 
 func TestSearchPromQL_EscapesRegexMetacharacters(t *testing.T) {
-	got := searchPromQL("k8s_node", "web.01")
-	want := `kube_node_info{node=~".*web\.01.*"}`
+	got, err := searchPromQL("k8s_node", "web.01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `count by (cluster,node) (kube_node_info{node=~".*web\\.01.*"})`
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestSearchPromQL_RejectsQueryBreakout(t *testing.T) {
+	if _, err := searchPromQL("k8s_node", `foo"}`); err == nil {
+		t.Fatal("expected invalid query")
+	}
+}
+
+func TestHostSearchEntity_UsesHostNameFallback(t *testing.T) {
+	ent, ok := hostSearchEntity("cid", "org", map[string]string{"host_name": "otel-web"})
+	if !ok || ent.Attributes["host_id"] != "otel-web" {
+		t.Fatalf("got %+v ok=%v", ent, ok)
 	}
 }
 
