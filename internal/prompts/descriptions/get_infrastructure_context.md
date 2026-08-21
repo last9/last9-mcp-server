@@ -20,5 +20,5 @@ Parameters:
 - cluster_id: (Optional) Levitate datasource UUID. Defaults to the configured datasource.
 - region: (Optional) AWS region header. Defaults to the configured datasource region.
 
-Do not send Prometheus credentials. Call did_you_mean with type=host or type=k8s_node
-when the name may be misspelled.
+Do not send Prometheus credentials. Call search_infrastructure_entities to find a typed
+id, or did_you_mean with type=host or type=k8s_node when the name may be misspelled.

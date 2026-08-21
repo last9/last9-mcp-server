@@ -279,6 +279,11 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: prompts.GetInfrastructureContextDescription,
 	}, infrastructure.NewGetInfrastructureContextHandler(client, cfg)))
 
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "search_infrastructure_entities",
+		Description: prompts.SearchInfrastructureEntitiesDescription,
+	}, infrastructure.NewSearchInfrastructureEntitiesHandler(client, cfg)))
+
 	// Register did_you_mean tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "did_you_mean",
