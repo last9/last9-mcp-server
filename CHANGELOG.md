@@ -7,15 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-08-21
+
 ### Added
 
 - MCP 2026-07-28 protocol support via `modelcontextprotocol/go-sdk` v1.7.0: `server/discover` without a legacy `initialize` handshake, and SEP-2549 cache TTL hints on `tools/list` / `prompts/list` (10m), `resources/list` / `resources/templates/list` (15m), `resources/read` (1h), and `server/discover` (10m). HTTP Streamable uses instrumented `last9/mcp-go-sdk` v0.1.4 so telemetry records `mcp.server.transport=streamable`, and anonymous requests get isolated per-request client IDs (#199).
 
 ### Fixed
 
-- `get_change_events`: the `service_name`, `env`, and `event_name` filters now match the labels change events are actually stored with. A filtered call previously returned nothing while the same call without filters showed the events.
-- `get_log_attributes_for_pipeline` now reports a plain-text Body's shape. A Body that is neither JSON nor logfmt and carries no severity token previously produced no Body entry at all, so models guessed `parser:"json"` and got a silent zero, or wrote an unanchored regexp that captured the leading timestamp and returned a confidently wrong count. Such services now get a `Body` entry with `source:"body"`, up to three `sample_bodies` lines to anchor a pattern against, and a one-stage `$regex`-on-Body hint. `sample_bodies` redacts URLs and known credential values only — it is not PII-redacted, so treat it as untrusted log content.
-- `l9_sanity` is no longer suppressed when `matched_count` is 0 — previously the most suspicious outcome was the one case with no guardrail. A zero from a pipeline that parses or filters `Body` now carries a note pointing at `sample_bodies`, and a new `service_log_volume` key separates a genuine zero from a parse/filter mismatch. Zero counts from pipelines that never touch `Body`, and all non-zero paths, are unchanged.
+- `get_change_events`: the `service_name`, `env`, and `event_name` filters now match the labels change events are actually stored with. A filtered call previously returned nothing while the same call without filters showed the events (#216).
+- `get_log_attributes_for_pipeline` now reports a plain-text Body's shape. A Body that is neither JSON nor logfmt and carries no severity token previously produced no Body entry at all, so models guessed `parser:"json"` and got a silent zero, or wrote an unanchored regexp that captured the leading timestamp and returned a confidently wrong count. Such services now get a `Body` entry with `source:"body"`, up to three `sample_bodies` lines to anchor a pattern against, and a one-stage `$regex`-on-Body hint. `sample_bodies` redacts URLs and known credential values only — it is not PII-redacted, so treat it as untrusted log content (#218).
+- `l9_sanity` is no longer suppressed when `matched_count` is 0 — previously the most suspicious outcome was the one case with no guardrail. A zero from a pipeline that parses or filters `Body` now carries a note pointing at `sample_bodies`, and a new `service_log_volume` key separates a genuine zero from a parse/filter mismatch. Zero counts from pipelines that never touch `Body`, and all non-zero paths, are unchanged (#218).
 
 ## [0.15.1] - 2026-08-16
 
