@@ -44,6 +44,8 @@ var named = map[string][]string{
 		"get_database_slow_queries",
 		"get_database_queries",
 		"get_database_server_metrics",
+		"get_infrastructure_context",
+		"search_infrastructure_entities",
 	},
 	"alerts": {
 		"get_alerts",

@@ -8,6 +8,7 @@ import (
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/change_events"
 	"last9-mcp/internal/dashboards"
+	"last9-mcp/internal/infrastructure"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/suggest"
@@ -272,6 +273,16 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Name:        "get_database_server_metrics",
 		Description: prompts.GetDatabaseServerMetricsDescription,
 	}, apm.NewGetDatabaseServerMetricsHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_infrastructure_context",
+		Description: prompts.GetInfrastructureContextDescription,
+	}, infrastructure.NewGetInfrastructureContextHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "search_infrastructure_entities",
+		Description: prompts.SearchInfrastructureEntitiesDescription,
+	}, infrastructure.NewSearchInfrastructureEntitiesHandler(client, cfg)))
 
 	// Register did_you_mean tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
