@@ -334,9 +334,17 @@ Server starts at `http://localhost:8080/mcp`.
 
 ### Test with curl
 
-The Streamable HTTP handler runs in **stateless** mode, so any request is served independently. An `initialize` handshake and an `Mcp-Session-Id` header are optional — clients that send them still work (the header is accepted and ignored), and clients can also skip straight to `tools/list` / `tools/call`. Every tool is an independent request/response query; the server issues no server→client notifications, so `GET /mcp` (the SSE stream) returns `405`.
+The Streamable HTTP handler runs in **stateless** mode, so any request is served independently. An `initialize` handshake and an `Mcp-Session-Id` header are optional — clients that send them still work (the header is accepted and ignored). Clients speaking MCP **2026-07-28** can probe `server/discover` instead of `initialize`; older protocol versions keep using `initialize`. Clients can also skip straight to `tools/list` / `tools/call`. Every tool is an independent request/response query; the server issues no server→client notifications, so `GET /mcp` (the SSE stream) returns `405`.
 
 ```bash
+# 2026-07-28: discover supported versions without initialize
+curl -s -X POST http://localhost:8080/mcp \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
+    -H "Mcp-Protocol-Version: 2026-07-28" \
+    -H "Mcp-Method: server/discover" \
+    -d '{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/clientInfo":{"name":"curl","version":"1.0.0"},"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
+
 # List tools — a session handshake is optional in stateless mode
 curl -s -X POST http://localhost:8080/mcp \
     -H "Content-Type: application/json" \
