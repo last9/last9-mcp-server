@@ -104,6 +104,9 @@ var GetDatabaseQueriesDescription string
 //go:embed descriptions/get_database_server_metrics.md
 var GetDatabaseServerMetricsDescription string
 
+//go:embed descriptions/get_infrastructure_context.md
+var GetInfrastructureContextDescription string
+
 //go:embed descriptions/did_you_mean.md
 var DidYouMeanDescription string
 

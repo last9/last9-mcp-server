@@ -37,6 +37,8 @@ const (
 	EndpointNotificationSettings = "/notification_settings"
 	// EndpointSuggest returns fuzzy entity-name suggestions for the did_you_mean tool.
 	EndpointSuggest = "/suggest"
+	// EndpointInfrastructureResolve returns host ↔ Kubernetes relationships.
+	EndpointInfrastructureResolve = "/infrastructure/resolve"
 
 	// Dashboard API endpoints (v4)
 	EndpointDashboards            = "/dashboards"
@@ -60,6 +62,7 @@ const (
 	HeaderUserAgent       = "User-Agent"
 	HeaderContentTypeJSON = "application/json"
 	HeaderAcceptJSON      = "application/json"
+	HeaderRegion          = "region"
 )
 
 // Bearer token prefix
