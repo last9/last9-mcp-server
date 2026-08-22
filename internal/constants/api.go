@@ -30,6 +30,7 @@ const (
 	EndpointOAuthAccessToken     = "/api/v4/oauth/access_token"
 	EndpointOTelSettingsDrop     = "/otel_settings/drop"
 	EndpointAlertRules           = "/alert-rules"
+	EndpointEntityAlertRuleByID  = "/entities/%s/alert-rules/%s"
 	EndpointAlertsMonitor        = "/alerts/monitor"
 	EndpointEntitiesList         = "/entities/list"
 	EndpointEntityKPI            = "/entities/%s/kpis/%s"

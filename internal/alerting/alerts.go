@@ -107,7 +107,7 @@ type GetAlertConfigArgs struct {
 	SearchTerm     string   `json:"search_term,omitempty" jsonschema:"Case-insensitive substring search across rule name and alert group metadata (optional)"`
 	RuleName       string   `json:"rule_name,omitempty" jsonschema:"Case-insensitive substring match on rule name (optional)"`
 	Severity       string   `json:"severity,omitempty" jsonschema:"Exact case-insensitive severity filter (optional, e.g. breach or threat)"`
-	RuleType       string   `json:"rule_type,omitempty" jsonschema:"Derived rule type filter (optional, allowed values: static or anomaly)"`
+	RuleType       string   `json:"rule_type,omitempty" jsonschema:"Derived rule type filter (optional, allowed values: static, anomaly, or adaptive)"`
 	AlertGroupName string   `json:"alert_group_name,omitempty" jsonschema:"Case-insensitive substring match on alert group name (optional)"`
 	AlertGroupType string   `json:"alert_group_type,omitempty" jsonschema:"Case-insensitive substring match on alert group type (optional)"`
 	DataSourceName string   `json:"data_source_name,omitempty" jsonschema:"Case-insensitive substring match on alert group data source name (optional)"`

@@ -9,7 +9,7 @@
 	- search_term: Case-insensitive substring search across rule name, alert group name/type, data source name, and tags
 	- rule_name: Case-insensitive substring match on rule name
 	- severity: Exact case-insensitive match
-	- rule_type: Exact case-insensitive match on derived rule type ("static" or "anomaly")
+	- rule_type: Exact case-insensitive match on derived rule type ("static", "anomaly", or "adaptive")
 	- alert_group_name: Case-insensitive substring match on alert group name
 	- alert_group_type: Case-insensitive substring match on alert group type
 	- data_source_name: Case-insensitive substring match on alert group data source name
