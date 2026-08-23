@@ -26,15 +26,18 @@ const (
 	EndpointAPMLabels        = "/apm/labels"
 
 	// Organization and configuration endpoints
-	EndpointDatasources          = "/datasources"
-	EndpointOAuthAccessToken     = "/api/v4/oauth/access_token"
-	EndpointLogsSettingsRouting  = "/logs_settings/routing"
-	EndpointAlertRules           = "/alert-rules"
-	EndpointEntityAlertRuleByID  = "/entities/%s/alert-rules/%s"
-	EndpointAlertsMonitor        = "/alerts/monitor"
-	EndpointEntitiesList         = "/entities/list"
-	EndpointEntityKPI            = "/entities/%s/kpis/%s"
-	EndpointEntityAlertRules     = "/entities/%s/alert-rules"
+	EndpointDatasources         = "/datasources"
+	EndpointOAuthAccessToken    = "/api/v4/oauth/access_token"
+	EndpointLogsSettingsRouting = "/logs_settings/routing"
+	EndpointAlertRules          = "/alert-rules"
+	EndpointEntityAlertRuleByID = "/entities/%s/alert-rules/%s"
+	EndpointAlertsMonitor       = "/alerts/monitor"
+	EndpointEntitiesList        = "/entities/list"
+	EndpointEntityKPI           = "/entities/%s/kpis/%s"
+	EndpointEntityAlertRules    = "/entities/%s/alert-rules"
+	// EndpointAlertIntelligence is the BFF chart-alert intelligence endpoint
+	// handling describe_chart and create_from_chart operations.
+	EndpointAlertIntelligence    = "/alert_intelligence"
 	EndpointNotificationSettings = "/notification_settings"
 	// EndpointSuggest returns fuzzy entity-name suggestions for the did_you_mean tool.
 	EndpointSuggest = "/suggest"
