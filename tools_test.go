@@ -11,6 +11,8 @@ import (
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/prompts"
+	"last9-mcp/internal/toolsets"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -26,6 +28,138 @@ func testToolRegistrationConfig() models.Config {
 			AccessToken: "test-token",
 			ExpiresAt:   time.Now().Add(24 * time.Hour),
 		},
+	}
+}
+
+func registeredToolNames(t *testing.T, cfg models.Config) map[string]*mcp.Tool {
+	t.Helper()
+	server, err := last9mcp.NewServerWithOptions("test-last9-mcp", "test", last9mcp.WithSkipProviderInit())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+	if err := registerAllTools(server, cfg); err != nil {
+		t.Fatal(err)
+	}
+	clientSession := connectToolsClient(t, server)
+	list, err := clientSession.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := make(map[string]*mcp.Tool, len(list.Tools))
+	for _, tool := range list.Tools {
+		tools[tool.Name] = tool
+	}
+	return tools
+}
+
+func connectToolsClient(t *testing.T, server *last9mcp.Last9MCPServer) *mcp.ClientSession {
+	t.Helper()
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	serverSession, err := server.Server.Connect(context.Background(), serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = serverSession.Close() })
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "test"}, nil)
+	clientSession, err := client.Connect(context.Background(), clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = clientSession.Close() })
+	return clientSession
+}
+
+func TestRegisterAllToolsPulseManageFailsClosedByDefault(t *testing.T) {
+	tools := registeredToolNames(t, testToolRegistrationConfig())
+	if _, ok := tools["get_pulse_report"]; !ok {
+		t.Fatal("default surface should include Pulse reads")
+	}
+	for _, name := range []string{"create_pulse_subscription", "update_pulse_subscription", "enable_pulse_subscription", "disable_pulse_subscription", "write_pulse_disposition"} {
+		if _, ok := tools[name]; ok {
+			t.Errorf("default surface unexpectedly includes managed tool %q", name)
+		}
+	}
+}
+
+func TestRegisterAllToolsPulseManageRequiresExplicitToolset(t *testing.T) {
+	allowed, err := toolsets.Parse("pulse_manage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := testToolRegistrationConfig()
+	cfg.AllowedTools = allowed
+	tools := registeredToolNames(t, cfg)
+	for _, name := range []string{"create_pulse_subscription", "update_pulse_subscription", "enable_pulse_subscription", "disable_pulse_subscription", "write_pulse_disposition"} {
+		if _, ok := tools[name]; !ok {
+			t.Errorf("pulse_manage missing %q", name)
+		}
+	}
+	if _, ok := tools["get_pulse_report"]; ok {
+		t.Fatal("pulse_manage must not implicitly expose Pulse reads")
+	}
+}
+
+func TestPulseSchemasDoNotAcceptOrganizationScope(t *testing.T) {
+	tools := registeredToolNames(t, testToolRegistrationConfig())
+	for _, name := range []string{"list_pulse_runs", "get_pulse_report", "list_pulse_evidence"} {
+		schema := schemaAsMap(t, tools[name].InputSchema)
+		properties, _ := schema["properties"].(map[string]any)
+		if _, exists := properties["organization_id"]; exists {
+			t.Errorf("%s accepts caller-supplied organization_id", name)
+		}
+	}
+}
+
+func TestPulseDescriptionsComeOnlyFromMarkdown(t *testing.T) {
+	seen := make(map[string]string)
+	check := func(tools map[string]*mcp.Tool, expected map[string]string) {
+		t.Helper()
+		for name, description := range expected {
+			if tools[name].Description != description {
+				t.Errorf("%s description contains non-markdown text", name)
+			}
+			if other, exists := seen[tools[name].Description]; exists {
+				t.Errorf("%s and %s share the same description", other, name)
+			}
+			seen[tools[name].Description] = name
+		}
+	}
+
+	check(registeredToolNames(t, testToolRegistrationConfig()), map[string]string{
+		"list_pulse_subscriptions": prompts.PulseSubscriptionsDescription,
+		"get_pulse_subscription":   prompts.GetPulseSubscriptionDescription,
+		"list_pulse_runs":          prompts.PulseReportsDescription,
+		"get_pulse_run":            prompts.GetPulseRunDescription,
+		"get_pulse_report":         prompts.GetPulseReportDescription,
+		"list_pulse_findings":      prompts.ListPulseFindingsDescription,
+		"get_pulse_finding":        prompts.GetPulseFindingDescription,
+		"list_pulse_evidence":      prompts.ListPulseEvidenceDescription,
+	})
+
+	allowed, err := toolsets.Parse("pulse_manage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := testToolRegistrationConfig()
+	config.AllowedTools = allowed
+	check(registeredToolNames(t, config), map[string]string{
+		"create_pulse_subscription":  prompts.CreatePulseSubscriptionDescription,
+		"update_pulse_subscription":  prompts.UpdatePulseSubscriptionDescription,
+		"enable_pulse_subscription":  prompts.EnablePulseSubscriptionDescription,
+		"disable_pulse_subscription": prompts.DisablePulseSubscriptionDescription,
+		"write_pulse_disposition":    prompts.PulseDispositionsDescription,
+	})
+}
+
+func TestGetPulseFindingSchemaNamesOccurrenceIdentifier(t *testing.T) {
+	tools := registeredToolNames(t, testToolRegistrationConfig())
+	schema := schemaAsMap(t, tools["get_pulse_finding"].InputSchema)
+	properties := schema["properties"].(map[string]any)
+	occurrence := properties["occurrence_id"].(map[string]any)
+	description, _ := occurrence["description"].(string)
+	if !strings.Contains(description, "'id' field") || !strings.Contains(description, "not 'finding_id'") {
+		t.Fatalf("occurrence_id description = %q", description)
 	}
 }
 
