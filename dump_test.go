@@ -13,7 +13,7 @@ import (
 
 func TestDumpTools(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dumpTools(&buf); err != nil {
+	if err := dumpTools(&buf, nil); err != nil {
 		t.Fatalf("dumpTools failed: %v", err)
 	}
 

@@ -13,6 +13,7 @@ import (
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -83,10 +84,10 @@ type PatchAlertArgs struct {
 func NewCreateAlertHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, CreateAlertArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args CreateAlertArgs) (*mcp.CallToolResult, any, error) {
 		if strings.TrimSpace(args.EntityID) == "" {
-			return toolErrorResult("entity_id is required"), nil, nil
+			return utils.ToolErrorResult("entity_id is required"), nil, nil
 		}
 		if err := validateAlertRulePayload(args.AlertRule); err != nil {
-			return toolErrorResult(err.Error()), nil, nil
+			return utils.ToolErrorResult(err.Error()), nil, nil
 		}
 		payload, err := marshalAlertRulePayload(args.AlertRule)
 		if err != nil {
@@ -107,13 +108,13 @@ func NewCreateAlertHandler(client *http.Client, cfg models.Config) func(context.
 func NewUpdateAlertHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, UpdateAlertArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args UpdateAlertArgs) (*mcp.CallToolResult, any, error) {
 		if strings.TrimSpace(args.EntityID) == "" {
-			return toolErrorResult("entity_id is required"), nil, nil
+			return utils.ToolErrorResult("entity_id is required"), nil, nil
 		}
 		if err := validateAlertRuleID(args.ID); err != nil {
-			return toolErrorResult(err.Error()), nil, nil
+			return utils.ToolErrorResult(err.Error()), nil, nil
 		}
 		if err := validateAlertRulePayload(args.AlertRule); err != nil {
-			return toolErrorResult(err.Error()), nil, nil
+			return utils.ToolErrorResult(err.Error()), nil, nil
 		}
 		path := fmt.Sprintf(constants.EndpointEntityAlertRuleByID, url.PathEscape(args.EntityID), url.PathEscape(args.ID))
 		payload, err := marshalAlertRulePayload(args.AlertRule)
@@ -134,13 +135,13 @@ func NewUpdateAlertHandler(client *http.Client, cfg models.Config) func(context.
 func NewPatchAlertHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PatchAlertArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args PatchAlertArgs) (*mcp.CallToolResult, any, error) {
 		if strings.TrimSpace(args.EntityID) == "" {
-			return toolErrorResult("entity_id is required"), nil, nil
+			return utils.ToolErrorResult("entity_id is required"), nil, nil
 		}
 		if err := validateAlertRuleID(args.ID); err != nil {
-			return toolErrorResult(err.Error()), nil, nil
+			return utils.ToolErrorResult(err.Error()), nil, nil
 		}
 		if args.IsDisabled == nil && args.MuteUntil == nil && args.Properties == nil {
-			return toolErrorResult("at least one of is_disabled, mute_until, or properties is required"), nil, nil
+			return utils.ToolErrorResult("at least one of is_disabled, mute_until, or properties is required"), nil, nil
 		}
 		payload, err := json.Marshal(struct {
 			IsDisabled *bool            `json:"is_disabled,omitempty"`
@@ -161,10 +162,10 @@ func NewPatchAlertHandler(client *http.Client, cfg models.Config) func(context.C
 func NewDeleteAlertHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, DeleteAlertArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args DeleteAlertArgs) (*mcp.CallToolResult, any, error) {
 		if strings.TrimSpace(args.EntityID) == "" {
-			return toolErrorResult("entity_id is required"), nil, nil
+			return utils.ToolErrorResult("entity_id is required"), nil, nil
 		}
 		if err := validateAlertRuleID(args.ID); err != nil {
-			return toolErrorResult(err.Error()), nil, nil
+			return utils.ToolErrorResult(err.Error()), nil, nil
 		}
 		path := fmt.Sprintf(constants.EndpointEntityAlertRuleByID, url.PathEscape(args.EntityID), url.PathEscape(args.ID))
 		body, err := doAlertMutation(ctx, client, cfg, http.MethodDelete, path, nil)

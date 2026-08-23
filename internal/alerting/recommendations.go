@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -22,24 +23,24 @@ type RecommendAlertConfigArgs struct {
 func NewRecommendAlertConfigHandler(_ *http.Client, _ models.Config) func(context.Context, *mcp.CallToolRequest, RecommendAlertConfigArgs) (*mcp.CallToolResult, any, error) {
 	return func(_ context.Context, _ *mcp.CallToolRequest, args RecommendAlertConfigArgs) (*mcp.CallToolResult, any, error) {
 		if strings.TrimSpace(args.Signal) == "" {
-			return toolErrorResult("signal is required"), nil, nil
+			return utils.ToolErrorResult("signal is required"), nil, nil
 		}
 		if strings.TrimSpace(args.Objective) == "" {
-			return toolErrorResult("objective is required"), nil, nil
+			return utils.ToolErrorResult("objective is required"), nil, nil
 		}
 		ruleType := strings.ToLower(strings.TrimSpace(args.RuleType))
 		if ruleType == "" {
 			ruleType = alertConfigRuleTypeStatic
 		}
 		if ruleType != alertConfigRuleTypeStatic && ruleType != alertConfigRuleTypeAnomaly {
-			return toolErrorResult("rule_type must be one of \"static\" or \"anomaly\"; adaptive is currently evaluated as static by the backend"), nil, nil
+			return utils.ToolErrorResult("rule_type must be one of \"static\" or \"anomaly\"; adaptive is currently evaluated as static by the backend"), nil, nil
 		}
 		severity := strings.ToLower(strings.TrimSpace(args.Severity))
 		if severity == "" {
 			severity = "breach"
 		}
 		if severity != "breach" && severity != "threat" {
-			return toolErrorResult("severity must be one of \"breach\" or \"threat\""), nil, nil
+			return utils.ToolErrorResult("severity must be one of \"breach\" or \"threat\""), nil, nil
 		}
 
 		strategy := map[string]string{
