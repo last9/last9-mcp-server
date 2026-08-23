@@ -217,6 +217,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, attrCa
 		Description: prompts.DescribeAlertChartDescription,
 	}, alerting.NewDescribeAlertChartHandler(client, cfg)))
 
+	// Register create alert from chart tool (one-call static-threshold rule from chart identity)
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "create_alert_from_chart",
+		Description: prompts.CreateAlertFromChartDescription,
+	}, alerting.NewCreateAlertFromChartHandler(client, cfg)))
+
 	// Register alerts tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_alerts",

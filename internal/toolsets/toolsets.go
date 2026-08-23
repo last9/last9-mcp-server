@@ -55,6 +55,7 @@ var named = map[string][]string{
 		"recommend_alert_config",
 		"get_entity_alert_rules",
 		"describe_alert_chart",
+		"create_alert_from_chart",
 		"get_alert_rule_state",
 		"get_notification_channels",
 		"get_drop_rules",

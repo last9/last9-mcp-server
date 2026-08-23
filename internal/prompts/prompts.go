@@ -89,6 +89,9 @@ var GetAlertRuleStateDescription string
 //go:embed descriptions/describe_alert_chart.md
 var DescribeAlertChartDescription string
 
+//go:embed descriptions/create_alert_from_chart.md
+var CreateAlertFromChartDescription string
+
 //go:embed descriptions/get_log_attributes.md
 var GetLogAttributesDescription string
 
