@@ -54,6 +54,7 @@ var named = map[string][]string{
 		"delete_alert",
 		"recommend_alert_config",
 		"get_entity_alert_rules",
+		"describe_alert_chart",
 		"get_alert_rule_state",
 		"get_notification_channels",
 		"get_drop_rules",

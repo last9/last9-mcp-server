@@ -160,3 +160,135 @@ func TestCallAlertIntelligenceRejectsEmptyPayload(t *testing.T) {
 		t.Fatalf("server received %d requests for empty payloads", requests)
 	}
 }
+
+func TestDescribeAlertChartHappyPath(t *testing.T) {
+	var gotBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"signals":[{"key":"p95_latency","unit":"ms","query_kind":"metric"}],"pointers":{"view_source":"/x","view_in":"/y"}}`))
+	}))
+	defer server.Close()
+
+	handler := NewDescribeAlertChartHandler(server.Client(), testAlertMutationConfig(server.URL))
+	result, _, err := handler(context.Background(), nil, DescribeAlertChartArgs{
+		Surface:     "discover-service",
+		ChartKey:    "response_time",
+		ServiceName: "checkout",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsError {
+		t.Fatalf("unexpected tool error: %s", resultText(result))
+	}
+	if !bytes.Contains(gotBody, []byte(`"operation":"describe_chart"`)) {
+		t.Errorf("request body missing operation describe_chart: %s", gotBody)
+	}
+	var req AlertIntelligenceRequest
+	if err := json.Unmarshal(gotBody, &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.Entity["serviceName"] != "checkout" {
+		t.Errorf("entity serviceName = %v, want checkout", req.Entity["serviceName"])
+	}
+	var resp AlertIntelligenceResponse
+	if err := json.Unmarshal([]byte(resultText(result)), &resp); err != nil {
+		t.Fatalf("response not valid JSON: %v", err)
+	}
+	if len(resp.Signals) != 1 || resp.Signals[0].Key != "p95_latency" || resp.Signals[0].Unit != "ms" {
+		t.Fatalf("signals changed in transit: %+v", resp)
+	}
+}
+
+func TestDescribeAlertChartCoverageMiss(t *testing.T) {
+	reason := `{"message":"unknown chart key: latency_p95"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, reason, http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	handler := NewDescribeAlertChartHandler(server.Client(), testAlertMutationConfig(server.URL))
+	result, _, err := handler(context.Background(), nil, DescribeAlertChartArgs{
+		Surface:     "discover-service",
+		ChartKey:    "latency_p95",
+		ServiceName: "checkout",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.IsError {
+		t.Fatalf("expected tool error result, got: %s", resultText(result))
+	}
+	text := resultText(result)
+	for _, want := range []string{"unknown chart key: latency_p95", "Discover page", "dashboard or API"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("guidance missing %q: %s", want, text)
+		}
+	}
+}
+
+func TestDescribeAlertChartMissingRequiredFields(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	handler := NewDescribeAlertChartHandler(server.Client(), testAlertMutationConfig(server.URL))
+	for _, args := range []DescribeAlertChartArgs{
+		{Surface: "", ChartKey: "apdex", ServiceName: "checkout"},
+		{Surface: "discover-service", ChartKey: "apdex", ServiceName: ""},
+	} {
+		result, _, err := handler(context.Background(), nil, args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !result.IsError {
+			t.Fatalf("expected tool error result for %+v", args)
+		}
+	}
+	if requests != 0 {
+		t.Fatalf("server received %d requests for invalid args", requests)
+	}
+}
+
+func TestDescribeAlertChartAttributesPassThroughVerbatim(t *testing.T) {
+	var gotBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	handler := NewDescribeAlertChartHandler(server.Client(), testAlertMutationConfig(server.URL))
+	if _, _, err := handler(context.Background(), nil, DescribeAlertChartArgs{
+		Surface:     "discover-exceptions",
+		ChartKey:    "exception_count",
+		ServiceName: "payments",
+		Env:         "prod",
+		Attributes:  map[string]string{"exception_type": "TimeoutError", "operation": "POST /charge"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var req struct {
+		Entity map[string]string `json:"entity"`
+	}
+	if err := json.Unmarshal(gotBody, &req); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"serviceName":    "payments",
+		"env":            "prod",
+		"exception_type": "TimeoutError",
+		"operation":      "POST /charge",
+	}
+	for k, v := range want {
+		if req.Entity[k] != v {
+			t.Errorf("entity[%q] = %q, want %q", k, req.Entity[k], v)
+		}
+	}
+	if len(req.Entity) != len(want) {
+		t.Errorf("entity has unexpected keys: %v", req.Entity)
+	}
+}
