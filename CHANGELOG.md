@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `get_logs` can answer a search with a single server-side call instead of the client-side chunk sweep. Set `LAST9_USE_LOG_SEARCH_API=true` (or `--use_log_search_api`) to enable it; it is off by default. The tool's output shape is unchanged, with three new sibling keys on raw searches: `total_matching_lines` (exact, not a sample count), `search_stats` (chunks planned/with data/failed, bucket width, covered range), and `volume_summary` (the densest buckets, to narrow a follow-up search). Aggregate queries are unaffected.
+- `get_logs` can answer a search with a single server-side call instead of the client-side chunk sweep. Set `LAST9_USE_LOG_SEARCH_API=true` (or `--use_log_search_api`) to enable it; it is off by default. The tool's output shape is unchanged, with four new sibling keys on raw searches: `total_matching_lines` (exact, not a sample count), `logs_truncated`, `search_stats` (chunks planned/with data/failed, bucket width, covered range), and `volume_summary` (the densest buckets, to narrow a follow-up search). Aggregate queries skip `total_matching_lines`, `logs_truncated`, and `volume_summary`, but still get `search_stats`.
 
 ### Fixed
 

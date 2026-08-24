@@ -278,6 +278,104 @@ func TestDecodeLogSearchResponse_KeepsDensestFive(t *testing.T) {
 	}
 }
 
+func TestDecodeLogSearchResponse_NumericVolumeCountStillReturnsLogLines(t *testing.T) {
+	// A count arriving as a bare JSON number instead of the usual stringified
+	// float must not sink the search: the log lines are the product, volume is
+	// advisory.
+	out := decodeLogSearchBody(t, `{
+		"query_result": {"status":"success","data":{"resultType":"streams","result":[{"stream":{},"values":[]}]}},
+		"volume": [{"metric":{"a":"1"},"values":[[100,412]]}]
+	}`)
+
+	data, ok := out["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("data missing or wrong type: %#v", out["data"])
+	}
+	if result, ok := data["result"].([]any); !ok || len(result) != 1 {
+		t.Errorf("data.result = %#v, want 1 element", data["result"])
+	}
+	// A numeric count is now tolerated by logBucketCount.UnmarshalJSON, so the
+	// series parses cleanly and volume_summary is present.
+	summary, ok := out["volume_summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("volume_summary missing or wrong type: %#v", out["volume_summary"])
+	}
+	if summary["buckets_with_data"] != 1 {
+		t.Errorf("buckets_with_data = %v, want 1", summary["buckets_with_data"])
+	}
+}
+
+func TestDecodeLogSearchResponse_MalformedVolumeDropsSummaryButKeepsLogLines(t *testing.T) {
+	cases := map[string]string{
+		"bucket pair with three elements": `{
+			"query_result": {"status":"success","data":{"resultType":"streams","result":[{"stream":{},"values":[]}]}},
+			"volume": [{"metric":{"a":"1"},"values":[[100,"5","extra"]]}]
+		}`,
+		"volume not an array": `{
+			"query_result": {"status":"success","data":{"resultType":"streams","result":[{"stream":{},"values":[]}]}},
+			"volume": {"not":"an array"}
+		}`,
+	}
+
+	for name, payload := range cases {
+		t.Run(name, func(t *testing.T) {
+			out := decodeLogSearchBody(t, payload)
+
+			data, ok := out["data"].(map[string]any)
+			if !ok {
+				t.Fatalf("data missing or wrong type: %#v", out["data"])
+			}
+			if result, ok := data["result"].([]any); !ok || len(result) != 1 {
+				t.Errorf("data.result = %#v, want 1 element", data["result"])
+			}
+			if _, present := out["volume_summary"]; present {
+				t.Error("volume_summary must be absent when volume is structurally malformed")
+			}
+		})
+	}
+}
+
+func TestDecodeLogSearchResponse_FloatTotalMatchingLinesStillReturnsLogLines(t *testing.T) {
+	out := decodeLogSearchBody(t, `{
+		"query_result": {"status":"success","data":{"resultType":"streams","result":[{"stream":{},"values":[]}]}},
+		"total_matching_lines": 42.0
+	}`)
+
+	data, ok := out["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("data missing or wrong type: %#v", out["data"])
+	}
+	if result, ok := data["result"].([]any); !ok || len(result) != 1 {
+		t.Errorf("data.result = %#v, want 1 element", data["result"])
+	}
+	if out["total_matching_lines"] != 42 {
+		t.Errorf("total_matching_lines = %v, want 42", out["total_matching_lines"])
+	}
+}
+
+func TestDecodeLogSearchResponse_FloatTimestampAndNumericCountParse(t *testing.T) {
+	out := decodeLogSearchBody(t, `{
+		"query_result": {"status":"success","data":{"resultType":"streams","result":[]}},
+		"search_stats": {"bucket_seconds": 60},
+		"volume": [{"metric":{"a":"1"},"values":[[100.5,412]]}]
+	}`)
+
+	summary, ok := out["volume_summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("volume_summary missing or wrong type: %#v", out["volume_summary"])
+	}
+	densest, ok := summary["densest"].([]map[string]any)
+	if !ok || len(densest) != 1 {
+		t.Fatalf("densest = %#v, want 1 entry", summary["densest"])
+	}
+	if densest[0]["start"] != int64(100) {
+		t.Errorf("start = %v, want 100 (float timestamp truncated)", densest[0]["start"])
+	}
+	if densest[0]["count"] != float64(412) {
+		t.Errorf("count = %v, want 412 (numeric count parsed)", densest[0]["count"])
+	}
+}
+
 func TestDecodeLogSearchResponse_AggregateOmitsExtras(t *testing.T) {
 	// An aggregate query gets no volume, no total, no truncation flag. Their
 	// absence is meaningful and must survive.

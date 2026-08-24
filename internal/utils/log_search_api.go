@@ -110,15 +110,16 @@ func MakeLogSearchAPI(
 // data dense", which a handful of buckets answers as well as hundreds.
 const densestBucketCount = 5
 
-// logSearchResponse is the endpoint's body. Volume, TotalMatchingLines and
-// LogsTruncated are pointers because the server omits them entirely on
-// aggregate and dataframe queries, and that absence is meaningful.
+// logSearchResponse is the endpoint's body. query_result is the product: if it
+// fails to decode, the whole call fails. Every other field is advisory — kept
+// as raw bytes here so a malformed one can be dropped in DecodeLogSearchResponse
+// instead of failing the search that already has its answer in query_result.
 type logSearchResponse struct {
-	QueryResult        json.RawMessage    `json:"query_result"`
-	Volume             *[]logVolumeSeries `json:"volume"`
-	TotalMatchingLines *int               `json:"total_matching_lines"`
-	LogsTruncated      *bool              `json:"logs_truncated"`
-	SearchStats        map[string]any     `json:"search_stats"`
+	QueryResult        json.RawMessage `json:"query_result"`
+	Volume             json.RawMessage `json:"volume"`
+	TotalMatchingLines json.RawMessage `json:"total_matching_lines"`
+	LogsTruncated      json.RawMessage `json:"logs_truncated"`
+	SearchStats        json.RawMessage `json:"search_stats"`
 }
 
 type logVolumeSeries struct {
@@ -131,9 +132,11 @@ type logBucketCount struct {
 	Count float64
 }
 
-// UnmarshalJSON reads the [timestamp, "count"] pair. The count is a stringified
-// float or integer depending on the ClickHouse column type, so the same logical
-// count arrives as "412" or "412.000000".
+// UnmarshalJSON reads the [timestamp, count] pair. The timestamp is normally an
+// integer but is tolerated as a float (truncated to seconds), and the count is
+// accepted as either a JSON string or a JSON number, since the same logical
+// count has been observed as "412", "412.000000", and a bare 412 depending on
+// the upstream column type.
 func (b *logBucketCount) UnmarshalJSON(data []byte) error {
 	var pair []json.RawMessage
 	if err := json.Unmarshal(data, &pair); err != nil {
@@ -142,25 +145,43 @@ func (b *logBucketCount) UnmarshalJSON(data []byte) error {
 	if len(pair) != 2 {
 		return fmt.Errorf("log search: bucket count has %d elements", len(pair))
 	}
-	if err := json.Unmarshal(pair[0], &b.TS); err != nil {
+
+	var ts float64
+	if err := json.Unmarshal(pair[0], &ts); err != nil {
 		return fmt.Errorf("log search: bucket timestamp: %w", err)
 	}
-	var raw string
-	if err := json.Unmarshal(pair[1], &raw); err != nil {
+
+	var count float64
+	var asString string
+	if err := json.Unmarshal(pair[1], &asString); err == nil {
+		parsed, err := strconv.ParseFloat(asString, 64)
+		if err != nil {
+			return fmt.Errorf("log search: bucket count %q: %w", asString, err)
+		}
+		count = parsed
+	} else if err := json.Unmarshal(pair[1], &count); err != nil {
 		return fmt.Errorf("log search: bucket count: %w", err)
 	}
-	count, err := strconv.ParseFloat(raw, 64)
-	if err != nil {
-		return fmt.Errorf("log search: bucket count %q: %w", raw, err)
-	}
+
+	b.TS = int64(ts)
 	b.Count = count
 	return nil
+}
+
+// rawPresent reports whether an advisory field's raw JSON is worth decoding:
+// present in the body and not an explicit null.
+func rawPresent(raw json.RawMessage) bool {
+	return len(raw) > 0 && string(raw) != "null"
 }
 
 // DecodeLogSearchResponse flattens the endpoint's envelope into the shape
 // get_logs already returns: query_result lifted to the top level, so data.result
 // stays exactly where every existing consumer expects it, with the endpoint's
 // extra signals attached as siblings.
+//
+// query_result is the only field that can fail the whole call. Every other
+// field is advisory: a malformed one is simply left out of the result rather
+// than discarding the log lines the caller actually asked for.
 func DecodeLogSearchResponse(resp *http.Response) (map[string]any, error) {
 	var parsed logSearchResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
@@ -174,18 +195,48 @@ func DecodeLogSearchResponse(resp *http.Response) (map[string]any, error) {
 		}
 	}
 
-	if parsed.TotalMatchingLines != nil {
-		out["total_matching_lines"] = *parsed.TotalMatchingLines
+	var searchStats map[string]any
+	if rawPresent(parsed.SearchStats) {
+		if err := json.Unmarshal(parsed.SearchStats, &searchStats); err == nil {
+			out["search_stats"] = searchStats
+		}
 	}
-	if parsed.LogsTruncated != nil {
-		out["logs_truncated"] = *parsed.LogsTruncated
+
+	if rawPresent(parsed.TotalMatchingLines) {
+		var total float64
+		if err := json.Unmarshal(parsed.TotalMatchingLines, &total); err == nil {
+			out["total_matching_lines"] = int(total)
+		}
 	}
-	if len(parsed.SearchStats) > 0 {
-		out["search_stats"] = parsed.SearchStats
+
+	if rawPresent(parsed.LogsTruncated) {
+		var truncated bool
+		if err := json.Unmarshal(parsed.LogsTruncated, &truncated); err == nil {
+			out["logs_truncated"] = truncated
+		}
 	}
-	if parsed.Volume != nil {
-		out["volume_summary"] = summarizeLogVolume(*parsed.Volume, bucketSecondsFrom(parsed.SearchStats))
+
+	if rawPresent(parsed.Volume) {
+		var rawSeries []json.RawMessage
+		if err := json.Unmarshal(parsed.Volume, &rawSeries); err == nil {
+			series := make([]logVolumeSeries, 0, len(rawSeries))
+			for _, rs := range rawSeries {
+				var s logVolumeSeries
+				// One malformed series (e.g. a bucket pair with the wrong
+				// number of elements) must not sink the whole volume summary
+				// or leave it half-built from that series's partial values —
+				// drop just that series and keep the rest.
+				if err := json.Unmarshal(rs, &s); err != nil {
+					continue
+				}
+				series = append(series, s)
+			}
+			if len(series) > 0 {
+				out["volume_summary"] = summarizeLogVolume(series, bucketSecondsFrom(searchStats))
+			}
+		}
 	}
+
 	return out, nil
 }
 
