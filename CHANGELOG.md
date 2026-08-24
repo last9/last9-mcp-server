@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `get_logs` can answer a search with a single server-side call instead of the client-side chunk sweep. Set `LAST9_USE_LOG_SEARCH_API=true` (or `--use_log_search_api`) to enable it; it is off by default. The tool's output shape is unchanged, with three new sibling keys on raw searches: `total_matching_lines` (exact, not a sample count), `search_stats` (chunks planned/with data/failed, bucket width, covered range), and `volume_summary` (the densest buckets, to narrow a follow-up search). Aggregate queries are unaffected.
+
 ### Fixed
 
 - `get_change_events`: the `service_name`, `env`, and `event_name` filters now match the labels change events are actually stored with. A filtered call previously returned nothing while the same call without filters showed the events.
