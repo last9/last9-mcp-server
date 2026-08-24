@@ -223,9 +223,41 @@ func TestDescribeAlertChartCoverageMiss(t *testing.T) {
 		t.Fatalf("expected tool error result, got: %s", resultText(result))
 	}
 	text := resultText(result)
-	for _, want := range []string{"unknown chart key: latency_p95", "Discover page", "dashboard or API"} {
+	for _, want := range []string{"unknown chart key: latency_p95", "Discover page", "dashboard or API", "Then pick a signal_key from that output when creating"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("guidance missing %q: %s", want, text)
+		}
+	}
+}
+
+func TestCoverageMissCoordinatesAreDescribeArgsTags(t *testing.T) {
+	guidance := alertIntelGuidance(&AlertIntelHTTPError{StatusCode: http.StatusBadRequest, Class: classCoverageMiss, Body: "unknown chart key"})
+	marker := "coordinates ("
+	start := strings.Index(guidance, marker)
+	if start < 0 {
+		t.Fatalf("guidance missing coordinate parenthetical: %s", guidance)
+	}
+	start += len(marker)
+	end := strings.Index(guidance[start:], ")")
+	if end < 0 {
+		t.Fatalf("unterminated coordinate parenthetical: %s", guidance)
+	}
+	tokens := strings.Split(guidance[start:start+end], ", ")
+	if len(tokens) == 0 {
+		t.Fatal("no coordinate tokens found")
+	}
+
+	tags := map[string]bool{}
+	typ := reflect.TypeOf(DescribeAlertChartArgs{})
+	for i := 0; i < typ.NumField(); i++ {
+		tag := strings.Split(typ.Field(i).Tag.Get("json"), ",")[0]
+		if tag != "" && tag != "-" {
+			tags[tag] = true
+		}
+	}
+	for _, tok := range tokens {
+		if !tags[tok] {
+			t.Errorf("coverage-miss coordinate %q is not a DescribeAlertChartArgs json tag", tok)
 		}
 	}
 }
@@ -473,9 +505,144 @@ func TestCreateAlertFromChartDuplicateNameGuidance(t *testing.T) {
 		t.Fatalf("expected tool error, got: %s", resultText(result))
 	}
 	text := resultText(result)
-	for _, want := range []string{"get_entity_alert_rules", "timeout", "duplicate"} {
+	for _, want := range []string{"get_alert_config", "entity_id", "get_entity_alert_rules", "never retry blindly", "timeout", "duplicate"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("duplicate-name guidance missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestAlertIntelEntityAttrsCannotOverrideReservedKeys(t *testing.T) {
+	var gotBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	handler := NewCreateAlertFromChartHandler(server.Client(), createAlertFromChartTestConfig(server.URL))
+	if _, _, err := handler(context.Background(), nil, CreateAlertFromChartArgs{
+		Surface:     "discover-service",
+		ChartKey:    "error_rate",
+		ServiceName: "checkout",
+		SignalKey:   "error_ratio",
+		Name:        "checkout-error-rate",
+		Env:         "prod",
+		Attributes:  map[string]string{"serviceName": "evil", "env": "staging", "region": "us-east-1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var req struct {
+		Entity map[string]string `json:"entity"`
+	}
+	if err := json.Unmarshal(gotBody, &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.Entity["serviceName"] != "checkout" {
+		t.Errorf("serviceName overridden via attributes: %v", req.Entity)
+	}
+	if req.Entity["env"] != "prod" {
+		t.Errorf("env overridden via attributes: %v", req.Entity)
+	}
+	if req.Entity["region"] != "us-east-1" {
+		t.Errorf("non-reserved attribute dropped: %v", req.Entity)
+	}
+}
+
+func TestCreateAlertFromChartTransportFailureIsToolError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	baseURL := server.URL
+	client := server.Client()
+	server.Close() // nothing is listening; the request fails at the transport level
+
+	handler := NewCreateAlertFromChartHandler(client, createAlertFromChartTestConfig(baseURL))
+	result, _, err := handler(context.Background(), nil, CreateAlertFromChartArgs{
+		Surface:     "discover-service",
+		ChartKey:    "error_rate",
+		ServiceName: "checkout",
+		SignalKey:   "error_ratio",
+		Name:        "checkout-error-rate",
+	})
+	if err != nil {
+		t.Fatalf("transport failure must surface as tool error result, got Go error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatalf("expected error result, got: %s", resultText(result))
+	}
+	text := resultText(result)
+	for _, want := range []string{"may or may not have been applied", "get_alert_config"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("transport-failure guidance missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestDescribeAlertChartTransportFailureStaysRawError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	baseURL := server.URL
+	client := server.Client()
+	server.Close()
+
+	handler := NewDescribeAlertChartHandler(client, testAlertMutationConfig(baseURL))
+	result, _, err := handler(context.Background(), nil, DescribeAlertChartArgs{
+		Surface:     "discover-service",
+		ChartKey:    "error_rate",
+		ServiceName: "checkout",
+	})
+	if err == nil {
+		t.Fatal("describe transport failure must keep the raw error path")
+	}
+	if result != nil {
+		t.Errorf("describe transport failure must not return a result: %s", resultText(result))
+	}
+	if !strings.Contains(err.Error(), "alert intelligence request failed") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestCreateAlertFromChartGarbageBodyIsParseFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`not-json{{`))
+	}))
+	defer server.Close()
+
+	handler := NewCreateAlertFromChartHandler(server.Client(), createAlertFromChartTestConfig(server.URL))
+	result, _, err := handler(context.Background(), nil, CreateAlertFromChartArgs{
+		Surface:     "discover-service",
+		ChartKey:    "error_rate",
+		ServiceName: "checkout",
+		SignalKey:   "error_ratio",
+		Name:        "checkout-error-rate",
+	})
+	if err == nil || !strings.Contains(err.Error(), "failed to parse") {
+		t.Fatalf("expected parse failure error, got result %v err %v", result, err)
+	}
+}
+
+func TestCreateAlertFromChartSuccessWithoutRuleID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	handler := NewCreateAlertFromChartHandler(server.Client(), createAlertFromChartTestConfig(server.URL))
+	result, _, err := handler(context.Background(), nil, CreateAlertFromChartArgs{
+		Surface:     "discover-service",
+		ChartKey:    "error_rate",
+		ServiceName: "checkout",
+		SignalKey:   "error_ratio",
+		Name:        "checkout-error-rate",
+	})
+	if err != nil {
+		t.Fatalf("no-rule-id must surface as tool error result, got Go error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatalf("expected error result, got: %s", resultText(result))
+	}
+	text := resultText(result)
+	for _, want := range []string{"no rule id", "get_alert_config"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("no-rule-id guidance missing %q:\n%s", want, text)
 		}
 	}
 }

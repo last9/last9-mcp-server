@@ -16,6 +16,6 @@ Parameters:
 
 Units warning: the defaults (> 0.01 over a 5-minute window with 3 bad minutes) fit rate/count-style signals such as error_rate or exception_count. Score-unit signals like apdex live on a 0..1 scale — an explicit threshold there is required, because the 0.01 default would fire constantly.
 
-Retry discipline: after a timeout never retry blindly — first verify whether the rule exists via get_entity_alert_rules, since a timed-out create may still have succeeded and a blind retry duplicates it. On a duplicate-name conflict, check existing rules and pick a different name.
+Retry discipline: after a timeout never retry blindly — first verify whether the rule exists via get_alert_config filtering by rule name (its output includes the entity_id), then get_entity_alert_rules with that id, since a timed-out create may still have succeeded and a blind retry duplicates it. On a duplicate-name conflict, check existing rules and pick a different name.
 
 Credentials must clear the alert-intelligence route's POST gate; viewer-role tokens are rejected with a permissions error.

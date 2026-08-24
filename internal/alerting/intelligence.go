@@ -189,12 +189,16 @@ type DescribeAlertChartArgs struct {
 
 // alertIntelEntity builds the chart identity map shared by describe and
 // create-from-chart: serviceName plus optional env and verbatim attributes.
+// The reserved keys serviceName/env in attrs never override the seeded values.
 func alertIntelEntity(serviceName, env string, attrs map[string]string) map[string]any {
 	entity := map[string]any{"serviceName": serviceName}
 	if env = strings.TrimSpace(env); env != "" {
 		entity["env"] = env
 	}
 	for k, v := range attrs {
+		if k == "serviceName" || k == "env" {
+			continue
+		}
 		if strings.TrimSpace(k) != "" {
 			entity[k] = v
 		}
@@ -250,11 +254,11 @@ func alertIntelGuidance(e *AlertIntelHTTPError) string {
 	b.WriteString(e.Error())
 	switch e.Class {
 	case classCoverageMiss:
-		b.WriteString("\n\nThis surface/chart_key/entity combination is not covered by the alert-coverage catalog. Re-run describe_alert_chart with these exact coordinates (surface, chart_key, env, attributes, signal_key) to see what the catalog covers, or verify the chart against the Last9 dashboard Discover page for this service. Genuinely uncataloged charts cannot be bound by the typed MCP create flow (it attaches alerts to existing KPIs only); alert them via the Last9 dashboard or API instead.")
+		b.WriteString("\n\nThis surface/chart_key/entity combination is not covered by the alert-coverage catalog. Re-run describe_alert_chart with these exact coordinates (surface, chart_key, env, attributes) to see what the catalog covers, or verify the chart against the Last9 dashboard Discover page for this service. Then pick a signal_key from that output when creating. Genuinely uncataloged charts cannot be bound by the typed MCP create flow (it attaches alerts to existing KPIs only); alert them via the Last9 dashboard or API instead.")
 	case classPermissions:
 		b.WriteString("\n\nThe configured credentials are not permitted on this route: alert intelligence requires a token whose role and scopes clear its POST gate; viewer-role tokens are rejected.")
 	case classDuplicateName:
-		b.WriteString("\n\nAn alert rule with this name already exists. Check existing rules with get_entity_alert_rules and pick a different name before retrying. After a timeout, never retry blindly — verify with get_entity_alert_rules whether the rule was actually created first, or you will create a duplicate.")
+		b.WriteString("\n\nAn alert rule with this name already exists. Pick a different name before retrying. To inspect existing rules, use get_alert_config filtering by rule name (its output includes the entity_id), then get_entity_alert_rules with that id. After a timeout, never retry blindly — verify with get_alert_config whether the rule was actually created first, or you will create a duplicate.")
 	case classUpstream:
 		b.WriteString("\n\nThis is an upstream server-side failure; retry once before reporting it.")
 	}
@@ -376,12 +380,15 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 			if errors.As(err, &apiErr) {
 				return utils.ToolErrorResult(alertIntelGuidance(apiErr)), nil, nil
 			}
-			return nil, nil, err
+			return utils.ToolErrorResult("alert intelligence request failed at the transport level and may or may not have been applied - verify whether the rule exists (get_alert_config filtered by rule name) before retrying"), nil, nil
 		}
 
 		var resp AlertIntelligenceResponse
 		if err := json.Unmarshal(body, &resp); err != nil {
 			return nil, nil, fmt.Errorf("failed to parse alert intelligence response: %w", err)
+		}
+		if strings.TrimSpace(resp.ID) == "" {
+			return utils.ToolErrorResult("alert intelligence create returned success but no rule id; do not assume the rule was created - verify via get_alert_config before retrying"), nil, nil
 		}
 		link := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildAlertingGroupsLink()
 		return &mcp.CallToolResult{

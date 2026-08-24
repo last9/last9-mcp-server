@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"last9-mcp/internal/apm"
+	"last9-mcp/internal/toolsets"
 )
 
 func TestDumpTools(t *testing.T) {
@@ -129,5 +130,23 @@ func TestDumpTools(t *testing.T) {
 	}
 	if _, exists := served["allOf"]; exists {
 		t.Fatal("served schema must omit provider-incompatible allOf")
+	}
+}
+
+func TestDumpToolsHonorsToolsetsFilter(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, toolsets.Set{"get_exceptions": {}}); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if len(out.Tools) != 1 || out.Tools[0].Name != "get_exceptions" {
+		t.Fatalf("filtered dump = %+v, want exactly [get_exceptions]", out.Tools)
 	}
 }
