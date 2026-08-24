@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
@@ -39,10 +40,22 @@ const (
 	// cap. Windows wider than this are split into consecutive chunks of at
 	// most this many days.
 	perfDetailsMaxChunkDays = 35
-	// perfDetailsStepWindow is the fixed inner range-vector selector duration
+	// perfDetailsInnerRange is the fixed inner range-vector selector duration
 	// used for rate()/step-based sub-queries, replacing the old (and unsafe)
-	// "reuse the whole requested window" behavior.
-	perfDetailsStepWindow = "5m"
+	// "reuse the whole requested window" behavior. This does NOT control the
+	// output step/resolution of the response — that's derived server-side
+	// from the outer `window` param (see utils.MakePromRangeAPIQuery); it
+	// only bounds how much raw data each inner rate()/quantile_over_time()
+	// rescans per output point.
+	perfDetailsInnerRange = "5m"
+	// perfDetailsDefaultTopN is the default number of entries returned for
+	// the three top-k fields (top_operations_by_response_time,
+	// top_operations_by_error_rate, top_errors) when top_n is unset/zero.
+	perfDetailsDefaultTopN = 10
+	// perfDetailsMaxConcurrency bounds how many chunks are fanned out to the
+	// backend in parallel, matching the small bounded concurrency other
+	// chunked callers (get_logs/get_traces) use.
+	perfDetailsMaxConcurrency = 5
 )
 
 // firstNonEmpty returns the first non-empty string, enabling canonical-wins
@@ -80,6 +93,7 @@ type ServicePerformanceDetailsArgs struct {
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
 	Env             string  `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
+	TopN            int     `json:"top_n,omitempty" jsonschema:"Max entries to return for top_operations_by_response_time, top_operations_by_error_rate, and top_errors (default: 10)."`
 }
 
 type ServiceOperationsSummaryArgs struct {
@@ -272,22 +286,37 @@ type perfDetailsChunk struct {
 	end   int64
 }
 
-// splitIntoPerfDetailsChunks splits [start, end) into consecutive chunks of
-// at most perfDetailsMaxChunkDays each. Chunk boundaries are inclusive on
-// both ends (chunk N's end equals chunk N+1's start), matching how the
-// range-query results at those boundaries overlap.
+// splitIntoPerfDetailsChunks splits [start, end) into as-close-to-equal-width
+// consecutive chunks (all within 1 second of each other), each no wider than
+// perfDetailsMaxChunkDays. Chunk boundaries are inclusive on both ends (chunk
+// N's end equals chunk N+1's start), matching how the range-query results at
+// those boundaries overlap.
+//
+// Equal widths matter beyond just call-count: the backend derives each
+// chunk's output step server-side from the `window` param sent with that
+// chunk's query (no explicit step is sent), so unequal chunk widths can come
+// back on different-resolution time grids, breaking the boundary dedup in
+// mergeChunkedSeries. Splitting into "as many full-width chunks as fit, then
+// a narrower remainder" (the old behavior) produces exactly that mismatch.
 func splitIntoPerfDetailsChunks(start, end int64) []perfDetailsChunk {
 	const maxChunkSeconds = int64(perfDetailsMaxChunkDays) * 24 * 3600
-	if end-start <= maxChunkSeconds {
+	total := end - start
+	if total <= maxChunkSeconds {
 		return []perfDetailsChunk{{start: start, end: end}}
 	}
-	var chunks []perfDetailsChunk
+
+	numChunks := (total + maxChunkSeconds - 1) / maxChunkSeconds // ceil(total/max)
+	baseWidth := total / numChunks
+	remainder := total % numChunks
+
+	chunks := make([]perfDetailsChunk, 0, numChunks)
 	cur := start
-	for cur < end {
-		chunkEnd := cur + maxChunkSeconds
-		if chunkEnd > end {
-			chunkEnd = end
+	for i := int64(0); i < numChunks; i++ {
+		width := baseWidth
+		if i < remainder {
+			width++ // distribute the remainder across the first `remainder` chunks
 		}
+		chunkEnd := cur + width
 		chunks = append(chunks, perfDetailsChunk{start: cur, end: chunkEnd})
 		cur = chunkEnd
 	}
@@ -320,9 +349,15 @@ func seriesLabelKey(m map[string]string) string {
 }
 
 // mergeChunkedSeries stitches per-chunk TimeSeries results (in chunk order)
-// into one series per unique label set, dropping the duplicate point shared
-// at each chunk boundary (chunk N's last timestamp == chunk N+1's first). A
-// label set need not appear in every chunk.
+// into one series per unique label set, dropping any incoming point at or
+// before the last timestamp already appended. A label set need not appear in
+// every chunk.
+//
+// Adjacent chunks aren't guaranteed to land on the same output time grid
+// (the backend derives step from each chunk's own `window` param), so an
+// exact-equality check at the boundary can miss a mismatch and let
+// near-duplicate/out-of-order points through. A `<=` comparison is robust to
+// that regardless of whether the grids happen to align.
 func mergeChunkedSeries(chunkResults [][]TimeSeries) []TimeSeries {
 	merged := map[string]*TimeSeries{}
 	var order []string
@@ -331,17 +366,23 @@ func mergeChunkedSeries(chunkResults [][]TimeSeries) []TimeSeries {
 			key := seriesLabelKey(s.Metric)
 			existing, ok := merged[key]
 			if !ok {
-				cp := TimeSeries{Metric: s.Metric, Values: append([]TimeSeriesPoint{}, s.Values...)}
+				cp := TimeSeries{Metric: s.Metric, Values: make([]TimeSeriesPoint, 0, len(s.Values))}
+				for _, v := range s.Values {
+					if len(cp.Values) > 0 && v.Timestamp <= cp.Values[len(cp.Values)-1].Timestamp {
+						continue
+					}
+					cp.Values = append(cp.Values, v)
+				}
 				merged[key] = &cp
 				order = append(order, key)
 				continue
 			}
-			vals := s.Values
-			if len(existing.Values) > 0 && len(vals) > 0 &&
-				existing.Values[len(existing.Values)-1].Timestamp == vals[0].Timestamp {
-				vals = vals[1:]
+			for _, v := range s.Values {
+				if len(existing.Values) > 0 && v.Timestamp <= existing.Values[len(existing.Values)-1].Timestamp {
+					continue
+				}
+				existing.Values = append(existing.Values, v)
 			}
-			existing.Values = append(existing.Values, vals...)
 		}
 	}
 	result := make([]TimeSeries, 0, len(order))
@@ -351,38 +392,150 @@ func mergeChunkedSeries(chunkResults [][]TimeSeries) []TimeSeries {
 	return result
 }
 
+// toUtilsChunks converts our seconds-based perfDetailsChunk into the
+// milliseconds-based utils.TimeChunk RunChunksParallel expects. Order is
+// preserved so result index still maps 1:1 back to the original chunk.
+func toUtilsChunks(chunks []perfDetailsChunk) []utils.TimeChunk {
+	out := make([]utils.TimeChunk, len(chunks))
+	for i, c := range chunks {
+		out[i] = utils.TimeChunk{StartMs: c.start * 1000, EndMs: c.end * 1000}
+	}
+	return out
+}
+
+// chunkWindowSelector renders a chunk's own width as a PromQL range-vector
+// selector duration (e.g. "3m"), clamped to a 1-minute minimum. Truncating
+// integer minutes on a sub-60s-wide chunk would otherwise render as the
+// invalid "[0m]" selector.
+func chunkWindowSelector(c perfDetailsChunk) string {
+	widthMinutes := (c.end - c.start) / 60
+	if widthMinutes < 1 {
+		widthMinutes = 1
+	}
+	return fmt.Sprintf("%dm", widthMinutes)
+}
+
 // fetchChunkedRangeSeries runs a range-vector query once per chunk (via
-// buildQuery) and merges the results with mergeChunkedSeries. A chunk that
-// returns a non-2xx status is recorded in partialErrors (with its time
-// bounds) and skipped, so the rest keep merging; a transport-level error
-// aborts the whole call, matching the pre-chunking behavior.
-func fetchChunkedRangeSeries(ctx context.Context, client *http.Client, cfg models.Config, chunks []perfDetailsChunk, buildQuery func(perfDetailsChunk) string, label string, partialErrors *[]string) ([]TimeSeries, error) {
-	var chunkResults [][]TimeSeries
-	for _, c := range chunks {
-		httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, buildQuery(c), c.start, c.end, cfg)
-		if err != nil {
-			return nil, err
-		}
-		func() {
+// buildQuery) in parallel (bounded by perfDetailsMaxConcurrency, each call
+// bounded by constants.PerChunkHTTPTimeout) and merges the results with
+// mergeChunkedSeries.
+//
+// For a single-chunk (unchunked, <=35 day) call, any failure — non-2xx
+// status, a read error, or a parse error — aborts the whole call immediately,
+// matching the pre-chunking behavior exactly (same error text/wrapping via
+// parseErrMsg). For a genuinely chunked (>1 chunk) call, the same failures on
+// any one chunk are recorded in partialErrors (with that chunk's time bounds)
+// and skipped so the rest keep merging.
+func fetchChunkedRangeSeries(ctx context.Context, client *http.Client, cfg models.Config, chunks []perfDetailsChunk, buildQuery func(perfDetailsChunk) string, label, parseErrMsg string, partialErrors *[]string) ([]TimeSeries, error) {
+	results := utils.RunChunksParallel(ctx, toUtilsChunks(chunks), perfDetailsMaxConcurrency,
+		func(cctx context.Context, idx int, _ utils.TimeChunk) ([]TimeSeries, error) {
+			c := chunks[idx]
+			chunkCtx, cancel := context.WithTimeout(cctx, constants.PerChunkHTTPTimeout)
+			defer cancel()
+
+			httpResp, err := utils.MakePromRangeAPIQuery(chunkCtx, client, buildQuery(c), c.start, c.end, cfg)
+			if err != nil {
+				return nil, err
+			}
 			defer httpResp.Body.Close()
+
 			if httpResp.StatusCode != http.StatusOK {
-				*partialErrors = append(*partialErrors, fmt.Sprintf("%s: %s", chunkBoundsLabel(c), promErr(httpResp, label).Error()))
-				return
+				return nil, promErr(httpResp, label)
 			}
 			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
-				*partialErrors = append(*partialErrors, fmt.Sprintf("%s: failed to read response body for %s: %v", chunkBoundsLabel(c), label, err))
-				return
+				return nil, fmt.Errorf("failed to read response body: %w", err)
 			}
 			seriesList, err := parsePromTimeSeries(data)
 			if err != nil {
-				*partialErrors = append(*partialErrors, fmt.Sprintf("%s: failed to parse %s: %v", chunkBoundsLabel(c), label, err))
-				return
+				return nil, fmt.Errorf("failed to parse %s: %w", parseErrMsg, err)
 			}
-			chunkResults = append(chunkResults, seriesList)
-		}()
+			return seriesList, nil
+		})
+
+	singleChunk := len(chunks) == 1
+	var chunkResults [][]TimeSeries
+	for _, r := range results {
+		if r.Err != nil {
+			if singleChunk {
+				return nil, r.Err
+			}
+			*partialErrors = append(*partialErrors, fmt.Sprintf("%s: %s", chunkBoundsLabel(chunks[r.Index]), r.Err.Error()))
+			continue
+		}
+		chunkResults = append(chunkResults, r.Value)
 	}
 	return mergeChunkedSeries(chunkResults), nil
+}
+
+// fetchChunkedTopK runs an instant-query top-k-style query once per chunk
+// (via buildQuery, given the chunk and its own clamped width selector) in
+// parallel, decodes each chunk's response into a flat list of single-key
+// maps via keyFn/parseVal, and returns the per-chunk results unmerged —
+// callers apply the domain-specific merge (mergeTopFloat/mergeTopInt64).
+//
+// Failure handling matches fetchChunkedRangeSeries: a single-chunk call
+// aborts immediately on any sub-query failure; a multi-chunk call records a
+// partial error per failing chunk and continues with the rest.
+func fetchChunkedTopK[V float64 | int64](
+	ctx context.Context,
+	client *http.Client,
+	cfg models.Config,
+	chunks []perfDetailsChunk,
+	buildQuery func(c perfDetailsChunk, windowSelector string) string,
+	keyFn func(m map[string]string) (string, bool),
+	parseVal func(s string) (V, bool),
+	label string,
+	partialErrors *[]string,
+) ([][]map[string]V, error) {
+	results := utils.RunChunksParallel(ctx, toUtilsChunks(chunks), perfDetailsMaxConcurrency,
+		func(cctx context.Context, idx int, _ utils.TimeChunk) ([]map[string]V, error) {
+			c := chunks[idx]
+			chunkCtx, cancel := context.WithTimeout(cctx, constants.PerChunkHTTPTimeout)
+			defer cancel()
+
+			query := buildQuery(c, chunkWindowSelector(c))
+			httpResp, err := utils.MakePromInstantAPIQuery(chunkCtx, client, query, c.end, cfg)
+			if err != nil {
+				return nil, err
+			}
+			defer httpResp.Body.Close()
+
+			if httpResp.StatusCode != http.StatusOK {
+				return nil, promErr(httpResp, label)
+			}
+			var resp apiPromInstantResp
+			if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
+				return nil, fmt.Errorf("failed to decode %s response: %w", label, err)
+			}
+			items := make([]map[string]V, 0, len(resp))
+			for _, r := range resp {
+				key, ok := keyFn(r.Metric)
+				if !ok {
+					continue
+				}
+				if valStr, ok := r.Value[1].(string); ok {
+					if val, ok := parseVal(valStr); ok {
+						items = append(items, map[string]V{key: val})
+					}
+				}
+			}
+			return items, nil
+		})
+
+	singleChunk := len(chunks) == 1
+	var chunkItems [][]map[string]V
+	for _, r := range results {
+		if r.Err != nil {
+			if singleChunk {
+				return nil, r.Err
+			}
+			*partialErrors = append(*partialErrors, fmt.Sprintf("%s: %s", chunkBoundsLabel(chunks[r.Index]), r.Err.Error()))
+			continue
+		}
+		chunkItems = append(chunkItems, r.Value)
+	}
+	return chunkItems, nil
 }
 
 // mergeTopFloat merges topk-style instant-query results (one single-key map
@@ -466,14 +619,25 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 
 		windowSeconds := endTimeParam - startTimeParam
 		if windowSeconds > int64(maxServicePerformanceWindowDays)*24*3600 {
+			// Ceiling-divide so the reported "got X days" is always strictly
+			// greater than the max at the rejection boundary (e.g. exactly
+			// 366 days + 1 second must report 367 days, not 366 — otherwise
+			// the message says "got 366 days, max is 366 days" with no
+			// visible reason for the rejection).
+			gotDays := (windowSeconds + 24*3600 - 1) / (24 * 3600)
 			return nil, nil, fmt.Errorf(
 				"time range too wide for get_service_performance_details: got %d days, max is %d days (this call fans out to multiple sub-queries per %d-day chunk; this bound limits call count/latency, not data availability)",
-				windowSeconds/(24*3600), maxServicePerformanceWindowDays, perfDetailsMaxChunkDays,
+				gotDays, maxServicePerformanceWindowDays, perfDetailsMaxChunkDays,
 			)
 		}
 
 		chunks := splitIntoPerfDetailsChunks(startTimeParam, endTimeParam)
 		multiChunk := len(chunks) > 1
+
+		topN := args.TopN
+		if topN <= 0 {
+			topN = perfDetailsDefaultTopN
+		}
 
 		details := ServicePerformanceDetails{
 			ServiceName: serviceName,
@@ -486,7 +650,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 				"sum(trace_service_apdex_score{service_name='%s', env=~'%s'})",
 				serviceName, env,
 			)
-		}, "service performance details apdex", &details.PartialErrors)
+		}, "service performance details apdex", "apdex score", &details.PartialErrors)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -495,9 +659,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		details.ResponseTimes, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
 				"sum by (quantile) (trace_service_response_time{service_name='%s', env='%s'}[%s])",
-				serviceName, env, perfDetailsStepWindow,
+				serviceName, env, perfDetailsInnerRange,
 			)
-		}, "service performance details response_times", &details.PartialErrors)
+		}, "service performance details response_times", "response times", &details.PartialErrors)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -506,9 +670,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		details.Availability, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
 				"(1 - (sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[%s])) or 0) / (sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[%s])) + 0.0000001)) * 100 default -999",
-				serviceName, env, perfDetailsStepWindow, serviceName, env, perfDetailsStepWindow,
+				serviceName, env, perfDetailsInnerRange, serviceName, env, perfDetailsInnerRange,
 			)
-		}, "service performance details availability", &details.PartialErrors)
+		}, "service performance details availability", "availability response", &details.PartialErrors)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -517,9 +681,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		details.Throughput, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
 				"sum by (http_status_code)(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[%s])) * 60 default 0",
-				serviceName, env, perfDetailsStepWindow,
+				serviceName, env, perfDetailsInnerRange,
 			)
-		}, "service performance details throughput", &details.PartialErrors)
+		}, "service performance details throughput", "throughput response", &details.PartialErrors)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -528,9 +692,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		details.ErrorRate, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
 				"sum by (service_name, http_status_code)(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[%s])) * 60 default 0",
-				serviceName, env, perfDetailsStepWindow,
+				serviceName, env, perfDetailsInnerRange,
 			)
-		}, "service performance details error_rate", &details.PartialErrors)
+		}, "service performance details error_rate", "error rate response", &details.PartialErrors)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -539,178 +703,108 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		details.ErrorPercent, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
 				"(sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[%s])) / sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[%s])) * 100) default 0",
-				serviceName, env, perfDetailsStepWindow, serviceName, env, perfDetailsStepWindow,
+				serviceName, env, perfDetailsInnerRange, serviceName, env, perfDetailsInnerRange,
 			)
-		}, "service performance details error_percent", &details.PartialErrors)
+		}, "service performance details error_percent", "error percent response", &details.PartialErrors)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		// Get Top Operations by Response Time - keep vector output. These are
-		// instant queries whose only windowing mechanism is the inner
-		// quantile_over_time([...]) selector, so (unlike the rate() queries
-		// above) it must stay at the chunk's own width, not perfDetailsStepWindow.
-		topRTLimit := 10
-		if multiChunk {
-			topRTLimit = 20 // over-fetch per chunk so the cross-chunk merge still has 10 real candidates
+		// spanKindKeyFn builds the unique key topRTQuery/topErrQuery use
+		// (span_name plus its co-selected label fields); every row from
+		// those queries carries all of them, so it never skips a row.
+		spanKindKeyFn := func(m map[string]string) (string, bool) {
+			return fmt.Sprintf("%s-%s-%s-%s-%s-%s-%s",
+				m["span_name"], m["span_kind"], m["net_peer_name"],
+				m["db_system"], m["rpc_system"], m["messaging_system"],
+				m["process_runtime_name"],
+			), true
 		}
-		var topRTChunks [][]map[string]float64
-		for _, c := range chunks {
-			chunkWindow := fmt.Sprintf("%dm", int((c.end-c.start)/60))
-			topRTQuery := fmt.Sprintf(
-				"topk(%d, quantile_over_time(0.95, sum by (span_name, messaging_system, rpc_system, span_kind,net_peer_name,process_runtime_name,db_system)(trace_endpoint_duration{service_name='%s', span_kind!='SPAN_KIND_INTERNAL', env='%s', quantile='p95'}[%s])))",
-				topRTLimit, serviceName, env, chunkWindow,
-			)
-			httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, topRTQuery, c.end, cfg)
-			if err != nil {
-				return nil, nil, err
-			}
-			func() {
-				defer httpResp.Body.Close()
+		parseFloatOK := func(s string) (float64, bool) {
+			v, err := strconv.ParseFloat(s, 64)
+			return v, err == nil
+		}
+		parseIntOK := func(s string) (int64, bool) {
+			v, err := strconv.ParseInt(s, 10, 64)
+			return v, err == nil
+		}
 
-				if httpResp.StatusCode != http.StatusOK {
-					details.PartialErrors = append(details.PartialErrors, fmt.Sprintf("%s: %s", chunkBoundsLabel(c), promErr(httpResp, "service performance details top_operations_by_response_time").Error()))
-				} else {
-					var topRTResp apiPromInstantResp
-					if err := json.NewDecoder(httpResp.Body).Decode(&topRTResp); err == nil {
-						items := make([]map[string]float64, 0, len(topRTResp))
-						for _, r := range topRTResp {
-							// join values of r.Timeseries with a - to create a unique key
-							key := fmt.Sprintf("%s-%s-%s-%s-%s-%s-%s",
-								r.Metric["span_name"],
-								r.Metric["span_kind"],
-								r.Metric["net_peer_name"],
-								r.Metric["db_system"],
-								r.Metric["rpc_system"],
-								r.Metric["messaging_system"],
-								r.Metric["process_runtime_name"],
-							)
-							if valStr, ok := r.Value[1].(string); ok {
-								val, _ := strconv.ParseFloat(valStr, 64)
-								items = append(items, map[string]float64{key: val})
-							}
-						}
-						topRTChunks = append(topRTChunks, items)
-					}
-				}
-			}()
-		}
+		// Get Top Operations by Response Time - keep vector output. This is
+		// an instant query whose only windowing mechanism is the inner
+		// quantile_over_time([...]) selector, so (unlike the rate() queries
+		// above) it must stay at the chunk's own width, not perfDetailsInnerRange.
+		topRTLimit := topN
 		if multiChunk {
-			if len(topRTChunks) > 0 {
-				details.TopOperations.ByResponseTime = mergeTopFloat(topRTChunks, 10)
-			}
-		} else if len(topRTChunks) > 0 {
-			details.TopOperations.ByResponseTime = topRTChunks[0]
+			topRTLimit = 2 * topN // over-fetch per chunk so the cross-chunk merge still has topN real candidates
+		}
+		topRTChunks, err := fetchChunkedTopK(ctx, client, cfg, chunks,
+			func(c perfDetailsChunk, windowSelector string) string {
+				return fmt.Sprintf(
+					"topk(%d, quantile_over_time(0.95, sum by (span_name, messaging_system, rpc_system, span_kind,net_peer_name,process_runtime_name,db_system)(trace_endpoint_duration{service_name='%s', span_kind!='SPAN_KIND_INTERNAL', env='%s', quantile='p95'}[%s])))",
+					topRTLimit, serviceName, env, windowSelector,
+				)
+			},
+			spanKindKeyFn, parseFloatOK,
+			"service performance details top_operations_by_response_time", &details.PartialErrors)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(topRTChunks) > 0 {
+			details.TopOperations.ByResponseTime = mergeTopFloat(topRTChunks, topN)
 		}
 
 		// Get Top Operations by Error Rate - keep vector output. Unlike
 		// topRTQuery, this query is not wrapped in topk() (it already
-		// returns every matching series unbounded), so there's no
-		// over-fetch limit to widen per chunk here; only the final merge
-		// across chunks truncates to the top 10.
-		var topErrChunks [][]map[string]int64
-		for _, c := range chunks {
-			chunkWindow := fmt.Sprintf("%dm", int((c.end-c.start)/60))
-			topErrQuery := fmt.Sprintf(
-				`sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, exception_type)(sum_over_time(trace_client_count{service_name="%s", env='%s', exception_type!=''}[%s])) or
-				 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, exception_type)(sum_over_time(trace_endpoint_count{service_name="%s", env='%s', exception_type!=''}[%s])) or
-				 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, http_status_code)(sum_over_time(trace_client_count{service_name="%s", env='%s', http_status_code=~"^[45].*"}[%s])) or
-				 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, http_status_code)(sum_over_time(trace_endpoint_count{service_name="%s", env='%s', http_status_code=~"^[45].*"}[%s]))`,
-				serviceName, env, chunkWindow, serviceName, env, chunkWindow, serviceName, env, chunkWindow, serviceName, env, chunkWindow,
-			)
-			httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, topErrQuery, c.end, cfg)
-			if err != nil {
-				return nil, nil, err
-			}
-			func() {
-				defer httpResp.Body.Close()
-
-				if httpResp.StatusCode != http.StatusOK {
-					details.PartialErrors = append(details.PartialErrors, fmt.Sprintf("%s: %s", chunkBoundsLabel(c), promErr(httpResp, "service performance details top_operations_by_error_rate").Error()))
-				} else {
-					var topErrResp apiPromInstantResp
-					if err := json.NewDecoder(httpResp.Body).Decode(&topErrResp); err == nil {
-						items := make([]map[string]int64, 0, len(topErrResp))
-						for _, r := range topErrResp {
-							// join values of r.Timeseries with a - to create a unique key
-							key := fmt.Sprintf("%s-%s-%s-%s-%s-%s-%s",
-								r.Metric["span_name"],
-								r.Metric["span_kind"],
-								r.Metric["net_peer_name"],
-								r.Metric["db_system"],
-								r.Metric["rpc_system"],
-								r.Metric["messaging_system"],
-								r.Metric["process_runtime_name"],
-							)
-							if valStr, ok := r.Value[1].(string); ok {
-								val, _ := strconv.ParseInt(valStr, 10, 64)
-								items = append(items, map[string]int64{key: val})
-							}
-						}
-						topErrChunks = append(topErrChunks, items)
-					}
-				}
-			}()
+		// returns every matching series unbounded); mergeTopInt64 sorts and
+		// truncates to topN uniformly, whether there's one chunk or many.
+		topErrChunks, err := fetchChunkedTopK(ctx, client, cfg, chunks,
+			func(c perfDetailsChunk, windowSelector string) string {
+				return fmt.Sprintf(
+					`sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, exception_type)(sum_over_time(trace_client_count{service_name="%s", env='%s', exception_type!=''}[%s])) or
+					 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, exception_type)(sum_over_time(trace_endpoint_count{service_name="%s", env='%s', exception_type!=''}[%s])) or
+					 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, http_status_code)(sum_over_time(trace_client_count{service_name="%s", env='%s', http_status_code=~"^[45].*"}[%s])) or
+					 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, http_status_code)(sum_over_time(trace_endpoint_count{service_name="%s", env='%s', http_status_code=~"^[45].*"}[%s]))`,
+					serviceName, env, windowSelector, serviceName, env, windowSelector, serviceName, env, windowSelector, serviceName, env, windowSelector,
+				)
+			},
+			spanKindKeyFn, parseIntOK,
+			"service performance details top_operations_by_error_rate", &details.PartialErrors)
+		if err != nil {
+			return nil, nil, err
 		}
-		if multiChunk {
-			if len(topErrChunks) > 0 {
-				details.TopOperations.ByErrorRate = mergeTopInt64(topErrChunks, 10)
-			}
-		} else if len(topErrChunks) > 0 {
-			details.TopOperations.ByErrorRate = topErrChunks[0]
+		if len(topErrChunks) > 0 {
+			details.TopOperations.ByErrorRate = mergeTopInt64(topErrChunks, topN)
 		}
 
 		// Get Top Errors - keep vector output. Same unbounded (no topk)
-		// shape as topErrQuery above; the merge across chunks handles the
-		// top-10 truncation.
-		var topErrorsChunks [][]map[string]int64
-		for _, c := range chunks {
-			chunkWindow := fmt.Sprintf("%dm", int((c.end-c.start)/60))
-			topErrorsQuery := fmt.Sprintf(
-				`sum by (exception_type)(sum by (exception_type, span_kind)(sum_over_time(trace_client_count{service_name="%s", env='%s', exception_type!=''}[%s])) or
-				 sum by (exception_type, span_kind)(sum_over_time(trace_endpoint_count{service_name="%s", env='%s', exception_type!=''}[%s]))) or
-				 sum by (http_status_code)(sum by (http_status_code, span_kind)(sum_over_time(trace_client_count{service_name="%s", env='%s', http_status_code=~"^[45].*"}[%s])) or
-				 sum by (http_status_code, span_kind)(sum_over_time(trace_endpoint_count{service_name="%s", env='%s', http_status_code=~"^[45].*"}[%s])))`,
-				serviceName, env, chunkWindow, serviceName, env, chunkWindow, serviceName, env, chunkWindow, serviceName, env, chunkWindow,
-			)
-			httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, topErrorsQuery, c.end, cfg)
-			if err != nil {
-				return nil, nil, err
+		// shape as topErrQuery above; mergeTopInt64 sorts and truncates to
+		// topN uniformly, whether there's one chunk or many.
+		topErrorsKeyFn := func(m map[string]string) (string, bool) {
+			if exceptionType := m["exception_type"]; exceptionType != "" {
+				return exceptionType, true
 			}
-			func() {
-				defer httpResp.Body.Close()
-				if httpResp.StatusCode != http.StatusOK {
-					details.PartialErrors = append(details.PartialErrors, fmt.Sprintf("%s: %s", chunkBoundsLabel(c), promErr(httpResp, "service performance details top_errors").Error()))
-				} else {
-					var topErrorsResp apiPromInstantResp
-					if err := json.NewDecoder(httpResp.Body).Decode(&topErrorsResp); err == nil {
-						items := make([]map[string]int64, 0, len(topErrorsResp))
-						for _, r := range topErrorsResp {
-							// extract either exception_type or http_status_code as the unique key
-							var key string
-							if exceptionType, ok := r.Metric["exception_type"]; ok && exceptionType != "" {
-								key = exceptionType
-							} else if httpStatusCode, ok := r.Metric["http_status_code"]; ok && httpStatusCode != "" {
-								key = httpStatusCode
-							} else {
-								continue // skip if neither is present
-							}
-							if valStr, ok := r.Value[1].(string); ok {
-								val, _ := strconv.ParseInt(valStr, 10, 64)
-								items = append(items, map[string]int64{key: val})
-							}
-						}
-						topErrorsChunks = append(topErrorsChunks, items)
-					}
-				}
-			}()
+			if httpStatusCode := m["http_status_code"]; httpStatusCode != "" {
+				return httpStatusCode, true
+			}
+			return "", false // skip if neither is present
 		}
-		if multiChunk {
-			if len(topErrorsChunks) > 0 {
-				details.TopErrors = mergeTopInt64(topErrorsChunks, 10)
-			}
-		} else if len(topErrorsChunks) > 0 {
-			details.TopErrors = topErrorsChunks[0]
+		topErrorsChunks, err := fetchChunkedTopK(ctx, client, cfg, chunks,
+			func(c perfDetailsChunk, windowSelector string) string {
+				return fmt.Sprintf(
+					`sum by (exception_type)(sum by (exception_type, span_kind)(sum_over_time(trace_client_count{service_name="%s", env='%s', exception_type!=''}[%s])) or
+					 sum by (exception_type, span_kind)(sum_over_time(trace_endpoint_count{service_name="%s", env='%s', exception_type!=''}[%s]))) or
+					 sum by (http_status_code)(sum by (http_status_code, span_kind)(sum_over_time(trace_client_count{service_name="%s", env='%s', http_status_code=~"^[45].*"}[%s])) or
+					 sum by (http_status_code, span_kind)(sum_over_time(trace_endpoint_count{service_name="%s", env='%s', http_status_code=~"^[45].*"}[%s])))`,
+					serviceName, env, windowSelector, serviceName, env, windowSelector, serviceName, env, windowSelector, serviceName, env, windowSelector,
+				)
+			},
+			topErrorsKeyFn, parseIntOK,
+			"service performance details top_errors", &details.PartialErrors)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(topErrorsChunks) > 0 {
+			details.TopErrors = mergeTopInt64(topErrorsChunks, topN)
 		}
 
 		resultJSON, err := json.Marshal(details)

@@ -697,7 +697,13 @@ func TestPromqlRangeQueryRelays400AndDrains502(t *testing.T) {
 	}
 }
 
-func TestServicePerformanceDetailsPromFailureRecordsPartialErrors(t *testing.T) {
+// A single-chunk (<=35 day) window never gets chunked, so it matches the
+// pre-chunking behavior exactly: any sub-query HTTP failure hard-aborts the
+// whole call rather than surviving in partial_errors. Genuinely chunked
+// (>35 day) windows keep the fail-soft/partial_errors behavior — see
+// TestServicePerformanceDetails_FailingChunkRecordsPartialErrorButOthersMerge
+// in service_performance_details_window_test.go.
+func TestServicePerformanceDetailsPromFailureHardAbortsSingleChunkWindow(t *testing.T) {
 	var n atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if n.Add(1) == 1 {
@@ -719,24 +725,18 @@ func TestServicePerformanceDetailsPromFailureRecordsPartialErrors(t *testing.T) 
 		},
 	}
 	handler := NewServicePerformanceDetailsHandler(server.Client(), cfg)
-	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServicePerformanceDetailsArgs{
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServicePerformanceDetailsArgs{
 		ServiceName:     "checkout",
 		Env:             "prod",
 		LookbackMinutes: 15,
 	})
-	if err != nil {
-		t.Fatalf("HTTP PromQL failures should stay in partial_errors, got Go error: %v", err)
+	if err == nil {
+		t.Fatal("expected a hard error for a single-chunk window's sub-query HTTP failure, got nil")
 	}
-	text := utils.GetTextContent(t, result)
-	var details ServicePerformanceDetails
-	if err := json.Unmarshal([]byte(text), &details); err != nil {
-		t.Fatalf("failed to unmarshal response: %v", err)
+	if !strings.Contains(err.Error(), "bad selector") {
+		t.Fatalf("expected sanitized 400 body in the returned error, got %v", err)
 	}
-	joined := strings.Join(details.PartialErrors, "\n")
-	if !strings.Contains(joined, "bad selector") {
-		t.Fatalf("expected sanitized 400 body in partial_errors, got %#v", details.PartialErrors)
-	}
-	if details.ServiceName != "checkout" {
-		t.Fatalf("surviving payload missing service_name, got %#v", details)
+	if strings.Contains(err.Error(), "chunk ") {
+		t.Fatalf("single-chunk failure must not carry a chunk-bounds prefix, got %v", err)
 	}
 }

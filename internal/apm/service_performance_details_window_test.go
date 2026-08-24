@@ -75,6 +75,29 @@ func TestSplitIntoPerfDetailsChunks_SplitsWiderWindows(t *testing.T) {
 			t.Errorf("expected chunk %d end (%d) to equal chunk %d start (%d)", i-1, chunks[i-1].end, i, chunks[i].start)
 		}
 	}
+	// Chunks must be as-close-to-equal-width as possible (all widths within
+	// 1 second of each other), not "as many full 35-day chunks as fit, then
+	// a narrower remainder" — a 90 day window should split into 3 nearly
+	// equal ~30-day chunks, not 35+35+20.
+	minWidth, maxWidth := chunks[0].end-chunks[0].start, chunks[0].end-chunks[0].start
+	for _, c := range chunks {
+		w := c.end - c.start
+		if w < minWidth {
+			minWidth = w
+		}
+		if w > maxWidth {
+			maxWidth = w
+		}
+	}
+	if maxWidth-minWidth > 1 {
+		t.Errorf("expected all chunk widths within 1 second of each other, got widths %v", func() []int64 {
+			ws := make([]int64, len(chunks))
+			for i, c := range chunks {
+				ws[i] = c.end - c.start
+			}
+			return ws
+		}())
+	}
 }
 
 // --- mergeChunkedSeries ---
@@ -128,6 +151,55 @@ func TestMergeChunkedSeries_DedupsBoundaryAndHandlesPartialLabelSets(t *testing.
 	}
 	if len(got500.Values) != 1 || got500.Values[0].Value != 9 {
 		t.Errorf("unexpected values for the chunk2-only series: %+v", got500.Values)
+	}
+}
+
+// TestMergeChunkedSeries_MisalignedGridBoundary_NoDuplicatesMonotonic covers
+// the case exact-timestamp-equality dedup misses: adjacent chunks whose
+// backend-derived output steps land on different-resolution time grids, so
+// chunk 2's "first" point can sit BEFORE chunk 1's last point rather than
+// exactly equal to it.
+func TestMergeChunkedSeries_MisalignedGridBoundary_NoDuplicatesMonotonic(t *testing.T) {
+	// Chunk 1 (fine grid) ends at T=1000.
+	chunk1 := []TimeSeries{
+		{
+			Metric: map[string]string{"http_status_code": "200"},
+			Values: []TimeSeriesPoint{
+				{Timestamp: 900, Value: 1},
+				{Timestamp: 1000, Value: 2},
+			},
+		},
+	}
+	// Chunk 2 (coarser grid) starts at T=970 — BEFORE chunk1's last point —
+	// and continues past it.
+	chunk2 := []TimeSeries{
+		{
+			Metric: map[string]string{"http_status_code": "200"},
+			Values: []TimeSeriesPoint{
+				{Timestamp: 970, Value: 5},
+				{Timestamp: 1100, Value: 6},
+			},
+		},
+	}
+
+	merged := mergeChunkedSeries([][]TimeSeries{chunk1, chunk2})
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 merged series, got %d: %+v", len(merged), merged)
+	}
+
+	got := merged[0].Values
+	wantValues := []TimeSeriesPoint{
+		{Timestamp: 900, Value: 1},
+		{Timestamp: 1000, Value: 2},
+		{Timestamp: 1100, Value: 6},
+	}
+	if !reflect.DeepEqual(got, wantValues) {
+		t.Errorf("expected chunk2's stale (<=last-appended-timestamp) point dropped and the rest kept, want %+v, got %+v", wantValues, got)
+	}
+	for i := 1; i < len(got); i++ {
+		if got[i].Timestamp <= got[i-1].Timestamp {
+			t.Errorf("expected strictly increasing timestamps, got %+v", got)
+		}
 	}
 }
 
@@ -273,6 +345,15 @@ func TestServicePerformanceDetails_SplitsWiderWindowIntoChunks(t *testing.T) {
 }
 
 func TestServicePerformanceDetails_FailingChunkRecordsPartialErrorButOthersMerge(t *testing.T) {
+	now := time.Now().UTC()
+	start := now.Add(-40 * 24 * time.Hour).Unix() // 40 days -> 2 chunks (~20d each)
+	end := now.Unix()
+	wantChunks := splitIntoPerfDetailsChunks(start, end)
+	if len(wantChunks) != 2 {
+		t.Fatalf("expected 2 chunks for a 40 day window, got %d", len(wantChunks))
+	}
+	failChunkEnd := wantChunks[0].end
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var payload struct {
@@ -283,11 +364,8 @@ func TestServicePerformanceDetails_FailingChunkRecordsPartialErrorButOthersMerge
 		_ = json.Unmarshal(body, &payload)
 
 		isApdex := strings.Contains(payload.Query, "trace_service_apdex_score")
-		firstChunkStart := payload.Timestamp - payload.Window // == chunk start for range queries
-		// The first chunk always starts at the window's absolute start; fail
-		// only the apdex sub-query for that first chunk.
-		if r.URL.Path == constants.EndpointPromQuery && isApdex && payload.Window == int64(perfDetailsMaxChunkDays)*24*3600 {
-			_ = firstChunkStart
+		// Fail only the apdex sub-query for the first chunk.
+		if r.URL.Path == constants.EndpointPromQuery && isApdex && payload.Timestamp == failChunkEnd {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(`{"error":"boom"}`))
 			return
@@ -310,11 +388,10 @@ func TestServicePerformanceDetails_FailingChunkRecordsPartialErrorButOthersMerge
 
 	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
 
-	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
 		ServiceName:  "svc",
-		StartTimeISO: now.Add(-40 * 24 * time.Hour).Format(time.RFC3339), // 40 days -> 2 chunks (35d + 5d)
-		EndTimeISO:   now.Format(time.RFC3339),
+		StartTimeISO: time.Unix(start, 0).UTC().Format(time.RFC3339),
+		EndTimeISO:   time.Unix(end, 0).UTC().Format(time.RFC3339),
 		Env:          "prod",
 	}
 
@@ -574,6 +651,17 @@ func TestServicePerformanceDetails_366DaysPlus1Second_Rejected(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "time range too wide") {
 		t.Errorf("unexpected error message: %v", err)
+	}
+	// The message must not be self-contradictory: at exactly 366 days + 1
+	// second, integer-dividing the rejected window's seconds into days would
+	// report "got 366 days, max is 366 days" with no visible reason for the
+	// rejection. Ceiling-dividing must report a "got" day count strictly
+	// greater than the max.
+	if !strings.Contains(err.Error(), fmt.Sprintf("got %d days", maxServicePerformanceWindowDays+1)) {
+		t.Errorf("expected the message to report %d days (ceiling of 366 days + 1 second), got: %v", maxServicePerformanceWindowDays+1, err)
+	}
+	if strings.Contains(err.Error(), fmt.Sprintf("got %d days", maxServicePerformanceWindowDays)) {
+		t.Errorf("message is self-contradictory: reports got=max (%d days) at the rejection boundary: %v", maxServicePerformanceWindowDays, err)
 	}
 	if rc := requestCount.Load(); rc != 0 {
 		t.Errorf("expected no HTTP calls for a rejected window, got %d", rc)
@@ -983,5 +1071,97 @@ func TestServicePerformanceDetails_MalformedJSONChunk_RecordsPartialErrorOthersM
 
 	if len(details.ErrorRate) == 0 {
 		t.Fatal("expected the second (valid) chunk's error_rate data to still merge despite the first chunk returning malformed JSON")
+	}
+}
+
+// --- top_n arg ---
+
+// TestServicePerformanceDetails_TopN covers the new optional top_n arg
+// (default 10) applied uniformly to top_operations_by_response_time,
+// top_operations_by_error_rate, and top_errors, for both a single-chunk
+// (<=35 day) and a multi-chunk (>35 day) window.
+func TestServicePerformanceDetails_TopN(t *testing.T) {
+	makeRows := func(keyField string, n int) []map[string]any {
+		rows := make([]map[string]any, 0, n)
+		for i := 0; i < n; i++ {
+			rows = append(rows, map[string]any{
+				"metric": map[string]string{keyField: fmt.Sprintf("%s-%02d", keyField, i)},
+				"value":  []any{float64(0), fmt.Sprintf("%d", 1000-i)}, // distinct, descending values
+			})
+		}
+		return rows
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var payload struct {
+			Query string `json:"query"`
+		}
+		_ = json.Unmarshal(body, &payload)
+		w.WriteHeader(http.StatusOK)
+		switch {
+		case r.URL.Path != constants.EndpointPromQueryInstant:
+			w.Write([]byte("[]"))
+		case strings.Contains(payload.Query, "trace_endpoint_duration"):
+			_ = json.NewEncoder(w).Encode(makeRows("span_name", 30))
+		case strings.Contains(payload.Query, "process_runtime_name, exception_type)"):
+			_ = json.NewEncoder(w).Encode(makeRows("span_name", 30))
+		case strings.Contains(payload.Query, "sum by (exception_type)(sum by (exception_type, span_kind)"):
+			_ = json.NewEncoder(w).Encode(makeRows("exception_type", 30))
+		default:
+			w.Write([]byte("[]"))
+		}
+	}))
+	defer server.Close()
+
+	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+
+	for _, windowCase := range []struct {
+		name       string
+		windowDays int
+	}{
+		{"single_chunk", 10},
+		{"multi_chunk", 90},
+	} {
+		t.Run(windowCase.name, func(t *testing.T) {
+			for _, tc := range []struct {
+				name  string
+				topN  int
+				wantN int
+			}{
+				{"default_unset", 0, perfDetailsDefaultTopN},
+				{"n3", 3, 3},
+				{"n25", 25, 25},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					now := time.Now().UTC()
+					args := ServicePerformanceDetailsArgs{
+						ServiceName:  "svc",
+						StartTimeISO: now.Add(-time.Duration(windowCase.windowDays) * 24 * time.Hour).Format(time.RFC3339),
+						EndTimeISO:   now.Format(time.RFC3339),
+						Env:          "prod",
+						TopN:         tc.topN,
+					}
+					result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
+					if err != nil {
+						t.Fatalf("handler returned error: %v", err)
+					}
+					text := result.Content[0].(*mcp.TextContent).Text
+					var details ServicePerformanceDetails
+					if err := json.Unmarshal([]byte(text), &details); err != nil {
+						t.Fatalf("failed to unmarshal response: %v", err)
+					}
+					if len(details.TopOperations.ByResponseTime) != tc.wantN {
+						t.Errorf("ByResponseTime: expected %d entries, got %d: %+v", tc.wantN, len(details.TopOperations.ByResponseTime), details.TopOperations.ByResponseTime)
+					}
+					if len(details.TopOperations.ByErrorRate) != tc.wantN {
+						t.Errorf("ByErrorRate: expected %d entries, got %d: %+v", tc.wantN, len(details.TopOperations.ByErrorRate), details.TopOperations.ByErrorRate)
+					}
+					if len(details.TopErrors) != tc.wantN {
+						t.Errorf("TopErrors: expected %d entries, got %d: %+v", tc.wantN, len(details.TopErrors), details.TopErrors)
+					}
+				})
+			}
+		})
 	}
 }
