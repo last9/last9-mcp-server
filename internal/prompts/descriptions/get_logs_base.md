@@ -1,28 +1,29 @@
-`logjson_query` is a JSON **array of stages** — NOT SQL, NOT a query string. Each stage sets `"type"`: `filter`|`parse`|`aggregate`|`window_aggregate`. No `"stage"`/`"conditions"`.
+`logjson_query` is a JSON stage array — **NOT SQL** or a query string. Each stage sets `"type"`: `filter`|`parse`|`aggregate`|`window_aggregate`; no `"stage"`/`"conditions"`.
 
-**Order rule:** filter first → parse (before using extracted attrs) → aggregate or window_aggregate only for counts/trends. Never use SpanKind/StatusCode/Duration/SpanName as log filters.
+**Order:** scope filter → parse before extracted attrs → filter parsed values → aggregate/window_aggregate. SpanKind/StatusCode/Duration/SpanName are trace-only.
 
-**Filter:** `{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}` — operators: `$eq|$neq|$ieq|$contains|$containsWords|$gt|$gte|$lt|$lte|$regex`. Always `$and`-wrap. Values are strings.
+**Filter:** `{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}`. Operators: `$eq|$neq|$ieq|$contains|$containsWords|$gt|$gte|$lt|$lte|$regex`. Always `$and`-wrap; values are strings.
 
-**Parse:** `{"type":"parse","parser":"json","field":"Body","labels":{"key":"key"}}` — `parser` is `json`/`logfmt`/`regexp` (never `"format"`). Parse Body first; then filter on `attributes['key']`.
+**Parse:** `{"type":"parse","parser":"json","field":"Body","labels":{"key":"key"}}`; parser is `json`/`logfmt`/`regexp`, never `"format"`. Parsed keys use `attributes['key']`.
 
-**Aggregate:** `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"_count"}],"groupby":{"ServiceName":"service"}}` — `aggregates` (plural), `function` as object.
+**Aggregate:** `{"type":"aggregate","aggregates":[{"function":{"$quantile":[0.99,"attributes['latency_ms']"]},"as":"p99"}],"groupby":{"attributes['route']":"route"}}`. `$quantile` is the general/default percentile operator.
 
-**window_aggregate** for per-minute/trend counts — use `function`+`as`+`window` (NOT the aggregate stage, NOT `TimeBucket`):
-`[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}},{"type":"window_aggregate","function":{"$count":[]},"as":"errors","window":["1","minutes"]}]`
+**window_aggregate:** use `function`+`as`+`window`, not `aggregates`/`TimeBucket`: `{"type":"window_aggregate","function":{"$quantile":[0.99,"attributes['latency_ms']"]},"as":"p99","window":["24","hours"],"groupby":{"attributes['route']":"route"}}`.
+
+**Percentiles:** compute P99 from raw values; never average P99 samples/series. Parse first, then `$regex`-gate numeric fields before aggregation. For calendar buckets use explicit ISO bounds and time zone; report source units and prefer normalized routes over raw URLs.
 
 **Severity-less logs:** empty `SeverityText` → parse Body `level`, gate `$ieq` on `ERROR` before counting.
 
-**Existence / attrs:** exists → `{"$neq":["field",""]}` (never `$exists`). Never bare field names — dotted (`http.status_code`) OR single-token (`community_member_id`) — wrap as `attributes['key']`/`resources['key']`. Only top-level `ServiceName`/`Body`/`SeverityText`/`Timestamp` may be bare.
+**Existence / attrs:** exists → `{"$neq":["field",""]}` (never `$exists`). Dotted or single-token (`community_member_id`) fields use `attributes['key']`/`resources['key']`; only ServiceName/Body/SeverityText/Timestamp may be bare.
 
 **Scope:** tenant → `resources['last9.tenant']`; env → `resources['deployment.environment']`. User `service.name` → `ServiceName`; `k8s.*` → `resources['k8s.…']`.
 
-**Free-text IDs** (EPL_…) → `{"$contains":["Body","…"]}` — not `ServiceName`.
+**Free-text IDs** → `$contains` on Body, not ServiceName.
 
-**HTTP 5xx:** known service → `get_service_logs` (`http_status_class`/`http_status_code`). Ad-hoc: `$eq` on discovered status field — never `SeverityText`.
+**HTTP 5xx:** known service → `get_service_logs`; otherwise `$eq` the discovered status field, never SeverityText.
 
-**Time:** `lookback_minutes` (default **5**). **Absolute ISO bounds** → `start_time_iso`+`end_time_iso` on the tool call — never `Timestamp`/`$gte`/`$lte` in the pipeline.
+**Time:** `lookback_minutes` defaults to **5**. Absolute ISO bounds use tool args `start_time_iso`+`end_time_iso`, never pipeline Timestamp filters.
 
-**l9_sanity:** high `ratio` or "filter likely too broad" → next call `get_logs` with `aggregate`+`$count` and an ERROR/`SeverityText` gate. `matched_count: 0`: check `sample_bodies`, don't narrow.
+**l9_sanity:** high ratio/broad-filter note → re-count with an ERROR gate. Zero matches → inspect sample_bodies before narrowing.
 
 Full manual: `last9://reference/logjson`

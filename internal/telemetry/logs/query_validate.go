@@ -2,6 +2,7 @@ package logs
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
 	"strings"
@@ -343,12 +344,16 @@ func validateWindowAggregateStage(stage map[string]interface{}, stagePath string
 			fmt.Sprintf("window_aggregate at %s missing required \"function\" key — example: {\"function\":{\"$count\":[]},\"as\":\"errors\",\"window\":[\"1\",\"minutes\"]}", stagePath),
 		)
 	}
-	if _, ok := fn.(map[string]interface{}); !ok {
+	fnMap, ok := fn.(map[string]interface{})
+	if !ok {
 		return newLogValidationError(
 			LogValidationInvalidField,
 			stagePath+".function",
 			fmt.Sprintf("window_aggregate at %s: \"function\" must be an object like {\"$count\":[]}, not a string — got %T", stagePath, fn),
 		)
+	}
+	if err := validateQuantileFunction(fnMap, stagePath+".function"); err != nil {
+		return err
 	}
 
 	as, _ := stage["as"].(string)
@@ -529,7 +534,8 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string) erro
 				),
 			)
 		}
-		if _, ok := fn.(map[string]interface{}); !ok {
+		fnMap, ok := fn.(map[string]interface{})
+		if !ok {
 			return newLogValidationError(
 				LogValidationInvalidField,
 				itemPath+".function",
@@ -538,6 +544,9 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string) erro
 					itemPath, fn,
 				),
 			)
+		}
+		if err := validateQuantileFunction(fnMap, itemPath+".function"); err != nil {
+			return err
 		}
 
 		// Require "as" as a non-empty string.
@@ -555,6 +564,35 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string) erro
 	}
 
 	return validateGroupByForTraceFields(stage, stagePath)
+}
+
+func validateQuantileFunction(function map[string]interface{}, path string) error {
+	rawArgs, ok := function["$quantile"]
+	if !ok {
+		return nil
+	}
+
+	args, ok := rawArgs.([]interface{})
+	if !ok || len(args) != 2 {
+		return invalidQuantileArgs(path, path+".$quantile")
+	}
+	level, ok := args[0].(float64)
+	if !ok || math.IsNaN(level) || level < 0 || level > 1 {
+		return invalidQuantileArgs(path, path+".$quantile[0]")
+	}
+	if _, ok := args[1].(string); !ok {
+		return invalidQuantileArgs(path, path+".$quantile[1]")
+	}
+
+	return nil
+}
+
+func invalidQuantileArgs(functionPath, errorPath string) error {
+	return newLogValidationError(
+		LogValidationInvalidField,
+		errorPath,
+		fmt.Sprintf("$quantile at %s.$quantile must be exactly [level, field], with a numeric level in [0,1] first and a string field second", functionPath),
+	)
 }
 
 func stageKeyList(allowed map[string]struct{}) string {

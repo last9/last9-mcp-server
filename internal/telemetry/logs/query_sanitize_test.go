@@ -917,6 +917,57 @@ func TestPrepareLogJSONQueryValidation(t *testing.T) {
 	}
 }
 
+func TestPrepareLogJSONQueryValidatesQuantileArguments(t *testing.T) {
+	aggregate := func(args interface{}) []map[string]interface{} {
+		return []map[string]interface{}{{
+			"type": "aggregate",
+			"aggregates": []interface{}{map[string]interface{}{
+				"function": map[string]interface{}{"$quantile": args},
+				"as":       "p99",
+			}},
+		}}
+	}
+	windowAggregate := func(args interface{}) []map[string]interface{} {
+		return []map[string]interface{}{{
+			"type":     "window_aggregate",
+			"function": map[string]interface{}{"$quantile": args},
+			"as":       "p99",
+			"window":   []interface{}{"24", "hours"},
+		}}
+	}
+
+	for _, tc := range []struct {
+		name    string
+		stages  []map[string]interface{}
+		wantErr bool
+	}{
+		{name: "aggregate accepts lower level boundary then field", stages: aggregate([]interface{}{0.0, "attributes['latency_ms']"})},
+		{name: "aggregate rejects swapped args", stages: aggregate([]interface{}{"attributes['latency_ms']", 0.99}), wantErr: true},
+		{name: "aggregate rejects wrong arity", stages: aggregate([]interface{}{0.99}), wantErr: true},
+		{name: "aggregate rejects level outside range", stages: aggregate([]interface{}{1.01, "attributes['latency_ms']"}), wantErr: true},
+		{name: "window accepts upper level boundary then field", stages: windowAggregate([]interface{}{1.0, "attributes['latency_ms']"})},
+		{name: "window rejects swapped args", stages: windowAggregate([]interface{}{"attributes['latency_ms']", 0.99}), wantErr: true},
+		{name: "window rejects wrong arity", stages: windowAggregate([]interface{}{0.99, "attributes['latency_ms']", "extra"}), wantErr: true},
+		{name: "window rejects non-string field", stages: windowAggregate([]interface{}{0.99, 42.0}), wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := prepareLogJSONQuery(tc.stages, "logjson_query")
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), "[level, field]") {
+				t.Fatalf("error must show the correct argument order, got: %v", err)
+			}
+		})
+	}
+}
+
 // TestPrepareLogJSONQueryErrorsNoQueryBuilder asserts that the empty-query path
 // in NewGetLogsHandler no longer references the logjson_query_builder prompt.
 func TestPrepareLogJSONQueryErrorsNoQueryBuilder(t *testing.T) {

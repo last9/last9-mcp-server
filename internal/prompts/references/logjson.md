@@ -237,16 +237,36 @@ Note that regex parsing operators also work as regex filters
 }
 ```
 
+`$quantile` is the general/default percentile operator. Percentiles must be computed from raw values; never average percentile samples or series. When the field comes from `Body`, parse it first, then use `$regex` to keep only numeric values before aggregating.
+
 ### Window Aggregate Operations:
 ```json
-{
-  "type": "window_aggregate",
-  "function": {"$count": []},
-  "as": "result_name",
-  "window": ["duration", "unit"],  // e.g., ["10", "minutes"]
-  "groupby": {"field": "alias"} // optional group-by fields
-}
+[
+  {
+    "type": "filter",
+    "query": {"$and": [{"$neq": ["ServiceName", ""]}]}
+  },
+  {
+    "type": "parse",
+    "parser": "json",
+    "field": "Body",
+    "labels": {"route": "route", "latency_ms": "latency_ms"}
+  },
+  {
+    "type": "filter",
+    "query": {"$and": [{"$regex": ["attributes['latency_ms']", "^[0-9]+(?:\\.[0-9]+)?$"]}]}
+  },
+  {
+    "type": "window_aggregate",
+    "function": {"$quantile": [0.99, "attributes['latency_ms']"]},
+    "as": "p99_latency_ms",
+    "window": ["24", "hours"],
+    "groupby": {"attributes['route']": "route"}
+  }
+]
 ```
+
+For calendar buckets, pass explicit RFC3339 `start_time_iso` and `end_time_iso` tool arguments and state the time zone used for the boundaries. Report the source field's units.
 
 ## Field Reference Format:
 

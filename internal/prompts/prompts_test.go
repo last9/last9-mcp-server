@@ -27,6 +27,12 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"last9://reference/logjson", "must point at the logjson resource"},
 		{"community_member_id", "must document bare single-token field mistake"},
 		{"attributes['key']", "must require attributes/resources wrapping"},
+		{"`$quantile` is the general/default percentile operator", "must default to approximate percentile aggregation"},
+		{"\"function\":{\"$quantile\":[0.99,\"attributes['latency_ms']\"]},\"as\":\"p99\",\"window\":[\"24\",\"hours\"]", "must show a complete day-wise percentile window"},
+		{"compute P99 from raw values; never average P99 samples/series", "must document non-composable percentile semantics"},
+		{"Parse first, then `$regex`-gate numeric fields before aggregation", "must exclude non-numeric parsed values"},
+		{"For calendar buckets use explicit ISO bounds and time zone", "must make calendar boundaries explicit"},
+		{"report source units", "must prevent inferred latency units"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
@@ -54,10 +60,77 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 		{"resources['last9.tenant']", "must document tenant scoping"},
 		{"last9://reference/tracejson", "must point at the tracejson resource"},
 		{"default **60**", "must document default lookback of 60 minutes"},
+		{"`$quantile` is the general/default percentile operator", "must default to approximate percentile aggregation"},
+		{"Compute from raw spans; never average percentile samples", "must document non-composable percentile semantics"},
+		{"`Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first", "must gate attribute values without gating Duration"},
+		{"For calendar buckets, use explicit ISO bounds and time zone", "must make calendar boundaries explicit"},
+		{"P99 `Duration` output remains nanoseconds", "must preserve Duration units"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
 			t.Errorf("GetTracesDescription missing %q: %s", c.phrase, c.reason)
+		}
+	}
+}
+
+func TestPrometheusQueryDescriptionsUseValidPercentileSources(t *testing.T) {
+	for name, desc := range map[string]string{
+		"instant": prompts.PromqlInstantQueryDetails,
+		"range":   prompts.PromqlRangeQueryDetails,
+	} {
+		for _, phrase := range []string{
+			"Percentiles are not composable: never average precomputed percentile series",
+			"suitable Prometheus histogram buckets",
+			"histogram_quantile(..., rate(...)) or histogram_quantile(..., increase(...))",
+			"Otherwise use get_logs/get_traces to aggregate raw values",
+			"recorded window exactly matches the requested window",
+		} {
+			if !strings.Contains(desc, phrase) {
+				t.Errorf("%s Prometheus description missing %q", name, phrase)
+			}
+		}
+	}
+}
+
+func TestPercentileReferenceManualsMatchToolDescriptions(t *testing.T) {
+	checks := map[string]struct {
+		body    string
+		phrases []string
+	}{
+		"logjson": {
+			body: prompts.LogjsonReference,
+			phrases: []string{
+				"`$quantile` is the general/default percentile operator",
+				"Percentiles must be computed from raw values; never average percentile samples or series",
+				"parse it first, then use `$regex` to keep only numeric values",
+				`"function": {"$quantile": [0.99, "attributes['latency_ms']"]}`,
+				`"window": ["24", "hours"]`,
+			},
+		},
+		"tracejson": {
+			body: prompts.TracejsonReference,
+			phrases: []string{
+				"`$quantile` is the general/default percentile operator",
+				"Top-level `Duration` is already numeric and is measured in nanoseconds",
+				"do not add this numeric gate for `Duration`",
+				`"function": {"$quantile": [0.99, "Duration"]}`,
+				`"window": ["24", "hours"]`,
+			},
+		},
+		"metrics": {
+			body: prompts.MetricsReference,
+			phrases: []string{
+				"Percentiles are not composable: never average precomputed percentile series",
+				"`histogram_quantile(..., rate(...))` or `histogram_quantile(..., increase(...))`",
+				"Otherwise use `get_logs` or `get_traces` to aggregate the raw distribution",
+			},
+		},
+	}
+	for name, check := range checks {
+		for _, phrase := range check.phrases {
+			if !strings.Contains(check.body, phrase) {
+				t.Errorf("%s reference missing %q", name, phrase)
+			}
 		}
 	}
 }
