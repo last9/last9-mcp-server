@@ -35,24 +35,21 @@ type AlertIntelligenceRequest struct {
 	Entity            map[string]any `json:"entity,omitempty"`
 	SignalKey         string         `json:"signal_key,omitempty"`
 	Name              string         `json:"name,omitempty"`
-	Algorithm         string         `json:"algorithm,omitempty"`
 	Threshold         string         `json:"threshold,omitempty"`
 	ThresholdOperator string         `json:"threshold_operator,omitempty"`
 	EvalWindow        int            `json:"eval_window,omitempty"`
 	BadMinutes        int            `json:"bad_minutes,omitempty"`
 	Severity          string         `json:"severity,omitempty"`
-	GroupID           string         `json:"group_id,omitempty"`
 }
 
 // AlertIntelligenceResponse is a permissive decode target for the shared
 // describe/create response (api/types/res/alert_intelligence.go); unknown
 // fields are ignored.
 type AlertIntelligenceResponse struct {
-	ID       string                    `json:"id,omitempty"`
-	Signals  []AlertIntelligenceSignal `json:"signals,omitempty"`
-	Pointers AlertIntelPointers        `json:"pointers,omitempty"`
-	GroupID  string                    `json:"group_id,omitempty"`
-	KPIID    string                    `json:"kpi_id,omitempty"`
+	ID      string                    `json:"id,omitempty"`
+	Signals []AlertIntelligenceSignal `json:"signals,omitempty"`
+	GroupID string                    `json:"group_id,omitempty"`
+	KPIID   string                    `json:"kpi_id,omitempty"`
 }
 
 // AlertIntelligenceSignal is one catalog signal on the chart.
@@ -62,12 +59,6 @@ type AlertIntelligenceSignal struct {
 	CanonicalQuery string `json:"canonical_query,omitempty"`
 	Unit           string `json:"unit,omitempty"`
 	QueryKind      string `json:"query_kind,omitempty"`
-}
-
-// AlertIntelPointers are inspect links returned with the response.
-type AlertIntelPointers struct {
-	ViewSource string `json:"view_source,omitempty"`
-	ViewIn     string `json:"view_in,omitempty"`
 }
 
 // callAlertIntelligence POSTs an encoded request to the BFF alert
@@ -168,7 +159,8 @@ type AlertIntelHTTPError struct {
 }
 
 func newAlertIntelHTTPError(statusCode int, body []byte) *AlertIntelHTTPError {
-	message := strings.TrimSpace(string(body))
+	raw := string(body)
+	message := strings.TrimSpace(raw)
 	if len(message) > 4096 {
 		message = message[:4096] + "..."
 	}
@@ -177,7 +169,7 @@ func newAlertIntelHTTPError(statusCode int, body []byte) *AlertIntelHTTPError {
 	}
 	return &AlertIntelHTTPError{
 		StatusCode: statusCode,
-		Class:      classifyAlertIntelligenceError(statusCode, string(body)),
+		Class:      classifyAlertIntelligenceError(statusCode, raw),
 		Body:       message,
 	}
 }
@@ -255,7 +247,7 @@ func NewDescribeAlertChartHandler(client *http.Client, cfg models.Config) func(c
 // motion. Retry framing only applies to the upstream class.
 func alertIntelGuidance(e *AlertIntelHTTPError) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "alert intelligence API returned status %d (%s): %s", e.StatusCode, e.Class, e.Body)
+	b.WriteString(e.Error())
 	switch e.Class {
 	case classCoverageMiss:
 		b.WriteString("\n\nThis surface/chart_key/entity combination is not covered by the alert-coverage catalog. Re-run describe_alert_chart with these exact coordinates (surface, chart_key, env, attributes, signal_key) to see what the catalog covers, or verify the chart against the Last9 dashboard Discover page for this service. Genuinely uncataloged charts cannot be bound by the typed MCP create flow (it attaches alerts to existing KPIs only); alert them via the Last9 dashboard or API instead.")
@@ -263,10 +255,8 @@ func alertIntelGuidance(e *AlertIntelHTTPError) string {
 		b.WriteString("\n\nThe configured credentials are not permitted on this route: alert intelligence requires a token whose role and scopes clear its POST gate; viewer-role tokens are rejected.")
 	case classDuplicateName:
 		b.WriteString("\n\nAn alert rule with this name already exists. Check existing rules with get_entity_alert_rules and pick a different name before retrying. After a timeout, never retry blindly — verify with get_entity_alert_rules whether the rule was actually created first, or you will create a duplicate.")
-	default:
-		if e.Class == classUpstream {
-			b.WriteString("\n\nThis is an upstream server-side failure; retry once before reporting it.")
-		}
+	case classUpstream:
+		b.WriteString("\n\nThis is an upstream server-side failure; retry once before reporting it.")
 	}
 	return b.String()
 }
@@ -278,7 +268,13 @@ const (
 	defaultThreshold         = "0.01"
 	defaultEvalWindow        = 5
 	defaultBadMinutes        = 3
-	defaultSeverity          = "breach"
+	defaultSeverity          = severityBreach
+)
+
+// Severity values accepted across the alerting surface.
+const (
+	severityBreach = "breach"
+	severityThreat = "threat"
 )
 
 var validThresholdOperators = map[string]bool{
@@ -343,7 +339,7 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 		if args.BadMinutes != nil && (*args.BadMinutes < 1 || *args.BadMinutes > evalWindow) {
 			return utils.ToolErrorResult(fmt.Sprintf("bad_minutes must be between 1 and eval_window (%d minutes)", evalWindow)), nil, nil
 		}
-		if args.Severity != "" && args.Severity != "breach" && args.Severity != "threat" {
+		if args.Severity != "" && args.Severity != severityBreach && args.Severity != severityThreat {
 			return utils.ToolErrorResult("severity must be breach or threat"), nil, nil
 		}
 

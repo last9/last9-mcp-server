@@ -100,11 +100,7 @@ func parseDumpToolsets() (toolsets.Set, error) {
 	fs := flag.NewFlagSet("dump-tools", flag.ContinueOnError)
 	spec := toolsets.SpecFromEnv()
 	fs.StringVar(&spec, "toolsets", spec, "Comma-separated MCP toolsets to dump")
-	args := []string{}
-	if len(os.Args) > 2 {
-		args = os.Args[2:]
-	}
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(os.Args[2:]); err != nil {
 		return nil, err
 	}
 	return toolsets.Parse(spec)

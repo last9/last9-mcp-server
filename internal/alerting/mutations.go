@@ -200,7 +200,7 @@ func validateAlertRulePayload(rule AlertRulePayload) error {
 	if rule.EvalWindow != nil && (*rule.EvalWindow < 0 || *rule.EvalWindow > 60) {
 		return fmt.Errorf("alert_rule.eval_window must be between 0 and 60 minutes")
 	}
-	if rule.Severity != nil && *rule.Severity != "breach" && *rule.Severity != "threat" {
+	if rule.Severity != nil && *rule.Severity != severityBreach && *rule.Severity != severityThreat {
 		return fmt.Errorf("alert_rule.severity must be breach or threat")
 	}
 	if rule.Properties != nil && rule.Properties.QueryMode != "" && rule.Properties.QueryMode != "builder" && rule.Properties.QueryMode != "code" {

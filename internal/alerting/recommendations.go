@@ -37,9 +37,9 @@ func NewRecommendAlertConfigHandler(_ *http.Client, _ models.Config) func(contex
 		}
 		severity := strings.ToLower(strings.TrimSpace(args.Severity))
 		if severity == "" {
-			severity = "breach"
+			severity = severityBreach
 		}
-		if severity != "breach" && severity != "threat" {
+		if severity != severityBreach && severity != severityThreat {
 			return utils.ToolErrorResult("severity must be one of \"breach\" or \"threat\""), nil, nil
 		}
 
