@@ -2,7 +2,7 @@
 
 **Order:** scope filter → parse before extracted attrs → filter parsed values → aggregate/window_aggregate. SpanKind/StatusCode/Duration/SpanName are trace-only.
 
-**Filter:** `{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}`. Operators: `$eq|$neq|$ieq|$contains|$containsWords|$gt|$gte|$lt|$lte|$regex`. Always `$and`-wrap; values are strings.
+**Filter:** `{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}`. Operators: `$eq|$neq|$ieq|$contains|$containsWords|$gt|$gte|$lt|$lte|$regex`. Always `$and`-wrap; values are strings. Body words: ALL → `$and` of one `$containsWords` per word; ANY → `$or`; never `$icontainsWords`.
 
 **Parse:** `{"type":"parse","parser":"json","field":"Body","labels":{"key":"key"}}`; parser is `json`/`logfmt`/`regexp`, never `"format"`. Parsed keys use `attributes['key']`.
 

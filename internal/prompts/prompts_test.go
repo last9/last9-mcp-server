@@ -33,6 +33,9 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"Parse first, then `$regex`-gate numeric fields before aggregation", "must exclude non-numeric parsed values"},
 		{"For calendar buckets use explicit ISO bounds and time zone", "must make calendar boundaries explicit"},
 		{"report source units", "must prevent inferred latency units"},
+		{"ALL → `$and` of one `$containsWords` per word", "must document all-word Body searches"},
+		{"ANY → `$or`", "must document any-word Body searches"},
+		{"never `$icontainsWords`", "must avoid the slower case-insensitive word operator"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
