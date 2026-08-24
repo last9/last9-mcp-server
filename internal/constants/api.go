@@ -17,6 +17,10 @@ const (
 	// EndpointLogsSeries returns the label-sets present for a given log pipeline.
 	// Used for pipeline-scoped attribute discovery.
 	EndpointLogsSeries = "/logs/api/v2/series/json"
+	// EndpointLogSearch answers a whole LogJSON search in one call: the API
+	// plans, probes and fetches server-side. Sibling of EndpointLogsQueryRange,
+	// which answers exactly one time range.
+	EndpointLogSearch = "/logs/query"
 
 	// Prometheus API endpoints
 	EndpointPromQueryInstant = "/prom_query_instant"
