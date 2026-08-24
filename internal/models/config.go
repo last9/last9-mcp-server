@@ -32,6 +32,11 @@ type Config struct {
 	MaxGetLogsEntries   int     // Maximum number of entries returned by chunked raw get_logs requests
 	MaxGetTracesEntries int     // Maximum number of traces returned by chunked get_traces requests
 
+	// UseLogSearchAPI routes get_logs through the server-side log search
+	// endpoint instead of the client-side chunk sweep. Off by default; the
+	// chunked path is deleted once this is proven in production.
+	UseLogSearchAPI bool
+
 	// HTTP server configuration
 	HTTPMode bool   // Enable HTTP server mode instead of STDIO
 	Port     string // HTTP server port

@@ -94,6 +94,10 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 }
 
 func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, startTime, endTime int64, args GetLogsArgs) (map[string]interface{}, error) {
+	if cfg.UseLogSearchAPI {
+		return fetchViaLogSearchAPI(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
+	}
+
 	chunkingDebug := chunkingDebugEnabled()
 
 	if !shouldChunkGetLogsQuery(logjsonQuery) {
@@ -297,6 +301,52 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 	}
 
 	return baseResponse, nil
+}
+
+// fetchViaLogSearchAPI answers the whole search in one call, letting the API
+// plan, probe and fetch server-side. No fallback to the chunked path: a failure
+// here is returned, so the two paths stay separable and the chunked one can
+// later be deleted rather than untangled.
+func fetchViaLogSearchAPI(
+	ctx context.Context, client *http.Client, cfg models.Config,
+	logjsonQuery interface{}, startTime, endTime int64, args GetLogsArgs,
+) (map[string]interface{}, error) {
+	req := utils.LogSearchRequest{
+		Pipeline: logjsonQuery,
+		StartMs:  startTime,
+		EndMs:    endTime,
+		Index:    args.Index,
+	}
+
+	// The endpoint rejects a limit on aggregate and dataframe pipelines, and
+	// requires a positive one otherwise. PipelineHasAggregateStage draws the
+	// same boundary the endpoint does.
+	stages, hasStages := logjsonQuery.([]map[string]interface{})
+	if !hasStages || !utils.PipelineHasAggregateStage(stages) {
+		req.Limit = effectiveGetLogsChunkLimit(cfg, args.Limit)
+	}
+
+	// The shared client's 3-minute timeout applies. Deliberately NOT wrapped in
+	// PerChunkHTTPTimeout: that bounds one chunk, and the server runs the whole
+	// sweep inside this single call.
+	resp, err := utils.MakeLogSearchAPI(ctx, client, cfg, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call log search API: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, utils.NewUpstreamHTTPError(resp, "logs query", utils.LogsPipelineSchemaHint)
+	}
+
+	result, err := utils.DecodeLogSearchResponse(resp)
+	if err != nil {
+		return nil, err
+	}
+	if hasStages {
+		result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
+	}
+	return result, nil
 }
 
 func effectiveGetLogsChunkLimit(cfg models.Config, requestedLimit int) int {
