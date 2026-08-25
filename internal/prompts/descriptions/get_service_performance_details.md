@@ -8,7 +8,7 @@ Many metric fields use PromQL timeseries format: `[{"metric":{...},"values":[[ti
 
 Windows over 35 days are split into 35-day-or-narrower chunks queried and merged separately (the backend hard-caps a single query's range at 35 days); the requested window is hard-capped at 366 days total. On a wider (chunked) window, any sub-query failure is recorded in `partial_errors` and the rest of the data is still returned. On a plain (<=35 day) window, a non-2xx upstream response is likewise recorded in `partial_errors`; a read/parse failure on the response fails the whole call.
 
-Very low-traffic services may return sparse or near-empty results for wide time windows — this is expected (the query's fixed 5-minute-scale inner selector has little data to aggregate per point when traffic is sparse), not a bug.
+On a wide window, counter-style fields (throughput, error rate) are returned on a dense time grid with explicit zero values for intervals that had no traffic — a low-traffic service shows long runs of zeros rather than missing points, and a low proportion of non-zero points is normal, not an error. Quantile-style fields (response times) only cover intervals that actually had samples, so they can span far less than the requested window.
 
 Parameters:
 - `service_name`: (Required) Service to query.

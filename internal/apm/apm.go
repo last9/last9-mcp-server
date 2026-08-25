@@ -430,9 +430,15 @@ func (e *chunkStatusError) Error() string { return e.err.Error() }
 func (e *chunkStatusError) Unwrap() error { return e.err }
 
 // fetchChunkedRangeSeries runs a range-vector query once per chunk (via
-// buildQuery) in parallel (bounded by perfDetailsMaxConcurrency, each call
-// bounded by constants.PerChunkHTTPTimeout) and merges the results with
-// mergeChunkedSeries.
+// buildQuery) in parallel (bounded by perfDetailsMaxConcurrency) and merges
+// the results with mergeChunkedSeries.
+//
+// The constants.PerChunkHTTPTimeout bound is applied per chunk only for
+// genuinely chunked (>1 chunk) calls, so one hung chunk can't stall a wide
+// multi-chunk fan-out. A single-chunk (<=35 day) call instead runs under the
+// caller's own ambient context with no added timeout, exactly matching
+// pre-chunking behavior (this handler previously passed the request context
+// straight through with no per-call bound).
 //
 // For a single-chunk (unchunked, <=35 day) call: a read error or a parse
 // error aborts the whole call immediately, matching the pre-chunking
@@ -445,11 +451,16 @@ func (e *chunkStatusError) Unwrap() error { return e.err }
 // recorded in partialErrors (with that chunk's time bounds) and skipped so
 // the rest keep merging.
 func fetchChunkedRangeSeries(ctx context.Context, client *http.Client, cfg models.Config, chunks []perfDetailsChunk, buildQuery func(perfDetailsChunk) string, label, parseErrMsg string, partialErrors *[]string) ([]TimeSeries, error) {
+	singleChunk := len(chunks) == 1
 	results := utils.RunChunksParallel(ctx, toUtilsChunks(chunks), perfDetailsMaxConcurrency,
 		func(cctx context.Context, idx int, _ utils.TimeChunk) ([]TimeSeries, error) {
 			c := chunks[idx]
-			chunkCtx, cancel := context.WithTimeout(cctx, constants.PerChunkHTTPTimeout)
-			defer cancel()
+			chunkCtx := cctx
+			if !singleChunk {
+				var cancel context.CancelFunc
+				chunkCtx, cancel = context.WithTimeout(cctx, constants.PerChunkHTTPTimeout)
+				defer cancel()
+			}
 
 			httpResp, err := utils.MakePromRangeAPIQuery(chunkCtx, client, buildQuery(c), c.start, c.end, cfg)
 			if err != nil {
@@ -471,7 +482,6 @@ func fetchChunkedRangeSeries(ctx context.Context, client *http.Client, cfg model
 			return seriesList, nil
 		})
 
-	singleChunk := len(chunks) == 1
 	var chunkResults [][]TimeSeries
 	for _, r := range results {
 		if r.Err != nil {
@@ -502,6 +512,11 @@ func fetchChunkedRangeSeries(ctx context.Context, client *http.Client, cfg model
 // response stays soft (partial error, no chunk-bounds prefix, call still
 // succeeds); a multi-chunk call records a partial error per failing chunk
 // (with that chunk's time bounds) and continues with the rest.
+//
+// Like fetchChunkedRangeSeries, the constants.PerChunkHTTPTimeout bound is
+// applied per chunk only for genuinely chunked (>1 chunk) calls; a
+// single-chunk call runs under the caller's own ambient context with no
+// added timeout, matching pre-chunking behavior.
 func fetchChunkedTopK[V float64 | int64](
 	ctx context.Context,
 	client *http.Client,
@@ -513,11 +528,16 @@ func fetchChunkedTopK[V float64 | int64](
 	label string,
 	partialErrors *[]string,
 ) ([][]map[string]V, error) {
+	singleChunk := len(chunks) == 1
 	results := utils.RunChunksParallel(ctx, toUtilsChunks(chunks), perfDetailsMaxConcurrency,
 		func(cctx context.Context, idx int, _ utils.TimeChunk) ([]map[string]V, error) {
 			c := chunks[idx]
-			chunkCtx, cancel := context.WithTimeout(cctx, constants.PerChunkHTTPTimeout)
-			defer cancel()
+			chunkCtx := cctx
+			if !singleChunk {
+				var cancel context.CancelFunc
+				chunkCtx, cancel = context.WithTimeout(cctx, constants.PerChunkHTTPTimeout)
+				defer cancel()
+			}
 
 			query := buildQuery(c, chunkWindowSelector(c))
 			httpResp, err := utils.MakePromInstantAPIQuery(chunkCtx, client, query, c.end, cfg)
@@ -548,7 +568,6 @@ func fetchChunkedTopK[V float64 | int64](
 			return items, nil
 		})
 
-	singleChunk := len(chunks) == 1
 	var chunkItems [][]map[string]V
 	for _, r := range results {
 		if r.Err != nil {

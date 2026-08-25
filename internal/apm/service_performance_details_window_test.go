@@ -1253,3 +1253,108 @@ func TestServicePerformanceDetails_TopNClampsToMax(t *testing.T) {
 		}
 	}
 }
+
+// --- per-chunk HTTP timeout applies only on the genuinely-chunked path ---
+
+// deadlineRecordingTransport wraps a RoundTripper and records, for every
+// outgoing request, whether req.Context() carried a deadline. The context
+// on outgoing requests is the client-side chunkCtx built by
+// fetchChunkedRangeSeries/fetchChunkedTopK (via
+// utils.MakePromRangeAPIQuery/MakePromInstantAPIQuery's
+// http.NewRequestWithContext) — this is where constants.PerChunkHTTPTimeout
+// actually lives. The inbound context on the *server* side
+// (httptest handler's r.Context()) is a different context tied to the TCP
+// connection/server lifecycle; it never carries the client's deadline, so
+// asserting there would not test anything.
+type deadlineRecordingTransport struct {
+	base http.RoundTripper
+
+	mu            sync.Mutex
+	sawDeadline   bool
+	sawNoDeadline bool
+}
+
+func (t *deadlineRecordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	_, hasDeadline := req.Context().Deadline()
+	t.mu.Lock()
+	if hasDeadline {
+		t.sawDeadline = true
+	} else {
+		t.sawNoDeadline = true
+	}
+	t.mu.Unlock()
+	return t.base.RoundTrip(req)
+}
+
+// TestServicePerformanceDetails_PerChunkTimeoutOnlyAppliedWhenChunked asserts
+// the contract structurally, at the client's own outgoing request context: a
+// single-chunk (<=35 day) call must run under the caller's own context with
+// no added bound (no deadline), while a multi-chunk (>35 day) call must have
+// the constants.PerChunkHTTPTimeout bound applied per chunk (a deadline is
+// present). This is deterministic and doesn't depend on sleeps or
+// wall-clock timing.
+func TestServicePerformanceDetails_PerChunkTimeoutOnlyAppliedWhenChunked(t *testing.T) {
+	// 1h single-chunk window: every outgoing sub-query request must carry no
+	// deadline.
+	t.Run("1h_single_chunk_no_deadline", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("[]"))
+		}))
+		defer server.Close()
+
+		transport := &deadlineRecordingTransport{base: http.DefaultTransport}
+		client := &http.Client{Transport: transport}
+
+		handler := NewServicePerformanceDetailsHandler(client, perfDetailsTestConfig(server.URL))
+		now := time.Now().UTC()
+		args := ServicePerformanceDetailsArgs{
+			ServiceName:  "svc",
+			Env:          "prod",
+			StartTimeISO: now.Add(-1 * time.Hour).Format(time.RFC3339),
+			EndTimeISO:   now.Format(time.RFC3339),
+		}
+		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
+		if err != nil {
+			t.Fatalf("handler returned error: %v", err)
+		}
+		if !transport.sawNoDeadline {
+			t.Error("expected at least one sub-query request with no deadline on the single-chunk path")
+		}
+		if transport.sawDeadline {
+			t.Error("expected no sub-query request to carry a deadline on the single-chunk path")
+		}
+	})
+
+	// 90 day multi-chunk window (3 chunks): every outgoing sub-query request
+	// must carry a deadline (the constants.PerChunkHTTPTimeout bound).
+	t.Run("90d_multi_chunk_has_deadline", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("[]"))
+		}))
+		defer server.Close()
+
+		transport := &deadlineRecordingTransport{base: http.DefaultTransport}
+		client := &http.Client{Transport: transport}
+
+		handler := NewServicePerformanceDetailsHandler(client, perfDetailsTestConfig(server.URL))
+		now := time.Now().UTC()
+		args := ServicePerformanceDetailsArgs{
+			ServiceName:  "svc",
+			Env:          "prod",
+			StartTimeISO: now.Add(-90 * 24 * time.Hour).Format(time.RFC3339),
+			EndTimeISO:   now.Format(time.RFC3339),
+		}
+		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
+		if err != nil {
+			t.Fatalf("handler returned error: %v", err)
+		}
+		if !transport.sawDeadline {
+			t.Error("expected at least one sub-query request with a deadline on the multi-chunk path")
+		}
+		if transport.sawNoDeadline {
+			t.Error("expected no sub-query request to run without a deadline on the multi-chunk path")
+		}
+	})
+}
