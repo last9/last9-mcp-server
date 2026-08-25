@@ -1329,6 +1329,25 @@ func TestPrepareLogJSONQueryValidatesQuantileArguments(t *testing.T) {
 	}
 }
 
+func TestPrepareLogJSONQueryPreservesTypedQuantileError(t *testing.T) {
+	_, err := prepareLogJSONQuery([]map[string]interface{}{{
+		"type": "aggregate",
+		"aggregates": []interface{}{map[string]interface{}{
+			"function": map[string]interface{}{"$quantile": []interface{}{"Timestamp", 0.99}}, "as": "p99",
+		}},
+	}}, "logjson_query")
+	var validationErr *LogPipelineValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected typed log validation error, got %T: %v", err, err)
+	}
+	if validationErr.Category != LogValidationInvalidField || validationErr.Path != "logjson_query[0].aggregates[0].function.$quantile[0]" {
+		t.Fatalf("unexpected typed quantile error: category=%q path=%q", validationErr.Category, validationErr.Path)
+	}
+	if !strings.Contains(validationErr.Message, "must be exactly [level, field]") {
+		t.Fatalf("expected actionable argument order, got: %q", validationErr.Message)
+	}
+}
+
 // TestPrepareLogJSONQueryErrorsNoQueryBuilder asserts that the empty-query path
 // in NewGetLogsHandler no longer references the logjson_query_builder prompt.
 func TestPrepareLogJSONQueryErrorsNoQueryBuilder(t *testing.T) {

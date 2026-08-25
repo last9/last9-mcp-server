@@ -237,9 +237,15 @@ Note that regex parsing operators also work as regex filters
 }
 ```
 
-`$quantile` is the general/default percentile operator. Day-wise: exactly ONE get_logs call over the full half-open start_time_iso/end_time_iso range with one window_aggregate; NEVER one call per day; honor requested timezone. For `attributes[...]` or `resources[...]`, parse when needed, then use the canonical anchored numeric `$regex` shown below. Equivalent exotic regex forms are deliberately rejected. Compute buckets from raw values. Never template, merge, or recombine already-aggregated percentile rows.
+`$quantile` is the general/default percentile operator. Day-wise: exactly ONE get_logs call over the full half-open start_time_iso/end_time_iso range with one window_aggregate; NEVER one call per day; honor requested timezone. For `attributes[...]` or `resources[...]`, parse when needed, then use the canonical anchored numeric `$regex` shown below. Equivalent exotic regex forms are deliberately rejected. The filter excludes non-matching values from percentile calculations; disclose that exclusion in the answer. Compute buckets from raw values. Never template, merge, or recombine already-aggregated percentile rows.
 
 ### Window Aggregate Operations:
+Generic count buckets:
+```json
+{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"],"groupby":{"ServiceName":"service"}}
+```
+
+Percentile buckets:
 ```json
 [
   {

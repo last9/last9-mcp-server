@@ -2,10 +2,11 @@ package logs
 
 import (
 	"fmt"
-	"math"
 	"regexp"
 	"sort"
 	"strings"
+
+	"last9-mcp/internal/telemetry"
 )
 
 // namedCapturePattern extracts (?P<name>…) groups from a regexp parse pattern.
@@ -729,31 +730,14 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string) erro
 }
 
 func validateQuantileFunction(function map[string]interface{}, path string) error {
-	rawArgs, ok := function["$quantile"]
-	if !ok {
+	err := telemetry.ValidateQuantileFunction(function, path)
+	if err == nil {
 		return nil
 	}
-
-	args, ok := rawArgs.([]interface{})
-	if !ok || len(args) != 2 {
-		return invalidQuantileArgs(path, path+".$quantile")
-	}
-	level, ok := args[0].(float64)
-	if !ok || math.IsNaN(level) || level < 0 || level > 1 {
-		return invalidQuantileArgs(path, path+".$quantile[0]")
-	}
-	if _, ok := args[1].(string); !ok {
-		return invalidQuantileArgs(path, path+".$quantile[1]")
-	}
-
-	return nil
-}
-
-func invalidQuantileArgs(functionPath, errorPath string) error {
 	return newLogValidationError(
 		LogValidationInvalidField,
-		errorPath,
-		fmt.Sprintf("$quantile at %s.$quantile must be exactly [level, field], with a numeric level in [0,1] first and a string field second", functionPath),
+		err.Path,
+		err.Error(),
 	)
 }
 

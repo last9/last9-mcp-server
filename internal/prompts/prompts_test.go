@@ -19,6 +19,8 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"window_aggregate", "must document time-bucketed counts"},
 		{"window", "must document window key for window_aggregate"},
 		{"function", "must document function key for window_aggregate"},
+		{"\"function\":{\"$count\":[]},\"as\":\"count\",\"window\":[\"5\",\"minutes\"]", "must show a generic windowed count"},
+		{"Ops: `$and`/`$or`/`$not`", "must retain a useful filter operator list"},
 		{"NOT SQL", "must clarify logjson_query is not SQL"},
 		{"$neq", "must document existence idiom"},
 		{"start_time_iso", "must document absolute time on tool args"},
@@ -32,6 +34,7 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"Day-wise: exactly ONE get_logs call over the full half-open start_time_iso/end_time_iso range with one window_aggregate; NEVER one call per day; honor requested timezone.", "must require one timezone-aware full-range day-wise call"},
 		{"Never template/merge/recombine aggregated percentile rows", "must forbid client-side percentile reconstruction"},
 		{"use the canonical anchored numeric `$regex` shown", "must require the deliberate canonical numeric allowlist"},
+		{"excludes non-matching values from percentile calculations; disclose that exclusion in the answer", "must disclose the numeric filter's effect"},
 		{"Use a discovered normalized route", "must discover normalized route semantics before aggregation"},
 		{"Raw URI: aggregate exact values only; never normalize/merge variants afterward", "must allow exact raw URI aggregation without unsafe normalization"},
 		{"If `l9_result.partial=true`, preserve rows and disclose partial coverage", "must tie partial disclosure to result metadata"},
@@ -112,6 +115,8 @@ func TestPercentileReferenceManualsMatchToolDescriptions(t *testing.T) {
 				"For `attributes[...]` or `resources[...]`",
 				"use the canonical anchored numeric `$regex` shown below",
 				"Equivalent exotic regex forms are deliberately rejected",
+				"excludes non-matching values from percentile calculations; disclose that exclusion in the answer",
+				`{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"]`,
 				"Discover and use a normalized route field before aggregation",
 				"group or aggregate exact raw URI values individually",
 				"never normalize or merge URI variants afterward",
@@ -126,7 +131,9 @@ func TestPercentileReferenceManualsMatchToolDescriptions(t *testing.T) {
 			phrases: []string{
 				"`$quantile` is the general/default percentile operator",
 				"Top-level `Duration` is already numeric and is measured in nanoseconds",
+				"canonical numeric `$regex` `^[0-9]+(?:\\\\.[0-9]+)?$`; it excludes non-matching values from percentile calculations, so disclose that exclusion in the answer",
 				"do not add this numeric gate for `Duration`",
+				`{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"]`,
 				`"function": {"$quantile": [0.99, "Duration"]}`,
 				`"window": ["24", "hours"]`,
 			},
@@ -145,6 +152,25 @@ func TestPercentileReferenceManualsMatchToolDescriptions(t *testing.T) {
 			if !strings.Contains(check.body, phrase) {
 				t.Errorf("%s reference missing %q", name, phrase)
 			}
+		}
+	}
+}
+
+func TestFilterOperatorGuidancePreserved(t *testing.T) {
+	for name, body := range map[string]string{
+		"get_logs":  prompts.GetLogsDescription,
+		"logjson":   prompts.LogjsonReference,
+		"tracejson": prompts.TracejsonReference,
+	} {
+		for _, operator := range []string{"$and", "$or", "$not", "$eq", "$neq", "$regex"} {
+			if !strings.Contains(body, operator) {
+				t.Errorf("%s filter guidance missing %s", name, operator)
+			}
+		}
+	}
+	for name, body := range map[string]string{"get_logs": prompts.GetLogsDescription, "logjson": prompts.LogjsonReference} {
+		if !strings.Contains(body, "$containsWords") {
+			t.Errorf("%s Body-search guidance missing $containsWords", name)
 		}
 	}
 }

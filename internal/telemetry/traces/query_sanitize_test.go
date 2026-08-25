@@ -246,6 +246,51 @@ func TestSanitizeTraceJSONQuery_WindowAggregateWrongKeys(t *testing.T) {
 	}
 }
 
+func TestSanitizeTraceJSONQuery_ValidatesQuantileArguments(t *testing.T) {
+	aggregate := func(args []interface{}) []map[string]interface{} {
+		return []map[string]interface{}{{
+			"type": "aggregate",
+			"aggregates": []interface{}{map[string]interface{}{
+				"function": map[string]interface{}{"$quantile": args}, "as": "percentile",
+			}},
+		}}
+	}
+	windowAggregate := func(args []interface{}) []map[string]interface{} {
+		return []map[string]interface{}{{
+			"type": "window_aggregate", "function": map[string]interface{}{"$quantile": args},
+			"as": "percentile", "window": []interface{}{"5", "minutes"},
+		}}
+	}
+
+	for _, tc := range []struct {
+		name     string
+		pipeline []map[string]interface{}
+		wantPath string
+	}{
+		{"aggregate valid", aggregate([]interface{}{0.95, "Duration"}), ""},
+		{"aggregate swapped", aggregate([]interface{}{"Duration", 0.95}), "tracejson_query[0].aggregates[0].function.$quantile[0]"},
+		{"aggregate out of range", aggregate([]interface{}{1.01, "Duration"}), "tracejson_query[0].aggregates[0].function.$quantile[0]"},
+		{"aggregate wrong arity", aggregate([]interface{}{0.95}), "tracejson_query[0].aggregates[0].function.$quantile"},
+		{"window valid", windowAggregate([]interface{}{0.95, "Duration"}), ""},
+		{"window swapped", windowAggregate([]interface{}{"Duration", 0.95}), "tracejson_query[0].function.$quantile[0]"},
+		{"window out of range", windowAggregate([]interface{}{-0.01, "Duration"}), "tracejson_query[0].function.$quantile[0]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := SanitizeTraceJSONQuery(tc.pipeline)
+			if tc.wantPath == "" {
+				if err != nil {
+					t.Fatalf("valid quantile rejected: %v", err)
+				}
+				return
+			}
+			var pipelineErr *tracePipelineError
+			if err == nil || !errors.As(err, &pipelineErr) || pipelineErr.Category() != traceCategoryInvalidField || pipelineErr.Path() != tc.wantPath || !strings.Contains(err.Error(), "must be exactly [level, field]") {
+				t.Fatalf("expected actionable quantile error at %s, got: %v", tc.wantPath, err)
+			}
+		})
+	}
+}
+
 func TestSanitizeTraceJSONQuery_WrongAggregateKeys(t *testing.T) {
 	tests := []struct {
 		name        string

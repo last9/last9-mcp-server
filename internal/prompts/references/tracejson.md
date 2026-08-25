@@ -143,7 +143,7 @@ Note that regexp parsing operators also work as regexp filters
 }
 ```
 
-`$quantile` is the general/default percentile operator. Compute percentiles from raw spans; never average percentile samples or series. Top-level `Duration` is already numeric and is measured in nanoseconds. For a percentile over `attributes[...]`, first add a `$regex` filter that keeps only numeric values; do not add this numeric gate for `Duration`.
+`$quantile` is the general/default percentile operator. Compute percentiles from raw spans; never average percentile samples or series. Top-level `Duration` is already numeric and is measured in nanoseconds. For a percentile over `attributes[...]`, first add the canonical numeric `$regex` `^[0-9]+(?:\\.[0-9]+)?$`; it excludes non-matching values from percentile calculations, so disclose that exclusion in the answer; do not add this numeric gate for `Duration`.
 
 ❌ WRONG (causes 400):
 ```json
@@ -152,6 +152,12 @@ Note that regexp parsing operators also work as regexp filters
 ```
 
 ### Window Aggregate Operations:
+Generic count buckets:
+```json
+{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"],"groupby":{"ServiceName":"service"}}
+```
+
+Percentile buckets:
 ```json
 [
   {
