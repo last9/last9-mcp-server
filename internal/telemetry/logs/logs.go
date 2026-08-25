@@ -19,7 +19,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const defaultGetLogsLookbackMinutes = 5
+const (
+	defaultGetLogsLookbackMinutes = 5
+	defaultGetLogsAggregateLimit  = 1000
+)
 
 // GetLogsArgs represents the input arguments for the get_logs tool
 type GetLogsArgs struct {
@@ -27,7 +30,7 @@ type GetLogsArgs struct {
 	StartTimeISO    string                   `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
 	EndTimeISO      string                   `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
 	LookbackMinutes int                      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 5, minimum: 1)"`
-	Limit           int                      `json:"limit,omitempty" jsonschema:"Maximum number of rows to return (optional, default: 5000 for chunked raw queries)"`
+	Limit           int                      `json:"limit,omitempty" jsonschema:"Maximum rows to return (optional; default: 1000 for aggregate/dataframe queries, 5000 for chunked raw queries)"`
 	Index           string                   `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Omit this when the user did not specify an index."`
 }
 
@@ -97,20 +100,30 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 	chunkingDebug := chunkingDebugEnabled()
 
 	if !shouldChunkGetLogsQuery(logjsonQuery) {
+		queryLimit := args.Limit
+		aggregateLimit := 0
+		if stages, ok := logjsonQuery.([]map[string]interface{}); ok && utils.PipelineHasAggregateStage(stages) {
+			aggregateLimit = effectiveGetLogsAggregateLimit(cfg, args.Limit)
+			queryLimit = aggregateLimit + 1
+		}
 		if chunkingDebug {
 			log.Printf(
 				"[chunking] get_logs chunking disabled start_ms=%d end_ms=%d limit=%d index=%q",
 				startTime,
 				endTime,
-				args.Limit,
+				queryLimit,
 				args.Index,
 			)
 		}
-		result, err := executeLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args.Limit, args.Index)
+		result, err := executeLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, queryLimit, args.Index)
 		if err != nil {
 			return nil, err
 		}
-		if stages, ok := logjsonQuery.([]map[string]interface{}); ok {
+		partial := false
+		if aggregateLimit > 0 {
+			partial = applyGetLogsAggregateRowLimit(result, aggregateLimit)
+		}
+		if stages, ok := logjsonQuery.([]map[string]interface{}); ok && !partial {
 			result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
 		}
 		return result, nil
@@ -297,6 +310,43 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 	}
 
 	return baseResponse, nil
+}
+
+func effectiveGetLogsAggregateLimit(cfg models.Config, requestedLimit int) int {
+	maxEntries := cfg.MaxGetLogsEntries
+	if maxEntries <= 0 {
+		maxEntries = models.DefaultMaxGetLogsEntries
+	}
+	if requestedLimit <= 0 {
+		requestedLimit = defaultGetLogsAggregateLimit
+	}
+	if requestedLimit > maxEntries {
+		return maxEntries
+	}
+	return requestedLimit
+}
+
+func applyGetLogsAggregateRowLimit(result map[string]interface{}, rowLimit int) bool {
+	if rowLimit <= 0 {
+		return false
+	}
+	data, ok := result["data"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	rows, ok := data["result"].([]interface{})
+	if !ok || len(rows) <= rowLimit {
+		return false
+	}
+
+	data["result"] = slices.Clone(rows[:rowLimit])
+	result["l9_result"] = map[string]interface{}{
+		"partial":       true,
+		"reason":        "row_limit_reached",
+		"returned_rows": rowLimit,
+		"row_limit":     rowLimit,
+	}
+	return true
 }
 
 func effectiveGetLogsChunkLimit(cfg models.Config, requestedLimit int) int {

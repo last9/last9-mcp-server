@@ -1,6 +1,7 @@
 
 	Perform a Prometheus range query to get metrics data.
 	This tool can be used to query Prometheus for metrics data over a specified time range.
+	Percentiles are not composable: never average precomputed percentile series. With suitable Prometheus histogram buckets, use histogram_quantile(..., rate(...)) or histogram_quantile(..., increase(...)). Otherwise use get_logs/get_traces to aggregate raw values. Use a precomputed percentile metric only when its recorded window exactly matches the requested window.
 	It is recommended to initially check the the available labels on the promql metric using the prometheus_labels tool
 	for filtering by a specific environment. Labels like "env", "environment" or "development_environment"
 	are common. To get possible values of a label, the prometheus_label_values tool can be used.
