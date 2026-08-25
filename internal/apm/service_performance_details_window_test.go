@@ -100,6 +100,29 @@ func TestSplitIntoPerfDetailsChunks_SplitsWiderWindows(t *testing.T) {
 	}
 }
 
+// --- chunkWindowSelector ---
+
+// splitIntoPerfDetailsChunks currently never produces a chunk narrower than
+// 60 seconds, so the 1-minute clamp inside chunkWindowSelector is only
+// reachable by calling it directly. Without this test, a future change to
+// the splitter could silently regress the "[0m]" invalid-selector fix with
+// nothing catching it.
+func TestChunkWindowSelector_ClampsSubMinuteWidthTo1m(t *testing.T) {
+	c := perfDetailsChunk{start: 1000, end: 1030} // 30s wide, well under 1 minute
+	got := chunkWindowSelector(c)
+	if got != "1m" {
+		t.Errorf("expected a sub-60s-wide chunk to clamp to \"1m\", got %q", got)
+	}
+}
+
+func TestChunkWindowSelector_NoClampAboveOneMinute(t *testing.T) {
+	c := perfDetailsChunk{start: 0, end: 180} // 3 minutes wide
+	got := chunkWindowSelector(c)
+	if got != "3m" {
+		t.Errorf("expected a 3-minute-wide chunk to render as \"3m\" unclamped, got %q", got)
+	}
+}
+
 // --- mergeChunkedSeries ---
 
 func TestMergeChunkedSeries_DedupsBoundaryAndHandlesPartialLabelSets(t *testing.T) {
@@ -1163,5 +1186,70 @@ func TestServicePerformanceDetails_TopN(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+// TestServicePerformanceDetails_TopNClampsToMax asserts a huge requested
+// top_n is clamped to perfDetailsMaxTopN rather than being sent to the
+// backend unbounded, and that the multi-chunk over-fetch ratio (2*topN) is
+// computed from the clamped value, not the raw input.
+func TestServicePerformanceDetails_TopNClampsToMax(t *testing.T) {
+	var mu sync.Mutex
+	var topRTQueries []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == constants.EndpointPromQueryInstant {
+			body, _ := io.ReadAll(r.Body)
+			var payload struct {
+				Query string `json:"query"`
+			}
+			_ = json.Unmarshal(body, &payload)
+			if strings.Contains(payload.Query, "trace_endpoint_duration") {
+				mu.Lock()
+				topRTQueries = append(topRTQueries, payload.Query)
+				mu.Unlock()
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("[]"))
+	}))
+	defer server.Close()
+
+	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+
+	now := time.Now().UTC()
+	args := ServicePerformanceDetailsArgs{
+		ServiceName:  "svc",
+		StartTimeISO: now.Add(-90 * 24 * time.Hour).Format(time.RFC3339), // 90 days -> multi-chunk
+		EndTimeISO:   now.Format(time.RFC3339),
+		Env:          "prod",
+		TopN:         1000000,
+	}
+
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	text := result.Content[0].(*mcp.TextContent).Text
+	var details ServicePerformanceDetails
+	if err := json.Unmarshal([]byte(text), &details); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if len(details.TopOperations.ByResponseTime) > perfDetailsMaxTopN {
+		t.Errorf("expected ByResponseTime capped at %d entries, got %d", perfDetailsMaxTopN, len(details.TopOperations.ByResponseTime))
+	}
+
+	wantOverFetch := fmt.Sprintf("topk(%d,", 2*perfDetailsMaxTopN)
+	unwantedOverFetch := "topk(2000000,"
+	if len(topRTQueries) == 0 {
+		t.Fatal("expected at least one topRTQuery call")
+	}
+	for _, q := range topRTQueries {
+		if strings.Contains(q, unwantedOverFetch) {
+			t.Errorf("expected the multi-chunk over-fetch to be computed from the clamped top_n, got unclamped query: %s", q)
+		}
+		if !strings.Contains(q, wantOverFetch) {
+			t.Errorf("expected topRTQuery to use the clamped over-fetch %s, got: %s", wantOverFetch, q)
+		}
 	}
 }

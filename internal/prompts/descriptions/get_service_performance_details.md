@@ -6,7 +6,7 @@ Use `get_service_operations_summary` for per-operation drill-down. Use for perfo
 
 Many metric fields use PromQL timeseries format: `[{"metric":{...},"values":[[timestamp_seconds,"value"]]}]`. Top operations/errors are dicts/lists of name→value.
 
-Windows over 35 days are split into 35-day-or-narrower chunks queried and merged separately (the backend hard-caps a single query's range at 35 days); the requested window is hard-capped at 366 days total. A sub-query failure on a plain (<=35 day) window fails the whole call; on a wider (chunked) window it's recorded in `partial_errors` and the rest of the data is still returned.
+Windows over 35 days are split into 35-day-or-narrower chunks queried and merged separately (the backend hard-caps a single query's range at 35 days); the requested window is hard-capped at 366 days total. On a wider (chunked) window, any sub-query failure is recorded in `partial_errors` and the rest of the data is still returned. On a plain (<=35 day) window, a non-2xx upstream response is likewise recorded in `partial_errors`; a read/parse failure on the response fails the whole call.
 
 Very low-traffic services may return sparse or near-empty results for wide time windows — this is expected (the query's fixed 5-minute-scale inner selector has little data to aggregate per point when traffic is sparse), not a bug.
 
@@ -15,6 +15,6 @@ Parameters:
 - `env`: (Required) Environment. Use `get_service_environments` to list values.
 - `lookback_minutes`: (Optional) Minutes to look back. Default 60.
 - `start_time_iso` / `end_time_iso`: (Optional) RFC3339/ISO8601 bounds (e.g. `2026-02-09T15:04:05Z`). Override lookback when set; end defaults to now.
-- `top_n`: (Optional) Max entries for `top_operations_by_response_time`, `top_operations_by_error_rate`, and `top_errors`. Default 10.
+- `top_n`: (Optional) Max entries for `top_operations_by_response_time`, `top_operations_by_error_rate`, and `top_errors`. Default 10. Values above 100 clamp to 100.
 
 If unsure of `service_name` or `env` spelling, call `did_you_mean` first.

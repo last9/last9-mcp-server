@@ -3,6 +3,7 @@ package apm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -52,6 +53,11 @@ const (
 	// the three top-k fields (top_operations_by_response_time,
 	// top_operations_by_error_rate, top_errors) when top_n is unset/zero.
 	perfDetailsDefaultTopN = 10
+	// perfDetailsMaxTopN caps top_n so a huge requested value can't blow up
+	// the backend topk()/over-fetch cost (e.g. topk(2000000, ...) for
+	// top_n: 1000000). Clamps down rather than erroring, matching the
+	// clamp-not-error precedent in service_summary.go's serviceSummaryMaxLimit.
+	perfDetailsMaxTopN = 100
 	// perfDetailsMaxConcurrency bounds how many chunks are fanned out to the
 	// backend in parallel, matching the small bounded concurrency other
 	// chunked callers (get_logs/get_traces) use.
@@ -93,7 +99,7 @@ type ServicePerformanceDetailsArgs struct {
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
 	Env             string  `json:"env,omitempty" jsonschema:"Environment to filter by (default: .*, e.g. prod)"`
-	TopN            int     `json:"top_n,omitempty" jsonschema:"Max entries to return for top_operations_by_response_time, top_operations_by_error_rate, and top_errors (default: 10)."`
+	TopN            int     `json:"top_n,omitempty" jsonschema:"Max entries to return for top_operations_by_response_time, top_operations_by_error_rate, and top_errors (default: 10). Values above 100 clamp to 100."`
 }
 
 type ServiceOperationsSummaryArgs struct {
@@ -415,17 +421,29 @@ func chunkWindowSelector(c perfDetailsChunk) string {
 	return fmt.Sprintf("%dm", widthMinutes)
 }
 
+// chunkStatusError marks a sub-query failure as a non-2xx HTTP status
+// response (as opposed to a read or parse error) so the single-chunk path in
+// fetchChunkedRangeSeries/fetchChunkedTopK can treat it as soft.
+type chunkStatusError struct{ err error }
+
+func (e *chunkStatusError) Error() string { return e.err.Error() }
+func (e *chunkStatusError) Unwrap() error { return e.err }
+
 // fetchChunkedRangeSeries runs a range-vector query once per chunk (via
 // buildQuery) in parallel (bounded by perfDetailsMaxConcurrency, each call
 // bounded by constants.PerChunkHTTPTimeout) and merges the results with
 // mergeChunkedSeries.
 //
-// For a single-chunk (unchunked, <=35 day) call, any failure — non-2xx
-// status, a read error, or a parse error — aborts the whole call immediately,
-// matching the pre-chunking behavior exactly (same error text/wrapping via
-// parseErrMsg). For a genuinely chunked (>1 chunk) call, the same failures on
-// any one chunk are recorded in partialErrors (with that chunk's time bounds)
-// and skipped so the rest keep merging.
+// For a single-chunk (unchunked, <=35 day) call: a read error or a parse
+// error aborts the whole call immediately, matching the pre-chunking
+// behavior exactly (same error text/wrapping via parseErrMsg). A non-2xx
+// status response instead stays soft — appended to partialErrors (with no
+// chunk-bounds prefix, since there's only one "chunk") and the call still
+// succeeds — which also matches the pre-chunking behavior exactly (non-2xx
+// was always soft there too, before chunking existed). For a genuinely
+// chunked (>1 chunk) call, all three failure kinds on any one chunk are
+// recorded in partialErrors (with that chunk's time bounds) and skipped so
+// the rest keep merging.
 func fetchChunkedRangeSeries(ctx context.Context, client *http.Client, cfg models.Config, chunks []perfDetailsChunk, buildQuery func(perfDetailsChunk) string, label, parseErrMsg string, partialErrors *[]string) ([]TimeSeries, error) {
 	results := utils.RunChunksParallel(ctx, toUtilsChunks(chunks), perfDetailsMaxConcurrency,
 		func(cctx context.Context, idx int, _ utils.TimeChunk) ([]TimeSeries, error) {
@@ -440,7 +458,7 @@ func fetchChunkedRangeSeries(ctx context.Context, client *http.Client, cfg model
 			defer httpResp.Body.Close()
 
 			if httpResp.StatusCode != http.StatusOK {
-				return nil, promErr(httpResp, label)
+				return nil, &chunkStatusError{promErr(httpResp, label)}
 			}
 			data, err := io.ReadAll(httpResp.Body)
 			if err != nil {
@@ -457,8 +475,13 @@ func fetchChunkedRangeSeries(ctx context.Context, client *http.Client, cfg model
 	var chunkResults [][]TimeSeries
 	for _, r := range results {
 		if r.Err != nil {
+			var statusErr *chunkStatusError
 			if singleChunk {
-				return nil, r.Err
+				if !errors.As(r.Err, &statusErr) {
+					return nil, r.Err
+				}
+				*partialErrors = append(*partialErrors, r.Err.Error())
+				continue
 			}
 			*partialErrors = append(*partialErrors, fmt.Sprintf("%s: %s", chunkBoundsLabel(chunks[r.Index]), r.Err.Error()))
 			continue
@@ -474,9 +497,11 @@ func fetchChunkedRangeSeries(ctx context.Context, client *http.Client, cfg model
 // maps via keyFn/parseVal, and returns the per-chunk results unmerged —
 // callers apply the domain-specific merge (mergeTopFloat/mergeTopInt64).
 //
-// Failure handling matches fetchChunkedRangeSeries: a single-chunk call
-// aborts immediately on any sub-query failure; a multi-chunk call records a
-// partial error per failing chunk and continues with the rest.
+// Failure handling matches fetchChunkedRangeSeries: on the single-chunk
+// path, a read/decode error aborts immediately, while a non-2xx status
+// response stays soft (partial error, no chunk-bounds prefix, call still
+// succeeds); a multi-chunk call records a partial error per failing chunk
+// (with that chunk's time bounds) and continues with the rest.
 func fetchChunkedTopK[V float64 | int64](
 	ctx context.Context,
 	client *http.Client,
@@ -502,7 +527,7 @@ func fetchChunkedTopK[V float64 | int64](
 			defer httpResp.Body.Close()
 
 			if httpResp.StatusCode != http.StatusOK {
-				return nil, promErr(httpResp, label)
+				return nil, &chunkStatusError{promErr(httpResp, label)}
 			}
 			var resp apiPromInstantResp
 			if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
@@ -527,8 +552,13 @@ func fetchChunkedTopK[V float64 | int64](
 	var chunkItems [][]map[string]V
 	for _, r := range results {
 		if r.Err != nil {
+			var statusErr *chunkStatusError
 			if singleChunk {
-				return nil, r.Err
+				if !errors.As(r.Err, &statusErr) {
+					return nil, r.Err
+				}
+				*partialErrors = append(*partialErrors, r.Err.Error())
+				continue
 			}
 			*partialErrors = append(*partialErrors, fmt.Sprintf("%s: %s", chunkBoundsLabel(chunks[r.Index]), r.Err.Error()))
 			continue
@@ -637,6 +667,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		topN := args.TopN
 		if topN <= 0 {
 			topN = perfDetailsDefaultTopN
+		}
+		if topN > perfDetailsMaxTopN {
+			topN = perfDetailsMaxTopN
 		}
 
 		details := ServicePerformanceDetails{
