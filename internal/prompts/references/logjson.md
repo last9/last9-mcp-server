@@ -237,7 +237,7 @@ Note that regex parsing operators also work as regex filters
 }
 ```
 
-`$quantile` is the general/default percentile operator. Percentiles must be computed from raw values; never average percentile samples or series. When the field comes from `Body`, parse it first, then use `$regex` to keep only numeric values before aggregating.
+`$quantile` is the general/default percentile operator. Day-wise: exactly ONE get_logs call over the full half-open start_time_iso/end_time_iso range with one window_aggregate; NEVER one call per day; honor requested timezone. For `attributes[...]` or `resources[...]`, parse when needed, then use the canonical anchored numeric `$regex` shown below. Equivalent exotic regex forms are deliberately rejected. Compute buckets from raw values. Never template, merge, or recombine already-aggregated percentile rows.
 
 ### Window Aggregate Operations:
 ```json
@@ -266,7 +266,7 @@ Note that regex parsing operators also work as regex filters
 ]
 ```
 
-For calendar buckets, pass explicit RFC3339 `start_time_iso` and `end_time_iso` tool arguments and state the time zone used for the boundaries. Report the source field's units.
+Discover and use a normalized route field before aggregation. If only raw URI exists, group or aggregate exact raw URI values individually; never normalize or merge URI variants afterward. When `l9_result.partial=true`, preserve returned rows and explicitly disclose partial coverage. Pass explicit RFC3339 bounds and state their time zone. Report source units exactly; never infer or convert units.
 
 ## Field Reference Format:
 
