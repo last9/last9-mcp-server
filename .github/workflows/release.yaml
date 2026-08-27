@@ -1,4 +1,4 @@
-# .github/workflows/release.yml
+# .github/workflows/release.yaml
 name: Release on Version Change
 
 on:
@@ -117,15 +117,9 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
-      # Trusted publishing (OIDC) needs npm >= 11.5.1. Node 20 bundles npm 10,
-      # which sends no credential at all — and since this job deliberately has no
-      # NODE_AUTH_TOKEN, npm answers the unauthenticated PUT with 404 (it hides
-      # package existence rather than returning 403). That silently failed every
-      # release from 0.11.0 through 0.15.1. setup-node's bundled npm drifts with
-      # patch releases, so pin the requirement explicitly rather than inheriting it.
       - name: Ensure npm supports trusted publishing (OIDC)
         run: |
-          npm install -g npm@latest
+          npm install -g npm@^11.5.1
           npm --version
 
       - name: Get version from package.json
