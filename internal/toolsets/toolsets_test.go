@@ -52,7 +52,7 @@ func TestParseInvestigate(t *testing.T) {
 	if set == nil {
 		t.Fatal("investigate must not expand to nil/all")
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "list_datasources", "get_apm_service_deviations"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "get_service_profile", "list_datasources", "get_apm_service_deviations"} {
 		if !set.Allows(want) {
 			t.Errorf("investigate missing %q", want)
 		}

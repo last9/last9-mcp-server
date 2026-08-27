@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `get_service_profile` returns a per-service telemetry profile — signal presence, language/runtime, deployment envs, log `signal_shape`, and a recommended ingest fix — as a short brief followed by raw JSON. Call it before a service-scoped investigation to skip trace tools when traces are absent and to parse severity from the log body when `severity_set` is `none` or `partial`.
+
 ## [0.16.0] - 2026-08-27
 
 ### Added
