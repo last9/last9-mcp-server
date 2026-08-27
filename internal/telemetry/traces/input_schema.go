@@ -117,13 +117,13 @@ func aggregateStageSchema() map[string]interface{} {
 func windowAggregateStageSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":        "object",
-		"description": "Window aggregate stage: time-bucketed aggregation. Use for rates or counts over time windows.",
+		"description": "Window aggregate stage: time-bucketed aggregation. Use for rates, counts, or percentiles over time windows.",
 		"required":    []string{"type", "function", "as", "window"},
 		"properties": map[string]interface{}{
 			"type": stringEnum("window_aggregate"),
 			"function": map[string]interface{}{
 				"type":        "object",
-				"description": "Aggregation function object. Example: {\"$count\": []}",
+				"description": "Aggregation function object. Examples: {\"$count\": []}, {\"$quantile\": [0.99, \"Duration\"]}",
 			},
 			"as": map[string]interface{}{
 				"type": "string",
