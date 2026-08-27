@@ -26,6 +26,10 @@ type ServiceLogsResponse struct {
 	Count           int        `json:"count"`
 	Logs            []LogEntry `json:"logs"`
 	HTTPStatusField string     `json:"http_status_field,omitempty"`
+	// Only the log search path produces these. Absent rather than zero-valued:
+	// a count of 0 means nothing matched, absent means nobody counted.
+	TotalMatchingLines *int           `json:"total_matching_lines,omitempty"`
+	SearchStats        map[string]any `json:"search_stats,omitempty"`
 }
 
 // LogEntry represents a single log entry
@@ -241,6 +245,10 @@ func addServiceLogsEnvFilter(query []map[string]interface{}, env string) []map[s
 
 // fetchServiceLogs retrieves raw log entries for a specific service using utils package
 func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Config, service string, startTime, endTime time.Time, limit int, logjsonQuery []map[string]interface{}, index string) (*ServiceLogsResponse, error) {
+	if cfg.UseLogSearchAPI {
+		return fetchServiceLogsViaSearchAPI(ctx, client, cfg, service, startTime, endTime, limit, logjsonQuery, index)
+	}
+
 	startMs := startTime.UnixMilli()
 	endMs := endTime.UnixMilli()
 	// ShouldOptimizeLineFilterQuery is intentionally left at the zero value
@@ -364,6 +372,61 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		Count:     len(logs),
 		Logs:      logs,
 	}, nil
+}
+
+// Same hard-fail rule as get_logs: no retry through the chunked path, so the
+// two stay separable and the chunked one can later be deleted. No aggregate
+// branch — buildServiceLogsQuery only ever emits filter and parse stages.
+func fetchServiceLogsViaSearchAPI(
+	ctx context.Context, client *http.Client, cfg models.Config, service string,
+	startTime, endTime time.Time, limit int, logjsonQuery []map[string]interface{}, index string,
+) (*ServiceLogsResponse, error) {
+	// The shared client's timeout applies. Deliberately NOT PerChunkHTTPTimeout:
+	// that bounds one chunk, and the server runs the whole sweep in this call.
+	resp, err := utils.MakeLogSearchAPI(ctx, client, cfg, utils.LogSearchRequest{
+		Pipeline: logjsonQuery,
+		StartMs:  startTime.UnixMilli(),
+		EndMs:    endTime.UnixMilli(),
+		Limit:    limit,
+		Index:    index,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to call log search API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, utils.NewUpstreamHTTPError(resp, "service logs query", utils.LogsPipelineSchemaHint)
+	}
+
+	result, err := utils.DecodeLogSearchResponse(resp)
+	if err != nil {
+		return nil, err
+	}
+
+	// query_result is lifted to the top level, so data.result sits exactly where
+	// the chunked path's parser already reads it.
+	logs := parseServiceLogEntries(result, service)
+	// The server bounds lines across the whole sample; this tool's contract is
+	// an entry count, so hold it here too.
+	if len(logs) > limit {
+		logs = logs[:limit]
+	}
+
+	response := &ServiceLogsResponse{
+		Service:   service,
+		StartTime: startTime.Format(time.RFC3339),
+		EndTime:   endTime.Format(time.RFC3339),
+		Count:     len(logs),
+		Logs:      logs,
+	}
+	if total, ok := result["total_matching_lines"].(int); ok {
+		response.TotalMatchingLines = &total
+	}
+	if stats, ok := result["search_stats"].(map[string]any); ok {
+		response.SearchStats = stats
+	}
+	return response, nil
 }
 
 func fetchServiceLogsChunk(ctx context.Context, client *http.Client, cfg models.Config, service string, logjsonQuery []map[string]interface{}, startTimeMs, endTimeMs int64, limit int, index string) ([]LogEntry, error) {
