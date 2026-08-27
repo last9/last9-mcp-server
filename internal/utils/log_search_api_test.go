@@ -418,3 +418,64 @@ func TestDecodeLogSearchResponse_RejectsUnusableQueryResult(t *testing.T) {
 		})
 	}
 }
+
+// An envelope that decodes but carries no result set must fail. `{}` used to
+// pass the object check and reach the caller as zero logs, which is
+// indistinguishable from a search that genuinely matched nothing.
+func TestDecodeLogSearchResponse_RejectsResultlessEnvelope(t *testing.T) {
+	for name, body := range map[string]string{
+		"empty_object":   `{"query_result":{}}`,
+		"no_data":        `{"query_result":{"status":"success"}}`,
+		"no_result_type": `{"query_result":{"data":{"result":[]}}}`,
+		"no_result_key":  `{"query_result":{"data":{"resultType":"streams"}}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := DecodeLogSearchResponse(&http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(body)),
+			}); err == nil {
+				t.Fatal("want an error")
+			}
+		})
+	}
+
+	// A null result is the legitimate empty-streams shape and must still pass.
+	out, err := DecodeLogSearchResponse(&http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(
+			`{"query_result":{"data":{"resultType":"streams","result":null}}}`)),
+	})
+	if err != nil {
+		t.Fatalf("empty streams must decode: %v", err)
+	}
+	if _, ok := out["data"]; !ok {
+		t.Errorf("out = %#v, want the envelope lifted", out)
+	}
+}
+
+// json.Marshal fails outright on NaN and Inf, so a single non-finite bucket
+// would sink the whole tool response at output time. The series is dropped and
+// the rest of the summary survives.
+func TestDecodeLogSearchResponse_DropsNonFiniteVolume(t *testing.T) {
+	body := `{"query_result":{"data":{"resultType":"streams","result":[]}},
+		"volume":[
+			{"metric":{"a":"1"},"values":[[1700000000,"NaN"],[1700000060,"5"]]},
+			{"metric":{"a":"2"},"values":[[1700000060,"7"]]}
+		],
+		"search_stats":{"bucket_seconds":60}}`
+	out, err := DecodeLogSearchResponse(&http.Response{
+		StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))})
+	if err != nil {
+		t.Fatalf("a bad series must not fail the search: %v", err)
+	}
+	if _, err := json.Marshal(out); err != nil {
+		t.Fatalf("result must be marshalable: %v", err)
+	}
+	summary, ok := out["volume_summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("volume_summary = %#v, want the surviving series summarised", out["volume_summary"])
+	}
+	if summary["buckets_with_data"] != 1 {
+		t.Errorf("buckets_with_data = %v, want 1 (only the finite series)", summary["buckets_with_data"])
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -163,6 +164,12 @@ func (b *logBucketCount) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("log search: bucket count: %w", err)
 	}
 
+	// A non-finite count marshals to nothing: json.Marshal fails on NaN and Inf,
+	// so one bad bucket would sink the whole tool response at output time.
+	if math.IsNaN(count) || math.IsInf(count, 0) {
+		return fmt.Errorf("log search: bucket count is not finite: %v", count)
+	}
+
 	b.TS = int64(ts)
 	b.Count = count
 	return nil
@@ -172,6 +179,34 @@ func (b *logBucketCount) UnmarshalJSON(data []byte) error {
 // present in the body and not an explicit null.
 func rawPresent(raw json.RawMessage) bool {
 	return len(raw) > 0 && string(raw) != "null"
+}
+
+// decodeQueryResult lifts the endpoint's result set. Every rejection here is
+// the same failure: an envelope that decodes but carries no result reaches the
+// caller as zero logs, indistinguishable from a search that matched nothing.
+func decodeQueryResult(raw json.RawMessage) (map[string]any, error) {
+	// A null would also nil the map, so the advisory writes later would panic.
+	if !rawPresent(raw) {
+		return nil, errors.New("log search response has no query_result")
+	}
+	out := map[string]any{}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("failed to decode query_result: %w", err)
+	}
+
+	data, ok := out["data"].(map[string]any)
+	if !ok {
+		return nil, errors.New("log search response has no query_result.data object")
+	}
+	if _, ok := data["resultType"].(string); !ok {
+		return nil, errors.New("log search response has no query_result.data.resultType")
+	}
+	// A null result is the legitimate empty-streams shape, so presence is the
+	// bar here, not non-emptiness.
+	if _, present := data["result"]; !present {
+		return nil, errors.New("log search response has no query_result.data.result")
+	}
+	return out, nil
 }
 
 // DecodeLogSearchResponse flattens the endpoint's envelope into the shape
@@ -188,15 +223,9 @@ func DecodeLogSearchResponse(resp *http.Response) (map[string]any, error) {
 		return nil, fmt.Errorf("failed to decode log search response: %w", err)
 	}
 
-	// Not an empty search: without it the caller gets an envelope with no
-	// data.result, which reads as "no logs matched". A null also nils the map,
-	// so the advisory writes below would panic.
-	if !rawPresent(parsed.QueryResult) {
-		return nil, errors.New("log search response has no query_result")
-	}
-	out := map[string]any{}
-	if err := json.Unmarshal(parsed.QueryResult, &out); err != nil {
-		return nil, fmt.Errorf("failed to decode query_result: %w", err)
+	out, err := decodeQueryResult(parsed.QueryResult)
+	if err != nil {
+		return nil, err
 	}
 
 	var searchStats map[string]any
