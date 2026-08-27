@@ -6,6 +6,8 @@ Call this tool before any service-scoped investigation (logs, traces, exceptions
 
 **Trust but verify:** the profile is derived from recent telemetry (~15 minute TTL). If a later tool call contradicts the profile, trust the fresh evidence and note the mismatch.
 
+**Output:** a short investigation brief followed by a blank line and the full profile as raw JSON. When logs and traces are both `absent`, the name may simply be wrong — confirm it with `did_you_mean` before concluding the service is unmonitored.
+
 Full investigation orchestration guide: `last9://reference/investigation`
 
 Parameters:

@@ -671,6 +671,15 @@ No parameters. Returns all configured notification channels (Slack, PagerDuty, e
 
 Returns up to 3 closest matches with similarity scores. Use this before any tool call where the entity name is uncertain. If a previous call returned empty results, try this before retrying.
 
+### get_service_profile
+
+- `service_name` (string, required): Service to derive a telemetry profile for.
+- `datasource` (string, optional): Datasource name. Omit for the default.
+
+Returns a short investigation brief followed by the full profile as raw JSON: signal presence (`logs`/`traces`/`metrics` as `present`, `absent`, or `unknown`), language and runtime, deployment environments, log `signal_shape` (`log_format`, `severity_set`, `level_field`), and a recommended ingest fix where one applies. Derived upstream and cached with a ~15 minute TTL.
+
+Call it before any service-scoped investigation so tool selection matches the service's actual telemetry — skip trace tools when `traces` is `absent`, and when `severity_set` is `none` or `partial` parse severity from `level_field` in the log body rather than using `severity_filters`. `metrics` is always `unknown` and `dependencies` is unpopulated in v1. When `logs` and `traces` are both `absent`, confirm the name with `did_you_mean` before concluding the service is unmonitored.
+
 ### list_dashboards
 
 No parameters. Returns all custom dashboards in the org as a JSON array with `id`, `name`, and metadata.
