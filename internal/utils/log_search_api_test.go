@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"last9-mcp/internal/models"
@@ -392,5 +393,28 @@ func TestDecodeLogSearchResponse_AggregateOmitsExtras(t *testing.T) {
 	data := out["data"].(map[string]any)
 	if data["resultType"] != "matrix" {
 		t.Errorf("resultType = %v, want matrix", data["resultType"])
+	}
+}
+
+// Hardening: today's endpoint always sends query_result. If that ever slips,
+// an absent one used to read as "no logs matched" and a null one panicked.
+func TestDecodeLogSearchResponse_RejectsUnusableQueryResult(t *testing.T) {
+	for name, body := range map[string]string{
+		"absent":     `{"total_matching_lines":42,"search_stats":{"bucket_seconds":60}}`,
+		"null":       `{"query_result":null,"total_matching_lines":42}`,
+		"non_object": `{"query_result":[],"total_matching_lines":42}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			out, err := DecodeLogSearchResponse(&http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(body)),
+			})
+			if err == nil {
+				t.Fatalf("want an error, got result %#v", out)
+			}
+			if out != nil {
+				t.Errorf("result = %#v, want nil alongside the error", out)
+			}
+		})
 	}
 }

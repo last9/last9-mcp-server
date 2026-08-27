@@ -188,11 +188,15 @@ func DecodeLogSearchResponse(resp *http.Response) (map[string]any, error) {
 		return nil, fmt.Errorf("failed to decode log search response: %w", err)
 	}
 
+	// Not an empty search: without it the caller gets an envelope with no
+	// data.result, which reads as "no logs matched". A null also nils the map,
+	// so the advisory writes below would panic.
+	if !rawPresent(parsed.QueryResult) {
+		return nil, errors.New("log search response has no query_result")
+	}
 	out := map[string]any{}
-	if len(parsed.QueryResult) > 0 {
-		if err := json.Unmarshal(parsed.QueryResult, &out); err != nil {
-			return nil, fmt.Errorf("failed to decode query_result: %w", err)
-		}
+	if err := json.Unmarshal(parsed.QueryResult, &out); err != nil {
+		return nil, fmt.Errorf("failed to decode query_result: %w", err)
 	}
 
 	var searchStats map[string]any
