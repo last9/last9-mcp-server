@@ -29,6 +29,7 @@ type ServiceLogsResponse struct {
 	// Only the log search path produces these. Absent rather than zero-valued:
 	// a count of 0 means nothing matched, absent means nobody counted.
 	TotalMatchingLines *int           `json:"total_matching_lines,omitempty"`
+	LogsTruncated      *bool          `json:"logs_truncated,omitempty"`
 	SearchStats        map[string]any `json:"search_stats,omitempty"`
 }
 
@@ -422,6 +423,9 @@ func fetchServiceLogsViaSearchAPI(
 	}
 	if total, ok := result["total_matching_lines"].(int); ok {
 		response.TotalMatchingLines = &total
+	}
+	if truncated, ok := result["logs_truncated"].(bool); ok {
+		response.LogsTruncated = &truncated
 	}
 	if stats, ok := result["search_stats"].(map[string]any); ok {
 		response.SearchStats = stats

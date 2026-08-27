@@ -79,6 +79,35 @@ func TestFetchServiceLogs_APIMode_SingleCallWithCoverage(t *testing.T) {
 	}
 }
 
+// logs_truncated is what makes the count a floor, so it must travel with it.
+// Forwarding the count alone reports 41 matching lines as if it were a total.
+func TestFetchServiceLogs_APIMode_CarriesTruncationSignal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"query_result":{"status":"success","data":{"resultType":"streams","result":[]}},
+			"total_matching_lines": 41,
+			"logs_truncated": true,
+			"search_stats":{"chunks_failed":0}
+		}`))
+	}))
+	defer srv.Close()
+
+	start, end := serviceLogsWindow()
+	got, err := fetchServiceLogs(
+		context.Background(), srv.Client(), apiModeCfg(srv.URL), "checkout",
+		start, end, 20, serviceLogsPipeline(), "")
+	if err != nil {
+		t.Fatalf("fetchServiceLogs: %v", err)
+	}
+	if got.LogsTruncated == nil || !*got.LogsTruncated {
+		t.Fatalf("logs_truncated = %v, want true alongside the count", got.LogsTruncated)
+	}
+	encoded, _ := json.Marshal(got)
+	if !strings.Contains(string(encoded), `"logs_truncated":true`) {
+		t.Errorf("payload must carry the signal, got %s", encoded)
+	}
+}
+
 // With no coverage in the response the fields stay absent, not zero: a count of
 // 0 means nothing matched, absent means nobody counted.
 func TestFetchServiceLogs_APIMode_OmitsAbsentCoverage(t *testing.T) {
@@ -102,7 +131,7 @@ func TestFetchServiceLogs_APIMode_OmitsAbsentCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	for _, key := range []string{"total_matching_lines", "search_stats"} {
+	for _, key := range []string{"total_matching_lines", "logs_truncated", "search_stats"} {
 		if strings.Contains(string(encoded), key) {
 			t.Errorf("%q must be omitted from the payload, got %s", key, encoded)
 		}
