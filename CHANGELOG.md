@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `get_logs` and `get_service_logs` can answer a search with one server-side call instead of the client-side chunk sweep. Set `LAST9_USE_LOG_SEARCH_API=true` (or `--use_log_search_api`); off by default. Output shapes are unchanged. `get_logs` gains `total_matching_lines`, `logs_truncated`, `search_stats` and `volume_summary` on raw searches (aggregates get `search_stats` only); `get_service_logs` gains `total_matching_lines` and `search_stats`. `total_matching_lines` counts all matching lines, not the returned sample — but it is a floor, not a total, when `logs_truncated` is true or `search_stats.chunks_failed` is above zero.
+
 ### Fixed
 
 - `get_logs` now caps aggregate result rows and sets `l9_result.partial` when capped; log and trace tools reject malformed `$quantile` arguments before execution, and log percentiles reject unsafe numeric-field pipelines.
