@@ -16,10 +16,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// maxServiceProfileBodyBytes caps the success body. A profile is small and
-// bounded; anything larger is drift, not data worth buffering.
-const maxServiceProfileBodyBytes = 5 * 1024 * 1024
-
 // briefUnavailableMarker replaces the brief when the response no longer parses,
 // so a dropped routing hint is visible rather than silent.
 const briefUnavailableMarker = "Service profile: brief unavailable — the response did not match the expected schema. Raw profile follows; derive routing from it directly."
@@ -90,7 +86,7 @@ func NewGetServiceProfileHandler(client *http.Client, cfg models.Config) func(co
 			return nil, nil, utils.NewUpstreamHTTPError(resp, "service profile")
 		}
 
-		rawJSON, err := io.ReadAll(io.LimitReader(resp.Body, maxServiceProfileBodyBytes))
+		rawJSON, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read response: %w", err)
 		}
