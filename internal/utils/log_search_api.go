@@ -201,10 +201,15 @@ func decodeQueryResult(raw json.RawMessage) (map[string]any, error) {
 	if _, ok := data["resultType"].(string); !ok {
 		return nil, errors.New("log search response has no query_result.data.resultType")
 	}
-	// A null result is the legitimate empty-streams shape, so presence is the
-	// bar here, not non-emptiness.
-	if _, present := data["result"]; !present {
+	// Null is the legitimate empty shape, so the bar is the type, not
+	// non-emptiness: an object or string here reaches the caller as zero rows.
+	result, present := data["result"]
+	if !present {
 		return nil, errors.New("log search response has no query_result.data.result")
+	}
+	if _, ok := result.([]any); !ok && result != nil {
+		return nil, fmt.Errorf(
+			"log search response has a %T query_result.data.result, want an array", result)
 	}
 	return out, nil
 }

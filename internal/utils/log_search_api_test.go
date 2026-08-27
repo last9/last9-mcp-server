@@ -428,6 +428,9 @@ func TestDecodeLogSearchResponse_RejectsResultlessEnvelope(t *testing.T) {
 		"no_data":        `{"query_result":{"status":"success"}}`,
 		"no_result_type": `{"query_result":{"data":{"result":[]}}}`,
 		"no_result_key":  `{"query_result":{"data":{"resultType":"streams"}}}`,
+		"object_result":  `{"query_result":{"data":{"resultType":"streams","result":{}}}}`,
+		"string_result":  `{"query_result":{"data":{"resultType":"streams","result":"x"}}}`,
+		"number_result":  `{"query_result":{"data":{"resultType":"matrix","result":3}}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := DecodeLogSearchResponse(&http.Response{
