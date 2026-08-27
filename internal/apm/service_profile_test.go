@@ -91,8 +91,36 @@ func TestGetServiceProfileHandler_UnparsableBodyStillReturnsRawJSON(t *testing.T
 	if err != nil {
 		t.Fatalf("schema drift must not fail the call: %v", err)
 	}
-	if text := utils.GetTextContent(t, result); !strings.Contains(text, drifted) {
+	text := utils.GetTextContent(t, result)
+	if !strings.Contains(text, drifted) {
 		t.Fatalf("want raw JSON passed through, got:\n%s", text)
+	}
+	// A dropped brief must announce itself; silently returning bare JSON hides
+	// that the routing guidance is gone.
+	if !strings.Contains(text, "brief unavailable") {
+		t.Fatalf("dropped brief must be marked, got:\n%s", text)
+	}
+}
+
+// A null or empty body unmarshals into a zero struct, which used to render
+// "Service profile: " with no name at all.
+func TestGetServiceProfileHandler_EmptyBodyKeepsServiceName(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`null`))
+	}))
+	defer server.Close()
+
+	cfg := models.Config{APIBaseURL: server.URL}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "tok", ExpiresAt: time.Now().Add(time.Hour)}
+
+	handler := NewGetServiceProfileHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "pay-svc"})
+	if err != nil {
+		t.Fatalf("empty body must not fail the call: %v", err)
+	}
+	if text := utils.GetTextContent(t, result); !strings.Contains(text, "Service profile: pay-svc") {
+		t.Fatalf("want the requested name echoed, got:\n%s", text)
 	}
 }
 

@@ -81,13 +81,23 @@ func formatInvestigationBrief(p serviceProfileResponse) string {
 		fmt.Fprintf(&b, " | level_field: %s", p.SignalShape.LevelField)
 	}
 
-	switch severity {
-	case "none", "partial":
-		fmt.Fprintf(&b, "\n  → parse %s from body; do not use severity_filters", firstNonEmpty(p.SignalShape.LevelField, "level"))
-	case "unknown":
-		// Silence here would leave severity_filters looking safe on a service
-		// where nobody has established that it works.
-		fmt.Fprintf(&b, "\n  → severity coverage undetermined; verify before relying on severity_filters")
+	// Severity routing is advice about querying logs; with no logs to query it
+	// is noise competing with the name-check hint below.
+	if logs != "absent" {
+		switch severity {
+		case "none", "partial":
+			if p.SignalShape.LevelField != "" {
+				fmt.Fprintf(&b, "\n  → parse %s from body; do not use severity_filters", p.SignalShape.LevelField)
+			} else {
+				// Naming a field the profile did not report would be a guess the
+				// model then queries on.
+				fmt.Fprintf(&b, "\n  → parse the level from the log body; do not use severity_filters")
+			}
+		case "unknown":
+			// Silence here would leave severity_filters looking safe on a service
+			// where nobody has established that it works.
+			fmt.Fprintf(&b, "\n  → severity coverage undetermined; verify before relying on severity_filters")
+		}
 	}
 
 	if p.Derivation.LogTier == "failed" {

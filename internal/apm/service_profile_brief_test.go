@@ -83,6 +83,35 @@ func TestFormatInvestigationBrief_MissingFieldsRenderUnknown(t *testing.T) {
 	}
 }
 
+// Severity advice is about querying logs; with none to query it competes with
+// the name-check hint.
+func TestFormatInvestigationBrief_NoSeverityAdviceWhenLogsAbsent(t *testing.T) {
+	p := serviceProfileResponse{
+		Service:   "api",
+		Telemetry: telemetryPresenceResponse{Logs: "absent", Traces: "present"},
+	}
+	got := formatInvestigationBrief(p)
+	if strings.Contains(got, "severity coverage undetermined") {
+		t.Fatalf("no logs means no severity advice:\n%s", got)
+	}
+}
+
+// Naming a field the profile never reported is a guess the model then queries on.
+func TestFormatInvestigationBrief_NoLevelFieldStaysGeneric(t *testing.T) {
+	p := serviceProfileResponse{
+		Service:     "api",
+		Telemetry:   telemetryPresenceResponse{Logs: "present"},
+		SignalShape: signalShapeResponse{SeveritySet: "none"},
+	}
+	got := formatInvestigationBrief(p)
+	if strings.Contains(got, "parse level from body") {
+		t.Fatalf("must not invent a level field name:\n%s", got)
+	}
+	if !strings.Contains(got, "parse the level from the log body") {
+		t.Fatalf("want generic body-parse guidance:\n%s", got)
+	}
+}
+
 func TestFormatInvestigationBrief_NoTelemetrySuggestsNameCheck(t *testing.T) {
 	p := serviceProfileResponse{
 		Service:    "typoed-svc",

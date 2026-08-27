@@ -16,10 +16,18 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// maxServiceProfileBodyBytes caps the success body. A profile is small and
+// bounded; anything larger is drift, not data worth buffering.
+const maxServiceProfileBodyBytes = 5 * 1024 * 1024
+
+// briefUnavailableMarker replaces the brief when the response no longer parses,
+// so a dropped routing hint is visible rather than silent.
+const briefUnavailableMarker = "Service profile: brief unavailable — the response did not match the expected schema. Raw profile follows; derive routing from it directly."
+
 // GetServiceProfileArgs are the input parameters for the get_service_profile tool.
 type GetServiceProfileArgs struct {
 	ServiceName string `json:"service_name" jsonschema:"(Required) Service to derive a telemetry profile for"`
-	Datasource  string `json:"datasource,omitempty" jsonschema:"Datasource name. Omit for default."`
+	Datasource  string `json:"datasource,omitempty" jsonschema:"Name of the datasource to query. If omitted, uses the default configured datasource."`
 }
 
 type serviceProfileRequest struct {
@@ -82,16 +90,23 @@ func NewGetServiceProfileHandler(client *http.Client, cfg models.Config) func(co
 			return nil, nil, utils.NewUpstreamHTTPError(resp, "service profile")
 		}
 
-		rawJSON, err := io.ReadAll(resp.Body)
+		rawJSON, err := io.ReadAll(io.LimitReader(resp.Body, maxServiceProfileBodyBytes))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read response: %w", err)
 		}
 
 		// The raw JSON is the payload of record; parsing only builds the brief.
-		// Backend schema drift must not fail a call the agent could still use.
+		// Backend schema drift must not fail a call the agent could still use —
+		// but dropping the brief silently would hide that the routing guidance,
+		// the reason to call this tool, is missing.
 		text := string(rawJSON)
 		var profile serviceProfileResponse
-		if err := json.Unmarshal(rawJSON, &profile); err == nil {
+		if err := json.Unmarshal(rawJSON, &profile); err != nil {
+			text = briefUnavailableMarker + "\n\n" + text
+		} else {
+			if profile.Service == "" {
+				profile.Service = service
+			}
 			text = formatInvestigationBrief(profile) + "\n\n" + text
 		}
 

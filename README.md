@@ -303,6 +303,10 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 - **`did_you_mean`** — When the agent isn't sure about an entity name, this returns the closest matches from your catalog (services, environments, hosts, databases, K8s deployments/namespaces, jobs). Up to 3 suggestions with similarity scores. The server calls this automatically before most tools when a name lookup returns empty.
 
+### Service Profile
+
+- **`get_service_profile`** — What a service's telemetry actually looks like, before you query it: which signals exist, language and runtime, deployment environments, the shape of its logs, and a recommended ingest fix where one applies. Lets the agent skip trace tools when a service has no traces, and parse severity from the log body when `SeverityText` is empty instead of filtering on it and finding nothing.
+
 ---
 
 ## How It Works
