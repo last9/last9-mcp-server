@@ -1,6 +1,6 @@
 `logjson_query`: JSON stage array, **NOT SQL**. Types: `filter`|`parse`|`aggregate`|`window_aggregate`; no `"stage"`/`"conditions"`.
 
-**Profile first:** service-scoped query → `get_service_profile`; route on `signal_shape`/`telemetry`. See `last9://reference/investigation`.
+**Profile first:** service-scoped query → `get_service_profile`; route on `signal_shape`/`telemetry`. See `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
 
 **Order:** scope→parse→filter→aggregate.
 

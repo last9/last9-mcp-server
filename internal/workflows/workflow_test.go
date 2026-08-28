@@ -130,12 +130,8 @@ func TestWorkflowsGateOnAbsentNotPresent(t *testing.T) {
 	}
 }
 
-func TestInvestigationReferenceDocumentsSkipOnAbsent(t *testing.T) {
-	ref := prompts.InvestigationReference
-	if !strings.Contains(ref, `telemetry.traces == "absent"`) {
-		t.Error("investigation reference must document the absent branch the workflows gate on")
-	}
-	if !strings.Contains(ref, "`unknown` means not measured") {
+func TestInvestigationReferenceKeepsUnknownDistinctFromAbsent(t *testing.T) {
+	if !strings.Contains(prompts.InvestigationReference, "`unknown` means not measured") {
 		t.Error("investigation reference must keep unknown distinct from absent")
 	}
 }

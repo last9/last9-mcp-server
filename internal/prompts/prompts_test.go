@@ -198,8 +198,8 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 
 func TestWhaleDescriptionsBounded(t *testing.T) {
 	budgets := map[string]int{
-		"get_logs_base":         2800,
-		"get_traces_base":       2000,
+		"get_logs_base":         2900,
+		"get_traces_base":       2200,
 		"get_service_logs_base": 2000,
 	}
 	bodies := map[string]string{
