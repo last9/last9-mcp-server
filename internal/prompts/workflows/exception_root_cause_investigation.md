@@ -25,8 +25,10 @@ Steps:
    - Results contradict profile → apply contradiction clause.
 5. Continue into logs when step 4 routes to logs and telemetry.logs !=
    "absent", AGGREGATE FIRST: build the `get_logs` count pipeline using
-   profile.signal_shape — use signal_shape.level_field (not SeverityText when
-   severity_set is none or partial); if log_format is "json", add parse stage
+   profile.signal_shape — use signal_shape.level_field when the profile reports one;
+   when it does not, discover the field with get_log_attributes_for_pipeline
+   rather than guessing a name (never SeverityText when severity_set is none
+   or partial); if log_format is "json", add parse stage
    per signal_shape.parse_hint; gate on ERROR/FATAL/CRITICAL using the level field;
    aggregate `$count` grouped by logger. This is cheap and wide-window-safe.
    Never raw-fetch lines before this aggregate — an unnarrowed fetch times out
