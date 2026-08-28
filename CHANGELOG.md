@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `last9://reference/investigation` documents the profile-first investigation flow. The five service workflows and the service-scoped tool descriptions now route on `get_service_profile` first: skip trace tools when `telemetry.traces` is `absent`, and parse the level from the log body when `signal_shape.severity_set` is `none` or `partial`.
 - `get_service_profile` returns a per-service telemetry profile — signal presence, language/runtime, deployment envs, log `signal_shape`, and a recommended ingest fix — as a short brief followed by raw JSON. Call it before a service-scoped investigation to skip trace tools when traces are absent and to parse severity from the log body when `severity_set` is `none` or `partial`.
 
 ## [0.16.0] - 2026-08-27
