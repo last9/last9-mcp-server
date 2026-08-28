@@ -198,8 +198,6 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 
 func TestWhaleDescriptionsBounded(t *testing.T) {
 	budgets := map[string]int{
-		// Raised from 2600 for the profile-first firing rule; get_logs is
-		// service-scoped often enough that the routing hint earns its bytes.
 		"get_logs_base":         2750,
 		"get_traces_base":       2000,
 		"get_service_logs_base": 2000,
