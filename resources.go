@@ -10,11 +10,11 @@ import (
 )
 
 const (
-	resourceURILogjson     = "last9://reference/logjson"
-	resourceURITracejson   = "last9://reference/tracejson"
-	resourceURIServiceLogs = "last9://reference/service_logs"
-	resourceURIMetrics        = "last9://reference/metrics"
-	resourceURIInvestigation  = "last9://reference/investigation"
+	resourceURILogjson       = "last9://reference/logjson"
+	resourceURITracejson     = "last9://reference/tracejson"
+	resourceURIServiceLogs   = "last9://reference/service_logs"
+	resourceURIMetrics       = "last9://reference/metrics"
+	resourceURIInvestigation = "last9://reference/investigation"
 )
 
 // registerReferenceResources registers whale tool manuals as MCP resources.

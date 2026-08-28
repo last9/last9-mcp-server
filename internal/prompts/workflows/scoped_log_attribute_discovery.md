@@ -7,9 +7,9 @@ Steps:
 0. Call get_service_profile(service_name=<requested ServiceName>). Use the
    result for all routing below — do not re-derive telemetry shape via PromQL
    or attribute probing.
-1. If signal_shape is fully populated (log_format != "unknown", level_field set),
-   skip attribute discovery and go directly to step 2 (get_logs). Otherwise fall
-   back to `get_log_attributes_for_pipeline` with a pipeline scoped to the
+1. If signal_shape is fully populated (log_format and level_field both present
+   and non-empty), skip attribute discovery and go directly to step 2 (get_logs).
+   Otherwise fall back to `get_log_attributes_for_pipeline` with a pipeline scoped to the
    requested `ServiceName` and time window.
 2. After scoped discovery (or profile), go directly to `get_logs`. Do not inspect raw
    examples first; use the discovered field list, source, and parse hint to

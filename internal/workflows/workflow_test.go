@@ -104,3 +104,44 @@ func TestWorkflowPromptsContainRoutingGuards(t *testing.T) {
 		}
 	}
 }
+
+// Every other assertion greps a string inside the one file it was added to, so
+// a workflow can drift from the tri-state contract in references/investigation.md
+// without any test noticing. These two check across files.
+
+func TestWorkflowsGateOnAbsentNotPresent(t *testing.T) {
+	// `unknown` means not measured. Gating on == "present" sends it down the
+	// skip branch, suppressing tools on every service whose tier did not resolve.
+	for name, body := range map[string]string{
+		"diagnose_error_rate":                prompts.DiagnoseErrorRateWorkflow,
+		"exception_root_cause_investigation": prompts.ExceptionRootCauseInvestigationWorkflow,
+		"investigate_latency_spike":          prompts.InvestigateLatencySpikeWorkflow,
+		"on_call_runbook":                    prompts.OnCallRunbookWorkflow,
+		"scoped_log_attribute_discovery":     prompts.ScopedLogAttributeDiscoveryWorkflow,
+	} {
+		// A `== "present"` gate is only safe inside a decision table that also
+		// routes `unknown` explicitly; as a bare if/else it sends unknown down
+		// the skip branch.
+		for _, signal := range []string{"traces", "logs", "metrics"} {
+			gate := "telemetry." + signal + ` == "present"`
+			if strings.Contains(body, gate) && !strings.Contains(body, `== "unknown"`) {
+				t.Errorf("%s gates on %s with no unknown arm; use != \"absent\" so unknown does not suppress tools", name, gate)
+			}
+		}
+		// log_format is omitempty and is never normalized to the literal
+		// "unknown", so comparing against it always passes.
+		if strings.Contains(body, `log_format != "unknown"`) {
+			t.Errorf("%s tests log_format against \"unknown\", which the field is never set to", name)
+		}
+	}
+}
+
+func TestInvestigationReferenceDocumentsSkipOnAbsent(t *testing.T) {
+	ref := prompts.InvestigationReference
+	if !strings.Contains(ref, `telemetry.traces == "absent"`) {
+		t.Error("investigation reference must document the absent branch the workflows gate on")
+	}
+	if !strings.Contains(ref, "`unknown` means not measured") {
+		t.Error("investigation reference must keep unknown distinct from absent")
+	}
+}

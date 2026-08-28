@@ -22,8 +22,8 @@ Steps:
    - derivation.log_tier == "failed" OR signal fields == "unknown"
      → proceed with caution; use get_log_attributes_for_pipeline as fallback.
    - Results contradict profile → apply contradiction clause.
-4. Continue into logs when step 3 routes to logs and telemetry.logs ==
-   "present", AGGREGATE FIRST: build the `get_logs` count pipeline using
+4. Continue into logs when step 3 routes to logs and telemetry.logs !=
+   "absent", AGGREGATE FIRST: build the `get_logs` count pipeline using
    profile.signal_shape — use profile.level_field (not SeverityText when
    severity_set is none or partial); if log_format is "json", add parse stage
    per profile.parse_hint; gate on ERROR/FATAL/CRITICAL using the level field;
@@ -33,7 +33,8 @@ Steps:
 5. Once the aggregate isolates the hot logger, READ THE LINES: filter to that
    logger and always pass a `limit` (a handful of lines is enough). Use a
    non-aggregate `get_logs` pipeline for this bounded read — never
-   `get_service_logs` during or after this investigation flow. Report the
+   `get_service_logs` during or after this investigation flow (HTTP status-class
+   log search is a separate task, and does use `get_service_logs`). Report the
    actual root-cause error text you read — the count locates the problem, the
    lines explain it.
 
