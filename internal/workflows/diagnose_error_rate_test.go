@@ -80,7 +80,7 @@ func TestDiagnoseErrorRateRendersEnvBranches(t *testing.T) {
 	if !strings.Contains(got2, "profile.deployment.envs") {
 		t.Errorf("env-absent render should pick env from profile:\n%s", got2)
 	}
-	if !strings.Contains(got2, "profile.level_field") {
+	if !strings.Contains(got2, "signal_shape.level_field") {
 		t.Errorf("render must use profile level_field for log aggregate:\n%s", got2)
 	}
 	// env absent: profile env pick, fallback, and perf-details must stay in one step.

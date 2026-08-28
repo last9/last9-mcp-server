@@ -41,10 +41,11 @@ When building log pipelines for `none` or `partial`, gate on ERROR/FATAL using t
 
 | Profile signal | Branch |
 |---|---|
-| `telemetry.traces == "present"` | Trace path: `get_exceptions` → `get_service_traces` |
+| `telemetry.traces != "absent"` | Trace path: `get_exceptions` → `get_service_traces` |
 | `telemetry.traces == "absent"` | Skip trace tools; go to logs or stop |
-| `telemetry.logs == "present"` + `severity_set` in (`none`, `partial`) | Parse `level_field` from body; never `severity_filters` |
-| `telemetry.logs == "present"` + `log_format == "json"` | `get_logs` with parse stage per `parse_hint` |
+| `telemetry.traces == "unknown"` | Not measured — take the trace path anyway; never treat as absent |
+| `telemetry.logs != "absent"` + `severity_set` in (`none`, `partial`) | Parse `level_field` from body; never `severity_filters` |
+| `telemetry.logs != "absent"` + `log_format == "json"` | `get_logs` with parse stage per `parse_hint` |
 | `telemetry.logs == "absent"` | Don't chase logs; exceptions/traces are the answer |
 | `deployment.envs` non-empty | Pick env from profile before `get_service_environments` |
 | `derivation.log_tier == "failed"` | Warn; fall back to `get_log_attributes_for_pipeline` |
@@ -53,10 +54,10 @@ When building log pipelines for `none` or `partial`, gate on ERROR/FATAL using t
 
 ### Exception root-cause routing (profile at step 2)
 
-Call modality-specific tools only when `profile.telemetry` reports them present — skip `get_service_traces` when `telemetry.traces == "absent"` and skip `get_logs` when `telemetry.logs == "absent"`.
+Call modality-specific tools unless `profile.telemetry` reports them absent — skip `get_service_traces` only when `telemetry.traces == "absent"`, and skip `get_logs` only when `telemetry.logs == "absent"`. `unknown` takes the tool path.
 
-- `telemetry.traces == "present"` AND `severity_set == "all"` → exceptions are likely the answer; report and stop.
-- `telemetry.logs == "present"` AND (`severity_set` in (`none`, `partial`) OR `telemetry.traces == "absent"`) → exceptions are likely symptoms; continue to logs.
+- `severity_set == "all"` AND `telemetry.traces != "absent"` → exceptions are likely the answer; report and stop. Fetching traces is a separate step and is not gated on `severity_set`.
+- `telemetry.logs != "absent"` AND (`severity_set` in (`none`, `partial`) OR `telemetry.traces == "absent"`) → exceptions are likely symptoms; continue to logs.
 - `derivation.log_tier == "failed"` OR signal fields == `unknown` → proceed with caution; use `get_log_attributes_for_pipeline` as fallback.
 
 ## Contradiction clause (trust but verify)

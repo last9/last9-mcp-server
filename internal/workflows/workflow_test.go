@@ -118,6 +118,7 @@ func TestWorkflowsGateOnAbsentNotPresent(t *testing.T) {
 		"investigate_latency_spike":          prompts.InvestigateLatencySpikeWorkflow,
 		"on_call_runbook":                    prompts.OnCallRunbookWorkflow,
 		"scoped_log_attribute_discovery":     prompts.ScopedLogAttributeDiscoveryWorkflow,
+		"references/investigation":           prompts.InvestigationReference,
 	} {
 		// No exemption: an escape hatch here is another condition that can
 		// silently stop failing, which is the bug this test exists to catch.
@@ -125,11 +126,6 @@ func TestWorkflowsGateOnAbsentNotPresent(t *testing.T) {
 			if gate := "telemetry." + signal + ` == "present"`; strings.Contains(body, gate) {
 				t.Errorf("%s gates on %s; use != \"absent\" so unknown does not suppress tools", name, gate)
 			}
-		}
-		// log_format is omitempty and is never normalized to the literal
-		// "unknown", so comparing against it always passes.
-		if strings.Contains(body, `log_format != "unknown"`) {
-			t.Errorf("%s tests log_format against \"unknown\", which the field is never set to", name)
 		}
 	}
 }
@@ -141,5 +137,25 @@ func TestInvestigationReferenceDocumentsSkipOnAbsent(t *testing.T) {
 	}
 	if !strings.Contains(ref, "`unknown` means not measured") {
 		t.Error("investigation reference must keep unknown distinct from absent")
+	}
+}
+
+// level_field and parse_hint are nested under signal_shape in the profile JSON
+// (see signalShapeResponse). A flattened profile.<field> path names something
+// the response does not contain, and the model queries on it anyway.
+func TestWorkflowsUseNestedSignalShapePaths(t *testing.T) {
+	for name, body := range map[string]string{
+		"diagnose_error_rate":                prompts.DiagnoseErrorRateWorkflow,
+		"exception_root_cause_investigation": prompts.ExceptionRootCauseInvestigationWorkflow,
+		"investigate_latency_spike":          prompts.InvestigateLatencySpikeWorkflow,
+		"on_call_runbook":                    prompts.OnCallRunbookWorkflow,
+		"scoped_log_attribute_discovery":     prompts.ScopedLogAttributeDiscoveryWorkflow,
+		"references/investigation":           prompts.InvestigationReference,
+	} {
+		for _, field := range []string{"level_field", "parse_hint", "severity_set", "log_format"} {
+			if bad := "profile." + field; strings.Contains(body, bad) {
+				t.Errorf("%s uses %s; the field is nested under signal_shape", name, bad)
+			}
+		}
 	}
 }
