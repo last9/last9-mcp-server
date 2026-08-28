@@ -35,7 +35,7 @@ When `derivation.log_tier == "failed"`, log-tier fields may be stale or empty �
 | `partial` | **Same as `none`** — severity is unreliable on most volume; body-parse is the safe default |
 | `unknown` | Fall back to discovery; do not assert absence of severity |
 
-When building log pipelines for `none` or `partial`, gate on ERROR/FATAL using the discovered `level_field` (not `SeverityText`). Copy `parse_hint` into the parse stage when `log_format == "json"`.
+When building log pipelines for `none` or `partial`, gate on ERROR/FATAL using `level_field` (not `SeverityText`); when the profile reports none, discover it with `get_log_attributes_for_pipeline` rather than guessing a name. Copy `parse_hint` into the parse stage when `log_format == "json"`.
 
 ## Profile → routing rules
 
