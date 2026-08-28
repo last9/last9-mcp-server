@@ -277,6 +277,35 @@ func TestDumpTools(t *testing.T) {
 	}
 }
 
+func TestDumpToolsLogsIncludesServiceProfile(t *testing.T) {
+	allowed, err := toolsets.Parse("logs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, allowed); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	byName := make(map[string]bool, len(out.Tools))
+	for _, tool := range out.Tools {
+		byName[tool.Name] = true
+	}
+	if !byName["get_service_profile"] {
+		t.Error("logs dump missing get_service_profile (required by profile-first firing rules on get_exceptions)")
+	}
+	if !byName["get_exceptions"] {
+		t.Error("logs dump missing get_exceptions")
+	}
+}
+
 func TestDumpToolsInvestigate(t *testing.T) {
 	allowed, err := toolsets.Parse("investigate")
 	if err != nil {

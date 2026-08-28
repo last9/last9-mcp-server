@@ -42,14 +42,6 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, allowed too
 func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error {
 	client := auth.GetHTTPClient()
 
-	// Whales: short on-tool description only (manuals are MCP resources).
-	getLogsDesc := prompts.GetLogsDescription
-	getServiceLogsDesc := prompts.GetServiceLogsDescription
-	getTracesDesc := prompts.GetTracesDescription
-	getServiceTracesDesc := prompts.GetServiceTracesDescription
-	// prometheus_range_query: short on-tool description; full guide is MCP resource.
-	getMetricsDesc := prompts.PromqlRangeQueryDetails
-
 	var regErr error
 	reg := func(err error) {
 		if err != nil && regErr == nil {
@@ -110,7 +102,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	// Register PromQL range query tool (enhanced with metrics instructions)
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "prometheus_range_query",
-		Description: getMetricsDesc,
+		Description: prompts.PromqlRangeQueryDetails,
 	}, apm.NewPromqlRangeQueryHandler(client, cfg)))
 
 	// Register PromQL instant query tool
@@ -134,14 +126,14 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	// Register logs tool (enhanced with log query instructions + labels)
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_logs",
-		Description: getLogsDesc,
+		Description: prompts.GetLogsDescription,
 		InputSchema: logs.GetLogsInputSchema(),
 	}, logs.NewGetLogsHandler(client, cfg)))
 
 	// Register service logs tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_service_logs",
-		Description: getServiceLogsDesc,
+		Description: prompts.GetServiceLogsDescription,
 	}, logs.NewGetServiceLogsHandler(client, cfg)))
 
 	// Register drop rules tool
@@ -189,14 +181,14 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	// Register get traces tool (enhanced with trace query instructions)
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_traces",
-		Description: getTracesDesc,
+		Description: prompts.GetTracesDescription,
 		InputSchema: traces.GetTracesInputSchema(),
 	}, traces.NewGetTracesHandler(client, cfg)))
 
 	// Register service traces tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_service_traces",
-		Description: getServiceTracesDesc,
+		Description: prompts.GetServiceTracesDescription,
 	}, traces.GetServiceTracesHandler(client, cfg)))
 
 	// Register log attributes tool

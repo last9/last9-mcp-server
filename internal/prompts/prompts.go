@@ -17,6 +17,9 @@ var ServiceLogsReference string
 //go:embed references/metrics.md
 var MetricsReference string
 
+//go:embed references/investigation.md
+var InvestigationReference string
+
 //go:embed descriptions/get_service_summary.md
 var GetServiceSummaryDescription string
 
@@ -143,7 +146,7 @@ var GetServiceLogsDescription string
 //go:embed descriptions/get_traces_base.md
 var GetTracesDescription string
 
-//go:embed descriptions/get_service_traces_base.md
+//go:embed descriptions/get_service_traces.md
 var GetServiceTracesDescription string
 
 //go:embed descriptions/prometheus_range_query_base.md
