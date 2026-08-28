@@ -200,7 +200,15 @@ func TestGetLogsHandlerDoesNotChunkAggregateQueries(t *testing.T) {
 				"type":  "filter",
 				"query": map[string]interface{}{"$contains": []interface{}{"Body", "error"}},
 			},
-			{"type": "aggregate"},
+			{
+				"type": "aggregate",
+				"aggregates": []interface{}{
+					map[string]interface{}{
+						"function": map[string]interface{}{"$count": []interface{}{}},
+						"as":       "count",
+					},
+				},
+			},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
 		EndTimeISO:   "1970-01-01T01:30:00Z",
@@ -324,7 +332,7 @@ func TestGetLogsHandlerTreatsMissingStreamsResultAsEmptyChunk(t *testing.T) {
 	}
 }
 
-func TestGetLogsHandlerReturnsPartialResultsAfterLaterChunkParseError(t *testing.T) {
+func TestGetLogsHandlerReturnsErrorAfterLaterChunkParseError(t *testing.T) {
 	rec := newRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -363,29 +371,17 @@ func TestGetLogsHandlerReturnsPartialResultsAfterLaterChunkParseError(t *testing
 		EndTimeISO:   "1970-01-01T01:30:00Z",
 		Limit:        10,
 	})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
+	if err == nil {
+		t.Fatal("expected tool error when a chunk fails to parse")
 	}
-
+	if result != nil {
+		t.Fatalf("expected no OK payload on chunk hole, got %#v", result)
+	}
 	if rec.count() != 6 {
 		t.Fatalf("expected 6 chunk requests, got %d", rec.count())
 	}
-
-	payload := parseToolJSONResult(t, result)
-	if entryCount := countEntriesInPayload(t, payload); entryCount != 3 {
-		t.Fatalf("expected 3 merged log entries in payload, got %d", entryCount)
-	}
-
-	meta, ok := payload[partialResultMetadataKey].(map[string]any)
-	if !ok {
-		t.Fatalf("expected partial metadata in payload, got %#v", payload)
-	}
-	if partial, ok := meta["partial_result"].(bool); !ok || !partial {
-		t.Fatalf("expected partial_result=true, got %#v", meta["partial_result"])
-	}
-	warning, ok := meta["warning"].(string)
-	if !ok || !strings.Contains(warning, "chunk 6/6 failed to parse") {
-		t.Fatalf("expected parse warning naming chunk 6/6, got %#v", meta["warning"])
+	if !strings.Contains(err.Error(), "chunk 6/6 failed to parse") {
+		t.Fatalf("expected parse error naming chunk 6/6, got %v", err)
 	}
 }
 
@@ -492,10 +488,9 @@ func TestFetchServiceLogsHardErrorsWhenAllChunksFail(t *testing.T) {
 	}
 }
 
-func TestFetchServiceLogsReturnsEmptyPartialWhenAllSuccessChunksAreEmpty(t *testing.T) {
-	// Regression: previously fetchServiceLogs returned a hard error when no log
-	// entries were collected, even if most chunks succeeded with empty payloads.
-	// Now matches fetchLogJSONQuery — empty + partial annotation, not hard fail.
+func TestFetchServiceLogsReturnsErrorWhenLaterChunkFailsAfterEmptySuccesses(t *testing.T) {
+	// A later chunk hole is a tool error even when earlier chunks succeeded with
+	// empty payloads — not an empty partial_result.
 	rec := newRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -526,21 +521,21 @@ func TestFetchServiceLogsReturnsEmptyPartialWhenAllSuccessChunksAreEmpty(t *test
 		buildServiceLogsQuery("api", nil, nil),
 		"",
 	)
-	if err != nil {
-		t.Fatalf("expected partial result, got hard error: %v", err)
+	if err == nil {
+		t.Fatal("expected tool error when a chunk fails")
 	}
-	if response.Count != 0 || len(response.Logs) != 0 {
-		t.Fatalf("expected empty logs from all-empty successes, got count=%d logs=%v", response.Count, response.Logs)
+	if response != nil {
+		t.Fatalf("expected nil response on chunk hole, got %#v", response)
 	}
-	if !response.PartialResult {
-		t.Fatalf("expected partial result flag set, got %#v", response)
+	if rec.count() != 6 {
+		t.Fatalf("expected 6 chunk requests, got %d", rec.count())
 	}
-	if !strings.Contains(response.Warning, "chunk 6/") {
-		t.Fatalf("expected partial warning naming chunk 6, got %q", response.Warning)
+	if !strings.Contains(err.Error(), "chunk 6/") {
+		t.Fatalf("expected error naming chunk 6, got %v", err)
 	}
 }
 
-func TestFetchServiceLogsReturnsPartialResultsAfterLaterChunkError(t *testing.T) {
+func TestFetchServiceLogsReturnsErrorAfterLaterChunkError(t *testing.T) {
 	rec := newRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -579,21 +574,17 @@ func TestFetchServiceLogsReturnsPartialResultsAfterLaterChunkError(t *testing.T)
 		buildServiceLogsQuery("api", nil, nil),
 		"",
 	)
-	if err != nil {
-		t.Fatalf("fetchServiceLogs returned error: %v", err)
+	if err == nil {
+		t.Fatal("expected tool error when a later chunk fails")
 	}
-
+	if response != nil {
+		t.Fatalf("expected nil response on chunk hole, got %#v", response)
+	}
 	if rec.count() != 6 {
 		t.Fatalf("expected 6 chunk requests, got %d", rec.count())
 	}
-	if response.Count != 3 {
-		t.Fatalf("expected count=3, got %d", response.Count)
-	}
-	if !response.PartialResult {
-		t.Fatalf("expected partial result flag, got %#v", response)
-	}
-	if !strings.Contains(response.Warning, "chunk 6/") || !strings.Contains(response.Warning, "failed") {
-		t.Fatalf("expected partial warning naming chunk 6, got %q", response.Warning)
+	if !strings.Contains(err.Error(), "chunk 6/") || !strings.Contains(err.Error(), "failed") {
+		t.Fatalf("expected error naming chunk 6, got %v", err)
 	}
 }
 

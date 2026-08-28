@@ -11,16 +11,19 @@ import (
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const maxServiceProfileErrorBodyBytes = 2048
+// briefUnavailableMarker replaces the brief when the response no longer parses,
+// so a dropped routing hint is visible rather than silent.
+const briefUnavailableMarker = "Service profile: brief unavailable — the response did not match the expected schema. Raw profile follows; derive routing from it directly."
 
 // GetServiceProfileArgs are the input parameters for the get_service_profile tool.
 type GetServiceProfileArgs struct {
 	ServiceName string `json:"service_name" jsonschema:"(Required) Service to derive a telemetry profile for"`
-	Datasource  string `json:"datasource,omitempty" jsonschema:"Datasource name. Omit for default."`
+	Datasource  string `json:"datasource,omitempty" jsonschema:"Name of the datasource to query. If omitted, uses the default configured datasource."`
 }
 
 type serviceProfileRequest struct {
@@ -77,13 +80,10 @@ func NewGetServiceProfileHandler(client *http.Client, cfg models.Config) func(co
 		}
 		defer resp.Body.Close()
 
+		// Request body carries Prometheus credentials; a raw echo of the upstream
+		// error would surface them to the model.
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxServiceProfileErrorBodyBytes))
-			msg := strings.TrimSpace(string(body))
-			if msg == "" {
-				msg = http.StatusText(resp.StatusCode)
-			}
-			return nil, nil, fmt.Errorf("service profile API returned status %d: %s", resp.StatusCode, msg)
+			return nil, nil, utils.NewUpstreamHTTPError(resp, "service profile")
 		}
 
 		rawJSON, err := io.ReadAll(resp.Body)
@@ -91,12 +91,20 @@ func NewGetServiceProfileHandler(client *http.Client, cfg models.Config) func(co
 			return nil, nil, fmt.Errorf("failed to read response: %w", err)
 		}
 
+		// The raw JSON is the payload of record; parsing only builds the brief.
+		// Backend schema drift must not fail a call the agent could still use —
+		// but dropping the brief silently would hide that the routing guidance,
+		// the reason to call this tool, is missing.
+		text := string(rawJSON)
 		var profile serviceProfileResponse
 		if err := json.Unmarshal(rawJSON, &profile); err != nil {
-			return nil, nil, fmt.Errorf("failed to parse response: %w", err)
+			text = briefUnavailableMarker + "\n\n" + text
+		} else {
+			if profile.Service == "" {
+				profile.Service = service
+			}
+			text = formatInvestigationBrief(profile) + "\n\n" + text
 		}
-
-		text := formatInvestigationBrief(profile) + "\n\n" + string(rawJSON)
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{

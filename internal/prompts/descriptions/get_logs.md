@@ -1,1 +1,0 @@
-Manual moved to `internal/prompts/references/logjson.md` (resource `last9://reference/logjson`). Served description is `get_logs_base.md`.

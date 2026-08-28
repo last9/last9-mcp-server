@@ -220,6 +220,7 @@ The NPM route is easier on Windows — no path management.
 | `LAST9_API_HOST`             | `app.last9.io`       | Override the API host |
 | `LAST9_TOOLSETS`             | all tools            | Comma-separated toolsets to expose (`logs`, `traces`, `metrics`, `alerts`, `dashboards`, `investigate`, `all`). Alias: `LAST9_MCP_TOOLSETS` |
 | `LAST9_MAX_GET_LOGS_ENTRIES` | `5000`               | Max entries for chunked `get_logs` requests |
+| `LAST9_USE_LOG_SEARCH_API`   | `false`              | Set `true` to answer `get_logs` and `get_service_logs` with one server-side search call instead of client-side chunking |
 | `LAST9_DEBUG_CHUNKING`       | `false`              | Set `true` to log chunk-planning details for `get_logs`, `get_service_logs`, `get_traces` |
 | `LAST9_DISABLE_TELEMETRY`    | `true`               | Set `false` to enable internal OTel tracing |
 | `OTEL_SDK_DISABLED`          | —                    | Standard OTel env var. Overrides `LAST9_DISABLE_TELEMETRY` |
@@ -232,7 +233,7 @@ The NPM route is easier on Windows — no path management.
 
 ### Service Health
 
-- **`get_service_summary`** — Throughput, error rate, p95 response time across all services
+- **`get_service_summary`** — Ranked fleet `(service, env)` rows: interval request_count, throughput_rpm, HTTP 4xx/5xx counts, and gRPC error counts
 - **`get_service_environments`** — Available environments for your services. Run this first — other APM tools need `env` from here
 - **`get_service_performance_details`** — Full breakdown: throughput, error rate, p50/p90/p95/avg/max, apdex, availability
 - **`get_service_operations_summary`** — Operations grouped by HTTP endpoints, DB calls, messaging, HTTP clients
@@ -301,6 +302,10 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 ### Fuzzy Name Resolution
 
 - **`did_you_mean`** — When the agent isn't sure about an entity name, this returns the closest matches from your catalog (services, environments, hosts, databases, K8s deployments/namespaces, jobs). Up to 3 suggestions with similarity scores. The server calls this automatically before most tools when a name lookup returns empty.
+
+### Service Profile
+
+- **`get_service_profile`** — What a service's telemetry actually looks like, before you query it: which signals exist, language and runtime, deployment environments, the shape of its logs, and a recommended ingest fix where one applies. Lets the agent skip trace tools when a service has no traces, and parse severity from the log body when `SeverityText` is empty instead of filtering on it and finding nothing.
 
 ---
 
@@ -401,7 +406,9 @@ LAST9_HTTP=true ./last9-mcp-server
 ### get_service_summary
 
 - `start_time_iso` / `end_time_iso` (string, optional)
-- `env` (string, optional): Defaults to `prod`.
+- `env` (string, optional): PromQL regex. Defaults to `.*`. Exact match needs anchors (e.g. `^prod$`).
+- `sort_by` (string, optional): `request_count` (default), `throughput_rpm`, `http_4xx_count`, `http_5xx_count`, or `grpc_error_count`.
+- `limit` (integer, optional): Max ranked rows. Omit or 0 means 10; values above 100 clamp to 100.
 
 ### get_service_environments
 
@@ -667,6 +674,15 @@ No parameters. Returns all configured notification channels (Slack, PagerDuty, e
 - `type` (string, optional): Restrict to entity type: `service`, `environment`, `host`, `database`, `k8s_deployment`, `k8s_namespace`, `job`.
 
 Returns up to 3 closest matches with similarity scores. Use this before any tool call where the entity name is uncertain. If a previous call returned empty results, try this before retrying.
+
+### get_service_profile
+
+- `service_name` (string, required): Service to derive a telemetry profile for.
+- `datasource` (string, optional): Datasource name. Omit for the default.
+
+Returns a short investigation brief followed by the full profile as raw JSON: signal presence (`logs`/`traces`/`metrics` as `present`, `absent`, or `unknown`), language and runtime, deployment environments, log `signal_shape` (`log_format`, `severity_set`, `level_field`), and a recommended ingest fix where one applies. Derived upstream and cached with a ~15 minute TTL.
+
+Call it before any service-scoped investigation so tool selection matches the service's actual telemetry — skip trace tools when `traces` is `absent`, and when `severity_set` is `none` or `partial` parse severity from `level_field` in the log body rather than using `severity_filters`. `metrics` is always `unknown` and `dependencies` is unpopulated in v1. When `logs` and `traces` are both `absent`, confirm the name with `did_you_mean` before concluding the service is unmonitored.
 
 ### list_dashboards
 

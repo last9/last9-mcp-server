@@ -57,8 +57,96 @@ func TestGetServiceProfileHandler_ForwardsRegionAndService(t *testing.T) {
 		t.Fatalf("body %+v", captured)
 	}
 	text := utils.GetTextContent(t, result)
-	if !strings.Contains(text, "severity_set: none") || !strings.Contains(text, "{") {
-		t.Fatalf("want brief + JSON, got:\n%s", text)
+	brief, rawJSON, found := strings.Cut(text, "\n\n")
+	if !found {
+		t.Fatalf("want brief and JSON separated by a blank line, got:\n%s", text)
+	}
+	if !strings.Contains(brief, "severity_set: none") {
+		t.Fatalf("brief missing severity routing:\n%s", brief)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(rawJSON), &decoded); err != nil {
+		t.Fatalf("trailing payload is not valid JSON (%v):\n%s", err, rawJSON)
+	}
+	if decoded["service"] != "pay-svc" {
+		t.Fatalf("raw JSON lost the service field: %v", decoded["service"])
+	}
+}
+
+// dependencies is null in v1 and will be populated later; a shape change there
+// must not take the whole tool down when the raw JSON is still usable.
+func TestGetServiceProfileHandler_UnparsableBodyStillReturnsRawJSON(t *testing.T) {
+	const drifted = `{"service":"pay-svc","dependencies":[{"db":"pg"}]}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(drifted))
+	}))
+	defer server.Close()
+
+	cfg := models.Config{APIBaseURL: server.URL}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "tok", ExpiresAt: time.Now().Add(time.Hour)}
+
+	handler := NewGetServiceProfileHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "pay-svc"})
+	if err != nil {
+		t.Fatalf("schema drift must not fail the call: %v", err)
+	}
+	text := utils.GetTextContent(t, result)
+	if !strings.Contains(text, drifted) {
+		t.Fatalf("want raw JSON passed through, got:\n%s", text)
+	}
+	// A dropped brief must announce itself; silently returning bare JSON hides
+	// that the routing guidance is gone.
+	if !strings.Contains(text, "brief unavailable") {
+		t.Fatalf("dropped brief must be marked, got:\n%s", text)
+	}
+}
+
+// A null or empty body unmarshals into a zero struct, which used to render
+// "Service profile: " with no name at all.
+func TestGetServiceProfileHandler_EmptyBodyKeepsServiceName(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`null`))
+	}))
+	defer server.Close()
+
+	cfg := models.Config{APIBaseURL: server.URL}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "tok", ExpiresAt: time.Now().Add(time.Hour)}
+
+	handler := NewGetServiceProfileHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "pay-svc"})
+	if err != nil {
+		t.Fatalf("empty body must not fail the call: %v", err)
+	}
+	if text := utils.GetTextContent(t, result); !strings.Contains(text, "Service profile: pay-svc") {
+		t.Fatalf("want the requested name echoed, got:\n%s", text)
+	}
+}
+
+func TestGetServiceProfileHandler_ErrorBodyIsSanitized(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`invalid request: {"password":"hunter2","read_url":"https://prom.example.com"}`))
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL:         server.URL,
+		PrometheusPassword: "hunter2",
+		PrometheusReadURL:  "https://prom.example.com",
+	}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "tok", ExpiresAt: time.Now().Add(time.Hour)}
+
+	handler := NewGetServiceProfileHandler(server.Client(), cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "pay-svc"})
+	if err == nil {
+		t.Fatal("expected error on API 400, got nil")
+	}
+	for _, leaked := range []string{"hunter2", "prom.example.com"} {
+		if strings.Contains(err.Error(), leaked) {
+			t.Fatalf("upstream error leaked %q: %v", leaked, err)
+		}
 	}
 }
 

@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `get_service_profile` returns a per-service telemetry profile — signal presence, language/runtime, deployment envs, log `signal_shape`, and a recommended ingest fix — as a short brief followed by raw JSON. Call it before a service-scoped investigation to skip trace tools when traces are absent and to parse severity from the log body when `severity_set` is `none` or `partial`.
+
+## [0.16.0] - 2026-08-27
+
+### Added
+
+- `get_logs` and `get_service_logs` can answer a search with one server-side call instead of the client-side chunk sweep. Set `LAST9_USE_LOG_SEARCH_API=true` (or `--use_log_search_api`); off by default. Output shapes are unchanged. `get_logs` gains `total_matching_lines`, `logs_truncated`, `search_stats` and `volume_summary` on raw searches (aggregates get `search_stats` only); `get_service_logs` gains `total_matching_lines` and `search_stats`. `total_matching_lines` counts all matching lines, not the returned sample — but it is a floor, not a total, when `logs_truncated` is true or `search_stats.chunks_failed` is above zero.
+
+## [0.15.2] - 2026-08-26
+
+### Fixed
+
+- `get_logs` now caps aggregate result rows and sets `l9_result.partial` when capped; log and trace tools reject malformed `$quantile` arguments before execution, and log percentiles reject unsafe numeric-field pipelines.
+- `get_change_events`: the `service_name`, `env`, and `event_name` filters now match the labels change events are actually stored with. A filtered call previously returned nothing while the same call without filters showed the events.
+- `get_log_attributes_for_pipeline` now reports a plain-text Body's shape. A Body that is neither JSON nor logfmt and carries no severity token previously produced no Body entry at all, so models guessed `parser:"json"` and got a silent zero, or wrote an unanchored regexp that captured the leading timestamp and returned a confidently wrong count. Such services now get a `Body` entry with `source:"body"`, up to three `sample_bodies` lines to anchor a pattern against, and a one-stage `$regex`-on-Body hint. `sample_bodies` redacts URLs and known credential values only — it is not PII-redacted, so treat it as untrusted log content.
+- `l9_sanity` is no longer suppressed when `matched_count` is 0 — previously the most suspicious outcome was the one case with no guardrail. A zero from a pipeline that parses or filters `Body` now carries a note pointing at `sample_bodies`, and a new `service_log_volume` key separates a genuine zero from a parse/filter mismatch. Zero counts from pipelines that never touch `Body`, and all non-zero paths, are unchanged.
+- `get_service_performance_details` rejects windows over 366 days with a clear error instead of the previous integer-day-truncated message, which could self-contradictorily report "got 366 days, max is 366 days" right at the rejection boundary. Windows over 35 days are now split into 35-day-or-narrower chunks and merged (query cost was previously unbounded for very wide windows); a chunk's PromQL selector could also render as the invalid `[0m]` for a narrow trailing chunk, which is now clamped to a 1-minute minimum. Chunk boundary merging is now robust to adjacent chunks landing on different-resolution output grids; the same dedup also defensively drops any duplicate/non-monotonic timestamp within a single response, not just at chunk boundaries, so a plain (unchunked) window's merge is filtered the same way. Chunked sub-queries now run in parallel (bounded concurrency); a genuinely chunked (>35 day) call applies a per-chunk timeout, while a plain (<=35 day) call runs under the caller's own context with no added timeout, matching pre-chunking behavior exactly. Note: on a wide window, counter-style fields (throughput, error rate) come back on a dense time grid with explicit zeros for intervals that had no traffic, so a low-traffic service shows long runs of zeros rather than missing points — a low proportion of non-zero points is normal, not a sign of a failed query. Quantile-style fields (response times) only cover the intervals that actually had samples, so they can span far less than the requested window.
+
+### Changed
+
+- `get_service_performance_details` sub-query failures on a plain (unchunked, <=35 day) window: a non-2xx upstream status response stays soft (`partial_errors`, rest of the data still returned), and a read or parse failure on the response still hard-aborts the whole call — both matching pre-chunking behavior exactly. Both failure kinds stay soft for a genuinely wide window that got split into multiple chunks.
+- `get_service_performance_details` accepts an optional `top_n` arg (default 10, previously fixed at 10, capped at 100) applied uniformly to `top_operations_by_response_time`, `top_operations_by_error_rate`, and `top_errors`. The latter two were previously unbounded for windows <=35 days — a slightly wider window could silently change from "every matching row" to "top 10". Requests above 100 now clamp to 100 instead of fanning out an unbounded backend `topk()`.
+
+## [0.15.1] - 2026-08-16
+
+### Fixed
+
+- Log-query `400`/`422` responses now use the shared upstream sanitizer (URL/credential redaction, 512-byte truncation with `… (truncated)`) instead of echoing the raw body. `get_logs` / `get_service_logs` also append the pipeline schema hint pointing at `get_log_attributes_for_pipeline` (#213).
+- `get_logs` fail-closed logjson validation with self-correcting tips (wrong keys/types, bare fields, NOT-SQL, bad parse/`window_aggregate` shapes); whale description aligned with API `window_aggregate`; missing parse `field` defaults to `Body`; `TraceId`/`SpanId`/`ParentSpanId` allowed for log↔trace correlation; dotted parse labels accepted; `tracejson.md` lookback default corrected to 60 (#212).
+
+### Changed
+
+- **Breaking:** a failed later time-chunk on `get_logs`, `get_service_logs`, or `get_traces` is a tool error. The previous `partial_result` / `_last9_mcp` merge-and-continue envelope is gone; clients that treated a truncated merge as success must handle the error. Declared truncation (`get_trace_waterfall` evidence, `get_apm_service_deviations` `partial_errors`) is unchanged (#213).
+- `get_service_logs` accepts `http_status_class`, `http_status_code`, optional `http_status_field`, and `attribute_filters`, and echoes the resolved status field as `http_status_field`. Known-service HTTP status search should use this tool, not `get_logs` (#213).
+- `get_service_performance_details` now records per-section PromQL HTTP failures in a new `partial_errors` field and still returns surviving metrics. Transport errors still fail the whole tool (#213).
+- `get_logs` InputSchema uses a permissive stage `anyOf` (plus catch-all) so handler validation tips reach the model instead of opaque SDK `anyOf` errors (#212).
+- **Breaking:** `get_service_summary` response shape is now a ranked `{rows: [...]}` envelope with snake_case fields (`request_count`, `throughput_rpm`, `http_4xx_count`, `http_5xx_count`, `grpc_error_count`) instead of a `map[string]ServiceSummary` with PascalCase keys (`ErrorRate`, etc.). Rows are `(service, env)` pairs sorted and limited server-side; clients that unmarshal the old map shape will fail and should be updated (#210).
+
 ## [0.15.0] - 2026-08-10
 
 ### Fixed

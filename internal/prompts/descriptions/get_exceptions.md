@@ -33,6 +33,9 @@ Investigation flow — follow this exactly:
      raw fetch is what times out. Use a non-aggregate `get_logs` pipeline with a
      small `limit` — not `get_service_logs` during or after exception investigation.
      Report the actual error text you read.
+   - For HTTP 4xx/5xx log search (a separate task from exception investigation),
+     call `get_service_logs` with `http_status_class` or `http_status_code`.
+     Do not write a `get_logs` pipeline for service status-class questions.
 
 limit: (Optional) The maximum number of exceptions to return. Defaults to 20.
 lookback_minutes: (Recommended) Number of minutes to look back from now. Default: 60 minutes.

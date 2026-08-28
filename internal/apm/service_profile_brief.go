@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+// Fields the brief does not render are still decoded so the shape stays
+// documented here; the agent reads them from the raw JSON that follows.
 type serviceProfileResponse struct {
 	Service        string                    `json:"service"`
 	DerivedAt      string                    `json:"derived_at"`
@@ -61,29 +63,50 @@ type dependenciesResponse struct {
 	Downstream []string `json:"downstream,omitempty"`
 }
 
-func nullCoalesce(value, fallback string) string {
-	if value != "" {
-		return value
-	}
-	return fallback
-}
-
 func formatInvestigationBrief(p serviceProfileResponse) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Service profile: %s", p.Service)
 	if p.DerivedAt != "" {
 		fmt.Fprintf(&b, " (derived %s)", p.DerivedAt)
 	}
-	fmt.Fprintf(&b, "\n  logs: %s | traces: %s | severity_set: %s",
-		p.Telemetry.Logs, p.Telemetry.Traces, p.SignalShape.SeveritySet)
+
+	// Absent tri-state fields render as "unknown" rather than a blank gap the
+	// model would have to guess at.
+	logs := firstNonEmpty(p.Telemetry.Logs, "unknown")
+	traces := firstNonEmpty(p.Telemetry.Traces, "unknown")
+	severity := firstNonEmpty(p.SignalShape.SeveritySet, "unknown")
+
+	fmt.Fprintf(&b, "\n  logs: %s | traces: %s | severity_set: %s", logs, traces, severity)
 	if p.SignalShape.LevelField != "" {
 		fmt.Fprintf(&b, " | level_field: %s", p.SignalShape.LevelField)
 	}
-	if p.SignalShape.SeveritySet == "none" || p.SignalShape.SeveritySet == "partial" {
-		fmt.Fprintf(&b, "\n  → parse %s from body; do not use severity_filters", nullCoalesce(p.SignalShape.LevelField, "level"))
+
+	// Severity routing is advice about querying logs; with no logs to query it
+	// is noise competing with the name-check hint below.
+	if logs != "absent" {
+		switch severity {
+		case "none", "partial":
+			if p.SignalShape.LevelField != "" {
+				fmt.Fprintf(&b, "\n  → parse %s from body; do not use severity_filters", p.SignalShape.LevelField)
+			} else {
+				// Naming a field the profile did not report would be a guess the
+				// model then queries on.
+				fmt.Fprintf(&b, "\n  → parse the level from the log body; do not use severity_filters")
+			}
+		case "unknown":
+			// Silence here would leave severity_filters looking safe on a service
+			// where nobody has established that it works.
+			fmt.Fprintf(&b, "\n  → severity coverage undetermined; verify before relying on severity_filters")
+		}
 	}
+
 	if p.Derivation.LogTier == "failed" {
 		fmt.Fprintf(&b, "\n  → log_tier: failed — fall back to get_log_attributes_for_pipeline")
+	}
+	// A typo'd service name derives the same empty profile as a real unmonitored
+	// service; only the name check separates them.
+	if logs == "absent" && traces == "absent" {
+		fmt.Fprintf(&b, "\n  → no telemetry under this exact name; confirm the spelling with did_you_mean before concluding the service is unmonitored")
 	}
 	if p.ErrorDetection != nil && p.ErrorDetection.RecommendedIngestFix != "" {
 		fmt.Fprintf(&b, "\n  ingest fix: %s", p.ErrorDetection.RecommendedIngestFix)
