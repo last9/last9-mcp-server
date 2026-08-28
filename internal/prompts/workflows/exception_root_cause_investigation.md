@@ -9,12 +9,12 @@ Steps:
 2. Call `get_service_profile(service_name=<service from step 1>)`. Use the
    result for all routing below — do not re-derive telemetry shape via PromQL
    or attribute probing.
-3. Route using the profile from step 2 — call modality-specific tools only
-   when the profile reports that telemetry is present:
-   - telemetry.traces == "present" AND severity_set == "all"
+3. Route using the profile from step 2 — call modality-specific tools unless
+   the profile reports that telemetry is absent:
+   - telemetry.traces != "absent" AND severity_set == "all"
      → call `get_service_traces` (service_name, start/end from the exception
      window, env when present); exceptions are likely the answer; report and stop.
-   - telemetry.logs == "present" AND (severity_set in ("none", "partial") OR telemetry.traces == "absent")
+   - telemetry.logs != "absent" AND (severity_set in ("none", "partial") OR telemetry.traces == "absent")
      → exceptions are likely symptoms; continue to logs (step 4). Do not call
      `get_service_traces` when telemetry.traces == "absent".
    - telemetry.logs == "absent" AND telemetry.traces == "absent"

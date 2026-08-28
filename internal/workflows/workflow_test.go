@@ -119,13 +119,11 @@ func TestWorkflowsGateOnAbsentNotPresent(t *testing.T) {
 		"on_call_runbook":                    prompts.OnCallRunbookWorkflow,
 		"scoped_log_attribute_discovery":     prompts.ScopedLogAttributeDiscoveryWorkflow,
 	} {
-		// A `== "present"` gate is only safe inside a decision table that also
-		// routes `unknown` explicitly; as a bare if/else it sends unknown down
-		// the skip branch.
+		// No exemption: an escape hatch here is another condition that can
+		// silently stop failing, which is the bug this test exists to catch.
 		for _, signal := range []string{"traces", "logs", "metrics"} {
-			gate := "telemetry." + signal + ` == "present"`
-			if strings.Contains(body, gate) && !strings.Contains(body, `== "unknown"`) {
-				t.Errorf("%s gates on %s with no unknown arm; use != \"absent\" so unknown does not suppress tools", name, gate)
+			if gate := "telemetry." + signal + ` == "present"`; strings.Contains(body, gate) {
+				t.Errorf("%s gates on %s; use != \"absent\" so unknown does not suppress tools", name, gate)
 			}
 		}
 		// log_format is omitempty and is never normalized to the literal
