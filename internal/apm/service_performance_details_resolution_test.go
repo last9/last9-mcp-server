@@ -103,19 +103,42 @@ func TestPerfDetails_AllRangeQueriesUseRateInterval(t *testing.T) {
 		t.Fatalf("expected 6 range sub-queries, got %d", len(rangeQ))
 	}
 
-	// response_times 1, availability 2, throughput 1, error_rate 1,
-	// error_percent 2 = 7. Apdex is a bare gauge and carries none: VM sizes a
-	// bare selector's lookback from the step, so it needs no selector.
-	const wantTotalRateIntervals = 7
-	total := 0
+	// Per-builder, not a total: a total lets one builder lose its selector
+	// while another gains one. Apdex is a bare gauge and carries none - VM
+	// sizes a bare selector's lookback from the step, so it needs no selector.
+	wantPerBuilder := []struct {
+		name   string
+		marker string
+		want   int
+	}{
+		{"apdex", "trace_service_apdex_score", 0},
+		{"response_times", "trace_service_response_time", 1},
+		{"availability", "default -999", 2},
+		{"throughput", "sum by (http_status_code)(rate(", 1},
+		{"error_rate", "sum by (service_name, http_status_code)(rate(", 1},
+		{"error_percent", "* 100) default 0", 2},
+	}
+
 	for _, q := range rangeQ {
-		total += strings.Count(q, "$__rate_interval")
 		if m := hardcodedSelector.FindString(q); m != "" {
 			t.Errorf("range query carries a hardcoded selector %s; it must be sized from the step:\n%s", m, q)
 		}
 	}
-	if total != wantTotalRateIntervals {
-		t.Errorf("$__rate_interval occurrences across all range queries = %d, want %d", total, wantTotalRateIntervals)
+
+	for _, w := range wantPerBuilder {
+		var matched []string
+		for _, q := range rangeQ {
+			if strings.Contains(q, w.marker) {
+				matched = append(matched, q)
+			}
+		}
+		if len(matched) != 1 {
+			t.Errorf("%s: marker %q matched %d range queries, want exactly 1", w.name, w.marker, len(matched))
+			continue
+		}
+		if got := strings.Count(matched[0], "$__rate_interval"); got != w.want {
+			t.Errorf("%s: $__rate_interval occurrences = %d, want %d:\n%s", w.name, got, w.want, matched[0])
+		}
 	}
 }
 
