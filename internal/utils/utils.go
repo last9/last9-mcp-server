@@ -154,9 +154,6 @@ func MakePromInstantAPIQuery(ctx context.Context, client *http.Client, promql st
 	return client.Do(req)
 }
 
-// PromResolution bounds a range query's output resolution. Set either field
-// only on a query whose selector is $__rate_interval: against a hardcoded
-// selector the step outgrows it and the query spot-samples.
 type PromResolution struct {
 	Step          int64
 	MaxDataPoints int64
