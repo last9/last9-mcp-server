@@ -154,26 +154,47 @@ func MakePromInstantAPIQuery(ctx context.Context, client *http.Client, promql st
 	return client.Do(req)
 }
 
+// PromResolution bounds a range query's output resolution. The zero value
+// sends neither field, leaving the server's defaults untouched.
+//
+// Only set MaxDataPoints on a query that asks for its selector via
+// $__rate_interval: the server sizes both from the same budget, so they move
+// together. A widened step against a hardcoded selector spot-samples.
+type PromResolution struct {
+	Step          int64
+	MaxDataPoints int64
+}
+
 func MakePromRangeAPIQuery(ctx context.Context, client *http.Client, promql string, startTimeParam, endTimeParam int64, cfg models.Config) (*http.Response, error) {
+	return MakePromRangeAPIQueryWithResolution(
+		ctx, client, promql, startTimeParam, endTimeParam, cfg, PromResolution{},
+	)
+}
+
+func MakePromRangeAPIQueryWithResolution(ctx context.Context, client *http.Client, promql string, startTimeParam, endTimeParam int64, cfg models.Config, res PromResolution) (*http.Response, error) {
 	// The Last9 PromQL HTTP endpoint treats `timestamp` as the END of the
 	// query window and runs Prometheus over [timestamp - window, timestamp]
 	// (this is also how MakePromInstantAPIQuery above uses endTimeParam as
 	// `timestamp`). Anchoring on startTimeParam shifts every range query
 	// backwards by exactly one window length.
 	promRangeParam := struct {
-		Query     string `json:"query"`
-		Timestamp int64  `json:"timestamp"`
-		Window    int64  `json:"window"`
-		ReadURL   string `json:"read_url"`
-		Username  string `json:"username"`
-		Password  string `json:"password"`
+		Query         string `json:"query"`
+		Timestamp     int64  `json:"timestamp"`
+		Window        int64  `json:"window"`
+		ReadURL       string `json:"read_url"`
+		Username      string `json:"username"`
+		Password      string `json:"password"`
+		Step          int64  `json:"step,omitempty"`
+		MaxDataPoints int64  `json:"max_data_points,omitempty"`
 	}{
-		Query:     promql,
-		Timestamp: endTimeParam,
-		Window:    endTimeParam - startTimeParam,
-		ReadURL:   cfg.PrometheusReadURL,
-		Username:  cfg.PrometheusUsername,
-		Password:  cfg.PrometheusPassword,
+		Query:         promql,
+		Timestamp:     endTimeParam,
+		Window:        endTimeParam - startTimeParam,
+		ReadURL:       cfg.PrometheusReadURL,
+		Username:      cfg.PrometheusUsername,
+		Password:      cfg.PrometheusPassword,
+		Step:          res.Step,
+		MaxDataPoints: res.MaxDataPoints,
 	}
 
 	bodyBytes, err := json.Marshal(promRangeParam)

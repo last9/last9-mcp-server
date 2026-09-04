@@ -146,3 +146,100 @@ func TestMakePromLabelsAPIQuery_AnchorsOnEndTime(t *testing.T) {
 
 	assertRightAnchored(t, decodeBody(t, captured))
 }
+
+// ENG-1823: the resolution fields are opt-in. get_change_events (bare
+// selector) and promql_range_query (arbitrary caller PromQL) keep calling the
+// legacy function, and a widened step against their selectors would
+// spot-sample instead of aggregate. Absence on the default path is the
+// contract that protects them.
+func TestMakePromRangeAPIQuery_OmitsResolutionFieldsByDefault(t *testing.T) {
+	var captured []byte
+	srv := newCapturingServer(t, &captured)
+	defer srv.Close()
+
+	cfg := stubTokenManagerCfg(t, srv.URL)
+	resp, err := MakePromRangeAPIQuery(
+		context.Background(), srv.Client(), "up", testStartUnix, testEndUnix, cfg,
+	)
+	if err != nil {
+		t.Fatalf("MakePromRangeAPIQuery: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body := decodeBody(t, captured)
+	if _, ok := body["step"]; ok {
+		t.Error("step present on the default path; callers with hardcoded selectors rely on its absence")
+	}
+	if _, ok := body["max_data_points"]; ok {
+		t.Error("max_data_points present on the default path; a widened step would outgrow their selectors")
+	}
+}
+
+func TestMakePromRangeAPIQueryWithResolution_SendsBudgetAndStep(t *testing.T) {
+	var captured []byte
+	srv := newCapturingServer(t, &captured)
+	defer srv.Close()
+
+	cfg := stubTokenManagerCfg(t, srv.URL)
+	resp, err := MakePromRangeAPIQueryWithResolution(
+		context.Background(), srv.Client(), "up", testStartUnix, testEndUnix, cfg,
+		PromResolution{Step: 30, MaxDataPoints: 200},
+	)
+	if err != nil {
+		t.Fatalf("MakePromRangeAPIQueryWithResolution: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body := decodeBody(t, captured)
+
+	mdp, ok := body["max_data_points"].(float64)
+	if !ok {
+		t.Fatalf("max_data_points missing or wrong type: %v", body["max_data_points"])
+	}
+	if int64(mdp) != 200 {
+		t.Errorf("max_data_points = %d, want 200", int64(mdp))
+	}
+
+	step, ok := body["step"].(float64)
+	if !ok {
+		t.Fatalf("step missing or wrong type: %v", body["step"])
+	}
+	if int64(step) != 30 {
+		t.Errorf("step = %d, want 30", int64(step))
+	}
+
+	// Resolution must not disturb the right-anchored window contract.
+	assertRightAnchored(t, body)
+}
+
+// A zero PromResolution must be byte-identical to the legacy call, so the two
+// untouched callers cannot drift.
+func TestMakePromRangeAPIQueryWithResolution_ZeroValueMatchesLegacyBody(t *testing.T) {
+	var legacyBody, zeroBody []byte
+
+	legacySrv := newCapturingServer(t, &legacyBody)
+	defer legacySrv.Close()
+	legacyResp, err := MakePromRangeAPIQuery(
+		context.Background(), legacySrv.Client(), "up", testStartUnix, testEndUnix,
+		stubTokenManagerCfg(t, legacySrv.URL),
+	)
+	if err != nil {
+		t.Fatalf("legacy call: %v", err)
+	}
+	legacyResp.Body.Close()
+
+	zeroSrv := newCapturingServer(t, &zeroBody)
+	defer zeroSrv.Close()
+	zeroResp, err := MakePromRangeAPIQueryWithResolution(
+		context.Background(), zeroSrv.Client(), "up", testStartUnix, testEndUnix,
+		stubTokenManagerCfg(t, zeroSrv.URL), PromResolution{},
+	)
+	if err != nil {
+		t.Fatalf("zero-resolution call: %v", err)
+	}
+	zeroResp.Body.Close()
+
+	if !bytes.Equal(legacyBody, zeroBody) {
+		t.Errorf("bodies differ:\n legacy = %s\n zero   = %s", legacyBody, zeroBody)
+	}
+}
