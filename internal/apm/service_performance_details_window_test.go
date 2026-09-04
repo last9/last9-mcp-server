@@ -693,7 +693,7 @@ func TestServicePerformanceDetails_366DaysPlus1Second_Rejected(t *testing.T) {
 
 // --- gap 3: PromQL query-string construction correctness ---
 
-func TestServicePerformanceDetails_QueryStrings_SingleChunkUses5mInnerSelector(t *testing.T) {
+func TestServicePerformanceDetails_QueryStrings_SingleChunkUsesRateInterval(t *testing.T) {
 	var mu sync.Mutex
 	var queries []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -732,8 +732,8 @@ func TestServicePerformanceDetails_QueryStrings_SingleChunkUses5mInnerSelector(t
 			continue
 		}
 		throughputQueries++
-		if !strings.Contains(q, "[5m]") {
-			t.Errorf("expected throughput query to use the fixed 5m inner selector, got: %s", q)
+		if !strings.Contains(q, "$__rate_interval") {
+			t.Errorf("expected throughput query to size its selector from the step, got: %s", q)
 		}
 		if strings.Contains(q, "[240h]") {
 			t.Errorf("throughput query still uses the full outer window as inner selector: %s", q)
@@ -744,7 +744,7 @@ func TestServicePerformanceDetails_QueryStrings_SingleChunkUses5mInnerSelector(t
 	}
 }
 
-func TestServicePerformanceDetails_QueryStrings_ChunkedUsesFixed5mRangeAndChunkWidthTopK(t *testing.T) {
+func TestServicePerformanceDetails_QueryStrings_ChunkedUsesRateIntervalAndChunkWidthTopK(t *testing.T) {
 	now := time.Now().UTC()
 	start := now.Add(-90 * 24 * time.Hour).Unix() // 90 days -> 3 chunks (35+35+20)
 	end := now.Unix()
@@ -798,8 +798,8 @@ func TestServicePerformanceDetails_QueryStrings_ChunkedUsesFixed5mRangeAndChunkW
 		t.Fatalf("expected 3 throughput range queries (one per chunk), got %d", len(rangeQueries))
 	}
 	for _, q := range rangeQueries {
-		if !strings.Contains(q, "[5m]") {
-			t.Errorf("expected chunked range query to still use the fixed 5m inner selector, got: %s", q)
+		if !strings.Contains(q, "$__rate_interval") {
+			t.Errorf("expected chunked range query to size its selector from the step, got: %s", q)
 		}
 	}
 

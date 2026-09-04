@@ -41,14 +41,6 @@ const (
 	// cap. Windows wider than this are split into consecutive chunks of at
 	// most this many days.
 	perfDetailsMaxChunkDays = 35
-	// perfDetailsInnerRange is the fixed inner range-vector selector duration
-	// used for rate()/step-based sub-queries, replacing the old (and unsafe)
-	// "reuse the whole requested window" behavior. This does NOT control the
-	// output step/resolution of the response — that's derived server-side
-	// from the outer `window` param (see utils.MakePromRangeAPIQuery); it
-	// only bounds how much raw data each inner rate()/quantile_over_time()
-	// rescans per output point.
-	perfDetailsInnerRange = "5m"
 	// perfDetailsDefaultTopN is the default number of entries returned for
 	// the three top-k fields (top_operations_by_response_time,
 	// top_operations_by_error_rate, top_errors) when top_n is unset/zero.
@@ -698,8 +690,10 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 
 		// Get Apdex Score over time range as a vector
 		details.ApdexScore, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
+			// Bare gauge: without a rollup sized from the step, a wide step
+			// reads almost none of the window.
 			return fmt.Sprintf(
-				"sum(trace_service_apdex_score{service_name='%s', env=~'%s'})",
+				"avg_over_time(sum(trace_service_apdex_score{service_name='%s', env=~'%s'})[$__rate_interval])",
 				serviceName, env,
 			)
 		}, "service performance details apdex", "apdex score", &details.PartialErrors)
@@ -710,8 +704,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Response Times - keep vector output
 		details.ResponseTimes, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				"sum by (quantile) (trace_service_response_time{service_name='%s', env='%s'}[%s])",
-				serviceName, env, perfDetailsInnerRange,
+				"sum by (quantile) (trace_service_response_time{service_name='%s', env='%s'}[$__rate_interval])",
+				serviceName, env,
 			)
 		}, "service performance details response_times", "response times", &details.PartialErrors)
 		if err != nil {
@@ -721,8 +715,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Availability over time range as a vector
 		details.Availability, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				"(1 - (sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[%s])) or 0) / (sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[%s])) + 0.0000001)) * 100 default -999",
-				serviceName, env, perfDetailsInnerRange, serviceName, env, perfDetailsInnerRange,
+				"(1 - (sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) or 0) / (sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) + 0.0000001)) * 100 default -999",
+				serviceName, env, serviceName, env,
 			)
 		}, "service performance details availability", "availability response", &details.PartialErrors)
 		if err != nil {
@@ -732,8 +726,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Throughput by status code - keep vector output
 		details.Throughput, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				"sum by (http_status_code)(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[%s])) * 60 default 0",
-				serviceName, env, perfDetailsInnerRange,
+				"sum by (http_status_code)(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) * 60 default 0",
+				serviceName, env,
 			)
 		}, "service performance details throughput", "throughput response", &details.PartialErrors)
 		if err != nil {
@@ -743,8 +737,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Error Rate by status code - keep vector output
 		details.ErrorRate, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				"sum by (service_name, http_status_code)(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[%s])) * 60 default 0",
-				serviceName, env, perfDetailsInnerRange,
+				"sum by (service_name, http_status_code)(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) * 60 default 0",
+				serviceName, env,
 			)
 		}, "service performance details error_rate", "error rate response", &details.PartialErrors)
 		if err != nil {
@@ -754,8 +748,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Calculate Error Percentage over time range as a vector
 		details.ErrorPercent, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				"(sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[%s])) / sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[%s])) * 100) default 0",
-				serviceName, env, perfDetailsInnerRange, serviceName, env, perfDetailsInnerRange,
+				"(sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) / sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) * 100) default 0",
+				serviceName, env, serviceName, env,
 			)
 		}, "service performance details error_percent", "error percent response", &details.PartialErrors)
 		if err != nil {
