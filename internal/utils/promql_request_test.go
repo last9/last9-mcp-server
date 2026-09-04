@@ -102,6 +102,7 @@ func TestMakePromRangeAPIQuery_AnchorsOnEndTime(t *testing.T) {
 	cfg := stubTokenManagerCfg(t, srv.URL)
 	resp, err := MakePromRangeAPIQuery(
 		context.Background(), srv.Client(), "up", testStartUnix, testEndUnix, cfg,
+		PromResolution{},
 	)
 	if err != nil {
 		t.Fatalf("MakePromRangeAPIQuery: %v", err)
@@ -145,4 +146,67 @@ func TestMakePromLabelsAPIQuery_AnchorsOnEndTime(t *testing.T) {
 	defer resp.Body.Close()
 
 	assertRightAnchored(t, decodeBody(t, captured))
+}
+
+// The resolution fields are opt-in — a zero PromResolution must put neither
+// on the wire, which is what callers with fixed selectors rely on.
+func TestMakePromRangeAPIQuery_OmitsResolutionFieldsByDefault(t *testing.T) {
+	var captured []byte
+	srv := newCapturingServer(t, &captured)
+	defer srv.Close()
+
+	cfg := stubTokenManagerCfg(t, srv.URL)
+	resp, err := MakePromRangeAPIQuery(
+		context.Background(), srv.Client(), "up", testStartUnix, testEndUnix, cfg,
+		PromResolution{},
+	)
+	if err != nil {
+		t.Fatalf("MakePromRangeAPIQuery: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body := decodeBody(t, captured)
+	if _, ok := body["step"]; ok {
+		t.Error("step present on the default path; callers with hardcoded selectors rely on its absence")
+	}
+	if _, ok := body["max_data_points"]; ok {
+		t.Error("max_data_points present on the default path; a widened step would outgrow their selectors")
+	}
+}
+
+func TestMakePromRangeAPIQuery_SendsBudgetAndStep(t *testing.T) {
+	var captured []byte
+	srv := newCapturingServer(t, &captured)
+	defer srv.Close()
+
+	cfg := stubTokenManagerCfg(t, srv.URL)
+	resp, err := MakePromRangeAPIQuery(
+		context.Background(), srv.Client(), "up", testStartUnix, testEndUnix, cfg,
+		PromResolution{Step: 30, MaxDataPoints: 200},
+	)
+	if err != nil {
+		t.Fatalf("MakePromRangeAPIQuery: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body := decodeBody(t, captured)
+
+	mdp, ok := body["max_data_points"].(float64)
+	if !ok {
+		t.Fatalf("max_data_points missing or wrong type: %v", body["max_data_points"])
+	}
+	if int64(mdp) != 200 {
+		t.Errorf("max_data_points = %d, want 200", int64(mdp))
+	}
+
+	step, ok := body["step"].(float64)
+	if !ok {
+		t.Fatalf("step missing or wrong type: %v", body["step"])
+	}
+	if int64(step) != 30 {
+		t.Errorf("step = %d, want 30", int64(step))
+	}
+
+	// Resolution must not disturb the right-anchored window contract.
+	assertRightAnchored(t, body)
 }

@@ -25,11 +25,15 @@ import (
 // (e.g. rate(x[<full window>])), which makes the backend rescan the entire
 // window's raw samples per output step. That crashes/OOMs the backend for
 // windows wider than ~1-2 weeks. Confirmed via direct backend testing:
-//   - a fixed 5m inner selector is safe at any outer width up to 35 days.
 //   - the backend hard-caps a single query's outer range at 35 days (HTTP
 //     422 "Too many samples queried" just past that).
 //   - splitting a wider outer window into <=35-day chunks and querying each
-//     with the 5m inner selector works cleanly.
+//     with a step-derived inner selector works cleanly.
+//
+// $__rate_interval resolves to max(step + scrape, 4 x scrape), so a selector
+// is never narrower than its step (overlap stays near 1x) and never narrower
+// than the scrape interval — the second floor is what keeps a narrow window's
+// rate() from returning nothing. Measured against the backend, not assumed.
 const (
 	// maxServicePerformanceWindowDays is NOT a data-retention cutoff — a
 	// chunk entirely outside retention just comes back empty from the
@@ -41,14 +45,6 @@ const (
 	// cap. Windows wider than this are split into consecutive chunks of at
 	// most this many days.
 	perfDetailsMaxChunkDays = 35
-	// perfDetailsInnerRange is the fixed inner range-vector selector duration
-	// used for rate()/step-based sub-queries, replacing the old (and unsafe)
-	// "reuse the whole requested window" behavior. This does NOT control the
-	// output step/resolution of the response — that's derived server-side
-	// from the outer `window` param (see utils.MakePromRangeAPIQuery); it
-	// only bounds how much raw data each inner rate()/quantile_over_time()
-	// rescans per output point.
-	perfDetailsInnerRange = "5m"
 	// perfDetailsDefaultTopN is the default number of entries returned for
 	// the three top-k fields (top_operations_by_response_time,
 	// top_operations_by_error_rate, top_errors) when top_n is unset/zero.
@@ -62,6 +58,12 @@ const (
 	// backend in parallel, matching the small bounded concurrency other
 	// chunked callers (get_logs/get_traces) use.
 	perfDetailsMaxConcurrency = 5
+	// Caps output timestamps per series per chunk. Only safe because every
+	// rate() selector is sized from the resulting step via $__rate_interval;
+	// the apdex and response-time queries carry no rate() and just resolve as
+	// last-value at the wider step. The cap only binds past ~3h20m of window,
+	// and applies per chunk - a chunked window merges to ~200 x chunk count.
+	perfDetailsMaxDataPoints = 200
 )
 
 // firstNonEmpty returns the first non-empty string, enabling canonical-wins
@@ -462,7 +464,10 @@ func fetchChunkedRangeSeries(ctx context.Context, client *http.Client, cfg model
 				defer cancel()
 			}
 
-			httpResp, err := utils.MakePromRangeAPIQuery(chunkCtx, client, buildQuery(c), c.start, c.end, cfg)
+			httpResp, err := utils.MakePromRangeAPIQuery(
+				chunkCtx, client, buildQuery(c), c.start, c.end, cfg,
+				utils.PromResolution{MaxDataPoints: perfDetailsMaxDataPoints},
+			)
 			if err != nil {
 				return nil, err
 			}
@@ -710,8 +715,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Response Times - keep vector output
 		details.ResponseTimes, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				"sum by (quantile) (trace_service_response_time{service_name='%s', env='%s'}[%s])",
-				serviceName, env, perfDetailsInnerRange,
+				"sum by (quantile) (trace_service_response_time{service_name='%s', env='%s'}[$__rate_interval])",
+				serviceName, env,
 			)
 		}, "service performance details response_times", "response times", &details.PartialErrors)
 		if err != nil {
@@ -721,8 +726,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Availability over time range as a vector
 		details.Availability, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				"(1 - (sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[%s])) or 0) / (sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[%s])) + 0.0000001)) * 100 default -999",
-				serviceName, env, perfDetailsInnerRange, serviceName, env, perfDetailsInnerRange,
+				"(1 - (sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) or 0) / (sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) + 0.0000001)) * 100 default -999",
+				serviceName, env, serviceName, env,
 			)
 		}, "service performance details availability", "availability response", &details.PartialErrors)
 		if err != nil {
@@ -732,8 +737,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Throughput by status code - keep vector output
 		details.Throughput, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				"sum by (http_status_code)(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[%s])) * 60 default 0",
-				serviceName, env, perfDetailsInnerRange,
+				"sum by (http_status_code)(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) * 60 default 0",
+				serviceName, env,
 			)
 		}, "service performance details throughput", "throughput response", &details.PartialErrors)
 		if err != nil {
@@ -743,8 +748,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Error Rate by status code - keep vector output
 		details.ErrorRate, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				"sum by (service_name, http_status_code)(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[%s])) * 60 default 0",
-				serviceName, env, perfDetailsInnerRange,
+				"sum by (service_name, http_status_code)(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) * 60 default 0",
+				serviceName, env,
 			)
 		}, "service performance details error_rate", "error rate response", &details.PartialErrors)
 		if err != nil {
@@ -754,8 +759,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Calculate Error Percentage over time range as a vector
 		details.ErrorPercent, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				"(sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[%s])) / sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[%s])) * 100) default 0",
-				serviceName, env, perfDetailsInnerRange, serviceName, env, perfDetailsInnerRange,
+				"(sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) / sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) * 100) default 0",
+				serviceName, env, serviceName, env,
 			)
 		}, "service performance details error_percent", "error percent response", &details.PartialErrors)
 		if err != nil {
@@ -784,7 +789,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Top Operations by Response Time - keep vector output. This is
 		// an instant query whose only windowing mechanism is the inner
 		// quantile_over_time([...]) selector, so (unlike the rate() queries
-		// above) it must stay at the chunk's own width, not perfDetailsInnerRange.
+		// above) it must stay at the chunk's own width, not the step-derived
+		// $__rate_interval the range queries use.
 		topRTLimit := topN
 		if multiChunk {
 			topRTLimit = 2 * topN // over-fetch per chunk so the cross-chunk merge still has topN real candidates
@@ -1916,7 +1922,7 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 			return nil, nil, err
 		}
 
-		httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, query, startTimeParam, endTimeParam, queryCfg)
+		httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, query, startTimeParam, endTimeParam, queryCfg, utils.PromResolution{})
 		if err != nil {
 			return nil, nil, err
 		}

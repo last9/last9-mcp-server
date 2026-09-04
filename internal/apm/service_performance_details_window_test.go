@@ -693,7 +693,7 @@ func TestServicePerformanceDetails_366DaysPlus1Second_Rejected(t *testing.T) {
 
 // --- gap 3: PromQL query-string construction correctness ---
 
-func TestServicePerformanceDetails_QueryStrings_SingleChunkUses5mInnerSelector(t *testing.T) {
+func TestServicePerformanceDetails_QueryStrings_SingleChunkUsesRateInterval(t *testing.T) {
 	var mu sync.Mutex
 	var queries []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -732,8 +732,8 @@ func TestServicePerformanceDetails_QueryStrings_SingleChunkUses5mInnerSelector(t
 			continue
 		}
 		throughputQueries++
-		if !strings.Contains(q, "[5m]") {
-			t.Errorf("expected throughput query to use the fixed 5m inner selector, got: %s", q)
+		if !strings.Contains(q, "$__rate_interval") {
+			t.Errorf("expected throughput query to size its selector from the step, got: %s", q)
 		}
 		if strings.Contains(q, "[240h]") {
 			t.Errorf("throughput query still uses the full outer window as inner selector: %s", q)
@@ -744,9 +744,9 @@ func TestServicePerformanceDetails_QueryStrings_SingleChunkUses5mInnerSelector(t
 	}
 }
 
-func TestServicePerformanceDetails_QueryStrings_ChunkedUsesFixed5mRangeAndChunkWidthTopK(t *testing.T) {
+func TestServicePerformanceDetails_QueryStrings_ChunkedUsesRateIntervalAndChunkWidthTopK(t *testing.T) {
 	now := time.Now().UTC()
-	start := now.Add(-90 * 24 * time.Hour).Unix() // 90 days -> 3 chunks (35+35+20)
+	start := now.Add(-90 * 24 * time.Hour).Unix() // 90 days -> 3 equal-width chunks of 30 days
 	end := now.Unix()
 	wantChunks := splitIntoPerfDetailsChunks(start, end)
 	if len(wantChunks) != 3 {
@@ -759,12 +759,14 @@ func TestServicePerformanceDetails_QueryStrings_ChunkedUsesFixed5mRangeAndChunkW
 
 	var mu sync.Mutex
 	var rangeQueries []string
+	var rangeBudgets []int64
 	var topRTEntries []string // "<timestamp>|<query>"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var payload struct {
-			Query     string `json:"query"`
-			Timestamp int64  `json:"timestamp"`
+			Query         string `json:"query"`
+			Timestamp     int64  `json:"timestamp"`
+			MaxDataPoints int64  `json:"max_data_points"`
 		}
 		_ = json.Unmarshal(body, &payload)
 
@@ -772,6 +774,7 @@ func TestServicePerformanceDetails_QueryStrings_ChunkedUsesFixed5mRangeAndChunkW
 		switch {
 		case r.URL.Path == constants.EndpointPromQuery && strings.Contains(payload.Query, "sum by (http_status_code)(rate("):
 			rangeQueries = append(rangeQueries, payload.Query)
+			rangeBudgets = append(rangeBudgets, payload.MaxDataPoints)
 		case r.URL.Path == constants.EndpointPromQueryInstant && strings.Contains(payload.Query, "trace_endpoint_duration"):
 			topRTEntries = append(topRTEntries, fmt.Sprintf("%d|%s", payload.Timestamp, payload.Query))
 		}
@@ -798,8 +801,22 @@ func TestServicePerformanceDetails_QueryStrings_ChunkedUsesFixed5mRangeAndChunkW
 		t.Fatalf("expected 3 throughput range queries (one per chunk), got %d", len(rangeQueries))
 	}
 	for _, q := range rangeQueries {
-		if !strings.Contains(q, "[5m]") {
-			t.Errorf("expected chunked range query to still use the fixed 5m inner selector, got: %s", q)
+		if !strings.Contains(q, "$__rate_interval") {
+			t.Errorf("expected chunked range query to size its selector from the step, got: %s", q)
+		}
+	}
+
+	// The budget is per chunk, not per merged series: mergeChunkedSeries
+	// concatenates, so this window returns ~200*3 points, not ~200. Deliberate
+	// - the payload is still bounded and each chunk keeps one grid - but it is
+	// the documented contract, so pin it here rather than leaving it implied by
+	// the single-chunk test.
+	if len(rangeBudgets) != len(rangeQueries) {
+		t.Fatalf("captured %d queries but %d budgets", len(rangeQueries), len(rangeBudgets))
+	}
+	for i, b := range rangeBudgets {
+		if b != perfDetailsMaxDataPoints {
+			t.Errorf("chunk %d sent max_data_points = %d, want %d (full budget per chunk)", i, b, perfDetailsMaxDataPoints)
 		}
 	}
 
@@ -834,7 +851,7 @@ func TestServicePerformanceDetails_QueryStrings_ChunkedUsesFixed5mRangeAndChunkW
 
 func TestServicePerformanceDetails_MultiChunkTopKMergeAtHandlerLevel(t *testing.T) {
 	now := time.Now().UTC()
-	start := now.Add(-90 * 24 * time.Hour).Unix() // 90 days -> 3 chunks (35+35+20)
+	start := now.Add(-90 * 24 * time.Hour).Unix() // 90 days -> 3 equal-width chunks of 30 days
 	end := now.Unix()
 	wantChunks := splitIntoPerfDetailsChunks(start, end)
 	if len(wantChunks) != 3 {
