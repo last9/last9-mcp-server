@@ -10,7 +10,7 @@ Many metric fields use PromQL timeseries format: `[{"metric":{...},"values":[[ti
 
 Windows over 35 days are split into 35-day-or-narrower chunks queried and merged separately (the backend hard-caps a single query's range at 35 days); the requested window is hard-capped at 366 days total. On a wider (chunked) window, any sub-query failure is recorded in `partial_errors` and the rest of the data is still returned. On a plain (<=35 day) window, a non-2xx upstream response is likewise recorded in `partial_errors`; a read/parse failure on the response fails the whole call.
 
-Counter-style fields (throughput, error rate) carry explicit zero values for intervals with no traffic, so a low-traffic service shows zeros rather than missing points. Each series is capped at about 200 points per chunk, so a wide window comes back as wide buckets rather than a dense per-minute grid — expect most buckets on a wide window to carry data. Quantile-style fields (response times) only cover intervals that actually had samples, so they can span far less than the requested window.
+Counter-style fields (throughput, error rate) carry explicit zero values for intervals with no traffic, so a low-traffic service shows zeros rather than missing points. Each series is capped at about 200 points per chunk, so a wide window returns wide buckets, not a dense per-minute grid — expect most buckets to carry data. Quantile-style fields (response times) only cover intervals that actually had samples, so they can span far less than the requested window.
 
 Parameters:
 - `service_name`: (Required) Service to query.
