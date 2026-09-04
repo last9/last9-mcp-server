@@ -157,9 +157,11 @@ func MakePromInstantAPIQuery(ctx context.Context, client *http.Client, promql st
 // PromResolution bounds a range query's output resolution. The zero value
 // sends neither field, leaving the server's defaults untouched.
 //
-// Only set MaxDataPoints on a query that asks for its selector via
-// $__rate_interval: the server sizes both from the same budget, so they move
-// together. A widened step against a hardcoded selector spot-samples.
+// Set neither field on a query with a hardcoded or absent range selector: a
+// widened budget and an absolute Step both leave the step outgrowing the
+// selector, which spot-samples instead of aggregating. Only set them on a
+// query that asks for its selector via $__rate_interval, which the server
+// sizes from the same step.
 type PromResolution struct {
 	Step          int64
 	MaxDataPoints int64

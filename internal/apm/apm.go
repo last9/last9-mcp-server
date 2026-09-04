@@ -25,12 +25,15 @@ import (
 // (e.g. rate(x[<full window>])), which makes the backend rescan the entire
 // window's raw samples per output step. That crashes/OOMs the backend for
 // windows wider than ~1-2 weeks. Confirmed via direct backend testing:
-//   - a step-derived inner selector ($__rate_interval) is safe at any outer
-//     width up to 35 days.
 //   - the backend hard-caps a single query's outer range at 35 days (HTTP
 //     422 "Too many samples queried" just past that).
 //   - splitting a wider outer window into <=35-day chunks and querying each
 //     with a step-derived inner selector works cleanly.
+//
+// A step-derived inner selector ($__rate_interval) is safe at any outer
+// width up to that 35-day cap by construction, not by measurement: it is
+// never narrower than the step, so scan overlap stays near 1x instead of
+// the up-to-5x the old fixed-window form incurred.
 const (
 	// maxServicePerformanceWindowDays is NOT a data-retention cutoff — a
 	// chunk entirely outside retention just comes back empty from the

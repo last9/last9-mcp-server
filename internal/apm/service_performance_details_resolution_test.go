@@ -17,18 +17,20 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// hardcodedSelector matches any literal PromQL duration selector (e.g.
-// [5m], [1h]) — a regression to a different hardcoded duration would slip
-// past a check for "[5m]" alone.
-var hardcodedSelector = regexp.MustCompile(`\[\d+[smhdwy]\]`)
+// hardcodedSelector matches any literal PromQL duration selector, including
+// compound (e.g. [1h30m]) and fractional (e.g. [1.5h]) durations — a
+// regression to a different hardcoded duration would slip past a check for
+// "[5m]" alone.
+var hardcodedSelector = regexp.MustCompile(`\[[\d.]+[a-z]+(\d+[a-z]+)*\]`)
 
 // perfDetailsCapture records the PromQL and resolution of every sub-query the
 // handler sends, split by endpoint.
 type perfDetailsCapture struct {
-	mu       sync.Mutex
-	rangeQ   []string
-	instantQ []string
-	rangeMDP []int64
+	mu        sync.Mutex
+	rangeQ    []string
+	instantQ  []string
+	rangeMDP  []int64
+	rangeStep []int64
 }
 
 func (c *perfDetailsCapture) snapshot() ([]string, []string, []int64) {
@@ -37,6 +39,14 @@ func (c *perfDetailsCapture) snapshot() ([]string, []string, []int64) {
 	return append([]string(nil), c.rangeQ...),
 		append([]string(nil), c.instantQ...),
 		append([]int64(nil), c.rangeMDP...)
+}
+
+// snapshotSteps returns the "step" value captured for every range sub-query,
+// in the same order as snapshot's rangeQ.
+func (c *perfDetailsCapture) snapshotSteps() []int64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]int64(nil), c.rangeStep...)
 }
 
 // runPerfDetailsCapture drives the handler over a 10-day (single-chunk) window
@@ -50,6 +60,7 @@ func runPerfDetailsCapture(t *testing.T) *perfDetailsCapture {
 		var payload struct {
 			Query         string `json:"query"`
 			MaxDataPoints int64  `json:"max_data_points"`
+			Step          int64  `json:"step"`
 		}
 		_ = json.Unmarshal(body, &payload)
 
@@ -58,6 +69,7 @@ func runPerfDetailsCapture(t *testing.T) *perfDetailsCapture {
 		case constants.EndpointPromQuery:
 			capture.rangeQ = append(capture.rangeQ, payload.Query)
 			capture.rangeMDP = append(capture.rangeMDP, payload.MaxDataPoints)
+			capture.rangeStep = append(capture.rangeStep, payload.Step)
 		case constants.EndpointPromQueryInstant:
 			capture.instantQ = append(capture.instantQ, payload.Query)
 		}
@@ -84,19 +96,46 @@ func runPerfDetailsCapture(t *testing.T) *perfDetailsCapture {
 }
 
 // ENG-1823: step and selector must move together. Every range sub-query asks
-// the server to size its selector from the step it chose.
+// the server to size its selector from the step it chose. Two builders
+// (availability, error_percent) carry two $__rate_interval occurrences each,
+// so a strings.Contains check alone could hide a regression in one selector
+// behind the other's surviving occurrence — count total occurrences instead.
 func TestPerfDetails_AllRangeQueriesUseRateInterval(t *testing.T) {
 	rangeQ, _, _ := runPerfDetailsCapture(t).snapshot()
 
 	if len(rangeQ) != 6 {
 		t.Fatalf("expected 6 range sub-queries, got %d", len(rangeQ))
 	}
+
+	// apdex 1, response_times 1, availability 2, throughput 1, error_rate 1,
+	// error_percent 2 = 8 total across the six queries.
+	const wantTotalRateIntervals = 8
+	total := 0
 	for _, q := range rangeQ {
-		if !strings.Contains(q, "$__rate_interval") {
-			t.Errorf("range query has no $__rate_interval; a widened step would outgrow its selector:\n%s", q)
-		}
+		total += strings.Count(q, "$__rate_interval")
 		if m := hardcodedSelector.FindString(q); m != "" {
 			t.Errorf("range query carries a hardcoded selector %s; it must be sized from the step:\n%s", m, q)
+		}
+	}
+	if total != wantTotalRateIntervals {
+		t.Errorf("$__rate_interval occurrences across all range queries = %d, want %d", total, wantTotalRateIntervals)
+	}
+}
+
+// ENG-1823: PromResolution{Step: ...} would send an absolute step against a
+// hardcoded selector and go unnoticed by a max_data_points-only check. Assert
+// no range sub-query sends a "step" value.
+func TestPerfDetails_RangeQueriesSendNoStep(t *testing.T) {
+	capture := runPerfDetailsCapture(t)
+	rangeQ, _, _ := capture.snapshot()
+	steps := capture.snapshotSteps()
+
+	if len(steps) != len(rangeQ) {
+		t.Fatalf("captured %d queries but %d step values", len(rangeQ), len(steps))
+	}
+	for i, step := range steps {
+		if step != 0 {
+			t.Errorf("range query %d sent step = %d, want 0 (absent):\n%s", i, step, rangeQ[i])
 		}
 	}
 }

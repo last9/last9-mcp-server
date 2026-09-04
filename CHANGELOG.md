@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `get_service_performance_details` now requests ~200 data points per series per chunk instead of one per minute, and sizes each sub-query's range selector from the resulting step via `$__rate_interval`. Windows under ~3h19m are unchanged. Wider windows return far smaller responses, and quantile-shaped fields (response times, apdex) cover the whole window instead of only the minutes that happened to hold samples. Requires a Last9 API version that accepts `max_data_points`.
+- `get_service_performance_details` now requests ~200 data points per series per chunk instead of one per minute, and sizes each sub-query's range selector from the resulting step via `$__rate_interval`. Response size and step are unchanged below ~3h19m; apdex and response-time values shift slightly at all widths, as their lookback is now sized from the step. Wider windows return far smaller responses, and quantile-shaped fields (response times, apdex) cover the whole window instead of only the minutes that happened to hold samples. Requires a Last9 API version that substitutes `$__rate_interval` on the range-query endpoint; against an older version the time-series fields come back empty with `partial_errors`.
 - The service workflows and the service-scoped tool descriptions now call `get_service_profile` first: skip trace tools when the profile reports `telemetry.traces` as `absent`, and parse the level from the log body when `severity_set` is `none` or `partial`.
 
 ## [0.16.0] - 2026-08-27
