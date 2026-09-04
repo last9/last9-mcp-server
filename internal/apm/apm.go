@@ -61,7 +61,8 @@ const (
 	// Caps output timestamps per series per chunk. Only safe because every
 	// rate() selector is sized from the resulting step via $__rate_interval;
 	// the apdex and response-time queries carry no rate() and just resolve as
-	// last-value at the wider step. The cap only binds past ~3h20m of window.
+	// last-value at the wider step. The cap only binds past ~3h20m of window,
+	// and applies per chunk - a chunked window merges to ~200 x chunk count.
 	perfDetailsMaxDataPoints = 200
 )
 
