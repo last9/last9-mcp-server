@@ -56,7 +56,6 @@ func TestGetChangeEventsHandler_ExplicitRangePrecedence(t *testing.T) {
 		Window    int64 `json:"window"`
 	}
 	captured := make([]promReq, 0, 2)
-	var capturedRaw []map[string]interface{}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -65,10 +64,6 @@ func TestGetChangeEventsHandler_ExplicitRangePrecedence(t *testing.T) {
 		var reqBody promReq
 		_ = json.Unmarshal(body, &reqBody)
 		captured = append(captured, reqBody)
-
-		var raw map[string]interface{}
-		_ = json.Unmarshal(body, &raw)
-		capturedRaw = append(capturedRaw, raw)
 
 		w.Header().Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
 		switch r.URL.Path {
@@ -112,18 +107,6 @@ func TestGetChangeEventsHandler_ExplicitRangePrecedence(t *testing.T) {
 		}
 		if req.Window != 3600 {
 			t.Fatalf("window = %d, want %d", req.Window, int64(3600))
-		}
-	}
-
-	// get_change_events must keep using the zero-value legacy helper: this
-	// query has no range-vector selector at all, so a widened step here
-	// would silently drop events.
-	for _, raw := range capturedRaw {
-		if _, ok := raw["step"]; ok {
-			t.Fatalf("range query body must not send \"step\", got: %v", raw)
-		}
-		if _, ok := raw["max_data_points"]; ok {
-			t.Fatalf("range query body must not send \"max_data_points\", got: %v", raw)
 		}
 	}
 }

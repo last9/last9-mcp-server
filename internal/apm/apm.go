@@ -30,10 +30,8 @@ import (
 //   - splitting a wider outer window into <=35-day chunks and querying each
 //     with a step-derived inner selector works cleanly.
 //
-// A step-derived inner selector ($__rate_interval) is safe at any outer
-// width up to that 35-day cap by construction, not by measurement: it is
-// never narrower than the step, so scan overlap stays near 1x instead of
-// the up-to-5x the old fixed-window form incurred.
+// A step-derived selector ($__rate_interval) is never narrower than the
+// step, so overlap stays near 1x — by construction, not measurement.
 const (
 	// maxServicePerformanceWindowDays is NOT a data-retention cutoff — a
 	// chunk entirely outside retention just comes back empty from the
@@ -58,10 +56,8 @@ const (
 	// backend in parallel, matching the small bounded concurrency other
 	// chunked callers (get_logs/get_traces) use.
 	perfDetailsMaxConcurrency = 5
-	// perfDetailsMaxDataPoints caps output timestamps per series per chunk.
-	// The 422 sample guard is a per-series tick limit — 50,401 ticks over 35
-	// days trips it, 200 sits far clear. Only safe because every range
-	// selector is sized from the resulting step via $__rate_interval.
+	// Caps output timestamps per series per chunk. Only safe because every
+	// range selector is sized from the resulting step via $__rate_interval.
 	perfDetailsMaxDataPoints = 200
 )
 
@@ -463,7 +459,7 @@ func fetchChunkedRangeSeries(ctx context.Context, client *http.Client, cfg model
 				defer cancel()
 			}
 
-			httpResp, err := utils.MakePromRangeAPIQueryWithResolution(
+			httpResp, err := utils.MakePromRangeAPIQuery(
 				chunkCtx, client, buildQuery(c), c.start, c.end, cfg,
 				utils.PromResolution{MaxDataPoints: perfDetailsMaxDataPoints},
 			)
@@ -1923,7 +1919,7 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 			return nil, nil, err
 		}
 
-		httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, query, startTimeParam, endTimeParam, queryCfg)
+		httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, query, startTimeParam, endTimeParam, queryCfg, utils.PromResolution{})
 		if err != nil {
 			return nil, nil, err
 		}

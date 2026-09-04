@@ -17,10 +17,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// hardcodedSelector matches any literal PromQL duration selector, including
-// compound (e.g. [1h30m]) and fractional (e.g. [1.5h]) durations — a
-// regression to a different hardcoded duration would slip past a check for
-// "[5m]" alone.
+// Matches any literal duration selector, incl. compound ([1h30m]) and
+// fractional ([1.5h]) — a check for "[5m]" alone would miss those.
 var hardcodedSelector = regexp.MustCompile(`\[[\d.]+[a-z]+(\d+[a-z]+)*\]`)
 
 // perfDetailsCapture records the PromQL and resolution of every sub-query the
@@ -95,11 +93,9 @@ func runPerfDetailsCapture(t *testing.T) *perfDetailsCapture {
 	return capture
 }
 
-// ENG-1823: step and selector must move together. Every range sub-query asks
-// the server to size its selector from the step it chose. Two builders
-// (availability, error_percent) carry two $__rate_interval occurrences each,
-// so a strings.Contains check alone could hide a regression in one selector
-// behind the other's surviving occurrence — count total occurrences instead.
+// Counting occurrences, not Contains: availability and error_percent carry
+// two selectors each, so one regressing could hide behind the other's
+// surviving occurrence.
 func TestPerfDetails_AllRangeQueriesUseRateInterval(t *testing.T) {
 	rangeQ, _, _ := runPerfDetailsCapture(t).snapshot()
 
@@ -122,9 +118,8 @@ func TestPerfDetails_AllRangeQueriesUseRateInterval(t *testing.T) {
 	}
 }
 
-// ENG-1823: PromResolution{Step: ...} would send an absolute step against a
-// hardcoded selector and go unnoticed by a max_data_points-only check. Assert
-// no range sub-query sends a "step" value.
+// A Step would be absolute, outgrowing a hardcoded selector, and would go
+// unnoticed by a max_data_points-only check.
 func TestPerfDetails_RangeQueriesSendNoStep(t *testing.T) {
 	capture := runPerfDetailsCapture(t)
 	rangeQ, _, _ := capture.snapshot()
@@ -179,8 +174,8 @@ func TestPerfDetails_TopKQueriesKeepChunkWidthSelector(t *testing.T) {
 	}
 }
 
-// ENG-1823 / ENG-1826: 50,401 points per series over 35 days becomes ~200.
-// Safe only because Task 2 made every selector track the step.
+// 50,401 points per series over 35 days becomes ~200. Safe only because
+// every range selector is sized from the resulting step.
 func TestPerfDetails_RangeQueriesSendPointBudget(t *testing.T) {
 	rangeQ, _, rangeMDP := runPerfDetailsCapture(t).snapshot()
 

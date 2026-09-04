@@ -154,26 +154,15 @@ func MakePromInstantAPIQuery(ctx context.Context, client *http.Client, promql st
 	return client.Do(req)
 }
 
-// PromResolution bounds a range query's output resolution. The zero value
-// sends neither field, leaving the server's defaults untouched.
-//
-// Set neither field on a query with a hardcoded or absent range selector: a
-// widened budget and an absolute Step both leave the step outgrowing the
-// selector, which spot-samples instead of aggregating. Only set them on a
-// query that asks for its selector via $__rate_interval, which the server
-// sizes from the same step.
+// PromResolution bounds a range query's output resolution. Set either field
+// only on a query whose selector is $__rate_interval: against a hardcoded
+// selector the step outgrows it and the query spot-samples.
 type PromResolution struct {
 	Step          int64
 	MaxDataPoints int64
 }
 
-func MakePromRangeAPIQuery(ctx context.Context, client *http.Client, promql string, startTimeParam, endTimeParam int64, cfg models.Config) (*http.Response, error) {
-	return MakePromRangeAPIQueryWithResolution(
-		ctx, client, promql, startTimeParam, endTimeParam, cfg, PromResolution{},
-	)
-}
-
-func MakePromRangeAPIQueryWithResolution(ctx context.Context, client *http.Client, promql string, startTimeParam, endTimeParam int64, cfg models.Config, res PromResolution) (*http.Response, error) {
+func MakePromRangeAPIQuery(ctx context.Context, client *http.Client, promql string, startTimeParam, endTimeParam int64, cfg models.Config, res PromResolution) (*http.Response, error) {
 	// The Last9 PromQL HTTP endpoint treats `timestamp` as the END of the
 	// query window and runs Prometheus over [timestamp - window, timestamp]
 	// (this is also how MakePromInstantAPIQuery above uses endTimeParam as

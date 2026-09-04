@@ -102,6 +102,7 @@ func TestMakePromRangeAPIQuery_AnchorsOnEndTime(t *testing.T) {
 	cfg := stubTokenManagerCfg(t, srv.URL)
 	resp, err := MakePromRangeAPIQuery(
 		context.Background(), srv.Client(), "up", testStartUnix, testEndUnix, cfg,
+		PromResolution{},
 	)
 	if err != nil {
 		t.Fatalf("MakePromRangeAPIQuery: %v", err)
@@ -147,11 +148,8 @@ func TestMakePromLabelsAPIQuery_AnchorsOnEndTime(t *testing.T) {
 	assertRightAnchored(t, decodeBody(t, captured))
 }
 
-// ENG-1823: the resolution fields are opt-in. get_change_events (bare
-// selector) and promql_range_query (arbitrary caller PromQL) keep calling the
-// legacy function, and a widened step against their selectors would
-// spot-sample instead of aggregate. Absence on the default path is the
-// contract that protects them.
+// The resolution fields are opt-in — a zero PromResolution must put neither
+// on the wire, which is what callers with fixed selectors rely on.
 func TestMakePromRangeAPIQuery_OmitsResolutionFieldsByDefault(t *testing.T) {
 	var captured []byte
 	srv := newCapturingServer(t, &captured)
@@ -160,6 +158,7 @@ func TestMakePromRangeAPIQuery_OmitsResolutionFieldsByDefault(t *testing.T) {
 	cfg := stubTokenManagerCfg(t, srv.URL)
 	resp, err := MakePromRangeAPIQuery(
 		context.Background(), srv.Client(), "up", testStartUnix, testEndUnix, cfg,
+		PromResolution{},
 	)
 	if err != nil {
 		t.Fatalf("MakePromRangeAPIQuery: %v", err)
@@ -175,18 +174,18 @@ func TestMakePromRangeAPIQuery_OmitsResolutionFieldsByDefault(t *testing.T) {
 	}
 }
 
-func TestMakePromRangeAPIQueryWithResolution_SendsBudgetAndStep(t *testing.T) {
+func TestMakePromRangeAPIQuery_SendsBudgetAndStep(t *testing.T) {
 	var captured []byte
 	srv := newCapturingServer(t, &captured)
 	defer srv.Close()
 
 	cfg := stubTokenManagerCfg(t, srv.URL)
-	resp, err := MakePromRangeAPIQueryWithResolution(
+	resp, err := MakePromRangeAPIQuery(
 		context.Background(), srv.Client(), "up", testStartUnix, testEndUnix, cfg,
 		PromResolution{Step: 30, MaxDataPoints: 200},
 	)
 	if err != nil {
-		t.Fatalf("MakePromRangeAPIQueryWithResolution: %v", err)
+		t.Fatalf("MakePromRangeAPIQuery: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -210,36 +209,4 @@ func TestMakePromRangeAPIQueryWithResolution_SendsBudgetAndStep(t *testing.T) {
 
 	// Resolution must not disturb the right-anchored window contract.
 	assertRightAnchored(t, body)
-}
-
-// A zero PromResolution must be byte-identical to the legacy call, so the two
-// untouched callers cannot drift.
-func TestMakePromRangeAPIQueryWithResolution_ZeroValueMatchesLegacyBody(t *testing.T) {
-	var legacyBody, zeroBody []byte
-
-	legacySrv := newCapturingServer(t, &legacyBody)
-	defer legacySrv.Close()
-	legacyResp, err := MakePromRangeAPIQuery(
-		context.Background(), legacySrv.Client(), "up", testStartUnix, testEndUnix,
-		stubTokenManagerCfg(t, legacySrv.URL),
-	)
-	if err != nil {
-		t.Fatalf("legacy call: %v", err)
-	}
-	legacyResp.Body.Close()
-
-	zeroSrv := newCapturingServer(t, &zeroBody)
-	defer zeroSrv.Close()
-	zeroResp, err := MakePromRangeAPIQueryWithResolution(
-		context.Background(), zeroSrv.Client(), "up", testStartUnix, testEndUnix,
-		stubTokenManagerCfg(t, zeroSrv.URL), PromResolution{},
-	)
-	if err != nil {
-		t.Fatalf("zero-resolution call: %v", err)
-	}
-	zeroResp.Body.Close()
-
-	if !bytes.Equal(legacyBody, zeroBody) {
-		t.Errorf("bodies differ:\n legacy = %s\n zero   = %s", legacyBody, zeroBody)
-	}
 }
