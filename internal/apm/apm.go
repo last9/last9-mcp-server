@@ -25,11 +25,12 @@ import (
 // (e.g. rate(x[<full window>])), which makes the backend rescan the entire
 // window's raw samples per output step. That crashes/OOMs the backend for
 // windows wider than ~1-2 weeks. Confirmed via direct backend testing:
-//   - a fixed 5m inner selector is safe at any outer width up to 35 days.
+//   - a step-derived inner selector ($__rate_interval) is safe at any outer
+//     width up to 35 days.
 //   - the backend hard-caps a single query's outer range at 35 days (HTTP
 //     422 "Too many samples queried" just past that).
 //   - splitting a wider outer window into <=35-day chunks and querying each
-//     with the 5m inner selector works cleanly.
+//     with a step-derived inner selector works cleanly.
 const (
 	// maxServicePerformanceWindowDays is NOT a data-retention cutoff — a
 	// chunk entirely outside retention just comes back empty from the
@@ -778,7 +779,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Top Operations by Response Time - keep vector output. This is
 		// an instant query whose only windowing mechanism is the inner
 		// quantile_over_time([...]) selector, so (unlike the rate() queries
-		// above) it must stay at the chunk's own width, not perfDetailsInnerRange.
+		// above) it must stay at the chunk's own width, not the step-derived
+		// $__rate_interval the range queries use.
 		topRTLimit := topN
 		if multiChunk {
 			topRTLimit = 2 * topN // over-fetch per chunk so the cross-chunk merge still has topN real candidates

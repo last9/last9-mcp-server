@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +16,11 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// hardcodedSelector matches any literal PromQL duration selector (e.g.
+// [5m], [1h]) — a regression to a different hardcoded duration would slip
+// past a check for "[5m]" alone.
+var hardcodedSelector = regexp.MustCompile(`\[\d+[smhdwy]\]`)
 
 // perfDetailsCapture records the PromQL and resolution of every sub-query the
 // handler sends, split by endpoint.
@@ -89,8 +95,8 @@ func TestPerfDetails_AllRangeQueriesUseRateInterval(t *testing.T) {
 		if !strings.Contains(q, "$__rate_interval") {
 			t.Errorf("range query has no $__rate_interval; a widened step would outgrow its selector:\n%s", q)
 		}
-		if strings.Contains(q, "[5m]") {
-			t.Errorf("range query still carries the hardcoded [5m] selector:\n%s", q)
+		if m := hardcodedSelector.FindString(q); m != "" {
+			t.Errorf("range query carries a hardcoded selector %s; it must be sized from the step:\n%s", m, q)
 		}
 	}
 }
