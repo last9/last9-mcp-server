@@ -103,9 +103,10 @@ func TestPerfDetails_AllRangeQueriesUseRateInterval(t *testing.T) {
 		t.Fatalf("expected 6 range sub-queries, got %d", len(rangeQ))
 	}
 
-	// apdex 1, response_times 1, availability 2, throughput 1, error_rate 1,
-	// error_percent 2 = 8 total across the six queries.
-	const wantTotalRateIntervals = 8
+	// response_times 1, availability 2, throughput 1, error_rate 1,
+	// error_percent 2 = 7. Apdex is a bare gauge and carries none: VM sizes a
+	// bare selector's lookback from the step, so it needs no selector.
+	const wantTotalRateIntervals = 7
 	total := 0
 	for _, q := range rangeQ {
 		total += strings.Count(q, "$__rate_interval")
@@ -132,29 +133,6 @@ func TestPerfDetails_RangeQueriesSendNoStep(t *testing.T) {
 		if step != 0 {
 			t.Errorf("range query %d sent step = %d, want 0 (absent):\n%s", i, step, rangeQ[i])
 		}
-	}
-}
-
-// Apdex is a bare gauge: without a rollup wrapper a widened step reads almost
-// nothing, regardless of what the selector says.
-func TestPerfDetails_ApdexIsWrappedInRollup(t *testing.T) {
-	rangeQ, _, _ := runPerfDetailsCapture(t).snapshot()
-
-	var apdex string
-	for _, q := range rangeQ {
-		if strings.Contains(q, "trace_service_apdex_score") {
-			apdex = q
-			break
-		}
-	}
-	if apdex == "" {
-		t.Fatal("no apdex sub-query was sent")
-	}
-	if !strings.Contains(apdex, "avg_over_time(") {
-		t.Errorf("apdex is still a bare selector; a widened step drops most of its points:\n%s", apdex)
-	}
-	if !strings.Contains(apdex, "$__rate_interval") {
-		t.Errorf("apdex rollup window is not sized from the step:\n%s", apdex)
 	}
 }
 

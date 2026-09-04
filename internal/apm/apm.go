@@ -698,10 +698,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 
 		// Get Apdex Score over time range as a vector
 		details.ApdexScore, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
-			// Bare gauge: without a rollup sized from the step, a wide step
-			// reads almost none of the window.
 			return fmt.Sprintf(
-				"avg_over_time(sum(trace_service_apdex_score{service_name='%s', env=~'%s'})[$__rate_interval])",
+				"sum(trace_service_apdex_score{service_name='%s', env=~'%s'})",
 				serviceName, env,
 			)
 		}, "service performance details apdex", "apdex score", &details.PartialErrors)
