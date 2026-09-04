@@ -139,3 +139,65 @@ func TestPerfDetails_TopKQueriesKeepChunkWidthSelector(t *testing.T) {
 		}
 	}
 }
+
+// ENG-1823 / ENG-1826: 50,401 points per series over 35 days becomes ~200.
+// Safe only because Task 2 made every selector track the step.
+func TestPerfDetails_RangeQueriesSendPointBudget(t *testing.T) {
+	rangeQ, _, rangeMDP := runPerfDetailsCapture(t).snapshot()
+
+	if len(rangeMDP) != len(rangeQ) {
+		t.Fatalf("captured %d queries but %d budgets", len(rangeQ), len(rangeMDP))
+	}
+	if len(rangeMDP) != 6 {
+		t.Fatalf("expected 6 range sub-queries, got %d", len(rangeMDP))
+	}
+	for i, mdp := range rangeMDP {
+		if mdp != perfDetailsMaxDataPoints {
+			t.Errorf("range query %d sent max_data_points = %d, want %d:\n%s",
+				i, mdp, perfDetailsMaxDataPoints, rangeQ[i])
+		}
+	}
+}
+
+// The instant endpoint has no step, so a budget there is meaningless. Sending
+// one would also be the first step toward widening a chunk-width selector.
+func TestPerfDetails_InstantQueriesSendNoPointBudget(t *testing.T) {
+	var mu sync.Mutex
+	instantCount := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if r.URL.Path == constants.EndpointPromQueryInstant {
+			var raw map[string]any
+			_ = json.Unmarshal(body, &raw)
+			mu.Lock()
+			instantCount++
+			mu.Unlock()
+			// t.Errorf is goroutine-safe; t.Fatalf is not. Never Fatalf here.
+			if _, ok := raw["max_data_points"]; ok {
+				t.Errorf("instant sub-query carried max_data_points: %s", body)
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("[]"))
+	}))
+	defer server.Close()
+
+	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+	now := time.Now().UTC()
+	args := ServicePerformanceDetailsArgs{
+		ServiceName:  "svc",
+		StartTimeISO: now.Add(-10 * 24 * time.Hour).Format(time.RFC3339),
+		EndTimeISO:   now.Format(time.RFC3339),
+		Env:          "prod",
+	}
+	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if instantCount != 3 {
+		t.Fatalf("expected 3 instant sub-queries, got %d", instantCount)
+	}
+}

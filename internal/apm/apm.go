@@ -55,6 +55,11 @@ const (
 	// backend in parallel, matching the small bounded concurrency other
 	// chunked callers (get_logs/get_traces) use.
 	perfDetailsMaxConcurrency = 5
+	// perfDetailsMaxDataPoints caps output timestamps per series per chunk.
+	// The 422 sample guard is a per-series tick limit — 50,401 ticks over 35
+	// days trips it, 200 sits far clear. Only safe because every range
+	// selector is sized from the resulting step via $__rate_interval.
+	perfDetailsMaxDataPoints = 200
 )
 
 // firstNonEmpty returns the first non-empty string, enabling canonical-wins
@@ -455,7 +460,10 @@ func fetchChunkedRangeSeries(ctx context.Context, client *http.Client, cfg model
 				defer cancel()
 			}
 
-			httpResp, err := utils.MakePromRangeAPIQuery(chunkCtx, client, buildQuery(c), c.start, c.end, cfg)
+			httpResp, err := utils.MakePromRangeAPIQueryWithResolution(
+				chunkCtx, client, buildQuery(c), c.start, c.end, cfg,
+				utils.PromResolution{MaxDataPoints: perfDetailsMaxDataPoints},
+			)
 			if err != nil {
 				return nil, err
 			}
