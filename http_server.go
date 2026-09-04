@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -20,27 +19,15 @@ import (
 
 // HTTPServer wraps the MCP server for HTTP transport
 type HTTPServer struct {
-	server   *last9mcp.Last9MCPServer
-	config   models.Config
-	toolsMap map[string]interface{}
-	sessions map[string]*MCPSession
-	mu       sync.RWMutex
-}
-
-// MCPSession represents an MCP session state
-type MCPSession struct {
-	ID           string
-	Initialized  bool
-	Capabilities map[string]interface{}
-	CreatedAt    time.Time
+	server *last9mcp.Last9MCPServer
+	config models.Config
 }
 
 // NewHTTPServer creates a new HTTP-based MCP server
 func NewHTTPServer(server *last9mcp.Last9MCPServer, config models.Config) *HTTPServer {
 	return &HTTPServer{
-		server:   server,
-		config:   config,
-		sessions: make(map[string]*MCPSession),
+		server: server,
+		config: config,
 	}
 }
 
