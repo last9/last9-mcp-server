@@ -30,8 +30,10 @@ import (
 //   - splitting a wider outer window into <=35-day chunks and querying each
 //     with a step-derived inner selector works cleanly.
 //
-// A step-derived selector ($__rate_interval) is never narrower than the
-// step, so overlap stays near 1x — by construction, not measurement.
+// $__rate_interval resolves to max(step + scrape, 4 x scrape), so a selector
+// is never narrower than its step (overlap stays near 1x) and never narrower
+// than the scrape interval — the second floor is what keeps a narrow window's
+// rate() from returning nothing. Measured against the backend, not assumed.
 const (
 	// maxServicePerformanceWindowDays is NOT a data-retention cutoff — a
 	// chunk entirely outside retention just comes back empty from the
@@ -57,7 +59,9 @@ const (
 	// chunked callers (get_logs/get_traces) use.
 	perfDetailsMaxConcurrency = 5
 	// Caps output timestamps per series per chunk. Only safe because every
-	// range selector is sized from the resulting step via $__rate_interval.
+	// rate() selector is sized from the resulting step via $__rate_interval;
+	// the apdex and response-time queries carry no rate() and just resolve as
+	// last-value at the wider step. The cap only binds past ~3h20m of window.
 	perfDetailsMaxDataPoints = 200
 )
 

@@ -154,6 +154,11 @@ func MakePromInstantAPIQuery(ctx context.Context, client *http.Client, promql st
 	return client.Do(req)
 }
 
+// PromResolution is an opt-in resolution hint; the zero value sends neither
+// field and leaves the step to the backend. Set one or the other: Step pins an
+// absolute step, MaxDataPoints caps points per series and lets the backend
+// size the step (a cap, not a target — it only binds once the default step
+// would exceed it). Sending both is untested.
 type PromResolution struct {
 	Step          int64
 	MaxDataPoints int64

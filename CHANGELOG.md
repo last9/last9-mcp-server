@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `get_service_performance_details` now returns about 200 data points per series instead of one per minute, and sizes each range selector from the resulting step, so a wide window aggregates the whole window instead of sampling part of it. Response-time values shift slightly, since that query's lookback is no longer fixed at 5m.
+- `get_service_performance_details` now caps each series at about 200 data points and sizes each range selector from the resulting step. Windows up to about 3h20m are unchanged at one point per minute; above that the step widens, so the four `rate()`-based series (availability, throughput, error rate, error percent) aggregate the whole window instead of sampling part of it. Apdex and response times carry no `rate()`, so they stay last-value-per-step and get sparser on a wide window. Response-time values also shift slightly, since that query's lookback is no longer fixed at 5m.
 - The service workflows and the service-scoped tool descriptions now call `get_service_profile` first: skip trace tools when the profile reports `telemetry.traces` as `absent`, and parse the level from the log body when `severity_set` is `none` or `partial`.
 
 ## [0.16.0] - 2026-08-27
