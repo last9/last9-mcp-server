@@ -1216,6 +1216,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			if operation.Throughput > 0 {
 				operation.ErrorPercent = (operation.ErrorRate / operation.Throughput) * 100
 			}
+			operationsSummary = append(operationsSummary, operation)
 		}
 		// Add database operations
 		for _, r := range dbThroughputRaw {
