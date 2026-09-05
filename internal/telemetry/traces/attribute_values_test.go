@@ -176,3 +176,211 @@ func TestGetTraceAttributeValuesHandler_ForwardsPipeline(t *testing.T) {
 		t.Errorf("expected the caller's $eq filter to be forwarded, got stage: %v", stage)
 	}
 }
+
+func parseAttributeValuesResult(t *testing.T, result *mcp.CallToolResult) (hint, filterField string, values []string, raw string) {
+	t.Helper()
+	if result == nil || len(result.Content) == 0 {
+		t.Fatalf("expected non-empty result content, got %+v", result)
+	}
+	raw = result.Content[0].(*mcp.TextContent).Text
+	var got struct {
+		TagName     string   `json:"tag_name"`
+		FilterField string   `json:"filter_field"`
+		Values      []string `json:"values"`
+		Hint        string   `json:"hint"`
+	}
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("result envelope is not valid JSON: %v\nraw: %s", err, raw)
+	}
+	return got.Hint, got.FilterField, got.Values, raw
+}
+
+func exampleJSONFromHint(t *testing.T, hint string) string {
+	t.Helper()
+	const marker = "Example: "
+	idx := strings.Index(hint, marker)
+	if idx < 0 {
+		t.Fatalf("hint missing %q: %q", marker, hint)
+	}
+	return hint[idx+len(marker):]
+}
+
+func requireValidJSONEq(t *testing.T, hint string) (field, value string) {
+	t.Helper()
+	example := exampleJSONFromHint(t, hint)
+	var eq struct {
+		Eq []string `json:"$eq"`
+	}
+	if err := json.Unmarshal([]byte(example), &eq); err != nil {
+		t.Fatalf("hint Example is not valid JSON: %v\nexample: %s\nhint: %q", err, example, hint)
+	}
+	if len(eq.Eq) != 2 {
+		t.Fatalf("expected $eq array of length 2, got %v (example: %s)", eq.Eq, example)
+	}
+	return eq.Eq[0], eq.Eq[1]
+}
+
+func TestGetTraceAttributeValuesHandler_HintRemainsValidForCleanValues(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `{"status":"success","data":["GET","POST","PUT"]}`)
+	}))
+	defer server.Close()
+
+	handler := NewGetTraceAttributeValuesHandler(server.Client(), newTestCfg(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeValuesArgs{TagName: "http.method"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	hint, filterField, values, _ := parseAttributeValuesResult(t, result)
+
+	if filterField != `attributes['http.method']` {
+		t.Fatalf("expected filter_field attributes['http.method'], got %q", filterField)
+	}
+	if len(values) != 3 || values[0] != "GET" || values[1] != "POST" || values[2] != "PUT" {
+		t.Fatalf("expected values [GET POST PUT], got %v", values)
+	}
+
+	field, value := requireValidJSONEq(t, hint)
+	if field != `attributes['http.method']` {
+		t.Errorf("expected $eq[0]=%q, got %q", `attributes['http.method']`, field)
+	}
+	if value != `GET` {
+		t.Errorf("expected $eq[1]=%q, got %q", `GET`, value)
+	}
+
+	wantHint := `Use filter_field in a tracejson condition. Example: {"$eq": ["attributes['http.method']", "GET"]}`
+	if hint != wantHint {
+		t.Errorf("hint changed for clean input:\nwant: %s\ngot : %s", wantHint, hint)
+	}
+}
+
+func TestGetTraceAttributeValuesHandler_HintJSONEscapesValueWithDoubleQuote(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `{"status":"success","data":["foo \"bar\""]}`)
+	}))
+	defer server.Close()
+
+	handler := NewGetTraceAttributeValuesHandler(server.Client(), newTestCfg(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeValuesArgs{TagName: "http.method"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	hint, filterField, values, _ := parseAttributeValuesResult(t, result)
+
+	if len(values) != 1 || values[0] != `foo "bar"` {
+		t.Fatalf("expected values=[%q], got %v", `foo "bar"`, values)
+	}
+	if filterField != `attributes['http.method']` {
+		t.Fatalf("expected filter_field attributes['http.method'], got %q", filterField)
+	}
+
+	field, value := requireValidJSONEq(t, hint)
+	if field != `attributes['http.method']` {
+		t.Errorf("expected $eq[0]=%q, got %q", `attributes['http.method']`, field)
+	}
+	if value != `foo "bar"` {
+		t.Errorf("expected $eq[1]=%q, got %q", `foo "bar"`, value)
+	}
+}
+
+func TestGetTraceAttributeValuesHandler_HintJSONEscapesValueWithBackslash(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `{"status":"success","data":["C:\\windows\\system32"]}`)
+	}))
+	defer server.Close()
+
+	handler := NewGetTraceAttributeValuesHandler(server.Client(), newTestCfg(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeValuesArgs{TagName: "file.path"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	hint, filterField, values, _ := parseAttributeValuesResult(t, result)
+
+	if len(values) != 1 || values[0] != `C:\windows\system32` {
+		t.Fatalf("expected values=[%q], got %v", `C:\windows\system32`, values)
+	}
+	if filterField != `attributes['file.path']` {
+		t.Fatalf("expected filter_field attributes['file.path'], got %q", filterField)
+	}
+
+	field, value := requireValidJSONEq(t, hint)
+	if field != `attributes['file.path']` {
+		t.Errorf("expected $eq[0]=%q, got %q", `attributes['file.path']`, field)
+	}
+	if value != `C:\windows\system32` {
+		t.Errorf("expected $eq[1]=%q, got %q", `C:\windows\system32`, value)
+	}
+}
+
+func TestGetTraceAttributeValuesHandler_HintJSONEscapesFilterFieldWithDoubleQuote(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `{"status":"success","data":["x"]}`)
+	}))
+	defer server.Close()
+
+	handler := NewGetTraceAttributeValuesHandler(server.Client(), newTestCfg(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeValuesArgs{TagName: `attributes['http"x']`})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	hint, filterField, _, _ := parseAttributeValuesResult(t, result)
+
+	if filterField != `attributes['http"x']` {
+		t.Fatalf("expected filter_field attributes['http\"x'], got %q", filterField)
+	}
+
+	field, value := requireValidJSONEq(t, hint)
+	if field != `attributes['http"x']` {
+		t.Errorf("expected $eq[0]=%q, got %q", `attributes['http"x']`, field)
+	}
+	if value != "x" {
+		t.Errorf("expected $eq[1]=%q, got %q", "x", value)
+	}
+}
+
+func TestGetTraceAttributeValuesHandler_HintExampleIsCopyableIntoTraceJSONQuery(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `{"status":"success","data":["foo \"bar\""]}`)
+	}))
+	defer server.Close()
+
+	handler := NewGetTraceAttributeValuesHandler(server.Client(), newTestCfg(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeValuesArgs{TagName: "http.method"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	hint, _, _, _ := parseAttributeValuesResult(t, result)
+	example := exampleJSONFromHint(t, hint)
+
+	llmArgs := `{"tracejson_query":[{"type":"filter","query":` + example + `}]}`
+	var parsed GetTracesArgs
+	if err := json.Unmarshal([]byte(llmArgs), &parsed); err != nil {
+		t.Fatalf("an LLM copying the hint example produces unparseable tool args: %v\nllmArgs: %s", err, llmArgs)
+	}
+	if len(parsed.TracejsonQuery) != 1 {
+		t.Fatalf("expected 1 stage, got %d", len(parsed.TracejsonQuery))
+	}
+	stage := parsed.TracejsonQuery[0]
+	if stage["type"] != "filter" {
+		t.Errorf("expected stage type filter, got %v", stage["type"])
+	}
+	query, ok := stage["query"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected query map, got %T", stage["query"])
+	}
+	eq, ok := query["$eq"].([]interface{})
+	if !ok {
+		t.Fatalf("expected $eq array, got %T", query["$eq"])
+	}
+	if eq[0] != `attributes['http.method']` {
+		t.Errorf("expected $eq[0]=%q, got %v", `attributes['http.method']`, eq[0])
+	}
+	if eq[1] != `foo "bar"` {
+		t.Errorf("expected $eq[1]=%q, got %v", `foo "bar"`, eq[1])
+	}
+}

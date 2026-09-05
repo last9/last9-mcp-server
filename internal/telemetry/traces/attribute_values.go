@@ -109,11 +109,19 @@ func NewGetTraceAttributeValuesHandler(client *http.Client, cfg models.Config) f
 			values = []string{}
 		}
 
+		fieldLit, err := json.Marshal(attr.FilterField)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to marshal filter_field: %v", err)
+		}
+		valueLit, err := json.Marshal(firstOrPlaceholder(values))
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to marshal value: %v", err)
+		}
 		out, err := json.Marshal(result{
 			TagName:     rawTagName,
 			FilterField: attr.FilterField,
 			Values:      values,
-			Hint:        fmt.Sprintf(`Use filter_field in a tracejson condition. Example: {"$eq": ["%s", "%s"]}`, attr.FilterField, firstOrPlaceholder(values)),
+			Hint:        fmt.Sprintf(`Use filter_field in a tracejson condition. Example: {"$eq": [%s, %s]}`, fieldLit, valueLit),
 		})
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal result: %v", err)
