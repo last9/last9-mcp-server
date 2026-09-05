@@ -575,17 +575,39 @@ func limitDeviationResult(result *apmDeviationResult, limit int) {
 		return
 	}
 	identities := make(map[string]struct{}, limit)
-	for _, service := range result.Services {
-		if len(identities) == limit {
-			break
+	add := func(serviceName, env string) {
+		key := serviceName + "\x00" + env
+		if _, ok := identities[key]; ok {
+			return
 		}
-		identities[service.ServiceName+"\x00"+service.Env] = struct{}{}
+		if len(identities) >= limit {
+			return
+		}
+		identities[key] = struct{}{}
+	}
+	// Deviating identities are kept in magnitude-priority order. The leaderboards
+	// and ThroughputShifts are already magnitude-sorted by sortDeviationResult,
+	// which runs before this cap, and leadingDeviationIdentity reads these same
+	// slices in this same order, so capping here keeps the worst regression
+	// visible and keeps the fleet follow-up aligned with the magnitude leader.
+	for _, entries := range [][]LeaderboardEntry{
+		result.Leaderboards.Reliability.Regressions, result.Leaderboards.Reliability.Improvements,
+		result.Leaderboards.Experience.Regressions, result.Leaderboards.Experience.Improvements,
+		result.Leaderboards.SustainedLatency.Regressions, result.Leaderboards.SustainedLatency.Improvements,
+		result.ThroughputShifts,
+	} {
+		for _, entry := range entries {
+			add(entry.ServiceName, entry.Env)
+		}
 	}
 	for _, change := range result.TelemetryChanges {
-		if len(identities) == limit {
-			break
-		}
-		identities[change.ServiceName+"\x00"+change.Env] = struct{}{}
+		add(change.ServiceName, change.Env)
+	}
+	// Fill any remaining capacity with the remaining (stable) services in the
+	// alphabetical order result.Services is already sorted in. When no
+	// identities deviate, this preserves the prior alphabetically-first slice.
+	for _, service := range result.Services {
+		add(service.ServiceName, service.Env)
 	}
 	result.Services = filterServices(result.Services, identities)
 	result.TelemetryChanges = filterTelemetryChanges(result.TelemetryChanges, identities)

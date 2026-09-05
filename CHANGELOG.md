@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_service_performance_details` now returns about 200 points per series instead of one per minute, sizing each range selector from the resulting step. Windows under ~3h20m are unchanged; above that the `rate()`-based series (availability, throughput, error rate, error percent) aggregate the whole window, while apdex and response times stay last-value and get sparser. Response-time values shift slightly — that query's lookback is no longer fixed at 5m.
 - The service workflows and the service-scoped tool descriptions now call `get_service_profile` first: skip trace tools when the profile reports `telemetry.traces` as `absent`, and parse the level from the log body when `severity_set` is `none` or `partial`.
 
+### Fixed
+
+- `get_apm_service_deviations` now keeps the highest-magnitude regression through the `max_services` cap instead of an alphabetically-first slice of the fleet. The cap previously walked the alphabetically-sorted `services` list, so a fleet with more than `max_services` monitored identities (default 10) whose top regression was alphabetically late dropped it from `services`, the leaderboards, and `throughput_shifts`; `leadingDeviationIdentity` then picked the magnitude leader of the capped set, misrouting the `get_apm_service_deviations` fleet follow-up to a lower-magnitude service. The cap now admits identities in the magnitude-priority order the leaderboards and follow-up already use (regressions and improvements by `|relative_delta|`, then `throughput_shifts`, then telemetry changes), and fills any remaining capacity with stable services alphabetically — preserving the prior behavior for fleets with no deviations.
+
 ## [0.16.0] - 2026-08-27
 
 ### Added
