@@ -259,7 +259,9 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 				traceResponse.Message = fmt.Sprintf("Retrieved trace data for trace ID: %s", queryParams.TraceID)
 			}
 		} else {
-			traceResponse.Message = fmt.Sprintf("Retrieved %d traces for service: %s", len(traceResponse.Data), queryParams.ServiceName)
+			if traceResponse.Success {
+				traceResponse.Message = fmt.Sprintf("Retrieved %d traces for service: %s", len(traceResponse.Data), queryParams.ServiceName)
+			}
 		}
 
 		jsonData, err := json.Marshal(traceResponse)
@@ -278,14 +280,18 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 		}
 		dashboardURL := dlBuilder.BuildTracesLink(startTime.UnixMilli(), endTime.UnixMilli(), pipeline, queryParams.TraceID, "")
 
-		return &mcp.CallToolResult{
+		result := &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(jsonData),
 				},
 			},
-		}, nil, nil
+		}
+		if !traceResponse.Success {
+			result.IsError = true
+		}
+		return result, nil, nil
 	}
 }
 
