@@ -62,7 +62,7 @@ func TestAPMServiceDeviationsInputSchemaStructure(t *testing.T) {
 		"datasource":              {"One datasource", "default"},
 		"start_time_iso":          {"RFC3339", "end_time_iso", "lookback_minutes"},
 		"end_time_iso":            {"RFC3339", "start_time_iso", "lookback_minutes"},
-		"lookback_minutes":        {"default 60", "Mutually exclusive"},
+		"lookback_minutes":        {"default 60", "Mutually exclusive", "fully-completed 1-minute buckets", "no completed buckets", "insufficient_evidence", "four aligned buckets"},
 		"baseline_start_time_iso": {"RFC3339", "baseline_end_time_iso", "equal duration"},
 		"baseline_end_time_iso":   {"RFC3339", "baseline_start_time_iso", "equal duration"},
 		"max_services":            {"Defaults to 10"},
