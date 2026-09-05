@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1131,5 +1133,375 @@ func TestAppendCountSanity_NonzeroMatchedEmptySeriesBaselineLeavesResponseUntouc
 	}
 	if *calls != 1 {
 		t.Errorf("expected exactly one prometheus baseline call, got %d", *calls)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests for the ceiling-window fix (non-whole-minute query windows).
+//
+// The guardrail compares a $count aggregate's matched count (measured over the
+// exact [startMs, endMs] query window by the log aggregate API) against a
+// service-volume baseline fetched via PromQL sum_over_time(...[Nm]) anchored at
+// endMs. Floor division for N (the old behaviour) dropped up to ~59 s of the
+// query window for non-whole-minute durations, inflating the ratio on the
+// nonzero path (false "too broad" notes) and misclassifying a truncated-but-
+// emitting service as a "genuine zero" on the zero path. The fix ceiling-
+// divides so the baseline window is never shorter than the query window.
+// ---------------------------------------------------------------------------
+
+var windowMinutesRe = regexp.MustCompile(`\[(\d+)m\]`)
+
+// volumeProportionalServer models a service emitting at a constant ratePerMinute.
+// For a [Nm] PromQL window it returns volume = N * ratePerMinute. It captures
+// the last query string so callers can assert on the window selector the
+// guardrail chose.
+func volumeProportionalServer(t *testing.T, ratePerMinute float64) (*httptest.Server, *string) {
+	t.Helper()
+	var lastQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Query string `json:"query"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		lastQuery = body.Query
+		m := windowMinutesRe.FindStringSubmatch(body.Query)
+		mins, _ := strconv.Atoi(m[1])
+		volume := float64(mins) * ratePerMinute
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		resp, _ := json.Marshal([]map[string]any{
+			{"metric": map[string]string{}, "value": []any{1_700_000_000, volume}},
+		})
+		_, _ = w.Write(resp)
+	}))
+	return srv, &lastQuery
+}
+
+// timeAwareVolumeServer models a service emitting at ratePerSec during
+// [emitStartSec, emitEndSec] (in seconds) and nothing otherwise. It reads both
+// the [Nm] window selector and the timestamp anchor from the guardrail's
+// instant-query body and returns the volume a real sum_over_time would yield:
+// rate * overlap([anchor - N*60, anchor], [emitStart, emitEnd]). This lets
+// tests prove that a ceiling window covers the emission while a floor window
+// would have dropped it.
+func timeAwareVolumeServer(t *testing.T, ratePerSec float64, emitStartSec, emitEndSec int64) (*httptest.Server, *string) {
+	t.Helper()
+	var lastQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Query     string `json:"query"`
+			Timestamp int64  `json:"timestamp"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		lastQuery = body.Query
+		m := windowMinutesRe.FindStringSubmatch(body.Query)
+		mins, _ := strconv.Atoi(m[1])
+		anchor := body.Timestamp
+		wStart := anchor - int64(mins)*60
+		lo, hi := max(wStart, emitStartSec), min(anchor, emitEndSec)
+		vol := 0.0
+		if hi > lo {
+			vol = ratePerSec * float64(hi-lo)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		resp, _ := json.Marshal([]map[string]any{
+			{"metric": map[string]string{}, "value": []any{1_700_000_000, vol}},
+		})
+		_, _ = w.Write(resp)
+	}))
+	return srv, &lastQuery
+}
+
+// parseAndCountPipeline builds a pipeline that filters by a single service,
+// parses the Body as JSON, and runs a $count aggregate — the parse-mismatch
+// shape the zero-count guardrail is designed to surface.
+func parseAndCountPipeline(service string) []map[string]interface{} {
+	return []map[string]interface{}{
+		{
+			"type": "filter",
+			"query": map[string]interface{}{
+				"$eq": []interface{}{"ServiceName", service},
+			},
+		},
+		{
+			"type":   "parse",
+			"parser": "json",
+			"field":  "Body",
+		},
+		{
+			"type": "aggregate",
+			"aggregates": []interface{}{
+				map[string]interface{}{
+					"function": map[string]interface{}{"$count": []interface{}{}},
+					"as":       "_count",
+				},
+			},
+		},
+	}
+}
+
+// TestCountSanity_CeilingWindowForSubMinuteQuery_NonzeroPath verifies that a
+// 90 s query uses [2m] (ceiling), not [1m] (floor), and that the inflated
+// ratio false-positive ("too broad" note) no longer fires for a window whose
+// true ratio is below the 5 % threshold.
+//
+// With a constant-rate server at 100 lines/min:
+//   - True window is 90 s → 150 lines; 6 matches → true ratio 0.04 (no note).
+//   - Old floor [1m]: volume 100 → ratio 0.06 (false "too broad" note).
+//   - Fix  ceil [2m]: volume 200 → ratio 0.03 (no note — conservative).
+func TestCountSanity_CeilingWindowForSubMinuteQuery_NonzeroPath(t *testing.T) {
+	srv, lastQuery := volumeProportionalServer(t, 100)
+	defer srv.Close()
+	cfg := sanityTestCfg(t, srv.URL)
+	pipeline := countAggregatePipeline("orders-service")
+	response := aggregateCountResponse("_count", float64(6))
+
+	got := AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 90*1000, response)
+	sanity := got["l9_sanity"].(map[string]interface{})
+
+	if !strings.Contains(*lastQuery, "[2m]") {
+		t.Fatalf("expected PromQL [2m] (ceiling) for a 90 s query, got: %q", *lastQuery)
+	}
+	if strings.Contains(*lastQuery, "[1m]") {
+		t.Fatalf("PromQL must NOT use floor [1m] for a 90 s query, got: %q", *lastQuery)
+	}
+	if vol, _ := sanity["service_log_volume"].(float64); vol != 200 {
+		t.Errorf("service_log_volume = %v, want 200 (2m * 100/min)", vol)
+	}
+	if ratio, _ := sanity["ratio"].(float64); ratio != 0.03 {
+		t.Errorf("ratio = %v, want 0.03 (6/200)", ratio)
+	}
+	if note, _ := sanity["note"].(string); note != "" {
+		t.Errorf("expected empty note for ratio 0.03 (< 5%%), got: %q", note)
+	}
+}
+
+// TestCountSanity_CeilingWindowForSubMinuteQuery_ZeroPathNoFalseGenuineZero
+// verifies the zero-path fix: a service that emitted only in the prefix of
+// the query window (the part that floor division would have dropped) is NOT
+// misclassified as a "genuine zero".
+//
+// Service emits 10 lines/sec during [0 s, 30 s]; query window is [0 s, 90 s].
+//   - Old floor [1m]: baseline [30 s, 90 s] → volume 0 → false "genuine
+//     zero / nothing to inspect".
+//   - Fix  ceil [2m]: baseline [-30 s, 90 s] → volume 300 → "parse/filter
+//     mismatch, inspect sample_bodies".
+func TestCountSanity_CeilingWindowForSubMinuteQuery_ZeroPathNoFalseGenuineZero(t *testing.T) {
+	srv, lastQuery := timeAwareVolumeServer(t, 10.0, 0, 30)
+	defer srv.Close()
+	cfg := sanityTestCfg(t, srv.URL)
+	pipeline := parseAndCountPipeline("orders-service")
+	response := aggregateCountResponse("_count", float64(0))
+
+	got := AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 90*1000, response)
+	sanity := got["l9_sanity"].(map[string]interface{})
+
+	if !strings.Contains(*lastQuery, "[2m]") {
+		t.Fatalf("expected PromQL [2m] (ceiling) for a 90 s query, got: %q", *lastQuery)
+	}
+	if vol, _ := sanity["service_log_volume"].(float64); vol != 300 {
+		t.Errorf("service_log_volume = %v, want 300 (30 s * 10/s overlap with [-30 s, 90 s])", vol)
+	}
+	note, _ := sanity["note"].(string)
+	if strings.Contains(note, "genuine zero") {
+		t.Errorf("must NOT classify as genuine zero when the baseline saw the emission, got: %q", note)
+	}
+	if strings.Contains(note, "nothing to inspect") {
+		t.Errorf("must NOT direct the model away from inspection when logs existed, got: %q", note)
+	}
+	if !strings.Contains(note, "sample_bodies") {
+		t.Errorf("expected the note to direct toward sample_bodies inspection, got: %q", note)
+	}
+}
+
+// TestCountSanity_WholeMinuteWindowUsesExactMinutes verifies that a whole-
+// minute window is unaffected by the ceiling fix: ceiling(N) == N for whole
+// minutes, so the baseline window must stay exact (no over-rounding).
+func TestCountSanity_WholeMinuteWindowUsesExactMinutes(t *testing.T) {
+	srv, lastQuery := volumeProportionalServer(t, 100)
+	defer srv.Close()
+	cfg := sanityTestCfg(t, srv.URL)
+	pipeline := countAggregatePipeline("orders-service")
+	response := aggregateCountResponse("_count", float64(50))
+
+	got := AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 5*60*1000, response)
+
+	if !strings.Contains(*lastQuery, "[5m]") {
+		t.Fatalf("expected PromQL [5m] for a 5-minute query, got: %q", *lastQuery)
+	}
+	if strings.Contains(*lastQuery, "[6m]") {
+		t.Fatalf("PromQL must NOT over-round to [6m] for a 5-minute query, got: %q", *lastQuery)
+	}
+	sanity := got["l9_sanity"].(map[string]interface{})
+	if vol, _ := sanity["service_log_volume"].(float64); vol != 500 {
+		t.Errorf("service_log_volume = %v, want 500 (5m * 100/min)", vol)
+	}
+	if ratio, _ := sanity["ratio"].(float64); ratio != 0.1 {
+		t.Errorf("ratio = %v, want 0.1 (50/500)", ratio)
+	}
+	if note, _ := sanity["note"].(string); note == "" {
+		t.Error("expected a too-broad note for ratio 0.1 (> 5%)")
+	}
+}
+
+// TestCountSanity_ExactlyOneMinuteUsesOneMinute verifies the boundary: a
+// 60 000 ms (exactly 1 minute) window ceilings to [1m], not [2m].
+func TestCountSanity_ExactlyOneMinuteUsesOneMinute(t *testing.T) {
+	srv, lastQuery := volumeProportionalServer(t, 100)
+	defer srv.Close()
+	cfg := sanityTestCfg(t, srv.URL)
+	pipeline := countAggregatePipeline("orders-service")
+	response := aggregateCountResponse("_count", float64(2))
+
+	_ = AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 60*1000, response)
+
+	if !strings.Contains(*lastQuery, "[1m]") {
+		t.Fatalf("expected [1m] for a 60 s query (exact), got: %q", *lastQuery)
+	}
+	if strings.Contains(*lastQuery, "[2m]") {
+		t.Fatalf("PromQL must NOT over-round to [2m] for an exact 60 s query, got: %q", *lastQuery)
+	}
+}
+
+// TestCountSanity_JustOverOneMinuteCeilsToTwoMinutes verifies that a window
+// just past a minute boundary (61 000 ms) ceilings to [2m] instead of flooring
+// to [1m].
+func TestCountSanity_JustOverOneMinuteCeilsToTwoMinutes(t *testing.T) {
+	srv, lastQuery := volumeProportionalServer(t, 100)
+	defer srv.Close()
+	cfg := sanityTestCfg(t, srv.URL)
+	pipeline := countAggregatePipeline("orders-service")
+	response := aggregateCountResponse("_count", float64(10))
+
+	_ = AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 61000, response)
+
+	if !strings.Contains(*lastQuery, "[2m]") {
+		t.Fatalf("expected [2m] (ceiling) for a 61 s query, got: %q", *lastQuery)
+	}
+	if strings.Contains(*lastQuery, "[1m]") {
+		t.Fatalf("PromQL must NOT use floor [1m] for a 61 s query, got: %q", *lastQuery)
+	}
+}
+
+// TestCountSanity_SubMinuteWindowClampsToOneMinute verifies that a sub-minute
+// window (e.g. 30 s) still clamps to the 1-minute floor (PromQL cannot express
+// a [0m] selector). This is unchanged from the old behaviour for short windows.
+func TestCountSanity_SubMinuteWindowClampsToOneMinute(t *testing.T) {
+	srv, lastQuery := volumeProportionalServer(t, 100)
+	defer srv.Close()
+	cfg := sanityTestCfg(t, srv.URL)
+	pipeline := countAggregatePipeline("orders-service")
+	response := aggregateCountResponse("_count", float64(2))
+
+	_ = AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 30*1000, response)
+
+	if !strings.Contains(*lastQuery, "[1m]") {
+		t.Fatalf("expected [1m] for a 30 s query (clamped to min 1), got: %q", *lastQuery)
+	}
+}
+
+// TestCountSanity_ZeroPathCeilingSurfacesEmissionDroppedByFloor provides the
+// full end-to-end proof for the zero-path fix. A service emits only in the
+// prefix the old floor would have dropped; the ceiling baseline sees the
+// emission, and the guardrail directs the model to inspect sample_bodies
+// (the parse-mismatch branch) rather than directing it away ("nothing to
+// inspect").
+//
+// Query window [0 s, 90 s]; emission [0 s, 30 s] at 10 lines/sec.
+// Ceiling [2m] baseline = [-30 s, 90 s] → overlap [0, 30] → volume 300.
+func TestCountSanity_ZeroPathCeilingSurfacesEmissionDroppedByFloor(t *testing.T) {
+	srv, lastQuery := timeAwareVolumeServer(t, 10.0, 0, 30)
+	defer srv.Close()
+	cfg := sanityTestCfg(t, srv.URL)
+	pipeline := parseAndCountPipeline("orders-service")
+	response := aggregateCountResponse("_count", float64(0))
+
+	got := AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 90*1000, response)
+	sanity := got["l9_sanity"].(map[string]interface{})
+
+	if sanity["matched_count"] != int64(0) {
+		t.Errorf("matched_count = %v, want 0", sanity["matched_count"])
+	}
+	if !strings.Contains(*lastQuery, "[2m]") {
+		t.Fatalf("expected ceiling [2m], got: %q", *lastQuery)
+	}
+	vol, _ := sanity["service_log_volume"].(float64)
+	if vol <= 0 {
+		t.Fatalf("service_log_volume = %v, want > 0 (ceiling baseline must cover the emission)", vol)
+	}
+	note, _ := sanity["note"].(string)
+	if !strings.Contains(note, "sample_bodies") {
+		t.Errorf("expected the note to direct toward sample_bodies inspection (parse mismatch), got: %q", note)
+	}
+	if strings.Contains(note, "nothing to inspect") {
+		t.Errorf("must NOT direct model away from inspection, got: %q", note)
+	}
+}
+
+// TestCountSanity_NonzeroPathCeilingDeflatesRatioForTwoMinuteWindow verifies
+// the conservative direction of the ceiling fix on the nonzero path for a
+// window just under 3 minutes: the ratio is deflated (not inflated), so a
+// true ratio sitting just below the 5 % threshold does NOT flip to a false
+// "too broad" note.
+//
+// 179 s window, 100 lines/min, 9 matches.
+//   - True window 179 s → ~298.3 lines; ratio 9/298.3 ≈ 0.0302 (no note).
+//   - Old floor [2m]: volume 200 → ratio 0.045 (no note, but dangerously close).
+//   - Fix  ceil [3m]: volume 300 → ratio 0.03 (no note — even safer).
+func TestCountSanity_NonzeroPathCeilingDeflatesRatioForTwoMinuteWindow(t *testing.T) {
+	srv, lastQuery := volumeProportionalServer(t, 100)
+	defer srv.Close()
+	cfg := sanityTestCfg(t, srv.URL)
+	pipeline := countAggregatePipeline("orders-service")
+	response := aggregateCountResponse("_count", float64(9))
+
+	got := AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 179*1000, response)
+	sanity := got["l9_sanity"].(map[string]interface{})
+
+	if !strings.Contains(*lastQuery, "[3m]") {
+		t.Fatalf("expected [3m] (ceiling of 179 s) for a 179 s query, got: %q", *lastQuery)
+	}
+	if strings.Contains(*lastQuery, "[2m]") {
+		t.Fatalf("PromQL must NOT use floor [2m] for a 179 s query, got: %q", *lastQuery)
+	}
+	if vol, _ := sanity["service_log_volume"].(float64); vol != 300 {
+		t.Errorf("service_log_volume = %v, want 300 (3m * 100/min)", vol)
+	}
+	if ratio, _ := sanity["ratio"].(float64); ratio >= 0.05 {
+		t.Errorf("ratio = %v, must be < 0.05 after ceiling fix (no false too-broad note)", ratio)
+	}
+	if note, _ := sanity["note"].(string); note != "" {
+		t.Errorf("expected empty note for ratio < 5%%, got: %q", note)
+	}
+}
+
+// TestCountSanity_LargeWholeMinuteWindowUnchangedByCeiling verifies that a
+// large whole-minute window (480 minutes) is unaffected by the ceiling fix —
+// the PromQL selector and the computed ratio stay the same as before.
+func TestCountSanity_LargeWholeMinuteWindowUnchangedByCeiling(t *testing.T) {
+	srv, lastQuery := volumeProportionalServer(t, 100)
+	defer srv.Close()
+	cfg := sanityTestCfg(t, srv.URL)
+	pipeline := countAggregatePipeline("orders-service")
+	response := aggregateCountResponse("_count", float64(750))
+
+	got := AppendCountSanity(context.Background(), srv.Client(), cfg, pipeline, 0, 480*60*1000, response)
+	sanity := got["l9_sanity"].(map[string]interface{})
+
+	if !strings.Contains(*lastQuery, "[480m]") {
+		t.Fatalf("expected [480m] for a 480-minute query (exact, unchanged), got: %q", *lastQuery)
+	}
+	if strings.Contains(*lastQuery, "[481m]") {
+		t.Fatalf("PromQL must NOT over-round to [481m] for a 480-minute query, got: %q", *lastQuery)
+	}
+	if vol, _ := sanity["service_log_volume"].(float64); vol != 48000 {
+		t.Errorf("service_log_volume = %v, want 48000 (480m * 100/min)", vol)
+	}
+	if ratio, _ := sanity["ratio"].(float64); ratio != 0.0156 {
+		t.Errorf("ratio = %v, want 0.0156 (750/48000 rounded to 4 dp)", ratio)
+	}
+	if note, _ := sanity["note"].(string); note != "" {
+		t.Errorf("expected empty note for ratio 0.0156 (< 5%%), got: %q", note)
 	}
 }

@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_service_performance_details` now returns about 200 points per series instead of one per minute, sizing each range selector from the resulting step. Windows under ~3h20m are unchanged; above that the `rate()`-based series (availability, throughput, error rate, error percent) aggregate the whole window, while apdex and response times stay last-value and get sparser. Response-time values shift slightly — that query's lookback is no longer fixed at 5m.
 - The service workflows and the service-scoped tool descriptions now call `get_service_profile` first: skip trace tools when the profile reports `telemetry.traces` as `absent`, and parse the level from the log body when `severity_set` is `none` or `partial`.
 
+### Fixed
+
+- `l9_sanity`'s `service_log_volume` baseline no longer under-counts for non-whole-minute query windows. The PromQL `sum_over_time(...[Nm])` window used floor division on the request duration, dropping up to ~59 s of the query window for any non-whole-minute `start_time_iso`/`end_time_iso` range. On the nonzero path this inflated the ratio and produced false "filter is likely too broad" notes; on the zero path a service emitting only in the dropped prefix was misclassified as a "genuine zero ... nothing to inspect", directing the model away from the `sample_bodies` inspection the guardrail exists to trigger. The baseline now ceiling-divides so its window is never shorter than the query window — exact for whole minutes, over-covering by at most ~59 s otherwise (the conservative direction for both paths). Whole-minute windows are unchanged.
+
 ## [0.16.0] - 2026-08-27
 
 ### Added
