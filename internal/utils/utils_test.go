@@ -391,6 +391,32 @@ func TestParseToolTimestamp(t *testing.T) {
 	}
 }
 
+func TestEscapePromQLLabel(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "empty", in: "", want: ""},
+		{name: "plain", in: "checkout", want: "checkout"},
+		{name: "regex default", in: ".*", want: ".*"},
+		{name: "single quote is NOT escaped (delimiter must be double-quote)", in: "acme'test", want: "acme'test"},
+		{name: "double quote escaped", in: `foo"bar`, want: `foo\"bar`},
+		{name: "backslash escaped first", in: `foo\bar`, want: `foo\\bar`},
+		{name: "newline escaped", in: "foo\nbar", want: `foo\nbar`},
+		{name: "backslash then double quote (order matters)", in: `foo\"bar`, want: `foo\\\"bar`},
+		{name: "all three mixed", in: `a\b"c`, want: `a\\b\"c`},
+		{name: "injection attempt stays literal", in: `x"} or up{`, want: `x\"} or up{`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := EscapePromQLLabel(tt.in); got != tt.want {
+				t.Fatalf("EscapePromQLLabel(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestValidatePopulatedDatasourceCfg(t *testing.T) {
 	cfg := &models.Config{
 		PrometheusReadURL:  "https://prom.example",
