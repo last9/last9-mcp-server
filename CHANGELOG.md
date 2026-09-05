@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `last9://reference/investigation`: an MCP resource documenting the profile-first investigation flow.
 - `get_service_profile` returns a per-service telemetry profile — signal presence, language/runtime, deployment envs, log `signal_shape`, and a recommended ingest fix — as a short brief followed by raw JSON. Call it before a service-scoped investigation to skip trace tools when traces are absent and to parse severity from the log body when `severity_set` is `none` or `partial`.
 
+### Fixed
+
+- `get_drop_rules` and `add_drop_rule` now route non-2xx `/otel_settings/drop` responses through the shared upstream sanitizer (URL/credential redaction, 512-byte truncation with `… (truncated)`, body drained and omitted for 5xx and other non-400/422) instead of echoing the raw body via an unbounded `io.ReadAll` into the tool error surfaced to the model. This matches the `get_logs` / `get_service_logs` contract ({{detail_github_issue_ref}}).
+
 ### Changed
 
 - `get_service_performance_details` now returns about 200 points per series instead of one per minute, sizing each range selector from the resulting step. Windows under ~3h20m are unchanged; above that the `rate()`-based series (availability, throughput, error rate, error percent) aggregate the whole window, while apdex and response times stay last-value and get sparser. Response-time values shift slightly — that query's lookback is no longer fixed at 5m.
