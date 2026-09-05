@@ -704,8 +704,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Apdex Score over time range as a vector
 		details.ApdexScore, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				"sum(trace_service_apdex_score{service_name='%s', env=~'%s'})",
-				serviceName, env,
+				`sum(trace_service_apdex_score{service_name="%s", env=~"%s"})`,
+				utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env),
 			)
 		}, "service performance details apdex", "apdex score", &details.PartialErrors)
 		if err != nil {
@@ -715,8 +715,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Response Times - keep vector output
 		details.ResponseTimes, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				"sum by (quantile) (trace_service_response_time{service_name='%s', env='%s'}[$__rate_interval])",
-				serviceName, env,
+				`sum by (quantile) (trace_service_response_time{service_name="%s", env="%s"}[$__rate_interval])`,
+				utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env),
 			)
 		}, "service performance details response_times", "response times", &details.PartialErrors)
 		if err != nil {
@@ -726,8 +726,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Availability over time range as a vector
 		details.Availability, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				"(1 - (sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) or 0) / (sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) + 0.0000001)) * 100 default -999",
-				serviceName, env, serviceName, env,
+				`(1 - (sum(rate(trace_endpoint_count{service_name="%s", env="%s", span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) or 0) / (sum(rate(trace_endpoint_count{service_name="%s", env="%s", span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) + 0.0000001)) * 100 default -999`,
+				utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env),
 			)
 		}, "service performance details availability", "availability response", &details.PartialErrors)
 		if err != nil {
@@ -737,8 +737,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Throughput by status code - keep vector output
 		details.Throughput, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				"sum by (http_status_code)(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) * 60 default 0",
-				serviceName, env,
+				`sum by (http_status_code)(rate(trace_endpoint_count{service_name="%s", env="%s", span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) * 60 default 0`,
+				utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env),
 			)
 		}, "service performance details throughput", "throughput response", &details.PartialErrors)
 		if err != nil {
@@ -748,8 +748,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Error Rate by status code - keep vector output
 		details.ErrorRate, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				"sum by (service_name, http_status_code)(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) * 60 default 0",
-				serviceName, env,
+				`sum by (service_name, http_status_code)(rate(trace_endpoint_count{service_name="%s", env="%s", span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) * 60 default 0`,
+				utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env),
 			)
 		}, "service performance details error_rate", "error rate response", &details.PartialErrors)
 		if err != nil {
@@ -759,8 +759,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Calculate Error Percentage over time range as a vector
 		details.ErrorPercent, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				"(sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) / sum(rate(trace_endpoint_count{service_name='%s', env='%s', span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) * 100) default 0",
-				serviceName, env, serviceName, env,
+				`(sum(rate(trace_endpoint_count{service_name="%s", env="%s", span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) / sum(rate(trace_endpoint_count{service_name="%s", env="%s", span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) * 100) default 0`,
+				utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env),
 			)
 		}, "service performance details error_percent", "error percent response", &details.PartialErrors)
 		if err != nil {
@@ -798,8 +798,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		topRTChunks, err := fetchChunkedTopK(ctx, client, cfg, chunks,
 			func(c perfDetailsChunk, windowSelector string) string {
 				return fmt.Sprintf(
-					"topk(%d, quantile_over_time(0.95, sum by (span_name, messaging_system, rpc_system, span_kind,net_peer_name,process_runtime_name,db_system)(trace_endpoint_duration{service_name='%s', span_kind!='SPAN_KIND_INTERNAL', env='%s', quantile='p95'}[%s])))",
-					topRTLimit, serviceName, env, windowSelector,
+					`topk(%d, quantile_over_time(0.95, sum by (span_name, messaging_system, rpc_system, span_kind,net_peer_name,process_runtime_name,db_system)(trace_endpoint_duration{service_name="%s", span_kind!='SPAN_KIND_INTERNAL', env="%s", quantile='p95'}[%s])))`,
+					topRTLimit, utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), windowSelector,
 				)
 			},
 			spanKindKeyFn, parseFloatOK,
@@ -818,11 +818,11 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		topErrChunks, err := fetchChunkedTopK(ctx, client, cfg, chunks,
 			func(c perfDetailsChunk, windowSelector string) string {
 				return fmt.Sprintf(
-					`sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, exception_type)(sum_over_time(trace_client_count{service_name="%s", env='%s', exception_type!=''}[%s])) or
-					 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, exception_type)(sum_over_time(trace_endpoint_count{service_name="%s", env='%s', exception_type!=''}[%s])) or
-					 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, http_status_code)(sum_over_time(trace_client_count{service_name="%s", env='%s', http_status_code=~"^[45].*"}[%s])) or
-					 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, http_status_code)(sum_over_time(trace_endpoint_count{service_name="%s", env='%s', http_status_code=~"^[45].*"}[%s]))`,
-					serviceName, env, windowSelector, serviceName, env, windowSelector, serviceName, env, windowSelector, serviceName, env, windowSelector,
+					`sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, exception_type)(sum_over_time(trace_client_count{service_name="%s", env="%s", exception_type!=''}[%s])) or
+					 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, exception_type)(sum_over_time(trace_endpoint_count{service_name="%s", env="%s", exception_type!=''}[%s])) or
+					 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, http_status_code)(sum_over_time(trace_client_count{service_name="%s", env="%s", http_status_code=~"^[45].*"}[%s])) or
+					 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, http_status_code)(sum_over_time(trace_endpoint_count{service_name="%s", env="%s", http_status_code=~"^[45].*"}[%s]))`,
+					utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), windowSelector, utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), windowSelector, utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), windowSelector, utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), windowSelector,
 				)
 			},
 			spanKindKeyFn, parseIntOK,
@@ -849,11 +849,11 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		topErrorsChunks, err := fetchChunkedTopK(ctx, client, cfg, chunks,
 			func(c perfDetailsChunk, windowSelector string) string {
 				return fmt.Sprintf(
-					`sum by (exception_type)(sum by (exception_type, span_kind)(sum_over_time(trace_client_count{service_name="%s", env='%s', exception_type!=''}[%s])) or
-					 sum by (exception_type, span_kind)(sum_over_time(trace_endpoint_count{service_name="%s", env='%s', exception_type!=''}[%s]))) or
-					 sum by (http_status_code)(sum by (http_status_code, span_kind)(sum_over_time(trace_client_count{service_name="%s", env='%s', http_status_code=~"^[45].*"}[%s])) or
-					 sum by (http_status_code, span_kind)(sum_over_time(trace_endpoint_count{service_name="%s", env='%s', http_status_code=~"^[45].*"}[%s])))`,
-					serviceName, env, windowSelector, serviceName, env, windowSelector, serviceName, env, windowSelector, serviceName, env, windowSelector,
+					`sum by (exception_type)(sum by (exception_type, span_kind)(sum_over_time(trace_client_count{service_name="%s", env="%s", exception_type!=''}[%s])) or
+					 sum by (exception_type, span_kind)(sum_over_time(trace_endpoint_count{service_name="%s", env="%s", exception_type!=''}[%s]))) or
+					 sum by (http_status_code)(sum by (http_status_code, span_kind)(sum_over_time(trace_client_count{service_name="%s", env="%s", http_status_code=~"^[45].*"}[%s])) or
+					 sum by (http_status_code, span_kind)(sum_over_time(trace_endpoint_count{service_name="%s", env="%s", http_status_code=~"^[45].*"}[%s])))`,
+					utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), windowSelector, utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), windowSelector, utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), windowSelector, utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), windowSelector,
 				)
 			},
 			topErrorsKeyFn, parseIntOK,
@@ -903,8 +903,8 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		timeRange := fmt.Sprintf("%dm", int((endTimeParam-startTimeParam)/60))
 		// Prepare the Prometheus query for throughput of endpoint operations
 		throughputQuery := fmt.Sprintf(
-			"sum by (span_name, span_kind)(sum_over_time(trace_endpoint_count{service_name='%s', span_kind='SPAN_KIND_SERVER', env=~'%s'}[%s])) / %d",
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
+			`sum by (span_name, span_kind)(sum_over_time(trace_endpoint_count{service_name="%s", span_kind='SPAN_KIND_SERVER', env=~"%s"}[%s])) / %d`,
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare instant query request to Prometheus
 		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, throughputQuery, endTimeParam, cfg)
@@ -921,8 +921,8 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the Prometheus query for response times of endpoint operations
 		respTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (quantile, span_name, span_kind) (trace_endpoint_duration{service_name='%s', span_kind='SPAN_KIND_SERVER', env=~'%s'}[%s]))",
-			serviceName, env, timeRange,
+			`quantile_over_time(0.95, sum by (quantile, span_name, span_kind) (trace_endpoint_duration{service_name="%s", span_kind='SPAN_KIND_SERVER', env=~"%s"}[%s]))`,
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, respTimeQuery, endTimeParam, cfg)
@@ -939,9 +939,9 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the Prometheus query for error rate of endpoint operations
 		errorRateQuery := fmt.Sprintf(
-			"100 * (sum by (span_name, span_kind) (sum_over_time(trace_endpoint_count{service_name='%s', span_kind='SPAN_KIND_SERVER', env=~'%s', http_status_code=~'4.*|5.*'}[%s])) / %d) / (sum by (span_name, span_kind) (sum_over_time(trace_endpoint_count{service_name='%s', span_kind='SPAN_KIND_SERVER', env=~'%s'}[%s])) / %d)",
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
+			`100 * (sum by (span_name, span_kind) (sum_over_time(trace_endpoint_count{service_name="%s", span_kind='SPAN_KIND_SERVER', env=~"%s", http_status_code=~'4.*|5.*'}[%s])) / %d) / (sum by (span_name, span_kind) (sum_over_time(trace_endpoint_count{service_name="%s", span_kind='SPAN_KIND_SERVER', env=~"%s"}[%s])) / %d)`,
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, errorRateQuery, endTimeParam, cfg)
@@ -958,8 +958,8 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the Prometheus query for throughput of database operations
 		dbThroughputQuery := fmt.Sprintf(
-			"sum by (span_name, db_system, net_peer_name, rpc_system, span_kind)(sum_over_time(trace_client_count{service_name='%s', span_kind='SPAN_KIND_CLIENT', db_system!='', env=~'%s'}[%s])) / %d",
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
+			`sum by (span_name, db_system, net_peer_name, rpc_system, span_kind)(sum_over_time(trace_client_count{service_name="%s", span_kind='SPAN_KIND_CLIENT', db_system!='', env=~"%s"}[%s])) / %d`,
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, dbThroughputQuery, endTimeParam, cfg)
@@ -976,8 +976,8 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the Prometheus query for response times of database operations
 		dbRespTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (quantile, span_name, db_system, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name='%s', span_kind='SPAN_KIND_CLIENT', db_system!='', env=~'%s'}[%s]))",
-			serviceName, env, timeRange,
+			`quantile_over_time(0.95, sum by (quantile, span_name, db_system, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name="%s", span_kind='SPAN_KIND_CLIENT', db_system!='', env=~"%s"}[%s]))`,
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, dbRespTimeQuery, endTimeParam, cfg)
@@ -1009,9 +1009,9 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 						(sum_over_time(trace_client_count{service_name="%s", db_system!="",env=~"%s"} [%s]) / %d)
 				)
 			`,
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, dbErrorRateQuery, endTimeParam, cfg)
@@ -1028,8 +1028,8 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare query for http operations
 		httpThroughputQuery := fmt.Sprintf(
-			"sum by(span_name, db_system, net_peer_name, rpc_system, span_kind)(sum_over_time(trace_client_count{service_name='%s', span_kind='SPAN_KIND_CLIENT', env=~'%s'}[%s])) / %d",
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
+			`sum by(span_name, db_system, net_peer_name, rpc_system, span_kind)(sum_over_time(trace_client_count{service_name="%s", span_kind='SPAN_KIND_CLIENT', env=~"%s"}[%s])) / %d`,
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, httpThroughputQuery, endTimeParam, cfg)
@@ -1046,8 +1046,8 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the Prometheus query for response times of http operations
 		httpRespTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (quantile, span_name, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name='%s', span_kind='SPAN_KIND_CLIENT', env=~'%s'}[%s]))",
-			serviceName, env, timeRange,
+			`quantile_over_time(0.95, sum by (quantile, span_name, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name="%s", span_kind='SPAN_KIND_CLIENT', env=~"%s"}[%s]))`,
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, httpRespTimeQuery, endTimeParam, cfg)
@@ -1077,9 +1077,9 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 				sum by(span_name, db_system, messaging_system, net_peer_name, rpc_system, span_kind)
 					(sum_over_time(trace_client_count{service_name="%s", env=~"%s"} [%s]) / %d)
 			)`,
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, httpErrorRateQuery, endTimeParam, cfg)
@@ -1096,8 +1096,8 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare query for messaging operations
 		messagingThroughputQuery := fmt.Sprintf(
-			"sum by(span_name, messaging_system, net_peer_name, rpc_system, span_kind)(sum_over_time(trace_client_count{service_name='%s', messaging_system!='', span_kind='SPAN_KIND_PRODUCER', env=~'%s'}[%s])) / %d",
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
+			`sum by(span_name, messaging_system, net_peer_name, rpc_system, span_kind)(sum_over_time(trace_client_count{service_name="%s", messaging_system!='', span_kind='SPAN_KIND_PRODUCER', env=~"%s"}[%s])) / %d`,
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, messagingThroughputQuery, endTimeParam, cfg)
@@ -1114,8 +1114,8 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the Prometheus query for response times of messaging operations
 		messagingRespTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95, sum by (quantile, span_name, messaging_system, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name='%s', messaging_system!='', span_kind='SPAN_KIND_PRODUCER', env=~'%s'}[%s]))",
-			serviceName, env, timeRange,
+			`quantile_over_time(0.95, sum by (quantile, span_name, messaging_system, net_peer_name, rpc_system, span_kind) (trace_client_duration{service_name="%s", messaging_system!='', span_kind='SPAN_KIND_PRODUCER', env=~"%s"}[%s]))`,
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange,
 		)
 		// Prepare request to Prometheus (or your metrics backend)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, messagingRespTimeQuery, endTimeParam, cfg)
@@ -1145,9 +1145,9 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 				sum by(span_name, messaging_system, net_peer_name, rpc_system, span_kind)
 					(sum_over_time(trace_client_count{service_name="%s", messaging_system!="", env=~"%s", span_kind='SPAN_KIND_PRODUCER'} [%s]) / %d)
 			)`,
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		// Prepare request to Prometheus (or your metrics backend)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, messagingErrorRateQuery, endTimeParam, cfg)
@@ -1467,8 +1467,8 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		// Incoming requests (HTTP server operations):
 		// throughput
 		incomingThroughputQuery := fmt.Sprintf(
-			"sum by (client)(sum_over_time(trace_call_graph_count{server='%s', env=~'%s'}[%s])) / %d",
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
+			`sum by (client)(sum_over_time(trace_call_graph_count{server="%s", env=~"%s"}[%s])) / %d`,
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, incomingThroughputQuery, endTimeParam, cfg)
 		if err != nil {
@@ -1484,8 +1484,8 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 		// response times
 		incomingRespTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95 ,sum by (client, quantile) (trace_call_graph_duration{server='%s', env=~'%s'}[%s]))",
-			serviceName, env, timeRange,
+			`quantile_over_time(0.95 ,sum by (client, quantile) (trace_call_graph_duration{server="%s", env=~"%s"}[%s]))`,
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange,
 		)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, incomingRespTimeQuery, endTimeParam, cfg)
 		if err != nil {
@@ -1501,8 +1501,8 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 		// error rate
 		incomingErrorRateQuery := fmt.Sprintf(
-			"sum by (client)(sum_over_time(trace_call_graph_count{server='%s', env=~'%s', client_status=~'4.*|5.*'}[%s])) / %d",
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
+			`sum by (client)(sum_over_time(trace_call_graph_count{server="%s", env=~"%s", client_status=~'4.*|5.*'}[%s])) / %d`,
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, incomingErrorRateQuery, endTimeParam, cfg)
 		if err != nil {
@@ -1577,8 +1577,8 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		// Outgoing requests (HTTP client operations):
 		// throughput
 		outgoingThroughputQuery := fmt.Sprintf(
-			"sum by (server)(sum_over_time(trace_call_graph_count{client='%s', env=~'%s'}[%s])) / %d",
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
+			`sum by (server)(sum_over_time(trace_call_graph_count{client="%s", env=~"%s"}[%s])) / %d`,
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, outgoingThroughputQuery, endTimeParam, cfg)
 		if err != nil {
@@ -1594,8 +1594,8 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 		// response times
 		outgoingRespTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95 ,sum by (server, quantile) (trace_call_graph_duration{client='%s', env=~'%s'}[%s]))",
-			serviceName, env, timeRange,
+			`quantile_over_time(0.95 ,sum by (server, quantile) (trace_call_graph_duration{client="%s", env=~"%s"}[%s]))`,
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange,
 		)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, outgoingRespTimeQuery, endTimeParam, cfg)
 		if err != nil {
@@ -1611,8 +1611,8 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 		// error rate
 		outgoingErrorRateQuery := fmt.Sprintf(
-			"sum by (server)(sum_over_time(trace_call_graph_count{client='%s', env=~'%s', client_status=~'4.*|5.*'}[%s])) / %d",
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
+			`sum by (server)(sum_over_time(trace_call_graph_count{client="%s", env=~"%s", client_status=~'4.*|5.*'}[%s])) / %d`,
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, outgoingErrorRateQuery, endTimeParam, cfg)
 		if err != nil {
@@ -1688,8 +1688,8 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		// Infrastructure services:
 		// throughput
 		infrastructureThroughputQuery := fmt.Sprintf(
-			"sum by (server_host, server_db_system, server_rpc_system, server_messaging_system, server_rpc_service) (sum_over_time(trace_internal_call_graph_count{client='%s', env=~'%s'}[%s])) / %d",
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
+			`sum by (server_host, server_db_system, server_rpc_system, server_messaging_system, server_rpc_service) (sum_over_time(trace_internal_call_graph_count{client="%s", env=~"%s"}[%s])) / %d`,
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, infrastructureThroughputQuery, endTimeParam, cfg)
 		if err != nil {
@@ -1705,8 +1705,8 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 		// response times
 		infrastructureRespTimeQuery := fmt.Sprintf(
-			"quantile_over_time(0.95 ,sum by (server_host, server_db_system, server_rpc_system, server_messaging_system, server_rpc_service, quantile) (trace_internal_call_graph_duration{client='%s', env=~'%s'}[%s]))",
-			serviceName, env, timeRange,
+			`quantile_over_time(0.95 ,sum by (server_host, server_db_system, server_rpc_system, server_messaging_system, server_rpc_service, quantile) (trace_internal_call_graph_duration{client="%s", env=~"%s"}[%s]))`,
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange,
 		)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, infrastructureRespTimeQuery, endTimeParam, cfg)
 		if err != nil {
@@ -1722,8 +1722,8 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 		// error rate
 		infrastructureErrorRateQuery := fmt.Sprintf(
-			"sum by (server_host, server_db_system, server_rpc_system, server_messaging_system, server_rpc_service) (sum_over_time(trace_internal_call_graph_count{client='%s', env=~'%s', client_status=~'4.*|5.*'}[%s])) / %d",
-			serviceName, env, timeRange, int((endTimeParam-startTimeParam)/60),
+			`sum by (server_host, server_db_system, server_rpc_system, server_messaging_system, server_rpc_service) (sum_over_time(trace_internal_call_graph_count{client="%s", env=~"%s", client_status=~'4.*|5.*'}[%s])) / %d`,
+			utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env), timeRange, int((endTimeParam-startTimeParam)/60),
 		)
 		httpResp, err = utils.MakePromInstantAPIQuery(ctx, client, infrastructureErrorRateQuery, endTimeParam, cfg)
 		if err != nil {
