@@ -444,3 +444,119 @@ func findDeviationError(t *testing.T, errors []deviationQueryError, kind string)
 	t.Fatalf("error kind %q not found in %+v", kind, errors)
 	return deviationQueryError{}
 }
+
+// TestErrorPercentageDistributionDividesWholeZeroFilledErrorUnion guards the
+// PromQL operator-precedence bug where errorExpression (whose top-level
+// operator is `or`, used to zero-fill healthy request buckets) was interpolated
+// bare as the left operand of `/`. Because `or` binds looser than `/`, the
+// division was absorbed by the zero-fill branch `(requestExpression * 0) /
+// requestExpression == 0`, leaving error buckets evaluated as `error_count *
+// 100` instead of `(error_count / request_count) * 100`.
+//
+// With the `or` parenthesized, the division applies to the whole zero-filled
+// error union, so the union's `or` must be nested strictly deeper than the
+// percent `/`. In the buggy expression both operators sat at the same depth.
+func TestErrorPercentageDistributionDividesWholeZeroFilledErrorUnion(t *testing.T) {
+	current, baseline := deviationTestWindows()
+	for _, scope := range []deviationQueryScope{
+		{ServiceName: "api", Env: "prod", Limit: 3},
+		{ServiceName: "checkout\"api\\v2", Env: "prod\nblue", Limit: 7},
+		{Limit: 5},
+	} {
+		queries := buildServiceRollupQueries(scope, current, baseline, time.Minute).Current
+		query := queryTextByName(t, queries, "error_percentage_distribution")
+
+		// The errorPercentageExpression is replicated once per distribution
+		// statistic (q25/median/q75) inside deviationDistributionQuery, so every
+		// slash is the same percent division and every ` or on (` is the same
+		// zero-fill union. Verify the invariant on every copy.
+		slashes := findSlashesOutsideStrings(query)
+		unionAts := findAllIndices(query, " or on (")
+		if len(slashes) == 0 || len(unionAts) == 0 {
+			t.Fatalf("%+v: missing division or zero-fill union in error_percentage_distribution:\n%s", scope, query)
+		}
+		if len(slashes) != len(unionAts) {
+			t.Fatalf("%+v: expected one zero-fill union per division, got %d unions and %d divisions:\n%s", scope, len(unionAts), len(slashes), query)
+		}
+		for i, slashAt := range slashes {
+			slashDepth := parenDepthAt(query, slashAt)
+			unionDepth := parenDepthAt(query, unionAts[i]+1)
+			if unionDepth <= slashDepth {
+				t.Fatalf("%+v: zero-fill `or` (depth %d) must nest deeper than the percent `/` (depth %d) so the division spans the whole error union, not only the zero-fill branch:\n%s", scope, unionDepth, slashDepth, query)
+			}
+		}
+	}
+}
+
+// findSlashesOutsideStrings returns the byte indices of every `/` that is not
+// inside a double-quoted PromQL string literal.
+func findSlashesOutsideStrings(expr string) []int {
+	var indices []int
+	inString := false
+	for i := 0; i < len(expr); i++ {
+		c := expr[i]
+		if inString {
+			if c == '\\' {
+				i++
+				continue
+			}
+			if c == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '/':
+			indices = append(indices, i)
+		}
+	}
+	return indices
+}
+
+// findAllIndices returns the byte indices of every non-overlapping occurrence of
+// substr in expr.
+func findAllIndices(expr, substr string) []int {
+	var indices []int
+	for start := 0; start < len(expr); {
+		idx := strings.Index(expr[start:], substr)
+		if idx < 0 {
+			break
+		}
+		indices = append(indices, start+idx)
+		start += idx + len(substr)
+	}
+	return indices
+}
+
+// parenDepthAt returns the parenthesis nesting depth at position idx in expr,
+// scanning from the start and skipping over double-quoted string literals
+// (with backslash escapes) so parentheses or slashes inside label-match values
+// do not affect the count.
+func parenDepthAt(expr string, idx int) int {
+	depth := 0
+	inString := false
+	for i := 0; i < idx && i < len(expr); i++ {
+		c := expr[i]
+		if inString {
+			if c == '\\' {
+				i++
+				continue
+			}
+			if c == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '(':
+			depth++
+		case ')':
+			depth--
+		}
+	}
+	return depth
+}
