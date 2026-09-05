@@ -142,6 +142,21 @@ func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 				)
 			}
 
+			// $not is documented as {"$not": [condition]} — a single-element
+			// array (logjson.md). The inspect heuristics that consume the
+			// sanitized pipeline (utils.HasExpensiveBodyParsing,
+			// utils.pipelineTouchesBody) descend into $not only when its value
+			// is []any, so a map-form {"$not": {…}} that free-form callers may
+			// emit would survive sanitization unchanged and be silently
+			// skipped. Normalize the map form to the documented array form
+			// before recursing. The type check avoids double-wrapping an
+			// already-correct array, which would produce {"$not":[[cond]]} and
+			// cause the inspector's element-type guard to drop the condition.
+			if key == "$not" {
+				if _, isMap := item.(map[string]interface{}); isMap {
+					item = []interface{}{item}
+				}
+			}
 			next, err := sanitizeLogCondition(item, path+"."+key)
 			if err != nil {
 				return nil, err

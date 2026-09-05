@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_service_performance_details` now returns about 200 points per series instead of one per minute, sizing each range selector from the resulting step. Windows under ~3h20m are unchanged; above that the `rate()`-based series (availability, throughput, error rate, error percent) aggregate the whole window, while apdex and response times stay last-value and get sparser. Response-time values shift slightly — that query's lookback is no longer fixed at 5m.
 - The service workflows and the service-scoped tool descriptions now call `get_service_profile` first: skip trace tools when the profile reports `telemetry.traces` as `absent`, and parse the level from the log body when `severity_set` is `none` or `partial`.
 
+### Fixed
+
+- The logs pipeline sanitizer now normalizes a map-form `$not` (`{"$not": {…}}`) to the documented single-element array form (`{"$not": [condition]}`). A map-form `$not` on `Body` previously survived sanitization unchanged and was skipped by the chunking-throttle and count-sanity heuristics, which only descend into an array-form `$not`: a non-aggregate `Body` search over a >1d lookback ran with ~3× too many parallel chunks, and a zero-count `Body` aggregate dropped its `l9_sanity` diagnostic. Array-form `$not` was already correct and is unchanged ({{detail_github_issue_ref}}).
+
 ## [0.16.0] - 2026-08-27
 
 ### Added
