@@ -282,3 +282,27 @@ func TestAPMServiceDeviationsDescriptionDefaultsAndPartialResults(t *testing.T) 
 		}
 	}
 }
+
+// TestAPMServiceDeviationsDescriptionLookbackFloor pins the short-lookback
+// domain guidance on the markdown contract surface so a future edit cannot
+// silently strip it. The resolver requires at least one fully-completed
+// 1-minute bucket; integer lookback below 2 hard-errors in production, and a
+// lookback below about 5 yields insufficient_evidence because classification
+// needs at least four aligned buckets. The schema's syntactic minimum stays 1
+// (fractional lookbacks between 1 and 2 are valid at some now offsets), so the
+// floor must live in prose rather than the schema's minimum bound.
+func TestAPMServiceDeviationsDescriptionLookbackFloor(t *testing.T) {
+	description := strings.ToLower(prompts.GetAPMServiceDeviationsDescription)
+	for _, phrase := range []string{
+		"short lookbacks are unreliable",
+		"fully-completed 1-minute buckets",
+		"integer `lookback_minutes` below 2",
+		"no completed buckets",
+		"insufficient_evidence",
+		"four aligned buckets",
+	} {
+		if !strings.Contains(description, phrase) {
+			t.Errorf("description missing lookback floor guidance %q", phrase)
+		}
+	}
+}
