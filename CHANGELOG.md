@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_service_performance_details` now returns about 200 points per series instead of one per minute, sizing each range selector from the resulting step. Windows under ~3h20m are unchanged; above that the `rate()`-based series (availability, throughput, error rate, error percent) aggregate the whole window, while apdex and response times stay last-value and get sparser. Response-time values shift slightly — that query's lookback is no longer fixed at 5m.
 - The service workflows and the service-scoped tool descriptions now call `get_service_profile` first: skip trace tools when the profile reports `telemetry.traces` as `absent`, and parse the level from the log body when `severity_set` is `none` or `partial`.
 
+### Fixed
+
+- The `/health` endpoint in HTTP mode (`--http`) now reports the running build's version instead of a hardcoded `1.0.0`, matching `--version`, the startup banner, and the MCP server-init log.
+
 ## [0.16.0] - 2026-08-27
 
 ### Added

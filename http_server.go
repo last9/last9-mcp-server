@@ -132,6 +132,6 @@ func (h *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":  "healthy",
 		"server":  "last9-mcp",
-		"version": "1.0.0",
+		"version": Version,
 	})
 }
