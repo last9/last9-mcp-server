@@ -247,7 +247,7 @@ func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, s
 	stepMinutes := strconv.FormatFloat(step.Minutes(), 'f', -1, 64)
 	requestRPMGrid := deviationSubquery(fmt.Sprintf("(%s / %s)", requestExpression, stepMinutes), window, step)
 	errorRPMGrid := deviationSubquery(fmt.Sprintf("(%s / %s)", errorExpression, stepMinutes), window, step)
-	errorPercentageExpression := fmt.Sprintf("(((%s / %s) * 100) and on (%s) (%s > 0))", errorExpression, requestExpression, matching, requestExpression)
+	errorPercentageExpression := fmt.Sprintf("((((%s) / %s) * 100) and on (%s) (%s > 0))", "("+errorExpression+")", requestExpression, matching, requestExpression)
 	errorPercentageGrid := deviationSubquery(errorPercentageExpression, window, step)
 	apdexDistributionGrid := deviationSubquery(alignedApdex, window, step)
 
