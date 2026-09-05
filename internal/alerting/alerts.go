@@ -181,7 +181,16 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			)
 		}
 
-		if !args.OnlyWithoutNotificationChannel {
+		// "Unconfigured-only" means a pure only_without_notification_channel
+		// request with no active notification_channel_* filters. When channel
+		// filters are OR-combined with only_without_notification_channel, the
+		// result set contains configured rules matched via the channel-binding
+		// branch, so KPI resolution must still run and the global-channel
+		// advisory must not be prepended. This mirrors the OR-aware gate used
+		// for unconfiguredOnlyHeader above.
+		unconfiguredOnly := args.OnlyWithoutNotificationChannel && !hasActiveNotificationChannelFilters(args)
+
+		if !unconfiguredOnly {
 			resolveAlertConfigKPIs(ctx, client, cfg, filteredAlertConfig)
 		}
 
@@ -192,7 +201,7 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			notificationChannelsErr,
 			unconfiguredOnlyHeader,
 		)
-		if args.OnlyWithoutNotificationChannel {
+		if unconfiguredOnly {
 			formattedResponse = globalChannelAdvisory + "\n" + formattedResponse
 		}
 
