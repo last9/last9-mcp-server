@@ -3,6 +3,7 @@ package apm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -801,5 +802,244 @@ func TestServicePerformanceDetailsReadParseFailureHardAbortsSingleChunkWindow(t 
 	}
 	if strings.Contains(err.Error(), "chunk ") {
 		t.Fatalf("single-chunk failure must not carry a chunk-bounds prefix, got %v", err)
+	}
+}
+
+// classifyOpsSummaryQuery maps one of the twelve instant PromQL queries the
+// get_service_operations_summary handler issues to a stable category key so
+// a stubbed backend can return a canned response per sub-query.
+func classifyOpsSummaryQuery(q string) string {
+	switch {
+	case strings.Contains(q, "SPAN_KIND_PRODUCER"):
+		if strings.Contains(q, "quantile_over_time") {
+			return "messaging_respTime"
+		}
+		if strings.Contains(q, "STATUS_CODE_ERROR") || strings.Contains(q, "http_status_code") {
+			return "messaging_errorRate"
+		}
+		return "messaging_throughput"
+	case strings.Contains(q, "db_system!=''") || strings.Contains(q, "db_system!=\""):
+		if strings.Contains(q, "quantile_over_time") {
+			return "db_respTime"
+		}
+		if strings.Contains(q, "STATUS_CODE_ERROR") || strings.Contains(q, "http_status_code") {
+			return "db_errorRate"
+		}
+		return "db_throughput"
+	case strings.Contains(q, "SPAN_KIND_SERVER"):
+		if strings.Contains(q, "quantile_over_time") {
+			return "server_respTime"
+		}
+		if strings.Contains(q, "http_status_code") {
+			return "server_errorRate"
+		}
+		return "server_throughput"
+	default:
+		if strings.Contains(q, "quantile_over_time") {
+			return "http_respTime"
+		}
+		if strings.Contains(q, "STATUS_CODE_ERROR") || strings.Contains(q, "http_status_code") {
+			return "http_errorRate"
+		}
+		return "http_throughput"
+	}
+}
+
+// opsSumRow builds a single Prometheus instant-query result row with the
+// given metric labels and a string value (the handler parses Value[1] as a
+// string and strconv.ParseFloat's it).
+func opsSumRow(metric map[string]string, value string) string {
+	type row struct {
+		Metric map[string]string `json:"metric"`
+		Value  []any             `json:"value"`
+	}
+	b, err := json.Marshal(row{Metric: metric, Value: []any{int64(1687600000), value}})
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
+}
+
+func opsSumRows(rows ...string) string {
+	if len(rows) == 0 {
+		return "[]"
+	}
+	return "[" + strings.Join(rows, ",") + "]"
+}
+
+func newOpsSummaryPromServer(t *testing.T, responses map[string]string) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqBody map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			t.Errorf("failed to decode instant request body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		query := fmt.Sprintf("%v", reqBody["query"])
+		body, ok := responses[classifyOpsSummaryQuery(query)]
+		if !ok {
+			body = "[]"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, body)
+	}))
+	return server
+}
+
+func callOpsSummaryHandler(t *testing.T, responses map[string]string, env string) ServiceOperationsSummaryResponse {
+	t.Helper()
+	server := newOpsSummaryPromServer(t, responses)
+	defer server.Close()
+	handler := NewServiceOperationsSummaryHandler(server.Client(), testSummaryConfig(server.URL))
+	start := time.Date(2026, 8, 13, 11, 20, 0, 0, time.UTC)
+	end := start.Add(15 * time.Minute)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServiceOperationsSummaryArgs{
+		ServiceName:  "checkout",
+		StartTimeISO: start.Format(time.RFC3339),
+		EndTimeISO:   end.Format(time.RFC3339),
+		Env:          env,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	text := utils.GetTextContent(t, result)
+	var resp ServiceOperationsSummaryResponse
+	if err := json.Unmarshal([]byte(text), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v\n%s", err, text)
+	}
+	return resp
+}
+
+// TestServiceOperationsSummary_IncludesInboundServerEndpoints is the
+// regression test for the missing append in the SPAN_KIND_SERVER loop:
+// when the backend returns a canned inbound server-endpoint row and the
+// db/http/messaging sub-queries return nothing, the response's operations
+// array must contain exactly that server operation with its populated
+// throughput, error_rate, derived error_percent, and response_time.
+func TestServiceOperationsSummary_IncludesInboundServerEndpoints(t *testing.T) {
+	responses := map[string]string{
+		"server_throughput": opsSumRows(opsSumRow(map[string]string{
+			"span_name": "GET /checkout",
+			"span_kind": "SPAN_KIND_SERVER",
+		}, "100")),
+		"server_respTime": opsSumRows(opsSumRow(map[string]string{
+			"span_name": "GET /checkout",
+			"quantile":  "0.95",
+			"span_kind": "SPAN_KIND_SERVER",
+		}, "250.5")),
+		"server_errorRate": opsSumRows(opsSumRow(map[string]string{
+			"span_name": "GET /checkout",
+			"span_kind": "SPAN_KIND_SERVER",
+		}, "5")),
+	}
+	resp := callOpsSummaryHandler(t, responses, "prod")
+
+	if len(resp.Operations) != 1 {
+		t.Fatalf("expected exactly 1 server operation, got %d: %+v", len(resp.Operations), resp.Operations)
+	}
+	op := resp.Operations[0]
+	if op.Name != "GET /checkout" {
+		t.Errorf("Name = %q, want %q", op.Name, "GET /checkout")
+	}
+	if op.ServiceName != "checkout" {
+		t.Errorf("ServiceName = %q, want %q", op.ServiceName, "checkout")
+	}
+	if op.Env != "prod" {
+		t.Errorf("Env = %q, want %q", op.Env, "prod")
+	}
+	if op.Throughput != 100 {
+		t.Errorf("Throughput = %v, want 100", op.Throughput)
+	}
+	if op.ErrorRate != 5 {
+		t.Errorf("ErrorRate = %v, want 5", op.ErrorRate)
+	}
+	if op.ErrorPercent != 5 {
+		t.Errorf("ErrorPercent = %v, want 5", op.ErrorPercent)
+	}
+	if got := op.ResponseTime["0.95"]; got != 250.5 {
+		t.Errorf("ResponseTime[0.95] = %v, want 250.5", got)
+	}
+}
+
+// TestServiceOperationsSummary_AllCategoriesAppended guards all four
+// category loops together: with one row per category from the backend,
+// the operations array must contain the server, db, http, and messaging
+// operations side by side. Before the fix, the server row was dropped and
+// only three appeared; this also ensures the new server append integrates
+// with the pre-existing db/http/messaging appends without regression.
+func TestServiceOperationsSummary_AllCategoriesAppended(t *testing.T) {
+	responses := map[string]string{
+		"server_throughput": opsSumRows(opsSumRow(map[string]string{
+			"span_name": "GET /checkout", "span_kind": "SPAN_KIND_SERVER",
+		}, "100")),
+		"server_respTime": opsSumRows(opsSumRow(map[string]string{
+			"span_name": "GET /checkout", "quantile": "0.95", "span_kind": "SPAN_KIND_SERVER",
+		}, "250.5")),
+		"server_errorRate": opsSumRows(opsSumRow(map[string]string{
+			"span_name": "GET /checkout", "span_kind": "SPAN_KIND_SERVER",
+		}, "5")),
+
+		"db_throughput": opsSumRows(opsSumRow(map[string]string{
+			"span_name": "SELECT orders", "db_system": "postgres", "net_peer_name": "db.internal", "span_kind": "SPAN_KIND_CLIENT",
+		}, "50")),
+		"db_respTime": opsSumRows(opsSumRow(map[string]string{
+			"span_name": "SELECT orders", "db_system": "postgres", "net_peer_name": "db.internal", "quantile": "0.95",
+		}, "15")),
+		"db_errorRate": opsSumRows(opsSumRow(map[string]string{
+			"span_name": "SELECT orders", "db_system": "postgres", "net_peer_name": "db.internal",
+		}, "2")),
+
+		"http_throughput": opsSumRows(opsSumRow(map[string]string{
+			"span_name": "GET /api/users", "net_peer_name": "api.internal", "rpc_system": "http", "span_kind": "SPAN_KIND_CLIENT",
+		}, "200")),
+		"http_respTime": opsSumRows(opsSumRow(map[string]string{
+			"span_name": "GET /api/users", "net_peer_name": "api.internal", "rpc_system": "http", "quantile": "0.95",
+		}, "80")),
+		"http_errorRate": opsSumRows(opsSumRow(map[string]string{
+			"span_name": "GET /api/users", "net_peer_name": "api.internal", "rpc_system": "http",
+		}, "10")),
+
+		"messaging_throughput": opsSumRows(opsSumRow(map[string]string{
+			"span_name": "publish events", "messaging_system": "kafka", "net_peer_name": "kafka.internal", "rpc_system": "messaging", "span_kind": "SPAN_KIND_PRODUCER",
+		}, "30")),
+		"messaging_respTime": opsSumRows(opsSumRow(map[string]string{
+			"span_name": "publish events", "messaging_system": "kafka", "net_peer_name": "kafka.internal", "rpc_system": "messaging", "quantile": "0.95",
+		}, "5")),
+		"messaging_errorRate": opsSumRows(opsSumRow(map[string]string{
+			"span_name": "publish events", "messaging_system": "kafka", "net_peer_name": "kafka.internal", "rpc_system": "messaging",
+		}, "0")),
+	}
+	resp := callOpsSummaryHandler(t, responses, "prod")
+
+	if len(resp.Operations) != 4 {
+		t.Fatalf("expected 4 operations (server+db+http+messaging), got %d: %+v", len(resp.Operations), resp.Operations)
+	}
+	seen := map[string]bool{}
+	for _, op := range resp.Operations {
+		seen[op.Name] = true
+	}
+	for _, want := range []string{"GET /checkout", "SELECT orders", "GET /api/users", "publish events"} {
+		if !seen[want] {
+			t.Errorf("missing operation %q; got %v", want, seen)
+		}
+	}
+}
+
+// TestServiceOperationsSummary_EmptyBackendsYieldsNoOperations confirms
+// the handler still returns a well-formed, empty operations array and no
+// error when every backend sub-query is empty (e.g. no spans in the
+// window). The server-category append fix must not change this path.
+func TestServiceOperationsSummary_EmptyBackendsYieldsNoOperations(t *testing.T) {
+	resp := callOpsSummaryHandler(t, nil, "prod")
+	if len(resp.Operations) != 0 {
+		t.Fatalf("expected 0 operations for empty backends, got %d: %+v", len(resp.Operations), resp.Operations)
+	}
+	if resp.ServiceName != "checkout" {
+		t.Errorf("ServiceName = %q, want checkout", resp.ServiceName)
+	}
+	if resp.Env != "prod" {
+		t.Errorf("Env = %q, want prod", resp.Env)
 	}
 }
