@@ -519,6 +519,232 @@ func TestGetAlertConfigHandler_NotificationChannelTypeAndUnconfiguredOR(t *testi
 	if !strings.Contains(text, "Found 3 alert rules:") {
 		t.Fatalf("expected default count header for OR filter, got:\n%s", text)
 	}
+	// OR-combined queries return configured rules (matched via the channel
+	// branch), so the unconfigured-only global-channel advisory must NOT be
+	// prepended. No global channels exist in this state, so the advisory would
+	// read "Global notification channels: none."
+	if strings.Contains(text, "Global notification channels:") {
+		t.Fatalf("OR-combined filter must not prepend global-channel advisory when configured rules are present, got:\n%s", text)
+	}
+}
+
+// TestGetAlertConfigHandler_NotificationChannelAndUnconfiguredOR_ResolvesKPIs
+// guards the bug where OR-combining only_without_notification_channel with a
+// notification_channel_* filter caused the handler to skip KPI resolution for
+// the entire result set (including configured rules matched via the
+// channel-binding branch) and prepend the global-channel advisory. Both
+// symptoms are fixed by gating on
+// `args.OnlyWithoutNotificationChannel && !hasActiveNotificationChannelFilters(args)`.
+//
+// The test is table-driven over the three notification_channel_* filter axes
+// (types, names, severities) to prove hasActiveNotificationChannelFilters
+// covers all three (G3). For each axis it asserts: (1) the channel-only query
+// resolves KPIs and omits the advisory (baseline / no regression G4), and (2)
+// the OR-combined query returns the configured rule-1 plus the unconfigured
+// rule-2, resolves PromQL/Unit for rule-1, and does NOT prepend the advisory
+// (G1, G2, G8, G9).
+func TestGetAlertConfigHandler_NotificationChannelAndUnconfiguredOR_ResolvesKPIs(t *testing.T) {
+	kpiID := "kpi-uuid-1"
+	promQL := `histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))`
+	rules := AlertConfigResponse{
+		{
+			ID:               "rule-1",
+			OrganizationID:   "org-1",
+			EntityID:         "entity-1",
+			PrimaryIndicator: "p99_latency",
+			Expression:       "p99_latency",
+			State:            "active",
+			Severity:         "breach",
+			Algorithm:        "static_threshold",
+			RuleName:         "High P99",
+			ExpressionArgs: map[string]AlertRuleExpressionArg{
+				"p99_latency": {ID: kpiID},
+			},
+		},
+		{
+			ID:               "rule-2",
+			OrganizationID:   "org-1",
+			EntityID:         "entity-2",
+			PrimaryIndicator: "error_rate",
+			Expression:       "errors_total",
+			State:            "active",
+			Severity:         "breach",
+			Algorithm:        "static_threshold",
+			RuleName:         "Errors",
+			ExpressionArgs: map[string]AlertRuleExpressionArg{
+				"errors_total": {ID: kpiID},
+			},
+		},
+	}
+	newState := func() alertConfigTestServerState {
+		return alertConfigTestServerState{
+			alertRules:   rules,
+			entityGroups: sampleAlertGroupEntities(),
+			notificationChannels: []NotificationChannel{
+				{ID: 1, Name: "Checkout Slack", Type: "slack", Severity: "breach", ServiceFQID: "entity-1"},
+			},
+			kpiResponses: map[string]kpiResponse{
+				kpiID: {
+					ID:   kpiID,
+					Name: "p99_latency",
+					Definition: kpiDefinition{
+						Query: promQL,
+						Unit:  "seconds",
+					},
+				},
+			},
+		}
+	}
+
+	cases := []struct {
+		name      string
+		onlyArgs  GetAlertConfigArgs
+		orArgs    GetAlertConfigArgs
+		onlyLabel string
+	}{
+		{
+			name:      "types",
+			onlyLabel: "type-only",
+			onlyArgs:  GetAlertConfigArgs{NotificationChannelTypes: []string{"slack"}},
+			orArgs:    GetAlertConfigArgs{OnlyWithoutNotificationChannel: true, NotificationChannelTypes: []string{"slack"}},
+		},
+		{
+			name:      "names",
+			onlyLabel: "name-only",
+			onlyArgs:  GetAlertConfigArgs{NotificationChannelNames: []string{"Checkout Slack"}},
+			orArgs:    GetAlertConfigArgs{OnlyWithoutNotificationChannel: true, NotificationChannelNames: []string{"Checkout Slack"}},
+		},
+		{
+			name:      "severities",
+			onlyLabel: "severity-only",
+			onlyArgs:  GetAlertConfigArgs{NotificationChannelSeverities: []string{"breach"}},
+			orArgs:    GetAlertConfigArgs{OnlyWithoutNotificationChannel: true, NotificationChannelSeverities: []string{"breach"}},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Baseline: channel-only query (no only_without) resolves the KPI
+			// for rule-1 (entity-1 has the binding) and omits the advisory.
+			s := newState()
+			only, _, err := executeGetAlertConfig(t, &s, tc.onlyArgs)
+			if err != nil {
+				t.Fatalf("%s: %v", tc.onlyLabel, err)
+			}
+			if !strings.Contains(only, "PromQL: "+promQL) {
+				t.Fatalf("%s: expected PromQL resolved for rule-1, got:\n%s", tc.onlyLabel, only)
+			}
+			if !strings.Contains(only, "Unit: seconds") {
+				t.Fatalf("%s: expected Unit resolved for rule-1, got:\n%s", tc.onlyLabel, only)
+			}
+			if !strings.Contains(only, "ID: rule-1") {
+				t.Fatalf("%s: expected rule-1 present, got:\n%s", tc.onlyLabel, only)
+			}
+			if strings.Contains(only, "Global notification channels:") {
+				t.Fatalf("%s: expected no global-channel advisory, got:\n%s", tc.onlyLabel, only)
+			}
+
+			// OR-combined query returns rule-1 (matched via the channel branch)
+			// plus the unconfigured rule-2. KPI resolution must still run for the
+			// configured rule-1, and the global-channel advisory must NOT be
+			// prepended.
+			s2 := newState()
+			or, _, err := executeGetAlertConfig(t, &s2, tc.orArgs)
+			if err != nil {
+				t.Fatalf("OR/%s: %v", tc.name, err)
+			}
+			if !strings.Contains(or, "ID: rule-1") {
+				t.Fatalf("OR/%s: expected rule-1 in output, got:\n%s", tc.name, or)
+			}
+			if !strings.Contains(or, "ID: rule-2") {
+				t.Fatalf("OR/%s: expected unconfigured rule-2 in output, got:\n%s", tc.name, or)
+			}
+			if !strings.Contains(or, "PromQL: "+promQL) {
+				t.Fatalf("BUG (KPI) /%s: rule-1 (configured, matched via channel branch) lost PromQL under OR-combined filter; got:\n%s", tc.name, or)
+			}
+			if !strings.Contains(or, "Unit: seconds") {
+				t.Fatalf("BUG (KPI) /%s: rule-1 lost Unit under OR-combined filter; got:\n%s", tc.name, or)
+			}
+			if strings.Contains(or, "Global notification channels:") {
+				t.Fatalf("BUG (advisory) /%s: global-channel advisory prepended to OR-combined result with configured rules present; got:\n%s", tc.name, or)
+			}
+			if strings.Contains(or, "no per-entity notification channel configured") {
+				t.Fatalf("OR/%s: must use default count header, got:\n%s", tc.name, or)
+			}
+		})
+	}
+}
+
+// TestGetAlertConfigHandler_OnlyWithoutNotificationChannel_SkipsKPIResolutionAndPrependsAdvisory
+// guards the pure unconfigured-only path so the OR-aware fix does not
+// accidentally regress the intended behavior: a request with ONLY
+// only_without_notification_channel (no notification_channel_* filters) still
+// skips KPI resolution and still prepends the global-channel advisory. The
+// fixture includes a rule with ExpressionArgs so we can prove KPI lookup is
+// skipped (no PromQL/Unit lines) rather than merely absent.
+func TestGetAlertConfigHandler_OnlyWithoutNotificationChannel_SkipsKPIResolutionAndPrependsAdvisory(t *testing.T) {
+	kpiID := "kpi-uuid-1"
+	promQL := `histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))`
+	rules := AlertConfigResponse{
+		{
+			ID:               "rule-2",
+			OrganizationID:   "org-1",
+			EntityID:         "entity-2",
+			PrimaryIndicator: "error_rate",
+			Expression:       "errors_total",
+			State:            "active",
+			Severity:         "breach",
+			Algorithm:        "static_threshold",
+			RuleName:         "Errors",
+			ExpressionArgs: map[string]AlertRuleExpressionArg{
+				"errors_total": {ID: kpiID},
+			},
+		},
+	}
+	state := alertConfigTestServerState{
+		alertRules:   rules,
+		entityGroups: sampleAlertGroupEntities(),
+		notificationChannels: []NotificationChannel{
+			{ID: 1, Name: "Checkout Slack", Type: "slack", Severity: "breach", ServiceFQID: "entity-1"},
+		},
+		kpiResponses: map[string]kpiResponse{
+			kpiID: {
+				ID:   kpiID,
+				Name: "p99_latency",
+				Definition: kpiDefinition{
+					Query: promQL,
+					Unit:  "seconds",
+				},
+			},
+		},
+	}
+
+	// Pure unconfigured-only: rule-2 (entity-2, unconfigured) is returned; the
+	// KPI response is registered but resolution must be intentionally skipped.
+	text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{
+		OnlyWithoutNotificationChannel: true,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if !strings.Contains(text, "ID: rule-2") {
+		t.Fatalf("expected unconfigured rule-2, got:\n%s", text)
+	}
+	if !strings.Contains(text, "no per-entity notification channel configured") {
+		t.Fatalf("expected unconfigured-only header, got:\n%s", text)
+	}
+	if !strings.Contains(text, "Global notification channels:") {
+		t.Fatalf("expected global-channel advisory prepended for unconfigured-only, got:\n%s", text)
+	}
+	// KPI resolution must be intentionally skipped: rule-2 carries
+	// ExpressionArgs and a KPI response is registered, yet no PromQL/Unit
+	// lines must appear.
+	if strings.Contains(text, "PromQL:") {
+		t.Fatalf("unconfigured-only must skip KPI resolution, got PromQL line:\n%s", text)
+	}
+	if strings.Contains(text, "Unit:") {
+		t.Fatalf("unconfigured-only must skip KPI resolution, got Unit line:\n%s", text)
+	}
 }
 
 func TestGetAlertConfigHandler_EnrichmentFormatting(t *testing.T) {
