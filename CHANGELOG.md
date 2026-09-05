@@ -16,17 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `get_drop_rules` and `add_drop_rule` now route non-2xx `/otel_settings/drop` responses through the shared upstream sanitizer (URL/credential redaction, 512-byte truncation with `… (truncated)`, body drained and omitted for 5xx and other non-400/422) instead of echoing the raw body via an unbounded `io.ReadAll` into the tool error surfaced to the model. This matches the `get_logs` / `get_service_logs` contract (#237).
+- The `/health` endpoint in HTTP mode (`--http`) now reports the running build's version instead of a hardcoded `1.0.0`, matching `--version`, the startup banner, and the MCP server-init log.
+- The logs pipeline sanitizer now normalizes a map-form `$not` (`{"$not": {…}}`) to the documented single-element array form (`{"$not": [condition]}`). A map-form `$not` on `Body` previously survived sanitization unchanged and was skipped by the chunking-throttle and count-sanity heuristics, which only descend into an array-form `$not`: a non-aggregate `Body` search over a >1d lookback ran with ~3× too many parallel chunks, and a zero-count `Body` aggregate dropped its `l9_sanity` diagnostic. Array-form `$not` was already correct and is unchanged (#241).
+- `l9_sanity`'s `service_log_volume` baseline no longer under-counts for non-whole-minute query windows. The PromQL `sum_over_time(...[Nm])` window used floor division on the request duration, dropping up to ~59 s of the query window for any non-whole-minute `start_time_iso`/`end_time_iso` range. On the nonzero path this inflated the ratio and produced false "filter is likely too broad" notes; on the zero path a service emitting only in the dropped prefix was misclassified as a "genuine zero ... nothing to inspect", directing the model away from the `sample_bodies` inspection the guardrail exists to trigger. The baseline now ceiling-divides so its window is never shorter than the query window — exact for whole minutes, over-covering by at most ~59 s otherwise (the conservative direction for both paths). Whole-minute windows are unchanged.
 
 ### Changed
 
 - `create_dashboard` and `update_dashboard` descriptions now steer create-once, refine-with-update. A successful `create_dashboard` appends a second text part pointing at `update_dashboard` with the new id; `Content[0]` is still the raw API JSON.
 - `get_service_performance_details` now returns about 200 points per series instead of one per minute, sizing each range selector from the resulting step. Windows under ~3h20m are unchanged; above that the `rate()`-based series (availability, throughput, error rate, error percent) aggregate the whole window, while apdex and response times stay last-value and get sparser. Response-time values shift slightly — that query's lookback is no longer fixed at 5m.
 - The service workflows and the service-scoped tool descriptions now call `get_service_profile` first: skip trace tools when the profile reports `telemetry.traces` as `absent`, and parse the level from the log body when `severity_set` is `none` or `partial`.
-
-### Fixed
-
-- The `/health` endpoint in HTTP mode (`--http`) now reports the running build's version instead of a hardcoded `1.0.0`, matching `--version`, the startup banner, and the MCP server-init log.
-- The logs pipeline sanitizer now normalizes a map-form `$not` (`{"$not": {…}}`) to the documented single-element array form (`{"$not": [condition]}`). A map-form `$not` on `Body` previously survived sanitization unchanged and was skipped by the chunking-throttle and count-sanity heuristics, which only descend into an array-form `$not`: a non-aggregate `Body` search over a >1d lookback ran with ~3× too many parallel chunks, and a zero-count `Body` aggregate dropped its `l9_sanity` diagnostic. Array-form `$not` was already correct and is unchanged (#241).
 
 ## [0.16.0] - 2026-08-27
 
