@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"last9-mcp/internal/constants"
@@ -1828,6 +1829,88 @@ func TestPrepareLogJSONQueryAliasRejectsWithTip(t *testing.T) {
 	}
 }
 
+// TestPrepareLogJSONQueryNonMapAggregateItemRejected verifies that a non-map
+// item inside an aggregate stage's "aggregates" array is rejected fail-closed
+// with a path-specific tip, mirroring the sibling function/groupby checks.
+// Regression test for the continue-based fail-open that previously let
+// malformed items (scalars/arrays/strings/bools) bypass every aggregate-item
+// check (unknown keys, missing function, missing as, $quantile dataflow) and
+// be forwarded verbatim to the HTTP execution path.
+func TestPrepareLogJSONQueryNonMapAggregateItemRejected(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		item interface{}
+	}{
+		{name: "bare number", item: float64(42)},
+		{name: "bare string", item: "count"},
+		{name: "bare bool", item: true},
+		{name: "array", item: []interface{}{"ServiceName"}},
+		{name: "nil item", item: nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := prepareLogJSONQuery([]map[string]interface{}{
+				{
+					"type":       "aggregate",
+					"aggregates": []interface{}{tc.item},
+				},
+			}, "logjson_query")
+			if err == nil {
+				t.Fatalf("expected fail-closed error for non-map aggregates item (%s), got nil", tc.name)
+			}
+			var validationErr *LogPipelineValidationError
+			if !errors.As(err, &validationErr) {
+				t.Fatalf("expected typed *LogPipelineValidationError, got %T: %v", err, err)
+			}
+			if validationErr.Category != LogValidationInvalidField {
+				t.Errorf("category = %q, want %q", validationErr.Category, LogValidationInvalidField)
+			}
+			const wantPath = "logjson_query[0].aggregates[0]"
+			if validationErr.Path != wantPath {
+				t.Errorf("path = %q, want %q", validationErr.Path, wantPath)
+			}
+			if !strings.Contains(validationErr.Message, "aggregates[0]") {
+				t.Errorf("error should reference aggregates[0], got: %q", validationErr.Message)
+			}
+			if !strings.Contains(validationErr.Message, "must be an object") {
+				t.Errorf("error should say 'must be an object', got: %q", validationErr.Message)
+			}
+		})
+	}
+}
+
+// TestPrepareLogJSONQueryNonMapAggregateNoHTTPFanOut verifies that a get_logs
+// handler invocation carrying a non-map aggregates item is rejected by
+// prepareLogJSONQuery BEFORE any HTTP fan-out to the upstream logs API.
+// The stub server fails the test if it is ever invoked.
+func TestPrepareLogJSONQueryNonMapAggregateNoHTTPFanOut(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		http.Error(w, "upstream must not be called for malformed aggregates item", http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	handler := NewGetLogsHandler(server.Client(), testLogsConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+		LogjsonQuery: []map[string]interface{}{
+			{
+				"type":       "aggregate",
+				"aggregates": []interface{}{42},
+			},
+		},
+		LookbackMinutes: 5,
+	})
+	if err == nil {
+		t.Fatal("expected fail-closed validation error for non-map aggregates item, got nil — malformed input reached HTTP layer")
+	}
+	if got := hits.Load(); got != 0 {
+		t.Fatalf("upstream was invoked %d time(s); malformed aggregates item must be rejected before HTTP fan-out", got)
+	}
+	if !strings.Contains(err.Error(), "aggregates[0]") {
+		t.Errorf("error should reference aggregates[0] with path-specific tip, got: %q", err.Error())
+	}
+}
+
 // TestPrepareLogJSONQueryParseFieldNoCallerMutation verifies that the caller's
 // original stage map is NOT mutated when "field" is defaulted to "Body".
 func TestPrepareLogJSONQueryParseFieldNoCallerMutation(t *testing.T) {
@@ -1933,6 +2016,16 @@ func TestPrepareLogJSONQueryCatchAllTips(t *testing.T) {
 				},
 			},
 			errSubstr: "groupby",
+		},
+		{
+			name: "non-map item in aggregates array",
+			stages: []map[string]interface{}{
+				{
+					"type":       "aggregate",
+					"aggregates": []interface{}{42},
+				},
+			},
+			errSubstr: "aggregates[0]",
 		},
 	}
 
