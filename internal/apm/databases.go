@@ -1008,12 +1008,14 @@ func fetchSlowQueryLogs(ctx context.Context, client *http.Client, cfg models.Con
 		return nil
 	}
 
-	return extractSlowQueryLogs(rawResult)
+	return extractSlowQueryLogs(rawResult, args.MinDurationMs)
 }
 
 // extractSlowQueryLogs parses Loki streams response into SlowQuery entries.
 // Slow query logs have attributes like db.operation.duration_ms, db.plan_summary, etc.
-func extractSlowQueryLogs(rawResult map[string]any) []SlowQuery {
+// minDurationMs, when positive, filters out entries whose duration is below the
+// user-supplied threshold (matching the trace-side MinDurationMs filter).
+func extractSlowQueryLogs(rawResult map[string]any, minDurationMs float64) []SlowQuery {
 	data, ok := rawResult["data"].(map[string]any)
 	if !ok {
 		return nil
@@ -1072,8 +1074,8 @@ func extractSlowQueryLogs(rawResult map[string]any) []SlowQuery {
 				sq.DBStatement = message
 			}
 
-			// Only include if we got a meaningful duration
-			if sq.DurationMs > 0 {
+			// Only include if we got a meaningful duration above the threshold (if set)
+			if sq.DurationMs > 0 && (minDurationMs <= 0 || sq.DurationMs >= minDurationMs) {
 				queries = append(queries, sq)
 			}
 		}

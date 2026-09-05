@@ -521,6 +521,173 @@ func TestGetDatabaseSlowQueriesHandler_NoResults(t *testing.T) {
 	}
 }
 
+// TestGetDatabaseSlowQueriesHandler_MinDurationMs_FiltersLogs is a regression
+// test for the logs path ignoring the user-supplied min_duration_ms filter.
+// The traces source applies MinDurationMs server-side ($gte on Duration), but
+// fetchSlowQueryLogs previously never threaded MinDurationMs into
+// extractSlowQueryLogs, so a sub-threshold log entry could fill a result slot
+// whenever traces returned fewer than `limit` entries. This test wires one
+// valid 500ms trace and one sub-threshold 50ms log (MinDurationMs=200) and
+// asserts the log entry is filtered out (from_logs=0, count=1). A reached
+// flag guards against a vacuous pass if the logs endpoint is never hit.
+func TestGetDatabaseSlowQueriesHandler_MinDurationMs_FiltersLogs(t *testing.T) {
+	var mu sync.Mutex
+	logEndpointReached := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/cat/api/traces/v2/query_range/json") {
+			// One valid 500ms trace (>= MinDurationMs=200).
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"result": []any{
+						map[string]any{
+							"TraceId":     "trace-valid",
+							"SpanId":      "span-1",
+							"ServiceName": "order-service",
+							"SpanName":    "SELECT * FROM orders WHERE id = ?",
+							"Duration":    float64(500_000_000), // 500ms
+							"StatusCode":  "STATUS_CODE_OK",
+							"Timestamp":   "2025-01-01T10:00:00Z",
+							"SpanAttributes": map[string]any{
+								"db.system":    "postgresql",
+								"db.statement": "SELECT * FROM orders WHERE id = $1",
+							},
+						},
+					},
+				},
+			})
+			return
+		}
+		if strings.Contains(r.URL.Path, "/logs/api/v2/query_range/json") {
+			mu.Lock()
+			logEndpointReached = true
+			mu.Unlock()
+
+			// One sub-threshold 50ms log (< MinDurationMs=200).
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"resultType": "streams",
+					"result": []any{
+						map[string]any{
+							"stream": map[string]any{
+								"service_name": "order-service",
+								"severity":     "warn",
+							},
+							"values": []any{
+								[]any{
+									"1700000000000000000",
+									`{"db.system":"postgresql","db.operation.duration_ms":50,"db.statement":"SELECT 1"}`,
+								},
+							},
+						},
+					},
+				},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"result": []any{}},
+		})
+	}))
+	defer server.Close()
+
+	handler := NewGetDatabaseSlowQueriesHandler(server.Client(), testDBConfig(server.URL))
+	now := time.Now().UTC()
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabaseSlowQueriesArgs{
+		DBSystem:      "postgresql",
+		MinDurationMs: 200,
+		StartTimeISO:  now.Add(-60 * time.Minute).Format(time.RFC3339),
+		EndTimeISO:    now.Format(time.RFC3339),
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !logEndpointReached {
+		t.Fatal("logs query_range endpoint was never called — log filtering not exercised")
+	}
+
+	text := result.Content[0].(*mcp.TextContent).Text
+	var response map[string]any
+	if err := json.Unmarshal([]byte(text), &response); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if got := response["from_logs"].(float64); got != 0 {
+		t.Errorf("expected from_logs=0 (50ms entry below min_duration_ms=200 should be filtered), got %v", got)
+	}
+	if got := response["count"].(float64); got != 1 {
+		t.Errorf("expected 1 slow query (only the valid 500ms trace), got %v", got)
+	}
+}
+
+// TestExtractSlowQueryLogs_MinDurationMs exercises the client-side threshold
+// filter in extractSlowQueryLogs directly, covering below/at/above threshold,
+// zero duration, and unset (<=0) threshold behavior.
+func TestExtractSlowQueryLogs_MinDurationMs(t *testing.T) {
+	mkMsg := func(d float64) string {
+		b, _ := json.Marshal(map[string]any{
+			"db.system":                "postgresql",
+			"db.operation.duration_ms": d,
+			"db.statement":             "SELECT 1",
+		})
+		return string(b)
+	}
+	buildRaw := func(durations ...float64) map[string]any {
+		values := make([]any, 0, len(durations))
+		for _, d := range durations {
+			values = append(values, []any{"1700000000000000000", mkMsg(d)})
+		}
+		return map[string]any{
+			"data": map[string]any{
+				"resultType": "streams",
+				"result": []any{
+					map[string]any{
+						"stream": map[string]any{"service_name": "svc"},
+						"values": values,
+					},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name          string
+		durations     []float64
+		minDurationMs float64
+		wantCount     int
+	}{
+		{name: "threshold filters below", durations: []float64{50, 500}, minDurationMs: 200, wantCount: 1},
+		{name: "boundary at threshold kept", durations: []float64{200}, minDurationMs: 200, wantCount: 1},
+		{name: "zero duration always dropped", durations: []float64{0, 1000}, minDurationMs: 200, wantCount: 1},
+		{name: "unset threshold keeps all positive", durations: []float64{50, 200, 500}, minDurationMs: 0, wantCount: 3},
+		{name: "negative threshold treated as unset", durations: []float64{1}, minDurationMs: -1, wantCount: 1},
+		{name: "all below threshold filtered", durations: []float64{50, 100}, minDurationMs: 200, wantCount: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			queries := extractSlowQueryLogs(buildRaw(tt.durations...), tt.minDurationMs)
+			if len(queries) != tt.wantCount {
+				t.Fatalf("expected %d queries, got %d", tt.wantCount, len(queries))
+			}
+			for _, q := range queries {
+				if q.DurationMs <= 0 {
+					t.Errorf("zero-duration entry should not be returned")
+				}
+				if tt.minDurationMs > 0 && q.DurationMs < tt.minDurationMs {
+					t.Errorf("entry duration_ms=%v below threshold %v was not filtered", q.DurationMs, tt.minDurationMs)
+				}
+			}
+		})
+	}
+}
+
 func TestGetDatabaseServerMetricsHandler(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
