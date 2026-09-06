@@ -297,7 +297,12 @@ func TestGetTracesHandlerWindowAggregateAlsoUsesSingleRequest(t *testing.T) {
 	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
 		TracejsonQuery: []map[string]interface{}{
-			{"type": "window_aggregate"},
+			{
+				"type":     "window_aggregate",
+				"function": map[string]interface{}{"$count": []interface{}{}},
+				"as":       "rate",
+				"window":   []interface{}{"5", "minutes"},
+			},
 		},
 		StartTimeISO: "2026-01-01T00:00:00Z",
 		EndTimeISO:   "2026-01-08T00:00:00Z",
@@ -406,7 +411,7 @@ func TestGetTracesHandlerHardErrorsWhenAllChunksFail(t *testing.T) {
 	}
 }
 
-func TestGetTracesHandlerReturnsPartialResultAfterLaterChunkError(t *testing.T) {
+func TestGetTracesHandlerReturnsErrorAfterLaterChunkError(t *testing.T) {
 	rec := newTracesRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -437,31 +442,20 @@ func TestGetTracesHandlerReturnsPartialResultAfterLaterChunkError(t *testing.T) 
 		Limit:        10,
 	})
 	if err != nil {
-		t.Fatalf("handler returned error on partial: %v", err)
+		t.Fatalf("expected tool execution error, got protocol error: %v", err)
 	}
-
+	if result == nil || !result.IsError {
+		t.Fatalf("expected IsError=true when a chunk fails, got %#v", result)
+	}
 	if rec.count() != 6 {
 		t.Fatalf("expected 6 chunk requests, got %d", rec.count())
 	}
-
-	payload := parseTracesToolResult(t, result)
-	if count := countTracesInPayload(t, payload); count != 3 {
-		t.Fatalf("expected 3 traces in partial result, got %d", count)
+	text := result.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, "chunk 6/6 failed") {
+		t.Fatalf("expected chunk 6/6 failure in error, got %q", text)
 	}
-
-	meta, ok := payload[partialResultMetadataKey].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected partial metadata in payload, got %#v", payload[partialResultMetadataKey])
-	}
-	if partial, ok := meta["partial_result"].(bool); !ok || !partial {
-		t.Fatalf("expected partial_result=true, got %#v", meta["partial_result"])
-	}
-	warning, ok := meta["warning"].(string)
-	if !ok || !strings.Contains(warning, "chunk 6/6 failed") {
-		t.Fatalf("expected chunk 6/6 failure in warning, got %q", warning)
-	}
-	if strings.Contains(warning, "backend error") {
-		t.Fatalf("partial-result warning leaked upstream body: %q", warning)
+	if strings.Contains(text, "backend error") {
+		t.Fatalf("error leaked upstream body: %q", text)
 	}
 }
 

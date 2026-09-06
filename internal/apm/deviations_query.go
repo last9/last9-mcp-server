@@ -206,10 +206,10 @@ func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, s
 	group := strings.Join(groupLabels, ", ")
 	baseMatchers := []string{`span_kind="SPAN_KIND_SERVER"`}
 	if scope.ServiceName != "" {
-		baseMatchers = append(baseMatchers, fmt.Sprintf(`service_name="%s"`, escapePromQLLabel(scope.ServiceName)))
+		baseMatchers = append(baseMatchers, fmt.Sprintf(`service_name="%s"`, utils.EscapePromQLLabel(scope.ServiceName)))
 	}
 	if scope.Env != "" {
-		baseMatchers = append(baseMatchers, fmt.Sprintf(`env="%s"`, escapePromQLLabel(scope.Env)))
+		baseMatchers = append(baseMatchers, fmt.Sprintf(`env="%s"`, utils.EscapePromQLLabel(scope.Env)))
 	}
 	requestSelector := fmt.Sprintf("trace_endpoint_count{%s}", strings.Join(baseMatchers, ","))
 	requestExpression := fmt.Sprintf("sum by (%s) (%s)", group, requestSelector)
@@ -305,10 +305,10 @@ func deviationGroupLabels(operations bool) []string {
 func deviationRequestExpression(scope deviationQueryScope, group string) string {
 	matchers := []string{`span_kind="SPAN_KIND_SERVER"`}
 	if scope.ServiceName != "" {
-		matchers = append(matchers, fmt.Sprintf(`service_name="%s"`, escapePromQLLabel(scope.ServiceName)))
+		matchers = append(matchers, fmt.Sprintf(`service_name="%s"`, utils.EscapePromQLLabel(scope.ServiceName)))
 	}
 	if scope.Env != "" {
-		matchers = append(matchers, fmt.Sprintf(`env="%s"`, escapePromQLLabel(scope.Env)))
+		matchers = append(matchers, fmt.Sprintf(`env="%s"`, utils.EscapePromQLLabel(scope.Env)))
 	}
 	return fmt.Sprintf("sum by (%s) (trace_endpoint_count{%s})", group, strings.Join(matchers, ","))
 }

@@ -244,7 +244,7 @@ func serviceSummaryEnvMatcher(env string) (scope, matcher string, err error) {
 	if _, err := regexp.Compile(env); err != nil {
 		return "", "", fmt.Errorf("env %q is not a valid regular expression: %w", env, err)
 	}
-	return env, fmt.Sprintf(`env=~"%s"`, escapePromQLLabel(env)), nil
+	return env, fmt.Sprintf(`env=~"%s"`, utils.EscapePromQLLabel(env)), nil
 }
 
 func serviceSummaryCountQuery(envMatcher string, windowMin int, extraMatcher string) string {
@@ -286,7 +286,7 @@ func fetchPromInstantSeries(ctx context.Context, client *http.Client, cfg models
 	}
 	defer httpResp.Body.Close()
 	if httpResp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to get service summary %s: %s", classKey, httpResp.Status)
+		return nil, promErr(httpResp, "service summary "+classKey)
 	}
 	var parsed apiPromInstantResp
 	if err := json.NewDecoder(httpResp.Body).Decode(&parsed); err != nil {

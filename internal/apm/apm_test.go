@@ -636,3 +636,170 @@ func TestServiceEnvironmentsHandler_FilterUsesServiceName(t *testing.T) {
 		t.Fatalf("expected service_name=\"checkout\" in matches, got: %v", captured)
 	}
 }
+
+func TestPromqlRangeQueryRelays400AndDrains502(t *testing.T) {
+	cases := []struct {
+		name       string
+		status     int
+		body       string
+		wantSubstr string
+		forbid     string
+	}{
+		{
+			name:       "400 includes parse body",
+			status:     http.StatusBadRequest,
+			body:       `{"error":"parse error: unexpected identifier \"foo\""}`,
+			wantSubstr: "parse error",
+		},
+		{
+			name:       "502 omits body",
+			status:     http.StatusBadGateway,
+			body:       `{"error":"gateway SECRET"}`,
+			wantSubstr: "HTTP 502",
+			forbid:     "SECRET",
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			t.Cleanup(server.Close)
+
+			cfg := models.Config{
+				APIBaseURL: server.URL,
+				Region:     "us-east-1",
+				TokenManager: &auth.TokenManager{
+					AccessToken: "test-token",
+					ExpiresAt:   time.Now().Add(24 * time.Hour),
+				},
+			}
+			handler := NewPromqlRangeQueryHandler(server.Client(), cfg)
+			result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, PromqlRangeQueryArgs{
+				Query:           "up",
+				LookbackMinutes: 5,
+			})
+			if err != nil {
+				t.Fatalf("handler returned Go error %v; want IsError result", err)
+			}
+			if result == nil || !result.IsError {
+				t.Fatal("expected IsError result")
+			}
+			text := result.Content[0].(*mcp.TextContent).Text
+			if !strings.Contains(text, tt.wantSubstr) {
+				t.Fatalf("error %q missing %q", text, tt.wantSubstr)
+			}
+			if tt.forbid != "" && strings.Contains(text, tt.forbid) {
+				t.Fatalf("error leaked %q: %s", tt.forbid, text)
+			}
+		})
+	}
+}
+
+// A single-chunk (<=35 day) window never gets chunked, so a non-2xx
+// sub-query response matches the pre-chunking behavior exactly: it stays
+// soft, recorded in partial_errors (with no chunk-bounds prefix, since
+// there's only one "chunk"), and the call still succeeds with the rest of
+// the data. Genuinely chunked (>35 day) windows keep the same fail-soft/
+// partial_errors behavior — see
+// TestServicePerformanceDetails_FailingChunkRecordsPartialErrorButOthersMerge
+// in service_performance_details_window_test.go. Read/parse failures on the
+// single-chunk path are a different, hard-abort contract — see
+// TestServicePerformanceDetailsReadParseFailureHardAbortsSingleChunkWindow
+// below.
+func TestServicePerformanceDetailsPromFailureSoftOnSingleChunkWindow(t *testing.T) {
+	var n atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if n.Add(1) == 1 {
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `[]`)
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":"bad selector"}`)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+		Region:     "us-east-1",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-token",
+			ExpiresAt:   time.Now().Add(24 * time.Hour),
+		},
+	}
+	handler := NewServicePerformanceDetailsHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServicePerformanceDetailsArgs{
+		ServiceName:     "checkout",
+		Env:             "prod",
+		LookbackMinutes: 15,
+	})
+	if err != nil {
+		t.Fatalf("expected a non-2xx sub-query response to stay soft on the single-chunk path, got hard error: %v", err)
+	}
+
+	text := result.Content[0].(*mcp.TextContent).Text
+	var details ServicePerformanceDetails
+	if err := json.Unmarshal([]byte(text), &details); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if len(details.PartialErrors) == 0 {
+		t.Fatal("expected a partial error for the failing sub-query")
+	}
+	found := false
+	for _, e := range details.PartialErrors {
+		if strings.Contains(e, "bad selector") {
+			found = true
+			if strings.HasPrefix(e, "chunk ") {
+				t.Errorf("single-chunk partial error must not carry a chunk-bounds prefix, got %q", e)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected a partial error containing the sanitized 400 body, got %+v", details.PartialErrors)
+	}
+}
+
+// Unlike a non-2xx status response (soft, see above), a read or parse
+// failure on the single-chunk path still hard-aborts the whole call,
+// matching the pre-chunking behavior exactly.
+func TestServicePerformanceDetailsReadParseFailureHardAbortsSingleChunkWindow(t *testing.T) {
+	var n atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if n.Add(1) == 1 {
+			_, _ = io.WriteString(w, `[]`)
+			return
+		}
+		// 200 OK but a malformed body - triggers a parse error, not a
+		// non-2xx status error.
+		_, _ = io.WriteString(w, `not valid json`)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL: server.URL,
+		Region:     "us-east-1",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-token",
+			ExpiresAt:   time.Now().Add(24 * time.Hour),
+		},
+	}
+	handler := NewServicePerformanceDetailsHandler(server.Client(), cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServicePerformanceDetailsArgs{
+		ServiceName:     "checkout",
+		Env:             "prod",
+		LookbackMinutes: 15,
+	})
+	if err == nil {
+		t.Fatal("expected a hard error for a single-chunk window's sub-query parse failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to parse") {
+		t.Fatalf("expected a parse-failure error, got %v", err)
+	}
+	if strings.Contains(err.Error(), "chunk ") {
+		t.Fatalf("single-chunk failure must not carry a chunk-bounds prefix, got %v", err)
+	}
+}

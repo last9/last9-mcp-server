@@ -12,6 +12,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"last9-mcp/internal/utils"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -232,7 +234,7 @@ func TestPipelineSchemaHintOnlyOnPipelineCallSites(t *testing.T) {
 
 func TestSanitizeUpstreamBodyRedactsAndBounds(t *testing.T) {
 	raw := `{"error":"bad pipeline","upstream_url":"https://internal-gw.example.com/v1/traces?token=SECRET_abc123","authorization":"Bearer eyJhbGciOi","host":"internal-gateway"}`
-	got := sanitizeUpstreamBody(raw)
+	got := utils.SanitizeUpstreamBody(raw)
 	for _, banned := range []string{"SECRET_abc123", "https://", "eyJhbGciOi"} {
 		if strings.Contains(got, banned) {
 			t.Fatalf("sanitizeUpstreamBody leaked %q: %s", banned, got)
@@ -244,7 +246,7 @@ func TestSanitizeUpstreamBodyRedactsAndBounds(t *testing.T) {
 }
 
 func TestSanitizeUpstreamBodyStripsControlCharacters(t *testing.T) {
-	got := sanitizeUpstreamBody("bad\x00pipeline\x1b[31m\nsecond line\tend")
+	got := utils.SanitizeUpstreamBody("bad\x00pipeline\x1b[31m\nsecond line\tend")
 	if strings.ContainsAny(got, "\x00\x1b\n\t") {
 		t.Fatalf("control characters survived: %q", got)
 	}
@@ -254,15 +256,15 @@ func TestSanitizeUpstreamBodyStripsControlCharacters(t *testing.T) {
 }
 
 func TestSanitizeUpstreamBodyTruncatesOnValidUTF8Boundary(t *testing.T) {
-	got := sanitizeUpstreamBody(strings.Repeat("é", 4096))
+	got := utils.SanitizeUpstreamBody(strings.Repeat("é", 4096))
 	if !utf8.ValidString(got) {
 		t.Fatalf("truncation produced invalid UTF-8: %q", got)
 	}
 	if !strings.Contains(got, "(truncated)") {
 		t.Fatalf("expected a truncation marker, got %q", got)
 	}
-	if len(got) > traceUpstreamBodyLimit+32 {
-		t.Fatalf("truncated body is %d bytes, want <= %d", len(got), traceUpstreamBodyLimit+32)
+	if len(got) > utils.UpstreamBodyLimit+32 {
+		t.Fatalf("truncated body is %d bytes, want <= %d", len(got), utils.UpstreamBodyLimit+32)
 	}
 }
 
