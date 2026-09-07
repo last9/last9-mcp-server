@@ -668,7 +668,14 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string) erro
 		itemPath := fmt.Sprintf("%s.aggregates[%d]", stagePath, i)
 		itemMap, ok := rawItem.(map[string]interface{})
 		if !ok {
-			continue
+			return newLogValidationError(
+				LogValidationInvalidField,
+				itemPath,
+				fmt.Sprintf(
+					"aggregates item at %s must be an object like {\"function\":{\"$count\":[]},\"as\":\"count\"}, not %T",
+					itemPath, rawItem,
+				),
+			)
 		}
 
 		// Reject unknown keys in each item.
