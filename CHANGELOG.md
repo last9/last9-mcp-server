@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The logs pipeline sanitizer now normalizes a map-form `$not` (`{"$not": {…}}`) to the documented single-element array form (`{"$not": [condition]}`). A map-form `$not` on `Body` previously survived sanitization unchanged and was skipped by the chunking-throttle and count-sanity heuristics, which only descend into an array-form `$not`: a non-aggregate `Body` search over a >1d lookback ran with ~3× too many parallel chunks, and a zero-count `Body` aggregate dropped its `l9_sanity` diagnostic. Array-form `$not` was already correct and is unchanged ({{detail_github_issue_ref}}).
+- The logs pipeline sanitizer now normalizes a map-form `$not` (`{"$not": {…}}`) to the documented single-element array form (`{"$not": [condition]}`). A map-form `$not` on `Body` previously survived sanitization unchanged and was skipped by the chunking-throttle and count-sanity heuristics, which only descend into an array-form `$not`: a non-aggregate `Body` search over a >1d lookback ran with ~3× too many parallel chunks, and a zero-count `Body` aggregate dropped its `l9_sanity` diagnostic. Array-form `$not` was already correct and is unchanged (#241).
 
 ## [0.16.0] - 2026-08-27
 

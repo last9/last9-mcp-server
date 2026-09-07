@@ -142,16 +142,12 @@ func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 				)
 			}
 
-			// $not is documented as {"$not": [condition]} — a single-element
-			// array (logjson.md). The inspect heuristics that consume the
-			// sanitized pipeline (utils.HasExpensiveBodyParsing,
-			// utils.pipelineTouchesBody) descend into $not only when its value
-			// is []any, so a map-form {"$not": {…}} that free-form callers may
-			// emit would survive sanitization unchanged and be silently
-			// skipped. Normalize the map form to the documented array form
-			// before recursing. The type check avoids double-wrapping an
-			// already-correct array, which would produce {"$not":[[cond]]} and
-			// cause the inspector's element-type guard to drop the condition.
+			// Normalize map-form {"$not": {…}} to the documented single-element
+			// array form {"$not": [condition]} (logjson.md) so downstream
+			// inspectors see one canonical shape. The type check avoids
+			// double-wrapping an already-correct array. Only $not gets this:
+			// a single condition map is a natural way to express negation,
+			// whereas map-form $and/$or have no sensible single-operand reading.
 			if key == "$not" {
 				if _, isMap := item.(map[string]interface{}); isMap {
 					item = []interface{}{item}
