@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1008,14 +1009,29 @@ func fetchSlowQueryLogs(ctx context.Context, client *http.Client, cfg models.Con
 		return nil
 	}
 
-	return extractSlowQueryLogs(rawResult, args.MinDurationMs)
+	// Apply MinDurationMs client-side, matching the trace-side $gte filter.
+	// The duration lives inside the JSON log body (under instrumentation-specific
+	// keys), so it cannot be pushed into the server-side pipeline. Note the
+	// trade-off: the API returns at most `limit` entries *before* this filter,
+	// so qualifying slow logs beyond that page may be missed. Acceptable since
+	// this path is best-effort (traces are the primary source).
+	return filterSlowQueriesByMinDuration(extractSlowQueryLogs(rawResult), args.MinDurationMs)
+}
+
+// filterSlowQueriesByMinDuration drops queries below minDurationMs.
+// A non-positive threshold means "unset" and returns the slice unchanged.
+func filterSlowQueriesByMinDuration(queries []SlowQuery, minDurationMs float64) []SlowQuery {
+	if minDurationMs <= 0 {
+		return queries
+	}
+	return slices.DeleteFunc(queries, func(q SlowQuery) bool {
+		return q.DurationMs < minDurationMs
+	})
 }
 
 // extractSlowQueryLogs parses Loki streams response into SlowQuery entries.
 // Slow query logs have attributes like db.operation.duration_ms, db.plan_summary, etc.
-// minDurationMs, when positive, filters out entries whose duration is below the
-// user-supplied threshold (matching the trace-side MinDurationMs filter).
-func extractSlowQueryLogs(rawResult map[string]any, minDurationMs float64) []SlowQuery {
+func extractSlowQueryLogs(rawResult map[string]any) []SlowQuery {
 	data, ok := rawResult["data"].(map[string]any)
 	if !ok {
 		return nil
@@ -1074,8 +1090,8 @@ func extractSlowQueryLogs(rawResult map[string]any, minDurationMs float64) []Slo
 				sq.DBStatement = message
 			}
 
-			// Only include if we got a meaningful duration above the threshold (if set)
-			if sq.DurationMs > 0 && (minDurationMs <= 0 || sq.DurationMs >= minDurationMs) {
+			// Only include if we got a meaningful duration
+			if sq.DurationMs > 0 {
 				queries = append(queries, sq)
 			}
 		}

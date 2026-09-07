@@ -619,18 +619,26 @@ func TestGetDatabaseSlowQueriesHandler_MinDurationMs_FiltersLogs(t *testing.T) {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 
-	if got := response["from_logs"].(float64); got != 0 {
-		t.Errorf("expected from_logs=0 (50ms entry below min_duration_ms=200 should be filtered), got %v", got)
+	fromLogs, ok := response["from_logs"].(float64)
+	if !ok {
+		t.Fatalf("response missing numeric from_logs field: %v", response["from_logs"])
 	}
-	if got := response["count"].(float64); got != 1 {
-		t.Errorf("expected 1 slow query (only the valid 500ms trace), got %v", got)
+	if fromLogs != 0 {
+		t.Errorf("expected from_logs=0 (50ms entry below min_duration_ms=200 should be filtered), got %v", fromLogs)
+	}
+	count, ok := response["count"].(float64)
+	if !ok {
+		t.Fatalf("response missing numeric count field: %v", response["count"])
+	}
+	if count != 1 {
+		t.Errorf("expected 1 slow query (only the valid 500ms trace), got %v", count)
 	}
 }
 
-// TestExtractSlowQueryLogs_MinDurationMs exercises the client-side threshold
-// filter in extractSlowQueryLogs directly, covering below/at/above threshold,
+// TestFilterSlowQueriesByMinDuration exercises the client-side threshold
+// filter applied to parsed log entries, covering below/at/above threshold,
 // zero duration, and unset (<=0) threshold behavior.
-func TestExtractSlowQueryLogs_MinDurationMs(t *testing.T) {
+func TestFilterSlowQueriesByMinDuration(t *testing.T) {
 	mkMsg := func(d float64) string {
 		b, _ := json.Marshal(map[string]any{
 			"db.system":                "postgresql",
@@ -672,7 +680,7 @@ func TestExtractSlowQueryLogs_MinDurationMs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			queries := extractSlowQueryLogs(buildRaw(tt.durations...), tt.minDurationMs)
+			queries := filterSlowQueriesByMinDuration(extractSlowQueryLogs(buildRaw(tt.durations...)), tt.minDurationMs)
 			if len(queries) != tt.wantCount {
 				t.Fatalf("expected %d queries, got %d", tt.wantCount, len(queries))
 			}
