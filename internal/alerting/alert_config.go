@@ -522,10 +522,19 @@ func entityLabelValue(labels map[string]string, key string) (string, bool) {
 	if value, ok := labels[key]; ok {
 		return value, true
 	}
-	for existingKey, value := range labels {
-		if strings.EqualFold(existingKey, key) {
-			return value, true
+
+	matched := ""
+	found := false
+	for existingKey := range labels {
+		if !strings.EqualFold(existingKey, key) {
+			continue
 		}
+		if !found || existingKey < matched {
+			matched, found = existingKey, true
+		}
+	}
+	if found {
+		return labels[matched], true
 	}
 	return "", false
 }

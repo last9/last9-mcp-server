@@ -69,6 +69,8 @@ func TestGetAlertGroupsHandler_Filters(t *testing.T) {
 			entityGroups:       sampleAlertGroupsWithZeroRuleEntity(),
 			alertRulesStatus:   http.StatusOK,
 			entityLookupStatus: http.StatusOK,
+
+			emulateUpstreamFilters: true,
 		}
 		body, _, err := executeGetAlertGroups(t, &state, GetAlertGroupsArgs{Team: "PAYMENTS"})
 		if err != nil {
@@ -85,14 +87,16 @@ func TestGetAlertGroupsHandler_Filters(t *testing.T) {
 			entityGroups:       sampleAlertGroupsWithZeroRuleEntity(),
 			alertRulesStatus:   http.StatusOK,
 			entityLookupStatus: http.StatusOK,
+
+			emulateUpstreamFilters: true,
 		}
-		body, _, err := executeGetAlertGroups(t, &state, GetAlertGroupsArgs{Tier: "p1"})
+		body, _, err := executeGetAlertGroups(t, &state, GetAlertGroupsArgs{Tier: "P1"})
 		if err != nil {
 			t.Fatalf("handler returned error: %v", err)
 		}
 		resp := decodeAlertGroupsResponse(t, body)
 		assertAlertGroupIDs(t, resp, []string{"entity-1", "entity-4"})
-		assertHasEntityFilter(t, state.lastEntityRequest, entityFilterTier, "p1", "p1", entityFilterEqual)
+		assertHasEntityFilter(t, state.lastEntityRequest, entityFilterTier, "P1", "P1", entityFilterEqual)
 	})
 
 	t.Run("label pair", func(t *testing.T) {
@@ -120,6 +124,8 @@ func TestGetAlertGroupsHandler_Filters(t *testing.T) {
 			entityGroups:       sampleAlertGroupsWithZeroRuleEntity(),
 			alertRulesStatus:   http.StatusOK,
 			entityLookupStatus: http.StatusOK,
+
+			emulateUpstreamFilters: true,
 		}
 		body, _, err := executeGetAlertGroups(t, &state, GetAlertGroupsArgs{Team: "pay"})
 		if err != nil {
@@ -137,6 +143,8 @@ func TestGetAlertGroupsHandler_Filters(t *testing.T) {
 			entityGroups:       sampleAlertGroupsWithZeroRuleEntity(),
 			alertRulesStatus:   http.StatusOK,
 			entityLookupStatus: http.StatusOK,
+
+			emulateUpstreamFilters: true,
 		}
 		body, _, err := executeGetAlertGroups(t, &state, GetAlertGroupsArgs{AlertGroupName: "payments"})
 		if err != nil {
@@ -358,7 +366,7 @@ func TestGetAlertGroupsHandler_LabelMatchIsCaseInsensitive(t *testing.T) {
 				alertRulesStatus:   http.StatusOK,
 				entityLookupStatus: http.StatusOK,
 
-				emulateUpstreamLabelFilter: true,
+				emulateUpstreamFilters: true,
 			}
 			body, _, err := executeGetAlertGroups(t, &state, GetAlertGroupsArgs{
 				LabelKey:   tc.labelKey,

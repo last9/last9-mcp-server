@@ -128,9 +128,6 @@ func alertGroupEntityQueryFromGroups(args GetAlertGroupsArgs) alertGroupEntityQu
 func countAlertRulesByEntity(rules AlertConfigResponse) map[string]alertRuleCounts {
 	counts := make(map[string]alertRuleCounts)
 	for _, rule := range rules {
-		if rule.DeletedAt != nil {
-			continue
-		}
 		current := counts[rule.EntityID]
 		current.Total++
 		if strings.EqualFold(rule.State, alertRuleStateDisabled) {
