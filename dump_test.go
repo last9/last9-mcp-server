@@ -342,6 +342,32 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	}
 }
 
+func TestDumpToolsDashboardWriteSteer(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, nil); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	byName := make(map[string]string, len(out.Tools))
+	for _, tool := range out.Tools {
+		byName[tool.Name] = tool.Description
+	}
+	if got, want := byName["create_dashboard"], prompts.CreateDashboardDescription; got != want {
+		t.Errorf("served create_dashboard description != embed\ngot:  %q\nwant: %q", got, want)
+	}
+	if got, want := byName["update_dashboard"], prompts.UpdateDashboardDescription; got != want {
+		t.Errorf("served update_dashboard description != embed\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
 func TestOnCallRunbookRoutesHTTPStatusToServiceLogs(t *testing.T) {
 	runbook := prompts.OnCallRunbookWorkflow
 	if !strings.Contains(runbook, "get_service_logs") {
