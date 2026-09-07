@@ -68,6 +68,7 @@ _Avoid_: one-shot writes that have no update (`add_drop_rule`); snapshot tools (
 
 - ENG-1510 — toolsets hard-filter `tools/list`; whale manuals move to MCP resources
 - ENG-1489 — the aggregate description-token gate (`TestDescriptionTokenBudgets`, `all` ≤ ~12k / `investigate` ≤ ~10k via chars/4) was **deliberately removed**, not lost. A chars/4 ceiling on the summed surface fails whenever a correct description grows, and correctness of a description outranks its size: a wrong unit or a stale warning string changes model behavior, while a few hundred extra chars do not. Per-tool size stays bounded by whale progressive disclosure, toolset filtering, and reference resources. There is deliberately no aggregate ceiling — a description-heavy change is reviewed on whether every claim is true and load-bearing, not against a number.
+- ENG-1735 — the dashboard **write pair** stays two tools; no upsert. Datadog collapses create+update into one `upsert_datadog_dashboard` (id present = update), but HITL approval cards must distinguish "creates a new dashboard" from "mutates an existing one", and an upsert makes those the same card. **Net-new** vs **refine** is steered by description copy plus a post-create result nudge, not by a server-side block on a second create — soft steer first, because a hard block would break a turn that legitimately needs two dashboards. `list_dashboards` before the first create is deliberately not required.
 
 ## Flagged ambiguities
 

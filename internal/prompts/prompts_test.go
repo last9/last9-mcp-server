@@ -188,13 +188,8 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 			t.Errorf("UpdateDashboardDescription missing %q: %s", c.phrase, c.reason)
 		}
 	}
-	for _, phrase := range []string{
-		"list_dashboards first",
-		"call list_dashboards before",
-		"list existing dashboards first",
-	} {
-		if strings.Contains(create, phrase) {
-			t.Errorf("CreateDashboardDescription must not contain %q", phrase)
-		}
+	// Any mention at all, not three exact phrasings a reword would slip past.
+	if strings.Contains(create, "list_dashboards") {
+		t.Error("CreateDashboardDescription must not require list_dashboards before create")
 	}
 }
