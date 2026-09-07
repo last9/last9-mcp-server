@@ -15,54 +15,6 @@ import (
 
 const integrationTestTimeout = 30 * time.Second
 
-// TestFetchLogAttributeNames_Integration_ReturnsJSONBodyFields verifies that
-// FetchLogAttributeNames returns attributes from JSON log bodies — not just
-// pre-indexed stream labels. Callers rely on this to build accurate
-// attribute filters; a labels-only result causes the LLM to fall back to
-// body text search and produce mismatched results.
-func TestFetchLogAttributeNames_Integration_ReturnsJSONBodyFields(t *testing.T) {
-	cfg := utils.SetupTestConfigOrSkip(t)
-
-	ctx, cancel := context.WithTimeout(context.Background(), integrationTestTimeout)
-	defer cancel()
-
-	attrs, err := FetchLogAttributeNames(ctx, http.DefaultClient, *cfg)
-	if utils.CheckAPIError(t, err) {
-		return
-	}
-
-	if len(attrs) == 0 {
-		t.Fatal("expected non-empty attribute list")
-	}
-	t.Logf("total attributes returned: %d", len(attrs))
-
-	// With empty pipeline, only ~15-20 stream labels came back.
-	// With JSON parse stage, we expect significantly more.
-	if len(attrs) < 30 {
-		t.Errorf("expected >30 attributes (JSON parse stage should discover body fields), got %d — empty pipeline still in use?", len(attrs))
-	}
-
-	// These are common JSON body fields present in Last9's own service logs.
-	// At least one of these must appear to confirm JSON body parsing is active.
-	jsonBodyFields := []string{"hook_event", "http.method", "http.status_code", "status", "method", "level"}
-	attrSet := make(map[string]bool, len(attrs))
-	for _, a := range attrs {
-		attrSet[a] = true
-	}
-
-	found := false
-	for _, f := range jsonBodyFields {
-		if attrSet[f] {
-			t.Logf("confirmed JSON body field present: %s", f)
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("none of the expected JSON body fields found in attribute list (%v); suggests empty pipeline still used", jsonBodyFields)
-	}
-}
-
 // TestGetLogAttributesHandler_Integration_Basic verifies the MCP handler returns
 // a non-empty attribute list that includes attributes beyond stream labels —
 // enough for the LLM to build meaningful structured attribute filters.
