@@ -726,20 +726,10 @@ func TestGetServiceTracesHandler_Integration(t *testing.T) {
 	t.Logf("Integration test successful: received %d trace(s)", len(traceResponse.Data))
 }
 
-func tracesSoftFailureTestConfig(t *testing.T, baseURL string) models.Config {
-	t.Helper()
-	return models.Config{
-		APIBaseURL: baseURL,
-		Region:     "ap-south-1",
-		ClusterID:  "cluster-1",
-		TokenManager: &auth.TokenManager{
-			AccessToken: "mock-access-token-for-testing",
-			ExpiresAt:   time.Now().Add(365 * 24 * time.Hour),
-		},
-	}
-}
-
-func runServiceTracesSoftFailureCase(t *testing.T, body string) (*mcp.CallToolResult, TraceQueryResponse) {
+// runServiceTracesCase serves the given HTTP 200 body from a mock upstream,
+// invokes the handler with the given args, and returns the raw tool result
+// plus the decoded structured response.
+func runServiceTracesCase(t *testing.T, body string, args GetServiceTracesArgs) (*mcp.CallToolResult, TraceQueryResponse) {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -748,10 +738,10 @@ func runServiceTracesSoftFailureCase(t *testing.T, body string) (*mcp.CallToolRe
 	}))
 	defer server.Close()
 
-	res, _, err := GetServiceTracesHandler(server.Client(), tracesSoftFailureTestConfig(t, server.URL))(
+	res, _, err := GetServiceTracesHandler(server.Client(), tracesTestConfig(server.URL))(
 		context.Background(),
 		&mcp.CallToolRequest{},
-		GetServiceTracesArgs{ServiceName: "api-service", LookbackMinutes: 60, Limit: 10},
+		args,
 	)
 	if err != nil {
 		t.Fatalf("expected tool result, got protocol error: %v", err)
@@ -775,7 +765,7 @@ func runServiceTracesSoftFailureCase(t *testing.T, body string) (*mcp.CallToolRe
 // found no traces: Success=true, IsError=false, and a "Retrieved 0 traces"
 // summary message.
 func TestGetServiceTracesHandler_LegitEmptyResultIsNotError(t *testing.T) {
-	res, tr := runServiceTracesSoftFailureCase(t, `{"data":{"result":[]}}`)
+	res, tr := runServiceTracesCase(t, `{"data":{"result":[]}}`, GetServiceTracesArgs{ServiceName: "api-service", LookbackMinutes: 60, Limit: 10})
 
 	if !tr.Success {
 		t.Fatalf("expected Success=true for legitimate empty result, got false; message=%q", tr.Message)
@@ -786,8 +776,8 @@ func TestGetServiceTracesHandler_LegitEmptyResultIsNotError(t *testing.T) {
 	if !strings.Contains(tr.Message, "Retrieved 0 traces for service: api-service") {
 		t.Fatalf("expected 'Retrieved 0 traces' message, got %q", tr.Message)
 	}
-	if res.Meta == nil {
-		t.Fatalf("expected dashboard deep-link Meta to be preserved on success")
+	if url, _ := res.Meta["reference_url"].(string); url == "" {
+		t.Fatalf("expected dashboard deep-link reference_url to be preserved on success")
 	}
 }
 
@@ -796,7 +786,7 @@ func TestGetServiceTracesHandler_LegitEmptyResultIsNotError(t *testing.T) {
 // Success=false in the structured JSON body, and the diagnostic message set by
 // transformToTraceQueryResponse (not overwritten by the success summary).
 func TestGetServiceTracesHandler_MissingResultArraySetsIsErrorAndPreservesDiagnostic(t *testing.T) {
-	res, tr := runServiceTracesSoftFailureCase(t, `{"data":{}}`)
+	res, tr := runServiceTracesCase(t, `{"data":{}}`, GetServiceTracesArgs{ServiceName: "api-service", LookbackMinutes: 60, Limit: 10})
 
 	if tr.Success {
 		t.Fatalf("expected Success=false for malformed 200 response, got true")
@@ -810,8 +800,8 @@ func TestGetServiceTracesHandler_MissingResultArraySetsIsErrorAndPreservesDiagno
 	if strings.Contains(tr.Message, "Retrieved 0 traces") {
 		t.Fatalf("diagnostic must not be overwritten with success summary, got %q", tr.Message)
 	}
-	if res.Meta == nil {
-		t.Fatalf("expected dashboard deep-link Meta to be preserved on soft failure")
+	if url, _ := res.Meta["reference_url"].(string); url == "" {
+		t.Fatalf("expected dashboard deep-link reference_url to be preserved on soft failure")
 	}
 }
 
@@ -819,7 +809,7 @@ func TestGetServiceTracesHandler_MissingResultArraySetsIsErrorAndPreservesDiagno
 // confirms a HTTP 200 body missing the `data` field entirely is escalated with
 // IsError=true, Success=false, and the "missing data field" diagnostic.
 func TestGetServiceTracesHandler_MissingDataFieldSetsIsErrorAndPreservesDiagnostic(t *testing.T) {
-	res, tr := runServiceTracesSoftFailureCase(t, `{"error":"resource exhausted"}`)
+	res, tr := runServiceTracesCase(t, `{"error":"resource exhausted"}`, GetServiceTracesArgs{ServiceName: "api-service", LookbackMinutes: 60, Limit: 10})
 
 	if tr.Success {
 		t.Fatalf("expected Success=false for 200 body missing data, got true")
@@ -833,8 +823,8 @@ func TestGetServiceTracesHandler_MissingDataFieldSetsIsErrorAndPreservesDiagnost
 	if strings.Contains(tr.Message, "Retrieved 0 traces") {
 		t.Fatalf("diagnostic must not be overwritten with success summary, got %q", tr.Message)
 	}
-	if res.Meta == nil {
-		t.Fatalf("expected dashboard deep-link Meta to be preserved on soft failure")
+	if url, _ := res.Meta["reference_url"].(string); url == "" {
+		t.Fatalf("expected dashboard deep-link reference_url to be preserved on soft failure")
 	}
 }
 
@@ -842,34 +832,11 @@ func TestGetServiceTracesHandler_MissingDataFieldSetsIsErrorAndPreservesDiagnost
 // path remains Success=true / IsError=false (it is not a failure), guarding
 // against an over-broad fix that would flag legitimately empty trace_id queries.
 func TestGetServiceTracesHandler_TraceIDEmptyIsNotError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, `{"traces":[]}`)
-	}))
-	defer server.Close()
+	res, tr := runServiceTracesCase(t, `{"traces":[]}`,
+		GetServiceTracesArgs{TraceID: "ea8148dece205073096e4ad48145b08a"})
 
-	res, _, err := GetServiceTracesHandler(server.Client(), tracesSoftFailureTestConfig(t, server.URL))(
-		context.Background(),
-		&mcp.CallToolRequest{},
-		GetServiceTracesArgs{TraceID: "ea8148dece205073096e4ad48145b08a"},
-	)
-	if err != nil {
-		t.Fatalf("expected tool result, got protocol error: %v", err)
-	}
-	if res == nil {
-		t.Fatalf("expected non-nil CallToolResult")
-	}
 	if res.IsError {
 		t.Fatalf("expected IsError=false for empty trace_id result, got true")
-	}
-	tc, ok := res.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent, got %T", res.Content[0])
-	}
-	var tr TraceQueryResponse
-	if err := json.Unmarshal([]byte(tc.Text), &tr); err != nil {
-		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 	if !tr.Success {
 		t.Fatalf("expected Success=true for empty trace_id result, got false")
