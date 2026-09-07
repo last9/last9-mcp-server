@@ -106,9 +106,32 @@ func TestDumpTools(t *testing.T) {
 	if strings.Contains(out.Tools[byName["get_logs"]].Description, "{{labels}}") {
 		t.Fatal("get_logs description still contains unsubstituted {{labels}} placeholder")
 	}
-	for _, whale := range []string{"get_logs", "get_traces", "get_service_logs"} {
-		if len(out.Tools[byName[whale]].Description) > 2000 {
-			t.Fatalf("%s served description length %d exceeds 2000-char tripwire", whale, len(out.Tools[byName[whale]].Description))
+	// get_logs: budget covers combined (description + inputSchema JSON) served size
+	// because get_logs ships a hand-crafted schema that contributes meaningfully to
+	// the context window. Budget is 7000 with headroom over the baseline ~6283.
+	logsIdx := byName["get_logs"]
+	logsSchemaBytes, err := json.Marshal(out.Tools[logsIdx].InputSchema)
+	if err != nil {
+		t.Fatalf("marshal get_logs inputSchema: %v", err)
+	}
+	logsServedSize := len(out.Tools[logsIdx].Description) + len(logsSchemaBytes)
+	const logsServedBudget = 7000
+	if logsServedSize > logsServedBudget {
+		t.Fatalf("get_logs combined (description + inputSchema) served size %d exceeds %d-char budget", logsServedSize, logsServedBudget)
+	}
+	if !strings.Contains(out.Tools[logsIdx].Description, "last9://reference/") {
+		t.Fatal("get_logs description missing resource URI pointer")
+	}
+
+	// Description-only budgets for other whales (main tripwire values restored to 2000).
+	whaleBudgets := map[string]int{
+		"get_traces":       2000,
+		"get_service_logs": 2000,
+	}
+	for _, whale := range []string{"get_traces", "get_service_logs"} {
+		budget := whaleBudgets[whale]
+		if len(out.Tools[byName[whale]].Description) > budget {
+			t.Fatalf("%s served description length %d exceeds %d-char budget", whale, len(out.Tools[byName[whale]].Description), budget)
 		}
 		if !strings.Contains(out.Tools[byName[whale]].Description, "last9://reference/") {
 			t.Fatalf("%s description missing resource URI pointer", whale)
@@ -116,6 +139,71 @@ func TestDumpTools(t *testing.T) {
 	}
 	if !strings.Contains(out.Tools[byName["prometheus_range_query"]].Description, "last9://reference/metrics") {
 		t.Fatal("prometheus_range_query description missing metrics resource URI pointer")
+	}
+
+	logsDesc := out.Tools[byName["get_logs"]].Description
+	if strings.Contains(logsDesc, "window_minutes") {
+		t.Fatal("get_logs description must not teach window_minutes; window_aggregate uses function/as/window")
+	}
+	for _, needle := range []string{`"function"`, `"as"`, `"window"`} {
+		if !strings.Contains(logsDesc, needle) {
+			t.Fatalf("get_logs description missing last9/api window_aggregate key %s", needle)
+		}
+	}
+
+	tracesDesc := out.Tools[byName["get_traces"]].Description
+	if strings.Contains(tracesDesc, "window_minutes") {
+		t.Fatal("get_traces description must not teach window_minutes; window_aggregate uses function/as/window")
+	}
+	for _, needle := range []string{`"function"`, `"as"`, `"window"`} {
+		if !strings.Contains(tracesDesc, needle) {
+			t.Fatalf("get_traces description missing last9/api window_aggregate key %s", needle)
+		}
+	}
+	if strings.Contains(tracesDesc, "default **5**") {
+		t.Fatal("get_traces lookback default must match GetTracesArgs (60), not 5")
+	}
+	if !strings.Contains(tracesDesc, "default **60**") {
+		t.Fatal("get_traces description missing lookback default 60")
+	}
+
+	svcLogsDesc := out.Tools[byName["get_service_logs"]].Description
+	if strings.Contains(svcLogsDesc, "Prefer `get_logs` instead when") {
+		t.Fatal("get_service_logs must not tell agents to prefer get_logs for HTTP status")
+	}
+	if strings.Contains(strings.ToLower(svcLogsDesc), "use `get_logs` + discovered status") {
+		t.Fatal("get_service_logs must not send HTTP-status search to get_logs")
+	}
+	if !strings.Contains(svcLogsDesc, "http_status") {
+		t.Fatal("get_service_logs description must document HTTP status filters")
+	}
+
+	excIdx, ok := byName["get_exceptions"]
+	if !ok {
+		t.Fatal("tool \"get_exceptions\" missing from dump")
+	}
+	excDesc := out.Tools[excIdx].Description
+	if !strings.Contains(excDesc, "get_service_logs") || !strings.Contains(excDesc, "http_status") {
+		t.Fatal("get_exceptions must route HTTP-status log search to get_service_logs")
+	}
+	if strings.Contains(excDesc, "write a `get_logs` pipeline") && !strings.Contains(excDesc, "Do not write a `get_logs` pipeline") {
+		t.Fatal("get_exceptions must not send HTTP-status log search to get_logs")
+	}
+
+	if !strings.Contains(logsDesc, "get_service_logs") {
+		t.Fatal("get_logs whale must name get_service_logs as the structured HTTP-status alternative")
+	}
+
+	perfIdx, ok := byName["get_service_performance_details"]
+	if !ok {
+		t.Fatal("tool \"get_service_performance_details\" missing from dump")
+	}
+	perfDesc := out.Tools[perfIdx].Description
+	if strings.Contains(perfDesc, "get_service_operation_details") {
+		t.Fatal("get_service_performance_details names nonexistent get_service_operation_details")
+	}
+	if !strings.Contains(perfDesc, "get_service_operations_summary") {
+		t.Fatal("get_service_performance_details must point at get_service_operations_summary")
 	}
 
 	deviationsIndex, ok := byName["get_apm_service_deviations"]
@@ -189,6 +277,35 @@ func TestDumpTools(t *testing.T) {
 	}
 }
 
+func TestDumpToolsLogsIncludesServiceProfile(t *testing.T) {
+	allowed, err := toolsets.Parse("logs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, allowed); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	byName := make(map[string]bool, len(out.Tools))
+	for _, tool := range out.Tools {
+		byName[tool.Name] = true
+	}
+	if !byName["get_service_profile"] {
+		t.Error("logs dump missing get_service_profile (required by profile-first firing rules on get_exceptions)")
+	}
+	if !byName["get_exceptions"] {
+		t.Error("logs dump missing get_exceptions")
+	}
+}
+
 func TestDumpToolsInvestigate(t *testing.T) {
 	allowed, err := toolsets.Parse("investigate")
 	if err != nil {
@@ -210,7 +327,7 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	for _, tool := range out.Tools {
 		byName[tool.Name] = true
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "list_datasources"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "get_service_profile", "list_datasources"} {
 		if !byName[want] {
 			t.Errorf("investigate dump missing %q", want)
 		}
@@ -248,5 +365,18 @@ func TestDumpToolsDashboardWriteSteer(t *testing.T) {
 	}
 	if got, want := byName["update_dashboard"], prompts.UpdateDashboardDescription; got != want {
 		t.Errorf("served update_dashboard description != embed\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+func TestOnCallRunbookRoutesHTTPStatusToServiceLogs(t *testing.T) {
+	runbook := prompts.OnCallRunbookWorkflow
+	if !strings.Contains(runbook, "get_service_logs") {
+		t.Fatal("on_call_runbook must name get_service_logs for status-class log search")
+	}
+	if !strings.Contains(runbook, "http_status_class") {
+		t.Fatal("on_call_runbook must send HTTP-status log search to get_service_logs, not logjson")
+	}
+	if strings.Contains(runbook, "write logjson") && !strings.Contains(runbook, "do not write logjson") {
+		t.Fatal("on_call_runbook must not tell the agent to write logjson for service 5xx")
 	}
 }
