@@ -482,7 +482,15 @@ func TestSanitizeLogJSONQueryNormalizesInsideOrAndNot(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		notCond := sanitized[0]["query"].(map[string]interface{})["$not"].(map[string]interface{})
+		// The sanitizer normalizes the map-form $not to the documented
+		// single-element array form {"$not": [condition]} so downstream
+		// inspectors (utils.HasExpensiveBodyParsing / pipelineTouchesBody)
+		// that only descend into []any $not values can see the condition.
+		notArr := sanitized[0]["query"].(map[string]interface{})["$not"].([]interface{})
+		if len(notArr) != 1 {
+			t.Fatalf("expected normalized $not to wrap a single condition, got %d elements: %#v", len(notArr), notArr)
+		}
+		notCond := notArr[0].(map[string]interface{})
 		args := notCond["$eq"].([]interface{})
 		if got := args[0]; got != "resources['k8s.pod.name']" {
 			t.Errorf("expected k8s alias inside $not to normalize, got %#v", got)

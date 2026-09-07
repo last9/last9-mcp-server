@@ -142,6 +142,17 @@ func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 				)
 			}
 
+			// Normalize map-form {"$not": {…}} to the documented single-element
+			// array form {"$not": [condition]} (logjson.md) so downstream
+			// inspectors see one canonical shape. The type check avoids
+			// double-wrapping an already-correct array. Only $not gets this:
+			// a single condition map is a natural way to express negation,
+			// whereas map-form $and/$or have no sensible single-operand reading.
+			if key == "$not" {
+				if _, isMap := item.(map[string]interface{}); isMap {
+					item = []interface{}{item}
+				}
+			}
 			next, err := sanitizeLogCondition(item, path+"."+key)
 			if err != nil {
 				return nil, err
