@@ -552,3 +552,96 @@ func TestGetExceptionsArgs_UsesCanonicalNames(t *testing.T) {
 		t.Fatal("GetExceptionsArgs must keep \"service_name\"")
 	}
 }
+
+func TestEscapePromQLLabelValue(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "empty is unchanged", input: "", want: ""},
+		{name: "plain value is unchanged", input: "checkout", want: "checkout"},
+		{name: "single quote is backslash escaped exactly once", input: `o'brien`, want: `o\'brien`},
+		{name: "multiple single quotes each escaped exactly once", input: `a'b'c`, want: `a\'b\'c`},
+		{name: "hyphen is regex escaped and doubled for JSON", input: `last9-api`, want: `last9\\-api`},
+		{name: "slash is regex escaped and doubled for JSON", input: `POST /orders`, want: `POST \\/orders`},
+		{name: "quote plus hyphen escapes quote after doubling", input: `o'brien-api`, want: `o\'brien\\-api`},
+		{name: "backslash is doubled for both JSON and PromQL layers", input: `a\b`, want: `a\\\\b`},
+		{name: "quote plus backslash escapes quote after doubling", input: `a'\b`, want: `a\'\\\\b`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := escapePromQLLabelValue(tt.input); got != tt.want {
+				t.Fatalf("escapePromQLLabelValue(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetExceptionsHandler_EscapesSingleQuoteInFilters(t *testing.T) {
+	endTime := time.Date(2026, 1, 20, 12, 0, 0, 0, time.UTC)
+	startTime := endTime.Add(-30 * time.Minute)
+
+	var capturedQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case constants.EndpointPromQueryInstant:
+			var reqBody map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+				t.Fatalf("failed to decode instant request body: %v", err)
+			}
+			capturedQuery = fmt.Sprintf("%v", reqBody["query"])
+
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, `[]`)
+		case constants.EndpointPromQuery:
+			t.Fatalf("did not expect range query")
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL:         server.URL,
+		PrometheusReadURL:  "https://prom.example.com",
+		PrometheusUsername: "prom-user",
+		PrometheusPassword: "prom-pass",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-access-token",
+			ExpiresAt:   time.Now().Add(24 * time.Hour),
+		},
+	}
+
+	handler := NewGetExceptionsHandler(server.Client(), cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetExceptionsArgs{
+		StartTimeISO: startTime.Format(time.RFC3339),
+		EndTimeISO:   endTime.Format(time.RFC3339),
+		ServiceName:  "o'brien",
+		SpanName:     "GET /o'reilly",
+		Env:          "prod'env",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if !strings.Contains(capturedQuery, `service_name=~'o\'brien'`) {
+		t.Fatalf("expected single-escaped quote in service_name matcher, got: %s", capturedQuery)
+	}
+	if !strings.Contains(capturedQuery, `span_name=~'GET \\/o\'reilly'`) {
+		t.Fatalf("expected escaped quote and slash in span_name matcher, got: %s", capturedQuery)
+	}
+	if !strings.Contains(capturedQuery, `env=~'prod\'env'`) {
+		t.Fatalf("expected single-escaped quote in env matcher, got: %s", capturedQuery)
+	}
+
+	if strings.Contains(capturedQuery, `service_name=~'o'brien'`) {
+		t.Fatalf("service_name matcher has unescaped quote that terminates the literal early: %s", capturedQuery)
+	}
+	if strings.Contains(capturedQuery, `span_name=~'GET /o'reilly'`) {
+		t.Fatalf("span_name matcher has unescaped quote or slash that terminates the literal early: %s", capturedQuery)
+	}
+	if strings.Contains(capturedQuery, `env=~'prod'env'`) {
+		t.Fatalf("env matcher has unescaped quote that terminates the literal early: %s", capturedQuery)
+	}
+}
