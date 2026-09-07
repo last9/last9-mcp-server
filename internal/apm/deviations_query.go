@@ -222,7 +222,11 @@ func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, s
 		requestSelectorWithMatcher(baseMatchers, `grpc_status_code!~"^(|0|OK)$"`),
 	}
 	errorUnion := fmt.Sprintf("sum by (%s) ((%s))", group, strings.Join(errorSelectors, ") or ("))
-	errorExpression := fmt.Sprintf("(%s) or on (%s) (%s * 0)", errorUnion, group, requestExpression)
+	// The outer parentheses are load-bearing: the top-level operator here is
+	// `or`, which binds looser than arithmetic operators in PromQL. Without
+	// them, a consumer like `errorExpression / x` would apply the division only
+	// to the zero-fill branch `(requestExpression * 0)`, not the whole union.
+	errorExpression := fmt.Sprintf("((%s) or on (%s) (%s * 0))", errorUnion, group, requestExpression)
 	errorGrid := deviationSubquery(errorExpression, window, step)
 
 	identityMatchers := baseMatchers[1:]
@@ -247,7 +251,7 @@ func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, s
 	stepMinutes := strconv.FormatFloat(step.Minutes(), 'f', -1, 64)
 	requestRPMGrid := deviationSubquery(fmt.Sprintf("(%s / %s)", requestExpression, stepMinutes), window, step)
 	errorRPMGrid := deviationSubquery(fmt.Sprintf("(%s / %s)", errorExpression, stepMinutes), window, step)
-	errorPercentageExpression := fmt.Sprintf("((((%s) / %s) * 100) and on (%s) (%s > 0))", "("+errorExpression+")", requestExpression, matching, requestExpression)
+	errorPercentageExpression := fmt.Sprintf("(((%s / %s) * 100) and on (%s) (%s > 0))", errorExpression, requestExpression, matching, requestExpression)
 	errorPercentageGrid := deviationSubquery(errorPercentageExpression, window, step)
 	apdexDistributionGrid := deviationSubquery(alignedApdex, window, step)
 
