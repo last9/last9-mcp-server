@@ -22,7 +22,7 @@ For a new tool `get_foo`:
 
 **Progressive disclosure (whales):** `get_logs`, `get_traces`, `get_service_logs`, and `prometheus_range_query` serve a short description (`*_base.md`) with firing blurb + critical rules + a `last9://reference/...` pointer. Full manuals live in `internal/prompts/references/` (`logjson.md`, `tracejson.md`, `service_logs.md`, `metrics.md`), embedded and registered as MCP resources in `resources.go`. Do not concatenate long manuals back into `tools/list`. Do not inject org attribute catalogs into descriptions — point at discovery tools.
 
-Grandfathered: some tools still use `*_base.md` naming; `get_exceptions` uses an `Instructions`-suffixed var as its plain description. Prefer a single description file for new tools unless progressive disclosure is required.
+The `*_base.md` suffix means progressive disclosure and nothing else — a description with no manual of its own must not carry it. Grandfathered: `get_exceptions` uses an `Instructions`-suffixed var as its plain description. Prefer a single description file for new tools unless progressive disclosure is required.
 
 Some description files intentionally end without a trailing newline — editors or formatters that auto-append one silently change the served description and break `dump-tools` snapshot diffs. Preserve file bytes exactly when editing.
 
@@ -59,3 +59,4 @@ Why markdown-only: Go constants are invisible to the eval harness and docs tooli
 - Avoid attribute-name allowlists models could over-anchor on; point to discovery tools instead.
 - When two params overlap (e.g. a seconds window and a minutes lookback), say explicitly which one to prefer and the valid range of each.
 - Critical query-construction rules for whales must remain on the tool description even when the long manual is a resource.
+- Write-pair tools (`create_*` / `update_*`) must state **net-new** vs **refine** in the description: create once, keep the returned id, refine with update. Do not require list-before-create unless product asks. Put this copy in the description markdown, not in Go schema strings.

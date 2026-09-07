@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"last9-mcp/internal/telemetry"
 )
 
 // namedCapturePattern extracts (?P<name>…) groups from a regexp parse pattern.
@@ -105,8 +107,9 @@ func prepareLogJSONQuery(stages []map[string]interface{}, pathPrefix string) ([]
 		pathPrefix = "logjson_query"
 	}
 
-	// Validate first (fail-closed), then sanitize field refs (which also defaults
-	// missing parse "field" to "Body" on rebuilt copies), then $and-wrap.
+	// Validate structure first, then sanitize field refs (which also defaults
+	// missing parse "field" to "Body" on rebuilt copies), then $and-wrap. The
+	// ordered semantic pass intentionally runs last so aliases are canonical.
 	if err := validateLogJSONQuery(stages, pathPrefix); err != nil {
 		return nil, err
 	}
@@ -122,6 +125,9 @@ func prepareLogJSONQuery(stages []map[string]interface{}, pathPrefix string) ([]
 				stage["query"] = wrapTopLevelLogFilterQuery(query)
 			}
 		}
+	}
+	if err := validateQuantileNumericDataflow(sanitized, pathPrefix); err != nil {
+		return nil, err
 	}
 
 	return sanitized, nil
@@ -228,6 +234,164 @@ func validateLogJSONQuery(stages []map[string]interface{}, pathPrefix string) er
 		}
 	}
 	return nil
+}
+
+// validateQuantileNumericDataflow makes one ordered pass over the sanitized
+// pipeline. String-backed attribute/resource fields become numeric-safe only
+// after a mandatory canonical regex. A later parse invalidates fields it can
+// produce, so the regex must follow the last relevant parse.
+func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix string) error {
+	numericSafeFields := make(map[string]struct{})
+
+	for stageIndex, stage := range stages {
+		stagePath := fmt.Sprintf("%s[%d]", pathPrefix, stageIndex)
+		stageType, _ := stage["type"].(string)
+
+		switch stageType {
+		case "filter":
+			fields := make(map[string]struct{})
+			collectMandatoryCanonicalNumericRegexFields(stage["query"], fields)
+			for field := range fields {
+				numericSafeFields[field] = struct{}{}
+			}
+			continue
+		case "parse":
+			invalidateParsedNumericFields(stage, numericSafeFields)
+			continue
+		}
+
+		checkFunction := func(function map[string]interface{}, functionPath string) error {
+			rawArgs, ok := function["$quantile"].([]interface{})
+			if !ok || len(rawArgs) != 2 {
+				return nil
+			}
+			field, _ := rawArgs[1].(string)
+			if !isStringBackedLogField(field) {
+				return nil
+			}
+			if _, ok := numericSafeFields[field]; ok {
+				return nil
+			}
+			return newLogValidationError(
+				LogValidationInvalidField,
+				functionPath+".$quantile[1]",
+				fmt.Sprintf(
+					"$quantile field %q at %s requires a preceding numeric $regex after the last parse that can produce it; use the canonical anchored numeric $regex shown: {\"$regex\":[%q,\"^[0-9]+(?:\\\\.[0-9]+)?$\"]}",
+					field, functionPath+".$quantile[1]", field,
+				),
+			)
+		}
+
+		switch stageType {
+		case "window_aggregate":
+			if function, ok := stage["function"].(map[string]interface{}); ok {
+				if err := checkFunction(function, stagePath+".function"); err != nil {
+					return err
+				}
+			}
+		case "aggregate":
+			aggregates, _ := stage["aggregates"].([]interface{})
+			for aggregateIndex, rawAggregate := range aggregates {
+				aggregate, ok := rawAggregate.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				function, ok := aggregate["function"].(map[string]interface{})
+				if !ok {
+					continue
+				}
+				functionPath := fmt.Sprintf("%s.aggregates[%d].function", stagePath, aggregateIndex)
+				if err := checkFunction(function, functionPath); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func isStringBackedLogField(field string) bool {
+	return strings.HasPrefix(field, "attributes['") || strings.HasPrefix(field, "resources['")
+}
+
+func invalidateParsedNumericFields(stage map[string]interface{}, numericSafeFields map[string]struct{}) {
+	parser, _ := stage["parser"].(string)
+	labels, labelsDeclared := stage["labels"].(map[string]interface{})
+
+	if (parser == "json" || parser == "logfmt") && (!labelsDeclared || len(labels) == 0) {
+		for field := range numericSafeFields {
+			if strings.HasPrefix(field, "attributes['") {
+				delete(numericSafeFields, field)
+			}
+		}
+		return
+	}
+
+	for source, rawAlias := range labels {
+		delete(numericSafeFields, attributeFieldRef(source))
+		if alias, ok := rawAlias.(string); ok {
+			delete(numericSafeFields, attributeFieldRef(alias))
+		}
+	}
+	if parser == "regexp" {
+		pattern, _ := stage["pattern"].(string)
+		for _, match := range namedCapturePattern.FindAllStringSubmatch(pattern, -1) {
+			delete(numericSafeFields, attributeFieldRef(match[1]))
+		}
+	}
+}
+
+func attributeFieldRef(name string) string {
+	return fmt.Sprintf("attributes['%s']", name)
+}
+
+// collectMandatoryCanonicalNumericRegexFields records only positive canonical
+// regex conditions that every matching row must satisfy. A regex beneath $or
+// or $not is not a numeric guard; nested $and conditions remain mandatory.
+func collectMandatoryCanonicalNumericRegexFields(node interface{}, fields map[string]struct{}) {
+	switch typed := node.(type) {
+	case map[string]interface{}:
+		for operator, raw := range typed {
+			if operator == "$regex" {
+				args, ok := raw.([]interface{})
+				if !ok || len(args) != 2 {
+					continue
+				}
+				field, fieldOK := args[0].(string)
+				pattern, patternOK := args[1].(string)
+				if fieldOK && patternOK && isCanonicalNumericRegex(pattern) {
+					fields[field] = struct{}{}
+				}
+				continue
+			}
+			if operator == "$and" {
+				collectMandatoryCanonicalNumericRegexFields(raw, fields)
+			}
+		}
+	case []interface{}:
+		for _, item := range typed {
+			collectMandatoryCanonicalNumericRegexFields(item, fields)
+		}
+	}
+}
+
+func isCanonicalNumericRegex(pattern string) bool {
+	pattern = strings.TrimSpace(pattern)
+	// Deliberately accept only these canonical anchored shapes. Equivalent exotic
+	// forms are rejected so alternation, literals, or broad classes cannot bypass
+	// the numeric guard.
+	switch pattern {
+	case `^[0-9]+$`,
+		`^[0-9]+(?:\.[0-9]+)?$`,
+		`^-?[0-9]+$`,
+		`^-?[0-9]+(?:\.[0-9]+)?$`,
+		`^[+-]?[0-9]+$`,
+		`^[+-]?[0-9]+(?:\.[0-9]+)?$`:
+		return true
+	default:
+		return false
+	}
 }
 
 func validateParseStage(stage map[string]interface{}, stagePath string) error {
@@ -343,12 +507,16 @@ func validateWindowAggregateStage(stage map[string]interface{}, stagePath string
 			fmt.Sprintf("window_aggregate at %s missing required \"function\" key — example: {\"function\":{\"$count\":[]},\"as\":\"errors\",\"window\":[\"1\",\"minutes\"]}", stagePath),
 		)
 	}
-	if _, ok := fn.(map[string]interface{}); !ok {
+	fnMap, ok := fn.(map[string]interface{})
+	if !ok {
 		return newLogValidationError(
 			LogValidationInvalidField,
 			stagePath+".function",
 			fmt.Sprintf("window_aggregate at %s: \"function\" must be an object like {\"$count\":[]}, not a string — got %T", stagePath, fn),
 		)
+	}
+	if err := validateQuantileFunction(fnMap, stagePath+".function"); err != nil {
+		return err
 	}
 
 	as, _ := stage["as"].(string)
@@ -529,7 +697,8 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string) erro
 				),
 			)
 		}
-		if _, ok := fn.(map[string]interface{}); !ok {
+		fnMap, ok := fn.(map[string]interface{})
+		if !ok {
 			return newLogValidationError(
 				LogValidationInvalidField,
 				itemPath+".function",
@@ -538,6 +707,9 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string) erro
 					itemPath, fn,
 				),
 			)
+		}
+		if err := validateQuantileFunction(fnMap, itemPath+".function"); err != nil {
+			return err
 		}
 
 		// Require "as" as a non-empty string.
@@ -555,6 +727,18 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string) erro
 	}
 
 	return validateGroupByForTraceFields(stage, stagePath)
+}
+
+func validateQuantileFunction(function map[string]interface{}, path string) error {
+	err := telemetry.ValidateQuantileFunction(function, path)
+	if err == nil {
+		return nil
+	}
+	return newLogValidationError(
+		LogValidationInvalidField,
+		err.Path,
+		err.Error(),
+	)
 }
 
 func stageKeyList(allowed map[string]struct{}) string {

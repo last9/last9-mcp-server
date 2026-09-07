@@ -46,6 +46,22 @@ func TestGetTraces_InvalidPipelinesMakeZeroUpstreamRequests(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "aggregate swapped quantile arguments",
+			query: []map[string]interface{}{{
+				"type": "aggregate",
+				"aggregates": []interface{}{map[string]interface{}{
+					"function": map[string]interface{}{"$quantile": []interface{}{"Duration", 0.95}}, "as": "p95",
+				}},
+			}},
+		},
+		{
+			name: "window aggregate out-of-range quantile",
+			query: []map[string]interface{}{{
+				"type": "window_aggregate", "function": map[string]interface{}{"$quantile": []interface{}{1.01, "Duration"}},
+				"as": "p95", "window": []interface{}{"5", "minutes"},
+			}},
+		},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {

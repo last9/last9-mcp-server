@@ -52,21 +52,6 @@ type AlertRule struct {
 	GroupTimeseriesNotifications bool                              `json:"group_timeseries_notifications"`
 }
 
-// Alert represents an active alert instance
-type Alert struct {
-	ID           string            `json:"id"`
-	RuleID       string            `json:"rule_id"`
-	RuleName     string            `json:"rule_name"`
-	State        string            `json:"state"`
-	Severity     string            `json:"severity"`
-	StartsAt     string            `json:"starts_at"`
-	EndsAt       string            `json:"ends_at"`
-	Labels       map[string]string `json:"labels"`
-	Annotations  map[string]string `json:"annotations"`
-	GeneratorURL string            `json:"generator_url"`
-	Fingerprint  string            `json:"fingerprint"`
-}
-
 // AlertConfigResponse represents the response from alert rules API (direct array)
 type AlertConfigResponse []AlertRule
 

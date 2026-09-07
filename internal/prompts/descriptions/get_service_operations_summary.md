@@ -1,5 +1,8 @@
 
 	Get a summary of operations inside a service over a given time range.
+
+	**Profile first:** Call `get_service_profile` for this service before using this tool. Use `signal_shape` and `telemetry` for routing — see `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
+
 	Returns a list of operations with their details.
 	These include operations like HTTP endpoints, database queries, messaging producer and http client calls.
 	Includes service name, environment, throughput, error rate, and response time for each operation.

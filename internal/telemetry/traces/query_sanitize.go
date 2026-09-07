@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"last9-mcp/internal/telemetry"
 )
 
 var traceFilterFieldOperators = map[string]struct{}{
@@ -344,6 +346,7 @@ const (
 	traceCategoryUnknownStageType     = "unknown_stage_type"
 	traceCategoryUnknownStageKey      = "unknown_stage_key"
 	traceCategoryWindowAggregateShape = "window_aggregate_shape"
+	traceCategoryInvalidField         = "invalid_field"
 )
 
 type tracePipelineError struct {
@@ -450,6 +453,11 @@ func validateWindowAggregateStage(stage map[string]interface{}, path string) err
 			msg:      `window_aggregate requires "function", "as", and "window"`,
 		}
 	}
+	if function, ok := stage["function"].(map[string]interface{}); ok {
+		if err := validateTraceQuantileFunction(function, path+".function"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -488,7 +496,24 @@ func validateAggregateStage(stage map[string]interface{}, path string) error {
 					path, j,
 				)
 			}
+			if function, ok := fn.(map[string]interface{}); ok {
+				if err := validateTraceQuantileFunction(function, fmt.Sprintf("%s.aggregates[%d].function", path, j)); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil
+}
+
+func validateTraceQuantileFunction(function map[string]interface{}, path string) error {
+	err := telemetry.ValidateQuantileFunction(function, path)
+	if err == nil {
+		return nil
+	}
+	return &tracePipelineError{
+		category: traceCategoryInvalidField,
+		path:     err.Path,
+		msg:      err.Error(),
+	}
 }

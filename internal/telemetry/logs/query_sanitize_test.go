@@ -760,6 +760,367 @@ func TestGetLogsHandlerRejectsUnsupportedDottedRefsBeforeAPICall(t *testing.T) {
 	}
 }
 
+func TestGetLogsHandlerRejectsUnsafeQuantilesBeforeAPICall(t *testing.T) {
+	field := "attributes['latency_ms']"
+	cases := []struct {
+		name       string
+		pipeline   []map[string]interface{}
+		fieldInErr string
+	}{
+		{"attribute without guard", []map[string]interface{}{testQuantileAggregate(field)}, field},
+		{"parse after guard", []map[string]interface{}{
+			testCanonicalNumericFilter(field),
+			{"type": "parse", "parser": "json", "field": "Body", "labels": map[string]interface{}{"latency_ms": "latency_ms"}},
+			testQuantileAggregate(field),
+		}, field},
+		{"sanitized resource alias", []map[string]interface{}{testQuantileAggregate("k8s.pod.cpu")}, "resources['k8s.pod.cpu']"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertGetLogsQuantileRejected(t, tc.pipeline, tc.fieldInErr)
+		})
+	}
+}
+
+func assertGetLogsQuantileRejected(t *testing.T, pipeline []map[string]interface{}, fieldInErr string) {
+	t.Helper()
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		http.Error(w, "should not be called", http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	handler := NewGetLogsHandler(server.Client(), testLogsConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{LogjsonQuery: pipeline, LookbackMinutes: 5})
+	if err == nil || !strings.Contains(err.Error(), fieldInErr) || !strings.Contains(err.Error(), "canonical anchored numeric $regex") {
+		t.Fatalf("expected field-specific canonical regex error, got: %v", err)
+	}
+	if requestCount != 0 {
+		t.Fatalf("expected no API requests, got %d", requestCount)
+	}
+}
+
+func TestGetLogsHandlerRejectsBodyQuantileWhenParseFollowsNumericRegex(t *testing.T) {
+	field := "attributes['latency_ms']"
+	assertGetLogsQuantileRejected(t, []map[string]interface{}{
+		testCanonicalNumericFilter(field),
+		{"type": "parse", "parser": "json", "field": "Body", "labels": map[string]interface{}{"latency_ms": "latency_ms"}},
+		testQuantileAggregate(field),
+	}, field)
+}
+
+func testQuantileAggregate(field string) map[string]interface{} {
+	return map[string]interface{}{
+		"type": "aggregate",
+		"aggregates": []interface{}{
+			map[string]interface{}{
+				"function": map[string]interface{}{"$quantile": []interface{}{0.99, field}},
+				"as":       "p99",
+			},
+		},
+	}
+}
+
+func testCanonicalNumericFilter(field string) map[string]interface{} {
+	return testNumericFilter(field, `^[0-9]+(?:\.[0-9]+)?$`)
+}
+
+func testNumericFilter(field, pattern string) map[string]interface{} {
+	return map[string]interface{}{
+		"type": "filter",
+		"query": map[string]interface{}{
+			"$and": []interface{}{
+				map[string]interface{}{"$regex": []interface{}{field, pattern}},
+			},
+		},
+	}
+}
+
+func TestGetLogsHandlerGuardsSanitizedResourceAliasQuantile(t *testing.T) {
+	assertGetLogsQuantileRejected(t, []map[string]interface{}{testQuantileAggregate("k8s.pod.cpu")}, "resources['k8s.pod.cpu']")
+}
+
+func TestPrepareLogJSONQueryParseInvalidatesNumericSafeState(t *testing.T) {
+	field := "attributes['latency_ms']"
+	for _, tc := range []struct {
+		name  string
+		parse map[string]interface{}
+	}{
+		{
+			name: "same declared JSON field",
+			parse: map[string]interface{}{
+				"type": "parse", "parser": "json", "field": "Body",
+				"labels": map[string]interface{}{"latency_ms": "latency_ms"},
+			},
+		},
+		{
+			name:  "JSON without labels invalidates all attributes",
+			parse: map[string]interface{}{"type": "parse", "parser": "json", "field": "Body"},
+		},
+		{
+			name:  "logfmt without labels invalidates all attributes",
+			parse: map[string]interface{}{"type": "parse", "parser": "logfmt", "field": "Body"},
+		},
+		{
+			name: "regexp named capture",
+			parse: map[string]interface{}{
+				"type": "parse", "parser": "regexp", "field": "Body",
+				"pattern": `latency=(?P<latency_ms>[0-9]+)`,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assertPrepareQuantileRejected(t, []map[string]interface{}{
+				testCanonicalNumericFilter(field),
+				tc.parse,
+				testQuantileAggregate(field),
+			})
+		})
+	}
+}
+
+func TestGetLogsHandlerNonChunkedAggregateProbesAndAnnotatesRowLimit(t *testing.T) {
+	assertAggregateLimitCase(t, 2, 0, "3", `[{"bucket":"a"},{"bucket":"b"},{"bucket":"probe"}]`, 2, true)
+}
+
+func assertAggregateLimitCase(t *testing.T, requested, configuredMax int, wantProbe, rowsJSON string, wantRows int, wantPartial bool) {
+	t.Helper()
+	receivedLimit := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedLimit <- r.URL.Query().Get("limit")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"dataframe","result":%s}}`, rowsJSON)
+	}))
+	defer server.Close()
+
+	cfg := testLogsConfig(server.URL)
+	cfg.MaxGetLogsEntries = configuredMax
+	handler := NewGetLogsHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+		LogjsonQuery: []map[string]interface{}{testCountAggregate()}, LookbackMinutes: 5, Limit: requested,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if got := <-receivedLimit; got != wantProbe {
+		t.Fatalf("probe limit=%q, want %q", got, wantProbe)
+	}
+	body := decodeGetLogsBody(t, result)
+	rows := body["data"].(map[string]interface{})["result"].([]interface{})
+	if len(rows) != wantRows {
+		t.Fatalf("returned rows=%d, want %d", len(rows), wantRows)
+	}
+	meta, partial := body["l9_result"].(map[string]interface{})
+	if partial != wantPartial || (partial && (meta["partial"] != true || meta["reason"] != "row_limit_reached")) {
+		t.Fatalf("partial metadata=%#v, wantPartial=%v", meta, wantPartial)
+	}
+}
+
+func testCountAggregate() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "aggregate",
+		"aggregates": []interface{}{map[string]interface{}{
+			"function": map[string]interface{}{"$count": []interface{}{}}, "as": "row_count",
+		}},
+	}
+}
+
+func decodeGetLogsBody(t *testing.T, result *mcp.CallToolResult) map[string]interface{} {
+	t.Helper()
+	var body map[string]interface{}
+	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &body); err != nil {
+		t.Fatalf("decode tool result: %v", err)
+	}
+	return body
+}
+
+func TestGetLogsHandlerAcceptsSafeQuantileInputs(t *testing.T) {
+	field := "attributes['latency_ms']"
+	numericFilter, aggregate := testCanonicalNumericFilter(field), testQuantileAggregate(field)
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"dataframe","result":[]}}`))
+	}))
+	defer server.Close()
+	handler := NewGetLogsHandler(server.Client(), testLogsConfig(server.URL))
+
+	for _, tc := range []struct {
+		name   string
+		stages []map[string]interface{}
+	}{
+		{
+			name:   "indexed attribute with preceding numeric regex",
+			stages: []map[string]interface{}{numericFilter, aggregate},
+		},
+		{
+			name: "Body parse before numeric regex",
+			stages: []map[string]interface{}{
+				{
+					"type":   "parse",
+					"parser": "json",
+					"field":  "Body",
+					"labels": map[string]interface{}{"latency_ms": "latency_ms"},
+				},
+				numericFilter,
+				aggregate,
+			},
+		},
+		{
+			name:   "known top-level numeric field without regex",
+			stages: []map[string]interface{}{testQuantileAggregate("Timestamp")},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+				LogjsonQuery:    tc.stages,
+				LookbackMinutes: 5,
+			})
+			if err != nil {
+				t.Fatalf("handler rejected safe quantile pipeline: %v", err)
+			}
+		})
+	}
+	if requestCount != 3 {
+		t.Fatalf("expected one API request per safe case, got %d", requestCount)
+	}
+}
+
+func TestPrepareLogJSONQueryRejectsNonNumericRegexForAttributeQuantile(t *testing.T) {
+	field := "attributes['latency_ms']"
+	assertPrepareQuantileRejected(t, []map[string]interface{}{testNumericFilter(field, `^.+$`), testQuantileAggregate(field)})
+}
+
+func assertPrepareQuantileRejected(t *testing.T, pipeline []map[string]interface{}) {
+	t.Helper()
+	_, err := prepareLogJSONQuery(pipeline, "logjson_query")
+	if err == nil || !strings.Contains(err.Error(), "canonical anchored numeric $regex") {
+		t.Fatalf("expected canonical numeric-regex error, got: %v", err)
+	}
+}
+
+func TestPrepareLogJSONQueryRejectsNonMandatoryOrNonNumericRegexGuards(t *testing.T) {
+	field := "attributes['latency_ms']"
+	aggregate := testQuantileAggregate(field)
+
+	for _, tc := range []struct {
+		name  string
+		query map[string]interface{}
+	}{
+		{
+			name: "regex in or is not mandatory",
+			query: map[string]interface{}{
+				"$or": []interface{}{
+					map[string]interface{}{"$regex": []interface{}{field, `^[0-9]+(?:\.[0-9]+)?$`}},
+					map[string]interface{}{"$neq": []interface{}{"SeverityText", ""}},
+				},
+			},
+		},
+		{
+			name: "regex in not is negative",
+			query: map[string]interface{}{
+				"$not": map[string]interface{}{"$regex": []interface{}{field, `^[0-9]+(?:\.[0-9]+)?$`}},
+			},
+		},
+		{
+			name:  "alternation permits a nonnumeric literal",
+			query: map[string]interface{}{"$and": []interface{}{map[string]interface{}{"$regex": []interface{}{field, `^(?:[0-9]+|unknown)$`}}}},
+		},
+		{
+			name:  "literal suffix permits nonnumeric values",
+			query: map[string]interface{}{"$and": []interface{}{map[string]interface{}{"$regex": []interface{}{field, `^[0-9]+ms$`}}}},
+		},
+		{
+			name:  "broad character class permits nonnumeric values",
+			query: map[string]interface{}{"$and": []interface{}{map[string]interface{}{"$regex": []interface{}{field, `^[[:alnum:]]+$`}}}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assertPrepareQuantileRejected(t, []map[string]interface{}{
+				{"type": "filter", "query": tc.query},
+				aggregate,
+			})
+		})
+	}
+}
+
+func TestGetLogsHandlerPartialGroupedCountSkipsCountSanity(t *testing.T) {
+	logsRequests := 0
+	baselineRequests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case constants.EndpointLogsQueryRange:
+			logsRequests++
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"dataframe","result":[{"metric":{"row_count":7,"route":"/a"},"values":[]},{"metric":{"row_count":11,"route":"/b"},"values":[]}]}}`))
+		case constants.EndpointPromQueryInstant:
+			baselineRequests++
+			_, _ = w.Write([]byte(`[{"metric":{},"value":[1700000000,"100"]}]`))
+		default:
+			http.Error(w, "unexpected path", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	handler := NewGetLogsHandler(server.Client(), testLogsConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+		LogjsonQuery: []map[string]interface{}{
+			{
+				"type": "filter",
+				"query": map[string]interface{}{
+					"$and": []interface{}{map[string]interface{}{"$eq": []interface{}{"ServiceName", "example-service"}}},
+				},
+			},
+			{
+				"type": "aggregate",
+				"aggregates": []interface{}{
+					map[string]interface{}{"function": map[string]interface{}{"$count": []interface{}{}}, "as": "row_count"},
+				},
+				"groupby": map[string]interface{}{"attributes['route']": "route"},
+			},
+		},
+		LookbackMinutes: 5,
+		Limit:           1,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if logsRequests != 1 {
+		t.Fatalf("expected one logs request, got %d", logsRequests)
+	}
+	if baselineRequests != 0 {
+		t.Fatalf("partial aggregate must skip count sanity baseline, got %d requests", baselineRequests)
+	}
+
+	body := decodeGetLogsBody(t, result)
+	if _, exists := body["l9_sanity"]; exists {
+		t.Fatalf("partial aggregate must not contain l9_sanity: %#v", body["l9_sanity"])
+	}
+	meta := body["l9_result"].(map[string]interface{})
+	if meta["partial"] != true {
+		t.Fatalf("expected truthful partial metadata, got %#v", meta)
+	}
+}
+
+func TestGetLogsHandlerAggregateLimitDefaultsCapsAndLeavesUnderLimitUnchanged(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		requested     int
+		configuredMax int
+		wantProbe     string
+	}{
+		{name: "omitted uses backend default plus probe", wantProbe: "1001"},
+		{name: "omitted default is capped by configured max", configuredMax: 100, wantProbe: "101"},
+		{name: "explicit limit is capped before probe", requested: 10, configuredMax: 2, wantProbe: "3"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assertAggregateLimitCase(t, tc.requested, tc.configuredMax, tc.wantProbe, `[{"bucket":"only"}]`, 1, false)
+		})
+	}
+}
+
 // TestPrepareLogJSONQueryValidation covers the fail-closed validation rules
 // introduced by prepareLogJSONQuery / validateLogJSONQuery.
 func TestPrepareLogJSONQueryValidation(t *testing.T) {
@@ -914,6 +1275,76 @@ func TestPrepareLogJSONQueryValidation(t *testing.T) {
 				t.Fatal("expected non-nil result")
 			}
 		})
+	}
+}
+
+func TestPrepareLogJSONQueryValidatesQuantileArguments(t *testing.T) {
+	aggregate := func(args interface{}) []map[string]interface{} {
+		return []map[string]interface{}{{
+			"type": "aggregate",
+			"aggregates": []interface{}{map[string]interface{}{
+				"function": map[string]interface{}{"$quantile": args},
+				"as":       "p99",
+			}},
+		}}
+	}
+	windowAggregate := func(args interface{}) []map[string]interface{} {
+		return []map[string]interface{}{{
+			"type":     "window_aggregate",
+			"function": map[string]interface{}{"$quantile": args},
+			"as":       "p99",
+			"window":   []interface{}{"24", "hours"},
+		}}
+	}
+
+	for _, tc := range []struct {
+		name    string
+		stages  []map[string]interface{}
+		wantErr bool
+	}{
+		{name: "aggregate accepts lower level boundary then known top-level numeric field", stages: aggregate([]interface{}{0.0, "Timestamp"})},
+		{name: "aggregate rejects swapped args", stages: aggregate([]interface{}{"attributes['latency_ms']", 0.99}), wantErr: true},
+		{name: "aggregate rejects wrong arity", stages: aggregate([]interface{}{0.99}), wantErr: true},
+		{name: "aggregate rejects level outside range", stages: aggregate([]interface{}{1.01, "attributes['latency_ms']"}), wantErr: true},
+		{name: "window accepts upper level boundary then known top-level numeric field", stages: windowAggregate([]interface{}{1.0, "Timestamp"})},
+		{name: "window rejects swapped args", stages: windowAggregate([]interface{}{"attributes['latency_ms']", 0.99}), wantErr: true},
+		{name: "window rejects wrong arity", stages: windowAggregate([]interface{}{0.99, "attributes['latency_ms']", "extra"}), wantErr: true},
+		{name: "window rejects non-string field", stages: windowAggregate([]interface{}{0.99, 42.0}), wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := prepareLogJSONQuery(tc.stages, "logjson_query")
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), "[level, field]") {
+				t.Fatalf("error must show the correct argument order, got: %v", err)
+			}
+		})
+	}
+}
+
+func TestPrepareLogJSONQueryPreservesTypedQuantileError(t *testing.T) {
+	_, err := prepareLogJSONQuery([]map[string]interface{}{{
+		"type": "aggregate",
+		"aggregates": []interface{}{map[string]interface{}{
+			"function": map[string]interface{}{"$quantile": []interface{}{"Timestamp", 0.99}}, "as": "p99",
+		}},
+	}}, "logjson_query")
+	var validationErr *LogPipelineValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected typed log validation error, got %T: %v", err, err)
+	}
+	if validationErr.Category != LogValidationInvalidField || validationErr.Path != "logjson_query[0].aggregates[0].function.$quantile[0]" {
+		t.Fatalf("unexpected typed quantile error: category=%q path=%q", validationErr.Category, validationErr.Path)
+	}
+	if !strings.Contains(validationErr.Message, "must be exactly [level, field]") {
+		t.Fatalf("expected actionable argument order, got: %q", validationErr.Message)
 	}
 }
 
