@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `last9://reference/investigation`: an MCP resource documenting the profile-first investigation flow.
 - `get_service_profile` returns a per-service telemetry profile — signal presence, language/runtime, deployment envs, log `signal_shape`, and a recommended ingest fix — as a short brief followed by raw JSON. Call it before a service-scoped investigation to skip trace tools when traces are absent and to parse severity from the log body when `severity_set` is `none` or `partial`.
 
+### Fixed
+
+- `get_drop_rules` and `add_drop_rule` now route non-2xx `/otel_settings/drop` responses through the shared upstream sanitizer (URL/credential redaction, 512-byte truncation with `… (truncated)`, body drained and omitted for 5xx and other non-400/422) instead of echoing the raw body via an unbounded `io.ReadAll` into the tool error surfaced to the model. This matches the `get_logs` / `get_service_logs` contract (#237).
+
 ### Changed
 
 - `create_dashboard` and `update_dashboard` descriptions now steer create-once, refine-with-update. A successful `create_dashboard` appends a second text part pointing at `update_dashboard` with the new id; `Content[0]` is still the raw API JSON.
