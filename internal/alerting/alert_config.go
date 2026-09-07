@@ -49,9 +49,6 @@ type alertGroupEntityMetadata struct {
 	Labels map[string]string `json:"labels"`
 }
 
-// alertGroupEntityQuery is the Compass /entities/list filter shared by
-// get_alert_config (name/type/datasource/tags) and get_alert_groups
-// (those plus team/tier/label).
 type alertGroupEntityQuery struct {
 	AlertGroupName string
 	AlertGroupType string

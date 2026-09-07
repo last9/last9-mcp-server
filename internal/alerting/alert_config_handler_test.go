@@ -28,7 +28,6 @@ type alertConfigTestServerState struct {
 	entityLookupCalls          int
 	lastEntityRequest          filterAlertGroupEntitiesRequest
 	kpiResponses               map[string]kpiResponse // kpiID → response (empty = 404)
-	// Upstream label matching folds no case on key or value.
 	emulateUpstreamLabelFilter bool
 }
 

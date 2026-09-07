@@ -160,7 +160,6 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: prompts.GetAlertConfigDescription,
 	}, alerting.NewGetAlertConfigHandler(client, cfg)))
 
-	// Register alert groups inventory tool (configured Compass metadata, including zero-rule groups)
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_alert_groups",
 		Description: prompts.GetAlertGroupsDescription,
