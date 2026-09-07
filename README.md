@@ -283,6 +283,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 ### Change Events & Alerts
 
 - **`get_change_events`** — Deployments, config changes, rollbacks. Correlate incidents with what changed
+- **`get_alert_groups`** — Configured Compass alert groups with metadata labels, team, tier, and rule counts — including groups with zero rules and groups that are not firing
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_alerts`** — Currently firing alerts within a time window
 - **`get_alert_rule_state`** — Historical firing state (1/0) per alert rule over a time range, grouped by `rule_id`. Filterable by alert group, rule name, label filters, and state.
@@ -292,8 +293,8 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 - **`list_dashboards`** — All custom dashboards in your org: IDs, names, and metadata
 - **`get_dashboard`** — Full dashboard definition by ID, including panels and queries
-- **`create_dashboard`** — Create a new custom dashboard with panels, queries, and metadata
-- **`update_dashboard`** — Update an existing dashboard by ID (readonly system dashboards return an error)
+- **`create_dashboard`** — Create a net-new custom dashboard once (panels, queries, metadata). After the id is returned, refine with `update_dashboard`.
+- **`update_dashboard`** — Refine an existing dashboard by ID (full replacement; readonly system dashboards return an error)
 - **`delete_dashboard`** — Delete a custom dashboard by ID
 - **`list_dashboard_snapshots`** — Frozen point-in-time snapshots for a dashboard (metadata only)
 - **`get_dashboard_snapshot`** — Full frozen snapshot including panel data for RCA / shareable views
@@ -636,6 +637,16 @@ Returns an `investigation-evidence/v1` envelope; the waterfall is under `data`.
 - `env` (string, optional)
 - `event_name` (string, optional): Call without this first to get `available_event_names`.
 
+### get_alert_groups
+
+Configured Compass alert-group inventory for changeboard / label-coverage audits. Includes groups with zero rules and groups that are not firing. Does not return PromQL.
+
+- `alert_group_name` / `alert_group_type` / `data_source_name` (string, optional): Case-insensitive substring match.
+- `team` / `tier` (string, optional): Exact case-insensitive match on configured metadata.
+- `label_key` + `label_value` (string, optional): Must be set together. Exact case-insensitive match on one `metadata.labels` pair — both key and value.
+
+Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `entity_class`, `team`, `tier`, `metadata.labels`, and rule counts. Empty `team` / `labels` means unset.
+
 ### get_alert_config
 
 - `search_term` (string, optional): Free-text search across name, group, data source, tags.
@@ -695,10 +706,14 @@ No parameters. Returns all custom dashboards in the org as a JSON array with `id
 
 ### create_dashboard
 
+Net-new only. After this call returns `dashboard.id`, refine with `update_dashboard` — do not create again to add, trim, or fix panels.
+
 - `dashboard` (object, required): Dashboard definition with `name` and `panels[]`. Each panel requires `name`, `version`, `layout` (`x`, `y`, `w`, `h`), `visualization.type`, and `queries[]`.
 - `metadata` (object, optional): Dashboard metadata — `_category` and `_type` fields (e.g. `{"_category":"custom","_type":"metrics"}`).
 
 ### update_dashboard
+
+Prefer this after create. Full replacement by id (same body as create).
 
 - `id` (string, required): Dashboard UUID to update.
 - `dashboard` (object, required): Full replacement dashboard body (same shape as create).
