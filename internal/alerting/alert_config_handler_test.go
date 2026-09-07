@@ -28,6 +28,37 @@ type alertConfigTestServerState struct {
 	entityLookupCalls          int
 	lastEntityRequest          filterAlertGroupEntitiesRequest
 	kpiResponses               map[string]kpiResponse // kpiID → response (empty = 404)
+	// Upstream label matching folds no case on key or value.
+	emulateUpstreamLabelFilter bool
+}
+
+func applyUpstreamLabelFilter(
+	groups []groupedAlertGroupEntitiesResponse,
+	req filterAlertGroupEntitiesRequest,
+) []groupedAlertGroupEntitiesResponse {
+	var key, value string
+	for _, filter := range req.Filters {
+		if filter.FilterType == "label" {
+			key, value = filter.FilterKey, filter.FilterValue
+			break
+		}
+	}
+	if key == "" {
+		return groups
+	}
+
+	out := make([]groupedAlertGroupEntitiesResponse, 0, len(groups))
+	for _, group := range groups {
+		kept := make([]alertGroupEntity, 0, len(group.Entities))
+		for _, entity := range group.Entities {
+			labelValue, ok := entity.Metadata.Labels[key]
+			if ok && strings.Contains(labelValue, value) {
+				kept = append(kept, entity)
+			}
+		}
+		out = append(out, groupedAlertGroupEntitiesResponse{Entities: kept})
+	}
+	return out
 }
 
 func TestGetAlertConfigHandler_RuleOnlyFilters(t *testing.T) {
@@ -682,7 +713,11 @@ func newAlertConfigTestServer(
 			}
 			w.WriteHeader(status)
 			if status == http.StatusOK {
-				_ = json.NewEncoder(w).Encode(state.entityGroups)
+				groups := state.entityGroups
+				if state.emulateUpstreamLabelFilter {
+					groups = applyUpstreamLabelFilter(groups, state.lastEntityRequest)
+				}
+				_ = json.NewEncoder(w).Encode(groups)
 				return
 			}
 			_, _ = w.Write([]byte(`{"error":"entity lookup failed"}`))

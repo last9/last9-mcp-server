@@ -76,7 +76,7 @@ func TestGetAlertGroupsHandler_Filters(t *testing.T) {
 		}
 		resp := decodeAlertGroupsResponse(t, body)
 		assertAlertGroupIDs(t, resp, []string{"entity-2"})
-		assertHasEntityFilter(t, state.lastEntityRequest, entityFilterTeam, "PAYMENTS", "PAYMENTS", entityFilterContains)
+		assertHasEntityFilter(t, state.lastEntityRequest, entityFilterTeam, "PAYMENTS", "PAYMENTS", entityFilterEqual)
 	})
 
 	t.Run("tier", func(t *testing.T) {
@@ -92,7 +92,7 @@ func TestGetAlertGroupsHandler_Filters(t *testing.T) {
 		}
 		resp := decodeAlertGroupsResponse(t, body)
 		assertAlertGroupIDs(t, resp, []string{"entity-1", "entity-4"})
-		assertHasEntityFilter(t, state.lastEntityRequest, entityFilterTier, "p1", "p1", entityFilterContains)
+		assertHasEntityFilter(t, state.lastEntityRequest, entityFilterTier, "p1", "p1", entityFilterEqual)
 	})
 
 	t.Run("label pair", func(t *testing.T) {
@@ -111,10 +111,10 @@ func TestGetAlertGroupsHandler_Filters(t *testing.T) {
 		}
 		resp := decodeAlertGroupsResponse(t, body)
 		assertAlertGroupIDs(t, resp, []string{"entity-1"})
-		assertHasEntityFilter(t, state.lastEntityRequest, entityFilterLabel, "domain", "checkout", entityFilterContains)
+		assertNoEntityFilterOfType(t, state.lastEntityRequest, "label")
 	})
 
-	t.Run("team is exact after contains", func(t *testing.T) {
+	t.Run("team is exact not substring", func(t *testing.T) {
 		state := alertConfigTestServerState{
 			alertRules:         sampleAlertConfigRules(),
 			entityGroups:       sampleAlertGroupsWithZeroRuleEntity(),
@@ -304,6 +304,15 @@ func groupIDs(groups []alertGroupResult) []string {
 	return ids
 }
 
+func assertNoEntityFilterOfType(t *testing.T, req filterAlertGroupEntitiesRequest, filterType string) {
+	t.Helper()
+	for _, filter := range req.Filters {
+		if filter.FilterType == filterType {
+			t.Fatalf("filter type=%s must not be sent upstream, got %#v", filterType, filter)
+		}
+	}
+}
+
 func assertHasEntityFilter(t *testing.T, req filterAlertGroupEntitiesRequest, filterType, key, value, operator string) {
 	t.Helper()
 	for _, filter := range req.Filters {
@@ -329,4 +338,57 @@ func sampleAlertGroupsWithZeroRuleEntity() []groupedAlertGroupEntitiesResponse {
 		},
 	})
 	return groups
+}
+
+func TestGetAlertGroupsHandler_LabelMatchIsCaseInsensitive(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		labelKey   string
+		labelValue string
+	}{
+		{"exact", "domain", "checkout"},
+		{"value case differs", "domain", "CheckOut"},
+		{"key case differs", "DOMAIN", "checkout"},
+		{"both case differ", "Domain", "CHECKOUT"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := alertConfigTestServerState{
+				alertRules:         sampleAlertConfigRules(),
+				entityGroups:       sampleAlertGroupsWithZeroRuleEntity(),
+				alertRulesStatus:   http.StatusOK,
+				entityLookupStatus: http.StatusOK,
+
+				emulateUpstreamLabelFilter: true,
+			}
+			body, _, err := executeGetAlertGroups(t, &state, GetAlertGroupsArgs{
+				LabelKey:   tc.labelKey,
+				LabelValue: tc.labelValue,
+			})
+			if err != nil {
+				t.Fatalf("handler returned error: %v", err)
+			}
+			assertAlertGroupIDs(t, decodeAlertGroupsResponse(t, body), []string{"entity-1"})
+			assertNoEntityFilterOfType(t, state.lastEntityRequest, "label")
+		})
+	}
+}
+
+func TestGetAlertGroupsHandler_LabelValueStillExactNotSubstring(t *testing.T) {
+	state := alertConfigTestServerState{
+		alertRules:         sampleAlertConfigRules(),
+		entityGroups:       sampleAlertGroupsWithZeroRuleEntity(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusOK,
+	}
+	body, _, err := executeGetAlertGroups(t, &state, GetAlertGroupsArgs{
+		LabelKey:   "domain",
+		LabelValue: "check",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	resp := decodeAlertGroupsResponse(t, body)
+	if resp.Count != 0 {
+		t.Fatalf("substring domain=check must not match domain=checkout, got %v", groupIDs(resp.Groups))
+	}
 }

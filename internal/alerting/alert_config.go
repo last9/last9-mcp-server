@@ -31,7 +31,6 @@ const (
 	entityFilterTags        = "tags"
 	entityFilterTeam        = "team"
 	entityFilterTier        = "tier"
-	entityFilterLabel       = "label"
 )
 
 type alertGroupEntity struct {
@@ -353,7 +352,7 @@ func buildAlertGroupEntityLookupFilters(query alertGroupEntityQuery) []alertGrou
 		explicitFilters = append(explicitFilters, newAlertGroupEntityFilter(
 			entityFilterTeam,
 			team,
-			entityFilterContains,
+			entityFilterEqual,
 		))
 	}
 
@@ -361,14 +360,7 @@ func buildAlertGroupEntityLookupFilters(query alertGroupEntityQuery) []alertGrou
 		explicitFilters = append(explicitFilters, newAlertGroupEntityFilter(
 			entityFilterTier,
 			tier,
-			entityFilterContains,
-		))
-	}
-
-	if labelKey := strings.TrimSpace(query.LabelKey); labelKey != "" {
-		explicitFilters = append(explicitFilters, newAlertGroupLabelFilter(
-			labelKey,
-			strings.TrimSpace(query.LabelValue),
+			entityFilterEqual,
 		))
 	}
 
@@ -381,15 +373,6 @@ func newAlertGroupEntityFilter(filterType, value, operator string) alertGroupEnt
 		FilterKey:   value,
 		FilterValue: value,
 		Operator:    operator,
-	}
-}
-
-func newAlertGroupLabelFilter(key, value string) alertGroupEntityFilter {
-	return alertGroupEntityFilter{
-		FilterType:  entityFilterLabel,
-		FilterKey:   key,
-		FilterValue: value,
-		Operator:    entityFilterContains,
 	}
 }
 
