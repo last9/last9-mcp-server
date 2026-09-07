@@ -643,7 +643,7 @@ Configured Compass alert-group inventory for changeboard / label-coverage audits
 
 - `alert_group_name` / `alert_group_type` / `data_source_name` (string, optional): Case-insensitive substring match.
 - `team` / `tier` (string, optional): Exact case-insensitive match on configured metadata.
-- `label_key` + `label_value` (string, optional): Must be set together. Exact match on one `metadata.labels` pair.
+- `label_key` + `label_value` (string, optional): Must be set together. Exact case-insensitive match on one `metadata.labels` pair — both key and value.
 
 Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `entity_class`, `team`, `tier`, `metadata.labels`, and rule counts. Empty `team` / `labels` means unset.
 

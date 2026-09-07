@@ -15,7 +15,7 @@ Optional filters (all AND-combined):
 - team: Exact case-insensitive match on configured team
 - tier: Exact case-insensitive match on configured tier
 - label_key + label_value: Must be set together. Exact case-insensitive match on one
-  configured metadata.labels pair (for example domain=issuing)
+  configured metadata.labels pair — both key and value (for example domain=issuing)
 
 Output is compact JSON: {"count":N,"groups":[...]}. Each group includes:
 - id, name, type, entity_class

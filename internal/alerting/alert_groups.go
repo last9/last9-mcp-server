@@ -22,7 +22,7 @@ type GetAlertGroupsArgs struct {
 	DataSourceName string `json:"data_source_name,omitempty" jsonschema:"Case-insensitive substring match on alert group data source name (optional)"`
 	Team           string `json:"team,omitempty" jsonschema:"Exact case-insensitive match on configured alert group team (optional)"`
 	Tier           string `json:"tier,omitempty" jsonschema:"Exact case-insensitive match on configured alert group tier (optional)"`
-	LabelKey       string `json:"label_key,omitempty" jsonschema:"Configured metadata label key. Must be set together with label_value (optional)"`
+	LabelKey       string `json:"label_key,omitempty" jsonschema:"Configured metadata label key. Must be set together with label_value (optional). Exact case-insensitive match"`
 	LabelValue     string `json:"label_value,omitempty" jsonschema:"Configured metadata label value. Must be set together with label_key (optional). Exact case-insensitive match"`
 }
 
