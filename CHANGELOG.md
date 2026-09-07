@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `get_drop_rules` and `add_drop_rule` now route non-2xx `/otel_settings/drop` responses through the shared upstream sanitizer (URL/credential redaction, 512-byte truncation with `… (truncated)`, body drained and omitted for 5xx and other non-400/422) instead of echoing the raw body via an unbounded `io.ReadAll` into the tool error surfaced to the model. This matches the `get_logs` / `get_service_logs` contract ({{detail_github_issue_ref}}).
+- `get_drop_rules` and `add_drop_rule` now route non-2xx `/otel_settings/drop` responses through the shared upstream sanitizer (URL/credential redaction, 512-byte truncation with `… (truncated)`, body drained and omitted for 5xx and other non-400/422) instead of echoing the raw body via an unbounded `io.ReadAll` into the tool error surfaced to the model. This matches the `get_logs` / `get_service_logs` contract (#237).
 
 ### Changed
 
