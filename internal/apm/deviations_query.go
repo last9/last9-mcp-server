@@ -222,7 +222,11 @@ func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, s
 		requestSelectorWithMatcher(baseMatchers, `grpc_status_code!~"^(|0|OK)$"`),
 	}
 	errorUnion := fmt.Sprintf("sum by (%s) ((%s))", group, strings.Join(errorSelectors, ") or ("))
-	errorExpression := fmt.Sprintf("(%s) or on (%s) (%s * 0)", errorUnion, group, requestExpression)
+	// The outer parentheses are load-bearing: the top-level operator here is
+	// `or`, which binds looser than arithmetic operators in PromQL. Without
+	// them, a consumer like `errorExpression / x` would apply the division only
+	// to the zero-fill branch `(requestExpression * 0)`, not the whole union.
+	errorExpression := fmt.Sprintf("((%s) or on (%s) (%s * 0))", errorUnion, group, requestExpression)
 	errorGrid := deviationSubquery(errorExpression, window, step)
 
 	identityMatchers := baseMatchers[1:]
