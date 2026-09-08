@@ -322,3 +322,15 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 		t.Error("CreateDashboardDescription must not require list_dashboards before create")
 	}
 }
+
+// TestAPMServiceDeviationsDescriptionLookbackFloor pins one sentinel phrase of
+// the short-lookback guidance on the markdown contract surface so a future
+// edit cannot silently strip the bullet. The behavior itself (integer lookback
+// below 2 collapsing to zero completed buckets) is guarded by the resolver
+// boundary test in internal/apm; this only checks the guidance is present.
+func TestAPMServiceDeviationsDescriptionLookbackFloor(t *testing.T) {
+	description := strings.ToLower(prompts.GetAPMServiceDeviationsDescription)
+	if !strings.Contains(description, "short lookbacks are unreliable") {
+		t.Error("description missing short-lookback floor guidance")
+	}
+}
