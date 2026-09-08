@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
 )
 
@@ -393,6 +395,41 @@ func TestExecuteDeviationQueriesClassifiesOverloadFailuresAsRejected(t *testing.
 		}
 		if item.Message != "query rejected by the datasource (limit or timeout)" {
 			t.Fatalf("unexpected message: %+v", item)
+		}
+	}
+}
+
+// TestHTTPDeviationQueryRunnerClassifiesOverloadStatuses drives the real HTTP
+// runner against a live local server to prove datasource status codes map to
+// the overload class end to end, not just at the executor level.
+func TestHTTPDeviationQueryRunnerClassifiesOverloadStatuses(t *testing.T) {
+	var status int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(`{"error":"limit exceeded"}`))
+	}))
+	defer server.Close()
+	cfg := models.Config{APIBaseURL: server.URL}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "mock-access-token", ExpiresAt: time.Now().Add(time.Hour)}
+	runner := newHTTPDeviationQueryRunner(server.Client(), cfg)
+
+	for _, tc := range []struct {
+		status   int
+		overload bool
+	}{
+		{status: 429, overload: true},
+		{status: 503, overload: true},
+		{status: 422, overload: true},
+		{status: 500, overload: false},
+		{status: 400, overload: false},
+	} {
+		status = tc.status
+		_, err := runner.Query(context.Background(), "up", time.Unix(0, 0))
+		if err == nil {
+			t.Fatalf("status %d: expected error", tc.status)
+		}
+		if got := isDeviationQueryOverload(err); got != tc.overload {
+			t.Fatalf("status %d: overload = %v, want %v (err=%v)", tc.status, got, tc.overload, err)
 		}
 	}
 }
