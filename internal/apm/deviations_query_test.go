@@ -137,59 +137,44 @@ func TestErrorQueriesZeroFillHealthyRequestBuckets(t *testing.T) {
 	}
 }
 
-// TestCandidateMaskOverfetchesBeyondResultLimit confirms the traffic-based
-// candidate mask requests candidateOverfetchFactor times the result limit, for
-// both service and operation scope. The mask selects by traffic, so at exactly
-// the result limit a low-traffic high-magnitude deviator would be excluded
-// before analysis; over-fetching lets the magnitude-aware in-process cap
-// (limitDeviationResult / correlateOperations) make the final cut instead.
-func TestCandidateMaskOverfetchesBeyondResultLimit(t *testing.T) {
+// TestDeviationQueriesHaveNoCandidatePreFilter guards the hard-completeness
+// invariant: the deviation aggregates are fetched for every identity in scope,
+// with no traffic-based topk (or any other ranking pre-filter) deciding which
+// identities the deviation math ever sees. Classification depends on
+// per-bucket distribution overlap and evidence coverage that no PromQL ranking
+// proxy can mirror, so any pre-filter can silently drop the identity a correct
+// result must contain — the exact failure mode of the max_services cap bug,
+// one layer up. The only cut is the magnitude-aware in-process selection.
+// Windows stay pinned with @ so current and baseline see the same fleet.
+func TestDeviationQueriesHaveNoCandidatePreFilter(t *testing.T) {
 	current, baseline := deviationTestWindows()
-
-	servicePlan := buildServiceRollupQueries(deviationQueryScope{Limit: 10}, current, baseline, time.Minute)
-	if !strings.Contains(servicePlan.CandidateMask, "topk(30,") {
-		t.Fatalf("service mask does not over-fetch (want topk(30,): %s", servicePlan.CandidateMask)
+	plans := map[string]deviationQueryPlan{
+		"service":   buildServiceRollupQueries(deviationQueryScope{Limit: 2}, current, baseline, time.Minute),
+		"operation": buildOperationRollupQueries(deviationQueryScope{ServiceName: "api", Limit: 2}, current, baseline, time.Minute),
 	}
-
-	operationPlan := buildOperationRollupQueries(deviationQueryScope{ServiceName: "api", Limit: 5}, current, baseline, time.Minute)
-	if !strings.Contains(operationPlan.CandidateMask, "topk(15,") {
-		t.Fatalf("operation mask does not over-fetch (want topk(15,): %s", operationPlan.CandidateMask)
-	}
-}
-
-func TestSharedCandidateMaskCombinesPinnedWindowsAndIsIdentical(t *testing.T) {
-	scope := deviationQueryScope{Limit: 2}
-	current, baseline := deviationTestWindows()
-	plan := buildServiceRollupQueries(scope, current, baseline, time.Minute)
-	mask := plan.CandidateMask
-	currentQueries := plan.Current
-	baselineQueries := plan.Baseline
-
-	for _, want := range []string{
-		// limit 2 × candidateOverfetchFactor 3: the mask over-fetches so the
-		// magnitude-aware in-process cap performs the final selection.
-		"topk(6,",
-		"@ " + strconvUnix(current.End),
-		"@ " + strconvUnix(baseline.End),
-		" or ",
-		"service_name, env",
-	} {
-		if !strings.Contains(mask, want) {
-			t.Errorf("candidate mask missing %q: %s", want, mask)
-		}
-	}
-	for _, queries := range [][]deviationQuery{currentQueries, baselineQueries} {
-		for _, query := range queries {
-			if query.CandidateMask != mask || !strings.Contains(query.Text, mask) {
-				t.Errorf("query %q does not use the exact shared mask", query.Name)
+	for name, plan := range plans {
+		for _, queries := range [][]deviationQuery{plan.Current, plan.Baseline} {
+			if len(queries) == 0 {
+				t.Fatalf("%s plan has no queries", name)
 			}
-			if strings.Count(query.Text, "topk(") != 1 {
-				t.Errorf("query %q contains an independent candidate selection: %s", query.Name, query.Text)
+			for _, query := range queries {
+				for _, forbidden := range []string{"topk(", "bottomk(", "limitk(", "limit_ratio("} {
+					if strings.Contains(query.Text, forbidden) {
+						t.Errorf("%s query %q pre-filters candidates with %s: %s", name, query.Name, forbidden, query.Text)
+					}
+				}
 			}
 		}
-	}
-	if maskFromQueries(currentQueries) != maskFromQueries(baselineQueries) {
-		t.Fatal("current and baseline candidate masks differ, risking false presence changes")
+		for _, query := range plan.Current {
+			if !strings.Contains(query.Text, "@ "+strconvUnix(current.End)) {
+				t.Errorf("%s current query %q is not pinned to the current window: %s", name, query.Name, query.Text)
+			}
+		}
+		for _, query := range plan.Baseline {
+			if !strings.Contains(query.Text, "@ "+strconvUnix(baseline.End)) {
+				t.Errorf("%s baseline query %q is not pinned to the baseline window: %s", name, query.Name, query.Text)
+			}
+		}
 	}
 }
 
@@ -428,13 +413,6 @@ func deviationTestWindows() (TimeWindow, TimeWindow) {
 
 func strconvUnix(value time.Time) string {
 	return strconv.FormatInt(value.Unix(), 10)
-}
-
-func maskFromQueries(queries []deviationQuery) string {
-	if len(queries) == 0 {
-		return ""
-	}
-	return queries[0].CandidateMask
 }
 
 func queryTexts(queries []deviationQuery) []string {

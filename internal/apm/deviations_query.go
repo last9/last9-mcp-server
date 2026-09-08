@@ -43,18 +43,16 @@ const (
 )
 
 type deviationQuery struct {
-	Name          string
-	Field         deviationField
-	Text          string
-	CandidateMask string
+	Name  string
+	Field deviationField
+	Text  string
 }
 
 type deviationQueryPlan struct {
-	CandidateMask string
-	CurrentEnd    time.Time
-	BaselineEnd   time.Time
-	Current       []deviationQuery
-	Baseline      []deviationQuery
+	CurrentEnd  time.Time
+	BaselineEnd time.Time
+	Current     []deviationQuery
+	Baseline    []deviationQuery
 }
 
 type deviationVector struct {
@@ -170,44 +168,23 @@ func buildDeviationRollupQueryPlan(scope deviationQueryScope, current, baseline 
 	if scope.Limit <= 0 || step <= 0 || !validDeviationWindow(current) || !validDeviationWindow(baseline) {
 		return deviationQueryPlan{}
 	}
-	mask := buildDeviationCandidateMask(scope, current, baseline, step, operations)
-	if mask == "" {
-		return deviationQueryPlan{}
-	}
+	// No candidate pre-filter: the deviation math runs over every identity in
+	// scope, and the magnitude-aware in-process selection (limitDeviationResult
+	// for services, correlateOperations for operations) performs the only cut.
+	// Deviation classification depends on per-bucket distribution overlap and
+	// evidence-coverage rules that no PromQL ranking proxy (such as a traffic
+	// topk) can mirror, so any pre-filter can silently exclude the identity a
+	// correct result must contain. Completeness is guaranteed at the price of
+	// query cost scaling with the number of identities in scope.
 	return deviationQueryPlan{
-		CandidateMask: mask,
-		CurrentEnd:    current.End,
-		BaselineEnd:   baseline.End,
-		Current:       buildDeviationWindowQueries(scope, current, step, operations, mask),
-		Baseline:      buildDeviationWindowQueries(scope, baseline, step, operations, mask),
+		CurrentEnd:  current.End,
+		BaselineEnd: baseline.End,
+		Current:     buildDeviationWindowQueries(scope, current, step, operations),
+		Baseline:    buildDeviationWindowQueries(scope, baseline, step, operations),
 	}
 }
 
-// candidateOverfetchFactor widens the traffic-based candidate mask beyond the
-// requested result limit. The mask selects candidates by traffic volume, so at
-// exactly the result limit a low-traffic identity with a high-magnitude
-// deviation is excluded before any deviation math runs and can never be
-// recovered downstream. Over-fetching hands a larger candidate set to the
-// magnitude-aware in-process selection (limitDeviationResult for services,
-// correlateOperations for operations), which performs the final cut by
-// deviation magnitude rather than traffic. The factor bounds query cost; it is
-// a recall/cost trade-off, not a completeness guarantee.
-const candidateOverfetchFactor = 3
-
-func buildDeviationCandidateMask(scope deviationQueryScope, current, baseline TimeWindow, step time.Duration, operations bool) string {
-	if scope.Limit <= 0 || step <= 0 || !validDeviationWindow(current) || !validDeviationWindow(baseline) || (operations && scope.ServiceName == "") {
-		return ""
-	}
-	groupLabels := deviationGroupLabels(operations)
-	group := strings.Join(groupLabels, ", ")
-	requestExpression := deviationRequestExpression(scope, group)
-	currentTotal := fmt.Sprintf("sum_over_time(%s)", deviationSubquery(requestExpression, current, step))
-	baselineTotal := fmt.Sprintf("sum_over_time(%s)", deviationSubquery(requestExpression, baseline, step))
-	combined := fmt.Sprintf("((%s + %s) or %s or %s)", currentTotal, baselineTotal, currentTotal, baselineTotal)
-	return fmt.Sprintf("topk(%d, %s)", scope.Limit*candidateOverfetchFactor, combined)
-}
-
-func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, step time.Duration, operations bool, candidateMask string) []deviationQuery {
+func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, step time.Duration, operations bool) []deviationQuery {
 	groupLabels := []string{"service_name", "env"}
 	apdexMetric := "trace_service_apdex_score"
 	if operations {
@@ -266,31 +243,24 @@ func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, s
 	errorPercentageGrid := deviationSubquery(errorPercentageExpression, window, step)
 	apdexDistributionGrid := deviationSubquery(alignedApdex, window, step)
 
-	limit := func(expression string) string {
-		return fmt.Sprintf("(%s) and on (%s) (%s)", expression, matching, candidateMask)
+	return []deviationQuery{
+		{Name: "requests_sum", Field: deviationFieldRequestTotal, Text: requestTotal},
+		{Name: "requests_count", Field: deviationFieldRequestCount, Text: fmt.Sprintf("count_over_time(%s)", requestGrid)},
+		{Name: "errors_sum", Field: deviationFieldErrorTotal, Text: fmt.Sprintf("sum_over_time(%s)", errorGrid)},
+		{Name: "errors_count", Field: deviationFieldErrorCount, Text: fmt.Sprintf("count_over_time(%s)", errorGrid)},
+		{Name: "apdex_numerator", Field: deviationFieldApdexNumerator, Text: fmt.Sprintf("sum_over_time(%s)", apdexNumeratorGrid)},
+		{Name: "apdex_denominator", Field: deviationFieldApdexDenominator, Text: fmt.Sprintf("sum_over_time(%s)", alignedRequestGrid)},
+		{Name: "apdex_count", Field: deviationFieldApdexCount, Text: fmt.Sprintf("count_over_time(%s)", alignedRequestGrid)},
+		{Name: "request_distribution", Field: deviationFieldRequestDistribution, Text: deviationDistributionQuery(requestRPMGrid)},
+		{Name: "error_throughput_distribution", Field: deviationFieldErrorThroughputDistribution, Text: deviationDistributionQuery(errorRPMGrid)},
+		{Name: "error_percentage_distribution", Field: deviationFieldErrorPercentageDistribution, Text: deviationDistributionQuery(errorPercentageGrid)},
+		{Name: "apdex_distribution", Field: deviationFieldApdexDistribution, Text: deviationDistributionQuery(apdexDistributionGrid)},
+		{Name: "latency_q25", Field: deviationFieldLatencyQ25, Text: fmt.Sprintf("quantile_over_time(0.25, %s)", latencyGrid)},
+		{Name: "latency_median", Field: deviationFieldLatencyMedian, Text: fmt.Sprintf("quantile_over_time(0.5, %s)", latencyGrid)},
+		{Name: "latency_q75", Field: deviationFieldLatencyQ75, Text: fmt.Sprintf("quantile_over_time(0.75, %s)", latencyGrid)},
+		{Name: "latency_max", Field: deviationFieldLatencyMax, Text: fmt.Sprintf("max_over_time(%s)", latencyGrid)},
+		{Name: "latency_count", Field: deviationFieldLatencyCount, Text: fmt.Sprintf("count_over_time(%s)", latencyGrid)},
 	}
-	queries := []deviationQuery{
-		{Name: "requests_sum", Field: deviationFieldRequestTotal, Text: limit(requestTotal)},
-		{Name: "requests_count", Field: deviationFieldRequestCount, Text: limit(fmt.Sprintf("count_over_time(%s)", requestGrid))},
-		{Name: "errors_sum", Field: deviationFieldErrorTotal, Text: limit(fmt.Sprintf("sum_over_time(%s)", errorGrid))},
-		{Name: "errors_count", Field: deviationFieldErrorCount, Text: limit(fmt.Sprintf("count_over_time(%s)", errorGrid))},
-		{Name: "apdex_numerator", Field: deviationFieldApdexNumerator, Text: limit(fmt.Sprintf("sum_over_time(%s)", apdexNumeratorGrid))},
-		{Name: "apdex_denominator", Field: deviationFieldApdexDenominator, Text: limit(fmt.Sprintf("sum_over_time(%s)", alignedRequestGrid))},
-		{Name: "apdex_count", Field: deviationFieldApdexCount, Text: limit(fmt.Sprintf("count_over_time(%s)", alignedRequestGrid))},
-		{Name: "request_distribution", Field: deviationFieldRequestDistribution, Text: limit(deviationDistributionQuery(requestRPMGrid))},
-		{Name: "error_throughput_distribution", Field: deviationFieldErrorThroughputDistribution, Text: limit(deviationDistributionQuery(errorRPMGrid))},
-		{Name: "error_percentage_distribution", Field: deviationFieldErrorPercentageDistribution, Text: limit(deviationDistributionQuery(errorPercentageGrid))},
-		{Name: "apdex_distribution", Field: deviationFieldApdexDistribution, Text: limit(deviationDistributionQuery(apdexDistributionGrid))},
-		{Name: "latency_q25", Field: deviationFieldLatencyQ25, Text: limit(fmt.Sprintf("quantile_over_time(0.25, %s)", latencyGrid))},
-		{Name: "latency_median", Field: deviationFieldLatencyMedian, Text: limit(fmt.Sprintf("quantile_over_time(0.5, %s)", latencyGrid))},
-		{Name: "latency_q75", Field: deviationFieldLatencyQ75, Text: limit(fmt.Sprintf("quantile_over_time(0.75, %s)", latencyGrid))},
-		{Name: "latency_max", Field: deviationFieldLatencyMax, Text: limit(fmt.Sprintf("max_over_time(%s)", latencyGrid))},
-		{Name: "latency_count", Field: deviationFieldLatencyCount, Text: limit(fmt.Sprintf("count_over_time(%s)", latencyGrid))},
-	}
-	for index := range queries {
-		queries[index].CandidateMask = candidateMask
-	}
-	return queries
 }
 
 func deviationDistributionQuery(grid string) string {
@@ -307,25 +277,6 @@ func deviationDistributionQuery(grid string) string {
 		queries = append(queries, fmt.Sprintf(`label_replace(quantile_over_time(%s, %s), "deviation_stat", "%s", "", "")`, part.quantile, grid, part.statistic))
 	}
 	return strings.Join(queries, " or ")
-}
-
-func deviationGroupLabels(operations bool) []string {
-	labels := []string{"service_name", "env"}
-	if operations {
-		labels = append(labels, "span_name")
-	}
-	return labels
-}
-
-func deviationRequestExpression(scope deviationQueryScope, group string) string {
-	matchers := []string{`span_kind="SPAN_KIND_SERVER"`}
-	if scope.ServiceName != "" {
-		matchers = append(matchers, fmt.Sprintf(`service_name="%s"`, utils.EscapePromQLLabel(scope.ServiceName)))
-	}
-	if scope.Env != "" {
-		matchers = append(matchers, fmt.Sprintf(`env="%s"`, utils.EscapePromQLLabel(scope.Env)))
-	}
-	return fmt.Sprintf("sum by (%s) (trace_endpoint_count{%s})", group, strings.Join(matchers, ","))
 }
 
 func deviationSubquery(expression string, window TimeWindow, step time.Duration) string {
