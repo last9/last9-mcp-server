@@ -105,6 +105,45 @@ func TestLimitDeviationResultFillsRemainingCapacityWithStableServices(t *testing
 	}
 }
 
+// TestLimitDeviationResultCapsAllStableFleetAlphabetically confirms the
+// documented pre-fix compatibility promise: when nothing deviates and the
+// fleet exceeds the cap, the alphabetically-first services survive and the
+// outcome stays stable.
+func TestLimitDeviationResultCapsAllStableFleetAlphabetically(t *testing.T) {
+	deps := testDeviationHandlerDeps()
+	deps.execute = func(_ context.Context, _ deviationQueryRunner, _ deviationQueryPlan) deviationQueryExecution {
+		var current, baseline []deviationAggregate
+		// 12 identical stable services svc-a..svc-l, no deviations anywhere.
+		for i := 0; i < 12; i++ {
+			name := "svc-" + string(rune('a'+i))
+			current = append(current, aggregate(name, "prod", "", 600, 6, 6, 6, 540, 600, 6, 50, 50, 50, 50, 6))
+			baseline = append(baseline, aggregate(name, "prod", "", 600, 6, 6, 6, 540, 600, 6, 50, 50, 50, 50, 6))
+		}
+		return deviationQueryExecution{Current: deviationQueryResult{Records: current}, Baseline: deviationQueryResult{Records: baseline}}
+	}
+	handler := newAPMServiceDeviationsHandler(http.DefaultClient, models.Config{DatasourceName: "primary"}, deps)
+	args := sixMinuteDeviationArgs()
+	args.MaxServices = 10
+	response := callDeviationHandler(t, handler, args)
+
+	if len(response.Services) != 10 {
+		t.Fatalf("services survived = %d, want 10", len(response.Services))
+	}
+	for i, s := range response.Services {
+		want := "svc-" + string(rune('a'+i))
+		if s.ServiceName != want {
+			t.Fatalf("services[%d] = %q, want %q (alphabetical fill)", i, s.ServiceName, want)
+		}
+	}
+	if response.Outcome != "stable" {
+		t.Fatalf("outcome = %q, want stable", response.Outcome)
+	}
+	boards := response.Leaderboards
+	if len(boards.Reliability.Regressions)+len(boards.Experience.Regressions)+len(boards.SustainedLatency.Regressions) != 0 {
+		t.Fatalf("expected empty regression leaderboards, got %+v", boards)
+	}
+}
+
 // TestLimitDeviationResultRespectsLeaderboardPriorityOrder confirms that when
 // multiple leaderboard categories contain regressions, identities are admitted
 // in the same priority order leadingDeviationIdentity uses (Reliability before

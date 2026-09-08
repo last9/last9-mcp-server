@@ -14,7 +14,8 @@ For a comparative question, call this tool first and by itself. Do not batch spe
 - Short lookbacks are unreliable: the resolver keeps only fully-completed 1-minute buckets, so integer `lookback_minutes` below 2 returns a "no completed buckets" error in production (the current time is essentially never minute-aligned), and a lookback below about 5 typically returns `insufficient_evidence` because deviation classification needs at least four aligned buckets.
 - The baseline defaults to the immediately preceding equal-duration period. To compare another equal-duration period, provide both `baseline_start_time_iso` and `baseline_end_time_iso`.
 - `datasource` optionally selects one datasource for the comparison. Do not combine data across datasources in one call.
-- `max_services` and `max_operations` each default to 10 and cannot exceed 10.
+- `max_services` and `max_operations` each default to 10 and cannot exceed 10. These caps bound only the response, never the analysis: every identity in scope is compared, deviating identities are always retained through the cap in magnitude-priority order, and only stable services beyond remaining capacity are omitted (alphabetically last first). A capped result is therefore complete for deviations — do not re-query narrower just to check for a missed regression.
+- Analysis cost scales with the number of identities in the selected scope. On very large fleets, narrow with `env` or `service_name` first rather than issuing an unscoped fleet call.
 
 ## Interpreting results
 
