@@ -9,17 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_alert_groups`: lists configured Compass alert groups with team, tier, metadata labels, and rule counts — including groups with zero rules and groups that are not currently firing. `get_alert_config` rule rows now also print team, tier, and labels when those fields are set.
 - `last9://reference/investigation`: an MCP resource documenting the profile-first investigation flow.
 - `get_service_profile` returns a per-service telemetry profile — signal presence, language/runtime, deployment envs, log `signal_shape`, and a recommended ingest fix — as a short brief followed by raw JSON. Call it before a service-scoped investigation to skip trace tools when traces are absent and to parse severity from the log body when `severity_set` is `none` or `partial`.
 
+### Fixed
+
+- `get_drop_rules` and `add_drop_rule` now route non-2xx `/otel_settings/drop` responses through the shared upstream sanitizer (URL/credential redaction, 512-byte truncation with `… (truncated)`, body drained and omitted for 5xx and other non-400/422) instead of echoing the raw body via an unbounded `io.ReadAll` into the tool error surfaced to the model. This matches the `get_logs` / `get_service_logs` contract (#237).
+
 ### Changed
 
+- `create_dashboard` and `update_dashboard` descriptions now steer create-once, refine-with-update. A successful `create_dashboard` appends a second text part pointing at `update_dashboard` with the new id; `Content[0]` is still the raw API JSON.
 - `get_service_performance_details` now returns about 200 points per series instead of one per minute, sizing each range selector from the resulting step. Windows under ~3h20m are unchanged; above that the `rate()`-based series (availability, throughput, error rate, error percent) aggregate the whole window, while apdex and response times stay last-value and get sparser. Response-time values shift slightly — that query's lookback is no longer fixed at 5m.
 - The service workflows and the service-scoped tool descriptions now call `get_service_profile` first: skip trace tools when the profile reports `telemetry.traces` as `absent`, and parse the level from the log body when `severity_set` is `none` or `partial`.
 
 ### Fixed
 
 - The `/health` endpoint in HTTP mode (`--http`) now reports the running build's version instead of a hardcoded `1.0.0`, matching `--version`, the startup banner, and the MCP server-init log.
+- The logs pipeline sanitizer now normalizes a map-form `$not` (`{"$not": {…}}`) to the documented single-element array form (`{"$not": [condition]}`). A map-form `$not` on `Body` previously survived sanitization unchanged and was skipped by the chunking-throttle and count-sanity heuristics, which only descend into an array-form `$not`: a non-aggregate `Body` search over a >1d lookback ran with ~3× too many parallel chunks, and a zero-count `Body` aggregate dropped its `l9_sanity` diagnostic. Array-form `$not` was already correct and is unchanged (#241).
 
 ## [0.16.0] - 2026-08-27
 

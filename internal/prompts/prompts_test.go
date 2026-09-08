@@ -282,3 +282,55 @@ func TestAPMServiceDeviationsDescriptionDefaultsAndPartialResults(t *testing.T) 
 		}
 	}
 }
+
+func TestWriteToolDescriptionSteerability(t *testing.T) {
+	create := prompts.CreateDashboardDescription
+	update := prompts.UpdateDashboardDescription
+	if create == "" || update == "" {
+		t.Fatal("dashboard write descriptions empty — embed missing")
+	}
+	for _, c := range []struct {
+		phrase string
+		reason string
+	}{
+		{"net-new", "must name net-new write intent"},
+		{"Create once", "must say create once"},
+		{"update_dashboard", "must name the refine tool"},
+		{"do not call create_dashboard again", "must forbid same-turn re-create"},
+		{"dashboard.id", "must keep the returned id"},
+	} {
+		if !strings.Contains(create, c.phrase) {
+			t.Errorf("CreateDashboardDescription missing %q: %s", c.phrase, c.reason)
+		}
+	}
+	for _, c := range []struct {
+		phrase string
+		reason string
+	}{
+		{"Prefer this tool", "refine is the default after create"},
+		{"after create", "must sequence after create"},
+		{"existing dashboard id", "must pass the known id"},
+		{"do not call create_dashboard", "must not create-for-refine"},
+		{"full replacement", "must state PUT is a full replacement"},
+	} {
+		if !strings.Contains(update, c.phrase) {
+			t.Errorf("UpdateDashboardDescription missing %q: %s", c.phrase, c.reason)
+		}
+	}
+	// Any mention at all, not three exact phrasings a reword would slip past.
+	if strings.Contains(create, "list_dashboards") {
+		t.Error("CreateDashboardDescription must not require list_dashboards before create")
+	}
+}
+
+// TestAPMServiceDeviationsDescriptionLookbackFloor pins one sentinel phrase of
+// the short-lookback guidance on the markdown contract surface so a future
+// edit cannot silently strip the bullet. The behavior itself (integer lookback
+// below 2 collapsing to zero completed buckets) is guarded by the resolver
+// boundary test in internal/apm; this only checks the guidance is present.
+func TestAPMServiceDeviationsDescriptionLookbackFloor(t *testing.T) {
+	description := strings.ToLower(prompts.GetAPMServiceDeviationsDescription)
+	if !strings.Contains(description, "short lookbacks are unreliable") {
+		t.Error("description missing short-lookback floor guidance")
+	}
+}
