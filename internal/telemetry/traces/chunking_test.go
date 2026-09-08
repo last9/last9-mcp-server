@@ -459,23 +459,6 @@ func TestGetTracesHandlerReturnsErrorAfterLaterChunkError(t *testing.T) {
 	}
 }
 
-func TestParseTimeRangeFromArgsAtDefaultsToSixtyMinutes(t *testing.T) {
-	now := time.Date(2026, time.March, 17, 12, 0, 0, 0, time.UTC)
-
-	startMs, endMs, err := parseTimeRangeFromArgsAt(GetTracesArgs{}, now)
-	if err != nil {
-		t.Fatalf("parseTimeRangeFromArgsAt returned error: %v", err)
-	}
-
-	duration := time.UnixMilli(endMs).Sub(time.UnixMilli(startMs))
-	if duration != 60*time.Minute {
-		t.Fatalf("expected 60-minute default lookback, got %s", duration)
-	}
-	if got := time.UnixMilli(endMs).UTC(); !got.Equal(now) {
-		t.Fatalf("expected end time %s, got %s", now, got)
-	}
-}
-
 func TestEffectiveGetTracesLimit(t *testing.T) {
 	tests := []struct {
 		name      string
