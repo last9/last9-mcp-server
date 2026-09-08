@@ -68,61 +68,49 @@ func TestStatelessStreamableHandler(t *testing.T) {
 	})
 }
 
-// TestHandleHealthReportsBuildVersion verifies the /health endpoint reports
-// the running build's package-level Version ldflag var, not a hardcoded
-// literal. The original handler read h.info.Version (dynamic); the SDK
-// migration (commit ef01a410) deleted that and hardcoded "1.0.0". This test
-// pins the dynamic behaviour so a regression back to a string literal fails:
-// it sets Version to a sentinel, hits /health on a real test server wired
-// exactly as Start wires it (mux.HandleFunc("/health", h.handleHealth)), and
-// asserts the response carries the sentinel version. It also guards against
-// the specific stale literal "1.0.0" so the regression cannot silently return.
+// TestHandleHealthReportsBuildVersion pins that /health reports the ldflag
+// Version var, not a hardcoded literal (this regressed once before).
 func TestHandleHealthReportsBuildVersion(t *testing.T) {
+	// Mutates the package-global Version: this test must not run under
+	// t.Parallel() alongside anything that reads Version.
 	const sentinel = "9.9.9-test-version"
 	orig := Version
 	Version = sentinel
 	t.Cleanup(func() { Version = orig })
 
-	// Wire /health exactly as HTTPServer.Start does, so this exercises the real
-	// route, not a synthetic handler. handleHealth touches neither h.server
-	// nor h.config, so a zero-value HTTPServer is sufficient.
+	// Wire /health exactly as HTTPServer.Start does.
 	h := &HTTPServer{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", h.handleHealth)
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 
-	t.Run("reports package-level Version var, not a hardcoded literal", func(t *testing.T) {
-		resp, err := http.Get(ts.URL + "/health")
-		if err != nil {
-			t.Fatalf("GET /health failed: %v", err)
-		}
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
+	resp, err := http.Get(ts.URL + "/health")
+	if err != nil {
+		t.Fatalf("GET /health failed: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
 
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("got status %d, want 200; body: %s", resp.StatusCode, body)
-		}
-		if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
-			t.Fatalf("got Content-Type %q, want application/json", ct)
-		}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("got status %d, want 200; body: %s", resp.StatusCode, body)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("got Content-Type %q, want application/json", ct)
+	}
 
-		var got map[string]string
-		if err := json.Unmarshal(body, &got); err != nil {
-			t.Fatalf("decode health body %q: %v", body, err)
-		}
+	var got map[string]string
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode health body %q: %v", body, err)
+	}
 
-		if got["status"] != "healthy" {
-			t.Errorf("status = %q, want healthy", got["status"])
-		}
-		if got["server"] != "last9-mcp" {
-			t.Errorf("server = %q, want last9-mcp", got["server"])
-		}
-		if got["version"] != sentinel {
-			t.Errorf("version = %q, want %q (the package-level Version var)", got["version"], sentinel)
-		}
-		if got["version"] == "1.0.0" {
-			t.Errorf("version is the stale hardcoded literal \"1.0.0\" — regression to the pre-fix handler")
-		}
-	})
+	if got["status"] != "healthy" {
+		t.Errorf("status = %q, want healthy", got["status"])
+	}
+	if got["server"] != "last9-mcp" {
+		t.Errorf("server = %q, want last9-mcp", got["server"])
+	}
+	if got["version"] != sentinel {
+		t.Errorf("version = %q, want %q (the package-level Version var)", got["version"], sentinel)
+	}
 }
