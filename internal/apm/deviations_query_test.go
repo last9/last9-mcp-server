@@ -3,12 +3,16 @@ package apm
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"last9-mcp/internal/models"
 )
 
 func TestServiceQueriesUseCanonicalServiceLatencyInMilliseconds(t *testing.T) {
@@ -345,6 +349,83 @@ func TestExecuteDeviationQueriesRunsWindowsConcurrentlyAndRetainsPartialErrors(t
 	}
 	if got.Errors[0].Message != "query failed" || strings.Contains(got.Errors[0].Message, "secret") || strings.Contains(got.Errors[0].Message, "baseline-errors") {
 		t.Fatalf("query or upstream details leaked in error: %+v", got.Errors[0])
+	}
+}
+
+// TestExecuteDeviationQueriesClassifiesOverloadFailuresAsRejected confirms
+// that limit/timeout-class failures (datasource rejections and client
+// timeouts) surface as kind "query_rejected" rather than the generic
+// "query_failed", so the handler can recommend narrowing the scope — the
+// failure mode the pre-filter removal makes reachable on very large fleets.
+func TestExecuteDeviationQueriesClassifiesOverloadFailuresAsRejected(t *testing.T) {
+	runner := deviationQueryRunnerFunc(func(_ context.Context, query string, _ time.Time) ([]deviationVector, error) {
+		switch query {
+		case "rejected":
+			return nil, deviationQueryOverloadError{Status: 429}
+		case "timeout":
+			return nil, fmt.Errorf("await upstream: %w", context.DeadlineExceeded)
+		default:
+			return []deviationVector{{Metric: map[string]string{"service_name": "api", "env": "prod"}, Value: []any{1.0, "5"}}}, nil
+		}
+	})
+	plan := deviationQueryPlan{
+		CurrentEnd:  time.Unix(20, 0),
+		BaselineEnd: time.Unix(10, 0),
+		Current: []deviationQuery{
+			{Name: "requests_sum", Field: deviationFieldRequestTotal, Text: "ok"},
+			{Name: "errors_sum", Field: deviationFieldErrorTotal, Text: "rejected"},
+		},
+		Baseline: []deviationQuery{
+			{Name: "requests_sum", Field: deviationFieldRequestTotal, Text: "ok"},
+			{Name: "latency_max", Field: deviationFieldLatencyMax, Text: "timeout"},
+		},
+	}
+	got := executeDeviationQueries(context.Background(), runner, plan)
+	if got.Err != nil {
+		t.Fatalf("partial rejection must not fail the execution: %v", got.Err)
+	}
+	if len(got.Errors) != 2 {
+		t.Fatalf("errors = %+v, want 2", got.Errors)
+	}
+	for _, item := range got.Errors {
+		if item.Kind != deviationQueryErrorKindRejected {
+			t.Fatalf("kind = %q, want %q: %+v", item.Kind, deviationQueryErrorKindRejected, item)
+		}
+		if item.Message != "query rejected by the datasource (limit or timeout)" {
+			t.Fatalf("unexpected message: %+v", item)
+		}
+	}
+}
+
+// TestDeviationHandlerWarnsToNarrowScopeOnRejectedQueries confirms the served
+// warning: when partial errors include the rejected class, the response tells
+// the caller to narrow with env or service_name.
+func TestDeviationHandlerWarnsToNarrowScopeOnRejectedQueries(t *testing.T) {
+	deps := testDeviationHandlerDeps()
+	deps.execute = func(_ context.Context, _ deviationQueryRunner, _ deviationQueryPlan) deviationQueryExecution {
+		return deviationQueryExecution{
+			Current:  deviationQueryResult{Records: []deviationAggregate{aggregate("api", "prod", "", 600, 6, 6, 6, 540, 600, 6, 50, 50, 50, 50, 6)}},
+			Baseline: deviationQueryResult{Records: []deviationAggregate{aggregate("api", "prod", "", 600, 6, 6, 6, 540, 600, 6, 50, 50, 50, 50, 6)}},
+			Errors: []deviationQueryError{{
+				Window: "current", Signal: "latency_max", Field: string(deviationFieldLatencyMax),
+				Kind: deviationQueryErrorKindRejected, Message: "query rejected by the datasource (limit or timeout)",
+			}},
+		}
+	}
+	handler := newAPMServiceDeviationsHandler(http.DefaultClient, models.Config{DatasourceName: "primary"}, deps)
+	response := callDeviationHandler(t, handler, sixMinuteDeviationArgs())
+
+	if len(response.PartialErrors) != 1 || response.PartialErrors[0].Kind != deviationQueryErrorKindRejected {
+		t.Fatalf("rejected partial error missing: %+v", response.PartialErrors)
+	}
+	found := false
+	for _, w := range response.Warnings {
+		if strings.Contains(w, "Narrow with env or service_name") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("narrowing warning missing: %+v", response.Warnings)
 	}
 }
 

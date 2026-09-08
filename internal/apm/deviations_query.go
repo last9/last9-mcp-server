@@ -3,8 +3,10 @@ package apm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
@@ -112,6 +114,48 @@ type deviationQueryExecution struct {
 	Err      error
 }
 
+// deviationQueryOverloadError marks datasource responses in the
+// limit/timeout class (rate limits, series/sample limits, gateway timeouts).
+// Since the candidate pre-filter was removed, deviation queries span every
+// identity in scope, so this class of failure is the signal that the caller
+// should narrow the scope rather than retry unchanged.
+type deviationQueryOverloadError struct {
+	Status int
+}
+
+func (e deviationQueryOverloadError) Error() string {
+	return fmt.Sprintf("metric query rejected with status %d (datasource limit or timeout)", e.Status)
+}
+
+func isDeviationOverloadStatus(status int) bool {
+	switch status {
+	case http.StatusRequestTimeout, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity,
+		http.StatusTooManyRequests, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+// isDeviationQueryOverload reports whether a query failure belongs to the
+// limit/timeout class, whether signalled by the datasource status code or by
+// a client-side timeout.
+func isDeviationQueryOverload(err error) bool {
+	var overload deviationQueryOverloadError
+	if errors.As(err, &overload) {
+		return true
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+// deviationQueryErrorKindRejected distinguishes limit/timeout-class failures
+// from generic query failures so the handler can recommend narrowing scope.
+const deviationQueryErrorKindRejected = "query_rejected"
+
 type deviationQueryRunner interface {
 	Query(context.Context, string, time.Time) ([]deviationVector, error)
 }
@@ -139,6 +183,9 @@ func (runner httpDeviationQueryRunner) Query(ctx context.Context, query string, 
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)
+		if isDeviationOverloadStatus(resp.StatusCode) {
+			return nil, deviationQueryOverloadError{Status: resp.StatusCode}
+		}
 		return nil, fmt.Errorf("metric query returned status %d", resp.StatusCode)
 	}
 
@@ -369,9 +416,13 @@ func executeDeviationQueryGroup(ctx context.Context, runner deviationQueryRunner
 	for range queries {
 		result := <-results
 		if result.err != nil {
+			kind, message := "query_failed", "query failed"
+			if isDeviationQueryOverload(result.err) {
+				kind, message = deviationQueryErrorKindRejected, "query rejected by the datasource (limit or timeout)"
+			}
 			queryErrors = append(queryErrors, deviationQueryError{
-				Window: window, Signal: result.query.Name, Kind: "query_failed",
-				Field: string(result.query.Field), Message: "query failed",
+				Window: window, Signal: result.query.Name, Kind: kind,
+				Field: string(result.query.Field), Message: message,
 			})
 			continue
 		}
@@ -538,7 +589,7 @@ func setDeviationDistributionField(statistic string, pointer func() *float64, q2
 
 func hasInvalidAggregateErrors(errors []deviationQueryError) bool {
 	for _, item := range errors {
-		if item.Kind != "query_failed" {
+		if item.Kind != "query_failed" && item.Kind != deviationQueryErrorKindRejected {
 			return true
 		}
 	}

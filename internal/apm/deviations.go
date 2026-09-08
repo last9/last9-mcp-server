@@ -195,6 +195,9 @@ func newAPMServiceDeviationsHandler(client *http.Client, baseCfg models.Config, 
 		if len(result.PartialErrors) > 0 {
 			result.Warnings = uniqueSorted(append(result.Warnings, "Some metric signals were unavailable; conclusions use the successful measurements only."))
 		}
+		if hasRejectedDeviationErrors(result.PartialErrors) {
+			result.Warnings = uniqueSorted(append(result.Warnings, "The datasource rejected or timed out on some queries; the unnarrowed scope may be too large. Narrow with env or service_name and retry."))
+		}
 		builder := deeplink.NewBuilder(queryCfg.OrgSlug, queryCfg.ClusterID)
 		result.DashboardURL = builder.BuildAPMServiceLink(
 			windows.RequestedCurrentStart.UnixMilli(), windows.RequestedCurrentEnd.UnixMilli(), args.ServiceName, deeplink.APMCatalogEnvExact(args.Env), "",
@@ -773,6 +776,18 @@ func leadingDeviationIdentity(result apmDeviationResult) (LeaderboardEntry, bool
 		return LeaderboardEntry{ServiceName: change.ServiceName, Env: change.Env}, true
 	}
 	return LeaderboardEntry{}, false
+}
+
+// hasRejectedDeviationErrors reports whether any partial error came from the
+// datasource limit/timeout class, which since the pre-filter removal is the
+// signal that the selected scope is too large for one call.
+func hasRejectedDeviationErrors(errors []deviationPartialError) bool {
+	for _, item := range errors {
+		if item.Kind == deviationQueryErrorKindRejected {
+			return true
+		}
+	}
+	return false
 }
 
 func publicDeviationErrors(errors []deviationQueryError) []deviationPartialError {
