@@ -13,7 +13,7 @@ import (
 )
 
 // Overflow *rejection* cases live in TestAlertRuleStateHandler_ValidationErrors.
-// This file keeps the two regression tests for #246 that need an upstream
+// This file keeps the two overflow regression tests that need an upstream
 // call counter or the real MCP transport.
 
 // countUpstream returns an httptest server that increments an atomic counter on
@@ -54,8 +54,8 @@ func TestAlertRuleStateHandler_LoopBoundedByCap(t *testing.T) {
 	}
 }
 
-// TestAlertRuleStateHandler_TransportBypassBlocked reproduces the #246
-// end-to-end scenario through the real MCP transport (server + in-memory
+// TestAlertRuleStateHandler_TransportBypassBlocked reproduces the original
+// overflow bypass end-to-end through the real MCP transport (server + in-memory
 // transport + client session, exercising the full applySchema -> remarshal ->
 // typed-unmarshal decode pipeline) and asserts the overflow input is now
 // blocked at the handler and never exceeds the documented 100-sample cap.
@@ -82,8 +82,8 @@ func TestAlertRuleStateHandler_TransportBypassBlocked(t *testing.T) {
 	}
 	defer session.Close()
 
-	// The exact raw JSON from #246: start/end near ±2^63 that survive the
-	// SDK's float64 decode round-trip.
+	// Raw JSON with start/end near ±2^63 that survive the SDK's float64
+	// decode round-trip.
 	res, _ := session.CallTool(ctx, &mcp.CallToolParams{
 		Name:      "get_alert_rule_state",
 		Arguments: json.RawMessage(`{"start_time":-9223372036854773760,"end_time":9223372036854773760,"step":1000000000}`),

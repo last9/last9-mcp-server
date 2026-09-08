@@ -261,7 +261,7 @@ func TestAlertRuleStateHandler_ValidationErrors(t *testing.T) {
 			want: "too many points",
 		},
 		{
-			// Regression for #246: endpoints near ±2^63 (float64-representable,
+			// Regression: endpoints near ±2^63 (float64-representable,
 			// so they survive the SDK decode round-trip) make end-start wrap
 			// negative, which previously bypassed the sample cap and let the
 			// sampling loop run ~10^10 iterations.
@@ -270,7 +270,7 @@ func TestAlertRuleStateHandler_ValidationErrors(t *testing.T) {
 			want: "overflows",
 		},
 		{
-			// Regression for #246: span = MaxInt64 with step = 1 would wrap
+			// Regression: span = MaxInt64 with step = 1 would wrap
 			// span/step + 1 past MaxInt64 if the cap were checked after the +1.
 			name: "sample count overflow at MaxInt64 span",
 			args: AlertRuleStateRequest{StartTime: 0, EndTime: math.MaxInt64, Step: 1},
