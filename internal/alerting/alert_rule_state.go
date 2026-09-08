@@ -51,11 +51,12 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 		}
 
 		// Inclusive sample count: t iterates start, start+step, ..., end.
-		// points < 0 catches the (span/step + 1) overflow at the int64 boundary.
-		points := span/args.Step + 1
-		if points < 0 || points > alertRuleStateMaxPoints {
+		// Compare before the +1 so the count can never wrap: with span >= 0 and
+		// step >= 1, span/step itself cannot overflow.
+		if span/args.Step >= alertRuleStateMaxPoints {
 			return utils.ToolErrorResult(fmt.Sprintf("time range and step result in too many points. Maximum is %d", alertRuleStateMaxPoints)), nil, nil
 		}
+		points := span/args.Step + 1
 
 		type Datapoint struct {
 			Timestamp int64 `json:"timestamp"`
@@ -67,10 +68,9 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 
 		tokenMgr := cfg.TokenManager
 
-		// Index-bounded so the loop terminates by construction once `points` is
-		// validated; value-bounded `t <= end_time` loops can run unbounded when
-		// the span arithmetic overflows. t never exceeds end_time because
-		// (points-1)*step <= span, so start+(points-1)*step <= end.
+		// Index-bounded by the validated `points` so the loop terminates by
+		// construction; a value-bounded `t <= end_time` loop can run unbounded
+		// when the span arithmetic overflows.
 		for i := int64(0); i < points; i++ {
 			t := args.StartTime + i*args.Step
 			queryParams := url.Values{}
