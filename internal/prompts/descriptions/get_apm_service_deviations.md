@@ -8,9 +8,9 @@ For a comparative question, call this tool first and by itself. Do not batch spe
 
 ## Scope and inputs
 
-- Omit `service_name` for fleet scope. Provide `service_name` for one service and its operation correlations. Environments remain separate and are never merged; optionally use `env` to select one environment.
+- Omit `service_name` for fleet scope. Provide `service_name` for one service and its operation correlations. Environments remain separate and are never merged; optionally use `env` to select one environment. `env` here is an exact literal match, not a regex — a pattern like `^prod$` matches nothing and returns `no_data`.
 - V1 supports server-request workloads. A named non-server workload may return `unsupported_workload_shape`.
-- The current window defaults to the last 60 minutes. Set `lookback_minutes`, or provide `start_time_iso` and `end_time_iso` for an explicit current window.
+- The current window defaults to the last 60 minutes. Set `lookback_minutes` (preferred — it self-aligns to completed buckets), or provide `start_time_iso` and `end_time_iso` for an explicit current window. Explicit current and baseline timestamps must align to whole minutes (seconds `:00`, e.g. `2026-09-08T14:05:00Z`); unaligned timestamps are rejected with an alignment error.
 - Short lookbacks are unreliable: the resolver keeps only fully-completed 1-minute buckets, so integer `lookback_minutes` below 2 returns a "no completed buckets" error in production (the current time is essentially never minute-aligned), and a lookback below about 5 typically returns `insufficient_evidence` because deviation classification needs at least four aligned buckets.
 - The baseline defaults to the immediately preceding equal-duration period. To compare another equal-duration period, provide both `baseline_start_time_iso` and `baseline_end_time_iso`.
 - `datasource` optionally selects one datasource for the comparison. Do not combine data across datasources in one call.

@@ -183,6 +183,17 @@ func buildDeviationRollupQueryPlan(scope deviationQueryScope, current, baseline 
 	}
 }
 
+// candidateOverfetchFactor widens the traffic-based candidate mask beyond the
+// requested result limit. The mask selects candidates by traffic volume, so at
+// exactly the result limit a low-traffic identity with a high-magnitude
+// deviation is excluded before any deviation math runs and can never be
+// recovered downstream. Over-fetching hands a larger candidate set to the
+// magnitude-aware in-process selection (limitDeviationResult for services,
+// correlateOperations for operations), which performs the final cut by
+// deviation magnitude rather than traffic. The factor bounds query cost; it is
+// a recall/cost trade-off, not a completeness guarantee.
+const candidateOverfetchFactor = 3
+
 func buildDeviationCandidateMask(scope deviationQueryScope, current, baseline TimeWindow, step time.Duration, operations bool) string {
 	if scope.Limit <= 0 || step <= 0 || !validDeviationWindow(current) || !validDeviationWindow(baseline) || (operations && scope.ServiceName == "") {
 		return ""
@@ -193,7 +204,7 @@ func buildDeviationCandidateMask(scope deviationQueryScope, current, baseline Ti
 	currentTotal := fmt.Sprintf("sum_over_time(%s)", deviationSubquery(requestExpression, current, step))
 	baselineTotal := fmt.Sprintf("sum_over_time(%s)", deviationSubquery(requestExpression, baseline, step))
 	combined := fmt.Sprintf("((%s + %s) or %s or %s)", currentTotal, baselineTotal, currentTotal, baselineTotal)
-	return fmt.Sprintf("topk(%d, %s)", scope.Limit, combined)
+	return fmt.Sprintf("topk(%d, %s)", scope.Limit*candidateOverfetchFactor, combined)
 }
 
 func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, step time.Duration, operations bool, candidateMask string) []deviationQuery {

@@ -137,6 +137,26 @@ func TestErrorQueriesZeroFillHealthyRequestBuckets(t *testing.T) {
 	}
 }
 
+// TestCandidateMaskOverfetchesBeyondResultLimit confirms the traffic-based
+// candidate mask requests candidateOverfetchFactor times the result limit, for
+// both service and operation scope. The mask selects by traffic, so at exactly
+// the result limit a low-traffic high-magnitude deviator would be excluded
+// before analysis; over-fetching lets the magnitude-aware in-process cap
+// (limitDeviationResult / correlateOperations) make the final cut instead.
+func TestCandidateMaskOverfetchesBeyondResultLimit(t *testing.T) {
+	current, baseline := deviationTestWindows()
+
+	servicePlan := buildServiceRollupQueries(deviationQueryScope{Limit: 10}, current, baseline, time.Minute)
+	if !strings.Contains(servicePlan.CandidateMask, "topk(30,") {
+		t.Fatalf("service mask does not over-fetch (want topk(30,): %s", servicePlan.CandidateMask)
+	}
+
+	operationPlan := buildOperationRollupQueries(deviationQueryScope{ServiceName: "api", Limit: 5}, current, baseline, time.Minute)
+	if !strings.Contains(operationPlan.CandidateMask, "topk(15,") {
+		t.Fatalf("operation mask does not over-fetch (want topk(15,): %s", operationPlan.CandidateMask)
+	}
+}
+
 func TestSharedCandidateMaskCombinesPinnedWindowsAndIsIdentical(t *testing.T) {
 	scope := deviationQueryScope{Limit: 2}
 	current, baseline := deviationTestWindows()
@@ -146,7 +166,9 @@ func TestSharedCandidateMaskCombinesPinnedWindowsAndIsIdentical(t *testing.T) {
 	baselineQueries := plan.Baseline
 
 	for _, want := range []string{
-		"topk(2,",
+		// limit 2 × candidateOverfetchFactor 3: the mask over-fetches so the
+		// magnitude-aware in-process cap performs the final selection.
+		"topk(6,",
 		"@ " + strconvUnix(current.End),
 		"@ " + strconvUnix(baseline.End),
 		" or ",
