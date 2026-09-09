@@ -52,62 +52,6 @@ var logAggregateFieldArgIndexes = map[string][]int{
 	"$sum":      {0},
 }
 
-var logAllowedStageTypes = map[string]map[string]struct{}{
-	"filter": {
-		"type":  {},
-		"query": {},
-	},
-	"where": {
-		"type":  {},
-		"query": {},
-	},
-	"parse": {
-		"type":    {},
-		"parser":  {},
-		"field":   {},
-		"pattern": {},
-		"labels":  {},
-	},
-	"aggregate": {
-		"type":       {},
-		"aggregates": {},
-		"groupby":    {},
-	},
-	"window_aggregate": {
-		"type":     {},
-		"function": {},
-		"as":       {},
-		"window":   {},
-		"groupby":  {},
-	},
-}
-
-var logParseParsers = map[string]struct{}{
-	"json":   {},
-	"logfmt": {},
-	"regexp": {},
-}
-
-const (
-	logCategoryUnknownStageType     = "unknown_stage_type"
-	logCategoryUnknownStageKey      = "unknown_stage_key"
-	logCategoryParseMissingParser   = "parse_missing_parser"
-	logCategoryWindowAggregateShape = "window_aggregate_shape"
-)
-
-type logPipelineError struct {
-	category string
-	path     string
-	msg      string
-}
-
-func (e *logPipelineError) Error() string {
-	return fmt.Sprintf("%s (category=%s path=%s)", e.msg, e.category, e.path)
-}
-
-func (e *logPipelineError) Category() string { return e.category }
-func (e *logPipelineError) Path() string     { return e.path }
-
 func sanitizeLogJSONQuery(stages []map[string]interface{}) ([]map[string]interface{}, error) {
 	return sanitizeLogJSONQueryPrefixed(stages, "logjson_query")
 }
@@ -120,11 +64,6 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 
 	for stageIndex, stage := range stages {
 		stagePath := fmt.Sprintf("%s[%d]", pathPrefix, stageIndex)
-		stageType, _ := stage["type"].(string)
-		if err := validateLogStageShape(stage, stageType, stagePath); err != nil {
-			return nil, err
-		}
-
 		sanitizedStage := make(map[string]interface{}, len(stage))
 		for key, value := range stage {
 			var (
@@ -163,88 +102,6 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 	}
 
 	return sanitized, nil
-}
-
-func validateLogStageShape(stage map[string]interface{}, stageType, path string) error {
-	allowed, ok := logAllowedStageTypes[stageType]
-	if !ok {
-		return &logPipelineError{
-			category: logCategoryUnknownStageType,
-			path:     path,
-			msg:      fmt.Sprintf("unknown log pipeline stage type %q; allowed: filter, parse, aggregate, window_aggregate", stageType),
-		}
-	}
-
-	for key := range stage {
-		if _, ok := allowed[key]; !ok {
-			hint := ""
-			if stageType == "parse" && key == "format" {
-				hint = `; use "parser": "json"|"logfmt"|"regexp", not "format"`
-			}
-			if stageType == "window_aggregate" && (key == "aggregates" || key == "window_minutes") {
-				return &logPipelineError{
-					category: logCategoryWindowAggregateShape,
-					path:     path,
-					msg:      `window_aggregate accepts only {"type":"window_aggregate","function":{...},"as":"...","window":["N","minutes"]}`,
-				}
-			}
-			return &logPipelineError{
-				category: logCategoryUnknownStageKey,
-				path:     path,
-				msg:      fmt.Sprintf("unknown key %q on %s stage%s", key, stageType, hint),
-			}
-		}
-	}
-
-	switch stageType {
-	case "filter", "where":
-		if _, ok := stage["query"]; !ok {
-			return &logPipelineError{category: logCategoryUnknownStageKey, path: path, msg: `filter stage requires "query"`}
-		}
-	case "parse":
-		parser, _ := stage["parser"].(string)
-		if parser == "" {
-			return &logPipelineError{
-				category: logCategoryParseMissingParser,
-				path:     path,
-				msg:      `parse stage missing "parser"; use "parser": "json"|"logfmt"|"regexp", not "format"`,
-			}
-		}
-		if _, ok := logParseParsers[parser]; !ok {
-			return &logPipelineError{
-				category: logCategoryParseMissingParser,
-				path:     path,
-				msg:      fmt.Sprintf("parse stage parser %q is not allowed; use json, logfmt, or regexp", parser),
-			}
-		}
-	case "aggregate":
-		if _, ok := stage["aggregates"]; !ok {
-			return &logPipelineError{category: logCategoryUnknownStageKey, path: path, msg: `aggregate stage requires "aggregates"`}
-		}
-	case "window_aggregate":
-		if _, ok := stage["function"]; !ok {
-			return &logPipelineError{
-				category: logCategoryWindowAggregateShape,
-				path:     path,
-				msg:      `window_aggregate requires "function", "as", and "window"`,
-			}
-		}
-		if _, ok := stage["as"]; !ok {
-			return &logPipelineError{
-				category: logCategoryWindowAggregateShape,
-				path:     path,
-				msg:      `window_aggregate requires "function", "as", and "window"`,
-			}
-		}
-		if _, ok := stage["window"]; !ok {
-			return &logPipelineError{
-				category: logCategoryWindowAggregateShape,
-				path:     path,
-				msg:      `window_aggregate requires "function", "as", and "window"`,
-			}
-		}
-	}
-	return nil
 }
 
 func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {

@@ -2,7 +2,6 @@ package logs
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -25,68 +24,6 @@ func countingLogsServer(t *testing.T) (*httptest.Server, *atomic.Int32) {
 	}))
 	t.Cleanup(server.Close)
 	return server, &n
-}
-
-func TestSanitizeLogJSONQueryRejectsHostedMalformedShapes(t *testing.T) {
-	cases := []struct {
-		name     string
-		stages   []map[string]interface{}
-		category string
-	}{
-		{
-			name: "parse uses format instead of parser",
-			stages: []map[string]interface{}{
-				{"type": "parse", "format": "json"},
-			},
-			category: logCategoryParseMissingParser,
-		},
-		{
-			name: "window_aggregate uses aggregates+window_minutes",
-			stages: []map[string]interface{}{
-				{
-					"type":           "window_aggregate",
-					"aggregates":     []interface{}{map[string]interface{}{"function": map[string]interface{}{"$count": []interface{}{}}, "as": "_count"}},
-					"window_minutes": 5,
-				},
-			},
-			category: logCategoryWindowAggregateShape,
-		},
-		{
-			name: "unknown stage key is rejected",
-			stages: []map[string]interface{}{
-				{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "checkout"}}, "bogus": true},
-			},
-			category: logCategoryUnknownStageKey,
-		},
-		{
-			name: "unknown stage type is rejected",
-			stages: []map[string]interface{}{
-				{"type": "trace_filter"},
-			},
-			category: logCategoryUnknownStageType,
-		},
-	}
-	for _, tt := range cases {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := sanitizeLogJSONQuery(tt.stages)
-			if err == nil {
-				t.Fatal("expected fail-closed validation")
-			}
-			var pipeErr *logPipelineError
-			if !errors.As(err, &pipeErr) {
-				if tt.category == logCategoryParseMissingParser && strings.Contains(err.Error(), "parser") {
-					return
-				}
-				t.Fatalf("want logPipelineError, got %T %v", err, err)
-			}
-			if pipeErr.Category() != tt.category && !(tt.category == logCategoryParseMissingParser && pipeErr.Category() == logCategoryUnknownStageKey) {
-				t.Fatalf("category=%s want %s err=%v", pipeErr.Category(), tt.category, err)
-			}
-			if pipeErr.Path() == "" {
-				t.Fatal("expected JSON path on validation error")
-			}
-		})
-	}
 }
 
 func TestGetLogAttributesForPipeline_InvalidInputMakesZeroUpstreamRequests(t *testing.T) {
