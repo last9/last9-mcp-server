@@ -12,6 +12,7 @@ import (
 // handled in Parse, not listed here as flat membership.
 var named = map[string][]string{
 	"logs": {
+		"get_service_profile",
 		"get_logs",
 		"get_service_logs",
 		"get_log_attributes",
@@ -20,6 +21,7 @@ var named = map[string][]string{
 		"prometheus_instant_query",
 	},
 	"traces": {
+		"get_service_profile",
 		"get_traces",
 		"get_service_traces",
 		"get_trace_attributes",
@@ -29,6 +31,7 @@ var named = map[string][]string{
 		"get_trace_waterfall",
 	},
 	"metrics": {
+		"get_service_profile",
 		"prometheus_range_query",
 		"prometheus_instant_query",
 		"prometheus_label_values",
@@ -48,6 +51,7 @@ var named = map[string][]string{
 	"alerts": {
 		"get_alerts",
 		"get_alert_config",
+		"get_alert_groups",
 		"get_entity_alert_rules",
 		"get_alert_rule_state",
 		"get_notification_channels",
@@ -69,6 +73,7 @@ var named = map[string][]string{
 // discovery tools included in the investigate composite (R9a).
 var investigateExtras = []string{
 	"did_you_mean",
+	"get_service_profile",
 	"list_datasources",
 }
 

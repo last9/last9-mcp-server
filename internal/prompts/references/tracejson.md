@@ -35,13 +35,11 @@ These are instructions for constructing natural language trace analytics queries
 5. Translate the query to JSON pipeline format using the correct field references
 6. Call the `get_traces` tool with canonical time params:
    - Use `start_time_iso` + `end_time_iso` when the user gave explicit absolute dates/times
-   - Otherwise use `lookback_minutes` (default: 5 when no time is specified)
+   - Otherwise use `lookback_minutes` (default: 60 when no time is specified)
 7. Analyze the results and provide insights to the user
 
 **CRITICAL TIME PARAMETER RULES:**
-- **ALWAYS use lookback_minutes: 5 when no time range is specified**
-- **NEVER use 60 minutes unless explicitly requested**
-- **Default means 5 minutes, not 60 minutes**
+- **ALWAYS use lookback_minutes: 60 when no time range is specified**
 - **`start_time_iso` and `end_time_iso` are top-level request parameters — NEVER put them inside the pipeline as `Timestamp` filter conditions**
 - When the user gives absolute dates/times → set `start_time_iso` + `end_time_iso` on the tool call, leave the pipeline for data filtering only
 - `{"$gte": ["Timestamp", "..."]}` in the pipeline is WRONG for time range queries — use the request-level params instead
@@ -145,6 +143,8 @@ Note that regexp parsing operators also work as regexp filters
 }
 ```
 
+`$quantile` is the general/default percentile operator. Compute percentiles from raw spans; never average percentile samples or series. Top-level `Duration` is already numeric and is measured in nanoseconds. For a percentile over `attributes[...]`, first add the canonical numeric `$regex` `^[0-9]+(?:\\.[0-9]+)?$`; it excludes non-matching values from percentile calculations, so disclose that exclusion in the answer; do not add this numeric gate for `Duration`.
+
 ❌ WRONG (causes 400):
 ```json
 {"type": "aggregate", "aggregations": [...], "group_by": [...]}
@@ -152,15 +152,29 @@ Note that regexp parsing operators also work as regexp filters
 ```
 
 ### Window Aggregate Operations:
+Generic count buckets:
 ```json
-{
-  "type": "window_aggregate",
-  "function": {"$count": []},
-  "as": "result_name",
-  "window": ["duration", "unit"],  // e.g., ["10", "minutes"]
-  "groupby": {"field": "alias"} // optional group-by fields
-}
+{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"],"groupby":{"ServiceName":"service"}}
 ```
+
+Percentile buckets:
+```json
+[
+  {
+    "type": "filter",
+    "query": {"$and": [{"$neq": ["TraceId", ""]}]}
+  },
+  {
+    "type": "window_aggregate",
+    "function": {"$quantile": [0.99, "Duration"]},
+    "as": "p99_duration_ns",
+    "window": ["24", "hours"],
+    "groupby": {"SpanName": "endpoint"}
+  }
+]
+```
+
+For calendar buckets, pass explicit RFC3339 `start_time_iso` and `end_time_iso` tool arguments and state the time zone used for the boundaries. `Duration` results remain nanoseconds unless explicitly converted for presentation.
 
 ## Field Reference Format:
 
@@ -426,14 +440,13 @@ Note: `ServiceName` is a top-level field — never `resources['service.name']`. 
 ## Default Parameters:
 
 **CRITICAL TIME LOOKBACK RULES:**
-- **DEFAULT IS ALWAYS 5 MINUTES when no time is specified**
-- When the user says "recent" or doesn't specify a time range → **USE 5 MINUTES**
-- For "last hour" or similar → use 60 minutes
+- **DEFAULT IS ALWAYS 60 MINUTES when no time is specified**
+- When the user says "recent" or doesn't specify a time range → **USE 60 MINUTES**
 - For specific timeframes → use the specified duration
 
 **MANDATORY time window parsing:**
-- NO TIME SPECIFIED → **5 minutes (NOT 60!)**
-- "recent", "latest", "current" → **5 minutes**
+- NO TIME SPECIFIED → **60 minutes**
+- "recent", "latest", "current" → **60 minutes**
 
 **ISO TIME FALLBACK RULE:**
 - If you receive a lookback-related validation error,
@@ -444,7 +457,7 @@ Note: `ServiceName` is a top-level field — never `resources['service.name']`. 
 ## Execution Instructions:
 
 When a user asks about traces:
-1. **CRITICAL: When no time is specified, MUST use lookback_minutes: 5 (NOT 60!)**
+1. **CRITICAL: When no time is specified, MUST use lookback_minutes: 60**
 2. **CRITICAL: When using window_aggregate without explicit time range, set lookback_minutes equal to window duration**
 3. **Never return raw JSON** to the user
 4. **Use type specified in the JSON query** (filter, parse, aggregate, window_aggregate), don't use anything else.

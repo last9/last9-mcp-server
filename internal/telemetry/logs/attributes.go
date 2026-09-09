@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
 	"time"
 
 	"last9-mcp/internal/models"
@@ -22,26 +21,6 @@ type GetLogAttributesArgs struct {
 	EndTimeISO      string `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
 	Region          string `json:"region,omitempty" jsonschema:"Region to query (optional). Defaults to configured region."`
 	Index           string `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Omit this when the user did not specify an index."`
-}
-
-// FetchLogAttributeNames fetches log attribute names from the API and returns them as a string slice.
-func FetchLogAttributeNames(ctx context.Context, client *http.Client, cfg models.Config) ([]string, error) {
-	now := time.Now()
-	startTime := now.Add(-15 * time.Minute).Unix()
-	endTime := now.Unix()
-
-	queryParams := url.Values{}
-	queryParams.Set("region", cfg.Region)
-	queryParams.Set("start", fmt.Sprintf("%d", startTime))
-	queryParams.Set("end", fmt.Sprintf("%d", endTime))
-
-	result, err := fetchLogLabels(ctx, client, cfg, queryParams)
-	if err != nil {
-		return nil, err
-	}
-
-	sort.Strings(result)
-	return result, nil
 }
 
 // fetchLogLabels calls GET /logs/api/v1/labels and returns the attribute names.

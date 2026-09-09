@@ -17,6 +17,9 @@ var ServiceLogsReference string
 //go:embed references/metrics.md
 var MetricsReference string
 
+//go:embed references/investigation.md
+var InvestigationReference string
+
 //go:embed descriptions/get_service_summary.md
 var GetServiceSummaryDescription string
 
@@ -58,6 +61,9 @@ var GetNotificationChannelsDescription string
 
 //go:embed descriptions/get_alert_config.md
 var GetAlertConfigDescription string
+
+//go:embed descriptions/get_alert_groups.md
+var GetAlertGroupsDescription string
 
 //go:embed descriptions/get_entity_alert_rules.md
 var GetEntityAlertRulesDescription string
@@ -107,6 +113,9 @@ var GetDatabaseServerMetricsDescription string
 //go:embed descriptions/did_you_mean.md
 var DidYouMeanDescription string
 
+//go:embed descriptions/get_service_profile.md
+var GetServiceProfileDescription string
+
 //go:embed descriptions/list_dashboards.md
 var ListDashboardsDescription string
 
@@ -140,7 +149,7 @@ var GetServiceLogsDescription string
 //go:embed descriptions/get_traces_base.md
 var GetTracesDescription string
 
-//go:embed descriptions/get_service_traces_base.md
+//go:embed descriptions/get_service_traces.md
 var GetServiceTracesDescription string
 
 //go:embed descriptions/prometheus_range_query_base.md

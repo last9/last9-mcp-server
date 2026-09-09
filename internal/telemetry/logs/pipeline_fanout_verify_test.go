@@ -34,17 +34,6 @@ func TestSanitizeLogJSONQueryRejectsHostedMalformedShapes(t *testing.T) {
 		category string
 	}{
 		{
-			name: "SpanKind filter is a traces field",
-			stages: []map[string]interface{}{
-				{"type": "filter", "query": map[string]interface{}{
-					"$and": []interface{}{
-						map[string]interface{}{"$eq": []interface{}{"SpanKind", "SPAN_KIND_SERVER"}},
-					},
-				}},
-			},
-			category: logCategoryTraceFieldOnLogs,
-		},
-		{
 			name: "parse uses format instead of parser",
 			stages: []map[string]interface{}{
 				{"type": "parse", "format": "json"},

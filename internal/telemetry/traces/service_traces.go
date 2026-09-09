@@ -270,7 +270,10 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 			} else {
 				traceResponse.Message = fmt.Sprintf("Retrieved trace data for trace ID: %s", queryParams.TraceID)
 			}
-		} else {
+		} else if traceResponse.Success {
+			// Only set the success summary when the transform succeeded;
+			// otherwise keep the diagnostic message it set (e.g.
+			// "Invalid API response: missing data field").
 			traceResponse.Message = fmt.Sprintf("Retrieved %d traces for service: %s", len(traceResponse.Data), queryParams.ServiceName)
 		}
 
@@ -291,7 +294,11 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 		dashboardURL := dlBuilder.BuildTracesLink(startTime.UnixMilli(), endTime.UnixMilli(), pipeline, queryParams.TraceID, "")
 
 		return &mcp.CallToolResult{
-			Meta: deeplink.ToMeta(dashboardURL),
+			// Escalate soft failures (e.g. malformed 200 body) per the
+			// package convention while preserving the structured
+			// success:false JSON and the dashboard deep link.
+			IsError: !traceResponse.Success,
+			Meta:    deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(jsonData),

@@ -44,6 +44,18 @@ func TestParseLogsIncludesInstantQuery(t *testing.T) {
 	}
 }
 
+func TestParseDomainToolsetsIncludeServiceProfile(t *testing.T) {
+	for _, spec := range []string{"logs", "traces", "metrics"} {
+		set, err := Parse(spec)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", spec, err)
+		}
+		if !set.Allows("get_service_profile") {
+			t.Errorf("%s toolset must include get_service_profile (profile-first firing rules on domain tools)", spec)
+		}
+	}
+}
+
 func TestParseInvestigate(t *testing.T) {
 	set, err := Parse("investigate")
 	if err != nil {
@@ -52,12 +64,12 @@ func TestParseInvestigate(t *testing.T) {
 	if set == nil {
 		t.Fatal("investigate must not expand to nil/all")
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "list_datasources", "get_apm_service_deviations"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "get_service_profile", "list_datasources", "get_apm_service_deviations"} {
 		if !set.Allows(want) {
 			t.Errorf("investigate missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots"} {
+	for _, deny := range []string{"get_alerts", "get_alert_groups", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots"} {
 		if set.Allows(deny) {
 			t.Errorf("investigate should exclude %q", deny)
 		}

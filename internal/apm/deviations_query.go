@@ -206,10 +206,10 @@ func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, s
 	group := strings.Join(groupLabels, ", ")
 	baseMatchers := []string{`span_kind="SPAN_KIND_SERVER"`}
 	if scope.ServiceName != "" {
-		baseMatchers = append(baseMatchers, fmt.Sprintf(`service_name="%s"`, escapePromQLLabel(scope.ServiceName)))
+		baseMatchers = append(baseMatchers, fmt.Sprintf(`service_name="%s"`, utils.EscapePromQLLabel(scope.ServiceName)))
 	}
 	if scope.Env != "" {
-		baseMatchers = append(baseMatchers, fmt.Sprintf(`env="%s"`, escapePromQLLabel(scope.Env)))
+		baseMatchers = append(baseMatchers, fmt.Sprintf(`env="%s"`, utils.EscapePromQLLabel(scope.Env)))
 	}
 	requestSelector := fmt.Sprintf("trace_endpoint_count{%s}", strings.Join(baseMatchers, ","))
 	requestExpression := fmt.Sprintf("sum by (%s) (%s)", group, requestSelector)
@@ -222,7 +222,11 @@ func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, s
 		requestSelectorWithMatcher(baseMatchers, `grpc_status_code!~"^(|0|OK)$"`),
 	}
 	errorUnion := fmt.Sprintf("sum by (%s) ((%s))", group, strings.Join(errorSelectors, ") or ("))
-	errorExpression := fmt.Sprintf("(%s) or on (%s) (%s * 0)", errorUnion, group, requestExpression)
+	// The outer parentheses are load-bearing: the top-level operator here is
+	// `or`, which binds looser than arithmetic operators in PromQL. Without
+	// them, a consumer like `errorExpression / x` would apply the division only
+	// to the zero-fill branch `(requestExpression * 0)`, not the whole union.
+	errorExpression := fmt.Sprintf("((%s) or on (%s) (%s * 0))", errorUnion, group, requestExpression)
 	errorGrid := deviationSubquery(errorExpression, window, step)
 
 	identityMatchers := baseMatchers[1:]
@@ -305,10 +309,10 @@ func deviationGroupLabels(operations bool) []string {
 func deviationRequestExpression(scope deviationQueryScope, group string) string {
 	matchers := []string{`span_kind="SPAN_KIND_SERVER"`}
 	if scope.ServiceName != "" {
-		matchers = append(matchers, fmt.Sprintf(`service_name="%s"`, escapePromQLLabel(scope.ServiceName)))
+		matchers = append(matchers, fmt.Sprintf(`service_name="%s"`, utils.EscapePromQLLabel(scope.ServiceName)))
 	}
 	if scope.Env != "" {
-		matchers = append(matchers, fmt.Sprintf(`env="%s"`, escapePromQLLabel(scope.Env)))
+		matchers = append(matchers, fmt.Sprintf(`env="%s"`, utils.EscapePromQLLabel(scope.Env)))
 	}
 	return fmt.Sprintf("sum by (%s) (trace_endpoint_count{%s})", group, strings.Join(matchers, ","))
 }

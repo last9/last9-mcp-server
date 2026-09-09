@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,7 +53,7 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 
 		envFilter := ""
 		if args.Env != "" {
-			envFilter = fmt.Sprintf(`, env=~"%s"`, escapePromQLLabel(args.Env))
+			envFilter = fmt.Sprintf(`, env=~"%s"`, utils.EscapePromQLLabel(args.Env))
 		}
 
 		baseFilter := fmt.Sprintf(
@@ -529,24 +530,15 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 func buildDBBaseFilter(dbSystem, host, env string) string {
 	filter := fmt.Sprintf(
 		`span_kind=~"SPAN_KIND_CLIENT|SPAN_KIND_INTERNAL", db_system="%s"`,
-		escapePromQLLabel(dbSystem),
+		utils.EscapePromQLLabel(dbSystem),
 	)
 	if host != "" {
-		filter += fmt.Sprintf(`, net_peer_name="%s"`, escapePromQLLabel(host))
+		filter += fmt.Sprintf(`, net_peer_name="%s"`, utils.EscapePromQLLabel(host))
 	}
 	if env != "" {
-		filter += fmt.Sprintf(`, env=~"%s"`, escapePromQLLabel(env))
+		filter += fmt.Sprintf(`, env=~"%s"`, utils.EscapePromQLLabel(env))
 	}
 	return filter
-}
-
-// escapePromQLLabel escapes special characters in a PromQL label value
-// to prevent injection when interpolating into queries.
-func escapePromQLLabel(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	s = strings.ReplaceAll(s, "\n", `\n`)
-	return s
 }
 
 func fetchPromBySpanName(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64, patterns map[string]*QueryPattern, setter func(*QueryPattern, float64)) error {
@@ -1017,7 +1009,24 @@ func fetchSlowQueryLogs(ctx context.Context, client *http.Client, cfg models.Con
 		return nil
 	}
 
-	return extractSlowQueryLogs(rawResult)
+	// Apply MinDurationMs client-side, matching the trace-side $gte filter.
+	// The duration lives inside the JSON log body (under instrumentation-specific
+	// keys), so it cannot be pushed into the server-side pipeline. Note the
+	// trade-off: the API returns at most `limit` entries *before* this filter,
+	// so qualifying slow logs beyond that page may be missed. Acceptable since
+	// this path is best-effort (traces are the primary source).
+	return filterSlowQueriesByMinDuration(extractSlowQueryLogs(rawResult), args.MinDurationMs)
+}
+
+// filterSlowQueriesByMinDuration drops queries below minDurationMs.
+// A non-positive threshold means "unset" and returns the slice unchanged.
+func filterSlowQueriesByMinDuration(queries []SlowQuery, minDurationMs float64) []SlowQuery {
+	if minDurationMs <= 0 {
+		return queries
+	}
+	return slices.DeleteFunc(queries, func(q SlowQuery) bool {
+		return q.DurationMs < minDurationMs
+	})
 }
 
 // extractSlowQueryLogs parses Loki streams response into SlowQuery entries.
