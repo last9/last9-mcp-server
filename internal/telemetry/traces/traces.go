@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
@@ -365,26 +364,6 @@ func formatJSON(data interface{}) string {
 		return fmt.Sprintf("%v", data)
 	}
 	return string(bytes)
-}
-
-// parseTimeRangeFromArgsAt is the testable version of parseTimeRangeFromArgs
-func parseTimeRangeFromArgsAt(args GetTracesArgs, now time.Time) (int64, int64, error) {
-	params := make(map[string]interface{})
-	if args.LookbackMinutes > 0 {
-		params["lookback_minutes"] = args.LookbackMinutes
-	}
-	if args.StartTimeISO != "" {
-		params["start_time_iso"] = args.StartTimeISO
-	}
-	if args.EndTimeISO != "" {
-		params["end_time_iso"] = args.EndTimeISO
-	}
-
-	startTime, endTime, err := utils.GetTimeRangeAt(params, utils.DefaultLookbackMinutes, now)
-	if err != nil {
-		return 0, 0, err
-	}
-	return startTime.UnixMilli(), endTime.UnixMilli(), nil
 }
 
 func extractExactTraceIDLookup(pipeline []map[string]interface{}) (string, bool) {
