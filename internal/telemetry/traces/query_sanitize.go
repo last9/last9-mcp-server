@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"last9-mcp/internal/otelids"
 	"last9-mcp/internal/telemetry"
 )
 
@@ -79,6 +80,24 @@ func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 			if err := validateAggregateStage(stage, path); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+// SanitizeTraceFilterConditions is SanitizeTraceJSONQuery without the top-level
+// $and wrap: each element is already one condition inside a filters array, so
+// wrapping would misplace it.
+func SanitizeTraceFilterConditions(conditions []map[string]interface{}, pathPrefix string) error {
+	for i, condition := range conditions {
+		path := fmt.Sprintf("%s[%d]", pathPrefix, i)
+		rewriteBrokenExistenceOperators(condition)
+		rewriteLegacyDotNotationFields(condition)
+		if err := validateTraceFilterCondition(condition, path); err != nil {
+			return err
+		}
+		if err := validateFilterFields(condition, path); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -218,9 +237,50 @@ func validateFilterFields(value interface{}, path string) error {
 					if err := validateFieldSyntax(fieldStr, fmt.Sprintf("%s.%s[0]", path, key)); err != nil {
 						return err
 					}
+					if _, isEquality := traceIDEqualityOperators[key]; isEquality && len(args) == 2 {
+						if err := normalizeOTelIDArg(fieldStr, args, path+"."+key); err != nil {
+							return err
+						}
+					}
 				}
 			}
 		}
+	}
+	return nil
+}
+
+// Exact-match operators only: substring/regex operators legitimately match
+// partial IDs, so validating their operands would reject valid queries.
+var traceIDEqualityOperators = map[string]struct{}{
+	"$eq":   {},
+	"$ieq":  {},
+	"$ineq": {},
+	"$neq":  {},
+}
+
+func normalizeOTelIDArg(field string, args []interface{}, path string) error {
+	id, ok := args[1].(string)
+	if !ok {
+		return nil
+	}
+	// An empty operand is the existence idiom, not an ID: rewriteBrokenExistenceOperators
+	// turns $notnull into {"$neq": [field, ""]} before validation runs.
+	if id == "" {
+		return nil
+	}
+	switch field {
+	case "TraceId":
+		normalized, err := otelids.NormalizeTraceID(id)
+		if err != nil {
+			return fmt.Errorf("%s[1]: %w", path, rejectOTelID("get_traces", err))
+		}
+		args[1] = normalized
+	case "SpanId", "ParentSpanId":
+		normalized, err := otelids.NormalizeSpanID(id)
+		if err != nil {
+			return fmt.Errorf("%s[1]: %w", path, rejectOTelID("get_traces", err))
+		}
+		args[1] = normalized
 	}
 	return nil
 }

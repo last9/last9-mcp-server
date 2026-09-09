@@ -160,6 +160,11 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: prompts.GetAlertConfigDescription,
 	}, alerting.NewGetAlertConfigHandler(client, cfg)))
 
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_alert_groups",
+		Description: prompts.GetAlertGroupsDescription,
+	}, alerting.NewGetAlertGroupsHandler(client, cfg)))
+
 	// Register entity alert rules tool (entity-scoped, includes expression_args and resolved PromQL)
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_entity_alert_rules",
@@ -233,6 +238,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_trace_waterfall",
 		Description: prompts.GetTraceWaterfallDescription,
+		InputSchema: traces.GetTraceWaterfallInputSchema(),
 	}, traces.NewGetTraceWaterfallHandler(client, cfg)))
 
 	// Register change events tool

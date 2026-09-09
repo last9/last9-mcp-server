@@ -171,10 +171,7 @@ func TestGetTraceAttributeValuesHandler_ForwardsPipeline(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected forwarded stage to be an object, got: %T", capturedPipeline[0])
 	}
-	query, ok := stage["query"].(map[string]interface{})
-	if !ok || query["$eq"] == nil {
-		t.Errorf("expected the caller's $eq filter to be forwarded, got stage: %v", stage)
-	}
+	assertServiceNameFilterForwarded(t, stage, "checkout")
 }
 
 func parseAttributeValuesResult(t *testing.T, result *mcp.CallToolResult) (hint, filterField string, values []string, raw string) {

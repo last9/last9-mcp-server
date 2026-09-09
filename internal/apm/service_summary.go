@@ -311,7 +311,7 @@ func mergeServiceSummarySeries(joined map[string]*ServiceSummaryRow, series apiP
 			continue
 		}
 		env := r.Metric["env"]
-		key := serviceName + "\x00" + env
+		key := identityKey(serviceName, env)
 		row, ok := joined[key]
 		if !ok {
 			row = &ServiceSummaryRow{Service: serviceName, Env: env}

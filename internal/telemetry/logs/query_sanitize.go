@@ -2,10 +2,14 @@ package logs
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"last9-mcp/internal/otelids"
 )
 
 var (
@@ -122,7 +126,7 @@ func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 		for key, item := range typed {
 			fieldArgIndex, isFieldOperator := logFilterFieldOperators[key]
 			if isFieldOperator {
-				next, err := sanitizeLogFieldOperatorArgs(item, fieldArgIndex, path+"."+key)
+				next, err := sanitizeLogFieldOperatorArgs(item, key, fieldArgIndex, path+"."+key)
 				if err != nil {
 					return nil, err
 				}
@@ -142,6 +146,17 @@ func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 				)
 			}
 
+			// Normalize map-form {"$not": {…}} to the documented single-element
+			// array form {"$not": [condition]} (logjson.md) so downstream
+			// inspectors see one canonical shape. The type check avoids
+			// double-wrapping an already-correct array. Only $not gets this:
+			// a single condition map is a natural way to express negation,
+			// whereas map-form $and/$or have no sensible single-operand reading.
+			if key == "$not" {
+				if _, isMap := item.(map[string]interface{}); isMap {
+					item = []interface{}{item}
+				}
+			}
 			next, err := sanitizeLogCondition(item, path+"."+key)
 			if err != nil {
 				return nil, err
@@ -154,7 +169,7 @@ func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 	}
 }
 
-func sanitizeLogFieldOperatorArgs(value interface{}, fieldArgIndex int, path string) (interface{}, error) {
+func sanitizeLogFieldOperatorArgs(value interface{}, operator string, fieldArgIndex int, path string) (interface{}, error) {
 	args, ok := value.([]interface{})
 	if !ok {
 		return nil, newLogValidationError(
@@ -193,9 +208,53 @@ func sanitizeLogFieldOperatorArgs(value interface{}, fieldArgIndex int, path str
 		if err != nil {
 			return nil, err
 		}
-		sanitized[valueIndex] = coerced
+		normalized, err := normalizeLogOTelID(operator, next, coerced, fmt.Sprintf("%s[%d]", path, valueIndex))
+		if err != nil {
+			return nil, err
+		}
+		sanitized[valueIndex] = normalized
 	}
 	return sanitized, nil
+}
+
+// Unvalidated, a malformed ID on these fields returns an empty result set with
+// no error, which reads to the model as "no logs for this trace".
+var logIDEqualityOperators = map[string]struct{}{
+	"$eq":   {},
+	"$ieq":  {},
+	"$ineq": {},
+	"$neq":  {},
+}
+
+func normalizeLogOTelID(operator, fieldRef, value, path string) (string, error) {
+	if _, isEquality := logIDEqualityOperators[operator]; !isEquality {
+		return value, nil
+	}
+	// An empty operand is the existence idiom {"$neq": [field, ""]}, not an ID.
+	if value == "" {
+		return value, nil
+	}
+
+	var (
+		normalized string
+		err        error
+	)
+	switch fieldRef {
+	case "TraceId":
+		normalized, err = otelids.NormalizeTraceID(value)
+	case "SpanId", "ParentSpanId":
+		normalized, err = otelids.NormalizeSpanID(value)
+	default:
+		return value, nil
+	}
+	if err != nil {
+		var idErr *otelids.Error
+		if errors.As(err, &idErr) {
+			slog.Warn("tool input rejected", "tool", "logs", "category", idErr.Category)
+		}
+		return "", newLogValidationError(LogValidationInvalidField, path, err.Error())
+	}
+	return normalized, nil
 }
 
 func coerceLogFilterValueToString(value interface{}, path string) (string, error) {

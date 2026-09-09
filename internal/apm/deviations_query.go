@@ -3,8 +3,10 @@ package apm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
@@ -43,18 +45,16 @@ const (
 )
 
 type deviationQuery struct {
-	Name          string
-	Field         deviationField
-	Text          string
-	CandidateMask string
+	Name  string
+	Field deviationField
+	Text  string
 }
 
 type deviationQueryPlan struct {
-	CandidateMask string
-	CurrentEnd    time.Time
-	BaselineEnd   time.Time
-	Current       []deviationQuery
-	Baseline      []deviationQuery
+	CurrentEnd  time.Time
+	BaselineEnd time.Time
+	Current     []deviationQuery
+	Baseline    []deviationQuery
 }
 
 type deviationVector struct {
@@ -114,6 +114,48 @@ type deviationQueryExecution struct {
 	Err      error
 }
 
+// deviationQueryOverloadError marks datasource responses in the
+// limit/timeout class (rate limits, series/sample limits, gateway timeouts).
+// Since the candidate pre-filter was removed, deviation queries span every
+// identity in scope, so this class of failure is the signal that the caller
+// should narrow the scope rather than retry unchanged.
+type deviationQueryOverloadError struct {
+	Status int
+}
+
+func (e deviationQueryOverloadError) Error() string {
+	return fmt.Sprintf("metric query rejected with status %d (datasource limit or timeout)", e.Status)
+}
+
+func isDeviationOverloadStatus(status int) bool {
+	switch status {
+	case http.StatusRequestTimeout, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity,
+		http.StatusTooManyRequests, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+// isDeviationQueryOverload reports whether a query failure belongs to the
+// limit/timeout class, whether signalled by the datasource status code or by
+// a client-side timeout.
+func isDeviationQueryOverload(err error) bool {
+	var overload deviationQueryOverloadError
+	if errors.As(err, &overload) {
+		return true
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+// deviationQueryErrorKindRejected distinguishes limit/timeout-class failures
+// from generic query failures so the handler can recommend narrowing scope.
+const deviationQueryErrorKindRejected = "query_rejected"
+
 type deviationQueryRunner interface {
 	Query(context.Context, string, time.Time) ([]deviationVector, error)
 }
@@ -141,6 +183,9 @@ func (runner httpDeviationQueryRunner) Query(ctx context.Context, query string, 
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)
+		if isDeviationOverloadStatus(resp.StatusCode) {
+			return nil, deviationQueryOverloadError{Status: resp.StatusCode}
+		}
 		return nil, fmt.Errorf("metric query returned status %d", resp.StatusCode)
 	}
 
@@ -170,33 +215,23 @@ func buildDeviationRollupQueryPlan(scope deviationQueryScope, current, baseline 
 	if scope.Limit <= 0 || step <= 0 || !validDeviationWindow(current) || !validDeviationWindow(baseline) {
 		return deviationQueryPlan{}
 	}
-	mask := buildDeviationCandidateMask(scope, current, baseline, step, operations)
-	if mask == "" {
-		return deviationQueryPlan{}
-	}
+	// No candidate pre-filter: the deviation math runs over every identity in
+	// scope, and the magnitude-aware in-process selection (limitDeviationResult
+	// for services, correlateOperations for operations) performs the only cut.
+	// Deviation classification depends on per-bucket distribution overlap and
+	// evidence-coverage rules that no PromQL ranking proxy (such as a traffic
+	// topk) can mirror, so any pre-filter can silently exclude the identity a
+	// correct result must contain. Completeness is guaranteed at the price of
+	// query cost scaling with the number of identities in scope.
 	return deviationQueryPlan{
-		CandidateMask: mask,
-		CurrentEnd:    current.End,
-		BaselineEnd:   baseline.End,
-		Current:       buildDeviationWindowQueries(scope, current, step, operations, mask),
-		Baseline:      buildDeviationWindowQueries(scope, baseline, step, operations, mask),
+		CurrentEnd:  current.End,
+		BaselineEnd: baseline.End,
+		Current:     buildDeviationWindowQueries(scope, current, step, operations),
+		Baseline:    buildDeviationWindowQueries(scope, baseline, step, operations),
 	}
 }
 
-func buildDeviationCandidateMask(scope deviationQueryScope, current, baseline TimeWindow, step time.Duration, operations bool) string {
-	if scope.Limit <= 0 || step <= 0 || !validDeviationWindow(current) || !validDeviationWindow(baseline) || (operations && scope.ServiceName == "") {
-		return ""
-	}
-	groupLabels := deviationGroupLabels(operations)
-	group := strings.Join(groupLabels, ", ")
-	requestExpression := deviationRequestExpression(scope, group)
-	currentTotal := fmt.Sprintf("sum_over_time(%s)", deviationSubquery(requestExpression, current, step))
-	baselineTotal := fmt.Sprintf("sum_over_time(%s)", deviationSubquery(requestExpression, baseline, step))
-	combined := fmt.Sprintf("((%s + %s) or %s or %s)", currentTotal, baselineTotal, currentTotal, baselineTotal)
-	return fmt.Sprintf("topk(%d, %s)", scope.Limit, combined)
-}
-
-func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, step time.Duration, operations bool, candidateMask string) []deviationQuery {
+func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, step time.Duration, operations bool) []deviationQuery {
 	groupLabels := []string{"service_name", "env"}
 	apdexMetric := "trace_service_apdex_score"
 	if operations {
@@ -222,7 +257,11 @@ func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, s
 		requestSelectorWithMatcher(baseMatchers, `grpc_status_code!~"^(|0|OK)$"`),
 	}
 	errorUnion := fmt.Sprintf("sum by (%s) ((%s))", group, strings.Join(errorSelectors, ") or ("))
-	errorExpression := fmt.Sprintf("(%s) or on (%s) (%s * 0)", errorUnion, group, requestExpression)
+	// The outer parentheses are load-bearing: the top-level operator here is
+	// `or`, which binds looser than arithmetic operators in PromQL. Without
+	// them, a consumer like `errorExpression / x` would apply the division only
+	// to the zero-fill branch `(requestExpression * 0)`, not the whole union.
+	errorExpression := fmt.Sprintf("((%s) or on (%s) (%s * 0))", errorUnion, group, requestExpression)
 	errorGrid := deviationSubquery(errorExpression, window, step)
 
 	identityMatchers := baseMatchers[1:]
@@ -251,31 +290,24 @@ func buildDeviationWindowQueries(scope deviationQueryScope, window TimeWindow, s
 	errorPercentageGrid := deviationSubquery(errorPercentageExpression, window, step)
 	apdexDistributionGrid := deviationSubquery(alignedApdex, window, step)
 
-	limit := func(expression string) string {
-		return fmt.Sprintf("(%s) and on (%s) (%s)", expression, matching, candidateMask)
+	return []deviationQuery{
+		{Name: "requests_sum", Field: deviationFieldRequestTotal, Text: requestTotal},
+		{Name: "requests_count", Field: deviationFieldRequestCount, Text: fmt.Sprintf("count_over_time(%s)", requestGrid)},
+		{Name: "errors_sum", Field: deviationFieldErrorTotal, Text: fmt.Sprintf("sum_over_time(%s)", errorGrid)},
+		{Name: "errors_count", Field: deviationFieldErrorCount, Text: fmt.Sprintf("count_over_time(%s)", errorGrid)},
+		{Name: "apdex_numerator", Field: deviationFieldApdexNumerator, Text: fmt.Sprintf("sum_over_time(%s)", apdexNumeratorGrid)},
+		{Name: "apdex_denominator", Field: deviationFieldApdexDenominator, Text: fmt.Sprintf("sum_over_time(%s)", alignedRequestGrid)},
+		{Name: "apdex_count", Field: deviationFieldApdexCount, Text: fmt.Sprintf("count_over_time(%s)", alignedRequestGrid)},
+		{Name: "request_distribution", Field: deviationFieldRequestDistribution, Text: deviationDistributionQuery(requestRPMGrid)},
+		{Name: "error_throughput_distribution", Field: deviationFieldErrorThroughputDistribution, Text: deviationDistributionQuery(errorRPMGrid)},
+		{Name: "error_percentage_distribution", Field: deviationFieldErrorPercentageDistribution, Text: deviationDistributionQuery(errorPercentageGrid)},
+		{Name: "apdex_distribution", Field: deviationFieldApdexDistribution, Text: deviationDistributionQuery(apdexDistributionGrid)},
+		{Name: "latency_q25", Field: deviationFieldLatencyQ25, Text: fmt.Sprintf("quantile_over_time(0.25, %s)", latencyGrid)},
+		{Name: "latency_median", Field: deviationFieldLatencyMedian, Text: fmt.Sprintf("quantile_over_time(0.5, %s)", latencyGrid)},
+		{Name: "latency_q75", Field: deviationFieldLatencyQ75, Text: fmt.Sprintf("quantile_over_time(0.75, %s)", latencyGrid)},
+		{Name: "latency_max", Field: deviationFieldLatencyMax, Text: fmt.Sprintf("max_over_time(%s)", latencyGrid)},
+		{Name: "latency_count", Field: deviationFieldLatencyCount, Text: fmt.Sprintf("count_over_time(%s)", latencyGrid)},
 	}
-	queries := []deviationQuery{
-		{Name: "requests_sum", Field: deviationFieldRequestTotal, Text: limit(requestTotal)},
-		{Name: "requests_count", Field: deviationFieldRequestCount, Text: limit(fmt.Sprintf("count_over_time(%s)", requestGrid))},
-		{Name: "errors_sum", Field: deviationFieldErrorTotal, Text: limit(fmt.Sprintf("sum_over_time(%s)", errorGrid))},
-		{Name: "errors_count", Field: deviationFieldErrorCount, Text: limit(fmt.Sprintf("count_over_time(%s)", errorGrid))},
-		{Name: "apdex_numerator", Field: deviationFieldApdexNumerator, Text: limit(fmt.Sprintf("sum_over_time(%s)", apdexNumeratorGrid))},
-		{Name: "apdex_denominator", Field: deviationFieldApdexDenominator, Text: limit(fmt.Sprintf("sum_over_time(%s)", alignedRequestGrid))},
-		{Name: "apdex_count", Field: deviationFieldApdexCount, Text: limit(fmt.Sprintf("count_over_time(%s)", alignedRequestGrid))},
-		{Name: "request_distribution", Field: deviationFieldRequestDistribution, Text: limit(deviationDistributionQuery(requestRPMGrid))},
-		{Name: "error_throughput_distribution", Field: deviationFieldErrorThroughputDistribution, Text: limit(deviationDistributionQuery(errorRPMGrid))},
-		{Name: "error_percentage_distribution", Field: deviationFieldErrorPercentageDistribution, Text: limit(deviationDistributionQuery(errorPercentageGrid))},
-		{Name: "apdex_distribution", Field: deviationFieldApdexDistribution, Text: limit(deviationDistributionQuery(apdexDistributionGrid))},
-		{Name: "latency_q25", Field: deviationFieldLatencyQ25, Text: limit(fmt.Sprintf("quantile_over_time(0.25, %s)", latencyGrid))},
-		{Name: "latency_median", Field: deviationFieldLatencyMedian, Text: limit(fmt.Sprintf("quantile_over_time(0.5, %s)", latencyGrid))},
-		{Name: "latency_q75", Field: deviationFieldLatencyQ75, Text: limit(fmt.Sprintf("quantile_over_time(0.75, %s)", latencyGrid))},
-		{Name: "latency_max", Field: deviationFieldLatencyMax, Text: limit(fmt.Sprintf("max_over_time(%s)", latencyGrid))},
-		{Name: "latency_count", Field: deviationFieldLatencyCount, Text: limit(fmt.Sprintf("count_over_time(%s)", latencyGrid))},
-	}
-	for index := range queries {
-		queries[index].CandidateMask = candidateMask
-	}
-	return queries
 }
 
 func deviationDistributionQuery(grid string) string {
@@ -292,25 +324,6 @@ func deviationDistributionQuery(grid string) string {
 		queries = append(queries, fmt.Sprintf(`label_replace(quantile_over_time(%s, %s), "deviation_stat", "%s", "", "")`, part.quantile, grid, part.statistic))
 	}
 	return strings.Join(queries, " or ")
-}
-
-func deviationGroupLabels(operations bool) []string {
-	labels := []string{"service_name", "env"}
-	if operations {
-		labels = append(labels, "span_name")
-	}
-	return labels
-}
-
-func deviationRequestExpression(scope deviationQueryScope, group string) string {
-	matchers := []string{`span_kind="SPAN_KIND_SERVER"`}
-	if scope.ServiceName != "" {
-		matchers = append(matchers, fmt.Sprintf(`service_name="%s"`, utils.EscapePromQLLabel(scope.ServiceName)))
-	}
-	if scope.Env != "" {
-		matchers = append(matchers, fmt.Sprintf(`env="%s"`, utils.EscapePromQLLabel(scope.Env)))
-	}
-	return fmt.Sprintf("sum by (%s) (trace_endpoint_count{%s})", group, strings.Join(matchers, ","))
 }
 
 func deviationSubquery(expression string, window TimeWindow, step time.Duration) string {
@@ -403,9 +416,13 @@ func executeDeviationQueryGroup(ctx context.Context, runner deviationQueryRunner
 	for range queries {
 		result := <-results
 		if result.err != nil {
+			kind, message := "query_failed", "query failed"
+			if isDeviationQueryOverload(result.err) {
+				kind, message = deviationQueryErrorKindRejected, "query rejected by the datasource (limit or timeout)"
+			}
 			queryErrors = append(queryErrors, deviationQueryError{
-				Window: window, Signal: result.query.Name, Kind: "query_failed",
-				Field: string(result.query.Field), Message: "query failed",
+				Window: window, Signal: result.query.Name, Kind: kind,
+				Field: string(result.query.Field), Message: message,
 			})
 			continue
 		}
@@ -572,7 +589,7 @@ func setDeviationDistributionField(statistic string, pointer func() *float64, q2
 
 func hasInvalidAggregateErrors(errors []deviationQueryError) bool {
 	for _, item := range errors {
-		if item.Kind != "query_failed" {
+		if item.Kind != "query_failed" && item.Kind != deviationQueryErrorKindRejected {
 			return true
 		}
 	}
