@@ -29,6 +29,22 @@ type HTTPTransportError struct {
 func (err *HTTPTransportError) Error() string { return "HTTP request failed: " + err.Err.Error() }
 func (err *HTTPTransportError) Unwrap() error { return err.Err }
 
+// EQExample renders a tracejson/logjson equality condition with both operands
+// JSON-encoded, so the example stays valid JSON when field or value contains
+// quotes, backslashes, or control characters. HTML escaping is disabled so
+// placeholders like <value> and URLs with & stay readable in hints.
+func EQExample(field, value string) string {
+	return fmt.Sprintf(`{"$eq": [%s, %s]}`, jsonStringLiteral(field), jsonStringLiteral(value))
+}
+
+func jsonStringLiteral(s string) string {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(s) // encoding a string never fails
+	return strings.TrimSuffix(buf.String(), "\n")
+}
+
 // Constants for time-related values
 const (
 	// DefaultLookbackMinutes is the default lookback time in minutes (1 hour)

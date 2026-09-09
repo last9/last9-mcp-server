@@ -42,7 +42,7 @@ func TestValidateGetServiceTracesArgs(t *testing.T) {
 		{
 			name: "Only trace_id provided - valid",
 			args: GetServiceTracesArgs{
-				TraceID: "abc123def456",
+				TraceID: "ea8148dece205073096e4ad48145b08a",
 			},
 			wantErr: false,
 		},
@@ -151,11 +151,11 @@ func TestParseGetTracesParams(t *testing.T) {
 		{
 			name: "Valid trace ID request",
 			args: GetServiceTracesArgs{
-				TraceID: "abc123def456",
+				TraceID: "ea8148dece205073096e4ad48145b08a",
 				Limit:   20,
 			},
 			wantErr:      false,
-			wantTrace:    "abc123def456",
+			wantTrace:    "ea8148dece205073096e4ad48145b08a",
 			wantLookback: TraceIDLookbackMinutesDefault,
 			wantLimit:    20,
 		},
@@ -521,7 +521,7 @@ func TestGetServiceTracesHandler_TraceIDUsesTraceDetailsEndpoint(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected GET request, got %s", r.Method)
 		}
-		if r.URL.Path != "/cat/api/traces/abc123def456" {
+		if r.URL.Path != "/cat/api/traces/ea8148dece205073096e4ad48145b08a" {
 			t.Errorf("expected trace details path, got %s", r.URL.Path)
 		}
 		if got := r.URL.Query().Get("limit"); got != "5" {
@@ -547,7 +547,7 @@ func TestGetServiceTracesHandler_TraceIDUsesTraceDetailsEndpoint(t *testing.T) {
 
 	handler := GetServiceTracesHandler(server.Client(), cfg)
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceTracesArgs{
-		TraceID: "abc123def456",
+		TraceID: "ea8148dece205073096e4ad48145b08a",
 		Limit:   5,
 	})
 	if err != nil {

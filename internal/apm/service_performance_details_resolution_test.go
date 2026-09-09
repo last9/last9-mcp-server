@@ -78,7 +78,7 @@ func runPerfDetailsCapture(t *testing.T) *perfDetailsCapture {
 	}))
 	t.Cleanup(server.Close)
 
-	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
 		ServiceName:  "svc",
@@ -218,7 +218,7 @@ func TestPerfDetails_InstantQueriesSendNoPointBudget(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
 		ServiceName:  "svc",

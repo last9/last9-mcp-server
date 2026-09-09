@@ -11,6 +11,7 @@ import (
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -53,6 +54,10 @@ func NewGetTraceAttributeValuesHandler(client *http.Client, cfg models.Config) f
 
 		// The label-values endpoint requires a POST with a pipeline body (same as series).
 		// Scope to the caller's pipeline when provided; otherwise discover globally.
+		if err := SanitizeTraceJSONQuery(args.Pipeline); err != nil {
+			return nil, nil, err
+		}
+
 		stages := args.Pipeline
 		if len(stages) == 0 {
 			stages = []map[string]interface{}{
@@ -113,7 +118,7 @@ func NewGetTraceAttributeValuesHandler(client *http.Client, cfg models.Config) f
 			TagName:     rawTagName,
 			FilterField: attr.FilterField,
 			Values:      values,
-			Hint:        fmt.Sprintf(`Use filter_field in a tracejson condition. Example: {"$eq": ["%s", "%s"]}`, attr.FilterField, firstOrPlaceholder(values)),
+			Hint:        "Use filter_field in a tracejson condition. Example: " + utils.EQExample(attr.FilterField, firstOrPlaceholder(values)),
 		})
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal result: %v", err)
