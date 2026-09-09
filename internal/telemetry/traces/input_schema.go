@@ -4,7 +4,6 @@ func stringEnum(values ...string) map[string]interface{} {
 	return map[string]interface{}{"type": "string", "enum": values}
 }
 
-// Advisory only; NewGetTraceWaterfallHandler remains the authoritative check.
 func GetTraceWaterfallInputSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":                 "object",

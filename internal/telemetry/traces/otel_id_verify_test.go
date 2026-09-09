@@ -150,8 +150,6 @@ func TestGetTraces_InvalidExactTraceIDMakesZeroUpstreamRequests(t *testing.T) {
 }
 
 func TestGetTraceWaterfallInputSchemaOmitsIDPatterns(t *testing.T) {
-	// A schema pattern is validated by the SDK before the handler runs, and its
-	// regex message replaces the actionable one NormalizeTraceID produces.
 	schema := GetTraceWaterfallInputSchema()
 	props := schema["properties"].(map[string]interface{})
 	for _, field := range []string{"trace_id", "selected_span_id"} {
