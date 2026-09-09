@@ -28,6 +28,9 @@ import (
 // These tests are hermetic: they spin up an httptest server that records the
 // PromQL the handler renders and return an empty Prometheus vector so the
 // handler completes without error, then assert on the captured query text.
+//
+// The tests are table-driven over escapingHandlers: adding the next handler
+// to the escaping contract is a one-entry change, not a copied test set.
 
 // apmCaptureServer is a stub Last9 Prom backend that records every PromQL
 // query string the handler sends (both range and instant endpoints) and
@@ -76,109 +79,95 @@ func (c *apmCaptureServer) allQueries() []string {
 	return out
 }
 
-func (c *apmCaptureServer) rangeQueries() []string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return append([]string(nil), c.rangeQ...)
+// escapingHandler describes one handler under the escaping contract.
+type escapingHandler struct {
+	name string
+	// run drives the handler over a short fixed window with the given
+	// service_name / env and returns every captured query string.
+	run func(t *testing.T, serviceName, env string) []string
+	// svcMatchers returns the double-quoted, escaped matcher substrings for
+	// the service value; a query must contain at least one of them.
+	svcMatchers func(serviceName string) []string
+	// forbiddenDelims are the renderer-level single-quote delimiter prefixes
+	// that must never appear in any rendered query.
+	forbiddenDelims []string
+	// injectionPayload is the balanced breakout payload from the bug report
+	// for this handler's metric names. Pre-fix it closed the single-quoted
+	// matcher early and injected a second sub-query; post-fix it must be
+	// carried verbatim inside one double-quoted literal.
+	injectionPayload string
 }
 
-func fixedWindowArgs(start, end time.Time) (string, string) {
-	return start.Format(time.RFC3339), end.Format(time.RFC3339)
-}
-
-// runPerfDetailsWithCapture drives NewServicePerformanceDetailsHandler over a
-// short single-chunk window and returns every captured query string.
-func runPerfDetailsWithCapture(t *testing.T, serviceName, env string) []string {
+// runHandlerWithCapture is the shared driver: it builds the handler via
+// construct, runs it over a fixed window ending 2026-01-01T12:00:00Z, and
+// returns all captured queries.
+func runHandlerWithCapture(
+	t *testing.T,
+	window time.Duration,
+	call func(cfgURL string, client *http.Client, startISO, endISO string) error,
+) []string {
 	t.Helper()
 	srv := newApmCaptureServer(t)
-	handler := NewServicePerformanceDetailsHandler(srv.Client(), perfDetailsTestConfig(srv.URL))
 	end := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
-	start := end.Add(-10 * time.Minute)
-	startISO, endISO := fixedWindowArgs(start, end)
-	args := ServicePerformanceDetailsArgs{
-		ServiceName:  serviceName,
-		StartTimeISO: startISO,
-		EndTimeISO:   endISO,
-		Env:          env,
-	}
-	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args); err != nil {
-		t.Fatalf("performance details handler returned error: %v", err)
+	start := end.Add(-window)
+	if err := call(srv.URL, srv.Client(), start.Format(time.RFC3339), end.Format(time.RFC3339)); err != nil {
+		t.Fatalf("handler returned error: %v", err)
 	}
 	return srv.allQueries()
 }
 
-// runOpsSummaryWithCapture drives NewServiceOperationsSummaryHandler over a
-// short window and returns every captured (instant) query string.
-func runOpsSummaryWithCapture(t *testing.T, serviceName, env string) []string {
-	t.Helper()
-	srv := newApmCaptureServer(t)
-	handler := NewServiceOperationsSummaryHandler(srv.Client(), perfDetailsTestConfig(srv.URL))
-	end := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
-	start := end.Add(-2 * time.Minute)
-	startISO, endISO := fixedWindowArgs(start, end)
-	args := ServiceOperationsSummaryArgs{
-		ServiceName:  serviceName,
-		StartTimeISO: startISO,
-		EndTimeISO:   endISO,
-		Env:          env,
-	}
-	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args); err != nil {
-		t.Fatalf("operations summary handler returned error: %v", err)
-	}
-	return srv.allQueries()
-}
-
-// runDepGraphWithCapture drives NewServiceDependencyGraphHandler over a short
-// window and returns every captured (instant) query string.
-func runDepGraphWithCapture(t *testing.T, serviceName, env string) []string {
-	t.Helper()
-	srv := newApmCaptureServer(t)
-	handler := NewServiceDependencyGraphHandler(srv.Client(), perfDetailsTestConfig(srv.URL))
-	end := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
-	start := end.Add(-2 * time.Minute)
-	startISO, endISO := fixedWindowArgs(start, end)
-	args := ServiceDependencyGraphArgs{
-		ServiceName:  serviceName,
-		StartTimeISO: startISO,
-		EndTimeISO:   endISO,
-		Env:          env,
-	}
-	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args); err != nil {
-		t.Fatalf("dependency graph handler returned error: %v", err)
-	}
-	return srv.allQueries()
-}
-
-// assertEveryQueryContains fails the test if any captured query lacks the
-// expected substring.
-func assertEveryQueryContains(t *testing.T, queries []string, want, label string) {
-	t.Helper()
-	if len(queries) == 0 {
-		t.Fatalf("no queries captured for %s assertion", label)
-	}
-	for i, q := range queries {
-		if !strings.Contains(q, want) {
-			t.Errorf("%s: query %d missing %q:\n%s", label, i, want, q)
-		}
-	}
-}
-
-// assertNoQueryContains fails if any captured query contains the forbidden
-// substring. Use only with values known NOT to embed the forbidden substring
-// themselves (see comment on safeEscapeInputs).
-func assertNoQueryContains(t *testing.T, queries []string, forbidden, label string) {
-	t.Helper()
-	for i, q := range queries {
-		if strings.Contains(q, forbidden) {
-			t.Errorf("%s: query %d still contains forbidden %q:\n%s", label, i, forbidden, q)
-		}
-	}
-}
-
-// escapeSvcMatcher returns the exact double-quoted, escaped service_name
-// matcher substring the handlers must emit.
-func escapeSvcMatcher(serviceName string) string {
-	return `service_name="` + utils.EscapePromQLLabel(serviceName) + `"`
+var escapingHandlers = []escapingHandler{
+	{
+		name: "performance_details",
+		run: func(t *testing.T, serviceName, env string) []string {
+			// 10m keeps the window single-chunk.
+			return runHandlerWithCapture(t, 10*time.Minute, func(url string, client *http.Client, startISO, endISO string) error {
+				handler := NewServicePerformanceDetailsHandler(client, apmTestConfig(url))
+				_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServicePerformanceDetailsArgs{
+					ServiceName: serviceName, Env: env, StartTimeISO: startISO, EndTimeISO: endISO,
+				})
+				return err
+			})
+		},
+		svcMatchers:      func(s string) []string { return []string{`service_name="` + utils.EscapePromQLLabel(s) + `"`} },
+		forbiddenDelims:  []string{`service_name='`, `env=~'`, `env='`},
+		injectionPayload: `api'} or trace_service_apdex_score{service_name='other'} or trace_service_apdex_score{service_name='api`,
+	},
+	{
+		name: "operations_summary",
+		run: func(t *testing.T, serviceName, env string) []string {
+			return runHandlerWithCapture(t, 2*time.Minute, func(url string, client *http.Client, startISO, endISO string) error {
+				handler := NewServiceOperationsSummaryHandler(client, apmTestConfig(url))
+				_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServiceOperationsSummaryArgs{
+					ServiceName: serviceName, Env: env, StartTimeISO: startISO, EndTimeISO: endISO,
+				})
+				return err
+			})
+		},
+		svcMatchers:      func(s string) []string { return []string{`service_name="` + utils.EscapePromQLLabel(s) + `"`} },
+		forbiddenDelims:  []string{`service_name='`, `env=~'`, `env='`},
+		injectionPayload: `api'} or trace_endpoint_count{service_name='other'} or trace_endpoint_count{service_name='api`,
+	},
+	{
+		name: "dependency_graph",
+		run: func(t *testing.T, serviceName, env string) []string {
+			return runHandlerWithCapture(t, 2*time.Minute, func(url string, client *http.Client, startISO, endISO string) error {
+				handler := NewServiceDependencyGraphHandler(client, apmTestConfig(url))
+				_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServiceDependencyGraphArgs{
+					ServiceName: serviceName, Env: env, StartTimeISO: startISO, EndTimeISO: endISO,
+				})
+				return err
+			})
+		},
+		// Incoming queries filter by server="<svc>"; outgoing/infrastructure
+		// by client="<svc>". Every captured query must carry one or the other.
+		svcMatchers: func(s string) []string {
+			esc := utils.EscapePromQLLabel(s)
+			return []string{`server="` + esc + `"`, `client="` + esc + `"`}
+		},
+		forbiddenDelims:  []string{`server='`, `client='`, `env=~'`, `env='`},
+		injectionPayload: `api'} or trace_call_graph_count{server='other'} or trace_call_graph_count{server='api`,
+	},
 }
 
 // escapeEnvRegexMatcher returns the exact `env=~"<escaped>"` substring.
@@ -200,19 +189,14 @@ func effectiveEnv(env string) string {
 	return env
 }
 
-// everyQueryHasEnvMatcher asserts each query carries the escaped env in either
-// the regex (env=~) or exact (env=) double-quoted form — the three handlers use
-// both styles across different sub-queries.
-func everyQueryHasEnvMatcher(t *testing.T, queries []string, env string) {
-	t.Helper()
-	eff := effectiveEnv(env)
-	wantRE := escapeEnvRegexMatcher(eff)
-	wantEq := escapeEnvExactMatcher(eff)
-	for i, q := range queries {
-		if !strings.Contains(q, wantRE) && !strings.Contains(q, wantEq) {
-			t.Errorf("query %d missing escaped env matcher (%q or %q):\n%s", i, wantRE, wantEq, q)
+// containsAny reports whether q contains at least one of the wants.
+func containsAny(q string, wants []string) bool {
+	for _, w := range wants {
+		if strings.Contains(q, w) {
+			return true
 		}
 	}
+	return false
 }
 
 // safeEscapeInputs are service_name / env values that DO NOT themselves embed
@@ -232,220 +216,105 @@ var safeEscapeInputs = []string{
 	`a\b"c`,     // mix of all three escapables
 }
 
-// ---------------------------------------------------------------------------
-// get_service_performance_details
-// ---------------------------------------------------------------------------
-
-func TestPerformanceDetails_EscapesServiceNameAndEnv(t *testing.T) {
-	for _, svc := range safeEscapeInputs {
-		if svc == "" {
-			continue // performance details requires service_name (tested separately)
-		}
-		for _, env := range safeEscapeInputs {
-			name := "svc=" + svc + "/env=" + env
-			t.Run(name, func(t *testing.T) {
-				queries := runPerfDetailsWithCapture(t, svc, env)
-				if len(queries) == 0 {
-					t.Fatalf("no queries captured")
+// TestAPMHandlers_EscapeServiceNameAndEnv asserts, for each handler and each
+// (service_name, env) input pair, that every rendered query carries the
+// escaped double-quoted matchers and never a single-quote user matcher.
+func TestAPMHandlers_EscapeServiceNameAndEnv(t *testing.T) {
+	for _, h := range escapingHandlers {
+		t.Run(h.name, func(t *testing.T) {
+			for _, svc := range safeEscapeInputs {
+				if svc == "" {
+					continue // service_name is required (rejected before any query renders)
 				}
-				// Every query must filter on the escaped service_name.
-				assertEveryQueryContains(t, queries, escapeSvcMatcher(svc), "service_name")
-				// Every query must filter on the escaped env (regex or exact form).
-				everyQueryHasEnvMatcher(t, queries, env)
-				// No renderer-level single-quote user matcher remains. Safe because
-				// none of these inputs embed those substrings.
-				assertNoQueryContains(t, queries, `service_name='`, "service_name delimiter")
-				assertNoQueryContains(t, queries, `env=~'`, "env=~ delimiter")
-				assertNoQueryContains(t, queries, `env='`, "env= delimiter")
-			})
-		}
-	}
-}
-
-func TestPerformanceDetails_ContainsInjectionInServiceName(t *testing.T) {
-	// The balanced payload from the bug report. Pre-fix this closed the
-	// single-quoted matcher early and injected a second apdex sub-query inside
-	// sum(...). Post-fix the entire payload is one double-quoted literal and
-	// promql-engine-level injection is impossible.
-	payload := `api'} or trace_service_apdex_score{service_name='other'} or trace_service_apdex_score{service_name='api`
-	queries := runPerfDetailsWithCapture(t, payload, "")
-	if len(queries) == 0 {
-		t.Fatalf("no queries captured")
-	}
-	want := escapeSvcMatcher(payload)
-	// At least the apdex query (a range sub-query) must carry the full payload
-	// verbatim inside one double-quoted literal, proving the injection did not
-	// break out of the matcher.
-	found := false
-	for _, q := range queries {
-		if strings.Contains(q, want) {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("no query carried contained injection literal %q:\n%v", want, queries)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// get_service_operations_summary
-// ---------------------------------------------------------------------------
-
-func TestOperationsSummary_EscapesServiceNameAndEnv(t *testing.T) {
-	for _, svc := range safeEscapeInputs {
-		if svc == "" {
-			continue
-		}
-		for _, env := range safeEscapeInputs {
-			name := "svc=" + svc + "/env=" + env
-			t.Run(name, func(t *testing.T) {
-				queries := runOpsSummaryWithCapture(t, svc, env)
-				if len(queries) == 0 {
-					t.Fatalf("no queries captured")
+				for _, env := range safeEscapeInputs {
+					t.Run("svc="+svc+"/env="+env, func(t *testing.T) {
+						queries := h.run(t, svc, env)
+						if len(queries) == 0 {
+							t.Fatalf("no queries captured")
+						}
+						eff := effectiveEnv(env)
+						wantEnv := []string{escapeEnvRegexMatcher(eff), escapeEnvExactMatcher(eff)}
+						for i, q := range queries {
+							if !containsAny(q, h.svcMatchers(svc)) {
+								t.Errorf("query %d missing escaped service matcher (any of %q):\n%s", i, h.svcMatchers(svc), q)
+							}
+							// The handlers use both env matcher styles across
+							// different sub-queries; require one of the two.
+							if !containsAny(q, wantEnv) {
+								t.Errorf("query %d missing escaped env matcher (any of %q):\n%s", i, wantEnv, q)
+							}
+							for _, delim := range h.forbiddenDelims {
+								if strings.Contains(q, delim) {
+									t.Errorf("query %d regressed to single-quote delimiter %q:\n%s", i, delim, q)
+								}
+							}
+						}
+					})
 				}
-				assertEveryQueryContains(t, queries, escapeSvcMatcher(svc), "service_name")
-				everyQueryHasEnvMatcher(t, queries, env)
-				assertNoQueryContains(t, queries, `service_name='`, "service_name delimiter")
-				assertNoQueryContains(t, queries, `env=~'`, "env=~ delimiter")
-				assertNoQueryContains(t, queries, `env='`, "env= delimiter")
-			})
-		}
+			}
+		})
 	}
 }
 
-func TestOperationsSummary_ContainsInjectionInServiceName(t *testing.T) {
-	payload := `api'} or trace_endpoint_count{service_name='other'} or trace_endpoint_count{service_name='api`
-	queries := runOpsSummaryWithCapture(t, payload, "")
-	if len(queries) == 0 {
-		t.Fatalf("no queries captured")
-	}
-	want := escapeSvcMatcher(payload)
-	found := false
-	for _, q := range queries {
-		if strings.Contains(q, want) {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("no query carried contained injection literal %q:\n%v", want, queries)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// get_service_dependency_graph
-// ---------------------------------------------------------------------------
-
-func assertDepGraphServerClientEscaped(t *testing.T, queries []string, serviceName string) {
-	t.Helper()
-	wantServer := `server="` + utils.EscapePromQLLabel(serviceName) + `"`
-	wantClient := `client="` + utils.EscapePromQLLabel(serviceName) + `"`
-	// Incoming queries filter by server="<svc>"; outgoing/infrastructure by
-	// client="<svc>". Every captured query must carry one or the other.
-	for i, q := range queries {
-		if !strings.Contains(q, wantServer) && !strings.Contains(q, wantClient) {
-			t.Errorf("query %d missing escaped server/client matcher (%q or %q):\n%s", i, wantServer, wantClient, q)
-		}
-	}
-}
-
-func TestDependencyGraph_EscapesServiceNameAndEnv(t *testing.T) {
-	for _, svc := range safeEscapeInputs {
-		if svc == "" {
-			continue // dependency graph requires service_name
-		}
-		for _, env := range safeEscapeInputs {
-			name := "svc=" + svc + "/env=" + env
-			t.Run(name, func(t *testing.T) {
-				queries := runDepGraphWithCapture(t, svc, env)
-				if len(queries) == 0 {
-					t.Fatalf("no queries captured")
+// TestAPMHandlers_ContainInjectionPayload renders the balanced breakout
+// payload from the bug report through each handler and asserts it stays inside
+// one double-quoted literal — promql-engine-level injection is impossible.
+func TestAPMHandlers_ContainInjectionPayload(t *testing.T) {
+	for _, h := range escapingHandlers {
+		t.Run(h.name, func(t *testing.T) {
+			queries := h.run(t, h.injectionPayload, "")
+			if len(queries) == 0 {
+				t.Fatalf("no queries captured")
+			}
+			wants := h.svcMatchers(h.injectionPayload)
+			found := false
+			for _, q := range queries {
+				if containsAny(q, wants) {
+					found = true
 				}
-				assertDepGraphServerClientEscaped(t, queries, svc)
-				everyQueryHasEnvMatcher(t, queries, env)
-				assertNoQueryContains(t, queries, `server='`, "server delimiter")
-				assertNoQueryContains(t, queries, `client='`, "client delimiter")
-				assertNoQueryContains(t, queries, `env=~'`, "env=~ delimiter")
-				assertNoQueryContains(t, queries, `env='`, "env= delimiter")
-			})
-		}
+			}
+			if !found {
+				t.Fatalf("no query carried contained injection literal (any of %q):\n%v", wants, queries)
+			}
+		})
 	}
 }
 
-func TestDependencyGraph_ContainsInjectionInServiceName(t *testing.T) {
-	payload := `api'} or trace_call_graph_count{server='other'} or trace_call_graph_count{server='api`
-	queries := runDepGraphWithCapture(t, payload, "")
-	if len(queries) == 0 {
-		t.Fatalf("no queries captured")
-	}
-	wantServer := `server="` + utils.EscapePromQLLabel(payload) + `"`
-	wantClient := `client="` + utils.EscapePromQLLabel(payload) + `"`
-	found := false
-	for _, q := range queries {
-		if strings.Contains(q, wantServer) || strings.Contains(q, wantClient) {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("no query carried contained injection literal (%q or %q):\n%v", wantServer, wantClient, queries)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Happy-path: plain values still produce valid, double-quoted matchers and the
-// handlers complete without error.
-// ---------------------------------------------------------------------------
-
-func TestPerformanceDetails_HappyPathDoubleQuotedMatchers(t *testing.T) {
-	queries := runPerfDetailsWithCapture(t, "checkout", "prod")
-	if len(queries) == 0 {
-		t.Fatalf("no queries captured")
-	}
-	for i, q := range queries {
-		if !strings.Contains(q, `service_name="checkout"`) {
-			t.Errorf("query %d missing service_name=\"checkout\":\n%s", i, q)
-		}
-		if strings.Contains(q, `service_name='`) {
-			t.Errorf("query %d regressed to single-quote matcher:\n%s", i, q)
-		}
-	}
-}
-
-func TestOperationsSummary_HappyPathDoubleQuotedMatchers(t *testing.T) {
-	queries := runOpsSummaryWithCapture(t, "checkout", "prod")
-	if len(queries) == 0 {
-		t.Fatalf("no queries captured")
-	}
-	for i, q := range queries {
-		if !strings.Contains(q, `service_name="checkout"`) {
-			t.Errorf("query %d missing service_name=\"checkout\":\n%s", i, q)
-		}
-		if strings.Contains(q, `service_name='`) {
-			t.Errorf("query %d regressed to single-quote matcher:\n%s", i, q)
-		}
-	}
-}
-
-func TestDependencyGraph_HappyPathDoubleQuotedMatchers(t *testing.T) {
-	queries := runDepGraphWithCapture(t, "checkout", "prod")
-	if len(queries) == 0 {
-		t.Fatalf("no queries captured")
-	}
-	sawServer, sawClient := false, false
-	for _, q := range queries {
-		if strings.Contains(q, `server="checkout"`) {
-			sawServer = true
-		}
-		if strings.Contains(q, `client="checkout"`) {
-			sawClient = true
-		}
-		if strings.Contains(q, `server='`) || strings.Contains(q, `client='`) {
-			t.Errorf("query regressed to single-quote matcher:\n%s", q)
-		}
-	}
-	if !sawServer {
-		t.Errorf("no query filtered by server=\"checkout\"")
-	}
-	if !sawClient {
-		t.Errorf("no query filtered by client=\"checkout\"")
+// TestAPMHandlers_HappyPathDoubleQuotedMatchers asserts plain values still
+// produce valid, double-quoted matchers and the handlers complete without
+// error. For the dependency graph it additionally checks both the server= and
+// client= matcher shapes appear across the query set.
+func TestAPMHandlers_HappyPathDoubleQuotedMatchers(t *testing.T) {
+	for _, h := range escapingHandlers {
+		t.Run(h.name, func(t *testing.T) {
+			queries := h.run(t, "checkout", "prod")
+			if len(queries) == 0 {
+				t.Fatalf("no queries captured")
+			}
+			wants := h.svcMatchers("checkout")
+			seen := make([]bool, len(wants))
+			for i, q := range queries {
+				if !containsAny(q, wants) {
+					t.Errorf("query %d missing escaped service matcher (any of %q):\n%s", i, wants, q)
+				}
+				for wi, w := range wants {
+					if strings.Contains(q, w) {
+						seen[wi] = true
+					}
+				}
+				for _, delim := range h.forbiddenDelims {
+					if strings.Contains(q, delim) {
+						t.Errorf("query %d regressed to single-quote delimiter %q:\n%s", i, delim, q)
+					}
+				}
+			}
+			// Every matcher shape (e.g. both server= and client= for the
+			// dependency graph) must appear somewhere in the query set.
+			for wi, ok := range seen {
+				if !ok {
+					t.Errorf("no query filtered by %q", wants[wi])
+				}
+			}
+		})
 	}
 }

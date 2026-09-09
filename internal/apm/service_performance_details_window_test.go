@@ -22,7 +22,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func perfDetailsTestConfig(serverURL string) models.Config {
+func apmTestConfig(serverURL string) models.Config {
 	return models.Config{
 		APIBaseURL: serverURL,
 		Region:     "ap-south-1",
@@ -269,7 +269,7 @@ func TestServicePerformanceDetails_RejectsWindowOverMaxDays(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
@@ -305,7 +305,7 @@ func TestServicePerformanceDetails_NoChunkingUnder35Days(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
@@ -343,7 +343,7 @@ func TestServicePerformanceDetails_SplitsWiderWindowIntoChunks(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
@@ -409,7 +409,7 @@ func TestServicePerformanceDetails_FailingChunkRecordsPartialErrorButOthersMerge
 	}))
 	defer server.Close()
 
-	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	args := ServicePerformanceDetailsArgs{
 		ServiceName:  "svc",
@@ -485,7 +485,7 @@ func TestServicePerformanceDetails_FailingChunkStillMergesOthers_Throughput(t *t
 	}))
 	defer server.Close()
 
-	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	args := ServicePerformanceDetailsArgs{
 		ServiceName:  "svc",
@@ -555,7 +555,7 @@ func TestServicePerformanceDetails_FailingChunkStillMergesOthers_TopRTQuery(t *t
 	}))
 	defer server.Close()
 
-	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	args := ServicePerformanceDetailsArgs{
 		ServiceName:  "svc",
@@ -630,7 +630,7 @@ func TestServicePerformanceDetails_Exactly366Days_Accepted(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
@@ -658,7 +658,7 @@ func TestServicePerformanceDetails_366DaysPlus1Second_Rejected(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
@@ -712,7 +712,7 @@ func TestServicePerformanceDetails_QueryStrings_SingleChunkUsesRateInterval(t *t
 	}))
 	defer server.Close()
 
-	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
@@ -785,7 +785,7 @@ func TestServicePerformanceDetails_QueryStrings_ChunkedUsesRateIntervalAndChunkW
 	}))
 	defer server.Close()
 
-	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	args := ServicePerformanceDetailsArgs{
 		ServiceName:  "svc",
@@ -915,7 +915,7 @@ func TestServicePerformanceDetails_MultiChunkTopKMergeAtHandlerLevel(t *testing.
 	}))
 	defer server.Close()
 
-	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	args := ServicePerformanceDetailsArgs{
 		ServiceName:  "svc",
@@ -994,7 +994,7 @@ func TestServicePerformanceDetails_ThreeChunkWindow_MergedSeriesOrderedContiguou
 	}))
 	defer server.Close()
 
-	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	args := ServicePerformanceDetailsArgs{
 		ServiceName:  "svc",
@@ -1079,7 +1079,7 @@ func TestServicePerformanceDetails_MalformedJSONChunk_RecordsPartialErrorOthersM
 	}))
 	defer server.Close()
 
-	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	args := ServicePerformanceDetailsArgs{
 		ServiceName:  "svc",
@@ -1154,7 +1154,7 @@ func TestServicePerformanceDetails_TopN(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	for _, windowCase := range []struct {
 		name       string
@@ -1231,7 +1231,7 @@ func TestServicePerformanceDetails_TopNClampsToMax(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := NewServicePerformanceDetailsHandler(server.Client(), perfDetailsTestConfig(server.URL))
+	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 
 	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
@@ -1323,7 +1323,7 @@ func TestServicePerformanceDetails_PerChunkTimeoutOnlyAppliedWhenChunked(t *test
 		transport := &deadlineRecordingTransport{base: http.DefaultTransport}
 		client := &http.Client{Transport: transport}
 
-		handler := NewServicePerformanceDetailsHandler(client, perfDetailsTestConfig(server.URL))
+		handler := NewServicePerformanceDetailsHandler(client, apmTestConfig(server.URL))
 		now := time.Now().UTC()
 		args := ServicePerformanceDetailsArgs{
 			ServiceName:  "svc",
@@ -1355,7 +1355,7 @@ func TestServicePerformanceDetails_PerChunkTimeoutOnlyAppliedWhenChunked(t *test
 		transport := &deadlineRecordingTransport{base: http.DefaultTransport}
 		client := &http.Client{Transport: transport}
 
-		handler := NewServicePerformanceDetailsHandler(client, perfDetailsTestConfig(server.URL))
+		handler := NewServicePerformanceDetailsHandler(client, apmTestConfig(server.URL))
 		now := time.Now().UTC()
 		args := ServicePerformanceDetailsArgs{
 			ServiceName:  "svc",
