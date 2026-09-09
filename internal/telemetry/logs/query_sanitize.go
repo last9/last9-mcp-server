@@ -63,8 +63,9 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 	sanitized := make([]map[string]interface{}, 0, len(stages))
 
 	for stageIndex, stage := range stages {
-		stagePath := fmt.Sprintf("%s[%d]", pathPrefix, stageIndex)
 		sanitizedStage := make(map[string]interface{}, len(stage))
+		stagePath := fmt.Sprintf("%s[%d]", pathPrefix, stageIndex)
+
 		for key, value := range stage {
 			var (
 				sanitizedValue interface{}
