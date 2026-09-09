@@ -446,6 +446,19 @@ func requiresNotificationChannelJoin(args GetAlertConfigArgs) bool {
 		hasActiveNotificationChannelFilters(args)
 }
 
+// isUnconfiguredOnlyRequest reports whether the request is a pure
+// only_without_notification_channel query with no active
+// notification_channel_* filters. Such requests report unconfigured rules
+// exclusively: the handler uses the unconfigured-only count header, skips KPI
+// resolution, and prepends the global-channel advisory. When channel filters
+// are OR-combined with only_without_notification_channel, the result set also
+// contains configured rules matched via the channel-binding branch, so none of
+// those behaviors apply.
+func isUnconfiguredOnlyRequest(args GetAlertConfigArgs) bool {
+	return args.OnlyWithoutNotificationChannel &&
+		!hasActiveNotificationChannelFilters(args)
+}
+
 func hasActiveNotificationChannelFilters(args GetAlertConfigArgs) bool {
 	return len(normalizeNotificationChannelTypes(args.NotificationChannelTypes)) > 0 ||
 		len(normalizeStringSlice(args.NotificationChannelNames)) > 0 ||

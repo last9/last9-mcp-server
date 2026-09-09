@@ -113,9 +113,14 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			channelIndex            map[string][]perEntityChannelBinding
 			entityChannelsByID      map[string][]NotificationChannel
 			globalChannelAdvisory   string
-			unconfiguredOnlyHeader  bool
 			notificationChannelsErr string
 		)
+
+		// See isUnconfiguredOnlyRequest for the semantics. A channel-fetch
+		// failure returns early below whenever this is true (the flag implies
+		// requiresNotificationChannelJoin), so the advisory is always populated
+		// when it is prepended.
+		unconfiguredOnly := isUnconfiguredOnlyRequest(args)
 
 		channels, chErr := fetchNotificationChannels(ctx, client, cfg)
 		if chErr != nil {
@@ -127,9 +132,6 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			channelIndex = buildEntityNotificationChannelIndex(channels)
 			entityChannelsByID = groupPerEntityNotificationChannels(channels)
 			globalChannelAdvisory = formatGlobalNotificationChannelAdvisory(channels)
-			if args.OnlyWithoutNotificationChannel && !hasActiveNotificationChannelFilters(args) {
-				unconfiguredOnlyHeader = true
-			}
 		}
 
 		alertConfig, err := fetchAlertConfig(ctx, client, cfg)
@@ -166,7 +168,7 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			)
 		}
 
-		if !args.OnlyWithoutNotificationChannel {
+		if !unconfiguredOnly {
 			resolveAlertConfigKPIs(ctx, client, cfg, filteredAlertConfig)
 		}
 
@@ -175,9 +177,9 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			entitiesByID,
 			entityChannelsByID,
 			notificationChannelsErr,
-			unconfiguredOnlyHeader,
+			unconfiguredOnly,
 		)
-		if args.OnlyWithoutNotificationChannel {
+		if unconfiguredOnly {
 			formattedResponse = globalChannelAdvisory + "\n" + formattedResponse
 		}
 
