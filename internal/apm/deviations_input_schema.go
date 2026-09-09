@@ -16,7 +16,7 @@ func GetAPMServiceDeviationsInputSchema() map[string]interface{} {
 			},
 			"env": map[string]interface{}{
 				"type":        "string",
-				"description": "Exact environment to compare. Omit to return environments separately; environments are never merged.",
+				"description": "Exact environment to compare (literal string, not a regex — unlike the env parameter on tools such as get_service_summary). Omit to return environments separately; environments are never merged.",
 			},
 			"datasource": map[string]interface{}{
 				"type":        "string",
@@ -25,12 +25,12 @@ func GetAPMServiceDeviationsInputSchema() map[string]interface{} {
 			"start_time_iso": map[string]interface{}{
 				"type":        "string",
 				"format":      "date-time",
-				"description": "Current-window start in RFC3339 format. Must be provided with end_time_iso and cannot be combined with lookback_minutes.",
+				"description": "Current-window start in RFC3339 format, aligned to a whole minute (seconds must be :00, e.g. 2026-09-08T14:05:00Z); unaligned timestamps are rejected. Must be provided with end_time_iso and cannot be combined with lookback_minutes.",
 			},
 			"end_time_iso": map[string]interface{}{
 				"type":        "string",
 				"format":      "date-time",
-				"description": "Current-window end in RFC3339 format. Must be provided with start_time_iso and cannot be combined with lookback_minutes.",
+				"description": "Current-window end in RFC3339 format, aligned to a whole minute (seconds must be :00); unaligned timestamps are rejected. Must be provided with start_time_iso and cannot be combined with lookback_minutes.",
 			},
 			"lookback_minutes": map[string]interface{}{
 				"type":    "number",
@@ -44,19 +44,19 @@ func GetAPMServiceDeviationsInputSchema() map[string]interface{} {
 			"baseline_start_time_iso": map[string]interface{}{
 				"type":        "string",
 				"format":      "date-time",
-				"description": "Explicit baseline start in RFC3339 format. Must be provided with baseline_end_time_iso; the handler validates that baseline and current windows have equal duration.",
+				"description": "Explicit baseline start in RFC3339 format, aligned to a whole minute (seconds must be :00). Must be provided with baseline_end_time_iso; the handler validates that baseline and current windows have equal duration.",
 			},
 			"baseline_end_time_iso": map[string]interface{}{
 				"type":        "string",
 				"format":      "date-time",
-				"description": "Explicit baseline end in RFC3339 format. Must be provided with baseline_start_time_iso; the handler validates that baseline and current windows have equal duration.",
+				"description": "Explicit baseline end in RFC3339 format, aligned to a whole minute (seconds must be :00). Must be provided with baseline_start_time_iso; the handler validates that baseline and current windows have equal duration.",
 			},
 			"max_services": map[string]interface{}{
 				"type":        "integer",
 				"minimum":     float64(1),
 				"maximum":     float64(10),
 				"default":     float64(10),
-				"description": "Maximum fleet services to return, from 1 through 10. Defaults to 10.",
+				"description": "Maximum fleet services to return, from 1 through 10. Defaults to 10. Bounds only the response, not the analysis: deviating identities are always retained through the cap in magnitude-priority order; only stable services are dropped when capacity runs out.",
 			},
 			"max_operations": map[string]interface{}{
 				"type":        "integer",
