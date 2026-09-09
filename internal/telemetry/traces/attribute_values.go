@@ -11,6 +11,7 @@ import (
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -117,7 +118,7 @@ func NewGetTraceAttributeValuesHandler(client *http.Client, cfg models.Config) f
 			TagName:     rawTagName,
 			FilterField: attr.FilterField,
 			Values:      values,
-			Hint:        fmt.Sprintf(`Use filter_field in a tracejson condition. Example: {"$eq": ["%s", "%s"]}`, attr.FilterField, firstOrPlaceholder(values)),
+			Hint:        "Use filter_field in a tracejson condition. Example: " + utils.EQExample(attr.FilterField, firstOrPlaceholder(values)),
 		})
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal result: %v", err)

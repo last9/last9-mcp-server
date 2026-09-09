@@ -703,7 +703,7 @@ func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 		out = append(out, LogAttribute{
 			Name:        name,
 			FilterField: filterField,
-			Hint:        fmt.Sprintf("{\"$eq\":[\"%s\",\"<value>\"]}", filterField),
+			Hint:        utils.EQExample(filterField, "<value>"),
 		})
 	}
 
