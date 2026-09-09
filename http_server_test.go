@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -65,4 +66,51 @@ func TestStatelessStreamableHandler(t *testing.T) {
 			t.Fatalf("got HTTP %d, want 405", resp.StatusCode)
 		}
 	})
+}
+
+// TestHandleHealthReportsBuildVersion pins that /health reports the ldflag
+// Version var, not a hardcoded literal (this regressed once before).
+func TestHandleHealthReportsBuildVersion(t *testing.T) {
+	// Mutates the package-global Version: this test must not run under
+	// t.Parallel() alongside anything that reads Version.
+	const sentinel = "9.9.9-test-version"
+	orig := Version
+	Version = sentinel
+	t.Cleanup(func() { Version = orig })
+
+	// Wire /health exactly as HTTPServer.Start does.
+	h := &HTTPServer{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", h.handleHealth)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/health")
+	if err != nil {
+		t.Fatalf("GET /health failed: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("got status %d, want 200; body: %s", resp.StatusCode, body)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("got Content-Type %q, want application/json", ct)
+	}
+
+	var got map[string]string
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode health body %q: %v", body, err)
+	}
+
+	if got["status"] != "healthy" {
+		t.Errorf("status = %q, want healthy", got["status"])
+	}
+	if got["server"] != "last9-mcp" {
+		t.Errorf("server = %q, want last9-mcp", got["server"])
+	}
+	if got["version"] != sentinel {
+		t.Errorf("version = %q, want %q (the package-level Version var)", got["version"], sentinel)
+	}
 }

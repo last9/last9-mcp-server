@@ -28,6 +28,101 @@ type alertConfigTestServerState struct {
 	entityLookupCalls          int
 	lastEntityRequest          filterAlertGroupEntitiesRequest
 	kpiResponses               map[string]kpiResponse // kpiID → response (empty = 404)
+	emulateUpstreamFilters     bool
+}
+
+func applyUpstreamFilters(
+	groups []groupedAlertGroupEntitiesResponse,
+	req filterAlertGroupEntitiesRequest,
+) []groupedAlertGroupEntitiesResponse {
+	if len(req.Filters) == 0 {
+		return groups
+	}
+
+	orGroups := [][]alertGroupEntityFilter{}
+	current := []alertGroupEntityFilter{}
+	for _, filter := range req.Filters {
+		if filter.Conjunction == "or" && len(current) > 0 {
+			orGroups = append(orGroups, current)
+			current = nil
+		}
+		current = append(current, filter)
+	}
+	if len(current) > 0 {
+		orGroups = append(orGroups, current)
+	}
+
+	out := make([]groupedAlertGroupEntitiesResponse, 0, len(groups))
+	for _, group := range groups {
+		kept := make([]alertGroupEntity, 0, len(group.Entities))
+		for _, entity := range group.Entities {
+			for _, andGroup := range orGroups {
+				matched := true
+				for _, filter := range andGroup {
+					if !matchesUpstreamFilter(entity, filter) {
+						matched = false
+						break
+					}
+				}
+				if matched {
+					kept = append(kept, entity)
+					break
+				}
+			}
+		}
+		out = append(out, groupedAlertGroupEntitiesResponse{Entities: kept})
+	}
+	return out
+}
+
+// matchesUpstreamFilter mirrors Compass entity-filter semantics: non-label
+// columns fold case on both `equal` and `contains`, label key and value do not.
+func matchesUpstreamFilter(entity alertGroupEntity, filter alertGroupEntityFilter) bool {
+	if filter.FilterType == "label" {
+		value, ok := entity.Metadata.Labels[filter.FilterKey]
+		if !ok {
+			return false
+		}
+		switch filter.Operator {
+		case "equal":
+			return value == filter.FilterValue
+		default:
+			return strings.Contains(value, filter.FilterValue)
+		}
+	}
+
+	var column string
+	switch filter.FilterType {
+	case "entity_class":
+		column = entity.EntityClass
+	case "entity_name":
+		column = entity.Name
+	case "entity_type":
+		column = entity.Type
+	case "data_source_name":
+		column = entity.DataSourceName
+	case "team":
+		column = entity.Metadata.Team
+	case "tier":
+		column = entity.Tier
+	case "tags":
+		column = "[" + strings.Join(entity.Metadata.Tags, " ") + "]"
+	default:
+		return false
+	}
+
+	if filter.Operator == "equal" {
+		if filter.FilterType == "tags" {
+			for _, tag := range entity.Metadata.Tags {
+				if strings.EqualFold(tag, filter.FilterValue) {
+					return true
+				}
+			}
+			return false
+		}
+		return strings.EqualFold(column, filter.FilterValue)
+	}
+	return strings.Contains(strings.ToLower(column), strings.ToLower(filter.FilterValue))
 }
 
 func TestGetAlertConfigHandler_RuleOnlyFilters(t *testing.T) {
@@ -514,6 +609,15 @@ func TestGetAlertConfigHandler_EnrichmentFormatting(t *testing.T) {
 		if !strings.Contains(text, "Tags: prod, checkout") {
 			t.Fatalf("expected Tags enrichment, got:\n%s", text)
 		}
+		if !strings.Contains(text, "Team: checkout") {
+			t.Fatalf("expected Team enrichment, got:\n%s", text)
+		}
+		if !strings.Contains(text, "Tier: p1") {
+			t.Fatalf("expected Tier enrichment, got:\n%s", text)
+		}
+		if !strings.Contains(text, "Labels: domain=checkout, env=prod") {
+			t.Fatalf("expected Labels enrichment, got:\n%s", text)
+		}
 		if !strings.Contains(text, "Notification Channels: Not configured") {
 			t.Fatalf("expected Not configured notification channels, got:\n%s", text)
 		}
@@ -643,7 +747,11 @@ func newAlertConfigTestServer(
 			}
 			w.WriteHeader(status)
 			if status == http.StatusOK {
-				_ = json.NewEncoder(w).Encode(state.entityGroups)
+				groups := state.entityGroups
+				if state.emulateUpstreamFilters {
+					groups = applyUpstreamFilters(groups, state.lastEntityRequest)
+				}
+				_ = json.NewEncoder(w).Encode(groups)
 				return
 			}
 			_, _ = w.Write([]byte(`{"error":"entity lookup failed"}`))
@@ -753,8 +861,8 @@ func TestGetAlertConfigHandler_KPIResolution(t *testing.T) {
 				Algorithm:        "static_threshold",
 				RuleName:         "High error rate",
 				ExpressionArgs: map[string]AlertRuleExpressionArg{
-					"errors_total":   {ID: kpiID},   // registered → resolves
-					"requests_total": {ID: kpiID2},  // not registered → 404
+					"errors_total":   {ID: kpiID},  // registered → resolves
+					"requests_total": {ID: kpiID2}, // not registered → 404
 				},
 			},
 		}
@@ -854,24 +962,33 @@ func sampleAlertGroupEntities() []groupedAlertGroupEntitiesResponse {
 					ID:             "entity-1",
 					Name:           "Checkout Alerts",
 					Type:           "grafana-dashboard",
+					EntityClass:    alertGroupEntityClassGrafanaAlerts,
+					Tier:           "p1",
 					DataSourceName: "Grafana Prod",
 					Metadata: alertGroupEntityMetadata{
-						Tags: []string{"prod", "checkout"},
+						Tags:   []string{"prod", "checkout"},
+						Team:   "checkout",
+						Labels: map[string]string{"env": "prod", "domain": "checkout"},
 					},
 				},
 				{
 					ID:             "entity-2",
 					Name:           "Payments Monitor",
 					Type:           "scheduled-search",
+					EntityClass:    alertGroupEntityClassAlertManager,
+					Tier:           "p2",
 					DataSourceName: "Loki Payments",
 					Metadata: alertGroupEntityMetadata{
-						Tags: []string{"payments", "staging"},
+						Tags:   []string{"payments", "staging"},
+						Team:   "payments",
+						Labels: map[string]string{"env": "staging"},
 					},
 				},
 				{
 					ID:             "entity-3",
 					Name:           "Inventory Group",
 					Type:           "alert-group",
+					EntityClass:    alertGroupEntityClassAlertManager,
 					DataSourceName: "Prometheus Inventory",
 					Metadata: alertGroupEntityMetadata{
 						Tags: []string{"inventory", "prod-east"},

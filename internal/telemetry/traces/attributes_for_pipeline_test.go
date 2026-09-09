@@ -90,10 +90,7 @@ func TestGetTraceAttributesForPipeline_UsesSeriesEndpoint(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected forwarded stage to be an object, got: %T", stages[0])
 	}
-	query, ok := stage["query"].(map[string]interface{})
-	if !ok || query["$eq"] == nil {
-		t.Errorf("expected the caller's $eq filter to be forwarded, got stage: %v", stage)
-	}
+	assertServiceNameFilterForwarded(t, stage, "checkout")
 
 	got := map[string]string{}
 	for _, a := range decodeTraceAttributes(t, res) {
@@ -133,5 +130,27 @@ func TestGetTraceAttributesForPipeline_EmptyData(t *testing.T) {
 	}
 	if attrs := decodeTraceAttributes(t, res); len(attrs) != 0 {
 		t.Errorf("expected empty attribute list, got: %v", attrs)
+	}
+}
+
+// SanitizeTraceJSONQuery wraps a bare top-level condition in $and as the tracejson
+// spec requires, so the assertion follows the wrap.
+func assertServiceNameFilterForwarded(t *testing.T, stage map[string]interface{}, wantService string) {
+	t.Helper()
+	query, ok := stage["query"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected a query object on the forwarded stage, got stage: %v", stage)
+	}
+	conditions, ok := query["$and"].([]interface{})
+	if !ok || len(conditions) != 1 {
+		t.Fatalf("expected the caller's filter wrapped in a single-element $and, got query: %v", query)
+	}
+	condition, ok := conditions[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected the wrapped condition to be an object, got: %T", conditions[0])
+	}
+	args, ok := condition["$eq"].([]interface{})
+	if !ok || len(args) != 2 || args[0] != "ServiceName" || args[1] != wantService {
+		t.Errorf("expected the caller's $eq [ServiceName %s] to be forwarded, got condition: %v", wantService, condition)
 	}
 }

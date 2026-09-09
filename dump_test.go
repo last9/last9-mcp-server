@@ -44,7 +44,7 @@ func TestDumpTools(t *testing.T) {
 	for i, tool := range out.Tools {
 		byName[tool.Name] = i
 	}
-	for _, name := range []string{"get_traces", "get_service_summary", "prometheus_label_values", "get_logs"} {
+	for _, name := range []string{"get_traces", "get_service_summary", "prometheus_label_values", "get_logs", "get_alert_groups"} {
 		i, ok := byName[name]
 		if !ok {
 			t.Fatalf("tool %q missing from dump", name)
@@ -332,13 +332,39 @@ func TestDumpToolsInvestigate(t *testing.T) {
 			t.Errorf("investigate dump missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots"} {
+	for _, deny := range []string{"get_alerts", "get_alert_groups", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots"} {
 		if byName[deny] {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}
 	}
 	if len(out.Tools) >= 38 {
 		t.Fatalf("investigate should expose fewer than full surface; got %d", len(out.Tools))
+	}
+}
+
+func TestDumpToolsDashboardWriteSteer(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, nil); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	byName := make(map[string]string, len(out.Tools))
+	for _, tool := range out.Tools {
+		byName[tool.Name] = tool.Description
+	}
+	if got, want := byName["create_dashboard"], prompts.CreateDashboardDescription; got != want {
+		t.Errorf("served create_dashboard description != embed\ngot:  %q\nwant: %q", got, want)
+	}
+	if got, want := byName["update_dashboard"], prompts.UpdateDashboardDescription; got != want {
+		t.Errorf("served update_dashboard description != embed\ngot:  %q\nwant: %q", got, want)
 	}
 }
 

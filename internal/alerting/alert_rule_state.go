@@ -40,11 +40,23 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 			return utils.ToolErrorResult("step must be greater than 0"), nil, nil
 		}
 
-		// Inclusive sample count: t iterates start, start+step, ..., end.
-		points := (args.EndTime-args.StartTime)/args.Step + 1
-		if points > alertRuleStateMaxPoints {
-			return utils.ToolErrorResult(fmt.Sprintf("time range and step result in too many points (%d). Maximum is %d", points, alertRuleStateMaxPoints)), nil, nil
+		// Guard against int64 overflow in (end_time - start_time). For a valid,
+		// in-range window the span is always non-negative; a negative span here
+		// means the subtraction wrapped (e.g. endpoints near ±2^63), which would
+		// otherwise let the sample cap below be bypassed and the sampling loop
+		// run far beyond the documented 100-sample limit.
+		span := args.EndTime - args.StartTime
+		if span < 0 {
+			return utils.ToolErrorResult("time range is too large (end_time - start_time overflows int64)"), nil, nil
 		}
+
+		// Inclusive sample count: t iterates start, start+step, ..., end.
+		// Compare before the +1 so the count can never wrap: with span >= 0 and
+		// step >= 1, span/step itself cannot overflow.
+		if span/args.Step >= alertRuleStateMaxPoints {
+			return utils.ToolErrorResult(fmt.Sprintf("time range and step result in too many points. Maximum is %d", alertRuleStateMaxPoints)), nil, nil
+		}
+		points := span/args.Step + 1
 
 		type Datapoint struct {
 			Timestamp int64 `json:"timestamp"`
@@ -56,7 +68,11 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 
 		tokenMgr := cfg.TokenManager
 
-		for t := args.StartTime; t <= args.EndTime; t += args.Step {
+		// Index-bounded by the validated `points` so the loop terminates by
+		// construction; a value-bounded `t <= end_time` loop can run unbounded
+		// when the span arithmetic overflows.
+		for i := int64(0); i < points; i++ {
+			t := args.StartTime + i*args.Step
 			queryParams := url.Values{}
 			queryParams.Set("timestamp", fmt.Sprintf("%d", t))
 			queryParams.Set("window", fmt.Sprintf("%d", args.Step))
@@ -128,7 +144,8 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 		finalResults := make(map[string][]Datapoint)
 		for ruleID, tsMap := range results {
 			var dps []Datapoint
-			for t := args.StartTime; t <= args.EndTime; t += args.Step {
+			for i := int64(0); i < points; i++ {
+				t := args.StartTime + i*args.Step
 				dps = append(dps, Datapoint{
 					Timestamp: t,
 					IsFiring:  tsMap[t],

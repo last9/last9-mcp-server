@@ -72,7 +72,7 @@ func TestTraceAttributeDeviationsHandlerCallsAtomicEndpoint(t *testing.T) {
 		w.Write([]byte(`{"contract_version":"investigation-evidence/v1","analysis_version":"trace-attribute-deviations/v1"}`))
 	}))
 	defer server.Close()
-	handler := NewGetTraceAttributeDeviationsHandler(server.Client(), deviationTestConfig(server.URL))
+	handler := NewGetTraceAttributeDeviationsHandler(server.Client(), tracesTestConfig(server.URL))
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeDeviationsArgs{
 		ComparisonMode: "errors", ServiceName: "last9-api", Environment: "production",
 	})
@@ -92,7 +92,7 @@ func TestTraceAttributeDeviationsHandlerDoesNotEchoServerErrorBody(t *testing.T)
 		w.Write([]byte(`{"code":"query_timeout","detail":"attribute deviation query timed out"}`))
 	}))
 	defer server.Close()
-	handler := NewGetTraceAttributeDeviationsHandler(server.Client(), deviationTestConfig(server.URL))
+	handler := NewGetTraceAttributeDeviationsHandler(server.Client(), tracesTestConfig(server.URL))
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeDeviationsArgs{
 		ComparisonMode: "errors", ServiceName: "last9-api", Environment: "production",
 	})
@@ -116,7 +116,7 @@ func TestTraceAttributeDeviationsHandlerRelaysSanitizedBadRequestBody(t *testing
 		w.Write([]byte(`{"code":"invalid_filter","detail":"unknown field xyz"}`))
 	}))
 	defer server.Close()
-	handler := NewGetTraceAttributeDeviationsHandler(server.Client(), deviationTestConfig(server.URL))
+	handler := NewGetTraceAttributeDeviationsHandler(server.Client(), tracesTestConfig(server.URL))
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeDeviationsArgs{
 		ComparisonMode: "errors", ServiceName: "last9-api", Environment: "production",
 	})
@@ -243,7 +243,9 @@ func TestDeviationLookbackMinutesRejectsOutOfRangeValues(t *testing.T) {
 	}
 }
 
-func deviationTestConfig(baseURL string) models.Config {
+// tracesTestConfig is the package-wide mock config builder for
+// httptest-backed handler tests.
+func tracesTestConfig(baseURL string) models.Config {
 	return models.Config{
 		APIBaseURL: baseURL,
 		Region:     "test",

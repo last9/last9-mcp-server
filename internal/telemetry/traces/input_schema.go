@@ -4,6 +4,44 @@ func stringEnum(values ...string) map[string]interface{} {
 	return map[string]interface{}{"type": "string", "enum": values}
 }
 
+func GetTraceWaterfallInputSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"trace_id"},
+		"properties": map[string]interface{}{
+			"trace_id": map[string]interface{}{
+				"type":        "string",
+				"description": "(Required) Exact 32-character hexadecimal OpenTelemetry trace ID.",
+			},
+			"environment": map[string]interface{}{
+				"type":        []string{"string", "null"},
+				"description": "Optional exact deployment.environment value",
+			},
+			"start_time_iso": map[string]interface{}{
+				"type":        []string{"string", "null"},
+				"description": "Start time in RFC3339",
+			},
+			"end_time_iso": map[string]interface{}{
+				"type":        []string{"string", "null"},
+				"description": "End time in RFC3339",
+			},
+			"lookback_minutes": map[string]interface{}{
+				"type":        []string{"integer", "null"},
+				"description": "Lookback ending now; default 4320 minutes",
+			},
+			"selected_span_id": map[string]interface{}{
+				"type":        []string{"string", "null"},
+				"description": "Optional 16-character hexadecimal OpenTelemetry span ID whose attributes, events, and links should be returned.",
+			},
+			"max_spans": map[string]interface{}{
+				"type":        []string{"integer", "null"},
+				"description": "Maximum spans; default 500, maximum 1000",
+			},
+		},
+	}
+}
+
 // GetTracesInputSchema returns a hand-crafted JSON Schema for the get_traces tool.
 // This replaces the auto-generated schema from GetTracesArgs so that tracejson_query
 // items have a detailed oneOf definition — constraining the LLM to use correct field
