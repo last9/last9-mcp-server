@@ -492,7 +492,7 @@ func TestGetLogAttributesForPipeline_IndexedLevelFieldNotHijackedBySeverityToken
 	if level == nil {
 		t.Fatalf("expected indexed 'level' entry, got: %v", attrs)
 	}
-	if level.Hint != `{"$eq":["attributes['level']","<value>"]}` {
+	if level.Hint != `{"$eq": ["attributes['level']", "<value>"]}` {
 		t.Errorf("indexed level entry must keep its bare $eq hint, got: %s", level.Hint)
 	}
 	if level.Source == "body" {

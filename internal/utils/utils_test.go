@@ -1,12 +1,39 @@
 package utils
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	"last9-mcp/internal/models"
 )
+
+func TestEQExample_RoundTripsThroughJSONForTrickyInputs(t *testing.T) {
+	tests := []struct {
+		name, field, value string
+	}{
+		{"double_quote", `attr"quote`, `foo"bar`},
+		{"backslash", `events_x\y`, `C:\windows`},
+		{"newline", "field\nname", "val\nue"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			example := EQExample(tt.field, tt.value)
+
+			var m struct {
+				Eq []string `json:"$eq"`
+			}
+			if err := json.Unmarshal([]byte(example), &m); err != nil {
+				t.Fatalf("EQExample(%q, %q) = %q, not valid JSON: %v", tt.field, tt.value, example, err)
+			}
+			if len(m.Eq) != 2 || m.Eq[0] != tt.field || m.Eq[1] != tt.value {
+				t.Errorf("EQExample(%q, %q) round-tripped to %v", tt.field, tt.value, m.Eq)
+			}
+		})
+	}
+}
 
 func TestGetTimeRange_TimezoneHandling(t *testing.T) {
 	tests := []struct {
@@ -436,5 +463,13 @@ func TestValidatePopulatedDatasourceCfg(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "missing required properties") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestEQExample_DoesNotHTMLEscape(t *testing.T) {
+	got := EQExample("attributes['http.url']", "<value>&x")
+	want := `{"$eq": ["attributes['http.url']", "<value>&x"]}`
+	if got != want {
+		t.Fatalf("EQExample = %s, want %s", got, want)
 	}
 }
