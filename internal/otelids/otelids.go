@@ -35,7 +35,6 @@ func normalizeHex(s string, wantLen int) (string, bool) {
 		return "", false
 	}
 	out := make([]byte, wantLen)
-	allZero := true
 	for i := 0; i < wantLen; i++ {
 		c := s[i]
 		if !isHex(c) {
@@ -45,12 +44,6 @@ func normalizeHex(s string, wantLen int) (string, bool) {
 			c += 'a' - 'A'
 		}
 		out[i] = c
-		if c != '0' {
-			allZero = false
-		}
-	}
-	if allZero {
-		return "", false
 	}
 	return string(out), true
 }
@@ -78,18 +71,10 @@ func NormalizeTraceID(raw string) (string, error) {
 			Message:  "trace_id is required and must be a 32-character hexadecimal OpenTelemetry trace ID",
 		}
 	}
-	if len(s) == SpanIDHexLen {
-		if _, ok := normalizeHex(s, SpanIDHexLen); ok || isAllZeroHex(s) {
-			return "", &Error{
-				Category: CategorySpanIDAsTraceID,
-				Message:  "received a span ID where a trace ID is required",
-			}
-		}
-	}
-	if isAllZeroHex(s) && len(s) == TraceIDHexLen {
+	if _, ok := normalizeHex(s, SpanIDHexLen); ok {
 		return "", &Error{
-			Category: CategoryAllZeroID,
-			Message:  "trace_id must be a non-zero 32-character hexadecimal OpenTelemetry trace ID",
+			Category: CategorySpanIDAsTraceID,
+			Message:  "received a span ID where a trace ID is required",
 		}
 	}
 	normalized, ok := normalizeHex(s, TraceIDHexLen)
@@ -97,6 +82,12 @@ func NormalizeTraceID(raw string) (string, error) {
 		return "", &Error{
 			Category: CategoryInvalidTraceID,
 			Message:  "trace_id must be a 32-character hexadecimal OpenTelemetry trace ID",
+		}
+	}
+	if isAllZeroHex(normalized) {
+		return "", &Error{
+			Category: CategoryAllZeroID,
+			Message:  "trace_id must be a non-zero 32-character hexadecimal OpenTelemetry trace ID",
 		}
 	}
 	return normalized, nil
@@ -112,17 +103,17 @@ func NormalizeSpanID(raw string) (string, error) {
 			Message:  "span_id must be a 16-character hexadecimal OpenTelemetry span ID",
 		}
 	}
-	if isAllZeroHex(s) && len(s) == SpanIDHexLen {
-		return "", &Error{
-			Category: CategoryAllZeroID,
-			Message:  "span_id must be a non-zero 16-character hexadecimal OpenTelemetry span ID",
-		}
-	}
 	normalized, ok := normalizeHex(s, SpanIDHexLen)
 	if !ok {
 		return "", &Error{
 			Category: CategoryInvalidSpanID,
 			Message:  "span_id must be a 16-character hexadecimal OpenTelemetry span ID",
+		}
+	}
+	if isAllZeroHex(normalized) {
+		return "", &Error{
+			Category: CategoryAllZeroID,
+			Message:  "span_id must be a non-zero 16-character hexadecimal OpenTelemetry span ID",
 		}
 	}
 	return normalized, nil
