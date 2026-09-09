@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Trace tools reject malformed OpenTelemetry identifiers locally instead of forwarding them. A 16-character span ID passed as `trace_id` to `get_trace_waterfall` or `get_service_traces` now names the mistake instead of returning an upstream `HTTP 400 Invalid traceId`, uppercase trace IDs are folded to lowercase rather than rejected, and a malformed ID in a `get_traces` equality filter errors instead of returning an empty result (#211).
+- Trace and log tools reject malformed OpenTelemetry identifiers locally instead of forwarding them. A 16-character span ID passed as `trace_id` now names the mistake instead of returning an upstream `HTTP 400 Invalid traceId`, and uppercase IDs are folded to lowercase. Malformed IDs in a filter error instead of silently matching nothing — in `get_traces` on all four exact-match operators, on the log pipeline's `TraceId`/`SpanId`/`ParentSpanId` fields, and in the previously unvalidated pipelines of `get_trace_attributes_for_pipeline`, `get_trace_attribute_values`, and `get_trace_attribute_deviations`. Substring and regex operators still match partial IDs (#211).
 
 - `get_drop_rules` and `add_drop_rule` now route non-2xx `/otel_settings/drop` responses through the shared upstream sanitizer (URL/credential redaction, 512-byte truncation with `… (truncated)`, body drained and omitted for 5xx and other non-400/422) instead of echoing the raw body via an unbounded `io.ReadAll` into the tool error surfaced to the model. This matches the `get_logs` / `get_service_logs` contract (#237).
 

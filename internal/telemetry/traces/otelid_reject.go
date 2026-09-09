@@ -10,7 +10,7 @@ import (
 func rejectOTelID(tool string, err error) error {
 	var idErr *otelids.Error
 	if errors.As(err, &idErr) {
-		slog.Error("tool input rejected", "tool", tool, "category", idErr.Category)
+		slog.Warn("tool input rejected", "tool", tool, "category", idErr.Category)
 	}
 	return err
 }

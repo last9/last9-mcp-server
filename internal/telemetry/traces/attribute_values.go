@@ -53,6 +53,10 @@ func NewGetTraceAttributeValuesHandler(client *http.Client, cfg models.Config) f
 
 		// The label-values endpoint requires a POST with a pipeline body (same as series).
 		// Scope to the caller's pipeline when provided; otherwise discover globally.
+		if err := SanitizeTraceJSONQuery(args.Pipeline); err != nil {
+			return nil, nil, err
+		}
+
 		stages := args.Pipeline
 		if len(stages) == 0 {
 			stages = []map[string]interface{}{

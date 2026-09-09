@@ -85,6 +85,24 @@ func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 	return nil
 }
 
+// SanitizeTraceFilterConditions is SanitizeTraceJSONQuery without the top-level
+// $and wrap: each element is already one condition inside a filters array, so
+// wrapping would misplace it.
+func SanitizeTraceFilterConditions(conditions []map[string]interface{}, pathPrefix string) error {
+	for i, condition := range conditions {
+		path := fmt.Sprintf("%s[%d]", pathPrefix, i)
+		rewriteBrokenExistenceOperators(condition)
+		rewriteLegacyDotNotationFields(condition)
+		if err := validateTraceFilterCondition(condition, path); err != nil {
+			return err
+		}
+		if err := validateFilterFields(condition, path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // wrapTopLevelFilterQuery ensures the top-level filter query is wrapped in a
 // logical operator, as the tracejson spec requires. A query that is already a
 // single logical operator ($and/$or/$not) is returned unchanged; anything else
@@ -231,16 +249,23 @@ func validateFilterFields(value interface{}, path string) error {
 	return nil
 }
 
-// Positive equality only: $notnull is rewritten to $neq against "", and
-// substring/regex operators match partial IDs.
+// Exact-match operators only: substring/regex operators legitimately match
+// partial IDs, so validating their operands would reject valid queries.
 var traceIDEqualityOperators = map[string]struct{}{
-	"$eq":  {},
-	"$ieq": {},
+	"$eq":   {},
+	"$ieq":  {},
+	"$ineq": {},
+	"$neq":  {},
 }
 
 func normalizeOTelIDArg(field string, args []interface{}, path string) error {
 	id, ok := args[1].(string)
 	if !ok {
+		return nil
+	}
+	// An empty operand is the existence idiom, not an ID: rewriteBrokenExistenceOperators
+	// turns $notnull into {"$neq": [field, ""]} before validation runs.
+	if id == "" {
 		return nil
 	}
 	switch field {
