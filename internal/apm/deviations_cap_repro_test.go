@@ -2,7 +2,9 @@ package apm
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"last9-mcp/internal/models"
@@ -191,6 +193,51 @@ func TestLimitDeviationResultRespectsLeaderboardPriorityOrder(t *testing.T) {
 	}
 	if followupService != "svc-a" {
 		t.Fatalf("fleet follow-up targets %q, want svc-a (reliability priority)", followupService)
+	}
+}
+
+// TestDeviationHandlerWarnsOnHighOperationCardinality confirms the guardrail
+// for the pre-filter removal in operation scope: when a service reports more
+// distinct span names than the warning threshold, the response carries an
+// instrumentation-cardinality warning.
+func TestDeviationHandlerWarnsOnHighOperationCardinality(t *testing.T) {
+	deps := testDeviationHandlerDeps()
+	calls := 0
+	deps.execute = func(_ context.Context, _ deviationQueryRunner, _ deviationQueryPlan) deviationQueryExecution {
+		calls++
+		if calls == 1 {
+			// Service scope: one regressed service so operations are queried.
+			return deviationQueryExecution{
+				Current:  deviationQueryResult{Records: []deviationAggregate{aggregate("api", "prod", "", 600, 6, 60, 6, 420, 600, 6, 250, 300, 350, 400, 6)}},
+				Baseline: deviationQueryResult{Records: []deviationAggregate{aggregate("api", "prod", "", 600, 6, 6, 6, 570, 600, 6, 80, 100, 120, 130, 6)}},
+			}
+		}
+		// Operation scope: threshold+1 distinct span names.
+		var current, baseline []deviationAggregate
+		for i := 0; i <= operationCardinalityWarningThreshold; i++ {
+			span := fmt.Sprintf("GET /orders/%d", i)
+			current = append(current, aggregate("api", "prod", span, 10, 6, 1, 6, 9, 10, 6, 80, 100, 120, 130, 6))
+			baseline = append(baseline, aggregate("api", "prod", span, 10, 6, 1, 6, 9, 10, 6, 80, 100, 120, 130, 6))
+		}
+		return deviationQueryExecution{Current: deviationQueryResult{Records: current}, Baseline: deviationQueryResult{Records: baseline}}
+	}
+	handler := newAPMServiceDeviationsHandler(http.DefaultClient, models.Config{}, deps)
+	args := sixMinuteDeviationArgs()
+	args.ServiceName = "api"
+	args.Env = "prod"
+	response := callDeviationHandler(t, handler, args)
+
+	if calls != 2 {
+		t.Fatalf("calls = %d, want 2 (service then operations)", calls)
+	}
+	found := false
+	for _, w := range response.Warnings {
+		if strings.Contains(w, "distinct span names") && strings.Contains(w, "instrumentation") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("cardinality warning missing: %+v", response.Warnings)
 	}
 }
 

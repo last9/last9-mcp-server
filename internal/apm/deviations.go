@@ -185,6 +185,10 @@ func newAPMServiceDeviationsHandler(client *http.Client, baseCfg models.Config, 
 				result.Warnings = append(result.Warnings, "Operation correlation was unavailable.")
 			} else {
 				result.PartialErrors = append(result.PartialErrors, publicDeviationErrors(opExecution.Errors)...)
+				if n := distinctOperationIdentities(opExecution); n > operationCardinalityWarningThreshold {
+					result.Warnings = append(result.Warnings, fmt.Sprintf(
+						"Operation analysis parsed %d distinct span names for this service; high span-name cardinality slows this tool and usually means unbounded span names (for example URLs with embedded IDs) — check the service's instrumentation.", n))
+				}
 				result.OperationCorrelations = correlateOperations(result, opExecution, windows, maxOperations)
 				result.OperationApdexReconciliations = reconcileOperationApdex(result, opExecution, windows, maxOperations)
 			}
@@ -776,6 +780,27 @@ func leadingDeviationIdentity(result apmDeviationResult) (LeaderboardEntry, bool
 		return LeaderboardEntry{ServiceName: change.ServiceName, Env: change.Env}, true
 	}
 	return LeaderboardEntry{}, false
+}
+
+// operationCardinalityWarningThreshold is the distinct span-name count above
+// which the operation-scope analysis warns about instrumentation cardinality.
+// Since the candidate pre-filter was removed, operation queries return every
+// span name of the service, so an unbounded span-name space (URLs with
+// embedded IDs) is the main realistic cost amplifier of a scoped call.
+const operationCardinalityWarningThreshold = 500
+
+// distinctOperationIdentities counts the distinct span names observed across
+// both windows of the operation-scope execution.
+func distinctOperationIdentities(execution deviationQueryExecution) int {
+	names := map[string]struct{}{}
+	for _, records := range [][]deviationAggregate{execution.Current.Records, execution.Baseline.Records} {
+		for _, record := range records {
+			if record.SpanName != "" {
+				names[record.SpanName] = struct{}{}
+			}
+		}
+	}
+	return len(names)
 }
 
 // hasRejectedDeviationErrors reports whether any partial error came from the
