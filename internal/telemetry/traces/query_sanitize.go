@@ -247,13 +247,13 @@ func normalizeOTelIDArg(field string, args []interface{}, path string) error {
 	case "TraceId":
 		normalized, err := otelids.NormalizeTraceID(id)
 		if err != nil {
-			return fmt.Errorf("%s[1]: %w", path, err)
+			return fmt.Errorf("%s[1]: %w", path, rejectOTelID("get_traces", err))
 		}
 		args[1] = normalized
 	case "SpanId", "ParentSpanId":
 		normalized, err := otelids.NormalizeSpanID(id)
 		if err != nil {
-			return fmt.Errorf("%s[1]: %w", path, err)
+			return fmt.Errorf("%s[1]: %w", path, rejectOTelID("get_traces", err))
 		}
 		args[1] = normalized
 	}

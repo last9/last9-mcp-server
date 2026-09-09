@@ -150,13 +150,13 @@ func NewGetTraceWaterfallHandler(client *http.Client, cfg models.Config) func(co
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args GetTraceWaterfallArgs) (*mcp.CallToolResult, any, error) {
 		traceID, err := otelids.NormalizeTraceID(args.TraceID)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, rejectOTelID("get_trace_waterfall", err)
 		}
 		args.TraceID = traceID
 		if args.SelectedSpanID != "" {
 			spanID, err := otelids.NormalizeSpanID(args.SelectedSpanID)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, rejectOTelID("get_trace_waterfall", err)
 			}
 			args.SelectedSpanID = spanID
 		}

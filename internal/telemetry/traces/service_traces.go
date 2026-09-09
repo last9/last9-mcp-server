@@ -141,7 +141,7 @@ func parseGetServiceTraceParams(args GetServiceTracesArgs, cfg models.Config) (*
 	if args.TraceID != "" {
 		normalized, err := otelids.NormalizeTraceID(args.TraceID)
 		if err != nil {
-			return nil, err
+			return nil, rejectOTelID("get_service_traces", err)
 		}
 		queryParams.TraceID = normalized
 		queryParams.LookbackMinutes = TraceIDLookbackMinutesDefault
