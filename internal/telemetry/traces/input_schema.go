@@ -13,7 +13,6 @@ func GetTraceWaterfallInputSchema() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"trace_id": map[string]interface{}{
 				"type":        "string",
-				"pattern":     "^[0-9a-fA-F]{32}$",
 				"description": "(Required) Exact 32-character hexadecimal OpenTelemetry trace ID.",
 			},
 			"environment": map[string]interface{}{
@@ -34,7 +33,6 @@ func GetTraceWaterfallInputSchema() map[string]interface{} {
 			},
 			"selected_span_id": map[string]interface{}{
 				"type":        []string{"string", "null"},
-				"pattern":     "^[0-9a-fA-F]{16}$",
 				"description": "Optional 16-character hexadecimal OpenTelemetry span ID whose attributes, events, and links should be returned.",
 			},
 			"max_spans": map[string]interface{}{

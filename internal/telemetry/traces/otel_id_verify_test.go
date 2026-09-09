@@ -149,15 +149,31 @@ func TestGetTraces_InvalidExactTraceIDMakesZeroUpstreamRequests(t *testing.T) {
 	}
 }
 
-func TestGetTraceWaterfallInputSchemaHasIDPatterns(t *testing.T) {
+func TestGetTraceWaterfallInputSchemaOmitsIDPatterns(t *testing.T) {
+	// A schema pattern is validated by the SDK before the handler runs, and its
+	// regex message replaces the actionable one NormalizeTraceID produces.
 	schema := GetTraceWaterfallInputSchema()
 	props := schema["properties"].(map[string]interface{})
-	traceID := props["trace_id"].(map[string]interface{})
-	if traceID["pattern"] != "^[0-9a-fA-F]{32}$" {
-		t.Fatalf("trace_id pattern = %v", traceID["pattern"])
+	for _, field := range []string{"trace_id", "selected_span_id"} {
+		if p, ok := props[field].(map[string]interface{})["pattern"]; ok {
+			t.Fatalf("%s must not carry a schema pattern, got %v", field, p)
+		}
 	}
-	spanID := props["selected_span_id"].(map[string]interface{})
-	if spanID["pattern"] != "^[0-9a-fA-F]{16}$" {
-		t.Fatalf("selected_span_id pattern = %v", spanID["pattern"])
+}
+
+func TestSpanIDAsTraceIDKeepsActionableMessage(t *testing.T) {
+	server, n := countingTraceDetailsServer(t)
+	handler := NewGetTraceWaterfallHandler(server.Client(), verifyTraceCfg(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceWaterfallArgs{
+		TraceID: eng1728SpanIDAsTraceID,
+	})
+	if err == nil {
+		t.Fatal("expected rejection")
+	}
+	if !strings.Contains(err.Error(), "span ID where a trace ID is required") {
+		t.Fatalf("error must name the span-ID mistake, got: %v", err)
+	}
+	if got := n.Load(); got != 0 {
+		t.Fatalf("expected zero upstream requests, got %d", got)
 	}
 }
