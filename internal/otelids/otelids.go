@@ -15,8 +15,7 @@ const (
 	CategoryAllZeroID       = "all_zero_id"
 )
 
-// Error is a local validation failure. Message never includes the identifier
-// so logs and metrics cannot leak customer IDs.
+// Message never includes the identifier so logs and metrics cannot leak customer IDs.
 type Error struct {
 	Category string
 	Message  string
@@ -60,9 +59,7 @@ func isAllZeroHex(s string) bool {
 	return true
 }
 
-// NormalizeTraceID accepts a 32-character hexadecimal OpenTelemetry trace ID.
-// Uppercase hex is folded to lowercase. A 16-hex value is rejected as a span ID
-// supplied where a trace ID is required.
+// Uppercase is folded rather than rejected: the trace-detail API 400s on uppercase hex.
 func NormalizeTraceID(raw string) (string, error) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
@@ -93,8 +90,6 @@ func NormalizeTraceID(raw string) (string, error) {
 	return normalized, nil
 }
 
-// NormalizeSpanID accepts a 16-character hexadecimal OpenTelemetry span ID.
-// Uppercase hex is folded to lowercase.
 func NormalizeSpanID(raw string) (string, error) {
 	s := strings.TrimSpace(raw)
 	if s == "" {

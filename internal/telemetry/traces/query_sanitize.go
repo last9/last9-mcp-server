@@ -219,7 +219,7 @@ func validateFilterFields(value interface{}, path string) error {
 					if err := validateFieldSyntax(fieldStr, fmt.Sprintf("%s.%s[0]", path, key)); err != nil {
 						return err
 					}
-					if key == "$eq" && len(args) == 2 {
+					if _, isEquality := traceIDEqualityOperators[key]; isEquality && len(args) == 2 {
 						if err := normalizeOTelIDArg(fieldStr, args, path+"."+key); err != nil {
 							return err
 						}
@@ -229,6 +229,13 @@ func validateFilterFields(value interface{}, path string) error {
 		}
 	}
 	return nil
+}
+
+// Positive equality only: $notnull is rewritten to $neq against "", and
+// substring/regex operators match partial IDs.
+var traceIDEqualityOperators = map[string]struct{}{
+	"$eq":  {},
+	"$ieq": {},
 }
 
 func normalizeOTelIDArg(field string, args []interface{}, path string) error {

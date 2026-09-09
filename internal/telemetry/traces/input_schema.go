@@ -4,8 +4,7 @@ func stringEnum(values ...string) map[string]interface{} {
 	return map[string]interface{}{"type": "string", "enum": values}
 }
 
-// GetTraceWaterfallInputSchema is the served schema for get_trace_waterfall.
-// Runtime validation in NewGetTraceWaterfallHandler remains authoritative.
+// Advisory only; NewGetTraceWaterfallHandler remains the authoritative check.
 func GetTraceWaterfallInputSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":                 "object",
@@ -15,7 +14,7 @@ func GetTraceWaterfallInputSchema() map[string]interface{} {
 			"trace_id": map[string]interface{}{
 				"type":        "string",
 				"pattern":     "^[0-9a-fA-F]{32}$",
-				"description": "(Required) Exact 32-character hexadecimal OpenTelemetry trace ID. A 16-character span ID is rejected locally.",
+				"description": "(Required) Exact 32-character hexadecimal OpenTelemetry trace ID.",
 			},
 			"environment": map[string]interface{}{
 				"type":        []string{"string", "null"},
@@ -36,7 +35,7 @@ func GetTraceWaterfallInputSchema() map[string]interface{} {
 			"selected_span_id": map[string]interface{}{
 				"type":        []string{"string", "null"},
 				"pattern":     "^[0-9a-fA-F]{16}$",
-				"description": "Optional 16-character hexadecimal span ID whose attributes, events, and links should be returned",
+				"description": "Optional 16-character hexadecimal OpenTelemetry span ID whose attributes, events, and links should be returned.",
 			},
 			"max_spans": map[string]interface{}{
 				"type":        []string{"integer", "null"},
