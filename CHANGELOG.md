@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `validate_dashboard`: read-only lint + execute + classify for a saved dashboard id or inline `dashboard_definition` over a ≤24h window. Returns `dashboard_validation/v1` (same contract as the supervisor skill). Dry run — never creates/updates dashboards. Day-1 empty results are `valid_no_data` without diagnose probes.
 - `get_alert_groups`: lists configured Compass alert groups with team, tier, metadata labels, and rule counts — including groups with zero rules and groups that are not currently firing. `get_alert_config` rule rows now also print team, tier, and labels when those fields are set.
 - `last9://reference/investigation`: an MCP resource documenting the profile-first investigation flow.
 - `get_service_profile` returns a per-service telemetry profile — signal presence, language/runtime, deployment envs, log `signal_shape`, and a recommended ingest fix — as a short brief followed by raw JSON. Call it before a service-scoped investigation to skip trace tools when traces are absent and to parse severity from the log body when `severity_set` is `none` or `partial`.

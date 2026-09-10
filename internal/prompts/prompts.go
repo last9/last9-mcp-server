@@ -122,6 +122,9 @@ var ListDashboardsDescription string
 //go:embed descriptions/get_dashboard.md
 var GetDashboardDescription string
 
+//go:embed descriptions/validate_dashboard.md
+var ValidateDashboardDescription string
+
 //go:embed descriptions/create_dashboard.md
 var CreateDashboardDescription string
 
