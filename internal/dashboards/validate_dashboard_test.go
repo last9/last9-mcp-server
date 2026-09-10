@@ -86,14 +86,21 @@ func TestValidateDashboardHandler_InvalidInputNoHTTP(t *testing.T) {
 
 	handler := NewValidateDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
 	id := "dash-1"
-	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ValidateDashboardArgs{
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ValidateDashboardArgs{
 		DashboardID:         &id,
 		DashboardDefinition: map[string]any{},
 		StartTimeISO:        "2026-09-10T08:00:00Z",
 		EndTimeISO:          "2026-09-10T09:00:00Z",
 	})
-	if err == nil {
-		t.Fatal("expected error")
+	if err != nil {
+		t.Fatalf("expected structured envelope, got err: %v", err)
+	}
+	var report map[string]any
+	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &report); err != nil {
+		t.Fatal(err)
+	}
+	if report["success"] != false || report["error"] != "invalid_input" {
+		t.Fatalf("report=%v", report)
 	}
 }
 
@@ -383,5 +390,78 @@ func TestValidateDashboard_NonListPanelsFailClosed(t *testing.T) {
 	_ = json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &report)
 	if report["success"] != false || report["error"] != "invalid_input" {
 		t.Fatalf("%v", report)
+	}
+}
+
+func TestValidateDashboard_LogJSONExecute(t *testing.T) {
+	var sawLogsPOST bool
+	var methods []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.Method+" "+r.URL.Path)
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/logs/") {
+			sawLogsPOST = true
+			body, _ := io.ReadAll(r.Body)
+			var payload map[string]any
+			_ = json.Unmarshal(body, &payload)
+			if _, ok := payload["pipeline"]; !ok {
+				t.Errorf("expected pipeline in body, got %s", body)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"logs":[{"Body":"hello"}]}`))
+			return
+		}
+		t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	cfg := testDashboardConfig(srv.URL)
+	handler := NewValidateDashboardHandler(srv.Client(), cfg)
+	pipeline := []any{
+		map[string]any{"type": "filter", "query": map[string]any{"$and": []any{}}},
+		map[string]any{"type": "aggregate", "window": "1m", "groupby": []any{map[string]any{"column": "__ts__"}}},
+	}
+	pipelineJSON, _ := json.Marshal(pipeline)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ValidateDashboardArgs{
+		DashboardDefinition: map[string]any{
+			"panels": []any{
+				map[string]any{
+					"id":            "p1",
+					"visualization": map[string]any{"type": "timeseries"},
+					"queries": []any{
+						map[string]any{
+							"query_type": "log_json",
+							"expr":       string(pipelineJSON),
+							"index_name": "logs",
+						},
+					},
+				},
+			},
+		},
+		StartTimeISO: "2026-09-10T08:00:00Z",
+		EndTimeISO:   "2026-09-10T09:00:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sawLogsPOST {
+		t.Fatalf("expected logs query_range POST, methods=%v", methods)
+	}
+	for _, m := range methods {
+		if strings.HasPrefix(m, "PUT ") || strings.HasPrefix(m, "DELETE ") {
+			t.Fatalf("unexpected mutating method: %s", m)
+		}
+		if strings.Contains(m, "/dashboards") {
+			t.Fatalf("inline must not hit dashboard CRUD: %s", m)
+		}
+	}
+	var report map[string]any
+	_ = json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &report)
+	if report["success"] != true {
+		t.Fatalf("%v", report)
+	}
+	status := report["panels"].([]any)[0].(map[string]any)["targets"].([]any)[0].(map[string]any)["status"]
+	if status != "valid_with_data" {
+		t.Fatalf("status=%v report=%v", status, report)
 	}
 }

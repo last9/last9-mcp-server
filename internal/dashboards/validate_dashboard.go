@@ -149,19 +149,27 @@ func NewValidateDashboardHandler(client *http.Client, cfg models.Config) func(co
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args ValidateDashboardArgs) (*mcp.CallToolResult, any, error) {
 		parsed, errs := validateDashboardInput(args)
 		if len(errs) > 0 {
-			return nil, nil, fmt.Errorf("%s", strings.Join(errs, "; "))
+			return jsonToolResult(map[string]any{
+				"success": false,
+				"error":   "invalid_input",
+				"detail":  errs,
+			})
 		}
 
 		exec := &validateExecutor{client: client, cfg: cfg}
 		result := runValidateDashboard(ctx, exec, parsed)
-		body, err := json.Marshal(result)
-		if err != nil {
-			return nil, nil, fmt.Errorf("marshal report: %w", err)
-		}
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: string(body)}},
-		}, nil, nil
+		return jsonToolResult(result)
 	}
+}
+
+func jsonToolResult(v any) (*mcp.CallToolResult, any, error) {
+	body, err := json.Marshal(v)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal report: %w", err)
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: string(body)}},
+	}, nil, nil
 }
 
 func runValidateDashboard(ctx context.Context, exec *validateExecutor, parsed *validatedDashboardArgs) map[string]any {

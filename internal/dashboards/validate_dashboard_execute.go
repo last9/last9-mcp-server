@@ -114,7 +114,7 @@ func (e *validateExecutor) runPromQL(ctx context.Context, expr string, window ma
 		return executionOutcome{status: "source_unavailable", tool: tool, errorText: "received nil response", durationMs: duration}
 	}
 	defer httpResp.Body.Close()
-	rawBody, err := io.ReadAll(io.LimitReader(httpResp.Body, maxAPISuccessBodyBytes+1))
+	rawBody, err := readCappedResponseBody(httpResp.Body)
 	if err != nil {
 		return executionOutcome{status: "source_unavailable", tool: tool, errorText: clipError(err.Error()), durationMs: duration}
 	}
@@ -148,7 +148,7 @@ func (e *validateExecutor) runLogJSON(ctx context.Context, pipeline any, window 
 		return executionOutcome{status: "source_unavailable", tool: tool, errorText: "received nil response", durationMs: duration}
 	}
 	defer httpResp.Body.Close()
-	rawBody, err := io.ReadAll(io.LimitReader(httpResp.Body, maxAPISuccessBodyBytes+1))
+	rawBody, err := readCappedResponseBody(httpResp.Body)
 	if err != nil {
 		return executionOutcome{status: "source_unavailable", tool: tool, errorText: clipError(err.Error()), durationMs: duration}
 	}
@@ -156,6 +156,19 @@ func (e *validateExecutor) runLogJSON(ctx context.Context, pipeline any, window 
 		return outcomeFromHTTPError(tool, string(rawBody), httpResp.StatusCode, duration)
 	}
 	return outcomeFromResult(tool, rawBody, "", duration)
+}
+
+// readCappedResponseBody mirrors doJSONRequest's success-body cap so truncated
+// JSON is never classified as an empty successful execute.
+func readCappedResponseBody(r io.Reader) ([]byte, error) {
+	rawBody, err := io.ReadAll(io.LimitReader(r, maxAPISuccessBodyBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(rawBody)) > maxAPISuccessBodyBytes {
+		return nil, fmt.Errorf("response body exceeds %d bytes", maxAPISuccessBodyBytes)
+	}
+	return rawBody, nil
 }
 
 func outcomeFromHTTPError(tool, body string, statusCode, durationMs int) executionOutcome {
