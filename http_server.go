@@ -46,9 +46,8 @@ func (h *HTTPServer) Start() error {
 	// independent request/response queries, so a temporary per-request session is
 	// sufficient and lets the server scale horizontally.
 	//
-	// The instrumented SDK helper is used so telemetry records the streamable
-	// transport instead of an empty one, which is what makes per-request client
-	// attribution work over HTTP.
+	// The instrumented SDK helper sets the transport on the server; without it
+	// HTTP tool calls cannot be attributed to the client that made them.
 	httpHandler := h.server.NewStreamableHTTPHandler(&mcp.StreamableHTTPOptions{Stateless: true})
 
 	// Register handlers on both root and /mcp paths for maximum client flexibility
