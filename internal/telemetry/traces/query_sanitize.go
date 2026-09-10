@@ -532,6 +532,7 @@ func validateAggregateStage(stage map[string]interface{}, path string) error {
 		return nil
 	}
 
+	aliases := map[string]struct{}{}
 	for j, rawEntry := range aggregates {
 		entry, ok := rawEntry.(map[string]interface{})
 		if !ok {
@@ -544,6 +545,12 @@ func validateAggregateStage(stage map[string]interface{}, path string) error {
 					"Example: {\"function\": {\"$count\": []}, \"as\": \"count\"}",
 				path, j,
 			)
+		}
+		if alias, ok := entry["as"].(string); ok && alias != "" {
+			if _, duplicate := aliases[alias]; duplicate {
+				return fmt.Errorf("%s.aggregates[%d].as: duplicate aggregate alias %q", path, j, alias)
+			}
+			aliases[alias] = struct{}{}
 		}
 
 		if fn, exists := entry["function"]; exists {

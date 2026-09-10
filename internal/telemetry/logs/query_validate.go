@@ -664,6 +664,7 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string) erro
 		)
 	}
 
+	aliases := map[string]struct{}{}
 	for i, rawItem := range aggs {
 		itemPath := fmt.Sprintf("%s.aggregates[%d]", stagePath, i)
 		itemMap, ok := rawItem.(map[string]interface{})
@@ -731,6 +732,10 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string) erro
 				),
 			)
 		}
+		if _, duplicate := aliases[as]; duplicate {
+			return newLogValidationError(LogValidationInvalidField, itemPath+".as", fmt.Sprintf("aggregate alias %q is duplicated", as))
+		}
+		aliases[as] = struct{}{}
 	}
 
 	return validateGroupByForTraceFields(stage, stagePath)

@@ -26,6 +26,7 @@ import (
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
 	l9telemetry "last9-mcp/internal/telemetry"
+	"last9-mcp/internal/telemetry/catalog"
 	"last9-mcp/internal/toolsets"
 	"last9-mcp/internal/utils"
 	"last9-mcp/internal/workflows"
@@ -48,6 +49,7 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	fs.StringVar(&cfg.APIHost, "api_host", os.Getenv("LAST9_API_HOST"), "API host (defaults to app.last9.io)")
 	fs.BoolVar(&cfg.DisableTelemetry, "disable_telemetry", true, "Disable OpenTelemetry tracing/metrics")
 	fs.BoolVar(&cfg.UseLogSearchAPI, "use_log_search_api", false, "Route get_logs through the server-side log search API instead of client-side chunking")
+	fs.StringVar(&cfg.SourceContractsFile, "api_source_contracts_file", os.Getenv("LAST9_API_SOURCE_CONTRACTS_FILE"), "Operator-owned API source contracts JSON file")
 	fs.Float64Var(&cfg.RequestRateLimit, "rate", 1, "Requests per second limit")
 	fs.IntVar(&cfg.RequestRateBurst, "burst", 1, "Request burst capacity")
 	fs.IntVar(&cfg.MaxGetLogsEntries, "max_get_logs_entries", models.DefaultMaxGetLogsEntries, "Maximum number of entries returned by chunked raw get_logs requests")
@@ -165,6 +167,13 @@ func main() {
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
 		log.Fatalf("failed to populate API config: %v", err)
 	}
+	var sourceContracts catalog.Contracts
+	if cfg.SourceContractsFile != "" {
+		sourceContracts, err = catalog.LoadContracts(cfg.SourceContractsFile)
+		if err != nil {
+			log.Fatalf("failed to load API source contracts: %v", err)
+		}
+	}
 
 	if cfg.DisableTelemetry {
 		otel.SetMeterProvider(metricnoop.NewMeterProvider())
@@ -222,7 +231,7 @@ func main() {
 	workflows.Register(server)
 
 	// Register all tools
-	if err := registerAllTools(server, cfg); err != nil {
+	if err := registerAllTools(server, cfg, sourceContracts); err != nil {
 		log.Fatalf("failed to register tools: %v", err)
 	}
 

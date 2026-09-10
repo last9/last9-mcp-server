@@ -36,6 +36,9 @@ type Config struct {
 	// endpoint instead of the client-side chunk sweep. Off by default; the
 	// chunked path is deleted once this is proven in production.
 	UseLogSearchAPI bool
+	// SourceContractsFile is an operator-mounted JSON file whose descriptors
+	// gate catalog completeness and numeric conclusions.
+	SourceContractsFile string
 
 	// HTTP server configuration
 	HTTPMode bool   // Enable HTTP server mode instead of STDIO

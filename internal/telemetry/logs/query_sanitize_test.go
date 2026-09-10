@@ -997,6 +997,28 @@ func TestGetLogsHandlerAcceptsSafeQuantileInputs(t *testing.T) {
 	}
 }
 
+func TestPrepareLogJSONQueryValidatesExactQuantilesAndAliases(t *testing.T) {
+	valid := []map[string]interface{}{{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{
+		"function": map[string]interface{}{"$quantile_exact": []interface{}{0.99, "attributes['duration_ms']"}}, "as": "p99",
+	}}}}
+	if _, err := prepareLogJSONQuery(valid, "logjson_query"); err != nil {
+		t.Fatal(err)
+	}
+	invalid := []map[string]interface{}{{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{
+		"function": map[string]interface{}{"$quantile_exact": []interface{}{1.1, "attributes['duration_ms']"}}, "as": "p99",
+	}}}}
+	if _, err := prepareLogJSONQuery(invalid, "logjson_query"); err == nil || !strings.Contains(err.Error(), "$quantile_exact") {
+		t.Fatalf("error = %v", err)
+	}
+	duplicate := []map[string]interface{}{{"type": "aggregate", "aggregates": []interface{}{
+		map[string]interface{}{"function": map[string]interface{}{"$count": []interface{}{}}, "as": "count"},
+		map[string]interface{}{"function": map[string]interface{}{"$sum": []interface{}{"attributes['duration_ms']"}}, "as": "count"},
+	}}}
+	if _, err := prepareLogJSONQuery(duplicate, "logjson_query"); err == nil || !strings.Contains(err.Error(), "duplicated") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestPrepareLogJSONQueryRejectsNonNumericRegexForAttributeQuantile(t *testing.T) {
 	field := "attributes['latency_ms']"
 	assertPrepareQuantileRejected(t, []map[string]interface{}{testNumericFilter(field, `^.+$`), testQuantileAggregate(field)})

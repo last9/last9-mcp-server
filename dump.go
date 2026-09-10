@@ -10,6 +10,7 @@ import (
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/telemetry/catalog"
 	"last9-mcp/internal/toolsets"
 	"last9-mcp/internal/workflows"
 
@@ -45,7 +46,7 @@ func dumpTools(w io.Writer, allowed toolsets.Set) error {
 	registerReferenceResources(server)
 	workflows.Register(server)
 
-	if err := registerAllTools(server, cfg); err != nil {
+	if err := registerAllTools(server, cfg, catalog.Contracts{}); err != nil {
 		return fmt.Errorf("failed to register tools: %w", err)
 	}
 	// The round-trip is over in-memory transports and won't hang in practice,

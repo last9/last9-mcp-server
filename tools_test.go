@@ -11,6 +11,7 @@ import (
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/telemetry/catalog"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -119,7 +120,7 @@ func TestRegisterAllTools_ExposesDashboardObjectSchemas(t *testing.T) {
 	defer server.Shutdown(context.Background())
 
 	cfg := testToolRegistrationConfig()
-	if err := registerAllTools(server, cfg); err != nil {
+	if err := registerAllTools(server, cfg, catalog.Contracts{}); err != nil {
 		t.Fatal(err)
 	}
 
