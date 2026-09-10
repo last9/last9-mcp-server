@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -20,10 +22,13 @@ import (
 // initialize fails, surfacing to clients as "tools fetch failed". A regression
 // back to stateful mode (opts nil / Stateless:false) fails this test.
 func TestStatelessStreamableHandler(t *testing.T) {
-	srv := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
-	ts := httptest.NewServer(newStatelessStreamableHandler(func(*http.Request) *mcp.Server {
-		return srv
-	}))
+	srv, err := last9mcp.NewServerWithOptions("test", "0", last9mcp.WithSkipProviderInit())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
+
+	ts := httptest.NewServer(srv.NewStreamableHTTPHandler(&mcp.StreamableHTTPOptions{Stateless: true}))
 	defer ts.Close()
 
 	t.Run("tools/list with unknown session returns 200, not 404", func(t *testing.T) {
