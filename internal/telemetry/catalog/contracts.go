@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"last9-mcp/internal/utils"
 )
 
 const schemaVersion = 1
@@ -21,6 +23,14 @@ type SourceContract struct {
 	RecordUnit    string            `json:"record_unit,omitempty"`
 	Fields        map[string]string `json:"fields,omitempty"`
 	MetricKinds   map[string]string `json:"metric_kinds,omitempty"`
+	BackendLimits BackendLimits     `json:"backend_limits"`
+}
+
+// BackendLimits is the operator-owned adapter attestation required before a
+// bounded response can be complete.
+type BackendLimits struct {
+	NoHiddenSampling bool `json:"no_hidden_sampling"`
+	MaxRows          int  `json:"max_rows"`
 }
 
 type contractKey struct {
@@ -38,6 +48,13 @@ type Contracts struct {
 func (c Contracts) Lookup(datasource, source, index string, version int) (SourceContract, bool) {
 	contract, ok := c.entries[contractKey{datasource, source, index, version}]
 	return cloneContract(contract), ok
+}
+
+// AllowsExactLogQuantile is consumed by get_logs through models' narrow
+// interface; request arguments never grant exact aggregate support.
+func (c Contracts) AllowsExactLogQuantile(datasource, index, field string) bool {
+	contract, ok := c.Lookup(datasource, "logs", index, schemaVersion)
+	return ok && contract.MetricKinds[field] == "exact_quantile"
 }
 
 // LoadContracts validates an operator-mounted JSON array once at startup.
@@ -79,6 +96,9 @@ func LoadContracts(path string) (Contracts, error) {
 				return Contracts{}, fmt.Errorf("source contracts[%d]: fields must use non-empty names and semantics", i)
 			}
 		}
+		if !item.BackendLimits.NoHiddenSampling || item.BackendLimits.MaxRows < 1 {
+			return Contracts{}, fmt.Errorf("source contracts[%d]: backend_limits must attest no_hidden_sampling with a positive max_rows", i)
+		}
 		key := contractKey{item.Datasource, item.Source, item.Index, item.SchemaVersion}
 		if _, duplicate := entries[key]; duplicate {
 			return Contracts{}, fmt.Errorf("source contracts[%d]: duplicate datasource=%q source=%q index=%q schema_version=%d", i, item.Datasource, item.Source, item.Index, item.SchemaVersion)
@@ -89,15 +109,7 @@ func LoadContracts(path string) (Contracts, error) {
 }
 
 func normalizeContractIndex(index string) (string, error) {
-	for _, prefix := range []string{"physical_index:", "rehydration_index:"} {
-		if rest, ok := strings.CutPrefix(index, prefix); ok && strings.TrimSpace(rest) != "" {
-			return index, nil
-		}
-	}
-	if !strings.HasPrefix(index, "physical_index:") && !strings.HasPrefix(index, "rehydration_index:") {
-		return "", fmt.Errorf("index must use physical_index:<name> or rehydration_index:<name>")
-	}
-	return "", fmt.Errorf("index must include a name")
+	return utils.NormalizeLogIndex(index)
 }
 
 func cloneContract(in SourceContract) SourceContract {

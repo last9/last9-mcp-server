@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"last9-mcp/internal/constants"
+	"last9-mcp/internal/models"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -998,9 +999,10 @@ func TestGetLogsHandlerAcceptsSafeQuantileInputs(t *testing.T) {
 }
 
 func TestPrepareLogJSONQueryValidatesExactQuantilesAndAliases(t *testing.T) {
-	valid := []map[string]interface{}{{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{
-		"function": map[string]interface{}{"$quantile_exact": []interface{}{0.99, "attributes['duration_ms']"}}, "as": "p99",
-	}}}}
+	valid := []map[string]interface{}{
+		{"type": "filter", "query": map[string]interface{}{"$regex": []interface{}{"attributes['duration_ms']", "^[0-9]+(?:\\.[0-9]+)?$"}}},
+		{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{"function": map[string]interface{}{"$quantile_exact": []interface{}{0.99, "attributes['duration_ms']"}}, "as": "p99"}}},
+	}
 	if _, err := prepareLogJSONQuery(valid, "logjson_query"); err != nil {
 		t.Fatal(err)
 	}
@@ -1016,6 +1018,38 @@ func TestPrepareLogJSONQueryValidatesExactQuantilesAndAliases(t *testing.T) {
 	}}}
 	if _, err := prepareLogJSONQuery(duplicate, "logjson_query"); err == nil || !strings.Contains(err.Error(), "duplicated") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+type denyExactQuantile struct{}
+
+func (denyExactQuantile) AllowsExactLogQuantile(string, string, string) bool { return false }
+
+type normalizedExactQuantile struct{}
+
+func (normalizedExactQuantile) AllowsExactLogQuantile(_ string, index string, _ string) bool {
+	return index == "physical_index:app"
+}
+
+func TestExactQuantileRequiresOperatorContract(t *testing.T) {
+	stages := []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$regex": []interface{}{"attributes['duration_ms']", "^[0-9]+(?:\\.[0-9]+)?$"}}}, {"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{"function": map[string]interface{}{"$quantile_exact": []interface{}{.99, "attributes['duration_ms']"}}, "as": "p99"}}}}
+	sanitized, err := prepareLogJSONQuery(stages, "logjson_query")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateExactQuantileContract(sanitized, models.Config{DatasourceName: "prod", ExactQuantileAuthorizer: denyExactQuantile{}}, ""); err == nil {
+		t.Fatal("exact quantile without contract was accepted")
+	}
+}
+
+func TestExactQuantileContractUsesCanonicalIndex(t *testing.T) {
+	stages := []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$regex": []interface{}{"attributes['duration_ms']", "^[0-9]+(?:\\.[0-9]+)?$"}}}, {"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{"function": map[string]interface{}{"$quantile_exact": []interface{}{.99, "attributes['duration_ms']"}}, "as": "p99"}}}}
+	sanitized, err := prepareLogJSONQuery(stages, "logjson_query")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateExactQuantileContract(sanitized, models.Config{DatasourceName: "prod", ExactQuantileAuthorizer: normalizedExactQuantile{}}, "physical_index: app"); err != nil {
+		t.Fatalf("canonical index was not used for contract lookup: %v", err)
 	}
 }
 

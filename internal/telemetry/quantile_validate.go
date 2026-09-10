@@ -3,6 +3,7 @@ package telemetry
 import (
 	"fmt"
 	"math"
+	"strings"
 )
 
 // QuantileArgsError describes the domain-independent $quantile argument
@@ -33,7 +34,8 @@ func ValidateQuantileFunction(function map[string]interface{}, functionPath stri
 		if !ok || math.IsNaN(level) || math.IsInf(level, 0) || level < 0 || level > 1 {
 			return &QuantileArgsError{FunctionPath: functionPath, Path: functionPath + "." + name + "[0]", Name: name}
 		}
-		if _, ok := args[1].(string); !ok {
+		field, ok := args[1].(string)
+		if !ok || strings.TrimSpace(field) == "" {
 			return &QuantileArgsError{FunctionPath: functionPath, Path: functionPath + "." + name + "[1]", Name: name}
 		}
 	}

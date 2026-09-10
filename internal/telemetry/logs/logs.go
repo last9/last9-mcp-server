@@ -46,6 +46,9 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 		if err != nil {
 			return nil, nil, err
 		}
+		if err := validateExactQuantileContract(sanitizedQuery, cfg, args.Index); err != nil {
+			return nil, nil, err
+		}
 		args.LogjsonQuery = sanitizedQuery
 
 		// Handle logjson_query directly
@@ -55,6 +58,39 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 		}
 		return result, nil, nil
 	}
+}
+
+func validateExactQuantileContract(stages []map[string]interface{}, cfg models.Config, index string) error {
+	normalizedIndex, err := utils.NormalizeLogIndex(index)
+	if err != nil {
+		return fmt.Errorf("invalid index: %w", err)
+	}
+	for _, stage := range stages {
+		functions := []map[string]interface{}{}
+		if function, ok := stage["function"].(map[string]interface{}); ok {
+			functions = append(functions, function)
+		}
+		if aggregates, ok := stage["aggregates"].([]interface{}); ok {
+			for _, raw := range aggregates {
+				if aggregate, ok := raw.(map[string]interface{}); ok {
+					if function, ok := aggregate["function"].(map[string]interface{}); ok {
+						functions = append(functions, function)
+					}
+				}
+			}
+		}
+		for _, function := range functions {
+			args, exact := function["$quantile_exact"].([]interface{})
+			if !exact {
+				continue
+			}
+			field, _ := args[1].(string)
+			if cfg.ExactQuantileAuthorizer == nil || !cfg.ExactQuantileAuthorizer.AllowsExactLogQuantile(cfg.DatasourceName, normalizedIndex, field) {
+				return fmt.Errorf("$quantile_exact for %q is not declared by the operator-owned log source contract", field)
+			}
+		}
+	}
+	return nil
 }
 
 func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, args GetLogsArgs) (*mcp.CallToolResult, error) {

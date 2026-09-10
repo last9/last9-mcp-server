@@ -752,6 +752,20 @@ func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 	return out, nil
 }
 
+// DiscoverLogAttributesForCatalog reuses the indexed and bounded body sampling
+// discovery path for the object-returning catalog without changing existing
+// array tool responses.
+func DiscoverLogAttributesForCatalog(ctx context.Context, client *http.Client, cfg models.Config, startSec, endSec int64, index string) ([]LogAttribute, error) {
+	params := url.Values{}
+	params.Set("region", cfg.Region)
+	params.Set("start", fmt.Sprintf("%d", startSec))
+	params.Set("end", fmt.Sprintf("%d", endSec))
+	if index != "" {
+		params.Set("index", index)
+	}
+	return discoverLogAttributes(ctx, client, cfg, []map[string]interface{}{}, startSec, endSec, index, params)
+}
+
 // NewGetLogAttributesForPipelineHandler creates a handler that returns the log
 // attributes present for a given pipeline, each enriched with its filter_field.
 func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetLogAttributesForPipelineArgs) (*mcp.CallToolResult, any, error) {
@@ -783,11 +797,6 @@ func NewGetLogAttributesForPipelineHandler(client *http.Client, cfg models.Confi
 		}
 		endTime := endTimeParsed.Unix()
 		startTime := startTimeParsed.Unix()
-		// Cap the window magnitude to keep server cost bounded, matching get_log_attributes.
-		maxWindowSeconds := int64(utils.MaxLogAttributeLookbackMinutes * 60)
-		if endTime-startTime > maxWindowSeconds {
-			startTime = endTime - maxWindowSeconds
-		}
 
 		region := cfg.Region
 		if args.Region != "" {

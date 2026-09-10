@@ -174,6 +174,7 @@ func main() {
 			log.Fatalf("failed to load API source contracts: %v", err)
 		}
 	}
+	cfg.ExactQuantileAuthorizer = sourceContracts
 
 	if cfg.DisableTelemetry {
 		otel.SetMeterProvider(metricnoop.NewMeterProvider())

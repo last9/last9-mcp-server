@@ -261,7 +261,12 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 		}
 
 		checkFunction := func(function map[string]interface{}, functionPath string) error {
-			rawArgs, ok := function["$quantile"].([]interface{})
+			operator := "$quantile"
+			rawArgs, ok := function[operator].([]interface{})
+			if !ok {
+				operator = "$quantile_exact"
+				rawArgs, ok = function[operator].([]interface{})
+			}
 			if !ok || len(rawArgs) != 2 {
 				return nil
 			}
@@ -274,10 +279,10 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 			}
 			return newLogValidationError(
 				LogValidationInvalidField,
-				functionPath+".$quantile[1]",
+				functionPath+"."+operator+"[1]",
 				fmt.Sprintf(
-					"$quantile field %q at %s requires a preceding numeric $regex after the last parse that can produce it; use the canonical anchored numeric $regex shown: {\"$regex\":[%q,\"^[0-9]+(?:\\\\.[0-9]+)?$\"]}",
-					field, functionPath+".$quantile[1]", field,
+					"%s field %q at %s requires a preceding numeric $regex after the last parse that can produce it; use the canonical anchored numeric $regex shown: {\"$regex\":[%q,\"^[0-9]+(?:\\\\.[0-9]+)?$\"]}",
+					operator, field, functionPath+"."+operator+"[1]", field,
 				),
 			)
 		}

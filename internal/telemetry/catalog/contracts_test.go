@@ -31,7 +31,7 @@ func TestLoadContractsRejectsUnsafeOrAmbiguousDescriptors(t *testing.T) {
 
 func TestContractsLookupUsesConfiguredBoundary(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "contracts.json")
-	if err := os.WriteFile(path, []byte(`[{"datasource":"prod","source":"logs","index":"physical_index:app","schema_version":1,"fields":{"ServiceName":"string"}}]`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`[{"datasource":"prod","source":"logs","index":"physical_index: app","schema_version":1,"fields":{"ServiceName":"string"},"backend_limits":{"no_hidden_sampling":true,"max_rows":101}}]`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	contracts, err := LoadContracts(path)

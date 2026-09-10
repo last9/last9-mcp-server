@@ -36,6 +36,7 @@ func dumpTools(w io.Writer, allowed toolsets.Set) error {
 	// token manager (only tools/call handlers do), but set it so a future
 	// handler constructor that touches it can't nil-panic on this path.
 	cfg.TokenManager = &auth.TokenManager{}
+	cfg.ExactQuantileAuthorizer = catalog.Contracts{}
 	cfg.AllowedTools = allowed
 
 	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())

@@ -39,6 +39,11 @@ type Config struct {
 	// SourceContractsFile is an operator-mounted JSON file whose descriptors
 	// gate catalog completeness and numeric conclusions.
 	SourceContractsFile string
+	// ExactQuantileAuthorizer is operator-owned startup state used by the log
+	// handler. It deliberately exposes no contract fields to model input.
+	ExactQuantileAuthorizer interface {
+		AllowsExactLogQuantile(datasource, index, field string) bool
+	}
 
 	// HTTP server configuration
 	HTTPMode bool   // Enable HTTP server mode instead of STDIO

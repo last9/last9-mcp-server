@@ -1,4 +1,4 @@
-Returns a bounded, evidence-qualified catalog for the requested log and trace sources.
+Returns a bounded, evidence-qualified catalog for the requested log and trace sources. Catalog schema version: `1`.
 
 Use absolute RFC3339 bounds. `datasource`, `sources`, `protocol`, `start_time_iso`, `end_time_iso`, and `include` are required. `include` accepts `services`, `environments`, and `fields`; `limit` is capped at 100.
 

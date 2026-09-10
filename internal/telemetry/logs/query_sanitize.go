@@ -49,11 +49,12 @@ var logFilterLogicalOperators = map[string]struct{}{
 }
 
 var logAggregateFieldArgIndexes = map[string][]int{
-	"$avg":      {0},
-	"$max":      {0},
-	"$min":      {0},
-	"$quantile": {1},
-	"$sum":      {0},
+	"$avg":            {0},
+	"$max":            {0},
+	"$min":            {0},
+	"$quantile":       {1},
+	"$quantile_exact": {1},
+	"$sum":            {0},
 }
 
 func sanitizeLogJSONQuery(stages []map[string]interface{}) ([]map[string]interface{}, error) {

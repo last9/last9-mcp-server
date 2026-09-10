@@ -15,6 +15,7 @@ import (
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
+	logtelemetry "last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -60,8 +61,11 @@ type FieldEvidence struct {
 }
 
 type ResultEnvelope struct {
-	Partial bool   `json:"partial"`
-	Reason  string `json:"reason,omitempty"`
+	Partial      bool   `json:"partial"`
+	Reason       string `json:"reason,omitempty"`
+	ReturnedRows int    `json:"returned_rows,omitempty"`
+	RowLimit     int    `json:"row_limit,omitempty"`
+	OverFetched  bool   `json:"over_fetched,omitempty"`
 }
 
 type CatalogResponse struct {
@@ -101,6 +105,14 @@ func NewHandler(client *http.Client, cfg models.Config, contracts Contracts) fun
 			}
 			if includes["fields"] {
 				response.Fields = append(response.Fields, evidenceFor(source, fields, samples, contract, trusted, fieldPartial)...)
+				if source == "logs" && needsBodyEvidence(contract) {
+					attributes, err := logtelemetry.DiscoverLogAttributesForCatalog(ctx, client, queryCfg, start/1000, end/1000, index)
+					if err != nil {
+						reasons = append(reasons, source+": body field discovery: "+err.Error())
+					} else {
+						response.Fields = logEvidence(attributes, contract, fieldPartial)
+					}
+				}
 			}
 			if fieldPartial {
 				reasons = append(reasons, source+": "+fieldReason)
@@ -110,30 +122,44 @@ func NewHandler(client *http.Client, cfg models.Config, contracts Contracts) fun
 				continue // observations are useful; counts are contract-dependent conclusions.
 			}
 			if includes["services"] {
-				values, partial, err := fetchInventory(ctx, client, queryCfg, source, start, end, index, "ServiceName", args.Limit)
+				values, inventory, err := fetchInventory(ctx, client, queryCfg, source, start, end, index, "ServiceName", args.Limit, contract)
 				if err != nil {
 					reasons = append(reasons, source+": "+err.Error())
 				} else {
 					response.Services = append(response.Services, values...)
-					if partial {
-						reasons = append(reasons, source+": row limit reached")
+					response.Result.ReturnedRows += inventory.ReturnedRows
+					response.Result.RowLimit = inventory.RowLimit
+					response.Result.OverFetched = response.Result.OverFetched || inventory.OverFetched
+					if inventory.Partial {
+						reasons = append(reasons, source+": "+inventory.Reason)
 					}
 				}
-			}
-			if includes["environments"] {
-				values, partial, err := fetchInventory(ctx, client, queryCfg, source, start, end, index, "resources['deployment.environment']", args.Limit)
-				if err != nil {
-					reasons = append(reasons, source+": "+err.Error())
-				} else {
-					response.Environments = append(response.Environments, values...)
-					if partial {
-						reasons = append(reasons, source+": environment row limit reached")
+				if includes["environments"] {
+					fields := environmentFields(contract)
+					if len(fields) == 0 {
+						reasons = append(reasons, source+": no configured environment field")
+						continue
+					}
+					for _, field := range fields {
+						values, inventory, err := fetchInventory(ctx, client, queryCfg, source, start, end, index, field, args.Limit, contract)
+						if err != nil {
+							reasons = append(reasons, source+": "+err.Error())
+						} else {
+							response.Environments = append(response.Environments, values...)
+							response.Result.ReturnedRows += inventory.ReturnedRows
+							response.Result.RowLimit = inventory.RowLimit
+							response.Result.OverFetched = response.Result.OverFetched || inventory.OverFetched
+							if inventory.Partial {
+								reasons = append(reasons, source+": "+inventory.Reason)
+							}
+						}
 					}
 				}
 			}
 		}
 		if len(reasons) > 0 {
-			response.Result = ResultEnvelope{Partial: true, Reason: strings.Join(reasons, "; ")}
+			response.Result.Partial = true
+			response.Result.Reason = strings.Join(reasons, "; ")
 		}
 		body, err := json.Marshal(response)
 		if err != nil {
@@ -159,6 +185,9 @@ func validateArgs(args CatalogArgs, cfg models.Config) (Scope, models.Config, in
 	}
 	if !startAt.Before(endAt) {
 		return Scope{}, models.Config{}, 0, 0, nil, fmt.Errorf("start_time_iso must be before end_time_iso")
+	}
+	if startAt.Nanosecond() != 0 || endAt.Nanosecond() != 0 {
+		return Scope{}, models.Config{}, 0, 0, nil, fmt.Errorf("subsecond bounds are not representable by this backend")
 	}
 	index, err := utils.NormalizeLogIndex(args.LogIndex)
 	if err != nil {
@@ -232,7 +261,7 @@ func fetchFields(ctx context.Context, client *http.Client, cfg models.Config, so
 	var payload struct {
 		Data   []map[string]json.RawMessage `json:"data"`
 		Status string                       `json:"status"`
-		Result ResultEnvelope               `json:"l9_result"`
+		Result *ResultEnvelope              `json:"l9_result"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return nil, 0, false, "", err
@@ -253,6 +282,9 @@ func fetchFields(ctx context.Context, client *http.Client, cfg models.Config, so
 		fields = append(fields, field)
 	}
 	sort.Strings(fields)
+	if payload.Result == nil {
+		return fields, len(payload.Data), true, "missing backend attestation", nil
+	}
 	reason := payload.Result.Reason
 	if payload.Result.Partial && reason == "" {
 		reason = "series response is partial"
@@ -260,7 +292,7 @@ func fetchFields(ctx context.Context, client *http.Client, cfg models.Config, so
 	return fields, len(payload.Data), payload.Result.Partial, reason, nil
 }
 
-func fetchInventory(ctx context.Context, client *http.Client, cfg models.Config, source string, start, end int64, index, field string, requestedLimit int) ([]ObservedValue, bool, error) {
+func fetchInventory(ctx context.Context, client *http.Client, cfg models.Config, source string, start, end int64, index, field string, requestedLimit int, contract SourceContract) ([]ObservedValue, ResultEnvelope, error) {
 	limit := requestedLimit
 	if limit == 0 {
 		limit = maxCatalogLimit
@@ -268,50 +300,84 @@ func fetchInventory(ctx context.Context, client *http.Client, cfg models.Config,
 	pipeline := []map[string]any{{"type": "aggregate", "aggregates": []map[string]any{{"function": map[string]any{"$count": []any{}}, "as": "count"}}, "groupby": map[string]any{field: "value"}}}
 	var resp *http.Response
 	var err error
+	if contract.BackendLimits.MaxRows < limit+1 {
+		return nil, ResultEnvelope{Partial: true, Reason: "backend max_rows cannot attest requested over-fetch", RowLimit: limit}, nil
+	}
 	if source == "logs" {
 		resp, err = utils.MakeLogsJSONQueryAPI(ctx, client, cfg, pipeline, start, end, limit+1, index)
 	} else {
 		resp, err = utils.MakeTracesJSONQueryAPI(ctx, client, cfg, pipeline, start, end, limit+1)
 	}
 	if err != nil {
-		return nil, false, err
+		return nil, ResultEnvelope{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, false, fmt.Errorf("inventory returned status %d", resp.StatusCode)
+		return nil, ResultEnvelope{}, fmt.Errorf("inventory returned status %d", resp.StatusCode)
 	}
 	var payload map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, false, err
+		return nil, ResultEnvelope{}, err
 	}
-	if result, ok := payload["l9_result"].(map[string]any); ok {
-		if partial, _ := result["partial"].(bool); partial {
-			return nil, true, nil
+	if status, ok := payload["status"].(string); !ok || status != "success" {
+		return nil, ResultEnvelope{}, fmt.Errorf("inventory returned non-success status")
+	}
+	upstream, ok := payload["l9_result"].(map[string]any)
+	if !ok {
+		return nil, ResultEnvelope{Partial: true, Reason: "missing backend attestation", RowLimit: limit}, nil
+	}
+	envelope := ResultEnvelope{RowLimit: limit, OverFetched: true}
+	if partial, _ := upstream["partial"].(bool); partial {
+		envelope.Partial = true
+		envelope.Reason, _ = upstream["reason"].(string)
+		if envelope.Reason == "" {
+			envelope.Reason = "backend returned partial inventory"
 		}
+		return nil, envelope, nil
 	}
 	data, _ := payload["data"].(map[string]any)
-	rows, _ := data["result"].([]any)
-	partial := len(rows) > limit
-	if partial {
+	rows, ok := data["result"].([]any)
+	if !ok {
+		return nil, ResultEnvelope{}, fmt.Errorf("inventory response missing result array")
+	}
+	if len(rows) > limit {
 		rows = rows[:limit]
+		envelope.Partial, envelope.Reason = true, "row_limit_reached"
 	}
 	values := make([]ObservedValue, 0, len(rows))
 	for _, row := range rows {
 		item, ok := row.(map[string]any)
 		if !ok {
+			envelope.Partial, envelope.Reason = true, "malformed inventory row"
 			continue
+		}
+		if metric, wrapped := item["metric"].(map[string]any); wrapped {
+			item = metric
 		}
 		value, _ := item["value"].(string)
 		if value == "" {
 			value, _ = item[field].(string)
 		}
 		count, ok := number(item["count"])
-		if !ok || value == "" {
+		if !ok || count < 0 || value == "" {
+			envelope.Partial, envelope.Reason = true, "malformed inventory row"
 			continue
 		}
 		values = append(values, ObservedValue{Source: source, Field: field, Value: value, Count: count})
 	}
-	return values, partial, nil
+	envelope.ReturnedRows = len(values)
+	return values, envelope, nil
+}
+
+func environmentFields(contract SourceContract) []string {
+	var fields []string
+	for field, kind := range contract.MetricKinds {
+		if kind == "environment" {
+			fields = append(fields, field)
+		}
+	}
+	sort.Strings(fields)
+	return fields
 }
 
 func number(value any) (int64, bool) {
@@ -338,8 +404,8 @@ func evidenceFor(source string, observed []string, samples int, contract SourceC
 		seen[field] = true
 		provenance, complete := "observed", false
 		if trusted && !partial {
-			if _, configured := contract.Fields[field]; configured {
-				provenance, complete = "contract", true
+			if descriptor, configured := contract.Fields[field]; configured {
+				provenance, complete = descriptor, true
 			}
 		}
 		out = append(out, FieldEvidence{Source: source, Field: field, Provenance: provenance, SampleCount: samples, Complete: complete})
@@ -351,6 +417,44 @@ func evidenceFor(source string, observed []string, samples int, contract SourceC
 			}
 			out = append(out, FieldEvidence{Source: source, Field: field, Provenance: "contract", Complete: true})
 		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Field < out[j].Field })
+	return out
+}
+
+func needsBodyEvidence(contract SourceContract) bool {
+	for _, descriptor := range contract.Fields {
+		if descriptor == "body" {
+			return true
+		}
+	}
+	return false
+}
+
+func logEvidence(attributes []logtelemetry.LogAttribute, contract SourceContract, partial bool) []FieldEvidence {
+	out := make([]FieldEvidence, 0, len(attributes))
+	for _, attribute := range attributes {
+		provenance := attribute.Source
+		if provenance == "" {
+			provenance = "indexed"
+		}
+		coverage := 0.0
+		if parts := strings.Split(attribute.SampleCoverage, "/"); len(parts) == 2 {
+			numerator, a := strconv.ParseFloat(parts[0], 64)
+			denominator, b := strconv.ParseFloat(parts[1], 64)
+			if a == nil && b == nil && denominator > 0 {
+				coverage = numerator / denominator
+			}
+		}
+		parser := ""
+		if provenance == "body" {
+			var stages []map[string]any
+			if json.Unmarshal([]byte(attribute.Hint), &stages) == nil && len(stages) > 0 {
+				parser, _ = stages[0]["parser"].(string)
+			}
+		}
+		_, configured := contract.Fields[attribute.Name]
+		out = append(out, FieldEvidence{Source: "logs", Field: attribute.FilterField, Provenance: provenance, Parser: parser, SampleCount: len(attribute.SampleBodies), Coverage: coverage, Complete: configured && provenance == "indexed" && !partial})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Field < out[j].Field })
 	return out

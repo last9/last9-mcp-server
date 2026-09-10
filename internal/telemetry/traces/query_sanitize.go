@@ -576,6 +576,12 @@ func validateAggregateStage(stage map[string]interface{}, path string) error {
 func validateTraceQuantileFunction(function map[string]interface{}, path string) error {
 	err := telemetry.ValidateQuantileFunction(function, path)
 	if err == nil {
+		if raw, ok := function["$quantile_exact"].([]interface{}); ok {
+			field, _ := raw[1].(string)
+			if field != "Duration" {
+				return &tracePipelineError{category: traceCategoryInvalidField, path: path + ".$quantile_exact[1]", msg: "$quantile_exact supports only trace Duration"}
+			}
+		}
 		return nil
 	}
 	return &tracePipelineError{

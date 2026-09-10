@@ -45,6 +45,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, loaded
 	if len(loadedContracts) > 0 {
 		sourceContracts = loadedContracts[0]
 	}
+	cfg.ExactQuantileAuthorizer = sourceContracts
 	client := auth.GetHTTPClient()
 
 	var regErr error
