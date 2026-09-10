@@ -432,7 +432,6 @@ func TestValidateDashboard_LogJSONExecute(t *testing.T) {
 						map[string]any{
 							"query_type": "log_json",
 							"expr":       string(pipelineJSON),
-							"index_name": "logs",
 						},
 					},
 				},
@@ -445,7 +444,7 @@ func TestValidateDashboard_LogJSONExecute(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !sawLogsPOST {
-		t.Fatalf("expected logs query_range POST, methods=%v", methods)
+		t.Fatalf("expected logs query_range POST, methods=%v report=%s", methods, result.Content[0].(*mcp.TextContent).Text)
 	}
 	for _, m := range methods {
 		if strings.HasPrefix(m, "PUT ") || strings.HasPrefix(m, "DELETE ") {
