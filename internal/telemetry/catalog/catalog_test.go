@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -169,10 +170,232 @@ func TestCatalogEnvironmentFieldsAndBodyEvidenceStaySourceQualified(t *testing.T
 	if got := environmentFields(contract); len(got) != 2 || got[0] != "resources['deployment.environment']" {
 		t.Fatalf("environment fields = %#v", got)
 	}
-	evidence := logEvidence([]logtelemetry.LogAttribute{{Name: "body.level", FilterField: "attributes['level']", Source: "body", SampleCoverage: "2/5", SampleBodies: []string{"level=info"}, Hint: `[{"type":"parse","parser":"logfmt"}]`}}, contract, false)
+	evidence := logEvidence([]logtelemetry.LogAttribute{{Name: "body.level", FilterField: "attributes['level']", Source: "body", SampleCoverage: "2/5", SampleBodies: []string{"level=info"}, Hint: `[{"type":"parse","parser":"logfmt"}]`}}, contract, false, 5)
 	if len(evidence) != 1 || evidence[0].Provenance != "body" || evidence[0].Parser != "logfmt" || evidence[0].Coverage != .4 || evidence[0].Complete {
 		t.Fatalf("body evidence = %#v", evidence)
 	}
+}
+
+func TestCatalogEnvironmentOnlyQueriesEveryConfiguredField(t *testing.T) {
+	inventoryCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case constants.EndpointLogsSeries:
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []map[string]string{{"ServiceName": "checkout"}}, "l9_result": map[string]any{"partial": false}})
+		case constants.EndpointLogsQueryRange:
+			inventoryCalls++
+			data := map[string]any{"result": []map[string]any{{"metric": map[string]any{"value": r.URL.Query().Get("limit"), "count": 1}}}}
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": data, "l9_result": map[string]any{"partial": false}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	contracts := testContracts(t, "[{\"datasource\":\"prod\",\"source\":\"logs\",\"schema_version\":1,\"metric_kinds\":{\"resources['deployment.environment']\":\"environment\",\"resources['deployment.environment.name']\":\"environment\"},\"backend_limits\":{\"no_hidden_sampling\":true,\"max_rows\":101}}]")
+	result, _, err := NewHandler(server.Client(), testConfig(server.URL), contracts)(context.Background(), &mcp.CallToolRequest{}, CatalogArgs{Datasource: "prod", Sources: []string{"logs"}, Protocol: "http", StartTimeISO: "2025-10-09T08:53:20Z", EndTimeISO: "2025-10-09T09:03:20Z", Include: []string{"environments"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response CatalogResponse
+	if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Result.Partial || len(response.Environments) != 2 || inventoryCalls != 2 {
+		t.Fatalf("environment-only request was not independently discovered: %#v calls=%d", response, inventoryCalls)
+	}
+}
+
+func TestCatalogRejectsMalformedPartialAttestation(t *testing.T) {
+	for _, attestation := range []any{map[string]any{}, map[string]any{"partial": nil}, map[string]any{"partial": "false"}} {
+		t.Run("invalid", func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []map[string]string{{"ServiceName": "checkout"}}, "l9_result": attestation})
+			}))
+			defer server.Close()
+			contracts := testContracts(t, "[{\"datasource\":\"prod\",\"source\":\"logs\",\"schema_version\":1,\"fields\":{\"ServiceName\":\"indexed\"},\"backend_limits\":{\"no_hidden_sampling\":true,\"max_rows\":101}}]")
+			result, _, err := NewHandler(server.Client(), testConfig(server.URL), contracts)(context.Background(), &mcp.CallToolRequest{}, CatalogArgs{Datasource: "prod", Sources: []string{"logs"}, Protocol: "http", StartTimeISO: "2025-10-09T08:53:20Z", EndTimeISO: "2025-10-09T09:03:20Z", Include: []string{"fields"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var response CatalogResponse
+			if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &response); err != nil {
+				t.Fatal(err)
+			}
+			if !response.Result.Partial {
+				t.Fatalf("malformed attestation became complete: %#v", response)
+			}
+		})
+	}
+}
+
+func TestCatalogRejectsMalformedInventoryPartialAttestation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case constants.EndpointLogsSeries:
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []map[string]string{{"ServiceName": "checkout"}}, "l9_result": map[string]any{"partial": false}})
+		case constants.EndpointLogsQueryRange:
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{"result": []map[string]any{}}, "l9_result": map[string]any{}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	contracts := testContracts(t, "[{\"datasource\":\"prod\",\"source\":\"logs\",\"schema_version\":1,\"fields\":{\"ServiceName\":\"indexed\"},\"backend_limits\":{\"no_hidden_sampling\":true,\"max_rows\":101}}]")
+	result, _, err := NewHandler(server.Client(), testConfig(server.URL), contracts)(context.Background(), &mcp.CallToolRequest{}, CatalogArgs{Datasource: "prod", Sources: []string{"logs"}, Protocol: "http", StartTimeISO: "2025-10-09T08:53:20Z", EndTimeISO: "2025-10-09T09:03:20Z", Include: []string{"services"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response CatalogResponse
+	if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Result.Partial || len(response.Services) != 0 {
+		t.Fatalf("malformed inventory attestation became authoritative: %#v", response)
+	}
+}
+
+func TestCatalogMergesLogBodyEvidenceWithoutDroppingTraceFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case constants.EndpointTracesSeries:
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []map[string]string{{"TraceOnly": "yes"}}, "l9_result": map[string]any{"partial": false}})
+		case constants.EndpointLogsSeries:
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []map[string]string{{"ServiceName": "checkout"}}, "l9_result": map[string]any{"partial": false}})
+		case constants.EndpointLogsQueryRange:
+			_ = json.NewEncoder(w).Encode(bodySampleResponse("{\"level\":\"info\"}", "{\"level\":\"warn\"}"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	contracts := testContracts(t, "[{\"datasource\":\"prod\",\"source\":\"traces\",\"schema_version\":1,\"fields\":{\"TraceOnly\":\"indexed\"},\"backend_limits\":{\"no_hidden_sampling\":true,\"max_rows\":101}},{\"datasource\":\"prod\",\"source\":\"logs\",\"schema_version\":1,\"fields\":{\"level\":\"body\"},\"backend_limits\":{\"no_hidden_sampling\":true,\"max_rows\":101}}]")
+	result, _, err := NewHandler(server.Client(), testConfig(server.URL), contracts)(context.Background(), &mcp.CallToolRequest{}, CatalogArgs{Datasource: "prod", Sources: []string{"traces", "logs"}, Protocol: "http", StartTimeISO: "2025-10-09T08:53:20Z", EndTimeISO: "2025-10-09T09:03:20Z", Include: []string{"fields"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response CatalogResponse
+	if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !hasField(response.Fields, "traces", "TraceOnly") || !hasField(response.Fields, "logs", "attributes['level']") {
+		t.Fatalf("source evidence was overwritten: %#v", response.Fields)
+	}
+}
+
+func TestCatalogMarksFailedBodySamplingIncomplete(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case constants.EndpointLogsSeries:
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []map[string]string{{"ServiceName": "checkout"}}, "l9_result": map[string]any{"partial": false}})
+		case constants.EndpointLogsQueryRange:
+			http.Error(w, "body sample failed", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	contracts := testContracts(t, "[{\"datasource\":\"prod\",\"source\":\"logs\",\"schema_version\":1,\"fields\":{\"level\":\"body\"},\"backend_limits\":{\"no_hidden_sampling\":true,\"max_rows\":101}}]")
+	result, _, err := NewHandler(server.Client(), testConfig(server.URL), contracts)(context.Background(), &mcp.CallToolRequest{}, CatalogArgs{Datasource: "prod", Sources: []string{"logs"}, Protocol: "http", StartTimeISO: "2025-10-09T08:53:20Z", EndTimeISO: "2025-10-09T09:03:20Z", Include: []string{"fields"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response CatalogResponse
+	if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Result.Partial || !hasIncompleteBodyField(response.Fields) {
+		t.Fatalf("body sampling failure became complete: %#v", response)
+	}
+}
+
+func TestCatalogMarksPartialBodySamplingIncomplete(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case constants.EndpointLogsSeries:
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []map[string]string{{"ServiceName": "checkout"}}, "l9_result": map[string]any{"partial": false}})
+		case constants.EndpointLogsQueryRange:
+			sample := bodySampleResponse("{\"level\":\"info\"}")
+			sample["l9_result"] = map[string]any{"partial": true, "reason": "sampled"}
+			_ = json.NewEncoder(w).Encode(sample)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	contracts := testContracts(t, "[{\"datasource\":\"prod\",\"source\":\"logs\",\"schema_version\":1,\"fields\":{\"level\":\"body\"},\"backend_limits\":{\"no_hidden_sampling\":true,\"max_rows\":101}}]")
+	result, _, err := NewHandler(server.Client(), testConfig(server.URL), contracts)(context.Background(), &mcp.CallToolRequest{}, CatalogArgs{Datasource: "prod", Sources: []string{"logs"}, Protocol: "http", StartTimeISO: "2025-10-09T08:53:20Z", EndTimeISO: "2025-10-09T09:03:20Z", Include: []string{"fields"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response CatalogResponse
+	if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Result.Partial {
+		t.Fatalf("partial body sample became complete: %#v", response)
+	}
+}
+
+func TestCatalogBodyEvidenceCarriesSampleCountAndExtraction(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case constants.EndpointLogsSeries:
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []map[string]string{{"ServiceName": "checkout"}}, "l9_result": map[string]any{"partial": false}})
+		case constants.EndpointLogsQueryRange:
+			_ = json.NewEncoder(w).Encode(bodySampleResponse("{\"level\":\"info\"}", "{\"level\":\"warn\"}"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	contracts := testContracts(t, "[{\"datasource\":\"prod\",\"source\":\"logs\",\"schema_version\":1,\"fields\":{\"level\":\"body\"},\"backend_limits\":{\"no_hidden_sampling\":true,\"max_rows\":101}}]")
+	result, _, err := NewHandler(server.Client(), testConfig(server.URL), contracts)(context.Background(), &mcp.CallToolRequest{}, CatalogArgs{Datasource: "prod", Sources: []string{"logs"}, Protocol: "http", StartTimeISO: "2025-10-09T08:53:20Z", EndTimeISO: "2025-10-09T09:03:20Z", Include: []string{"fields"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response CatalogResponse
+	if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &response); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range response.Fields {
+		if field.Source == "logs" && field.Provenance == "body" {
+			if field.SampleCount != 2 || field.Coverage != 1 || field.Parser != "json" || field.Extraction["field"] != "Body" {
+				t.Fatalf("incomplete body evidence: %#v", field)
+			}
+			labels, ok := field.Extraction["labels"].(map[string]any)
+			if !ok || labels["level"] != "level" {
+				t.Fatalf("extraction requirements were lost: %#v", field.Extraction)
+			}
+			return
+		}
+	}
+	t.Fatalf("body field was not returned: %#v", response.Fields)
+}
+
+func bodySampleResponse(lines ...string) map[string]any {
+	values := make([][]string, 0, len(lines))
+	for i, line := range lines {
+		values = append(values, []string{strconv.Itoa(i), line})
+	}
+	return map[string]any{"status": "success", "data": map[string]any{"resultType": "streams", "result": []map[string]any{{"values": values}}}}
+}
+
+func hasField(fields []FieldEvidence, source, field string) bool {
+	for _, evidence := range fields {
+		if evidence.Source == source && evidence.Field == field {
+			return true
+		}
+	}
+	return false
+}
+
+func hasIncompleteBodyField(fields []FieldEvidence) bool {
+	for _, evidence := range fields {
+		if evidence.Provenance == "body" && !evidence.Complete {
+			return true
+		}
+	}
+	return false
 }
 
 func testContracts(t *testing.T, body string) Contracts {

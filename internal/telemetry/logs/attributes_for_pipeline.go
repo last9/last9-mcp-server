@@ -64,6 +64,16 @@ type LogAttribute struct {
 	SampleNotes    []string `json:"sample_notes,omitempty"`
 }
 
+// CatalogAttributeDiscovery keeps body-sampling completeness separate from
+// attribute values so object-returning catalog callers can fail closed without
+// changing the existing best-effort array-tool response.
+type CatalogAttributeDiscovery struct {
+	Attributes      []LogAttribute
+	BodySampleCount int
+	Partial         bool
+	Reason          string
+}
+
 const (
 	// bodySampleLimit bounds the raw-log sample used to discover Body-derived keys.
 	bodySampleLimit = 5
@@ -379,16 +389,22 @@ func hasIndexedSeverityFamily(indexedNames []string) bool {
 // and never blocks the indexed-attribute response (the call is also bounded by
 // PerChunkHTTPTimeout so a slow raw-log scan cannot stall discovery).
 func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg models.Config, pipeline []map[string]interface{}, startSec, endSec int64, index string) []LogAttribute {
+	attributes, _, _ := sampleBodyDerivedAttributesWithStatus(ctx, client, cfg, pipeline, startSec, endSec, index)
+	return attributes
+}
+
+func sampleBodyDerivedAttributesWithStatus(ctx context.Context, client *http.Client, cfg models.Config, pipeline []map[string]interface{}, startSec, endSec int64, index string) ([]LogAttribute, int, error) {
 	ctx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
 	defer cancel()
 
 	result, err := executeLogJSONQuery(ctx, client, cfg, pipeline, startSec*1000, endSec*1000, bodySampleLimit, index)
 	if err != nil {
-		return nil
+		return nil, 0, err
 	}
+	partialErr := bodySamplePartialError(result)
 	lines := extractSampleBodyLines(result)
 	if len(lines) == 0 {
-		return nil
+		return nil, 0, fmt.Errorf("body sample returned no usable rows")
 	}
 
 	freq := map[string]int{}       // JSON body-derived key frequency
@@ -467,7 +483,7 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 				SampleCoverage: fmt.Sprintf("%d/%d", freq[key], len(lines)),
 			})
 		}
-		return out
+		return out, len(lines), partialErr
 	}
 
 	// logfmt fallback: no line was JSON, but at least one line matched
@@ -497,7 +513,7 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 				SampleCoverage: fmt.Sprintf("%d/%d", logfmtFreq[key], len(lines)),
 			})
 		}
-		return out
+		return out, len(lines), partialErr
 	}
 
 	// plaintext-inline fallback: neither JSON nor logfmt, but a severity
@@ -527,7 +543,7 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 			attr.SampleBodies = []string{sampleBody}
 			attr.SampleNotes = sampleNotes
 		}
-		return []LogAttribute{attr}
+		return []LogAttribute{attr}, len(lines), partialErr
 	}
 
 	// Plaintext fallback: no recognized structure at all — the Body is
@@ -549,10 +565,33 @@ func sampleBodyDerivedAttributes(ctx context.Context, client *http.Client, cfg m
 			SampleBodies: samples,
 			SampleNotes:  notes,
 			Hint:         plaintextBodyHint(),
-		}}
+		}}, len(lines), partialErr
 	}
 
-	return nil
+	return nil, len(lines), partialErr
+}
+
+func bodySamplePartialError(result map[string]interface{}) error {
+	raw, present := result["l9_result"]
+	if !present {
+		return nil
+	}
+	envelope, ok := raw.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("body sample returned invalid partial metadata")
+	}
+	partial, ok := envelope["partial"].(bool)
+	if !ok {
+		return fmt.Errorf("body sample returned invalid partial metadata")
+	}
+	if !partial {
+		return nil
+	}
+	reason, _ := envelope["reason"].(string)
+	if reason == "" {
+		reason = "body sample is partial"
+	}
+	return fmt.Errorf("%s", reason)
 }
 
 // extractSampleBodyLines pulls the raw Body line of each sampled log entry from
@@ -764,6 +803,74 @@ func DiscoverLogAttributesForCatalog(ctx context.Context, client *http.Client, c
 		params.Set("index", index)
 	}
 	return discoverLogAttributes(ctx, client, cfg, []map[string]interface{}{}, startSec, endSec, index, params)
+}
+
+// DiscoverLogAttributesForCatalogWithStatus preserves body-sampling failure
+// semantics for the catalog while leaving the array tool's best-effort
+// compatibility path unchanged.
+func DiscoverLogAttributesForCatalogWithStatus(ctx context.Context, client *http.Client, cfg models.Config, startSec, endSec int64, index string) (CatalogAttributeDiscovery, error) {
+	params := url.Values{}
+	params.Set("region", cfg.Region)
+	params.Set("start", fmt.Sprintf("%d", startSec))
+	params.Set("end", fmt.Sprintf("%d", endSec))
+	if index != "" {
+		params.Set("index", index)
+	}
+	names, err := fetchLogSeriesFieldNames(ctx, client, cfg, []map[string]interface{}{}, params)
+	if err != nil {
+		return CatalogAttributeDiscovery{}, err
+	}
+	body, sampleCount, bodyErr := sampleBodyDerivedAttributesWithStatus(ctx, client, cfg, []map[string]interface{}{}, startSec, endSec, index)
+	return CatalogAttributeDiscovery{
+		Attributes:      mergeLogAttributes(names, body),
+		BodySampleCount: sampleCount,
+		Partial:         bodyErr != nil,
+		Reason:          bodySamplingReason(bodyErr),
+	}, nil
+}
+
+func bodySamplingReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	return "body sampling: " + err.Error()
+}
+
+func mergeLogAttributes(indexedNames []string, body []LogAttribute) []LogAttribute {
+	out := make([]LogAttribute, 0, len(indexedNames))
+	indexedFilterFields := make(map[string]struct{}, len(indexedNames))
+	indexedHasSeverity := hasIndexedSeverityFamily(indexedNames)
+	for _, name := range indexedNames {
+		filterField := logFieldFilterField(name)
+		indexedFilterFields[filterField] = struct{}{}
+		out = append(out, LogAttribute{
+			Name:        name,
+			FilterField: filterField,
+			Hint:        utils.EQExample(filterField, "<value>"),
+		})
+	}
+	for _, attr := range body {
+		if _, dup := indexedFilterFields[attr.FilterField]; dup {
+			if attr.FilterField == "Body" && len(attr.SampleBodies) > 0 {
+				for i := range out {
+					if out[i].FilterField == attr.FilterField {
+						out[i].Source = attr.Source
+						out[i].SampleBodies = attr.SampleBodies
+						out[i].SampleNotes = attr.SampleNotes
+						out[i].Hint = attr.Hint
+						break
+					}
+				}
+			}
+			continue
+		}
+		if indexedHasSeverity && isSeverityFamilyName(attr.Name) {
+			continue
+		}
+		out = append(out, attr)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 // NewGetLogAttributesForPipelineHandler creates a handler that returns the log
