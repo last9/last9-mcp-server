@@ -39,15 +39,9 @@ func (h *HTTPServer) Start() error {
 	// Create a mux to handle multiple endpoints
 	mux := http.NewServeMux()
 
-	// Stateless mode: session state is otherwise kept per-instance in memory, so
-	// when more than one replica runs behind a load balancer a follow-up request
-	// (e.g. tools/list) can be routed to a different instance than the one that
-	// handled initialize and fail with "session not found" (404). All tools are
-	// independent request/response queries, so a temporary per-request session is
-	// sufficient and lets the server scale horizontally.
-	//
-	// The instrumented SDK helper sets the transport on the server; without it
-	// HTTP tool calls cannot be attributed to the client that made them.
+	// Stateless: stateful mode keeps sessions per-instance, so behind a load
+	// balancer a follow-up request routed to another replica 404s. The
+	// instrumented helper sets the transport, needed for client attribution.
 	httpHandler := h.server.NewStreamableHTTPHandler(&mcp.StreamableHTTPOptions{Stateless: true})
 
 	// Register handlers on both root and /mcp paths for maximum client flexibility
