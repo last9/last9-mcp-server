@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `get_databases` now lists databases discovered from infrastructure metrics, not only from OpenTelemetry client spans. Previously a database with no trace-backed client spans — an OpenSearch or RDS instance reporting through CloudWatch, for example — was reported as "No databases found" even though the Databases dashboard showed it. Rows now carry `sources`, `metrics_only`, `capabilities`, `activity`, and `resolved_labels`, and a row omits `throughput_rpm`, `p95_latency_ms`, `error_rate_pct` and `service_count` when it has no trace-backed values instead of reporting zeros (#NNN).
+
 ## [0.17.0] - 2026-09-11
 
 ### Added

@@ -245,12 +245,12 @@ The NPM route is easier on Windows — no path management.
 
 Four tools that go directly at your database performance, derived from OpenTelemetry trace spans. No extra instrumentation needed if you're already using OTel.
 
-- **`get_databases`** — Discover all databases across your infrastructure: DB type, host, throughput (queries/min), p95 latency, error rate, number of dependent services
+- **`get_databases`** — Discover all databases across your infrastructure: DB type, host, throughput (queries/min), p95 latency, error rate, number of dependent services. Also discovers databases from infrastructure metrics such as CloudWatch, with no trace instrumentation needed — those rows carry an activity value instead of trace metrics
 - **`get_database_slow_queries`** — The actual slowest query executions, ordered by duration, with trace IDs for drilling into full traces
 - **`get_database_queries`** — Query patterns and aggregates: how often a query runs, average/p95 duration, error rate
 - **`get_database_server_metrics`** — Server-side metrics from the DB host itself (CPU, connections, buffer hit rates — depends on your DB system)
 
-Supports PostgreSQL, MySQL, MongoDB, Redis, Aerospike, and anything else OTel traces with a `db_system` attribute.
+Supports PostgreSQL, MySQL, MongoDB, Redis, Aerospike, and anything else OTel traces with a `db_system` attribute — plus databases discovered from infrastructure metrics such as CloudWatch, whose rows carry an activity value instead of trace metrics.
 
 ### Prometheus / PromQL
 
@@ -450,8 +450,8 @@ LAST9_HTTP=true ./last9-mcp-server
 
 ### get_databases
 
-- `env` (string, optional): Filter by environment. Default: all.
-- `lookback_minutes` (integer, optional): Default: 60.
+- `env` (string, optional): Filter by environment. Accepts a regular expression. Default: all.
+- `lookback_minutes` (integer, optional): Default: 60. Window may not exceed 7 days.
 - `start_time_iso` / `end_time_iso` (string, optional)
 
 ### get_database_slow_queries
