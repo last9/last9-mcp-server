@@ -60,3 +60,24 @@ Why markdown-only: Go constants are invisible to the eval harness and docs tooli
 - When two params overlap (e.g. a seconds window and a minutes lookback), say explicitly which one to prefer and the valid range of each.
 - Critical query-construction rules for whales must remain on the tool description even when the long manual is a resource.
 - Write-pair tools (`create_*` / `update_*`) must state **net-new** vs **refine** in the description: create once, keep the returned id, refine with update. Do not require list-before-create unless product asks. Put this copy in the description markdown, not in Go schema strings.
+
+## CHANGELOG
+
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Add your entry to `[Unreleased]` in the same PR as the change — a release cut only renames the heading, it does not go hunting for missing entries.
+
+### What earns an entry
+
+Write one when a user of the server would otherwise hold a wrong belief: the tool returns different data, a filter or parameter now behaves differently, `isError` or a response shape changes, the process stops crashing, or a query is no longer injectable. "It was an obscure input" is not a reason to skip — `min_duration_ms` silently ignored on half the results is the same defect class as a wrong number, and both belong here.
+
+Skip dead-code removals, internal refactors, and test-only changes. Skip hardening for inputs no caller can produce (a malformed pipeline the validator already rejects, arithmetic that needs timestamps near ±2^63). Dependency bumps get a single line under `Changed`, collapsed across PRs: `Bumped 'x/y' 1.2.3 → 1.2.5 (#231, #272)`.
+
+### Format
+
+- Sections are `### Added`, `### Fixed`, `### Changed`, in that order. One contiguous run of bullets per section — no blank lines between them.
+- Newest first: a new bullet goes at the **top** of its section. After merging main into your branch, put your entry above the one you merged in.
+- End every bullet with the **PR** number, not the issue it closes: `… (#274).` A reader needs the diff, and the issue is one click from the PR anyway.
+- State the observable behavior and the mechanism behind it. These entries are read by people debugging a version difference, so "fixed a bug in get_foo" is useless — say what was wrong, what they saw, and what they see now.
+
+### Cutting a release
+
+Rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`, add a fresh empty `[Unreleased]` above it, and bump `version` in `package.json` — that bump is what the release workflow detects. Minor when tools or resources are added, patch for fixes alone; mark any breaking change with a leading `**Breaking:**`.
