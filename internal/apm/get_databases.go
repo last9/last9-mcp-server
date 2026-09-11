@@ -53,7 +53,7 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 		}
 
 		meta := deeplink.ToMeta(deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildDatabasesLink())
-		if len(resp.Databases) == 0 {
+		if len(resp.Databases) == 0 && len(fieldErrs) == 0 {
 			return &mcp.CallToolResult{Meta: meta, Content: noDatabasesContent()}, nil, nil
 		}
 

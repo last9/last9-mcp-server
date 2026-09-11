@@ -243,7 +243,7 @@ The NPM route is easier on Windows — no path management.
 
 ### Database Observability
 
-Four tools that go directly at your database performance, derived from OpenTelemetry trace spans. No extra instrumentation needed if you're already using OTel.
+Four tools that go directly at your database performance, derived from OpenTelemetry trace spans and, where traces are absent, infrastructure metrics such as CloudWatch. No extra instrumentation needed if you're already using OTel.
 
 - **`get_databases`** — Discover all databases across your infrastructure: DB type, host, throughput (queries/min), p95 latency, error rate, number of dependent services. Also discovers databases from infrastructure metrics such as CloudWatch, with no trace instrumentation needed — those rows carry an activity value instead of trace metrics
 - **`get_database_slow_queries`** — The actual slowest query executions, ordered by duration, with trace IDs for drilling into full traces

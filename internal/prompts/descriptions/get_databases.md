@@ -15,6 +15,10 @@ what a row supports: do not call trace-backed tools (`get_database_queries`,
 `resolved_labels` carries the metrics-native label names and values for the row. Use them
 when building follow-up metric queries instead of guessing label names from `host`.
 
+Each row also carries `id` (a stable identifier for the row), `env` (its deployment
+environment), `sources` (which signals produced it), and, for a metrics-only row,
+`activity_source` (which infrastructure signal the `activity` value came from).
+
 Rows are returned in the same order the Databases dashboard shows: busiest first.
 
 Parameters:

@@ -132,6 +132,13 @@ func TestGetDatabasesHandler_SendsEnvFilter(t *testing.T) {
 	if f["name"] != "deployment_environment" || f["operator"] != "matches" || f["value"] != "production" {
 		t.Errorf("filter = %v", f)
 	}
+
+	timeRange, _ := body["time_range"].(map[string]any)
+	from, _ := timeRange["from"].(float64)
+	to, _ := timeRange["to"].(float64)
+	if to-from != 3600 {
+		t.Errorf("time_range = %v; want a 3600s (60 minute) window in seconds, got %v", timeRange, to-from)
+	}
 }
 
 func TestGetDatabasesHandler_PreservesAPIOrder(t *testing.T) {
@@ -177,6 +184,28 @@ func TestGetDatabasesHandler_SurfacesPartialErrors(t *testing.T) {
 	}
 }
 
+func TestGetDatabasesHandler_SurfacesPartialErrorsWithNoRows(t *testing.T) {
+	srv := discoverServer(t, `{"template":"discover","partial":true,
+		"errors":[{"field":"traces/p95_latency","reason":"timeout"}],
+		"discover":{"databases":[]}}`, nil)
+	defer srv.Close()
+
+	handler := NewGetDatabasesHandler(srv.Client(), testDBConfig(srv.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
+		LookbackMinutes: 60,
+	})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	if strings.Contains(text, "No databases found") {
+		t.Errorf("partial failure with zero rows must not be reported as a plain empty result: %s", text)
+	}
+	if !strings.Contains(text, "_warnings") || !strings.Contains(text, "traces/p95_latency") {
+		t.Errorf("partial failures not surfaced in _warnings: %s", text)
+	}
+}
+
 func TestGetDatabasesHandler_NoDatabases(t *testing.T) {
 	srv := discoverServer(t, `{"template":"discover","discover":{"databases":[]}}`, nil)
 	defer srv.Close()
@@ -197,8 +226,15 @@ func TestGetDatabasesHandler_NoDatabases(t *testing.T) {
 func TestGetDatabasesHandler_Integration(t *testing.T) {
 	cfg := utils.SetupTestConfigOrSkip(t)
 	handler := NewGetDatabasesHandler(http.DefaultClient, *cfg)
-	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
 		LookbackMinutes: 60,
 	})
-	utils.CheckAPIError(t, err)
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+	text := utils.GetTextContent(t, result)
+	if len(text) > 500 {
+		text = text[:500]
+	}
+	t.Logf("get_databases response: %s", text)
 }
