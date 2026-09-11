@@ -555,12 +555,20 @@ func matchesAlertConfigSearchTerm(
 
 	if containsFold(entity.Name, searchTerm) ||
 		containsFold(entity.Type, searchTerm) ||
-		containsFold(entity.DataSourceName, searchTerm) {
+		containsFold(entity.DataSourceName, searchTerm) ||
+		containsFold(entity.Metadata.Team, searchTerm) ||
+		containsFold(entity.Tier, searchTerm) {
 		return true
 	}
 
 	for _, tag := range entity.Metadata.Tags {
 		if containsFold(tag, searchTerm) {
+			return true
+		}
+	}
+
+	for key, value := range entity.Metadata.Labels {
+		if containsFold(key, searchTerm) || containsFold(value, searchTerm) {
 			return true
 		}
 	}
