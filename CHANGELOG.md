@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `get_apm_service_deviations` no longer lets an improvement oust a cross-category regression from the `max_services` cap. `orderedDeviationSlices` interleaved each category's `Improvements` between that category's `Regressions` and the next category's `Regressions` (`Rel.Regr, Rel.Impr, Exp.Regr, …`), so a Reliability improvement consumed a cap slot — and was picked as the fleet follow-up target by `leadingDeviationIdentity` — before an Experience or SustainedLatency regression was even visited. `limitDeviationResult` then dropped the unvisited regression from `services` and the deviation leaderboards via `filterLeaderboardEntries`, and no downstream pass reinstated it: `shouldQueryOperations` and the corroborating follow-ups (`get_exceptions`, `get_service_logs`, `get_service_traces`) read the post-cap result and gate on `*.Regressions > 0`, so they never fired. At both `max_services=1` and the default `max_services=10`, a fleet's only regression could be silently deleted while improvements filled the cap and the follow-up was misrouted to an improving service. The slices are now ordered all `Regressions` before all `Improvements` (category-priority within each kind, magnitude within each category), so no improvement can outrank any regression across category boundaries — consistent with the regression-driven rest of the system. The committed category-over-magnitude priority among regressions (a low-magnitude Reliability regression still beats a high-magnitude Experience one) is preserved. The description's "magnitude-priority order" wording is corrected to "all regressions before all improvements, category-priority within each kind, magnitude within each category". Introduced by #264.
+
 ## [0.17.0] - 2026-09-11
 
 ### Added
