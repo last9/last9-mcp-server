@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `get_alert_groups`: the `label_key` + `label_value` filter is now truly case-insensitive on both coordinates. `matchesAlertGroupEntityFilters` resolved the entity's labels to a single value first (exact-byte key, else the lexicographically-lowest case-variant key) before comparing it to the query, so when an entity carried duplicate keys differing only by case with different values (e.g. `domain=checkout` and `Domain=other`), the same semantic query matched or failed depending on the casing the caller typed — `label_key="domain"` matched while `label_key="DOMAIN"` dropped the same entity. The matcher now iterates the labels and accepts the entity when any `(key, value)` pair matches case-insensitively on both coordinates via `strings.EqualFold`, so the result no longer depends on query-key casing. `get_alert_config` is unaffected — its args struct never sets `label_key`/`label_value`, so the label branch was never entered there.
+
 ## [0.17.0] - 2026-09-11
 
 ### Added
