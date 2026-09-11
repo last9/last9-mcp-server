@@ -116,9 +116,11 @@ func buildDeviationAPIRequest(args GetTraceAttributeDeviationsArgs, now time.Tim
 	if mode != "latency" && mode != "errors" && mode != "time" {
 		return deviationAPIRequest{}, fmt.Errorf("comparison_mode must be latency, errors, or time")
 	}
-	if err := SanitizeTraceFilterConditions(args.Filters, "filters"); err != nil {
+	sanitizedFilters, err := SanitizeTraceFilterConditions(args.Filters, "filters")
+	if err != nil {
 		return deviationAPIRequest{}, err
 	}
+	args.Filters = sanitizedFilters
 	target, err := deviationTargetWindow(args, now)
 	if err != nil {
 		return deviationAPIRequest{}, err

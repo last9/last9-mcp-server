@@ -1,6 +1,7 @@
 package traces
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -87,20 +88,90 @@ func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 
 // SanitizeTraceFilterConditions is SanitizeTraceJSONQuery without the top-level
 // $and wrap: each element is already one condition inside a filters array, so
-// wrapping would misplace it.
-func SanitizeTraceFilterConditions(conditions []map[string]interface{}, pathPrefix string) error {
+// wrapping would misplace it. It returns a possibly-larger slice: when the
+// shared rewriteBrokenExistenceOperators helper folds $notnull/$exists alongside
+// a sibling operator into a single {"$and":[...]} element, that $and is split
+// back into sibling bare-condition elements, because a filters array is
+// AND-implicit and a logical operator at the element level is non-canonical.
+func SanitizeTraceFilterConditions(conditions []map[string]interface{}, pathPrefix string) ([]map[string]interface{}, error) {
+	sanitized := make([]map[string]interface{}, 0, len(conditions))
 	for i, condition := range conditions {
 		path := fmt.Sprintf("%s[%d]", pathPrefix, i)
 		rewriteBrokenExistenceOperators(condition)
-		rewriteLegacyDotNotationFields(condition)
-		if err := validateTraceFilterCondition(condition, path); err != nil {
-			return err
+		flat, err := splitFiltersElement(condition, path)
+		if err != nil {
+			return nil, err
 		}
-		if err := validateFilterFields(condition, path); err != nil {
-			return err
+		for _, cond := range flat {
+			rewriteLegacyDotNotationFields(cond)
+			if err := validateTraceFilterCondition(cond, path); err != nil {
+				return nil, err
+			}
+			if err := validateFilterFields(cond, path); err != nil {
+				return nil, err
+			}
+			sanitized = append(sanitized, cond)
 		}
 	}
-	return nil
+	return sanitized, nil
+}
+
+// splitFiltersElement expands a single filters-array element into one or more
+// bare field-operator conditions.
+//
+// rewriteBrokenExistenceOperators reuses the pipeline-path helper
+// rewriteBrokenExistenceOperatorsInMap, which folds $notnull/$exists alongside
+// a sibling operator into a single {"$and":[...]} map. That fold is correct
+// for the pipeline path (the top-level query is re-wrapped by
+// wrapTopLevelFilterQuery), but a deviations filters array is AND-implicit with
+// one field operator per element, so a $and at the element level violates the
+// sanitizer's own design contract. $and is therefore split into its children —
+// semantically identical, since AND is the implicit join between filters
+// elements. $or/$not cannot be split without changing semantics and are
+// rejected with guidance to emit each condition as a separate filters element.
+// Nested $and wrappers are flattened. Children are sorted so the output is
+// deterministic (canonical) regardless of map-iteration order.
+func splitFiltersElement(condition map[string]interface{}, path string) ([]map[string]interface{}, error) {
+	if len(condition) != 1 {
+		return []map[string]interface{}{condition}, nil
+	}
+	for key, item := range condition {
+		switch key {
+		case "$and":
+			children, ok := item.([]interface{})
+			if !ok {
+				return []map[string]interface{}{condition}, nil
+			}
+			flat := make([]map[string]interface{}, 0, len(children))
+			for j, child := range children {
+				childMap, ok := child.(map[string]interface{})
+				if !ok {
+					return nil, fmt.Errorf(
+						"invalid filter condition at %s.$and[%d]: each $and child must be a single field-operator condition object such as {\"$eq\":[field,value]}",
+						path, j,
+					)
+				}
+				expanded, err := splitFiltersElement(childMap, fmt.Sprintf("%s.$and[%d]", path, j))
+				if err != nil {
+					return nil, err
+				}
+				flat = append(flat, expanded...)
+			}
+			sort.SliceStable(flat, func(a, b int) bool {
+				encA, _ := json.Marshal(flat[a])
+				encB, _ := json.Marshal(flat[b])
+				return string(encA) < string(encB)
+			})
+			return flat, nil
+		case "$or", "$not":
+			return nil, fmt.Errorf(
+				"invalid filter condition at %s: the %q logical operator cannot appear inside a filters array — each filters element must be a single bare field-operator condition such as {\"$eq\":[field,value]}; emit each condition as a separate filters element",
+				path, key,
+			)
+		}
+		return []map[string]interface{}{condition}, nil
+	}
+	return []map[string]interface{}{condition}, nil
 }
 
 // wrapTopLevelFilterQuery ensures the top-level filter query is wrapped in a
