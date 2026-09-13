@@ -337,7 +337,27 @@ func fetchInventory(ctx context.Context, client *http.Client, cfg models.Config,
 	if limit == 0 {
 		limit = maxCatalogLimit
 	}
-	pipeline := []map[string]any{{"type": "aggregate", "aggregates": []map[string]any{{"function": map[string]any{"$count": []any{}}, "as": "count"}}, "groupby": map[string]any{field: "value"}}}
+	pipeline := make([]map[string]any, 0, 1)
+	if execution := contract.Execution; execution != nil && field == execution.EnvironmentField {
+		for _, stage := range execution.ParserStages {
+			parser := map[string]any{"type": stage.Type, "parser": stage.Parser}
+			if stage.Field != "" {
+				parser["field"] = stage.Field
+			}
+			if len(stage.Labels) > 0 {
+				labels := make(map[string]any, len(stage.Labels))
+				for name, value := range stage.Labels {
+					labels[name] = value
+				}
+				parser["labels"] = labels
+			}
+			if stage.Pattern != "" {
+				parser["pattern"] = stage.Pattern
+			}
+			pipeline = append(pipeline, parser)
+		}
+	}
+	pipeline = append(pipeline, map[string]any{"type": "aggregate", "aggregates": []map[string]any{{"function": map[string]any{"$count": []any{}}, "as": "count"}}, "groupby": map[string]any{field: "value"}})
 	var resp *http.Response
 	var err error
 	if contract.BackendLimits.MaxRows < limit+1 {

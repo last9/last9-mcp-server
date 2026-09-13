@@ -113,6 +113,55 @@ func TestCatalogDiscoversExecutionEnvironmentWithoutLegacyDeclaration(t *testing
 	}
 }
 
+func TestCatalogParsesBodyEnvironmentBeforeInventory(t *testing.T) {
+	contracts := testContracts(t, `[{"datasource":"prod","source":"logs","schema_version":1,"backend_limits":{"no_hidden_sampling":true,"max_rows":5000},"execution":{"record_unit":"log_record","parser_stages":[{"type":"parse","parser":"json","field":"Body","labels":{"environment":"env"}}],"environment_field":"attributes['environment']"}}]`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == constants.EndpointLogsSeries {
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []any{}, "l9_result": map[string]any{"partial": false}})
+			return
+		}
+		if r.URL.Path != constants.EndpointLogsQueryRange {
+			http.NotFound(w, r)
+			return
+		}
+		var body struct {
+			Pipeline []map[string]any `json:"pipeline"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			return
+		}
+		parsed := len(body.Pipeline) == 2 && body.Pipeline[0]["type"] == "parse" && body.Pipeline[0]["parser"] == "json" && body.Pipeline[0]["field"] == "Body" && body.Pipeline[1]["type"] == "aggregate"
+		if parsed {
+			if labels, ok := body.Pipeline[0]["labels"].(map[string]any); !ok || labels["environment"] != "env" {
+				parsed = false
+			}
+			if groupby, ok := body.Pipeline[1]["groupby"].(map[string]any); !ok || groupby["attributes['environment']"] != "value" {
+				parsed = false
+			}
+		}
+		if !parsed {
+			t.Errorf("inventory must parse Body before grouping environment: %#v", body.Pipeline)
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{"result": []any{}}, "l9_result": map[string]any{"partial": false}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{"result": []any{map[string]any{"metric": map[string]any{"value": "prod", "count": 1}}}}, "l9_result": map[string]any{"partial": false}})
+	}))
+	defer server.Close()
+
+	result, _, err := NewHandler(server.Client(), testConfig(server.URL), contracts)(context.Background(), nil, CatalogArgs{Datasource: "prod", Sources: []string{"logs"}, Protocol: "http", StartTimeISO: "2025-10-09T08:53:20Z", EndTimeISO: "2025-10-09T09:03:20Z", Include: []string{"environments"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response CatalogResponse
+	if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Result.Partial || len(response.Environments) != 1 || response.Environments[0].Value != "prod" {
+		t.Fatalf("unparsed environment receipt became authoritative: %#v", response)
+	}
+}
+
 func TestExecutableDescriptorStartupRefusals(t *testing.T) {
 	for _, execution := range []string{
 		`{"record_unit":"log_record"}`,
