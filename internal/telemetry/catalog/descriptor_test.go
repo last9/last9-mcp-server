@@ -20,13 +20,19 @@ func TestCatalogTransportsOnlySelectedOperatorDescriptor(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []any{}, "l9_result": map[string]any{"partial": false}})
 	}))
 	defer server.Close()
-	result, _, err := NewHandler(server.Client(), testConfig(server.URL), contracts)(context.Background(), nil, CatalogArgs{Datasource: "prod", Sources: []string{"logs"}, Protocol: "http", StartTimeISO: "2025-10-09T08:53:20Z", EndTimeISO: "2025-10-09T09:03:20Z", Include: []string{"fields"}})
+	result, _, err := NewHandler(server.Client(), testConfig(server.URL), contracts)(context.Background(), nil, CatalogArgs{Datasource: "prod", Sources: []string{"logs"}, Protocol: "http", StartTimeISO: "2025-10-09T08:53:20.000Z", EndTimeISO: "2025-10-09T09:03:20.000Z", Include: []string{"fields"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var body map[string]any
 	if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &body); err != nil {
 		t.Fatal(err)
+	}
+	for _, name := range []string{"requested", "effective"} {
+		scope := body[name].(map[string]any)
+		if scope["start_time_iso"] != "2025-10-09T08:53:20.000Z" || scope["end_time_iso"] != "2025-10-09T09:03:20.000Z" {
+			t.Fatalf("%s must preserve accepted frozen timestamp bytes: %#v", name, scope)
+		}
 	}
 	descriptors, ok := body["descriptors"].([]any)
 	if !ok || len(descriptors) != 1 {

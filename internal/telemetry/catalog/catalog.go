@@ -244,7 +244,7 @@ func validateArgs(args CatalogArgs, cfg models.Config) (Scope, models.Config, in
 		}
 		queryCfg.Region = ds.Region
 	}
-	return Scope{Datasource: args.Datasource, Sources: sources, LogIndex: index, Protocol: args.Protocol, StartTimeISO: startAt.Format("2006-01-02T15:04:05Z"), EndTimeISO: endAt.Format("2006-01-02T15:04:05Z")}, queryCfg, startAt.UnixMilli(), endAt.UnixMilli(), includes, nil
+	return Scope{Datasource: args.Datasource, Sources: sources, LogIndex: index, Protocol: args.Protocol, StartTimeISO: args.StartTimeISO, EndTimeISO: args.EndTimeISO}, queryCfg, startAt.UnixMilli(), endAt.UnixMilli(), includes, nil
 }
 
 func fetchFields(ctx context.Context, client *http.Client, cfg models.Config, source string, start, end int64, index string) ([]string, int, bool, string, error) {
