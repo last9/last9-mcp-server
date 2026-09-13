@@ -70,13 +70,14 @@ type ResultEnvelope struct {
 }
 
 type CatalogResponse struct {
-	SchemaVersion int             `json:"schema_version"`
-	Requested     Scope           `json:"requested"`
-	Effective     Scope           `json:"effective"`
-	Services      []ObservedValue `json:"services"`
-	Environments  []ObservedValue `json:"environments,omitempty"`
-	Fields        []FieldEvidence `json:"fields"`
-	Result        ResultEnvelope  `json:"l9_result"`
+	SchemaVersion int              `json:"schema_version"`
+	Requested     Scope            `json:"requested"`
+	Effective     Scope            `json:"effective"`
+	Services      []ObservedValue  `json:"services"`
+	Environments  []ObservedValue  `json:"environments,omitempty"`
+	Fields        []FieldEvidence  `json:"fields"`
+	Descriptors   []SourceContract `json:"descriptors,omitempty"`
+	Result        ResultEnvelope   `json:"l9_result"`
 }
 
 func NewHandler(client *http.Client, cfg models.Config, contracts Contracts) func(context.Context, *mcp.CallToolRequest, CatalogArgs) (*mcp.CallToolResult, any, error) {
@@ -99,6 +100,9 @@ func NewHandler(client *http.Client, cfg models.Config, contracts Contracts) fun
 				index = requested.LogIndex
 			}
 			contract, trusted := contracts.Lookup(requested.Datasource, source, index, schemaVersion)
+			if trusted && contract.Execution != nil {
+				response.Descriptors = append(response.Descriptors, contract)
+			}
 			fields, samples, fieldPartial, fieldReason, err := fetchFields(ctx, client, queryCfg, source, start, end, index)
 			if err != nil {
 				reasons = append(reasons, source+": "+err.Error())
