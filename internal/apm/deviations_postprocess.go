@@ -43,11 +43,14 @@ func limitDeviationResult(result *apmDeviationResult, limit int) {
 		}
 		identities[key] = struct{}{}
 	}
-	// Deviating identities are kept in magnitude-priority order. The leaderboards
-	// and ThroughputShifts are already magnitude-sorted by sortDeviationResult,
-	// which runs before this cap, so capping here keeps the worst regression
-	// visible and keeps the fleet follow-up aligned with the magnitude leader,
-	// which leadingDeviationIdentity picks from the same ordered slices.
+	// Deviating identities are admitted in priority order: all regressions
+	// before all improvements, category-priority (Reliability before Experience
+	// before SustainedLatency) within each kind, magnitude within each
+	// category. The leaderboards and ThroughputShifts are already sorted within
+	// each slice by sortDeviationResult, which runs before this cap, so capping
+	// here keeps the highest-priority regression visible and keeps the fleet
+	// follow-up aligned with it — leadingDeviationIdentity picks from the same
+	// ordered slices.
 	for _, entries := range orderedDeviationSlices(*result) {
 		for _, entry := range entries {
 			add(entry.ServiceName, entry.Env)
@@ -71,16 +74,25 @@ func limitDeviationResult(result *apmDeviationResult, limit int) {
 	}
 }
 
-// orderedDeviationSlices returns the deviation slices in magnitude-priority
-// order. This is the single source of that priority: limitDeviationResult uses
-// it to decide which identities survive the max_services cap, and
-// leadingDeviationIdentity uses it to pick the fleet follow-up target, so the
-// two can never disagree about which identity leads.
+// orderedDeviationSlices returns the deviation slices in admission-priority
+// order: all Regressions before all Improvements, category-priority
+// (Reliability before Experience before SustainedLatency) within each kind,
+// then ThroughputShifts last. Regressions outrank improvements across category
+// boundaries so an improvement can never oust a regression from the capped
+// result — the rest of the system is regression-driven: shouldQueryOperations
+// and the corroborating follow-ups fire only on regressions. This is the
+// single source of that priority: limitDeviationResult uses it to decide which
+// identities survive the max_services cap, and leadingDeviationIdentity uses
+// it to pick the fleet follow-up target, so the two can never disagree about
+// which identity leads.
 func orderedDeviationSlices(result apmDeviationResult) [][]LeaderboardEntry {
 	return [][]LeaderboardEntry{
-		result.Leaderboards.Reliability.Regressions, result.Leaderboards.Reliability.Improvements,
-		result.Leaderboards.Experience.Regressions, result.Leaderboards.Experience.Improvements,
-		result.Leaderboards.SustainedLatency.Regressions, result.Leaderboards.SustainedLatency.Improvements,
+		result.Leaderboards.Reliability.Regressions,
+		result.Leaderboards.Experience.Regressions,
+		result.Leaderboards.SustainedLatency.Regressions,
+		result.Leaderboards.Reliability.Improvements,
+		result.Leaderboards.Experience.Improvements,
+		result.Leaderboards.SustainedLatency.Improvements,
 		result.ThroughputShifts,
 	}
 }
