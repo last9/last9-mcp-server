@@ -3,14 +3,17 @@ package traces
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -82,6 +85,103 @@ func TestTraceAttributeDeviationsHandlerCallsAtomicEndpoint(t *testing.T) {
 	text, ok := result.Content[0].(*mcp.TextContent)
 	if !ok || !strings.Contains(text.Text, `"analysis_version":"trace-attribute-deviations/v1"`) {
 		t.Fatalf("unexpected MCP result: %+v", result.Content)
+	}
+}
+
+// The sanitizer must not forward a {"$and":[...]} logical operator as a single
+// filters-array element. When a filters element mixes $notnull/$exists with a
+// sibling field operator, the shared existence rewriter folds it to $and; the
+// deviations path must split that $and back into sibling bare conditions before
+// the request hits the wire. Asserting on the decoded upstream body (not the
+// sanitizer's in-memory output) proves the canonical shape actually reaches
+// the endpoint.
+func TestTraceAttributeDeviationsHandler_SplitsFoldedFiltersOnTheWire(t *testing.T) {
+	var captured deviationAPIRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"contract_version":"investigation-evidence/v1","analysis_version":"trace-attribute-deviations/v1"}`))
+	}))
+	defer server.Close()
+	handler := NewGetTraceAttributeDeviationsHandler(server.Client(), tracesTestConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeDeviationsArgs{
+		ComparisonMode:     "latency",
+		ServiceName:        "checkout",
+		Environment:        "prod",
+		LatencyThresholdMs: 100,
+		Filters: []map[string]interface{}{
+			{
+				"$notnull": []interface{}{"SpanName"},
+				"$eq":      []interface{}{"SpanKind", "SPAN_KIND_SERVER"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(captured.Scope.Filters) != 2 {
+		t.Fatalf("want 2 bare filters elements on the wire, got %d: %v",
+			len(captured.Scope.Filters), captured.Scope.Filters)
+	}
+	for i, cond := range captured.Scope.Filters {
+		for key := range cond {
+			if _, isLogical := traceFilterLogicalOperators[key]; isLogical {
+				t.Errorf("filters element %d forwarded a %q logical operator (non-canonical): %v", i, key, cond)
+			}
+		}
+	}
+	raw, _ := json.Marshal(captured.Scope.Filters)
+	body := string(raw)
+	for _, want := range []string{
+		`{"$eq":["SpanKind","SPAN_KIND_SERVER"]}`,
+		`{"$neq":["SpanName",""]}`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing expected bare condition %s on the wire, got %s", want, body)
+		}
+	}
+	if strings.Contains(body, "$notnull") || strings.Contains(body, "$exists") {
+		t.Fatalf("broken existence operator reached the wire: %s", body)
+	}
+}
+
+// A filters array with each operator already in its own element (the idiomatic
+// shape) must be forwarded unchanged: the split fix must not regrow or reorder
+// the happy path.
+func TestTraceAttributeDeviationsHandler_ForwardsBareFiltersUnchanged(t *testing.T) {
+	var captured deviationAPIRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"contract_version":"investigation-evidence/v1","analysis_version":"trace-attribute-deviations/v1"}`))
+	}))
+	defer server.Close()
+	handler := NewGetTraceAttributeDeviationsHandler(server.Client(), tracesTestConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeDeviationsArgs{
+		ComparisonMode:     "latency",
+		ServiceName:        "checkout",
+		Environment:        "prod",
+		LatencyThresholdMs: 100,
+		Filters: []map[string]interface{}{
+			{"$neq": []interface{}{"SpanName", ""}},
+			{"$eq": []interface{}{"SpanKind", "SPAN_KIND_SERVER"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(captured.Scope.Filters) != 2 {
+		t.Fatalf("want 2 filters elements, got %d", len(captured.Scope.Filters))
+	}
+	if len(captured.Scope.Filters[0]) != 1 || captured.Scope.Filters[0]["$neq"] == nil {
+		t.Errorf("first element changed shape: %v", captured.Scope.Filters[0])
+	}
+	if len(captured.Scope.Filters[1]) != 1 || captured.Scope.Filters[1]["$eq"] == nil {
+		t.Errorf("second element changed shape: %v", captured.Scope.Filters[1])
 	}
 }
 
@@ -292,4 +392,149 @@ func TestDeviationDiscoveryOmitsEndpointOwnedLimits(t *testing.T) {
 			t.Fatalf("%s must be omitted on the explicit path: %s", absent, body)
 		}
 	}
+}
+
+// With no filters, the request must omit the filters field entirely (omitempty)
+// and must not introduce a $and. Confirms the new returned-slice path doesn't
+// emit an empty array or a stray logical operator on the happy path.
+func TestDeviationEmptyFiltersOmitsFiltersField(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	for _, args := range []GetTraceAttributeDeviationsArgs{
+		{ComparisonMode: "errors", ServiceName: "checkout", Environment: "production"},
+		{ComparisonMode: "errors", ServiceName: "checkout", Environment: "production", Filters: nil},
+		{ComparisonMode: "errors", ServiceName: "checkout", Environment: "production", Filters: []map[string]interface{}{}},
+	} {
+		request, err := buildDeviationAPIRequest(args, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := json.Marshal(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(body), `"filters"`) {
+			t.Fatalf("filters key must be omitted when there are no filters: %s", body)
+		}
+		if strings.Contains(string(body), "$and") {
+			t.Fatalf("no $and may be synthesized on the empty path: %s", body)
+		}
+	}
+}
+
+// TraceId/SpanId/ParentSpanId/TraceState/Timestamp are valid get_traces fields
+// but the deviations endpoint rejects them with HTTP 422. Fail closed locally
+// (including when the banned field is inside a folded multi-op element) and
+// make zero upstream requests.
+func TestDeviationDisallowedFilterFieldsMakeZeroUpstreamRequests(t *testing.T) {
+	for _, field := range []string{"TraceId", "SpanId", "ParentSpanId", "TraceState", "Timestamp"} {
+		field := field
+		t.Run(field, func(t *testing.T) {
+			var n atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				n.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = io.WriteString(w, `{"contract_version":"investigation-evidence/v1","analysis_version":"trace-attribute-deviations/v1"}`)
+			}))
+			defer server.Close()
+			handler := NewGetTraceAttributeDeviationsHandler(server.Client(), tracesTestConfig(server.URL))
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeDeviationsArgs{
+				ComparisonMode:     "latency",
+				ServiceName:        "checkout",
+				Environment:        "prod",
+				LatencyThresholdMs: 100,
+				Filters: []map[string]interface{}{
+					{
+						"$notnull": []interface{}{"SpanName"},
+						"$eq":      []interface{}{field, "x"},
+					},
+				},
+			})
+			if err == nil {
+				t.Fatalf("expected local rejection of deviations filter field %q", field)
+			}
+			if !strings.Contains(err.Error(), "invalid filter field") || !strings.Contains(err.Error(), field) {
+				t.Fatalf("want invalid filter field %q, got %v", field, err)
+			}
+			if got := n.Load(); got != 0 {
+				t.Fatalf("disallowed field made %d upstream requests, want 0", got)
+			}
+		})
+	}
+}
+
+// Allowed cohort fields (and attributes['…']) must still pass local validation
+// so the denylist does not over-reject.
+func TestDeviationAllowsCohortFilterFields(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	for _, field := range []string{"ServiceName", "SpanName", "SpanKind", "StatusCode", "Duration", "StatusMessage"} {
+		_, err := buildDeviationAPIRequest(GetTraceAttributeDeviationsArgs{
+			ComparisonMode:     "latency",
+			ServiceName:        "checkout",
+			Environment:        "prod",
+			LatencyThresholdMs: 100,
+			Filters: []map[string]interface{}{
+				{"$neq": []interface{}{field, ""}},
+			},
+		}, now)
+		if err != nil {
+			t.Fatalf("field %q should be allowed: %v", field, err)
+		}
+	}
+	_, err := buildDeviationAPIRequest(GetTraceAttributeDeviationsArgs{
+		ComparisonMode:     "latency",
+		ServiceName:        "checkout",
+		Environment:        "prod",
+		LatencyThresholdMs: 100,
+		Filters: []map[string]interface{}{
+			{"$eq": []interface{}{"attributes['http.method']", "GET"}},
+		},
+	}, now)
+	if err != nil {
+		t.Fatalf("attributes filter should be allowed: %v", err)
+	}
+}
+
+// Integration test against the live Last9 attribute-deviations endpoint. It is
+// gated by TEST_REFRESH_TOKEN / LAST9_REFRESH_TOKEN via SetupTestConfigOrSkip;
+// without a token it skips (the repo convention for all *_Integration tests).
+// With a token set, the trigger filters — a single element mixing $notnull with
+// a sibling $eq — exercise the fix end to end: the sanitizer must split the
+// folded $and into sibling bare conditions and the upstream must accept the
+// canonical flat filters shape (200, evidence-contract-conformant), proving no
+// 400 regression from the split. SpanName/SpanKind are used because identity
+// fields (TraceId, …) are rejected both locally and upstream.
+func TestGetTraceAttributeDeviationsHandler_Integration(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+	handler := NewGetTraceAttributeDeviationsHandler(http.DefaultClient, *cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeDeviationsArgs{
+		ComparisonMode:     "latency",
+		ServiceName:        "checkout",
+		Environment:        "prod",
+		LatencyThresholdMs: 100,
+		Filters: []map[string]interface{}{
+			{
+				"$notnull": []interface{}{"SpanName"},
+				"$eq":      []interface{}{"SpanKind", "SPAN_KIND_SERVER"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected upstream to accept split filters; got: %v", err)
+	}
+	text, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("expected TextContent, got %T", result.Content[0])
+	}
+	var envelope map[string]interface{}
+	if err := json.Unmarshal([]byte(text.Text), &envelope); err != nil {
+		t.Fatalf("response is not valid JSON: %v", err)
+	}
+	if envelope["contract_version"] != investigationEvidenceVersion {
+		t.Fatalf("contract_version=%v, want %q", envelope["contract_version"], investigationEvidenceVersion)
+	}
+	if envelope["analysis_version"] != attributeDeviationsVersion {
+		t.Fatalf("analysis_version=%v, want %q", envelope["analysis_version"], attributeDeviationsVersion)
+	}
+	t.Logf("deviations endpoint accepted the split filters shape; evidence: %s", text.Text)
 }
