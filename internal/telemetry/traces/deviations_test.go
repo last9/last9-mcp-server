@@ -13,7 +13,6 @@ import (
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
-	"last9-mcp/internal/otelids"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -114,8 +113,8 @@ func TestTraceAttributeDeviationsHandler_SplitsFoldedFiltersOnTheWire(t *testing
 		LatencyThresholdMs: 100,
 		Filters: []map[string]interface{}{
 			{
-				"$notnull": []interface{}{"TraceId"},
-				"$eq":      []interface{}{"ServiceName", "checkout"},
+				"$notnull": []interface{}{"SpanName"},
+				"$eq":      []interface{}{"SpanKind", "SPAN_KIND_SERVER"},
 			},
 		},
 	})
@@ -136,8 +135,8 @@ func TestTraceAttributeDeviationsHandler_SplitsFoldedFiltersOnTheWire(t *testing
 	raw, _ := json.Marshal(captured.Scope.Filters)
 	body := string(raw)
 	for _, want := range []string{
-		`{"$eq":["ServiceName","checkout"]}`,
-		`{"$neq":["TraceId",""]}`,
+		`{"$eq":["SpanKind","SPAN_KIND_SERVER"]}`,
+		`{"$neq":["SpanName",""]}`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing expected bare condition %s on the wire, got %s", want, body)
@@ -168,8 +167,8 @@ func TestTraceAttributeDeviationsHandler_ForwardsBareFiltersUnchanged(t *testing
 		Environment:        "prod",
 		LatencyThresholdMs: 100,
 		Filters: []map[string]interface{}{
-			{"$neq": []interface{}{"TraceId", ""}},
-			{"$eq": []interface{}{"ServiceName", "checkout"}},
+			{"$neq": []interface{}{"SpanName", ""}},
+			{"$eq": []interface{}{"SpanKind", "SPAN_KIND_SERVER"}},
 		},
 	})
 	if err != nil {
@@ -422,42 +421,77 @@ func TestDeviationEmptyFiltersOmitsFiltersField(t *testing.T) {
 	}
 }
 
-// A filters element that mixes $notnull with a sibling $eq on TraceId carrying a
-// span-id-as-trace-id value must be caught by ID validation after the fold is
-// split, and must not fan out an upstream request. Mirrors the
-// TestGetTraces_InvalidPipelinesMakeZeroUpstreamRequests convention using a
-// counting server so the "zero upstream requests" invariant is asserted on the
-// wire, not just on the error return.
-func TestDeviationFoldedFilterWithInvalidTraceIDMakesZeroUpstreamRequests(t *testing.T) {
-	var n atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		n.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, `{"contract_version":"investigation-evidence/v1","analysis_version":"trace-attribute-deviations/v1"}`)
-	}))
-	defer server.Close()
-	handler := NewGetTraceAttributeDeviationsHandler(server.Client(), tracesTestConfig(server.URL))
-	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeDeviationsArgs{
+// TraceId/SpanId/ParentSpanId/TraceState/Timestamp are valid get_traces fields
+// but the deviations endpoint rejects them with HTTP 422. Fail closed locally
+// (including when the banned field is inside a folded multi-op element) and
+// make zero upstream requests.
+func TestDeviationDisallowedFilterFieldsMakeZeroUpstreamRequests(t *testing.T) {
+	for _, field := range []string{"TraceId", "SpanId", "ParentSpanId", "TraceState", "Timestamp"} {
+		field := field
+		t.Run(field, func(t *testing.T) {
+			var n atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				n.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = io.WriteString(w, `{"contract_version":"investigation-evidence/v1","analysis_version":"trace-attribute-deviations/v1"}`)
+			}))
+			defer server.Close()
+			handler := NewGetTraceAttributeDeviationsHandler(server.Client(), tracesTestConfig(server.URL))
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeDeviationsArgs{
+				ComparisonMode:     "latency",
+				ServiceName:        "checkout",
+				Environment:        "prod",
+				LatencyThresholdMs: 100,
+				Filters: []map[string]interface{}{
+					{
+						"$notnull": []interface{}{"SpanName"},
+						"$eq":      []interface{}{field, "x"},
+					},
+				},
+			})
+			if err == nil {
+				t.Fatalf("expected local rejection of deviations filter field %q", field)
+			}
+			if !strings.Contains(err.Error(), "invalid filter field") || !strings.Contains(err.Error(), field) {
+				t.Fatalf("want invalid filter field %q, got %v", field, err)
+			}
+			if got := n.Load(); got != 0 {
+				t.Fatalf("disallowed field made %d upstream requests, want 0", got)
+			}
+		})
+	}
+}
+
+// Allowed cohort fields (and attributes['…']) must still pass local validation
+// so the denylist does not over-reject.
+func TestDeviationAllowsCohortFilterFields(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	for _, field := range []string{"ServiceName", "SpanName", "SpanKind", "StatusCode", "Duration", "StatusMessage"} {
+		_, err := buildDeviationAPIRequest(GetTraceAttributeDeviationsArgs{
+			ComparisonMode:     "latency",
+			ServiceName:        "checkout",
+			Environment:        "prod",
+			LatencyThresholdMs: 100,
+			Filters: []map[string]interface{}{
+				{"$neq": []interface{}{field, ""}},
+			},
+		}, now)
+		if err != nil {
+			t.Fatalf("field %q should be allowed: %v", field, err)
+		}
+	}
+	_, err := buildDeviationAPIRequest(GetTraceAttributeDeviationsArgs{
 		ComparisonMode:     "latency",
 		ServiceName:        "checkout",
 		Environment:        "prod",
 		LatencyThresholdMs: 100,
 		Filters: []map[string]interface{}{
-			{
-				"$notnull": []interface{}{"attributes['user.id']"},
-				"$eq":      []interface{}{"TraceId", testSpanIDAsTraceID},
-			},
+			{"$eq": []interface{}{"attributes['http.method']", "GET"}},
 		},
-	})
-	if err == nil {
-		t.Fatal("expected local validation error for span-id-as-trace-id inside a folded element")
-	}
-	if !strings.Contains(err.Error(), "category="+otelids.CategorySpanIDAsTraceID) {
-		t.Fatalf("want span-id-as-trace-id category, got %v", err)
-	}
-	if got := n.Load(); got != 0 {
-		t.Fatalf("invalid ID made %d upstream requests, want 0", got)
+	}, now)
+	if err != nil {
+		t.Fatalf("attributes filter should be allowed: %v", err)
 	}
 }
 
@@ -468,7 +502,8 @@ func TestDeviationFoldedFilterWithInvalidTraceIDMakesZeroUpstreamRequests(t *tes
 // a sibling $eq — exercise the fix end to end: the sanitizer must split the
 // folded $and into sibling bare conditions and the upstream must accept the
 // canonical flat filters shape (200, evidence-contract-conformant), proving no
-// 400 regression from the split.
+// 400 regression from the split. SpanName/SpanKind are used because identity
+// fields (TraceId, …) are rejected both locally and upstream.
 func TestGetTraceAttributeDeviationsHandler_Integration(t *testing.T) {
 	cfg := utils.SetupTestConfigOrSkip(t)
 	handler := NewGetTraceAttributeDeviationsHandler(http.DefaultClient, *cfg)
@@ -479,13 +514,13 @@ func TestGetTraceAttributeDeviationsHandler_Integration(t *testing.T) {
 		LatencyThresholdMs: 100,
 		Filters: []map[string]interface{}{
 			{
-				"$notnull": []interface{}{"TraceId"},
-				"$eq":      []interface{}{"ServiceName", "checkout"},
+				"$notnull": []interface{}{"SpanName"},
+				"$eq":      []interface{}{"SpanKind", "SPAN_KIND_SERVER"},
 			},
 		},
 	})
-	if utils.CheckAPIError(t, err) {
-		return
+	if err != nil {
+		t.Fatalf("expected upstream to accept split filters; got: %v", err)
 	}
 	text, ok := result.Content[0].(*mcp.TextContent)
 	if !ok {

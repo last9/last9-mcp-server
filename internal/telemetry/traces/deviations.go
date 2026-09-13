@@ -116,6 +116,9 @@ func buildDeviationAPIRequest(args GetTraceAttributeDeviationsArgs, now time.Tim
 	if mode != "latency" && mode != "errors" && mode != "time" {
 		return deviationAPIRequest{}, fmt.Errorf("comparison_mode must be latency, errors, or time")
 	}
+	if err := validateDeviationFilterFields(args.Filters, "filters"); err != nil {
+		return deviationAPIRequest{}, err
+	}
 	sanitizedFilters, err := SanitizeTraceFilterConditions(args.Filters, "filters")
 	if err != nil {
 		return deviationAPIRequest{}, err
@@ -138,6 +141,57 @@ func buildDeviationAPIRequest(args GetTraceAttributeDeviationsArgs, now time.Tim
 		return deviationAPIRequest{}, err
 	}
 	return newDeviationAPIRequest(args, mode, target, control, threshold, limits), nil
+}
+
+// deviationDisallowedFilterFields are top-level tracejson fields the attribute-
+// deviations endpoint rejects with HTTP 422 ("invalid filter field"). They are
+// valid on get_traces pipelines (identity lookup, match-all before aggregate,
+// time bounds) but not as cohort-scope filters: TraceId/SpanId/ParentSpanId/
+// TraceState are per-request identifiers, and Timestamp is owned by the
+// request windows. Fail closed here so models get a local correction instead
+// of an upstream validation_failed.
+var deviationDisallowedFilterFields = map[string]struct{}{
+	"TraceId": {}, "SpanId": {}, "ParentSpanId": {}, "TraceState": {}, "Timestamp": {},
+}
+
+// validateDeviationFilterFields walks sanitized filters and rejects fields the
+// deviations endpoint never accepts. It is intentionally a denylist — not a
+// full allowlist — so discovered attributes['…']/resources['…'] stay open.
+func validateDeviationFilterFields(value interface{}, path string) error {
+	switch typed := value.(type) {
+	case []map[string]interface{}:
+		for i, item := range typed {
+			if err := validateDeviationFilterFields(item, fmt.Sprintf("%s[%d]", path, i)); err != nil {
+				return err
+			}
+		}
+	case []interface{}:
+		for i, item := range typed {
+			if err := validateDeviationFilterFields(item, fmt.Sprintf("%s[%d]", path, i)); err != nil {
+				return err
+			}
+		}
+	case map[string]interface{}:
+		for key, item := range typed {
+			if _, isLogical := traceFilterLogicalOperators[key]; isLogical {
+				if err := validateDeviationFilterFields(item, path+"."+key); err != nil {
+					return err
+				}
+				continue
+			}
+			if args, ok := item.([]interface{}); ok && len(args) > 0 {
+				if field, ok := args[0].(string); ok {
+					if _, banned := deviationDisallowedFilterFields[field]; banned {
+						return fmt.Errorf(
+							"invalid filter field %q at %s.%s[0]: get_trace_attribute_deviations scope filters cannot use TraceId, SpanId, ParentSpanId, TraceState, or Timestamp — those are valid on get_traces but rejected by the deviations endpoint; filter on ServiceName, SpanName, SpanKind, StatusCode, Duration, or attributes['…']/resources['…'] (discover with get_trace_attributes_for_pipeline)",
+							field, path, key,
+						)
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // deviationLimits defaults zero values and rejects out-of-range ones instead of clamping.

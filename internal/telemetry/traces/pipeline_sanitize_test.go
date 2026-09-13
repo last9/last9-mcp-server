@@ -70,12 +70,14 @@ func TestGetTraceAttributeDeviations_ValidatesFilterTraceIDs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected local validation error")
 	}
-	if !strings.Contains(err.Error(), "category="+otelids.CategorySpanIDAsTraceID) {
-		t.Fatalf("want span-id-as-trace-id category, got %v", err)
+	// TraceId is disallowed for deviations entirely (upstream 422); denylist
+	// runs before OTel ID normalization so the field error wins.
+	if !strings.Contains(err.Error(), `invalid filter field "TraceId"`) {
+		t.Fatalf("want TraceId field rejection, got %v", err)
 	}
 }
 
-func TestGetTraceAttributeDeviations_NormalizesFilterTraceIDs(t *testing.T) {
+func TestGetTraceAttributeDeviations_RejectsFilterTraceIDs(t *testing.T) {
 	args := GetTraceAttributeDeviationsArgs{
 		ComparisonMode:     "latency",
 		ServiceName:        "checkout",
@@ -85,16 +87,12 @@ func TestGetTraceAttributeDeviations_NormalizesFilterTraceIDs(t *testing.T) {
 			{"$eq": []interface{}{"TraceId", strings.ToUpper(testValidTraceID)}},
 		},
 	}
-	request, err := buildDeviationAPIRequest(args, time.Now())
-	if err != nil {
-		t.Fatalf("valid uppercase ID rejected: %v", err)
+	_, err := buildDeviationAPIRequest(args, time.Now())
+	if err == nil {
+		t.Fatal("expected TraceId filter to be rejected for deviations")
 	}
-	condition, ok := request.Scope.Filters[0]["$eq"].([]interface{})
-	if !ok || len(condition) != 2 {
-		t.Fatalf("unexpected forwarded condition: %v", request.Scope.Filters[0])
-	}
-	if condition[1] != testValidTraceID {
-		t.Errorf("want lowercased trace ID forwarded, got %v", condition[1])
+	if !strings.Contains(err.Error(), `invalid filter field "TraceId"`) {
+		t.Fatalf("want TraceId field rejection, got %v", err)
 	}
 }
 

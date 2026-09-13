@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `get_trace_attribute_deviations` no longer forwards a folded `{"$and":[…]}` as a single `filters` element when `$notnull`/`$exists` was rewritten alongside a sibling operator. The filters array is AND-implicit, so that shape is split into sibling bare field-operator conditions (or rejected for `$or`/`$not`). Scope filters that use `TraceId`, `SpanId`, `ParentSpanId`, `TraceState`, or `Timestamp` are also rejected locally — the deviations endpoint returns HTTP 422 for those fields even though they are valid on `get_traces` (#283).
+
 ## [0.17.0] - 2026-09-11
 
 ### Added
