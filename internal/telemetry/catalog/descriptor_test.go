@@ -7,8 +7,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/utils"
 )
 
@@ -32,6 +34,76 @@ func TestCatalogTransportsOnlySelectedOperatorDescriptor(t *testing.T) {
 	}
 	if descriptors[0].(map[string]any)["execution"].(map[string]any)["record_unit"] != "log_record" {
 		t.Fatal("descriptor changed")
+	}
+}
+
+func TestCatalogDiscoversExecutionEnvironmentWithoutLegacyDeclaration(t *testing.T) {
+	for _, tc := range []struct {
+		name, legacy string
+		fields       []string
+	}{
+		{"execution only", `{}`, []string{"resources['environment']"}},
+		{"duplicate", `{"resources['environment']":"environment"}`, []string{"resources['environment']"}},
+		{"combined", `{"resources['environment']":"environment","resources['deployment.environment']":"environment"}`, []string{"resources['deployment.environment']", "resources['environment']"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			contracts := testContracts(t, `[{"datasource":"prod","source":"logs","schema_version":1,"metric_kinds":`+tc.legacy+`,"backend_limits":{"no_hidden_sampling":true,"max_rows":5000},"execution":{"record_unit":"log_record","parser_stages":[],"environment_field":"resources['environment']"}}]`)
+			var queried []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == constants.EndpointLogsSeries {
+					_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []any{}, "l9_result": map[string]any{"partial": false}})
+					return
+				}
+				if r.URL.Path != constants.EndpointLogsQueryRange {
+					t.Errorf("unexpected endpoint: %s", r.URL.Path)
+					http.NotFound(w, r)
+					return
+				}
+				var body struct {
+					Pipeline []struct {
+						Groupby map[string]string `json:"groupby"`
+					} `json:"pipeline"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+					return
+				}
+				if len(body.Pipeline) != 1 || len(body.Pipeline[0].Groupby) != 1 {
+					t.Errorf("invalid inventory query: %#v", body)
+					return
+				}
+				for field, alias := range body.Pipeline[0].Groupby {
+					if alias != "value" {
+						t.Errorf("unexpected alias: %s", alias)
+					}
+					queried = append(queried, field)
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{"result": []any{map[string]any{"metric": map[string]any{"value": "prod", "count": 3}, "values": []any{}}}}, "l9_result": map[string]any{"partial": false}})
+			}))
+			defer server.Close()
+			result, _, err := NewHandler(server.Client(), testConfig(server.URL), contracts)(context.Background(), nil, CatalogArgs{Datasource: "prod", Sources: []string{"logs"}, Protocol: "http", StartTimeISO: "2025-10-09T08:53:20Z", EndTimeISO: "2025-10-09T09:03:20Z", Include: []string{"environments"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var response CatalogResponse
+			if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Result.Partial || response.Result.Reason != "" {
+				t.Fatalf("configured environment returned incomplete: %#v", response.Result)
+			}
+			if !reflect.DeepEqual(queried, tc.fields) {
+				t.Fatalf("queried fields = %v, want %v", queried, tc.fields)
+			}
+			if len(response.Environments) != len(tc.fields) || len(response.Descriptors) != 1 {
+				t.Fatalf("missing environment/descriptor: %#v", response)
+			}
+			for i, row := range response.Environments {
+				if row.Source != "logs" || row.Field != tc.fields[i] || row.Value != "prod" || row.Count != 3 {
+					t.Fatalf("unexpected environment: %#v", row)
+				}
+			}
+		})
 	}
 }
 

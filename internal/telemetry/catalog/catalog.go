@@ -415,6 +415,9 @@ func fetchInventory(ctx context.Context, client *http.Client, cfg models.Config,
 
 func environmentFields(contract SourceContract) []string {
 	var fields []string
+	if execution := contract.Execution; execution != nil && execution.EnvironmentField != "" && contract.MetricKinds[execution.EnvironmentField] != "environment" {
+		fields = append(fields, execution.EnvironmentField)
+	}
 	for field, kind := range contract.MetricKinds {
 		if kind == "environment" {
 			fields = append(fields, field)
