@@ -1,4 +1,4 @@
-# get_metrics Tool Usage Guide
+# prometheus_range_query Tool Usage Guide
 
 Use for performance monitoring, trend analysis, and system health checks.
 
