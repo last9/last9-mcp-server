@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -30,93 +29,6 @@ func testDBConfig(serverURL string) models.Config {
 			AccessToken: "mock-token",
 			ExpiresAt:   time.Now().Add(365 * 24 * time.Hour),
 		},
-	}
-}
-
-func TestGetDatabasesHandler(t *testing.T) {
-	var requestCount atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount.Add(1)
-		w.WriteHeader(http.StatusOK)
-
-		// Return different results depending on the query
-		response := []map[string]any{
-			{
-				"metric": map[string]string{"db_system": "postgresql", "net_peer_name": "db-primary.internal"},
-				"value":  []any{1700000000, "150.5"},
-			},
-			{
-				"metric": map[string]string{"db_system": "redis", "net_peer_name": "redis-cache.internal"},
-				"value":  []any{1700000000, "2500.0"},
-			},
-		}
-		json.NewEncoder(w).Encode(response)
-	}))
-	defer server.Close()
-
-	handler := NewGetDatabasesHandler(server.Client(), testDBConfig(server.URL))
-	now := time.Now().UTC()
-	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
-		StartTimeISO: now.Add(-60 * time.Minute).Format(time.RFC3339),
-		EndTimeISO:   now.Format(time.RFC3339),
-	})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-
-	text := result.Content[0].(*mcp.TextContent).Text
-	var response map[string]any
-	if err := json.Unmarshal([]byte(text), &response); err != nil {
-		t.Fatalf("failed to unmarshal response: %v", err)
-	}
-
-	count, ok := response["count"].(float64)
-	if !ok || count == 0 {
-		t.Fatalf("expected databases in response, got count=%v", response["count"])
-	}
-
-	databases, ok := response["databases"].([]any)
-	if !ok || len(databases) == 0 {
-		t.Fatal("expected databases array in response")
-	}
-
-	// Verify first database has expected fields
-	db := databases[0].(map[string]any)
-	if db["db_system"] == nil || db["db_system"] == "" {
-		t.Error("expected db_system field")
-	}
-	if db["host"] == nil {
-		t.Error("expected host field")
-	}
-	if db["throughput_rpm"] == nil {
-		t.Error("expected throughput_rpm field")
-	}
-
-	// Should have made at least 4 PromQL requests (throughput, latency, error_count, total_count + service_count)
-	if rc := requestCount.Load(); rc < 4 {
-		t.Errorf("expected at least 4 PromQL requests, got %d", rc)
-	}
-}
-
-func TestGetDatabasesHandler_NoDatabases(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		// Return empty series
-		json.NewEncoder(w).Encode([]map[string]any{})
-	}))
-	defer server.Close()
-
-	handler := NewGetDatabasesHandler(server.Client(), testDBConfig(server.URL))
-	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
-		LookbackMinutes: 60,
-	})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-
-	text := result.Content[0].(*mcp.TextContent).Text
-	if !strings.Contains(text, "No databases found") {
-		t.Errorf("expected 'No databases found' message, got: %s", text)
 	}
 }
 
@@ -142,16 +54,6 @@ func TestDatabaseLatencyQueries_NoUnitMultiplier(t *testing.T) {
 		name string
 		run  func(client *http.Client, cfg models.Config) error
 	}{
-		{
-			name: "get_databases",
-			run: func(client *http.Client, cfg models.Config) error {
-				_, _, err := NewGetDatabasesHandler(client, cfg)(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
-					StartTimeISO: now.Add(-60 * time.Minute).Format(time.RFC3339),
-					EndTimeISO:   now.Format(time.RFC3339),
-				})
-				return err
-			},
-		},
 		{
 			name: "get_database_queries",
 			run: func(client *http.Client, cfg models.Config) error {
@@ -843,21 +745,6 @@ func TestExtractSlowQueries_TruncatesLongStatements(t *testing.T) {
 }
 
 // --- Integration tests (require TEST_REFRESH_TOKEN) ---
-
-func TestGetDatabasesHandler_Integration(t *testing.T) {
-	cfg := utils.SetupTestConfigOrSkip(t)
-
-	handler := NewGetDatabasesHandler(http.DefaultClient, *cfg)
-	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
-		LookbackMinutes: 60,
-	})
-	if utils.CheckAPIError(t, err) {
-		return
-	}
-
-	text := utils.GetTextContent(t, result)
-	t.Logf("get_databases response (%d bytes): %.500s", len(text), text)
-}
 
 func TestGetDatabaseSlowQueriesHandler_Integration(t *testing.T) {
 	cfg := utils.SetupTestConfigOrSkip(t)
