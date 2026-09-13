@@ -6,7 +6,7 @@
 
 	Optional filters:
 	- rule_id: Exact match on alert rule ID
-	- search_term: Case-insensitive substring search across rule name, alert group name/type, data source name, and tags
+	- search_term: Case-insensitive substring search across rule name, alert group name/type, data source name, tags, team, tier, and labels (label keys and values)
 	- rule_name: Case-insensitive substring match on rule name
 	- severity: Exact case-insensitive match
 	- rule_type: Exact case-insensitive match on derived rule type ("static" or "anomaly")
