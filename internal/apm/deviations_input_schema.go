@@ -56,7 +56,7 @@ func GetAPMServiceDeviationsInputSchema() map[string]interface{} {
 				"minimum":     float64(1),
 				"maximum":     float64(10),
 				"default":     float64(10),
-				"description": "Maximum fleet services to return, from 1 through 10. Defaults to 10. Bounds only the response, not the analysis: deviating identities are always retained through the cap in magnitude-priority order; only stable services are dropped when capacity runs out.",
+				"description": "Maximum fleet services to return, from 1 through 10. Defaults to 10. Bounds only the response, not the analysis: deviating identities are retained through the cap in priority order — all regressions before all improvements, category-priority (Reliability before Experience before SustainedLatency) within each kind, magnitude within each category; only throughput shifts and stable services are dropped when capacity runs out.",
 			},
 			"max_operations": map[string]interface{}{
 				"type":        "integer",
