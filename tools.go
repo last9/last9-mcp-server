@@ -40,12 +40,7 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, allowed too
 }
 
 // registerAllTools registers all tools with the MCP server using the new SDK pattern
-func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, loadedContracts ...catalog.Contracts) error {
-	var sourceContracts catalog.Contracts
-	if len(loadedContracts) > 0 {
-		sourceContracts = loadedContracts[0]
-	}
-	cfg.ExactQuantileAuthorizer = sourceContracts
+func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error {
 	client := auth.GetHTTPClient()
 
 	var regErr error
@@ -286,7 +281,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config, loaded
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_api_source_catalog",
 		Description: prompts.GetAPISourceCatalogDescription,
-	}, catalog.NewHandler(client, cfg, sourceContracts)))
+	}, catalog.NewHandler(client, cfg)))
 
 	// Register service profile tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{

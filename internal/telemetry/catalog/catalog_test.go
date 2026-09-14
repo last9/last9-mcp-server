@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -23,6 +21,12 @@ import (
 func TestCatalogUsesExactBoundsAndOverfetchesTrustedInventory(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/datasources/ds-1/api-source-contracts/":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"datasource": "prod", "source": "logs", "schema_version": 1,
+				"fields":         map[string]string{"ServiceName": "string", "duration_ms": "milliseconds"},
+				"backend_limits": map[string]any{"no_hidden_sampling": true, "max_rows": 101},
+			}})
 		case constants.EndpointLogsSeries:
 			if r.URL.Query().Get("start") != "1760000000" || r.URL.Query().Get("end") != "1760000600" {
 				t.Fatalf("series bounds = %s", r.URL.RawQuery)
@@ -46,8 +50,7 @@ func TestCatalogUsesExactBoundsAndOverfetchesTrustedInventory(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	contracts := testContracts(t, `[{"datasource":"prod","source":"logs","schema_version":1,"fields":{"ServiceName":"string","duration_ms":"milliseconds"},"backend_limits":{"no_hidden_sampling":true,"max_rows":101}}]`)
-	result, _, err := NewHandler(server.Client(), testConfig(server.URL), contracts)(context.Background(), &mcp.CallToolRequest{}, CatalogArgs{
+	result, _, err := NewHandler(server.Client(), testConfig(server.URL))(context.Background(), &mcp.CallToolRequest{}, CatalogArgs{
 		Datasource: "prod", Sources: []string{"logs"}, Protocol: "http", StartTimeISO: "2025-10-09T08:53:20Z", EndTimeISO: "2025-10-09T09:03:20Z", Include: []string{"services", "fields"}, Limit: 2,
 	})
 	if err != nil {
@@ -400,11 +403,7 @@ func hasIncompleteBodyField(fields []FieldEvidence) bool {
 
 func testContracts(t *testing.T, body string) Contracts {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "contracts.json")
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	contracts, err := LoadContracts(path)
+	contracts, err := DecodeContracts([]byte(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -412,5 +411,5 @@ func testContracts(t *testing.T, body string) Contracts {
 }
 
 func testConfig(url string) models.Config {
-	return models.Config{APIBaseURL: url, DatasourceName: "prod", Region: "test", TokenManager: &auth.TokenManager{AccessToken: "token", ExpiresAt: time.Now().Add(time.Hour)}}
+	return models.Config{APIBaseURL: url, DatasourceName: "prod", Datasources: []models.DatasourceInfo{{ID: "ds-1", Name: "prod"}}, Region: "test", TokenManager: &auth.TokenManager{AccessToken: "token", ExpiresAt: time.Now().Add(time.Hour)}}
 }

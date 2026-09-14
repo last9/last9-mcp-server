@@ -86,7 +86,7 @@ func validateExactQuantileContract(stages []map[string]interface{}, cfg models.C
 			}
 			field, _ := args[1].(string)
 			if cfg.ExactQuantileAuthorizer == nil || !cfg.ExactQuantileAuthorizer.AllowsExactLogQuantile(cfg.DatasourceName, normalizedIndex, field) {
-				return fmt.Errorf("$quantile_exact for %q is not declared by the operator-owned log source contract", field)
+				return fmt.Errorf("$quantile_exact for %q is not declared by the Last9-managed log source contract", field)
 			}
 		}
 	}

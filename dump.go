@@ -10,7 +10,6 @@ import (
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
-	"last9-mcp/internal/telemetry/catalog"
 	"last9-mcp/internal/toolsets"
 	"last9-mcp/internal/workflows"
 
@@ -36,7 +35,6 @@ func dumpTools(w io.Writer, allowed toolsets.Set) error {
 	// token manager (only tools/call handlers do), but set it so a future
 	// handler constructor that touches it can't nil-panic on this path.
 	cfg.TokenManager = &auth.TokenManager{}
-	cfg.ExactQuantileAuthorizer = catalog.Contracts{}
 	cfg.AllowedTools = allowed
 
 	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
@@ -47,7 +45,7 @@ func dumpTools(w io.Writer, allowed toolsets.Set) error {
 	registerReferenceResources(server)
 	workflows.Register(server)
 
-	if err := registerAllTools(server, cfg, catalog.Contracts{}); err != nil {
+	if err := registerAllTools(server, cfg); err != nil {
 		return fmt.Errorf("failed to register tools: %w", err)
 	}
 	// The round-trip is over in-memory transports and won't hang in practice,

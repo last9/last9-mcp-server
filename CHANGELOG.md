@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `get_api_source_catalog` returns bounded source-qualified services, environments, field evidence, and trusted execution descriptors; log parser stages run before environment inventory aggregation when the field derives from `Body` (#287).
+- `get_api_source_catalog` returns bounded source-qualified services, environments, field evidence, and trusted execution descriptors fetched automatically from Last9 API; log parser stages run before environment inventory aggregation when the field derives from `Body` (#287).
 
 ### Fixed
 

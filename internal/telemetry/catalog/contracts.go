@@ -2,19 +2,24 @@ package catalog
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
+	"net/http"
+	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 
+	"last9-mcp/internal/constants"
+	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 )
 
 const schemaVersion = 1
 
-// SourceContract is an operator-owned descriptor. Request arguments select a
+// SourceContract is a Last9-managed descriptor. Request arguments select a
 // descriptor; they never supply fields, metric kinds, or record semantics.
 type SourceContract struct {
 	Datasource    string               `json:"datasource"`
@@ -28,7 +33,7 @@ type SourceContract struct {
 	Execution     *ExecutionDescriptor `json:"execution,omitempty"`
 }
 
-// ExecutionDescriptor grants semantics only from the operator-mounted file.
+// ExecutionDescriptor grants semantics only from the Last9 API contract.
 // Observed fields and catalog arguments cannot create this section.
 type ExecutionDescriptor struct {
 	RecordUnit       string             `json:"record_unit,omitempty"`
@@ -161,7 +166,7 @@ func validateExecution(c SourceContract) error {
 	return nil
 }
 
-// BackendLimits is the operator-owned adapter attestation required before a
+// BackendLimits is the Last9-managed adapter attestation required before a
 // bounded response can be complete.
 type BackendLimits struct {
 	NoHiddenSampling bool `json:"no_hidden_sampling"`
@@ -175,7 +180,7 @@ type contractKey struct {
 	version    int
 }
 
-// Contracts is immutable after LoadContracts returns.
+// Contracts is immutable after DecodeContracts returns.
 type Contracts struct {
 	entries map[contractKey]SourceContract
 }
@@ -192,12 +197,8 @@ func (c Contracts) AllowsExactLogQuantile(datasource, index, field string) bool 
 	return ok && contract.MetricKinds[field] == "exact_quantile"
 }
 
-// LoadContracts validates an operator-mounted JSON array once at startup.
-func LoadContracts(path string) (Contracts, error) {
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		return Contracts{}, fmt.Errorf("read source contracts: %w", err)
-	}
+// DecodeContracts validates contracts received from Last9 API.
+func DecodeContracts(contents []byte) (Contracts, error) {
 	if err := rejectDuplicateKeys(json.NewDecoder(bytes.NewReader(contents))); err != nil {
 		return Contracts{}, fmt.Errorf("decode source contracts: %w", err)
 	}
@@ -247,6 +248,37 @@ func LoadContracts(path string) (Contracts, error) {
 		entries[key] = cloneContract(item)
 	}
 	return Contracts{entries: entries}, nil
+}
+
+func FetchContracts(ctx context.Context, client *http.Client, cfg models.Config, datasource, index string) (Contracts, error) {
+	ds, ok := cfg.ResolveDatasource(datasource)
+	if !ok || ds.ID == "" {
+		return Contracts{}, fmt.Errorf("datasource %q has no API identity", datasource)
+	}
+	query := url.Values{"schema_version": {strconv.Itoa(schemaVersion)}}
+	if index != "" {
+		query.Set("index", index)
+	}
+	path := fmt.Sprintf("/datasources/%s/api-source-contracts/?%s", url.PathEscape(ds.ID), query.Encode())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.APIBaseURL+path, nil)
+	if err != nil {
+		return Contracts{}, err
+	}
+	req.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
+	req.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
+	resp, err := client.Do(req)
+	if err != nil {
+		return Contracts{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return Contracts{}, fmt.Errorf("source contracts returned status %d", resp.StatusCode)
+	}
+	contents, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return Contracts{}, err
+	}
+	return DecodeContracts(contents)
 }
 
 func rejectDuplicateKeys(decoder *json.Decoder) error {

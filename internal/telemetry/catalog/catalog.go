@@ -80,7 +80,7 @@ type CatalogResponse struct {
 	Result        ResultEnvelope   `json:"l9_result"`
 }
 
-func NewHandler(client *http.Client, cfg models.Config, contracts Contracts) func(context.Context, *mcp.CallToolRequest, CatalogArgs) (*mcp.CallToolResult, any, error) {
+func NewHandler(client *http.Client, cfg models.Config, injected ...Contracts) func(context.Context, *mcp.CallToolRequest, CatalogArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args CatalogArgs) (*mcp.CallToolResult, any, error) {
 		requested, queryCfg, start, end, includes, err := validateArgs(args, cfg)
 		if err != nil {
@@ -94,6 +94,7 @@ func NewHandler(client *http.Client, cfg models.Config, contracts Contracts) fun
 			Fields:        []FieldEvidence{},
 		}
 		var reasons []string
+		contracts, contractErr := contractsForRequest(ctx, client, cfg, requested, injected)
 		for _, source := range requested.Sources {
 			index := ""
 			if source == "logs" {
@@ -132,7 +133,11 @@ func NewHandler(client *http.Client, cfg models.Config, contracts Contracts) fun
 				reasons = append(reasons, source+": "+fieldReason)
 			}
 			if !trusted {
-				reasons = append(reasons, source+": missing trusted source contract")
+				reason := "missing trusted source contract"
+				if contractErr != nil {
+					reason = "source contract API: " + contractErr.Error()
+				}
+				reasons = append(reasons, source+": "+reason)
 				continue // observations are useful; counts are contract-dependent conclusions.
 			}
 			if includes["services"] {
@@ -181,6 +186,13 @@ func NewHandler(client *http.Client, cfg models.Config, contracts Contracts) fun
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}, nil, nil
 	}
+}
+
+func contractsForRequest(ctx context.Context, client *http.Client, cfg models.Config, scope Scope, injected []Contracts) (Contracts, error) {
+	if len(injected) > 0 {
+		return injected[0], nil
+	}
+	return FetchContracts(ctx, client, cfg, scope.Datasource, scope.LogIndex)
 }
 
 func validateArgs(args CatalogArgs, cfg models.Config) (Scope, models.Config, int64, int64, map[string]bool, error) {

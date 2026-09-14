@@ -1031,7 +1031,7 @@ func (normalizedExactQuantile) AllowsExactLogQuantile(_ string, index string, _ 
 	return index == "physical_index:app"
 }
 
-func TestExactQuantileRequiresOperatorContract(t *testing.T) {
+func TestExactQuantileRequiresManagedContract(t *testing.T) {
 	stages := []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$regex": []interface{}{"attributes['duration_ms']", "^[0-9]+(?:\\.[0-9]+)?$"}}}, {"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{"function": map[string]interface{}{"$quantile_exact": []interface{}{.99, "attributes['duration_ms']"}}, "as": "p99"}}}}
 	sanitized, err := prepareLogJSONQuery(stages, "logjson_query")
 	if err != nil {

@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -176,12 +174,8 @@ func TestExecutableDescriptorStartupRefusals(t *testing.T) {
 		`{"record_unit":"log_record","parser_stages":[],"graphql":{"qualified":false}}`,
 		`{"record_unit":"log_record","record_unit":"request","parser_stages":[]}`,
 	} {
-		path := filepath.Join(t.TempDir(), "contracts.json")
 		body := `[{"datasource":"prod","source":"logs","schema_version":1,"backend_limits":{"no_hidden_sampling":true,"max_rows":5000},"execution":` + execution + `}]`
-		if err := os.WriteFile(path, []byte(body), 0600); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := LoadContracts(path); err == nil {
+		if _, err := DecodeContracts([]byte(body)); err == nil {
 			t.Fatalf("accepted unsafe execution %s", execution)
 		}
 	}
