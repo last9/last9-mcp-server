@@ -295,6 +295,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	}, dashboards.NewGetDashboardHandler(client, cfg)))
 
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "validate_dashboard",
+		Description: prompts.ValidateDashboardDescription,
+		InputSchema: dashboards.GetValidateDashboardInputSchema(),
+	}, dashboards.NewValidateDashboardHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "create_dashboard",
 		Description: prompts.CreateDashboardDescription,
 		InputSchema: dashboards.GetCreateDashboardInputSchema(),

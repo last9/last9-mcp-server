@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `validate_dashboard`: read-only lint + execute + classify for a saved dashboard id or inline `dashboard_definition` over a ≤24h window. Returns `dashboard_validation/v1` (same contract as the supervisor skill). Dry run — never creates/updates dashboards. Day-1 empty results are `valid_no_data` without diagnose probes.
+
 ### Fixed
 
 - `get_alert_config`'s `search_term` now matches alert group team, tier, and metadata labels (label keys and values), not just rule name, alert group name/type, data source name, and tags. Commit 5d9757f added `Team` and `Labels` to `alertGroupEntityMetadata` and `Tier` to `alertGroupEntity` and rendered all three in every rule row, but did not extend `matchesAlertConfigSearchTerm` to search them, so a `search_term` that appeared only in team/tier/labels silently returned `Found 0 alert rules:` while the same rows displayed the matching data when no search term was used. The `search_term` prompt description is updated to list team, tier, and labels alongside the previously-searched fields so the prompt, the jsonschema tag, and the implementation agree (#285).

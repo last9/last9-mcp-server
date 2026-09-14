@@ -69,10 +69,23 @@ func TestParseInvestigate(t *testing.T) {
 			t.Errorf("investigate missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "get_alert_groups", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots"} {
+	for _, deny := range []string{"get_alerts", "get_alert_groups", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard"} {
 		if set.Allows(deny) {
 			t.Errorf("investigate should exclude %q", deny)
 		}
+	}
+}
+
+func TestParseDashboardsIncludesValidate(t *testing.T) {
+	set, err := Parse("dashboards")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !set.Allows("validate_dashboard") || !set.Allows("get_dashboard") {
+		t.Fatal("dashboards toolset missing validate_dashboard or get_dashboard")
+	}
+	if set.Allows("get_logs") {
+		t.Fatal("dashboards should not include get_logs")
 	}
 }
 
