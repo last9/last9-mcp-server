@@ -196,6 +196,14 @@ func NewExactQuantileAuthorizer(client *http.Client, cfg models.Config) *ExactQu
 }
 
 func (a *ExactQuantileAuthorizer) AllowsExactLogQuantile(ctx context.Context, datasource, index, field string) (bool, error) {
+	if datasource == "" {
+		for _, candidate := range a.cfg.Datasources {
+			if candidate.IsDefault {
+				datasource = candidate.Name
+				break
+			}
+		}
+	}
 	contracts, err := FetchContracts(ctx, a.client, a.cfg, datasource, index)
 	if err != nil {
 		return false, err

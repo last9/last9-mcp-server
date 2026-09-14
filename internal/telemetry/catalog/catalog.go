@@ -104,7 +104,7 @@ func NewHandler(client *http.Client, cfg models.Config, injected ...Contracts) f
 			if trusted && contract.Execution != nil {
 				response.Descriptors = append(response.Descriptors, contract)
 			}
-			fields, samples, fieldPartial, fieldReason, err := fetchFields(ctx, client, queryCfg, source, start, end, index)
+			fields, samples, fieldPartial, fieldReason, err := fetchFields(ctx, client, queryCfg, source, requested.StartTimeISO, requested.EndTimeISO, index)
 			if err != nil {
 				reasons = append(reasons, source+": "+err.Error())
 				continue
@@ -259,12 +259,12 @@ func validateArgs(args CatalogArgs, cfg models.Config) (Scope, models.Config, in
 	return Scope{Datasource: args.Datasource, Sources: sources, LogIndex: index, Protocol: args.Protocol, StartTimeISO: args.StartTimeISO, EndTimeISO: args.EndTimeISO}, queryCfg, startAt.UnixMilli(), endAt.UnixMilli(), includes, nil
 }
 
-func fetchFields(ctx context.Context, client *http.Client, cfg models.Config, source string, start, end int64, index string) ([]string, int, bool, string, error) {
+func fetchFields(ctx context.Context, client *http.Client, cfg models.Config, source, start, end, index string) ([]string, int, bool, string, error) {
 	endpoint := constants.EndpointTracesSeries
 	if source == "logs" {
 		endpoint = constants.EndpointLogsSeries
 	}
-	params := url.Values{"region": []string{cfg.Region}, "start": []string{strconv.FormatInt(start/1000, 10)}, "end": []string{strconv.FormatInt(end/1000, 10)}, "exact_bounds": []string{"true"}}
+	params := url.Values{"region": []string{cfg.Region}, "start": []string{start}, "end": []string{end}, "exact_bounds": []string{"true"}}
 	if index != "" {
 		params.Set("index", index)
 	}

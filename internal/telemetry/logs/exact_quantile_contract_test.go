@@ -34,8 +34,8 @@ func TestGetLogsExactQuantileUsesManagedAPIContract(t *testing.T) {
 	defer server.Close()
 
 	cfg := models.Config{
-		APIBaseURL: server.URL, DatasourceName: "prod", Region: "us-east-1", OrgSlug: "last9", ClusterID: "cluster-1",
-		Datasources:  []models.DatasourceInfo{{ID: "ds-1", Name: "prod"}},
+		APIBaseURL: server.URL, Region: "us-east-1", OrgSlug: "last9", ClusterID: "cluster-1",
+		Datasources:  []models.DatasourceInfo{{ID: "ds-1", Name: "prod", IsDefault: true}},
 		TokenManager: &auth.TokenManager{AccessToken: "token", ExpiresAt: time.Now().Add(time.Hour)},
 	}
 	cfg.ExactQuantileAuthorizer = catalog.NewExactQuantileAuthorizer(server.Client(), cfg)
