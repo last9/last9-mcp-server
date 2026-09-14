@@ -264,7 +264,7 @@ func fetchFields(ctx context.Context, client *http.Client, cfg models.Config, so
 	if source == "logs" {
 		endpoint = constants.EndpointLogsSeries
 	}
-	params := url.Values{"region": []string{cfg.Region}, "start": []string{strconv.FormatInt(start/1000, 10)}, "end": []string{strconv.FormatInt(end/1000, 10)}}
+	params := url.Values{"region": []string{cfg.Region}, "start": []string{strconv.FormatInt(start/1000, 10)}, "end": []string{strconv.FormatInt(end/1000, 10)}, "exact_bounds": []string{"true"}}
 	if index != "" {
 		params.Set("index", index)
 	}

@@ -185,6 +185,24 @@ type Contracts struct {
 	entries map[contractKey]SourceContract
 }
 
+// ExactQuantileAuthorizer checks the managed API contract at execution time.
+type ExactQuantileAuthorizer struct {
+	client *http.Client
+	cfg    models.Config
+}
+
+func NewExactQuantileAuthorizer(client *http.Client, cfg models.Config) *ExactQuantileAuthorizer {
+	return &ExactQuantileAuthorizer{client: client, cfg: cfg}
+}
+
+func (a *ExactQuantileAuthorizer) AllowsExactLogQuantile(ctx context.Context, datasource, index, field string) (bool, error) {
+	contracts, err := FetchContracts(ctx, a.client, a.cfg, datasource, index)
+	if err != nil {
+		return false, err
+	}
+	return contracts.AllowsExactLogQuantile(datasource, index, field), nil
+}
+
 func (c Contracts) Lookup(datasource, source, index string, version int) (SourceContract, bool) {
 	contract, ok := c.entries[contractKey{datasource, source, index, version}]
 	return cloneContract(contract), ok
@@ -254,6 +272,9 @@ func FetchContracts(ctx context.Context, client *http.Client, cfg models.Config,
 	ds, ok := cfg.ResolveDatasource(datasource)
 	if !ok || ds.ID == "" {
 		return Contracts{}, fmt.Errorf("datasource %q has no API identity", datasource)
+	}
+	if cfg.TokenManager == nil {
+		return Contracts{}, fmt.Errorf("source contracts require an access token")
 	}
 	query := url.Values{"schema_version": {strconv.Itoa(schemaVersion)}}
 	if index != "" {

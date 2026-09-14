@@ -1023,12 +1023,14 @@ func TestPrepareLogJSONQueryValidatesExactQuantilesAndAliases(t *testing.T) {
 
 type denyExactQuantile struct{}
 
-func (denyExactQuantile) AllowsExactLogQuantile(string, string, string) bool { return false }
+func (denyExactQuantile) AllowsExactLogQuantile(context.Context, string, string, string) (bool, error) {
+	return false, nil
+}
 
 type normalizedExactQuantile struct{}
 
-func (normalizedExactQuantile) AllowsExactLogQuantile(_ string, index string, _ string) bool {
-	return index == "physical_index:app"
+func (normalizedExactQuantile) AllowsExactLogQuantile(_ context.Context, _ string, index string, _ string) (bool, error) {
+	return index == "physical_index:app", nil
 }
 
 func TestExactQuantileRequiresManagedContract(t *testing.T) {
@@ -1037,7 +1039,7 @@ func TestExactQuantileRequiresManagedContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateExactQuantileContract(sanitized, models.Config{DatasourceName: "prod", ExactQuantileAuthorizer: denyExactQuantile{}}, ""); err == nil {
+	if err := validateExactQuantileContract(context.Background(), sanitized, models.Config{DatasourceName: "prod", ExactQuantileAuthorizer: denyExactQuantile{}}, ""); err == nil {
 		t.Fatal("exact quantile without contract was accepted")
 	}
 }
@@ -1048,7 +1050,7 @@ func TestExactQuantileContractUsesCanonicalIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateExactQuantileContract(sanitized, models.Config{DatasourceName: "prod", ExactQuantileAuthorizer: normalizedExactQuantile{}}, "physical_index: app"); err != nil {
+	if err := validateExactQuantileContract(context.Background(), sanitized, models.Config{DatasourceName: "prod", ExactQuantileAuthorizer: normalizedExactQuantile{}}, "physical_index: app"); err != nil {
 		t.Fatalf("canonical index was not used for contract lookup: %v", err)
 	}
 }

@@ -28,7 +28,7 @@ func TestCatalogUsesExactBoundsAndOverfetchesTrustedInventory(t *testing.T) {
 				"backend_limits": map[string]any{"no_hidden_sampling": true, "max_rows": 101},
 			}})
 		case constants.EndpointLogsSeries:
-			if r.URL.Query().Get("start") != "1760000000" || r.URL.Query().Get("end") != "1760000600" {
+			if r.URL.Query().Get("start") != "1760000000" || r.URL.Query().Get("end") != "1760000600" || r.URL.Query().Get("exact_bounds") != "true" {
 				t.Fatalf("series bounds = %s", r.URL.RawQuery)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []map[string]string{{"ServiceName": "checkout", "duration_ms": "12"}}, "l9_result": map[string]any{"partial": false}})

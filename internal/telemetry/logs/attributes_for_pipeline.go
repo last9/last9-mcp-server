@@ -658,6 +658,7 @@ func logFieldFilterField(name string) string {
 func fetchLogSeriesFieldNames(ctx context.Context, client *http.Client, cfg models.Config, pipeline []map[string]interface{}, queryParams url.Values) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
 	defer cancel()
+	queryParams.Set("exact_bounds", "true")
 
 	apiURL := fmt.Sprintf("%s%s?%s", cfg.APIBaseURL, constants.EndpointLogsSeries, queryParams.Encode())
 

@@ -42,6 +42,7 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, allowed too
 // registerAllTools registers all tools with the MCP server using the new SDK pattern
 func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error {
 	client := auth.GetHTTPClient()
+	cfg.ExactQuantileAuthorizer = catalog.NewExactQuantileAuthorizer(client, cfg)
 
 	var regErr error
 	reg := func(err error) {

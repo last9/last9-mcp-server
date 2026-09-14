@@ -64,3 +64,46 @@ func TestFetchContractsUsesDatasourceIdentityAndAccessToken(t *testing.T) {
 		t.Fatal("API contract was not indexed")
 	}
 }
+
+func TestExactQuantileAuthorizerFetchesCurrentContract(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		kind := "counter"
+		if requests == 2 {
+			kind = "exact_quantile"
+		}
+		_, _ = w.Write([]byte(`[{"datasource":"prod","source":"logs","schema_version":1,"metric_kinds":{"duration":"` + kind + `"},"backend_limits":{"no_hidden_sampling":true,"max_rows":5000}}]`))
+	}))
+	defer server.Close()
+	cfg := models.Config{
+		APIBaseURL: server.URL, Datasources: []models.DatasourceInfo{{ID: "ds-1", Name: "prod"}},
+		TokenManager: &auth.TokenManager{AccessToken: "token", ExpiresAt: time.Now().Add(time.Hour)},
+	}
+	authorizer := NewExactQuantileAuthorizer(server.Client(), cfg)
+	first, err := authorizer.AllowsExactLogQuantile(context.Background(), "prod", "", "duration")
+	if err != nil || first {
+		t.Fatalf("first authorization = %v, %v", first, err)
+	}
+	second, err := authorizer.AllowsExactLogQuantile(context.Background(), "prod", "", "duration")
+	if err != nil || !second {
+		t.Fatalf("second authorization = %v, %v", second, err)
+	}
+}
+
+func TestFetchContractsFailsClosed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unavailable", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	cfg := models.Config{
+		APIBaseURL: server.URL, Datasources: []models.DatasourceInfo{{ID: "ds-1", Name: "prod"}},
+		TokenManager: &auth.TokenManager{AccessToken: "token", ExpiresAt: time.Now().Add(time.Hour)},
+	}
+	if _, err := FetchContracts(context.Background(), server.Client(), cfg, "prod", ""); err == nil {
+		t.Fatal("expected API failure")
+	}
+	if _, err := FetchContracts(context.Background(), server.Client(), cfg, "missing", ""); err == nil {
+		t.Fatal("expected missing datasource identity failure")
+	}
+}

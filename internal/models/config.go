@@ -1,6 +1,8 @@
 package models
 
 import (
+	"context"
+
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/toolsets"
 )
@@ -40,7 +42,7 @@ type Config struct {
 	// ExactQuantileAuthorizer remains injectable for tests. Runtime source
 	// contracts are fetched per request and exact log quantiles fail closed.
 	ExactQuantileAuthorizer interface {
-		AllowsExactLogQuantile(datasource, index, field string) bool
+		AllowsExactLogQuantile(context.Context, string, string, string) (bool, error)
 	}
 	// HTTP server configuration
 	HTTPMode bool   // Enable HTTP server mode instead of STDIO

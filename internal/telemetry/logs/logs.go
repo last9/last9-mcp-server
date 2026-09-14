@@ -46,7 +46,7 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 		if err != nil {
 			return nil, nil, err
 		}
-		if err := validateExactQuantileContract(sanitizedQuery, cfg, args.Index); err != nil {
+		if err := validateExactQuantileContract(ctx, sanitizedQuery, cfg, args.Index); err != nil {
 			return nil, nil, err
 		}
 		args.LogjsonQuery = sanitizedQuery
@@ -60,7 +60,7 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 	}
 }
 
-func validateExactQuantileContract(stages []map[string]interface{}, cfg models.Config, index string) error {
+func validateExactQuantileContract(ctx context.Context, stages []map[string]interface{}, cfg models.Config, index string) error {
 	normalizedIndex, err := utils.NormalizeLogIndex(index)
 	if err != nil {
 		return fmt.Errorf("invalid index: %w", err)
@@ -85,7 +85,14 @@ func validateExactQuantileContract(stages []map[string]interface{}, cfg models.C
 				continue
 			}
 			field, _ := args[1].(string)
-			if cfg.ExactQuantileAuthorizer == nil || !cfg.ExactQuantileAuthorizer.AllowsExactLogQuantile(cfg.DatasourceName, normalizedIndex, field) {
+			if cfg.ExactQuantileAuthorizer == nil {
+				return fmt.Errorf("$quantile_exact for %q is not declared by the Last9-managed log source contract", field)
+			}
+			allowed, err := cfg.ExactQuantileAuthorizer.AllowsExactLogQuantile(ctx, cfg.DatasourceName, normalizedIndex, field)
+			if err != nil {
+				return fmt.Errorf("load Last9-managed log source contract: %w", err)
+			}
+			if !allowed {
 				return fmt.Errorf("$quantile_exact for %q is not declared by the Last9-managed log source contract", field)
 			}
 		}
