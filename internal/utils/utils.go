@@ -377,6 +377,7 @@ func MakeTracesJSONQueryAPI(ctx context.Context, client *http.Client, cfg models
 
 // Datasource represents a datasource configuration
 type Datasource struct {
+	ID         string `json:"id"`
 	Name       string `json:"name"`
 	IsDefault  bool   `json:"is_default"`
 	URL        string `json:"url"`
@@ -481,6 +482,7 @@ func PopulateAPICfg(cfg *models.Config) error {
 	cfg.Datasources = make([]models.DatasourceInfo, 0, len(datasourcesList))
 	for _, ds := range datasourcesList {
 		cfg.Datasources = append(cfg.Datasources, models.DatasourceInfo{
+			ID:        ds.ID,
 			Name:      ds.Name,
 			ReadURL:   ds.URL,
 			Username:  ds.Properties.Username,

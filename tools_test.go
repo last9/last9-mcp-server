@@ -155,4 +155,7 @@ func TestRegisterAllTools_ExposesDashboardObjectSchemas(t *testing.T) {
 	for _, name := range []string{"list_dashboard_snapshots", "get_dashboard_snapshot", "delete_dashboard_snapshot"} {
 		_ = toolByName(t, list.Tools, name)
 	}
+	if tool := toolByName(t, list.Tools, "get_api_source_catalog"); !strings.Contains(tool.Description, "schema version: `1`") {
+		t.Fatalf("catalog tools/list description must publish its schema version: %q", tool.Description)
+	}
 }
