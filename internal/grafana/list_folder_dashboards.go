@@ -38,19 +38,16 @@ func NewListFolderDashboardsHandler(client *http.Client, cfg models.Config) func
 			return nil, nil, fmt.Errorf("folder %q not found", args.FolderUID)
 		}
 
-		u := cfg.GrafanaAPIBaseURL + "/api/search?" + url.Values{
+		u := cfg.GrafanaAPIBaseURL + "/api/search"
+		params := url.Values{
 			"folderIds": {strconv.Itoa(folder.ID)},
 			"type":      {"dash-db"},
-		}.Encode()
-		body, err := doJSONRequest(ctx, client, cfg, u)
+		}
+		res, err := collectSearchHits(ctx, client, cfg, u, params)
 		if err != nil {
 			return nil, nil, err
 		}
-		var hits []SearchHit
-		if err := json.Unmarshal(body, &hits); err != nil {
-			return nil, nil, fmt.Errorf("failed to parse folder dashboards response: %w", err)
-		}
-		out, err := json.MarshalIndent(hits, "", "  ")
+		out, err := json.MarshalIndent(res, "", "  ")
 		if err != nil {
 			return nil, nil, err
 		}

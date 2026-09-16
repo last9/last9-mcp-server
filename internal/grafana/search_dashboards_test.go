@@ -25,7 +25,7 @@ func TestSearchDashboardsHandler(t *testing.T) {
 	}
 	text := result.Content[0].(*mcp.TextContent).Text
 
-	for _, want := range []string{`"uid": "dash1"`, "Payments Latency"} {
+	for _, want := range []string{`"uid": "dash1"`, "Payments Latency", `"dashboards"`} {
 		if !strings.Contains(text, want) {
 			t.Errorf("search result missing %q: %s", want, text)
 		}
@@ -34,12 +34,15 @@ func TestSearchDashboardsHandler(t *testing.T) {
 		t.Fatalf("search request path = %q", gotPath)
 	}
 
-	var hits []SearchHit
-	if err := json.Unmarshal([]byte(text), &hits); err != nil {
+	var res SearchResults
+	if err := json.Unmarshal([]byte(text), &res); err != nil {
 		t.Fatalf("search result not valid JSON: %v", err)
 	}
-	if len(hits) != 1 || hits[0].UID != "dash1" {
-		t.Fatalf("search hits = %+v", hits)
+	if len(res.Dashboards) != 1 || res.Dashboards[0].UID != "dash1" {
+		t.Fatalf("search hits = %+v", res.Dashboards)
+	}
+	if res.Truncated {
+		t.Fatalf("single-page result marked truncated")
 	}
 }
 

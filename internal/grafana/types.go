@@ -16,6 +16,14 @@ type SearchHit struct {
 	Tags  []string `json:"tags,omitempty"`
 }
 
+// SearchResults is the paginated response shared by grafana_search_dashboards
+// and grafana_list_folder_dashboards. Truncated is set only when the collector
+// hit maxSearchRows, signalling the list may be incomplete.
+type SearchResults struct {
+	Dashboards []SearchHit `json:"dashboards"`
+	Truncated  bool        `json:"truncated,omitempty"`
+}
+
 // Folder is one row from GET /api/folders.
 type Folder struct {
 	ID   int    `json:"id"`

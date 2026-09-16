@@ -2,9 +2,12 @@ package grafana
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"last9-mcp/internal/constants"
@@ -18,6 +21,50 @@ const maxAPIErrorBodyBytes = 4096
 // error instead of dumping MBs into the client. 5 MiB comfortably exceeds
 // normal dashboard payloads.
 var maxAPISuccessBodyBytes int64 = 5 * 1024 * 1024
+
+// searchPageSize is the /api/search page we request. Grafana's default page is
+// 1000 rows; asking for the same keeps a page at most one round trip but lets
+// us page deterministically.
+const searchPageSize = 1000
+
+// maxSearchRows bounds how many dashboards one search/folder-listing returns.
+// Past this many rows the caller sees truncated=true instead of a silent
+// subset; request narrower filters to see the rest.
+const maxSearchRows = 5000
+
+// collectSearchHits walks every page of GET /api/search, keeping the caller's
+// filters on each page, until a page returns short or the row cap is reached.
+// A result whose Dashboards hold exactly maxSearchRows may be incomplete and is
+// flagged truncated rather than silently stopping at a page boundary.
+func collectSearchHits(ctx context.Context, client *http.Client, cfg models.Config, base string, params url.Values) (SearchResults, error) {
+	var all []SearchHit
+	for page := 1; len(all) <= maxSearchRows; page++ {
+		q := url.Values{}
+		for k, vs := range params {
+			q[k] = vs
+		}
+		q.Set("limit", strconv.Itoa(searchPageSize))
+		q.Set("page", strconv.Itoa(page))
+		body, err := doJSONRequest(ctx, client, cfg, base+"?"+q.Encode())
+		if err != nil {
+			return SearchResults{}, err
+		}
+		var hits []SearchHit
+		if err := json.Unmarshal(body, &hits); err != nil {
+			return SearchResults{}, fmt.Errorf("failed to parse search response: %w", err)
+		}
+		all = append(all, hits...)
+		if len(hits) < searchPageSize {
+			break
+		}
+	}
+	res := SearchResults{Dashboards: all}
+	if len(all) > maxSearchRows {
+		res.Dashboards = all[:maxSearchRows]
+		res.Truncated = true
+	}
+	return res, nil
+}
 
 func doJSONRequest(ctx context.Context, client *http.Client, cfg models.Config, url string) ([]byte, error) {
 	accessToken := cfg.TokenManager.GetAccessToken(ctx)

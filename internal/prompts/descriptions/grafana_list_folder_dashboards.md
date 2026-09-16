@@ -1,1 +1,1 @@
-List the dashboards inside one Grafana folder. Provide the folder's uid (from `grafana_list_folders`); returns each dashboard's uid, title, url, type, and tags. Use the dashboard uid with `grafana_get_dashboard` to fetch panel details.
+List the dashboards inside one Grafana folder. Provide the folder's uid (from `grafana_list_folders`); returns `dashboards` with each dashboard's uid, title, url, type, and tags across all result pages; `truncated: true` signals more dashboards exist than are returned. Use the dashboard uid with `grafana_get_dashboard` to fetch panel details.

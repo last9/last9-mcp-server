@@ -21,20 +21,15 @@ func NewSearchDashboardsHandler(client *http.Client, cfg models.Config) func(con
 		if args.Query == "" {
 			return nil, nil, fmt.Errorf("query is required")
 		}
-		u := cfg.GrafanaAPIBaseURL + "/api/search" + "?" + url.Values{
+		params := url.Values{
 			"query": {args.Query},
 			"type":  {"dash-db"},
-		}.Encode()
-
-		body, err := doJSONRequest(ctx, client, cfg, u)
+		}
+		res, err := collectSearchHits(ctx, client, cfg, cfg.GrafanaAPIBaseURL+"/api/search", params)
 		if err != nil {
 			return nil, nil, err
 		}
-		var hits []SearchHit
-		if err := json.Unmarshal(body, &hits); err != nil {
-			return nil, nil, fmt.Errorf("failed to parse search response: %w", err)
-		}
-		out, err := json.MarshalIndent(hits, "", "  ")
+		out, err := json.MarshalIndent(res, "", "  ")
 		if err != nil {
 			return nil, nil, err
 		}
