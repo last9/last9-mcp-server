@@ -1,0 +1,1 @@
+Search Grafana dashboards by title substring. Returns matching dashboards with their uid, title, uri, url, type, and tags. Use the returned uid with `grafana_get_dashboard` to fetch full panel details.

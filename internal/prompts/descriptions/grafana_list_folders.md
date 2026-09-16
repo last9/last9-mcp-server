@@ -1,0 +1,1 @@
+List folders in Grafana. Returns each folder's id, uid, title, and url. Use the folder uid with `grafana_list_folder_dashboards` to enumerate dashboards inside a folder, or `grafana_search_dashboards` for a global title search.

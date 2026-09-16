@@ -1,0 +1,1 @@
+List the data sources configured in Grafana. Returns id, uid, name, type, url, access, and whether each is the default — credential fields are never included. Use the uid or name to interpret a panel's datasource reference from `grafana_get_dashboard`.
