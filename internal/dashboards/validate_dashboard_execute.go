@@ -188,7 +188,10 @@ func outcomeFromResult(tool string, raw []byte, transportErr string, durationMs 
 	if transportErr != "" {
 		return executionOutcome{status: "source_unavailable", tool: tool, errorText: transportErr, durationMs: durationMs}
 	}
-	payload := parseJSONPayload(raw)
+	payload, err := parseJSONPayload(raw)
+	if err != nil {
+		return executionOutcome{status: "execution_error", tool: tool, errorText: clipError(err.Error()), durationMs: durationMs}
+	}
 	if errText := errorTextFromPayload(payload, string(raw)); errText != "" {
 		lowered := strings.ToLower(errText)
 		status := "execution_error"
@@ -203,15 +206,18 @@ func outcomeFromResult(tool string, raw []byte, transportErr string, durationMs 
 	return executionOutcome{status: "executed", tool: tool, payload: payload, durationMs: durationMs}
 }
 
-func parseJSONPayload(raw []byte) any {
-	if len(raw) == 0 {
-		return nil
+func parseJSONPayload(raw []byte) (any, error) {
+	if len(strings.TrimSpace(string(raw))) == 0 {
+		return nil, fmt.Errorf("upstream returned an empty response body")
 	}
 	var payload any
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil
+		return nil, fmt.Errorf("upstream returned malformed JSON: %w", err)
 	}
-	return payload
+	if payload == nil {
+		return nil, fmt.Errorf("upstream returned a null payload")
+	}
+	return payload, nil
 }
 
 func errorTextFromPayload(payload any, raw string) string {

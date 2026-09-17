@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"time"
 )
 
 // Pure dashboard-variable interpolation.
@@ -78,9 +79,48 @@ func dashboardDefaults(dashboard map[string]any) map[string]any {
 	return defaults
 }
 
+// windowRangeBuiltins copies builtinDefaults with $__range / $__range_s /
+// $__range_ms derived from the requested validation window.
+func windowRangeBuiltins(window map[string]string) map[string]string {
+	builtins := make(map[string]string, len(builtinDefaults))
+	for k, v := range builtinDefaults {
+		builtins[k] = v
+	}
+	start, startErr := parseValidateISO(window["start"])
+	end, endErr := parseValidateISO(window["end"])
+	if startErr != nil || endErr != nil || !end.After(start) {
+		return builtins
+	}
+	duration := end.Sub(start)
+	builtins["__range"] = formatPromRange(duration)
+	builtins["__range_s"] = strconv.FormatInt(int64(duration/time.Second), 10)
+	builtins["__range_ms"] = strconv.FormatInt(duration.Milliseconds(), 10)
+	return builtins
+}
+
+func formatPromRange(d time.Duration) string {
+	if d <= 0 {
+		return builtinDefaults["__range"]
+	}
+	if d%time.Hour == 0 {
+		return strconv.FormatInt(int64(d/time.Hour), 10) + "h"
+	}
+	if d%time.Minute == 0 {
+		return strconv.FormatInt(int64(d/time.Minute), 10) + "m"
+	}
+	if d%time.Second == 0 {
+		return strconv.FormatInt(int64(d/time.Second), 10) + "s"
+	}
+	return strconv.FormatInt(d.Milliseconds(), 10) + "ms"
+}
+
 // interpolate returns (interpolatedExpr, used, unresolvedNames).
 // used maps variable name -> {"value": ..., "source": "caller"|"dashboard_default"|"builtin_default"}.
 func interpolate(expr string, callerVars, defaults map[string]any) (string, map[string]map[string]any, []string) {
+	return interpolateWithBuiltins(expr, callerVars, defaults, builtinDefaults)
+}
+
+func interpolateWithBuiltins(expr string, callerVars, defaults map[string]any, builtins map[string]string) (string, map[string]map[string]any, []string) {
 	used := map[string]map[string]any{}
 	var unresolved []string
 
@@ -89,9 +129,9 @@ func interpolate(expr string, callerVars, defaults map[string]any) (string, map[
 		var source string
 		if v, ok := callerVars[name]; ok {
 			value, source = v, "caller"
-		} else if v, ok := defaults[name]; ok {
+		} else 		if v, ok := defaults[name]; ok {
 			value, source = v, "dashboard_default"
-		} else if v, ok := builtinDefaults[name]; ok {
+		} else if v, ok := builtins[name]; ok {
 			value, source = v, "builtin_default"
 		} else {
 			return "", false
@@ -120,6 +160,10 @@ func interpolate(expr string, callerVars, defaults map[string]any) (string, map[
 
 // interpolatePipeline interpolates every string inside a pipeline structure.
 func interpolatePipeline(pipeline any, callerVars, defaults map[string]any) (any, map[string]map[string]any, []string) {
+	return interpolatePipelineWithBuiltins(pipeline, callerVars, defaults, builtinDefaults)
+}
+
+func interpolatePipelineWithBuiltins(pipeline any, callerVars, defaults map[string]any, builtins map[string]string) (any, map[string]map[string]any, []string) {
 	used := map[string]map[string]any{}
 	var unresolved []string
 
@@ -127,7 +171,7 @@ func interpolatePipeline(pipeline any, callerVars, defaults map[string]any) (any
 	walk = func(node any) any {
 		switch n := node.(type) {
 		case string:
-			out, u, unres := interpolate(n, callerVars, defaults)
+			out, u, unres := interpolateWithBuiltins(n, callerVars, defaults, builtins)
 			for k, v := range u {
 				used[k] = v
 			}

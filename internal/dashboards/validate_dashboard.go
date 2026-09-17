@@ -422,18 +422,19 @@ func validateTarget(
 	var resolved any
 	var used map[string]map[string]any
 	var unresolved []string
+	builtins := windowRangeBuiltins(window)
 
 	if queryType == "log_json" || queryType == "trace_json" {
 		pipeline := parsePipeline(expr)
 		if pipeline != nil {
-			resolved, used, unresolved = interpolatePipeline(pipeline, callerVars, defaults)
+			resolved, used, unresolved = interpolatePipelineWithBuiltins(pipeline, callerVars, defaults, builtins)
 		} else {
-			resolved, used, unresolved = interpolatePipeline(expr, callerVars, defaults)
+			resolved, used, unresolved = interpolatePipelineWithBuiltins(expr, callerVars, defaults, builtins)
 		}
 	} else {
 		exprStr, _ := expr.(string)
 		var s string
-		s, used, unresolved = interpolate(exprStr, callerVars, defaults)
+		s, used, unresolved = interpolateWithBuiltins(exprStr, callerVars, defaults, builtins)
 		resolved = s
 	}
 	if len(used) > 0 {
