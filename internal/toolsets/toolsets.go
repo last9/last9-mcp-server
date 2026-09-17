@@ -68,6 +68,13 @@ var named = map[string][]string{
 		"get_dashboard_snapshot",
 		"delete_dashboard_snapshot",
 	},
+	"grafana": {
+		"grafana_search_dashboards",
+		"grafana_get_dashboard",
+		"grafana_list_folders",
+		"grafana_list_folder_dashboards",
+		"grafana_list_datasources",
+	},
 }
 
 // discovery tools included in the investigate composite (R9a).

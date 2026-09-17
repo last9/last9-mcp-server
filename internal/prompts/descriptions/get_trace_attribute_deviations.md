@@ -8,7 +8,7 @@ Compares attribute-value distributions between two bounded trace-span cohorts an
 - `service_name` (required): exact service name.
 - `environment` (required): exact `deployment.environment` value.
 - `operation`: optional exact operation/span name.
-- `filters`: optional trace JSON filter conditions. Discover valid fields first with `get_trace_attributes_for_pipeline`.
+- `filters`: optional trace JSON filter conditions (each element a single bare field operator). Discover valid fields with `get_trace_attributes_for_pipeline`. Do not use `TraceId`, `SpanId`, `ParentSpanId`, `TraceState`, or `Timestamp` — the deviations endpoint rejects them (use `ServiceName`/`SpanName`/`SpanKind`/`StatusCode`/`Duration` or `attributes['…']`/`resources['…']`).
 - `candidate_attributes`: up to 8 raw attribute names or returned `filter_field` values. Omit for bounded safe discovery, which auto-selects a small number of attributes within a server-side budget. Naming attributes explicitly is how you widen that, or analyze a specific dimension discovery did not pick. Sensitive and identifier-like attributes are rejected — a named one fails the call rather than being silently dropped.
 - `latency_threshold_ms`: required for latency mode. Pass milliseconds; the value is sent as milliseconds and the split is applied server-side. Must be positive, and must be omitted for `errors` and `time` modes.
 - `start_time_iso` / `end_time_iso`: explicit RFC3339 target window.

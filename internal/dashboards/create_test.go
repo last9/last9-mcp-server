@@ -117,6 +117,42 @@ func TestCreateDashboardHandler_NoNudgeWithoutID(t *testing.T) {
 	}
 }
 
+func TestCreateDashboardHandler_DefaultsPanelVersion(t *testing.T) {
+	var captured map[string]json.RawMessage
+	srv := createDashboardAPI(t, `{"dashboard":{"id":"new-id","name":"Created"}}`, &captured)
+
+	dash := json.RawMessage(`{"name":"Created","panels":[{"name":"p","layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"stat"},"queries":[{"name":"A","type":"range","expr":"1","telemetry":"metrics","query_type":"promql","legend":{"type":"auto","value":""}}]},{"name":"s","visualization":{"type":"section"}},{"name":"m","visualization":{"type":"markdown"}}]}`)
+	args := CreateDashboardArgs{DashboardRequest: DashboardRequest{Dashboard: dash}}
+
+	_, _, err := NewCreateDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))(
+		context.Background(), &mcp.CallToolRequest{}, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var sent struct {
+		Panels []struct {
+			Name    string `json:"name"`
+			Version int    `json:"version"`
+		} `json:"panels"`
+	}
+	if err := json.Unmarshal(captured["dashboard"], &sent); err != nil {
+		t.Fatalf("captured dashboard: %v", err)
+	}
+	if len(sent.Panels) != 3 {
+		t.Fatalf("panels %d", len(sent.Panels))
+	}
+	if sent.Panels[0].Version != 1 {
+		t.Fatalf("telemetry panel version %d, want 1", sent.Panels[0].Version)
+	}
+	if sent.Panels[1].Version != 0 {
+		t.Fatalf("section panel version %d, want left unset", sent.Panels[1].Version)
+	}
+	if sent.Panels[2].Version != 1 {
+		t.Fatalf("markdown panel version %d, want 1", sent.Panels[2].Version)
+	}
+}
+
 func TestCreateDashboardHandler_Validation(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("server should not be called")
