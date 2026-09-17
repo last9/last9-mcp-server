@@ -69,7 +69,7 @@ func TestParseInvestigate(t *testing.T) {
 			t.Errorf("investigate missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "get_alert_groups", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard"} {
+	for _, deny := range []string{"get_alerts", "get_alert_groups", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard", "grafana_get_dashboard"} {
 		if set.Allows(deny) {
 			t.Errorf("investigate should exclude %q", deny)
 		}
@@ -86,6 +86,26 @@ func TestParseDashboardsIncludesValidate(t *testing.T) {
 	}
 	if set.Allows("get_logs") {
 		t.Fatal("dashboards should not include get_logs")
+	}
+}
+
+func TestParseGrafana(t *testing.T) {
+	set, err := Parse("grafana")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set == nil {
+		t.Fatal("grafana must not expand to nil/all")
+	}
+	for _, want := range []string{"grafana_search_dashboards", "grafana_get_dashboard", "grafana_list_folders", "grafana_list_folder_dashboards", "grafana_list_datasources"} {
+		if !set.Allows(want) {
+			t.Errorf("grafana missing %q", want)
+		}
+	}
+	for _, deny := range []string{"get_logs", "get_dashboard", "create_dashboard"} {
+		if set.Allows(deny) {
+			t.Errorf("grafana should exclude %q", deny)
+		}
 	}
 }
 

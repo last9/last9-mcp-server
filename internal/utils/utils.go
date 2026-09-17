@@ -421,6 +421,7 @@ func PopulateAPICfg(cfg *models.Config) error {
 		apiHost = audURL.Host
 	}
 	cfg.APIBaseURL = fmt.Sprintf("https://%s/api/v4/organizations/%s", apiHost, cfg.OrgSlug)
+	cfg.GrafanaAPIBaseURL = fmt.Sprintf("https://%s/api/gp/v1/organizations/%s", apiHost, cfg.OrgSlug)
 	req, err := http.NewRequestWithContext(context.Background(), "GET", cfg.APIBaseURL+constants.EndpointDatasources, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request for datasources: %w", err)

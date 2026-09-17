@@ -45,6 +45,9 @@ type Config struct {
 	OrgSlug    string // Organization slug for multi-tenant support
 	ActionURL  string
 	APIBaseURL string // Base URL for API requests
+	// GrafanaAPIBaseURL is the base URL for the Grafana API proxy:
+	// https://{api-host}/gp/v1/organizations/{org-slug}/api
+	GrafanaAPIBaseURL string
 	// Datasource configuration
 	DatasourceName   string // Datasource name to use (overrides default datasource)
 	APIHost          string // API host (defaults to app.last9.io)

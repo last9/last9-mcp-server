@@ -8,6 +8,7 @@ import (
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/change_events"
 	"last9-mcp/internal/dashboards"
+	"last9-mcp/internal/grafana"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/suggest"
@@ -331,6 +332,32 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Name:        "delete_dashboard_snapshot",
 		Description: prompts.DeleteDashboardSnapshotDescription,
 	}, dashboards.NewDeleteDashboardSnapshotHandler(client, cfg)))
+
+	// Register Grafana read tools
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "grafana_search_dashboards",
+		Description: prompts.GrafanaSearchDashboardsDescription,
+	}, grafana.NewSearchDashboardsHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "grafana_get_dashboard",
+		Description: prompts.GrafanaGetDashboardDescription,
+	}, grafana.NewGetDashboardHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "grafana_list_folders",
+		Description: prompts.GrafanaListFoldersDescription,
+	}, grafana.NewListFoldersHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "grafana_list_folder_dashboards",
+		Description: prompts.GrafanaListFolderDashboardsDescription,
+	}, grafana.NewListFolderDashboardsHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "grafana_list_datasources",
+		Description: prompts.GrafanaListDatasourcesDescription,
+	}, grafana.NewListDatasourcesHandler(client, cfg)))
 
 	return regErr
 }

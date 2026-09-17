@@ -143,6 +143,21 @@ var GetDashboardSnapshotDescription string
 //go:embed descriptions/delete_dashboard_snapshot.md
 var DeleteDashboardSnapshotDescription string
 
+//go:embed descriptions/grafana_search_dashboards.md
+var GrafanaSearchDashboardsDescription string
+
+//go:embed descriptions/grafana_get_dashboard.md
+var GrafanaGetDashboardDescription string
+
+//go:embed descriptions/grafana_list_folders.md
+var GrafanaListFoldersDescription string
+
+//go:embed descriptions/grafana_list_folder_dashboards.md
+var GrafanaListFolderDashboardsDescription string
+
+//go:embed descriptions/grafana_list_datasources.md
+var GrafanaListDatasourcesDescription string
+
 //go:embed descriptions/get_logs_base.md
 var GetLogsDescription string
 

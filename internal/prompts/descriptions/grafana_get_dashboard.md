@@ -1,0 +1,1 @@
+Get a Grafana dashboard by uid. By default returns a filtered summary: title, tags, templating variables, and every panel (id, type, datasource, gridPos) with its query targets (PromQL expr, refId, datasource). Set `full_json=true` for the complete raw Grafana dashboard JSON instead. `uid` comes from `grafana_search_dashboards` or `grafana_list_folder_dashboards`.
