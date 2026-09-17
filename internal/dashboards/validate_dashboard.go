@@ -222,9 +222,10 @@ func runValidateDashboard(ctx context.Context, exec *validateExecutor, parsed *v
 	}
 
 	panelRecords := make([]map[string]any, 0, len(panels))
-	for _, raw := range panels {
+	for index, raw := range panels {
 		panel, ok := raw.(map[string]any)
 		if !ok {
+			panelRecords = append(panelRecords, malformedPanelRecord(index, raw))
 			continue
 		}
 		func() {
@@ -326,6 +327,34 @@ func panelFailureRecord(panel map[string]any, err error) map[string]any {
 	}
 }
 
+func malformedPanelRecord(index int, raw any) map[string]any {
+	return map[string]any{
+		"panel_id":           nil,
+		"name":               nil,
+		"visualization_type": nil,
+		"classification":     "query",
+		"targets": []map[string]any{invalidQueryTarget(
+			0, fmt.Sprintf("panels[%d] must be an object, got %T", index, raw),
+		)},
+	}
+}
+
+func invalidQueryTarget(index int, note string) map[string]any {
+	if len(note) > 200 {
+		note = note[:200]
+	}
+	return map[string]any{
+		"target_index": index,
+		"query_type":   "unknown",
+		"status":       "invalid_query",
+		"note":         note,
+		"lint":         []any{},
+		"execution":    nil,
+		"evidence":     nil,
+		"diagnosis":    nil,
+	}
+}
+
 func detectQueryType(query map[string]any) string {
 	if qt, ok := query["query_type"].(string); ok {
 		if isQueryType(qt) {
@@ -362,6 +391,10 @@ func validatePanel(
 	queries := asAnySlice(panel["queries"])
 	_, isCSV := panel["csv"]
 	if _, noQuery := noQueryVizTypes[vizType]; noQuery || isCSV || len(queries) == 0 {
+		if rawQueries, present := panel["queries"]; present && rawQueries != nil && queries == nil {
+			record["targets"] = []map[string]any{invalidQueryTarget(0, "queries must be a list of query objects")}
+			return record
+		}
 		record["classification"] = "no_query"
 		reason := "no_queries_defined"
 		if isCSV {
@@ -377,6 +410,9 @@ func validatePanel(
 	for index, raw := range queries {
 		query, ok := raw.(map[string]any)
 		if !ok {
+			targets = append(targets, invalidQueryTarget(
+				index, fmt.Sprintf("queries[%d] must be an object, got %T", index, raw),
+			))
 			continue
 		}
 		func() {

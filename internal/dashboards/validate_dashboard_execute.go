@@ -203,6 +203,9 @@ func outcomeFromResult(tool string, raw []byte, transportErr string, durationMs 
 		}
 		return executionOutcome{status: status, tool: tool, errorText: errText, durationMs: durationMs}
 	}
+	if shapeErr := responseShapeError(tool, payload); shapeErr != "" {
+		return executionOutcome{status: "execution_error", tool: tool, errorText: clipError(shapeErr), durationMs: durationMs}
+	}
 	return executionOutcome{status: "executed", tool: tool, payload: payload, durationMs: durationMs}
 }
 
@@ -218,6 +221,51 @@ func parseJSONPayload(raw []byte) (any, error) {
 		return nil, fmt.Errorf("upstream returned a null payload")
 	}
 	return payload, nil
+}
+
+// responseShapeError verifies the recognized success contract for the executed
+// query. Decodable JSON alone is not a successful result: only an explicitly
+// empty recognized envelope may later become valid_no_data.
+func responseShapeError(tool string, payload any) string {
+	switch tool {
+	case "prometheus_instant_query", "prometheus_range_query":
+		obj, ok := payload.(map[string]any)
+		if !ok {
+			return "unrecognized Prometheus response: expected a JSON object"
+		}
+		if status, _ := obj["status"].(string); status != "success" {
+			return `unrecognized Prometheus response: missing "status":"success"`
+		}
+		data, ok := obj["data"].(map[string]any)
+		if !ok {
+			return `unrecognized Prometheus response: missing "data" object`
+		}
+		if _, ok := data["result"].([]any); !ok {
+			return `unrecognized Prometheus response: missing "data.result" array`
+		}
+		return ""
+	case "get_logs":
+		if _, ok := payload.([]any); ok {
+			return ""
+		}
+		obj, ok := payload.(map[string]any)
+		if !ok {
+			return "unrecognized logs response: expected a JSON object"
+		}
+		if data, ok := obj["data"].(map[string]any); ok {
+			if _, ok := data["result"].([]any); ok {
+				return ""
+			}
+		}
+		for _, key := range []string{"logs", "entries", "rows", "result"} {
+			if _, ok := obj[key].([]any); ok {
+				return ""
+			}
+		}
+		return "unrecognized logs response: missing a result array"
+	default:
+		return ""
+	}
 }
 
 func errorTextFromPayload(payload any, raw string) string {
