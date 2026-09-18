@@ -241,38 +241,35 @@ func zeroCountSanityBlock() map[string]interface{} {
 	}
 }
 
-// serviceVolumeBaseline fetches the physical_index_service_count PromQL
-// baseline for service over a window ending at endMs that covers at least the
-// full [startMs, endMs] query window. It is shared by the nonzero ratio path
-// and the zero-path genuine-zero check. queryOK is true whenever the query
-// executed and returned a well-formed instant-vector response — INCLUDING an
-// empty series list, which is a legitimate answer meaning the service has
-// zero log volume (a service that emitted nothing has no series in
-// physical_index_service_count at all, so the PromQL response is empty rather
-// than carrying an explicit 0 sample). queryOK is false only for a genuine
-// failure to get an answer: HTTP error status, transport error, or a decode
-// failure — callers must treat that as "could not determine", never as a
-// volume of zero.
-//
-// The baseline window is ceiling-divided to whole minutes so it is never
-// shorter than the query window: the matched count from the log aggregate API
-// covers [startMs, endMs] exactly, and the volume baseline must cover at
-// least that same range. Floor division dropped up to ~59s of the query
-// window for non-whole-minute durations, inflating the ratio on the nonzero
-// path and misclassifying a truncated-but-emitting service as a "genuine
-// zero" on the zero path. Ceiling over-covers by at most ~59s before startMs
-// — the conservative direction for both paths (deflates the nonzero ratio
-// and pushes the zero path toward "inspect" rather than "nothing to
-// inspect"), and is exact for whole-minute durations. Unlike the identical
-// floor in internal/apm/apm.go (which is harmless because it appears in both
-// the numerator and denominator of a rate and cancels), the matched-count
-// numerator here is measured over the full window by the log API while the
-// volume denominator is truncated, so truncation does not cancel.
-func serviceVolumeBaseline(ctx context.Context, client *http.Client, cfg models.Config, service string, startMs, endMs int64) (volume float64, queryOK bool) {
+// ceilingPromWindowMinutes returns the PromQL [Nm] length that covers at least
+// [startMs, endMs]. Ceiling (not floor) so the volume baseline is never shorter
+// than the log-API matched-count window; exact for whole minutes, over-covers
+// by at most ~59s otherwise. Clamps to 1m (PromQL cannot express [0m]).
+// Unlike the floor in internal/apm/apm.go (harmless in a rate — both sides
+// truncate), the matched-count numerator here is full-window, so floor would
+// not cancel.
+func ceilingPromWindowMinutes(startMs, endMs int64) int64 {
 	windowMinutes := (endMs - startMs + 59999) / 60000
 	if windowMinutes < 1 {
-		windowMinutes = 1
+		return 1
 	}
+	return windowMinutes
+}
+
+// serviceVolumeBaseline fetches the physical_index_service_count PromQL
+// baseline for service over a window ending at endMs that covers at least the
+// full [startMs, endMs] query window (see ceilingPromWindowMinutes). It is
+// shared by the nonzero ratio path and the zero-path genuine-zero check.
+// queryOK is true whenever the query executed and returned a well-formed
+// instant-vector response — INCLUDING an empty series list, which is a
+// legitimate answer meaning the service has zero log volume (a service that
+// emitted nothing has no series in physical_index_service_count at all, so
+// the PromQL response is empty rather than carrying an explicit 0 sample).
+// queryOK is false only for a genuine failure to get an answer: HTTP error
+// status, transport error, or a decode failure — callers must treat that as
+// "could not determine", never as a volume of zero.
+func serviceVolumeBaseline(ctx context.Context, client *http.Client, cfg models.Config, service string, startMs, endMs int64) (volume float64, queryOK bool) {
+	windowMinutes := ceilingPromWindowMinutes(startMs, endMs)
 	promql := fmt.Sprintf(`sum(sum_over_time(physical_index_service_count{service_name=%q}[%dm]))`, service, windowMinutes)
 
 	instantCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
