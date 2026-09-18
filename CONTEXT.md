@@ -37,7 +37,7 @@ Long DSL manuals, stage catalogs, and deep examples that used to bloat tool desc
 _Avoid_: stuffing manuals into the tool description; using prompts as a dump for reference docs
 
 **Named toolsets** (v1):
-Domain groups that partition the served tool surface: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, plus `all` and the composite `investigate` (`logs`+`traces`+`metrics`+discovery helpers, no dashboard/alert writes). Operators may combine domain toolsets.
+Domain groups that partition the served tool surface: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, plus `all` and the composite `investigate` (`logs`+`traces`+`metrics`+`profiles`+discovery helpers, no dashboard/alert writes). Operators may combine domain toolsets.
 _Avoid_: per-tool toggles as the primary UX; write-only toolset as a v1 requirement
 
 **Description whales**:
