@@ -197,6 +197,15 @@ func TestOutcomeFromResultAcceptsEmptyStreams(t *testing.T) {
 	}
 }
 
+func TestOutcomeFromResultAcceptsPrometheusArray(t *testing.T) {
+	for _, raw := range []string{`[]`, `[{"metric":{},"value":[1,"1"]}]`} {
+		outcome := outcomeFromResult("prometheus_instant_query", []byte(raw), "", 0)
+		if outcome.status != "executed" {
+			t.Fatalf("Prometheus array response %s: status=%q error=%q", raw, outcome.status, outcome.errorText)
+		}
+	}
+}
+
 func TestValidateDashboard_InlinePromWithData(t *testing.T) {
 	var methods []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

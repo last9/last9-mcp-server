@@ -229,6 +229,9 @@ func parseJSONPayload(raw []byte) (any, error) {
 func responseShapeError(tool string, payload any) string {
 	switch tool {
 	case "prometheus_instant_query", "prometheus_range_query":
+		if _, ok := payload.([]any); ok {
+			return ""
+		}
 		obj, ok := payload.(map[string]any)
 		if !ok {
 			return "unrecognized Prometheus response: expected a JSON object"
