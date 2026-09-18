@@ -2,6 +2,7 @@ package traces
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -84,6 +85,19 @@ func TestSanitizeTraceJSONQuery_ValidPipelines(t *testing.T) {
 			},
 		},
 		{
+			name: "window_aggregate with groupby",
+			stages: []map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"TraceId", ""}}},
+				{
+					"type":     "window_aggregate",
+					"function": map[string]interface{}{"$count": []interface{}{}},
+					"as":       "requests_per_min",
+					"window":   []interface{}{"5", "minutes"},
+					"groupby":  map[string]interface{}{"ServiceName": "service"},
+				},
+			},
+		},
+		{
 			name: "filter after aggregate (HAVING-style)",
 			stages: []map[string]interface{}{
 				{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"StatusCode", "STATUS_CODE_ERROR"}}},
@@ -126,6 +140,13 @@ func TestSanitizeTraceJSONQuery_ValidPipelines(t *testing.T) {
 			},
 		},
 		{
+			name: "select stage",
+			stages: []map[string]interface{}{
+				{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"TraceId", ""}}},
+				{"type": "select", "labels": map[string]interface{}{"ServiceName": "service", "Duration": "duration"}},
+			},
+		},
+		{
 			name: "all statistical aggregate functions",
 			stages: []map[string]interface{}{
 				{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"Duration", ""}}},
@@ -147,6 +168,124 @@ func TestSanitizeTraceJSONQuery_ValidPipelines(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := SanitizeTraceJSONQuery(tt.stages); err != nil {
 				t.Errorf("expected no error, got: %v", err)
+			}
+		})
+	}
+}
+
+func TestSanitizeTraceJSONQuery_UnknownStageType(t *testing.T) {
+	err := SanitizeTraceJSONQuery([]map[string]interface{}{
+		{"type": "trace_filter"},
+	})
+	if err == nil {
+		t.Fatal("expected unknown stage type to fail closed")
+	}
+	var pipeErr *tracePipelineError
+	if !errors.As(err, &pipeErr) {
+		t.Fatalf("want tracePipelineError, got %T %v", err, err)
+	}
+	if pipeErr.Category() != traceCategoryUnknownStageType {
+		t.Fatalf("category=%s want %s err=%v", pipeErr.Category(), traceCategoryUnknownStageType, err)
+	}
+	if pipeErr.Path() != "tracejson_query[0]" {
+		t.Fatalf("path=%q want tracejson_query[0]", pipeErr.Path())
+	}
+}
+
+func TestSanitizeTraceJSONQuery_WindowAggregateWrongKeys(t *testing.T) {
+	tests := []struct {
+		name     string
+		stage    map[string]interface{}
+		category string
+	}{
+		{
+			name: "aggregates+window_minutes",
+			stage: map[string]interface{}{
+				"type":           "window_aggregate",
+				"aggregates":     []interface{}{map[string]interface{}{"function": map[string]interface{}{"$count": []interface{}{}}, "as": "_count"}},
+				"window_minutes": 5,
+			},
+			category: traceCategoryWindowAggregateShape,
+		},
+		{
+			name: "unknown extra key",
+			stage: map[string]interface{}{
+				"type":     "window_aggregate",
+				"function": map[string]interface{}{"$count": []interface{}{}},
+				"as":       "rate",
+				"window":   []interface{}{"5", "minutes"},
+				"bogus":    true,
+			},
+			category: traceCategoryUnknownStageKey,
+		},
+		{
+			name: "missing function as window",
+			stage: map[string]interface{}{
+				"type": "window_aggregate",
+			},
+			category: traceCategoryWindowAggregateShape,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := SanitizeTraceJSONQuery([]map[string]interface{}{tt.stage})
+			if err == nil {
+				t.Fatal("expected window_aggregate shape to fail closed")
+			}
+			var pipeErr *tracePipelineError
+			if !errors.As(err, &pipeErr) {
+				t.Fatalf("want tracePipelineError, got %T %v", err, err)
+			}
+			if pipeErr.Category() != tt.category {
+				t.Fatalf("category=%s want %s err=%v", pipeErr.Category(), tt.category, err)
+			}
+			if pipeErr.Path() == "" {
+				t.Fatal("expected JSON path on validation error")
+			}
+		})
+	}
+}
+
+func TestSanitizeTraceJSONQuery_ValidatesQuantileArguments(t *testing.T) {
+	aggregate := func(args []interface{}) []map[string]interface{} {
+		return []map[string]interface{}{{
+			"type": "aggregate",
+			"aggregates": []interface{}{map[string]interface{}{
+				"function": map[string]interface{}{"$quantile": args}, "as": "percentile",
+			}},
+		}}
+	}
+	windowAggregate := func(args []interface{}) []map[string]interface{} {
+		return []map[string]interface{}{{
+			"type": "window_aggregate", "function": map[string]interface{}{"$quantile": args},
+			"as": "percentile", "window": []interface{}{"5", "minutes"},
+		}}
+	}
+
+	for _, tc := range []struct {
+		name     string
+		pipeline []map[string]interface{}
+		wantPath string
+	}{
+		{"aggregate valid", aggregate([]interface{}{0.95, "Duration"}), ""},
+		{"aggregate swapped", aggregate([]interface{}{"Duration", 0.95}), "tracejson_query[0].aggregates[0].function.$quantile[0]"},
+		{"aggregate out of range", aggregate([]interface{}{1.01, "Duration"}), "tracejson_query[0].aggregates[0].function.$quantile[0]"},
+		{"aggregate wrong arity", aggregate([]interface{}{0.95}), "tracejson_query[0].aggregates[0].function.$quantile"},
+		{"window valid", windowAggregate([]interface{}{0.95, "Duration"}), ""},
+		{"window swapped", windowAggregate([]interface{}{"Duration", 0.95}), "tracejson_query[0].function.$quantile[0]"},
+		{"window out of range", windowAggregate([]interface{}{-0.01, "Duration"}), "tracejson_query[0].function.$quantile[0]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := SanitizeTraceJSONQuery(tc.pipeline)
+			if tc.wantPath == "" {
+				if err != nil {
+					t.Fatalf("valid quantile rejected: %v", err)
+				}
+				return
+			}
+			var pipelineErr *tracePipelineError
+			if err == nil || !errors.As(err, &pipelineErr) || pipelineErr.Category() != traceCategoryInvalidField || pipelineErr.Path() != tc.wantPath || !strings.Contains(err.Error(), "must be exactly [level, field]") {
+				t.Fatalf("expected actionable quantile error at %s, got: %v", tc.wantPath, err)
 			}
 		})
 	}

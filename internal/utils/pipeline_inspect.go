@@ -38,6 +38,50 @@ func PipelineHasAggregateStage(pipeline []map[string]interface{}) bool {
 	return false
 }
 
+// hasParseStage reports whether pipeline contains a stage whose "type" is
+// "parse".
+func hasParseStage(pipeline []map[string]interface{}) bool {
+	for _, stage := range pipeline {
+		if stageType, _ := stage["type"].(string); stageType == "parse" {
+			return true
+		}
+	}
+	return false
+}
+
+// bodyTouchFilterOperators are the filter operators over Body that
+// pipelineTouchesBody recognizes — the shape of the parse-free plaintext
+// Body hint get_log_attributes_for_pipeline's fallback emits ($regex on
+// Body), plus $contains as the other common direct-Body-match operator.
+var bodyTouchFilterOperators = map[string]struct{}{
+	"$regex":    {},
+	"$contains": {},
+}
+
+// pipelineTouchesBody reports whether pipeline contains a filter condition
+// using $regex/$contains directly on the Body field (it does NOT check for a
+// parse stage — callers needing "parse stage OR touches Body" should also
+// call hasParseStage). Used to widen zero-count guardrails beyond
+// hasParseStage: the recommended parse-free plaintext Body hint never adds a
+// parse stage, so a guardrail gated only on hasParseStage misses it.
+func pipelineTouchesBody(pipeline []map[string]interface{}) bool {
+	for _, stage := range pipeline {
+		if stageType, _ := stage["type"].(string); stageType != "filter" {
+			continue
+		}
+		query, ok := stage["query"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for op := range collectBodyConditions(query) {
+			if _, touch := bodyTouchFilterOperators[op]; touch {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // HasJSONParsePipeline mirrors frontend hasJSONParsePipeline in
 // adaptive-chunk-loader.ts:31 — true if any stage is a JSON parse.
 func HasJSONParsePipeline(pipeline []map[string]any) bool {
@@ -179,6 +223,15 @@ func conditionReferencesBody(condition map[string]any) bool {
 	for op, raw := range condition {
 		switch op {
 		case "$and", "$or", "$not":
+			// The sanitizer normalizes logical operators to array form, but
+			// unsanitized pipelines may still carry a map-form value (e.g.
+			// {"$not": {…}}) — recurse into it rather than silently skipping.
+			if cm, ok := raw.(map[string]any); ok {
+				if conditionReferencesBody(cm) {
+					return true
+				}
+				continue
+			}
 			group, ok := raw.([]any)
 			if !ok {
 				continue
@@ -254,6 +307,12 @@ func collectBodyConditionsInto(condition map[string]any, out map[string]struct{}
 	for op, raw := range condition {
 		switch op {
 		case "$and", "$or", "$not":
+			// Mirror conditionReferencesBody: accept map-form logical values
+			// from unsanitized pipelines, not just the sanitized array form.
+			if cm, ok := raw.(map[string]any); ok {
+				collectBodyConditionsInto(cm, out)
+				continue
+			}
 			group, ok := raw.([]any)
 			if !ok {
 				continue

@@ -1,6 +1,10 @@
 package traces
 
-import "strings"
+import (
+	"strings"
+
+	"last9-mcp/internal/utils"
+)
 
 // traceTopLevelFields is the set of first-class trace fields that are used
 // directly by name in tracejson filter conditions (no bracket syntax needed).
@@ -41,7 +45,7 @@ func enrichAttribute(raw string) TraceAttribute {
 			SemanticName: stripped,
 			Type:         "resource",
 			FilterField:  filterField,
-			Hint:         `Example: {"$eq": ["` + filterField + `", "value"]}`,
+			Hint:         "Example: " + utils.EQExample(filterField, "value"),
 		}
 	}
 
@@ -54,7 +58,7 @@ func enrichAttribute(raw string) TraceAttribute {
 			SemanticName: stripped,
 			Type:         "event",
 			FilterField:  filterField,
-			Hint:         `Example: {"$eq": ["` + filterField + `", "value"]}`,
+			Hint:         "Example: " + utils.EQExample(filterField, "value"),
 		}
 	}
 
@@ -65,7 +69,7 @@ func enrichAttribute(raw string) TraceAttribute {
 			SemanticName: raw,
 			Type:         "toplevel",
 			FilterField:  raw,
-			Hint:         `Example: {"$eq": ["` + raw + `", "value"]}`,
+			Hint:         "Example: " + utils.EQExample(raw, "value"),
 		}
 	}
 
@@ -87,7 +91,7 @@ func enrichAttribute(raw string) TraceAttribute {
 		SemanticName: raw,
 		Type:         "span",
 		FilterField:  filterField,
-		Hint:         `Example: {"$eq": ["` + filterField + `", "value"]}`,
+		Hint:         "Example: " + utils.EQExample(filterField, "value"),
 	}
 }
 

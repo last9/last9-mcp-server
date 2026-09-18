@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -30,93 +29,6 @@ func testDBConfig(serverURL string) models.Config {
 			AccessToken: "mock-token",
 			ExpiresAt:   time.Now().Add(365 * 24 * time.Hour),
 		},
-	}
-}
-
-func TestGetDatabasesHandler(t *testing.T) {
-	var requestCount atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount.Add(1)
-		w.WriteHeader(http.StatusOK)
-
-		// Return different results depending on the query
-		response := []map[string]any{
-			{
-				"metric": map[string]string{"db_system": "postgresql", "net_peer_name": "db-primary.internal"},
-				"value":  []any{1700000000, "150.5"},
-			},
-			{
-				"metric": map[string]string{"db_system": "redis", "net_peer_name": "redis-cache.internal"},
-				"value":  []any{1700000000, "2500.0"},
-			},
-		}
-		json.NewEncoder(w).Encode(response)
-	}))
-	defer server.Close()
-
-	handler := NewGetDatabasesHandler(server.Client(), testDBConfig(server.URL))
-	now := time.Now().UTC()
-	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
-		StartTimeISO: now.Add(-60 * time.Minute).Format(time.RFC3339),
-		EndTimeISO:   now.Format(time.RFC3339),
-	})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-
-	text := result.Content[0].(*mcp.TextContent).Text
-	var response map[string]any
-	if err := json.Unmarshal([]byte(text), &response); err != nil {
-		t.Fatalf("failed to unmarshal response: %v", err)
-	}
-
-	count, ok := response["count"].(float64)
-	if !ok || count == 0 {
-		t.Fatalf("expected databases in response, got count=%v", response["count"])
-	}
-
-	databases, ok := response["databases"].([]any)
-	if !ok || len(databases) == 0 {
-		t.Fatal("expected databases array in response")
-	}
-
-	// Verify first database has expected fields
-	db := databases[0].(map[string]any)
-	if db["db_system"] == nil || db["db_system"] == "" {
-		t.Error("expected db_system field")
-	}
-	if db["host"] == nil {
-		t.Error("expected host field")
-	}
-	if db["throughput_rpm"] == nil {
-		t.Error("expected throughput_rpm field")
-	}
-
-	// Should have made at least 4 PromQL requests (throughput, latency, error_count, total_count + service_count)
-	if rc := requestCount.Load(); rc < 4 {
-		t.Errorf("expected at least 4 PromQL requests, got %d", rc)
-	}
-}
-
-func TestGetDatabasesHandler_NoDatabases(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		// Return empty series
-		json.NewEncoder(w).Encode([]map[string]any{})
-	}))
-	defer server.Close()
-
-	handler := NewGetDatabasesHandler(server.Client(), testDBConfig(server.URL))
-	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
-		LookbackMinutes: 60,
-	})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-
-	text := result.Content[0].(*mcp.TextContent).Text
-	if !strings.Contains(text, "No databases found") {
-		t.Errorf("expected 'No databases found' message, got: %s", text)
 	}
 }
 
@@ -142,16 +54,6 @@ func TestDatabaseLatencyQueries_NoUnitMultiplier(t *testing.T) {
 		name string
 		run  func(client *http.Client, cfg models.Config) error
 	}{
-		{
-			name: "get_databases",
-			run: func(client *http.Client, cfg models.Config) error {
-				_, _, err := NewGetDatabasesHandler(client, cfg)(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
-					StartTimeISO: now.Add(-60 * time.Minute).Format(time.RFC3339),
-					EndTimeISO:   now.Format(time.RFC3339),
-				})
-				return err
-			},
-		},
 		{
 			name: "get_database_queries",
 			run: func(client *http.Client, cfg models.Config) error {
@@ -521,6 +423,181 @@ func TestGetDatabaseSlowQueriesHandler_NoResults(t *testing.T) {
 	}
 }
 
+// TestGetDatabaseSlowQueriesHandler_MinDurationMs_FiltersLogs is a regression
+// test for the logs path ignoring the user-supplied min_duration_ms filter.
+// The traces source applies MinDurationMs server-side ($gte on Duration), but
+// fetchSlowQueryLogs previously never threaded MinDurationMs into
+// extractSlowQueryLogs, so a sub-threshold log entry could fill a result slot
+// whenever traces returned fewer than `limit` entries. This test wires one
+// valid 500ms trace and one sub-threshold 50ms log (MinDurationMs=200) and
+// asserts the log entry is filtered out (from_logs=0, count=1). A reached
+// flag guards against a vacuous pass if the logs endpoint is never hit.
+func TestGetDatabaseSlowQueriesHandler_MinDurationMs_FiltersLogs(t *testing.T) {
+	var mu sync.Mutex
+	logEndpointReached := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/cat/api/traces/v2/query_range/json") {
+			// One valid 500ms trace (>= MinDurationMs=200).
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"result": []any{
+						map[string]any{
+							"TraceId":     "trace-valid",
+							"SpanId":      "span-1",
+							"ServiceName": "order-service",
+							"SpanName":    "SELECT * FROM orders WHERE id = ?",
+							"Duration":    float64(500_000_000), // 500ms
+							"StatusCode":  "STATUS_CODE_OK",
+							"Timestamp":   "2025-01-01T10:00:00Z",
+							"SpanAttributes": map[string]any{
+								"db.system":    "postgresql",
+								"db.statement": "SELECT * FROM orders WHERE id = $1",
+							},
+						},
+					},
+				},
+			})
+			return
+		}
+		if strings.Contains(r.URL.Path, "/logs/api/v2/query_range/json") {
+			mu.Lock()
+			logEndpointReached = true
+			mu.Unlock()
+
+			// One sub-threshold 50ms log (< MinDurationMs=200).
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"resultType": "streams",
+					"result": []any{
+						map[string]any{
+							"stream": map[string]any{
+								"service_name": "order-service",
+								"severity":     "warn",
+							},
+							"values": []any{
+								[]any{
+									"1700000000000000000",
+									`{"db.system":"postgresql","db.operation.duration_ms":50,"db.statement":"SELECT 1"}`,
+								},
+							},
+						},
+					},
+				},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"result": []any{}},
+		})
+	}))
+	defer server.Close()
+
+	handler := NewGetDatabaseSlowQueriesHandler(server.Client(), testDBConfig(server.URL))
+	now := time.Now().UTC()
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabaseSlowQueriesArgs{
+		DBSystem:      "postgresql",
+		MinDurationMs: 200,
+		StartTimeISO:  now.Add(-60 * time.Minute).Format(time.RFC3339),
+		EndTimeISO:    now.Format(time.RFC3339),
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !logEndpointReached {
+		t.Fatal("logs query_range endpoint was never called — log filtering not exercised")
+	}
+
+	text := result.Content[0].(*mcp.TextContent).Text
+	var response map[string]any
+	if err := json.Unmarshal([]byte(text), &response); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	fromLogs, ok := response["from_logs"].(float64)
+	if !ok {
+		t.Fatalf("response missing numeric from_logs field: %v", response["from_logs"])
+	}
+	if fromLogs != 0 {
+		t.Errorf("expected from_logs=0 (50ms entry below min_duration_ms=200 should be filtered), got %v", fromLogs)
+	}
+	count, ok := response["count"].(float64)
+	if !ok {
+		t.Fatalf("response missing numeric count field: %v", response["count"])
+	}
+	if count != 1 {
+		t.Errorf("expected 1 slow query (only the valid 500ms trace), got %v", count)
+	}
+}
+
+// TestFilterSlowQueriesByMinDuration exercises the client-side threshold
+// filter applied to parsed log entries, covering below/at/above threshold,
+// zero duration, and unset (<=0) threshold behavior.
+func TestFilterSlowQueriesByMinDuration(t *testing.T) {
+	mkMsg := func(d float64) string {
+		b, _ := json.Marshal(map[string]any{
+			"db.system":                "postgresql",
+			"db.operation.duration_ms": d,
+			"db.statement":             "SELECT 1",
+		})
+		return string(b)
+	}
+	buildRaw := func(durations ...float64) map[string]any {
+		values := make([]any, 0, len(durations))
+		for _, d := range durations {
+			values = append(values, []any{"1700000000000000000", mkMsg(d)})
+		}
+		return map[string]any{
+			"data": map[string]any{
+				"resultType": "streams",
+				"result": []any{
+					map[string]any{
+						"stream": map[string]any{"service_name": "svc"},
+						"values": values,
+					},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name          string
+		durations     []float64
+		minDurationMs float64
+		wantCount     int
+	}{
+		{name: "threshold filters below", durations: []float64{50, 500}, minDurationMs: 200, wantCount: 1},
+		{name: "boundary at threshold kept", durations: []float64{200}, minDurationMs: 200, wantCount: 1},
+		{name: "zero duration always dropped", durations: []float64{0, 1000}, minDurationMs: 200, wantCount: 1},
+		{name: "unset threshold keeps all positive", durations: []float64{50, 200, 500}, minDurationMs: 0, wantCount: 3},
+		{name: "negative threshold treated as unset", durations: []float64{1}, minDurationMs: -1, wantCount: 1},
+		{name: "all below threshold filtered", durations: []float64{50, 100}, minDurationMs: 200, wantCount: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			queries := filterSlowQueriesByMinDuration(extractSlowQueryLogs(buildRaw(tt.durations...)), tt.minDurationMs)
+			if len(queries) != tt.wantCount {
+				t.Fatalf("expected %d queries, got %d", tt.wantCount, len(queries))
+			}
+			for _, q := range queries {
+				if q.DurationMs <= 0 {
+					t.Errorf("zero-duration entry should not be returned")
+				}
+				if tt.minDurationMs > 0 && q.DurationMs < tt.minDurationMs {
+					t.Errorf("entry duration_ms=%v below threshold %v was not filtered", q.DurationMs, tt.minDurationMs)
+				}
+			}
+		})
+	}
+}
+
 func TestGetDatabaseServerMetricsHandler(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -668,21 +745,6 @@ func TestExtractSlowQueries_TruncatesLongStatements(t *testing.T) {
 }
 
 // --- Integration tests (require TEST_REFRESH_TOKEN) ---
-
-func TestGetDatabasesHandler_Integration(t *testing.T) {
-	cfg := utils.SetupTestConfigOrSkip(t)
-
-	handler := NewGetDatabasesHandler(http.DefaultClient, *cfg)
-	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{
-		LookbackMinutes: 60,
-	})
-	if utils.CheckAPIError(t, err) {
-		return
-	}
-
-	text := utils.GetTextContent(t, result)
-	t.Logf("get_databases response (%d bytes): %.500s", len(text), text)
-}
 
 func TestGetDatabaseSlowQueriesHandler_Integration(t *testing.T) {
 	cfg := utils.SetupTestConfigOrSkip(t)

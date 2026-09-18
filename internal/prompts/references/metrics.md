@@ -1,4 +1,4 @@
-# get_metrics Tool Usage Guide
+# prometheus_range_query Tool Usage Guide
 
 Use for performance monitoring, trend analysis, and system health checks.
 
@@ -34,6 +34,11 @@ Choose metrics that align with the user's question:
 - **Error rates**: For reliability concerns
 - **Throughput**: For capacity planning
 - **Cache ratios**: For CDN optimization
+
+### Percentiles
+- Percentiles are not composable: never average precomputed percentile series to answer a wider-window percentile question.
+- When suitable Prometheus histogram buckets exist, compute the requested percentile with `histogram_quantile(..., rate(...))` or `histogram_quantile(..., increase(...))`.
+- Otherwise use `get_logs` or `get_traces` to aggregate the raw distribution. A precomputed percentile metric is valid only when its recorded window exactly matches the requested window.
 
 ## Common Use Cases
 

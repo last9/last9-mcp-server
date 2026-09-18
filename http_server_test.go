@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -19,10 +22,13 @@ import (
 // initialize fails, surfacing to clients as "tools fetch failed". A regression
 // back to stateful mode (opts nil / Stateless:false) fails this test.
 func TestStatelessStreamableHandler(t *testing.T) {
-	srv := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
-	ts := httptest.NewServer(newStatelessStreamableHandler(func(*http.Request) *mcp.Server {
-		return srv
-	}))
+	srv, err := last9mcp.NewServerWithOptions("test", "0", last9mcp.WithSkipProviderInit())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
+
+	ts := httptest.NewServer(srv.NewStreamableHTTPHandler(&mcp.StreamableHTTPOptions{Stateless: true}))
 	defer ts.Close()
 
 	t.Run("tools/list with unknown session returns 200, not 404", func(t *testing.T) {
@@ -65,4 +71,51 @@ func TestStatelessStreamableHandler(t *testing.T) {
 			t.Fatalf("got HTTP %d, want 405", resp.StatusCode)
 		}
 	})
+}
+
+// TestHandleHealthReportsBuildVersion pins that /health reports the ldflag
+// Version var, not a hardcoded literal (this regressed once before).
+func TestHandleHealthReportsBuildVersion(t *testing.T) {
+	// Mutates the package-global Version: this test must not run under
+	// t.Parallel() alongside anything that reads Version.
+	const sentinel = "9.9.9-test-version"
+	orig := Version
+	Version = sentinel
+	t.Cleanup(func() { Version = orig })
+
+	// Wire /health exactly as HTTPServer.Start does.
+	h := &HTTPServer{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", h.handleHealth)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/health")
+	if err != nil {
+		t.Fatalf("GET /health failed: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("got status %d, want 200; body: %s", resp.StatusCode, body)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("got Content-Type %q, want application/json", ct)
+	}
+
+	var got map[string]string
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode health body %q: %v", body, err)
+	}
+
+	if got["status"] != "healthy" {
+		t.Errorf("status = %q, want healthy", got["status"])
+	}
+	if got["server"] != "last9-mcp" {
+		t.Errorf("server = %q, want last9-mcp", got["server"])
+	}
+	if got["version"] != sentinel {
+		t.Errorf("version = %q, want %q (the package-level Version var)", got["version"], sentinel)
+	}
 }

@@ -1,33 +1,32 @@
-Use this tool to fetch raw log entries for a single service using simple filters.
+Use this tool to fetch raw log entries for a single service using structured filters. Do not write a `logjson_query`.
 
-## When to use `get_logs` instead
+## When to use this tool vs `get_logs`
 
-**CRITICAL:** If the query involves a structured attribute — HTTP status codes (401, 500, etc.), gRPC status codes, `user_id`, latency, or any field discoverable via `get_log_attributes` — **use `get_logs`** with a `logjson_query` attribute filter instead of this tool.
+**Use `get_service_logs` when:** the question is about one known service and you can express it with `severity_filters`, `http_status_class` / `http_status_code`, `attribute_filters`, or `body_filters`.
 
-**Why:** `body_filters` performs plain-text substring search on the log message body only. It will miss all logs where the value is stored as a structured attribute (e.g. `attributes['http_status_code']`). Structured attribute queries are also **faster** because they are indexed.
+**Use `get_logs` when:** you need parse/aggregate/`window_aggregate`, or an ad-hoc pipeline the structured args cannot express.
 
-**Decision rule:**
-- Query involves a known or discoverable structured attribute → **use `get_logs`**
-- Query is simple severity filtering or keyword/phrase match against log text → use `get_service_logs`
+**Do not** send HTTP status or named-attribute questions to `get_logs` by default. This tool compiles those filters server-side.
 
-## Check log attributes first
+## HTTP status
 
-Before using `body_filters`, call `get_log_attributes` to discover what structured attributes are available for the service. If the value you are filtering on is stored as a structured attribute, **prefer an attribute filter via `get_logs`** over a body text search.
+Pass `http_status_class` (`2xx`/`3xx`/`4xx`/`5xx`) or `http_status_code` (`500`, `401`). The server discovers the status field for this service/env/window via the same path as `get_log_attributes_for_pipeline`.
 
-**Do not assume an attribute's key name** — which fields exist and how they're keyed depend on the scope you've filtered to (for example, HTTP status is keyed `status_code` on some sources and `http.status_code` on others; neither is a safe default). To get the field that is actually present for your scope, build a pipeline scoped to this service (e.g. `{"$eq":["ServiceName","<service>"]}`, plus any other filters such as namespace or environment), call `get_log_attributes_for_pipeline`, then use the `filter_field` it returns. Entries marked `source: "body"` live inside the log `Body` (JSON, logfmt, or plaintext matched by regexp) and require the parse stage from their `hint` — that path needs `get_logs`, not this tool.
+If discovery finds no status-like field, or more than one, the tool errors and asks you to pass `http_status_field` with the exact logjson field (e.g. `attributes['http.status_code']`). Do not guess a field name.
 
-**Severity is not an HTTP-error proxy** — access logs commonly carry INFO severity even for 5xx responses, and severity can be empty. `severity_filters: ["error"]` returns 0 for such services. For HTTP error questions, use `get_logs` with the discovered status field instead.
+`http_status_code` takes precedence over `http_status_class` when both are set.
 
-Structured attribute queries are:
-- **Faster**: indexed, not a full-text scan
-- **More precise**: exact value match, not partial text
-- **More reliable**: work even when the value is not embedded in the log message body
+**Severity is not an HTTP-error proxy** — access logs commonly carry INFO severity even for 5xx responses, and severity can be empty. `severity_filters: ["error"]` returns 0 for such services. Use `http_status_class` / `http_status_code` instead.
 
-`body_filters` is a **last resort** — use it only when no structured attribute captures the information you need.
+## Named attributes
 
-## Available structured attributes
+`attribute_filters` is an array of `{field, value}` equality matches compiled into logjson `$eq`. `field` must use logjson syntax: `attributes['user_id']`, `resources['k8s.namespace.name']`, or a simple name that this tool wraps as `attributes['name']`.
 
-Do not invent org-specific attribute names. Discover fields with `get_log_attributes` / `get_log_attributes_for_pipeline` before filtering.
+Invalid syntax (double quotes, `resource_` prefixes) is a local error. An unknown org field is not rejected — it is forwarded and may match nothing.
+
+Do not invent org-specific attribute names. Discover fields with `get_log_attributes` / `get_log_attributes_for_pipeline` if you are unsure of the key. Entries marked `source: "body"` live inside the log `Body` and need a parse stage; prefer `get_logs` with the hint pipeline for those.
+
+`body_filters` is a last resort for plaintext that is not stored as a structured attribute.
 
 ## Parameters
 
@@ -36,7 +35,11 @@ Do not invent org-specific attribute names. Discover fields with `get_log_attrib
 - `lookback_minutes` (optional): Relative time range only when the user did not give explicit timestamps.
 - `limit` (optional): Maximum number of log entries to return.
 - `severity_filters` (optional): Array of severity strings such as `["error", "fatal", "critical"]`.
-- `body_filters` (optional): Array of substrings that should appear in the log body. **Last resort only — prefer `get_logs` with attribute filters for structured values.**
+- `http_status_class` (optional): `2xx`, `3xx`, `4xx`, or `5xx`.
+- `http_status_code` (optional): Exact 3-digit HTTP status such as `500` or `401`.
+- `http_status_field` (optional): Explicit logjson field when discovery is ambiguous or empty.
+- `attribute_filters` (optional): Array of `{field, value}` equality filters.
+- `body_filters` (optional): Array of substrings that should appear in the log body. Last resort only.
 - `env` (optional): Deployment environment string.
 - `index` (optional): Explicit log index in the form `physical_index:<name>` or `rehydration_index:<block_name>`.
 
@@ -55,7 +58,7 @@ Do not invent org-specific attribute names. Discover fields with `get_log_attrib
 - Prefer `start_time_iso` and `end_time_iso` over `lookback_minutes` when the user provides absolute times.
 - Keep `severity_filters` and `body_filters` as arrays of strings.
 - Do not invent `index` or `env` unless the user explicitly asked for them or supplied that context.
-- **NEVER use `body_filters` for values stored as structured attributes.** Call `get_log_attributes` to check first, then use `get_logs` if an attribute exists.
+- **NEVER use `body_filters` for HTTP status codes or values stored as structured attributes.** Use `http_status_*` or `attribute_filters`.
 
 ## Examples
 
@@ -70,21 +73,39 @@ Do not invent org-specific attribute names. Discover fields with `get_log_attrib
 }
 ```
 
-This misses all logs where `401` is stored as `attributes['http_status_code']` and the body doesn't contain the literal string.
-
-### ✅ CORRECT — HTTP 401 via `get_logs` attribute filter
-
-Use `get_logs` instead:
+### ✅ CORRECT — HTTP 401 via this tool
 
 ```json
 {
-  "logjson_query": [{"type": "filter", "query": {"$eq": ["attributes['http_status_code']", "401"]}}],
   "service_name": "auth-sanic",
-  "lookback_minutes": 5
+  "env": "production",
+  "lookback_minutes": 60,
+  "http_status_code": "401"
 }
 ```
 
-### ✅ CORRECT — Simple severity filter (valid use of this tool)
+### ✅ CORRECT — HTTP 5xx class
+
+```json
+{
+  "service_name": "checkout",
+  "env": "production",
+  "lookback_minutes": 15,
+  "http_status_class": "5xx"
+}
+```
+
+### ✅ CORRECT — Named attribute equality
+
+```json
+{
+  "service_name": "checkout",
+  "lookback_minutes": 15,
+  "attribute_filters": [{"field": "attributes['user_id']", "value": "abc"}]
+}
+```
+
+### ✅ CORRECT — Simple severity filter
 
 ```json
 {
@@ -96,7 +117,7 @@ Use `get_logs` instead:
 }
 ```
 
-### ✅ CORRECT — Plain keyword search (valid use of this tool)
+### ✅ CORRECT — Plain keyword search
 
 ```json
 {

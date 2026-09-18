@@ -15,6 +15,7 @@ import (
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/otelids"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -28,7 +29,7 @@ const (
 
 // GetServiceTracesArgs defines the input structure for getting traces by service or ID
 type GetServiceTracesArgs struct {
-	TraceID         string  `json:"trace_id,omitempty" jsonschema:"Specific trace ID to retrieve"`
+	TraceID         string  `json:"trace_id,omitempty" jsonschema:"Specific 32-character hexadecimal OpenTelemetry trace ID."`
 	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Name of service to get traces for"`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 4320 for trace_id, 60 for service_name, minimum: 1)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - lookback_minutes."`
@@ -138,6 +139,11 @@ func parseGetServiceTraceParams(args GetServiceTracesArgs, cfg models.Config) (*
 	}
 
 	if args.TraceID != "" {
+		normalized, err := otelids.NormalizeTraceID(args.TraceID)
+		if err != nil {
+			return nil, rejectOTelID("get_service_traces", err)
+		}
+		queryParams.TraceID = normalized
 		queryParams.LookbackMinutes = TraceIDLookbackMinutesDefault
 	}
 
@@ -258,7 +264,10 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 			} else {
 				traceResponse.Message = fmt.Sprintf("Retrieved trace data for trace ID: %s", queryParams.TraceID)
 			}
-		} else {
+		} else if traceResponse.Success {
+			// Only set the success summary when the transform succeeded;
+			// otherwise keep the diagnostic message it set (e.g.
+			// "Invalid API response: missing data field").
 			traceResponse.Message = fmt.Sprintf("Retrieved %d traces for service: %s", len(traceResponse.Data), queryParams.ServiceName)
 		}
 
@@ -279,7 +288,11 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 		dashboardURL := dlBuilder.BuildTracesLink(startTime.UnixMilli(), endTime.UnixMilli(), pipeline, queryParams.TraceID, "")
 
 		return &mcp.CallToolResult{
-			Meta: deeplink.ToMeta(dashboardURL),
+			// Escalate soft failures (e.g. malformed 200 body) per the
+			// package convention while preserving the structured
+			// success:false JSON and the dashboard deep link.
+			IsError: !traceResponse.Success,
+			Meta:    deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(jsonData),

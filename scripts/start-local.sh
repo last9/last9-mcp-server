@@ -13,6 +13,9 @@ if [[ -f "$REPO_DIR/.env" ]]; then
   set +a
 fi
 
+export LAST9_HTTP=false
+unset LAST9_PORT
+
 if [[ -x "$BIN_DIR/last9-mcp" ]]; then
   exec "$BIN_DIR/last9-mcp" "$@"
 fi

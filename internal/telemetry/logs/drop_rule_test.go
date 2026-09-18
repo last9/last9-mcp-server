@@ -246,11 +246,16 @@ func TestAddDropRuleHandlerAPIError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected API error, got nil")
 	}
+	if !strings.Contains(err.Error(), "add_drop_rule:") {
+		t.Fatalf("expected wrapped add_drop_rule error, got %v", err)
+	}
 	if !strings.Contains(err.Error(), "405") {
 		t.Fatalf("expected status in error, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "method not allowed") {
-		t.Fatalf("expected response body in error, got %v", err)
+	// 405 is neither 400 nor 422, so the upstream body is drained and omitted
+	// from the tool error — only the status + advice are relayed.
+	if strings.Contains(err.Error(), "method not allowed") {
+		t.Fatalf("non-400/422 body leaked into error: %v", err)
 	}
 }
 
@@ -436,5 +441,126 @@ func TestGetDropRulesHandlerContextCancellation(t *testing.T) {
 	_, _, err := handler(ctx, &mcp.CallToolRequest{}, GetDropRulesArgs{})
 	if err == nil {
 		t.Fatal("expected error from cancelled context, got nil")
+	}
+}
+
+func TestDropRuleHandlerUpstreamErrorRedactsAndDrains(t *testing.T) {
+	cases := []struct {
+		name       string
+		status     int
+		body       string
+		wantSubstr string
+		forbid     []string
+	}{
+		{
+			name:       "400 redacts URLs and credentials",
+			status:     http.StatusBadRequest,
+			body:       `{"error":"invalid rule","url":"https://internal.example/otel_settings/drop?token=SECRETVALUE","authorization":"Bearer s3cr3tT0k3n","api_key":"ak_live_xyz"}`,
+			wantSubstr: "[redacted-url]",
+			forbid:     []string{"SECRETVALUE", "s3cr3tT0k3n", "ak_live_xyz", "https://internal.example"},
+		},
+		{
+			name:       "422 redacts URLs and credentials",
+			status:     http.StatusUnprocessableEntity,
+			body:       `{"error":"invalid","url":"https://internal.example/x?token=SECRETVALUE","api_key":"ak_live_xyz"}`,
+			wantSubstr: "[redacted-url]",
+			forbid:     []string{"SECRETVALUE", "ak_live_xyz", "https://internal.example"},
+		},
+		{
+			name:       "502 drains body and omits internals",
+			status:     http.StatusBadGateway,
+			body:       `{"error":"gateway SECRET https://internal.example/x"}`,
+			wantSubstr: "HTTP 502",
+			forbid:     []string{"SECRET", "https://"},
+		},
+	}
+
+	addArgs := AddDropRuleArgs{
+		Name:    "drop-test-service",
+		Filters: []DropRuleFilter{{Key: `attributes["level"]`, Value: "debug"}},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			t.Cleanup(server.Close)
+			cfg := testDropRuleConfig(server.URL)
+
+			addHandler := NewAddDropRuleHandler(server.Client(), cfg)
+			_, _, err := addHandler(context.Background(), &mcp.CallToolRequest{}, addArgs)
+			if err == nil {
+				t.Fatal("add_drop_rule: expected tool error")
+			}
+			assertDropRuleRedactedError(t, "add_drop_rule", err, tt.wantSubstr, tt.forbid)
+
+			getHandler := NewGetDropRulesHandler(server.Client(), cfg)
+			_, _, gerr := getHandler(context.Background(), &mcp.CallToolRequest{}, GetDropRulesArgs{})
+			if gerr == nil {
+				t.Fatal("get_drop_rules: expected tool error")
+			}
+			assertDropRuleRedactedError(t, "get_drop_rules", gerr, tt.wantSubstr, tt.forbid)
+		})
+	}
+}
+
+func assertDropRuleRedactedError(t *testing.T, tool string, err error, wantSubstr string, forbid []string) {
+	t.Helper()
+	got := err.Error()
+	if !strings.Contains(got, tool+":") {
+		t.Fatalf("%s: error not wrapped: %s", tool, got)
+	}
+	if wantSubstr != "" && !strings.Contains(got, wantSubstr) {
+		t.Fatalf("%s: error %q missing %q", tool, got, wantSubstr)
+	}
+	for _, f := range forbid {
+		if strings.Contains(got, f) {
+			t.Fatalf("%s: error leaked %q: %s", tool, f, got)
+		}
+	}
+}
+
+func TestDropRuleHandlerUpstreamErrorBoundsBodySize(t *testing.T) {
+	// A 400 body well past utils.UpstreamBodyLimit (512) must be truncated
+	// before it reaches the tool error surfaced to the model.
+	largeBody := `{"error":"` + strings.Repeat("x", 800) + `"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(largeBody))
+	}))
+	t.Cleanup(server.Close)
+	cfg := testDropRuleConfig(server.URL)
+
+	// A run of 600 x's only exists past the 512-byte cap, so its presence in
+	// the error means the body was relayed unbounded.
+	tail := strings.Repeat("x", 600)
+
+	addHandler := NewAddDropRuleHandler(server.Client(), cfg)
+	_, _, err := addHandler(context.Background(), &mcp.CallToolRequest{}, AddDropRuleArgs{
+		Name:    "drop-test-service",
+		Filters: []DropRuleFilter{{Key: `attributes["level"]`, Value: "debug"}},
+	})
+	if err == nil {
+		t.Fatal("add_drop_rule: expected tool error")
+	}
+	if !strings.Contains(err.Error(), "… (truncated)") {
+		t.Fatalf("add_drop_rule: expected truncation marker, got %s", err)
+	}
+	if strings.Contains(err.Error(), tail) {
+		t.Fatalf("add_drop_rule: error relayed body beyond the upstream limit: %s", err)
+	}
+
+	getHandler := NewGetDropRulesHandler(server.Client(), cfg)
+	_, _, gerr := getHandler(context.Background(), &mcp.CallToolRequest{}, GetDropRulesArgs{})
+	if gerr == nil {
+		t.Fatal("get_drop_rules: expected tool error")
+	}
+	if !strings.Contains(gerr.Error(), "… (truncated)") {
+		t.Fatalf("get_drop_rules: expected truncation marker, got %s", gerr)
+	}
+	if strings.Contains(gerr.Error(), tail) {
+		t.Fatalf("get_drop_rules: error relayed body beyond the upstream limit: %s", gerr)
 	}
 }

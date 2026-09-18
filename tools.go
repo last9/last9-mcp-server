@@ -8,6 +8,7 @@ import (
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/change_events"
 	"last9-mcp/internal/dashboards"
+	"last9-mcp/internal/grafana"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/suggest"
@@ -43,14 +44,6 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, allowed too
 func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error {
 	client := auth.GetHTTPClient()
 
-	// Whales: short on-tool description only (manuals are MCP resources).
-	getLogsDesc := prompts.GetLogsDescription
-	getServiceLogsDesc := prompts.GetServiceLogsDescription
-	getTracesDesc := prompts.GetTracesDescription
-	getServiceTracesDesc := prompts.GetServiceTracesDescription
-	// prometheus_range_query: short on-tool description; full guide is MCP resource.
-	getMetricsDesc := prompts.PromqlRangeQueryDetails
-
 	var regErr error
 	reg := func(err error) {
 		if err != nil && regErr == nil {
@@ -68,6 +61,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_service_summary",
 		Description: prompts.GetServiceSummaryDescription,
+		InputSchema: apm.GetServiceSummaryInputSchema(),
 	}, apm.NewServiceSummaryHandler(client, cfg)))
 
 	// Register APM service deviations tool
@@ -110,7 +104,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	// Register PromQL range query tool (enhanced with metrics instructions)
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "prometheus_range_query",
-		Description: getMetricsDesc,
+		Description: prompts.PromqlRangeQueryDetails,
 	}, apm.NewPromqlRangeQueryHandler(client, cfg)))
 
 	// Register PromQL instant query tool
@@ -134,13 +128,14 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	// Register logs tool (enhanced with log query instructions + labels)
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_logs",
-		Description: getLogsDesc,
+		Description: prompts.GetLogsDescription,
+		InputSchema: logs.GetLogsInputSchema(),
 	}, logs.NewGetLogsHandler(client, cfg)))
 
 	// Register service logs tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_service_logs",
-		Description: getServiceLogsDesc,
+		Description: prompts.GetServiceLogsDescription,
 	}, logs.NewGetServiceLogsHandler(client, cfg)))
 
 	// Register drop rules tool
@@ -167,6 +162,11 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: prompts.GetAlertConfigDescription,
 	}, alerting.NewGetAlertConfigHandler(client, cfg)))
 
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_alert_groups",
+		Description: prompts.GetAlertGroupsDescription,
+	}, alerting.NewGetAlertGroupsHandler(client, cfg)))
+
 	// Register entity alert rules tool (entity-scoped, includes expression_args and resolved PromQL)
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_entity_alert_rules",
@@ -188,14 +188,14 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	// Register get traces tool (enhanced with trace query instructions)
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_traces",
-		Description: getTracesDesc,
+		Description: prompts.GetTracesDescription,
 		InputSchema: traces.GetTracesInputSchema(),
 	}, traces.NewGetTracesHandler(client, cfg)))
 
 	// Register service traces tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_service_traces",
-		Description: getServiceTracesDesc,
+		Description: prompts.GetServiceTracesDescription,
 	}, traces.GetServiceTracesHandler(client, cfg)))
 
 	// Register log attributes tool
@@ -240,6 +240,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_trace_waterfall",
 		Description: prompts.GetTraceWaterfallDescription,
+		InputSchema: traces.GetTraceWaterfallInputSchema(),
 	}, traces.NewGetTraceWaterfallHandler(client, cfg)))
 
 	// Register change events tool
@@ -278,6 +279,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: prompts.DidYouMeanDescription,
 	}, suggest.NewDidYouMeanHandler(client, cfg)))
 
+	// Register service profile tool
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_service_profile",
+		Description: prompts.GetServiceProfileDescription,
+	}, apm.NewGetServiceProfileHandler(client, cfg)))
+
 	// Continuous profiling tools (query_range/json)
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_profile_services",
@@ -311,6 +318,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	}, dashboards.NewGetDashboardHandler(client, cfg)))
 
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "validate_dashboard",
+		Description: prompts.ValidateDashboardDescription,
+		InputSchema: dashboards.GetValidateDashboardInputSchema(),
+	}, dashboards.NewValidateDashboardHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "create_dashboard",
 		Description: prompts.CreateDashboardDescription,
 		InputSchema: dashboards.GetCreateDashboardInputSchema(),
@@ -341,6 +354,32 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Name:        "delete_dashboard_snapshot",
 		Description: prompts.DeleteDashboardSnapshotDescription,
 	}, dashboards.NewDeleteDashboardSnapshotHandler(client, cfg)))
+
+	// Register Grafana read tools
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "grafana_search_dashboards",
+		Description: prompts.GrafanaSearchDashboardsDescription,
+	}, grafana.NewSearchDashboardsHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "grafana_get_dashboard",
+		Description: prompts.GrafanaGetDashboardDescription,
+	}, grafana.NewGetDashboardHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "grafana_list_folders",
+		Description: prompts.GrafanaListFoldersDescription,
+	}, grafana.NewListFoldersHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "grafana_list_folder_dashboards",
+		Description: prompts.GrafanaListFolderDashboardsDescription,
+	}, grafana.NewListFolderDashboardsHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "grafana_list_datasources",
+		Description: prompts.GrafanaListDatasourcesDescription,
+	}, grafana.NewListDatasourcesHandler(client, cfg)))
 
 	return regErr
 }

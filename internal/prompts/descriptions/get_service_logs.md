@@ -1,1 +1,0 @@
-Manual moved to `internal/prompts/references/service_logs.md` (resource `last9://reference/service_logs`). Served description is `get_service_logs_base.md`.

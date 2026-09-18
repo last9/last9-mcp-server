@@ -1,39 +1,45 @@
 package logs
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
+	"strconv"
 	"strings"
+
+	"last9-mcp/internal/otelids"
 )
 
 var (
-	logAttributeFieldRefPattern  = regexp.MustCompile(`^attributes\['[^'\[\]]+'\]$`)
-	logResourceFieldRefPattern   = regexp.MustCompile(`^resources\['[^'\[\]]+'\]$`)
-	logKubernetesAliasPattern    = regexp.MustCompile(`^k8s(?:\.[A-Za-z0-9_/-]+)+$`)
-	logSimpleFieldRefPattern     = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	logAttributeFieldRefPattern = regexp.MustCompile(`^attributes\['[^'\[\]]+'\]$`)
+	logResourceFieldRefPattern  = regexp.MustCompile(`^resources\['[^'\[\]]+'\]$`)
+	logKubernetesAliasPattern   = regexp.MustCompile(`^k8s(?:\.[A-Za-z0-9_/-]+)+$`)
+	logSimpleFieldRefPattern    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
 
 var logFilterFieldOperators = map[string]int{
-	"$contains":        0,
-	"$containsWords":   0,
-	"$eq":              0,
-	"$gt":              0,
-	"$gte":             0,
-	"$icontains":       0,
-	"$icontainsWords":  0,
-	"$ieq":             0,
-	"$ineq":            0,
-	"$inotcontains":    0,
+	"$contains":          0,
+	"$containsWords":     0,
+	"$eq":                0,
+	"$gt":                0,
+	"$gte":               0,
+	"$icontains":         0,
+	"$icontainsWords":    0,
+	"$ieq":               0,
+	"$ineq":              0,
+	"$inotcontains":      0,
 	"$inotcontainsWords": 0,
-	"$inotregex":       0,
-	"$iregex":          0,
-	"$lt":              0,
-	"$lte":             0,
-	"$neq":             0,
-	"$notcontains":     0,
-	"$notcontainsWords": 0,
-	"$notregex":        0,
-	"$regex":           0,
+	"$inotregex":         0,
+	"$iregex":            0,
+	"$lt":                0,
+	"$lte":               0,
+	"$neq":               0,
+	"$notcontains":       0,
+	"$notcontainsWords":  0,
+	"$notregex":          0,
+	"$regex":             0,
 }
 
 var logFilterLogicalOperators = map[string]struct{}{
@@ -51,11 +57,18 @@ var logAggregateFieldArgIndexes = map[string][]int{
 }
 
 func sanitizeLogJSONQuery(stages []map[string]interface{}) ([]map[string]interface{}, error) {
+	return sanitizeLogJSONQueryPrefixed(stages, "logjson_query")
+}
+
+func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix string) ([]map[string]interface{}, error) {
+	if pathPrefix == "" {
+		pathPrefix = "logjson_query"
+	}
 	sanitized := make([]map[string]interface{}, 0, len(stages))
 
 	for stageIndex, stage := range stages {
 		sanitizedStage := make(map[string]interface{}, len(stage))
-		stagePath := fmt.Sprintf("logjson_query[%d]", stageIndex)
+		stagePath := fmt.Sprintf("%s[%d]", pathPrefix, stageIndex)
 
 		for key, value := range stage {
 			var (
@@ -82,6 +95,14 @@ func sanitizeLogJSONQuery(stages []map[string]interface{}) ([]map[string]interfa
 			sanitizedStage[key] = sanitizedValue
 		}
 
+		// Default missing or blank parse "field" to "Body" on the rebuilt copy so
+		// the API always receives a value without mutating the caller's original map.
+		if stageType, _ := sanitizedStage["type"].(string); stageType == "parse" {
+			if field, _ := sanitizedStage["field"].(string); strings.TrimSpace(field) == "" {
+				sanitizedStage["field"] = "Body"
+			}
+		}
+
 		sanitized = append(sanitized, sanitizedStage)
 	}
 
@@ -105,7 +126,7 @@ func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 		for key, item := range typed {
 			fieldArgIndex, isFieldOperator := logFilterFieldOperators[key]
 			if isFieldOperator {
-				next, err := sanitizeLogFieldOperatorArgs(item, fieldArgIndex, path+"."+key)
+				next, err := sanitizeLogFieldOperatorArgs(item, key, fieldArgIndex, path+"."+key)
 				if err != nil {
 					return nil, err
 				}
@@ -114,14 +135,28 @@ func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 			}
 
 			if _, isLogicalOperator := logFilterLogicalOperators[key]; !isLogicalOperator {
-				return nil, fmt.Errorf(
-					"invalid filter condition key %q at %s: keys must be operators ($eq, $neq, $ieq, $ineq, $gt, $gte, $lt, $lte, $contains, $notcontains, $icontains, $inotcontains, $containsWords, $notcontainsWords, $icontainsWords, $inotcontainsWords, $regex, $notregex, $iregex, $inotregex) or logical operators ($and, $or, $not); use the form {%q: [field, value]} — for example {\"$eq\": [\"ServiceName\", \"checkout\"]} — and call get_log_attributes if you need the exact field name",
-					key,
+				return nil, newLogValidationError(
+					LogValidationInvalidField,
 					path,
-					"$eq",
+					fmt.Sprintf(
+						"invalid filter condition key %q at %s: keys must be operators ($eq, $neq, $ieq, $ineq, $gt, $gte, $lt, $lte, $contains, $notcontains, $icontains, $inotcontains, $containsWords, $notcontainsWords, $icontainsWords, $inotcontainsWords, $regex, $notregex, $iregex, $inotregex) or logical operators ($and, $or, $not); use the form {\"$eq\": [field, value]} — for example {\"$eq\": [\"ServiceName\", \"checkout\"]} — and call get_log_attributes if you need the exact field name",
+						key,
+						path,
+					),
 				)
 			}
 
+			// Normalize map-form {"$not": {…}} to the documented single-element
+			// array form {"$not": [condition]} (logjson.md) so downstream
+			// inspectors see one canonical shape. The type check avoids
+			// double-wrapping an already-correct array. Only $not gets this:
+			// a single condition map is a natural way to express negation,
+			// whereas map-form $and/$or have no sensible single-operand reading.
+			if key == "$not" {
+				if _, isMap := item.(map[string]interface{}); isMap {
+					item = []interface{}{item}
+				}
+			}
 			next, err := sanitizeLogCondition(item, path+"."+key)
 			if err != nil {
 				return nil, err
@@ -134,13 +169,17 @@ func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 	}
 }
 
-func sanitizeLogFieldOperatorArgs(value interface{}, fieldArgIndex int, path string) (interface{}, error) {
+func sanitizeLogFieldOperatorArgs(value interface{}, operator string, fieldArgIndex int, path string) (interface{}, error) {
 	args, ok := value.([]interface{})
 	if !ok {
-		return nil, fmt.Errorf(
-			"invalid arguments for field operator at %s: expected an array like [field, value], got %T — use the form {\"$eq\": [\"ServiceName\", \"checkout\"]}",
+		return nil, newLogValidationError(
+			LogValidationInvalidField,
 			path,
-			value,
+			fmt.Sprintf(
+				"invalid arguments for field operator at %s: expected an array like [field, value], got %T — use the form {\"$eq\": [\"ServiceName\", \"checkout\"]}",
+				path,
+				value,
+			),
 		)
 	}
 
@@ -159,7 +198,102 @@ func sanitizeLogFieldOperatorArgs(value interface{}, fieldArgIndex int, path str
 		return nil, err
 	}
 	sanitized[fieldArgIndex] = next
+
+	// last9/api logjson requires comparison values as strings. JSON numbers/bools
+	// from model tool calls (e.g. 500 instead of "500") produce opaque
+	// "invalid JSON pipeline" 400s — coerce in place.
+	valueIndex := fieldArgIndex + 1
+	if valueIndex < len(sanitized) {
+		coerced, err := coerceLogFilterValueToString(sanitized[valueIndex], fmt.Sprintf("%s[%d]", path, valueIndex))
+		if err != nil {
+			return nil, err
+		}
+		normalized, err := normalizeLogOTelID(operator, next, coerced, fmt.Sprintf("%s[%d]", path, valueIndex))
+		if err != nil {
+			return nil, err
+		}
+		sanitized[valueIndex] = normalized
+	}
 	return sanitized, nil
+}
+
+// Unvalidated, a malformed ID on these fields returns an empty result set with
+// no error, which reads to the model as "no logs for this trace".
+var logIDEqualityOperators = map[string]struct{}{
+	"$eq":   {},
+	"$ieq":  {},
+	"$ineq": {},
+	"$neq":  {},
+}
+
+func normalizeLogOTelID(operator, fieldRef, value, path string) (string, error) {
+	if _, isEquality := logIDEqualityOperators[operator]; !isEquality {
+		return value, nil
+	}
+	// An empty operand is the existence idiom {"$neq": [field, ""]}, not an ID.
+	if value == "" {
+		return value, nil
+	}
+
+	var (
+		normalized string
+		err        error
+	)
+	switch fieldRef {
+	case "TraceId":
+		normalized, err = otelids.NormalizeTraceID(value)
+	case "SpanId", "ParentSpanId":
+		normalized, err = otelids.NormalizeSpanID(value)
+	default:
+		return value, nil
+	}
+	if err != nil {
+		var idErr *otelids.Error
+		if errors.As(err, &idErr) {
+			slog.Warn("tool input rejected", "tool", "logs", "category", idErr.Category)
+		}
+		return "", newLogValidationError(LogValidationInvalidField, path, err.Error())
+	}
+	return normalized, nil
+}
+
+func coerceLogFilterValueToString(value interface{}, path string) (string, error) {
+	switch typed := value.(type) {
+	case string:
+		return typed, nil
+	case float64:
+		if typed == float64(int64(typed)) {
+			return strconv.FormatInt(int64(typed), 10), nil
+		}
+		return strconv.FormatFloat(typed, 'g', -1, 64), nil
+	case float32:
+		f := float64(typed)
+		if f == float64(int64(f)) {
+			return strconv.FormatInt(int64(f), 10), nil
+		}
+		return strconv.FormatFloat(f, 'g', -1, 32), nil
+	case int:
+		return strconv.Itoa(typed), nil
+	case int64:
+		return strconv.FormatInt(typed, 10), nil
+	case int32:
+		return strconv.FormatInt(int64(typed), 10), nil
+	case json.Number:
+		return typed.String(), nil
+	case bool:
+		return strconv.FormatBool(typed), nil
+	case nil:
+		return "", nil
+	default:
+		return "", newLogValidationError(
+			LogValidationInvalidField,
+			path,
+			fmt.Sprintf(
+				"invalid filter value at %s: expected a string (got %T %#v) — use {\"$eq\":[\"attributes['status_code']\",\"500\"]} with a string value",
+				path, value, value,
+			),
+		)
+	}
 }
 
 func sanitizeLogAggregates(value interface{}, path string) (interface{}, error) {
@@ -247,12 +381,16 @@ func sanitizeLogGroupBy(value interface{}, path string) (interface{}, error) {
 		}
 
 		if previous, exists := originalBySanitized[next]; exists {
-			return nil, fmt.Errorf(
-				"groupby collision at %s: %q and %q both normalize to %q",
+			return nil, newLogValidationError(
+				LogValidationInvalidField,
 				path,
-				previous,
-				fieldRef,
-				next,
+				fmt.Sprintf(
+					"groupby collision at %s: %q and %q both normalize to %q",
+					path,
+					previous,
+					fieldRef,
+					next,
+				),
 			)
 		}
 
@@ -274,37 +412,74 @@ func sanitizeLogFieldRef(fieldRef, path string) (string, error) {
 		return "ServiceName", nil
 	case strings.HasPrefix(trimmed, `attributes["`) || strings.HasPrefix(trimmed, `resources["`):
 		corrected := strings.ReplaceAll(trimmed, `"`, "'")
-		return "", fmt.Errorf(
-			"invalid log field reference %q at %s: use single quotes — %q; call get_log_attributes if you need the exact field name",
-			trimmed, path, corrected,
+		return "", newLogValidationError(
+			LogValidationInvalidField,
+			path,
+			fmt.Sprintf(
+				"invalid log field reference %q at %s: use single quotes — %q; call get_log_attributes if you need the exact field name",
+				trimmed, path, corrected,
+			),
 		)
 	case logKubernetesAliasPattern.MatchString(trimmed):
 		return fmt.Sprintf("resources['%s']", trimmed), nil
 	case isCanonicalLogFieldRef(trimmed):
 		return trimmed, nil
+	case isTraceOnlyLogField(trimmed):
+		return "", newLogValidationError(
+			LogValidationWrongDomainField,
+			path,
+			fmt.Sprintf(
+				"invalid log field reference %q at %s: %q is a trace-only field and is not valid in logs — use ServiceName, SeverityText, Body, attributes['…'], or resources['…']; call get_log_attributes if you need the exact field name",
+				trimmed, path, trimmed,
+			),
+		)
 	case strings.HasPrefix(trimmed, "resource_"):
 		stripped := trimmed[len("resource_"):]
-		return "", fmt.Errorf(
-			"invalid log field reference %q at %s: use resources['%s'] instead of the flat resource_ prefix; call get_log_attributes if you need the exact field name",
-			trimmed, path, stripped,
+		return "", newLogValidationError(
+			LogValidationInvalidField,
+			path,
+			fmt.Sprintf(
+				"invalid log field reference %q at %s: use resources['%s'] instead of the flat resource_ prefix; call get_log_attributes if you need the exact field name",
+				trimmed, path, stripped,
+			),
 		)
 	case logSimpleFieldRefPattern.MatchString(trimmed):
-		return trimmed, nil
-	default:
-		return "", fmt.Errorf(
-			"invalid log field reference %q at %s: use ServiceName, attributes['field'], or resources['field']; call get_log_attributes if you need the exact field name",
-			trimmed,
+		// Bare single-token names (e.g. community_member_id) look plausible but
+		// are invalid unless they are a known top-level log field. Fail closed with
+		// the attributes['…'] form so models can self-correct (ENG-1410).
+		return "", newLogValidationError(
+			LogValidationInvalidField,
 			path,
+			fmt.Sprintf(
+				"invalid log field reference %q at %s: never emit bare field names (dotted or single-token) — use attributes['%s'] or resources['%s']; only ServiceName, Body, SeverityText, Timestamp may be bare; call get_log_attributes if you need the exact field name",
+				trimmed, path, trimmed, trimmed,
+			),
+		)
+	default:
+		return "", newLogValidationError(
+			LogValidationInvalidField,
+			path,
+			fmt.Sprintf(
+				"invalid log field reference %q at %s: use ServiceName, attributes['field'], or resources['field']; call get_log_attributes if you need the exact field name",
+				trimmed,
+				path,
+			),
 		)
 	}
 }
 
 func isCanonicalLogFieldRef(fieldRef string) bool {
 	switch fieldRef {
-	case "Body", "ServiceName", "SeverityText", "Timestamp":
+	case "Body", "ServiceName", "SeverityText", "Timestamp",
+		"TraceId", "SpanId", "ParentSpanId":
 		return true
 	}
 
 	return logAttributeFieldRefPattern.MatchString(fieldRef) ||
 		logResourceFieldRefPattern.MatchString(fieldRef)
+}
+
+func isTraceOnlyLogField(fieldRef string) bool {
+	_, ok := traceOnlyLogFields[fieldRef]
+	return ok
 }

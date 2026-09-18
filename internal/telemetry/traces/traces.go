@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
@@ -28,14 +27,12 @@ type GetTracesArgs struct {
 	Limit           int                      `json:"limit,omitempty" jsonschema:"Maximum number of traces to return (optional, default: 5000)"`
 }
 
-const partialResultMetadataKey = "_last9_mcp"
-
 // NewGetTracesHandler creates a handler for getting traces using tracejson_query parameter
 func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTracesArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetTracesArgs) (*mcp.CallToolResult, any, error) {
 		// Check if tracejson_query is provided
 		if len(args.TracejsonQuery) == 0 {
-			return nil, nil, fmt.Errorf("tracejson_query parameter is required. Use the tracejson_query_builder prompt to generate JSON pipeline queries from natural language")
+			return nil, nil, fmt.Errorf("tracejson_query parameter is required. tracejson_query is a JSON array of stages (filter/parse/aggregate/window_aggregate) — see last9://reference/tracejson")
 		}
 
 		// Validate the pipeline before forwarding to the API
@@ -262,18 +259,9 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 	data["result"] = mergedItems
 
 	if partialErr != nil {
-		annotatePartialGetTracesResponse(baseResponse, partialErr, len(chunks), len(mergedItems))
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_traces chunking partial chunks=%d returned_traces=%d start_ms=%d end_ms=%d err=%v",
-				len(chunks),
-				len(mergedItems),
-				startMs,
-				endMs,
-				partialErr,
-			)
-		}
-	} else if chunkingDebug {
+		return nil, fmt.Errorf("%w (window start_ms=%d end_ms=%d)", partialErr, startMs, endMs)
+	}
+	if chunkingDebug {
 		log.Printf(
 			"[chunking] get_traces chunking complete chunks=%d returned_traces=%d start_ms=%d end_ms=%d",
 			len(chunks), len(mergedItems), startMs, endMs,
@@ -281,15 +269,6 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 	}
 
 	return baseResponse, nil
-}
-
-func annotatePartialGetTracesResponse(response map[string]interface{}, err error, totalChunks, returnedTraces int) {
-	response[partialResultMetadataKey] = map[string]interface{}{
-		"partial_result":  true,
-		"warning":         fmt.Sprintf("Returning partial results: %v", err),
-		"total_chunks":    totalChunks,
-		"returned_traces": returnedTraces,
-	}
 }
 
 // executeTraceJSONQuery performs a single API call for a given time window.
@@ -385,26 +364,6 @@ func formatJSON(data interface{}) string {
 		return fmt.Sprintf("%v", data)
 	}
 	return string(bytes)
-}
-
-// parseTimeRangeFromArgsAt is the testable version of parseTimeRangeFromArgs
-func parseTimeRangeFromArgsAt(args GetTracesArgs, now time.Time) (int64, int64, error) {
-	params := make(map[string]interface{})
-	if args.LookbackMinutes > 0 {
-		params["lookback_minutes"] = args.LookbackMinutes
-	}
-	if args.StartTimeISO != "" {
-		params["start_time_iso"] = args.StartTimeISO
-	}
-	if args.EndTimeISO != "" {
-		params["end_time_iso"] = args.EndTimeISO
-	}
-
-	startTime, endTime, err := utils.GetTimeRangeAt(params, utils.DefaultLookbackMinutes, now)
-	if err != nil {
-		return 0, 0, err
-	}
-	return startTime.UnixMilli(), endTime.UnixMilli(), nil
 }
 
 func extractExactTraceIDLookup(pipeline []map[string]interface{}) (string, bool) {

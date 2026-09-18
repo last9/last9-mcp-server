@@ -44,6 +44,18 @@ func TestParseLogsIncludesInstantQuery(t *testing.T) {
 	}
 }
 
+func TestParseDomainToolsetsIncludeServiceProfile(t *testing.T) {
+	for _, spec := range []string{"logs", "traces", "metrics"} {
+		set, err := Parse(spec)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", spec, err)
+		}
+		if !set.Allows("get_service_profile") {
+			t.Errorf("%s toolset must include get_service_profile (profile-first firing rules on domain tools)", spec)
+		}
+	}
+}
+
 func TestParseInvestigate(t *testing.T) {
 	set, err := Parse("investigate")
 	if err != nil {
@@ -52,14 +64,47 @@ func TestParseInvestigate(t *testing.T) {
 	if set == nil {
 		t.Fatal("investigate must not expand to nil/all")
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "list_datasources", "get_apm_service_deviations", "get_flamegraph", "get_profile_services"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "get_service_profile", "list_datasources", "get_apm_service_deviations", "get_flamegraph", "get_profile_services"} {
 		if !set.Allows(want) {
 			t.Errorf("investigate missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots"} {
+	for _, deny := range []string{"get_alerts", "get_alert_groups", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard", "grafana_get_dashboard"} {
 		if set.Allows(deny) {
 			t.Errorf("investigate should exclude %q", deny)
+		}
+	}
+}
+
+func TestParseDashboardsIncludesValidate(t *testing.T) {
+	set, err := Parse("dashboards")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !set.Allows("validate_dashboard") || !set.Allows("get_dashboard") {
+		t.Fatal("dashboards toolset missing validate_dashboard or get_dashboard")
+	}
+	if set.Allows("get_logs") {
+		t.Fatal("dashboards should not include get_logs")
+	}
+}
+
+func TestParseGrafana(t *testing.T) {
+	set, err := Parse("grafana")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set == nil {
+		t.Fatal("grafana must not expand to nil/all")
+	}
+	for _, want := range []string{"grafana_search_dashboards", "grafana_get_dashboard", "grafana_list_folders", "grafana_list_folder_dashboards", "grafana_list_datasources"} {
+		if !set.Allows(want) {
+			t.Errorf("grafana missing %q", want)
+		}
+	}
+	for _, deny := range []string{"get_logs", "get_dashboard", "create_dashboard"} {
+		if set.Allows(deny) {
+			t.Errorf("grafana should exclude %q", deny)
 		}
 	}
 }

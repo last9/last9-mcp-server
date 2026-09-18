@@ -1,6 +1,10 @@
 package traces
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func TestEnrichAttribute(t *testing.T) {
 	tests := []struct {
@@ -79,6 +83,35 @@ func TestEventAttributeField(t *testing.T) {
 		if got := EventAttributeField(tt.key); got != tt.want {
 			t.Errorf("EventAttributeField(%q) = %q, want %q", tt.key, got, tt.want)
 		}
+	}
+}
+
+func TestEnrichAttribute_HintIsValidJSON(t *testing.T) {
+	tests := []string{
+		`resource_dep"t`,
+		`events_x\y`,
+		`attr"quote`,
+		"ServiceName", // toplevel field with nothing special
+	}
+
+	for _, raw := range tests {
+		t.Run(raw, func(t *testing.T) {
+			attr := enrichAttribute(raw)
+			example := strings.TrimPrefix(attr.Hint, "Example: ")
+
+			var m map[string]any
+			if err := json.Unmarshal([]byte(example), &m); err != nil {
+				t.Fatalf("hint %q is not valid JSON: %v", attr.Hint, err)
+			}
+
+			eq, ok := m["$eq"].([]any)
+			if !ok || len(eq) != 2 {
+				t.Fatalf("expected $eq array of length 2, got %v", m["$eq"])
+			}
+			if eq[0] != attr.FilterField {
+				t.Errorf("$eq[0] = %v, want %v", eq[0], attr.FilterField)
+			}
+		})
 	}
 }
 
