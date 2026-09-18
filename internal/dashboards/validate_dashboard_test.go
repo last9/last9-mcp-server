@@ -167,6 +167,36 @@ func TestLintPromQLAndLogJSONTimeseries(t *testing.T) {
 	}
 }
 
+func TestLintWindowAggregateTimeseries(t *testing.T) {
+	pipeline := []any{
+		map[string]any{"type": "filter", "query": map[string]any{}},
+		map[string]any{
+			"type":     "window_aggregate",
+			"function": map[string]any{"$count": []any{}},
+			"as":       "count",
+			"window":   []any{"1", "minutes"},
+		},
+	}
+	if findings := lintPipeline(pipeline, "log_json", "timeseries"); hasBlockingError(findings) {
+		t.Fatalf("canonical window_aggregate should be valid for timeseries: %v", findings)
+	}
+}
+
+func TestOutcomeFromResultAcceptsEmptyStreams(t *testing.T) {
+	for _, raw := range []string{
+		`{"status":"success","data":{"resultType":"streams","result":null}}`,
+		`{"status":"success","data":{"resultType":"streams"}}`,
+	} {
+		outcome := outcomeFromResult("get_logs", []byte(raw), "", 0)
+		if outcome.status != "executed" {
+			t.Fatalf("empty streams response %s: status=%q error=%q", raw, outcome.status, outcome.errorText)
+		}
+		if rows := extractResultRows(outcome.payload); rows == nil || len(rows) != 0 {
+			t.Fatalf("empty streams response %s was not normalized: %#v", raw, outcome.payload)
+		}
+	}
+}
+
 func TestValidateDashboard_InlinePromWithData(t *testing.T) {
 	var methods []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

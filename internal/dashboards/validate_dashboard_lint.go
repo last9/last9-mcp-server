@@ -10,8 +10,8 @@ import (
 // Port of agents/supervisor/skills/dashboard_validation/lint.py.
 
 const (
-	severityError   = "error"
-	severityWarning = "warning"
+	severityError       = "error"
+	severityWarning     = "warning"
 	timesliceGroupbyCol = "__ts__"
 )
 
@@ -129,7 +129,7 @@ func aggregateStages(pipeline []any) []map[string]any {
 			continue
 		}
 		t, _ := m["type"].(string)
-		if t == "aggregate" || t == "aggregation" {
+		if t == "aggregate" || t == "aggregation" || t == "window_aggregate" {
 			out = append(out, m)
 		}
 	}

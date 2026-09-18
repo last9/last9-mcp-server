@@ -256,6 +256,10 @@ func responseShapeError(tool string, payload any) string {
 			if _, ok := data["result"].([]any); ok {
 				return ""
 			}
+			if resultType, _ := data["resultType"].(string); resultType == "streams" && data["result"] == nil {
+				data["result"] = []any{}
+				return ""
+			}
 		}
 		for _, key := range []string{"logs", "entries", "rows", "result"} {
 			if _, ok := obj[key].([]any); ok {
