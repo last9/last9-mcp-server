@@ -53,12 +53,15 @@ func NewGetTopFunctionsHandler(client *http.Client, cfg models.Config) func(cont
 		if err != nil {
 			return nil, nil, err
 		}
-		rows, err := runQueryRange(ctx, client, cfg, flamegraphPipeline(filters, DefaultFlamegraphRowLimit), start, end, DefaultFlamegraphRowLimit, args.Region)
+		rowLimit := DefaultFlamegraphRowLimit
+		rows, err := runQueryRange(ctx, client, cfg, flamegraphPipeline(filters, rowLimit), start, end, rowLimit, args.Region)
 		if err != nil {
 			return utils.ToolErrorResult(fmt.Sprintf("failed to fetch top functions: %v", err)), nil, nil
 		}
 
-		all := FoldToTopFunctions(mapFlamegraphRows(rows))
+		flameRows := mapFlamegraphRows(rows)
+		truncated := len(flameRows) >= rowLimit
+		all := FoldToTopFunctions(flameRows)
 		total := getProfileTotalSamples(all)
 		functions := limitTopFunctions(all, rankLimit)
 		result, err := jsonResult(map[string]any{
@@ -66,6 +69,7 @@ func NewGetTopFunctionsHandler(client *http.Client, cfg models.Config) func(cont
 			"profile_type":   string(filters.ProfileType),
 			"start":          start.UTC().Format(time.RFC3339),
 			"end":            end.UTC().Format(time.RFC3339),
+			"truncated":      truncated,
 			"total_samples":  total,
 			"function_count": len(functions),
 			"functions":      functions,

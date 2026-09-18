@@ -130,8 +130,11 @@ func TestGetProfileSummaryHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := result.Content[0].(*mcp.TextContent).Text
-	if !strings.Contains(text, "Top 2 CPU consumers for api are a, b") {
+	if !strings.Contains(text, "Top 2 CPU consumers for api are a, b, accounting for 100.0% of total self samples.") {
 		t.Fatalf("response=%s", text)
+	}
+	if strings.Contains(text, `"truncated": true`) {
+		t.Fatalf("unexpected truncation on uncapped fixture: %s", text)
 	}
 }
 

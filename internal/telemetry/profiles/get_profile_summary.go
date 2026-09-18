@@ -56,21 +56,25 @@ func NewGetProfileSummaryHandler(client *http.Client, cfg models.Config) func(co
 		if err != nil {
 			return nil, nil, err
 		}
-		rows, err := runQueryRange(ctx, client, cfg, flamegraphPipeline(filters, DefaultFlamegraphRowLimit), start, end, DefaultFlamegraphRowLimit, args.Region)
+		rowLimit := DefaultFlamegraphRowLimit
+		rows, err := runQueryRange(ctx, client, cfg, flamegraphPipeline(filters, rowLimit), start, end, rowLimit, args.Region)
 		if err != nil {
 			return utils.ToolErrorResult(fmt.Sprintf("failed to fetch profile summary: %v", err)), nil, nil
 		}
 
-		functions := FoldToTopFunctions(mapFlamegraphRows(rows))
+		flameRows := mapFlamegraphRows(rows)
+		truncated := len(flameRows) >= rowLimit
+		functions := FoldToTopFunctions(flameRows)
 		total := getProfileTotalSamples(functions)
 		top := limitTopFunctions(functions, topN)
-		summary := buildProfileSummaryText(filters.Service, string(filters.ProfileType), top, total)
+		summary := buildProfileSummaryText(filters.Service, string(filters.ProfileType), top, total, truncated)
 
 		result, err := jsonResult(map[string]any{
 			"service":       filters.Service,
 			"profile_type":  string(filters.ProfileType),
 			"start":         start.UTC().Format(time.RFC3339),
 			"end":           end.UTC().Format(time.RFC3339),
+			"truncated":     truncated,
 			"total_samples": total,
 			"summary":       summary,
 			"top_functions": top,
@@ -79,7 +83,7 @@ func NewGetProfileSummaryHandler(client *http.Client, cfg models.Config) func(co
 	}
 }
 
-func buildProfileSummaryText(service, profileType string, top []TopFunction, total float64) string {
+func buildProfileSummaryText(service, profileType string, top []TopFunction, total float64, truncated bool) string {
 	if len(top) == 0 || total <= 0 {
 		return fmt.Sprintf("No %s profile samples found for service %q in the selected window.", profileType, service)
 	}
@@ -100,12 +104,18 @@ func buildProfileSummaryText(service, profileType string, top []TopFunction, tot
 		label = "wall-time"
 	}
 
+	scope := "total self samples"
+	if truncated {
+		scope = "self samples in the returned (truncated) stack subset"
+	}
+
 	return fmt.Sprintf(
-		"Top %d %s consumers for %s are %s, accounting for %.1f%% of total self samples.",
+		"Top %d %s consumers for %s are %s, accounting for %.1f%% of %s.",
 		len(top),
 		label,
 		service,
 		strings.Join(names, ", "),
 		pct,
+		scope,
 	)
 }

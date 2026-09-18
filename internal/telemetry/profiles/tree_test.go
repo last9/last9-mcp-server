@@ -1,6 +1,9 @@
 package profiles
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestBuildFlameTreeMergesCommonRoot(t *testing.T) {
 	rows := []FlamegraphRow{
@@ -74,9 +77,16 @@ func TestBuildProfileSummaryText(t *testing.T) {
 		{Name: "hot.A", SelfSamples: 40},
 		{Name: "hot.B", SelfSamples: 30},
 		{Name: "hot.C", SelfSamples: 10},
-	}, 100)
+	}, 100, false)
 	want := "Top 3 CPU consumers for api are hot.A, hot.B, hot.C, accounting for 80.0% of total self samples."
 	if summary != want {
 		t.Fatalf("summary=%q want %q", summary, want)
+	}
+
+	truncated := buildProfileSummaryText("api", "cpu", []TopFunction{
+		{Name: "hot.A", SelfSamples: 40},
+	}, 40, true)
+	if !strings.Contains(truncated, "truncated") {
+		t.Fatalf("truncated summary=%q", truncated)
 	}
 }
