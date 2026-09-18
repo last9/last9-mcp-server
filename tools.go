@@ -13,6 +13,7 @@ import (
 	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/suggest"
 	"last9-mcp/internal/telemetry/logs"
+	"last9-mcp/internal/telemetry/profiles"
 	"last9-mcp/internal/telemetry/traces"
 	"last9-mcp/internal/toolsets"
 
@@ -283,6 +284,27 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Name:        "get_service_profile",
 		Description: prompts.GetServiceProfileDescription,
 	}, apm.NewGetServiceProfileHandler(client, cfg)))
+
+	// Continuous profiling tools (query_range/json)
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_profile_services",
+		Description: prompts.GetProfileServicesDescription,
+	}, profiles.NewGetProfileServicesHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_flamegraph",
+		Description: prompts.GetFlamegraphDescription,
+	}, profiles.NewGetFlamegraphHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_top_functions",
+		Description: prompts.GetTopFunctionsDescription,
+	}, profiles.NewGetTopFunctionsHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_profile_summary",
+		Description: prompts.GetProfileSummaryDescription,
+	}, profiles.NewGetProfileSummaryHandler(client, cfg)))
 
 	// Register dashboard tools
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
