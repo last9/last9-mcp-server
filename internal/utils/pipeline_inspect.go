@@ -223,6 +223,15 @@ func conditionReferencesBody(condition map[string]any) bool {
 	for op, raw := range condition {
 		switch op {
 		case "$and", "$or", "$not":
+			// The sanitizer normalizes logical operators to array form, but
+			// unsanitized pipelines may still carry a map-form value (e.g.
+			// {"$not": {…}}) — recurse into it rather than silently skipping.
+			if cm, ok := raw.(map[string]any); ok {
+				if conditionReferencesBody(cm) {
+					return true
+				}
+				continue
+			}
 			group, ok := raw.([]any)
 			if !ok {
 				continue
@@ -298,6 +307,12 @@ func collectBodyConditionsInto(condition map[string]any, out map[string]struct{}
 	for op, raw := range condition {
 		switch op {
 		case "$and", "$or", "$not":
+			// Mirror conditionReferencesBody: accept map-form logical values
+			// from unsanitized pipelines, not just the sanitized array form.
+			if cm, ok := raw.(map[string]any); ok {
+				collectBodyConditionsInto(cm, out)
+				continue
+			}
 			group, ok := raw.([]any)
 			if !ok {
 				continue

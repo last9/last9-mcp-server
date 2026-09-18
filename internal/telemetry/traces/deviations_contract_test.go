@@ -36,7 +36,7 @@ func callDeviationsHandler(t *testing.T, status int, body []byte) (string, error
 	}))
 	defer server.Close()
 
-	handler := NewGetTraceAttributeDeviationsHandler(server.Client(), deviationTestConfig(server.URL))
+	handler := NewGetTraceAttributeDeviationsHandler(server.Client(), tracesTestConfig(server.URL))
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeDeviationsArgs{
 		ComparisonMode: "errors", ServiceName: "checkout", Environment: "production",
 	})

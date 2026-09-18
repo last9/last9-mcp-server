@@ -38,8 +38,19 @@ type TokenManager struct {
 	RefreshToken string
 	ExpiresAt    time.Time
 
-	// Synchronization
-	mu          sync.RWMutex
+	// mu guards the token fields (AccessToken, ExpiresAt). It is kept as an
+	// RWMutex so the hot read path can take just a read lock.
+	mu sync.RWMutex
+
+	// condMu guards refreshing and is the locker that backs refreshCond. It
+	// must be a dedicated sync.Mutex (not tm.mu): refreshCond.Wait() performs
+	// an implicit c.L.Unlock() followed by c.L.Lock(), and those resolve to
+	// the *exclusive* Lock/Unlock of whatever Locker NewCond was given. If
+	// refreshCond were bound to tm.mu, a caller holding only tm.mu.RLock()
+	// would trigger a runtime fatal ("sync: Unlock of unlocked RWMutex") on
+	// Wait(). Using a plain Mutex here means Wait()'s Unlock/Lock operates
+	// on a lock the slow-path caller actually holds.
+	condMu      sync.Mutex
 	refreshing  bool
 	refreshCond *sync.Cond
 
@@ -177,7 +188,7 @@ func NewTokenManager(refreshToken string) (*TokenManager, error) {
 		ExpiresAt:     expiry,
 		refreshBuffer: expiry.Sub(time.Now()) / 2, // 50% of token lifespan
 	}
-	tm.refreshCond = sync.NewCond(&tm.mu)
+	tm.refreshCond = sync.NewCond(&tm.condMu)
 
 	// background refresh goroutine
 	go tm.backgroundRefresh()
@@ -202,39 +213,46 @@ func GetTokenExpiry(accessToken string) (time.Time, error) {
 }
 
 func (tm *TokenManager) GetAccessToken(ctx context.Context) string {
+	// Fast path: token is still within its refresh buffer. Read it under the
+	// read lock and return without touching the cond.
 	tm.mu.RLock()
-	defer tm.mu.RUnlock()
-
-	// Check if token is valid
 	if time.Now().Before(tm.ExpiresAt.Add(-tm.refreshBuffer)) {
-		return tm.AccessToken
+		tok := tm.AccessToken
+		tm.mu.RUnlock()
+		return tok
 	}
+	tm.mu.RUnlock()
 
+	// Slow path: token needs refresh. refreshing and refreshCond are guarded
+	// by condMu, and the cond is built on condMu, so refreshCond.Wait()'s
+	// implicit Unlock/Lock operates on condMu -- a lock this goroutine holds.
+	tm.condMu.Lock()
 	if !tm.refreshing {
+		tm.refreshing = true
 		go tm.refreshToken(ctx)
 	}
-
 	for tm.refreshing {
 		tm.refreshCond.Wait()
 	}
+	tm.condMu.Unlock()
 
-	return tm.AccessToken
+	tm.mu.RLock()
+	tok := tm.AccessToken
+	tm.mu.RUnlock()
+	return tok
 }
 
+// refreshToken performs a single OAuth refresh. It must be entered with
+// tm.refreshing already set to true under condMu (the caller is responsible
+// for the check-and-set, so there is no duplicate-refresh race between the
+// set and the spawn). refreshToken owns clearing tm.refreshing and
+// broadcasting waiters on completion.
 func (tm *TokenManager) refreshToken(ctx context.Context) {
-	tm.mu.Lock()
-	if tm.refreshing {
-		tm.mu.Unlock()
-		return
-	}
-	tm.refreshing = true
-	tm.mu.Unlock()
-
 	defer func() {
-		tm.mu.Lock()
+		tm.condMu.Lock()
 		tm.refreshing = false
 		tm.refreshCond.Broadcast()
-		tm.mu.Unlock()
+		tm.condMu.Unlock()
 	}()
 
 	client := GetHTTPClient()
@@ -264,7 +282,15 @@ func (tm *TokenManager) backgroundRefresh() {
 		tm.mu.RUnlock()
 
 		if needsRefresh {
-			tm.refreshToken(context.Background())
+			tm.condMu.Lock()
+			already := tm.refreshing
+			if !already {
+				tm.refreshing = true
+			}
+			tm.condMu.Unlock()
+			if !already {
+				tm.refreshToken(context.Background())
+			}
 		}
 	}
 }

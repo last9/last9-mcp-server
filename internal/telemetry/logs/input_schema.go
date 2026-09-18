@@ -111,7 +111,7 @@ func logAggregateStageSchema() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"function": map[string]interface{}{
 				"type":        "object",
-				"description": "Aggregation function as an object. Examples: {\"$count\": []}, {\"$avg\": [\"field\"]}, {\"$max\": [\"field\"]}.",
+				"description": "Aggregation function object. Examples: {\"$count\": []}, {\"$quantile\": [0.99, \"field\"]}.",
 			},
 			"as": map[string]interface{}{
 				"type":        "string",
@@ -143,7 +143,7 @@ func logAggregateStageSchema() map[string]interface{} {
 func logWindowAggregateStageSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":        "object",
-		"description": "Window aggregate stage: time-bucketed counts/trends. CRITICAL: use 'function'+'as'+'window' — NOT 'aggregates', NOT 'window_minutes', NOT 'TimeBucket'.",
+		"description": "Window aggregate stage: time-bucketed counts, trends, or percentiles. CRITICAL: use 'function'+'as'+'window' — NOT 'aggregates', NOT 'window_minutes', NOT 'TimeBucket'.",
 		// Only "type" is schema-required; validateLogJSONQuery owns function/as/window
 		// so {"type":"window_aggregate","window_minutes":1,...} reaches the tip.
 		"required": []string{"type"},
@@ -151,7 +151,7 @@ func logWindowAggregateStageSchema() map[string]interface{} {
 			"type": logStringEnum("window_aggregate"),
 			"function": map[string]interface{}{
 				"type":        "object",
-				"description": "Aggregation function object. Example: {\"$count\": []}",
+				"description": "Aggregation function object. Examples: {\"$count\": []}, {\"$quantile\": [0.99, \"field\"]}",
 			},
 			"as": map[string]interface{}{
 				"type":        "string",

@@ -1,5 +1,9 @@
 
 Fetches available log attributes (labels) for a specified time window.
+Scope is the whole index — it takes no service filter. For attributes on one
+service, use `get_log_attributes_for_pipeline` with a pipeline scoped to that
+`ServiceName` instead; this tool's global list will not tell you which fields
+that service actually emits.
 This tool queries the Last9 logs API to retrieve all available attribute names
 that can be used for filtering and querying logs within the specified time range.
 

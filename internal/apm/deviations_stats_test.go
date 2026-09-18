@@ -23,7 +23,6 @@ func summarizeWindow(buckets []bucket, queryStep time.Duration, expectedPoints i
 	}
 	summary.Evidence = newWindowEvidence(expectedPoints)
 
-	latencies := make([]float64, 0, len(buckets))
 	var weightedApdex, apdexRequestTotal, reliabilityRequests, reliabilityErrors float64
 	for _, point := range buckets {
 		requestValid := point.Requests != nil && isFinite(*point.Requests)
@@ -70,7 +69,6 @@ func summarizeWindow(buckets []bucket, queryStep time.Duration, expectedPoints i
 		case !isFinite(*point.P95LatencyMS):
 			summary.Evidence.P95Latency.ExcludedValues++
 		default:
-			latencies = append(latencies, *point.P95LatencyMS)
 			summary.Evidence.P95Latency.ObservedPoints++
 		}
 	}
@@ -87,11 +85,6 @@ func summarizeWindow(buckets []bucket, queryStep time.Duration, expectedPoints i
 	if apdexRequestTotal > 0 {
 		apdex := weightedApdex / apdexRequestTotal
 		summary.Apdex = &apdex
-	}
-	if len(latencies) > 0 {
-		latencyDistribution := distribution(latencies)
-		summary.P95Latency = &latencyDistribution
-		summary.Distribution = latencyDistribution
 	}
 	summary.Evidence = withCoverage(summary.Evidence)
 	return summary
@@ -133,22 +126,6 @@ func TestSummarizeWindowDoesNotTreatMissingApdexAsZero(t *testing.T) {
 	}
 	if got.Evidence.Apdex.ObservedPoints != 1 || got.Evidence.Apdex.Coverage != 0.5 {
 		t.Fatalf("unexpected Apdex evidence: %+v", got.Evidence.Apdex)
-	}
-}
-
-func TestSummarizeWindowCalculatesLatencyDistribution(t *testing.T) {
-	got := summarizeWindow([]bucket{
-		{Requests: float64Pointer(1), P95LatencyMS: float64Pointer(10)},
-		{Requests: float64Pointer(1), P95LatencyMS: float64Pointer(20)},
-		{Requests: float64Pointer(1), P95LatencyMS: float64Pointer(30)},
-		{Requests: float64Pointer(1), P95LatencyMS: float64Pointer(100)},
-	}, time.Minute, 4)
-
-	if got.P95Latency == nil || got.P95Latency.Median != 25 || got.P95Latency.Peak != 100 {
-		t.Fatalf("unexpected median/peak: %+v", got.P95Latency)
-	}
-	if got.P95Latency.Q25 != 17.5 || got.P95Latency.Q75 != 47.5 || got.P95Latency.IQR != 30 {
-		t.Fatalf("unexpected quartiles: %+v", got.P95Latency)
 	}
 }
 
@@ -219,9 +196,6 @@ func TestSummarizeWindowExcludesNonFiniteValues(t *testing.T) {
 
 	if got.RequestTotal != 10 || got.ErrorTotal != 1 || got.Apdex == nil || *got.Apdex != 0.9 {
 		t.Fatalf("non-finite values affected aggregates: %+v", got)
-	}
-	if got.P95Latency == nil || got.P95Latency.Median != 10 {
-		t.Fatalf("non-finite latency affected distribution: %+v", got.P95Latency)
 	}
 	if got.Evidence.Requests.ExcludedValues != 1 || got.Evidence.Errors.ExcludedValues != 1 ||
 		got.Evidence.Apdex.ExcludedValues != 1 || got.Evidence.P95Latency.ExcludedValues != 1 {

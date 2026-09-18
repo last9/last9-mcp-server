@@ -2,7 +2,6 @@ package apm
 
 import (
 	"math"
-	"sort"
 )
 
 func newWindowEvidence(expectedPoints int) WindowEvidence {
@@ -36,37 +35,6 @@ func calculateCoverage(evidence MetricEvidence) MetricEvidence {
 
 func isFinite(value float64) bool {
 	return !math.IsNaN(value) && !math.IsInf(value, 0)
-}
-
-func distribution(values []float64) Distribution {
-	if len(values) == 0 {
-		return Distribution{}
-	}
-	sorted := append([]float64(nil), values...)
-	sort.Float64s(sorted)
-	q25 := quantile(sorted, 0.25)
-	q75 := quantile(sorted, 0.75)
-	return Distribution{
-		Q25:    q25,
-		Median: quantile(sorted, 0.5),
-		Q75:    q75,
-		IQR:    q75 - q25,
-		Peak:   sorted[len(sorted)-1],
-	}
-}
-
-func quantile(sorted []float64, q float64) float64 {
-	if len(sorted) == 1 {
-		return sorted[0]
-	}
-	position := q * float64(len(sorted)-1)
-	lower := int(math.Floor(position))
-	upper := int(math.Ceil(position))
-	if lower == upper {
-		return sorted[lower]
-	}
-	weight := position - float64(lower)
-	return sorted[lower]*(1-weight) + sorted[upper]*weight
 }
 
 func compareSignal(definition SignalDefinition, current, baseline WindowSummary) SignalComparison {

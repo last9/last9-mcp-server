@@ -237,16 +237,42 @@ Note that regex parsing operators also work as regex filters
 }
 ```
 
+`$quantile` is the general/default percentile operator. Day-wise: exactly ONE get_logs call over the full half-open start_time_iso/end_time_iso range with one window_aggregate; NEVER one call per day; honor requested timezone. For `attributes[...]` or `resources[...]`, parse when needed, then use the canonical anchored numeric `$regex` shown below. Equivalent exotic regex forms are deliberately rejected. The filter excludes non-matching values from percentile calculations; disclose that exclusion in the answer. Compute buckets from raw values. Never template, merge, or recombine already-aggregated percentile rows.
+
 ### Window Aggregate Operations:
+Generic count buckets:
 ```json
-{
-  "type": "window_aggregate",
-  "function": {"$count": []},
-  "as": "result_name",
-  "window": ["duration", "unit"],  // e.g., ["10", "minutes"]
-  "groupby": {"field": "alias"} // optional group-by fields
-}
+{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"],"groupby":{"ServiceName":"service"}}
 ```
+
+Percentile buckets:
+```json
+[
+  {
+    "type": "filter",
+    "query": {"$and": [{"$neq": ["ServiceName", ""]}]}
+  },
+  {
+    "type": "parse",
+    "parser": "json",
+    "field": "Body",
+    "labels": {"route": "route", "latency_ms": "latency_ms"}
+  },
+  {
+    "type": "filter",
+    "query": {"$and": [{"$regex": ["attributes['latency_ms']", "^[0-9]+(?:\\.[0-9]+)?$"]}]}
+  },
+  {
+    "type": "window_aggregate",
+    "function": {"$quantile": [0.99, "attributes['latency_ms']"]},
+    "as": "p99_latency_ms",
+    "window": ["24", "hours"],
+    "groupby": {"attributes['route']": "route"}
+  }
+]
+```
+
+Discover and use a normalized route field before aggregation. If only raw URI exists, group or aggregate exact raw URI values individually; never normalize or merge URI variants afterward. When `l9_result.partial=true`, preserve returned rows and explicitly disclose partial coverage. Pass explicit RFC3339 bounds and state their time zone. Report source units exactly; never infer or convert units.
 
 ## Field Reference Format:
 

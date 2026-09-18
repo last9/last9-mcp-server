@@ -33,8 +33,8 @@ func TestDumpTools(t *testing.T) {
 	// All registered tools must be covered — the whole point of dump-tools.
 	// A loose floor would let a regression silently drop tools. Tighten this
 	// when the committed snapshot + CI equality gate supersedes it.
-	if len(out.Tools) < 38 {
-		t.Fatalf("expected at least 38 tools, got %d", len(out.Tools))
+	if len(out.Tools) < 39 {
+		t.Fatalf("expected at least 39 tools, got %d", len(out.Tools))
 	}
 	if !sort.SliceIsSorted(out.Tools, func(i, j int) bool { return out.Tools[i].Name < out.Tools[j].Name }) {
 		t.Fatal("tools are not sorted by name (output must be deterministic for snapshot diffing)")
@@ -44,7 +44,7 @@ func TestDumpTools(t *testing.T) {
 	for i, tool := range out.Tools {
 		byName[tool.Name] = i
 	}
-	for _, name := range []string{"get_traces", "get_service_summary", "prometheus_label_values", "get_logs"} {
+	for _, name := range []string{"get_traces", "get_service_summary", "prometheus_label_values", "get_logs", "get_alert_groups"} {
 		i, ok := byName[name]
 		if !ok {
 			t.Fatalf("tool %q missing from dump", name)
@@ -277,6 +277,35 @@ func TestDumpTools(t *testing.T) {
 	}
 }
 
+func TestDumpToolsLogsIncludesServiceProfile(t *testing.T) {
+	allowed, err := toolsets.Parse("logs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, allowed); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	byName := make(map[string]bool, len(out.Tools))
+	for _, tool := range out.Tools {
+		byName[tool.Name] = true
+	}
+	if !byName["get_service_profile"] {
+		t.Error("logs dump missing get_service_profile (required by profile-first firing rules on get_exceptions)")
+	}
+	if !byName["get_exceptions"] {
+		t.Error("logs dump missing get_exceptions")
+	}
+}
+
 func TestDumpToolsInvestigate(t *testing.T) {
 	allowed, err := toolsets.Parse("investigate")
 	if err != nil {
@@ -298,18 +327,44 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	for _, tool := range out.Tools {
 		byName[tool.Name] = true
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "list_datasources"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "get_service_profile", "list_datasources"} {
 		if !byName[want] {
 			t.Errorf("investigate dump missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots"} {
+	for _, deny := range []string{"get_alerts", "get_alert_groups", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard"} {
 		if byName[deny] {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}
 	}
 	if len(out.Tools) >= 38 {
 		t.Fatalf("investigate should expose fewer than full surface; got %d", len(out.Tools))
+	}
+}
+
+func TestDumpToolsDashboardWriteSteer(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, nil); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	byName := make(map[string]string, len(out.Tools))
+	for _, tool := range out.Tools {
+		byName[tool.Name] = tool.Description
+	}
+	if got, want := byName["create_dashboard"], prompts.CreateDashboardDescription; got != want {
+		t.Errorf("served create_dashboard description != embed\ngot:  %q\nwant: %q", got, want)
+	}
+	if got, want := byName["update_dashboard"], prompts.UpdateDashboardDescription; got != want {
+		t.Errorf("served update_dashboard description != embed\ngot:  %q\nwant: %q", got, want)
 	}
 }
 

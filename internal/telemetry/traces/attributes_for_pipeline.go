@@ -100,6 +100,10 @@ func NewGetTraceAttributesForPipelineHandler(client *http.Client, cfg models.Con
 			return nil, nil, fmt.Errorf("pipeline parameter is required. Provide at least one filter stage to scope discovery, e.g. [{\"type\":\"filter\",\"query\":{\"$eq\":[\"ServiceName\",\"<service>\"]}}]")
 		}
 
+		if err := SanitizeTraceJSONQuery(args.Pipeline); err != nil {
+			return nil, nil, err
+		}
+
 		timeParams := map[string]interface{}{}
 		if args.LookbackMinutes > 0 {
 			timeParams["lookback_minutes"] = args.LookbackMinutes

@@ -13,6 +13,7 @@ import (
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -117,13 +118,16 @@ func convertDropRuleFilters(filters []DropRuleFilter) ([]models.DropRuleFilter, 
 
 // readDropRuleAPIResponse returns emptyBody when the API answers 2xx with no
 // content, so each caller keeps the JSON shape its populated responses have.
+// Non-2xx responses are mapped to a tool-facing error via
+// utils.NewUpstreamHTTPError, which redacts credentials/URLs and bounds the
+// relayed body — the same contract the log-query handlers in this package use.
 func readDropRuleAPIResponse(resp *http.Response, emptyBody string) ([]byte, error) {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, utils.NewUpstreamHTTPError(resp, "drop rule API")
+	}
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("drop rule API request failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
 	// json.Valid rejects an empty body, so a 201/204 would read as a failure.
 	if len(bytes.TrimSpace(respBody)) == 0 {

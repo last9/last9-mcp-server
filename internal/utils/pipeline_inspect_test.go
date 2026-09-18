@@ -32,6 +32,38 @@ func TestPipelineHasAggregateStage(t *testing.T) {
 	}
 }
 
+// TestConditionReferencesBodyLogicalShapes locks the inspectors' handling of
+// logical operators in both shapes: the sanitized array form and the map form
+// that unsanitized pipelines may carry (e.g. {"$not": {…}}). Map-form values
+// must be recursed into, not silently skipped (issue #241).
+func TestConditionReferencesBodyLogicalShapes(t *testing.T) {
+	bodyCond := map[string]any{"$contains": []any{"Body", "timeout"}}
+	nonBodyCond := map[string]any{"$eq": []any{"ServiceName", "orders"}}
+
+	cases := []struct {
+		name      string
+		condition map[string]any
+		want      bool
+	}{
+		{"array-form $not on Body", map[string]any{"$not": []any{bodyCond}}, true},
+		{"map-form $not on Body", map[string]any{"$not": bodyCond}, true},
+		{"map-form $not without Body", map[string]any{"$not": nonBodyCond}, false},
+		{"map-form $not nested in $and", map[string]any{"$and": []any{map[string]any{"$not": bodyCond}}}, true},
+		{"scalar $not is skipped", map[string]any{"$not": "bogus"}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := conditionReferencesBody(c.condition); got != c.want {
+				t.Errorf("conditionReferencesBody = %v, want %v", got, c.want)
+			}
+			gotOps := collectBodyConditions(c.condition)
+			if (len(gotOps) > 0) != c.want {
+				t.Errorf("collectBodyConditions returned %v, want body ops present = %v", gotOps, c.want)
+			}
+		})
+	}
+}
+
 // TestHasParseStage locks the unexported helper's contract directly.
 func TestHasParseStage(t *testing.T) {
 	cases := []struct {

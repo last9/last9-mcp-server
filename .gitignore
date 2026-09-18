@@ -121,6 +121,7 @@ docs
 
 # Agent/tool local dirs (never commit)
 .superpowers/
+sdd/
 .cursor/
 .worktrees/
 .aider*

@@ -47,6 +47,7 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	fs.StringVar(&cfg.DatasourceName, "datasource", os.Getenv("LAST9_DATASOURCE"), "Datasource name to use (overrides default datasource)")
 	fs.StringVar(&cfg.APIHost, "api_host", os.Getenv("LAST9_API_HOST"), "API host (defaults to app.last9.io)")
 	fs.BoolVar(&cfg.DisableTelemetry, "disable_telemetry", true, "Disable OpenTelemetry tracing/metrics")
+	fs.BoolVar(&cfg.UseLogSearchAPI, "use_log_search_api", false, "Route get_logs through the server-side log search API instead of client-side chunking")
 	fs.Float64Var(&cfg.RequestRateLimit, "rate", 1, "Requests per second limit")
 	fs.IntVar(&cfg.RequestRateBurst, "burst", 1, "Request burst capacity")
 	fs.IntVar(&cfg.MaxGetLogsEntries, "max_get_logs_entries", models.DefaultMaxGetLogsEntries, "Maximum number of entries returned by chunked raw get_logs requests")

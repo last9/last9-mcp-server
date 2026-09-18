@@ -3,6 +3,7 @@ package alerting
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -257,6 +258,22 @@ func TestAlertRuleStateHandler_ValidationErrors(t *testing.T) {
 		{
 			name: "cap boundary - 101 samples is rejected",
 			args: AlertRuleStateRequest{StartTime: 0, EndTime: 60 * 100, Step: 60},
+			want: "too many points",
+		},
+		{
+			// Regression: endpoints near ±2^63 (float64-representable,
+			// so they survive the SDK decode round-trip) make end-start wrap
+			// negative, which previously bypassed the sample cap and let the
+			// sampling loop run ~10^10 iterations.
+			name: "subtraction overflow near int64 bounds",
+			args: AlertRuleStateRequest{StartTime: -9223372036854774000, EndTime: 9223372036854774000, Step: 1000000000},
+			want: "overflows",
+		},
+		{
+			// Regression: span = MaxInt64 with step = 1 would wrap
+			// span/step + 1 past MaxInt64 if the cap were checked after the +1.
+			name: "sample count overflow at MaxInt64 span",
+			args: AlertRuleStateRequest{StartTime: 0, EndTime: math.MaxInt64, Step: 1},
 			want: "too many points",
 		},
 	}

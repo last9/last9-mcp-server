@@ -1,6 +1,7 @@
 package apm
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -62,6 +63,40 @@ func TestResolveDeviationWindowsRelativeLookback(t *testing.T) {
 	if got.EffectiveBaselineStart != time.Date(2026, 7, 11, 9, 39, 0, 0, time.UTC) ||
 		got.EffectiveBaselineEnd != time.Date(2026, 7, 11, 9, 53, 0, 0, time.UTC) {
 		t.Fatalf("unexpected effective baseline: %+v", got)
+	}
+}
+
+// TestResolveDeviationWindowsLookbackFloorBoundary pins the now-dependent
+// continuous success boundary the contract surfaces document. At this fixture
+// now (:32s past the minute, queryStep 1m) one completed bucket requires
+// lookback >= 92s/60s (~1.5333): values below collapse to zero completed
+// buckets and return the documented domain error; fractional values above it
+// succeed. This guards against a future "fix" raising the schema minimum to 2,
+// which would over-reject valid fractional inputs like 1.6 that the
+// type:number schema legitimately admits at some now offsets.
+func TestResolveDeviationWindowsLookbackFloorBoundary(t *testing.T) {
+	now := time.Date(2026, 7, 11, 10, 7, 32, 0, time.UTC)
+	tests := []struct {
+		lookback float64
+		wantErr  bool
+	}{
+		{1.0, true},  // integer minimum the schema advertises: always collapses in production
+		{1.5, true},  // below the ~1.5333 threshold: collapses
+		{1.6, false}, // above threshold: one completed bucket
+		{1.9, false},
+		{2.0, false}, // worst-case integer floor: one completed bucket at any now
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("lookback=%v", tt.lookback), func(t *testing.T) {
+			_, err := resolveDeviationWindows(DeviationArgs{LookbackMinutes: tt.lookback}, now, time.Minute)
+			gotErr := err != nil
+			if gotErr != tt.wantErr {
+				t.Fatalf("lookback=%v: got err=%v want err=%t", tt.lookback, err, tt.wantErr)
+			}
+			if gotErr && err.Error() != "requested window contains no completed buckets" {
+				t.Fatalf("lookback=%v: unexpected error %v", tt.lookback, err)
+			}
+		})
 	}
 }
 

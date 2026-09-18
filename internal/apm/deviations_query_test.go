@@ -3,12 +3,18 @@ package apm
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"last9-mcp/internal/auth"
+	"last9-mcp/internal/models"
 )
 
 func TestServiceQueriesUseCanonicalServiceLatencyInMilliseconds(t *testing.T) {
@@ -137,37 +143,44 @@ func TestErrorQueriesZeroFillHealthyRequestBuckets(t *testing.T) {
 	}
 }
 
-func TestSharedCandidateMaskCombinesPinnedWindowsAndIsIdentical(t *testing.T) {
-	scope := deviationQueryScope{Limit: 2}
+// TestDeviationQueriesHaveNoCandidatePreFilter guards the hard-completeness
+// invariant: the deviation aggregates are fetched for every identity in scope,
+// with no traffic-based topk (or any other ranking pre-filter) deciding which
+// identities the deviation math ever sees. Classification depends on
+// per-bucket distribution overlap and evidence coverage that no PromQL ranking
+// proxy can mirror, so any pre-filter can silently drop the identity a correct
+// result must contain — the exact failure mode of the max_services cap bug,
+// one layer up. The only cut is the magnitude-aware in-process selection.
+// Windows stay pinned with @ so current and baseline see the same fleet.
+func TestDeviationQueriesHaveNoCandidatePreFilter(t *testing.T) {
 	current, baseline := deviationTestWindows()
-	plan := buildServiceRollupQueries(scope, current, baseline, time.Minute)
-	mask := plan.CandidateMask
-	currentQueries := plan.Current
-	baselineQueries := plan.Baseline
-
-	for _, want := range []string{
-		"topk(2,",
-		"@ " + strconvUnix(current.End),
-		"@ " + strconvUnix(baseline.End),
-		" or ",
-		"service_name, env",
-	} {
-		if !strings.Contains(mask, want) {
-			t.Errorf("candidate mask missing %q: %s", want, mask)
-		}
+	plans := map[string]deviationQueryPlan{
+		"service":   buildServiceRollupQueries(deviationQueryScope{Limit: 2}, current, baseline, time.Minute),
+		"operation": buildOperationRollupQueries(deviationQueryScope{ServiceName: "api", Limit: 2}, current, baseline, time.Minute),
 	}
-	for _, queries := range [][]deviationQuery{currentQueries, baselineQueries} {
-		for _, query := range queries {
-			if query.CandidateMask != mask || !strings.Contains(query.Text, mask) {
-				t.Errorf("query %q does not use the exact shared mask", query.Name)
+	for name, plan := range plans {
+		for _, queries := range [][]deviationQuery{plan.Current, plan.Baseline} {
+			if len(queries) == 0 {
+				t.Fatalf("%s plan has no queries", name)
 			}
-			if strings.Count(query.Text, "topk(") != 1 {
-				t.Errorf("query %q contains an independent candidate selection: %s", query.Name, query.Text)
+			for _, query := range queries {
+				for _, forbidden := range []string{"topk(", "bottomk(", "limitk(", "limit_ratio("} {
+					if strings.Contains(query.Text, forbidden) {
+						t.Errorf("%s query %q pre-filters candidates with %s: %s", name, query.Name, forbidden, query.Text)
+					}
+				}
 			}
 		}
-	}
-	if maskFromQueries(currentQueries) != maskFromQueries(baselineQueries) {
-		t.Fatal("current and baseline candidate masks differ, risking false presence changes")
+		for _, query := range plan.Current {
+			if !strings.Contains(query.Text, "@ "+strconvUnix(current.End)) {
+				t.Errorf("%s current query %q is not pinned to the current window: %s", name, query.Name, query.Text)
+			}
+		}
+		for _, query := range plan.Baseline {
+			if !strings.Contains(query.Text, "@ "+strconvUnix(baseline.End)) {
+				t.Errorf("%s baseline query %q is not pinned to the baseline window: %s", name, query.Name, query.Text)
+			}
+		}
 	}
 }
 
@@ -341,6 +354,118 @@ func TestExecuteDeviationQueriesRunsWindowsConcurrentlyAndRetainsPartialErrors(t
 	}
 }
 
+// TestExecuteDeviationQueriesClassifiesOverloadFailuresAsRejected confirms
+// that limit/timeout-class failures (datasource rejections and client
+// timeouts) surface as kind "query_rejected" rather than the generic
+// "query_failed", so the handler can recommend narrowing the scope — the
+// failure mode the pre-filter removal makes reachable on very large fleets.
+func TestExecuteDeviationQueriesClassifiesOverloadFailuresAsRejected(t *testing.T) {
+	runner := deviationQueryRunnerFunc(func(_ context.Context, query string, _ time.Time) ([]deviationVector, error) {
+		switch query {
+		case "rejected":
+			return nil, deviationQueryOverloadError{Status: 429}
+		case "timeout":
+			return nil, fmt.Errorf("await upstream: %w", context.DeadlineExceeded)
+		default:
+			return []deviationVector{{Metric: map[string]string{"service_name": "api", "env": "prod"}, Value: []any{1.0, "5"}}}, nil
+		}
+	})
+	plan := deviationQueryPlan{
+		CurrentEnd:  time.Unix(20, 0),
+		BaselineEnd: time.Unix(10, 0),
+		Current: []deviationQuery{
+			{Name: "requests_sum", Field: deviationFieldRequestTotal, Text: "ok"},
+			{Name: "errors_sum", Field: deviationFieldErrorTotal, Text: "rejected"},
+		},
+		Baseline: []deviationQuery{
+			{Name: "requests_sum", Field: deviationFieldRequestTotal, Text: "ok"},
+			{Name: "latency_max", Field: deviationFieldLatencyMax, Text: "timeout"},
+		},
+	}
+	got := executeDeviationQueries(context.Background(), runner, plan)
+	if got.Err != nil {
+		t.Fatalf("partial rejection must not fail the execution: %v", got.Err)
+	}
+	if len(got.Errors) != 2 {
+		t.Fatalf("errors = %+v, want 2", got.Errors)
+	}
+	for _, item := range got.Errors {
+		if item.Kind != deviationQueryErrorKindRejected {
+			t.Fatalf("kind = %q, want %q: %+v", item.Kind, deviationQueryErrorKindRejected, item)
+		}
+		if item.Message != "query rejected by the datasource (limit or timeout)" {
+			t.Fatalf("unexpected message: %+v", item)
+		}
+	}
+}
+
+// TestHTTPDeviationQueryRunnerClassifiesOverloadStatuses drives the real HTTP
+// runner against a live local server to prove datasource status codes map to
+// the overload class end to end, not just at the executor level.
+func TestHTTPDeviationQueryRunnerClassifiesOverloadStatuses(t *testing.T) {
+	var status int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(`{"error":"limit exceeded"}`))
+	}))
+	defer server.Close()
+	cfg := models.Config{APIBaseURL: server.URL}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "mock-access-token", ExpiresAt: time.Now().Add(time.Hour)}
+	runner := newHTTPDeviationQueryRunner(server.Client(), cfg)
+
+	for _, tc := range []struct {
+		status   int
+		overload bool
+	}{
+		{status: 429, overload: true},
+		{status: 503, overload: true},
+		{status: 422, overload: true},
+		{status: 500, overload: false},
+		{status: 400, overload: false},
+	} {
+		status = tc.status
+		_, err := runner.Query(context.Background(), "up", time.Unix(0, 0))
+		if err == nil {
+			t.Fatalf("status %d: expected error", tc.status)
+		}
+		if got := isDeviationQueryOverload(err); got != tc.overload {
+			t.Fatalf("status %d: overload = %v, want %v (err=%v)", tc.status, got, tc.overload, err)
+		}
+	}
+}
+
+// TestDeviationHandlerWarnsToNarrowScopeOnRejectedQueries confirms the served
+// warning: when partial errors include the rejected class, the response tells
+// the caller to narrow with env or service_name.
+func TestDeviationHandlerWarnsToNarrowScopeOnRejectedQueries(t *testing.T) {
+	deps := testDeviationHandlerDeps()
+	deps.execute = func(_ context.Context, _ deviationQueryRunner, _ deviationQueryPlan) deviationQueryExecution {
+		return deviationQueryExecution{
+			Current:  deviationQueryResult{Records: []deviationAggregate{aggregate("api", "prod", "", 600, 6, 6, 6, 540, 600, 6, 50, 50, 50, 50, 6)}},
+			Baseline: deviationQueryResult{Records: []deviationAggregate{aggregate("api", "prod", "", 600, 6, 6, 6, 540, 600, 6, 50, 50, 50, 50, 6)}},
+			Errors: []deviationQueryError{{
+				Window: "current", Signal: "latency_max", Field: string(deviationFieldLatencyMax),
+				Kind: deviationQueryErrorKindRejected, Message: "query rejected by the datasource (limit or timeout)",
+			}},
+		}
+	}
+	handler := newAPMServiceDeviationsHandler(http.DefaultClient, models.Config{DatasourceName: "primary"}, deps)
+	response := callDeviationHandler(t, handler, sixMinuteDeviationArgs())
+
+	if len(response.PartialErrors) != 1 || response.PartialErrors[0].Kind != deviationQueryErrorKindRejected {
+		t.Fatalf("rejected partial error missing: %+v", response.PartialErrors)
+	}
+	found := false
+	for _, w := range response.Warnings {
+		if strings.Contains(w, "Narrow with env or service_name") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("narrowing warning missing: %+v", response.Warnings)
+	}
+}
+
 func TestExecuteDeviationQueriesReturnsTopLevelErrorWhenAllQueriesFail(t *testing.T) {
 	runner := deviationQueryRunnerFunc(func(context.Context, string, time.Time) ([]deviationVector, error) {
 		return nil, errors.New("credential and URL details")
@@ -408,13 +533,6 @@ func strconvUnix(value time.Time) string {
 	return strconv.FormatInt(value.Unix(), 10)
 }
 
-func maskFromQueries(queries []deviationQuery) string {
-	if len(queries) == 0 {
-		return ""
-	}
-	return queries[0].CandidateMask
-}
-
 func queryTexts(queries []deviationQuery) []string {
 	texts := make([]string, 0, len(queries))
 	for _, query := range queries {
@@ -443,4 +561,120 @@ func findDeviationError(t *testing.T, errors []deviationQueryError, kind string)
 	}
 	t.Fatalf("error kind %q not found in %+v", kind, errors)
 	return deviationQueryError{}
+}
+
+// TestErrorPercentageDistributionDividesWholeZeroFilledErrorUnion guards the
+// PromQL operator-precedence bug where errorExpression (whose top-level
+// operator is `or`, used to zero-fill healthy request buckets) was interpolated
+// bare as the left operand of `/`. Because `or` binds looser than `/`, the
+// division was absorbed by the zero-fill branch `(requestExpression * 0) /
+// requestExpression == 0`, leaving error buckets evaluated as `error_count *
+// 100` instead of `(error_count / request_count) * 100`.
+//
+// With the `or` parenthesized, the division applies to the whole zero-filled
+// error union, so the union's `or` must be nested strictly deeper than the
+// percent `/`. In the buggy expression both operators sat at the same depth.
+func TestErrorPercentageDistributionDividesWholeZeroFilledErrorUnion(t *testing.T) {
+	current, baseline := deviationTestWindows()
+	for _, scope := range []deviationQueryScope{
+		{ServiceName: "api", Env: "prod", Limit: 3},
+		{ServiceName: "checkout\"api\\v2", Env: "prod\nblue", Limit: 7},
+		{Limit: 5},
+	} {
+		queries := buildServiceRollupQueries(scope, current, baseline, time.Minute).Current
+		query := queryTextByName(t, queries, "error_percentage_distribution")
+
+		// The errorPercentageExpression is replicated once per distribution
+		// statistic (q25/median/q75) inside deviationDistributionQuery, so every
+		// slash is the same percent division and every ` or on (` is the same
+		// zero-fill union. Verify the invariant on every copy.
+		slashes := findSlashesOutsideStrings(query)
+		unionAts := findAllIndices(query, " or on (")
+		if len(slashes) == 0 || len(unionAts) == 0 {
+			t.Fatalf("%+v: missing division or zero-fill union in error_percentage_distribution:\n%s", scope, query)
+		}
+		if len(slashes) != len(unionAts) {
+			t.Fatalf("%+v: expected one zero-fill union per division, got %d unions and %d divisions:\n%s", scope, len(unionAts), len(slashes), query)
+		}
+		for i, slashAt := range slashes {
+			slashDepth := parenDepthAt(query, slashAt)
+			unionDepth := parenDepthAt(query, unionAts[i]+1)
+			if unionDepth <= slashDepth {
+				t.Fatalf("%+v: zero-fill `or` (depth %d) must nest deeper than the percent `/` (depth %d) so the division spans the whole error union, not only the zero-fill branch:\n%s", scope, unionDepth, slashDepth, query)
+			}
+		}
+	}
+}
+
+// findSlashesOutsideStrings returns the byte indices of every `/` that is not
+// inside a double-quoted PromQL string literal.
+func findSlashesOutsideStrings(expr string) []int {
+	var indices []int
+	inString := false
+	for i := 0; i < len(expr); i++ {
+		c := expr[i]
+		if inString {
+			if c == '\\' {
+				i++
+				continue
+			}
+			if c == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '/':
+			indices = append(indices, i)
+		}
+	}
+	return indices
+}
+
+// findAllIndices returns the byte indices of every non-overlapping occurrence of
+// substr in expr.
+func findAllIndices(expr, substr string) []int {
+	var indices []int
+	for start := 0; start < len(expr); {
+		idx := strings.Index(expr[start:], substr)
+		if idx < 0 {
+			break
+		}
+		indices = append(indices, start+idx)
+		start += idx + len(substr)
+	}
+	return indices
+}
+
+// parenDepthAt returns the parenthesis nesting depth at position idx in expr,
+// scanning from the start and skipping over double-quoted string literals
+// (with backslash escapes) so parentheses or slashes inside label-match values
+// do not affect the count.
+func parenDepthAt(expr string, idx int) int {
+	depth := 0
+	inString := false
+	for i := 0; i < idx && i < len(expr); i++ {
+		c := expr[i]
+		if inString {
+			if c == '\\' {
+				i++
+				continue
+			}
+			if c == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '(':
+			depth++
+		case ')':
+			depth--
+		}
+	}
+	return depth
 }

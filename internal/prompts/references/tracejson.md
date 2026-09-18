@@ -143,6 +143,8 @@ Note that regexp parsing operators also work as regexp filters
 }
 ```
 
+`$quantile` is the general/default percentile operator. Compute percentiles from raw spans; never average percentile samples or series. Top-level `Duration` is already numeric and is measured in nanoseconds. For a percentile over `attributes[...]`, first add the canonical numeric `$regex` `^[0-9]+(?:\\.[0-9]+)?$`; it excludes non-matching values from percentile calculations, so disclose that exclusion in the answer; do not add this numeric gate for `Duration`.
+
 ❌ WRONG (causes 400):
 ```json
 {"type": "aggregate", "aggregations": [...], "group_by": [...]}
@@ -150,15 +152,29 @@ Note that regexp parsing operators also work as regexp filters
 ```
 
 ### Window Aggregate Operations:
+Generic count buckets:
 ```json
-{
-  "type": "window_aggregate",
-  "function": {"$count": []},
-  "as": "result_name",
-  "window": ["duration", "unit"],  // e.g., ["10", "minutes"]
-  "groupby": {"field": "alias"} // optional group-by fields
-}
+{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"],"groupby":{"ServiceName":"service"}}
 ```
+
+Percentile buckets:
+```json
+[
+  {
+    "type": "filter",
+    "query": {"$and": [{"$neq": ["TraceId", ""]}]}
+  },
+  {
+    "type": "window_aggregate",
+    "function": {"$quantile": [0.99, "Duration"]},
+    "as": "p99_duration_ns",
+    "window": ["24", "hours"],
+    "groupby": {"SpanName": "endpoint"}
+  }
+]
+```
+
+For calendar buckets, pass explicit RFC3339 `start_time_iso` and `end_time_iso` tool arguments and state the time zone used for the boundaries. `Duration` results remain nanoseconds unless explicitly converted for presentation.
 
 ## Field Reference Format:
 
