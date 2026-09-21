@@ -218,7 +218,7 @@ The NPM route is easier on Windows — no path management.
 | `LAST9_REFRESH_TOKEN`        | *(required)*         | Refresh token from [API Access](https://app.last9.io/settings/api-access) |
 | `LAST9_DATASOURCE`           | org default          | Datasource/cluster name — useful when you have multiple Levitate clusters |
 | `LAST9_API_HOST`             | `app.last9.io`       | Override the API host |
-| `LAST9_TOOLSETS`             | all tools            | Comma-separated toolsets to expose (`logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `investigate`, `all`). Alias: `LAST9_MCP_TOOLSETS` |
+| `LAST9_TOOLSETS`             | all tools            | Comma-separated toolsets to expose (`logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`). Alias: `LAST9_MCP_TOOLSETS` |
 | `LAST9_MAX_GET_LOGS_ENTRIES` | `5000`               | Max entries for chunked `get_logs` requests |
 | `LAST9_USE_LOG_SEARCH_API`   | `false`              | Set `true` to answer `get_logs` and `get_service_logs` with one server-side search call instead of client-side chunking |
 | `LAST9_DEBUG_CHUNKING`       | `false`              | Set `true` to log chunk-planning details for `get_logs`, `get_service_logs`, `get_traces` |
@@ -293,12 +293,32 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 - **`list_dashboards`** — All custom dashboards in your org: IDs, names, and metadata
 - **`get_dashboard`** — Full dashboard definition by ID, including panels and queries
+- **`validate_dashboard`** — Read-only lint + execute + classify for a saved dashboard id or an inline `dashboard_definition` over a ≤24h window. Never creates or updates dashboards
 - **`create_dashboard`** — Create a net-new custom dashboard once (panels, queries, metadata). After the id is returned, refine with `update_dashboard`.
 - **`update_dashboard`** — Refine an existing dashboard by ID (full replacement; readonly system dashboards return an error)
 - **`delete_dashboard`** — Delete a custom dashboard by ID
 - **`list_dashboard_snapshots`** — Frozen point-in-time snapshots for a dashboard (metadata only)
 - **`get_dashboard_snapshot`** — Full frozen snapshot including panel data for RCA / shareable views
 - **`delete_dashboard_snapshot`** — Delete a frozen snapshot by ID
+
+### Continuous Profiling
+
+Requires continuous profiling enabled for the org. Discover services first with `get_profile_services`, then pull a flamegraph or ranked functions.
+
+- **`get_profile_services`** — Services that have profiling data in the window (index before querying)
+- **`get_flamegraph`** — Nested flamegraph tree for one service (`cpu` default; also `alloc`, `wall`)
+- **`get_top_functions`** — Self-sample ranking of hottest functions for one service
+- **`get_profile_summary`** — Short natural-language triage of the profile for one service
+
+### Grafana Dashboards
+
+Read-only tools against the org's Grafana instance (via Last9's Grafana proxy). Credential fields are never returned to the model. Enable with `LAST9_TOOLSETS=grafana` (or leave toolsets unset for all tools).
+
+- **`grafana_search_dashboards`** — Search dashboards by title substring (paginated; `truncated: true` when the cap is hit)
+- **`grafana_get_dashboard`** — Dashboard summary by uid (panels, variables, PromQL targets); `full_json=true` for raw Grafana JSON
+- **`grafana_list_folders`** — Folder tree
+- **`grafana_list_folder_dashboards`** — Dashboards in one folder (paginated)
+- **`grafana_list_datasources`** — Datasource inventory without credentials
 
 ### Fuzzy Name Resolution
 
@@ -314,7 +334,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 **Deep links on every response.** Every tool returns a `deep_link` field — a direct URL into the Last9 dashboard for that exact query and time range. The agent can hand you the link; you click it; you're there.
 
-**Toolsets.** By default the server exposes every tool. Automation hosts that only need investigation (logs/traces/metrics/profiles) can set `LAST9_TOOLSETS=investigate` (or pass `--toolsets=investigate`) so `tools/list` stays small without client-side mass-disable. Named packs: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `investigate`, `all`. Unknown names fail fast. The `metrics` pack alone does **not** include `list_datasources` or `did_you_mean` — use `investigate` (or combine toolsets) when you need those discovery helpers.
+**Toolsets.** By default the server exposes every tool. Automation hosts that only need investigation (logs/traces/metrics/profiles) can set `LAST9_TOOLSETS=investigate` (or pass `--toolsets=investigate`) so `tools/list` stays small without client-side mass-disable. Named packs: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`. Unknown names fail fast. The `metrics` pack alone does **not** include `list_datasources` or `did_you_mean` — use `investigate` (or combine toolsets) when you need those discovery helpers.
 
 **Tool reference resources.** Long logjson/tracejson/service-logs/metrics manuals are MCP resources (`last9://reference/logjson`, `last9://reference/tracejson`, `last9://reference/service_logs`, `last9://reference/metrics`, `last9://reference/investigation`), not always-on tool description text. Critical query rules stay on the tool description so agents that never call `resources/read` still get correct construction guidance. Discover org-specific fields with `get_log_attributes` / `get_log_attributes_for_pipeline` (and the trace equivalents)—they are not injected into descriptions.
 
@@ -704,6 +724,17 @@ No parameters. Returns all custom dashboards in the org as a JSON array with `id
 - `id` (string, required): Dashboard UUID.
 - `region` (string, optional): Region for panel query population. Defaults to configured datasource region.
 
+### validate_dashboard
+
+Read-only. Never creates or updates dashboards. Accept exactly one of `dashboard_id` or `dashboard_definition`.
+
+- `dashboard_id` (string, optional): Saved dashboard UUID to validate.
+- `dashboard_definition` (object, optional): Inline unsaved dashboard body (true dry run).
+- `start_time_iso` / `end_time_iso` (string, optional): Validation window (RFC3339). Must be ≤ 24h.
+- `region` (string, optional): Region for panel query execution.
+
+Returns `dashboard_validation/v1`: per-panel lint + execute classification (`data` / `no_data` / `invalid` / `error`). Day-1 empty results classify as `valid_no_data` without diagnose probes.
+
 ### create_dashboard
 
 Net-new only. After this call returns `dashboard.id`, refine with `update_dashboard` — do not create again to add, trim, or fix panels.
@@ -738,6 +769,58 @@ Returns the full frozen snapshot including `dashboard_definition`, `panel_data`,
 ### delete_dashboard_snapshot
 
 - `id` (string, required): Snapshot UUID to delete.
+
+### get_profile_services
+
+- `lookback_minutes` / `start_time_iso` / `end_time_iso` (optional): Window; prefer lookback or explicit ISO bounds (default 60m).
+- `region` (string, optional): Region override.
+
+Returns services that have profiling data in the window. Call this before `get_flamegraph` / `get_top_functions` / `get_profile_summary`.
+
+### get_flamegraph
+
+- `service` (string, required): Service name from `get_profile_services`.
+- `profile_type` (string, optional): `cpu` (default), `alloc`, or `wall`. Pin a type when comparing windows.
+- `env` / `cluster` / `namespace` / `runtime` (string, optional): Scope filters.
+- `limit` (number, optional): Max aggregated stack rows (default 1000, max 10000).
+- `lookback_minutes` / `start_time_iso` / `end_time_iso` / `region` (optional).
+
+Returns a nested flamegraph tree (`name` / `value` / `self` / `children`). `truncated: true` means the API row limit was hit.
+
+### get_top_functions
+
+Same filters as `get_flamegraph`. Returns self-sample ranking of hottest functions. May be truncated; check `truncated`.
+
+### get_profile_summary
+
+Same filters as `get_flamegraph`. Returns a short natural-language triage of the profile for the service.
+
+### grafana_search_dashboards
+
+- `query` (string, optional): Title substring. Empty lists broadly (subject to the 5,000-row cap).
+
+Returns `{"dashboards":[…], "truncated":bool}` with `uid`, `title`, `uri`, `url`, `type`, `tags`. Use `uid` with `grafana_get_dashboard`.
+
+### grafana_get_dashboard
+
+- `uid` (string, required): Grafana dashboard uid.
+- `full_json` (boolean, optional): When true, return raw Grafana JSON instead of the filtered summary.
+
+Default summary: version, tags, templating variables, and each panel's type/datasource/gridPos/promQL targets. Unknown plugin panel types appear in `unsupportedPanelTypes`.
+
+### grafana_list_folders
+
+No parameters. Returns the folder tree.
+
+### grafana_list_folder_dashboards
+
+- `folder_uid` (string, required): Grafana folder uid.
+
+Returns `{"dashboards":[…], "truncated":bool}` for dashboards in that folder (paginated up to 5,000).
+
+### grafana_list_datasources
+
+No parameters. Returns a safe projection of datasources (no credential fields).
 
 </details>
 
