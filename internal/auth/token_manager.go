@@ -229,12 +229,22 @@ func (tm *TokenManager) GetAccessToken(ctx context.Context) string {
 	tm.condMu.Lock()
 	if !tm.refreshing {
 		tm.refreshing = true
-		go tm.refreshToken(ctx)
+		// Other callers wait on this refresh, so it must outlive the tool call
+		// that happened to start it. The HTTP client timeout still bounds it.
+		go tm.refreshToken(context.WithoutCancel(ctx))
 	}
-	for tm.refreshing {
+	// Wake this waiter if its own context ends, so a canceled caller does not
+	// stay parked until someone else's refresh finishes.
+	stop := context.AfterFunc(ctx, func() {
+		tm.condMu.Lock()
+		tm.refreshCond.Broadcast()
+		tm.condMu.Unlock()
+	})
+	for tm.refreshing && ctx.Err() == nil {
 		tm.refreshCond.Wait()
 	}
 	tm.condMu.Unlock()
+	stop()
 
 	tm.mu.RLock()
 	tok := tm.AccessToken
