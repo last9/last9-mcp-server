@@ -231,10 +231,18 @@ func (tm *TokenManager) GetAccessToken(ctx context.Context) string {
 		tm.refreshing = true
 		go tm.refreshToken(ctx)
 	}
-	for tm.refreshing {
+	// Wake this waiter if its own context ends, so a canceled caller does not
+	// stay parked until someone else's refresh finishes.
+	stop := context.AfterFunc(ctx, func() {
+		tm.condMu.Lock()
+		tm.refreshCond.Broadcast()
+		tm.condMu.Unlock()
+	})
+	for tm.refreshing && ctx.Err() == nil {
 		tm.refreshCond.Wait()
 	}
 	tm.condMu.Unlock()
+	stop()
 
 	tm.mu.RLock()
 	tok := tm.AccessToken
