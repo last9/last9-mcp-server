@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-09-23
+
 ### Fixed
 
 - Token refresh no longer leaves a canceled tool call blocked for up to the 3-minute HTTP timeout while another call's refresh finishes, and canceling the call that started a shared refresh no longer aborts that refresh for concurrent waiters (which previously could hand them an expired token). `GetAccessToken` now wakes waiters on their own context cancel via `context.AfterFunc`, and runs the shared refresh on `context.WithoutCancel` so only the HTTP client timeout bounds it (#295).
