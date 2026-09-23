@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-09-23
+
+### Changed
+
+- `get_trace_attribute_values` now accepts `lookback_minutes` (default 15) and optional `start_time_iso` / `end_time_iso` for historical windows. Explicit ISO bounds take precedence over lookback. Previously the tool always queried a fixed last-15-minutes window with no way to inspect older spans (#297).
+
 ## [0.19.0] - 2026-09-23
 
 ### Fixed
