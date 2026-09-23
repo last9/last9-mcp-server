@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Token refresh no longer leaves a canceled tool call blocked for up to the 3-minute HTTP timeout while another call's refresh finishes, and canceling the call that started a shared refresh no longer aborts that refresh for concurrent waiters (which previously could hand them an expired token). `GetAccessToken` now wakes waiters on their own context cancel via `context.AfterFunc`, and runs the shared refresh on `context.WithoutCancel` so only the HTTP client timeout bounds it.
+
 ### Added
 
 - Every tool in `tools/list` now carries a `title` and MCP tool annotations, so clients can set permissions without guessing from the tool name. The 51 read tools are served with `readOnlyHint: true`, which lets a client run them without a per-call confirmation. The five write tools are served with `readOnlyHint: false` and an explicit `destructiveHint`: `true` for `add_drop_rule` (matching logs are dropped at ingestion), `update_dashboard`, `delete_dashboard` and `delete_dashboard_snapshot`, and `false` for `create_dashboard`, which only adds. Every tool also sets `openWorldHint: false`, because it acts only on the caller's own Last9 organization. Previously no tool had annotations, so clients fell back to the MCP defaults, which treat every tool as possibly destructive (#294).
