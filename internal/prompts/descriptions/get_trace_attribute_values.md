@@ -13,3 +13,7 @@ plus an example condition.
 
 Optionally pass a pipeline to scope the returned values to a filtered slice of
 spans (same pipeline shape as get_traces). Omit it for global values.
+
+The window defaults to the last 15 minutes. Set `lookback_minutes` for a
+relative window, or use `start_time_iso` and `end_time_iso` for historical
+RFC3339 bounds. Explicit bounds take precedence over `lookback_minutes`.

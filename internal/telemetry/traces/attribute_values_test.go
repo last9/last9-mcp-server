@@ -118,6 +118,77 @@ func TestGetTraceAttributeValuesHandler_Success(t *testing.T) {
 	}
 }
 
+func TestGetTraceAttributeValuesHandler_UsesExplicitHistoricalBounds(t *testing.T) {
+	start := time.Date(2026, time.February, 9, 10, 0, 0, 0, time.UTC)
+	end := start.Add(45 * time.Minute)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("start"); got != "1770631200" {
+			t.Errorf("start = %q, want %d", got, start.Unix())
+		}
+		if got := r.URL.Query().Get("end"); got != "1770633900" {
+			t.Errorf("end = %q, want %d", got, end.Unix())
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `{"status":"success","data":["checkout-worker"]}`)
+	}))
+	defer server.Close()
+
+	handler := NewGetTraceAttributeValuesHandler(server.Client(), newTestCfg(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeValuesArgs{
+		TagName:         "service.name",
+		LookbackMinutes: 1,
+		StartTimeISO:    start.Format(time.RFC3339),
+		EndTimeISO:      end.Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGetTraceAttributeValuesHandler_InvalidTimeDoesNotDispatch(t *testing.T) {
+	tests := []struct {
+		name string
+		args GetTraceAttributeValuesArgs
+	}{
+		{
+			name: "invalid start",
+			args: GetTraceAttributeValuesArgs{TagName: "service.name", StartTimeISO: "not-a-time"},
+		},
+		{
+			name: "end before start",
+			args: GetTraceAttributeValuesArgs{
+				TagName:      "service.name",
+				StartTimeISO: "2026-02-09T11:00:00Z",
+				EndTimeISO:   "2026-02-09T10:00:00Z",
+			},
+		},
+		{
+			name: "invalid lookback",
+			args: GetTraceAttributeValuesArgs{TagName: "service.name", LookbackMinutes: -1},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dispatches := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				dispatches++
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer server.Close()
+
+			handler := NewGetTraceAttributeValuesHandler(server.Client(), newTestCfg(server.URL))
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, tt.args)
+			if err == nil {
+				t.Fatal("expected invalid time arguments to fail")
+			}
+			if dispatches != 0 {
+				t.Fatalf("handler dispatched %d request(s) after local validation failed", dispatches)
+			}
+		})
+	}
+}
+
 func TestGetTraceAttributeValuesHandler_ResourceTagNormalized(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
