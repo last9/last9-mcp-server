@@ -52,6 +52,7 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	fs.IntVar(&cfg.RequestRateBurst, "burst", 1, "Request burst capacity")
 	fs.IntVar(&cfg.MaxGetLogsEntries, "max_get_logs_entries", models.DefaultMaxGetLogsEntries, "Maximum number of entries returned by chunked raw get_logs requests")
 	fs.BoolVar(&cfg.HTTPMode, "http", false, "Run as HTTP server instead of STDIO")
+	cfg.UserTokenFallback = userTokenFallbackFromEnv()
 	fs.StringVar(&cfg.Port, "port", "8080", "HTTP server port")
 	fs.StringVar(&cfg.Host, "host", "localhost", "HTTP server host")
 	fs.StringVar(&cfg.Toolsets, "toolsets", toolsets.SpecFromEnv(), "Comma-separated MCP toolsets to expose (logs,traces,metrics,alerts,dashboards,profiles,investigate,all). Empty or all = full surface")
@@ -227,6 +228,7 @@ func main() {
 	}
 
 	if cfg.HTTPMode {
+		server.Server.AddReceivingMiddleware(userTokenMiddleware(cfg))
 		httpServer := NewHTTPServer(server, cfg)
 		if err := httpServer.Start(); err != nil {
 			log.Fatalf("HTTP server error: %v", err)
