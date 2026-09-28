@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -357,7 +358,7 @@ func buildDBBaseFilter(dbSystem, host, env string) string {
 		filter += fmt.Sprintf(`, net_peer_name="%s"`, utils.EscapePromQLLabel(host))
 	}
 	if env != "" {
-		filter += fmt.Sprintf(`, env=~"%s"`, utils.EscapePromQLLabel(env))
+		filter += fmt.Sprintf(`, env=~"%s"`, utils.EscapePromQLLabel(regexp.QuoteMeta(env)))
 	}
 	return filter
 }

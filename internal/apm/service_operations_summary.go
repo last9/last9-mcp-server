@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 
 	"last9-mcp/internal/deeplink"
@@ -42,8 +43,11 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 
 		env := args.Env
-		if env == "" {
-			env = ".*" // default environment
+		envForQuery := env
+		if envForQuery == "" {
+			envForQuery = ".*" // default environment
+		} else {
+			envForQuery = regexp.QuoteMeta(envForQuery)
 		}
 		serviceName := args.ServiceName
 		if serviceName == "" {
@@ -51,7 +55,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Escape once per handler: every PromQL label matcher below must use
 		// escSvc/escEnv, never the raw values, to prevent label-matcher injection.
-		escSvc, escEnv := utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env)
+		escSvc, escEnv := utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(envForQuery)
 		timeRange := fmt.Sprintf("%dm", int((endTimeParam-startTimeParam)/60))
 		// Prepare the Prometheus query for throughput of endpoint operations
 		throughputQuery := fmt.Sprintf(

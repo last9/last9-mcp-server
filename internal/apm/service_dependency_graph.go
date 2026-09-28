@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 
 	"last9-mcp/internal/deeplink"
@@ -37,8 +38,11 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 
 		env := args.Env
-		if env == "" {
-			env = ".*" // default environment
+		envForQuery := env
+		if envForQuery == "" {
+			envForQuery = ".*" // default environment
+		} else {
+			envForQuery = regexp.QuoteMeta(envForQuery)
 		}
 		serviceName := args.ServiceName
 		if serviceName == "" {
@@ -46,7 +50,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 		// Escape once per handler: every PromQL label matcher below must use
 		// escSvc/escEnv, never the raw values, to prevent label-matcher injection.
-		escSvc, escEnv := utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env)
+		escSvc, escEnv := utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(envForQuery)
 		timeRange := fmt.Sprintf("%dm", int((endTimeParam-startTimeParam)/60))
 
 		incoming := make(map[string]RedMetrics)
