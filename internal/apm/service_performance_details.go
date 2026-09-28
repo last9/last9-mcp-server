@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -458,6 +459,10 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		if env == "" {
 			env = ".*"
 		}
+		envPattern := ".*"
+		if args.Env != "" {
+			envPattern = regexp.QuoteMeta(args.Env)
+		}
 
 		// Handle service_name
 		serviceName := args.ServiceName
@@ -466,7 +471,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}
 		// Escape once per handler: every PromQL label matcher below must use
 		// escSvc/escEnv, never the raw values, to prevent label-matcher injection.
-		escSvc, escEnv := utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env)
+		escSvc, escEnv := utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(envPattern)
 
 		windowSeconds := endTimeParam - startTimeParam
 		if windowSeconds > int64(maxServicePerformanceWindowDays)*24*3600 {

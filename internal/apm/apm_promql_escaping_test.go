@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -96,6 +97,8 @@ type escapingHandler struct {
 	// matcher early and injected a second sub-query; post-fix it must be
 	// carried verbatim inside one double-quoted literal.
 	injectionPayload string
+	// Nil means plain-escaped env; set when the handler regexp-quotes explicit env.
+	envMatchers func(env string) []string
 }
 
 // runHandlerWithCapture is the shared driver: it builds the handler via
@@ -132,6 +135,13 @@ var escapingHandlers = []escapingHandler{
 		svcMatchers:      func(s string) []string { return []string{`service_name="` + utils.EscapePromQLLabel(s) + `"`} },
 		forbiddenDelims:  []string{`service_name='`, `env=~'`, `env='`},
 		injectionPayload: `api'} or trace_service_apdex_score{service_name='other'} or trace_service_apdex_score{service_name='api`,
+		envMatchers: func(env string) []string {
+			pattern := ".*"
+			if env != "" {
+				pattern = regexp.QuoteMeta(env)
+			}
+			return []string{`env=~"` + utils.EscapePromQLLabel(pattern) + `"`}
+		},
 	},
 	{
 		name: "operations_summary",
@@ -232,16 +242,22 @@ func TestAPMHandlers_EscapeServiceNameAndEnv(t *testing.T) {
 						if len(queries) == 0 {
 							t.Fatalf("no queries captured")
 						}
-						eff := effectiveEnv(env)
-						wantEnv := []string{escapeEnvRegexMatcher(eff), escapeEnvExactMatcher(eff)}
+						wantEnv := h.envMatchers
+						if wantEnv == nil {
+							eff := effectiveEnv(env)
+							wantEnv = func(string) []string {
+								return []string{escapeEnvRegexMatcher(eff), escapeEnvExactMatcher(eff)}
+							}
+						}
 						for i, q := range queries {
 							if !containsAny(q, h.svcMatchers(svc)) {
 								t.Errorf("query %d missing escaped service matcher (any of %q):\n%s", i, h.svcMatchers(svc), q)
 							}
 							// The handlers use both env matcher styles across
 							// different sub-queries; require one of the two.
-							if !containsAny(q, wantEnv) {
-								t.Errorf("query %d missing escaped env matcher (any of %q):\n%s", i, wantEnv, q)
+							envWants := wantEnv(env)
+							if !containsAny(q, envWants) {
+								t.Errorf("query %d missing escaped env matcher (any of %q):\n%s", i, envWants, q)
 							}
 							for _, delim := range h.forbiddenDelims {
 								if strings.Contains(q, delim) {
