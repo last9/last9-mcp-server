@@ -1375,3 +1375,68 @@ func TestServicePerformanceDetails_PerChunkTimeoutOnlyAppliedWhenChunked(t *test
 		}
 	})
 }
+
+func TestServicePerformanceDetails_EnvUsesRegexMatcher(t *testing.T) {
+	tests := []struct {
+		name        string
+		env         string
+		wantMatcher string
+	}{
+		{name: "empty_env_defaults_to_regex_wildcard", env: "", wantMatcher: `env=~".*"`},
+		{name: "explicit_env_uses_regex_matcher", env: "prod", wantMatcher: `env=~"prod"`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var mu sync.Mutex
+			var queries []string
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				var payload struct {
+					Query string `json:"query"`
+				}
+				_ = json.Unmarshal(body, &payload)
+
+				mu.Lock()
+				queries = append(queries, payload.Query)
+				mu.Unlock()
+
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("[]"))
+			}))
+			defer server.Close()
+
+			handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
+
+			now := time.Now().UTC()
+			args := ServicePerformanceDetailsArgs{
+				ServiceName:  "svc",
+				Env:          tc.env,
+				StartTimeISO: now.Add(-60 * time.Minute).Format(time.RFC3339),
+				EndTimeISO:   now.Format(time.RFC3339),
+			}
+
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
+			if err != nil {
+				t.Fatalf("handler returned error: %v", err)
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			if got := len(queries); got != 9 {
+				t.Fatalf("expected 9 sub-queries (6 range + 3 instant), got %d: %+v", got, queries)
+			}
+
+			for _, q := range queries {
+				if !strings.Contains(q, tc.wantMatcher) {
+					t.Errorf("expected query to contain %q, got: %s", tc.wantMatcher, q)
+				}
+				if strings.Contains(q, `env="`) {
+					t.Errorf("expected no exact env= matcher, got: %s", q)
+				}
+			}
+		})
+	}
+}

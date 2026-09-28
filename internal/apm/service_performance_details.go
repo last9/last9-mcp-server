@@ -512,7 +512,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Response Times - keep vector output
 		details.ResponseTimes, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				`sum by (quantile) (trace_service_response_time{service_name="%s", env="%s"}[$__rate_interval])`,
+				`sum by (quantile) (trace_service_response_time{service_name="%s", env=~"%s"}[$__rate_interval])`,
 				escSvc, escEnv,
 			)
 		}, "service performance details response_times", "response times", &details.PartialErrors)
@@ -523,7 +523,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Availability over time range as a vector
 		details.Availability, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				`(1 - (sum(rate(trace_endpoint_count{service_name="%s", env="%s", span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) or 0) / (sum(rate(trace_endpoint_count{service_name="%s", env="%s", span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) + 0.0000001)) * 100 default -999`,
+				`(1 - (sum(rate(trace_endpoint_count{service_name="%s", env=~"%s", span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) or 0) / (sum(rate(trace_endpoint_count{service_name="%s", env=~"%s", span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) + 0.0000001)) * 100 default -999`,
 				escSvc, escEnv, escSvc, escEnv,
 			)
 		}, "service performance details availability", "availability response", &details.PartialErrors)
@@ -534,7 +534,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Throughput by status code - keep vector output
 		details.Throughput, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				`sum by (http_status_code)(rate(trace_endpoint_count{service_name="%s", env="%s", span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) * 60 default 0`,
+				`sum by (http_status_code)(rate(trace_endpoint_count{service_name="%s", env=~"%s", span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) * 60 default 0`,
 				escSvc, escEnv,
 			)
 		}, "service performance details throughput", "throughput response", &details.PartialErrors)
@@ -545,7 +545,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Error Rate by status code - keep vector output
 		details.ErrorRate, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				`sum by (service_name, http_status_code)(rate(trace_endpoint_count{service_name="%s", env="%s", span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) * 60 default 0`,
+				`sum by (service_name, http_status_code)(rate(trace_endpoint_count{service_name="%s", env=~"%s", span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) * 60 default 0`,
 				escSvc, escEnv,
 			)
 		}, "service performance details error_rate", "error rate response", &details.PartialErrors)
@@ -556,7 +556,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Calculate Error Percentage over time range as a vector
 		details.ErrorPercent, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				`(sum(rate(trace_endpoint_count{service_name="%s", env="%s", span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) / sum(rate(trace_endpoint_count{service_name="%s", env="%s", span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) * 100) default 0`,
+				`(sum(rate(trace_endpoint_count{service_name="%s", env=~"%s", span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) / sum(rate(trace_endpoint_count{service_name="%s", env=~"%s", span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) * 100) default 0`,
 				escSvc, escEnv, escSvc, escEnv,
 			)
 		}, "service performance details error_percent", "error percent response", &details.PartialErrors)
@@ -595,7 +595,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		topRTChunks, err := fetchChunkedTopK(ctx, client, cfg, chunks,
 			func(c perfDetailsChunk, windowSelector string) string {
 				return fmt.Sprintf(
-					`topk(%d, quantile_over_time(0.95, sum by (span_name, messaging_system, rpc_system, span_kind,net_peer_name,process_runtime_name,db_system)(trace_endpoint_duration{service_name="%s", span_kind!='SPAN_KIND_INTERNAL', env="%s", quantile='p95'}[%s])))`,
+					`topk(%d, quantile_over_time(0.95, sum by (span_name, messaging_system, rpc_system, span_kind,net_peer_name,process_runtime_name,db_system)(trace_endpoint_duration{service_name="%s", span_kind!='SPAN_KIND_INTERNAL', env=~"%s", quantile='p95'}[%s])))`,
 					topRTLimit, escSvc, escEnv, windowSelector,
 				)
 			},
@@ -615,10 +615,10 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		topErrChunks, err := fetchChunkedTopK(ctx, client, cfg, chunks,
 			func(c perfDetailsChunk, windowSelector string) string {
 				return fmt.Sprintf(
-					`sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, exception_type)(sum_over_time(trace_client_count{service_name="%s", env="%s", exception_type!=''}[%s])) or
-					 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, exception_type)(sum_over_time(trace_endpoint_count{service_name="%s", env="%s", exception_type!=''}[%s])) or
-					 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, http_status_code)(sum_over_time(trace_client_count{service_name="%s", env="%s", http_status_code=~"^[45].*"}[%s])) or
-					 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, http_status_code)(sum_over_time(trace_endpoint_count{service_name="%s", env="%s", http_status_code=~"^[45].*"}[%s]))`,
+					`sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, exception_type)(sum_over_time(trace_client_count{service_name="%s", env=~"%s", exception_type!=''}[%s])) or
+					 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, exception_type)(sum_over_time(trace_endpoint_count{service_name="%s", env=~"%s", exception_type!=''}[%s])) or
+					 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, http_status_code)(sum_over_time(trace_client_count{service_name="%s", env=~"%s", http_status_code=~"^[45].*"}[%s])) or
+					 sum by (span_name, span_kind, net_peer_name, db_system, rpc_system, messaging_system, process_runtime_name, http_status_code)(sum_over_time(trace_endpoint_count{service_name="%s", env=~"%s", http_status_code=~"^[45].*"}[%s]))`,
 					escSvc, escEnv, windowSelector, escSvc, escEnv, windowSelector, escSvc, escEnv, windowSelector, escSvc, escEnv, windowSelector,
 				)
 			},
@@ -646,10 +646,10 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		topErrorsChunks, err := fetchChunkedTopK(ctx, client, cfg, chunks,
 			func(c perfDetailsChunk, windowSelector string) string {
 				return fmt.Sprintf(
-					`sum by (exception_type)(sum by (exception_type, span_kind)(sum_over_time(trace_client_count{service_name="%s", env="%s", exception_type!=''}[%s])) or
-					 sum by (exception_type, span_kind)(sum_over_time(trace_endpoint_count{service_name="%s", env="%s", exception_type!=''}[%s]))) or
-					 sum by (http_status_code)(sum by (http_status_code, span_kind)(sum_over_time(trace_client_count{service_name="%s", env="%s", http_status_code=~"^[45].*"}[%s])) or
-					 sum by (http_status_code, span_kind)(sum_over_time(trace_endpoint_count{service_name="%s", env="%s", http_status_code=~"^[45].*"}[%s])))`,
+					`sum by (exception_type)(sum by (exception_type, span_kind)(sum_over_time(trace_client_count{service_name="%s", env=~"%s", exception_type!=''}[%s])) or
+					 sum by (exception_type, span_kind)(sum_over_time(trace_endpoint_count{service_name="%s", env=~"%s", exception_type!=''}[%s]))) or
+					 sum by (http_status_code)(sum by (http_status_code, span_kind)(sum_over_time(trace_client_count{service_name="%s", env=~"%s", http_status_code=~"^[45].*"}[%s])) or
+					 sum by (http_status_code, span_kind)(sum_over_time(trace_endpoint_count{service_name="%s", env=~"%s", http_status_code=~"^[45].*"}[%s])))`,
 					escSvc, escEnv, windowSelector, escSvc, escEnv, windowSelector, escSvc, escEnv, windowSelector, escSvc, escEnv, windowSelector,
 				)
 			},
