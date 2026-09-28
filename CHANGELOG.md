@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `get_service_performance_details` returned empty `response_times`, zero throughput, availability and error rates, and no top operations or errors when `env` was omitted, while `apdex_score` still had data: the unset-env default `.*` was applied with an exact `env=` matcher that matched no series. All sub-queries now use the regex `env=~` matcher, consistent with apdex and the sibling service tools (#TBD).
+- `get_service_performance_details` returned empty `response_times`, zero throughput, availability and error rates, and no top operations or errors when `env` was omitted, while `apdex_score` still had data: the unset-env default `.*` was applied with an exact `env=` matcher that matched no series. All sub-queries now use the regex `env=~` matcher, consistent with apdex and the sibling service tools (#300).
 
 ## [0.19.1] - 2026-09-23
 
