@@ -92,9 +92,6 @@ type escapingHandler struct {
 	// forbiddenDelims are the renderer-level single-quote delimiter prefixes
 	// that must never appear in any rendered query.
 	forbiddenDelims []string
-	// quotesEnv is true once the handler regexp.QuoteMeta's an explicit env
-	// before rendering it into the env=~ matcher (ENG-2086).
-	quotesEnv bool
 	// injectionPayload is the balanced breakout payload from the bug report
 	// for this handler's metric names. Pre-fix it closed the single-quoted
 	// matcher early and injected a second sub-query; post-fix it must be
@@ -150,7 +147,6 @@ var escapingHandlers = []escapingHandler{
 		},
 		svcMatchers:      func(s string) []string { return []string{`service_name="` + utils.EscapePromQLLabel(s) + `"`} },
 		forbiddenDelims:  []string{`service_name='`, `env=~'`, `env='`},
-		quotesEnv:        true,
 		injectionPayload: `api'} or trace_endpoint_count{service_name='other'} or trace_endpoint_count{service_name='api`,
 	},
 	{
@@ -171,7 +167,6 @@ var escapingHandlers = []escapingHandler{
 			return []string{`server="` + esc + `"`, `client="` + esc + `"`}
 		},
 		forbiddenDelims:  []string{`server='`, `client='`, `env=~'`, `env='`},
-		quotesEnv:        true,
 		injectionPayload: `api'} or trace_call_graph_count{server='other'} or trace_call_graph_count{server='api`,
 	},
 }
@@ -186,17 +181,13 @@ func escapeEnvExactMatcher(env string) string {
 	return `env="` + utils.EscapePromQLLabel(env) + `"`
 }
 
-// effectiveEnv mirrors the handlers' "" -> ".*" default, and an explicit
-// env's regexp.QuoteMeta quoting (ENG-2086), so assertions compare against
-// the value actually rendered into the PromQL.
-func effectiveEnv(env string, quotesEnv bool) string {
+// effectiveEnv mirrors the handlers' "" -> ".*" default and regexp quoting of
+// an explicit env, so assertions compare against the value rendered into PromQL.
+func effectiveEnv(env string) string {
 	if env == "" {
 		return ".*"
 	}
-	if quotesEnv {
-		return regexp.QuoteMeta(env)
-	}
-	return env
+	return regexp.QuoteMeta(env)
 }
 
 // containsAny reports whether q contains at least one of the wants.
@@ -242,7 +233,7 @@ func TestAPMHandlers_EscapeServiceNameAndEnv(t *testing.T) {
 						if len(queries) == 0 {
 							t.Fatalf("no queries captured")
 						}
-						eff := effectiveEnv(env, h.quotesEnv)
+						eff := effectiveEnv(env)
 						wantEnv := []string{escapeEnvRegexMatcher(eff), escapeEnvExactMatcher(eff)}
 						for i, q := range queries {
 							if !containsAny(q, h.svcMatchers(svc)) {

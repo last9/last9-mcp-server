@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -1374,4 +1375,93 @@ func TestServicePerformanceDetails_PerChunkTimeoutOnlyAppliedWhenChunked(t *test
 			t.Error("expected no sub-query request to run without a deadline on the multi-chunk path")
 		}
 	})
+}
+
+func TestServicePerformanceDetails_EnvMatcherScope(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     string
+		matches string
+		rejects string
+	}{
+		{name: "empty_env_defaults_to_regex_wildcard", env: "", matches: "anything-env", rejects: ""},
+		{name: "explicit_env_uses_regex_matcher", env: "prod", matches: "prod", rejects: "staging"},
+		{name: "dotted_env_is_literal_not_regex", env: "prod.v1", matches: "prod.v1", rejects: "prodXv1"},
+		{name: "bracketed_env_is_literal_not_regex", env: "prod[blue]", matches: "prod[blue]", rejects: "prodb"},
+	}
+
+	envMatcherRe := regexp.MustCompile(`env(=~|=)("(?:[^"\\]|\\.)*")`)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var mu sync.Mutex
+			var queries []string
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				var payload struct {
+					Query string `json:"query"`
+				}
+				_ = json.Unmarshal(body, &payload)
+
+				mu.Lock()
+				queries = append(queries, payload.Query)
+				mu.Unlock()
+
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("[]"))
+			}))
+			defer server.Close()
+
+			handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
+
+			now := time.Now().UTC()
+			args := ServicePerformanceDetailsArgs{
+				ServiceName:  "svc",
+				Env:          tc.env,
+				StartTimeISO: now.Add(-60 * time.Minute).Format(time.RFC3339),
+				EndTimeISO:   now.Format(time.RFC3339),
+			}
+
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args)
+			if err != nil {
+				t.Fatalf("handler returned error: %v", err)
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			if got := len(queries); got != 9 {
+				t.Fatalf("expected 9 sub-queries (6 range + 3 instant), got %d: %+v", got, queries)
+			}
+
+			for _, q := range queries {
+				if strings.Contains(q, `env="`) {
+					t.Errorf("expected no exact env= matcher, got: %s", q)
+				}
+
+				m := envMatcherRe.FindStringSubmatch(q)
+				if m == nil {
+					t.Fatalf("expected an env matcher in query, got: %s", q)
+				}
+				if m[1] != "=~" {
+					t.Fatalf("expected env matcher operator =~, got %q in query: %s", m[1], q)
+				}
+				pattern, err := strconv.Unquote(m[2])
+				if err != nil {
+					t.Fatalf("failed to unquote env matcher value %q: %v", m[2], err)
+				}
+				re, err := regexp.Compile("^(?:" + pattern + ")$")
+				if err != nil {
+					t.Fatalf("failed to compile env matcher pattern %q: %v", pattern, err)
+				}
+				if !re.MatchString(tc.matches) {
+					t.Errorf("expected env pattern %q to match %q, query: %s", pattern, tc.matches, q)
+				}
+				if tc.rejects != "" && re.MatchString(tc.rejects) {
+					t.Errorf("expected env pattern %q to NOT match %q, query: %s", pattern, tc.rejects, q)
+				}
+			}
+		})
+	}
 }
