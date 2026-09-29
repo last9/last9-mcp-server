@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-09-29
+
 ### Fixed
 
 - `get_service_operations_summary`, `get_service_dependency_graph` and `get_database_queries` matched an explicitly supplied `env` as a live regex, so environment names containing regex metacharacters selected the wrong scope (`prod.v1` also matched `prodXv1`; `prod[blue]` matched `prodb` but not itself). Explicit env names are now regex-quoted before querying; an omitted env still matches all environments (#301).
