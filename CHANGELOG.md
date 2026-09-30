@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.3] - 2026-09-30
+
+### Added
+
+- `get_alerts` now includes a `label_hash` field on each alert instance, exposing the hash of the instance's label set as used internally by the alerting engine. Useful for correlating an alert instance with its underlying metric series (#303).
+
 ## [0.19.2] - 2026-09-29
 
 ### Fixed
