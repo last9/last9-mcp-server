@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.3] - 2026-09-30
+
+### Added
+
+- `get_alerts` now includes a `label_hash` field on each alert instance, exposing the hash of the instance's label set as used internally by the alerting engine. Useful for correlating an alert instance with its underlying metric series (#303).
+
+## [0.19.2] - 2026-09-29
+
+### Fixed
+
+- `get_service_operations_summary`, `get_service_dependency_graph` and `get_database_queries` matched an explicitly supplied `env` as a live regex, so environment names containing regex metacharacters selected the wrong scope (`prod.v1` also matched `prodXv1`; `prod[blue]` matched `prodb` but not itself). Explicit env names are now regex-quoted before querying; an omitted env still matches all environments (#301).
+- `get_service_performance_details` returned empty `response_times`, zero throughput, availability and error rates, and no top operations or errors when `env` was omitted, while `apdex_score` still had data: the unset-env default `.*` was applied with an exact `env=` matcher that matched no series. All sub-queries now use the regex `env=~` matcher, consistent with apdex and the sibling service tools; explicitly supplied env names are regex-quoted, so names containing regex metacharacters such as `prod.v1` still select only that environment (#300).
+
+## [0.19.1] - 2026-09-23
+
+### Changed
+
+- `get_trace_attribute_values` now accepts `lookback_minutes` (default 15) and optional `start_time_iso` / `end_time_iso` for historical windows. Explicit ISO bounds take precedence over lookback. Previously the tool always queried a fixed last-15-minutes window with no way to inspect older spans (#297).
+
 ## [0.19.0] - 2026-09-23
 
 ### Fixed

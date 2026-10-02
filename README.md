@@ -618,6 +618,8 @@ Exactly one of `trace_id` or `service_name` is required.
 
 - `tag_name` (string, required): Attribute name from `get_trace_attributes` (e.g. `resource_department` or `attributes['http.method']`).
 - `pipeline` (array, optional): Prior filter stages to scope the values; omit for global values.
+- `lookback_minutes` (integer, optional): Default: 15.
+- `start_time_iso` / `end_time_iso` (string, optional): Historical RFC3339 bounds; take precedence over `lookback_minutes`.
 - `region` (string, optional)
 
 ### get_trace_attribute_deviations
