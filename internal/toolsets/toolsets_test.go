@@ -64,7 +64,7 @@ func TestParseInvestigate(t *testing.T) {
 	if set == nil {
 		t.Fatal("investigate must not expand to nil/all")
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "get_service_profile", "list_datasources", "get_apm_service_deviations", "get_flamegraph", "get_profile_services"} {
+	for _, want := range []string{"get_logs", "get_traces", "get_trace_attribute_deviations", "get_trace_waterfall", "prometheus_instant_query", "did_you_mean", "get_service_profile", "list_datasources", "get_apm_service_deviations", "get_flamegraph", "get_profile_services"} {
 		if !set.Allows(want) {
 			t.Errorf("investigate missing %q", want)
 		}
@@ -72,6 +72,20 @@ func TestParseInvestigate(t *testing.T) {
 	for _, deny := range []string{"get_alerts", "get_alert_groups", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard", "grafana_get_dashboard"} {
 		if set.Allows(deny) {
 			t.Errorf("investigate should exclude %q", deny)
+		}
+	}
+}
+
+func TestTraceEvidenceToolsAppearExactlyOnceInTraces(t *testing.T) {
+	for _, want := range []string{"get_trace_attribute_deviations", "get_trace_waterfall"} {
+		count := 0
+		for _, tool := range named["traces"] {
+			if tool == want {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Fatalf("%s appears %d times in traces, want exactly once", want, count)
 		}
 	}
 }

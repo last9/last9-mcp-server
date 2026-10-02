@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -193,6 +194,35 @@ func TestWorkflowEvidenceHashesMatchImmutableFixtures(t *testing.T) {
 				t.Fatalf("%s hash does not match immutable fixture", analysis)
 			}
 		}
+	}
+}
+
+func TestCanonicalDeviationFixtureCarriesU1CohortProvenance(t *testing.T) {
+	fixture := readJSONObject(t, "contracts/fixtures/evidence-trace-deviations.json")
+	request := object(t, fixture, "request")
+	scope := object(t, request, "scope")
+	if scope["population"] == nil || request["target_cohort"] == nil || request["control_cohort"] == nil {
+		t.Fatalf("canonical deviation request lacks normalized scope/cohorts: %+v", request)
+	}
+	evidence := object(t, fixture, "evidence")
+	for _, field := range []string{"normalized_population_count", "candidate_coverage", "threshold", "backend_duration_ms"} {
+		if _, ok := evidence[field]; !ok {
+			t.Fatalf("canonical deviation evidence lacks %q", field)
+		}
+	}
+}
+
+func TestCanonicalDeviationFixtureMatchesU1EndpointBytes(t *testing.T) {
+	canonical, err := os.ReadFile("contracts/fixtures/evidence-trace-deviations.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint, err := os.ReadFile("contracts/fixtures/evidence-attribute-deviations-endpoint.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(canonical, endpoint) {
+		t.Fatal("workflow deviation fixture drifted from the exact U1 endpoint golden response")
 	}
 }
 

@@ -4,7 +4,8 @@
   "request": {
     "scope": {
       "service_name": "checkout",
-      "environment": "production"
+      "environment": "production",
+      "population": "service"
     },
     "requested_window": {
       "start": "2026-07-15T08:00:00Z",
@@ -16,6 +17,24 @@
       "end": "2026-07-15T08:15:00Z",
       "boundary": "half-open"
     },
+    "target_cohort": {
+      "name": "target",
+      "window": {
+        "start": "2026-07-15T08:00:00Z",
+        "end": "2026-07-15T08:15:00Z",
+        "boundary": "half-open"
+      },
+      "definition": "duration_above_threshold"
+    },
+    "control_cohort": {
+      "name": "control",
+      "window": {
+        "start": "2026-07-15T08:00:00Z",
+        "end": "2026-07-15T08:15:00Z",
+        "boundary": "half-open"
+      },
+      "definition": "duration_at_or_below_threshold"
+    },
     "comparison_mode": "latency",
     "latency_threshold_ms": 500
   },
@@ -26,6 +45,31 @@
     "partial_errors": [],
     "target_count": 100,
     "control_count": 100,
+    "normalized_population_count": 200,
+    "candidate_coverage": {
+      "requested": 1,
+      "analyzed": 1,
+      "excluded": 0,
+      "auto_discover": false
+    },
+    "threshold": {
+      "source": "explicit_threshold",
+      "effective_latency_threshold_ms": 500,
+      "population": {
+        "scope": {
+          "service_name": "checkout",
+          "environment": "production",
+          "population": "service"
+        },
+        "window": {
+          "start": "2026-07-15T08:00:00Z",
+          "end": "2026-07-15T08:15:00Z",
+          "boundary": "half-open"
+        },
+        "count": 200
+      }
+    },
+    "backend_duration_ms": 0,
     "provenance": {
       "source": "trace-analytics",
       "observed_at": "2026-07-15T08:16:00Z",
@@ -65,7 +109,22 @@
         "interpretation": "v2 for service.version differs by 40.00 percentage points between target (60/100) and control (20/100). This is an association, not proof of cause."
       }
     ],
-    "representative_traces": []
+    "representative_traces": [
+      {
+        "trace_id": "seed-trace-confirming-01",
+        "attribute": "service.version",
+        "value": "v2",
+        "cohort": "target",
+        "relation": "value_present"
+      },
+      {
+        "trace_id": "seed-trace-control-01",
+        "attribute": "service.version",
+        "value": "v2",
+        "cohort": "control",
+        "relation": "value_present"
+      }
+    ]
   },
   "follow_ups": [
     "Inspect confirming and contradicting traces before recommending action."
