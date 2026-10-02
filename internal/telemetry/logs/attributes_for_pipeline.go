@@ -574,7 +574,7 @@ func sampleBodyDerivedAttributesWithStatus(ctx context.Context, client *http.Cli
 func bodySamplePartialError(result map[string]interface{}) error {
 	raw, present := result["l9_result"]
 	if !present {
-		return nil
+		return fmt.Errorf("body sample missing backend attestation")
 	}
 	envelope, ok := raw.(map[string]interface{})
 	if !ok {
