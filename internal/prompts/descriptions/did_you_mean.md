@@ -5,7 +5,7 @@ when the user types something that looks like a typo, abbreviation, or partial n
 
 Returns up to 3 closest matches with similarity scores (0–100%) from the Last9 catalog,
 covering all entity types: services, environments, hosts, databases, k8s deployments,
-k8s namespaces, jobs, and more.
+k8s namespaces, k8s nodes, jobs, and more.
 
 When to use:
 - Before calling get_service_logs, get_service_traces, get_service_performance_details, etc.
@@ -16,7 +16,7 @@ When to use:
 Parameters:
 - query: (Required) The name to search for — can be a partial name, misspelling, or abbreviation
 - type: (Optional) Restrict suggestions to a specific entity type (e.g. "service", "environment",
-  "host", "k8s_deployment", "k8s_namespace", "database", "job")
+  "host", "k8s_deployment", "k8s_namespace", "k8s_node", "database", "job")
 
 Examples:
 - query="paymnt-svc"  → "payment-service (92%, service)"
