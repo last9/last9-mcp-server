@@ -1,1 +1,0 @@
-Manual moved to `internal/prompts/references/metrics.md` (resource `last9://reference/metrics`). Served description is `prometheus_range_query_base.md`.

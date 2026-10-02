@@ -73,7 +73,7 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 		promql := buildChangeEventsPromQL(args.ServiceName, args.Env, args.EventName)
 
 		// Make range query to get change events over time
-		resp, err := utils.MakePromRangeAPIQuery(ctx, client, promql, startTimeParam, endTimeParam, cfg)
+		resp, err := utils.MakePromRangeAPIQuery(ctx, client, promql, startTimeParam, endTimeParam, cfg, utils.PromResolution{})
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to query change events: %w", err)
 		}

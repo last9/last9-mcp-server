@@ -1,5 +1,7 @@
 Fetch raw log lines for one service (`service_name`, optional `severity_filters`, `body_filters`, `http_status_class`/`http_status_code`, `attribute_filters`, `env`, `index`, `limit`).
 
+**Profile first:** Call `get_service_profile` for this service before using this tool. Use `signal_shape` and `telemetry` for routing — see `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
+
 **Use this tool when:** filtering one known service by severity, HTTP status, named attributes, or plain-text `body_filters`—no pipeline needed.
 
 **HTTP status:** Pass `http_status_class` (`5xx`) or `http_status_code` (`500`). This tool discovers the status field for the service/env/window. If discovery finds none or more than one, pass `http_status_field` (e.g. `attributes['http.status_code']`). Severity is not an HTTP-error proxy (5xx often INFO)—do not use `severity_filters` for status.

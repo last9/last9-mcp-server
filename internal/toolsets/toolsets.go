@@ -12,6 +12,7 @@ import (
 // handled in Parse, not listed here as flat membership.
 var named = map[string][]string{
 	"logs": {
+		"get_service_profile",
 		"get_logs",
 		"get_service_logs",
 		"get_log_attributes",
@@ -20,6 +21,7 @@ var named = map[string][]string{
 		"prometheus_instant_query",
 	},
 	"traces": {
+		"get_service_profile",
 		"get_traces",
 		"get_service_traces",
 		"get_trace_attributes",
@@ -29,6 +31,7 @@ var named = map[string][]string{
 		"get_trace_waterfall",
 	},
 	"metrics": {
+		"get_service_profile",
 		"prometheus_range_query",
 		"prometheus_instant_query",
 		"prometheus_label_values",
@@ -50,6 +53,7 @@ var named = map[string][]string{
 	"alerts": {
 		"get_alerts",
 		"get_alert_config",
+		"get_alert_groups",
 		"get_entity_alert_rules",
 		"get_alert_rule_state",
 		"get_notification_channels",
@@ -59,6 +63,7 @@ var named = map[string][]string{
 	"dashboards": {
 		"list_dashboards",
 		"get_dashboard",
+		"validate_dashboard",
 		"create_dashboard",
 		"update_dashboard",
 		"delete_dashboard",
@@ -66,11 +71,25 @@ var named = map[string][]string{
 		"get_dashboard_snapshot",
 		"delete_dashboard_snapshot",
 	},
+	"profiles": {
+		"get_profile_services",
+		"get_flamegraph",
+		"get_top_functions",
+		"get_profile_summary",
+	},
+	"grafana": {
+		"grafana_search_dashboards",
+		"grafana_get_dashboard",
+		"grafana_list_folders",
+		"grafana_list_folder_dashboards",
+		"grafana_list_datasources",
+	},
 }
 
 // discovery tools included in the investigate composite (R9a).
 var investigateExtras = []string{
 	"did_you_mean",
+	"get_service_profile",
 	"list_datasources",
 }
 
@@ -141,7 +160,7 @@ func Parse(spec string) (Set, error) {
 	for _, t := range tokens {
 		switch t {
 		case "investigate":
-			for _, domain := range []string{"logs", "traces", "metrics"} {
+			for _, domain := range []string{"logs", "traces", "metrics", "profiles"} {
 				for _, tool := range named[domain] {
 					out[tool] = struct{}{}
 				}

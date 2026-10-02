@@ -241,8 +241,24 @@ func zeroCountSanityBlock() map[string]interface{} {
 	}
 }
 
+// ceilingPromWindowMinutes returns the PromQL [Nm] length that covers at least
+// [startMs, endMs]. Ceiling (not floor) so the volume baseline is never shorter
+// than the log-API matched-count window; exact for whole minutes, over-covers
+// by at most ~59s otherwise. Clamps to 1m (PromQL cannot express [0m]).
+// Unlike the floor in internal/apm/apm.go (harmless in a rate — both sides
+// truncate), the matched-count numerator here is full-window, so floor would
+// not cancel.
+func ceilingPromWindowMinutes(startMs, endMs int64) int64 {
+	windowMinutes := (endMs - startMs + 59999) / 60000
+	if windowMinutes < 1 {
+		return 1
+	}
+	return windowMinutes
+}
+
 // serviceVolumeBaseline fetches the physical_index_service_count PromQL
-// baseline for service over a window of windowMinutes ending at endMs. It is
+// baseline for service over a window ending at endMs that covers at least the
+// full [startMs, endMs] query window (see ceilingPromWindowMinutes). It is
 // shared by the nonzero ratio path and the zero-path genuine-zero check.
 // queryOK is true whenever the query executed and returned a well-formed
 // instant-vector response — INCLUDING an empty series list, which is a
@@ -252,7 +268,8 @@ func zeroCountSanityBlock() map[string]interface{} {
 // queryOK is false only for a genuine failure to get an answer: HTTP error
 // status, transport error, or a decode failure — callers must treat that as
 // "could not determine", never as a volume of zero.
-func serviceVolumeBaseline(ctx context.Context, client *http.Client, cfg models.Config, service string, endMs int64, windowMinutes int64) (volume float64, queryOK bool) {
+func serviceVolumeBaseline(ctx context.Context, client *http.Client, cfg models.Config, service string, startMs, endMs int64) (volume float64, queryOK bool) {
+	windowMinutes := ceilingPromWindowMinutes(startMs, endMs)
 	promql := fmt.Sprintf(`sum(sum_over_time(physical_index_service_count{service_name=%q}[%dm]))`, service, windowMinutes)
 
 	instantCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
@@ -298,11 +315,7 @@ func zeroCountSanityBlockWithBaseline(ctx context.Context, client *http.Client, 
 		return zeroCountSanityBlock()
 	}
 
-	windowMinutes := (endMs - startMs) / 60000
-	if windowMinutes < 1 {
-		windowMinutes = 1
-	}
-	volume, queryOK := serviceVolumeBaseline(ctx, client, cfg, service, endMs, windowMinutes)
+	volume, queryOK := serviceVolumeBaseline(ctx, client, cfg, service, startMs, endMs)
 	if !queryOK {
 		return zeroCountSanityBlock()
 	}
@@ -389,11 +402,7 @@ func AppendCountSanity(ctx context.Context, client *http.Client, cfg models.Conf
 		return response
 	}
 
-	windowMinutes := (endMs - startMs) / 60000
-	if windowMinutes < 1 {
-		windowMinutes = 1
-	}
-	volume, queryOK := serviceVolumeBaseline(ctx, client, cfg, service, endMs, windowMinutes)
+	volume, queryOK := serviceVolumeBaseline(ctx, client, cfg, service, startMs, endMs)
 	if !queryOK || volume <= 0 {
 		return response
 	}
