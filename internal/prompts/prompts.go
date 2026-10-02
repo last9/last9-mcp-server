@@ -113,6 +113,9 @@ var GetDatabaseServerMetricsDescription string
 //go:embed descriptions/did_you_mean.md
 var DidYouMeanDescription string
 
+//go:embed descriptions/get_api_source_catalog.md
+var GetAPISourceCatalogDescription string
+
 //go:embed descriptions/get_service_profile.md
 var GetServiceProfileDescription string
 

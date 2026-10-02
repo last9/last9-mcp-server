@@ -603,6 +603,7 @@ func validateAggregateStage(stage map[string]interface{}, path string) error {
 		return nil
 	}
 
+	aliases := map[string]struct{}{}
 	for j, rawEntry := range aggregates {
 		entry, ok := rawEntry.(map[string]interface{})
 		if !ok {
@@ -615,6 +616,12 @@ func validateAggregateStage(stage map[string]interface{}, path string) error {
 					"Example: {\"function\": {\"$count\": []}, \"as\": \"count\"}",
 				path, j,
 			)
+		}
+		if alias, ok := entry["as"].(string); ok && alias != "" {
+			if _, duplicate := aliases[alias]; duplicate {
+				return fmt.Errorf("%s.aggregates[%d].as: duplicate aggregate alias %q", path, j, alias)
+			}
+			aliases[alias] = struct{}{}
 		}
 
 		if fn, exists := entry["function"]; exists {
@@ -640,6 +647,12 @@ func validateAggregateStage(stage map[string]interface{}, path string) error {
 func validateTraceQuantileFunction(function map[string]interface{}, path string) error {
 	err := telemetry.ValidateQuantileFunction(function, path)
 	if err == nil {
+		if raw, ok := function["$quantile_exact"].([]interface{}); ok {
+			field, _ := raw[1].(string)
+			if field != "Duration" {
+				return &tracePipelineError{category: traceCategoryInvalidField, path: path + ".$quantile_exact[1]", msg: "$quantile_exact supports only trace Duration"}
+			}
+		}
 		return nil
 	}
 	return &tracePipelineError{

@@ -22,8 +22,9 @@ const (
 
 // DidYouMeanArgs are the input parameters for the did_you_mean tool.
 type DidYouMeanArgs struct {
-	Query string `json:"query" jsonschema:"The misspelled or uncertain entity name to find suggestions for (required)"`
-	Type  string `json:"type,omitempty" jsonschema:"Optional entity type filter: service, environment, host, database, k8s_deployment, k8s_namespace, job"`
+	Query          string `json:"query" jsonschema:"The misspelled or uncertain entity name to find suggestions for (required)"`
+	Type           string `json:"type,omitempty" jsonschema:"Optional entity type filter: service, environment, host, database, k8s_deployment, k8s_namespace, job"`
+	ResponseFormat string `json:"response_format,omitempty" jsonschema:"Optional response format. Use json for structured suggestions; other values return prose."`
 }
 
 type suggestionItem struct {
@@ -109,6 +110,9 @@ func NewDidYouMeanHandler(client *http.Client, cfg models.Config) func(context.C
 		}
 
 		if len(apiResp.Suggestions) == 0 {
+			if args.ResponseFormat == "json" {
+				return structuredSuggestResult(query, nil)
+			}
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{
@@ -124,6 +128,9 @@ func NewDidYouMeanHandler(client *http.Client, cfg models.Config) func(context.C
 		if max > maxDidYouMeanSuggestions {
 			max = maxDidYouMeanSuggestions
 		}
+		if args.ResponseFormat == "json" {
+			return structuredSuggestResult(query, apiResp.Suggestions[:max])
+		}
 		for _, s := range apiResp.Suggestions[:max] {
 			fmt.Fprintf(&sb, "  - %s (%d%% match, type: %s)\n", s.Name, int(s.Score*100), s.Type)
 		}
@@ -136,4 +143,18 @@ func NewDidYouMeanHandler(client *http.Client, cfg models.Config) func(context.C
 			},
 		}, nil, nil
 	}
+}
+
+func structuredSuggestResult(query string, suggestions []suggestionItem) (*mcp.CallToolResult, any, error) {
+	if suggestions == nil {
+		suggestions = []suggestionItem{}
+	}
+	body, err := json.Marshal(struct {
+		Query       string           `json:"query"`
+		Suggestions []suggestionItem `json:"suggestions"`
+	}{Query: query, Suggestions: suggestions})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to marshal suggestions: %w", err)
+	}
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}, nil, nil
 }

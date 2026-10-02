@@ -3,6 +3,7 @@ package traces
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -271,6 +272,9 @@ func TestSanitizeTraceJSONQuery_ValidatesQuantileArguments(t *testing.T) {
 		{"aggregate swapped", aggregate([]interface{}{"Duration", 0.95}), "tracejson_query[0].aggregates[0].function.$quantile[0]"},
 		{"aggregate out of range", aggregate([]interface{}{1.01, "Duration"}), "tracejson_query[0].aggregates[0].function.$quantile[0]"},
 		{"aggregate wrong arity", aggregate([]interface{}{0.95}), "tracejson_query[0].aggregates[0].function.$quantile"},
+		{"exact duration valid", []map[string]interface{}{{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{"function": map[string]interface{}{"$quantile_exact": []interface{}{0.99, "Duration"}}, "as": "p99"}}}}, ""},
+		{"exact non-finite", []map[string]interface{}{{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{"function": map[string]interface{}{"$quantile_exact": []interface{}{math.Inf(1), "Duration"}}, "as": "p99"}}}}, "tracejson_query[0].aggregates[0].function.$quantile_exact[0]"},
+		{"exact malformed", []map[string]interface{}{{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{"function": map[string]interface{}{"$quantile_exact": []interface{}{0.99}}, "as": "p99"}}}}, "tracejson_query[0].aggregates[0].function.$quantile_exact"},
 		{"window valid", windowAggregate([]interface{}{0.95, "Duration"}), ""},
 		{"window swapped", windowAggregate([]interface{}{"Duration", 0.95}), "tracejson_query[0].function.$quantile[0]"},
 		{"window out of range", windowAggregate([]interface{}{-0.01, "Duration"}), "tracejson_query[0].function.$quantile[0]"},
@@ -288,6 +292,16 @@ func TestSanitizeTraceJSONQuery_ValidatesQuantileArguments(t *testing.T) {
 				t.Fatalf("expected actionable quantile error at %s, got: %v", tc.wantPath, err)
 			}
 		})
+	}
+}
+
+func TestSanitizeTraceJSONQueryRejectsDuplicateAggregateAliases(t *testing.T) {
+	err := SanitizeTraceJSONQuery([]map[string]interface{}{{"type": "aggregate", "aggregates": []interface{}{
+		map[string]interface{}{"function": map[string]interface{}{"$count": []interface{}{}}, "as": "count"},
+		map[string]interface{}{"function": map[string]interface{}{"$sum": []interface{}{"Duration"}}, "as": "count"},
+	}}})
+	if err == nil || !strings.Contains(err.Error(), "duplicate aggregate alias") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

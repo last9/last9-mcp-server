@@ -40,6 +40,7 @@ func fetchTraceSeriesAttributeNames(ctx context.Context, client *http.Client, cf
 	queryParams.Set("region", region)
 	queryParams.Set("start", fmt.Sprintf("%d", startTime))
 	queryParams.Set("end", fmt.Sprintf("%d", endTime))
+	queryParams.Set("exact_bounds", "true")
 	apiURL := fmt.Sprintf("%s%s?%s", cfg.APIBaseURL, constants.EndpointTracesSeries, queryParams.Encode())
 
 	requestBody := map[string]interface{}{"pipeline": pipeline}
