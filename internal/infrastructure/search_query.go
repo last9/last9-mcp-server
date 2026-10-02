@@ -18,37 +18,33 @@ type instantPoint struct {
 	Metric map[string]string `json:"metric"`
 }
 
-func fetchSearchMetrics(ctx context.Context, q searchQuery, ts int64) ([]map[string]string, bool, error) {
+func fetchSearchMetrics(ctx context.Context, q searchQuery, ts int64) ([]map[string]string, error) {
 	promql, err := searchPromQL(q.args.EntityType, q.args.Query)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	resp, err := utils.MakePromInstantAPIQuery(ctx, q.client, promql, ts, q.cfg)
 	if err != nil {
-		return nil, false, fmt.Errorf("infrastructure search query failed: %w", err)
+		return nil, fmt.Errorf("infrastructure search query failed: %w", err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxSearchBodyBytes+1))
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to read search response: %w", err)
+		return nil, fmt.Errorf("failed to read search response: %w", err)
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
-		return nil, false, fmt.Errorf("infrastructure search returned status %d: %s", resp.StatusCode, truncateAPIError(body, resp.StatusCode))
+		return nil, fmt.Errorf("infrastructure search returned status %d: %s", resp.StatusCode, truncateAPIError(body, resp.StatusCode))
 	}
 	if int64(len(body)) > maxSearchBodyBytes {
-		return nil, false, fmt.Errorf("infrastructure search response exceeds %d bytes", maxSearchBodyBytes)
+		return nil, fmt.Errorf("infrastructure search response exceeds %d bytes", maxSearchBodyBytes)
 	}
 	return parseInstantMetrics(body)
 }
 
-func parseInstantMetrics(body []byte) ([]map[string]string, bool, error) {
+func parseInstantMetrics(body []byte) ([]map[string]string, error) {
 	var points []instantPoint
 	if err := json.Unmarshal(body, &points); err != nil {
-		return nil, false, fmt.Errorf("failed to parse search response: %w", err)
-	}
-	truncated := len(points) > maxSearchFetch
-	if truncated {
-		points = points[:maxSearchFetch]
+		return nil, fmt.Errorf("failed to parse search response: %w", err)
 	}
 	out := make([]map[string]string, 0, len(points))
 	for _, point := range points {
@@ -57,7 +53,7 @@ func parseInstantMetrics(body []byte) ([]map[string]string, bool, error) {
 		}
 		out = append(out, point.Metric)
 	}
-	return out, truncated, nil
+	return out, nil
 }
 
 func searchPromQL(entityType, query string) (string, error) {

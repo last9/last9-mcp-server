@@ -140,6 +140,13 @@ func entityMatchesQuery(ent searchEntity, query string) bool {
 	return false
 }
 
+func capSearchEntities(entities []searchEntity) ([]searchEntity, bool) {
+	if len(entities) <= maxSearchFetch {
+		return entities, false
+	}
+	return entities[:maxSearchFetch], true
+}
+
 func paginateEntities(entityType string, entities []searchEntity, limit int, cursor string, truncated bool) (searchPage, error) {
 	offset, err := parseSearchCursor(cursor)
 	if err != nil {

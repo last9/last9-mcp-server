@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `search_infrastructure_entities` capped the raw inventory at 500 points before host-name filtering, deduplication and sorting, so a query for a host past that cutoff returned zero matches even though the host existed, and repeated queries at the same timestamp could return pages in a different order when the upstream vector order changed. The cap is now applied after filtering, deduplication and sorting (#224).
+
 ## [0.19.3] - 2026-09-30
 
 ### Added

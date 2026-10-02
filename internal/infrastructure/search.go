@@ -81,13 +81,14 @@ func runSearch(ctx context.Context, q searchQuery) (searchPage, error) {
 	if ts <= 0 {
 		ts = time.Now().Unix()
 	}
-	metrics, truncated, err := fetchSearchMetrics(ctx, q, ts)
+	metrics, err := fetchSearchMetrics(ctx, q, ts)
 	if err != nil {
 		return searchPage{}, err
 	}
 	clusterID := firstNonEmpty(q.args.ClusterID, q.cfg.ClusterID)
 	entities := entitiesFromMetrics(entityType, clusterID, q.cfg.OrgSlug, metrics)
 	entities = filterEntities(entities, q.args.Query)
+	entities, truncated := capSearchEntities(entities)
 	return paginateEntities(entityType, entities, clampSearchLimit(q.args.Limit), q.args.Cursor, truncated)
 }
 
