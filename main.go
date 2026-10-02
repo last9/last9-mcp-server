@@ -23,12 +23,12 @@ import (
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"last9-mcp/internal/attributes"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
 	l9telemetry "last9-mcp/internal/telemetry"
 	"last9-mcp/internal/toolsets"
 	"last9-mcp/internal/utils"
+	"last9-mcp/internal/workflows"
 )
 
 // Version information
@@ -47,13 +47,14 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	fs.StringVar(&cfg.DatasourceName, "datasource", os.Getenv("LAST9_DATASOURCE"), "Datasource name to use (overrides default datasource)")
 	fs.StringVar(&cfg.APIHost, "api_host", os.Getenv("LAST9_API_HOST"), "API host (defaults to app.last9.io)")
 	fs.BoolVar(&cfg.DisableTelemetry, "disable_telemetry", true, "Disable OpenTelemetry tracing/metrics")
+	fs.BoolVar(&cfg.UseLogSearchAPI, "use_log_search_api", false, "Route get_logs through the server-side log search API instead of client-side chunking")
 	fs.Float64Var(&cfg.RequestRateLimit, "rate", 1, "Requests per second limit")
 	fs.IntVar(&cfg.RequestRateBurst, "burst", 1, "Request burst capacity")
 	fs.IntVar(&cfg.MaxGetLogsEntries, "max_get_logs_entries", models.DefaultMaxGetLogsEntries, "Maximum number of entries returned by chunked raw get_logs requests")
 	fs.BoolVar(&cfg.HTTPMode, "http", false, "Run as HTTP server instead of STDIO")
 	fs.StringVar(&cfg.Port, "port", "8080", "HTTP server port")
 	fs.StringVar(&cfg.Host, "host", "localhost", "HTTP server host")
-	fs.StringVar(&cfg.Toolsets, "toolsets", toolsets.SpecFromEnv(), "Comma-separated MCP toolsets to expose (logs,traces,metrics,alerts,dashboards,investigate,all). Empty or all = full surface")
+	fs.StringVar(&cfg.Toolsets, "toolsets", toolsets.SpecFromEnv(), "Comma-separated MCP toolsets to expose (logs,traces,metrics,alerts,dashboards,profiles,investigate,all). Empty or all = full surface")
 	versionFlag := fs.Bool("version", false, "Print version information")
 
 	var configFile string
@@ -100,14 +101,18 @@ func parseDumpToolsets() (toolsets.Set, error) {
 	fs := flag.NewFlagSet("dump-tools", flag.ContinueOnError)
 	spec := toolsets.SpecFromEnv()
 	fs.StringVar(&spec, "toolsets", spec, "Comma-separated MCP toolsets to dump")
-	if err := fs.Parse(os.Args[2:]); err != nil {
+	args := []string{}
+	if len(os.Args) > 2 {
+		args = os.Args[2:]
+	}
+	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
 	return toolsets.Parse(spec)
 }
 
 func main() {
-	// dump-tools runs before config parsing: it needs no credentials
+	// dump-tools runs before full config parsing: it needs no credentials
 	// and must work in CI and eval harnesses without a refresh token.
 	// It still honors --toolsets / LAST9_TOOLSETS (and loads .env) so
 	// snapshots match the served surface.
@@ -118,6 +123,13 @@ func main() {
 		}
 		if err := dumpTools(os.Stdout, allowed); err != nil {
 			log.Fatalf("dump-tools failed: %v", err)
+		}
+		return
+	}
+
+	if len(os.Args) > 1 && os.Args[1] == "dump-prompts" {
+		if err := dumpPrompts(os.Stdout); err != nil {
+			log.Fatalf("dump-prompts failed: %v", err)
 		}
 		return
 	}
@@ -178,12 +190,6 @@ func main() {
 		"version", Version,
 	)
 
-	// Create attribute cache and perform best-effort initial fetch
-	attrCache := attributes.NewAttributeCache(auth.GetHTTPClient(), cfg)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	attrCache.Warm(ctx)
-	cancel()
-
 	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
 	if err != nil {
 		log.Fatalf("failed to create MCP server: %v", err)
@@ -212,30 +218,13 @@ func main() {
 		}
 	}
 
+	registerReferenceResources(server)
+	workflows.Register(server)
+
 	// Register all tools
-	if err := registerAllTools(server, cfg, attrCache); err != nil {
+	if err := registerAllTools(server, cfg); err != nil {
 		log.Fatalf("failed to register tools: %v", err)
 	}
-
-	// Background goroutine to refresh attributes and re-register tools periodically
-	go func() {
-		ticker := time.NewTicker(2 * time.Hour)
-		defer ticker.Stop()
-		for range ticker.C {
-			refreshCtx, refreshCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			if err := attrCache.RefreshIfStale(refreshCtx); err != nil {
-				slog.Warn("failed to refresh attribute cache", "error", err)
-			} else {
-				// Re-register tools with updated descriptions (AddTool is an upsert)
-				if err := registerAllTools(server, cfg, attrCache); err != nil {
-					slog.Warn("failed to re-register tools after cache refresh", "error", err)
-				} else {
-					slog.Info("attribute cache refreshed and tools re-registered")
-				}
-			}
-			refreshCancel()
-		}
-	}()
 
 	if cfg.HTTPMode {
 		httpServer := NewHTTPServer(server, cfg)

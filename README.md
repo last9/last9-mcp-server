@@ -218,7 +218,9 @@ The NPM route is easier on Windows — no path management.
 | `LAST9_REFRESH_TOKEN`        | *(required)*         | Refresh token from [API Access](https://app.last9.io/settings/api-access) |
 | `LAST9_DATASOURCE`           | org default          | Datasource/cluster name — useful when you have multiple Levitate clusters |
 | `LAST9_API_HOST`             | `app.last9.io`       | Override the API host |
+| `LAST9_TOOLSETS`             | all tools            | Comma-separated toolsets to expose (`logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`). Alias: `LAST9_MCP_TOOLSETS` |
 | `LAST9_MAX_GET_LOGS_ENTRIES` | `5000`               | Max entries for chunked `get_logs` requests |
+| `LAST9_USE_LOG_SEARCH_API`   | `false`              | Set `true` to answer `get_logs` and `get_service_logs` with one server-side search call instead of client-side chunking |
 | `LAST9_DEBUG_CHUNKING`       | `false`              | Set `true` to log chunk-planning details for `get_logs`, `get_service_logs`, `get_traces` |
 | `LAST9_DISABLE_TELEMETRY`    | `true`               | Set `false` to enable internal OTel tracing |
 | `OTEL_SDK_DISABLED`          | —                    | Standard OTel env var. Overrides `LAST9_DISABLE_TELEMETRY` |
@@ -231,7 +233,7 @@ The NPM route is easier on Windows — no path management.
 
 ### Service Health
 
-- **`get_service_summary`** — Throughput, error rate, p95 response time across all services
+- **`get_service_summary`** — Ranked fleet `(service, env)` rows: interval request_count, throughput_rpm, HTTP 4xx/5xx counts, and gRPC error counts
 - **`get_service_environments`** — Available environments for your services. Run this first — other APM tools need `env` from here
 - **`get_service_performance_details`** — Full breakdown: throughput, error rate, p50/p90/p95/avg/max, apdex, availability
 - **`get_service_operations_summary`** — Operations grouped by HTTP endpoints, DB calls, messaging, HTTP clients
@@ -241,14 +243,14 @@ The NPM route is easier on Windows — no path management.
 
 ### Database Observability
 
-Four tools that go directly at your database performance, derived from OpenTelemetry trace spans. No extra instrumentation needed if you're already using OTel.
+Four tools that go directly at your database performance, derived from OpenTelemetry trace spans and, where traces are absent, infrastructure metrics such as CloudWatch. No extra instrumentation needed if you're already using OTel.
 
-- **`get_databases`** — Discover all databases across your infrastructure: DB type, host, throughput (queries/min), p95 latency, error rate, number of dependent services
+- **`get_databases`** — Discover all databases across your infrastructure: DB type, host, throughput (queries/min), p95 latency, error rate, number of dependent services. Also discovers databases from infrastructure metrics such as CloudWatch, with no trace instrumentation needed — those rows carry an activity value instead of trace metrics
 - **`get_database_slow_queries`** — The actual slowest query executions, ordered by duration, with trace IDs for drilling into full traces
 - **`get_database_queries`** — Query patterns and aggregates: how often a query runs, average/p95 duration, error rate
 - **`get_database_server_metrics`** — Server-side metrics from the DB host itself (CPU, connections, buffer hit rates — depends on your DB system)
 
-Supports PostgreSQL, MySQL, MongoDB, Redis, Aerospike, and anything else OTel traces with a `db_system` attribute.
+Supports PostgreSQL, MySQL, MongoDB, Redis, Aerospike, and anything else OTel traces with a `db_system` attribute — plus databases discovered from infrastructure metrics such as CloudWatch, whose rows carry an activity value instead of trace metrics.
 
 ### Prometheus / PromQL
 
@@ -275,10 +277,13 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_trace_attributes`** — Global catalog of attributes in the trace schema
 - **`get_trace_attributes_for_pipeline`** — Attributes actually present for an in-progress pipeline (scoped discovery), each with its exact `filter_field`
 - **`get_trace_attribute_values`** — Distinct values for a trace attribute, optionally scoped to a pipeline
+- **`get_trace_attribute_deviations`** — Ranks attribute values that differ between two bounded span cohorts (slow vs fast, error vs non-error, or two time windows). Correlation, not cause
+- **`get_trace_waterfall`** — One exact trace as a parent/child waterfall with interval-union self-time, slowest spans, and graph warnings
 
 ### Change Events & Alerts
 
 - **`get_change_events`** — Deployments, config changes, rollbacks. Correlate incidents with what changed
+- **`get_alert_groups`** — Configured Compass alert groups with metadata labels, team, tier, and rule counts — including groups with zero rules and groups that are not firing
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_alerts`** — Currently firing alerts within a time window
 - **`get_alert_rule_state`** — Historical firing state (1/0) per alert rule over a time range, grouped by `rule_id`. Filterable by alert group, rule name, label filters, and state.
@@ -288,16 +293,40 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 - **`list_dashboards`** — All custom dashboards in your org: IDs, names, and metadata
 - **`get_dashboard`** — Full dashboard definition by ID, including panels and queries
-- **`create_dashboard`** — Create a new custom dashboard with panels, queries, and metadata
-- **`update_dashboard`** — Update an existing dashboard by ID (readonly system dashboards return an error)
+- **`validate_dashboard`** — Read-only lint + execute + classify for a saved dashboard id or an inline `dashboard_definition` over a ≤24h window. Never creates or updates dashboards
+- **`create_dashboard`** — Create a net-new custom dashboard once (panels, queries, metadata). After the id is returned, refine with `update_dashboard`.
+- **`update_dashboard`** — Refine an existing dashboard by ID (full replacement; readonly system dashboards return an error)
 - **`delete_dashboard`** — Delete a custom dashboard by ID
 - **`list_dashboard_snapshots`** — Frozen point-in-time snapshots for a dashboard (metadata only)
 - **`get_dashboard_snapshot`** — Full frozen snapshot including panel data for RCA / shareable views
 - **`delete_dashboard_snapshot`** — Delete a frozen snapshot by ID
 
+### Continuous Profiling
+
+Requires continuous profiling enabled for the org. Discover services first with `get_profile_services`, then pull a flamegraph or ranked functions.
+
+- **`get_profile_services`** — Services that have profiling data in the window (index before querying)
+- **`get_flamegraph`** — Nested flamegraph tree for one service (`cpu` default; also `alloc`, `wall`)
+- **`get_top_functions`** — Self-sample ranking of hottest functions for one service
+- **`get_profile_summary`** — Short natural-language triage of the profile for one service
+
+### Grafana Dashboards
+
+Read-only tools against the org's Grafana instance (via Last9's Grafana proxy). Credential fields are never returned to the model. Enable with `LAST9_TOOLSETS=grafana` (or leave toolsets unset for all tools).
+
+- **`grafana_search_dashboards`** — Search dashboards by title substring (paginated; `truncated: true` when the cap is hit)
+- **`grafana_get_dashboard`** — Dashboard summary by uid (panels, variables, PromQL targets); `full_json=true` for raw Grafana JSON
+- **`grafana_list_folders`** — Folder tree
+- **`grafana_list_folder_dashboards`** — Dashboards in one folder (paginated)
+- **`grafana_list_datasources`** — Datasource inventory without credentials
+
 ### Fuzzy Name Resolution
 
 - **`did_you_mean`** — When the agent isn't sure about an entity name, this returns the closest matches from your catalog (services, environments, hosts, databases, K8s deployments/namespaces, jobs). Up to 3 suggestions with similarity scores. The server calls this automatically before most tools when a name lookup returns empty.
+
+### Service Profile
+
+- **`get_service_profile`** — What a service's telemetry actually looks like, before you query it: which signals exist, language and runtime, deployment environments, the shape of its logs, and a recommended ingest fix where one applies. Lets the agent skip trace tools when a service has no traces, and parse severity from the log body when `SeverityText` is empty instead of filtering on it and finding nothing.
 
 ---
 
@@ -305,7 +334,9 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 **Deep links on every response.** Every tool returns a `deep_link` field — a direct URL into the Last9 dashboard for that exact query and time range. The agent can hand you the link; you click it; you're there.
 
-**Live attribute caching.** At startup, the server fetches the actual log and trace attribute names from your data and embeds them into tool descriptions. This means the AI assistant knows what fields exist in your schema, not just a generic list. The cache refreshes every 2 hours.
+**Toolsets.** By default the server exposes every tool. Automation hosts that only need investigation (logs/traces/metrics/profiles) can set `LAST9_TOOLSETS=investigate` (or pass `--toolsets=investigate`) so `tools/list` stays small without client-side mass-disable. Named packs: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`. Unknown names fail fast. The `metrics` pack alone does **not** include `list_datasources` or `did_you_mean` — use `investigate` (or combine toolsets) when you need those discovery helpers.
+
+**Tool reference resources.** Long logjson/tracejson/service-logs/metrics manuals are MCP resources (`last9://reference/logjson`, `last9://reference/tracejson`, `last9://reference/service_logs`, `last9://reference/metrics`, `last9://reference/investigation`), not always-on tool description text. Critical query rules stay on the tool description so agents that never call `resources/read` still get correct construction guidance. Discover org-specific fields with `get_log_attributes` / `get_log_attributes_for_pipeline` (and the trace equivalents)—they are not injected into descriptions.
 
 **Chunked large results.** `get_logs` and `get_traces` handle large result sets through chunking rather than truncating. The default limit is 5000 entries for logs; configurable via `LAST9_MAX_GET_LOGS_ENTRIES`.
 
@@ -396,7 +427,9 @@ LAST9_HTTP=true ./last9-mcp-server
 ### get_service_summary
 
 - `start_time_iso` / `end_time_iso` (string, optional)
-- `env` (string, optional): Defaults to `prod`.
+- `env` (string, optional): PromQL regex. Defaults to `.*`. Exact match needs anchors (e.g. `^prod$`).
+- `sort_by` (string, optional): `request_count` (default), `throughput_rpm`, `http_4xx_count`, `http_5xx_count`, or `grpc_error_count`.
+- `limit` (integer, optional): Max ranked rows. Omit or 0 means 10; values above 100 clamp to 100.
 
 ### get_service_environments
 
@@ -437,8 +470,8 @@ LAST9_HTTP=true ./last9-mcp-server
 
 ### get_databases
 
-- `env` (string, optional): Filter by environment. Default: all.
-- `lookback_minutes` (integer, optional): Default: 60.
+- `env` (string, optional): Filter by environment. Accepts a regular expression. Default: all.
+- `lookback_minutes` (integer, optional): Default: 60. Window may not exceed 7 days.
 - `start_time_iso` / `end_time_iso` (string, optional)
 
 ### get_database_slow_queries
@@ -539,12 +572,14 @@ Use `get_logs` for broad aggregate counts first; use `get_service_logs` only aft
 
 ### get_drop_rules
 
-No parameters.
+No parameters. Lists drop rules via `GET /otel_settings/drop?region=...`.
 
 ### add_drop_rule
 
 - `name` (string, required)
 - `filters` (array, required): Each filter: `key`, `value`, `operator` (`equals`/`not_equals`), `conjunction` (`and`).
+- Filter keys must use `attributes["key_name"]` or `resource.attributes["key_name"]` (required by the Last9 API).
+- Creates the rule via `POST /otel_settings/drop?region=...&cluster_id=...`.
 
 ### get_traces
 
@@ -583,7 +618,38 @@ Exactly one of `trace_id` or `service_name` is required.
 
 - `tag_name` (string, required): Attribute name from `get_trace_attributes` (e.g. `resource_department` or `attributes['http.method']`).
 - `pipeline` (array, optional): Prior filter stages to scope the values; omit for global values.
+- `lookback_minutes` (integer, optional): Default: 15.
+- `start_time_iso` / `end_time_iso` (string, optional): Historical RFC3339 bounds; take precedence over `lookback_minutes`.
 - `region` (string, optional)
+
+### get_trace_attribute_deviations
+
+- `comparison_mode` (string, required): `latency`, `errors`, or `time`.
+- `service_name` (string, required)
+- `environment` (string, required): Exact `deployment.environment` value.
+- `operation` (string, optional)
+- `filters` (array, optional): Trace JSON filter conditions.
+- `candidate_attributes` (array, optional): Maximum 8; omit for bounded discovery.
+- `latency_threshold_ms` (number, optional): Required for `latency` mode; rejected for other modes.
+- `start_time_iso` / `end_time_iso` (string, optional)
+- `lookback_minutes` (integer, optional): Default: 15. Maximum: 15.
+- `baseline_start_time_iso` / `baseline_end_time_iso` (string, optional): Required for `time` mode; non-overlapping and equal in duration to the target window.
+- `minimum_cohort_size` (integer, optional): Default: 100. Minimum: 20.
+- `minimum_value_support` (integer, optional): Default: 20. Minimum: 10.
+- `limit` (integer, optional): Default: 10. Maximum: 10.
+
+Requires the companion backend capability to be enabled.
+
+### get_trace_waterfall
+
+- `trace_id` (string, required)
+- `environment` (string, optional)
+- `start_time_iso` / `end_time_iso` (string, optional)
+- `lookback_minutes` (integer, optional): Default: 4320 (72 hours).
+- `selected_span_id` (string, optional): Returns attributes, events, and links for that span only.
+- `max_spans` (integer, optional): Default: 500. Maximum: 1000.
+
+Returns an `investigation-evidence/v1` envelope; the waterfall is under `data`.
 
 ### get_change_events
 
@@ -592,6 +658,16 @@ Exactly one of `trace_id` or `service_name` is required.
 - `service_name` (string, optional)
 - `env` (string, optional)
 - `event_name` (string, optional): Call without this first to get `available_event_names`.
+
+### get_alert_groups
+
+Configured Compass alert-group inventory for changeboard / label-coverage audits. Includes groups with zero rules and groups that are not firing. Does not return PromQL.
+
+- `alert_group_name` / `alert_group_type` / `data_source_name` (string, optional): Case-insensitive substring match.
+- `team` / `tier` (string, optional): Exact case-insensitive match on configured metadata.
+- `label_key` + `label_value` (string, optional): Must be set together. Exact case-insensitive match on one `metadata.labels` pair — both key and value.
+
+Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `entity_class`, `team`, `tier`, `metadata.labels`, and rule counts. Empty `team` / `labels` means unset.
 
 ### get_alert_config
 
@@ -632,6 +708,15 @@ No parameters. Returns all configured notification channels (Slack, PagerDuty, e
 
 Returns up to 3 closest matches with similarity scores. Use this before any tool call where the entity name is uncertain. If a previous call returned empty results, try this before retrying.
 
+### get_service_profile
+
+- `service_name` (string, required): Service to derive a telemetry profile for.
+- `datasource` (string, optional): Datasource name. Omit for the default.
+
+Returns a short investigation brief followed by the full profile as raw JSON: signal presence (`logs`/`traces`/`metrics` as `present`, `absent`, or `unknown`), language and runtime, deployment environments, log `signal_shape` (`log_format`, `severity_set`, `level_field`), and a recommended ingest fix where one applies. Derived upstream and cached with a ~15 minute TTL.
+
+Call it before any service-scoped investigation so tool selection matches the service's actual telemetry — skip trace tools when `traces` is `absent`, and when `severity_set` is `none` or `partial` parse severity from `level_field` in the log body rather than using `severity_filters`. `metrics` is always `unknown` and `dependencies` is unpopulated in v1. When `logs` and `traces` are both `absent`, confirm the name with `did_you_mean` before concluding the service is unmonitored.
+
 ### list_dashboards
 
 No parameters. Returns all custom dashboards in the org as a JSON array with `id`, `name`, and metadata.
@@ -641,12 +726,27 @@ No parameters. Returns all custom dashboards in the org as a JSON array with `id
 - `id` (string, required): Dashboard UUID.
 - `region` (string, optional): Region for panel query population. Defaults to configured datasource region.
 
+### validate_dashboard
+
+Read-only. Never creates or updates dashboards. Accept exactly one of `dashboard_id` or `dashboard_definition`.
+
+- `dashboard_id` (string, optional): Saved dashboard UUID to validate.
+- `dashboard_definition` (object, optional): Inline unsaved dashboard body (true dry run).
+- `start_time_iso` / `end_time_iso` (string, optional): Validation window (RFC3339). Must be ≤ 24h.
+- `region` (string, optional): Region for panel query execution.
+
+Returns `dashboard_validation/v1`: per-panel lint + execute classification (`data` / `no_data` / `invalid` / `error`). Day-1 empty results classify as `valid_no_data` without diagnose probes.
+
 ### create_dashboard
+
+Net-new only. After this call returns `dashboard.id`, refine with `update_dashboard` — do not create again to add, trim, or fix panels.
 
 - `dashboard` (object, required): Dashboard definition with `name` and `panels[]`. Each panel requires `name`, `version`, `layout` (`x`, `y`, `w`, `h`), `visualization.type`, and `queries[]`.
 - `metadata` (object, optional): Dashboard metadata — `_category` and `_type` fields (e.g. `{"_category":"custom","_type":"metrics"}`).
 
 ### update_dashboard
+
+Prefer this after create. Full replacement by id (same body as create).
 
 - `id` (string, required): Dashboard UUID to update.
 - `dashboard` (object, required): Full replacement dashboard body (same shape as create).
@@ -671,6 +771,58 @@ Returns the full frozen snapshot including `dashboard_definition`, `panel_data`,
 ### delete_dashboard_snapshot
 
 - `id` (string, required): Snapshot UUID to delete.
+
+### get_profile_services
+
+- `lookback_minutes` / `start_time_iso` / `end_time_iso` (optional): Window; prefer lookback or explicit ISO bounds (default 60m).
+- `region` (string, optional): Region override.
+
+Returns services that have profiling data in the window. Call this before `get_flamegraph` / `get_top_functions` / `get_profile_summary`.
+
+### get_flamegraph
+
+- `service` (string, required): Service name from `get_profile_services`.
+- `profile_type` (string, optional): `cpu` (default), `alloc`, or `wall`. Pin a type when comparing windows.
+- `env` / `cluster` / `namespace` / `runtime` (string, optional): Scope filters.
+- `limit` (number, optional): Max aggregated stack rows (default 1000, max 10000).
+- `lookback_minutes` / `start_time_iso` / `end_time_iso` / `region` (optional).
+
+Returns a nested flamegraph tree (`name` / `value` / `self` / `children`). `truncated: true` means the API row limit was hit.
+
+### get_top_functions
+
+Same filters as `get_flamegraph`. Returns self-sample ranking of hottest functions. May be truncated; check `truncated`.
+
+### get_profile_summary
+
+Same filters as `get_flamegraph`. Returns a short natural-language triage of the profile for the service.
+
+### grafana_search_dashboards
+
+- `query` (string, optional): Title substring. Empty lists broadly (subject to the 5,000-row cap).
+
+Returns `{"dashboards":[…], "truncated":bool}` with `uid`, `title`, `uri`, `url`, `type`, `tags`. Use `uid` with `grafana_get_dashboard`.
+
+### grafana_get_dashboard
+
+- `uid` (string, required): Grafana dashboard uid.
+- `full_json` (boolean, optional): When true, return raw Grafana JSON instead of the filtered summary.
+
+Default summary: version, tags, templating variables, and each panel's type/datasource/gridPos/promQL targets. Unknown plugin panel types appear in `unsupportedPanelTypes`.
+
+### grafana_list_folders
+
+No parameters. Returns the folder tree.
+
+### grafana_list_folder_dashboards
+
+- `folder_uid` (string, required): Grafana folder uid.
+
+Returns `{"dashboards":[…], "truncated":bool}` for dashboards in that folder (paginated up to 5,000).
+
+### grafana_list_datasources
+
+No parameters. Returns a safe projection of datasources (no credential fields).
 
 </details>
 

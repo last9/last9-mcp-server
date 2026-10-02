@@ -46,6 +46,66 @@ func TestGetAlertConfigHandler_Integration_Basic(t *testing.T) {
 	if !strings.Contains(text, "State:") {
 		t.Fatalf("expected 'State:' in response, got:\n%s", text)
 	}
+	if !strings.Contains(text, "Alert Group:") {
+		t.Fatalf("expected 'Alert Group:' enrichment in response, got:\n%s", text)
+	}
+	if !strings.Contains(text, "Notification Channels:") {
+		t.Fatalf("expected 'Notification Channels:' enrichment in response, got:\n%s", text)
+	}
+}
+
+func TestGetAlertConfigHandler_Integration_OnlyWithoutNotificationChannel(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+	handler := NewGetAlertConfigHandler(http.DefaultClient, *cfg)
+
+	ctx, cancel := context.WithTimeout(context.Background(), integrationTestTimeout)
+	defer cancel()
+
+	result, _, err := handler(ctx, &mcp.CallToolRequest{}, GetAlertConfigArgs{
+		OnlyWithoutNotificationChannel: true,
+	})
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+
+	text := utils.GetTextContent(t, result)
+	t.Logf("response (truncated):\n%s", truncate(text, 1200))
+
+	if !strings.Contains(text, "Global notification channels:") {
+		t.Fatalf("expected global channel advisory line, got:\n%s", text)
+	}
+	if !strings.Contains(text, "no per-entity notification channel configured") {
+		t.Fatalf("expected unconfigured filter header, got:\n%s", text)
+	}
+	if strings.Contains(text, "Found 0 alert rules:\n") {
+		t.Fatalf("unexpected default header when filter is active, got:\n%s", text)
+	}
+}
+
+func TestGetAlertConfigHandler_Integration_NotificationChannelSeverityFilter(t *testing.T) {
+	cfg := utils.SetupTestConfigOrSkip(t)
+	handler := NewGetAlertConfigHandler(http.DefaultClient, *cfg)
+
+	ctx, cancel := context.WithTimeout(context.Background(), integrationTestTimeout)
+	defer cancel()
+
+	result, _, err := handler(ctx, &mcp.CallToolRequest{}, GetAlertConfigArgs{
+		NotificationChannelTypes:      []string{"slack"},
+		NotificationChannelSeverities: []string{"breach"},
+	})
+	if utils.CheckAPIError(t, err) {
+		return
+	}
+
+	text := utils.GetTextContent(t, result)
+	t.Logf("response (truncated):\n%s", truncate(text, 1200))
+
+	if strings.Contains(text, "Found 0 alert rules") {
+		t.Skip("no slack+breach channel bindings in org; skipping")
+	}
+	if !strings.Contains(text, "ID:") {
+		t.Fatalf("expected at least one matching rule, got:\n%s", text)
+	}
 }
 
 func TestGetAlertConfigHandler_Integration_KPIResolution(t *testing.T) {

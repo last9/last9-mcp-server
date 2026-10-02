@@ -1,5 +1,11 @@
 package traces
 
+import (
+	"strings"
+
+	"last9-mcp/internal/utils"
+)
+
 // traceTopLevelFields is the set of first-class trace fields that are used
 // directly by name in tracejson filter conditions (no bracket syntax needed).
 var traceTopLevelFields = map[string]struct{}{
@@ -39,7 +45,7 @@ func enrichAttribute(raw string) TraceAttribute {
 			SemanticName: stripped,
 			Type:         "resource",
 			FilterField:  filterField,
-			Hint:         `Example: {"$eq": ["` + filterField + `", "value"]}`,
+			Hint:         "Example: " + utils.EQExample(filterField, "value"),
 		}
 	}
 
@@ -52,7 +58,7 @@ func enrichAttribute(raw string) TraceAttribute {
 			SemanticName: stripped,
 			Type:         "event",
 			FilterField:  filterField,
-			Hint:         `Example: {"$eq": ["` + filterField + `", "value"]}`,
+			Hint:         "Example: " + utils.EQExample(filterField, "value"),
 		}
 	}
 
@@ -63,7 +69,7 @@ func enrichAttribute(raw string) TraceAttribute {
 			SemanticName: raw,
 			Type:         "toplevel",
 			FilterField:  raw,
-			Hint:         `Example: {"$eq": ["` + raw + `", "value"]}`,
+			Hint:         "Example: " + utils.EQExample(raw, "value"),
 		}
 	}
 
@@ -85,8 +91,23 @@ func enrichAttribute(raw string) TraceAttribute {
 		SemanticName: raw,
 		Type:         "span",
 		FilterField:  filterField,
-		Hint:         `Example: {"$eq": ["` + filterField + `", "value"]}`,
+		Hint:         "Example: " + utils.EQExample(filterField, "value"),
 	}
+}
+
+// SpanAttributeField returns the tracejson filter field for a span attribute key.
+func SpanAttributeField(key string) string {
+	return enrichAttribute(key).FilterField
+}
+
+// ResourceAttributeField returns the tracejson filter field for a resource attribute key.
+func ResourceAttributeField(key string) string {
+	return enrichAttribute("resource_" + strings.TrimPrefix(key, "resource_")).FilterField
+}
+
+// EventAttributeField returns the tracejson filter field for a span event attribute key.
+func EventAttributeField(key string) string {
+	return enrichAttribute("event_" + strings.TrimPrefix(key, "event_")).FilterField
 }
 
 // normalizeTagName converts a filter_field syntax string or raw API tag name

@@ -38,3 +38,6 @@
 	- Each filter requires a conjunction (and) to combine with other filters
 
 	The system only supports filtering on metadata about the logs, not the actual log content itself.
+
+	Rule Names
+	- Rule names are unique. Call get_drop_rules to check which names are already in use.

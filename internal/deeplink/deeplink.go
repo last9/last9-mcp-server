@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -114,8 +115,40 @@ func (b *Builder) BuildDropRulesLink() string {
 	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, route)
 }
 
+// apmCatalogEnvRegexMeta are characters that make an env argument a pattern,
+// not a single catalog filter value.
+const apmCatalogEnvRegexMeta = `.*+?()[]{}|\^$`
+
+// APMCatalogEnvExact returns a catalog filter for callers that pass an exact
+// environment name (not a PromQL regex). Only empty and ".*" are screened out;
+// names with "." or other metacharacters (e.g. k8s.prod) pass through as literals.
+func APMCatalogEnvExact(env string) string {
+	env = strings.TrimSpace(env)
+	if env == "" || env == ".*" {
+		return ""
+	}
+	return env
+}
+
+// APMCatalogEnvFromRegex returns a catalog filter for callers whose env is a
+// PromQL regex. Only anchored exact matches (^name$ with a meta-free name)
+// become a literal; wildcards, unanchored tokens, and patterns yield "".
+func APMCatalogEnvFromRegex(env string) string {
+	env = strings.TrimSpace(env)
+	if len(env) < 3 || !strings.HasPrefix(env, "^") || !strings.HasSuffix(env, "$") {
+		return ""
+	}
+	inner := env[1 : len(env)-1]
+	if inner == "" || strings.ContainsAny(inner, apmCatalogEnvRegexMeta) {
+		return ""
+	}
+	return inner
+}
+
 // BuildAPMServiceLink creates a deep link to the APM service catalog page with the service name in the path
-// and environment filter as a JSON array
+// and environment filter as a JSON array. env is treated as an exact environment
+// name (see APMCatalogEnvExact). Regex callers must pre-sanitize with
+// APMCatalogEnvFromRegex and pass the resulting literal (or "").
 func (b *Builder) BuildAPMServiceLink(fromMs, toMs int64, serviceName, env, tab string) string {
 	params := url.Values{}
 	params.Set("live", "true")
@@ -124,8 +157,8 @@ func (b *Builder) BuildAPMServiceLink(fromMs, toMs int64, serviceName, env, tab 
 	if b.clusterID != "" {
 		params.Set("cluster", b.clusterID)
 	}
-	if env != "" && env != ".*" {
-		if filterValue, err := json.Marshal([]string{fmt.Sprintf(`deployment_environment="%s"`, env)}); err == nil {
+	if catalogEnv := APMCatalogEnvExact(env); catalogEnv != "" {
+		if filterValue, err := json.Marshal([]string{fmt.Sprintf(`deployment_environment="%s"`, catalogEnv)}); err == nil {
 			params.Set("filter", string(filterValue))
 		}
 	}
