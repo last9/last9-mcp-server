@@ -125,6 +125,9 @@ var ListDashboardsDescription string
 //go:embed descriptions/get_dashboard.md
 var GetDashboardDescription string
 
+//go:embed descriptions/validate_dashboard.md
+var ValidateDashboardDescription string
+
 //go:embed descriptions/create_dashboard.md
 var CreateDashboardDescription string
 
@@ -143,6 +146,21 @@ var GetDashboardSnapshotDescription string
 //go:embed descriptions/delete_dashboard_snapshot.md
 var DeleteDashboardSnapshotDescription string
 
+//go:embed descriptions/grafana_search_dashboards.md
+var GrafanaSearchDashboardsDescription string
+
+//go:embed descriptions/grafana_get_dashboard.md
+var GrafanaGetDashboardDescription string
+
+//go:embed descriptions/grafana_list_folders.md
+var GrafanaListFoldersDescription string
+
+//go:embed descriptions/grafana_list_folder_dashboards.md
+var GrafanaListFolderDashboardsDescription string
+
+//go:embed descriptions/grafana_list_datasources.md
+var GrafanaListDatasourcesDescription string
+
 //go:embed descriptions/get_logs_base.md
 var GetLogsDescription string
 
@@ -157,6 +175,18 @@ var GetServiceTracesDescription string
 
 //go:embed descriptions/prometheus_range_query_base.md
 var PromqlRangeQueryDetails string
+
+//go:embed descriptions/get_profile_services.md
+var GetProfileServicesDescription string
+
+//go:embed descriptions/get_flamegraph.md
+var GetFlamegraphDescription string
+
+//go:embed descriptions/get_top_functions.md
+var GetTopFunctionsDescription string
+
+//go:embed descriptions/get_profile_summary.md
+var GetProfileSummaryDescription string
 
 //go:embed workflows/scoped_log_attribute_discovery.md
 var ScopedLogAttributeDiscoveryWorkflow string

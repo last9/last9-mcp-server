@@ -64,14 +64,47 @@ func TestParseInvestigate(t *testing.T) {
 	if set == nil {
 		t.Fatal("investigate must not expand to nil/all")
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "get_api_source_catalog", "get_service_profile", "list_datasources", "get_apm_service_deviations"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "get_api_source_catalog", "get_service_profile", "list_datasources", "get_apm_service_deviations", "get_flamegraph", "get_profile_services"} {
 		if !set.Allows(want) {
 			t.Errorf("investigate missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "get_alert_groups", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots"} {
+	for _, deny := range []string{"get_alerts", "get_alert_groups", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard", "grafana_get_dashboard"} {
 		if set.Allows(deny) {
 			t.Errorf("investigate should exclude %q", deny)
+		}
+	}
+}
+
+func TestParseDashboardsIncludesValidate(t *testing.T) {
+	set, err := Parse("dashboards")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !set.Allows("validate_dashboard") || !set.Allows("get_dashboard") {
+		t.Fatal("dashboards toolset missing validate_dashboard or get_dashboard")
+	}
+	if set.Allows("get_logs") {
+		t.Fatal("dashboards should not include get_logs")
+	}
+}
+
+func TestParseGrafana(t *testing.T) {
+	set, err := Parse("grafana")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set == nil {
+		t.Fatal("grafana must not expand to nil/all")
+	}
+	for _, want := range []string{"grafana_search_dashboards", "grafana_get_dashboard", "grafana_list_folders", "grafana_list_folder_dashboards", "grafana_list_datasources"} {
+		if !set.Allows(want) {
+			t.Errorf("grafana missing %q", want)
+		}
+	}
+	for _, deny := range []string{"get_logs", "get_dashboard", "create_dashboard"} {
+		if set.Allows(deny) {
+			t.Errorf("grafana should exclude %q", deny)
 		}
 	}
 }

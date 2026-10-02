@@ -11,12 +11,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `get_api_source_catalog` returns bounded source-qualified services, environments, field evidence, and trusted execution descriptors fetched automatically from Last9 API; log parser stages run before environment inventory aggregation when the field derives from `Body` (#287).
 
+## [0.19.3] - 2026-09-30
+
+### Added
+
+- `get_alerts` now includes a `label_hash` field on each alert instance, exposing the hash of the instance's label set as used internally by the alerting engine. Useful for correlating an alert instance with its underlying metric series (#303).
+
+## [0.19.2] - 2026-09-29
+
 ### Fixed
 
+- `get_service_operations_summary`, `get_service_dependency_graph` and `get_database_queries` matched an explicitly supplied `env` as a live regex, so environment names containing regex metacharacters selected the wrong scope (`prod.v1` also matched `prodXv1`; `prod[blue]` matched `prodb` but not itself). Explicit env names are now regex-quoted before querying; an omitted env still matches all environments (#301).
+- `get_service_performance_details` returned empty `response_times`, zero throughput, availability and error rates, and no top operations or errors when `env` was omitted, while `apdex_score` still had data: the unset-env default `.*` was applied with an exact `env=` matcher that matched no series. All sub-queries now use the regex `env=~` matcher, consistent with apdex and the sibling service tools; explicitly supplied env names are regex-quoted, so names containing regex metacharacters such as `prod.v1` still select only that environment (#300).
+
+## [0.19.1] - 2026-09-23
+
+### Changed
+
+- `get_trace_attribute_values` now accepts `lookback_minutes` (default 15) and optional `start_time_iso` / `end_time_iso` for historical windows. Explicit ISO bounds take precedence over lookback. Previously the tool always queried a fixed last-15-minutes window with no way to inspect older spans (#297).
+
+## [0.19.0] - 2026-09-23
+
+### Fixed
+
+- Token refresh no longer leaves a canceled tool call blocked for up to the 3-minute HTTP timeout while another call's refresh finishes, and canceling the call that started a shared refresh no longer aborts that refresh for concurrent waiters (which previously could hand them an expired token). `GetAccessToken` now wakes waiters on their own context cancel via `context.AfterFunc`, and runs the shared refresh on `context.WithoutCancel` so only the HTTP client timeout bounds it (#295).
+
+### Added
+
+- Every tool in `tools/list` now carries a `title` and MCP tool annotations, so clients can set permissions without guessing from the tool name. The 51 read tools are served with `readOnlyHint: true`, which lets a client run them without a per-call confirmation. The five write tools are served with `readOnlyHint: false` and an explicit `destructiveHint`: `true` for `add_drop_rule` (matching logs are dropped at ingestion), `update_dashboard`, `delete_dashboard` and `delete_dashboard_snapshot`, and `false` for `create_dashboard`, which only adds. Every tool also sets `openWorldHint: false`, because it acts only on the caller's own Last9 organization. Previously no tool had annotations, so clients fell back to the MCP defaults, which treat every tool as possibly destructive (#294).
+
+## [0.18.0] - 2026-09-21
+
+### Added
+
+- Continuous profiling MCP tools backed by the same Profiling UI contract: `get_profile_services` (service index), `get_flamegraph` (nested tree), `get_top_functions` (self-sample ranking), and `get_profile_summary` (short NL triage). New `profiles` toolset; also included in `investigate`. Tenants without profiling enabled get a clear error asking them to contact the Last9 team (#214).
+- `validate_dashboard`: read-only lint + execute + classify for a saved dashboard id or inline `dashboard_definition` over a ≤24h window. Returns `dashboard_validation/v1` (same contract as the supervisor skill). Dry run — never creates/updates dashboards. Day-1 empty results are `valid_no_data` without diagnose probes (#275).
+- Five read-only Grafana tools, enabled under a new `grafana` toolset: `grafana_search_dashboards` (title substring search), `grafana_get_dashboard` (filtered summary by default: version, tags, templating variables, and each panel's type/datasource/gridPos/promQL targets; `full_json=true` returns the raw Grafana JSON), `grafana_list_folders`, `grafana_list_folder_dashboards`, and `grafana_list_datasources` (safe projection only — credential fields like `basicAuthUser`/`secureJsonFields` are never forwarded to the model). Tools hit the org Grafana API proxy authenticated with the same tenant MCP token; unknown panel types (plugin panels) are surfaced via `unsupportedPanelTypes` instead of being dropped. `grafana_list_folder_dashboards` resolves the folder's numeric id via `/api/folders/{uid}` then lists via `/api/search?folderIds=` (#289).
+
+### Fixed
+
+- Metrics tools that hit a Levitate "too many samples" 422 now return an actionable `METRICS_QUERY_TOO_MANY_SAMPLES` error that tells the agent to narrow filters or split the window (and never to ask the user to edit PromQL or retry the same query unchanged), instead of surfacing the raw upstream body (#221).
+- `grafana_search_dashboards` and `grafana_list_folder_dashboards` now page through `/api/search` until a page comes back short or 5,000 dashboards are reached, instead of silently returning only the API's default first page (1,000 rows). Results are wrapped in `{"dashboards":[…], "truncated":bool}`; `truncated: true` signals that more dashboards exist than are returned, so a caller can no longer mistake a capped list for a complete inventory (#289).
+- `create_dashboard` and `update_dashboard` now default every non-section panel to `version: 1` before the request reaches the API. The dashboards API now rejects new dashboards whose non-section panels omit `version` (last9/last9#11544), but the MCP server forwarded the model-generated dashboard JSON unmodified, so a versionless telemetry panel created through the tool bounced with a 400. `marshalDashboardRequest` now rewrites missing or zero `version` to `1` on every panel except `section` visualization panels, which the API exempts (#288).
 - `get_alert_config`'s `search_term` now matches alert group team, tier, and metadata labels (label keys and values), not just rule name, alert group name/type, data source name, and tags. Commit 5d9757f added `Team` and `Labels` to `alertGroupEntityMetadata` and `Tier` to `alertGroupEntity` and rendered all three in every rule row, but did not extend `matchesAlertConfigSearchTerm` to search them, so a `search_term` that appeared only in team/tier/labels silently returned `Found 0 alert rules:` while the same rows displayed the matching data when no search term was used. The `search_term` prompt description is updated to list team, tier, and labels alongside the previously-searched fields so the prompt, the jsonschema tag, and the implementation agree (#285).
 - `get_apm_service_deviations` no longer lets an improvement oust a cross-category regression from the `max_services` cap. `orderedDeviationSlices` interleaved each category's `Improvements` between that category's `Regressions` and the next category's `Regressions` (`Rel.Regr, Rel.Impr, Exp.Regr, …`), so a Reliability improvement consumed a cap slot — and was picked as the fleet follow-up target by `leadingDeviationIdentity` — before an Experience or SustainedLatency regression was even visited. `limitDeviationResult` then dropped the unvisited regression from `services` and the deviation leaderboards via `filterLeaderboardEntries`, and no downstream pass reinstated it: `shouldQueryOperations` and the corroborating follow-ups (`get_exceptions`, `get_service_logs`, `get_service_traces`) read the post-cap result and gate on `*.Regressions > 0`, so they never fired. At both `max_services=1` and the default `max_services=10`, a fleet's only regression could be silently deleted while improvements filled the cap and the follow-up was misrouted to an improving service. The slices are now ordered all `Regressions` before all `Improvements` (category-priority within each kind, magnitude within each category), so no improvement can outrank any regression across category boundaries — consistent with the regression-driven rest of the system. The committed category-over-magnitude priority among regressions (a low-magnitude Reliability regression still beats a high-magnitude Experience one) is preserved. The description's "magnitude-priority order" wording is corrected to "all regressions before all improvements, category-priority within each kind, magnitude within each category". Introduced by #264.
 - `get_trace_attribute_deviations` no longer forwards a folded `{"$and":[…]}` as a single `filters` element when `$notnull`/`$exists` was rewritten alongside a sibling operator. The filters array is AND-implicit, so that shape is split into sibling bare field-operator conditions (or rejected for `$or`/`$not`). Scope filters that use `TraceId`, `SpanId`, `ParentSpanId`, `TraceState`, or `Timestamp` are also rejected locally — the deviations endpoint returns HTTP 422 for those fields even though they are valid on `get_traces` (#283).
 - `get_databases` now lists databases discovered from infrastructure metrics, not only from OpenTelemetry client spans. Previously a database with no trace-backed client spans — an OpenSearch or RDS instance reporting through CloudWatch, for example — was reported as "No databases found" even though the Databases dashboard showed it. Rows now carry `sources`, `metrics_only`, `capabilities`, `activity`, and `resolved_labels`, and a row omits `throughput_rpm`, `p95_latency_ms`, `error_rate_pct` and `service_count` when it has no trace-backed values instead of reporting zeros (#277).
+- `get_alert_groups`: the `label_key` + `label_value` filter is now truly case-insensitive on both coordinates. `matchesAlertGroupEntityFilters` resolved the entity's labels to a single value first (exact-byte key, else the lexicographically-lowest case-variant key) before comparing it to the query, so when an entity carried duplicate keys differing only by case with different values (e.g. `domain=checkout` and `Domain=other`), the same semantic query matched or failed depending on the casing the caller typed — `label_key="domain"` matched while `label_key="DOMAIN"` dropped the same entity. The matcher now iterates the labels and accepts the entity when any `(key, value)` pair matches case-insensitively on both coordinates via `strings.EqualFold`, so the result no longer depends on query-key casing. `get_alert_config` is unaffected — its args struct never sets `label_key`/`label_value`, so the label branch was never entered there (#286).
+
+### Changed
+
+- Bumped `go.opentelemetry.io/otel/exporters/otlp/otlptrace` and `…/otlptracehttp` 1.43.0 → 1.45.0 (#290, #292).
 
 ## [0.17.0] - 2026-09-11
 

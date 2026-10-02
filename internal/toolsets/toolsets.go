@@ -61,12 +61,26 @@ var named = map[string][]string{
 	"dashboards": {
 		"list_dashboards",
 		"get_dashboard",
+		"validate_dashboard",
 		"create_dashboard",
 		"update_dashboard",
 		"delete_dashboard",
 		"list_dashboard_snapshots",
 		"get_dashboard_snapshot",
 		"delete_dashboard_snapshot",
+	},
+	"profiles": {
+		"get_profile_services",
+		"get_flamegraph",
+		"get_top_functions",
+		"get_profile_summary",
+	},
+	"grafana": {
+		"grafana_search_dashboards",
+		"grafana_get_dashboard",
+		"grafana_list_folders",
+		"grafana_list_folder_dashboards",
+		"grafana_list_datasources",
 	},
 }
 
@@ -145,7 +159,7 @@ func Parse(spec string) (Set, error) {
 	for _, t := range tokens {
 		switch t {
 		case "investigate":
-			for _, domain := range []string{"logs", "traces", "metrics"} {
+			for _, domain := range []string{"logs", "traces", "metrics", "profiles"} {
 				for _, tool := range named[domain] {
 					out[tool] = struct{}{}
 				}

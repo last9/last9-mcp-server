@@ -492,8 +492,15 @@ func matchesAlertGroupEntityFilters(
 	}
 
 	if labelKey := strings.TrimSpace(query.LabelKey); labelKey != "" {
-		labelValue, ok := entityLabelValue(entity.Metadata.Labels, labelKey)
-		if !ok || !strings.EqualFold(labelValue, strings.TrimSpace(query.LabelValue)) {
+		labelValue := strings.TrimSpace(query.LabelValue)
+		matched := false
+		for k, v := range entity.Metadata.Labels {
+			if strings.EqualFold(k, labelKey) && strings.EqualFold(v, labelValue) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			return false
 		}
 	}
@@ -513,30 +520,6 @@ func matchesAlertGroupEntityFilters(
 	}
 
 	return true
-}
-
-func entityLabelValue(labels map[string]string, key string) (string, bool) {
-	if labels == nil {
-		return "", false
-	}
-	if value, ok := labels[key]; ok {
-		return value, true
-	}
-
-	matched := ""
-	found := false
-	for existingKey := range labels {
-		if !strings.EqualFold(existingKey, key) {
-			continue
-		}
-		if !found || existingKey < matched {
-			matched, found = existingKey, true
-		}
-	}
-	if found {
-		return labels[matched], true
-	}
-	return "", false
 }
 
 func matchesAlertConfigSearchTerm(

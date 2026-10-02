@@ -152,10 +152,14 @@ func TestRegisterAllTools_ExposesDashboardObjectSchemas(t *testing.T) {
 		t.Fatalf("update_dashboard InputSchema mismatch:\ngot  %v\nwant %v", got, want)
 	}
 
-	for _, name := range []string{"list_dashboard_snapshots", "get_dashboard_snapshot", "delete_dashboard_snapshot"} {
+	for _, name := range []string{"list_dashboard_snapshots", "get_dashboard_snapshot", "delete_dashboard_snapshot", "validate_dashboard"} {
 		_ = toolByName(t, list.Tools, name)
 	}
 	if tool := toolByName(t, list.Tools, "get_api_source_catalog"); !strings.Contains(tool.Description, "schema version: `1`") {
 		t.Fatalf("catalog tools/list description must publish its schema version: %q", tool.Description)
+	}
+
+	if got, want := schemaAsMap(t, toolByName(t, list.Tools, "validate_dashboard").InputSchema), schemaAsMap(t, dashboards.GetValidateDashboardInputSchema()); !reflect.DeepEqual(got, want) {
+		t.Fatalf("validate_dashboard InputSchema mismatch:\ngot  %v\nwant %v", got, want)
 	}
 }

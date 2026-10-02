@@ -400,3 +400,126 @@ func TestGetAlertGroupsHandler_LabelValueStillExactNotSubstring(t *testing.T) {
 		t.Fatalf("substring domain=check must not match domain=checkout, got %v", groupIDs(resp.Groups))
 	}
 }
+
+// sampleAlertGroupsWithCaseVariantLabelKeys adds an entity that stores two
+// label keys differing only by case ("domain" and "Domain") with different
+// values. Compass treats label keys as byte-exact, so both coexist; the
+// case-insensitive filter must match the entity regardless of the casing
+// used in the query key.
+func sampleAlertGroupsWithCaseVariantLabelKeys() []groupedAlertGroupEntitiesResponse {
+	groups := sampleAlertGroupEntities()
+	groups[0].Entities = append(groups[0].Entities, alertGroupEntity{
+		ID:             "entity-5",
+		Name:           "ZZZ Duplicate Label Keys",
+		Type:           "alert-group",
+		EntityClass:    alertGroupEntityClassGrafanaAlerts,
+		Tier:           "p1",
+		DataSourceName: "Grafana Prod",
+		Metadata: alertGroupEntityMetadata{
+			Team:   "checkout",
+			Labels: map[string]string{"domain": "checkout", "Domain": "other"},
+		},
+	})
+	return groups
+}
+
+// TestGetAlertGroupsHandler_LabelCaseInsensitiveAcrossDuplicateCaseVariantKeys
+// guards the documented case-insensitive label filter against the regression
+// where an entity carries duplicate case-variant keys with different values.
+// Both entity-1 ({"domain":"checkout"}) and entity-5
+// ({"domain":"checkout","Domain":"other"}) must match for every casing of the
+// query key — the previous single-value resolution dropped entity-5 whenever
+// the query key's casing selected the "Domain"->"other" variant.
+func TestGetAlertGroupsHandler_LabelCaseInsensitiveAcrossDuplicateCaseVariantKeys(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		labelKey   string
+		labelValue string
+	}{
+		{"lowercase key", "domain", "checkout"},
+		{"uppercase key", "DOMAIN", "checkout"},
+		{"mixed case key", "Domain", "CHECKOUT"},
+		{"arbitrary case key", "DoMaIn", "CheCkOut"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := alertConfigTestServerState{
+				alertRules:         sampleAlertConfigRules(),
+				entityGroups:       sampleAlertGroupsWithCaseVariantLabelKeys(),
+				alertRulesStatus:   http.StatusOK,
+				entityLookupStatus: http.StatusOK,
+			}
+			body, _, err := executeGetAlertGroups(t, &state, GetAlertGroupsArgs{
+				LabelKey:   tc.labelKey,
+				LabelValue: tc.labelValue,
+			})
+			if err != nil {
+				t.Fatalf("handler returned error: %v", err)
+			}
+			assertAlertGroupIDs(t, decodeAlertGroupsResponse(t, body), []string{"entity-1", "entity-5"})
+			assertNoEntityFilterOfType(t, state.lastEntityRequest, "label")
+		})
+	}
+}
+
+func TestGetAlertGroupsHandler_LabelFilterRejectsNonMatchingValue(t *testing.T) {
+	state := alertConfigTestServerState{
+		alertRules:         sampleAlertConfigRules(),
+		entityGroups:       sampleAlertGroupsWithCaseVariantLabelKeys(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusOK,
+	}
+	body, _, err := executeGetAlertGroups(t, &state, GetAlertGroupsArgs{
+		LabelKey:   "domain",
+		LabelValue: "payments",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	resp := decodeAlertGroupsResponse(t, body)
+	if resp.Count != 0 {
+		t.Fatalf("domain=payments must match no entity, got %v", groupIDs(resp.Groups))
+	}
+}
+
+// TestMatchesAlertGroupEntityFilters_LabelCaseInsensitiveDuplicateCaseVariantKeys
+// is the direct regression test for the case-sensitivity violation: the same
+// entity and labels must accept the matching value regardless of the casing
+// of the query key, even when duplicate case-variant keys hold different
+// values. Under the previous implementation the match outcome depended on the
+// query key casing because a single value was resolved before comparison.
+func TestMatchesAlertGroupEntityFilters_LabelCaseInsensitiveDuplicateCaseVariantKeys(t *testing.T) {
+	labels := map[string]string{"domain": "checkout", "Domain": "other"}
+	entity := alertGroupEntity{Metadata: alertGroupEntityMetadata{Labels: labels}}
+
+	for _, tc := range []struct {
+		name       string
+		labelKey   string
+		labelValue string
+		want       bool
+	}{
+		{"lowercase key matches lowercase variant", "domain", "checkout", true},
+		{"uppercase key matches lowercase variant", "DOMAIN", "checkout", true},
+		{"mixed key matches lowercase variant", "Domain", "checkout", true},
+		{"value case differs", "DOMAIN", "CheckOut", true},
+		{"lowercase key matches uppercase variant", "domain", "other", true},
+		{"uppercase key matches uppercase variant", "DOMAIN", "other", true},
+		{"non-matching value rejected", "domain", "payments", false},
+		{"non-matching key rejected", "env", "prod", false},
+		{"nil labels no match", "domain", "checkout", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := entity
+			if tc.name == "nil labels no match" {
+				e = alertGroupEntity{Metadata: alertGroupEntityMetadata{Labels: nil}}
+			}
+			got := matchesAlertGroupEntityFilters(e, true, alertGroupEntityQuery{
+				LabelKey:   tc.labelKey,
+				LabelValue: tc.labelValue,
+			})
+			if got != tc.want {
+				t.Fatalf("matchesAlertGroupEntityFilters(label_key=%q, label_value=%q) = %v, want %v",
+					tc.labelKey, tc.labelValue, got, tc.want)
+			}
+		})
+	}
+}

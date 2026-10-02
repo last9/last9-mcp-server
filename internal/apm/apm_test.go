@@ -653,6 +653,13 @@ func TestPromqlRangeQueryRelays400AndDrains502(t *testing.T) {
 			wantSubstr: "parse error",
 		},
 		{
+			name:       "422 too many samples gives actionable metrics error",
+			status:     http.StatusUnprocessableEntity,
+			body:       `{"error":"Too many samples queried. Please try selecting a smaller time range."}`,
+			wantSubstr: "METRICS_QUERY_TOO_MANY_SAMPLES",
+			forbid:     "Upstream response",
+		},
+		{
 			name:       "502 omits body",
 			status:     http.StatusBadGateway,
 			body:       `{"error":"gateway SECRET"}`,
@@ -709,6 +716,9 @@ func TestPromqlRangeQueryRelays400AndDrains502(t *testing.T) {
 // single-chunk path are a different, hard-abort contract — see
 // TestServicePerformanceDetailsReadParseFailureHardAbortsSingleChunkWindow
 // below.
+//
+// The fixture uses a 422 "too many samples" body so this also asserts the
+// actionable METRICS_QUERY_TOO_MANY_SAMPLES mapping through partial_errors.
 func TestServicePerformanceDetailsPromFailureSoftOnSingleChunkWindow(t *testing.T) {
 	var n atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -717,8 +727,8 @@ func TestServicePerformanceDetailsPromFailureSoftOnSingleChunkWindow(t *testing.
 			_, _ = io.WriteString(w, `[]`)
 			return
 		}
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = io.WriteString(w, `{"error":"bad selector"}`)
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = io.WriteString(w, `{"error":"Too many samples queried. Please try selecting a smaller time range."}`)
 	}))
 	defer server.Close()
 
@@ -749,17 +759,25 @@ func TestServicePerformanceDetailsPromFailureSoftOnSingleChunkWindow(t *testing.
 	if len(details.PartialErrors) == 0 {
 		t.Fatal("expected a partial error for the failing sub-query")
 	}
-	found := false
-	for _, e := range details.PartialErrors {
-		if strings.Contains(e, "bad selector") {
-			found = true
-			if strings.HasPrefix(e, "chunk ") {
-				t.Errorf("single-chunk partial error must not carry a chunk-bounds prefix, got %q", e)
-			}
+	joined := strings.Join(details.PartialErrors, "\n")
+	for _, want := range []string{
+		"METRICS_QUERY_TOO_MANY_SAMPLES",
+		"narrower filters",
+		"do not ask the user to edit PromQL",
+		"preserve the requested coverage",
+		"Never average percentile values",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("actionable partial_errors %q missing %q", joined, want)
 		}
 	}
-	if !found {
-		t.Fatalf("expected a partial error containing the sanitized 400 body, got %+v", details.PartialErrors)
+	for _, e := range details.PartialErrors {
+		if strings.HasPrefix(e, "chunk ") {
+			t.Errorf("single-chunk partial error must not carry a chunk-bounds prefix, got %q", e)
+		}
+	}
+	if details.ServiceName != "checkout" {
+		t.Fatalf("surviving payload missing service_name, got %#v", details)
 	}
 }
 

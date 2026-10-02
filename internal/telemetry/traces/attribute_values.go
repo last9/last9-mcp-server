@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"time"
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
@@ -18,9 +17,12 @@ import (
 
 // GetTraceAttributeValuesArgs is the input for get_trace_attribute_values.
 type GetTraceAttributeValuesArgs struct {
-	TagName  string                   `json:"tag_name" jsonschema:"required,The attribute name from get_trace_attributes (e.g. resource_department or attributes['http.method'])"`
-	Region   string                   `json:"region,omitempty" jsonschema:"Region to query (optional). Defaults to configured region."`
-	Pipeline []map[string]interface{} `json:"pipeline,omitempty" jsonschema:"Optional pipeline of prior filter stages to scope values to a slice, e.g. [{\"type\":\"filter\",\"query\":{\"$eq\":[\"ServiceName\",\"<service>\"]}}]. Omit for global values."`
+	TagName         string                   `json:"tag_name" jsonschema:"required,The attribute name from get_trace_attributes (e.g. resource_department or attributes['http.method'])"`
+	Region          string                   `json:"region,omitempty" jsonschema:"Region to query (optional). Defaults to configured region."`
+	Pipeline        []map[string]interface{} `json:"pipeline,omitempty" jsonschema:"Optional pipeline of prior filter stages to scope values to a slice, e.g. [{\"type\":\"filter\",\"query\":{\"$eq\":[\"ServiceName\",\"<service>\"]}}]. Omit for global values."`
+	LookbackMinutes int                      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 15, minimum: 1)"`
+	StartTimeISO    string                   `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
+	EndTimeISO      string                   `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
 }
 
 // traceTagValuesAPIResponse is the raw API shape.
@@ -40,16 +42,31 @@ func NewGetTraceAttributeValuesHandler(client *http.Client, cfg models.Config) f
 		if rawTagName == "" {
 			return nil, nil, fmt.Errorf("tag_name cannot be blank")
 		}
+
+		timeParams := map[string]interface{}{}
+		if args.LookbackMinutes != 0 {
+			timeParams["lookback_minutes"] = args.LookbackMinutes
+		}
+		if args.StartTimeISO != "" {
+			timeParams["start_time_iso"] = args.StartTimeISO
+		}
+		if args.EndTimeISO != "" {
+			timeParams["end_time_iso"] = args.EndTimeISO
+		}
+		startTime, endTime, err := utils.GetTimeRange(timeParams, 15)
+		if err != nil {
+			return nil, nil, err
+		}
+
 		region := cfg.Region
 		if args.Region != "" {
 			region = args.Region
 		}
 
-		now := time.Now()
 		q := url.Values{}
 		q.Set("region", region)
-		q.Set("start", fmt.Sprintf("%d", now.Add(-15*time.Minute).Unix()))
-		q.Set("end", fmt.Sprintf("%d", now.Unix()))
+		q.Set("start", fmt.Sprintf("%d", startTime.Unix()))
+		q.Set("end", fmt.Sprintf("%d", endTime.Unix()))
 		apiURL := cfg.APIBaseURL + fmt.Sprintf(constants.EndpointTraceTagValues, url.PathEscape(rawTagName)) + "?" + q.Encode()
 
 		// The label-values endpoint requires a POST with a pipeline body (same as series).

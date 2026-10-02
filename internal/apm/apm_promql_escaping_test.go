@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -180,13 +181,13 @@ func escapeEnvExactMatcher(env string) string {
 	return `env="` + utils.EscapePromQLLabel(env) + `"`
 }
 
-// effectiveEnv mirrors the handlers' "" -> ".*" default so assertions compare
-// against the value actually rendered into the PromQL.
+// effectiveEnv mirrors the handlers' "" -> ".*" default and regexp quoting of
+// an explicit env, so assertions compare against the value rendered into PromQL.
 func effectiveEnv(env string) string {
 	if env == "" {
 		return ".*"
 	}
-	return env
+	return regexp.QuoteMeta(env)
 }
 
 // containsAny reports whether q contains at least one of the wants.
