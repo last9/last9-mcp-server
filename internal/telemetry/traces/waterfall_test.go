@@ -55,7 +55,7 @@ func TestTraceWaterfallHandlerRejectsOversizedUpstreamBodyBeforeDecode(t *testin
 			Header:     make(http.Header),
 		}, nil
 	})}
-	handler := NewGetTraceWaterfallHandler(client, deviationTestConfig("https://example.test"))
+	handler := NewGetTraceWaterfallHandler(client, tracesTestConfig("https://example.test"))
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceWaterfallArgs{TraceID: "trace-1"})
 	if err == nil {
 		t.Fatalf("expected bounded-body error, got %v", err)

@@ -1,25 +1,27 @@
-Query traces with `tracejson_query` — a JSON **array of stages**. Each stage MUST set `"type"` to `filter`|`parse`|`aggregate`|`window_aggregate`. Do **not** use `"stage"` or `"conditions"`. For an exact `trace_id` or recent traces of one service, prefer `get_service_traces`.
+`tracejson_query` is a JSON stage array. Each stage sets `"type"`: `filter`|`parse`|`aggregate`|`window_aggregate`; no `"stage"`/`"conditions"`. Prefer `get_service_traces` for exact trace_id/recent service traces.
 
 **Filter shape:**
 ```json
 [{"type":"filter","query":{"$and":[{"$eq":["StatusCode","STATUS_CODE_ERROR"]}]}}]
 ```
-`query` holds `$and`/`$or` of `{ "$eq"|"$neq"|"$contains"|"$regex"|"$gt"|…: [field, value] }`. Values are strings. Always wrap in `$and`. Never invent SQL. No `filter_tags`/`tags` params—filter in the pipeline only.
+`query` holds `$and`/`$or` of `{ "$eq"|"$neq"|"$contains"|"$regex"|"$gt"|…: [field,value] }`. Values are strings; always `$and`-wrap. Never SQL or filter_tags/tags.
 
-**Pattern match:** regex patterns (e.g. `checkout.*`) → `$regex` on the field — not `$contains`.
+**Pattern:** regex like `checkout.*` → `$regex`, not `$contains`.
 
-**Existence:** "attribute exists/present/non-empty" → `{"$neq":["attributes['key']",""]}` — never `$exists`/`$notnull`.
+**Existence:** `{"$neq":["attributes['key']",""]}`; never `$exists`/`$notnull`.
 
 **Scope:** tenant name → `resources['last9.tenant']`; deployment env → `resources['deployment.environment']`.
 
-**Time (tool args):** Prefer `lookback_minutes` (default **60**). Absolute → `start_time_iso`+`end_time_iso` (RFC3339). Never put the window as a `Timestamp` filter in the pipeline.
+**Time args:** `lookback_minutes` (default **60**); absolute RFC3339 uses `start_time_iso`+`end_time_iso`, never pipeline Timestamp filters.
 
-**Fields:** Top-level: `TraceId`, `SpanId`, `ServiceName`, `SpanName`, `SpanKind`, `StatusCode`, `Duration`, `Timestamp`, `ParentSpanId`. SpanKind/StatusCode need full OTel prefixes (`SPAN_KIND_SERVER`, `STATUS_CODE_ERROR`—not `SERVER`/`ERROR`). **`Duration` is nanoseconds** (1000ms = `1000000000`). Span/resource attrs → `get_trace_attributes*`; use `attributes['key']` / `resources['key']` (never `SpanAttributes.foo`).
+**Fields:** TraceId, SpanId, ServiceName, SpanName, SpanKind, StatusCode, Duration, Timestamp, ParentSpanId. Enums need OTel prefixes (`SPAN_KIND_SERVER`, `STATUS_CODE_ERROR`). **Duration is nanoseconds** (1000ms=`1000000000`). Attributes use `attributes['key']`/`resources['key']`, never `SpanAttributes.foo`.
 
-**Aggregate:** `aggregates`+`groupby`; each `{"function":{"$count":[]},"as":"name"}`.
+**Aggregate:** use `aggregates`+`groupby`. `$quantile` is the general/default percentile operator: `{"function":{"$quantile":[0.99,"Duration"]},"as":"p99"}`. Compute from raw spans; never average percentile samples. `Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first.
 
-**window_aggregate:** `{"type":"window_aggregate","function":{"$count":[]},"as":"c","window":["1","minutes"]}` — not the aggregate stage.
+**window_aggregate:** `{"type":"window_aggregate","function":{"$quantile":[0.99,"Duration"]},"as":"p99","window":["24","hours"],"groupby":{"SpanName":"endpoint"}}`.
 
-**Order:** filter first (match-all `TraceId`/`SpanId` before aggregate). Show/find → filter only; aggregate/window_aggregate for counts.
+For calendar buckets, use explicit ISO bounds and time zone. P99 `Duration` output remains nanoseconds.
+
+**Order:** filter first (match-all TraceId/SpanId before aggregate). Show/find → filter only; analysis → aggregate/window_aggregate.
 
 Full manual: resource `last9://reference/tracejson`

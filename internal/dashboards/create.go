@@ -32,6 +32,14 @@ func NewCreateDashboardHandler(client *http.Client, cfg models.Config) func(cont
 			return nil, nil, mapDashboardAPIError(err)
 		}
 
-		return textResultWithDashboardLink(dlBuilder, body, ""), nil, nil
+		id := dashboardIDFromResponse(body)
+		// No fallback id: the helper re-extracts from the same body.
+		result := textResultWithDashboardLink(dlBuilder, body, "")
+		if id != "" {
+			result.Content = append(result.Content, &mcp.TextContent{
+				Text: "To refine this dashboard, call update_dashboard with id=" + id + " and the full dashboard body (update replaces the whole dashboard). Do not call create_dashboard again for this dashboard.",
+			})
+		}
+		return result, nil, nil
 	}
 }

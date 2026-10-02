@@ -185,6 +185,10 @@ func newAPMServiceDeviationsHandler(client *http.Client, baseCfg models.Config, 
 				result.Warnings = append(result.Warnings, "Operation correlation was unavailable.")
 			} else {
 				result.PartialErrors = append(result.PartialErrors, publicDeviationErrors(opExecution.Errors)...)
+				if n := distinctOperationIdentities(opExecution); n > operationCardinalityWarningThreshold {
+					result.Warnings = append(result.Warnings, fmt.Sprintf(
+						"Operation analysis parsed %d distinct span names for this service; high span-name cardinality slows this tool and usually means unbounded span names (for example URLs with embedded IDs) — check the service's instrumentation.", n))
+				}
 				result.OperationCorrelations = correlateOperations(result, opExecution, windows, maxOperations)
 				result.OperationApdexReconciliations = reconcileOperationApdex(result, opExecution, windows, maxOperations)
 			}
@@ -194,6 +198,9 @@ func newAPMServiceDeviationsHandler(client *http.Client, baseCfg models.Config, 
 		result.PartialErrors = sortedPartialErrors(result.PartialErrors)
 		if len(result.PartialErrors) > 0 {
 			result.Warnings = uniqueSorted(append(result.Warnings, "Some metric signals were unavailable; conclusions use the successful measurements only."))
+		}
+		if hasRejectedDeviationErrors(result.PartialErrors) {
+			result.Warnings = uniqueSorted(append(result.Warnings, "The datasource rejected or timed out on some queries; the unnarrowed scope may be too large. Narrow with env or service_name and retry."))
 		}
 		builder := deeplink.NewBuilder(queryCfg.OrgSlug, queryCfg.ClusterID)
 		result.DashboardURL = builder.BuildAPMServiceLink(
@@ -548,105 +555,6 @@ func appendLeaderboard(board *SignalLeaderboard, entry LeaderboardEntry) {
 		board.Improvements = append(board.Improvements, entry)
 	}
 }
-
-func sortDeviationResult(result *apmDeviationResult) {
-	sort.Slice(result.Services, func(i, j int) bool {
-		return identityLess(result.Services[i].ServiceName, result.Services[i].Env, result.Services[j].ServiceName, result.Services[j].Env)
-	})
-	sort.Slice(result.TelemetryChanges, func(i, j int) bool {
-		return identityLess(result.TelemetryChanges[i].ServiceName, result.TelemetryChanges[i].Env, result.TelemetryChanges[j].ServiceName, result.TelemetryChanges[j].Env)
-	})
-	for _, board := range []*SignalLeaderboard{&result.Leaderboards.Reliability, &result.Leaderboards.Experience, &result.Leaderboards.SustainedLatency} {
-		sortLeaderboard(board.Regressions)
-		sortLeaderboard(board.Improvements)
-	}
-	sort.SliceStable(result.ThroughputShifts, func(i, j int) bool {
-		left := math.Abs(result.ThroughputShifts[i].Comparison.AbsoluteDelta)
-		right := math.Abs(result.ThroughputShifts[j].Comparison.AbsoluteDelta)
-		if left != right {
-			return left > right
-		}
-		return identityLess(result.ThroughputShifts[i].ServiceName, result.ThroughputShifts[i].Env, result.ThroughputShifts[j].ServiceName, result.ThroughputShifts[j].Env)
-	})
-}
-
-func limitDeviationResult(result *apmDeviationResult, limit int) {
-	if limit <= 0 {
-		return
-	}
-	identities := make(map[string]struct{}, limit)
-	for _, service := range result.Services {
-		if len(identities) == limit {
-			break
-		}
-		identities[service.ServiceName+"\x00"+service.Env] = struct{}{}
-	}
-	for _, change := range result.TelemetryChanges {
-		if len(identities) == limit {
-			break
-		}
-		identities[change.ServiceName+"\x00"+change.Env] = struct{}{}
-	}
-	result.Services = filterServices(result.Services, identities)
-	result.TelemetryChanges = filterTelemetryChanges(result.TelemetryChanges, identities)
-	result.ThroughputShifts = filterLeaderboardEntries(result.ThroughputShifts, identities)
-	for _, board := range []*SignalLeaderboard{&result.Leaderboards.Reliability, &result.Leaderboards.Experience, &result.Leaderboards.SustainedLatency} {
-		board.Regressions = filterLeaderboardEntries(board.Regressions, identities)
-		board.Improvements = filterLeaderboardEntries(board.Improvements, identities)
-	}
-}
-
-func filterServices(values []ServiceDeviation, identities map[string]struct{}) []ServiceDeviation {
-	result := make([]ServiceDeviation, 0, len(values))
-	for _, value := range values {
-		if _, ok := identities[value.ServiceName+"\x00"+value.Env]; ok {
-			result = append(result, value)
-		}
-	}
-	return result
-}
-
-func filterTelemetryChanges(values []TelemetryChange, identities map[string]struct{}) []TelemetryChange {
-	result := make([]TelemetryChange, 0, len(values))
-	for _, value := range values {
-		if _, ok := identities[value.ServiceName+"\x00"+value.Env]; ok {
-			result = append(result, value)
-		}
-	}
-	return result
-}
-
-func filterLeaderboardEntries(values []LeaderboardEntry, identities map[string]struct{}) []LeaderboardEntry {
-	result := make([]LeaderboardEntry, 0, len(values))
-	for _, value := range values {
-		if _, ok := identities[value.ServiceName+"\x00"+value.Env]; ok {
-			result = append(result, value)
-		}
-	}
-	return result
-}
-
-func sortLeaderboard(entries []LeaderboardEntry) {
-	sort.SliceStable(entries, func(i, j int) bool {
-		left, right := comparisonMagnitude(entries[i].Comparison), comparisonMagnitude(entries[j].Comparison)
-		if left != right {
-			return left > right
-		}
-		return identityLess(entries[i].ServiceName, entries[i].Env, entries[j].ServiceName, entries[j].Env)
-	})
-}
-
-func comparisonMagnitude(comparison SignalComparison) float64 {
-	if comparison.RelativeDelta != nil {
-		return math.Abs(*comparison.RelativeDelta)
-	}
-	return math.Abs(comparison.AbsoluteDelta)
-}
-
-func identityLess(leftService, leftEnv, rightService, rightEnv string) bool {
-	return leftService+"\x00"+leftEnv < rightService+"\x00"+rightEnv
-}
-
 func hasMaterialDeviation(result apmDeviationResult) bool {
 	return len(result.Leaderboards.Reliability.Regressions)+len(result.Leaderboards.Reliability.Improvements)+
 		len(result.Leaderboards.Experience.Regressions)+len(result.Leaderboards.Experience.Improvements)+
@@ -733,7 +641,7 @@ func reconcileOperationApdex(serviceResult apmDeviationResult, execution deviati
 				signal.Current.Evidence.Selected.ObservedPoints == 0 || signal.Baseline.Evidence.Selected.ObservedPoints == 0 {
 				continue
 			}
-			key := service.ServiceName + "\x00" + service.Env
+			key := identityKey(service.ServiceName, service.Env)
 			bases[key] = serviceApdexBasis{
 				serviceName: service.ServiceName, env: service.Env,
 				currentRequests: signal.Current.ApdexRequestTotal, baselineRequests: signal.Baseline.ApdexRequestTotal,
@@ -753,7 +661,7 @@ func reconcileOperationApdex(serviceResult apmDeviationResult, execution deviati
 		if !curOK || !baseOK || cur.SpanName == "" {
 			continue
 		}
-		basisKey := cur.ServiceName + "\x00" + cur.Env
+		basisKey := identityKey(cur.ServiceName, cur.Env)
 		basis, ok := bases[basisKey]
 		if !ok {
 			continue
@@ -862,13 +770,7 @@ func recommendedDeviationFollowups(result apmDeviationResult, args DeviationArgs
 }
 
 func leadingDeviationIdentity(result apmDeviationResult) (LeaderboardEntry, bool) {
-	ordered := [][]LeaderboardEntry{
-		result.Leaderboards.Reliability.Regressions, result.Leaderboards.Reliability.Improvements,
-		result.Leaderboards.Experience.Regressions, result.Leaderboards.Experience.Improvements,
-		result.Leaderboards.SustainedLatency.Regressions, result.Leaderboards.SustainedLatency.Improvements,
-		result.ThroughputShifts,
-	}
-	for _, entries := range ordered {
+	for _, entries := range orderedDeviationSlices(result) {
 		if len(entries) > 0 {
 			return entries[0], true
 		}
@@ -878,6 +780,39 @@ func leadingDeviationIdentity(result apmDeviationResult) (LeaderboardEntry, bool
 		return LeaderboardEntry{ServiceName: change.ServiceName, Env: change.Env}, true
 	}
 	return LeaderboardEntry{}, false
+}
+
+// operationCardinalityWarningThreshold is the distinct span-name count above
+// which the operation-scope analysis warns about instrumentation cardinality.
+// Since the candidate pre-filter was removed, operation queries return every
+// span name of the service, so an unbounded span-name space (URLs with
+// embedded IDs) is the main realistic cost amplifier of a scoped call.
+const operationCardinalityWarningThreshold = 500
+
+// distinctOperationIdentities counts the distinct span names observed across
+// both windows of the operation-scope execution.
+func distinctOperationIdentities(execution deviationQueryExecution) int {
+	names := map[string]struct{}{}
+	for _, records := range [][]deviationAggregate{execution.Current.Records, execution.Baseline.Records} {
+		for _, record := range records {
+			if record.SpanName != "" {
+				names[record.SpanName] = struct{}{}
+			}
+		}
+	}
+	return len(names)
+}
+
+// hasRejectedDeviationErrors reports whether any partial error came from the
+// datasource limit/timeout class, which since the pre-filter removal is the
+// signal that the selected scope is too large for one call.
+func hasRejectedDeviationErrors(errors []deviationPartialError) bool {
+	for _, item := range errors {
+		if item.Kind == deviationQueryErrorKindRejected {
+			return true
+		}
+	}
+	return false
 }
 
 func publicDeviationErrors(errors []deviationQueryError) []deviationPartialError {

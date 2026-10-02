@@ -29,6 +29,22 @@ type HTTPTransportError struct {
 func (err *HTTPTransportError) Error() string { return "HTTP request failed: " + err.Err.Error() }
 func (err *HTTPTransportError) Unwrap() error { return err.Err }
 
+// EQExample renders a tracejson/logjson equality condition with both operands
+// JSON-encoded, so the example stays valid JSON when field or value contains
+// quotes, backslashes, or control characters. HTML escaping is disabled so
+// placeholders like <value> and URLs with & stay readable in hints.
+func EQExample(field, value string) string {
+	return fmt.Sprintf(`{"$eq": [%s, %s]}`, jsonStringLiteral(field), jsonStringLiteral(value))
+}
+
+func jsonStringLiteral(s string) string {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(s) // encoding a string never fails
+	return strings.TrimSuffix(buf.String(), "\n")
+}
+
 // Constants for time-related values
 const (
 	// DefaultLookbackMinutes is the default lookback time in minutes (1 hour)
@@ -154,26 +170,40 @@ func MakePromInstantAPIQuery(ctx context.Context, client *http.Client, promql st
 	return client.Do(req)
 }
 
-func MakePromRangeAPIQuery(ctx context.Context, client *http.Client, promql string, startTimeParam, endTimeParam int64, cfg models.Config) (*http.Response, error) {
+// PromResolution is an opt-in resolution hint; the zero value sends neither
+// field and leaves the step to the backend. Set one or the other: Step pins an
+// absolute step, MaxDataPoints caps points per series and lets the backend
+// size the step (a cap, not a target — it only binds once the default step
+// would exceed it). Sending both is untested.
+type PromResolution struct {
+	Step          int64
+	MaxDataPoints int64
+}
+
+func MakePromRangeAPIQuery(ctx context.Context, client *http.Client, promql string, startTimeParam, endTimeParam int64, cfg models.Config, res PromResolution) (*http.Response, error) {
 	// The Last9 PromQL HTTP endpoint treats `timestamp` as the END of the
 	// query window and runs Prometheus over [timestamp - window, timestamp]
 	// (this is also how MakePromInstantAPIQuery above uses endTimeParam as
 	// `timestamp`). Anchoring on startTimeParam shifts every range query
 	// backwards by exactly one window length.
 	promRangeParam := struct {
-		Query     string `json:"query"`
-		Timestamp int64  `json:"timestamp"`
-		Window    int64  `json:"window"`
-		ReadURL   string `json:"read_url"`
-		Username  string `json:"username"`
-		Password  string `json:"password"`
+		Query         string `json:"query"`
+		Timestamp     int64  `json:"timestamp"`
+		Window        int64  `json:"window"`
+		ReadURL       string `json:"read_url"`
+		Username      string `json:"username"`
+		Password      string `json:"password"`
+		Step          int64  `json:"step,omitempty"`
+		MaxDataPoints int64  `json:"max_data_points,omitempty"`
 	}{
-		Query:     promql,
-		Timestamp: endTimeParam,
-		Window:    endTimeParam - startTimeParam,
-		ReadURL:   cfg.PrometheusReadURL,
-		Username:  cfg.PrometheusUsername,
-		Password:  cfg.PrometheusPassword,
+		Query:         promql,
+		Timestamp:     endTimeParam,
+		Window:        endTimeParam - startTimeParam,
+		ReadURL:       cfg.PrometheusReadURL,
+		Username:      cfg.PrometheusUsername,
+		Password:      cfg.PrometheusPassword,
+		Step:          res.Step,
+		MaxDataPoints: res.MaxDataPoints,
 	}
 
 	bodyBytes, err := json.Marshal(promRangeParam)
@@ -391,6 +421,7 @@ func PopulateAPICfg(cfg *models.Config) error {
 		apiHost = audURL.Host
 	}
 	cfg.APIBaseURL = fmt.Sprintf("https://%s/api/v4/organizations/%s", apiHost, cfg.OrgSlug)
+	cfg.GrafanaAPIBaseURL = fmt.Sprintf("https://%s/api/gp/v1/organizations/%s", apiHost, cfg.OrgSlug)
 	req, err := http.NewRequestWithContext(context.Background(), "GET", cfg.APIBaseURL+constants.EndpointDatasources, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request for datasources: %w", err)

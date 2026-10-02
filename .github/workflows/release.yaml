@@ -1,4 +1,4 @@
-# .github/workflows/release.yml
+# .github/workflows/release.yaml
 name: Release on Version Change
 
 on:
@@ -114,8 +114,13 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Ensure npm supports trusted publishing (OIDC)
+        run: |
+          npm install -g npm@^11.5.1
+          npm --version
 
       - name: Get version from package.json
         id: get_version
