@@ -277,6 +277,24 @@ func TestDumpTools(t *testing.T) {
 	}
 }
 
+func TestDumpToolsHonorsToolsetsFilter(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, toolsets.Set{"get_exceptions": {}}); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if len(out.Tools) != 1 || out.Tools[0].Name != "get_exceptions" {
+		t.Fatalf("filtered dump = %+v, want exactly [get_exceptions]", out.Tools)
+	}
+}
+
 func TestDumpToolsLogsIncludesServiceProfile(t *testing.T) {
 	allowed, err := toolsets.Parse("logs")
 	if err != nil {
