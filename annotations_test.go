@@ -10,6 +10,7 @@ import (
 // added here on purpose; any tool not listed must be served as read-only.
 var writeTools = map[string]struct{ destructive, idempotent bool }{
 	"add_drop_rule":             {destructive: true, idempotent: false},
+	"add_remapping_rule":        {destructive: false, idempotent: false},
 	"create_dashboard":          {destructive: false, idempotent: false},
 	"update_dashboard":          {destructive: true, idempotent: true},
 	"delete_dashboard":          {destructive: true, idempotent: true},

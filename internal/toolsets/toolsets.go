@@ -57,6 +57,8 @@ var named = map[string][]string{
 		"get_notification_channels",
 		"get_drop_rules",
 		"add_drop_rule",
+		"get_remapping_rules",
+		"add_remapping_rule",
 	},
 	"dashboards": {
 		"list_dashboards",
