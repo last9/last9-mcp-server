@@ -432,6 +432,8 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: prompts.DeleteDashboardSnapshotDescription,
 	}, dashboards.NewDeleteDashboardSnapshotHandler(client, cfg)))
 
+	registerPulseTools(reg, server, cfg, client)
+
 	// Register Grafana read tools
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "grafana_search_dashboards",
