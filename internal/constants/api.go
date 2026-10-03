@@ -17,6 +17,13 @@ const (
 	// EndpointLogsSeries returns the label-sets present for a given log pipeline.
 	// Used for pipeline-scoped attribute discovery.
 	EndpointLogsSeries = "/logs/api/v2/series/json"
+	// EndpointLogSearch answers a whole LogJSON search in one call: the API
+	// plans, probes and fetches server-side. Sibling of EndpointLogsQueryRange,
+	// which answers exactly one time range.
+	EndpointLogSearch = "/logs/query"
+
+	// Profiles API endpoints (continuous profiling / flamegraphs).
+	EndpointProfilesQueryRange = "/profiles/api/v1/query_range/json"
 
 	// Prometheus API endpoints
 	EndpointPromQueryInstant = "/prom_query_instant"
@@ -34,6 +41,7 @@ const (
 	EndpointRemappingLogsExtract = "/otel_settings/remapping/logs_extract"
 	EndpointRemappingLogsMap     = "/otel_settings/remapping/logs_map"
 	EndpointRemappingTracesMap   = "/otel_settings/remapping/traces_map"
+	EndpointOTelSettingsDrop     = "/otel_settings/drop"
 	EndpointAlertRules           = "/alert-rules"
 	EndpointAlertsMonitor        = "/alerts/monitor"
 	EndpointEntitiesList         = "/entities/list"
@@ -42,6 +50,8 @@ const (
 	EndpointNotificationSettings = "/notification_settings"
 	// EndpointSuggest returns fuzzy entity-name suggestions for the did_you_mean tool.
 	EndpointSuggest = "/suggest"
+	// EndpointServiceProfile derives per-service telemetry shape (POST body mirrors /suggest + region).
+	EndpointServiceProfile = "/service_profile"
 
 	// Dashboard API endpoints (v4)
 	EndpointDashboards            = "/dashboards"
@@ -53,7 +63,7 @@ const (
 	DefaultHTTPTimeout = 3 * time.Minute
 
 	// PerChunkHTTPTimeout bounds a single chunked upstream call so one slow
-	// chunk can't stall the whole tool invocation. ENG-914.
+	// chunk can't stall the whole tool invocation.
 	PerChunkHTTPTimeout = 30 * time.Second
 )
 

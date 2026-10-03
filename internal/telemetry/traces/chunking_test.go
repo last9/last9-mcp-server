@@ -79,7 +79,7 @@ func TestGetTracesHandlerChunksAndHonorsLimit(t *testing.T) {
 		TracejsonQuery: []map[string]interface{}{
 			{
 				"type":  "filter",
-				"query": map[string]interface{}{"$exists": []string{"ServiceName"}},
+				"query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}},
 			},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
@@ -130,7 +130,7 @@ func TestGetTracesHandlerCapsAtConfiguredMax(t *testing.T) {
 	handler := NewGetTracesHandler(server.Client(), cfg)
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
 		TracejsonQuery: []map[string]interface{}{
-			{"type": "filter", "query": map[string]interface{}{"$exists": []string{"ServiceName"}}},
+			{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}}},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
 		EndTimeISO:   "1970-01-01T01:30:00Z",
@@ -164,7 +164,7 @@ func TestGetTracesHandlerSingleChunkForSubThresholdRange(t *testing.T) {
 	// 30 min range — below SplitThresholdMs → adaptive returns a single chunk.
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
 		TracejsonQuery: []map[string]interface{}{
-			{"type": "filter", "query": map[string]interface{}{"$exists": []string{"ServiceName"}}},
+			{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}}},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
 		EndTimeISO:   "1970-01-01T00:30:00Z",
@@ -189,7 +189,7 @@ func TestGetTracesHandlerEmptyChunks(t *testing.T) {
 	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
 		TracejsonQuery: []map[string]interface{}{
-			{"type": "filter", "query": map[string]interface{}{"$exists": []string{"ServiceName"}}},
+			{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}}},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
 		EndTimeISO:   "1970-01-01T00:07:00Z",
@@ -251,6 +251,124 @@ func TestGetTracesHandlerExactTraceIDUsesSingleRequest(t *testing.T) {
 	}
 }
 
+func TestGetTracesHandlerDoesNotChunkAggregateQueries(t *testing.T) {
+	rec := newTracesRequestRecorder()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.add(r.URL.Query())
+		_, _ = w.Write([]byte(traceAPIResponse(2)))
+	}))
+	defer server.Close()
+
+	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+		TracejsonQuery: []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}}},
+			{"type": "aggregate"},
+		},
+		// 7-day window: without the aggregate guard this would chunk into
+		// many ~1h requests and concatenate per-chunk aggregate results,
+		// producing duplicate group-by keys and wrong avg/median/quantile.
+		StartTimeISO: "2026-01-01T00:00:00Z",
+		EndTimeISO:   "2026-01-08T00:00:00Z",
+		Limit:        10,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if got := rec.count(); got != 1 {
+		t.Fatalf("expected aggregate pipeline over 7-day window to issue exactly 1 request, got %d", got)
+	}
+
+	payload := parseTracesToolResult(t, result)
+	if count := countTracesInPayload(t, payload); count != 2 {
+		t.Fatalf("expected 2 traces in single-request payload, got %d", count)
+	}
+}
+
+func TestGetTracesHandlerWindowAggregateAlsoUsesSingleRequest(t *testing.T) {
+	rec := newTracesRequestRecorder()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.add(r.URL.Query())
+		_, _ = w.Write([]byte(traceAPIResponse(1)))
+	}))
+	defer server.Close()
+
+	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+		TracejsonQuery: []map[string]interface{}{
+			{
+				"type":     "window_aggregate",
+				"function": map[string]interface{}{"$count": []interface{}{}},
+				"as":       "rate",
+				"window":   []interface{}{"5", "minutes"},
+			},
+		},
+		StartTimeISO: "2026-01-01T00:00:00Z",
+		EndTimeISO:   "2026-01-08T00:00:00Z",
+		Limit:        10,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if got := rec.count(); got != 1 {
+		t.Fatalf("expected window_aggregate pipeline over 7-day window to issue exactly 1 request, got %d", got)
+	}
+}
+
+func TestGetTracesHandlerPlainFilterOverSevenDaysStillChunks(t *testing.T) {
+	rec := newTracesRequestRecorder()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.add(r.URL.Query())
+		_, _ = w.Write([]byte(traceAPIResponse(0)))
+	}))
+	defer server.Close()
+
+	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+		TracejsonQuery: []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}}},
+		},
+		StartTimeISO: "2026-01-01T00:00:00Z",
+		EndTimeISO:   "2026-01-08T00:00:00Z",
+		Limit:        10,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if got := rec.count(); got <= 1 {
+		t.Fatalf("expected non-aggregate pipeline over 7-day window to chunk (>1 requests), got %d", got)
+	}
+}
+
+func TestGetTracesHandlerAggregateSingleRequestTimeoutHintsNarrowerWindow(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "query timeout", http.StatusRequestTimeout)
+	}))
+	defer server.Close()
+
+	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+		TracejsonQuery: []map[string]interface{}{
+			{"type": "aggregate"},
+		},
+		StartTimeISO: "2026-01-01T00:00:00Z",
+		EndTimeISO:   "2026-01-08T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("expected tool execution error, got protocol error: %v", err)
+	}
+	if result == nil || !result.IsError {
+		t.Fatalf("expected IsError=true when upstream returns 408, got %#v", result)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, "smaller time window") {
+		t.Fatalf("expected error to hint narrowing the time window, got: %s", text)
+	}
+}
+
 func TestGetTracesHandlerHardErrorsWhenAllChunksFail(t *testing.T) {
 	// Regression: when every chunk returns an upstream error and no chunk
 	// produced a valid response, fetchTraceJSONQuery must surface a hard
@@ -266,21 +384,24 @@ func TestGetTracesHandlerHardErrorsWhenAllChunksFail(t *testing.T) {
 	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
 		TracejsonQuery: []map[string]interface{}{
-			{"type": "filter", "query": map[string]interface{}{"$exists": []string{"ServiceName"}}},
+			{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}}},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
 		EndTimeISO:   "1970-01-01T01:30:00Z",
 		Limit:        10,
 	})
-	if err == nil {
-		t.Fatalf("expected hard error when every chunk fails, got result=%#v", result)
+	if err != nil {
+		t.Fatalf("expected tool execution error, got protocol error: %v", err)
 	}
-	if result != nil {
-		t.Fatalf("expected nil result on hard error, got %#v", result)
+	if result == nil || !result.IsError {
+		t.Fatalf("expected IsError=true when every chunk fails, got %#v", result)
 	}
-	// Error should carry chunk context (post firstErr/partialErr unification).
-	if !strings.Contains(err.Error(), "chunk 1/") || !strings.Contains(err.Error(), "failed") {
-		t.Fatalf("expected chunk-context wrapped error, got: %v", err)
+	text := result.Content[0].(*mcp.TextContent).Text
+	if strings.Contains(text, "backend exploded") {
+		t.Fatalf("tool error leaked upstream response body: %s", text)
+	}
+	if !strings.Contains(text, "500") {
+		t.Fatalf("tool error lacks safe status context: %s", text)
 	}
 	// All 6 chunks (90-min range → 6 chunks of 15 min each) should have been
 	// attempted in parallel; failure of one chunk doesn't short-circuit the
@@ -290,7 +411,7 @@ func TestGetTracesHandlerHardErrorsWhenAllChunksFail(t *testing.T) {
 	}
 }
 
-func TestGetTracesHandlerReturnsPartialResultAfterLaterChunkError(t *testing.T) {
+func TestGetTracesHandlerReturnsErrorAfterLaterChunkError(t *testing.T) {
 	rec := newTracesRequestRecorder()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -314,52 +435,27 @@ func TestGetTracesHandlerReturnsPartialResultAfterLaterChunkError(t *testing.T) 
 	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
 		TracejsonQuery: []map[string]interface{}{
-			{"type": "filter", "query": map[string]interface{}{"$exists": []string{"ServiceName"}}},
+			{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}}},
 		},
 		StartTimeISO: "1970-01-01T00:00:00Z",
 		EndTimeISO:   "1970-01-01T01:30:00Z",
 		Limit:        10,
 	})
 	if err != nil {
-		t.Fatalf("handler returned error on partial: %v", err)
+		t.Fatalf("expected tool execution error, got protocol error: %v", err)
 	}
-
+	if result == nil || !result.IsError {
+		t.Fatalf("expected IsError=true when a chunk fails, got %#v", result)
+	}
 	if rec.count() != 6 {
 		t.Fatalf("expected 6 chunk requests, got %d", rec.count())
 	}
-
-	payload := parseTracesToolResult(t, result)
-	if count := countTracesInPayload(t, payload); count != 3 {
-		t.Fatalf("expected 3 traces in partial result, got %d", count)
+	text := result.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(text, "chunk 6/6 failed") {
+		t.Fatalf("expected chunk 6/6 failure in error, got %q", text)
 	}
-
-	meta, ok := payload[partialResultMetadataKey].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected partial metadata in payload, got %#v", payload[partialResultMetadataKey])
-	}
-	if partial, ok := meta["partial_result"].(bool); !ok || !partial {
-		t.Fatalf("expected partial_result=true, got %#v", meta["partial_result"])
-	}
-	warning, ok := meta["warning"].(string)
-	if !ok || !strings.Contains(warning, "chunk 6/6 failed") {
-		t.Fatalf("expected chunk 6/6 failure in warning, got %q", warning)
-	}
-}
-
-func TestParseTimeRangeFromArgsAtDefaultsToSixtyMinutes(t *testing.T) {
-	now := time.Date(2026, time.March, 17, 12, 0, 0, 0, time.UTC)
-
-	startMs, endMs, err := parseTimeRangeFromArgsAt(GetTracesArgs{}, now)
-	if err != nil {
-		t.Fatalf("parseTimeRangeFromArgsAt returned error: %v", err)
-	}
-
-	duration := time.UnixMilli(endMs).Sub(time.UnixMilli(startMs))
-	if duration != 60*time.Minute {
-		t.Fatalf("expected 60-minute default lookback, got %s", duration)
-	}
-	if got := time.UnixMilli(endMs).UTC(); !got.Equal(now) {
-		t.Fatalf("expected end time %s, got %s", now, got)
+	if strings.Contains(text, "backend error") {
+		t.Fatalf("error leaked upstream body: %q", text)
 	}
 }
 

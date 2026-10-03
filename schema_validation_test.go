@@ -5,9 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"last9-mcp/internal/attributes"
-	"last9-mcp/internal/auth"
-
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -24,8 +21,7 @@ func newInMemoryClientSession(t *testing.T) *mcp.ClientSession {
 		t.Fatalf("NewServerWithOptions error = %v", err)
 	}
 
-	attrCache := attributes.NewAttributeCache(auth.GetHTTPClient(), cfg)
-	if err := registerAllTools(server, cfg, attrCache); err != nil {
+	if err := registerAllTools(server, cfg); err != nil {
 		t.Fatalf("registerAllTools error = %v", err)
 	}
 

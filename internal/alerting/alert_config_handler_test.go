@@ -19,13 +19,110 @@ import (
 )
 
 type alertConfigTestServerState struct {
-	alertRules         AlertConfigResponse
-	entityGroups       []groupedAlertGroupEntitiesResponse
-	alertRulesStatus   int
-	entityLookupStatus int
-	entityLookupCalls  int
-	lastEntityRequest  filterAlertGroupEntitiesRequest
-	kpiResponses       map[string]kpiResponse // kpiID → response (empty = 404)
+	alertRules                 AlertConfigResponse
+	entityGroups               []groupedAlertGroupEntitiesResponse
+	notificationChannels       []NotificationChannel
+	alertRulesStatus           int
+	entityLookupStatus         int
+	notificationChannelsStatus int
+	entityLookupCalls          int
+	lastEntityRequest          filterAlertGroupEntitiesRequest
+	kpiResponses               map[string]kpiResponse // kpiID → response (empty = 404)
+	emulateUpstreamFilters     bool
+}
+
+func applyUpstreamFilters(
+	groups []groupedAlertGroupEntitiesResponse,
+	req filterAlertGroupEntitiesRequest,
+) []groupedAlertGroupEntitiesResponse {
+	if len(req.Filters) == 0 {
+		return groups
+	}
+
+	orGroups := [][]alertGroupEntityFilter{}
+	current := []alertGroupEntityFilter{}
+	for _, filter := range req.Filters {
+		if filter.Conjunction == "or" && len(current) > 0 {
+			orGroups = append(orGroups, current)
+			current = nil
+		}
+		current = append(current, filter)
+	}
+	if len(current) > 0 {
+		orGroups = append(orGroups, current)
+	}
+
+	out := make([]groupedAlertGroupEntitiesResponse, 0, len(groups))
+	for _, group := range groups {
+		kept := make([]alertGroupEntity, 0, len(group.Entities))
+		for _, entity := range group.Entities {
+			for _, andGroup := range orGroups {
+				matched := true
+				for _, filter := range andGroup {
+					if !matchesUpstreamFilter(entity, filter) {
+						matched = false
+						break
+					}
+				}
+				if matched {
+					kept = append(kept, entity)
+					break
+				}
+			}
+		}
+		out = append(out, groupedAlertGroupEntitiesResponse{Entities: kept})
+	}
+	return out
+}
+
+// matchesUpstreamFilter mirrors Compass entity-filter semantics: non-label
+// columns fold case on both `equal` and `contains`, label key and value do not.
+func matchesUpstreamFilter(entity alertGroupEntity, filter alertGroupEntityFilter) bool {
+	if filter.FilterType == "label" {
+		value, ok := entity.Metadata.Labels[filter.FilterKey]
+		if !ok {
+			return false
+		}
+		switch filter.Operator {
+		case "equal":
+			return value == filter.FilterValue
+		default:
+			return strings.Contains(value, filter.FilterValue)
+		}
+	}
+
+	var column string
+	switch filter.FilterType {
+	case "entity_class":
+		column = entity.EntityClass
+	case "entity_name":
+		column = entity.Name
+	case "entity_type":
+		column = entity.Type
+	case "data_source_name":
+		column = entity.DataSourceName
+	case "team":
+		column = entity.Metadata.Team
+	case "tier":
+		column = entity.Tier
+	case "tags":
+		column = "[" + strings.Join(entity.Metadata.Tags, " ") + "]"
+	default:
+		return false
+	}
+
+	if filter.Operator == "equal" {
+		if filter.FilterType == "tags" {
+			for _, tag := range entity.Metadata.Tags {
+				if strings.EqualFold(tag, filter.FilterValue) {
+					return true
+				}
+			}
+			return false
+		}
+		return strings.EqualFold(column, filter.FilterValue)
+	}
+	return strings.Contains(strings.ToLower(column), strings.ToLower(filter.FilterValue))
 }
 
 func TestGetAlertConfigHandler_RuleOnlyFilters(t *testing.T) {
@@ -114,8 +211,15 @@ func TestGetAlertConfigHandler_RuleOnlyFilters(t *testing.T) {
 			}
 
 			assertAlertConfigResultIDs(t, text, tt.expectedIDs)
-			if state.entityLookupCalls != 0 {
-				t.Fatalf("expected no entity lookup for rule-only filters, got %d call(s)", state.entityLookupCalls)
+			// Entity lookup now always runs to enrich the response (alert group
+			// name/data source/tags), as long as there are rules left after
+			// rule-field filtering — it's no longer gated on entity-based filters.
+			wantEntityLookupCalls := 0
+			if len(tt.expectedIDs) > 0 {
+				wantEntityLookupCalls = 1
+			}
+			if state.entityLookupCalls != wantEntityLookupCalls {
+				t.Fatalf("expected %d entity lookup call(s), got %d", wantEntityLookupCalls, state.entityLookupCalls)
 			}
 		})
 	}
@@ -281,6 +385,278 @@ func TestGetAlertConfigHandler_EntityLookupFailure(t *testing.T) {
 	}
 }
 
+func TestGetAlertConfigHandler_EntityLookupFailure_NoFilter(t *testing.T) {
+	state := alertConfigTestServerState{
+		alertRules:         sampleAlertConfigRules(),
+		entityGroups:       sampleAlertGroupEntities(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusInternalServerError,
+	}
+
+	text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{})
+	if err != nil {
+		t.Fatalf("handler should succeed when entity lookup fails but no entity-based filter is requested: %v", err)
+	}
+
+	assertAlertConfigResultIDs(t, text, []string{"rule-1", "rule-2", "rule-3"})
+	if strings.Contains(text, "Alert Group:") {
+		t.Fatalf("expected no Alert Group enrichment when entity lookup failed, got:\n%s", text)
+	}
+	if state.entityLookupCalls != 1 {
+		t.Fatalf("expected one entity lookup call, got %d", state.entityLookupCalls)
+	}
+}
+
+func TestGetAlertConfigHandler_OnlyWithoutNotificationChannel(t *testing.T) {
+	state := alertConfigTestServerState{
+		alertRules:         sampleAlertConfigRules(),
+		entityGroups:       sampleAlertGroupEntities(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusOK,
+		notificationChannels: []NotificationChannel{
+			{ID: 1, Name: "Org Slack", Type: "slack", Global: true},
+			{ID: 2, Name: "Checkout Slack", Type: "slack", ServiceFQID: "entity-1"},
+		},
+	}
+
+	text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{
+		OnlyWithoutNotificationChannel: true,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if !strings.Contains(text, "Global notification channels: 1 org-wide channel(s) configured (Org Slack)") {
+		t.Fatalf("expected global channel advisory, got:\n%s", text)
+	}
+	if !strings.Contains(text, "no per-entity notification channel configured") {
+		t.Fatalf("expected unconfigured header, got:\n%s", text)
+	}
+	if !strings.Contains(text, "ID: rule-2") || !strings.Contains(text, "ID: rule-3") {
+		t.Fatalf("expected rule-2 and rule-3, got:\n%s", text)
+	}
+	if strings.Contains(text, "ID: rule-1") {
+		t.Fatalf("rule-1 should be excluded (entity-1 has channel binding), got:\n%s", text)
+	}
+	if !strings.Contains(text, "Notification Channels: Not configured") {
+		t.Fatalf("expected Not configured on unconfigured rules, got:\n%s", text)
+	}
+}
+
+func TestGetAlertConfigHandler_NotificationChannelEnrichmentOnRule(t *testing.T) {
+	state := alertConfigTestServerState{
+		alertRules:         sampleAlertConfigRules(),
+		entityGroups:       sampleAlertGroupEntities(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusOK,
+		notificationChannels: []NotificationChannel{
+			{ID: 1, Name: "Checkout Slack", Type: "slack", Severity: "breach", ServiceFQID: "entity-1"},
+			{ID: 2, Name: "Checkout Slack", Type: "slack", Severity: "threat", ServiceFQID: "entity-1"},
+		},
+	}
+
+	text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{RuleID: "rule-1"})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if !strings.Contains(text, "Notification Channels: slack") {
+		t.Fatalf("expected slack in summary, got:\n%s", text)
+	}
+	if !strings.Contains(text, "slack / Checkout Slack (threat)") ||
+		!strings.Contains(text, "slack / Checkout Slack (breach)") {
+		t.Fatalf("expected binding detail lines, got:\n%s", text)
+	}
+}
+
+func TestGetAlertConfigHandler_NotificationChannelTypeFilter(t *testing.T) {
+	state := alertConfigTestServerState{
+		alertRules:         sampleAlertConfigRules(),
+		entityGroups:       sampleAlertGroupEntities(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusOK,
+		notificationChannels: []NotificationChannel{
+			{ID: 1, Name: "Checkout Slack", Type: "slack", Severity: "breach", ServiceFQID: "entity-1"},
+			{ID: 2, Name: "Payments Email", Type: "email", Severity: "threat", ServiceFQID: "entity-2"},
+		},
+	}
+
+	text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{
+		NotificationChannelTypes: []string{"slack"},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if !strings.Contains(text, "ID: rule-1") {
+		t.Fatalf("expected rule-1 (slack on entity-1), got:\n%s", text)
+	}
+	if strings.Contains(text, "ID: rule-2") || strings.Contains(text, "ID: rule-3") {
+		t.Fatalf("expected only rule-1, got:\n%s", text)
+	}
+}
+
+func TestGetAlertConfigHandler_NotificationChannelNameFilter(t *testing.T) {
+	state := alertConfigTestServerState{
+		alertRules:         sampleAlertConfigRules(),
+		entityGroups:       sampleAlertGroupEntities(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusOK,
+		notificationChannels: []NotificationChannel{
+			{ID: 1, Name: "Checkout Slack", Type: "slack", Severity: "breach", ServiceFQID: "entity-1"},
+			{ID: 2, Name: "Payments Email", Type: "email", Severity: "threat", ServiceFQID: "entity-2"},
+		},
+	}
+
+	text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{
+		NotificationChannelNames: []string{"Payments Email"},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if !strings.Contains(text, "ID: rule-2") {
+		t.Fatalf("expected rule-2, got:\n%s", text)
+	}
+	if strings.Contains(text, "ID: rule-1") || strings.Contains(text, "ID: rule-3") {
+		t.Fatalf("expected only rule-2, got:\n%s", text)
+	}
+}
+
+func TestGetAlertConfigHandler_NotificationChannelSeverityFilter(t *testing.T) {
+	state := alertConfigTestServerState{
+		alertRules:         sampleAlertConfigRules(),
+		entityGroups:       sampleAlertGroupEntities(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusOK,
+		notificationChannels: []NotificationChannel{
+			{ID: 1, Name: "Checkout Slack Breach", Type: "slack", Severity: "breach", ServiceFQID: "entity-1"},
+			{ID: 2, Name: "Checkout Slack Threat", Type: "slack", Severity: "threat", ServiceFQID: "entity-1"},
+			{ID: 3, Name: "Payments Email", Type: "email", Severity: "threat", ServiceFQID: "entity-2"},
+		},
+	}
+
+	t.Run("severity only", func(t *testing.T) {
+		text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{
+			NotificationChannelSeverities: []string{"threat"},
+		})
+		if err != nil {
+			t.Fatalf("handler returned error: %v", err)
+		}
+		if !strings.Contains(text, "ID: rule-1") || !strings.Contains(text, "ID: rule-2") {
+			t.Fatalf("expected rule-1 and rule-2, got:\n%s", text)
+		}
+		if strings.Contains(text, "ID: rule-3") {
+			t.Fatalf("expected rule-3 excluded, got:\n%s", text)
+		}
+	})
+
+	t.Run("type and severity on same binding", func(t *testing.T) {
+		text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{
+			NotificationChannelTypes:      []string{"slack"},
+			NotificationChannelSeverities: []string{"breach"},
+		})
+		if err != nil {
+			t.Fatalf("handler returned error: %v", err)
+		}
+		if !strings.Contains(text, "ID: rule-1") {
+			t.Fatalf("expected rule-1 only, got:\n%s", text)
+		}
+		if strings.Contains(text, "ID: rule-2") {
+			t.Fatalf("slack+threat on entity-1 should not match slack+breach, got:\n%s", text)
+		}
+	})
+}
+
+func TestGetAlertConfigHandler_InvalidNotificationChannelSeverity(t *testing.T) {
+	state := alertConfigTestServerState{
+		alertRules:         sampleAlertConfigRules(),
+		entityGroups:       sampleAlertGroupEntities(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusOK,
+	}
+
+	_, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{
+		NotificationChannelSeverities: []string{"critical"},
+	})
+	if err == nil {
+		t.Fatal("expected invalid notification_channel_severities to return an error")
+	}
+	if !strings.Contains(err.Error(), "notification_channel_severities") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGetAlertConfigHandler_EnrichmentFormatting(t *testing.T) {
+	t.Run("entity match includes alert group enrichment", func(t *testing.T) {
+		state := alertConfigTestServerState{
+			alertRules:         sampleAlertConfigRules(),
+			entityGroups:       sampleAlertGroupEntities(),
+			alertRulesStatus:   http.StatusOK,
+			entityLookupStatus: http.StatusOK,
+		}
+
+		text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{RuleID: "rule-1"})
+		if err != nil {
+			t.Fatalf("handler returned error: %v", err)
+		}
+
+		if !strings.Contains(text, "Alert Group: Checkout Alerts") {
+			t.Fatalf("expected Alert Group enrichment, got:\n%s", text)
+		}
+		if !strings.Contains(text, "Data Source: Grafana Prod") {
+			t.Fatalf("expected Data Source enrichment, got:\n%s", text)
+		}
+		if !strings.Contains(text, "Tags: prod, checkout") {
+			t.Fatalf("expected Tags enrichment, got:\n%s", text)
+		}
+		if !strings.Contains(text, "Team: checkout") {
+			t.Fatalf("expected Team enrichment, got:\n%s", text)
+		}
+		if !strings.Contains(text, "Tier: p1") {
+			t.Fatalf("expected Tier enrichment, got:\n%s", text)
+		}
+		if !strings.Contains(text, "Labels: domain=checkout, env=prod") {
+			t.Fatalf("expected Labels enrichment, got:\n%s", text)
+		}
+		if !strings.Contains(text, "Notification Channels: Not configured") {
+			t.Fatalf("expected Not configured notification channels, got:\n%s", text)
+		}
+	})
+
+	t.Run("entity no match omits alert group enrichment", func(t *testing.T) {
+		rules := AlertConfigResponse{
+			{
+				ID:               "rule-no-entity",
+				OrganizationID:   "org-1",
+				EntityID:         "entity-unknown",
+				PrimaryIndicator: "latency_ms",
+				CreatedAt:        1700000000,
+				UpdatedAt:        1700000600,
+				State:            "active",
+				Severity:         "breach",
+				Algorithm:        "static_threshold",
+				RuleName:         "No entity rule",
+			},
+		}
+
+		state := alertConfigTestServerState{
+			alertRules:         rules,
+			entityGroups:       sampleAlertGroupEntities(),
+			alertRulesStatus:   http.StatusOK,
+			entityLookupStatus: http.StatusOK,
+		}
+
+		text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{})
+		if err != nil {
+			t.Fatalf("handler returned error: %v", err)
+		}
+
+		if strings.Contains(text, "Alert Group:") {
+			t.Fatalf("expected no Alert Group line for rule with unmatched entity, got:\n%s", text)
+		}
+	})
+}
+
 func TestGetAlertConfigHandler_InvalidRuleType(t *testing.T) {
 	state := alertConfigTestServerState{
 		alertRules:         sampleAlertConfigRules(),
@@ -335,6 +711,18 @@ func newAlertConfigTestServer(
 
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case constants.EndpointNotificationSettings:
+			w.Header().Set("Content-Type", "application/json")
+			status := state.notificationChannelsStatus
+			if status == 0 {
+				status = http.StatusOK
+			}
+			w.WriteHeader(status)
+			if status == http.StatusOK {
+				_ = json.NewEncoder(w).Encode(state.notificationChannels)
+				return
+			}
+			_, _ = w.Write([]byte(`{"error":"notification channels failed"}`))
 		case constants.EndpointAlertRules:
 			w.Header().Set("Content-Type", "application/json")
 			status := state.alertRulesStatus
@@ -359,7 +747,11 @@ func newAlertConfigTestServer(
 			}
 			w.WriteHeader(status)
 			if status == http.StatusOK {
-				_ = json.NewEncoder(w).Encode(state.entityGroups)
+				groups := state.entityGroups
+				if state.emulateUpstreamFilters {
+					groups = applyUpstreamFilters(groups, state.lastEntityRequest)
+				}
+				_ = json.NewEncoder(w).Encode(groups)
 				return
 			}
 			_, _ = w.Write([]byte(`{"error":"entity lookup failed"}`))
@@ -469,8 +861,8 @@ func TestGetAlertConfigHandler_KPIResolution(t *testing.T) {
 				Algorithm:        "static_threshold",
 				RuleName:         "High error rate",
 				ExpressionArgs: map[string]AlertRuleExpressionArg{
-					"errors_total":   {ID: kpiID},   // registered → resolves
-					"requests_total": {ID: kpiID2},  // not registered → 404
+					"errors_total":   {ID: kpiID},  // registered → resolves
+					"requests_total": {ID: kpiID2}, // not registered → 404
 				},
 			},
 		}
@@ -570,24 +962,33 @@ func sampleAlertGroupEntities() []groupedAlertGroupEntitiesResponse {
 					ID:             "entity-1",
 					Name:           "Checkout Alerts",
 					Type:           "grafana-dashboard",
+					EntityClass:    alertGroupEntityClassGrafanaAlerts,
+					Tier:           "p1",
 					DataSourceName: "Grafana Prod",
 					Metadata: alertGroupEntityMetadata{
-						Tags: []string{"prod", "checkout"},
+						Tags:   []string{"prod", "checkout"},
+						Team:   "checkout",
+						Labels: map[string]string{"env": "prod", "domain": "checkout"},
 					},
 				},
 				{
 					ID:             "entity-2",
 					Name:           "Payments Monitor",
 					Type:           "scheduled-search",
+					EntityClass:    alertGroupEntityClassAlertManager,
+					Tier:           "p2",
 					DataSourceName: "Loki Payments",
 					Metadata: alertGroupEntityMetadata{
-						Tags: []string{"payments", "staging"},
+						Tags:   []string{"payments", "staging"},
+						Team:   "payments",
+						Labels: map[string]string{"env": "staging"},
 					},
 				},
 				{
 					ID:             "entity-3",
 					Name:           "Inventory Group",
 					Type:           "alert-group",
+					EntityClass:    alertGroupEntityClassAlertManager,
 					DataSourceName: "Prometheus Inventory",
 					Metadata: alertGroupEntityMetadata{
 						Tags: []string{"inventory", "prod-east"},

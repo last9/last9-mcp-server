@@ -3,13 +3,12 @@ package traces
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"log"
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
@@ -28,24 +27,25 @@ type GetTracesArgs struct {
 	Limit           int                      `json:"limit,omitempty" jsonschema:"Maximum number of traces to return (optional, default: 5000)"`
 }
 
-const partialResultMetadataKey = "_last9_mcp"
-
 // NewGetTracesHandler creates a handler for getting traces using tracejson_query parameter
 func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTracesArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetTracesArgs) (*mcp.CallToolResult, any, error) {
 		// Check if tracejson_query is provided
 		if len(args.TracejsonQuery) == 0 {
-			return nil, nil, fmt.Errorf("tracejson_query parameter is required. Use the tracejson_query_builder prompt to generate JSON pipeline queries from natural language")
+			return nil, nil, fmt.Errorf("tracejson_query parameter is required. tracejson_query is a JSON array of stages (filter/parse/aggregate/window_aggregate) — see last9://reference/tracejson")
 		}
 
 		// Validate the pipeline before forwarding to the API
-		if err := sanitizeTraceJSONQuery(args.TracejsonQuery); err != nil {
+		if err := SanitizeTraceJSONQuery(args.TracejsonQuery); err != nil {
 			return nil, nil, err
 		}
 
 		// Handle tracejson_query directly
 		result, err := handleTraceJSONQuery(ctx, client, cfg, args.TracejsonQuery, args)
 		if err != nil {
+			if isTraceUpstreamError(err) {
+				return traceToolErrorResult(err), nil, nil
+			}
 			return nil, nil, err
 		}
 		return result, nil, nil
@@ -94,6 +94,22 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 			log.Printf(
 				"[chunking] get_traces exact trace_id lookup detected trace_id=%s using single request start_ms=%d end_ms=%d effective_limit=%d",
 				traceID,
+				startMs,
+				endMs,
+				effectiveLimit,
+			)
+		}
+		return executeTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startMs, endMs, effectiveLimit)
+	}
+
+	// Aggregate pipelines (group-by, avg/median/quantile/stddev, etc.) must
+	// never be chunked: concatenating per-chunk aggregate results produces
+	// duplicate group-by keys and mathematically wrong aggregates. Run the
+	// full window as a single request instead.
+	if utils.PipelineHasAggregateStage(args.TracejsonQuery) {
+		if chunkingDebug {
+			log.Printf(
+				"[chunking] get_traces aggregate stage detected, using single request start_ms=%d end_ms=%d effective_limit=%d",
 				startMs,
 				endMs,
 				effectiveLimit,
@@ -177,7 +193,7 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 				"total_chunks", len(chunks),
 				"start_ms", r.Chunk.StartMs,
 				"end_ms", r.Chunk.EndMs,
-				"err", r.Err,
+				"err", traceLogCause(r.Err),
 			)
 			if partialErr == nil {
 				partialErr = fmt.Errorf("chunk %d/%d failed: %w", chunkNum, len(chunks), r.Err)
@@ -243,18 +259,9 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 	data["result"] = mergedItems
 
 	if partialErr != nil {
-		annotatePartialGetTracesResponse(baseResponse, partialErr, len(chunks), len(mergedItems))
-		if chunkingDebug {
-			log.Printf(
-				"[chunking] get_traces chunking partial chunks=%d returned_traces=%d start_ms=%d end_ms=%d err=%v",
-				len(chunks),
-				len(mergedItems),
-				startMs,
-				endMs,
-				partialErr,
-			)
-		}
-	} else if chunkingDebug {
+		return nil, fmt.Errorf("%w (window start_ms=%d end_ms=%d)", partialErr, startMs, endMs)
+	}
+	if chunkingDebug {
 		log.Printf(
 			"[chunking] get_traces chunking complete chunks=%d returned_traces=%d start_ms=%d end_ms=%d",
 			len(chunks), len(mergedItems), startMs, endMs,
@@ -264,36 +271,25 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 	return baseResponse, nil
 }
 
-func annotatePartialGetTracesResponse(response map[string]interface{}, err error, totalChunks, returnedTraces int) {
-	response[partialResultMetadataKey] = map[string]interface{}{
-		"partial_result":  true,
-		"warning":         fmt.Sprintf("Returning partial results: %v", err),
-		"total_chunks":    totalChunks,
-		"returned_traces": returnedTraces,
-	}
-}
-
 // executeTraceJSONQuery performs a single API call for a given time window.
 func executeTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, tracejsonQuery interface{}, startMs, endMs int64, limit int) (map[string]interface{}, error) {
 	resp, err := utils.MakeTracesJSONQueryAPI(ctx, client, cfg, tracejsonQuery, startMs, endMs, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call trace JSON query API: %v", err)
+		var transportErr *utils.HTTPTransportError
+		if errors.As(err, &transportErr) {
+			return nil, newTraceTransportError(transportErr)
+		}
+		return nil, fmt.Errorf("failed to prepare trace data request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		bodyStr := string(body)
-		if len(bodyStr) > 100 {
-			bodyStr = bodyStr[:100] + "... (truncated)"
-		}
-		return nil, fmt.Errorf("traces API request failed with status %d (endpoint: %s/cat/api/traces/v2/query_range/json). Response: %s",
-			resp.StatusCode, cfg.APIBaseURL, bodyStr)
+		return nil, newTracePipelineHTTPError(resp)
 	}
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+		return nil, newTraceInvalidResponseError(err)
 	}
 	return result, nil
 }
@@ -368,26 +364,6 @@ func formatJSON(data interface{}) string {
 		return fmt.Sprintf("%v", data)
 	}
 	return string(bytes)
-}
-
-// parseTimeRangeFromArgsAt is the testable version of parseTimeRangeFromArgs
-func parseTimeRangeFromArgsAt(args GetTracesArgs, now time.Time) (int64, int64, error) {
-	params := make(map[string]interface{})
-	if args.LookbackMinutes > 0 {
-		params["lookback_minutes"] = args.LookbackMinutes
-	}
-	if args.StartTimeISO != "" {
-		params["start_time_iso"] = args.StartTimeISO
-	}
-	if args.EndTimeISO != "" {
-		params["end_time_iso"] = args.EndTimeISO
-	}
-
-	startTime, endTime, err := utils.GetTimeRangeAt(params, utils.DefaultLookbackMinutes, now)
-	if err != nil {
-		return 0, 0, err
-	}
-	return startTime.UnixMilli(), endTime.UnixMilli(), nil
 }
 
 func extractExactTraceIDLookup(pipeline []map[string]interface{}) (string, bool) {

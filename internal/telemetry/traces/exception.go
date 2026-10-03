@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"regexp"
 	"sort"
@@ -97,18 +96,17 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 		// Frontend parity: exceptions list is fetched from prom_query_instant over trace_*_count.
 		resp, err := utils.MakePromInstantAPIQuery(ctx, client, exceptionsQuery, endTime.Unix(), cfg)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to execute exceptions instant query: %w", err)
+			return traceToolErrorResult(newTraceTransportError(err)), nil, nil
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return nil, nil, fmt.Errorf("exceptions instant query failed with status %d: %s", resp.StatusCode, string(body))
+			return traceToolErrorResult(newTraceHTTPError(resp)), nil, nil
 		}
 
 		var instantSeries promInstantResponse
 		if err := json.NewDecoder(resp.Body).Decode(&instantSeries); err != nil {
-			return nil, nil, fmt.Errorf("failed to decode exceptions instant response: %w", err)
+			return traceToolErrorResult(newTraceInvalidResponseError(err)), nil, nil
 		}
 
 		aggregates := make([]exceptionAggregate, 0, len(instantSeries))
@@ -313,6 +311,7 @@ func escapePromQLLabelValue(value string) string {
 		return value
 	}
 
+	var out string
 	if promQLRegexSpecialChars.MatchString(value) {
 		promQLEscaped := promQLRegexSpecialChars.ReplaceAllStringFunc(value, func(match string) string {
 			return `\` + match
@@ -320,8 +319,17 @@ func escapePromQLLabelValue(value string) string {
 
 		// Match the frontend builder: the query is serialized to JSON before it
 		// reaches the API, so existing backslashes must be doubled here.
-		return strings.ReplaceAll(promQLEscaped, `\`, `\\`)
+		// PromQL-string unescaping consumes one backslash layer, so regex
+		// escapes emit two backslashes on the wire (e.g. \\- -> \- in RE2).
+		out = strings.ReplaceAll(promQLEscaped, `\`, `\\`)
+	} else {
+		out = value
 	}
 
-	return value
+	// Single quote is the matcher delimiter, not a regex special char. It must
+	// emit exactly one backslash on the wire (\' -> '), so escape it AFTER the
+	// doubling step above so the inserted backslash is not doubled. Doing it
+	// before (or routing ' through the regex class) would yield \\', which the
+	// Prometheus parser rejects.
+	return strings.ReplaceAll(out, "'", `\'`)
 }

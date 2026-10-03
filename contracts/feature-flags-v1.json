@@ -1,0 +1,13 @@
+{
+  "manifest_version": "investigation-feature-flags/v1",
+  "comment": "Records rollout gates that exist, not ones this repo hopes for. Nothing in the MCP server reads this file; each gate is enforced by the API that owns it. A tenant without a gate enabled gets a 404, which the tool reports as the capability being unavailable or disabled.",
+  "flags": [
+    {
+      "name": "trace_attribute_deviations",
+      "default": false,
+      "owner": "trace-api",
+      "enforced_by": "server-side; the endpoint is not routed when the capability is off",
+      "consumed_by_this_repo": false
+    }
+  ]
+}

@@ -99,3 +99,43 @@ func TestGetChangeEventsArgs_UsesCanonicalNames(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildChangeEventsPromQL(t *testing.T) {
+	excludes := excludeBackupEvents + "," + excludeScheduledSearchEvents
+	metric := func(matchers string) string {
+		return changeEventsMetric + `{` + matchers + `}`
+	}
+
+	tests := []struct {
+		name                        string
+		serviceName, env, eventName string
+		want                        string
+	}{
+		{"unfiltered", "", "", "", metric(excludes)},
+		{"service", "checkout", "", "", metric(excludes + `,service="checkout"`)},
+		{"env", "", "uat", "", metric(excludes + `,deployment_environment="uat"`)},
+		{"event", "", "", "deployment", metric(excludes + `,event_name="deployment"`)},
+		{
+			"all three", "checkout", "uat", "deployment",
+			metric(excludes + `,service="checkout",deployment_environment="uat",event_name="deployment"`),
+		},
+		{
+			// A quote or backslash must not terminate the matcher.
+			"value needing escapes", `a"b\c`, "", "",
+			metric(excludes + `,service="a\"b\\c"`),
+		},
+		{
+			"injection attempt", `x"} or up{`, "", "",
+			metric(excludes + `,service="x\"} or up{"`),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildChangeEventsPromQL(tt.serviceName, tt.env, tt.eventName)
+			if got != tt.want {
+				t.Fatalf("\n got %s\nwant %s", got, tt.want)
+			}
+		})
+	}
+}

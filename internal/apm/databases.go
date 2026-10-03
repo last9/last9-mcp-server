@@ -3,9 +3,12 @@ package apm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,189 +16,11 @@ import (
 
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/telemetry/traces"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
-
-// --- get_databases tool ---
-
-type GetDatabasesArgs struct {
-	Env             string  `json:"env,omitempty" jsonschema:"Deployment environment to filter by (e.g. production)"`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60, minimum: 1)"`
-	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339 format"`
-	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339 format"`
-}
-
-type DatabaseSummary struct {
-	DBSystem     string  `json:"db_system"`
-	Host         string  `json:"host"`
-	Throughput   float64 `json:"throughput_rpm"`
-	P95Latency   float64 `json:"p95_latency_ms"`
-	ErrorRate    float64 `json:"error_rate_pct"`
-	ServiceCount int     `json:"service_count"`
-}
-
-func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetDatabasesArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, args GetDatabasesArgs) (*mcp.CallToolResult, any, error) {
-		startTime, endTime, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		durationMin := (endTime - startTime) / 60
-		if durationMin <= 0 {
-			durationMin = 1
-		}
-
-		envFilter := ""
-		if args.Env != "" {
-			envFilter = fmt.Sprintf(`, env=~"%s"`, escapePromQLLabel(args.Env))
-		}
-
-		baseFilter := fmt.Sprintf(
-			`span_kind=~"SPAN_KIND_CLIENT|SPAN_KIND_INTERNAL", db_system!=""%s`,
-			envFilter,
-		)
-
-		// Build all PromQL queries
-		throughputQuery := fmt.Sprintf(
-			`sum by(db_system, net_peer_name)(sum_over_time(trace_client_count{%s}[%dm])) / %d`,
-			baseFilter, durationMin, durationMin,
-		)
-		latencyQuery := fmt.Sprintf(
-			`max by(db_system, net_peer_name)(avg_over_time(trace_client_duration{%s, quantile="p95"}[%dm]))`,
-			baseFilter, durationMin,
-		)
-		errorCountQuery := fmt.Sprintf(
-			`sum by(db_system, net_peer_name)(sum_over_time(trace_client_count{%s, status_code="STATUS_CODE_ERROR"}[%dm]))`,
-			baseFilter, durationMin,
-		)
-		totalCountQuery := fmt.Sprintf(
-			`sum by(db_system, net_peer_name)(sum_over_time(trace_client_count{%s}[%dm]))`,
-			baseFilter, durationMin,
-		)
-		serviceCountQuery := fmt.Sprintf(
-			`count by(db_system, net_peer_name)(sum by(service_name, db_system, net_peer_name)(sum_over_time(trace_client_count{%s}[%dm])))`,
-			baseFilter, durationMin,
-		)
-
-		// Run all 5 PromQL queries in parallel, each writing to its own map
-		var (
-			throughputDBs   = make(map[string]*DatabaseSummary)
-			latencyDBs      = make(map[string]*DatabaseSummary)
-			serviceCountDBs = make(map[string]*DatabaseSummary)
-			errorCounts     = make(map[string]float64)
-			totalCounts     = make(map[string]float64)
-			throughputErr   error
-			warnings        []string
-			warnMu          sync.Mutex
-			wg              sync.WaitGroup
-		)
-
-		wg.Add(5)
-		go func() {
-			defer wg.Done()
-			throughputErr = fetchPromAndPopulate(ctx, client, cfg, throughputQuery, endTime, throughputDBs, func(db *DatabaseSummary, val float64) {
-				db.Throughput = val
-			})
-		}()
-		go func() {
-			defer wg.Done()
-			if err := fetchPromAndPopulate(ctx, client, cfg, latencyQuery, endTime, latencyDBs, func(db *DatabaseSummary, val float64) {
-				db.P95Latency = val
-			}); err != nil {
-				warnMu.Lock()
-				warnings = append(warnings, "p95 latency unavailable")
-				warnMu.Unlock()
-			}
-		}()
-		go func() {
-			defer wg.Done()
-			fetchPromToMap(ctx, client, cfg, errorCountQuery, endTime, errorCounts)
-		}()
-		go func() {
-			defer wg.Done()
-			fetchPromToMap(ctx, client, cfg, totalCountQuery, endTime, totalCounts)
-		}()
-		go func() {
-			defer wg.Done()
-			if err := fetchPromAndPopulate(ctx, client, cfg, serviceCountQuery, endTime, serviceCountDBs, func(db *DatabaseSummary, val float64) {
-				db.ServiceCount = int(val)
-			}); err != nil {
-				warnMu.Lock()
-				warnings = append(warnings, "service count unavailable")
-				warnMu.Unlock()
-			}
-		}()
-		wg.Wait()
-
-		if throughputErr != nil {
-			return nil, nil, fmt.Errorf("failed to fetch throughput: %w", throughputErr)
-		}
-
-		// Merge results: throughput is the primary map, enrich from others
-		databases := throughputDBs
-		for key, latDB := range latencyDBs {
-			if db, ok := databases[key]; ok {
-				db.P95Latency = latDB.P95Latency
-			}
-		}
-		for key, scDB := range serviceCountDBs {
-			if db, ok := databases[key]; ok {
-				db.ServiceCount = scDB.ServiceCount
-			}
-		}
-		for key, total := range totalCounts {
-			if total > 0 {
-				if db, ok := databases[key]; ok {
-					db.ErrorRate = (errorCounts[key] / total) * 100
-				}
-			}
-		}
-
-		if len(databases) == 0 {
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{
-					&mcp.TextContent{Text: "No databases found for the given parameters. Ensure services are instrumented with OpenTelemetry and have db_system span attribute set."},
-				},
-			}, nil, nil
-		}
-
-		// Sort by throughput descending
-		result := make([]DatabaseSummary, 0, len(databases))
-		for _, db := range databases {
-			result = append(result, *db)
-		}
-		sort.Slice(result, func(i, j int) bool {
-			return result[i].Throughput > result[j].Throughput
-		})
-
-		response := map[string]any{
-			"count":     len(result),
-			"databases": result,
-		}
-		if len(warnings) > 0 {
-			response["_warnings"] = warnings
-		}
-
-		jsonBytes, err := json.Marshal(response)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
-		}
-
-		// Build deep link
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardURL := dlBuilder.BuildDatabasesLink()
-
-		return &mcp.CallToolResult{
-			Meta: deeplink.ToMeta(dashboardURL),
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: string(jsonBytes)},
-			},
-		}, nil, nil
-	}
-}
 
 // --- get_database_slow_queries tool ---
 
@@ -243,59 +68,9 @@ func NewGetDatabaseSlowQueriesHandler(client *http.Client, cfg models.Config) fu
 			limit = 20
 		}
 
-		// Build trace query pipeline filters.
-		// The traces API uses dot-notation for nested attributes:
-		//   - span attributes: "attributes.db.system"
-		//   - resource attributes: "resource.attributes.deployment.environment"
-		var conditions []any
-
-		// Filter by SPAN_KIND_CLIENT or SPAN_KIND_INTERNAL (DB operations)
-		conditions = append(conditions, map[string]any{
-			"$regex": []any{"SpanKind", "SPAN_KIND_CLIENT|SPAN_KIND_INTERNAL"},
-		})
-
-		if args.DBSystem != "" {
-			conditions = append(conditions, map[string]any{
-				"$eq": []any{"attributes.db.system", args.DBSystem},
-			})
-		} else {
-			// No specific db_system — match any span that has db.system set
-			conditions = append(conditions, map[string]any{
-				"$exists": []any{"attributes.db.system"},
-			})
-		}
-
-		if args.Host != "" {
-			conditions = append(conditions, map[string]any{
-				"$eq": []any{"attributes.net.peer.name", args.Host},
-			})
-		}
-
-		if args.ServiceName != "" {
-			conditions = append(conditions, map[string]any{
-				"$eq": []any{"ServiceName", args.ServiceName},
-			})
-		}
-
-		if args.Env != "" {
-			conditions = append(conditions, map[string]any{
-				"$eq": []any{"resource.attributes.deployment.environment", args.Env},
-			})
-		}
-
-		if args.MinDurationMs > 0 {
-			// Duration in traces is in nanoseconds
-			minDurationNs := int64(args.MinDurationMs * 1_000_000)
-			conditions = append(conditions, map[string]any{
-				"$gte": []any{"Duration", minDurationNs},
-			})
-		}
-
-		pipeline := []map[string]any{
-			{
-				"type":  "filter",
-				"query": map[string]any{"$and": conditions},
-			},
+		pipeline, err := buildDatabaseSlowQueryTracePipeline(args)
+		if err != nil {
+			return nil, nil, err
 		}
 
 		// Use milliseconds for traces API
@@ -315,18 +90,19 @@ func NewGetDatabaseSlowQueriesHandler(client *http.Client, cfg models.Config) fu
 			defer sqWg.Done()
 			resp, err := utils.MakeTracesJSONQueryAPI(ctx, client, cfg, pipeline, startMs, endMs, limit)
 			if err != nil {
+				var transportErr *utils.HTTPTransportError
+				if errors.As(err, &transportErr) {
+					traceErr = errors.New("failed to query slow database traces: trace service could not be reached")
+					return
+				}
 				traceErr = fmt.Errorf("failed to query slow database traces: %w", err)
 				return
 			}
 			defer resp.Body.Close()
 
 			if resp.StatusCode != http.StatusOK {
-				body, _ := io.ReadAll(resp.Body)
-				bodyStr := string(body)
-				if len(bodyStr) > 200 {
-					bodyStr = bodyStr[:200] + "..."
-				}
-				traceErr = fmt.Errorf("traces API returned status %d: %s", resp.StatusCode, bodyStr)
+				_, _ = io.CopyN(io.Discard, resp.Body, 4<<10)
+				traceErr = fmt.Errorf("traces API returned status %d", resp.StatusCode)
 				return
 			}
 
@@ -576,24 +352,15 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 func buildDBBaseFilter(dbSystem, host, env string) string {
 	filter := fmt.Sprintf(
 		`span_kind=~"SPAN_KIND_CLIENT|SPAN_KIND_INTERNAL", db_system="%s"`,
-		escapePromQLLabel(dbSystem),
+		utils.EscapePromQLLabel(dbSystem),
 	)
 	if host != "" {
-		filter += fmt.Sprintf(`, net_peer_name="%s"`, escapePromQLLabel(host))
+		filter += fmt.Sprintf(`, net_peer_name="%s"`, utils.EscapePromQLLabel(host))
 	}
 	if env != "" {
-		filter += fmt.Sprintf(`, env=~"%s"`, escapePromQLLabel(env))
+		filter += fmt.Sprintf(`, env=~"%s"`, utils.EscapePromQLLabel(regexp.QuoteMeta(env)))
 	}
 	return filter
-}
-
-// escapePromQLLabel escapes special characters in a PromQL label value
-// to prevent injection when interpolating into queries.
-func escapePromQLLabel(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	s = strings.ReplaceAll(s, "\n", `\n`)
-	return s
 }
 
 func fetchPromBySpanName(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64, patterns map[string]*QueryPattern, setter func(*QueryPattern, float64)) error {
@@ -954,6 +721,62 @@ func queryPromInstantValue(ctx context.Context, client *http.Client, cfg models.
 
 // --- helpers ---
 
+func buildDatabaseSlowQueryTracePipeline(args GetDatabaseSlowQueriesArgs) ([]map[string]any, error) {
+	var conditions []any
+
+	conditions = append(conditions, map[string]any{
+		"$regex": []any{"SpanKind", "SPAN_KIND_CLIENT|SPAN_KIND_INTERNAL"},
+	})
+
+	if args.DBSystem != "" {
+		conditions = append(conditions, map[string]any{
+			"$eq": []any{traces.SpanAttributeField("db.system"), args.DBSystem},
+		})
+	} else {
+		conditions = append(conditions, map[string]any{
+			"$neq": []any{traces.SpanAttributeField("db.system"), ""},
+		})
+	}
+
+	if args.Host != "" {
+		conditions = append(conditions, map[string]any{
+			"$eq": []any{traces.SpanAttributeField("net.peer.name"), args.Host},
+		})
+	}
+
+	if args.ServiceName != "" {
+		conditions = append(conditions, map[string]any{
+			"$eq": []any{"ServiceName", args.ServiceName},
+		})
+	}
+
+	if args.Env != "" {
+		conditions = append(conditions, map[string]any{
+			"$eq": []any{traces.ResourceAttributeField("deployment.environment"), args.Env},
+		})
+	}
+
+	if args.MinDurationMs > 0 {
+		minDurationNs := int64(args.MinDurationMs * 1_000_000)
+		conditions = append(conditions, map[string]any{
+			"$gte": []any{"Duration", minDurationNs},
+		})
+	}
+
+	pipeline := []map[string]any{
+		{
+			"type":  "filter",
+			"query": map[string]any{"$and": conditions},
+		},
+	}
+
+	if err := traces.SanitizeTraceJSONQuery(pipeline); err != nil {
+		return nil, fmt.Errorf("invalid slow query trace pipeline: %w", err)
+	}
+
+	return pipeline, nil
+}
+
 // fetchSlowQueryLogs queries the logs API for entries with attributes['slow_query']='true'
 // and extracts database-specific fields like plan_summary, docs_examined, etc.
 // This is best-effort — returns nil on any error (traces are the primary source).
@@ -1008,7 +831,24 @@ func fetchSlowQueryLogs(ctx context.Context, client *http.Client, cfg models.Con
 		return nil
 	}
 
-	return extractSlowQueryLogs(rawResult)
+	// Apply MinDurationMs client-side, matching the trace-side $gte filter.
+	// The duration lives inside the JSON log body (under instrumentation-specific
+	// keys), so it cannot be pushed into the server-side pipeline. Note the
+	// trade-off: the API returns at most `limit` entries *before* this filter,
+	// so qualifying slow logs beyond that page may be missed. Acceptable since
+	// this path is best-effort (traces are the primary source).
+	return filterSlowQueriesByMinDuration(extractSlowQueryLogs(rawResult), args.MinDurationMs)
+}
+
+// filterSlowQueriesByMinDuration drops queries below minDurationMs.
+// A non-positive threshold means "unset" and returns the slice unchanged.
+func filterSlowQueriesByMinDuration(queries []SlowQuery, minDurationMs float64) []SlowQuery {
+	if minDurationMs <= 0 {
+		return queries
+	}
+	return slices.DeleteFunc(queries, func(q SlowQuery) bool {
+		return q.DurationMs < minDurationMs
+	})
 }
 
 // extractSlowQueryLogs parses Loki streams response into SlowQuery entries.
@@ -1228,51 +1068,6 @@ func extractSlowQueries(rawResult map[string]any) []SlowQuery {
 		queries = append(queries, sq)
 	}
 	return queries
-}
-
-// fetchPromAndPopulate runs a PromQL instant query and populates DatabaseSummary entries
-// keyed by "db_system|net_peer_name".
-func fetchPromAndPopulate(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64, databases map[string]*DatabaseSummary, setter func(*DatabaseSummary, float64)) error {
-	resp, err := utils.MakePromInstantAPIQuery(ctx, client, query, endTime, cfg)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("PromQL query failed with status %d", resp.StatusCode)
-	}
-
-	var series apiPromInstantResp
-	if err := json.NewDecoder(resp.Body).Decode(&series); err != nil {
-		return fmt.Errorf("failed to decode PromQL response: %w", err)
-	}
-
-	for _, point := range series {
-		dbSystem := point.Metric["db_system"]
-		host := point.Metric["net_peer_name"]
-		key := dbSystem + "|" + host
-
-		val := parsePromValue(point.Value)
-
-		db, ok := databases[key]
-		if !ok {
-			db = &DatabaseSummary{
-				DBSystem: dbSystem,
-				Host:     host,
-			}
-			databases[key] = db
-		}
-		setter(db, val)
-	}
-	return nil
-}
-
-// fetchPromToMap runs a PromQL query and stores values in a map keyed by "db_system|net_peer_name".
-func fetchPromToMap(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64, result map[string]float64) {
-	fetchPromToMapByKey(ctx, client, cfg, query, endTime, result, func(m map[string]string) string {
-		return m["db_system"] + "|" + m["net_peer_name"]
-	})
 }
 
 // fetchPromToMapByKey is the generic version: runs a PromQL instant query

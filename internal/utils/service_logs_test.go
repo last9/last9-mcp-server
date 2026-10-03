@@ -4,12 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
-func TestMakeLogsJSONQueryAPI_400WrapsSelfHealingHint(t *testing.T) {
-	const bodyText = `{"error":"invalid pipeline: unknown stage type"}`
+func TestMakeLogsJSONQueryAPI_400ReturnsResponse(t *testing.T) {
+	const bodyText = `{"error":"invalid pipeline: unknown stage type","url":"https://internal.example/query"}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(bodyText))
@@ -20,17 +19,15 @@ func TestMakeLogsJSONQueryAPI_400WrapsSelfHealingHint(t *testing.T) {
 	pipeline := []map[string]interface{}{{"type": "filter"}}
 
 	resp, err := MakeLogsJSONQueryAPI(context.Background(), srv.Client(), cfg, pipeline, 0, 60000, 100, "")
-	if resp != nil {
-		t.Fatalf("expected nil response on 400, got %#v", resp)
+	if err != nil {
+		t.Fatalf("400 must return the response so the caller can sanitize: %v", err)
 	}
-	if err == nil {
-		t.Fatal("expected an error for a 400 response, got nil")
+	if resp == nil {
+		t.Fatal("expected 400 response")
 	}
-	if !strings.Contains(err.Error(), "get_log_attributes_for_pipeline") {
-		t.Errorf("error missing self-healing hint: %v", err)
-	}
-	if !strings.Contains(err.Error(), bodyText) {
-		t.Errorf("error missing original body: %v", err)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", resp.StatusCode)
 	}
 }
 

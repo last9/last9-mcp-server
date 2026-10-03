@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -20,39 +19,16 @@ import (
 
 // HTTPServer wraps the MCP server for HTTP transport
 type HTTPServer struct {
-	server   *last9mcp.Last9MCPServer
-	config   models.Config
-	toolsMap map[string]interface{}
-	sessions map[string]*MCPSession
-	mu       sync.RWMutex
-}
-
-// MCPSession represents an MCP session state
-type MCPSession struct {
-	ID           string
-	Initialized  bool
-	Capabilities map[string]interface{}
-	CreatedAt    time.Time
+	server *last9mcp.Last9MCPServer
+	config models.Config
 }
 
 // NewHTTPServer creates a new HTTP-based MCP server
 func NewHTTPServer(server *last9mcp.Last9MCPServer, config models.Config) *HTTPServer {
 	return &HTTPServer{
-		server:   server,
-		config:   config,
-		sessions: make(map[string]*MCPSession),
+		server: server,
+		config: config,
 	}
-}
-
-// newStatelessStreamableHandler builds the MCP Streamable HTTP handler in
-// stateless mode. Otherwise session state is kept per-instance in memory, so
-// when more than one replica runs behind a load balancer a follow-up request
-// (e.g. tools/list) can be routed to a different instance than the one that
-// handled initialize and fail with "session not found" (404). All tools are
-// independent request/response queries, so a temporary per-request session is
-// sufficient and lets the server scale horizontally.
-func newStatelessStreamableHandler(getServer func(*http.Request) *mcp.Server) http.Handler {
-	return mcp.NewStreamableHTTPHandler(getServer, &mcp.StreamableHTTPOptions{Stateless: true})
 }
 
 // Start starts the HTTP server with streamable HTTP support
@@ -63,10 +39,10 @@ func (h *HTTPServer) Start() error {
 	// Create a mux to handle multiple endpoints
 	mux := http.NewServeMux()
 
-	// See newStatelessStreamableHandler for why the handler runs in stateless mode.
-	httpHandler := newStatelessStreamableHandler(func(req *http.Request) *mcp.Server {
-		return h.server.Server
-	})
+	// Stateless: stateful mode keeps sessions per-instance, so behind a load
+	// balancer a follow-up request routed to another replica 404s. The
+	// instrumented helper sets the transport, needed for client attribution.
+	httpHandler := h.server.NewStreamableHTTPHandler(&mcp.StreamableHTTPOptions{Stateless: true})
 
 	// Register handlers on both root and /mcp paths for maximum client flexibility
 	mux.Handle("/", httpHandler)    // Root endpoint for standard MCP clients
@@ -132,6 +108,6 @@ func (h *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":  "healthy",
 		"server":  "last9-mcp",
-		"version": "1.0.0",
+		"version": Version,
 	})
 }

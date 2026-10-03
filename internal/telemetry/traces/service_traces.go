@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -16,6 +15,7 @@ import (
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/otelids"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -29,7 +29,7 @@ const (
 
 // GetServiceTracesArgs defines the input structure for getting traces by service or ID
 type GetServiceTracesArgs struct {
-	TraceID         string  `json:"trace_id,omitempty" jsonschema:"Specific trace ID to retrieve"`
+	TraceID         string  `json:"trace_id,omitempty" jsonschema:"Specific 32-character hexadecimal OpenTelemetry trace ID."`
 	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Name of service to get traces for"`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 4320 for trace_id, 60 for service_name, minimum: 1)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - lookback_minutes."`
@@ -86,16 +86,20 @@ type TraceDetailsResponse struct {
 
 // TraceDetailsSpan represents a single span from the dedicated trace details endpoint.
 type TraceDetailsSpan struct {
-	Timestamp          string            `json:"Timestamp"`
-	TraceID            string            `json:"TraceId"`
-	SpanID             string            `json:"SpanId"`
-	TraceState         string            `json:"TraceState"`
-	SpanName           string            `json:"SpanName"`
-	SpanKind           string            `json:"SpanKind"`
-	ServiceName        string            `json:"ServiceName"`
-	ResourceAttributes map[string]string `json:"ResourceAttributes"`
-	Duration           int64             `json:"Duration"`
-	StatusCode         string            `json:"StatusCode"`
+	Timestamp          string                   `json:"Timestamp"`
+	TraceID            string                   `json:"TraceId"`
+	SpanID             string                   `json:"SpanId"`
+	ParentSpanID       string                   `json:"ParentSpanId"`
+	TraceState         string                   `json:"TraceState"`
+	SpanName           string                   `json:"SpanName"`
+	SpanKind           string                   `json:"SpanKind"`
+	ServiceName        string                   `json:"ServiceName"`
+	ResourceAttributes map[string]string        `json:"ResourceAttributes"`
+	Duration           int64                    `json:"Duration"`
+	StatusCode         string                   `json:"StatusCode"`
+	SpanAttributes     map[string]interface{}   `json:"SpanAttributes,omitempty"`
+	Events             []map[string]interface{} `json:"Events,omitempty"`
+	Links              []map[string]interface{} `json:"Links,omitempty"`
 }
 
 // validateGetServiceTracesArgs validates the input arguments
@@ -135,6 +139,11 @@ func parseGetServiceTraceParams(args GetServiceTracesArgs, cfg models.Config) (*
 	}
 
 	if args.TraceID != "" {
+		normalized, err := otelids.NormalizeTraceID(args.TraceID)
+		if err != nil {
+			return nil, rejectOTelID("get_service_traces", err)
+		}
+		queryParams.TraceID = normalized
 		queryParams.LookbackMinutes = TraceIDLookbackMinutesDefault
 	}
 
@@ -239,6 +248,9 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 
 		traceResponse, err := fetchServiceTraceResponse(ctx, client, cfg, queryParams, startTime.Unix(), endTime.Unix())
 		if err != nil {
+			if isTraceUpstreamError(err) {
+				return traceToolErrorResult(err), nil, nil
+			}
 			return nil, nil, err
 		}
 
@@ -252,7 +264,10 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 			} else {
 				traceResponse.Message = fmt.Sprintf("Retrieved trace data for trace ID: %s", queryParams.TraceID)
 			}
-		} else {
+		} else if traceResponse.Success {
+			// Only set the success summary when the transform succeeded;
+			// otherwise keep the diagnostic message it set (e.g.
+			// "Invalid API response: missing data field").
 			traceResponse.Message = fmt.Sprintf("Retrieved %d traces for service: %s", len(traceResponse.Data), queryParams.ServiceName)
 		}
 
@@ -273,7 +288,11 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 		dashboardURL := dlBuilder.BuildTracesLink(startTime.UnixMilli(), endTime.UnixMilli(), pipeline, queryParams.TraceID, "")
 
 		return &mcp.CallToolResult{
-			Meta: deeplink.ToMeta(dashboardURL),
+			// Escalate soft failures (e.g. malformed 200 body) per the
+			// package convention while preserving the structured
+			// success:false JSON and the dashboard deep link.
+			IsError: !traceResponse.Success,
+			Meta:    deeplink.ToMeta(dashboardURL),
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(jsonData),
@@ -305,24 +324,17 @@ func fetchServiceQueryRangeResponse(ctx context.Context, client *http.Client, cf
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return TraceQueryResponse{}, fmt.Errorf("request failed: %w", err)
+		return TraceQueryResponse{}, newTraceTransportError(err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyStr := readTruncatedResponseBody(resp.Body)
-		return TraceQueryResponse{}, fmt.Errorf(
-			"API request failed with status %d (endpoint: %s%s). Response: %s",
-			resp.StatusCode,
-			cfg.APIBaseURL,
-			constants.EndpointTracesQueryRange,
-			bodyStr,
-		)
+		return TraceQueryResponse{}, newTraceHTTPError(resp)
 	}
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return TraceQueryResponse{}, fmt.Errorf("failed to decode response: %w", err)
+		return TraceQueryResponse{}, newTraceInvalidResponseError(err)
 	}
 
 	return transformToTraceQueryResponse(result), nil
@@ -341,24 +353,20 @@ func fetchTraceDetailsResponse(ctx context.Context, client *http.Client, cfg mod
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return TraceQueryResponse{}, fmt.Errorf("request failed: %w", err)
+		return TraceQueryResponse{}, newTraceTransportError(err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyStr := readTruncatedResponseBody(resp.Body)
-		return TraceQueryResponse{}, fmt.Errorf(
-			"API request failed with status %d (endpoint: %s%s). Response: %s",
-			resp.StatusCode,
-			cfg.APIBaseURL,
-			fmt.Sprintf(constants.EndpointTraceDetails, params.TraceID),
-			bodyStr,
-		)
+		if resp.StatusCode == http.StatusNotFound {
+			return TraceQueryResponse{}, newTraceNotFoundTraceError()
+		}
+		return TraceQueryResponse{}, newTraceHTTPError(resp)
 	}
 
 	var result TraceDetailsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return TraceQueryResponse{}, fmt.Errorf("failed to decode response: %w", err)
+		return TraceQueryResponse{}, newTraceInvalidResponseError(err)
 	}
 
 	return transformTraceDetailsToTraceQueryResponse(result, params.Env), nil
@@ -518,15 +526,6 @@ func traceDetailsMatchesEnv(span TraceDetailsSpan, env string) bool {
 	return false
 }
 
-func readTruncatedResponseBody(body io.Reader) string {
-	respBody, _ := io.ReadAll(body)
-	bodyStr := string(respBody)
-	if len(bodyStr) > 100 {
-		return bodyStr[:100] + "... (truncated)"
-	}
-	return bodyStr
-}
-
 // Helper function to safely extract string values from map
 func extractString(m map[string]interface{}, key string) string {
 	if val, ok := m[key].(string); ok {
@@ -549,21 +548,37 @@ func extractInt64(m map[string]interface{}, key string) int64 {
 	}
 }
 
-// Helper function to parse ISO timestamp strings to Unix timestamp
-func parseTimestampToUnix(timestamp string) int64 {
+// Span timestamp forms the trace APIs emit; zone-less layouts are parsed as UTC.
+var traceTimestampLayouts = []string{
+	time.RFC3339Nano,
+	time.RFC3339,
+	"2006-01-02T15:04:05.999999999",
+	"2006-01-02 15:04:05.999999999",
+	"2006-01-02 15:04:05.999999999 -0700 MST",
+	"2006-01-02 15:04:05.999999999 -07:00",
+}
+
+// parseTraceTimestampNano parses a span timestamp to Unix nanoseconds. Check the bool,
+// not for 0 — the Unix epoch is a valid instant.
+func parseTraceTimestampNano(timestamp string) (int64, bool) {
+	timestamp = strings.TrimSpace(timestamp)
 	if timestamp == "" {
+		return 0, false
+	}
+	for _, layout := range traceTimestampLayouts {
+		if t, err := time.ParseInLocation(layout, timestamp, time.UTC); err == nil {
+			return t.UnixNano(), true
+		}
+	}
+	return 0, false
+}
+
+// Helper function to parse ISO timestamp strings to Unix timestamp (seconds).
+func parseTimestampToUnix(timestamp string) int64 {
+	nanos, ok := parseTraceTimestampNano(timestamp)
+	if !ok {
 		return 0
 	}
-
-	// Try parsing with nanoseconds first (RFC3339Nano format)
-	if t, err := time.Parse(time.RFC3339Nano, timestamp); err == nil {
-		return t.Unix()
-	}
-
-	// Fallback to standard RFC3339 format
-	if t, err := time.Parse(time.RFC3339, timestamp); err == nil {
-		return t.Unix()
-	}
-
-	return 0
+	// time.Unix floors; integer division truncates toward zero (differs pre-epoch).
+	return time.Unix(0, nanos).Unix()
 }

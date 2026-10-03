@@ -29,18 +29,55 @@ const (
 	entityFilterEntityType  = "entity_type"
 	entityFilterDataSource  = "data_source_name"
 	entityFilterTags        = "tags"
+	entityFilterTeam        = "team"
+	entityFilterTier        = "tier"
 )
 
 type alertGroupEntity struct {
 	ID             string                   `json:"id"`
 	Name           string                   `json:"name"`
 	Type           string                   `json:"type"`
+	EntityClass    string                   `json:"entity_class"`
+	Tier           string                   `json:"tier"`
 	DataSourceName string                   `json:"data_source_name"`
 	Metadata       alertGroupEntityMetadata `json:"metadata"`
 }
 
 type alertGroupEntityMetadata struct {
-	Tags []string `json:"tags"`
+	Tags   []string          `json:"tags"`
+	Team   string            `json:"team"`
+	Labels map[string]string `json:"labels"`
+}
+
+type alertGroupEntityQuery struct {
+	AlertGroupName string
+	AlertGroupType string
+	DataSourceName string
+	Tags           []string
+	Team           string
+	Tier           string
+	LabelKey       string
+	LabelValue     string
+}
+
+func alertGroupEntityQueryFromConfig(args GetAlertConfigArgs) alertGroupEntityQuery {
+	return alertGroupEntityQuery{
+		AlertGroupName: args.AlertGroupName,
+		AlertGroupType: args.AlertGroupType,
+		DataSourceName: args.DataSourceName,
+		Tags:           args.Tags,
+	}
+}
+
+func (q alertGroupEntityQuery) hasTypedFilters() bool {
+	return strings.TrimSpace(q.AlertGroupName) != "" ||
+		strings.TrimSpace(q.AlertGroupType) != "" ||
+		strings.TrimSpace(q.DataSourceName) != "" ||
+		len(normalizeStringSlice(q.Tags)) > 0 ||
+		strings.TrimSpace(q.Team) != "" ||
+		strings.TrimSpace(q.Tier) != "" ||
+		strings.TrimSpace(q.LabelKey) != "" ||
+		strings.TrimSpace(q.LabelValue) != ""
 }
 
 type groupedAlertGroupEntitiesResponse struct {
@@ -62,6 +99,12 @@ type filterAlertGroupEntitiesRequest struct {
 }
 
 func validateGetAlertConfigArgs(args GetAlertConfigArgs) error {
+	for _, severity := range normalizeNotificationChannelSeverities(args.NotificationChannelSeverities) {
+		if severity != "breach" && severity != "threat" {
+			return fmt.Errorf("notification_channel_severities entries must be %q or %q", "breach", "threat")
+		}
+	}
+
 	ruleType := strings.ToLower(strings.TrimSpace(args.RuleType))
 	if ruleType == "" {
 		return nil
@@ -208,10 +251,10 @@ func fetchAlertGroupEntities(
 	ctx context.Context,
 	client *http.Client,
 	cfg models.Config,
-	args GetAlertConfigArgs,
+	query alertGroupEntityQuery,
 ) (map[string]alertGroupEntity, error) {
 	requestBody := filterAlertGroupEntitiesRequest{
-		Filters: buildAlertGroupEntityLookupFilters(args),
+		Filters: buildAlertGroupEntityLookupFilters(query),
 		Groups:  []any{},
 		Orders:  []any{},
 	}
@@ -267,10 +310,10 @@ func fetchAlertGroupEntities(
 	return entitiesByID, nil
 }
 
-func buildAlertGroupEntityLookupFilters(args GetAlertConfigArgs) []alertGroupEntityFilter {
-	explicitFilters := make([]alertGroupEntityFilter, 0, 2+len(normalizeStringSlice(args.Tags)))
+func buildAlertGroupEntityLookupFilters(query alertGroupEntityQuery) []alertGroupEntityFilter {
+	explicitFilters := make([]alertGroupEntityFilter, 0, 4+len(normalizeStringSlice(query.Tags)))
 
-	if alertGroupName := strings.TrimSpace(args.AlertGroupName); alertGroupName != "" {
+	if alertGroupName := strings.TrimSpace(query.AlertGroupName); alertGroupName != "" {
 		explicitFilters = append(explicitFilters, newAlertGroupEntityFilter(
 			entityFilterEntityName,
 			alertGroupName,
@@ -278,7 +321,7 @@ func buildAlertGroupEntityLookupFilters(args GetAlertConfigArgs) []alertGroupEnt
 		))
 	}
 
-	if alertGroupType := strings.TrimSpace(args.AlertGroupType); alertGroupType != "" {
+	if alertGroupType := strings.TrimSpace(query.AlertGroupType); alertGroupType != "" {
 		explicitFilters = append(explicitFilters, newAlertGroupEntityFilter(
 			entityFilterEntityType,
 			alertGroupType,
@@ -286,7 +329,7 @@ func buildAlertGroupEntityLookupFilters(args GetAlertConfigArgs) []alertGroupEnt
 		))
 	}
 
-	if dataSourceName := strings.TrimSpace(args.DataSourceName); dataSourceName != "" {
+	if dataSourceName := strings.TrimSpace(query.DataSourceName); dataSourceName != "" {
 		explicitFilters = append(explicitFilters, newAlertGroupEntityFilter(
 			entityFilterDataSource,
 			dataSourceName,
@@ -294,11 +337,27 @@ func buildAlertGroupEntityLookupFilters(args GetAlertConfigArgs) []alertGroupEnt
 		))
 	}
 
-	for _, tag := range normalizeStringSlice(args.Tags) {
+	for _, tag := range normalizeStringSlice(query.Tags) {
 		explicitFilters = append(explicitFilters, newAlertGroupEntityFilter(
 			entityFilterTags,
 			tag,
 			entityFilterContains,
+		))
+	}
+
+	if team := strings.TrimSpace(query.Team); team != "" {
+		explicitFilters = append(explicitFilters, newAlertGroupEntityFilter(
+			entityFilterTeam,
+			team,
+			entityFilterEqual,
+		))
+	}
+
+	if tier := strings.TrimSpace(query.Tier); tier != "" {
+		explicitFilters = append(explicitFilters, newAlertGroupEntityFilter(
+			entityFilterTier,
+			tier,
+			entityFilterEqual,
 		))
 	}
 
@@ -380,7 +439,7 @@ func filterAlertConfigByEntityFieldsAndSearch(
 	for _, rule := range alertConfig {
 		entity, entityFound := entitiesByID[rule.EntityID]
 
-		if !matchesAlertGroupEntityFilters(entity, entityFound, args) {
+		if !matchesAlertGroupEntityFilters(entity, entityFound, alertGroupEntityQueryFromConfig(args)) {
 			continue
 		}
 
@@ -396,22 +455,15 @@ func filterAlertConfigByEntityFieldsAndSearch(
 
 func requiresAlertGroupEntityLookup(args GetAlertConfigArgs) bool {
 	return strings.TrimSpace(args.SearchTerm) != "" ||
-		strings.TrimSpace(args.AlertGroupName) != "" ||
-		strings.TrimSpace(args.AlertGroupType) != "" ||
-		strings.TrimSpace(args.DataSourceName) != "" ||
-		len(normalizeStringSlice(args.Tags)) > 0
+		alertGroupEntityQueryFromConfig(args).hasTypedFilters()
 }
 
 func matchesAlertGroupEntityFilters(
 	entity alertGroupEntity,
 	entityFound bool,
-	args GetAlertConfigArgs,
+	query alertGroupEntityQuery,
 ) bool {
-	hasTypedEntityFilters := strings.TrimSpace(args.AlertGroupName) != "" ||
-		strings.TrimSpace(args.AlertGroupType) != "" ||
-		strings.TrimSpace(args.DataSourceName) != "" ||
-		len(normalizeStringSlice(args.Tags)) > 0
-	if !hasTypedEntityFilters {
+	if !query.hasTypedFilters() {
 		return true
 	}
 
@@ -419,19 +471,41 @@ func matchesAlertGroupEntityFilters(
 		return false
 	}
 
-	if alertGroupName := strings.TrimSpace(args.AlertGroupName); alertGroupName != "" && !containsFold(entity.Name, alertGroupName) {
+	if alertGroupName := strings.TrimSpace(query.AlertGroupName); alertGroupName != "" && !containsFold(entity.Name, alertGroupName) {
 		return false
 	}
 
-	if alertGroupType := strings.TrimSpace(args.AlertGroupType); alertGroupType != "" && !containsFold(entity.Type, alertGroupType) {
+	if alertGroupType := strings.TrimSpace(query.AlertGroupType); alertGroupType != "" && !containsFold(entity.Type, alertGroupType) {
 		return false
 	}
 
-	if dataSourceName := strings.TrimSpace(args.DataSourceName); dataSourceName != "" && !containsFold(entity.DataSourceName, dataSourceName) {
+	if dataSourceName := strings.TrimSpace(query.DataSourceName); dataSourceName != "" && !containsFold(entity.DataSourceName, dataSourceName) {
 		return false
 	}
 
-	for _, tagFilter := range normalizeStringSlice(args.Tags) {
+	if team := strings.TrimSpace(query.Team); team != "" && !strings.EqualFold(entity.Metadata.Team, team) {
+		return false
+	}
+
+	if tier := strings.TrimSpace(query.Tier); tier != "" && !strings.EqualFold(entity.Tier, tier) {
+		return false
+	}
+
+	if labelKey := strings.TrimSpace(query.LabelKey); labelKey != "" {
+		labelValue := strings.TrimSpace(query.LabelValue)
+		matched := false
+		for k, v := range entity.Metadata.Labels {
+			if strings.EqualFold(k, labelKey) && strings.EqualFold(v, labelValue) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
+	for _, tagFilter := range normalizeStringSlice(query.Tags) {
 		matched := false
 		for _, tag := range entity.Metadata.Tags {
 			if containsFold(tag, tagFilter) {
@@ -464,12 +538,20 @@ func matchesAlertConfigSearchTerm(
 
 	if containsFold(entity.Name, searchTerm) ||
 		containsFold(entity.Type, searchTerm) ||
-		containsFold(entity.DataSourceName, searchTerm) {
+		containsFold(entity.DataSourceName, searchTerm) ||
+		containsFold(entity.Metadata.Team, searchTerm) ||
+		containsFold(entity.Tier, searchTerm) {
 		return true
 	}
 
 	for _, tag := range entity.Metadata.Tags {
 		if containsFold(tag, searchTerm) {
+			return true
+		}
+	}
+
+	for key, value := range entity.Metadata.Labels {
+		if containsFold(key, searchTerm) || containsFold(value, searchTerm) {
 			return true
 		}
 	}
@@ -507,8 +589,37 @@ func containsFold(value, substring string) bool {
 	return strings.Contains(strings.ToLower(value), strings.ToLower(substring))
 }
 
-func formatAlertConfigResponse(alertConfig AlertConfigResponse) string {
-	formattedResponse := fmt.Sprintf("Found %d alert rules:\n\n", len(alertConfig))
+func formatAlertGroupLabels(labels map[string]string) string {
+	if len(labels) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(labels))
+	for key := range labels {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%s", key, labels[key]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func formatAlertConfigResponse(
+	alertConfig AlertConfigResponse,
+	entitiesByID map[string]alertGroupEntity,
+	entityChannelsByID map[string][]NotificationChannel,
+	notificationChannelsErr string,
+	onlyWithoutNotificationChannel bool,
+) string {
+	header := fmt.Sprintf("Found %d alert rules:\n\n", len(alertConfig))
+	if onlyWithoutNotificationChannel {
+		header = fmt.Sprintf(
+			"Found %d alert rule(s) with no per-entity notification channel configured:\n\n",
+			len(alertConfig),
+		)
+	}
+	formattedResponse := header
 	for i, rule := range alertConfig {
 		formattedResponse += fmt.Sprintf("Alert Rule %d:\n", i+1)
 		formattedResponse += fmt.Sprintf("  ID: %s\n", rule.ID)
@@ -558,6 +669,39 @@ func formatAlertConfigResponse(alertConfig AlertConfigResponse) string {
 		formattedResponse += fmt.Sprintf("  Severity: %s\n", rule.Severity)
 		formattedResponse += fmt.Sprintf("  Algorithm: %s\n", rule.Algorithm)
 		formattedResponse += fmt.Sprintf("  Entity ID: %s\n", rule.EntityID)
+
+		if entity, ok := entitiesByID[rule.EntityID]; ok {
+			formattedResponse += fmt.Sprintf("  Alert Group: %s\n", entity.Name)
+			if entity.DataSourceName != "" {
+				formattedResponse += fmt.Sprintf("  Data Source: %s\n", entity.DataSourceName)
+			}
+			if len(entity.Metadata.Tags) > 0 {
+				formattedResponse += fmt.Sprintf("  Tags: %s\n", strings.Join(entity.Metadata.Tags, ", "))
+			}
+			if team := strings.TrimSpace(entity.Metadata.Team); team != "" {
+				formattedResponse += fmt.Sprintf("  Team: %s\n", team)
+			}
+			if tier := strings.TrimSpace(entity.Tier); tier != "" {
+				formattedResponse += fmt.Sprintf("  Tier: %s\n", tier)
+			}
+			if formatted := formatAlertGroupLabels(entity.Metadata.Labels); formatted != "" {
+				formattedResponse += fmt.Sprintf("  Labels: %s\n", formatted)
+			}
+		}
+
+		if notificationChannelsErr != "" {
+			formattedResponse += fmt.Sprintf(
+				"  Notification Channels: [lookup failed: %s]\n",
+				notificationChannelsErr,
+			)
+		} else {
+			bindings := entityChannelsByID[rule.EntityID]
+			formattedResponse += fmt.Sprintf(
+				"  Notification Channels: %s\n",
+				formatNotificationChannelSummary(bindings),
+			)
+			formattedResponse += formatNotificationChannelBindingDetails(bindings)
+		}
 
 		if rule.ErrorSince != nil {
 			errorTime := time.Unix(*rule.ErrorSince, 0).UTC().Format("2006-01-02 15:04:05 UTC")

@@ -1,46 +1,31 @@
+`logjson_query`: JSON stage array, **NOT SQL**. Types: `filter`|`parse`|`aggregate`|`window_aggregate`; no `"stage"`/`"conditions"`.
 
-	Get logs for service or group of services using JSON pipeline queries for advanced filtering, parsing, aggregation, and processing. 
-	
-	This tool requires the logjson_query parameter which contains a JSON pipeline query. Use the logjson_query_builder prompt to generate these queries from natural language descriptions.
+**Profile first:** service-scoped query → `get_service_profile`; route on `signal_shape`/`telemetry`. See `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
 
-	Time format rules:
-	- Prefer lookback_minutes for relative windows (for example, last 5 or 60 minutes).
-	- Use start_time_iso and end_time_iso for absolute windows.
-	- start_time_iso/end_time_iso accept RFC3339/ISO8601 (e.g. 2026-02-09T15:04:05Z).
-	- Legacy format YYYY-MM-DD HH:MM:SS is accepted only for compatibility.
-	- If both lookback_minutes and absolute times are provided, absolute times take precedence.
+**Order:** scope→parse→filter→aggregate.
 
-	Parameters:
-	- logjson_query: (Required) JSON pipeline query array for advanced log filtering and processing. Use logjson_query_builder prompt to generate from natural language.
-	- lookback_minutes: (Optional) Number of minutes to look back from now. Default: 5 minutes.
-	- start_time_iso: (Optional) Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to use lookback_minutes.
-	- end_time_iso: (Optional) End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time.
-	- index: (Optional) Explicit log index to query. Accepted values are physical_index:<name> and rehydration_index:<block_name>. Omit it when the user did not specify an index.
+**Filter:** `{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}`. Ops: `$and`/`$or`/`$not`; `$eq`/`$neq`; `$containsWords`; `$regex`. Body words: ALL → `$and` of one `$containsWords` per word; ANY → `$or`; never `$icontainsWords`.
 
-	Service and index discovery:
-	- For log-based service inventory, query the metric physical_index_service_count with prometheus_instant_query before searching logs broadly.
-	- Use a query such as sum by (name, service_name, env) (physical_index_service_count{destination="logs"}) to find services, environments, and physical index names that are actively sending logs.
-	- The physical index name is exposed in the metric label named "name". If name="default", omit the index parameter when calling log tools.
-	- For non-default physical index names selected by the user, pass index as physical_index:<name>.
-	- If the backend rejects physical index filtering, retry without index and mention that explicit physical index filtering is unavailable for that backend.
-	- Avoid broad multi-service body searches. First choose a service/env/index from inventory, then aggregate by severity or pattern, then drill into raw samples.
+**Parse:** `{"type":"parse","parser":"json","field":"Body","labels":{"key":"key"}}`; also `logfmt`/`regexp`, not `"format"`. Outputs use `attributes['key']`.
 
-	Field reference rules:
-	- Use ServiceName for service filters/grouping. Do not use bare service.name.
-	- Use attributes['field'] for log attributes.
-	- Use resources['field'] for resource attributes such as Kubernetes metadata.
-	- Bare dotted field references are rejected unless they are normalized aliases like service.name or k8s.*.
-	- Fields reported by get_log_attributes_for_pipeline with source "body" exist only inside the log Body (JSON, logfmt, or plaintext matched by regexp): copy the parse stage from their hint into the pipeline BEFORE any filter or groupby referencing them — an unparsed body field silently yields empty values (a groupby collapses to one empty bucket). Prefer indexed SeverityText/severity/level over a body-derived level parse when both are available.
-	- When the user names a workload generically rather than an exact service, enumerate ServiceName variants first (e.g. aggregate grouped by ServiceName) and OR all variants of the workload — canary/primary siblings split traffic, so a single service undercounts.
-	- Severity is not a proxy for HTTP errors: access logs are commonly INFO even for 5xx and SeverityText can be empty. Filter on the discovered status field for HTTP error questions.
+**Aggregate:** `aggregates` entries use `function`+`as`; optional `groupby`. `$quantile` is the general/default percentile operator.
 
-	The logjson_query supports:
-	- Filter operations: Filter logs based on conditions
-	- Parse operations: Parse log content (json, regexp, logfmt)
-	- Aggregate operations: Perform aggregations (sum, avg, count, etc.)
-	- Window aggregate operations: Time-windowed aggregations
-	- Transform operations: Transform/extract fields
-	- Select operations: Select specific fields and apply limits
+**window_aggregate:** `function`+`as`+`window`, not `aggregates`/`TimeBucket`. Count: `{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"]}`. P99: `{"type":"window_aggregate","function":{"$quantile":[0.99,"attributes['latency_ms']"]},"as":"p99","window":["24","hours"],"groupby":{"attributes['route']":"route"}}`.
 
-	Response contains the results of the JSON pipeline query execution.
+**Percentiles:** Day-wise: exactly ONE get_logs call over the full half-open start_time_iso/end_time_iso range with one window_aggregate; NEVER one call per day; honor requested timezone. Parse, then use the canonical anchored numeric `$regex` shown: `^[0-9]+(?:\\.[0-9]+)?$`. It excludes non-matching values from percentile calculations; disclose that exclusion in the answer. Never template/merge/recombine aggregated percentile rows. Use a discovered normalized route. Raw URI: aggregate exact values only; never normalize/merge variants afterward. If `l9_result.partial=true`, preserve rows and disclose partial coverage. Report source units; never infer/convert.
 
+**Severity-less:** empty `SeverityText` → parse Body `level`; `$ieq` `ERROR`.
+
+**Attrs:** exists → `{"$neq":["field",""]}` (never `$exists`). Dotted/single-token (`community_member_id`) use `attributes['key']`/`resources['key']`; only ServiceName/Body/SeverityText/Timestamp may be bare.
+
+**Scope:** tenant → `resources['last9.tenant']`; env → `resources['deployment.environment']`; `service.name` → `ServiceName`; `k8s.*` → `resources['k8s.…']`.
+
+**Free-text IDs:** `$contains` Body, never ServiceName.
+
+**HTTP 5xx:** known→`get_service_logs`; else `$eq` discovered status, never SeverityText.
+
+**Time:** `lookback_minutes` default **5**. ISO args: `start_time_iso`+`end_time_iso`, not Timestamp filters.
+
+**l9_sanity:** high ratio/broad filter→ERROR re-count; zero→inspect samples.
+
+Full manual: `last9://reference/logjson`
