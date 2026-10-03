@@ -295,6 +295,50 @@ func TestWriteDispositionSendsOnlyCanonicalFields(t *testing.T) {
 	}
 }
 
+func TestUpdateSubscriptionPreservesStaleConflict(t *testing.T) {
+	client := pulseTestClient(func(*http.Request) (int, string) {
+		return http.StatusConflict, `{"error":"pulse subscription is stale; re-read before updating"}`
+	})
+
+	handler := NewUpdateSubscriptionHandler(client, pulseTestConfig())
+	args := UpdateSubscriptionArgs{SubscriptionID: "subscription-1", ExpectedVersion: 2, SubscriptionInput: validSubscriptionInput(), Confirmed: true}
+	_, _, err := handler(context.Background(), nil, args)
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusConflict {
+		t.Fatalf("error = %#v, want preserved HTTP 409", err)
+	}
+	if !strings.Contains(apiErr.Body, "re-read") {
+		t.Fatalf("error body = %q, want upstream guidance", apiErr.Body)
+	}
+}
+
+func TestUpdateSubscriptionSendsExpectedVersion(t *testing.T) {
+	client := pulseTestClient(func(r *http.Request) (int, string) {
+		if r.Method != http.MethodPut || r.URL.Path != pulseBasePath+"/subscriptions/subscription-1" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		var got map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got["expected_version"] != float64(2) {
+			t.Errorf("request body expected_version = %v, want 2", got["expected_version"])
+		}
+		for _, forbidden := range []string{"confirmed", "subscription_id"} {
+			if _, exists := got[forbidden]; exists {
+				t.Errorf("request body contains %q: %v", forbidden, got)
+			}
+		}
+		return http.StatusOK, `{"id":"subscription-1"}`
+	})
+
+	handler := NewUpdateSubscriptionHandler(client, pulseTestConfig())
+	args := UpdateSubscriptionArgs{SubscriptionID: "subscription-1", ExpectedVersion: 2, SubscriptionInput: validSubscriptionInput(), Confirmed: true}
+	if _, _, err := handler(context.Background(), nil, args); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func validSubscriptionInput() SubscriptionInput {
 	return SubscriptionInput{
 		Name: "Weekly alert review", Schedule: "0 9 * * 1", Timezone: "UTC",

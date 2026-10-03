@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `update_pulse_subscription` now requires an `expected_version` and sends it with the full-replace write, so two concurrent updates no longer silently clobber each other; a stale write returns HTTP 409, matching `write_pulse_disposition`'s existing optimistic concurrency (#204).
+
 ## [0.19.3] - 2026-09-30
 
 ### Added

@@ -33,9 +33,15 @@ type CreateSubscriptionArgs struct {
 }
 
 type UpdateSubscriptionArgs struct {
-	SubscriptionID string `json:"subscription_id" jsonschema:"(Required) Subscription ID to replace."`
+	SubscriptionID  string `json:"subscription_id" jsonschema:"(Required) Subscription ID to replace."`
+	ExpectedVersion int64  `json:"expected_version" jsonschema:"(Required) Current subscription version from get_pulse_subscription; stale writes return HTTP 409."`
 	SubscriptionInput
 	Confirmed bool `json:"confirmed" jsonschema:"(Required) Must be true after the user confirms the full replacement."`
+}
+
+type subscriptionReplacePayload struct {
+	SubscriptionInput
+	ExpectedVersion int64 `json:"expected_version"`
 }
 
 type SetSubscriptionEnabledArgs struct {
@@ -81,7 +87,8 @@ func NewUpdateSubscriptionHandler(httpClient *http.Client, config models.Config)
 		if err != nil {
 			return nil, nil, err
 		}
-		body, err := api.call(ctx, request{method: http.MethodPut, path: "/subscriptions/" + id, body: args.SubscriptionInput})
+		payload := subscriptionReplacePayload{SubscriptionInput: args.SubscriptionInput, ExpectedVersion: args.ExpectedVersion}
+		body, err := api.call(ctx, request{method: http.MethodPut, path: "/subscriptions/" + id, body: payload})
 		return handlerResult(body, err)
 	}
 }
