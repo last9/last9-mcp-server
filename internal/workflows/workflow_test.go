@@ -92,12 +92,66 @@ func TestWorkflowPromptsContainRoutingGuards(t *testing.T) {
 		text   string
 		phrase string
 	}{
+		{"scoped log attribute discovery", prompts.ScopedLogAttributeDiscoveryWorkflow, "get_service_profile"},
 		{"scoped log attribute discovery", prompts.ScopedLogAttributeDiscoveryWorkflow, "Forbidden tool for this workflow: `get_service_logs`"},
+		{"exception root cause investigation", prompts.ExceptionRootCauseInvestigationWorkflow, "get_service_profile"},
 		{"exception root cause investigation", prompts.ExceptionRootCauseInvestigationWorkflow, "AGGREGATE FIRST"},
+		{"exception root cause investigation", prompts.ExceptionRootCauseInvestigationWorkflow, "severity_set in (\"none\", \"partial\")"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(c.text, c.phrase) {
 			t.Errorf("%s workflow prompt missing %q", c.name, c.phrase)
+		}
+	}
+}
+
+// Every other assertion greps a string inside the one file it was added to, so
+// a workflow can drift from the tri-state contract in references/investigation.md
+// without any test noticing. These two check across files.
+
+func TestWorkflowsGateOnAbsentNotPresent(t *testing.T) {
+	// `unknown` means not measured. Gating on == "present" sends it down the
+	// skip branch, suppressing tools on every service whose tier did not resolve.
+	for name, body := range map[string]string{
+		"diagnose_error_rate":                prompts.DiagnoseErrorRateWorkflow,
+		"exception_root_cause_investigation": prompts.ExceptionRootCauseInvestigationWorkflow,
+		"investigate_latency_spike":          prompts.InvestigateLatencySpikeWorkflow,
+		"on_call_runbook":                    prompts.OnCallRunbookWorkflow,
+		"scoped_log_attribute_discovery":     prompts.ScopedLogAttributeDiscoveryWorkflow,
+		"references/investigation":           prompts.InvestigationReference,
+	} {
+		// No exemption: an escape hatch here is another condition that can
+		// silently stop failing, which is the bug this test exists to catch.
+		for _, signal := range []string{"traces", "logs", "metrics"} {
+			if gate := "telemetry." + signal + ` == "present"`; strings.Contains(body, gate) {
+				t.Errorf("%s gates on %s; use != \"absent\" so unknown does not suppress tools", name, gate)
+			}
+		}
+	}
+}
+
+func TestInvestigationReferenceKeepsUnknownDistinctFromAbsent(t *testing.T) {
+	if !strings.Contains(prompts.InvestigationReference, "`unknown` means not measured") {
+		t.Error("investigation reference must keep unknown distinct from absent")
+	}
+}
+
+// level_field and parse_hint are nested under signal_shape in the profile JSON
+// (see signalShapeResponse). A flattened profile.<field> path names something
+// the response does not contain, and the model queries on it anyway.
+func TestWorkflowsUseNestedSignalShapePaths(t *testing.T) {
+	for name, body := range map[string]string{
+		"diagnose_error_rate":                prompts.DiagnoseErrorRateWorkflow,
+		"exception_root_cause_investigation": prompts.ExceptionRootCauseInvestigationWorkflow,
+		"investigate_latency_spike":          prompts.InvestigateLatencySpikeWorkflow,
+		"on_call_runbook":                    prompts.OnCallRunbookWorkflow,
+		"scoped_log_attribute_discovery":     prompts.ScopedLogAttributeDiscoveryWorkflow,
+		"references/investigation":           prompts.InvestigationReference,
+	} {
+		for _, field := range []string{"level_field", "parse_hint", "severity_set", "log_format"} {
+			if bad := "profile." + field; strings.Contains(body, bad) {
+				t.Errorf("%s uses %s; the field is nested under signal_shape", name, bad)
+			}
 		}
 	}
 }

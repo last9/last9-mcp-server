@@ -1,9 +1,13 @@
 package traces
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
+
+	"last9-mcp/internal/otelids"
+	"last9-mcp/internal/telemetry"
 )
 
 var traceFilterFieldOperators = map[string]struct{}{
@@ -37,10 +41,11 @@ var traceFilterLogicalOperators = map[string]struct{}{
 	"$not": {},
 }
 
-// sanitizeTraceJSONQuery validates a tracejson_query pipeline before forwarding
+// SanitizeTraceJSONQuery validates a tracejson_query pipeline before forwarding
 // to the API. It catches common LLM mistakes and returns descriptive errors so
 // the model can self-correct without waiting for a 400 from the upstream API.
-func sanitizeTraceJSONQuery(stages []map[string]interface{}) error {
+// Normalizations are applied in place — callers forward the slice they passed in.
+func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 	for i, stage := range stages {
 		stageType, _ := stage["type"].(string)
 		path := fmt.Sprintf("tracejson_query[%d]", i)
@@ -56,6 +61,7 @@ func sanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 				// ClickHouse). Rewrite both to the working idiom before
 				// validation ever sees them. Recurses through $and/$or/$not.
 				rewriteBrokenExistenceOperators(query)
+				rewriteLegacyDotNotationFields(query)
 				if err := validateTraceFilterCondition(query, path+".query"); err != nil {
 					return err
 				}
@@ -78,6 +84,94 @@ func sanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 		}
 	}
 	return nil
+}
+
+// SanitizeTraceFilterConditions is SanitizeTraceJSONQuery without the top-level
+// $and wrap: each element is already one condition inside a filters array, so
+// wrapping would misplace it. It returns a possibly-larger slice: when the
+// shared rewriteBrokenExistenceOperators helper folds $notnull/$exists alongside
+// a sibling operator into a single {"$and":[...]} element, that $and is split
+// back into sibling bare-condition elements, because a filters array is
+// AND-implicit and a logical operator at the element level is non-canonical.
+func SanitizeTraceFilterConditions(conditions []map[string]interface{}, pathPrefix string) ([]map[string]interface{}, error) {
+	sanitized := make([]map[string]interface{}, 0, len(conditions))
+	for i, condition := range conditions {
+		path := fmt.Sprintf("%s[%d]", pathPrefix, i)
+		rewriteBrokenExistenceOperators(condition)
+		flat, err := splitFiltersElement(condition, path)
+		if err != nil {
+			return nil, err
+		}
+		for _, cond := range flat {
+			rewriteLegacyDotNotationFields(cond)
+			if err := validateTraceFilterCondition(cond, path); err != nil {
+				return nil, err
+			}
+			if err := validateFilterFields(cond, path); err != nil {
+				return nil, err
+			}
+			sanitized = append(sanitized, cond)
+		}
+	}
+	return sanitized, nil
+}
+
+// splitFiltersElement expands a single filters-array element into one or more
+// bare field-operator conditions.
+//
+// rewriteBrokenExistenceOperators reuses the pipeline-path helper
+// rewriteBrokenExistenceOperatorsInMap, which folds $notnull/$exists alongside
+// a sibling operator into a single {"$and":[...]} map. That fold is correct
+// for the pipeline path (the top-level query is re-wrapped by
+// wrapTopLevelFilterQuery), but a deviations filters array is AND-implicit with
+// one field operator per element, so a $and at the element level violates the
+// sanitizer's own design contract. $and is therefore split into its children —
+// semantically identical, since AND is the implicit join between filters
+// elements. $or/$not cannot be split without changing semantics and are
+// rejected with guidance to emit each condition as a separate filters element.
+// Nested $and wrappers are flattened. Children are sorted so the output is
+// deterministic (canonical) regardless of map-iteration order.
+func splitFiltersElement(condition map[string]interface{}, path string) ([]map[string]interface{}, error) {
+	if len(condition) != 1 {
+		return []map[string]interface{}{condition}, nil
+	}
+	for key, item := range condition {
+		switch key {
+		case "$and":
+			children, ok := item.([]interface{})
+			if !ok {
+				return []map[string]interface{}{condition}, nil
+			}
+			flat := make([]map[string]interface{}, 0, len(children))
+			for j, child := range children {
+				childMap, ok := child.(map[string]interface{})
+				if !ok {
+					return nil, fmt.Errorf(
+						"invalid filter condition at %s.$and[%d]: each $and child must be a single field-operator condition object such as {\"$eq\":[field,value]}",
+						path, j,
+					)
+				}
+				expanded, err := splitFiltersElement(childMap, fmt.Sprintf("%s.$and[%d]", path, j))
+				if err != nil {
+					return nil, err
+				}
+				flat = append(flat, expanded...)
+			}
+			sort.SliceStable(flat, func(a, b int) bool {
+				encA, _ := json.Marshal(flat[a])
+				encB, _ := json.Marshal(flat[b])
+				return string(encA) < string(encB)
+			})
+			return flat, nil
+		case "$or", "$not":
+			return nil, fmt.Errorf(
+				"invalid filter condition at %s: the %q logical operator cannot appear inside a filters array — each filters element must be a single bare field-operator condition such as {\"$eq\":[field,value]}; emit each condition as a separate filters element",
+				path, key,
+			)
+		}
+		return []map[string]interface{}{condition}, nil
+	}
+	return []map[string]interface{}{condition}, nil
 }
 
 // wrapTopLevelFilterQuery ensures the top-level filter query is wrapped in a
@@ -214,9 +308,50 @@ func validateFilterFields(value interface{}, path string) error {
 					if err := validateFieldSyntax(fieldStr, fmt.Sprintf("%s.%s[0]", path, key)); err != nil {
 						return err
 					}
+					if _, isEquality := traceIDEqualityOperators[key]; isEquality && len(args) == 2 {
+						if err := normalizeOTelIDArg(fieldStr, args, path+"."+key); err != nil {
+							return err
+						}
+					}
 				}
 			}
 		}
+	}
+	return nil
+}
+
+// Exact-match operators only: substring/regex operators legitimately match
+// partial IDs, so validating their operands would reject valid queries.
+var traceIDEqualityOperators = map[string]struct{}{
+	"$eq":   {},
+	"$ieq":  {},
+	"$ineq": {},
+	"$neq":  {},
+}
+
+func normalizeOTelIDArg(field string, args []interface{}, path string) error {
+	id, ok := args[1].(string)
+	if !ok {
+		return nil
+	}
+	// An empty operand is the existence idiom, not an ID: rewriteBrokenExistenceOperators
+	// turns $notnull into {"$neq": [field, ""]} before validation runs.
+	if id == "" {
+		return nil
+	}
+	switch field {
+	case "TraceId":
+		normalized, err := otelids.NormalizeTraceID(id)
+		if err != nil {
+			return fmt.Errorf("%s[1]: %w", path, rejectOTelID("get_traces", err))
+		}
+		args[1] = normalized
+	case "SpanId", "ParentSpanId":
+		normalized, err := otelids.NormalizeSpanID(id)
+		if err != nil {
+			return fmt.Errorf("%s[1]: %w", path, rejectOTelID("get_traces", err))
+		}
+		args[1] = normalized
 	}
 	return nil
 }
@@ -281,6 +416,103 @@ func validateFieldSyntax(field, path string) error {
 	return nil
 }
 
+// rewriteLegacyDotNotationFields walks a filter condition tree and rewrites
+// legacy dot-notation map attribute references to bracket syntax in place.
+func rewriteLegacyDotNotationFields(value interface{}) {
+	switch typed := value.(type) {
+	case []interface{}:
+		for _, item := range typed {
+			rewriteLegacyDotNotationFields(item)
+		}
+	case map[string]interface{}:
+		for key, item := range typed {
+			if _, isLogical := traceFilterLogicalOperators[key]; isLogical {
+				rewriteLegacyDotNotationFields(item)
+				continue
+			}
+			if args, ok := item.([]interface{}); ok && len(args) > 0 {
+				if fieldStr, ok := args[0].(string); ok {
+					args[0] = normalizeTraceFilterField(fieldStr)
+				}
+			}
+		}
+	}
+}
+
+// normalizeTraceFilterField converts legacy dot-notation field references to
+// ClickHouse Map bracket syntax. Already-correct bracket forms pass through.
+func normalizeTraceFilterField(field string) string {
+	if strings.HasPrefix(field, `attributes['`) ||
+		strings.HasPrefix(field, `resources['`) ||
+		strings.HasPrefix(field, `events['`) {
+		return field
+	}
+	// Longest prefix first: resource.attributes. before resource.
+	for _, p := range []struct {
+		prefix string
+		to     func(string) string
+	}{
+		{"resource.attributes.", ResourceAttributeField},
+		{"resources.", ResourceAttributeField},
+		{"resource.", ResourceAttributeField},
+		{"attributes.", SpanAttributeField},
+		{"events.", EventAttributeField},
+		{"event.", EventAttributeField},
+	} {
+		if !strings.HasPrefix(field, p.prefix) {
+			continue
+		}
+		// A prefix with nothing after it names no key; rewriting would pick a
+		// column from the empty remainder and land on the wrong one.
+		key := field[len(p.prefix):]
+		if key == "" {
+			return field
+		}
+		return p.to(key)
+	}
+	return field
+}
+
+const (
+	traceCategoryUnknownStageType     = "unknown_stage_type"
+	traceCategoryUnknownStageKey      = "unknown_stage_key"
+	traceCategoryWindowAggregateShape = "window_aggregate_shape"
+	traceCategoryInvalidField         = "invalid_field"
+)
+
+type tracePipelineError struct {
+	category string
+	path     string
+	msg      string
+}
+
+func (e *tracePipelineError) Error() string {
+	return fmt.Sprintf("%s (category=%s path=%s)", e.msg, e.category, e.path)
+}
+
+func (e *tracePipelineError) Category() string { return e.category }
+func (e *tracePipelineError) Path() string     { return e.path }
+
+// traceAllowedStageTypes is the last9/api tracejson stage set, including
+// traces-only transform and select. Unknown types fail closed locally.
+var traceAllowedStageTypes = map[string]struct{}{
+	"filter":           {},
+	"where":            {},
+	"parse":            {},
+	"transform":        {},
+	"select":           {},
+	"aggregate":        {},
+	"window_aggregate": {},
+}
+
+var windowAggregateAllowedKeys = map[string]struct{}{
+	"type":     {},
+	"function": {},
+	"as":       {},
+	"window":   {},
+	"groupby":  {},
+}
+
 func validateStageKeys(stage map[string]interface{}, stageType, path string) error {
 	if _, bad := stage["aggregations"]; bad {
 		return fmt.Errorf(
@@ -295,6 +527,67 @@ func validateStageKeys(stage map[string]interface{}, stageType, path string) err
 				"Example: \"groupby\": {\"ServiceName\": \"service\", \"SpanName\": \"span\"}",
 			path, stageType,
 		)
+	}
+
+	if _, ok := traceAllowedStageTypes[stageType]; !ok {
+		return &tracePipelineError{
+			category: traceCategoryUnknownStageType,
+			path:     path,
+			msg:      fmt.Sprintf("unknown trace pipeline stage type %q; allowed: filter, where, parse, transform, select, aggregate, window_aggregate", stageType),
+		}
+	}
+
+	if stageType == "window_aggregate" {
+		if err := validateWindowAggregateStage(stage, path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateWindowAggregateStage(stage map[string]interface{}, path string) error {
+	for key := range stage {
+		if _, ok := windowAggregateAllowedKeys[key]; ok {
+			continue
+		}
+		if key == "aggregates" || key == "window_minutes" {
+			return &tracePipelineError{
+				category: traceCategoryWindowAggregateShape,
+				path:     path,
+				msg:      `window_aggregate accepts only {"type":"window_aggregate","function":{...},"as":"...","window":["N","minutes"]}`,
+			}
+		}
+		return &tracePipelineError{
+			category: traceCategoryUnknownStageKey,
+			path:     path,
+			msg:      fmt.Sprintf("unknown key %q on window_aggregate stage", key),
+		}
+	}
+	if _, ok := stage["function"]; !ok {
+		return &tracePipelineError{
+			category: traceCategoryWindowAggregateShape,
+			path:     path,
+			msg:      `window_aggregate requires "function", "as", and "window"`,
+		}
+	}
+	if _, ok := stage["as"]; !ok {
+		return &tracePipelineError{
+			category: traceCategoryWindowAggregateShape,
+			path:     path,
+			msg:      `window_aggregate requires "function", "as", and "window"`,
+		}
+	}
+	if _, ok := stage["window"]; !ok {
+		return &tracePipelineError{
+			category: traceCategoryWindowAggregateShape,
+			path:     path,
+			msg:      `window_aggregate requires "function", "as", and "window"`,
+		}
+	}
+	if function, ok := stage["function"].(map[string]interface{}); ok {
+		if err := validateTraceQuantileFunction(function, path+".function"); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -334,7 +627,24 @@ func validateAggregateStage(stage map[string]interface{}, path string) error {
 					path, j,
 				)
 			}
+			if function, ok := fn.(map[string]interface{}); ok {
+				if err := validateTraceQuantileFunction(function, fmt.Sprintf("%s.aggregates[%d].function", path, j)); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil
+}
+
+func validateTraceQuantileFunction(function map[string]interface{}, path string) error {
+	err := telemetry.ValidateQuantileFunction(function, path)
+	if err == nil {
+		return nil
+	}
+	return &tracePipelineError{
+		category: traceCategoryInvalidField,
+		path:     err.Path,
+		msg:      err.Error(),
+	}
 }

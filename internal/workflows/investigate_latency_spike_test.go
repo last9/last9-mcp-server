@@ -49,9 +49,12 @@ func TestInvestigateLatencySpikeRendersEnvBranches(t *testing.T) {
 	if !strings.Contains(got, `env "prod"`) || !strings.Contains(got, "env=prod") {
 		t.Errorf("env-present render missing env interpolation:\n%s", got)
 	}
+	if !strings.Contains(got, "get_service_profile") {
+		t.Errorf("render must include profile bootstrap step:\n%s", got)
+	}
 	// env present: step 1 is the single perf-details call, no env discovery.
 	withStep1 := lineStartingWith(t, got, "1.")
-	if strings.Contains(withStep1, "get_service_environments") {
+	if strings.Contains(withStep1, "get_service_environments") || strings.Contains(withStep1, "profile.deployment.envs") {
 		t.Errorf("env-present step 1 should not resolve env:\n%s", withStep1)
 	}
 	without, err := InvestigateLatencySpike.Handler(context.Background(), &mcp.GetPromptRequest{
@@ -61,13 +64,12 @@ func TestInvestigateLatencySpikeRendersEnvBranches(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	got2 := without.Messages[0].Content.(*mcp.TextContent).Text
-	if !strings.Contains(got2, "Resolve env first") {
-		t.Errorf("env-absent render should trigger discovery branch:\n%s", got2)
+	if !strings.Contains(got2, "profile.deployment.envs") {
+		t.Errorf("env-absent render should pick env from profile:\n%s", got2)
 	}
-	// env absent: both calls must stay in the one numbered step, else markdown
-	// folds the second into an unnumbered continuation.
+	// env absent: profile env pick, fallback, and perf-details must stay in one step.
 	step1 := lineStartingWith(t, got2, "1.")
 	if !strings.Contains(step1, "get_service_environments") || !strings.Contains(step1, "get_service_performance_details") {
-		t.Errorf("env-absent step 1 must sequence both calls in one list item:\n%s", got2)
+		t.Errorf("env-absent step 1 must sequence env resolution and perf-details in one list item:\n%s", got2)
 	}
 }

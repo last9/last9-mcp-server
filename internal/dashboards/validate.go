@@ -26,11 +26,54 @@ func validateMetadata(metadata json.RawMessage) error {
 }
 
 func marshalDashboardRequest(req DashboardRequest) ([]byte, error) {
+	if len(req.Dashboard) > 0 {
+		dashboard, err := defaultPanelVersions(req.Dashboard)
+		if err != nil {
+			return nil, err
+		}
+		req.Dashboard = dashboard
+	}
 	payload, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 	return payload, nil
+}
+
+// defaultPanelVersions defaults every non-section panel to version 1 so the
+// create API accepts it. Section panels carry no panel version.
+func defaultPanelVersions(dashboard json.RawMessage) (json.RawMessage, error) {
+	var doc map[string]any
+	if err := json.Unmarshal(dashboard, &doc); err != nil {
+		return nil, fmt.Errorf("dashboard must be valid JSON: %w", err)
+	}
+	panels, _ := doc["panels"].([]any)
+	for _, raw := range panels {
+		panel, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if isSectionPanel(panel) {
+			continue
+		}
+		if v, _ := panel["version"].(float64); v == 0 {
+			panel["version"] = 1
+		}
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal dashboard: %w", err)
+	}
+	return out, nil
+}
+
+func isSectionPanel(panel map[string]any) bool {
+	viz, ok := panel["visualization"].(map[string]any)
+	if !ok {
+		return false
+	}
+	t, _ := viz["type"].(string)
+	return t == "section"
 }
 
 func mapStatusAPIError(err error, forbiddenMsg, notFoundMsg string) error {

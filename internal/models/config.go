@@ -32,6 +32,11 @@ type Config struct {
 	MaxGetLogsEntries   int     // Maximum number of entries returned by chunked raw get_logs requests
 	MaxGetTracesEntries int     // Maximum number of traces returned by chunked get_traces requests
 
+	// UseLogSearchAPI routes get_logs through the server-side log search
+	// endpoint instead of the client-side chunk sweep. Off by default; the
+	// chunked path is deleted once this is proven in production.
+	UseLogSearchAPI bool
+
 	// HTTP server configuration
 	HTTPMode bool   // Enable HTTP server mode instead of STDIO
 	Port     string // HTTP server port
@@ -40,6 +45,9 @@ type Config struct {
 	OrgSlug    string // Organization slug for multi-tenant support
 	ActionURL  string
 	APIBaseURL string // Base URL for API requests
+	// GrafanaAPIBaseURL is the base URL for the Grafana API proxy:
+	// https://{api-host}/gp/v1/organizations/{org-slug}/api
+	GrafanaAPIBaseURL string
 	// Datasource configuration
 	DatasourceName   string // Datasource name to use (overrides default datasource)
 	APIHost          string // API host (defaults to app.last9.io)

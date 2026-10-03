@@ -17,6 +17,9 @@ var ServiceLogsReference string
 //go:embed references/metrics.md
 var MetricsReference string
 
+//go:embed references/investigation.md
+var InvestigationReference string
+
 //go:embed descriptions/get_service_summary.md
 var GetServiceSummaryDescription string
 
@@ -58,6 +61,9 @@ var GetNotificationChannelsDescription string
 
 //go:embed descriptions/get_alert_config.md
 var GetAlertConfigDescription string
+
+//go:embed descriptions/get_alert_groups.md
+var GetAlertGroupsDescription string
 
 //go:embed descriptions/get_entity_alert_rules.md
 var GetEntityAlertRulesDescription string
@@ -107,11 +113,17 @@ var GetDatabaseServerMetricsDescription string
 //go:embed descriptions/did_you_mean.md
 var DidYouMeanDescription string
 
+//go:embed descriptions/get_service_profile.md
+var GetServiceProfileDescription string
+
 //go:embed descriptions/list_dashboards.md
 var ListDashboardsDescription string
 
 //go:embed descriptions/get_dashboard.md
 var GetDashboardDescription string
+
+//go:embed descriptions/validate_dashboard.md
+var ValidateDashboardDescription string
 
 //go:embed descriptions/create_dashboard.md
 var CreateDashboardDescription string
@@ -170,6 +182,21 @@ var ListPulseEvidenceDescription string
 //go:embed descriptions/write_pulse_disposition.md
 var PulseDispositionsDescription string
 
+//go:embed descriptions/grafana_search_dashboards.md
+var GrafanaSearchDashboardsDescription string
+
+//go:embed descriptions/grafana_get_dashboard.md
+var GrafanaGetDashboardDescription string
+
+//go:embed descriptions/grafana_list_folders.md
+var GrafanaListFoldersDescription string
+
+//go:embed descriptions/grafana_list_folder_dashboards.md
+var GrafanaListFolderDashboardsDescription string
+
+//go:embed descriptions/grafana_list_datasources.md
+var GrafanaListDatasourcesDescription string
+
 //go:embed descriptions/get_logs_base.md
 var GetLogsDescription string
 
@@ -179,11 +206,23 @@ var GetServiceLogsDescription string
 //go:embed descriptions/get_traces_base.md
 var GetTracesDescription string
 
-//go:embed descriptions/get_service_traces_base.md
+//go:embed descriptions/get_service_traces.md
 var GetServiceTracesDescription string
 
 //go:embed descriptions/prometheus_range_query_base.md
 var PromqlRangeQueryDetails string
+
+//go:embed descriptions/get_profile_services.md
+var GetProfileServicesDescription string
+
+//go:embed descriptions/get_flamegraph.md
+var GetFlamegraphDescription string
+
+//go:embed descriptions/get_top_functions.md
+var GetTopFunctionsDescription string
+
+//go:embed descriptions/get_profile_summary.md
+var GetProfileSummaryDescription string
 
 //go:embed workflows/scoped_log_attribute_discovery.md
 var ScopedLogAttributeDiscoveryWorkflow string
