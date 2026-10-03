@@ -144,7 +144,7 @@ var GetDashboardSnapshotDescription string
 var DeleteDashboardSnapshotDescription string
 
 //go:embed descriptions/list_pulse_subscriptions.md
-var PulseSubscriptionsDescription string
+var ListPulseSubscriptionsDescription string
 
 //go:embed descriptions/get_pulse_subscription.md
 var GetPulseSubscriptionDescription string
@@ -162,7 +162,7 @@ var EnablePulseSubscriptionDescription string
 var DisablePulseSubscriptionDescription string
 
 //go:embed descriptions/list_pulse_runs.md
-var PulseReportsDescription string
+var ListPulseRunsDescription string
 
 //go:embed descriptions/get_pulse_run.md
 var GetPulseRunDescription string
@@ -180,7 +180,7 @@ var GetPulseFindingDescription string
 var ListPulseEvidenceDescription string
 
 //go:embed descriptions/write_pulse_disposition.md
-var PulseDispositionsDescription string
+var WritePulseDispositionDescription string
 
 //go:embed descriptions/grafana_search_dashboards.md
 var GrafanaSearchDashboardsDescription string

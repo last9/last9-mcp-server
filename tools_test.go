@@ -127,9 +127,9 @@ func TestPulseDescriptionsComeOnlyFromMarkdown(t *testing.T) {
 	}
 
 	check(registeredToolNames(t, testToolRegistrationConfig()), map[string]string{
-		"list_pulse_subscriptions": prompts.PulseSubscriptionsDescription,
+		"list_pulse_subscriptions": prompts.ListPulseSubscriptionsDescription,
 		"get_pulse_subscription":   prompts.GetPulseSubscriptionDescription,
-		"list_pulse_runs":          prompts.PulseReportsDescription,
+		"list_pulse_runs":          prompts.ListPulseRunsDescription,
 		"get_pulse_run":            prompts.GetPulseRunDescription,
 		"get_pulse_report":         prompts.GetPulseReportDescription,
 		"list_pulse_findings":      prompts.ListPulseFindingsDescription,
@@ -148,7 +148,7 @@ func TestPulseDescriptionsComeOnlyFromMarkdown(t *testing.T) {
 		"update_pulse_subscription":  prompts.UpdatePulseSubscriptionDescription,
 		"enable_pulse_subscription":  prompts.EnablePulseSubscriptionDescription,
 		"disable_pulse_subscription": prompts.DisablePulseSubscriptionDescription,
-		"write_pulse_disposition":    prompts.PulseDispositionsDescription,
+		"write_pulse_disposition":    prompts.WritePulseDispositionDescription,
 	})
 }
 

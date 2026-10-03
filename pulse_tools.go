@@ -21,7 +21,7 @@ func registerPulseTools(reg func(error), server *last9mcp.Last9MCPServer, config
 func registerPulseSubscriptions(reg func(error), server *last9mcp.Last9MCPServer, config models.Config, client *http.Client) {
 	read := config.AllowedTools
 	manage := toolsets.ManageOnly(config.AllowedTools)
-	reg(registerIfAllowed(server, read, pulseReadTool("list_pulse_subscriptions", "List Pulse Subscriptions", prompts.PulseSubscriptionsDescription), pulse.NewListSubscriptionsHandler(client, config)))
+	reg(registerIfAllowed(server, read, pulseReadTool("list_pulse_subscriptions", "List Pulse Subscriptions", prompts.ListPulseSubscriptionsDescription), pulse.NewListSubscriptionsHandler(client, config)))
 	reg(registerIfAllowed(server, read, pulseReadTool("get_pulse_subscription", "Get Pulse Subscription", prompts.GetPulseSubscriptionDescription), pulse.NewGetSubscriptionHandler(client, config)))
 	reg(registerIfAllowed(server, manage, pulseWriteTool("create_pulse_subscription", "Create Pulse Subscription", prompts.CreatePulseSubscriptionDescription, false, false), pulse.NewCreateSubscriptionHandler(client, config)))
 	reg(registerIfAllowed(server, manage, pulseWriteTool("update_pulse_subscription", "Update Pulse Subscription", prompts.UpdatePulseSubscriptionDescription, true, true), pulse.NewUpdateSubscriptionHandler(client, config)))
@@ -31,7 +31,7 @@ func registerPulseSubscriptions(reg func(error), server *last9mcp.Last9MCPServer
 
 func registerPulseReports(reg func(error), server *last9mcp.Last9MCPServer, config models.Config, client *http.Client) {
 	allowed := config.AllowedTools
-	reg(registerIfAllowed(server, allowed, pulseReadTool("list_pulse_runs", "List Pulse Runs", prompts.PulseReportsDescription), pulse.NewListRunsHandler(client, config)))
+	reg(registerIfAllowed(server, allowed, pulseReadTool("list_pulse_runs", "List Pulse Runs", prompts.ListPulseRunsDescription), pulse.NewListRunsHandler(client, config)))
 	reg(registerIfAllowed(server, allowed, pulseReadTool("get_pulse_run", "Get Pulse Run", prompts.GetPulseRunDescription), pulse.NewGetRunHandler(client, config)))
 	reg(registerIfAllowed(server, allowed, pulseReadTool("get_pulse_report", "Get Pulse Report", prompts.GetPulseReportDescription), pulse.NewGetReportHandler(client, config)))
 	reg(registerIfAllowed(server, allowed, pulseReadTool("list_pulse_findings", "List Pulse Findings", prompts.ListPulseFindingsDescription), pulse.NewListFindingsHandler(client, config)))
@@ -40,7 +40,7 @@ func registerPulseReports(reg func(error), server *last9mcp.Last9MCPServer, conf
 }
 
 func registerPulseDisposition(reg func(error), server *last9mcp.Last9MCPServer, config models.Config, client *http.Client) {
-	tool := pulseWriteTool("write_pulse_disposition", "Write Pulse Disposition", prompts.PulseDispositionsDescription, false, true)
+	tool := pulseWriteTool("write_pulse_disposition", "Write Pulse Disposition", prompts.WritePulseDispositionDescription, false, true)
 	reg(registerIfAllowed(server, toolsets.ManageOnly(config.AllowedTools), tool, pulse.NewWriteDispositionHandler(client, config)))
 }
 
