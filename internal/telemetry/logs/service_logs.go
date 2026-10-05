@@ -376,7 +376,7 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		})
 
 	logs := make([]LogEntry, 0, limit)
-	verified := len(chunks) > 0 && startTime.Nanosecond()%int(time.Millisecond) == 0 && endTime.Nanosecond()%int(time.Millisecond) == 0
+	verified := len(chunks) > 0 && startTime.Nanosecond() == 0 && endTime.Nanosecond() == 0
 	bounded := false
 	var (
 		// partialErr carries chunk context (e.g. "chunk 3/6 failed: ...") and
