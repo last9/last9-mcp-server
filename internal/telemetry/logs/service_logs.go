@@ -2,6 +2,7 @@ package logs
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -31,6 +32,7 @@ type ServiceLogsResponse struct {
 	TotalMatchingLines *int           `json:"total_matching_lines,omitempty"`
 	LogsTruncated      *bool          `json:"logs_truncated,omitempty"`
 	SearchStats        map[string]any `json:"search_stats,omitempty"`
+	coverageStatus     string
 }
 
 // LogEntry represents a single log entry
@@ -147,6 +149,12 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		if normalizedIndex == "" || dashboardIndex != "" {
 			meta = deeplink.ToMeta(dashboardURL)
 		}
+		if coverage := serviceLogsCoverage(logs, logjsonQuery, serviceLogsScope{startTime, endTime, normalizedIndex}); coverage != nil {
+			if meta == nil {
+				meta = mcp.Meta{}
+			}
+			meta["last9/coverage"] = coverage
+		}
 
 		return &mcp.CallToolResult{
 			Meta: meta,
@@ -157,6 +165,75 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			},
 		}, nil, nil
 	}
+}
+
+type serviceLogsScope struct {
+	start, end time.Time
+	index      string
+}
+
+func serviceLogsCoverage(logs *ServiceLogsResponse, query []map[string]interface{}, bounds serviceLogsScope) map[string]any {
+	if logs.coverageStatus == "" || len(bounds.index) > 512 {
+		return nil
+	}
+	encoded, err := json.Marshal(query)
+	if err != nil {
+		return nil
+	}
+	scope := map[string]any{
+		"start_time_iso": bounds.start.UTC().Format(time.RFC3339Nano),
+		"end_time_iso":   bounds.end.UTC().Format(time.RFC3339Nano),
+		"query_sha256":   fmt.Sprintf("%x", sha256.Sum256(encoded)),
+		"index":          bounds.index,
+	}
+	covered := map[string]any{}
+	if logs.coverageStatus == "complete" {
+		covered = scope
+	}
+	state := "empty"
+	if logs.Count > 0 {
+		state = "data"
+	}
+	return map[string]any{
+		"version": 1, "subject": "logs", "attempted_scope": scope,
+		"covered_scope": covered, "status": logs.coverageStatus, "result_state": state,
+	}
+}
+
+type serviceLogsChunkResult struct {
+	logs     []LogEntry
+	verified bool
+}
+
+func serviceLogsResultVerified(result map[string]any, logs []LogEntry) bool {
+	if result["status"] != "success" {
+		return false
+	}
+	data, ok := result["data"].(map[string]any)
+	if !ok {
+		return false
+	}
+	if _, exists := data["result"]; !exists {
+		return false
+	}
+	for _, key := range []string{"warnings", "error", "errors", "partial", "truncated", "logs_truncated"} {
+		if value, exists := result[key]; exists && value != nil {
+			switch value := value.(type) {
+			case bool:
+				if value {
+					return false
+				}
+			case []any:
+				if len(value) != 0 {
+					return false
+				}
+			default:
+				return false
+			}
+		}
+	}
+	kind, items, err := extractResultItems(result)
+	return err == nil && kind == "streams" && countLogEntriesInResultItems(items) == len(logs)
 }
 
 func buildServiceLogsQuery(service string, severityFilters []string, bodyFilters []string) []map[string]interface{} {
@@ -292,13 +369,15 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 	// for honest coverage of the full time range and consistent wall-clock
 	// regardless of where the data sits in the window.
 	results := utils.RunChunksParallel(ctx, chunks, adaptiveCfg.MaxParallelChunks,
-		func(ctx context.Context, _ int, chunk utils.TimeChunk) ([]LogEntry, error) {
+		func(ctx context.Context, _ int, chunk utils.TimeChunk) (serviceLogsChunkResult, error) {
 			chunkCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
 			defer cancel()
 			return fetchServiceLogsChunk(chunkCtx, client, cfg, service, logjsonQuery, chunk.StartMs, chunk.EndMs, limit, index)
 		})
 
 	logs := make([]LogEntry, 0, limit)
+	verified := len(chunks) > 0 && startTime.Nanosecond() == 0 && endTime.Nanosecond() == 0
+	bounded := false
 	var (
 		// partialErr carries chunk context (e.g. "chunk 3/6 failed: ...") and
 		// is used both for the all-chunks-failed hard error and for the
@@ -327,7 +406,9 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		}
 
 		remaining := limit - len(logs)
-		chunkLogs := r.Value
+		chunkLogs := r.Value.logs
+		verified = verified && r.Value.verified
+		bounded = bounded || len(chunkLogs) >= limit || len(chunkLogs) > remaining
 		// Track whether this chunk's results were fully truncated away so the
 		// debug log records every successful chunk, not just the ones that
 		// fit inside the limit.
@@ -366,12 +447,20 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		)
 	}
 
+	coverageStatus := ""
+	if verified {
+		coverageStatus = "complete"
+		if bounded {
+			coverageStatus = "partial"
+		}
+	}
 	return &ServiceLogsResponse{
-		Service:   service,
-		StartTime: startTime.Format(time.RFC3339),
-		EndTime:   endTime.Format(time.RFC3339),
-		Count:     len(logs),
-		Logs:      logs,
+		Service:        service,
+		StartTime:      startTime.Format(time.RFC3339),
+		EndTime:        endTime.Format(time.RFC3339),
+		Count:          len(logs),
+		Logs:           logs,
+		coverageStatus: coverageStatus,
 	}, nil
 }
 
@@ -433,13 +522,14 @@ func fetchServiceLogsViaSearchAPI(
 	return response, nil
 }
 
-func fetchServiceLogsChunk(ctx context.Context, client *http.Client, cfg models.Config, service string, logjsonQuery []map[string]interface{}, startTimeMs, endTimeMs int64, limit int, index string) ([]LogEntry, error) {
+func fetchServiceLogsChunk(ctx context.Context, client *http.Client, cfg models.Config, service string, logjsonQuery []map[string]interface{}, startTimeMs, endTimeMs int64, limit int, index string) (serviceLogsChunkResult, error) {
 	apiResponse, err := executeLogJSONQuery(ctx, client, cfg, logjsonQuery, startTimeMs, endTimeMs, limit, index)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return serviceLogsChunkResult{}, fmt.Errorf("request failed: %w", err)
 	}
 
-	return parseServiceLogEntries(apiResponse, service), nil
+	logs := parseServiceLogEntries(apiResponse, service)
+	return serviceLogsChunkResult{logs: logs, verified: serviceLogsResultVerified(apiResponse, logs)}, nil
 }
 
 func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEntry {
