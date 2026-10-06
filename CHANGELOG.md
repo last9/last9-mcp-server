@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.4] - 2026-10-06
+
 ### Added
 
 - `get_service_logs` advertises and returns optional `last9/coverage` metadata only when its chunked query can verify the requested scope, distinguishing complete, partial, empty, and uncertain results (#307).
