@@ -14,7 +14,7 @@
 
 **window_aggregate:** `function`+`as`+`window`, not `aggregates`/`TimeBucket`. Count: `{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"]}`. P99: `{"type":"window_aggregate","function":{"$quantile":[0.99,"attributes['latency_ms']"]},"as":"p99","window":["24","hours"],"groupby":{"attributes['route']":"route"}}`.
 
-**Percentiles:** Day-wise: exactly ONE get_logs call over the full half-open start_time_iso/end_time_iso range with one window_aggregate; NEVER one call per day; honor requested timezone. Parse, then use the canonical anchored numeric `$regex` shown: `^[0-9]+(?:\\.[0-9]+)?$`. It excludes non-matching values from percentile calculations; disclose that exclusion in the answer. Never template/merge/recombine aggregated percentile rows. Use a discovered normalized route. Raw URI: aggregate exact values only; never normalize/merge variants afterward. If `l9_result.partial=true`, preserve rows and disclose partial coverage. Report source units; never infer/convert.
+**Percentiles:** one get_logs call over the full half-open start_time_iso/end_time_iso range with window_aggregate; never per day; honor timezone. Parse with `^[0-9]+(?:\\.[0-9]+)?$`; disclose exclusions and `l9_result.partial`. Normalize discovered routes, not raw URIs; preserve source units.
 
 **Severity-less:** empty `SeverityText` → parse Body `level`; `$ieq` `ERROR`.
 
