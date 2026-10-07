@@ -56,6 +56,35 @@ func TestDumpTools(t *testing.T) {
 			t.Fatalf("tool %q has no inputSchema", name)
 		}
 	}
+	for _, tool := range out.Tools {
+		var schema struct {
+			Properties map[string]struct {
+				Description string `json:"description"`
+			} `json:"properties"`
+			Required []string `json:"required"`
+		}
+		schemaBytes, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatalf("marshal %s inputSchema: %v", tool.Name, err)
+		}
+		if err := json.Unmarshal(schemaBytes, &schema); err != nil {
+			t.Fatalf("unmarshal %s inputSchema: %v", tool.Name, err)
+		}
+		for name, property := range schema.Properties {
+			if strings.TrimSpace(property.Description) == "" {
+				t.Fatalf("%s schema property %q is missing a description", tool.Name, name)
+			}
+		}
+		for _, name := range schema.Required {
+			property, ok := schema.Properties[name]
+			if !ok {
+				t.Fatalf("%s required schema property %q is missing", tool.Name, name)
+			}
+			if !strings.HasPrefix(property.Description, "(Required)") {
+				t.Fatalf("%s required schema property %q description must start with (Required): %q", tool.Name, name, property.Description)
+			}
+		}
+	}
 
 	summary := out.Tools[byName["get_service_summary"]]
 	if strings.Contains(summary.Description, "ErrorRate") {
@@ -171,6 +200,23 @@ func TestDumpTools(t *testing.T) {
 	}
 	if !strings.Contains(tracesDesc, "default **60**") {
 		t.Fatal("get_traces description missing lookback default 60")
+	}
+	for _, name := range []string{"get_log_attributes_for_pipeline", "get_trace_attributes_for_pipeline", "get_trace_attribute_values"} {
+		var schema struct {
+			Properties map[string]struct {
+				Description string `json:"description"`
+			} `json:"properties"`
+		}
+		schemaBytes, err := json.Marshal(out.Tools[byName[name]].InputSchema)
+		if err != nil {
+			t.Fatalf("marshal %s inputSchema: %v", name, err)
+		}
+		if err := json.Unmarshal(schemaBytes, &schema); err != nil {
+			t.Fatalf("unmarshal %s inputSchema: %v", name, err)
+		}
+		if !strings.Contains(schema.Properties["pipeline"].Description, `"$and"`) {
+			t.Fatalf("%s pipeline schema must show the canonical $and filter shape", name)
+		}
 	}
 
 	svcLogsDesc := out.Tools[byName["get_service_logs"]].Description

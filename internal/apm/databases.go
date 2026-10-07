@@ -180,7 +180,7 @@ func NewGetDatabaseSlowQueriesHandler(client *http.Client, cfg models.Config) fu
 // --- get_database_queries tool ---
 
 type GetDatabaseQueriesArgs struct {
-	DBSystem        string  `json:"db_system" jsonschema:"Database system (required, e.g. postgresql, mysql, mongodb, redis)"`
+	DBSystem        string  `json:"db_system" jsonschema:"(Required) Database system (e.g. postgresql, mysql, mongodb, redis)"`
 	Host            string  `json:"host,omitempty" jsonschema:"Database host filter (net_peer_name)"`
 	Env             string  `json:"env,omitempty" jsonschema:"Deployment environment filter"`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60)"`
