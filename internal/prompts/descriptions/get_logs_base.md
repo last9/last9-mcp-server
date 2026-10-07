@@ -8,6 +8,8 @@
 
 **Parse:** `{"type":"parse","parser":"json","field":"Body","labels":{"key":"key"}}`; also `logfmt`/`regexp`, not `"format"`. Outputs use `attributes['key']`.
 
+**Filters:** always `$and` (even one). Not equal → `$neq`, not `$not`+`$eq`. A bare opaque token (e.g. `moon_dragon_v2_api_response`) MUST be `$contains` on Body, never infer ServiceName. Count → aggregate `$count`.
+
 **Aggregate:** `aggregates` entries use `function`+`as`; optional `groupby`. `$quantile` is the general/default percentile operator.
 
 **window_aggregate:** `function`+`as`+`window`, not `aggregates`/`TimeBucket`. Count: `{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"]}`. P99: `{"type":"window_aggregate","function":{"$quantile":[0.99,"attributes['latency_ms']"]},"as":"p99","window":["24","hours"],"groupby":{"attributes['route']":"route"}}`.
@@ -20,7 +22,7 @@
 
 **Scope:** tenant → `resources['last9.tenant']`; env → `resources['deployment.environment']`; `service.name` → `ServiceName`; `k8s.*` → `resources['k8s.…']`.
 
-**Free-text IDs:** `$contains` Body, never ServiceName.
+**Service scope:** explicit service/service.name → required ServiceName filter, even when grouping.
 
 **HTTP 5xx:** known→`get_service_logs`; else `$eq` discovered status, never SeverityText.
 
