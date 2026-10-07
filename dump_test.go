@@ -241,6 +241,12 @@ func TestDumpTools(t *testing.T) {
 	if strings.Contains(excDesc, "write a `get_logs` pipeline") && !strings.Contains(excDesc, "Do not write a `get_logs` pipeline") {
 		t.Fatal("get_exceptions must not send HTTP-status log search to get_logs")
 	}
+	if !strings.Contains(excDesc, "aggregate server-side exception heat") {
+		t.Fatal("get_exceptions must describe its aggregate heat semantics")
+	}
+	if !strings.Contains(excDesc, "not verified samples") {
+		t.Fatal("get_exceptions must prevent exact-trace inference")
+	}
 
 	if !strings.Contains(logsDesc, "get_service_logs") {
 		t.Fatal("get_logs whale must name get_service_logs as the structured HTTP-status alternative")

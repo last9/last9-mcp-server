@@ -26,14 +26,12 @@ type promInstantResponse []struct {
 }
 
 type exceptionAggregate struct {
-	ExceptionType          string
-	ServiceName            string
-	SpanName               string
-	SpanKind               string
-	DeploymentEnvironment  string
-	Count                  float64
-	FirstSeenAtMillisecond int64
-	LastSeenAtMillisecond  int64
+	ExceptionType         string
+	ServiceName           string
+	SpanName              string
+	SpanKind              string
+	DeploymentEnvironment string
+	Count                 float64
 }
 
 // GetExceptionsArgs defines the input structure for getting exceptions
@@ -121,27 +119,18 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 				count = parsePromNumber(point.Value[1])
 			}
 
-			lastSeenMs := endMs
-			if len(point.Value) > 0 {
-				if tsSeconds := parsePromTimestampSeconds(point.Value[0]); tsSeconds > 0 {
-					lastSeenMs = tsSeconds * 1000
-				}
-			}
-
 			deploymentEnvironment := point.Metric["env"]
 			if deploymentEnvironment == "" {
 				deploymentEnvironment = args.Env
 			}
 
 			aggregates = append(aggregates, exceptionAggregate{
-				ExceptionType:          exceptionType,
-				ServiceName:            serviceName,
-				SpanName:               spanName,
-				SpanKind:               spanKind,
-				DeploymentEnvironment:  deploymentEnvironment,
-				Count:                  count,
-				FirstSeenAtMillisecond: startMs,
-				LastSeenAtMillisecond:  lastSeenMs,
+				ExceptionType:         exceptionType,
+				ServiceName:           serviceName,
+				SpanName:              spanName,
+				SpanKind:              spanKind,
+				DeploymentEnvironment: deploymentEnvironment,
+				Count:                 count,
 			})
 		}
 
@@ -158,28 +147,13 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 
 		exceptions := make([]map[string]interface{}, 0, len(aggregates))
 		for _, exceptionData := range aggregates {
-			lastSeen := time.UnixMilli(exceptionData.LastSeenAtMillisecond).UTC().Format(time.RFC3339)
-			firstSeen := time.UnixMilli(exceptionData.FirstSeenAtMillisecond).UTC().Format(time.RFC3339)
-
 			exceptions = append(exceptions, map[string]interface{}{
-				"trace_id":               nil,
-				"span_id":                nil,
 				"service_name":           exceptionData.ServiceName,
 				"span_name":              exceptionData.SpanName,
-				"timestamp":              lastSeen,
 				"exception_type":         exceptionData.ExceptionType,
-				"exception_message":      "",
-				"exception_stacktrace":   "",
-				"exception_escaped":      nil,
 				"deployment_environment": exceptionData.DeploymentEnvironment,
-				"service_namespace":      "",
-				"service_instance_id":    "",
 				"span_kind":              exceptionData.SpanKind,
-				"duration_ms":            nil,
-				"status_code":            "",
 				"count":                  exceptionData.Count,
-				"first_seen":             firstSeen,
-				"last_seen":              lastSeen,
 			})
 		}
 
@@ -268,31 +242,6 @@ func parsePromNumber(raw any) float64 {
 		f, err := strconv.ParseFloat(value, 64)
 		if err == nil {
 			return f
-		}
-	}
-
-	return 0
-}
-
-func parsePromTimestampSeconds(raw any) int64 {
-	switch value := raw.(type) {
-	case int64:
-		return value
-	case int:
-		return int64(value)
-	case float64:
-		return int64(value)
-	case float32:
-		return int64(value)
-	case json.Number:
-		f, err := value.Float64()
-		if err == nil {
-			return int64(f)
-		}
-	case string:
-		f, err := strconv.ParseFloat(value, 64)
-		if err == nil {
-			return int64(f)
 		}
 	}
 
