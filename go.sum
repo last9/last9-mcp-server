@@ -25,8 +25,8 @@ github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 h1:5VipnvEpbqr2gA2VbM+nYVbkIF2
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0/go.mod h1:Hyl3n6Twe1hvtd9XUXDec4pTvgMSEixRuQKPTMH2bNs=
 github.com/joho/godotenv v1.5.1 h1:7eLL/+HRGLY0ldzfGMeQkb7vMd0as4CfYvUVzLqw0N0=
 github.com/joho/godotenv v1.5.1/go.mod h1:f4LDr5Voq0i2e/R5DDNOoa2zzDfwtkZa6DnEwAbqwq4=
-github.com/last9/mcp-go-sdk v0.1.4 h1:onxiVeZ3B9T3BG8qsFZtP1Qr6NXKVfF5uEnJzY0OId8=
-github.com/last9/mcp-go-sdk v0.1.4/go.mod h1:JbxmpZeBphmAQMIBUUHR+7lsPWQfvKL/0rg6bBOL6JA=
+github.com/last9/mcp-go-sdk v0.1.5-0.20261007135806-f773de5df59f h1:IFkGGl9KPqjlIcC6SLZAog35K8zn+nPDthQVzbb0Rbw=
+github.com/last9/mcp-go-sdk v0.1.5-0.20261007135806-f773de5df59f/go.mod h1:WbJHVpEgKLjTvjPnv6dP+QrEGOrSzlpyR/LkxNrtmdY=
 github.com/modelcontextprotocol/go-sdk v1.7.0 h1:yqjY2dsbKAC0LSuWZVBMrHgiG8ukXv6NRo0JiALay44=
 github.com/modelcontextprotocol/go-sdk v1.7.0/go.mod h1:dL7u98E/zjJTGzEq+j30jQ8K2k1mb6LeAH4inEcSGts=
 github.com/peterbourgon/ff/v3 v3.4.0 h1:QBvM/rizZM1cB0p0lGMdmR7HxZeI/ZrBWB4DqLkMUBc=
