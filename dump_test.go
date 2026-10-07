@@ -11,7 +11,85 @@ import (
 	"last9-mcp/internal/apm"
 	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/toolsets"
+
+	"github.com/google/jsonschema-go/jsonschema"
 )
+
+func TestServedQueryToolSchemas(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, nil); err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string          `json:"name"`
+			InputSchema json.RawMessage `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	tests := map[string]struct {
+		valid          map[string]any
+		invalid        []map[string]any
+		requiredFields []string
+	}{
+		"get_logs": {valid: map[string]any{"logjson_query": []any{map[string]any{"type": "filter", "query": map[string]any{"$and": []any{map[string]any{"$eq": []any{"ServiceName", "api"}}}}}}}, invalid: []map[string]any{
+			{"logjson_query": []any{}, "unexpected": true}, {},
+		}, requiredFields: []string{"logjson_query"}},
+		"get_service_logs": {valid: map[string]any{"service_name": "api", "attribute_filters": []any{map[string]any{"field": "attributes['id']", "value": "1"}}}, invalid: []map[string]any{
+			{"service_name": "api", "attribute_filters": []any{map[string]any{"field": "id", "value": "1", "unexpected": true}}},
+			{}, {"service_name": 1},
+			{"service_name": "api", "attribute_filters": []any{map[string]any{"field": "id"}}},
+		}, requiredFields: []string{"service_name"}},
+		"get_service_traces": {valid: map[string]any{"trace_id": "0123456789abcdef0123456789abcdef"}, invalid: []map[string]any{
+			{"service_name": "api", "unexpected": true}, {"trace_id": 1},
+		}},
+		"prometheus_range_query": {valid: map[string]any{"query": "up", "lookback_minutes": 5.5}, invalid: []map[string]any{
+			{"query": "up", "step": "1m"}, {}, {"query": 1},
+		}, requiredFields: []string{"query"}},
+		"prometheus_instant_query": {valid: map[string]any{"query": "up", "lookback_minutes": 5.5}, invalid: []map[string]any{
+			{"promql": "up"}, {}, {"query": 1},
+		}, requiredFields: []string{"query"}},
+	}
+	for _, tool := range out.Tools {
+		test, ok := tests[tool.Name]
+		if !ok {
+			continue
+		}
+		var schema jsonschema.Schema
+		if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+			t.Fatalf("%s schema: %v", tool.Name, err)
+		}
+		resolved, err := schema.Resolve(nil)
+		if err != nil {
+			t.Fatalf("%s resolve: %v", tool.Name, err)
+		}
+		if err := resolved.Validate(test.valid); err != nil {
+			t.Errorf("%s rejected valid input: %v", tool.Name, err)
+		}
+		for _, invalid := range test.invalid {
+			if err := resolved.Validate(invalid); err == nil {
+				t.Errorf("%s accepted invalid input %#v", tool.Name, invalid)
+			}
+		}
+		for _, required := range test.requiredFields {
+			missing := make(map[string]any, len(test.valid))
+			for key, value := range test.valid {
+				if key != required {
+					missing[key] = value
+				}
+			}
+			if err := resolved.Validate(missing); err == nil {
+				t.Errorf("%s accepted input missing required field %q", tool.Name, required)
+			}
+		}
+		delete(tests, tool.Name)
+	}
+	if len(tests) != 0 {
+		t.Fatalf("tools missing from served schema: %v", tests)
+	}
+}
 
 func TestDumpTools(t *testing.T) {
 	var buf bytes.Buffer
