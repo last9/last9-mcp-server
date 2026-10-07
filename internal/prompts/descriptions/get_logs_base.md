@@ -10,7 +10,7 @@
 
 **Filters:** `$and` always. Not equal → `$neq`, not `$not`+`$eq`. Bare token `moon_dragon_v2_api_response` MUST use `$contains` Body, never ServiceName. Count → aggregate `$count`.
 
-**Aggregate:** `{\"type\":\"aggregate\",\"aggregates\":[{\"function\":{\"$count\":[]},\"as\":\"count\"}]}`; optional `groupby`. `$quantile` is the general/default percentile operator.
+**Aggregate:** `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`; optional `groupby`. `$quantile` is the general/default percentile operator.
 
 **window_aggregate:** `function`+`as`+`window`, not `aggregates`/`TimeBucket`. Count: `{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"]}`. P99: `{"type":"window_aggregate","function":{"$quantile":[0.99,"attributes['latency_ms']"]},"as":"p99","window":["24","hours"],"groupby":{"attributes['route']":"route"}}`.
 

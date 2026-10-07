@@ -20,7 +20,7 @@
 
 **window_aggregate:** `{"type":"window_aggregate","function":{"$quantile":[0.99,"Duration"]},"as":"p99","window":["24","hours"],"groupby":{"SpanName":"endpoint"}}`.
 
-**Aggregate example:** `{\"type\":\"aggregate\",\"aggregates\":[{\"function\":{\"$count\":[]},\"as\":\"count\"}]}`.
+**Aggregate example:** `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`.
 
 For calendar buckets, use explicit ISO bounds and time zone. P99 `Duration` output remains nanoseconds.
 

@@ -196,8 +196,13 @@ func TestDumpTools(t *testing.T) {
 		}
 	}
 	for name, desc := range map[string]string{"get_logs": logsDesc, "get_traces": tracesDesc} {
-		if !strings.Contains(desc, `{\"type\":\"aggregate\",\"aggregates\":[{\"function\":{\"$count\":[]},\"as\":\"count\"}]}`) {
+		const aggregateExample = `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`
+		if !strings.Contains(desc, aggregateExample) {
 			t.Fatalf("%s served description missing canonical aggregate example", name)
+		}
+		var decoded any
+		if err := json.Unmarshal([]byte(aggregateExample), &decoded); err != nil {
+			t.Fatalf("%s canonical aggregate example is not valid JSON: %v", name, err)
 		}
 	}
 	if strings.Contains(tracesDesc, "default **5**") {
