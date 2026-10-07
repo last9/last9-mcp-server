@@ -1,4 +1,4 @@
-`tracejson_query` is a JSON stage array. Each stage sets `"type"`: `filter`|`parse`|`aggregate`|`window_aggregate`; no `"stage"`/`"conditions"`. Prefer `get_service_traces` for exact trace_id/recent service traces.
+`tracejson_query`: JSON stage array, **NOT SQL**. Stages use `"type"`: `filter`|`parse`|`aggregate`|`window_aggregate`; no `"stage"`/`"conditions"`. Prefer `get_service_traces` for exact/recent trace lookups.
 
 **Filter shape:**
 ```json

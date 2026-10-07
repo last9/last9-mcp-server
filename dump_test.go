@@ -142,6 +142,9 @@ func TestDumpTools(t *testing.T) {
 	}
 
 	logsDesc := out.Tools[byName["get_logs"]].Description
+	if !strings.Contains(logsDesc, `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`) {
+		t.Fatal("get_logs served description missing canonical JSON stage-array example")
+	}
 	if strings.Contains(logsDesc, "window_minutes") {
 		t.Fatal("get_logs description must not teach window_minutes; window_aggregate uses function/as/window")
 	}
@@ -152,6 +155,9 @@ func TestDumpTools(t *testing.T) {
 	}
 
 	tracesDesc := out.Tools[byName["get_traces"]].Description
+	if !strings.Contains(tracesDesc, `[{"type":"filter","query":{"$and":[{"$eq":["StatusCode","STATUS_CODE_ERROR"]}]}}]`) {
+		t.Fatal("get_traces served description missing canonical JSON stage-array example")
+	}
 	if strings.Contains(tracesDesc, "window_minutes") {
 		t.Fatal("get_traces description must not teach window_minutes; window_aggregate uses function/as/window")
 	}

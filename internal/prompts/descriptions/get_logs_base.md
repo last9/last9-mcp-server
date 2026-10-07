@@ -4,7 +4,7 @@
 
 **Order:** scope→parse→filter→aggregate.
 
-**Filter:** `{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}`. Ops: `$and`/`$or`/`$not`; `$eq`/`$neq`; `$containsWords`; `$regex`. Body words: ALL → `$and` of one `$containsWords` per word; ANY → `$or`; never `$icontainsWords`.
+**Canonical JSON array:** `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`. Ops: `$and`/`$or`/`$not`; `$eq`/`$neq`; `$containsWords`; `$regex`. Body words: ALL → `$and` of one `$containsWords` per word; ANY → `$or`; never `$icontainsWords`.
 
 **Parse:** `{"type":"parse","parser":"json","field":"Body","labels":{"key":"key"}}`; also `logfmt`/`regexp`, not `"format"`. Outputs use `attributes['key']`.
 

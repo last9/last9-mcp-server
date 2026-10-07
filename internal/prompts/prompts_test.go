@@ -51,6 +51,9 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 	if strings.Contains(desc, "window_minutes") {
 		t.Error("GetLogsDescription must NOT contain deprecated 'window_minutes' key")
 	}
+	if !strings.Contains(desc, `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`) {
+		t.Error("GetLogsDescription must include its canonical JSON stage-array example")
+	}
 }
 
 func TestGetTracesDescriptionCriticalRules(t *testing.T) {
@@ -63,6 +66,7 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 		reason string
 	}{
 		{"$regex", "must document pattern match operator"},
+		{"NOT SQL", "must clarify tracejson_query is not SQL"},
 		{"$neq", "must document existence idiom"},
 		{"aggregates", "must document aggregate key name"},
 		{"groupby", "must document groupby key name"},
@@ -79,6 +83,9 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 		if !strings.Contains(desc, c.phrase) {
 			t.Errorf("GetTracesDescription missing %q: %s", c.phrase, c.reason)
 		}
+	}
+	if !strings.Contains(desc, `[{"type":"filter","query":{"$and":[{"$eq":["StatusCode","STATUS_CODE_ERROR"]}]}}]`) {
+		t.Error("GetTracesDescription must include its canonical JSON stage-array example")
 	}
 }
 
