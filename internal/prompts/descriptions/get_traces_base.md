@@ -14,11 +14,13 @@
 
 **Time args:** `lookback_minutes` (default **60**); absolute RFC3339 uses `start_time_iso`+`end_time_iso`, never pipeline Timestamp filters.
 
-**Fields:** TraceId, SpanId, ServiceName, SpanName, SpanKind, StatusCode, Duration, Timestamp, ParentSpanId. Enums need OTel prefixes (`SPAN_KIND_SERVER`, `STATUS_CODE_ERROR`). **Duration is nanoseconds** (1000ms=`1000000000`). Attributes use `attributes['key']`/`resources['key']`, never `SpanAttributes.foo`.
+**Fields:** OTel enum prefixes: `SPAN_KIND_SERVER`, `STATUS_CODE_ERROR`. Duration is nanoseconds (1000ms=`1000000000`). Attributes use `attributes['key']`/`resources['key']`, never `SpanAttributes.foo`.
 
 **Aggregate:** use `aggregates`+`groupby`. `$quantile` is the general/default percentile operator: `{"function":{"$quantile":[0.99,"Duration"]},"as":"p99"}`. Compute from raw spans; never average percentile samples. `Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first.
 
 **window_aggregate:** `{"type":"window_aggregate","function":{"$quantile":[0.99,"Duration"]},"as":"p99","window":["24","hours"],"groupby":{"SpanName":"endpoint"}}`.
+
+**Aggregate example:** `{\"type\":\"aggregate\",\"aggregates\":[{\"function\":{\"$count\":[]},\"as\":\"count\"}]}`.
 
 For calendar buckets, use explicit ISO bounds and time zone. P99 `Duration` output remains nanoseconds.
 

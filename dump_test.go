@@ -195,6 +195,11 @@ func TestDumpTools(t *testing.T) {
 			t.Fatalf("get_traces description missing last9/api window_aggregate key %s", needle)
 		}
 	}
+	for name, desc := range map[string]string{"get_logs": logsDesc, "get_traces": tracesDesc} {
+		if !strings.Contains(desc, `{\"type\":\"aggregate\",\"aggregates\":[{\"function\":{\"$count\":[]},\"as\":\"count\"}]}`) {
+			t.Fatalf("%s served description missing canonical aggregate example", name)
+		}
+	}
 	if strings.Contains(tracesDesc, "default **5**") {
 		t.Fatal("get_traces lookback default must match GetTracesArgs (60), not 5")
 	}

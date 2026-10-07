@@ -1,6 +1,6 @@
 `logjson_query`: JSON stage array, **NOT SQL**. Types: `filter`|`parse`|`aggregate`|`window_aggregate`; no `"stage"`/`"conditions"`.
 
-**Profile:** service → `get_service_profile`; route on `signal_shape`/`telemetry`; stale results → discovery.
+**Profile:** service→`get_service_profile`; route `signal_shape`/`telemetry`; stale→discovery.
 
 **Order:** scope→parse→filter→aggregate.
 
@@ -8,9 +8,9 @@
 
 **Parse:** `{"type":"parse","parser":"json","field":"Body","labels":{"key":"key"}}`; also `logfmt`/`regexp`, not `"format"`. Outputs use `attributes['key']`.
 
-**Filters:** always `$and` (even one). Not equal → `$neq`, not `$not`+`$eq`. A bare opaque token (e.g. `moon_dragon_v2_api_response`) MUST be `$contains` on Body, never infer ServiceName. Count → aggregate `$count`.
+**Filters:** `$and` always. Not equal → `$neq`, not `$not`+`$eq`. Bare token `moon_dragon_v2_api_response` MUST use `$contains` Body, never ServiceName. Count → aggregate `$count`.
 
-**Aggregate:** `function`+`as`; optional `groupby`. `$quantile` is the general/default percentile operator.
+**Aggregate:** `{\"type\":\"aggregate\",\"aggregates\":[{\"function\":{\"$count\":[]},\"as\":\"count\"}]}`; optional `groupby`. `$quantile` is the general/default percentile operator.
 
 **window_aggregate:** `function`+`as`+`window`, not `aggregates`/`TimeBucket`. Count: `{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"]}`. P99: `{"type":"window_aggregate","function":{"$quantile":[0.99,"attributes['latency_ms']"]},"as":"p99","window":["24","hours"],"groupby":{"attributes['route']":"route"}}`.
 
@@ -22,10 +22,10 @@
 
 **Scope:** tenant → `resources['last9.tenant']`; env → `resources['deployment.environment']`; `service.name` → `ServiceName`; `k8s.*` → `resources['k8s.…']`.
 
-**Service scope:** explicit service/service.name → required ServiceName filter, even when grouping.
+**Service:** explicit service/service.name→ServiceName filter, even grouping.
 
 **HTTP 5xx:** known→`get_service_logs`; else `$eq` discovered status, never SeverityText.
 
-**Time:** `lookback_minutes` default **5**. ISO args: `start_time_iso`+`end_time_iso`, not Timestamp filters.
+**Time:** `lookback_minutes` default **5**; ISO uses `start_time_iso`+`end_time_iso`, not Timestamp filters.
 
 Full manual: `last9://reference/logjson`
