@@ -147,12 +147,16 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 		t.Fatalf("unexpected deployment_environment: got %v, want prod", first["deployment_environment"])
 	}
 
-	expectedLastSeen := endTime.UTC().Format(time.RFC3339)
-	if first["last_seen"] != expectedLastSeen {
-		t.Fatalf("unexpected first last_seen: got %v, want %s", first["last_seen"], expectedLastSeen)
-	}
-	if second["last_seen"] != expectedLastSeen {
-		t.Fatalf("unexpected second last_seen: got %v, want %s", second["last_seen"], expectedLastSeen)
+	for _, exception := range []map[string]any{first, second} {
+		for _, field := range []string{
+			"trace_id", "span_id", "timestamp", "exception_message", "exception_stacktrace",
+			"exception_escaped", "service_namespace", "service_instance_id", "duration_ms",
+			"status_code", "first_seen", "last_seen",
+		} {
+			if _, found := exception[field]; found {
+				t.Fatalf("aggregate exception row must not include fabricated forensic field %q: %#v", field, exception)
+			}
+		}
 	}
 }
 
@@ -360,7 +364,7 @@ func TestGetExceptionsHandler_DoesNotCallRangeQuery(t *testing.T) {
 	}
 }
 
-func TestGetExceptionsHandler_LastSeenUsesInstantTimestamp(t *testing.T) {
+func TestGetExceptionsHandler_DoesNotExposeInstantTimestampAsLastSeen(t *testing.T) {
 	startTime := time.Date(2026, 1, 20, 10, 0, 0, 0, time.UTC)
 	endTime := startTime.Add(10 * time.Minute)
 	clientLastSeen := endTime.Add(-3 * time.Minute).Unix()
@@ -418,26 +422,14 @@ func TestGetExceptionsHandler_LastSeenUsesInstantTimestamp(t *testing.T) {
 		t.Fatalf("unexpected exceptions length: got %d, want 2", len(exceptions))
 	}
 
-	lastSeenBySpanKind := map[string]string{}
 	for _, entry := range exceptions {
 		exceptionMap, ok := entry.(map[string]any)
 		if !ok {
 			t.Fatalf("unexpected exception entry type: %T", entry)
 		}
-
-		spanKind, _ := exceptionMap["span_kind"].(string)
-		lastSeen, _ := exceptionMap["last_seen"].(string)
-		lastSeenBySpanKind[spanKind] = lastSeen
-	}
-
-	expectedServerLastSeen := time.Unix(serverLastSeen, 0).UTC().Format(time.RFC3339)
-	if got := lastSeenBySpanKind["SPAN_KIND_SERVER"]; got != expectedServerLastSeen {
-		t.Fatalf("unexpected server last_seen: got %q, want %q", got, expectedServerLastSeen)
-	}
-
-	expectedClientLastSeen := time.Unix(clientLastSeen, 0).UTC().Format(time.RFC3339)
-	if got := lastSeenBySpanKind["SPAN_KIND_CLIENT"]; got != expectedClientLastSeen {
-		t.Fatalf("unexpected client last_seen: got %q, want %q", got, expectedClientLastSeen)
+		if _, found := exceptionMap["last_seen"]; found {
+			t.Fatalf("aggregate exception row must not expose the instant query timestamp as last_seen: %#v", exceptionMap)
+		}
 	}
 }
 
