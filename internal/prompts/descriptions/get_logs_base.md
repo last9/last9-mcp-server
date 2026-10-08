@@ -1,14 +1,16 @@
 `logjson_query`: JSON stage array, **NOT SQL**. Types: `filter`|`parse`|`aggregate`|`window_aggregate`; no `"stage"`/`"conditions"`.
 
-**Profile first:** service-scoped query → `get_service_profile`; route on `signal_shape`/`telemetry`. See `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
+**Profile:** service→`get_service_profile`; route `signal_shape`/`telemetry`; stale→discovery.
 
 **Order:** scope→parse→filter→aggregate.
 
-**Filter:** `{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}`. Ops: `$and`/`$or`/`$not`; `$eq`/`$neq`; `$containsWords`; `$regex`. Body words: ALL → `$and` of one `$containsWords` per word; ANY → `$or`; never `$icontainsWords`.
+**Canonical JSON array:** `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`. Ops: `$and`/`$or`/`$not`; `$eq`/`$neq`; `$containsWords`; `$regex`. Body words: ALL → `$and` of one `$containsWords` per word; ANY → `$or`; never `$icontainsWords`.
 
 **Parse:** `{"type":"parse","parser":"json","field":"Body","labels":{"key":"key"}}`; also `logfmt`/`regexp`, not `"format"`. Outputs use `attributes['key']`.
 
-**Aggregate:** `aggregates` entries use `function`+`as`; optional `groupby`. `$quantile` is the general/default percentile operator.
+**Filters:** `$and` always. Not equal → `$neq`, not `$not`+`$eq`. Bare token `moon_dragon_v2_api_response` MUST use `$contains` Body, never ServiceName. Count → aggregate `$count`.
+
+**Aggregate:** `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`; optional `groupby`. `$quantile` is the general/default percentile operator.
 
 **window_aggregate:** `function`+`as`+`window`, not `aggregates`/`TimeBucket`. Count: `{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"]}`. P99: `{"type":"window_aggregate","function":{"$quantile":[0.99,"attributes['latency_ms']"]},"as":"p99","window":["24","hours"],"groupby":{"attributes['route']":"route"}}`.
 
@@ -20,12 +22,10 @@
 
 **Scope:** tenant → `resources['last9.tenant']`; env → `resources['deployment.environment']`; `service.name` → `ServiceName`; `k8s.*` → `resources['k8s.…']`.
 
-**Free-text IDs:** `$contains` Body, never ServiceName.
+**Service:** explicit service/service.name→ServiceName filter, even grouping.
 
 **HTTP 5xx:** known→`get_service_logs`; else `$eq` discovered status, never SeverityText.
 
-**Time:** `lookback_minutes` default **5**. ISO args: `start_time_iso`+`end_time_iso`, not Timestamp filters.
-
-**l9_sanity:** high ratio/broad filter→ERROR re-count; zero→inspect samples.
+**Time:** `lookback_minutes` default **5**; ISO uses `start_time_iso`+`end_time_iso`, not Timestamp filters.
 
 Full manual: `last9://reference/logjson`
