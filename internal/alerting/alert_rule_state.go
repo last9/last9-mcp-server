@@ -21,9 +21,9 @@ type AlertRuleStateRequest struct {
 	AlertGroupName string `json:"alert_group_name,omitempty" jsonschema:"Optional regex filter by alert group name"`
 	LabelFilters   string `json:"label_filters,omitempty" jsonschema:"Optional comma separated key-value label filters"`
 	State          string `json:"state,omitempty" jsonschema:"Optional state filter (e.g. firing)"`
-	StartTime      int64  `json:"start_time" jsonschema:"Start time in unix epoch (required)"`
-	EndTime        int64  `json:"end_time" jsonschema:"End time in unix epoch (required)"`
-	Step           int64  `json:"step" jsonschema:"Resolution step in seconds (required)"`
+	StartTime      int64  `json:"start_time" jsonschema:"(Required) Start time in Unix epoch seconds"`
+	EndTime        int64  `json:"end_time" jsonschema:"(Required) End time in Unix epoch seconds"`
+	Step           int64  `json:"step" jsonschema:"(Required) Resolution step in seconds"`
 }
 
 const alertRuleStateMaxPoints = 100

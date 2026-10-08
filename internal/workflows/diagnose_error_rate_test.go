@@ -49,6 +49,9 @@ func TestDiagnoseErrorRateAggregatesFirst(t *testing.T) {
 	if !strings.Contains(got, "AGGREGATE FIRST") {
 		t.Errorf("template must instruct aggregate-first:\n%s", got)
 	}
+	if !strings.Contains(got, "do not provide exact exception time bounds") {
+		t.Errorf("template must not treat aggregate exception rows as time-bounded samples:\n%s", got)
+	}
 }
 
 func TestDiagnoseErrorRateRendersEnvBranches(t *testing.T) {

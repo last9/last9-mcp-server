@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `get_exceptions` now returns only the aggregate metric dimensions and occurrence count for each ranked row. It previously fabricated or emitted empty trace/sample fields, including a query-evaluation timestamp as `last_seen`, which made metric aggregates look like exact exception samples. The tool description and investigation workflow now require treating later service traces as context rather than verified matches (#310).
+- Tool schemas now describe every argument, consistently mark required inputs, and use the canonical `$and` pipeline example across query helpers; public descriptions no longer expose transport routes (#309).
+- `get_logs` and `get_traces` now explicitly show compact JSON stage-array examples and reject SQL-like query construction in their tool descriptions, so description-only clients can form valid pipelines without fetching a reference manual (#309).
+
+## [0.19.4] - 2026-10-06
+
+### Added
+
+- `get_service_logs` advertises and returns optional `last9/coverage` metadata only when its chunked query can verify the requested scope, distinguishing complete, partial, empty, and uncertain results (#307).
+
 ## [0.19.3] - 2026-09-30
 
 ### Added

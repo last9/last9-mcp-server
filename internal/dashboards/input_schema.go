@@ -21,7 +21,7 @@ func GetCreateDashboardInputSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"dashboard": dashboardObjectSchema("Dashboard definition with name and panels."),
+			"dashboard": dashboardObjectSchema("(Required) Dashboard definition with name and panels."),
 			"metadata":  metadataObjectSchema(),
 		},
 		"required": []string{"dashboard"},
@@ -35,9 +35,9 @@ func GetUpdateDashboardInputSchema() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"id": map[string]interface{}{
 				"type":        "string",
-				"description": "Dashboard UUID to update.",
+				"description": "(Required) Dashboard UUID to update.",
 			},
-			"dashboard": dashboardObjectSchema("Full replacement dashboard definition with name and panels."),
+			"dashboard": dashboardObjectSchema("(Required) Full replacement dashboard definition with name and panels."),
 			"metadata":  metadataObjectSchema(),
 		},
 		"required": []string{"id", "dashboard"},
