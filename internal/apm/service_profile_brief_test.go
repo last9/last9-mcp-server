@@ -1,9 +1,44 @@
 package apm
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
+
+func TestFormatInvestigationBrief_Routing(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		json   string
+		want   []string
+		absent []string
+	}{
+		{name: "ordered environment associations", json: `{"domains":["apm","rum"],"domain_envs":{"apm":["staging","qa"],"rum":["production"]},"log_indexes":["archive","default"],"log_index_envs":{"archive":["staging"],"default":["production"]}}`, want: []string{"→ domain: apm (staging, qa), rum (production)", "→ log index: archive (staging), default (production)"}},
+		{name: "no inferred environments", json: `{"domains":["apm"],"log_indexes":["archive"],"deployment":{"envs":["production"]}}`, want: []string{"→ domain: apm", "→ log index: archive"}, absent: []string{"(production)"}},
+		{name: "absent logs retain indexes", json: `{"telemetry":{"logs":"absent"},"log_indexes":["archive"]}`, want: []string{"→ log index: archive"}},
+		{name: "missing", json: `{}`, absent: []string{"→ domain:", "→ log index:"}},
+		{name: "null", json: `{"domains":null,"domain_envs":null,"log_indexes":null,"log_index_envs":null}`, absent: []string{"→ domain:", "→ log index:"}},
+		{name: "empty and orphan mappings", json: `{"domains":[""],"domain_envs":{"apm":["production"]},"log_indexes":[],"log_index_envs":{"archive":["staging"]}}`, absent: []string{"→ domain:", "→ log index:"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var profile serviceProfileResponse
+			if err := json.Unmarshal([]byte(tc.json), &profile); err != nil {
+				t.Fatal(err)
+			}
+			got := formatInvestigationBrief(profile)
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Fatalf("missing %q in %s", want, got)
+				}
+			}
+			for _, absent := range tc.absent {
+				if strings.Contains(got, absent) {
+					t.Fatalf("unexpected %q in %s", absent, got)
+				}
+			}
+		})
+	}
+}
 
 func TestFormatInvestigationBrief_SeverityNone(t *testing.T) {
 	p := serviceProfileResponse{

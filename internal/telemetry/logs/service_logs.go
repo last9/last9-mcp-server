@@ -57,7 +57,7 @@ type GetServiceLogsArgs struct {
 	HTTPStatusField  string                      `json:"http_status_field,omitempty" jsonschema:"Explicit logjson field for HTTP status (e.g. attributes['http.status_code']). Required when discovery finds zero or multiple status-like fields."`
 	AttributeFilters []ServiceLogAttributeFilter `json:"attribute_filters,omitempty" jsonschema:"Equality filters on named log attributes. Each entry is field plus value. field uses logjson syntax such as attributes['user_id']. Unknown org fields are allowed; invalid syntax is rejected."`
 	Env              string                      `json:"env,omitempty" jsonschema:"Environment to filter by. Empty string if environment is unknown (e.g. production)"`
-	Index            string                      `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Omit this when the user did not specify an index."`
+	Index            string                      `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Use a user-named index or a non-default physical index discovered by get_service_profile; omit for default or when unknown."`
 }
 
 // ServiceLogAttributeFilter is a structured equality filter compiled into logjson.

@@ -10,6 +10,6 @@ Fetch raw log lines for one service (`service_name`, optional `severity_filters`
 
 **Prefer `get_logs` when:** you need parse/aggregate/`window_aggregate`, or an ad-hoc pipeline.
 
-**Time:** Prefer `lookback_minutes` for relative windows; `start_time_iso`+`end_time_iso` (RFC3339) for absolute. Pass `index` only when the user names one (`physical_index:<name>` / `rehydration_index:<block>`).
+**Time:** Prefer `lookback_minutes` for relative windows; `start_time_iso`+`end_time_iso` (RFC3339) for absolute. Pass a user-named `index` (`physical_index:<name>` / `rehydration_index:<block>`) or a non-default physical index discovered by `get_service_profile`. Match the requested environment using `log_index_envs`; query matching indexes separately. Omit `index` for `default` or when unknown.
 
 Full service-logs reference: `last9://reference/service_logs`. Logjson: `last9://reference/logjson`

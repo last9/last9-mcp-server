@@ -33,7 +33,7 @@ func GetLogsInputSchema() map[string]interface{} {
 			},
 			"index": map[string]interface{}{
 				"type":        []string{"string", "null"},
-				"description": "Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Omit when the user did not specify an index.",
+				"description": "Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Use a user-named index or a non-default physical index discovered by get_service_profile; omit for default or when unknown.",
 			},
 		},
 		"required":             []string{"logjson_query"},
