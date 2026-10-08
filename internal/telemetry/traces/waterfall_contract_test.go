@@ -1,6 +1,7 @@
 package traces
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -54,10 +55,15 @@ func waterfallFixtureInput() waterfallBuildInput {
 // Run with LAST9_UPDATE_FIXTURES=1 to regenerate, then refresh the content_sha256
 // entries in contracts/fixtures/workflow-cases-v1.json.
 func TestWaterfallFixtureMatchesProducerOutput(t *testing.T) {
-	generated, err := json.MarshalIndent(buildTraceWaterfall(waterfallFixtureInput()), "", "  ")
+	canonical, err := marshalSanitizedTraceWaterfall(buildTraceWaterfall(waterfallFixtureInput()))
 	if err != nil {
 		t.Fatal(err)
 	}
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, canonical, "", "  "); err != nil {
+		t.Fatal(err)
+	}
+	generated := indented.Bytes()
 	generated = append(generated, '\n')
 	path := filepath.Clean(waterfallFixturePath)
 	if os.Getenv("LAST9_UPDATE_FIXTURES") == "1" {
@@ -124,7 +130,7 @@ func TestTraceWaterfallOutputSatisfiesEvidenceContract(t *testing.T) {
 
 	for name, in := range cases {
 		t.Run(name, func(t *testing.T) {
-			marshalled, err := json.Marshal(buildTraceWaterfall(in))
+			marshalled, err := marshalSanitizedTraceWaterfall(buildTraceWaterfall(in))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -170,12 +176,12 @@ func TestTraceWaterfallOutputIsByteStable(t *testing.T) {
 		effective:    evidenceWindow(start, start.Add(15*time.Minute)),
 		observedAt:   start,
 	}
-	first, err := json.Marshal(buildTraceWaterfall(in))
+	first, err := marshalSanitizedTraceWaterfall(buildTraceWaterfall(in))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 50; i++ {
-		next, err := json.Marshal(buildTraceWaterfall(in))
+		next, err := marshalSanitizedTraceWaterfall(buildTraceWaterfall(in))
 		if err != nil {
 			t.Fatal(err)
 		}

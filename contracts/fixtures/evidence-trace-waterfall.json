@@ -29,6 +29,19 @@
       "source": "trace-details",
       "observed_at": "2026-07-15T08:41:05Z",
       "query_id": null
+    },
+    "sanitization": {
+      "version": "trace-evidence-sanitizer/v1",
+      "redacted": false,
+      "truncated": false,
+      "redactions": [],
+      "truncations": [],
+      "limits": {
+        "max_string_bytes": 512,
+        "max_collection_items": 64,
+        "max_depth": 12,
+        "max_serialized_bytes": 524288
+      }
     }
   },
   "interpretation": {
