@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bumped `github.com/last9/mcp-go-sdk` 0.1.4 → 0.1.5 (#PR).
+- Bumped `github.com/last9/mcp-go-sdk` 0.1.4 → 0.1.5 (#313).
 
 ## [0.19.4] - 2026-10-06
 
