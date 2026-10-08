@@ -25,7 +25,6 @@ import (
 // present. The shape is compatible with .mcpc.json contract-snapshot tooling
 // (e.g. mcpdiff).
 //
-// No credentials or network access required: registration never calls the
 // API. Descriptions do not embed org attribute catalogs. External consumers
 // (eval harness, docs generation) should treat this as the canonical source
 // instead of maintaining parallel description files.

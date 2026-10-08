@@ -14,6 +14,11 @@ var writeTools = map[string]struct{ destructive, idempotent bool }{
 	"update_dashboard":          {destructive: true, idempotent: true},
 	"delete_dashboard":          {destructive: true, idempotent: true},
 	"delete_dashboard_snapshot": {destructive: true, idempotent: true},
+	"create_alert":              {destructive: false, idempotent: false},
+	"update_alert":              {destructive: true, idempotent: true},
+	"patch_alert":               {destructive: true, idempotent: true},
+	"delete_alert":              {destructive: true, idempotent: true},
+	"create_alert_from_chart":   {destructive: false, idempotent: false},
 }
 
 func TestDumpToolsServesAnnotations(t *testing.T) {
