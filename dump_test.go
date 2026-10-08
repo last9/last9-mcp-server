@@ -294,7 +294,8 @@ func TestDumpToolsLogsIncludesServiceProfile(t *testing.T) {
 	}
 	var out struct {
 		Tools []struct {
-			Name string `json:"name"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
 		} `json:"tools"`
 	}
 	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
@@ -303,6 +304,13 @@ func TestDumpToolsLogsIncludesServiceProfile(t *testing.T) {
 	byName := make(map[string]bool, len(out.Tools))
 	for _, tool := range out.Tools {
 		byName[tool.Name] = true
+		if tool.Name == "get_service_profile" {
+			for _, want := range []string{"`domains`", "`domain_envs`", "`log_indexes`", "`log_index_envs`", "physical_index:<name>", "Query each matching index separately", "never infer their environments from `deployment.envs`"} {
+				if !strings.Contains(tool.Description, want) {
+					t.Errorf("served profile description missing %q", want)
+				}
+			}
+		}
 	}
 	if !byName["get_service_profile"] {
 		t.Error("logs dump missing get_service_profile (required by profile-first firing rules on get_exceptions)")

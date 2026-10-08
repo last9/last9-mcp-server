@@ -27,7 +27,7 @@ type GetLogAttributesForPipelineArgs struct {
 	StartTimeISO    string                   `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
 	EndTimeISO      string                   `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
 	Region          string                   `json:"region,omitempty" jsonschema:"Region to query (optional). Defaults to configured region."`
-	Index           string                   `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Omit this when the user did not specify an index."`
+	Index           string                   `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Use a user-named index or a non-default physical index discovered by get_service_profile; omit for default or when unknown."`
 }
 
 // logSeriesResponse represents the /logs/api/v2/series/json response. Each entry

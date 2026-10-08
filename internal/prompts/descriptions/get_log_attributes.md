@@ -21,8 +21,8 @@ Time format rules:
 - Legacy format YYYY-MM-DD HH:MM:SS is accepted only for compatibility.
 
 Index rules:
-- Pass index only when the user explicitly names a log index.
+- Pass index when the user names a log index or get_service_profile reports a matching non-default physical index. Match the requested environment using log_index_envs; query matching indexes separately.
 - Accepted values are physical_index:<name> and rehydration_index:<block_name>.
 - If the user says "rehydration index X", use rehydration_index:X.
 - If the user says "physical index X" or just "index X", use physical_index:X.
-- Omit index when the user did not specify one.
+- Omit index for default or when neither the user nor the profile identifies one. Never infer index environments from deployment.envs.

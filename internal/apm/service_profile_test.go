@@ -73,6 +73,34 @@ func TestGetServiceProfileHandler_ForwardsRegionAndService(t *testing.T) {
 	}
 }
 
+func TestGetServiceProfileHandler_RoutingPreservesRawJSON(t *testing.T) {
+	for _, raw := range []string{
+		"{\n  \"service\":\"api\", \"domains\":[\"apm\"], \"domain_envs\":{\"apm\":[\"production\"]}, \"log_indexes\":[\"archive\",\"default\"], \"log_index_envs\":{\"archive\":[\"staging\"],\"default\":[\"production\"]}, \"future_field\":true\n}\n",
+		`{"service":"api","domains":null,"domain_envs":null,"log_indexes":null,"log_index_envs":null}`,
+		`{"service":"api"}`,
+	} {
+		t.Run(raw, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(raw)) }))
+			defer server.Close()
+			cfg := models.Config{APIBaseURL: server.URL, TokenManager: &auth.TokenManager{AccessToken: "tok", ExpiresAt: time.Now().Add(time.Hour)}}
+			result, _, err := NewGetServiceProfileHandler(server.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetServiceProfileArgs{ServiceName: "api"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			brief, payload, found := strings.Cut(utils.GetTextContent(t, result), "\n\n")
+			if !found || payload != raw {
+				t.Fatalf("raw payload changed: %q", payload)
+			}
+			if strings.Contains(brief, "brief unavailable") {
+				t.Fatalf("routing must decode: %s", brief)
+			}
+			if strings.Contains(raw, "future_field") && (!strings.Contains(brief, "→ domain: apm (production)") || !strings.Contains(brief, "→ log index: archive (staging), default (production)")) {
+				t.Fatalf("missing routing: %s", brief)
+			}
+		})
+	}
+}
+
 // dependencies is null in v1 and will be populated later; a shape change there
 // must not take the whole tool down when the raw JSON is still usable.
 func TestGetServiceProfileHandler_UnparsableBodyStillReturnsRawJSON(t *testing.T) {

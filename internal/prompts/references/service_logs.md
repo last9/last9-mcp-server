@@ -48,7 +48,7 @@ Do not invent org-specific attribute names. Discover fields with `get_log_attrib
 - When the user has not named an exact service, do not use this raw-log tool for broad discovery.
 - Use `prometheus_instant_query` first with `sum by (name, service_name, env) (physical_index_service_count{destination="logs"})`.
 - Use `service_name` as the service argument, `env` as the environment when present, and `name` as the physical index name.
-- If `name="default"`, omit the `index` parameter. For a non-default physical index selected by the user, use `index: "physical_index:<name>"`.
+- If `name="default"`, omit the `index` parameter. For a non-default physical index selected by the user or reported by `get_service_profile`, use `index: "physical_index:<name>"`. Match the requested environment using `log_index_envs`; query matching indexes separately.
 - If the backend rejects explicit physical index filtering, retry without `index` and tell the user that explicit physical index filtering is unavailable for that backend.
 - Prefer `get_logs` for aggregate counts. Use this tool after the service/env/index and pattern are already narrowed, and request a small `limit` for samples.
 
@@ -77,7 +77,7 @@ as unknown.
 - Output a JSON object of tool arguments, not a query pipeline.
 - Prefer `start_time_iso` and `end_time_iso` over `lookback_minutes` when the user provides absolute times.
 - Keep `severity_filters` and `body_filters` as arrays of strings.
-- Do not invent `index` or `env` unless the user explicitly asked for them or supplied that context.
+- Do not invent `index` or `env`. Use user-supplied context or profile routing fields; never infer index environments from `deployment.envs`. Omit `index` for `default` or when unknown.
 - **NEVER use `body_filters` for HTTP status codes or values stored as structured attributes.** Use `http_status_*` or `attribute_filters`.
 
 ## Examples
