@@ -19,8 +19,8 @@ import (
 
 // GetEntityAlertRulesArgs holds the input arguments for get_entity_alert_rules.
 type GetEntityAlertRulesArgs struct {
-	EntityID string `json:"entity_id"`
-	Severity string `json:"severity,omitempty"`
+	EntityID string `json:"entity_id" jsonschema:"(Required) Entity or alert-group UUID from get_alert_config"`
+	Severity string `json:"severity,omitempty" jsonschema:"Optional case-insensitive severity filter (e.g. breach or threat)"`
 }
 
 // NewGetEntityAlertRulesHandler returns the MCP tool handler for get_entity_alert_rules.

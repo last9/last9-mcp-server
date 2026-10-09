@@ -11,7 +11,85 @@ import (
 	"last9-mcp/internal/apm"
 	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/toolsets"
+
+	"github.com/google/jsonschema-go/jsonschema"
 )
+
+func TestServedQueryToolSchemas(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, nil); err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string          `json:"name"`
+			InputSchema json.RawMessage `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	tests := map[string]struct {
+		valid          map[string]any
+		invalid        []map[string]any
+		requiredFields []string
+	}{
+		"get_logs": {valid: map[string]any{"logjson_query": []any{map[string]any{"type": "filter", "query": map[string]any{"$and": []any{map[string]any{"$eq": []any{"ServiceName", "api"}}}}}}}, invalid: []map[string]any{
+			{"logjson_query": []any{}, "unexpected": true}, {},
+		}, requiredFields: []string{"logjson_query"}},
+		"get_service_logs": {valid: map[string]any{"service_name": "api", "attribute_filters": []any{map[string]any{"field": "attributes['id']", "value": "1"}}}, invalid: []map[string]any{
+			{"service_name": "api", "attribute_filters": []any{map[string]any{"field": "id", "value": "1", "unexpected": true}}},
+			{}, {"service_name": 1},
+			{"service_name": "api", "attribute_filters": []any{map[string]any{"field": "id"}}},
+		}, requiredFields: []string{"service_name"}},
+		"get_service_traces": {valid: map[string]any{"trace_id": "0123456789abcdef0123456789abcdef"}, invalid: []map[string]any{
+			{"service_name": "api", "unexpected": true}, {"trace_id": 1},
+		}},
+		"prometheus_range_query": {valid: map[string]any{"query": "up", "lookback_minutes": 5.5}, invalid: []map[string]any{
+			{"query": "up", "step": "1m"}, {}, {"query": 1},
+		}, requiredFields: []string{"query"}},
+		"prometheus_instant_query": {valid: map[string]any{"query": "up", "lookback_minutes": 5.5}, invalid: []map[string]any{
+			{"promql": "up"}, {}, {"query": 1},
+		}, requiredFields: []string{"query"}},
+	}
+	for _, tool := range out.Tools {
+		test, ok := tests[tool.Name]
+		if !ok {
+			continue
+		}
+		var schema jsonschema.Schema
+		if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+			t.Fatalf("%s schema: %v", tool.Name, err)
+		}
+		resolved, err := schema.Resolve(nil)
+		if err != nil {
+			t.Fatalf("%s resolve: %v", tool.Name, err)
+		}
+		if err := resolved.Validate(test.valid); err != nil {
+			t.Errorf("%s rejected valid input: %v", tool.Name, err)
+		}
+		for _, invalid := range test.invalid {
+			if err := resolved.Validate(invalid); err == nil {
+				t.Errorf("%s accepted invalid input %#v", tool.Name, invalid)
+			}
+		}
+		for _, required := range test.requiredFields {
+			missing := make(map[string]any, len(test.valid))
+			for key, value := range test.valid {
+				if key != required {
+					missing[key] = value
+				}
+			}
+			if err := resolved.Validate(missing); err == nil {
+				t.Errorf("%s accepted input missing required field %q", tool.Name, required)
+			}
+		}
+		delete(tests, tool.Name)
+	}
+	if len(tests) != 0 {
+		t.Fatalf("tools missing from served schema: %v", tests)
+	}
+}
 
 func TestDumpTools(t *testing.T) {
 	var buf bytes.Buffer
@@ -54,6 +132,35 @@ func TestDumpTools(t *testing.T) {
 		}
 		if out.Tools[i].InputSchema == nil {
 			t.Fatalf("tool %q has no inputSchema", name)
+		}
+	}
+	for _, tool := range out.Tools {
+		var schema struct {
+			Properties map[string]struct {
+				Description string `json:"description"`
+			} `json:"properties"`
+			Required []string `json:"required"`
+		}
+		schemaBytes, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatalf("marshal %s inputSchema: %v", tool.Name, err)
+		}
+		if err := json.Unmarshal(schemaBytes, &schema); err != nil {
+			t.Fatalf("unmarshal %s inputSchema: %v", tool.Name, err)
+		}
+		for name, property := range schema.Properties {
+			if strings.TrimSpace(property.Description) == "" {
+				t.Fatalf("%s schema property %q is missing a description", tool.Name, name)
+			}
+		}
+		for _, name := range schema.Required {
+			property, ok := schema.Properties[name]
+			if !ok {
+				t.Fatalf("%s required schema property %q is missing", tool.Name, name)
+			}
+			if !strings.HasPrefix(property.Description, "(Required)") {
+				t.Fatalf("%s required schema property %q description must start with (Required): %q", tool.Name, name, property.Description)
+			}
 		}
 	}
 
@@ -142,6 +249,9 @@ func TestDumpTools(t *testing.T) {
 	}
 
 	logsDesc := out.Tools[byName["get_logs"]].Description
+	if !strings.Contains(logsDesc, `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`) {
+		t.Fatal("get_logs served description missing canonical JSON stage-array example")
+	}
 	if strings.Contains(logsDesc, "window_minutes") {
 		t.Fatal("get_logs description must not teach window_minutes; window_aggregate uses function/as/window")
 	}
@@ -152,6 +262,9 @@ func TestDumpTools(t *testing.T) {
 	}
 
 	tracesDesc := out.Tools[byName["get_traces"]].Description
+	if !strings.Contains(tracesDesc, `[{"type":"filter","query":{"$and":[{"$eq":["StatusCode","STATUS_CODE_ERROR"]}]}}]`) {
+		t.Fatal("get_traces served description missing canonical JSON stage-array example")
+	}
 	if strings.Contains(tracesDesc, "window_minutes") {
 		t.Fatal("get_traces description must not teach window_minutes; window_aggregate uses function/as/window")
 	}
@@ -160,11 +273,38 @@ func TestDumpTools(t *testing.T) {
 			t.Fatalf("get_traces description missing last9/api window_aggregate key %s", needle)
 		}
 	}
+	for name, desc := range map[string]string{"get_logs": logsDesc, "get_traces": tracesDesc} {
+		const aggregateExample = `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`
+		if !strings.Contains(desc, aggregateExample) {
+			t.Fatalf("%s served description missing canonical aggregate example", name)
+		}
+		var decoded any
+		if err := json.Unmarshal([]byte(aggregateExample), &decoded); err != nil {
+			t.Fatalf("%s canonical aggregate example is not valid JSON: %v", name, err)
+		}
+	}
 	if strings.Contains(tracesDesc, "default **5**") {
 		t.Fatal("get_traces lookback default must match GetTracesArgs (60), not 5")
 	}
 	if !strings.Contains(tracesDesc, "default **60**") {
 		t.Fatal("get_traces description missing lookback default 60")
+	}
+	for _, name := range []string{"get_log_attributes_for_pipeline", "get_trace_attributes_for_pipeline", "get_trace_attribute_values"} {
+		var schema struct {
+			Properties map[string]struct {
+				Description string `json:"description"`
+			} `json:"properties"`
+		}
+		schemaBytes, err := json.Marshal(out.Tools[byName[name]].InputSchema)
+		if err != nil {
+			t.Fatalf("marshal %s inputSchema: %v", name, err)
+		}
+		if err := json.Unmarshal(schemaBytes, &schema); err != nil {
+			t.Fatalf("unmarshal %s inputSchema: %v", name, err)
+		}
+		if !strings.Contains(schema.Properties["pipeline"].Description, `"$and"`) {
+			t.Fatalf("%s pipeline schema must show the canonical $and filter shape", name)
+		}
 	}
 
 	svcLogsDesc := out.Tools[byName["get_service_logs"]].Description
