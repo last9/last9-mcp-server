@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tool-call telemetry preserves the requesting agent's trace parent and records `mcp.turn.id` from trace context or explicit turn metadata; unrelated calls no longer share a synthetic session query span (#312).
 - `get_exceptions` now returns only the aggregate metric dimensions and occurrence count for each ranked row. It previously fabricated or emitted empty trace/sample fields, including a query-evaluation timestamp as `last_seen`, which made metric aggregates look like exact exception samples. The tool description and investigation workflow now require treating later service traces as context rather than verified matches (#310).
 
+### Changed
+
+- Bumped `github.com/last9/mcp-go-sdk` from v0.1.4 to v0.1.5 (#312).
+
 ## [0.19.4] - 2026-10-06
 
 ### Added
