@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added `did_you_mean` to the logs, traces, and metrics toolsets so their entity-name discovery guidance can be followed (#312).
+
 ### Fixed
 
 - `get_logs` now includes the required `type: "window_aggregate"` discriminator in its count and percentile examples, so copied stages pass validation (#312).
