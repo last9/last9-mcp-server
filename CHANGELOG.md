@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `metric_status`: reports metric liveness, series count, last-sample age, inferred sample cadence, and a suggested panel window (`$__interval` for high-cadence series, else ~3× last-sample age such as `3d` for daily emitters) so agents stop binary-searching query windows and mistaking between-sample gaps for dead metrics (#PR).
+
 ### Fixed
 
 - `get_exceptions` now returns only the aggregate metric dimensions and occurrence count for each ranked row. It previously fabricated or emitted empty trace/sample fields, including a query-evaluation timestamp as `last_seen`, which made metric aggregates look like exact exception samples. The tool description and investigation workflow now require treating later service traces as context rather than verified matches (#310).
