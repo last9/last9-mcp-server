@@ -6,7 +6,7 @@ Fetch raw log lines for one service (`service_name`, optional `severity_filters`
 
 **HTTP status:** Pass `http_status_class` (`5xx`) or `http_status_code` (`500`). This tool discovers the status field for the service/env/window. If discovery finds none or more than one, pass `http_status_field` (e.g. `attributes['http.status_code']`). Severity is not an HTTP-error proxy (5xx often INFO)—do not use `severity_filters` for status.
 
-**Named attributes:** `attribute_filters` is `[{field, value}]` equality. `field` uses logjson syntax (`attributes['user_id']`). Invalid syntax is rejected; unknown org fields are allowed. Discover names with `get_log_attributes` / `get_log_attributes_for_pipeline` if unsure.
+**Named attributes:** `attribute_filters` is `[{field, value}]` equality. For comparisons (`>`, `<`, ranges), grouping, or aggregation, use `get_logs` instead. `field` uses logjson syntax (`attributes['user_id']`). Invalid syntax is rejected; unknown org fields are allowed. Discover names with `get_log_attributes` / `get_log_attributes_for_pipeline` if unsure.
 
 **Prefer `get_logs` when:** you need parse/aggregate/`window_aggregate`, or an ad-hoc pipeline.
 
