@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `metric_status`: reports metric liveness, series count, last-sample age, inferred sample cadence, and a suggested panel window (`$__interval` for high-cadence series, else ~3× last-sample age such as `3d` for daily emitters) so agents stop binary-searching query windows and mistaking between-sample gaps for dead metrics (#PR).
+- `metric_status`: reports metric liveness, series count, last-sample age, inferred sample cadence, and a suggested panel window (`$__interval` for high-cadence series, else ~3× last-sample age such as `3d` for daily emitters) so agents stop binary-searching query windows and mistaking between-sample gaps for dead metrics (#316).
 
 ### Fixed
 
