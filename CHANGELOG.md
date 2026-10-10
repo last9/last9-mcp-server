@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `prometheus_label_values` now documents that daily/sparse metrics need a widened `lookback_minutes` (for example `5760` for 4 days). The default 60-minute window omitted those series from discovery and led to false "not streaming" decisions; handler tests pin default, 4-day, and explicit ISO window wiring (#315).
 - `get_exceptions` now returns only the aggregate metric dimensions and occurrence count for each ranked row. It previously fabricated or emitted empty trace/sample fields, including a query-evaluation timestamp as `last_seen`, which made metric aggregates look like exact exception samples. The tool description and investigation workflow now require treating later service traces as context rather than verified matches (#310).
 - Tool schemas now describe every argument, consistently mark required inputs, and use the canonical `$and` pipeline example across query helpers; public descriptions no longer expose transport routes (#309).
 - `get_logs` and `get_traces` now explicitly show compact JSON stage-array examples and reject SQL-like query construction in their tool descriptions, so description-only clients can form valid pipelines without fetching a reference manual (#309).
