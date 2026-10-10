@@ -238,19 +238,17 @@ func minPositiveOrZero(vals []float64) float64 {
 }
 
 // High-cadence metrics keep Grafana's $__interval; slow emitters need a window
-// that exceeds cadence (~3× last sample age) so last_over_time does not go blank.
+// that exceeds cadence (~3× max(age, interval)) so last_over_time does not go blank
+// between samples — including right after a fresh emission when age ≪ cadence.
 func suggestWindow(lastSampleAgeSeconds, inferredIntervalSeconds float64) string {
 	const liveCadenceSeconds = 5 * 60
 	if inferredIntervalSeconds > 0 && inferredIntervalSeconds <= liveCadenceSeconds {
 		return "$__interval"
 	}
-	if lastSampleAgeSeconds > 0 && lastSampleAgeSeconds <= liveCadenceSeconds {
+	if inferredIntervalSeconds <= 0 && lastSampleAgeSeconds > 0 && lastSampleAgeSeconds <= liveCadenceSeconds {
 		return "$__interval"
 	}
-	basis := lastSampleAgeSeconds
-	if basis <= 0 {
-		basis = inferredIntervalSeconds
-	}
+	basis := math.Max(lastSampleAgeSeconds, inferredIntervalSeconds)
 	if basis <= 0 {
 		return "$__interval"
 	}

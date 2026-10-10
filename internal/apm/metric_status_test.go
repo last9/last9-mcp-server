@@ -230,3 +230,19 @@ func TestFormatSuggestedDuration(t *testing.T) {
 		t.Fatalf("ceil days: got %q, want 3d", got)
 	}
 }
+
+func TestSuggestWindow_SlowEmitterSoonAfterSample(t *testing.T) {
+	// Daily cadence with a fresh sample must still suggest ~3d, not $__interval.
+	if got := suggestWindow(10, 86400); got != "3d" {
+		t.Fatalf("suggestWindow(10, 86400)=%q, want 3d", got)
+	}
+	if got := suggestWindow(400, 86400); got != "3d" {
+		t.Fatalf("suggestWindow(400, 86400)=%q, want 3d", got)
+	}
+	if got := suggestWindow(15, 15); got != "$__interval" {
+		t.Fatalf("suggestWindow(15, 15)=%q, want $__interval", got)
+	}
+	if got := suggestWindow(10, 0); got != "$__interval" {
+		t.Fatalf("unknown cadence + fresh sample: got %q, want $__interval", got)
+	}
+}
