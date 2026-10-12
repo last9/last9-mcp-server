@@ -68,6 +68,22 @@ var promptDescriptionFiles = map[string]string{
 	"validate_dashboard.md":                prompts.ValidateDashboardDescription,
 }
 
+var simplePromptDescriptionFiles = map[string]bool{
+	"add_drop_rule.md":             true,
+	"create_dashboard.md":          true,
+	"delete_dashboard.md":          true,
+	"delete_dashboard_snapshot.md": true,
+	"get_dashboard.md":             true,
+	"get_dashboard_snapshot.md":    true,
+	"get_drop_rules.md":            true,
+	"get_notification_channels.md": true,
+	"list_dashboard_snapshots.md":  true,
+	"list_dashboards.md":           true,
+	"list_datasources.md":          true,
+	"update_dashboard.md":          true,
+	"validate_dashboard.md":        true,
+}
+
 func TestPromptDescriptionFilesLoadCleanMarkdown(t *testing.T) {
 	for name, body := range promptDescriptionFiles {
 		t.Run(name, func(t *testing.T) {
@@ -81,12 +97,12 @@ func TestPromptDescriptionFilesLoadCleanMarkdown(t *testing.T) {
 			if strings.Contains(description, "<no value>") {
 				t.Fatal("embedded description contains a rendered empty template value")
 			}
-			if !hasDescriptionStructure(description) {
-				t.Fatalf("embedded description lacks markdown structure or a complete sentence: %q", snippet(description))
+			if !hasDescriptionStructure(name, description) {
+				t.Fatalf("embedded description lacks markdown structure and is not an allowlisted simple description: %q", snippet(description))
 			}
-			base := generatedBaseDescription(name)
+			base := genericBaseDescriptionForFile(name)
 			if len(description) <= len(base) {
-				t.Fatalf("embedded description length %d must be greater than generated base length %d", len(description), len(base))
+				t.Fatalf("embedded description length %d must be greater than generic base length %d", len(description), len(base))
 			}
 		})
 	}
@@ -142,17 +158,32 @@ func TestPromptDescriptionRegistryMatchesDirectory(t *testing.T) {
 	}
 }
 
-func hasDescriptionStructure(description string) bool {
-	structuralMarkers := []string{"\n- ", "\n* ", "## ", "`", ":"}
+func hasDescriptionStructure(name, description string) bool {
+	structuralMarkers := []string{
+		"\n- ",
+		"\n* ",
+		"\n1. ",
+		"## ",
+		"`",
+		"Parameters:",
+		"Required parameters:",
+		"Optional filters",
+		"Examples:",
+		"Response:",
+		"Returns:",
+	}
 	for _, marker := range structuralMarkers {
 		if strings.Contains(description, marker) {
 			return true
 		}
 	}
-	return strings.Count(description, ".") > 0 && len(strings.Fields(description)) >= 6
+	return simplePromptDescriptionFiles[name] &&
+		strings.Count(description, ".") > 0 &&
+		len(description) >= 40 &&
+		len(strings.Fields(description)) >= 6
 }
 
-func generatedBaseDescription(name string) string {
+func genericBaseDescriptionForFile(name string) string {
 	stem := strings.TrimSuffix(name, ".md")
 	stem = strings.TrimSuffix(stem, "_base")
 	words := strings.Split(stem, "_")
