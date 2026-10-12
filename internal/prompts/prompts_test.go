@@ -46,6 +46,7 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"ALL → `$and` of one `$containsWords` per word", "must document all-word Body searches"},
 		{"ANY → `$or`", "must document any-word Body searches"},
 		{"never `$icontainsWords`", "must avoid the slower case-insensitive word operator"},
+		{"if no service named, search token/phrase (even service-like) in `Body` via `$contains`", "must distinguish standalone identifiers from service names"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
@@ -75,6 +76,7 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 		{"aggregates", "must document aggregate key name"},
 		{"groupby", "must document groupby key name"},
 		{"resources['last9.tenant']", "must document tenant scoping"},
+		{"`service.name`→`ServiceName`", "must map service.name to the canonical service field"},
 		{"last9://reference/tracejson", "must point at the tracejson resource"},
 		{"default **60**", "must document default lookback of 60 minutes"},
 		{"`$quantile` is the general/default percentile operator", "must default to approximate percentile aggregation"},

@@ -10,7 +10,7 @@
 
 **Existence:** `{"$neq":["attributes['key']",""]}`; never `$exists`/`$notnull`.
 
-**Scope:** tenant name → `resources['last9.tenant']`; deployment env → `resources['deployment.environment']`.
+**Scope:** `service.name`→`ServiceName`; tenant→`resources['last9.tenant']`; env→`resources['deployment.environment']`.
 
 **Time args:** `lookback_minutes` (default **60**); absolute RFC3339 uses `start_time_iso`+`end_time_iso`, never pipeline Timestamp filters.
 

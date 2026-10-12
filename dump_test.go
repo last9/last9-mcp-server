@@ -317,6 +317,9 @@ func TestDumpTools(t *testing.T) {
 	if !strings.Contains(svcLogsDesc, "http_status") {
 		t.Fatal("get_service_logs description must document HTTP status filters")
 	}
+	if !strings.Contains(svcLogsDesc, "attributes['rpc.grpc.status_code']") {
+		t.Fatal("get_service_logs description must document the canonical gRPC status attribute")
+	}
 
 	excIdx, ok := byName["get_exceptions"]
 	if !ok {

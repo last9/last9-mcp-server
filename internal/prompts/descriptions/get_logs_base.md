@@ -18,7 +18,7 @@
 
 **Scope:** tenant/env→`resources['last9.tenant']`/`resources['deployment.environment']`; k8s.*→`resources['k8s.…']`; service (incl. service.name)→`ServiceName`.
 
-**Free-text IDs:** named→`ServiceName`; otherwise `$contains` ID/token in Body (incl. `_api`/`_service`).
+**Free-text:** if no service named, search token/phrase (even service-like) in `Body` via `$contains`; otherwise `ServiceName`.
 
 **HTTP 5xx:** known→`get_service_logs`; else discover status→`$eq` (not SeverityText).
 

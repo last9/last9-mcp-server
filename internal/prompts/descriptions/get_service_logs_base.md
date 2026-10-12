@@ -8,6 +8,8 @@ Fetch raw log lines for one service (`service_name`, optional `severity_filters`
 
 **Named attributes:** `attribute_filters` is `[{field, value}]` equality. For comparisons (`>`, `<`, ranges), grouping, or aggregation, use `get_logs` instead. `field` uses logjson syntax (`attributes['user_id']`). Invalid syntax is rejected; unknown org fields are allowed. Discover names with `get_log_attributes` / `get_log_attributes_for_pipeline` if unsure.
 
+**gRPC status:** use `attributes['rpc.grpc.status_code']` (e.g. `14` for UNAVAILABLE).
+
 **Prefer `get_logs` when:** you need parse/aggregate/`window_aggregate`, or an ad-hoc pipeline.
 
 **Time:** Prefer `lookback_minutes` for relative windows; `start_time_iso`+`end_time_iso` (RFC3339) for absolute. Pass `index` only when the user names one (`physical_index:<name>` / `rehydration_index:<block>`).
