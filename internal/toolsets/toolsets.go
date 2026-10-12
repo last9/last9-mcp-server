@@ -32,6 +32,7 @@ var named = map[string][]string{
 	},
 	"metrics": {
 		"get_service_profile",
+		"metric_status",
 		"prometheus_range_query",
 		"prometheus_instant_query",
 		"prometheus_label_values",
