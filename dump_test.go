@@ -134,6 +134,13 @@ func TestDumpTools(t *testing.T) {
 			t.Fatalf("tool %q has no inputSchema", name)
 		}
 	}
+	labelValuesDesc := out.Tools[byName["prometheus_label_values"]].Description
+	if !strings.Contains(labelValuesDesc, "5760") {
+		t.Fatal("prometheus_label_values description must document a wide lookback (5760) for daily/sparse metrics")
+	}
+	if !strings.Contains(strings.ToLower(labelValuesDesc), "sparse") && !strings.Contains(strings.ToLower(labelValuesDesc), "daily") {
+		t.Fatal("prometheus_label_values description must warn that daily/sparse metrics need a widened lookback")
+	}
 	for _, tool := range out.Tools {
 		var schema struct {
 			Properties map[string]struct {
