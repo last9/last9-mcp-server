@@ -10,7 +10,7 @@ Fetch raw log lines for one service (`service_name`, optional `severity_filters`
 
 **gRPC status:** use `attributes['rpc.grpc.status_code']` (e.g. `14` for UNAVAILABLE).
 
-**Prefer `get_logs` when:** you need parse/aggregate/`window_aggregate`, or an ad-hoc pipeline.
+**Prefer `get_logs` when:** you need parse/aggregate/`window_aggregate`, multiple HTTP statuses in one `$or`, numeric/range comparisons, or an ad-hoc pipeline.
 
 **Time:** Prefer `lookback_minutes` for relative windows; `start_time_iso`+`end_time_iso` (RFC3339) for absolute. Pass `index` only when the user names one (`physical_index:<name>` / `rehydration_index:<block>`).
 

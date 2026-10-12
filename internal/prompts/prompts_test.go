@@ -28,6 +28,8 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"resources['last9.tenant']", "must document tenant scoping"},
 		{"resources['deployment.environment']", "must document env scoping"},
 		{"last9://reference/logjson", "must point at the logjson resource"},
+		{"Single predicate may stand alone; multiple use `$and`", "must allow valid standalone predicates"},
+		{"high→add filter, recount", "must repeat counts after narrowing broad filters"},
 		{"community_member_id", "must document bare single-token field mistake"},
 		{"attributes['key']", "must require attributes/resources wrapping"},
 		{"Parse Body-derived fields before filtering, grouping, or aggregation", "must parse Body fields before grouping or aggregation"},
@@ -201,6 +203,7 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 		{"get_log_attributes", "must tell model to check attributes before body_filters"},
 		{"body_filters", "must explicitly label body_filters as last resort"},
 		{"last9://reference/service_logs", "must point at the service_logs resource"},
+		{"multiple HTTP statuses in one `$or`", "must direct multiple status alternatives to get_logs"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {

@@ -4,7 +4,7 @@
 
 **Order:** scope→parse→filter→group/aggregate.
 
-**Filter:** `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`. Always wrap predicates in `$and` (even one), except OR/NOT. Ops: `$and`/`$or`/`$not`, `$eq`/`$neq`/`$gt`/`$gte`/`$lt`/`$lte`, `$containsWords`, `$regex`. Body words: ALL → `$and` of one `$containsWords` per word; ANY → `$or`; never `$icontainsWords`.
+**Filter:** `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`. Single predicate may stand alone; multiple use `$and`. Ops: `$and`/`$or`/`$not`, `$eq`/`$neq`/`$gt`/`$gte`/`$lt`/`$lte`, `$containsWords`, `$regex`. Body words: ALL → `$and` of one `$containsWords` per word; ANY → `$or`; never `$icontainsWords`.
 
 **Parse:** JSON `{"type":"parse","parser":"json","field":"Body","labels":{"key":"key"}}`; also logfmt/regexp. Parse Body-derived fields before filtering, grouping, or aggregation. `attributes['key']`.
 
@@ -24,6 +24,6 @@
 
 **Time:** `lookback_minutes` default **5**; absolute→`start_time_iso`+`end_time_iso` (not Timestamp).
 
-**l9_sanity:** high/broad→ERROR re-count; zero→inspect samples.
+**l9_sanity:** high→add filter, recount; zero→inspect samples.
 
 Manual: `last9://reference/logjson`
