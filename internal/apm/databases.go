@@ -137,7 +137,18 @@ func NewGetDatabaseSlowQueriesHandler(client *http.Client, cfg models.Config) fu
 		if len(slowQueries) == 0 {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{
-					&mcp.TextContent{Text: "No slow database queries found for the given parameters."},
+					&mcp.TextContent{Text: apmEmptyAdvice(
+						"slow database queries",
+						apmGuidanceArgs{
+							serviceName: args.ServiceName,
+							env:         args.Env,
+							dbSystem:    args.DBSystem,
+							startUnix:   startTime,
+							endUnix:     endTime,
+						},
+						"verify database client spans or slow-query logs are instrumented",
+						"lower min_duration_ms if it was supplied",
+					)},
 				},
 			}, nil, nil
 		}
@@ -230,7 +241,12 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 		if len(patterns) == 0 {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{
-					&mcp.TextContent{Text: fmt.Sprintf("No query patterns found for db_system=%s. Ensure services are instrumented with OpenTelemetry database client spans.", args.DBSystem)},
+					&mcp.TextContent{Text: apmEmptyAdvice(
+						"query patterns",
+						apmGuidanceArgs{env: args.Env, dbSystem: args.DBSystem, startUnix: startTime, endUnix: endTime},
+						"ensure services are instrumented with OpenTelemetry database client spans",
+						"verify host if one was supplied",
+					)},
 				},
 			}, nil, nil
 		}
@@ -648,7 +664,12 @@ func NewGetDatabaseServerMetricsHandler(client *http.Client, cfg models.Config) 
 		if len(results) == 0 {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{
-					&mcp.TextContent{Text: "No database server-side metrics found. Ensure database exporters (postgres_exporter, mysqld_exporter, etc.) are running and scraping to your Prometheus/Levitate instance."},
+					&mcp.TextContent{Text: apmEmptyAdvice(
+						"database server-side metrics",
+						apmGuidanceArgs{dbSystem: args.DBSystem, startUnix: startTime, endUnix: endTime},
+						"ensure database exporters (postgres_exporter, mysqld_exporter, etc.) are running",
+						"verify metrics are scraping to the configured Prometheus datasource",
+					)},
 				},
 			}, nil, nil
 		}
@@ -656,6 +677,21 @@ func NewGetDatabaseServerMetricsHandler(client *http.Client, cfg models.Config) 
 		response := map[string]any{
 			"count":     len(results),
 			"databases": results,
+		}
+		allUnavailable := len(results) > 0
+		for _, result := range results {
+			if result.Available {
+				allUnavailable = false
+				break
+			}
+		}
+		if allUnavailable {
+			response["hint"] = apmEmptyAdvice(
+				"database server-side metrics",
+				apmGuidanceArgs{dbSystem: args.DBSystem, startUnix: startTime, endUnix: endTime},
+				"ensure database exporters (postgres_exporter, mysqld_exporter, etc.) are running",
+				"verify metrics are scraping to the configured Prometheus datasource",
+			)
 		}
 		jsonBytes, err := json.Marshal(response)
 		if err != nil {

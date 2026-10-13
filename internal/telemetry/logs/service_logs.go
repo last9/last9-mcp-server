@@ -32,6 +32,7 @@ type ServiceLogsResponse struct {
 	TotalMatchingLines *int           `json:"total_matching_lines,omitempty"`
 	LogsTruncated      *bool          `json:"logs_truncated,omitempty"`
 	SearchStats        map[string]any `json:"search_stats,omitempty"`
+	Hint               string         `json:"hint,omitempty"`
 	coverageStatus     string
 }
 
@@ -126,6 +127,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
 		logs.HTTPStatusField = statusField
+		addServiceLogsGuidance(logs, args, limit)
 
 		// Format response as JSON for better readability
 		responseJSON, err := json.MarshalIndent(logs, "", "  ")

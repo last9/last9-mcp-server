@@ -104,11 +104,11 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 		case int64:
 			lookbackMinutes = int(l)
 		default:
-			return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes must be a number")
+			return time.Time{}, time.Time{}, fmt.Errorf("Invalid lookback_minutes %q. Use minutes as a number, for example 60 for 1h or 390 for 6h30m", rawLookback)
 		}
 	}
 	if lookbackMinutes < 1 {
-		return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes must be at least 1")
+		return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes must be at least 1. Use minutes as a number, for example 60 for 1h")
 	}
 	// Default start time based on lookback
 	startTime = endTime.Add(time.Duration(-lookbackMinutes) * time.Minute)
@@ -119,7 +119,7 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 	if hasStart && startTimeStr != "" {
 		parsedStart, parseErr := ParseToolTimestamp(startTimeStr)
 		if parseErr != nil {
-			return time.Time{}, time.Time{}, fmt.Errorf("invalid start_time_iso format: %w", parseErr)
+			return time.Time{}, time.Time{}, fmt.Errorf("Invalid start_time_iso %q. Use RFC3339 like 2026-02-09T15:04:05Z. Original error: %w", startTimeStr, parseErr)
 		}
 		startTime = parsedStart
 	}
@@ -127,7 +127,7 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 	if hasEnd && endTimeStr != "" {
 		parsedEnd, parseErr := ParseToolTimestamp(endTimeStr)
 		if parseErr != nil {
-			return time.Time{}, time.Time{}, fmt.Errorf("invalid end_time_iso format: %w", parseErr)
+			return time.Time{}, time.Time{}, fmt.Errorf("Invalid end_time_iso %q. Use RFC3339 like 2026-02-09T16:04:05Z. Original error: %w", endTimeStr, parseErr)
 		}
 		endTime = parsedEnd
 	}
@@ -141,7 +141,7 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 
 	// Validate time range
 	if startTime.After(endTime) {
-		return time.Time{}, time.Time{}, fmt.Errorf("start_time cannot be after end_time")
+		return time.Time{}, time.Time{}, fmt.Errorf("start_time cannot be after end_time; start_time_iso must be before end_time_iso. Swap the timestamps or widen the window")
 	}
 
 	return startTime, endTime, nil

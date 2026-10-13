@@ -264,6 +264,8 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 			} else {
 				traceResponse.Message = fmt.Sprintf("Retrieved trace data for trace ID: %s", queryParams.TraceID)
 			}
+		} else if len(traceResponse.Data) == 0 {
+			traceResponse.Message = serviceTraceEmptyAdvice(args, queryParams, traceGuidanceWindow{start: startTime, end: endTime})
 		} else if traceResponse.Success {
 			// Only set the success summary when the transform succeeded;
 			// otherwise keep the diagnostic message it set (e.g.

@@ -28,7 +28,6 @@ const (
 	serviceSummarySpanKind       = `span_kind="SPAN_KIND_SERVER"`
 	serviceSummaryGRPCMatcher    = `grpc_status_code!="",grpc_status_code!~"^(0|OK)$"`
 	serviceSummaryCoverage       = "Ranking covers APM server-span metrics only. Log-only services are absent from rows, not listed as zero. Dual-instrumented services (multiple l9_source series for the same service and env) are summed together, so request_count and class counts can be inflated versus a single instrumentation source."
-	serviceSummaryEmptyHint      = "No APM server-span series matched this interval and env_scope. rows is empty; the interval was not widened and no placeholder service names were added."
 	serviceSummarySortRequest    = "request_count"
 	serviceSummarySortRPM        = "throughput_rpm"
 	serviceSummarySort4xx        = "http_4xx_count"
@@ -177,7 +176,19 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 			Coverage:         serviceSummaryCoverage,
 		}
 		if len(rows) == 0 {
-			result.Hint = serviceSummaryEmptyHint
+			result.Hint = apmEmptyAdvice(
+				"APM services",
+				apmGuidanceArgs{env: envScope, startUnix: queriedStart, endUnix: endTimeParam},
+				"verify the environment param",
+				"confirm services emit APM server spans",
+			)
+		} else if truncated {
+			result.Hint = utils.TruncatedResultAdvice(utils.TruncatedResultOptions{
+				Subject:  "services",
+				Returned: len(rows),
+				Total:    matchedCount,
+				MaxLimit: serviceSummaryMaxLimit,
+			})
 		}
 
 		returnText, err := json.Marshal(result)

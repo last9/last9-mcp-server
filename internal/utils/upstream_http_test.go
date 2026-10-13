@@ -105,6 +105,28 @@ func TestNewUpstreamHTTPErrorDrains502Body(t *testing.T) {
 	}
 }
 
+func TestNewUpstreamHTTPErrorTimeoutAndRateLimitGuideRetry(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		want   []string
+	}{
+		{name: "timeout", status: http.StatusRequestTimeout, want: []string{"narrowing the time range", "service filter"}},
+		{name: "rate limited", status: http.StatusTooManyRequests, want: []string{"wait", "narrower time range"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := NewUpstreamHTTPError(&http.Response{StatusCode: tt.status, Body: io.NopCloser(strings.NewReader(""))}, "logs query")
+			got := err.Error()
+			for _, want := range tt.want {
+				if !strings.Contains(got, want) {
+					t.Fatalf("message %q missing %q", got, want)
+				}
+			}
+		})
+	}
+}
+
 func TestSanitizeUpstreamBodyRedactsAndBounds(t *testing.T) {
 	raw := `{"error":"bad pipeline","upstream_url":"https://internal-gw.example.com/v1/traces?token=SECRET_abc123","authorization":"Bearer eyJhbGciOi"}`
 	got := SanitizeUpstreamBody(raw)
