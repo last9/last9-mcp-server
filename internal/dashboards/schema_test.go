@@ -75,10 +75,10 @@ func validateInputSchema(t *testing.T, inputSchema map[string]interface{}, args 
 func TestCreateDashboardInputSchema_ValidatesDashboardObject(t *testing.T) {
 	validArgs := map[string]any{
 		"dashboard": map[string]any{
-			"name":   "Created",
+			"name": "Created",
 			"panels": []any{map[string]any{
 				"name": "Request rate", "version": 1,
-				"layout": map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+				"layout":        map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
 				"visualization": map[string]any{"type": "timeseries"},
 				"queries": []any{map[string]any{
 					"name": "A", "type": "range", "query_type": "promql", "telemetry": "metrics", "expr": "up",
@@ -97,12 +97,80 @@ func TestCreateDashboardInputSchema_ValidatesDashboardObject(t *testing.T) {
 	}
 }
 
+func TestDashboardInputSchema_AllowsSupportedPanelVariants(t *testing.T) {
+	queryPanel := map[string]any{
+		"name": "Request rate", "version": 1,
+		"layout":        map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+		"visualization": map[string]any{"type": "stat"},
+		"queries": []any{map[string]any{
+			"name": "A", "type": "range", "query_type": "promql", "telemetry": "metrics", "expr": "up",
+			"legend": map[string]any{"type": "auto", "value": ""},
+		}},
+	}
+
+	for _, tc := range []struct {
+		name  string
+		panel map[string]any
+	}{
+		{name: "query_control", panel: queryPanel},
+		{name: "section", panel: map[string]any{
+			"name":          "Overview",
+			"layout":        map[string]any{"x": 0, "y": 0, "w": 24, "h": 1},
+			"visualization": map[string]any{"type": "section"},
+		}},
+		{name: "markdown", panel: map[string]any{
+			"name": "Notes", "version": 1,
+			"layout":        map[string]any{"x": 0, "y": 1, "w": 24, "h": 3},
+			"visualization": map[string]any{"type": "markdown", "markdown": "Synthetic notes"},
+		}},
+		{name: "default_version", panel: map[string]any{
+			"name":          "Request rate",
+			"layout":        map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+			"visualization": map[string]any{"type": "stat"},
+			"queries": []any{map[string]any{
+				"name": "A", "type": "range", "query_type": "promql", "telemetry": "metrics", "expr": "up",
+				"legend": map[string]any{"type": "auto", "value": ""},
+			}},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dashboard := map[string]any{"name": "Created", "panels": []any{tc.panel}}
+			for _, op := range []string{"create", "update"} {
+				args := map[string]any{"dashboard": dashboard}
+				schema := GetCreateDashboardInputSchema()
+				if op == "update" {
+					args["id"] = "uuid-1"
+					schema = GetUpdateDashboardInputSchema()
+				}
+				if err := validateInputSchema(t, schema, args); err != nil {
+					t.Fatalf("%s schema rejected supported %s panel: %v", op, tc.name, err)
+				}
+			}
+		})
+	}
+}
+
+func TestDashboardInputSchema_RequiresQueriesForQueryPanels(t *testing.T) {
+	args := map[string]any{"dashboard": map[string]any{
+		"name": "Created",
+		"panels": []any{map[string]any{
+			"name":          "Request rate",
+			"layout":        map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+			"visualization": map[string]any{"type": "stat"},
+		}},
+	}}
+
+	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), args); err == nil {
+		t.Fatal("expected query panel without queries to fail validation")
+	}
+}
+
 func TestCreateDashboardInputSchema_RejectsLegacyPanelShape(t *testing.T) {
 	args := map[string]any{"dashboard": map[string]any{
 		"name": "Created",
 		"panels": []any{map[string]any{
-			"name": "Log Volume",
-			"type": "timeseries",
+			"name":    "Log Volume",
+			"type":    "timeseries",
 			"gridPos": map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
 			"queries": []any{map[string]any{"query": "sum(rate(logs_total[5m]))"}},
 		}},
