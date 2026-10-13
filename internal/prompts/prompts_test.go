@@ -1,11 +1,206 @@
 package prompts_test
 
 import (
+	"os"
+	"sort"
 	"strings"
 	"testing"
 
 	"last9-mcp/internal/prompts"
 )
+
+var promptDescriptionFiles = map[string]string{
+	"add_drop_rule.md":                     prompts.AddDropRuleDescription,
+	"create_dashboard.md":                  prompts.CreateDashboardDescription,
+	"delete_dashboard.md":                  prompts.DeleteDashboardDescription,
+	"delete_dashboard_snapshot.md":         prompts.DeleteDashboardSnapshotDescription,
+	"did_you_mean.md":                      prompts.DidYouMeanDescription,
+	"get_alert_config.md":                  prompts.GetAlertConfigDescription,
+	"get_alert_groups.md":                  prompts.GetAlertGroupsDescription,
+	"get_alert_rule_state.md":              prompts.GetAlertRuleStateDescription,
+	"get_alerts.md":                        prompts.GetAlertsDescription,
+	"get_apm_service_deviations.md":        prompts.GetAPMServiceDeviationsDescription,
+	"get_change_events.md":                 prompts.GetChangeEventsDescription,
+	"get_dashboard.md":                     prompts.GetDashboardDescription,
+	"get_dashboard_snapshot.md":            prompts.GetDashboardSnapshotDescription,
+	"get_database_queries.md":              prompts.GetDatabaseQueriesDescription,
+	"get_database_server_metrics.md":       prompts.GetDatabaseServerMetricsDescription,
+	"get_database_slow_queries.md":         prompts.GetDatabaseSlowQueriesDescription,
+	"get_databases.md":                     prompts.GetDatabasesDescription,
+	"get_drop_rules.md":                    prompts.GetDropRulesDescription,
+	"get_entity_alert_rules.md":            prompts.GetEntityAlertRulesDescription,
+	"get_exceptions.md":                    prompts.GetExceptionsInstructions,
+	"get_flamegraph.md":                    prompts.GetFlamegraphDescription,
+	"get_log_attributes.md":                prompts.GetLogAttributesDescription,
+	"get_log_attributes_for_pipeline.md":   prompts.GetLogAttributesForPipelineDescription,
+	"get_logs_base.md":                     prompts.GetLogsDescription,
+	"get_notification_channels.md":         prompts.GetNotificationChannelsDescription,
+	"get_profile_services.md":              prompts.GetProfileServicesDescription,
+	"get_profile_summary.md":               prompts.GetProfileSummaryDescription,
+	"get_service_dependency_graph.md":      prompts.GetServiceDependencyGraphDetails,
+	"get_service_environments.md":          prompts.GetServiceEnvironmentsDescription,
+	"get_service_logs_base.md":             prompts.GetServiceLogsDescription,
+	"get_service_operations_summary.md":    prompts.GetServiceOperationsSummaryDescription,
+	"get_service_performance_details.md":   prompts.GetServicePerformanceDetails,
+	"get_service_profile.md":               prompts.GetServiceProfileDescription,
+	"get_service_summary.md":               prompts.GetServiceSummaryDescription,
+	"get_service_traces.md":                prompts.GetServiceTracesDescription,
+	"get_top_functions.md":                 prompts.GetTopFunctionsDescription,
+	"get_trace_attribute_deviations.md":    prompts.GetTraceAttributeDeviationsDescription,
+	"get_trace_attribute_values.md":        prompts.GetTraceAttributeValuesDescription,
+	"get_trace_attributes.md":              prompts.GetTraceAttributesDescription,
+	"get_trace_attributes_for_pipeline.md": prompts.GetTraceAttributesForPipelineDescription,
+	"get_trace_waterfall.md":               prompts.GetTraceWaterfallDescription,
+	"get_traces_base.md":                   prompts.GetTracesDescription,
+	"grafana_get_dashboard.md":             prompts.GrafanaGetDashboardDescription,
+	"grafana_list_datasources.md":          prompts.GrafanaListDatasourcesDescription,
+	"grafana_list_folder_dashboards.md":    prompts.GrafanaListFolderDashboardsDescription,
+	"grafana_list_folders.md":              prompts.GrafanaListFoldersDescription,
+	"grafana_search_dashboards.md":         prompts.GrafanaSearchDashboardsDescription,
+	"list_dashboard_snapshots.md":          prompts.ListDashboardSnapshotsDescription,
+	"list_dashboards.md":                   prompts.ListDashboardsDescription,
+	"list_datasources.md":                  prompts.ListDatasourcesDescription,
+	"prometheus_instant_query.md":          prompts.PromqlInstantQueryDetails,
+	"prometheus_label_values.md":           prompts.PromqlLabelValuesQueryDetails,
+	"prometheus_labels.md":                 prompts.PromqlLabelsQueryDetails,
+	"prometheus_range_query_base.md":       prompts.PromqlRangeQueryDetails,
+	"update_dashboard.md":                  prompts.UpdateDashboardDescription,
+	"validate_dashboard.md":                prompts.ValidateDashboardDescription,
+}
+
+var simplePromptDescriptionFiles = map[string]bool{
+	"add_drop_rule.md":             true,
+	"create_dashboard.md":          true,
+	"delete_dashboard.md":          true,
+	"delete_dashboard_snapshot.md": true,
+	"get_dashboard.md":             true,
+	"get_dashboard_snapshot.md":    true,
+	"get_drop_rules.md":            true,
+	"get_notification_channels.md": true,
+	"list_dashboard_snapshots.md":  true,
+	"list_dashboards.md":           true,
+	"list_datasources.md":          true,
+	"update_dashboard.md":          true,
+	"validate_dashboard.md":        true,
+}
+
+func TestPromptDescriptionFilesLoadCleanMarkdown(t *testing.T) {
+	for name, body := range promptDescriptionFiles {
+		t.Run(name, func(t *testing.T) {
+			description := strings.TrimSpace(body)
+			if description == "" {
+				t.Fatal("embedded description is empty")
+			}
+			if strings.Contains(description, "{{") {
+				t.Fatalf("embedded description contains unresolved template syntax: %q", snippet(description))
+			}
+			if strings.Contains(description, "<no value>") {
+				t.Fatal("embedded description contains a rendered empty template value")
+			}
+			if !hasDescriptionStructure(name, description) {
+				t.Fatalf("embedded description lacks markdown structure and is not an allowlisted simple description: %q", snippet(description))
+			}
+			base := genericBaseDescriptionForFile(name)
+			if len(description) <= len(base) {
+				t.Fatalf("embedded description length %d must be greater than generic base length %d", len(description), len(base))
+			}
+		})
+	}
+}
+
+func TestPromptDescriptionEmbedsMatchMarkdownFiles(t *testing.T) {
+	for name, body := range promptDescriptionFiles {
+		t.Run(name, func(t *testing.T) {
+			raw, err := os.ReadFile("descriptions/" + name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if body != string(raw) {
+				t.Fatal("embedded description does not match markdown file bytes")
+			}
+		})
+	}
+}
+
+func TestPromptDescriptionRegistryMatchesDirectory(t *testing.T) {
+	files, err := os.ReadDir("descriptions")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := make(map[string]bool)
+	for _, file := range files {
+		if file.IsDir() || !strings.HasSuffix(file.Name(), ".md") {
+			continue
+		}
+		want[file.Name()] = true
+	}
+
+	var missing []string
+	for name := range want {
+		if _, ok := promptDescriptionFiles[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+	var extra []string
+	for name := range promptDescriptionFiles {
+		if !want[name] {
+			extra = append(extra, name)
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(extra)
+	if len(missing) != 0 {
+		t.Errorf("description files missing from promptDescriptionFiles: %v", missing)
+	}
+	if len(extra) != 0 {
+		t.Errorf("promptDescriptionFiles entries without matching markdown files: %v", extra)
+	}
+}
+
+func hasDescriptionStructure(name, description string) bool {
+	structuralMarkers := []string{
+		"\n- ",
+		"\n* ",
+		"\n1. ",
+		"## ",
+		"`",
+		"Parameters:",
+		"Required parameters:",
+		"Optional filters",
+		"Examples:",
+		"Response:",
+		"Returns:",
+	}
+	for _, marker := range structuralMarkers {
+		if strings.Contains(description, marker) {
+			return true
+		}
+	}
+	return simplePromptDescriptionFiles[name] &&
+		strings.Count(description, ".") > 0 &&
+		len(description) >= 40 &&
+		len(strings.Fields(description)) >= 6
+}
+
+func genericBaseDescriptionForFile(name string) string {
+	stem := strings.TrimSuffix(name, ".md")
+	stem = strings.TrimSuffix(stem, "_base")
+	words := strings.Split(stem, "_")
+	if len(words) == 0 {
+		return "."
+	}
+	words[0] = strings.ToUpper(words[0][:1]) + words[0][1:]
+	return strings.Join(words, " ") + "."
+}
+
+func snippet(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	if len(s) <= 120 {
+		return s
+	}
+	return s[:120] + "..."
+}
 
 func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 	desc := prompts.GetLogsDescription
