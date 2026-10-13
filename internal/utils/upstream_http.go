@@ -83,9 +83,9 @@ func upstreamStatusAdvice(statusCode int) string {
 	case http.StatusNotFound:
 		return "The capability may be unavailable or disabled."
 	case http.StatusRequestTimeout:
-		return "Retry after a short delay or request a smaller time window."
+		return "Request timed out. Try narrowing the time range, such as a smaller time window, or adding a service filter. Do not retry the same request unchanged."
 	case http.StatusTooManyRequests:
-		return "Rate limited; retry after a short delay."
+		return "Rate limited; wait for a short delay before retrying, then use a narrower time range or more selective filters. Do not retry immediately unchanged."
 	default:
 		if statusCode >= http.StatusInternalServerError {
 			return "The upstream service is temporarily unavailable; retry later."

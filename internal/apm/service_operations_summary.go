@@ -19,6 +19,7 @@ type ServiceOperationsSummaryResponse struct {
 	ServiceName string                    `json:"service_name"`
 	Env         string                    `json:"env"`
 	Operations  []ServiceOperationSummary `json:"operations"`
+	Hint        string                    `json:"hint,omitempty"`
 }
 
 type ServiceOperationSummary struct {
@@ -562,6 +563,19 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			ServiceName: serviceName,
 			Env:         env,
 			Operations:  operationsSummary,
+		}
+		if len(operationsSummary) == 0 {
+			details.Hint = apmEmptyAdvice(
+				"operations",
+				apmGuidanceArgs{
+					serviceName: serviceName,
+					env:         env,
+					startUnix:   startTimeParam,
+					endUnix:     endTimeParam,
+				},
+				"confirm the service emits APM server spans",
+				"try get_service_profile for the service before choosing log or trace tools",
+			)
 		}
 		// Return the response
 		resultJSON, err := json.Marshal(details)
