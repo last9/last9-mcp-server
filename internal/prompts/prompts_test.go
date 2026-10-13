@@ -22,13 +22,15 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"\"function\":{\"$count\":[]},\"as\":\"count\",\"window\":[\"5\",\"minutes\"]", "must show a generic windowed count"},
 		{"\"type\":\"window_aggregate\",\"function\":{\"$count\":[]}", "must include the required stage type in the windowed count example"},
 		{"Ops: `$and`/`$or`/`$not`", "must retain a useful filter operator list"},
+		{"`$containsWords` args `[field,word]` (e.g. `[\"Body\",\"timeout\"]`)", "must show the required field argument for body-word filters"},
 		{"NOT SQL", "must clarify logjson_query is not SQL"},
 		{"$neq", "must document existence idiom"},
 		{"start_time_iso", "must document absolute time on tool args"},
 		{"resources['last9.tenant']", "must document tenant scoping"},
 		{"resources['deployment.environment']", "must document env scoping"},
+		{"no `service_name` arg; filter ServiceName in query", "must place service scope in the get_logs pipeline"},
 		{"last9://reference/logjson", "must point at the logjson resource"},
-		{"Single predicate may stand alone; multiple use `$and`", "must allow valid standalone predicates"},
+		{"Predicates: one standalone, many in `$and`", "must allow valid standalone predicates"},
 		{"high→add filter, recount", "must repeat counts after narrowing broad filters"},
 		{"community_member_id", "must document bare single-token field mistake"},
 		{"attributes['key']", "must require attributes/resources wrapping"},
@@ -41,14 +43,13 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"use the canonical anchored numeric `$regex` shown", "must require the deliberate canonical numeric allowlist"},
 		{"excludes non-matching values from percentile calculations; disclose that exclusion in the answer", "must disclose the numeric filter's effect"},
 		{"Use a discovered normalized route", "must discover normalized route semantics before aggregation"},
-		{"Raw URI: aggregate exact values only; never normalize/merge variants afterward", "must allow exact raw URI aggregation without unsafe normalization"},
+		{"Raw URI: aggregate exact values; never normalize/merge later", "must allow exact raw URI aggregation without unsafe normalization"},
 		{"If `l9_result.partial=true`, preserve rows and disclose partial coverage", "must tie partial disclosure to result metadata"},
-		{"never infer/convert", "must prevent inferred latency units"},
-		{"Report a P99 only if a successful aggregate returns it; otherwise say unavailable", "must ground P99 claims in returned numeric aggregate evidence"},
-		{"ALL → `$and` of one `$containsWords` per word", "must document all-word Body searches"},
-		{"ANY → `$or`", "must document any-word Body searches"},
+		{"Units: report source; never convert", "must prevent inferred latency units"},
+		{"Only report returned P99 values; empty result→say unavailable and stop", "must prevent fallback counts from replacing an empty percentile result"},
+		{"ALL→`$and`; ANY→`$or`", "must document all/any-word Body searches"},
 		{"never `$icontainsWords`", "must avoid the slower case-insensitive word operator"},
-		{"if no service named, search token/phrase (even service-like) in `Body` via `$contains`", "must distinguish standalone identifiers from service names"},
+		{"no service→search `Body` with `$contains` (even service-like)", "must distinguish standalone identifiers from service names"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
@@ -314,6 +315,9 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 		{"update_dashboard", "must name the refine tool"},
 		{"do not call create_dashboard again", "must forbid same-turn re-create"},
 		{"dashboard.id", "must keep the returned id"},
+		{"`layout: {x, y, w, h}`", "must document the API panel layout shape"},
+		{"`legend: {type, value}`", "must document the API query legend shape"},
+		{"Do not use `gridPos` or a panel-level `type`", "must rule out the rejected legacy panel shape"},
 	} {
 		if !strings.Contains(create, c.phrase) {
 			t.Errorf("CreateDashboardDescription missing %q: %s", c.phrase, c.reason)
@@ -328,6 +332,7 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 		{"existing dashboard id", "must pass the known id"},
 		{"do not call create_dashboard", "must not create-for-refine"},
 		{"full replacement", "must state PUT is a full replacement"},
+		{"same panel/query shape as create_dashboard", "must retain create's required dashboard payload shape"},
 	} {
 		if !strings.Contains(update, c.phrase) {
 			t.Errorf("UpdateDashboardDescription missing %q: %s", c.phrase, c.reason)

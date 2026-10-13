@@ -76,7 +76,15 @@ func TestCreateDashboardInputSchema_ValidatesDashboardObject(t *testing.T) {
 	validArgs := map[string]any{
 		"dashboard": map[string]any{
 			"name":   "Created",
-			"panels": []any{},
+			"panels": []any{map[string]any{
+				"name": "Request rate", "version": 1,
+				"layout": map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+				"visualization": map[string]any{"type": "timeseries"},
+				"queries": []any{map[string]any{
+					"name": "A", "type": "range", "query_type": "promql", "telemetry": "metrics", "expr": "up",
+					"legend": map[string]any{"type": "auto", "value": ""},
+				}},
+			}},
 		},
 		"metadata": map[string]any{
 			"_category": "custom",
@@ -86,6 +94,22 @@ func TestCreateDashboardInputSchema_ValidatesDashboardObject(t *testing.T) {
 
 	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), validArgs); err != nil {
 		t.Fatalf("expected dashboard object args to validate: %v", err)
+	}
+}
+
+func TestCreateDashboardInputSchema_RejectsLegacyPanelShape(t *testing.T) {
+	args := map[string]any{"dashboard": map[string]any{
+		"name": "Created",
+		"panels": []any{map[string]any{
+			"name": "Log Volume",
+			"type": "timeseries",
+			"gridPos": map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+			"queries": []any{map[string]any{"query": "sum(rate(logs_total[5m]))"}},
+		}},
+	}}
+
+	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), args); err == nil {
+		t.Fatal("expected legacy panel shape to fail validation")
 	}
 }
 

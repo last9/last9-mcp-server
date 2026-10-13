@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `get_logs` now shows the field-first `$containsWords` form and stops percentile fallback after an empty result; dashboard creation exposes the API's required panel/query schema and examples (#312).
 - Log and trace tool descriptions now map message searches to `Body`, gRPC status code 14 to `attributes['rpc.grpc.status_code']`, and trace `service.name` to `ServiceName` (#312).
 - `get_logs` now includes the required `type: "window_aggregate"` discriminator in its count and percentile examples, so copied stages pass validation (#312).
 - Tool-call telemetry preserves the requesting agent's trace parent and records `mcp.turn.id` from trace context or explicit turn metadata; unrelated calls no longer share a synthetic session query span (#312).

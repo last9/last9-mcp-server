@@ -1,3 +1,5 @@
-Create a custom dashboard. Body uses API envelope {dashboard, metadata}. Panels use queries[] with nested legend; metadata uses _category and _type.
+Create a custom dashboard. Pass the API envelope `{dashboard, metadata}`. `dashboard` needs `name` and `panels`. Each panel needs `name`, `version: 1`, `layout: {x, y, w, h}`, `visualization: {type}`, and `queries`. Do not use `gridPos` or a panel-level `type`.
+
+Each query needs `name`, `type`, `query_type`, `telemetry`, `expr`, and `legend: {type, value}`. Use a discovered valid expression; do not invent metric names. Example shape: `{"dashboard":{"name":"Example","panels":[{"name":"Request rate","version":1,"layout":{"x":0,"y":0,"w":12,"h":8},"visualization":{"type":"timeseries"},"queries":[{"name":"A","type":"range","query_type":"promql","telemetry":"metrics","expr":"up","legend":{"type":"auto","value":""}}]}]},"metadata":{"_category":"custom","_type":"metrics"}}`.
 
 Use this tool only for a net-new dashboard (no id yet). Create once. After this tool returns, keep dashboard.id and call update_dashboard for any panel, layout, or query change — including later in the same turn. If an id was returned this turn or is already known, do not call create_dashboard again.

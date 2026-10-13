@@ -4,6 +4,47 @@ func dashboardObjectSchema(description string) map[string]interface{} {
 	return map[string]interface{}{
 		"type":        "object",
 		"description": description,
+		"required":    []string{"name", "panels"},
+		"properties": map[string]interface{}{
+			"name": map[string]interface{}{"type": "string"},
+			"panels": map[string]interface{}{
+				"type": "array",
+				"items": map[string]interface{}{
+					"type":     "object",
+					"required": []string{"name", "version", "layout", "visualization", "queries"},
+					"properties": map[string]interface{}{
+						"name":    map[string]interface{}{"type": "string"},
+						"version": map[string]interface{}{"type": "integer", "enum": []int{1}},
+						"layout": map[string]interface{}{
+							"type": "object", "required": []string{"x", "y", "w", "h"},
+							"properties": map[string]interface{}{
+								"x": map[string]interface{}{"type": "number"}, "y": map[string]interface{}{"type": "number"},
+								"w": map[string]interface{}{"type": "number"}, "h": map[string]interface{}{"type": "number"},
+							},
+						},
+						"visualization": map[string]interface{}{
+							"type": "object", "required": []string{"type"},
+							"properties": map[string]interface{}{"type": map[string]interface{}{"type": "string"}},
+						},
+						"queries": map[string]interface{}{
+							"type": "array",
+							"items": map[string]interface{}{
+								"type": "object", "required": []string{"name", "type", "query_type", "telemetry", "expr", "legend"},
+								"properties": map[string]interface{}{
+									"name": map[string]interface{}{"type": "string"}, "type": map[string]interface{}{"type": "string"},
+									"query_type": map[string]interface{}{"type": "string"}, "telemetry": map[string]interface{}{"type": "string"},
+									"expr": map[string]interface{}{"type": "string"},
+									"legend": map[string]interface{}{
+										"type": "object", "required": []string{"type", "value"},
+										"properties": map[string]interface{}{"type": map[string]interface{}{"type": "string"}, "value": map[string]interface{}{"type": "string"}},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 }
 

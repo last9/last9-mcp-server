@@ -4,7 +4,7 @@
 
 **Order:** scope→parse→filter→group/aggregate.
 
-**Filter:** `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`. Single predicate may stand alone; multiple use `$and`. Ops: `$and`/`$or`/`$not`, `$eq`/`$neq`/`$gt`/`$gte`/`$lt`/`$lte`, `$containsWords`, `$regex`. Body words: ALL → `$and` of one `$containsWords` per word; ANY → `$or`; never `$icontainsWords`.
+**Filter:** `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`. Predicates: one standalone, many in `$and`. Ops: `$and`/`$or`/`$not`, `$eq`/`$neq`/`$gt`/`$gte`/`$lt`/`$lte`, `$regex`. Body words: `$containsWords` args `[field,word]` (e.g. `["Body","timeout"]`); ALL→`$and`; ANY→`$or`; never `$icontainsWords`.
 
 **Parse:** JSON `{"type":"parse","parser":"json","field":"Body","labels":{"key":"key"}}`; also logfmt/regexp. Parse Body-derived fields before filtering, grouping, or aggregation. `attributes['key']`.
 
@@ -12,15 +12,15 @@
 
 **window_aggregate:** type+function+as+window (not `aggregates`). Count: `{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"]}`. P99: `{"type":"window_aggregate","function":{"$quantile":[0.99,"attributes['latency_ms']"]},"as":"p99","window":["24","hours"],"groupby":{"attributes['route']":"route"}}`.
 
-**Percentiles:** Day-wise: exactly ONE get_logs call over the full half-open start_time_iso/end_time_iso range with one window_aggregate; NEVER one call per day; honor requested timezone. Parse, then use the canonical anchored numeric `$regex` shown: `^[0-9]+(?:\\.[0-9]+)?$`. It excludes non-matching values from percentile calculations; disclose that exclusion in the answer. Report a P99 only if a successful aggregate returns it; otherwise say unavailable. Never template/merge/recombine aggregated percentile rows. Use a discovered normalized route. Raw URI: aggregate exact values only; never normalize/merge variants afterward. If `l9_result.partial=true`, preserve rows and disclose partial coverage. Report source units; never infer/convert.
+**Percentiles:** Day-wise: exactly ONE get_logs call over the full half-open start_time_iso/end_time_iso range with one window_aggregate; NEVER one call per day; honor requested timezone. Parse, then use the canonical anchored numeric `$regex` shown: `^[0-9]+(?:\\.[0-9]+)?$`. It excludes non-matching values from percentile calculations; disclose that exclusion in the answer. Only report returned P99 values; empty result→say unavailable and stop (no count/sample substitute). Never template/merge/recombine aggregated percentile rows. Use a discovered normalized route. Raw URI: aggregate exact values; never normalize/merge later. If `l9_result.partial=true`, preserve rows and disclose partial coverage. Units: report source; never convert.
 
 **Attrs:** exists→neq(field,"") (not `$exists`). Dotted (`community_member_id`)→`attributes['key']`/`resources['key']`; bare: ServiceName/Body/SeverityText/Timestamp.
 
-**Scope:** tenant/env→`resources['last9.tenant']`/`resources['deployment.environment']`; k8s.*→`resources['k8s.…']`; service (incl. service.name)→`ServiceName`.
+**Scope:** no `service_name` arg; filter ServiceName in query. tenant/env→`resources['last9.tenant']`/`resources['deployment.environment']`; k8s.*→`resources['k8s.…']`; service.name→`ServiceName`.
 
-**Free-text:** if no service named, search token/phrase (even service-like) in `Body` via `$contains`; otherwise `ServiceName`.
+**Free-text:** no service→search `Body` with `$contains` (even service-like); else `ServiceName`.
 
-**HTTP 5xx:** known→`get_service_logs`; else discover status→`$eq` (not SeverityText).
+**HTTP counts:** `get_logs`; status from Body, not SeverityText. `get_service_logs` for lines.
 
 **Time:** `lookback_minutes` default **5**; absolute→`start_time_iso`+`end_time_iso` (not Timestamp).
 
