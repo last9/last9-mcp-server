@@ -19,6 +19,7 @@ var writeTools = map[string]struct{ destructive, idempotent bool }{
 	"patch_alert":               {destructive: true, idempotent: true},
 	"delete_alert":              {destructive: true, idempotent: true},
 	"mute_alert_group":          {destructive: true, idempotent: true},
+	"reassign_alert":            {destructive: false, idempotent: true},
 	"create_alert_from_chart":   {destructive: false, idempotent: false},
 }
 

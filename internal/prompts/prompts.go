@@ -77,6 +77,9 @@ var DeleteAlertDescription string
 //go:embed descriptions/mute_alert_group.md
 var MuteAlertGroupDescription string
 
+//go:embed descriptions/reassign_alert.md
+var ReassignAlertDescription string
+
 //go:embed descriptions/validate_alert_expression.md
 var ValidateAlertExpressionDescription string
 

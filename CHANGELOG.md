@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `reassign_alert` (`alerts` toolset only) hands an already-owned alert to another user by `owner_email` (matched case-insensitively against active users) or `owner_user_id`, given the `alert_group_id`, `rule_id` and `rule_type` from `get_alerts`. 404, 403 and invalid-target-owner responses return explanatory tool errors; Last9 does not notify the new owner (#321).
 - `mute_alert_group` (`alerts` toolset only) mutes every rule in an alert group until a Unix-seconds `until` deadline, or unmutes with `until=0` (negative mutes indefinitely). Use `patch_alert` to mute a single rule (#321).
 - `create_alert_from_chart` accepts optional `group_id` (the chart's own alert group; the API rejects any other) and `description` (stored as the rule's `properties.description`), both passed through in the `/alert_intelligence` create request (#321).
 - `validate_alert_expression` (read-only, `alerts` toolset) dry-runs an alert rule expression against an alert group's KPIs and returns `{"valid":true}` or `{"valid":false,"reason":...}`; an invalid expression is returned as a result, not a tool error. `create_alert` and `update_alert` descriptions now point to it (#321).

@@ -241,6 +241,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	}, alerting.NewMuteAlertGroupHandler(client, cfg)))
 
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "reassign_alert",
+		Annotations: writeTool("Reassign Alert", false, true),
+		Description: prompts.ReassignAlertDescription,
+	}, alerting.NewReassignAlertHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "validate_alert_expression",
 		Annotations: readOnlyTool("Validate Alert Expression"),
 		Description: prompts.ValidateAlertExpressionDescription,
