@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `mute_alert_group` (`alerts` toolset only) mutes every rule in an alert group until a Unix-seconds `until` deadline, or unmutes with `until=0` (negative mutes indefinitely). Use `patch_alert` to mute a single rule (#TBD).
 - `create_alert_from_chart` accepts optional `group_id` (the chart's own alert group; the API rejects any other) and `description` (stored as the rule's `properties.description`), both passed through in the `/alert_intelligence` create request (#TBD).
 - `validate_alert_expression` (read-only, `alerts` toolset) dry-runs an alert rule expression against an alert group's KPIs and returns `{"valid":true}` or `{"valid":false,"reason":...}`; an invalid expression is returned as a result, not a tool error. `create_alert` and `update_alert` descriptions now point to it (#TBD).
 - `patch_alert` accepts `recurring_mute_schedule` (`enabled`, IANA `timezone`, up to 20 weekly `windows` of `weekdays`, `start_time`, `end_time`), validated client-side with the same rules as the API and sent as `recurring_mute_schedule` in the rule PATCH body. A 403 from the PATCH now returns a tool error explaining that viewer-role users may only change `mute_until` and other changes need editor access (#TBD).

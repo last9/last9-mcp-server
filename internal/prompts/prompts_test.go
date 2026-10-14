@@ -64,6 +64,7 @@ var promptDescriptionFiles = map[string]string{
 	"list_dashboard_snapshots.md":          prompts.ListDashboardSnapshotsDescription,
 	"list_dashboards.md":                   prompts.ListDashboardsDescription,
 	"list_datasources.md":                  prompts.ListDatasourcesDescription,
+	"mute_alert_group.md":                  prompts.MuteAlertGroupDescription,
 	"patch_alert.md":                       prompts.PatchAlertDescription,
 	"prometheus_instant_query.md":          prompts.PromqlInstantQueryDetails,
 	"prometheus_label_values.md":           prompts.PromqlLabelValuesQueryDetails,
