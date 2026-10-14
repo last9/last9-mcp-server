@@ -47,6 +47,8 @@ type CreateAlertFromChartArgs struct {
 	EvalWindow        *int              `json:"eval_window,omitempty" jsonschema:"Evaluation window in minutes, range 1-60; default 5"`
 	BadMinutes        *int              `json:"bad_minutes,omitempty" jsonschema:"Minutes within eval_window the condition must hold before firing, range 1-eval_window; default 3"`
 	Severity          string            `json:"severity,omitempty" jsonschema:"Severity: breach or threat; when omitted the backend derives it from the algorithm and static chart rules default to breach"`
+	GroupID           string            `json:"group_id,omitempty" jsonschema:"Alert group UUID the chart resolves to; normally omit. The backend rejects any group other than the chart's own, so use only a group_id already returned for this chart"`
+	Description       string            `json:"description,omitempty" jsonschema:"Responder-facing symptom, impact, and intended action stored on the rule as properties.description"`
 }
 
 // NewCreateAlertFromChartHandler returns the MCP tool handler for
@@ -114,6 +116,8 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 			req.BadMinutes = *args.BadMinutes
 		}
 		req.Severity = args.Severity
+		req.GroupID = strings.TrimSpace(args.GroupID)
+		req.Description = args.Description
 
 		body, err := alerts.CreateAlertFromChart(ctx, last9api.NewClient(client, cfg), req)
 		if err != nil {

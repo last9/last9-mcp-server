@@ -339,3 +339,27 @@ func TestCreateAlertFromChartPermissionsGuidance(t *testing.T) {
 		t.Errorf("permission guidance must be distinct from coverage text:\n%s", text)
 	}
 }
+
+func TestCreateAlertFromChartPassesGroupIDAndDescription(t *testing.T) {
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		_, _ = w.Write([]byte(`{"id":"rule-1","group_id":"grp-1"}`))
+	}))
+	defer server.Close()
+
+	handler := NewCreateAlertFromChartHandler(server.Client(), createAlertFromChartTestConfig(server.URL))
+	result, _, err := handler(context.Background(), nil, CreateAlertFromChartArgs{
+		Surface: "discover-service", ChartKey: "error_rate", ServiceName: "checkout", SignalKey: "error_rate", Name: "checkout-errors",
+		GroupID: " grp-1 ", Description: "Checkout errors above baseline",
+	})
+	if err != nil || result.IsError {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if got["group_id"] != "grp-1" || got["description"] != "Checkout errors above baseline" {
+		t.Errorf("body = %v", got)
+	}
+	if _, ok := got["algorithm"]; ok {
+		t.Errorf("algorithm must not be sent: %v", got)
+	}
+}

@@ -13,6 +13,8 @@ Parameters:
 - eval_window: Evaluation window in minutes, range 1-60; default 5.
 - bad_minutes: Minutes within eval_window the condition must hold before firing, range 1-eval_window; default 3.
 - severity: breach or threat; when omitted the backend derives it from the algorithm, and static chart rules default to breach.
+- group_id: Alert group UUID the chart resolves to; normally omit. The backend resolves the chart's group itself and rejects any other group_id as a mismatch, so only pass a group_id already returned for this same chart.
+- description: Responder-facing symptom, impact, and intended action, stored on the rule as properties.description; omit for none.
 
 Units warning: the defaults (> 0.01 over a 5-minute window with 3 bad minutes) fit rate/count-style signals such as error_rate or exception_count. Score-unit signals like apdex live on a 0..1 scale — an explicit threshold there is required, because the 0.01 default would fire constantly.
 
