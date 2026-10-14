@@ -9,10 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `mute_alert_group` (`alerts` toolset only) mutes every rule in an alert group until a Unix-seconds `until` deadline, or unmutes with `until=0` (negative mutes indefinitely). Use `patch_alert` to mute a single rule (#TBD).
-- `create_alert_from_chart` accepts optional `group_id` (the chart's own alert group; the API rejects any other) and `description` (stored as the rule's `properties.description`), both passed through in the `/alert_intelligence` create request (#TBD).
-- `validate_alert_expression` (read-only, `alerts` toolset) dry-runs an alert rule expression against an alert group's KPIs and returns `{"valid":true}` or `{"valid":false,"reason":...}`; an invalid expression is returned as a result, not a tool error. `create_alert` and `update_alert` descriptions now point to it (#TBD).
-- `patch_alert` accepts `recurring_mute_schedule` (`enabled`, IANA `timezone`, up to 20 weekly `windows` of `weekdays`, `start_time`, `end_time`), validated client-side with the same rules as the API and sent as `recurring_mute_schedule` in the rule PATCH body. A 403 from the PATCH now returns a tool error explaining that viewer-role users may only change `mute_until` and other changes need editor access (#TBD).
+- `mute_alert_group` (`alerts` toolset only) mutes every rule in an alert group until a Unix-seconds `until` deadline, or unmutes with `until=0` (negative mutes indefinitely). Use `patch_alert` to mute a single rule (#321).
+- `create_alert_from_chart` accepts optional `group_id` (the chart's own alert group; the API rejects any other) and `description` (stored as the rule's `properties.description`), both passed through in the `/alert_intelligence` create request (#321).
+- `validate_alert_expression` (read-only, `alerts` toolset) dry-runs an alert rule expression against an alert group's KPIs and returns `{"valid":true}` or `{"valid":false,"reason":...}`; an invalid expression is returned as a result, not a tool error. `create_alert` and `update_alert` descriptions now point to it (#321).
+- `patch_alert` accepts `recurring_mute_schedule` (`enabled`, IANA `timezone`, up to 20 weekly `windows` of `weekdays`, `start_time`, `end_time`), validated client-side with the same rules as the API and sent as `recurring_mute_schedule` in the rule PATCH body. A 403 from the PATCH now returns a tool error explaining that viewer-role users may only change `mute_until` and other changes need editor access (#321).
 - Alert lifecycle tools: `create_alert`, `update_alert` (full replace), `patch_alert` (pause, mute, metadata) and `delete_alert` manage alert rules on an existing alert group, `recommend_alert_config` proposes a rule design before creation, and `describe_alert_chart` / `create_alert_from_chart` create a static-threshold rule from a covered Discover chart. Adaptive expressions are saved as adaptive rules, with `condition`, `alert_condition` and `eval_window` optional (supplied values are kept, omitted ones get defaults). Upstream HTTP failures now surface as a typed error carrying the status code and sanitized body (#190).
 
 ### Fixed
@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_logs` and `get_traces` now explicitly show compact JSON stage-array examples and reject SQL-like query construction in their tool descriptions, so description-only clients can form valid pipelines without fetching a reference manual (#309).
 
 ### Changed
-- `get_alerts` now shows the episode claim (owner user id, name and email, claimed-by user id, `claimed_at` and `muted_until`) on each alert rule that has been acknowledged or owned, read from the `claim` object of the alert monitor response. Unclaimed rules are unchanged (#TBD).
+- `get_alerts` now shows the episode claim (owner user id, name and email, claimed-by user id, `claimed_at` and `muted_until`) on each alert rule that has been acknowledged or owned, read from the `claim` object of the alert monitor response. Unclaimed rules are unchanged (#321).
 - `get_service_logs`, `get_service_traces`, and the PromQL range and instant query tools now serve explicit schemas for their supported fields, so unknown names and invalid field types are rejected during input validation (#311).
 
 ## [0.19.4] - 2026-10-06
