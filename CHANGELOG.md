@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_logs` and `get_traces` now explicitly show compact JSON stage-array examples and reject SQL-like query construction in their tool descriptions, so description-only clients can form valid pipelines without fetching a reference manual (#309).
 
 ### Changed
+- `get_alerts` now shows the episode claim (owner user id, name and email, claimed-by user id, `claimed_at` and `muted_until`) on each alert rule that has been acknowledged or owned, read from the `claim` object of the alert monitor response. Unclaimed rules are unchanged (#TBD).
 - `get_service_logs`, `get_service_traces`, and the PromQL range and instant query tools now serve explicit schemas for their supported fields, so unknown names and invalid field types are rejected during input validation (#311).
 
 ## [0.19.4] - 2026-10-06
