@@ -11,9 +11,13 @@ import (
 
 var promptDescriptionFiles = map[string]string{
 	"add_drop_rule.md":                     prompts.AddDropRuleDescription,
+	"create_alert.md":                      prompts.CreateAlertDescription,
+	"create_alert_from_chart.md":           prompts.CreateAlertFromChartDescription,
 	"create_dashboard.md":                  prompts.CreateDashboardDescription,
+	"delete_alert.md":                      prompts.DeleteAlertDescription,
 	"delete_dashboard.md":                  prompts.DeleteDashboardDescription,
 	"delete_dashboard_snapshot.md":         prompts.DeleteDashboardSnapshotDescription,
+	"describe_alert_chart.md":              prompts.DescribeAlertChartDescription,
 	"did_you_mean.md":                      prompts.DidYouMeanDescription,
 	"get_alert_config.md":                  prompts.GetAlertConfigDescription,
 	"get_alert_groups.md":                  prompts.GetAlertGroupsDescription,
@@ -60,15 +64,23 @@ var promptDescriptionFiles = map[string]string{
 	"list_dashboard_snapshots.md":          prompts.ListDashboardSnapshotsDescription,
 	"list_dashboards.md":                   prompts.ListDashboardsDescription,
 	"list_datasources.md":                  prompts.ListDatasourcesDescription,
+	"patch_alert.md":                       prompts.PatchAlertDescription,
 	"prometheus_instant_query.md":          prompts.PromqlInstantQueryDetails,
 	"prometheus_label_values.md":           prompts.PromqlLabelValuesQueryDetails,
 	"prometheus_labels.md":                 prompts.PromqlLabelsQueryDetails,
 	"prometheus_range_query_base.md":       prompts.PromqlRangeQueryDetails,
+	"recommend_alert_config.md":            prompts.RecommendAlertConfigDescription,
+	"update_alert.md":                      prompts.UpdateAlertDescription,
 	"update_dashboard.md":                  prompts.UpdateDashboardDescription,
 	"validate_dashboard.md":                prompts.ValidateDashboardDescription,
 }
 
 var simplePromptDescriptionFiles = map[string]bool{
+	"create_alert.md":              true,
+	"delete_alert.md":              true,
+	"patch_alert.md":               true,
+	"recommend_alert_config.md":    true,
+	"update_alert.md":              true,
 	"add_drop_rule.md":             true,
 	"create_dashboard.md":          true,
 	"delete_dashboard.md":          true,
