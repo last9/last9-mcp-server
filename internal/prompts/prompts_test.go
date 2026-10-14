@@ -72,6 +72,7 @@ var promptDescriptionFiles = map[string]string{
 	"recommend_alert_config.md":            prompts.RecommendAlertConfigDescription,
 	"update_alert.md":                      prompts.UpdateAlertDescription,
 	"update_dashboard.md":                  prompts.UpdateDashboardDescription,
+	"validate_alert_expression.md":         prompts.ValidateAlertExpressionDescription,
 	"validate_dashboard.md":                prompts.ValidateDashboardDescription,
 }
 

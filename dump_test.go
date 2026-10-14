@@ -122,7 +122,7 @@ func TestDumpTools(t *testing.T) {
 	for i, tool := range out.Tools {
 		byName[tool.Name] = i
 	}
-	for _, name := range []string{"get_traces", "get_service_summary", "prometheus_label_values", "get_logs", "get_alert_groups"} {
+	for _, name := range []string{"get_traces", "get_service_summary", "prometheus_label_values", "get_logs", "get_alert_groups", "validate_alert_expression"} {
 		i, ok := byName[name]
 		if !ok {
 			t.Fatalf("tool %q missing from dump", name)
@@ -496,7 +496,7 @@ func TestDumpToolsInvestigate(t *testing.T) {
 			t.Errorf("investigate dump missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "get_alert_groups", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard"} {
+	for _, deny := range []string{"get_alerts", "get_alert_groups", "validate_alert_expression", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard"} {
 		if byName[deny] {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}

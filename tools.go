@@ -235,6 +235,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	}, alerting.NewDeleteAlertHandler(client, cfg)))
 
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "validate_alert_expression",
+		Annotations: readOnlyTool("Validate Alert Expression"),
+		Description: prompts.ValidateAlertExpressionDescription,
+	}, alerting.NewValidateAlertExpressionHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "recommend_alert_config",
 		Annotations: readOnlyTool("Recommend Alert Config"),
 		Description: prompts.RecommendAlertConfigDescription,

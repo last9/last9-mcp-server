@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `validate_alert_expression` (read-only, `alerts` toolset) dry-runs an alert rule expression against an alert group's KPIs and returns `{"valid":true}` or `{"valid":false,"reason":...}`; an invalid expression is returned as a result, not a tool error. `create_alert` and `update_alert` descriptions now point to it (#TBD).
 - `patch_alert` accepts `recurring_mute_schedule` (`enabled`, IANA `timezone`, up to 20 weekly `windows` of `weekdays`, `start_time`, `end_time`), validated client-side with the same rules as the API and sent as `recurring_mute_schedule` in the rule PATCH body. A 403 from the PATCH now returns a tool error explaining that viewer-role users may only change `mute_until` and other changes need editor access (#TBD).
 - Alert lifecycle tools: `create_alert`, `update_alert` (full replace), `patch_alert` (pause, mute, metadata) and `delete_alert` manage alert rules on an existing alert group, `recommend_alert_config` proposes a rule design before creation, and `describe_alert_chart` / `create_alert_from_chart` create a static-threshold rule from a covered Discover chart. Adaptive expressions are saved as adaptive rules, with `condition`, `alert_condition` and `eval_window` optional (supplied values are kept, omitted ones get defaults). Upstream HTTP failures now surface as a typed error carrying the status code and sanitized body (#190).
 
