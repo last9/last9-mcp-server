@@ -22,11 +22,11 @@ var noQueryVizTypes = map[string]struct{}{
 
 // ValidateDashboardArgs is the MCP input for validate_dashboard.
 type ValidateDashboardArgs struct {
-	DashboardID         *string                `json:"dashboard_id,omitempty"`
-	DashboardDefinition map[string]any         `json:"dashboard_definition,omitempty"`
-	StartTimeISO        string                 `json:"start_time_iso"`
-	EndTimeISO          string                 `json:"end_time_iso"`
-	Variables           map[string]any         `json:"variables,omitempty"`
+	DashboardID         *string        `json:"dashboard_id,omitempty"`
+	DashboardDefinition map[string]any `json:"dashboard_definition,omitempty"`
+	StartTimeISO        string         `json:"start_time_iso" jsonschema:"(Required) Start of the validation window in RFC3339/ISO8601"`
+	EndTimeISO          string         `json:"end_time_iso" jsonschema:"(Required) End of the validation window in RFC3339/ISO8601"`
+	Variables           map[string]any `json:"variables,omitempty"`
 }
 
 // GetValidateDashboardInputSchema returns the MCP-facing schema so nested
@@ -45,11 +45,11 @@ func GetValidateDashboardInputSchema() map[string]any {
 			},
 			"start_time_iso": map[string]any{
 				"type":        "string",
-				"description": "Window start, RFC3339 (required).",
+				"description": "(Required) Window start, RFC3339.",
 			},
 			"end_time_iso": map[string]any{
 				"type":        "string",
-				"description": "Window end, RFC3339 (required). Window must be <= 24h.",
+				"description": "(Required) Window end, RFC3339. Window must be <= 24h.",
 			},
 			"variables": map[string]any{
 				"type":        "object",

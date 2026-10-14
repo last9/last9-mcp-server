@@ -52,6 +52,26 @@ Do not invent org-specific attribute names. Discover fields with `get_log_attrib
 - If the backend rejects explicit physical index filtering, retry without `index` and tell the user that explicit physical index filtering is unavailable for that backend.
 - Prefer `get_logs` for aggregate counts. Use this tool after the service/env/index and pattern are already narrowed, and request a small `limit` for samples.
 
+## Coverage metadata for clients
+
+`tools/list` advertises `_meta: {"last9/coverage": true}` for this tool. Successful
+calls may return `_meta["last9/coverage"]` with `version: 1`, `subject: "logs"`,
+`attempted_scope`, `covered_scope`, `status` (`complete` or `partial`), and
+`result_state` (`data` or `empty`). The scope identifies the resolved UTC time
+bounds, selected index, and SHA-256 of the compiled filter pipeline.
+
+`complete` requires every planned time chunk to return a valid successful log
+result, without warnings, result caps, or discarded entries, and without losing
+sub-millisecond precision from the requested bounds. A reached cap or discarded
+entries makes a verified response `partial`; its `covered_scope` is empty because
+the available sample does not establish an exhaustive sub-window. Other uncertain
+responses omit the descriptor. The search response currently lacks an established
+completion contract and therefore omits the descriptor. An empty result alone
+never establishes completeness. Coverage applies to this tool's resolved query,
+not to all telemetry or the user's wider investigation. Existing JSON content and
+dashboard reference metadata are preserved. Clients must treat absent descriptors
+as unknown.
+
 ## Rules
 
 - Output a JSON object of tool arguments, not a query pipeline.

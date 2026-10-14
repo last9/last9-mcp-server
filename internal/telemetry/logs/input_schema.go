@@ -50,7 +50,7 @@ func GetLogsInputSchema() map[string]interface{} {
 func logjsonQuerySchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":        "array",
-		"description": "JSON pipeline query for logs. An ordered list of stages: filter → parse → aggregate/window_aggregate. NOT SQL, NOT a query string. Each stage is an object with a 'type' field.",
+		"description": "(Required) JSON pipeline query for logs. An ordered list of stages: filter → parse → aggregate/window_aggregate. NOT SQL, NOT a query string. Each stage is an object with a 'type' field.",
 		"items": map[string]interface{}{
 			"anyOf": []interface{}{
 				logFilterStageSchema(),
