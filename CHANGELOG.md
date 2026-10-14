@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Alert lifecycle tools: `create_alert`, `update_alert` (full replace), `patch_alert` (pause, mute, metadata) and `delete_alert` manage alert rules on an existing alert group, `recommend_alert_config` proposes a rule design before creation, and `describe_alert_chart` / `create_alert_from_chart` create a static-threshold rule from a covered Discover chart. Adaptive expressions are saved as adaptive rules, with `condition`, `alert_condition` and `eval_window` optional (supplied values are kept, omitted ones get defaults). Upstream HTTP failures now surface as a typed error carrying the status code and sanitized body (#190).
+
 ### Fixed
 
 - `get_exceptions` now returns only the aggregate metric dimensions and occurrence count for each ranked row. It previously fabricated or emitted empty trace/sample fields, including a query-evaluation timestamp as `last_seen`, which made metric aggregates look like exact exception samples. The tool description and investigation workflow now require treating later service traces as context rather than verified matches (#310).
