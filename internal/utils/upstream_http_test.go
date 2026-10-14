@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -118,5 +119,17 @@ func TestSanitizeUpstreamBodyRedactsAndBounds(t *testing.T) {
 	}
 	if !utf8.ValidString(got) {
 		t.Fatalf("invalid utf8: %q", got)
+	}
+}
+
+func TestNewUpstreamHTTPErrorIsTyped(t *testing.T) {
+	resp := &http.Response{StatusCode: http.StatusBadRequest, Body: io.NopCloser(strings.NewReader("unknown chart key"))}
+	var typed *UpstreamHTTPError
+	if !errors.As(NewUpstreamHTTPError(resp, "op"), &typed) || typed.StatusCode != http.StatusBadRequest || typed.Body != "unknown chart key" {
+		t.Fatalf("unexpected typed error: %+v", typed)
+	}
+	resp = &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(strings.NewReader("boom"))}
+	if !errors.As(NewUpstreamHTTPError(resp, "op"), &typed) || typed.StatusCode != http.StatusBadGateway || typed.Body != "" {
+		t.Fatalf("unexpected typed error: %+v", typed)
 	}
 }
