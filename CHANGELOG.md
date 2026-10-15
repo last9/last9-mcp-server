@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Name-only dashboard creation now starts with empty panels instead of inventing metric queries, matching the accepted dashboard schema (#322).
+- `get_logs` now names `logjson_query` as the stage-array argument instead of the invalid `pipeline` key, and `get_traces` maps average duration requests to `$avg` rather than `$quantile` (#322).
 - `create_dashboard` and `update_dashboard` now accept raw-log queries and queryless CSV-backed panels by allowing `log_raw` and a `csv` panel branch in their shared schema; remote-query panels still require `queries` (#322).
 - Equal-window APM comparisons now go directly to the comparison tool when service scope is known, so a required profile lookup cannot consume the call budget before the comparison; the description also directs answers to use raw values when no percentage is returned (#322).
 - `get_logs` now shows the field-first `$containsWords` form and stops percentile fallback after an empty result; dashboard creation exposes the API's required panel/query schema and examples while preserving section, markdown, and omitted-version panel variants (#322).
