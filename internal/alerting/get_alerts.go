@@ -172,6 +172,7 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 				formattedResponse += fmt.Sprintf("  Rule ID: %s\n", rule.RuleID)
 				formattedResponse += fmt.Sprintf("  Rule Name: %s\n", rule.RuleName)
 				formattedResponse += fmt.Sprintf("  Alert Group: %s\n", rule.AlertGroupName)
+				formattedResponse += fmt.Sprintf("  Alert Group ID: %s\n", rule.AlertGroupID)
 				formattedResponse += fmt.Sprintf("  State: %s\n", rule.State)
 				formattedResponse += fmt.Sprintf("  Severity: %s\n", rule.Severity)
 				formattedResponse += fmt.Sprintf("  Rule Type: %s\n", rule.RuleType)

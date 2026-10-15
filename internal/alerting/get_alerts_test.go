@@ -390,3 +390,23 @@ func TestGetAlertsHandler_FormatsClaim(t *testing.T) {
 		t.Errorf("unclaimed rule must not show a claim:\n%s", unclaimed)
 	}
 }
+
+func TestGetAlertsHandler_ShowsReassignIdentity(t *testing.T) {
+	const groupID = "11111111-2222-4333-8444-555555555555"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"timestamp":1700000000,"window":900,"alert_rules":[{"alert_group_id":"`+groupID+`","alert_group_name":"checkout","rule_id":"rule-1","rule_type":"static","claim":{"owner_user_id":"u1","claimed_by_user_id":"u1","claimed_at":1700000000,"muted_until":0}}]}`)
+	}))
+	defer server.Close()
+
+	result, _, err := NewGetAlertsHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil, GetAlertsArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := resultText(result)
+	for _, want := range []string{groupID, "rule-1", "static"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("get_alerts output missing reassign_alert identity field %q:\n%s", want, text)
+		}
+	}
+}
