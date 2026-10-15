@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_logs` and `get_traces` now explicitly show compact JSON stage-array examples and reject SQL-like query construction in their tool descriptions, so description-only clients can form valid pipelines without fetching a reference manual (#309).
 
 ### Changed
+- Bumped `go.opentelemetry.io/otel/sdk/log` 0.19.0 → 0.21.0 (plus `go.opentelemetry.io/otel/log` 0.19.0 → 0.21.0, `go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp` 0.19.0 → 0.21.0, `go.opentelemetry.io/contrib/bridges/otelslog` 0.17.0 → 0.20.0) (#304). Fixes the BatchProcessor busy-spin when the export buffer is full.
 - `get_service_logs`, `get_service_traces`, and the PromQL range and instant query tools now serve explicit schemas for their supported fields, so unknown names and invalid field types are rejected during input validation (#311).
 
 ## [0.19.4] - 2026-10-06
