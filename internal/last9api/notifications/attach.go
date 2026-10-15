@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -9,8 +10,9 @@ import (
 )
 
 type AttachNotificationSettingInput struct {
-	EntityID string `json:"entity_id"`
-	Severity string `json:"severity"`
+	EntityID string          `json:"entity_id"`
+	Severity string          `json:"severity"`
+	Property json.RawMessage `json:"property,omitempty"`
 }
 
 func attachPath(id int) string { return pathNotificationSettings + strconv.Itoa(id) + "/attach" }

@@ -41,10 +41,19 @@ func NewAttachNotificationChannelHandler(client *http.Client, cfg models.Config)
 			return utils.ToolErrorResult("severity must be breach, threat or both"), nil, nil
 		}
 		api := last9api.NewClient(client, cfg)
+		property, found, err := notifications.ChannelProperty(ctx, api, args.ChannelID)
+		if err != nil {
+			return notificationChannelErrorResult(err, map[int]string{
+				http.StatusForbidden: "attaching requires a token that can read and write notification channels",
+			})
+		}
+		if !found {
+			return utils.ToolErrorResult("channel_id is not a channel id; nothing was sent. Use the id column of get_notification_channels with scope=channels"), nil, nil
+		}
 		done := make([]notificationChannelAttachment, 0, len(severities))
 		for _, sev := range severities {
 			row, err := notifications.AttachNotificationSetting(ctx, api, args.ChannelID,
-				notifications.AttachNotificationSettingInput{EntityID: groupID, Severity: sev})
+				notifications.AttachNotificationSettingInput{EntityID: groupID, Severity: sev, Property: property})
 			if err != nil {
 				return attachNotificationChannelFailure(err, sev, done)
 			}

@@ -840,7 +840,7 @@ Creates a channel; it routes nothing until attached with `attach_notification_ch
 
 ### attach_notification_channel
 
-Routes an existing channel to one alert group. Idempotent.
+Routes an existing channel to one alert group. Idempotent. Attachments copy the channel's delivery settings (headers, certificate, mentions) at attach time; if the channel's settings change later, reattach.
 
 - `channel_id` (integer, required): A channel id (`get_notification_channels` with `scope=channels`), not an attachment id.
 - `alert_group_id` (string, required): From `get_alert_groups`.

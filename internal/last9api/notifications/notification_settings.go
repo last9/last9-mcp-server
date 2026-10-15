@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 
@@ -59,4 +60,31 @@ func CreateNotificationSetting(ctx context.Context, c *last9api.Client, in Creat
 		return nil, err
 	}
 	return &out, nil
+}
+
+// ChannelProperty returns a channel's raw property object, found via GET /notification_settings/.
+// found is false when id is not a channel (missing, or a per-alert-group attachment row).
+// The property can hold secrets; callers forward it and never surface it.
+func ChannelProperty(ctx context.Context, c *last9api.Client, id int) (property json.RawMessage, found bool, err error) {
+	var rows []struct {
+		ID          int             `json:"id"`
+		ServiceFQID string          `json:"service_fqid"`
+		Property    json.RawMessage `json:"property"`
+	}
+	if err := c.Do(ctx, "list notification settings",
+		last9api.Request{Method: http.MethodGet, Path: pathNotificationSettings}, &rows); err != nil {
+		return nil, false, err
+	}
+	for _, r := range rows {
+		if r.ID == id {
+			if r.ServiceFQID != "" {
+				return nil, false, nil
+			}
+			if string(r.Property) == "null" {
+				r.Property = nil
+			}
+			return r.Property, true, nil
+		}
+	}
+	return nil, false, nil
 }
