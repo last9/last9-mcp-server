@@ -97,6 +97,37 @@ func TestCreateDashboardInputSchema_ValidatesDashboardObject(t *testing.T) {
 	}
 }
 
+func TestCreateDashboardInputSchema_RestrictsQueryTypes(t *testing.T) {
+	args := map[string]any{
+		"dashboard": map[string]any{
+			"name": "Logs",
+			"panels": []any{map[string]any{
+				"name": "Errors", "version": 1,
+				"layout": map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+				"visualization": map[string]any{"type": "timeseries"},
+				"queries": []any{map[string]any{
+					"name": "A", "type": "range", "query_type": "log_ql", "telemetry": "logs", "expr": "{service_name=\"api\"}[5m]",
+					"legend": map[string]any{"type": "auto", "value": ""},
+				}},
+			}},
+		},
+	}
+	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), args); err != nil {
+		t.Fatalf("expected log_ql query to validate: %v", err)
+	}
+
+	query := args["dashboard"].(map[string]any)["panels"].([]any)[0].(map[string]any)["queries"].([]any)[0].(map[string]any)
+	query["query_type"] = "logs"
+	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), args); err == nil {
+		t.Fatal("expected telemetry name used as query_type to fail validation")
+	}
+	query["query_type"] = "log_ql"
+	query["legend"].(map[string]any)["type"] = "invalid"
+	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), args); err == nil {
+		t.Fatal("expected unsupported legend type to fail validation")
+	}
+}
+
 func TestDashboardInputSchema_AllowsSupportedPanelVariants(t *testing.T) {
 	queryPanel := map[string]any{
 		"name": "Request rate", "version": 1,
@@ -162,6 +193,33 @@ func TestDashboardInputSchema_RequiresQueriesForQueryPanels(t *testing.T) {
 
 	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), args); err == nil {
 		t.Fatal("expected query panel without queries to fail validation")
+	}
+}
+
+func TestDashboardInputSchema_RequiresLogsConfigForLogsVisualization(t *testing.T) {
+	args := map[string]any{"dashboard": map[string]any{
+		"name": "Created",
+		"panels": []any{map[string]any{
+			"name": "Recent errors", "version": 1,
+			"layout":        map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+			"visualization": map[string]any{"type": "logs"},
+			"queries": []any{map[string]any{
+				"name": "Errors", "type": "range", "query_type": "log_ql", "telemetry": "logs", "expr": "{}",
+				"legend": map[string]any{"type": "auto", "value": ""},
+			}},
+		}},
+	}}
+	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), args); err == nil {
+		t.Fatal("expected logs visualization without logs_config to fail validation")
+	}
+	panel := args["dashboard"].(map[string]any)["panels"].([]any)[0].(map[string]any)
+	panel["visualization"].(map[string]any)["logs_config"] = map[string]any{"columns": []any{"timestamp", "severity", "body"}}
+	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), args); err != nil {
+		t.Fatalf("expected supported logs_config to validate: %v", err)
+	}
+	panel["visualization"].(map[string]any)["logs_config"].(map[string]any)["columns"] = []any{"unknown"}
+	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), args); err == nil {
+		t.Fatal("expected unsupported logs_config column to fail validation")
 	}
 }
 
