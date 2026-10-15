@@ -313,3 +313,38 @@ func TestGetAlertsHandler_TimeParameterPrecedence(t *testing.T) {
 		})
 	}
 }
+
+func TestGetAlertsHandler_FormatsAlertInstanceLabelHash(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(AlertsResponse{
+			Timestamp: 1700000000,
+			Window:    3600,
+			AlertRules: []AlertRuleData{{
+				RuleID: "rule-1",
+				Alerts: []AlertInstance{
+					{LabelHash: "instance-hash"},
+					{},
+				},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	cfg := models.Config{APIBaseURL: server.URL}
+	cfg.TokenManager = &auth.TokenManager{
+		AccessToken: "mock-token",
+		ExpiresAt:   time.Now().Add(time.Hour),
+	}
+	result, _, err := NewGetAlertsHandler(server.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetAlertsArgs{Window: 3600})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	text := utils.GetTextContent(t, result)
+	if !strings.Contains(text, "      Label Hash: instance-hash\n") {
+		t.Fatalf("formatted response does not expose alert instance label hash:\n%s", text)
+	}
+	if strings.Contains(text, "Label Hash: \n") {
+		t.Fatalf("formatted response emitted an empty label hash:\n%s", text)
+	}
+}

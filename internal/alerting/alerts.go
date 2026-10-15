@@ -337,6 +337,9 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 					for j, alert := range rule.Alerts {
 						formattedResponse += fmt.Sprintf("    Instance %d:\n", j+1)
 						formattedResponse += fmt.Sprintf("      State: %s\n", alert.State)
+						if alert.LabelHash != "" {
+							formattedResponse += fmt.Sprintf("      Label Hash: %s\n", alert.LabelHash)
+						}
 						formattedResponse += fmt.Sprintf("      Current Value: %.4f\n", alert.CurrentValue)
 						formattedResponse += fmt.Sprintf("      Metric Degradation: %.4f\n", alert.MetricDegradation)
 

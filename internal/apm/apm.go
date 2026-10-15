@@ -45,7 +45,7 @@ type ServiceEnvironmentsArgs struct {
 }
 
 type ServicePerformanceDetailsArgs struct {
-	ServiceName     string  `json:"service_name" jsonschema:"Name of the service to get performance details for (required)"`
+	ServiceName     string  `json:"service_name" jsonschema:"(Required) Name of the service to get performance details for"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
@@ -54,7 +54,7 @@ type ServicePerformanceDetailsArgs struct {
 }
 
 type ServiceOperationsSummaryArgs struct {
-	ServiceName     string  `json:"service_name" jsonschema:"Name of the service to get operations summary for (required)"`
+	ServiceName     string  `json:"service_name" jsonschema:"(Required) Name of the service to get operations summary for"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
@@ -70,7 +70,7 @@ type ServiceDependencyGraphArgs struct {
 }
 
 type PromqlRangeQueryArgs struct {
-	Query           string  `json:"query" jsonschema:"PromQL query to execute (required)"`
+	Query           string  `json:"query" jsonschema:"(Required) PromQL query to execute"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
@@ -78,7 +78,7 @@ type PromqlRangeQueryArgs struct {
 }
 
 type PromqlInstantQueryArgs struct {
-	Query           string  `json:"query" jsonschema:"PromQL query to execute (required)"`
+	Query           string  `json:"query" jsonschema:"(Required) PromQL query to execute"`
 	TimeISO         string  `json:"time_iso,omitempty" jsonschema:"Evaluation time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). If omitted, defaults to now or now-lookback_minutes."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now when time_iso is omitted (default: 0, minimum: 1)."`
 	Datasource      string  `json:"datasource,omitempty" jsonschema:"Name of the datasource to query. If omitted, uses the default configured datasource."`
@@ -87,7 +87,7 @@ type PromqlInstantQueryArgs struct {
 type PromqlLabelValuesArgs struct {
 	MatchQuery      string  `json:"match_query,omitempty" jsonschema:"PromQL query to match series (e.g. up{job=\"prometheus\"})"`
 	Match           string  `json:"match,omitempty" jsonschema:"Alias of match_query (matches the Prometheus API's match parameter); ignored when match_query is set."`
-	Label           string  `json:"label" jsonschema:"Label name to get values for (required)"`
+	Label           string  `json:"label" jsonschema:"(Required) Label name to get values for"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`

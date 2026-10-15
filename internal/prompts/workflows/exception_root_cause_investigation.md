@@ -4,14 +4,15 @@ Use this workflow when investigating server-side exceptions, especially when
 span errors may be a downstream symptom rather than the root cause.
 
 Steps:
-1. Call `get_exceptions` to identify the problematic service and exception
-   type, and the time bounds (`first_seen` / `last_seen`).
+1. Call `get_exceptions` to identify the hottest aggregate service and exception
+   type group. Its rows are metric aggregates, not trace samples or exact time bounds.
 2. Call `get_service_profile(service_name=<service from step 1>)`. Use the
    result for all routing below — do not re-derive telemetry shape via PromQL
    or attribute probing.
 3. Unless telemetry.traces == "absent", call `get_service_traces`
-   (service_name, start/end from the exception window, env when present) to
-   inspect representative traces. Skip this step only when traces are absent.
+   (service_name, the same requested start/end window, env when present) to
+   inspect contextual traces. Do not represent those traces as exact samples of
+   the aggregate exception row. Skip this step only when traces are absent.
 4. Decide whether the exceptions are the ANSWER or a SYMPTOM. This is a
    verdict on what step 3 returned, not a second gate on fetching traces:
    - severity_set == "all" AND telemetry.traces != "absent"
