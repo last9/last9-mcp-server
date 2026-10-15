@@ -3,9 +3,7 @@ package entities
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 
@@ -55,9 +53,6 @@ func doAlertRule(
 ) (json.RawMessage, error) {
 	var out json.RawMessage
 	err := c.Do(ctx, op, last9api.Request{Method: method, Path: path, Body: body}, &out)
-	if errors.Is(err, io.EOF) {
-		return nil, nil
-	}
 	if err != nil {
 		return nil, err
 	}
