@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `get_traces` now shows the canonical `$avg` plus `groupby` shape for per-span duration queries (#312).
+- `get_traces` now distinguishes literal `TraceId` substring searches (`$contains`) from wildcard patterns (`$regex`) and shows the canonical `$avg` plus `groupby` shape for per-span duration queries (#312).
 - `get_logs` now shows the field-first `$containsWords` form and stops percentile fallback after an empty result; dashboard create/update schemas validate query/legend types and logs-panel configuration, and descriptions document required log aggregates and time windows (#312).
 - Log and trace tool descriptions now map message searches to `Body`, gRPC status code 14 to `attributes['rpc.grpc.status_code']`, and trace `service.name` to `ServiceName` (#312).
 - `get_logs` now includes the required `type: "window_aggregate"` discriminator in its count and percentile examples, so copied stages pass validation (#312).

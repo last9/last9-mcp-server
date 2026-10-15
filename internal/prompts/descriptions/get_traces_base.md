@@ -1,4 +1,4 @@
-`tracejson_query`: JSON stage array, **NOT SQL**. Stages use `"type"`: `filter`|`parse`|`aggregate`|`window_aggregate`; no `"stage"`/`"conditions"`. Prefer `get_service_traces` for exact/recent trace lookups.
+`tracejson_query`: JSON stage array, **NOT SQL**. Stages use `"type"`: `filter`|`parse`|`aggregate`|`window_aggregate`; no `"stage"`/`"conditions"`.
 
 **Filter shape:**
 ```json
@@ -6,7 +6,7 @@
 ```
 `query` uses `$and`/`$or` of operator:[field,value] pairs; values are strings. Always `$and`-wrap; no SQL/tags.
 
-**Pattern:** regex like `checkout.*` → `$regex`, not `$contains`.
+**Pattern:** wildcards like `checkout.*` → `$regex`. Trace ID substring → `$contains` on `TraceId`; exact ID → `get_service_traces`.
 
 **Existence:** `{"$neq":["attributes['key']",""]}`; never `$exists`/`$notnull`.
 

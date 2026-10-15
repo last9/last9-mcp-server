@@ -289,6 +289,9 @@ func TestDumpTools(t *testing.T) {
 	if !strings.Contains(tracesDesc, "default **60**") {
 		t.Fatal("get_traces description missing lookback default 60")
 	}
+	if !strings.Contains(tracesDesc, "Trace ID substring → `$contains` on `TraceId`") {
+		t.Fatal("get_traces description must distinguish trace ID substring searches from regex patterns")
+	}
 	for _, name := range []string{"get_log_attributes_for_pipeline", "get_trace_attributes_for_pipeline", "get_trace_attribute_values"} {
 		var schema struct {
 			Properties map[string]struct {
