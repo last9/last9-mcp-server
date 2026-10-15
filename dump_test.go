@@ -317,6 +317,9 @@ func TestDumpTools(t *testing.T) {
 	if !strings.Contains(svcLogsDesc, "http_status") {
 		t.Fatal("get_service_logs description must document HTTP status filters")
 	}
+	if !strings.Contains(svcLogsDesc, "attributes['rpc.grpc.status_code']") {
+		t.Fatal("get_service_logs description must document the canonical gRPC status attribute")
+	}
 
 	excIdx, ok := byName["get_exceptions"]
 	if !ok {
@@ -449,6 +452,21 @@ func TestDumpToolsLogsIncludesServiceProfile(t *testing.T) {
 	}
 	if !byName["get_exceptions"] {
 		t.Error("logs dump missing get_exceptions")
+	}
+	if !byName["did_you_mean"] {
+		t.Error("logs dump missing did_you_mean (required by log tool name-discovery guidance)")
+	}
+}
+
+func TestDumpToolsDataToolsetsIncludeNameDiscovery(t *testing.T) {
+	for _, spec := range []string{"traces", "metrics"} {
+		allowed, err := toolsets.Parse(spec)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", spec, err)
+		}
+		if !allowed.Allows("did_you_mean") {
+			t.Errorf("%s toolset excludes did_you_mean", spec)
+		}
 	}
 }
 

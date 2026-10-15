@@ -4,6 +4,76 @@ func dashboardObjectSchema(description string) map[string]interface{} {
 	return map[string]interface{}{
 		"type":        "object",
 		"description": description,
+		"required":    []string{"name", "panels"},
+		"properties": map[string]interface{}{
+			"name": map[string]interface{}{"type": "string"},
+			"panels": map[string]interface{}{
+				"type":  "array",
+				"items": panelObjectSchema(),
+			},
+		},
+	}
+}
+
+func panelObjectSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":     "object",
+		"required": []string{"name", "layout", "visualization"},
+		"properties": map[string]interface{}{
+			"name":    map[string]interface{}{"type": "string"},
+			"version": map[string]interface{}{"type": "integer", "enum": []int{1}},
+			"layout": map[string]interface{}{
+				"type":     "object",
+				"required": []string{"x", "y", "w", "h"},
+				"properties": map[string]interface{}{
+					"x": map[string]interface{}{"type": "number"}, "y": map[string]interface{}{"type": "number"},
+					"w": map[string]interface{}{"type": "number"}, "h": map[string]interface{}{"type": "number"},
+				},
+			},
+			"visualization": map[string]interface{}{
+				"type": "object", "required": []string{"type"},
+				"properties": map[string]interface{}{"type": map[string]interface{}{"type": "string"}},
+			},
+			"queries": queriesArraySchema(),
+		},
+		"anyOf": []interface{}{
+			panelVisualizationTypeSchema("section"),
+			panelVisualizationTypeSchema("markdown"),
+			map[string]interface{}{"required": []string{"queries"}},
+		},
+	}
+}
+
+func panelVisualizationTypeSchema(kind string) map[string]interface{} {
+	return map[string]interface{}{
+		"properties": map[string]interface{}{
+			"visualization": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"type": map[string]interface{}{"enum": []string{kind}},
+				},
+			},
+		},
+	}
+}
+
+func queriesArraySchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "array",
+		"items": map[string]interface{}{
+			"type":     "object",
+			"required": []string{"name", "type", "query_type", "telemetry", "expr", "legend"},
+			"properties": map[string]interface{}{
+				"name": map[string]interface{}{"type": "string"}, "type": map[string]interface{}{"type": "string"},
+				"query_type": map[string]interface{}{"type": "string", "enum": []string{"promql", "log_json", "log_ql", "trace_json", "trace_ql"}},
+				"telemetry":  map[string]interface{}{"type": "string"},
+				"expr": map[string]interface{}{"type": "string"},
+				"legend": map[string]interface{}{
+					"type": "object", "required": []string{"type", "value"},
+					"properties": map[string]interface{}{"type": map[string]interface{}{"type": "string"}, "value": map[string]interface{}{"type": "string"}},
+				},
+			},
+		},
 	}
 }
 

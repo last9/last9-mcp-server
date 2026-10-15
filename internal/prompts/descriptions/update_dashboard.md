@@ -1,3 +1,3 @@
-Update a custom dashboard by ID. Same {dashboard, metadata} envelope as create_dashboard (full replacement). Readonly system dashboards return an error.
+Update a custom dashboard by ID. Same `{dashboard, metadata}` envelope and same panel/query shape as create_dashboard (full replacement): panels use `layout` and `visualization`; query panels also use `queries`; section and markdown panels do not. Non-section panels may omit `version` and default to `version: 1`; section panels stay versionless. Each query uses `name`, `type`, `query_type`, `telemetry`, `expr`, and `legend: {type, value}`. Use `promql` for metrics, `log_ql` or `log_json` for logs, and `trace_ql` or `trace_json` for traces; `logs` is a telemetry value, not a query type. Readonly system dashboards return an error.
 
 Prefer this tool for panel, layout, or query changes after create. Pass the existing dashboard id; do not call create_dashboard to refine a dashboard that already has an id.
