@@ -303,7 +303,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`attach_notification_channel`** — Route an existing channel to an alert group for `breach`, `threat`, or both
 - **`detach_notification_channel`** — Remove one channel-to-alert-group attachment
 
-The alert write tools (`create_alert`, `update_alert`, `patch_alert`, `delete_alert`, `create_alert_from_chart`, `mute_alert_group`, `acknowledge_alert`, `reassign_alert`, `create_notification_channel`, `attach_notification_channel`, `detach_notification_channel`) need a token with write scope; `detach_notification_channel` needs delete scope, as does `delete_alert` where the org enforces it. They are exposed only in the `alerts` toolset.
+The alert write tools (`create_alert`, `update_alert`, `patch_alert`, `delete_alert`, `create_alert_from_chart`, `mute_alert_group`, `acknowledge_alert`, `reassign_alert`, `create_notification_channel`, `attach_notification_channel`, `detach_notification_channel`) need a token with write scope; `detach_notification_channel` needs delete scope, and `delete_alert` may too. They are exposed only in the `alerts` toolset.
 
 ### Custom Dashboards
 
