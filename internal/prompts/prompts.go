@@ -83,6 +83,15 @@ var AcknowledgeAlertDescription string
 //go:embed descriptions/reassign_alert.md
 var ReassignAlertDescription string
 
+//go:embed descriptions/create_notification_channel.md
+var CreateNotificationChannelDescription string
+
+//go:embed descriptions/attach_notification_channel.md
+var AttachNotificationChannelDescription string
+
+//go:embed descriptions/detach_notification_channel.md
+var DetachNotificationChannelDescription string
+
 //go:embed descriptions/validate_alert_expression.md
 var ValidateAlertExpressionDescription string
 
