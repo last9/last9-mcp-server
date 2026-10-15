@@ -39,6 +39,12 @@ func panelObjectSchema() map[string]interface{} {
 		"anyOf": []interface{}{
 			panelVisualizationTypeSchema("section"),
 			panelVisualizationTypeSchema("markdown"),
+			map[string]interface{}{
+				"required": []string{"csv"},
+				"properties": map[string]interface{}{
+					"csv": map[string]interface{}{"type": "object"},
+				},
+			},
 			map[string]interface{}{"required": []string{"queries"}},
 		},
 	}
@@ -65,9 +71,9 @@ func queriesArraySchema() map[string]interface{} {
 			"required": []string{"name", "type", "query_type", "telemetry", "expr", "legend"},
 			"properties": map[string]interface{}{
 				"name": map[string]interface{}{"type": "string"}, "type": map[string]interface{}{"type": "string"},
-				"query_type": map[string]interface{}{"type": "string", "enum": []string{"promql", "log_json", "log_ql", "trace_json", "trace_ql"}},
+				"query_type": map[string]interface{}{"type": "string", "enum": []string{"promql", "log_json", "log_ql", "log_raw", "trace_json", "trace_ql"}},
 				"telemetry":  map[string]interface{}{"type": "string"},
-				"expr": map[string]interface{}{"type": "string"},
+				"expr":       map[string]interface{}{"type": "string"},
 				"legend": map[string]interface{}{
 					"type": "object", "required": []string{"type", "value"},
 					"properties": map[string]interface{}{"type": map[string]interface{}{"type": "string"}, "value": map[string]interface{}{"type": "string"}},
