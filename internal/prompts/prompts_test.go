@@ -452,6 +452,7 @@ func TestAPMServiceDeviationsDescription(t *testing.T) {
 		{"equal-duration baseline", "must describe comparative rather than snapshot behavior"},
 		{"get_service_summary", "must disambiguate one-window snapshots"},
 		{"call this tool first and by itself", "must prevent speculative parallel investigation"},
+		{"do not call `get_service_profile` first", "must route known-service comparisons directly"},
 		{"do not batch speculative corroboration", "must require inspecting the comparison before follow-ups"},
 		{"service_name", "must explain fleet and service scope"},
 		{"environments remain separate", "must prevent merged environment conclusions"},
@@ -473,6 +474,19 @@ func TestAPMServiceDeviationsDescription(t *testing.T) {
 	for _, check := range checks {
 		if !strings.Contains(description, check.phrase) {
 			t.Errorf("description missing %q: %s", check.phrase, check.reason)
+		}
+	}
+}
+
+func TestServiceProfileDescriptionSkipsSpecializedTools(t *testing.T) {
+	description := strings.ToLower(prompts.GetServiceProfileDescription)
+	for _, phrase := range []string{
+		"skip it when a specialized tool directly answers",
+		"get_apm_service_deviations` for equal-window comparisons",
+		"dashboard tools for dashboard changes",
+	} {
+		if !strings.Contains(description, phrase) {
+			t.Errorf("service profile description missing routing exception %q", phrase)
 		}
 	}
 }

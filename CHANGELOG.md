@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Equal-window APM comparisons now go directly to the comparison tool when service scope is known, so a required profile lookup cannot consume the call budget before the comparison.
 - `get_logs` now shows the field-first `$containsWords` form and stops percentile fallback after an empty result; dashboard creation exposes the API's required panel/query schema and examples while preserving section, markdown, and omitted-version panel variants.
 - Log and trace tool descriptions now map message searches to `Body`, gRPC status code 14 to `attributes['rpc.grpc.status_code']`, and trace `service.name` to `ServiceName`.
 - `get_logs` now includes the required `type: "window_aggregate"` discriminator in its count and percentile examples, so copied stages pass validation.
