@@ -1,0 +1,43 @@
+package alerting
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"strings"
+
+	"last9-mcp/internal/last9api"
+	"last9-mcp/internal/last9api/entities"
+	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+type ValidateAlertExpressionArgs struct {
+	EntityID       string            `json:"entity_id" jsonschema:"(Required) Alert group/entity UUID whose KPIs the expression uses"`
+	Expression     string            `json:"expression" jsonschema:"(Required) Arithmetic expression over indicator names, for example x / y"`
+	IndicatorsUsed map[string]string `json:"indicators_used,omitempty" jsonschema:"Indicator name used in the expression mapped to its KPI UUID owned by entity_id, for example {\"x\":\"<kpi-uuid>\"}; every name in the expression must be present"`
+}
+
+func NewValidateAlertExpressionHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ValidateAlertExpressionArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, args ValidateAlertExpressionArgs) (*mcp.CallToolResult, any, error) {
+		if strings.TrimSpace(args.EntityID) == "" {
+			return utils.ToolErrorResult("entity_id is required"), nil, nil
+		}
+		if strings.TrimSpace(args.Expression) == "" {
+			return utils.ToolErrorResult("expression is required"), nil, nil
+		}
+		body, err := entities.ValidateAlertExpression(ctx, last9api.NewClient(client, cfg), entities.ValidateExpressionInput{
+			EntityID: args.EntityID, Expression: args.Expression, IndicatorsUsed: args.IndicatorsUsed,
+		})
+		var apiErr *utils.UpstreamHTTPError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnprocessableEntity && apiErr.Body != "" {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: apiErr.Body}}}, nil, nil
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}, nil, nil
+	}
+}

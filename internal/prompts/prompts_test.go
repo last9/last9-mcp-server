@@ -64,6 +64,12 @@ var promptDescriptionFiles = map[string]string{
 	"list_dashboard_snapshots.md":          prompts.ListDashboardSnapshotsDescription,
 	"list_dashboards.md":                   prompts.ListDashboardsDescription,
 	"list_datasources.md":                  prompts.ListDatasourcesDescription,
+	"mute_alert_group.md":                  prompts.MuteAlertGroupDescription,
+	"acknowledge_alert.md":                 prompts.AcknowledgeAlertDescription,
+	"reassign_alert.md":                    prompts.ReassignAlertDescription,
+	"create_notification_channel.md":       prompts.CreateNotificationChannelDescription,
+	"attach_notification_channel.md":       prompts.AttachNotificationChannelDescription,
+	"detach_notification_channel.md":       prompts.DetachNotificationChannelDescription,
 	"patch_alert.md":                       prompts.PatchAlertDescription,
 	"prometheus_instant_query.md":          prompts.PromqlInstantQueryDetails,
 	"prometheus_label_values.md":           prompts.PromqlLabelValuesQueryDetails,
@@ -72,6 +78,7 @@ var promptDescriptionFiles = map[string]string{
 	"recommend_alert_config.md":            prompts.RecommendAlertConfigDescription,
 	"update_alert.md":                      prompts.UpdateAlertDescription,
 	"update_dashboard.md":                  prompts.UpdateDashboardDescription,
+	"validate_alert_expression.md":         prompts.ValidateAlertExpressionDescription,
 	"validate_dashboard.md":                prompts.ValidateDashboardDescription,
 }
 

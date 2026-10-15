@@ -235,6 +235,48 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	}, alerting.NewDeleteAlertHandler(client, cfg)))
 
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "mute_alert_group",
+		Annotations: writeTool("Mute Alert Group", true, true),
+		Description: prompts.MuteAlertGroupDescription,
+	}, alerting.NewMuteAlertGroupHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "acknowledge_alert",
+		Annotations: writeTool("Acknowledge Alert", false, true),
+		Description: prompts.AcknowledgeAlertDescription,
+	}, alerting.NewAcknowledgeAlertHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "reassign_alert",
+		Annotations: writeTool("Reassign Alert", false, true),
+		Description: prompts.ReassignAlertDescription,
+	}, alerting.NewReassignAlertHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "create_notification_channel",
+		Annotations: writeTool("Create Notification Channel", false, false),
+		Description: prompts.CreateNotificationChannelDescription,
+	}, alerting.NewCreateNotificationChannelHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "attach_notification_channel",
+		Annotations: writeTool("Attach Notification Channel", false, true),
+		Description: prompts.AttachNotificationChannelDescription,
+	}, alerting.NewAttachNotificationChannelHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "detach_notification_channel",
+		Annotations: writeTool("Detach Notification Channel", true, true),
+		Description: prompts.DetachNotificationChannelDescription,
+	}, alerting.NewDetachNotificationChannelHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "validate_alert_expression",
+		Annotations: readOnlyTool("Validate Alert Expression"),
+		Description: prompts.ValidateAlertExpressionDescription,
+	}, alerting.NewValidateAlertExpressionHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "recommend_alert_config",
 		Annotations: readOnlyTool("Recommend Alert Config"),
 		Description: prompts.RecommendAlertConfigDescription,

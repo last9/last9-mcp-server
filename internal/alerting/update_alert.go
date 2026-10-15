@@ -34,7 +34,7 @@ func NewUpdateAlertHandler(client *http.Client, cfg models.Config) func(context.
 		body, err := entities.UpdateAlertRule(ctx, last9api.NewClient(client, cfg),
 			entities.AlertRuleInput{EntityID: args.EntityID, RuleID: args.ID, Body: args.AlertRule})
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, withUpstreamBody(err)
 		}
 		if err := validateMutationIDResponse(body); err != nil {
 			return nil, nil, fmt.Errorf("invalid update alert response: %w", err)

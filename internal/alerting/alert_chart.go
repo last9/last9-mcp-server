@@ -1,6 +1,7 @@
 package alerting
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -84,8 +85,13 @@ func alertIntelEntity(serviceName, env string, attrs map[string]string) map[stri
 // motion. Retry framing only applies to the upstream class.
 func alertIntelGuidance(e *utils.UpstreamHTTPError) string {
 	var b strings.Builder
-	b.WriteString(e.Error())
-	switch classifyAlertIntelligenceError(e.StatusCode, e.Body) {
+	class := classifyAlertIntelligenceError(e.StatusCode, e.Body)
+	detail := e.Body
+	if detail == "" {
+		detail = http.StatusText(e.StatusCode)
+	}
+	fmt.Fprintf(&b, "alert intelligence API returned status %d (%s): %s", e.StatusCode, class, detail)
+	switch class {
 	case classCoverageMiss:
 		b.WriteString("\n\nThis surface/chart_key/entity combination is not covered by the alert-coverage catalog. Re-run describe_alert_chart with these exact coordinates (surface, chart_key, env, attributes) to see what the catalog covers, or verify the chart against the Last9 dashboard Discover page for this service. Then pick a signal_key from that output when creating. Genuinely uncataloged charts cannot be bound by the typed MCP create flow (it attaches alerts to existing KPIs only); alert them via the Last9 dashboard or API instead.")
 	case classPermissions:

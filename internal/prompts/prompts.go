@@ -74,6 +74,27 @@ var PatchAlertDescription string
 //go:embed descriptions/delete_alert.md
 var DeleteAlertDescription string
 
+//go:embed descriptions/mute_alert_group.md
+var MuteAlertGroupDescription string
+
+//go:embed descriptions/acknowledge_alert.md
+var AcknowledgeAlertDescription string
+
+//go:embed descriptions/reassign_alert.md
+var ReassignAlertDescription string
+
+//go:embed descriptions/create_notification_channel.md
+var CreateNotificationChannelDescription string
+
+//go:embed descriptions/attach_notification_channel.md
+var AttachNotificationChannelDescription string
+
+//go:embed descriptions/detach_notification_channel.md
+var DetachNotificationChannelDescription string
+
+//go:embed descriptions/validate_alert_expression.md
+var ValidateAlertExpressionDescription string
+
 //go:embed descriptions/recommend_alert_config.md
 var RecommendAlertConfigDescription string
 

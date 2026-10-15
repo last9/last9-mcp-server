@@ -31,6 +31,8 @@ type IntelligenceRequest struct {
 	EvalWindow        int            `json:"eval_window,omitempty"`
 	BadMinutes        int            `json:"bad_minutes,omitempty"`
 	Severity          string         `json:"severity,omitempty"`
+	GroupID           string         `json:"group_id,omitempty"`
+	Description       string         `json:"description,omitempty"`
 }
 
 // IntelligenceResponse is a permissive decode target for both operations; unknown fields
