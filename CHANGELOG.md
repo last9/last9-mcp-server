@@ -9,15 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added `did_you_mean` to the logs, traces, and metrics toolsets so their entity-name discovery guidance can be followed.
+- Added `did_you_mean` to the logs, traces, and metrics toolsets so their entity-name discovery guidance can be followed (#322).
 
 ### Fixed
 
-- Equal-window APM comparisons now go directly to the comparison tool when service scope is known, so a required profile lookup cannot consume the call budget before the comparison.
-- `get_logs` now shows the field-first `$containsWords` form and stops percentile fallback after an empty result; dashboard creation exposes the API's required panel/query schema and examples while preserving section, markdown, and omitted-version panel variants.
-- Log and trace tool descriptions now map message searches to `Body`, gRPC status code 14 to `attributes['rpc.grpc.status_code']`, and trace `service.name` to `ServiceName`.
-- `get_logs` now includes the required `type: "window_aggregate"` discriminator in its count and percentile examples, so copied stages pass validation.
-- `get_logs` now permits standalone single-predicate filters and repeats counts after narrowing broad results; `get_service_logs` documents canonical gRPC status and directs multiple-status or range queries to `get_logs`.
+- Equal-window APM comparisons now go directly to the comparison tool when service scope is known, so a required profile lookup cannot consume the call budget before the comparison (#322).
+- `get_logs` now shows the field-first `$containsWords` form and stops percentile fallback after an empty result; dashboard creation exposes the API's required panel/query schema and examples while preserving section, markdown, and omitted-version panel variants (#322).
+- Log and trace tool descriptions now map message searches to `Body`, gRPC status code 14 to `attributes['rpc.grpc.status_code']`, and trace `service.name` to `ServiceName` (#322).
+- `get_logs` now includes the required `type: "window_aggregate"` discriminator in its count and percentile examples, so copied stages pass validation (#322).
+- `get_logs` now permits standalone single-predicate filters and repeats counts after narrowing broad results; `get_service_logs` documents canonical gRPC status and directs multiple-status or range queries to `get_logs` (#322).
 - `get_exceptions` now returns only the aggregate metric dimensions and occurrence count for each ranked row. It previously fabricated or emitted empty trace/sample fields, including a query-evaluation timestamp as `last_seen`, which made metric aggregates look like exact exception samples. The tool description and investigation workflow now require treating later service traces as context rather than verified matches (#310).
 - Tool schemas now describe every argument, consistently mark required inputs, and use the canonical `$and` pipeline example across query helpers; public descriptions no longer expose transport routes (#309).
 - `get_logs` and `get_traces` now explicitly show compact JSON stage-array examples and reject SQL-like query construction in their tool descriptions, so description-only clients can form valid pipelines without fetching a reference manual (#309).
