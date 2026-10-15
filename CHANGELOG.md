@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `patch_alert` accepts `clear_recurring_mute_schedule=true` to remove a rule's recurring mute schedule entirely; it sends `"recurring_mute_schedule":null` in the PATCH body and is rejected alongside `recurring_mute_schedule`. `enabled=false` in a schedule only pauses it and keeps the windows (#321).
 
 - `reassign_alert` (`alerts` toolset only) hands an already-owned alert to another user by `owner_email` (matched case-insensitively against active users) or `owner_user_id`, given the `alert_group_id`, `rule_id` and `rule_type` from `get_alerts`. 404, 403 and invalid-target-owner responses return explanatory tool errors; Last9 does not notify the new owner (#321).
 - `mute_alert_group` (`alerts` toolset only) mutes every rule in an alert group until a Unix-seconds `until` deadline, or unmutes with `until=0` (negative mutes indefinitely). Use `patch_alert` to mute a single rule (#321).

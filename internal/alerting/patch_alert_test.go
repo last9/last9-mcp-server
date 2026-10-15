@@ -40,6 +40,37 @@ func TestPatchAlertSendsRecurringMuteSchedule(t *testing.T) {
 	}
 }
 
+func TestPatchAlertClearsRecurringMuteSchedule(t *testing.T) {
+	server := newAlertRuleServer(t, http.MethodPatch, "/entities/entity-1/alert-rules/rule-1", `{"recurring_mute_schedule":null}`)
+	result, _, err := NewPatchAlertHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil, PatchAlertArgs{
+		EntityID: "entity-1", ID: "rule-1", ClearRecurringMuteSchedule: true,
+	})
+	if err != nil || result.IsError {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestPatchAlertOmitsScheduleKeyWhenNotCleared(t *testing.T) {
+	server := newAlertRuleServer(t, http.MethodPatch, "/entities/entity-1/alert-rules/rule-1", `{"mute_until":0}`)
+	zero := int64(0)
+	result, _, err := NewPatchAlertHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil, PatchAlertArgs{
+		EntityID: "entity-1", ID: "rule-1", MuteUntil: &zero,
+	})
+	if err != nil || result.IsError {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestPatchAlertRejectsClearWithSchedule(t *testing.T) {
+	result, _, err := NewPatchAlertHandler(http.DefaultClient, testAlertMutationConfig("http://unused"))(context.Background(), nil, PatchAlertArgs{
+		EntityID: "entity-1", ID: "rule-1", ClearRecurringMuteSchedule: true,
+		RecurringMuteSchedule: muteSchedule("Asia/Kolkata", RecurringMuteWindow{Weekdays: []string{"sat"}, StartTime: "22:00", EndTime: "06:00"}),
+	})
+	if err != nil || !result.IsError || !strings.Contains(resultText(result), "cannot be combined") {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
 func TestPatchAlertRejectsInvalidScheduleBeforeRequest(t *testing.T) {
 	result, _, err := NewPatchAlertHandler(http.DefaultClient, testAlertMutationConfig("http://unused"))(context.Background(), nil, PatchAlertArgs{
 		EntityID: "entity-1", ID: "rule-1", RecurringMuteSchedule: muteSchedule("Nowhere/Land"),
