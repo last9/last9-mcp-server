@@ -74,7 +74,7 @@ func NewPatchAlertHandler(client *http.Client, cfg models.Config) func(context.C
 			if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusForbidden {
 				return utils.ToolErrorResult("patch_alert was forbidden (HTTP 403). Viewer-role users may only change the mute deadline (mute_until, on its own); pausing, properties, recurring_mute_schedule, clear_recurring_mute_schedule and every other change need editor access."), nil, nil
 			}
-			return nil, nil, err
+			return nil, nil, withUpstreamBody(err)
 		}
 		return alertMutationResult(cfg, nil, fmt.Sprintf(`{"patched":true,"id":%q}`, args.ID)), nil, nil
 	}

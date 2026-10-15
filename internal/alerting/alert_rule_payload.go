@@ -3,11 +3,13 @@ package alerting
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -110,4 +112,13 @@ func alertMutationResult(cfg models.Config, body []byte, fallback string) *mcp.C
 	}
 	link := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildAlertingGroupsLink()
 	return &mcp.CallToolResult{Meta: deeplink.ToMeta(link), Content: []mcp.Content{&mcp.TextContent{Text: text}}}
+}
+
+// withUpstreamBody relays a sanitized upstream 4xx body that the error text omits (403/404/409).
+func withUpstreamBody(err error) error {
+	var apiErr *utils.UpstreamHTTPError
+	if errors.As(err, &apiErr) && apiErr.Body != "" && !strings.Contains(err.Error(), apiErr.Body) {
+		return fmt.Errorf("%w. Upstream response: %s", err, apiErr.Body)
+	}
+	return err
 }

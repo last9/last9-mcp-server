@@ -49,7 +49,8 @@ func SanitizeUpstreamBody(raw string) string {
 }
 
 // UpstreamHTTPError is the typed form of a non-OK upstream response; use errors.As to
-// branch on StatusCode. Body is the sanitized 400/422 body and empty for other statuses.
+// branch on StatusCode. Body is the sanitized 4xx body (relayed in Error() only for 400/422)
+// and empty for 5xx.
 type UpstreamHTTPError struct {
 	StatusCode int
 	Body       string
@@ -82,8 +83,13 @@ func NewUpstreamHTTPError(resp *http.Response, op string, hint ...string) error 
 		}
 		return &UpstreamHTTPError{StatusCode: status, Body: body, message: msg}
 	}
-	DrainResponseBody(resp.Body)
-	return &UpstreamHTTPError{StatusCode: status, message: fmt.Sprintf("%s failed with HTTP %d. %s", op, status, upstreamStatusAdvice(status))}
+	var body string
+	if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
+		body = ReadLimitedResponseBody(resp.Body, 4<<10)
+	} else {
+		DrainResponseBody(resp.Body)
+	}
+	return &UpstreamHTTPError{StatusCode: status, Body: body, message: fmt.Sprintf("%s failed with HTTP %d. %s", op, status, upstreamStatusAdvice(status))}
 }
 
 func upstreamStatusAdvice(statusCode int) string {

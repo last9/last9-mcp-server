@@ -26,7 +26,7 @@ func NewMuteAlertGroupHandler(client *http.Client, cfg models.Config) func(conte
 		body, err := entities.SnoozeAlertRules(ctx, last9api.NewClient(client, cfg),
 			entities.SnoozeAlertRulesInput{EntityID: args.EntityID, Until: args.Until})
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, withUpstreamBody(err)
 		}
 		return alertMutationResult(cfg, body, `{"muted":true}`), nil, nil
 	}

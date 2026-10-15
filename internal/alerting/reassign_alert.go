@@ -76,5 +76,5 @@ func reassignErrorResult(err error) (*mcp.CallToolResult, any, error) {
 	case upstream.StatusCode == http.StatusBadRequest && strings.Contains(upstream.Body, "invalid_target_owner"):
 		return utils.ToolErrorResult("that user cannot respond to alerts (needs editor or admin role)"), nil, nil
 	}
-	return nil, nil, err
+	return nil, nil, withUpstreamBody(err)
 }

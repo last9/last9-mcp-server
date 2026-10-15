@@ -30,7 +30,7 @@ func NewDeleteAlertHandler(client *http.Client, cfg models.Config) func(context.
 		body, err := entities.DeleteAlertRule(ctx, last9api.NewClient(client, cfg),
 			entities.AlertRuleInput{EntityID: args.EntityID, RuleID: args.ID})
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, withUpstreamBody(err)
 		}
 		return alertMutationResult(cfg, body, fmt.Sprintf(`{"deleted":true,"id":%q}`, args.ID)), nil, nil
 	}
