@@ -70,7 +70,7 @@ func reassignErrorResult(err error) (*mcp.CallToolResult, any, error) {
 	}
 	switch {
 	case upstream.StatusCode == http.StatusNotFound:
-		return utils.ToolErrorResult("this alert has no owner yet; it must be acknowledged in Last9 before it can be reassigned"), nil, nil
+		return utils.ToolErrorResult("this alert has no owner yet; it must be acknowledged (acknowledge_alert) before it can be reassigned"), nil, nil
 	case upstream.StatusCode == http.StatusForbidden:
 		return utils.ToolErrorResult("reassigning requires a write-scope token and being an org admin or the alert's current owner"), nil, nil
 	case upstream.StatusCode == http.StatusBadRequest && strings.Contains(upstream.Body, "invalid_target_owner"):

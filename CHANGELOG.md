@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `acknowledge_alert` (`alerts` toolset only) takes ownership of a firing alert as the token owner (`action` `ack`, the default) or releases it (`unack`), given `alert_group_id`, `rule_id` and `rule_type` from get_alerts. Acknowledging again as the owner is a no-op and returns the existing claim; an alert owned by someone else is reported with a pointer to `get_alerts`/`reassign_alert` rather than a raw 409. Optional `mute_until` only records a mute already applied with `mute_alert_group` or `patch_alert`; it does not mute (#321).
 - `patch_alert` accepts `clear_recurring_mute_schedule=true` to remove a rule's recurring mute schedule entirely; it sends `"recurring_mute_schedule":null` in the PATCH body and is rejected alongside `recurring_mute_schedule`. `enabled=false` in a schedule only pauses it and keeps the windows (#321).
 
 - `reassign_alert` (`alerts` toolset only) hands an already-owned alert to another user by `owner_email` (matched case-insensitively against active users) or `owner_user_id`, given the `alert_group_id`, `rule_id` and `rule_type` from `get_alerts`. 404, 403 and invalid-target-owner responses return explanatory tool errors; Last9 does not notify the new owner (#321).

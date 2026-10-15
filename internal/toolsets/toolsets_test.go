@@ -81,7 +81,7 @@ func TestInvestigateExcludesAlertsDomainTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tool := range []string{"get_alerts", "describe_alert_chart", "create_alert_from_chart", "get_drop_rules", "validate_alert_expression", "mute_alert_group", "reassign_alert"} {
+	for _, tool := range []string{"get_alerts", "describe_alert_chart", "create_alert_from_chart", "get_drop_rules", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert"} {
 		if set.Allows(tool) {
 			t.Errorf("investigate must not include alerts-domain tool %q", tool)
 		}
@@ -96,7 +96,7 @@ func TestAlertsToolsetMembership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tool := range []string{"get_alerts", "add_drop_rule", "describe_alert_chart", "create_alert_from_chart", "validate_alert_expression", "mute_alert_group", "reassign_alert"} {
+	for _, tool := range []string{"get_alerts", "add_drop_rule", "describe_alert_chart", "create_alert_from_chart", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert"} {
 		if !set.Allows(tool) {
 			t.Errorf("alerts toolset must include %q", tool)
 		}
@@ -198,7 +198,7 @@ func TestParseInvestigate(t *testing.T) {
 			t.Errorf("investigate missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "reassign_alert", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard", "grafana_get_dashboard"} {
+	for _, deny := range []string{"get_alerts", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard", "grafana_get_dashboard"} {
 		if set.Allows(deny) {
 			t.Errorf("investigate should exclude %q", deny)
 		}
