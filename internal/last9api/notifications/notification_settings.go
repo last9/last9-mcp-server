@@ -20,6 +20,7 @@ type NotificationSetting struct {
 	SendResolved *bool  `json:"send_resolved"`
 	ServiceFQID  string `json:"service_fqid"`
 	Severity     string `json:"severity"`
+	CreatedVia   string `json:"created_via"`
 }
 
 type Property struct {

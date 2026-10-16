@@ -102,6 +102,19 @@ func storedCreatedViaMarker(rule entities.AlertRule) map[string]string {
 	return marker
 }
 
+// formatRuleCreatedVia renders a listed rule's marker, or "-" when it has none.
+func formatRuleCreatedVia(rule AlertRule) string {
+	annotations, _ := rule.Properties["annotations"].(map[string]interface{})
+	via, _ := annotations[annotationCreatedVia].(string)
+	if strings.TrimSpace(via) == "" {
+		return "-"
+	}
+	if client, _ := annotations[annotationCreatedViaClient].(string); client != "" {
+		via += " (client " + client + ")"
+	}
+	return escapeTSV(via)
+}
+
 func newCreatedViaMarker(req *mcp.CallToolRequest) map[string]string {
 	return map[string]string{
 		annotationCreatedVia:       createdViaMCP,
