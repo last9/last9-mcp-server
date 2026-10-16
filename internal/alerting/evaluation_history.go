@@ -125,6 +125,11 @@ func fetchAlertMonitorStates(
 		if state == "" {
 			state = "ok"
 		}
+		// The monitor can return one row per severity for the same rule ID; a
+		// firing row must not be overwritten by a resolved row for the same rule.
+		if existing, ok := states[rule.RuleID]; ok && existing == "firing" && state != "firing" {
+			continue
+		}
 		states[rule.RuleID] = state
 	}
 	return states, nil

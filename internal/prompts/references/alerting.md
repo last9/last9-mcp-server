@@ -93,7 +93,7 @@ Validate the **inner** name only if you dry-run arithmetic; adaptive wrappers ar
 ### Error rate (static)
 
 ```
-primary_indicator: error_rate
+primary_indicator: errors
 expression: errors / total
 condition: expr > 0.01
 alert_condition: count_true(result) >= 3

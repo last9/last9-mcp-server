@@ -115,6 +115,31 @@ func TestFetchRecentEvaluationHistory_MissingRuleIsUnknown(t *testing.T) {
 	}
 }
 
+func TestFetchRecentEvaluationHistory_FiringSurvivesMultipleSeverityRows(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(AlertsResponse{
+			AlertRules: []AlertRuleData{
+				{RuleID: "rule-1", Severity: "breach", State: "firing"},
+				{RuleID: "rule-1", Severity: "threat", State: "resolved"},
+			},
+		})
+	}))
+	defer srv.Close()
+	cfg := models.Config{
+		APIBaseURL: srv.URL,
+		TokenManager: &auth.TokenManager{
+			AccessToken: "tok",
+			ExpiresAt:   time.Now().Add(time.Hour),
+		},
+	}
+	history := fetchRecentEvaluationHistory(context.Background(), srv.Client(), cfg, []string{"rule-1"})
+	for _, s := range history["rule-1"] {
+		if s.State != "firing" {
+			t.Fatalf("active firing row must survive aggregation, got %q", s.State)
+		}
+	}
+}
+
 func TestFetchRecentEvaluationHistory_SkipsLargeResultSets(t *testing.T) {
 	ids := make([]string, recentEvaluationHistoryMaxRules+1)
 	for i := range ids {
