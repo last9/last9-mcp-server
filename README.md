@@ -695,6 +695,8 @@ Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `en
 - `alert_group_name` / `alert_group_type` / `data_source_name` (string, optional)
 - `tags` (array, optional): All must match (AND logic).
 
+Each rule shows `Disabled`, `Muted until` (none, indefinitely or RFC3339 UTC), `Recurring mute schedule` (timezone and one line per window) and `Next transition` when known; `get_entity_alert_rules` shows the same lines, so both read back a `patch_alert` change.
+
 ### get_alerts
 
 - `time_iso` (string, optional): Evaluation time in RFC3339.

@@ -101,15 +101,17 @@ func fetchEntityAlertRules(
 	return wrapper.Rules, nil
 }
 
-// formatEntityAlertRulesResponse formats entity-scoped rules showing only
-// expression/indicator fields. Basic metadata (state, severity, timestamps, etc.)
-// is omitted because callers already have it from get_alert_config.
+// formatEntityAlertRulesResponse formats entity-scoped rules showing their
+// pause/mute/schedule state and expression/indicator fields. Other metadata
+// (state, severity, timestamps, etc.) is omitted because callers already have
+// it from get_alert_config.
 func formatEntityAlertRulesResponse(rules AlertConfigResponse) string {
 	out := fmt.Sprintf("Found %d alert rules for entity:\n\n", len(rules))
 	for i, rule := range rules {
 		out += fmt.Sprintf("Rule %d:\n", i+1)
 		out += fmt.Sprintf("  ID: %s\n", rule.ID)
 		out += fmt.Sprintf("  Rule Name: %s\n", rule.RuleName)
+		out += formatRuleLifecycle(rule)
 		if rule.Expression != "" {
 			out += fmt.Sprintf("  Expression: %s\n", rule.Expression)
 		}

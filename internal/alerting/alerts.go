@@ -42,6 +42,9 @@ type AlertRule struct {
 	Algorithm                    string                            `json:"algorithm"`
 	RuleName                     string                            `json:"rule_name"`
 	MuteUntil                    int64                             `json:"mute_until"`
+	IsDisabled                   *bool                             `json:"is_disabled"`
+	NextTransitionAt             *int64                            `json:"next_transition_at"`
+	RecurringMuteSchedule        *RecurringMuteSchedule            `json:"recurring_mute_schedule"`
 	Properties                   map[string]interface{}            `json:"properties"`
 	GroupTimeseriesNotifications bool                              `json:"group_timeseries_notifications"`
 }
