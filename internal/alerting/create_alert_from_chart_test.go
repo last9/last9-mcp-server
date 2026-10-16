@@ -363,3 +363,85 @@ func TestCreateAlertFromChartPassesGroupIDAndDescription(t *testing.T) {
 		t.Errorf("algorithm must not be sent: %v", got)
 	}
 }
+
+func TestCreateAlertFromChartRequestsDisabledDraft(t *testing.T) {
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		_, _ = w.Write([]byte(`{"id":"rule-1","rules":[{"id":"rule-1","name":"checkout-errors","is_disabled":true}]}`))
+	}))
+	defer server.Close()
+
+	handler := NewCreateAlertFromChartHandler(server.Client(), createAlertFromChartTestConfig(server.URL))
+	result, _, err := handler(context.Background(), nil, CreateAlertFromChartArgs{
+		Surface: "discover-service", ChartKey: "error_rate", ServiceName: "checkout", SignalKey: "error_rate", Name: "checkout-errors",
+	})
+	if err != nil || result.IsError {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if got["is_disabled"] != true {
+		t.Errorf("request must carry is_disabled=true, body = %v", got)
+	}
+}
+
+func TestCreateAlertFromChartReportsPersistedState(t *testing.T) {
+	cases := []struct {
+		name     string
+		response string
+		want     []string
+		notWant  []string
+	}{
+		{
+			name:     "draft",
+			response: `{"id":"rule-1","rules":[{"id":"rule-1","name":"checkout-errors","is_disabled":true}]}`,
+			want:     []string{"created as a disabled draft", "patch_alert (is_disabled=false) after the user confirms"},
+			notWant:  []string{"active now", "is enabled", "did not report"},
+		},
+		{
+			name:     "existing enabled rule",
+			response: `{"id":"rule-1","rules":[{"id":"rule-1","name":"checkout-errors","is_disabled":false}]}`,
+			want:     []string{"is enabled", "can fire immediately", "patch_alert (is_disabled=true)", "delete_alert"},
+			notWant:  []string{"created as a disabled draft", "Requested as"},
+		},
+		{
+			name:     "state not reported",
+			response: `{"id":"rule-1","rules":[{"id":"rule-1","name":"checkout-errors"}]}`,
+			want:     []string{"did not report", "get_entity_alert_rules"},
+			notWant:  []string{"created as a disabled draft", "is enabled"},
+		},
+		{
+			name:     "state reported for another rule only",
+			response: `{"id":"rule-1","rules":[{"id":"rule-2","name":"other","is_disabled":true}]}`,
+			want:     []string{"did not report"},
+			notWant:  []string{"created as a disabled draft"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.ReadAll(r.Body)
+				_, _ = w.Write([]byte(tc.response))
+			}))
+			defer server.Close()
+
+			handler := NewCreateAlertFromChartHandler(server.Client(), createAlertFromChartTestConfig(server.URL))
+			result, _, err := handler(context.Background(), nil, CreateAlertFromChartArgs{
+				Surface: "discover-service", ChartKey: "error_rate", ServiceName: "checkout", SignalKey: "error_rate", Name: "checkout-errors",
+			})
+			if err != nil || result.IsError {
+				t.Fatalf("result=%+v err=%v", result, err)
+			}
+			text := resultText(result)
+			for _, w := range tc.want {
+				if !strings.Contains(text, w) {
+					t.Errorf("result missing %q:\n%s", w, text)
+				}
+			}
+			for _, w := range tc.notWant {
+				if strings.Contains(text, w) {
+					t.Errorf("result must not contain %q:\n%s", w, text)
+				}
+			}
+		})
+	}
+}
