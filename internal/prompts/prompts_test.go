@@ -444,6 +444,28 @@ func TestAlertRuleDescriptionsRequireKPINames(t *testing.T) {
 	}
 }
 
+// Cleanup and bulk removals must stay on resources an MCP agent created unless the user
+// names one; each tool must also say where the marker is listed.
+func TestRemovalDescriptionsScopeCleanupToMarkedResources(t *testing.T) {
+	for name, tc := range map[string]struct{ desc, listing string }{
+		"delete_alert":                {prompts.DeleteAlertDescription, "get_entity_alert_rules"},
+		"delete_notification_channel": {prompts.DeleteNotificationChannelDescription, "get_notification_channels scope=channels"},
+		"detach_notification_channel": {prompts.DetachNotificationChannelDescription, "get_notification_channels scope=attached"},
+	} {
+		for _, phrase := range []string{
+			"clean up",
+			"whose created_via is last9-mcp",
+			"shown by " + tc.listing,
+			"only when the user names that specific",
+			"explicitly says to include ones created elsewhere",
+		} {
+			if !strings.Contains(tc.desc, phrase) {
+				t.Errorf("%s missing cleanup-scope wording %q", name, phrase)
+			}
+		}
+	}
+}
+
 func TestWhaleDescriptionsBounded(t *testing.T) {
 	budgets := map[string]int{
 		"get_logs_base":         2900,
