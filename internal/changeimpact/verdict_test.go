@@ -85,3 +85,20 @@ func TestVerdictStringsAreTheEvalContract(t *testing.T) {
 		t.Fatal("verdict strings changed")
 	}
 }
+
+func TestAPMDeviationRegressionAloneIsRegressionLikely(t *testing.T) {
+	entry := func(signal, classification string) apm.LeaderboardEntry {
+		return apm.LeaderboardEntry{ServiceName: "checkout", Env: "prod", Comparison: apm.SignalComparison{
+			Definition: apm.SignalDefinition{Name: signal}, Classification: classification,
+		}}
+	}
+	section, triggers := summarizeAPMDeviations([]apm.LeaderboardEntry{entry("apdex", "improvement"), entry("error_percentage", "regression")})
+	if len(section.Items) != 2 || len(triggers) != 1 || !strings.Contains(triggers[0], "error_percentage") {
+		t.Fatalf("items = %+v, triggers = %v; want both items and only the regression as a trigger", section.Items, triggers)
+	}
+	flat := signals(1000, 5, 100)
+	verdict, reason, _ := decideVerdict(verdictInputs{afterMinutes: 60, haveChanged: true, changedBaseline: flat, changedAfter: flat, triggers: triggers})
+	if verdict != VerdictRegressionLikely || !strings.Contains(reason, "get_apm_service_deviations") {
+		t.Fatalf("verdict = %q (%s), want a regression citing get_apm_service_deviations", verdict, reason)
+	}
+}

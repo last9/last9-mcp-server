@@ -293,14 +293,9 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 	if apmErr != nil {
 		report.Deviations.APM.Error = apmErr.Error()
 	} else {
-		items := make([]APMDeviation, 0, len(apmEntries))
-		for _, e := range apmEntries {
-			items = append(items, apmDeviation(e))
-			if e.Comparison.Classification == "regression" {
-				triggers = append(triggers, fmt.Sprintf("get_apm_service_deviations classifies %s %s as a regression", e.ServiceName, e.Comparison.Definition.Name))
-			}
-		}
-		report.Deviations.APM.Items, report.Deviations.APM.Dropped = truncate(items, sectionTopN)
+		var apmTriggers []string
+		report.Deviations.APM, apmTriggers = summarizeAPMDeviations(apmEntries)
+		triggers = append(triggers, apmTriggers...)
 	}
 
 	switch {
@@ -402,6 +397,22 @@ func change(baseline, after *float64) SignalChange {
 func rounded(v float64) *float64 {
 	r := math.Round(v*1000) / 1000
 	return &r
+}
+
+// summarizeAPMDeviations bounds the entries for the report and lists each
+// regression get_apm_service_deviations classifies as a verdict trigger.
+func summarizeAPMDeviations(entries []apm.LeaderboardEntry) (APMDeviations, []string) {
+	var section APMDeviations
+	var triggers []string
+	items := make([]APMDeviation, 0, len(entries))
+	for _, e := range entries {
+		items = append(items, apmDeviation(e))
+		if e.Comparison.Classification == "regression" {
+			triggers = append(triggers, fmt.Sprintf("get_apm_service_deviations classifies %s %s as a regression", e.ServiceName, e.Comparison.Definition.Name))
+		}
+	}
+	section.Items, section.Dropped = truncate(items, sectionTopN)
+	return section, triggers
 }
 
 func apmDeviation(e apm.LeaderboardEntry) APMDeviation {
