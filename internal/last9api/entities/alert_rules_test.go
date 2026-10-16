@@ -61,6 +61,20 @@ func TestAlertRuleRequests(t *testing.T) {
 	}
 }
 
+func TestGetAlertRuleDecodesOwner(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.EscapedPath() != "/entities/entity%2F1/alert-rules/rule%2F1" {
+			t.Errorf("request = %s %s", r.Method, r.URL.EscapedPath())
+		}
+		_, _ = w.Write([]byte(`{"id":"rule/1","entity_id":"entity-2","rule_name":"x"}`))
+	}))
+	defer srv.Close()
+	rule, err := GetAlertRule(context.Background(), newTestClient(srv), AlertRuleInput{EntityID: "entity/1", RuleID: "rule/1"})
+	if err != nil || rule != (AlertRule{ID: "rule/1", EntityID: "entity-2"}) {
+		t.Fatalf("rule=%+v err=%v", rule, err)
+	}
+}
+
 func TestCreateAlertRuleReturnsRawBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"id":"rule-1"}`))

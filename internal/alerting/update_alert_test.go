@@ -30,7 +30,11 @@ func TestUpdateAlertValidationReturnsToolError(t *testing.T) {
 }
 
 func TestUpdateAlertRejectsEmptyReplacementIDResponse(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !serveRuleOwner(w, r) {
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
 	defer server.Close()
 	_, _, err := NewUpdateAlertHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil, UpdateAlertArgs{
 		EntityID: "entity-1", ID: "rule-1", AlertRuleMutation: AlertRuleMutation{AlertRule: validAlertRulePayload(nil)},

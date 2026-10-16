@@ -21,6 +21,20 @@ type AlertRuleInput struct {
 	Body     any
 }
 
+// AlertRule is the subset of a stored rule callers need to confirm which group owns it.
+type AlertRule struct {
+	ID       string `json:"id"`
+	EntityID string `json:"entity_id"`
+}
+
+// GetAlertRule calls GET /entities/{entity_id}/alert-rules/{rule_id}. The API looks the
+// rule up by id alone, so callers must compare EntityID themselves.
+func GetAlertRule(ctx context.Context, c *last9api.Client, in AlertRuleInput) (AlertRule, error) {
+	var out AlertRule
+	err := c.Do(ctx, "get alert rule", last9api.Request{Method: http.MethodGet, Path: alertRulePath(in)}, &out)
+	return out, err
+}
+
 // CreateAlertRule calls POST /entities/{entity_id}/alert-rules and returns the raw response body.
 func CreateAlertRule(ctx context.Context, c *last9api.Client, in AlertRuleInput) (json.RawMessage, error) {
 	path := fmt.Sprintf(pathAlertRules, url.PathEscape(in.EntityID))

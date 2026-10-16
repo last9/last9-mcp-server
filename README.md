@@ -778,7 +778,7 @@ Creates a static-threshold rule from a chart described by `describe_alert_chart`
 
 ### update_alert
 
-Full replacement of a rule's evaluation config. Retrieve the rule first with `get_alert_config` or `get_entity_alert_rules`. May soft-delete and recreate the rule, so use the returned replacement ID afterwards.
+Full replacement of a rule's evaluation config. Retrieve the rule first with `get_alert_config` or `get_entity_alert_rules`. Refuses without changing anything when the rule does not exist or belongs to another alert group. May soft-delete and recreate the rule, so use the returned replacement ID afterwards.
 
 - `entity_id` (string, required)
 - `id` (string, required): Alert rule UUID.
@@ -786,7 +786,7 @@ Full replacement of a rule's evaluation config. Retrieve the rule first with `ge
 
 ### patch_alert
 
-Partial change that preserves the rule ID. At least one change is required.
+Partial change that preserves the rule ID. At least one change is required. Refuses without changing anything when the rule does not exist or belongs to another alert group.
 
 - `entity_id` (string, required)
 - `id` (string, required): Alert rule UUID.
@@ -800,7 +800,7 @@ Viewer-role users may only change `mute_until`. Rule-level mute changes are reje
 
 ### delete_alert
 
-Permanently deletes a rule. Verify with `get_alert_config` and get explicit user confirmation first.
+Permanently deletes a rule. Verify with `get_alert_config` and get explicit user confirmation first. Refuses without deleting anything when the rule does not exist or belongs to another alert group.
 
 - `entity_id` (string, required)
 - `id` (string, required): Alert rule UUID.

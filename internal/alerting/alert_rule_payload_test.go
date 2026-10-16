@@ -1,9 +1,11 @@
 package alerting
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,9 +15,23 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// serveRuleOwner answers the ownership lookup patch/update/delete make before writing,
+// reporting the rule as owned by the entity in the request path.
+func serveRuleOwner(w http.ResponseWriter, r *http.Request) bool {
+	parts := strings.Split(r.URL.EscapedPath(), "/")
+	if r.Method != http.MethodGet || len(parts) != 5 || parts[1] != "entities" || parts[3] != "alert-rules" {
+		return false
+	}
+	_, _ = w.Write([]byte(fmt.Sprintf(`{"id":%q,"entity_id":%q}`, parts[4], parts[2])))
+	return true
+}
+
 func newAlertRuleServer(t *testing.T, method, path, body string) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveRuleOwner(w, r) {
+			return
+		}
 		if r.Method != method {
 			t.Errorf("method = %s", r.Method)
 		}
