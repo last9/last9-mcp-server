@@ -301,6 +301,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: prompts.GetEntityAlertRulesDescription,
 	}, alerting.NewGetEntityAlertRulesHandler(client, cfg)))
 
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_entity_kpis",
+		Annotations: readOnlyTool("Get Entity KPIs"),
+		Description: prompts.GetEntityKPIsDescription,
+	}, alerting.NewGetEntityKPIsHandler(client, cfg)))
+
 	// Register describe alert chart tool (read-only enumerate of alertable signals on a covered Discover chart)
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "describe_alert_chart",

@@ -285,6 +285,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_change_events`** — Deployments, config changes, rollbacks. Correlate incidents with what changed
 - **`get_alert_groups`** — Configured Compass alert groups with metadata labels, team, tier, and rule counts — including groups with zero rules and groups that are not firing
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
+- **`get_entity_kpis`** — Every KPI (id, name, PromQL, unit) on one alert group, including KPIs no rule uses yet — the ids `create_alert` and `validate_alert_expression` need
 - **`get_alerts`** — Currently firing alerts within a time window
 - **`get_alert_rule_state`** — Historical firing state (1/0) per alert rule over a time range, grouped by `rule_id`. Filterable by alert group, rule name, label filters, and state.
 - **`get_notification_channels`** — Configured notification channels (Slack, PagerDuty, email, etc.). `scope=channels` lists the channels themselves (ids for attaching); the default `attached` lists per-alert-group attachments
@@ -694,6 +695,14 @@ Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `en
 - `rule_type` (string, optional): `static` or `anomaly`.
 - `alert_group_name` / `alert_group_type` / `data_source_name` (string, optional)
 - `tags` (array, optional): All must match (AND logic).
+
+### get_entity_kpis
+
+Read-only; in the `alerts` and `investigate` toolsets. Lists every KPI on one alert group, including KPIs no alert rule uses yet. Use the returned ids in `expression_args` / `indicators_used`; never invent one.
+
+- `entity_id` (string, required): Alert group/entity UUID, from `get_alert_groups` or `get_alert_config`.
+
+Returns JSON `{"entity_id","count","kpis":[{"id","name","description","query","unit"}]}`, sorted by name. `unit` is a display label: thresholds compare against the raw query value. When no KPI fits, create one with `create_kpi`.
 
 ### get_alerts
 

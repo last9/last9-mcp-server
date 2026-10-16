@@ -107,6 +107,9 @@ var GetAlertGroupsDescription string
 //go:embed descriptions/get_entity_alert_rules.md
 var GetEntityAlertRulesDescription string
 
+//go:embed descriptions/get_entity_kpis.md
+var GetEntityKPIsDescription string
+
 //go:embed descriptions/get_alerts.md
 var GetAlertsDescription string
 

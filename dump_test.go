@@ -122,7 +122,7 @@ func TestDumpTools(t *testing.T) {
 	for i, tool := range out.Tools {
 		byName[tool.Name] = i
 	}
-	for _, name := range []string{"get_traces", "get_service_summary", "prometheus_label_values", "get_logs", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel"} {
+	for _, name := range []string{"get_traces", "get_service_summary", "prometheus_label_values", "get_logs", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "get_entity_kpis"} {
 		i, ok := byName[name]
 		if !ok {
 			t.Fatalf("tool %q missing from dump", name)
@@ -520,7 +520,7 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	for _, tool := range out.Tools {
 		byName[tool.Name] = true
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "get_service_profile", "list_datasources"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "get_service_profile", "list_datasources", "get_entity_kpis"} {
 		if !byName[want] {
 			t.Errorf("investigate dump missing %q", want)
 		}
