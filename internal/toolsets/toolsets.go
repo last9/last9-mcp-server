@@ -87,6 +87,12 @@ var named = map[string][]string{
 	},
 }
 
+// core tools are served under every toolset: other tools' arguments depend on
+// them, so no --toolsets value may hide them.
+var core = []string{
+	"get_current_time",
+}
+
 // discovery tools included in the investigate composite (R9a).
 var investigateExtras = []string{
 	"did_you_mean",
@@ -119,6 +125,7 @@ func (s Set) Allows(toolName string) bool {
 
 // Parse expands a comma-separated toolset spec into allowed tool names.
 // Empty / whitespace-only → nil (all tools). "all" supersedes other tokens.
+// Every non-nil result includes the core tools.
 // Unknown names return an error listing ValidNames.
 func Parse(spec string) (Set, error) {
 	spec = strings.TrimSpace(spec)
@@ -158,6 +165,9 @@ func Parse(spec string) (Set, error) {
 	}
 
 	out := make(Set)
+	for _, tool := range core {
+		out[tool] = struct{}{}
+	}
 	for _, t := range tokens {
 		switch t {
 		case "investigate":

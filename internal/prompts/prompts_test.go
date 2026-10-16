@@ -21,6 +21,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_alerts.md":                        prompts.GetAlertsDescription,
 	"get_apm_service_deviations.md":        prompts.GetAPMServiceDeviationsDescription,
 	"get_change_events.md":                 prompts.GetChangeEventsDescription,
+	"get_current_time.md":                  prompts.GetCurrentTimeDescription,
 	"get_dashboard.md":                     prompts.GetDashboardDescription,
 	"get_dashboard_snapshot.md":            prompts.GetDashboardSnapshotDescription,
 	"get_database_queries.md":              prompts.GetDatabaseQueriesDescription,

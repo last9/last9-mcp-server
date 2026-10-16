@@ -1,0 +1,7 @@
+Return the current time, and resolve a human time range ("last 2h", "since yesterday 9am IST") to absolute start and end times. Call it before building `start_time_iso` / `end_time_iso` for another tool instead of guessing today's date. No API call; always available.
+
+Parameters:
+- `range`: (Optional) Expression to resolve. Forms: `last 2h`, `past 30 minutes`, `last hour`, `last 7d` (units s, m, h, d = 24h, w = 7d); `today` (local midnight to now); `yesterday` (the full local day); `since <point>`; `<point> to <point>`. A point is an RFC3339 timestamp, or `today` / `yesterday` / `YYYY-MM-DD` with an optional clock time (`9am`, `9:30pm`, `14:30`). A trailing zone (`IST`, `Asia/Kolkata`) overrides `timezone` for the bounds.
+- `timezone`: (Optional) Zone for calendar words and for the `local` renderings: an IANA name or an abbreviation (IST = Asia/Kolkata, PST/PDT = America/Los_Angeles, EST/EDT = America/New_York, UTC, GMT). Default UTC. Unknown zones are an error.
+
+Returns JSON: `now`, `timezone`, and with `range` also `range`, `start`, `end`. Each time is `{iso, epoch_seconds, local}`: `iso` is UTC RFC3339, `epoch_seconds` is Unix seconds, `local` (only for a non-UTC timezone) is RFC3339 in that zone. Pass `iso` to `*_time_iso` parameters.

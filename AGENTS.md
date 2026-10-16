@@ -181,6 +181,8 @@ one.
 - CLI/env: `--toolsets` / `LAST9_TOOLSETS` (alias `LAST9_MCP_TOOLSETS`). Comma-separated:
   `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`.
 - Empty / unset / `all` → full surface. Unknown names fail fast with the valid list.
+- `core` tools in `toolsets.go` (`get_current_time`) join every parsed set; add a tool there only
+  when other tools' arguments depend on it.
 - `dump-tools` honors the same flags and env, and loads `.env` first. The canonical snapshot
   is unset/`all`; use `--toolsets=investigate` to measure the automation surface.
 

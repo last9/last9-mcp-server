@@ -517,6 +517,41 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	}
 }
 
+func TestDumpToolsServesCoreToolsUnderEveryToolset(t *testing.T) {
+	for _, spec := range append(toolsets.ValidNames(), "") {
+		t.Run("toolsets="+spec, func(t *testing.T) {
+			allowed, err := toolsets.Parse(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var buf bytes.Buffer
+			if err := dumpTools(&buf, allowed); err != nil {
+				t.Fatalf("dumpTools failed: %v", err)
+			}
+			var out struct {
+				Tools []struct {
+					Name        string `json:"name"`
+					Description string `json:"description"`
+				} `json:"tools"`
+			}
+			if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+				t.Fatalf("output is not valid JSON: %v", err)
+			}
+			var description string
+			for _, tool := range out.Tools {
+				if tool.Name == "get_current_time" {
+					description = tool.Description
+				}
+			}
+			for _, want := range []string{"`range`", "`timezone`", "since <point>", "IST = Asia/Kolkata", "epoch_seconds"} {
+				if !strings.Contains(description, want) {
+					t.Errorf("get_current_time description missing %q", want)
+				}
+			}
+		})
+	}
+}
+
 func TestDumpToolsDashboardWriteSteer(t *testing.T) {
 	var buf bytes.Buffer
 	if err := dumpTools(&buf, nil); err != nil {

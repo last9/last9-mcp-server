@@ -231,6 +231,10 @@ The NPM route is easier on Windows — no path management.
 
 ## What It Can Do
 
+### Orientation
+
+- **`get_current_time`** — Current time, plus absolute bounds for `last 2h`, `yesterday` or `since yesterday 9am IST`, in any IANA zone or common abbreviation. Served under every toolset
+
 ### Service Health
 
 - **`get_service_summary`** — Ranked fleet `(service, env)` rows: interval request_count, throughput_rpm, HTTP 4xx/5xx counts, and gRPC error counts
@@ -334,7 +338,7 @@ Read-only tools against the org's Grafana instance (via Last9's Grafana proxy). 
 
 **Deep links on every response.** Every tool returns a `deep_link` field — a direct URL into the Last9 dashboard for that exact query and time range. The agent can hand you the link; you click it; you're there.
 
-**Toolsets.** By default the server exposes every tool. Automation hosts that only need investigation (logs/traces/metrics/profiles) can set `LAST9_TOOLSETS=investigate` (or pass `--toolsets=investigate`) so `tools/list` stays small without client-side mass-disable. Named packs: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`. Unknown names fail fast. The `metrics` pack alone does **not** include `list_datasources` or `did_you_mean` — use `investigate` (or combine toolsets) when you need those discovery helpers.
+**Toolsets.** By default the server exposes every tool. Automation hosts that only need investigation (logs/traces/metrics/profiles) can set `LAST9_TOOLSETS=investigate` (or pass `--toolsets=investigate`) so `tools/list` stays small without client-side mass-disable. Named packs: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`. Unknown names fail fast. `get_current_time` is served under every toolset. The `metrics` pack alone does **not** include `list_datasources` or `did_you_mean` — use `investigate` (or combine toolsets) when you need those discovery helpers.
 
 **Tool reference resources.** Long logjson/tracejson/service-logs/metrics manuals are MCP resources (`last9://reference/logjson`, `last9://reference/tracejson`, `last9://reference/service_logs`, `last9://reference/metrics`, `last9://reference/investigation`), not always-on tool description text. Critical query rules stay on the tool description so agents that never call `resources/read` still get correct construction guidance. Discover org-specific fields with `get_log_attributes` / `get_log_attributes_for_pipeline` (and the trace equivalents)—they are not injected into descriptions.
 
@@ -414,6 +418,14 @@ LAST9_HTTP=true ./last9-mcp-server
 - For relative windows: use `lookback_minutes`.
 - For absolute windows: use RFC3339/ISO8601 — `2026-02-09T15:04:05Z`.
 - Legacy `YYYY-MM-DD HH:MM:SS` is accepted for compatibility only.
+- Resolve phrases like `since yesterday 9am IST` to RFC3339 bounds with `get_current_time`.
+
+### get_current_time
+
+- `range` (string, optional): `last 2h`, `past 30 minutes`, `last 7d` (s, m, h, d = 24h, w = 7d); `today`; `yesterday`; `since <point>`; `<point> to <point>`. A point is RFC3339, or `today` / `yesterday` / `YYYY-MM-DD` with an optional `9am`, `9:30pm` or `14:30`. A trailing zone overrides `timezone`. Omit for just `now`.
+- `timezone` (string, optional): IANA name or abbreviation (IST = Asia/Kolkata, PST/PDT, EST/EDT, UTC, GMT). Default UTC. Unknown zones are an error.
+
+Returns `now` (and `start`/`end` with `range`) as `{iso, epoch_seconds, local}`; `local` appears only for a non-UTC zone.
 
 ### get_exceptions
 
