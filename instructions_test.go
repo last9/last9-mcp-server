@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -61,22 +60,48 @@ func initializeOver(t *testing.T, spec string) (string, map[string]bool) {
 	return session.InitializeResult().Instructions, served
 }
 
-var mentionedToolName = regexp.MustCompile("`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`")
+// namedTools returns the registry tools that text wraps in backticks. Matching
+// against the registry, not a name-shaped pattern, keeps backticked parameters
+// such as `service_name` from counting as tools.
+func namedTools(text string, registry map[string]bool) map[string]bool {
+	named := map[string]bool{}
+	for name := range registry {
+		if strings.Contains(text, "`"+name+"`") {
+			named[name] = true
+		}
+	}
+	return named
+}
+
+func TestNamedToolsMatchesOnlyRegisteredNames(t *testing.T) {
+	registry := map[string]bool{"get_logs": true, "logs": true}
+	text := "Use `get_logs` or `logs`; reuse `service_name` values, not `get_logs_x`."
+	got := namedTools(text, registry)
+	want := map[string]bool{"get_logs": true, "logs": true}
+	if len(got) != len(want) {
+		t.Fatalf("namedTools = %v, want %v", got, want)
+	}
+	for name := range want {
+		if !got[name] {
+			t.Errorf("namedTools = %v, want %v", got, want)
+		}
+	}
+}
 
 // A tool registered without a line in server_instructions.md fails here, so
 // the policy cannot silently drift from tools.go.
 func TestServerInstructionsNameExactlyServedTools(t *testing.T) {
+	_, registry := initializeOver(t, "")
 	for _, spec := range []string{"", "logs", "traces", "metrics", "alerts", "dashboards", "profiles", "grafana", "investigate", "logs,alerts"} {
 		t.Run("toolsets="+spec, func(t *testing.T) {
 			instructions, served := initializeOver(t, spec)
 			if len(served) == 0 {
 				t.Fatalf("toolsets=%q serves no tools", spec)
 			}
-			named := map[string]bool{}
-			for _, m := range mentionedToolName.FindAllStringSubmatch(instructions, -1) {
-				named[m[1]] = true
-				if !served[m[1]] {
-					t.Errorf("instructions name %q, which toolsets=%q does not serve", m[1], spec)
+			named := namedTools(instructions, registry)
+			for tool := range named {
+				if !served[tool] {
+					t.Errorf("instructions name %q, which toolsets=%q does not serve", tool, spec)
 				}
 			}
 			for tool := range served {

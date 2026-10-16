@@ -152,7 +152,8 @@ It is a `text/template` rendered against `--toolsets` (`tools`/`has` drop unregi
 tools), so a tool named there never leaks into a toolset that lacks it. Every new tool
 goes into one of its groups (discovery, dedicated, raw, write):
 `instructions_test.go` fails, per toolset, if the policy names a tool the toolset does not
-serve or omits one it does.
+serve or omits one it does. It matches backticked text against registered tool names, so
+backticking a parameter such as `service_name` in the policy is fine.
 
 ### Argument structs
 
