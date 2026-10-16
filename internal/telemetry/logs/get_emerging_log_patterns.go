@@ -123,9 +123,7 @@ func NewGetEmergingLogPatternsHandler(client *http.Client, cfg models.Config) fu
 		response.Env = scope.env
 		response.Current = current
 		response.Baseline = baseline
-		if baseline.SampledLines == 0 && current.SampledLines > 0 {
-			response.Note = "Baseline window has no matching lines; every current pattern at or above min_count is reported as new."
-		}
+		response.Note = emptyBaselineNote(current, baseline)
 
 		text, err := json.MarshalIndent(response, "", "  ")
 		if err != nil {
@@ -136,6 +134,19 @@ func NewGetEmergingLogPatternsHandler(client *http.Client, cfg models.Config) fu
 			Content: []mcp.Content{&mcp.TextContent{Text: string(text)}},
 		}, nil, nil
 	}
+}
+
+// emptyBaselineNote explains why every current pattern is new. Only a complete
+// baseline sample proves the window had no matching lines; a capped or
+// truncated one may have missed them.
+func emptyBaselineNote(current, baseline LogPatternWindow) string {
+	if baseline.SampledLines > 0 || current.SampledLines == 0 {
+		return ""
+	}
+	if baseline.SampleLimitReached {
+		return "Baseline sample is empty but incomplete (sample_limit_reached): the baseline search stopped before returning lines, so new means absent from the baseline sample, not from the baseline window."
+	}
+	return "Baseline window has no matching lines; every current pattern at or above min_count is reported as new."
 }
 
 type windowSample struct {
