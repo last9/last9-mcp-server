@@ -150,6 +150,42 @@ func TestGetLogsGuardrailOffSkipsEstimate(t *testing.T) {
 	}
 }
 
+func callGuardedGetServiceLogs(t *testing.T, s *guardrailServer, mode string, args GetServiceLogsArgs) *mcp.CallToolResult {
+	t.Helper()
+	result, _, err := NewGetServiceLogsHandler(s.Client(), guardrailConfig(s.URL, mode))(context.Background(), &mcp.CallToolRequest{}, args)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	return result
+}
+
+func TestGetServiceLogsGuardrailEnforceRejectNeverQueries(t *testing.T) {
+	s := newGuardrailServer(t, http.StatusOK, `{"data":{"bytes":5001}}`)
+	result := callGuardedGetServiceLogs(t, s, guardrail.ModeEnforce, GetServiceLogsArgs{ServiceName: "api", LookbackMinutes: 60})
+
+	if n := s.queryCalls.Load(); n != 0 {
+		t.Fatalf("upstream query called %d times on an enforce reject", n)
+	}
+	if !result.IsError || envelopeHint(t, result, "query_guardrail["+guardrail.ReasonScanBudgetExceeded+"] rejected") == "" {
+		t.Fatalf("isError=%v hints=%v", result.IsError, utils.GetResultEnvelope(t, result).Hints)
+	}
+}
+
+func TestGetServiceLogsGuardrailShadowRunsAndHints(t *testing.T) {
+	s := newGuardrailServer(t, http.StatusOK, `{"data":{"bytes":5001}}`)
+	result := callGuardedGetServiceLogs(t, s, guardrail.ModeShadow, GetServiceLogsArgs{ServiceName: "api", LookbackMinutes: twoDaysMinutes})
+
+	if result.IsError || s.queryCalls.Load() == 0 {
+		t.Fatalf("shadow blocked the query: isError=%v queries=%d", result.IsError, s.queryCalls.Load())
+	}
+	if envelopeHint(t, result, "query_guardrail["+guardrail.ReasonScanBudgetExceeded+"] would be rejected") == "" {
+		t.Fatalf("hints = %v", utils.GetResultEnvelope(t, result).Hints)
+	}
+	if envelopeHint(t, result, "query_guardrail["+guardrail.ReasonRangeTooWide+"]") != "" {
+		t.Error("a service-scoped query was held to the unscoped range cap")
+	}
+}
+
 func TestGetLogsGuardrailEstimateUnavailableStillRuns(t *testing.T) {
 	s := newGuardrailServer(t, http.StatusNotFound, `404 page not found`)
 	result := callGuardedGetLogs(t, s, guardrail.ModeEnforce, GetLogsArgs{LogjsonQuery: rawErrorFilter, LookbackMinutes: 60})

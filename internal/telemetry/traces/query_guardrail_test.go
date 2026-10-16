@@ -132,6 +132,56 @@ func TestGetTracesGuardrailOffSkipsEstimate(t *testing.T) {
 	}
 }
 
+func callGuardedGetServiceTraces(t *testing.T, s *guardrailServer, mode string, args GetServiceTracesArgs) *mcp.CallToolResult {
+	t.Helper()
+	result, _, err := GetServiceTracesHandler(s.Client(), guardrailConfig(s.URL, mode))(context.Background(), &mcp.CallToolRequest{}, args)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	return result
+}
+
+func TestGetServiceTracesGuardrailEnforceRejectNeverQueries(t *testing.T) {
+	s := newGuardrailServer(t, http.StatusOK, `{"data":{"bytes":5001}}`)
+	result := callGuardedGetServiceTraces(t, s, guardrail.ModeEnforce, GetServiceTracesArgs{ServiceName: "api", LookbackMinutes: 60})
+
+	if n := s.queryCalls.Load(); n != 0 {
+		t.Fatalf("upstream query called %d times on an enforce reject", n)
+	}
+	if !result.IsError || envelopeHint(t, result, "query_guardrail["+guardrail.ReasonScanBudgetExceeded+"] rejected") == "" {
+		t.Fatalf("isError=%v hints=%v", result.IsError, utils.GetResultEnvelope(t, result).Hints)
+	}
+}
+
+func TestGetServiceTracesGuardrailShadowRunsAndHints(t *testing.T) {
+	s := newGuardrailServer(t, http.StatusOK, `{"data":{"bytes":5001}}`)
+	result := callGuardedGetServiceTraces(t, s, guardrail.ModeShadow, GetServiceTracesArgs{ServiceName: "api", LookbackMinutes: twoDaysMinutes})
+
+	if result.IsError || s.queryCalls.Load() != 1 {
+		t.Fatalf("shadow blocked the query: isError=%v queries=%d", result.IsError, s.queryCalls.Load())
+	}
+	if !strings.HasPrefix(utils.GetTextContent(t, result), `{"data":[{"trace_id":"trace-0"`) {
+		t.Errorf("payload text changed: %s", utils.GetTextContent(t, result))
+	}
+	if envelopeHint(t, result, "query_guardrail["+guardrail.ReasonScanBudgetExceeded+"] would be rejected") == "" {
+		t.Fatalf("hints = %v", utils.GetResultEnvelope(t, result).Hints)
+	}
+	if envelopeHint(t, result, "query_guardrail["+guardrail.ReasonRangeTooWide+"]") != "" {
+		t.Error("a service-scoped query was held to the unscoped range cap")
+	}
+}
+
+// An exact trace lookup reads one trace by id from its own endpoint; there is
+// no scan to estimate.
+func TestGetServiceTracesGuardrailSkipsTraceIDLookup(t *testing.T) {
+	s := newGuardrailServer(t, http.StatusOK, `{"data":{"bytes":5001}}`)
+	result := callGuardedGetServiceTraces(t, s, guardrail.ModeEnforce, GetServiceTracesArgs{TraceID: "ea8148dece205073096e4ad48145b08a"})
+
+	if result.IsError || s.estimateCalls.Load() != 0 || s.queryCalls.Load() != 1 {
+		t.Fatalf("isError=%v estimates=%d queries=%d", result.IsError, s.estimateCalls.Load(), s.queryCalls.Load())
+	}
+}
+
 func TestGetTracesGuardrailEstimateUnavailableStillRuns(t *testing.T) {
 	s := newGuardrailServer(t, http.StatusBadRequest, `{"error":"bad pipeline"}`)
 	result := callGuardedGetTraces(t, s, guardrail.ModeEnforce, GetTracesArgs{TracejsonQuery: serviceSpanFilter, LookbackMinutes: 60})

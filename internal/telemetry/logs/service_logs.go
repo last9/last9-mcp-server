@@ -14,6 +14,7 @@ import (
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/telemetry/guardrail"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -69,6 +70,7 @@ type ServiceLogAttributeFilter struct {
 
 // NewGetServiceLogsHandler creates a new handler for the get_service_logs tool
 func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetServiceLogsArgs) (*mcp.CallToolResult, any, error) {
+	guard := guardrail.New(client, cfg)
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetServiceLogsArgs) (*mcp.CallToolResult, any, error) {
 		// Validate required parameters
 		if args.ServiceName == "" {
@@ -120,12 +122,21 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, err
 		}
 
+		verdict := guard.Check(ctx, req, guardrail.Query{
+			Tool: "get_service_logs", Signal: guardrail.Logs, Pipeline: logjsonQuery,
+			StartMs: startTime.UnixMilli(), EndMs: endTime.UnixMilli(), Index: normalizedIndex,
+		})
+		if verdict.Blocked {
+			return verdict.RejectionResult(), nil, nil
+		}
+
 		// Fetch raw logs using the existing logs API approach. When index is omitted,
 		// keep the query on the no-index path that matches the live dashboard/API.
 		logs, err := fetchServiceLogs(ctx, client, cfg, args.ServiceName, startTime, endTime, limit, logjsonQuery, normalizedIndex)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
+		verdict.AddHints(&logs.envelope)
 		logs.HTTPStatusField = statusField
 		if logs.Count == 0 {
 			logs.envelope.Hint("No log lines matched. Before concluding there are none, confirm the service name with did_you_mean or get_service_profile, check env and index against the profile, relax filters, or widen the window.")
