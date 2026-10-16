@@ -117,7 +117,8 @@ func TestOnCallRunbookChecksLogNoveltyBeforeRawLines(t *testing.T) {
 			t.Fatalf("symptom %q: unexpected error: %v", symptom, err)
 		}
 		got := res.Messages[0].Content.(*mcp.TextContent).Text
-		for _, want := range []string{"get_emerging_log_patterns", "get_log_patterns", "no log novelty"} {
+		// get_log_patterns costs a second sample, so only branches that go on to read logs call it.
+		for _, want := range []string{"get_emerging_log_patterns", "Call get_log_patterns only when a branch below reads logs", "no log novelty"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("symptom %q render should contain %q:\n%s", symptom, want, got)
 			}
