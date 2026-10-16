@@ -289,6 +289,20 @@ func TestGetEmergingLogPatterns_RejectsInvalidArgsBeforeQuerying(t *testing.T) {
 	}
 }
 
+func TestGetEmergingLogPatterns_MinCountErrorBlamesSampleSizeOnlyWhenOverIt(t *testing.T) {
+	const blame = "min_count cannot exceed sample_size"
+	cases := map[int]bool{-1: false, 11: true, maxPatternSampleSize + 1: true}
+	for minCount, wantBlame := range cases {
+		_, err := GetEmergingLogPatternsArgs{MinCount: minCount}.thresholds(10)
+		if err == nil {
+			t.Fatalf("min_count %d: want an error", minCount)
+		}
+		if got := strings.Contains(err.Error(), blame); got != wantBlame {
+			t.Errorf("min_count %d: error %q mentions %q = %v, want %v", minCount, err, blame, got, wantBlame)
+		}
+	}
+}
+
 func TestGetEmergingLogPatterns_MinCountMayEqualSampleSize(t *testing.T) {
 	args := emergingArgs(LogPatternScopeArgs{SampleSize: 4})
 	args.MinCount = 4
