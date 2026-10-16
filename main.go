@@ -89,7 +89,7 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	if err != nil {
 		return cfg, err
 	}
-	cfg.AllowedTools = allowed
+	cfg.ToolFilter = toolsets.Filter{Tools: allowed}
 
 	return cfg, nil
 }
@@ -121,7 +121,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("dump-tools failed: %v", err)
 		}
-		if err := dumpTools(os.Stdout, allowed); err != nil {
+		if err := dumpTools(os.Stdout, toolsets.Filter{Tools: allowed}); err != nil {
 			log.Fatalf("dump-tools failed: %v", err)
 		}
 		return

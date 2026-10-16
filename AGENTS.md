@@ -119,15 +119,21 @@ a Go schema string. Do not require list-before-create unless product asks.
 ### Tools
 
 **Register through `registerIfAllowed`, never `last9mcp.RegisterInstrumentedTool`.**
-`registerIfAllowed` is what enforces `--toolsets` filtering, surfaces registration errors
-instead of discarding them, and recovers the SDK's panic on an invalid tool schema. A tool
-registered directly leaks into every toolset.
+`registerIfAllowed` is what enforces `--toolsets` and `--read-only` filtering, surfaces
+registration errors instead of discarding them, and recovers the SDK's panic on an invalid
+tool schema. A tool registered directly leaks into every toolset and into read-only mode.
 
 ```go
-reg(registerIfAllowed(server, cfg.AllowedTools,
-    &mcp.Tool{Name: "get_foo", Description: prompts.GetFooDescription},
+reg(registerIfAllowed(server, gate,
+    &mcp.Tool{Name: "get_foo", Annotations: readOnlyTool("Get Foo"),
+        Description: prompts.GetFooDescription},
     foo.NewGetFooHandler(client, cfg)))
 ```
+
+**Annotate every tool:** `readOnlyTool(title)` or `writeTool(title, destructive, idempotent)`.
+Read-only mode serves a tool only when its `readOnlyHint` is true, and a tool without
+annotations counts as a write tool. A new write tool also goes in `writeTools` in
+`annotations_test.go`.
 
 Then add `get_foo` to its domain in `internal/toolsets/toolsets.go`, and verify with
 `go run . dump-tools --toolsets=<other-domain>` that it is absent there. `dump_test.go`
