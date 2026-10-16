@@ -16,11 +16,11 @@ Parameters:
 
 Returns:
 - `current` and `baseline`: each window's range, `sampled_lines`, `sample_limit_reached` (true when the sample may miss matching lines), `total_matching_lines` when the API reports it, and `logs_truncated` when the search stopped early.
-- `comparison_basis`: `rate_per_minute` when both samples hold every matching line, `share_of_sample` when either has `sample_limit_reached`.
+- `comparison_basis`: `rate_per_minute` when both samples hold every matching line; `estimated_rate_per_minute` when a capped sample is scaled to its window's exact `total_matching_lines`; `share_of_sample` when a capped window's volume is unknown (no total, or `logs_truncated`).
 - `patterns`: each with `template`, `change` (`new`, `increased`, `decreased`, `disappeared`), `ratio` (current over baseline frequency, when both are non-zero), `current` and `baseline` stats (`count`, `first_seen`, `last_seen`, `severity_counts`) and one raw `sample` line. Ordered new, increased, decreased, disappeared.
 - `unchanged_patterns`: templates in both windows whose frequency changed by less than `change_factor`. `below_min_count_patterns`: templates that changed (including new or disappeared ones) but had fewer than `min_count` lines, so they are not stable, only too rare to report. `note`: set when the baseline sample is empty, so everything current reads as new; it says whether that sample was complete.
 
 Rules:
 - An empty `patterns` list is a valid answer: nothing in the logs changed significantly. Report that there is no log novelty. Do not invent patterns, counts or causes that the response does not contain, and do not lower `min_count` or `change_factor` just to produce a finding.
-- Counts are within each window's sample; quote them with `comparison_basis`. Failed search chunks return a tool error. A truncated or capped search still returns a comparison, with `sample_limit_reached` true on that window and `comparison_basis` `share_of_sample`.
+- Counts are within each window's sample; quote them with `comparison_basis`. Failed search chunks return a tool error. A truncated or capped search still returns a comparison, with `sample_limit_reached` true on that window. Under `share_of_sample`, `increased` and `decreased` mean the template's share of its sample changed, not its rate; say so.
 - When either window has `sample_limit_reached`, `new` and `disappeared` mean absent from the other window's sample, not from the window; say so when you report them.

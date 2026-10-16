@@ -446,6 +446,9 @@ func TestLogPatternDescriptionsCriticalRules(t *testing.T) {
 	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "absent from the other window's sample, not from the window") {
 		t.Error("get_emerging_log_patterns must say new/disappeared are presence-in-sample once a sample is capped")
 	}
+	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "`increased` and `decreased` mean the template's share of its sample changed, not its rate") {
+		t.Error("get_emerging_log_patterns must say share_of_sample changes are composition, not rate")
+	}
 }
 
 func TestWhaleDescriptionsBounded(t *testing.T) {

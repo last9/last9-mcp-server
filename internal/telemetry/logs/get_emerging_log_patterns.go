@@ -23,8 +23,9 @@ const (
 	changeDecreased   = "decreased"
 	changeDisappeared = "disappeared"
 
-	comparisonRatePerMinute = "rate_per_minute"
-	comparisonShareOfSample = "share_of_sample"
+	comparisonRatePerMinute          = "rate_per_minute"
+	comparisonShareOfSample          = "share_of_sample"
+	comparisonEstimatedRatePerMinute = "estimated_rate_per_minute"
 
 	defaultEmergingMinCount     = 3
 	defaultEmergingChangeFactor = 2.0
@@ -220,18 +221,39 @@ func (args GetEmergingLogPatternsArgs) baselineRange(currentStart, currentEnd ti
 }
 
 // windowComparison normalises counts so windows of different length or
-// sampling compare fairly. Counts are exact per minute only while neither
-// sample hit its cap; otherwise only each pattern's share of its sample is.
+// sampling compare fairly. Each scale divides a sampled count into lines per
+// minute across the whole window; shares of the sample are the fallback once a
+// capped window's volume is unknown, and compare composition, not rate.
 type windowComparison struct {
 	basis                       string
 	currentScale, baselineScale float64
 }
 
 func newWindowComparison(current, baseline LogPatternWindow, currentSpan, baselineSpan time.Duration) windowComparison {
-	if current.SampleLimitReached || baseline.SampleLimitReached {
+	currentScale, currentEstimated, currentKnown := perMinuteScale(current, currentSpan)
+	baselineScale, baselineEstimated, baselineKnown := perMinuteScale(baseline, baselineSpan)
+	switch {
+	case !currentKnown || !baselineKnown:
 		return windowComparison{comparisonShareOfSample, float64(current.SampledLines), float64(baseline.SampledLines)}
+	case currentEstimated || baselineEstimated:
+		return windowComparison{comparisonEstimatedRatePerMinute, currentScale, baselineScale}
+	default:
+		return windowComparison{comparisonRatePerMinute, currentScale, baselineScale}
 	}
-	return windowComparison{comparisonRatePerMinute, currentSpan.Minutes(), baselineSpan.Minutes()}
+}
+
+// perMinuteScale is what a window's sampled count is divided by to get lines
+// per minute. A capped sample is extrapolated to the window's exact total; a
+// truncated search's total is only a floor, so that window's volume is unknown.
+func perMinuteScale(w LogPatternWindow, span time.Duration) (scale float64, estimated, known bool) {
+	switch {
+	case !w.SampleLimitReached:
+		return span.Minutes(), false, true
+	case w.TotalMatchingLines == nil || (w.LogsTruncated != nil && *w.LogsTruncated):
+		return 0, false, false
+	default:
+		return span.Minutes() * float64(w.SampledLines) / float64(*w.TotalMatchingLines), true, true
+	}
 }
 
 // ratio is the current frequency over the baseline frequency; both counts

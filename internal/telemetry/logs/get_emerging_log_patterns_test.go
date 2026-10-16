@@ -180,6 +180,55 @@ func TestGetEmergingLogPatterns_ComparesSharesWhenASampleIsCapped(t *testing.T) 
 	}
 }
 
+// A capped dense window against a complete sparse one: the pattern's share of
+// the sample halves while its rate grows 500x, so shares would report decreased.
+func TestGetEmergingLogPatterns_ExtrapolatesACappedSampleWithAnExactTotal(t *testing.T) {
+	stub := &logSearchStub{}
+	srv := stub.serve(t, map[int64][]string{
+		patternWindowStart:   append(sameLines("alarm raised", 5), sameLines("request served", 5)...),
+		precedingWindowStart: sameLines("alarm raised", 10),
+	}, map[int64]int{patternWindowStart: 10000, precedingWindowStart: 10})
+	args := emergingArgs(LogPatternScopeArgs{SampleSize: 10})
+	args.MinCount = 2
+	result, _, err := NewGetEmergingLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, args)
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	got := decodeToolJSON[GetEmergingLogPatternsResponse](t, result)
+
+	if !got.Current.SampleLimitReached || got.ComparisonBasis != comparisonEstimatedRatePerMinute {
+		t.Fatalf("basis = %q current = %+v, want estimated_rate_per_minute with the current cap reached", got.ComparisonBasis, got.Current)
+	}
+	for _, p := range got.Patterns {
+		if p.Template == "alarm raised" {
+			if p.Change != changeIncreased || *p.Ratio != 500 {
+				t.Fatalf("alarm = %+v, want increased x500 (5/10 of 10000 lines against 10)", p)
+			}
+			return
+		}
+	}
+	t.Fatalf("patterns = %+v, want alarm raised reported", got.Patterns)
+}
+
+// A truncated search's total is only a floor, so it cannot scale a sample.
+func TestGetEmergingLogPatterns_ComparesSharesWhenACappedTotalIsAFloor(t *testing.T) {
+	stub := &logSearchStub{envelope: map[string]any{"logs_truncated": true}}
+	srv := stub.serve(t, map[int64][]string{
+		patternWindowStart:   sameLines("lock wait timeout", 4),
+		precedingWindowStart: append(sameLines("lock wait timeout", 2), sameLines("vacuum done", 2)...),
+	}, map[int64]int{patternWindowStart: 400, precedingWindowStart: 4})
+	args := emergingArgs(LogPatternScopeArgs{SampleSize: 4})
+	args.MinCount = 2
+	result, _, err := NewGetEmergingLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, args)
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	got := decodeToolJSON[GetEmergingLogPatternsResponse](t, result)
+	if got.ComparisonBasis != comparisonShareOfSample {
+		t.Fatalf("basis = %q, want share_of_sample when the total is only a floor", got.ComparisonBasis)
+	}
+}
+
 func TestGetEmergingLogPatterns_UsesExplicitBaselineAndNormalisesByDuration(t *testing.T) {
 	baselineStart := patternWindowStart - 86400
 	lines := map[int64][]string{
