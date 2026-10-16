@@ -95,6 +95,26 @@ func TestFetchRecentEvaluationHistory_SamplesMonitor(t *testing.T) {
 	}
 }
 
+func TestFetchRecentEvaluationHistory_MissingRuleIsUnknown(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(AlertsResponse{AlertRules: nil})
+	}))
+	defer srv.Close()
+	cfg := models.Config{
+		APIBaseURL: srv.URL,
+		TokenManager: &auth.TokenManager{
+			AccessToken: "tok",
+			ExpiresAt:   time.Now().Add(time.Hour),
+		},
+	}
+	history := fetchRecentEvaluationHistory(context.Background(), srv.Client(), cfg, []string{"rule-missing"})
+	for _, s := range history["rule-missing"] {
+		if s.State != "unknown" {
+			t.Fatalf("unobserved sample must be unknown, got %q", s.State)
+		}
+	}
+}
+
 func TestFetchRecentEvaluationHistory_SkipsLargeResultSets(t *testing.T) {
 	ids := make([]string, recentEvaluationHistoryMaxRules+1)
 	for i := range ids {

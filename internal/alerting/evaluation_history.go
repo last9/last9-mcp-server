@@ -69,7 +69,9 @@ func fetchRecentEvaluationHistory(
 			continue
 		}
 		for ruleID := range wanted {
-			state := "ok"
+			// Absence is not proof of health: get_alert_rule_state only records
+			// rules the monitor returned. Label unobserved minutes unknown.
+			state := "unknown"
 			if s, ok := states[ruleID]; ok && s != "" {
 				state = s
 			}
