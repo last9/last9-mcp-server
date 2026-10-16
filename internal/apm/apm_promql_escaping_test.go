@@ -209,7 +209,7 @@ func escapeEnvExactMatcher(env string) string {
 // accepted by literalEnvPattern.
 func effectiveEnv(t *testing.T, env string) string {
 	t.Helper()
-	pat, err := literalEnvPattern(env)
+	pat, _, err := literalEnvPattern(env)
 	if err != nil {
 		t.Fatalf("effectiveEnv(%q): %v", env, err)
 	}

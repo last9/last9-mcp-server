@@ -360,7 +360,7 @@ func buildDBBaseFilter(dbSystem, host, env string) (string, error) {
 		filter += fmt.Sprintf(`, net_peer_name="%s"`, utils.EscapePromQLLabel(host))
 	}
 	if env != "" {
-		envPattern, err := literalEnvPattern(env)
+		envPattern, _, err := literalEnvPattern(env)
 		if err != nil {
 			return "", err
 		}

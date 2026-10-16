@@ -37,7 +37,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 
 		env := args.Env
-		envForQuery, err := literalEnvPattern(env)
+		envForQuery, literalEnv, err := literalEnvPattern(env)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -452,7 +452,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 
 		// Build deep link URL
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, deeplink.APMCatalogEnvExact(env), "dependency")
+		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, deeplink.APMCatalogEnvExact(literalEnv), "dependency")
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
