@@ -265,6 +265,8 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 - **`get_logs`** — Full JSON pipeline log queries (aggregations, filters, field extraction)
 - **`get_service_logs`** — Raw log lines for a service, filterable by severity and body content
+- **`get_log_patterns`** — A service's log lines in a window clustered into message templates, with count, first/last seen, severity mix and a sample
+- **`get_emerging_log_patterns`** — Log templates that are new, increased, decreased or disappeared against a baseline window, with counts from both
 - **`get_log_attributes`** — Global catalog of attributes in the log schema for a time window
 - **`get_log_attributes_for_pipeline`** — Log fields actually present for an in-progress pipeline (scoped discovery), each with its exact `filter_field`
 - **`get_drop_rules`** — Log drop rules from [Last9 Control Plane](https://last9.io/control-plane)
@@ -554,6 +556,29 @@ Use `service_name` as `ServiceName`, `env` as the environment when present, and 
 
 Multiple filter types combine with AND. Each array uses OR internally.
 Use `get_logs` for broad aggregate counts first; use `get_service_logs` only after narrowing to a service/env/index and a small sample set.
+
+### get_log_patterns
+
+- `service_name` (string, required)
+- `env` (string, optional)
+- `start_time_iso` / `end_time_iso` (string, optional)
+- `lookback_minutes` (integer, optional): Default: 60.
+- `severity_filters` / `body_filters` (array, optional): OR logic, as in `get_service_logs`.
+- `index` (string, optional)
+- `sample_size` (integer, optional): Lines sampled from the window. Default: 1000, maximum: 5000.
+- `top_n` (integer, optional): Templates returned by count. Default: 20, maximum: 100. The rest are totalled in `other`.
+
+Clustering runs in the MCP server over the sampled lines, so counts are within the sample; `window.sample_limit_reached` says when the sample did not cover the whole window. An empty `patterns` list is a valid answer.
+
+### get_emerging_log_patterns
+
+Takes every `get_log_patterns` parameter (the time range is the current window), plus:
+
+- `baseline_start_time_iso` / `baseline_end_time_iso` (string, optional): Set both or neither. Default: the window of equal length immediately before the current one.
+- `min_count` (integer, optional): Lines a pattern needs to be reported. Default: 3.
+- `change_factor` (number, optional): Frequency ratio counted as significant, greater than 1. Default: 2.
+
+Returns only changed templates (`new`, `increased`, `decreased`, `disappeared`) with `current` and `baseline` counts. Frequencies are compared per minute while both samples are complete and as shares of the sample once either hits `sample_size` (`comparison_basis`). An empty `patterns` list means no log novelty.
 
 ### get_log_attributes
 
