@@ -291,7 +291,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`recommend_alert_config`** — Read-only design guidance (lifecycle, validation gates, responder context) before creating an alert rule
 - **`validate_alert_expression`** — Dry-run an alert expression against an alert group's KPIs without saving anything
 - **`describe_alert_chart`** — Read-only: the alertable signals (key, unit) on a Discover chart (`discover-service`, `discover-exceptions`)
-- **`create_alert`** — Create a static or supported anomaly-macro alert rule in an existing alert group, disabled first. Create once; refine with `update_alert` / `patch_alert`
+- **`create_alert`** — Create an alert rule (static, or adaptive via `adaptive_std_cmp`) in an existing alert group; always created disabled as a draft. Create once; refine with `update_alert` / `patch_alert`
 - **`create_alert_from_chart`** — Create a static-threshold alert rule from a Discover chart in one call. Unlike `create_alert`, the rule is enabled immediately
 - **`update_alert`** — Full replacement of a rule's evaluation config (may return a replacement rule ID)
 - **`patch_alert`** — Partial change to a rule: enable/pause, `mute_until`, responder `properties`, weekly `recurring_mute_schedule` (or `clear_recurring_mute_schedule`)
@@ -736,7 +736,9 @@ Dry-runs an expression without saving. Use before `create_alert` / `update_alert
 
 - `entity_id` (string, required): Alert group/entity UUID.
 - `expression` (string, required): Arithmetic over indicator names, e.g. `x / y`. At most 3 indicators.
-- `indicators_used` (object, optional): Indicator name to KPI UUID owned by `entity_id`.
+- `indicators_used` (object, required, non-empty): Indicator name to KPI UUID owned by `entity_id`.
+
+Only the arithmetic expression is checked (pass the inner metric expression, not an `adaptive_std_cmp(...)` wrapper); `condition` / `alert_condition` are not. The at-least-one-timeseries check runs only when more than one indicator is used.
 
 Returns `{"valid":true}` or `{"valid":false,"reason":"..."}`; an invalid expression is a normal result, not a tool error.
 
@@ -752,10 +754,10 @@ Read-only. Lists the alertable signals (key, name, unit, query metadata) on a co
 
 ### create_alert
 
-Creates a static or supported anomaly-macro rule in an existing alert group. Call `recommend_alert_config` first; create new rules with `is_disabled=true`, validate, then promote with `patch_alert`. Create once and keep the returned rule ID.
+Creates a rule in an existing alert group, always disabled (a draft, even if `is_disabled=false` is passed). Call `recommend_alert_config` first, then promote with `patch_alert` `is_disabled=false` only after the user confirms. Create once and keep the returned rule ID.
 
 - `entity_id` (string, required): Alert group/entity UUID.
-- `alert_rule` (object, required): Complete typed rule body, including `primary_indicator` and `expression_args` bound to real KPIs of the entity. Static rules require `condition`, `alert_condition`, and `eval_window` (0–60 minutes). `algorithm` cannot be set. Responder context goes in `properties` (description, runbook, annotations, `query_mode`).
+- `alert_rule` (object, required): Complete typed rule body, including `primary_indicator` and `expression_args` bound to real KPIs of the entity. Static rules require `condition`, `alert_condition`, and `eval_window` (0–60 minutes). Adaptive rules use `expression` = `adaptive_std_cmp(<primary_indicator>, sensitivity, window)`; the three fields are then optional (defaults `expr > 0`, `count_true(result) >= 1`, `1`). `algorithm` cannot be set. Responder context goes in `properties` (description, runbook, annotations, `query_mode`).
 
 Notification routing is configured on the alert group, not the rule.
 

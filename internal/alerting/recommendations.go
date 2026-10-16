@@ -15,7 +15,7 @@ import (
 type RecommendAlertConfigArgs struct {
 	Signal      string `json:"signal" jsonschema:"(Required) Metric or user-impact signal to alert on, including its unit and relevant dimensions"`
 	Objective   string `json:"objective" jsonschema:"(Required) Operational symptom or user impact this alert should detect"`
-	RuleType    string `json:"rule_type,omitempty" jsonschema:"Alert type: static or anomaly (default: static). Adaptive is not a distinct creatable backend type."`
+	RuleType    string `json:"rule_type,omitempty" jsonschema:"Alert type: static or anomaly (default: static); anomaly means an adaptive_std_cmp(metric, sensitivity, window) rule"`
 	Environment string `json:"environment,omitempty" jsonschema:"Environment and traffic profile, for example production with weekday seasonality"`
 	Severity    string `json:"severity,omitempty" jsonschema:"Desired severity: breach or threat (default: breach)"`
 }
@@ -33,7 +33,7 @@ func NewRecommendAlertConfigHandler(_ *http.Client, _ models.Config) func(contex
 			ruleType = alertConfigRuleTypeStatic
 		}
 		if ruleType != alertConfigRuleTypeStatic && ruleType != alertConfigRuleTypeAnomaly {
-			return utils.ToolErrorResult("rule_type must be one of \"static\" or \"anomaly\"; adaptive is currently evaluated as static by the backend"), nil, nil
+			return utils.ToolErrorResult("rule_type must be one of \"static\" or \"anomaly\""), nil, nil
 		}
 		severity := strings.ToLower(strings.TrimSpace(args.Severity))
 		if severity == "" {
@@ -45,7 +45,7 @@ func NewRecommendAlertConfigHandler(_ *http.Client, _ models.Config) func(contex
 
 		strategy := map[string]string{
 			alertConfigRuleTypeStatic:  "Use a threshold derived from an SLO, capacity limit, or historical percentile; never invent a threshold. Start with 3 bad minutes in a 5-minute evaluation window and tune from observed incidents.",
-			alertConfigRuleTypeAnomaly: "Use only a backend-supported anomaly macro when the signal has a stable learned baseline. Confirm seasonality, minimum traffic, model warm-up, and a static safety bound before enabling paging.",
+			alertConfigRuleTypeAnomaly: "Use adaptive_std_cmp(metric, sensitivity, window) when the signal has a stable learned baseline. Confirm seasonality, minimum traffic, model warm-up, and a static safety bound before enabling paging.",
 		}[ruleType]
 
 		text := fmt.Sprintf(`Recommended %s alert configuration
@@ -59,7 +59,7 @@ Strategy: %s
 
 Lifecycle:
 1. Discover and verify the alert group, KPI/query, unit, labels, and alert-group notification routing.
-2. Create the rule disabled (is_disabled=true). The backend derives the algorithm from expression; clients must not send algorithm.
+2. Create the rule (create_alert always creates it disabled, is_disabled=true). The backend derives the algorithm from expression; clients must not send algorithm.
 3. Observe or replay representative traffic, checking no-data behavior, cardinality, grouped notifications, and recovery.
 4. Promote it with patch_alert by setting is_disabled=false; PATCH preserves the rule ID.
 5. Tune evaluation configuration with update_alert, use patch_alert for mute/pause/metadata, and delete only after explicit confirmation.

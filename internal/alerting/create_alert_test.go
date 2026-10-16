@@ -4,19 +4,31 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
-func TestCreateAlertHandler(t *testing.T) {
-	server := newAlertRuleServer(t, http.MethodPost, "/entities/entity-1/alert-rules",
-		`{"primary_indicator":"latency","expression_args":{"latency":{"id":"kpi-1"}},"rule_name":"latency"}`)
-	name := "latency"
-	result, _, err := NewCreateAlertHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil, CreateAlertArgs{EntityID: "entity-1", AlertRuleMutation: AlertRuleMutation{AlertRule: validAlertRulePayload(&name)}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resultText(result) != `{"id":"rule-1"}` {
-		t.Fatalf("unexpected result: %s", resultText(result))
+func TestCreateAlertAlwaysCreatesDisabledDraft(t *testing.T) {
+	f, tr := false, true
+	for name, in := range map[string]*bool{"omitted": nil, "false": &f, "true": &tr} {
+		t.Run(name, func(t *testing.T) {
+			server := newAlertRuleServer(t, http.MethodPost, "/entities/entity-1/alert-rules",
+				`{"primary_indicator":"latency","expression_args":{"latency":{"id":"kpi-1"}},"is_disabled":true,"rule_name":"latency"}`)
+			rn := "latency"
+			payload := validAlertRulePayload(&rn)
+			payload.IsDisabled = in
+			result, _, err := NewCreateAlertHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil, CreateAlertArgs{EntityID: "entity-1", AlertRuleMutation: AlertRuleMutation{AlertRule: payload}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := resultText(result)
+			if !strings.HasPrefix(text, `{"id":"rule-1"}`) || !strings.Contains(text, "disabled draft") || !strings.Contains(text, "patch_alert is_disabled=false") {
+				t.Fatalf("unexpected result: %s", text)
+			}
+			if got := strings.Contains(text, "was ignored"); got != (name == "false") {
+				t.Fatalf("override note = %v for %s: %s", got, name, text)
+			}
+		})
 	}
 }
 

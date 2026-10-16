@@ -39,11 +39,11 @@ type AlertProperties struct {
 type AlertRulePayload struct {
 	PrimaryIndicator             string                        `json:"primary_indicator" jsonschema:"(Required) Primary KPI name; must be a key in expression_args"`
 	ExpressionArgs               map[string]AlertExpressionArg `json:"expression_args" jsonschema:"(Required) Indicator name to KPI binding; all KPIs must belong to entity_id"`
-	Expression                   *string                       `json:"expression,omitempty" jsonschema:"Rule expression. Supported anomaly macros determine the algorithm; clients cannot set algorithm directly."`
+	Expression                   *string                       `json:"expression,omitempty" jsonschema:"Rule expression. Plain arithmetic over indicators (static) or adaptive_std_cmp(<primary_indicator>, sensitivity, window) (adaptive); clients cannot set algorithm directly."`
 	Condition                    *string                       `json:"condition,omitempty" jsonschema:"Required for static rules; boolean expression over expr, for example expr > 100"`
 	AlertCondition               *string                       `json:"alert_condition,omitempty" jsonschema:"Required for static rules; firing window expression, for example count_true(result) >= 3"`
 	EvalWindow                   *int                          `json:"eval_window,omitempty" jsonschema:"Required for static rules; evaluation window in minutes, range 0-60"`
-	IsDisabled                   *bool                         `json:"is_disabled,omitempty" jsonschema:"Create disabled for validation, then promote with patch_alert"`
+	IsDisabled                   *bool                         `json:"is_disabled,omitempty" jsonschema:"Ignored by create_alert, which always creates the rule disabled; promote with patch_alert"`
 	ExternalRef                  *string                       `json:"external_ref,omitempty" jsonschema:"Optional alphanumeric-and-hyphen external reference"`
 	Severity                     *string                       `json:"severity,omitempty" jsonschema:"Severity: breach or threat; backend chooses an algorithm default when omitted"`
 	RuleName                     *string                       `json:"rule_name,omitempty" jsonschema:"Alert rule name; backend generates one when omitted"`

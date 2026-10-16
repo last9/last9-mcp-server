@@ -17,7 +17,7 @@ import (
 type ValidateAlertExpressionArgs struct {
 	EntityID       string            `json:"entity_id" jsonschema:"(Required) Alert group/entity UUID whose KPIs the expression uses"`
 	Expression     string            `json:"expression" jsonschema:"(Required) Arithmetic expression over indicator names, for example x / y"`
-	IndicatorsUsed map[string]string `json:"indicators_used,omitempty" jsonschema:"Indicator name used in the expression mapped to its KPI UUID owned by entity_id, for example {\"x\":\"<kpi-uuid>\"}; every name in the expression must be present"`
+	IndicatorsUsed map[string]string `json:"indicators_used" jsonschema:"(Required) Non-empty map of indicator name used in the expression mapped to its KPI UUID owned by entity_id, for example {\"x\":\"<kpi-uuid>\"}; every name in the expression must be present"`
 }
 
 func NewValidateAlertExpressionHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ValidateAlertExpressionArgs) (*mcp.CallToolResult, any, error) {
@@ -27,6 +27,9 @@ func NewValidateAlertExpressionHandler(client *http.Client, cfg models.Config) f
 		}
 		if strings.TrimSpace(args.Expression) == "" {
 			return utils.ToolErrorResult("expression is required"), nil, nil
+		}
+		if len(args.IndicatorsUsed) == 0 {
+			return utils.ToolErrorResult("indicators_used is required and must map each indicator name in the expression to its KPI UUID"), nil, nil
 		}
 		body, err := entities.ValidateAlertExpression(ctx, last9api.NewClient(client, cfg), entities.ValidateExpressionInput{
 			EntityID: args.EntityID, Expression: args.Expression, IndicatorsUsed: args.IndicatorsUsed,

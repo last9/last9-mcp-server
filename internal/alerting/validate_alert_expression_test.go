@@ -44,7 +44,7 @@ func TestValidateAlertExpressionHandler(t *testing.T) {
 
 func TestValidateAlertExpressionRequiresArgs(t *testing.T) {
 	h := NewValidateAlertExpressionHandler(http.DefaultClient, testAlertMutationConfig("http://unused"))
-	for _, args := range []ValidateAlertExpressionArgs{{Expression: "x"}, {EntityID: "e"}} {
+	for _, args := range []ValidateAlertExpressionArgs{{Expression: "x"}, {EntityID: "e"}, {EntityID: "e", Expression: "x"}} {
 		result, _, err := h(context.Background(), nil, args)
 		if err != nil || !result.IsError {
 			t.Fatalf("args=%+v result=%+v err=%v", args, result, err)

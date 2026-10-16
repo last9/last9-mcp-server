@@ -27,6 +27,9 @@ func NewCreateAlertHandler(client *http.Client, cfg models.Config) func(context.
 		if err := validateAlertRulePayload(args.AlertRule); err != nil {
 			return utils.ToolErrorResult(err.Error()), nil, nil
 		}
+		overridden := args.AlertRule.IsDisabled != nil && !*args.AlertRule.IsDisabled
+		disabled := true
+		args.AlertRule.IsDisabled = &disabled
 		body, err := entities.CreateAlertRule(ctx, last9api.NewClient(client, cfg),
 			entities.AlertRuleInput{EntityID: args.EntityID, Body: args.AlertRule})
 		if err != nil {
@@ -35,6 +38,10 @@ func NewCreateAlertHandler(client *http.Client, cfg models.Config) func(context.
 		if err := validateMutationIDResponse(body); err != nil {
 			return nil, nil, fmt.Errorf("invalid create alert response: %w", err)
 		}
-		return alertMutationResult(cfg, body, ""), nil, nil
+		text := strings.TrimSpace(string(body)) + "\n\nCreated as a disabled draft; it will not fire. Promote it with patch_alert is_disabled=false only after the user confirms."
+		if overridden {
+			text += " Requested is_disabled=false was ignored: create_alert always creates disabled."
+		}
+		return alertMutationResult(cfg, []byte(text), ""), nil, nil
 	}
 }
