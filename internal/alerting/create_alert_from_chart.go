@@ -55,7 +55,7 @@ type CreateAlertFromChartArgs struct {
 // create_alert_from_chart: one-call static-threshold rule creation from a
 // covered Discover chart identity.
 func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, CreateAlertFromChartArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, args CreateAlertFromChartArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, mcpReq *mcp.CallToolRequest, args CreateAlertFromChartArgs) (*mcp.CallToolResult, any, error) {
 		surface := strings.TrimSpace(args.Surface)
 		if surface == "" {
 			return utils.ToolErrorResult("surface is required"), nil, nil
@@ -100,11 +100,12 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 		}
 
 		req := alerts.IntelligenceRequest{
-			Surface:   surface,
-			ChartKey:  chartKey,
-			Entity:    alertIntelEntity(serviceName, args.Env, args.Attributes),
-			SignalKey: signalKey,
-			Name:      name,
+			Surface:    surface,
+			ChartKey:   chartKey,
+			Entity:     alertIntelEntity(serviceName, args.Env, args.Attributes),
+			SignalKey:  signalKey,
+			Name:       name,
+			CreatedVia: newCreatedViaFields(mcpReq),
 		}
 		// Omitted optionals stay zero-valued so omitempty drops them from the
 		// wire payload and the backend defaults apply untouched.

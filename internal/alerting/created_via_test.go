@@ -14,13 +14,13 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// bodyRecorder answers the rule-ownership GET and records every write body; each write
-// gets writeReply.
+// bodyRecorder answers every GET with getReply (or, when unset, the rule-ownership lookup)
+// and records every write body; each write gets writeReply.
 type bodyRecorder struct {
 	*httptest.Server
-	mu         sync.Mutex
-	bodies     []map[string]any
-	ruleLookup string
+	mu       sync.Mutex
+	bodies   []map[string]any
+	getReply string
 }
 
 func newBodyRecorder(t *testing.T, writeReply string) *bodyRecorder {
@@ -29,8 +29,8 @@ func newBodyRecorder(t *testing.T, writeReply string) *bodyRecorder {
 	rec.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		if r.Method == http.MethodGet {
-			if rec.ruleLookup != "" && strings.Contains(r.URL.Path, "/alert-rules/") {
-				_, _ = w.Write([]byte(rec.ruleLookup))
+			if rec.getReply != "" {
+				_, _ = w.Write([]byte(rec.getReply))
 				return
 			}
 			if serveRuleOwner(w, r) {
@@ -206,7 +206,7 @@ func TestRuleEditsKeepStoredMarkerAndDropForgedOnes(t *testing.T) {
 		} {
 			t.Run(tt.name+"/"+tool, func(t *testing.T) {
 				rec := newBodyRecorder(t, `{"id":"rule-2"}`)
-				rec.ruleLookup = tt.stored
+				rec.getReply = tt.stored
 				result, err := call(rec)
 				if err != nil || result.IsError {
 					t.Fatalf("result=%s err=%v", resultText(result), err)
@@ -221,7 +221,7 @@ func TestRuleEditsKeepStoredMarkerAndDropForgedOnes(t *testing.T) {
 
 func TestPatchWithoutPropertiesLeavesAnnotationsAlone(t *testing.T) {
 	rec := newBodyRecorder(t, `{}`)
-	rec.ruleLookup = `{"id":"rule-1","entity_id":"entity-1","properties":{"annotations":{"_l9_created_via_":"last9-mcp"}}}`
+	rec.getReply = `{"id":"rule-1","entity_id":"entity-1","properties":{"annotations":{"_l9_created_via_":"last9-mcp"}}}`
 	enabled := false
 	result, _, err := NewPatchAlertHandler(rec.Client(), testAlertMutationConfig(rec.URL))(context.Background(), nil,
 		PatchAlertArgs{EntityID: "entity-1", ID: "rule-1", IsDisabled: &enabled})
@@ -235,7 +235,7 @@ func TestPatchWithoutPropertiesLeavesAnnotationsAlone(t *testing.T) {
 
 func TestUpdateWithoutPropertiesKeepsStoredMarker(t *testing.T) {
 	rec := newBodyRecorder(t, `{"id":"rule-2"}`)
-	rec.ruleLookup = `{"id":"rule-1","entity_id":"entity-1","properties":{"annotations":{"_l9_created_via_":"last9-mcp","_l9_created_via_client_":"c/1"}}}`
+	rec.getReply = `{"id":"rule-1","entity_id":"entity-1","properties":{"annotations":{"_l9_created_via_":"last9-mcp","_l9_created_via_client_":"c/1"}}}`
 	result, _, err := NewUpdateAlertHandler(rec.Client(), testAlertMutationConfig(rec.URL))(context.Background(), nil,
 		UpdateAlertArgs{EntityID: "entity-1", ID: "rule-1", AlertRuleMutation: AlertRuleMutation{AlertRule: validAlertRulePayload(nil)}})
 	if err != nil || result.IsError {
@@ -244,6 +244,51 @@ func TestUpdateWithoutPropertiesKeepsStoredMarker(t *testing.T) {
 	want := map[string]any{annotationCreatedVia: "last9-mcp", annotationCreatedViaClient: "c/1"}
 	if got := ruleAnnotations(t, rec.only(t)); !mapsEqual(got, want) {
 		t.Fatalf("annotations = %v, want %v", got, want)
+	}
+}
+
+func TestChartAndChannelCreatesSendCreatedVia(t *testing.T) {
+	req := clientRequest("claude-code{{x}}", "2.1.0\n")
+	for _, tt := range []struct {
+		name, getReply, writeReply string
+		writes                     int
+		call                       func(*bodyRecorder) (*mcp.CallToolResult, error)
+	}{
+		{"create_alert_from_chart", "", `{"id":"rule-9"}`, 1, func(rec *bodyRecorder) (*mcp.CallToolResult, error) {
+			r, _, err := NewCreateAlertFromChartHandler(rec.Client(), testAlertMutationConfig(rec.URL))(context.Background(), req, CreateAlertFromChartArgs{
+				Surface: "discover-service", ChartKey: "error_rate", ServiceName: "checkout", SignalKey: "error_ratio", Name: "n",
+			})
+			return r, err
+		}},
+		{"create_notification_channel", "", `{"id":7,"name":"n","type":"email"}`, 1, func(rec *bodyRecorder) (*mcp.CallToolResult, error) {
+			r, _, err := NewCreateNotificationChannelHandler(rec.Client(), testAlertMutationConfig(rec.URL))(context.Background(), req, CreateNotificationChannelArgs{
+				Name: "n", Type: "email", Destination: "a@b.co",
+			})
+			return r, err
+		}},
+		{"attach_notification_channel", `[{"id":7,"name":"n","type":"email"}]`, `{"id":11}`, 2, func(rec *bodyRecorder) (*mcp.CallToolResult, error) {
+			r, _, err := NewAttachNotificationChannelHandler(rec.Client(), testAlertMutationConfig(rec.URL))(context.Background(), req, AttachNotificationChannelArgs{
+				ChannelID: 7, AlertGroupID: "g1", Severity: "both",
+			})
+			return r, err
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := newBodyRecorder(t, tt.writeReply)
+			rec.getReply = tt.getReply
+			result, err := tt.call(rec)
+			if err != nil || result.IsError {
+				t.Fatalf("result=%s err=%v", resultText(result), err)
+			}
+			if len(rec.bodies) != tt.writes {
+				t.Fatalf("writes = %d, want %d", len(rec.bodies), tt.writes)
+			}
+			for _, body := range rec.bodies {
+				if body["created_via"] != "last9-mcp" || body["created_via_client"] != "claude-codex/2.1.0" {
+					t.Fatalf("body = %v", body)
+				}
+			}
+		})
 	}
 }
 

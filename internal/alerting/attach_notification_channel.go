@@ -27,7 +27,7 @@ type notificationChannelAttachment struct {
 }
 
 func NewAttachNotificationChannelHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, AttachNotificationChannelArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, args AttachNotificationChannelArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args AttachNotificationChannelArgs) (*mcp.CallToolResult, any, error) {
 		groupID, severity := strings.TrimSpace(args.AlertGroupID), strings.ToLower(strings.TrimSpace(args.Severity))
 		if args.ChannelID <= 0 || groupID == "" {
 			return utils.ToolErrorResult("channel_id and alert_group_id are required"), nil, nil
@@ -50,10 +50,11 @@ func NewAttachNotificationChannelHandler(client *http.Client, cfg models.Config)
 		if !found {
 			return utils.ToolErrorResult("channel_id is not a channel id; nothing was sent. Use the id column of get_notification_channels with scope=channels"), nil, nil
 		}
+		createdVia := newCreatedViaFields(req)
 		done := make([]notificationChannelAttachment, 0, len(severities))
 		for _, sev := range severities {
 			row, err := notifications.AttachNotificationSetting(ctx, api, args.ChannelID,
-				notifications.AttachNotificationSettingInput{EntityID: groupID, Severity: sev, Property: property})
+				notifications.AttachNotificationSettingInput{EntityID: groupID, Severity: sev, Property: property, CreatedVia: createdVia})
 			if err != nil {
 				return attachNotificationChannelFailure(err, sev, done)
 			}

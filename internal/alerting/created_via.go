@@ -4,6 +4,7 @@ import (
 	"strings"
 	"unicode"
 
+	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/entities"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -83,6 +84,10 @@ func withCreatedViaAnnotations(props *AlertProperties, marker map[string]string)
 		out.Annotations = nil
 	}
 	return &out
+}
+
+func newCreatedViaFields(req *mcp.CallToolRequest) last9api.CreatedVia {
+	return last9api.CreatedVia{CreatedVia: createdViaMCP, CreatedViaClient: createdViaClient(req)}
 }
 
 // storedCreatedViaMarker returns the marker annotations a stored rule already carries, so
