@@ -204,6 +204,21 @@ func TestGetEmergingLogPatterns_EmptyBaselineIsCalledOut(t *testing.T) {
 	}
 }
 
+func TestGetEmergingLogPatterns_TruncatedEmptyBaselineIsCalledOutAsIncomplete(t *testing.T) {
+	stub := &logSearchStub{envelope: map[string]any{"logs_truncated": true}}
+	got, _ := callEmerging(t, stub, map[int64][]string{patternWindowStart: sameLines("booting", 3)}, emergingArgs(LogPatternScopeArgs{}))
+
+	if !got.Baseline.SampleLimitReached || got.Baseline.SampledLines != 0 {
+		t.Fatalf("baseline = %+v, want a truncated empty sample", got.Baseline)
+	}
+	if strings.Contains(got.Note, "no matching lines") {
+		t.Errorf("note = %q, must not claim no matching lines for a truncated baseline", got.Note)
+	}
+	if !strings.Contains(got.Note, "Baseline sample is empty but incomplete") {
+		t.Errorf("note = %q, want the incomplete baseline sample called out", got.Note)
+	}
+}
+
 func TestGetEmergingLogPatterns_BoundsOutputWithOther(t *testing.T) {
 	current := append(sameLines("gamma failed right now", 3), sameLines("beta failed now", 4)...)
 	current = append(current, sameLines("alpha failed", 5)...)
