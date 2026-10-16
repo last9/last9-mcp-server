@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"last9-mcp/internal/alerting"
+	"last9-mcp/internal/apm"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/change_events"
 	"last9-mcp/internal/models"
@@ -312,6 +313,55 @@ func TestAlertsStayInsideTheRequestedEnv(t *testing.T) {
 			}
 			if tc.wantEnvMatch == envMatchUnlabelled && !strings.Contains(report.Reason, "no env label") {
 				t.Fatalf("reason %q must not imply the alert is in %s", report.Reason, tc.reqEnv)
+			}
+		})
+	}
+}
+
+func TestFetchStartedAlertsPagesHourSlicesAndDedups(t *testing.T) {
+	change := time.Now().UTC().Truncate(time.Minute).Add(-3 * time.Hour)
+	cases := []struct {
+		after     time.Duration
+		wantSpans []int64
+	}{
+		{120 * time.Minute, []int64{3600, 3600}},
+		{90 * time.Minute, []int64{3600, 1800}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.after.String(), func(t *testing.T) {
+			var calls []alerting.AlertsMonitorQuery
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				ts, _ := strconv.ParseInt(r.URL.Query().Get("timestamp"), 10, 64)
+				win, _ := strconv.ParseInt(r.URL.Query().Get("window"), 10, 64)
+				calls = append(calls, alerting.AlertsMonitorQuery{Timestamp: ts, Window: win})
+				// Every slice reports the same instance, as a rule still firing across slices does.
+				rule := alerting.AlertRuleData{RuleID: "r1", AlertGroupName: "checkout",
+					Alerts: []alerting.AlertInstance{{Since: change.Add(20 * time.Minute).Unix()}}}
+				_ = json.NewEncoder(w).Encode(alerting.AlertsResponse{AlertRules: []alerting.AlertRuleData{rule}})
+			}))
+			defer server.Close()
+			end := change.Add(tc.after)
+			got, err := fetchStartedAlerts(context.Background(), server.Client(), testConfig(server.URL),
+				alertScope{window: apm.TimeWindow{Start: change, End: end}, services: []string{"checkout"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(calls) != len(tc.wantSpans) {
+				t.Fatalf("monitor calls = %+v, want %d slices", calls, len(tc.wantSpans))
+			}
+			wantEnd := end.Unix()
+			for i, c := range calls {
+				if c.Timestamp != wantEnd || c.Window != tc.wantSpans[i] {
+					t.Fatalf("slice %d = %+v, want ending %d spanning %d", i, c, wantEnd, tc.wantSpans[i])
+				}
+				wantEnd -= c.Window
+			}
+			if wantEnd != change.Unix() {
+				t.Fatalf("slices stop at %d, want the window start %d", wantEnd, change.Unix())
+			}
+			if len(got) != 1 || got[0].RuleID != "r1" {
+				t.Fatalf("started = %+v, want one deduped alert", got)
 			}
 		})
 	}
