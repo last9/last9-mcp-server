@@ -256,3 +256,6 @@ var AnalyzeSlowQueriesWorkflow string
 
 //go:embed workflows/on_call_runbook.md
 var OnCallRunbookWorkflow string
+
+//go:embed workflows/author_alert.md
+var AuthorAlertWorkflow string
