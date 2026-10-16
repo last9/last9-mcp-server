@@ -458,6 +458,7 @@ func TestReferenceManualsEmbedded(t *testing.T) {
 		"tracejson":    prompts.TracejsonReference,
 		"service_logs": prompts.ServiceLogsReference,
 		"metrics":      prompts.MetricsReference,
+		"alerting":     prompts.AlertingReference,
 	} {
 		if len(body) < 1000 {
 			t.Errorf("%s reference too short (%d chars) — embed may be wrong", name, len(body))
@@ -558,6 +559,59 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 	// Any mention at all, not three exact phrasings a reword would slip past.
 	if strings.Contains(create, "list_dashboards") {
 		t.Error("CreateDashboardDescription must not require list_dashboards before create")
+	}
+}
+
+func TestAlertingReferenceCoversAuthoringContract(t *testing.T) {
+	for _, phrase := range []string{
+		"adaptive_std_cmp(<primary_indicator>, <sensitivity>, <window>)",
+		"One to three distinct indicator names",
+		"There is **no `for:` clause**",
+		`"count_true(result) >= <bad_minutes>"` + "` with `eval_window: <total_minutes>`",
+		"**required**, minutes, 0-60",
+		"default `expr > 0`",
+		"default `count_true(result) >= 1`",
+		"The KPI `unit` is a label",
+		"**inner metric expression**",
+		"`invalid indicator details for <name>`",
+		"`missing indicator details for <name>`",
+		"`expression yields 0 timeseries`",
+		"It does **not** check `condition`, `alert_condition`, `eval_window`",
+		"### Latency", "### Error rate", "### Saturation",
+		"## Alert from a dashboard panel",
+		"only after the user explicitly confirms",
+	} {
+		if !strings.Contains(prompts.AlertingReference, phrase) {
+			t.Errorf("alerting reference missing %q", phrase)
+		}
+	}
+	// Each template section must show both a static and an adaptive rule.
+	for _, section := range strings.Split(strings.SplitN(prompts.AlertingReference, "## Templates", 2)[1], "\n### ")[1:] {
+		title := strings.SplitN(section, "\n", 2)[0]
+		if title == "Saturation" {
+			section = strings.SplitN(section, "\n## ", 2)[0]
+		}
+		if !strings.Contains(section, `"condition": "expr >`) || !strings.Contains(section, `"expression": "adaptive_std_cmp(`) {
+			t.Errorf("template %q must show a static and an adaptive rule", title)
+		}
+	}
+}
+
+func TestAlertToolDescriptionsPointAtAlertingReference(t *testing.T) {
+	for name, body := range map[string]string{
+		"create_alert":              prompts.CreateAlertDescription,
+		"update_alert":              prompts.UpdateAlertDescription,
+		"validate_alert_expression": prompts.ValidateAlertExpressionDescription,
+		"recommend_alert_config":    prompts.RecommendAlertConfigDescription,
+		"get_entity_kpis":           prompts.GetEntityKPIsDescription,
+		"create_kpi":                prompts.CreateKPIDescription,
+	} {
+		if !strings.Contains(body, "last9://reference/alerting") {
+			t.Errorf("%s description must point at last9://reference/alerting", name)
+		}
+	}
+	if !strings.Contains(prompts.ValidateAlertExpressionDescription, "get_entity_kpis") {
+		t.Error("validate_alert_expression must send agents to get_entity_kpis for KPI ids")
 	}
 }
 

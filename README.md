@@ -355,7 +355,7 @@ Read-only tools against the org's Grafana instance (via Last9's Grafana proxy). 
 
 **Toolsets.** By default the server exposes every tool. Automation hosts that only need investigation (logs/traces/metrics/profiles) can set `LAST9_TOOLSETS=investigate` (or pass `--toolsets=investigate`) so `tools/list` stays small without client-side mass-disable. Named packs: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`. Unknown names fail fast. The `metrics` pack alone does **not** include `list_datasources` or `did_you_mean` — use `investigate` (or combine toolsets) when you need those discovery helpers.
 
-**Tool reference resources.** Long logjson/tracejson/service-logs/metrics manuals are MCP resources (`last9://reference/logjson`, `last9://reference/tracejson`, `last9://reference/service_logs`, `last9://reference/metrics`, `last9://reference/investigation`), not always-on tool description text. Critical query rules stay on the tool description so agents that never call `resources/read` still get correct construction guidance. Discover org-specific fields with `get_log_attributes` / `get_log_attributes_for_pipeline` (and the trace equivalents)—they are not injected into descriptions.
+**Tool reference resources.** Long logjson/tracejson/service-logs/metrics manuals are MCP resources (`last9://reference/logjson`, `last9://reference/tracejson`, `last9://reference/service_logs`, `last9://reference/metrics`, `last9://reference/investigation`, `last9://reference/alerting`), not always-on tool description text. The alerting manual covers the alert expression grammar, static vs adaptive fields, units, what `validate_alert_expression` checks, and latency / error-rate / saturation rule templates. Critical query rules stay on the tool description so agents that never call `resources/read` still get correct construction guidance. Discover org-specific fields with `get_log_attributes` / `get_log_attributes_for_pipeline` (and the trace equivalents)—they are not injected into descriptions.
 
 **Chunked large results.** `get_logs` and `get_traces` handle large result sets through chunking rather than truncating. The default limit is 5000 entries for logs; configurable via `LAST9_MAX_GET_LOGS_ENTRIES`.
 
@@ -759,7 +759,7 @@ Dry-runs an expression without saving. Use before `create_alert` / `update_alert
 
 - `entity_id` (string, required): Alert group/entity UUID.
 - `expression` (string, required): Arithmetic over indicator names, e.g. `x / y`. At most 3 indicators.
-- `indicators_used` (object, required, non-empty): Indicator name to KPI UUID owned by `entity_id`.
+- `indicators_used` (object, required, non-empty): Indicator name to KPI UUID owned by `entity_id`; list the group's KPI ids with `get_entity_kpis`.
 
 Only the arithmetic expression is checked (pass the inner metric expression, not an `adaptive_std_cmp(...)` wrapper); `condition` / `alert_condition` are not. The at-least-one-timeseries check runs only when more than one indicator is used.
 

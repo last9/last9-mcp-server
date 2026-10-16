@@ -20,6 +20,9 @@ var MetricsReference string
 //go:embed references/investigation.md
 var InvestigationReference string
 
+//go:embed references/alerting.md
+var AlertingReference string
+
 //go:embed descriptions/get_service_summary.md
 var GetServiceSummaryDescription string
 

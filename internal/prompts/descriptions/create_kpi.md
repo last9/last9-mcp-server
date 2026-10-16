@@ -10,4 +10,4 @@ Parameters:
 - `description` (optional): what the KPI measures.
 - `data_source_id` (optional): data source UUID; defaults to the alert group's data source.
 
-Create once and keep the returned id: bind it in `expression_args` (`create_alert`, `update_alert`) and `indicators_used` (`validate_alert_expression`). Never call create_kpi again for the same query; on a name conflict, call `get_entity_kpis` and reuse the existing id. Returns `{"id", "name", "query", "unit"}` and a link to Alerting.
+Create once and keep the returned id: bind it in `expression_args` (`create_alert`, `update_alert`) and `indicators_used` (`validate_alert_expression`). Never call create_kpi again for the same query; on a name conflict, call `get_entity_kpis` and reuse the existing id. Returns `{"id", "name", "query", "unit"}` and a link to Alerting. Alert authoring guide: `last9://reference/alerting`.

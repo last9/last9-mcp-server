@@ -7,6 +7,7 @@ import (
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/toolsets"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
@@ -52,7 +53,7 @@ func TestReferenceResourcesAvailableUnderMetricsToolset(t *testing.T) {
 		}
 		found[res.URI] = true
 	}
-	for _, uri := range []string{resourceURILogjson, resourceURITracejson, resourceURIServiceLogs, resourceURIMetrics, resourceURIInvestigation} {
+	for _, uri := range []string{resourceURILogjson, resourceURITracejson, resourceURIServiceLogs, resourceURIMetrics, resourceURIInvestigation, resourceURIAlerting} {
 		if !found[uri] {
 			t.Errorf("resource %q missing under metrics toolset", uri)
 		}
@@ -96,6 +97,14 @@ func TestReferenceResourcesAvailableUnderMetricsToolset(t *testing.T) {
 	}
 	if len(investigationRead.Contents) == 0 || len(investigationRead.Contents[0].Text) < 500 {
 		t.Fatalf("investigation resource body too short: %#v", investigationRead.Contents)
+	}
+
+	alertingRead, err := session.ReadResource(ctx, &mcp.ReadResourceParams{URI: resourceURIAlerting})
+	if err != nil {
+		t.Fatalf("resources/read alerting: %v", err)
+	}
+	if len(alertingRead.Contents) == 0 || alertingRead.Contents[0].Text != prompts.AlertingReference {
+		t.Fatalf("alerting resource body does not match the embedded manual: %#v", alertingRead.Contents)
 	}
 
 	_, err = session.ReadResource(ctx, &mcp.ReadResourceParams{URI: "last9://reference/nope"})
