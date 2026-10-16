@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `create_alert` and `update_alert` now explain the API's bare `Invalid expression_args` 400: each `expression_args` key must be the bound KPI's exact name. `validate_alert_expression` accepts any name, so its description and schema no longer suggest placeholders such as `x, y, z` (#190).
 - `acknowledge_alert` `ack` now refuses, without recording a claim, unless the alert monitor behind `get_alerts` lists that exact `alert_group_id`, `rule_id` and `rule_type` within the last hour; the claim API accepted any ids and wrote phantom claims (#190).
 - `patch_alert`, `update_alert` and `delete_alert` now look the rule up first and refuse, without writing, when it does not exist or belongs to an alert group other than `entity_id`; the API acted on the rule id alone, so a mismatched pair changed or deleted another group's rule. An unknown id now reads "no alert rule … exists" instead of a generic 404 or a retryable 500 (#190).
 - `create_notification_channel` now rejects a `generic_webhook` `destination` that is not an `https://` URL instead of silently creating a plain-HTTP channel; the description already documented an HTTPS-only destination (#190).

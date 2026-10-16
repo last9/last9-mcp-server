@@ -428,6 +428,22 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 	}
 }
 
+// The API rejects expression_args keys other than the bound KPI's own name.
+func TestAlertRuleDescriptionsRequireKPINames(t *testing.T) {
+	for name, desc := range map[string]string{
+		"create_alert":              prompts.CreateAlertDescription,
+		"update_alert":              prompts.UpdateAlertDescription,
+		"validate_alert_expression": prompts.ValidateAlertExpressionDescription,
+	} {
+		if !strings.Contains(desc, "exact name") {
+			t.Errorf("%s does not require each indicator to use its KPI's exact name", name)
+		}
+	}
+	if strings.Contains(prompts.ValidateAlertExpressionDescription, "x, y, z") {
+		t.Error("validate_alert_expression still suggests placeholder indicator names")
+	}
+}
+
 func TestWhaleDescriptionsBounded(t *testing.T) {
 	budgets := map[string]int{
 		"get_logs_base":         2900,

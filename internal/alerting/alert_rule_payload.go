@@ -42,7 +42,7 @@ type AlertProperties struct {
 
 type AlertRulePayload struct {
 	PrimaryIndicator             string                        `json:"primary_indicator" jsonschema:"(Required) Primary KPI name; must be a key in expression_args"`
-	ExpressionArgs               map[string]AlertExpressionArg `json:"expression_args" jsonschema:"(Required) Indicator name to KPI binding; all KPIs must belong to entity_id"`
+	ExpressionArgs               map[string]AlertExpressionArg `json:"expression_args" jsonschema:"(Required) KPI name to KPI binding; each key must be the bound KPI's exact name (not a placeholder such as x), and all KPIs must belong to entity_id"`
 	Expression                   *string                       `json:"expression,omitempty" jsonschema:"Rule expression. Plain arithmetic over indicators (static) or adaptive_std_cmp(<primary_indicator>, sensitivity, window) (adaptive); clients cannot set algorithm directly."`
 	Condition                    *string                       `json:"condition,omitempty" jsonschema:"Required for static rules; boolean expression over expr, for example expr > 100"`
 	AlertCondition               *string                       `json:"alert_condition,omitempty" jsonschema:"Required for static rules; firing window expression, for example count_true(result) >= 3"`
@@ -138,6 +138,17 @@ func alertMutationResult(cfg models.Config, body []byte, fallback string) *mcp.C
 	}
 	link := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildAlertingGroupsLink()
 	return &mcp.CallToolResult{Meta: deeplink.ToMeta(link), Content: []mcp.Content{&mcp.TextContent{Text: text}}}
+}
+
+// alertRuleWriteError turns create/update failures into results. The API accepts an
+// expression_args key only when it equals the bound KPI's own name (validate_alert_expression
+// does not check this), and its bare "Invalid expression_args" gives no hint of that.
+func alertRuleWriteError(err error) (*mcp.CallToolResult, any, error) {
+	var apiErr *utils.UpstreamHTTPError
+	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusBadRequest && strings.Contains(apiErr.Body, "Invalid expression_args") {
+		return utils.ToolErrorResult("the API rejected expression_args; nothing was saved. Each key must be the exact name of the KPI it binds, not a placeholder such as x (existing rules show KPI names under Indicators in get_entity_alert_rules); primary_indicator and the expression must use those same names, and every KPI id must belong to entity_id."), nil, nil
+	}
+	return nil, nil, withUpstreamBody(err)
 }
 
 // withUpstreamBody relays a sanitized upstream 4xx body that the error text omits (403/404/409).
