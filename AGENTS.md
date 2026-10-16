@@ -18,7 +18,7 @@ prompts, and resources.
 | `main.go` | startup, config, subcommands, stdio/HTTP transport |
 | `tools.go` | every tool registration |
 | `resources.go` | reference resources (`last9://reference/...`) |
-| `dump.go` | `dump-tools` / `dump-prompts` — builds a server without credentials |
+| `dump.go` | `dump-tools` / `dump-prompts` / `dump-instructions` — builds a server without credentials |
 | `http_server.go` | `--http` mode |
 
 **`internal/`**
@@ -39,6 +39,7 @@ go build .
 go test -race ./...          # integration tests skip without TEST_REFRESH_TOKEN
 go run . dump-tools          # served tools/list, name-sorted, no credentials
 go run . dump-prompts        # served prompts/list
+go run . dump-instructions   # instructions sent on initialize; honors --toolsets
 ./scripts/start-local.sh     # run against a local .env
 ./scripts/eval-r10.sh        # eval suites against a fresh build of this checkout
 ```
@@ -155,9 +156,10 @@ goes into one of its groups (discovery, dedicated, raw, write):
 serve or omits one it does. It matches backticked text against registered tool names, so
 backticking a parameter such as `service_name` in the policy is fine.
 
-`registerServerInstructions` has one call site, in `main.go` after `registerAllTools`
-(stdio and `--http` share that server). `dump.go` skips it on purpose: `tools/list` and
-`prompts/list` carry no instructions, and `instructions_test.go` covers the handshake.
+`registerServerInstructions` is called in `main.go` after `registerAllTools` (stdio and
+`--http` share that server) and in `dumpInstructions`. `dumpTools` and `dumpPrompts` skip
+it on purpose: `tools/list` and `prompts/list` carry no instructions. Run
+`go run . dump-instructions --toolsets=<set>` to read the policy a toolset gets.
 
 ### Argument structs
 

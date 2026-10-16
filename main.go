@@ -94,11 +94,12 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	return cfg, nil
 }
 
-// parseDumpToolsets loads .env then parses --toolsets / LAST9_TOOLSETS for dump-tools
-// (which short-circuits before SetupConfig and needs no credentials).
+// parseDumpToolsets loads .env then parses --toolsets / LAST9_TOOLSETS for
+// dump-tools and dump-instructions (which short-circuit before SetupConfig and
+// need no credentials).
 func parseDumpToolsets() (toolsets.Set, error) {
 	_ = godotenv.Load()
-	fs := flag.NewFlagSet("dump-tools", flag.ContinueOnError)
+	fs := flag.NewFlagSet(os.Args[1], flag.ContinueOnError)
 	spec := toolsets.SpecFromEnv()
 	fs.StringVar(&spec, "toolsets", spec, "Comma-separated MCP toolsets to dump")
 	args := []string{}
@@ -123,6 +124,17 @@ func main() {
 		}
 		if err := dumpTools(os.Stdout, allowed); err != nil {
 			log.Fatalf("dump-tools failed: %v", err)
+		}
+		return
+	}
+
+	if len(os.Args) > 1 && os.Args[1] == "dump-instructions" {
+		allowed, err := parseDumpToolsets()
+		if err != nil {
+			log.Fatalf("dump-instructions failed: %v", err)
+		}
+		if err := dumpInstructions(os.Stdout, allowed); err != nil {
+			log.Fatalf("dump-instructions failed: %v", err)
 		}
 		return
 	}

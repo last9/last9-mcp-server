@@ -103,6 +103,30 @@ func dumpPrompts(w io.Writer) error {
 	return enc.Encode(map[string]any{"prompts": promptList})
 }
 
+// dumpInstructions writes the instructions an initialize returns for the
+// allowed toolsets, as plain markdown. Like dumpTools it reads them back over
+// in-memory transports, so the output is what clients receive.
+func dumpInstructions(w io.Writer, allowed toolsets.Set) error {
+	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
+	if err != nil {
+		return fmt.Errorf("failed to create server: %w", err)
+	}
+	if err := registerServerInstructions(server, allowed); err != nil {
+		return fmt.Errorf("failed to register instructions: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), dumpTimeout)
+	defer cancel()
+	session, closeSessions, err := connectInMemory(ctx, server, "dump-instructions")
+	if err != nil {
+		return err
+	}
+	defer closeSessions()
+
+	_, err = fmt.Fprintln(w, session.InitializeResult().Instructions)
+	return err
+}
+
 // The round-trips are over in-memory transports and won't hang in practice,
 // but a timeout makes a wedged dump fail loudly in CI rather than hanging the
 // gate.
