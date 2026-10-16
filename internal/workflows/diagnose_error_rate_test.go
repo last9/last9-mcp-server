@@ -101,7 +101,12 @@ func TestDiagnoseErrorRateChecksLogNoveltyBeforeRawLines(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	got := res.Messages[0].Content.(*mcp.TextContent).Text
-	for _, want := range []string{"get_emerging_log_patterns(service_name=checkout, env=prod", "no log novelty"} {
+	for _, want := range []string{
+		"get_emerging_log_patterns(service_name=checkout, env=prod",
+		"no log novelty",
+		// Error triage compares error templates, but severity_filters drop body-level lines when severity_set is none or partial.
+		`severity_filters=["error", "fatal"] only when severity_set is "all"`,
+	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("template should contain %q:\n%s", want, got)
 		}
