@@ -434,6 +434,9 @@ func apmDeviation(e apm.LeaderboardEntry) APMDeviation {
 // envLabels are the group labels alert rules use to name an environment.
 var envLabels = []string{"env", "environment", "deployment_environment", "deployment.environment"}
 
+// serviceLabels are the group labels alert rules use to name a service.
+var serviceLabels = []string{"service", "service_name", "service.name"}
+
 type alertScope struct {
 	window   apm.TimeWindow
 	services []string
@@ -473,8 +476,8 @@ func fetchStartedAlerts(ctx context.Context, client *http.Client, cfg models.Con
 	return started, nil
 }
 
-// startedInScope matches a rule to a scoped service by an exact group-label
-// value or by its alert group's name, and keeps instances whose firing began
+// startedInScope matches a rule to a scoped service by a service group label
+// or by its alert group's name, and keeps instances whose firing began
 // inside the window. An instance without its own start falls back to the
 // rule's; a rule with no instances has nothing firing and yields none. With an
 // env, instances labelled with another env are dropped.
@@ -507,13 +510,15 @@ func startedInScope(rule alerting.AlertRuleData, scope alertScope) []StartedAler
 	return out
 }
 
+// matchService reads only service label keys: any other label (team,
+// component, exported_job) can equal a service name by coincidence.
 func matchService(rule alerting.AlertRuleData, inst alerting.AlertInstance, scope []string) (string, bool) {
 	for _, service := range scope {
 		if strings.EqualFold(rule.AlertGroupName, service) {
 			return service, true
 		}
-		for _, v := range inst.GroupLabels {
-			if fmt.Sprint(v) == service {
+		for _, key := range serviceLabels {
+			if v, ok := inst.GroupLabels[key]; ok && strings.EqualFold(fmt.Sprint(v), service) {
 				return service, true
 			}
 		}

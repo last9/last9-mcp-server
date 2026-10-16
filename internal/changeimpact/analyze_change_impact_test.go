@@ -292,6 +292,47 @@ func TestRuleWithoutAlertInstancesHasNotStarted(t *testing.T) {
 	}
 }
 
+func TestAlertsMatchAServiceOnlyByServiceLabelsOrGroupName(t *testing.T) {
+	cases := []struct {
+		name        string
+		group       string
+		labels      map[string]interface{}
+		wantService string
+	}{
+		{"service_name label", "", map[string]interface{}{"service_name": "web"}, "web"},
+		{"service label", "", map[string]interface{}{"service": "web"}, "web"},
+		{"service.name label", "", map[string]interface{}{"service.name": "web"}, "web"},
+		{"service label in another case", "", map[string]interface{}{"service_name": "Web"}, "web"},
+		{"group name in another case", "Checkout", nil, "checkout"},
+		{"team label", "", map[string]interface{}{"team": "web"}, ""},
+		{"exported_job label", "", map[string]interface{}{"exported_job": "checkout"}, ""},
+		{"other service named", "", map[string]interface{}{"service_name": "billing", "component": "checkout"}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			change := recentChange()
+			f := &fakeLast9{change: change, baseline: flatWindow(), after: flatWindow(), callers: map[string]float64{"web": 10},
+				alerts: []alerting.AlertRuleData{{
+					RuleID: "r", RuleName: "some alert", AlertGroupName: tc.group,
+					Alerts: []alerting.AlertInstance{{Since: change.Add(10 * time.Minute).Unix(), GroupLabels: tc.labels}},
+				}}}
+			report, err := runTool(t, f, serviceArgs(change))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.wantService == "" {
+				if len(report.Alerts.Started) != 0 || report.Verdict == VerdictRegressionLikely {
+					t.Fatalf("unrelated alert attributed: verdict=%q (%s) alerts=%+v", report.Verdict, report.Reason, report.Alerts.Started)
+				}
+				return
+			}
+			if len(report.Alerts.Started) != 1 || report.Alerts.Started[0].Service != tc.wantService {
+				t.Fatalf("alerts = %+v, want one for %s", report.Alerts.Started, tc.wantService)
+			}
+		})
+	}
+}
+
 func TestAlertsStayInsideTheRequestedEnv(t *testing.T) {
 	cases := []struct {
 		name, reqEnv string
