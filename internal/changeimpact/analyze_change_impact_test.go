@@ -264,6 +264,51 @@ func TestNewFiringAlertAloneIsRegressionLikely(t *testing.T) {
 	}
 }
 
+func TestAlertsStayInsideTheRequestedEnv(t *testing.T) {
+	cases := []struct {
+		name, reqEnv string
+		labels       map[string]interface{}
+		wantStarted  bool
+		wantEnvMatch string
+	}{
+		{"same env", "prod", map[string]interface{}{"service_name": "checkout", "env": "prod"}, true, envMatchExact},
+		{"other env", "prod", map[string]interface{}{"service_name": "checkout", "env": "staging"}, false, ""},
+		{"other environment label", "prod", map[string]interface{}{"service_name": "checkout", "deployment_environment": "staging"}, false, ""},
+		{"no env label", "prod", map[string]interface{}{"service_name": "checkout"}, true, envMatchUnlabelled},
+		{"no env requested", "", map[string]interface{}{"service_name": "checkout", "env": "staging"}, true, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			change := recentChange()
+			f := &fakeLast9{change: change, baseline: flatWindow(), after: flatWindow(), alerts: []alerting.AlertRuleData{{
+				RuleID: "latency", AlertGroupName: "checkout", RuleName: "checkout latency",
+				Alerts: []alerting.AlertInstance{{State: "firing", Since: change.Add(10 * time.Minute).Unix(), GroupLabels: tc.labels}},
+			}}}
+			args := serviceArgs(change)
+			args.Env = tc.reqEnv
+			report, err := runTool(t, f, args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !tc.wantStarted {
+				if len(report.Alerts.Started) != 0 || report.Verdict == VerdictRegressionLikely {
+					t.Fatalf("alert from another env attributed to the change: verdict=%q (%s) alerts=%+v", report.Verdict, report.Reason, report.Alerts.Started)
+				}
+				return
+			}
+			if len(report.Alerts.Started) != 1 || report.Verdict != VerdictRegressionLikely {
+				t.Fatalf("verdict=%q (%s) alerts=%+v, want the alert kept", report.Verdict, report.Reason, report.Alerts.Started)
+			}
+			if got := report.Alerts.Started[0].EnvMatch; got != tc.wantEnvMatch {
+				t.Fatalf("env_match = %q, want %q", got, tc.wantEnvMatch)
+			}
+			if tc.wantEnvMatch == envMatchUnlabelled && !strings.Contains(report.Reason, "no env label") {
+				t.Fatalf("reason %q must not imply the alert is in %s", report.Reason, tc.reqEnv)
+			}
+		})
+	}
+}
+
 func TestDependentRegressionAloneIsRegressionLikely(t *testing.T) {
 	change := recentChange()
 	after := flatWindow()

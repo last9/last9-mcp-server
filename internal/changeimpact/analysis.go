@@ -135,9 +135,16 @@ type StartedAlert struct {
 	State      string `json:"state,omitempty"`
 	StartedAt  string `json:"started_at"`
 	Service    string `json:"service"`
+	EnvMatch   string `json:"env_match,omitempty"`
 
 	startedUnix int64
 }
+
+// EnvMatch values, set only when the request names an env.
+const (
+	envMatchExact      = "exact"
+	envMatchUnlabelled = "unlabelled"
+)
 
 type AlertsSection struct {
 	Started []StartedAlert `json:"started"`
@@ -244,7 +251,7 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 	}
 	wg.Go(func() {
 		alertsStarted, alertsErr = withTimeout(ctx, func(ctx context.Context) ([]StartedAlert, error) {
-			return fetchStartedAlerts(ctx, client, cfg, w.after, scope)
+			return fetchStartedAlerts(ctx, client, cfg, alertScope{window: w.after, services: scope, env: req.Env})
 		})
 	})
 	wg.Wait()
@@ -268,7 +275,11 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 		report.Alerts.Error = alertsErr.Error()
 	} else {
 		for _, a := range alertsStarted {
-			triggers = append(triggers, fmt.Sprintf("alert %q started firing for %s at %s", firstNonEmpty(a.RuleName, a.RuleID), a.Service, a.StartedAt))
+			trigger := fmt.Sprintf("alert %q started firing for %s at %s", firstNonEmpty(a.RuleName, a.RuleID), a.Service, a.StartedAt)
+			if a.EnvMatch == envMatchUnlabelled {
+				trigger += " (no env label)"
+			}
+			triggers = append(triggers, trigger)
 		}
 		report.Alerts.Started, report.Alerts.Dropped = truncate(alertsStarted, sectionTopN)
 	}
@@ -409,10 +420,21 @@ func apmDeviation(e apm.LeaderboardEntry) APMDeviation {
 	return d
 }
 
+// envLabels are the group labels alert rules use to name an environment.
+var envLabels = []string{"env", "environment", "deployment_environment", "deployment.environment"}
+
+type alertScope struct {
+	window   apm.TimeWindow
+	services []string
+	// env is exact; empty means every environment.
+	env string
+}
+
 // fetchStartedAlerts returns alerts for scope that started firing inside
-// window, earliest first. The monitor call caps its window, so a longer
+// its window, earliest first. The monitor call caps its window, so a longer
 // window is read in consecutive slices.
-func fetchStartedAlerts(ctx context.Context, client *http.Client, cfg models.Config, window apm.TimeWindow, scope []string) ([]StartedAlert, error) {
+func fetchStartedAlerts(ctx context.Context, client *http.Client, cfg models.Config, scope alertScope) ([]StartedAlert, error) {
+	window := scope.window
 	seen := map[string]bool{}
 	var started []StartedAlert
 	for end := window.End.Unix(); end > window.Start.Unix(); end -= alerting.MaxAlertsMonitorWindowSeconds {
@@ -422,7 +444,7 @@ func fetchStartedAlerts(ctx context.Context, client *http.Client, cfg models.Con
 			return nil, err
 		}
 		for _, rule := range resp.AlertRules {
-			for _, a := range startedInWindow(rule, window, scope) {
+			for _, a := range startedInScope(rule, scope) {
 				key := a.RuleID + "\x00" + a.Service + "\x00" + a.StartedAt
 				if !seen[key] {
 					seen[key] = true
@@ -440,10 +462,12 @@ func fetchStartedAlerts(ctx context.Context, client *http.Client, cfg models.Con
 	return started, nil
 }
 
-// startedInWindow matches a rule to a scoped service by an exact group-label
+// startedInScope matches a rule to a scoped service by an exact group-label
 // value or by its alert group's name, and keeps instances whose firing began
-// inside window. An instance without its own start falls back to the rule's.
-func startedInWindow(rule alerting.AlertRuleData, window apm.TimeWindow, scope []string) []StartedAlert {
+// inside the window. An instance without its own start falls back to the
+// rule's. With an env, instances labelled with another env are dropped.
+func startedInScope(rule alerting.AlertRuleData, scope alertScope) []StartedAlert {
+	window := scope.window
 	instances := rule.Alerts
 	if len(instances) == 0 {
 		instances = []alerting.AlertInstance{{}}
@@ -457,7 +481,11 @@ func startedInWindow(rule alerting.AlertRuleData, window apm.TimeWindow, scope [
 		if since < window.Start.Unix() || since > window.End.Unix() {
 			continue
 		}
-		service, ok := matchService(rule, inst, scope)
+		service, ok := matchService(rule, inst, scope.services)
+		if !ok {
+			continue
+		}
+		envMatch, ok := matchEnv(inst, scope.env)
 		if !ok {
 			continue
 		}
@@ -465,7 +493,7 @@ func startedInWindow(rule alerting.AlertRuleData, window apm.TimeWindow, scope [
 			RuleID: rule.RuleID, RuleName: rule.RuleName, AlertGroup: rule.AlertGroupName,
 			Severity: rule.Severity, State: firstNonEmpty(inst.State, rule.State),
 			StartedAt: time.Unix(since, 0).UTC().Format(time.RFC3339), Service: service,
-			startedUnix: since,
+			EnvMatch: envMatch, startedUnix: since,
 		})
 	}
 	return out
@@ -483,4 +511,27 @@ func matchService(rule alerting.AlertRuleData, inst alerting.AlertInstance, scop
 		}
 	}
 	return "", false
+}
+
+// matchEnv rejects an instance whose env label names another environment. One
+// without any env label is kept but marked unlabelled, not claimed as a match.
+func matchEnv(inst alerting.AlertInstance, env string) (string, bool) {
+	if env == "" {
+		return "", true
+	}
+	labelled := false
+	for _, key := range envLabels {
+		v, ok := inst.GroupLabels[key]
+		if !ok {
+			continue
+		}
+		if fmt.Sprint(v) != env {
+			return "", false
+		}
+		labelled = true
+	}
+	if !labelled {
+		return envMatchUnlabelled, true
+	}
+	return envMatchExact, true
 }
