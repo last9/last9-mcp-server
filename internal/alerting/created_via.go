@@ -4,6 +4,8 @@ import (
 	"strings"
 	"unicode"
 
+	"last9-mcp/internal/last9api/entities"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -81,6 +83,18 @@ func withCreatedViaAnnotations(props *AlertProperties, marker map[string]string)
 		out.Annotations = nil
 	}
 	return &out
+}
+
+// storedCreatedViaMarker returns the marker annotations a stored rule already carries, so
+// an edit that replaces properties keeps them.
+func storedCreatedViaMarker(rule entities.AlertRule) map[string]string {
+	marker := map[string]string{}
+	for _, k := range []string{annotationCreatedVia, annotationCreatedViaClient} {
+		if v, ok := rule.Properties.Annotations[k].(string); ok {
+			marker[k] = v
+		}
+	}
+	return marker
 }
 
 func newCreatedViaMarker(req *mcp.CallToolRequest) map[string]string {

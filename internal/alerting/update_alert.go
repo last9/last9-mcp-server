@@ -32,9 +32,11 @@ func NewUpdateAlertHandler(client *http.Client, cfg models.Config) func(context.
 			return utils.ToolErrorResult(err.Error()), nil, nil
 		}
 		api := last9api.NewClient(client, cfg)
-		if refusal, err := requireRuleInGroup(ctx, api, args.EntityID, args.ID); refusal != nil || err != nil {
+		stored, refusal, err := requireRuleInGroup(ctx, api, args.EntityID, args.ID)
+		if refusal != nil || err != nil {
 			return refusal, nil, err
 		}
+		args.AlertRule.Properties = withCreatedViaAnnotations(args.AlertRule.Properties, storedCreatedViaMarker(stored))
 		body, err := entities.UpdateAlertRule(ctx, api,
 			entities.AlertRuleInput{EntityID: args.EntityID, RuleID: args.ID, Body: args.AlertRule})
 		if err != nil {

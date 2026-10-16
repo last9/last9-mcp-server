@@ -170,6 +170,83 @@ func TestCreateAlertReadsClientFromSession(t *testing.T) {
 	}
 }
 
+func TestRuleEditsKeepStoredMarkerAndDropForgedOnes(t *testing.T) {
+	const marked = `{"id":"rule-1","entity_id":"entity-1","properties":{"annotations":{"_l9_created_via_":"last9-mcp","_l9_created_via_client_":"claude-code/2.1.0","team":"old"}}}`
+	const unmarked = `{"id":"rule-1","entity_id":"entity-1","properties":{"annotations":{"team":"old"}}}`
+	storedMarker := map[string]any{annotationCreatedVia: "last9-mcp", annotationCreatedViaClient: "claude-code/2.1.0"}
+	forged := func() *AlertProperties {
+		return &AlertProperties{Annotations: map[string]string{
+			"team": "new", annotationCreatedVia: "last9-mcp", annotationCreatedViaClient: "forged/1",
+		}}
+	}
+	for _, tt := range []struct {
+		name   string
+		stored string
+		props  *AlertProperties
+		want   map[string]any
+	}{
+		{"marked, caller forges", marked, forged(), map[string]any{"team": "new", annotationCreatedVia: "last9-mcp", annotationCreatedViaClient: "claude-code/2.1.0"}},
+		{"marked, caller sends no annotations", marked, &AlertProperties{Description: "d"}, storedMarker},
+		{"unmarked, caller forges", unmarked, forged(), map[string]any{"team": "new"}},
+		{"stored annotation values not strings", `{"id":"rule-1","entity_id":"entity-1","properties":{"annotations":{"_l9_created_via_":"last9-mcp","n":3}}}`, &AlertProperties{}, map[string]any{annotationCreatedVia: "last9-mcp"}},
+	} {
+		for tool, call := range map[string]func(*bodyRecorder) (*mcp.CallToolResult, error){
+			"update_alert": func(rec *bodyRecorder) (*mcp.CallToolResult, error) {
+				payload := validAlertRulePayload(nil)
+				payload.Properties = tt.props
+				r, _, err := NewUpdateAlertHandler(rec.Client(), testAlertMutationConfig(rec.URL))(context.Background(), clientRequest("other", "9"),
+					UpdateAlertArgs{EntityID: "entity-1", ID: "rule-1", AlertRuleMutation: AlertRuleMutation{AlertRule: payload}})
+				return r, err
+			},
+			"patch_alert": func(rec *bodyRecorder) (*mcp.CallToolResult, error) {
+				r, _, err := NewPatchAlertHandler(rec.Client(), testAlertMutationConfig(rec.URL))(context.Background(), clientRequest("other", "9"),
+					PatchAlertArgs{EntityID: "entity-1", ID: "rule-1", Properties: tt.props})
+				return r, err
+			},
+		} {
+			t.Run(tt.name+"/"+tool, func(t *testing.T) {
+				rec := newBodyRecorder(t, `{"id":"rule-2"}`)
+				rec.ruleLookup = tt.stored
+				result, err := call(rec)
+				if err != nil || result.IsError {
+					t.Fatalf("result=%s err=%v", resultText(result), err)
+				}
+				if got := ruleAnnotations(t, rec.only(t)); !mapsEqual(got, tt.want) {
+					t.Fatalf("annotations = %v, want %v", got, tt.want)
+				}
+			})
+		}
+	}
+}
+
+func TestPatchWithoutPropertiesLeavesAnnotationsAlone(t *testing.T) {
+	rec := newBodyRecorder(t, `{}`)
+	rec.ruleLookup = `{"id":"rule-1","entity_id":"entity-1","properties":{"annotations":{"_l9_created_via_":"last9-mcp"}}}`
+	enabled := false
+	result, _, err := NewPatchAlertHandler(rec.Client(), testAlertMutationConfig(rec.URL))(context.Background(), nil,
+		PatchAlertArgs{EntityID: "entity-1", ID: "rule-1", IsDisabled: &enabled})
+	if err != nil || result.IsError {
+		t.Fatalf("result=%s err=%v", resultText(result), err)
+	}
+	if body := rec.only(t); body["properties"] != nil {
+		t.Fatalf("patch sent properties it was not asked to change: %v", body)
+	}
+}
+
+func TestUpdateWithoutPropertiesKeepsStoredMarker(t *testing.T) {
+	rec := newBodyRecorder(t, `{"id":"rule-2"}`)
+	rec.ruleLookup = `{"id":"rule-1","entity_id":"entity-1","properties":{"annotations":{"_l9_created_via_":"last9-mcp","_l9_created_via_client_":"c/1"}}}`
+	result, _, err := NewUpdateAlertHandler(rec.Client(), testAlertMutationConfig(rec.URL))(context.Background(), nil,
+		UpdateAlertArgs{EntityID: "entity-1", ID: "rule-1", AlertRuleMutation: AlertRuleMutation{AlertRule: validAlertRulePayload(nil)}})
+	if err != nil || result.IsError {
+		t.Fatalf("result=%s err=%v", resultText(result), err)
+	}
+	want := map[string]any{annotationCreatedVia: "last9-mcp", annotationCreatedViaClient: "c/1"}
+	if got := ruleAnnotations(t, rec.only(t)); !mapsEqual(got, want) {
+		t.Fatalf("annotations = %v, want %v", got, want)
+	}
+}
+
 func mapsEqual(a, b map[string]any) bool {
 	if len(a) != len(b) {
 		return false
