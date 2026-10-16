@@ -215,14 +215,14 @@ func TestDumpTools(t *testing.T) {
 	}
 	// get_logs: budget covers combined (description + inputSchema JSON) served size
 	// because get_logs ships a hand-crafted schema that contributes meaningfully to
-	// the context window. Budget is 7000 with headroom over the baseline ~6283.
+	// the context window. Budget is 7500 with headroom over the baseline ~7390.
 	logsIdx := byName["get_logs"]
 	logsSchemaBytes, err := json.Marshal(out.Tools[logsIdx].InputSchema)
 	if err != nil {
 		t.Fatalf("marshal get_logs inputSchema: %v", err)
 	}
 	logsServedSize := len(out.Tools[logsIdx].Description) + len(logsSchemaBytes)
-	const logsServedBudget = 7000
+	const logsServedBudget = 7500
 	if logsServedSize > logsServedBudget {
 		t.Fatalf("get_logs combined (description + inputSchema) served size %d exceeds %d-char budget", logsServedSize, logsServedBudget)
 	}
@@ -230,10 +230,11 @@ func TestDumpTools(t *testing.T) {
 		t.Fatal("get_logs description missing resource URI pointer")
 	}
 
-	// Description-only budgets for other whales (main tripwire values restored to 2000).
+	// Description-only budgets for other whales; raised from 2000 for the
+	// routing sections (When to use … Known traps).
 	whaleBudgets := map[string]int{
-		"get_traces":       2000,
-		"get_service_logs": 2000,
+		"get_traces":       2700,
+		"get_service_logs": 2700,
 	}
 	for _, whale := range []string{"get_traces", "get_service_logs"} {
 		budget := whaleBudgets[whale]

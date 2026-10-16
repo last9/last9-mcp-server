@@ -28,3 +28,18 @@ For a comparative question, call this tool first and by itself. Do not batch spe
 - `partial_errors` or warnings mean successful evidence remains usable, but explicitly qualify conclusions with the missing evidence. If all metric queries fail, the tool returns an error rather than a partial result.
 - `operation_apdex_reconciliations` mathematically decomposes the service Apdex delta across comparable returned operations. State `current_request_coverage` and `baseline_request_coverage`; treat `observed_operation_delta` as explained only over that reported coverage. `unexplained_delta` is the residual from unreported operations and metric-population differences, not evidence of an unknown cause.
 - Operation correlations and structured, non-executing follow-ups help narrow an investigation. Correlation is supporting evidence only and does not establish contribution, attribution, cause, or root cause. Corroborate conclusions with traces, logs, and change events.
+
+## When to use
+What regressed, improved or changed against an equal-duration baseline.
+
+## When not to use
+One-window fleet ranking: `get_service_summary`. Attribute cohorts that explain slow or failing traces: `get_trace_attribute_deviations`.
+
+## Pairs well with
+`get_service_profile` (first), `get_change_events` (what deployed), `get_service_performance_details` (one service's charts).
+
+## Output shape
+An outcome with returned percentages, deltas and evidence per service and operation, as described above.
+
+## Known traps
+Never recompute percentages from raw counts; quote the returned values.

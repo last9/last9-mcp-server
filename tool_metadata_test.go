@@ -21,15 +21,18 @@ const defaultDescriptionBudget = 2500
 // near its current size so growth is a reviewed decision. Raise an entry in
 // the PR that grows the description, and say why.
 var descriptionBudgetOverrides = map[string]int{
-	"get_apm_service_deviations":      5700,
+	"get_apm_service_deviations":      6300,
+	"get_exceptions":                  4900,
+	"get_service_summary":             4600,
+	"get_alert_config":                4600,
 	"get_trace_attribute_deviations":  4400,
-	"get_exceptions":                  4300,
-	"get_service_summary":             4300,
-	"get_alert_config":                4000,
-	"get_logs":                        3000,
+	"get_logs":                        3700,
+	"create_dashboard":                3200,
+	"prometheus_range_query":          3000,
 	"get_log_attributes_for_pipeline": 2800,
-	"create_dashboard":                2800,
 	"get_trace_waterfall":             2700,
+	"get_traces":                      2700,
+	"get_service_logs":                2700,
 }
 
 // maxSchemaDepth bounds input schema nesting (root = 1). The dashboard write
@@ -240,7 +243,7 @@ func TestToolMetadataViolationsCatchBadFixtures(t *testing.T) {
 		{name: "legacy name", tool: &mcp.Tool{Name: "prometheus_labels", Description: "ok", InputSchema: okSchema}},
 		{name: "namespaced verb", tool: &mcp.Tool{Name: "grafana_list_fixtures", Description: "ok", InputSchema: okSchema}},
 		{name: "over default budget", tool: &mcp.Tool{Name: "get_fixture", Description: strings.Repeat("x", defaultDescriptionBudget+1), InputSchema: okSchema}, want: "budget 2500"},
-		{name: "over override budget", tool: &mcp.Tool{Name: "get_logs", Description: strings.Repeat("x", descriptionBudgetOverrides["get_logs"]+1), InputSchema: okSchema}, want: "budget 3000"},
+		{name: "over override budget", tool: &mcp.Tool{Name: "get_logs", Description: strings.Repeat("x", descriptionBudgetOverrides["get_logs"]+1), InputSchema: okSchema}, want: "budget 3700"},
 		{name: "unregistered resource", tool: &mcp.Tool{Name: "get_fixture", Description: "See last9://reference/nope.", InputSchema: okSchema}, want: "unregistered resource last9://reference/nope"},
 		{name: "integer enum", tool: &mcp.Tool{Name: "get_fixture", Description: "ok", InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 			"version": map[string]any{"type": "integer", "enum": []any{float64(1)}},

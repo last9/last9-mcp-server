@@ -14,3 +14,18 @@
 	It is encouraged to not use default
 	values of start_time and end_time and use values that are appropriate for the
 	use case
+
+	## When to use
+	The valid values of one label (env, service) for a metric selector, before filtering on it.
+
+	## When not to use
+	Label names: `prometheus_labels`. APM service environments: `get_service_environments`. Fuzzy name lookup: `did_you_mean`.
+
+	## Pairs well with
+	`prometheus_labels`, `prometheus_range_query`, `prometheus_instant_query`.
+
+	## Output shape
+	A JSON array of strings.
+
+	## Known traps
+	An empty array usually means the window is too short or the selector matches nothing; widen or fix it before concluding the value does not exist.

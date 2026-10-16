@@ -50,3 +50,18 @@ Time format rules:
 - Prefer lookback_minutes for relative windows.
 - Use start_time_iso/end_time_iso for absolute windows.
 - Legacy format YYYY-MM-DD HH:MM:SS is accepted only for compatibility.
+
+## When to use
+Which service, span and exception type are hottest in a window.
+
+## When not to use
+Exception text, stack traces or root cause: `get_logs`. HTTP status ranking: `get_service_summary`. Exact traces: `get_service_traces`.
+
+## Pairs well with
+`get_service_profile` (answer or symptom), `get_service_traces` (context traces), `get_logs` (read the error lines).
+
+## Output shape
+Ranked aggregate rows: exception type, service, span name, span kind, environment and count.
+
+## Known traps
+Rows come from metrics: no trace IDs or samples, and later traces are context, not matches.

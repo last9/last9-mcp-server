@@ -21,3 +21,18 @@
 	- annotations: Additional context and descriptions
 	- generator_url: URL to the source of the alert
 	- fingerprint: Unique fingerprint for this alert instance
+
+	## When to use
+	Alerts firing now or within the last hour.
+
+	## When not to use
+	Firing history over a longer range: `get_alert_rule_state`. Rule definitions: `get_alert_config`. Only a count of firing alerts: `get_workspace_overview`.
+
+	## Pairs well with
+	`get_alert_config` (rule details), `get_entity_alert_rules` (PromQL behind a rule), `get_current_time` (evaluation time).
+
+	## Output shape
+	Text listing each alert rule with its group, state, severity and alert instances.
+
+	## Known traps
+	`window` above 3600 seconds is rejected; cap it.

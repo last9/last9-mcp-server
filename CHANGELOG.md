@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_logs` and `get_traces` now explicitly show compact JSON stage-array examples and reject SQL-like query construction in their tool descriptions, so description-only clients can form valid pipelines without fetching a reference manual (#309).
 
 ### Changed
+- The 15 tools eval cases use most (`get_logs`, `get_service_summary`, `prometheus_range_query`, `get_service_logs`, `get_service_traces`, `get_exceptions`, `prometheus_label_values`, `get_apm_service_deviations`, `get_alerts`, `get_traces`, `get_alert_config`, `prometheus_instant_query`, `get_alert_rule_state`, `create_dashboard`, `list_datasources`) now carry *When to use*, *When not to use*, *Pairs well with*, *Output shape* and *Known traps* sections in their descriptions, naming the tool to use instead; previously only `get_service_summary` said when not to use it. A test fails if a section is missing or names a tool that is not served. Description budgets for `get_logs`, `get_traces` and `get_service_logs` rose by about 650 bytes each to fit (#344).
 - Dashboard create and update schemas now restrict `query_type` to supported values and their descriptions explain the query types for logs, metrics, and traces (#312).
 - `get_service_logs`, `get_service_traces`, and the PromQL range and instant query tools now serve explicit schemas for their supported fields, so unknown names and invalid field types are rejected during input validation (#311).
 

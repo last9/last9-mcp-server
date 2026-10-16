@@ -1,12 +1,22 @@
 Rank APM server-span services over one time window. Each row is one (service, env) with interval request_count, throughput_rpm, http_4xx_count, http_5xx_count, and grpc_error_count. The server sorts, limits, and stamps rank. Cite `rows` only; never invent service names.
 
-Use this tool for fleet ranking by volume, rpm, HTTP 4xx, HTTP 5xx, or gRPC errors. It is the only fleet ranking tool for those questions.
+## When to use
+Fleet ranking by volume, rpm, HTTP 4xx, HTTP 5xx, or gRPC errors. It is the only fleet ranking tool for those questions.
 
-When not to use:
-- Exceptions → get_exceptions
-- Log status codes or log-only services → get_logs
-- Unlabeled percentages or current-vs-baseline change → get_apm_service_deviations
-- One service's RED charts → get_service_performance_details
+## When not to use
+- Exceptions → `get_exceptions`
+- Log status codes or log-only services → `get_logs`
+- Unlabeled percentages or current-vs-baseline change → `get_apm_service_deviations`
+- One service's RED charts → `get_service_performance_details`
+
+## Pairs well with
+`get_service_environments` (env values), `get_service_performance_details` (drill into a ranked row).
+
+## Output shape
+`rows` of (service, env) with rank and the counts above, plus the envelope listed below.
+
+## Known traps
+`env` is a regex: `prod` also matches `production`; anchor it as `^prod$`.
 
 Language → sort_by (pass the named key; unlabeled "highest errors" is not the default):
 - top / highest HTTP 5xx → http_5xx_count
