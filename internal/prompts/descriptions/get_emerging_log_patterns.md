@@ -22,5 +22,5 @@ Returns:
 
 Rules:
 - An empty `patterns` list is a valid answer: nothing in the logs changed significantly. Report that there is no log novelty. Do not invent patterns, counts or causes that the response does not contain, and do not lower `min_count` or `change_factor` just to produce a finding.
-- Counts are within each window's sample; quote them with `comparison_basis`. A window whose search could not cover it fully returns an error, not a partial comparison.
+- Counts are within each window's sample; quote them with `comparison_basis`. Failed search chunks return a tool error. A truncated or capped search still returns a comparison, with `sample_limit_reached` true on that window and `comparison_basis` `share_of_sample`.
 - When either window has `sample_limit_reached`, `new` and `disappeared` mean absent from the other window's sample, not from the window; say so when you report them.

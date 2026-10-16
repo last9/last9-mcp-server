@@ -424,13 +424,17 @@ func TestLogPatternDescriptionsCriticalRules(t *testing.T) {
 		{"instead of paging raw lines", "must be preferred over raw log paging during triage"},
 		{"sample_size", "must say counts are within a bounded sample"},
 		{"logs_truncated", "must say a truncated search's total is not complete"},
-		{"returns an error, not a partial", "must say an incomplete search fails rather than reading as fewer patterns"},
+		{"Failed search chunks return a tool error", "must say an incomplete search fails rather than reading as fewer patterns"},
+		{"A truncated or capped search still returns", "must say truncation is a success flagged by sample_limit_reached, not a failure"},
 	}
 	for name, desc := range descriptions {
 		for _, c := range checks {
 			if !strings.Contains(desc, c.phrase) {
 				t.Errorf("%s description missing %q: %s", name, c.phrase, c.reason)
 			}
+		}
+		if strings.Contains(desc, "not a partial") {
+			t.Errorf("%s description says incomplete searches never return partial results, but truncated ones do", name)
 		}
 	}
 	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "absent from the other window's sample, not from the window") {

@@ -568,7 +568,7 @@ Use `get_logs` for broad aggregate counts first; use `get_service_logs` only aft
 - `sample_size` (integer, optional): Lines sampled from the window. Default: 1000, maximum: 5000.
 - `top_n` (integer, optional): Templates returned by count. Default: 20, maximum: 100. The rest are totalled in `other`.
 
-Clustering runs in the MCP server over the sampled lines, so counts are within the sample; `window.sample_limit_reached` says when the sample may miss matching lines (it holds `sample_size` lines and the API does not report an exact `total_matching_lines` equal to that, or the search was `logs_truncated`). A search with failed chunks is an error rather than a partial window. An empty `patterns` list is a valid answer.
+Clustering runs in the MCP server over the sampled lines, so counts are within the sample; `window.sample_limit_reached` says when the sample may miss matching lines (it holds `sample_size` lines and the API does not report an exact `total_matching_lines` equal to that, or the search was `logs_truncated`). A search with failed chunks is a tool error; a truncated or capped search still returns patterns, flagged by `sample_limit_reached`. An empty `patterns` list is a valid answer.
 
 ### get_emerging_log_patterns
 
