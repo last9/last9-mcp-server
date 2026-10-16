@@ -139,6 +139,24 @@ func TestDescribeAlertChartMissingRequiredFields(t *testing.T) {
 	}
 }
 
+func TestDescribeAlertChartRejectsUncoveredSurface(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+	}))
+	defer server.Close()
+	result, _, err := NewDescribeAlertChartHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil,
+		DescribeAlertChartArgs{Surface: "dashboards", ChartKey: "apdex", ServiceName: "checkout"})
+	if err != nil || !result.IsError || requests != 0 {
+		t.Fatalf("result=%s err=%v requests=%d", resultText(result), err, requests)
+	}
+	for _, want := range []string{"discover-service", "discover-exceptions", "create_alert"} {
+		if !strings.Contains(resultText(result), want) {
+			t.Errorf("message missing %q: %s", want, resultText(result))
+		}
+	}
+}
+
 func TestDescribeAlertChartAttributesPassThroughVerbatim(t *testing.T) {
 	var gotBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,6 @@
-Enumerate the alertable signals on a covered Last9 Discover chart: for each signal you get its key, name, unit, and query metadata, which is the input you need before creating a chart-derived alert rule. This tool is read-only — it never mutates anything, so use it freely during discovery. Lifecycle contrast: alert rules later created from these signals via create-from-chart fire immediately once created, unlike create_alert's disabled-first flow that requires promoting with patch_alert.
+Enumerate the alertable signals on a covered Last9 Discover chart: for each signal you get its key, unit, eval_query, and query_kind, which is the input you need before creating a chart-derived alert rule. This tool is read-only — it never mutates anything, so use it freely during discovery. Lifecycle contrast: alert rules later created from these signals via create-from-chart fire immediately once created, unlike create_alert's disabled-first flow that requires promoting with patch_alert.
 
-Covered surfaces today are exactly two: discover-service and discover-exceptions. Any other surface value is a coverage miss.
+Covered surfaces today are exactly two: discover-service and discover-exceptions. Any other surface value (including custom dashboards) is rejected before calling the API; for those, bind create_alert to a KPI of the alert group instead.
 
 Parameters:
 - surface (Required): Surface identifier the chart lives on; one of discover-service or discover-exceptions.

@@ -3,6 +3,7 @@ package alerting
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"last9-mcp/internal/utils"
@@ -33,6 +34,19 @@ func (c alertIntelErrorClass) String() string {
 	default:
 		return "upstream"
 	}
+}
+
+// coveredAlertSurfaces are the chart surfaces the alert-coverage catalog serves. Any other
+// surface makes the API report "unknown chart key", which sends agents hunting for keys.
+var coveredAlertSurfaces = []string{"discover-service", "discover-exceptions"}
+
+// uncoveredSurfaceError returns a tool-facing message when surface is not covered, or "".
+func uncoveredSurfaceError(surface string) string {
+	if slices.Contains(coveredAlertSurfaces, surface) {
+		return ""
+	}
+	return fmt.Sprintf("surface %q is not covered by chart alerts; use %s. Custom dashboard panels and other pages are not covered: bind create_alert to a KPI of the alert group instead",
+		surface, strings.Join(coveredAlertSurfaces, " or "))
 }
 
 // A 400 carrying one of these means "this chart is not alert-coverage eligible".

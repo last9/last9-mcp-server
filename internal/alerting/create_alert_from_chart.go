@@ -60,6 +60,9 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 		if surface == "" {
 			return utils.ToolErrorResult("surface is required"), nil, nil
 		}
+		if msg := uncoveredSurfaceError(surface); msg != "" {
+			return utils.ToolErrorResult(msg), nil, nil
+		}
 		chartKey := strings.TrimSpace(args.ChartKey)
 		if chartKey == "" {
 			return utils.ToolErrorResult("chart_key is required"), nil, nil

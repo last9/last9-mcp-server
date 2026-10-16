@@ -744,9 +744,9 @@ Returns `{"valid":true}` or `{"valid":false,"reason":"..."}`; an invalid express
 
 ### describe_alert_chart
 
-Read-only. Lists the alertable signals (key, name, unit, query metadata) on a covered Discover chart. Viewer-role tokens are rejected.
+Read-only. Lists the alertable signals (`key`, `unit`, `eval_query`, `query_kind`) on a covered Discover chart. Viewer-role tokens are rejected.
 
-- `surface` (string, required): `discover-service` or `discover-exceptions`.
+- `surface` (string, required): `discover-service` or `discover-exceptions`; any other surface, including custom dashboards, is rejected before calling the API (use `create_alert` with a KPI instead).
 - `chart_key` (string, required): e.g. `apdex`, `error_rate`, `response_time`, `exception_count`.
 - `service_name` (string, required)
 - `env` (string, optional)
