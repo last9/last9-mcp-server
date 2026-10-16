@@ -29,6 +29,17 @@ func lineStartingWith(t *testing.T, text, prefix string) string {
 	return found
 }
 
+// assertReadsChangeImpactVerdicts requires both verdict rules: only `no
+// significant change` clears a change; `insufficient data` is missing evidence.
+func assertReadsChangeImpactVerdicts(t *testing.T, name, text string) {
+	t.Helper()
+	for _, rule := range []string{"`no significant change` rules the change out", "`insufficient data` does not"} {
+		if !strings.Contains(text, rule) {
+			t.Fatalf("%s: the prompt must say %q:\n%s", name, rule, text)
+		}
+	}
+}
+
 // handlerText calls a workflow's handler and returns the single message's text.
 func handlerText(t *testing.T, w Workflow) string {
 	t.Helper()
