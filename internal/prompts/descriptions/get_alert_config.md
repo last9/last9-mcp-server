@@ -52,3 +52,4 @@
 	- algorithm: Detection algorithm (static_threshold, high_spike, inc_trend, etc.)
 	- created_at: When the alert rule was created
 	- updated_at: When the alert rule was last modified
+Each rule includes recent evaluation history (last 5 one-minute samples: firing/ok) so thresholds can be tuned without a separate get_alert_rule_state call.

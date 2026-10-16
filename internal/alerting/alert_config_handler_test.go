@@ -735,6 +735,9 @@ func newAlertConfigTestServer(
 				return
 			}
 			_, _ = w.Write([]byte(`{"error":"alert rules failed"}`))
+		case constants.EndpointAlertsMonitor:
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(AlertsResponse{AlertRules: nil})
 		case constants.EndpointEntitiesList:
 			state.entityLookupCalls++
 			defer r.Body.Close()

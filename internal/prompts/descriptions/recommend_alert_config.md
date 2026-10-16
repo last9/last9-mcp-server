@@ -6,3 +6,4 @@ Parameters (only these; any other argument is rejected):
 - rule_type (optional): "static" or "anomaly". Default "static".
 - severity (optional): "breach" or "threat". Default "breach".
 - environment (optional): environment and traffic profile, for example production with weekday seasonality. Default: not supplied.
+Full expression grammar, static vs adaptive field rules, templates, and dashboard-panel flow: read last9://reference/alerting.
