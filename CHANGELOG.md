@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added the read-only `get_alert_hygiene` tool (alerts toolset): ranks enabled alert rules that are noisy, flapping, stale or unrouted over a 7d or 30d window, with the numbers behind each verdict and a suggested parameter change (`bad_minutes`, `eval_window`, threshold or `adaptive_std_cmp`, notification channel, disable). It never changes anything; null ack, mute or history data yields no verdict instead of counting as zero (#340).
 - Added `did_you_mean` to the logs, traces, and metrics toolsets so their entity-name discovery guidance can be followed (#312).
 
 ### Fixed
