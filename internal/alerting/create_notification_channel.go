@@ -28,7 +28,7 @@ type CreateNotificationChannelArgs struct {
 	Type                 string            `json:"type" jsonschema:"(Required) One of slack, pagerduty, opsgenie, email, generic_webhook"`
 	Destination          string            `json:"destination" jsonschema:"(Required) Where notifications go; format depends on type: slack Incoming Webhook URL (https://hooks.slack.com/...) or, with slack_app_mode, a Slack channel ID; pagerduty routing key; opsgenie API key; email comma-separated addresses; generic_webhook the HTTPS URL"`
 	SlackAppMode         bool              `json:"slack_app_mode,omitempty" jsonschema:"slack only. true sends through the Last9 Slack app and destination is a channel ID rather than a webhook URL. Default false"`
-	MentionHandles       string            `json:"mention_handles,omitempty" jsonschema:"Comma-separated handles to mention or notify, e.g. user|U123ABC|name, usergroup|S123ABC|name, special|here. Default none"`
+	MentionHandles       string            `json:"mention_handles,omitempty" jsonschema:"Comma-separated handles to mention or notify, e.g. user|U123ABC|name, usergroup|S123ABC|name, special|here, special|channel. Default none"`
 	WebhookHeaders       map[string]string `json:"webhook_headers,omitempty" jsonschema:"generic_webhook only. Extra HTTP headers sent with each call, e.g. an Authorization header. Default none"`
 	WebhookCACertificate string            `json:"webhook_ca_certificate,omitempty" jsonschema:"generic_webhook only. One PEM CA certificate (max 64 KiB) to trust for an HTTPS webhook with a private CA. Default none"`
 	SendResolved         *bool             `json:"send_resolved,omitempty" jsonschema:"Also notify when the alert resolves. Default true"`
@@ -98,7 +98,7 @@ func validateCreateNotificationChannel(args CreateNotificationChannelArgs) strin
 		return msg
 	}
 	if !validMentionHandles(args.MentionHandles) {
-		return "mention_handles contains a malformed typed mention; use user|<U or W id>|name, usergroup|<S id>|name or special|here|channel"
+		return "mention_handles contains a malformed typed mention; use user|<U or W id>|name, usergroup|<S id>|name, special|here or special|channel"
 	}
 	return ""
 }

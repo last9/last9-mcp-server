@@ -836,7 +836,7 @@ Creates a channel; it routes nothing until attached with `attach_notification_ch
 - `type` (string, required): `slack`, `pagerduty`, `opsgenie`, `email`, or `generic_webhook`.
 - `destination` (string, required): Slack Incoming Webhook URL (or channel ID with `slack_app_mode`), PagerDuty routing key, Opsgenie API key, comma-separated org-domain email addresses, or an HTTPS webhook URL.
 - `slack_app_mode` (boolean, optional): Slack only. Default: false.
-- `mention_handles` (string, optional): Comma-separated, e.g. `user|U123ABC|name`, `special|here`.
+- `mention_handles` (string, optional): Comma-separated, e.g. `user|U123ABC|name`, `special|here`, `special|channel`.
 - `webhook_headers` (object, optional): `generic_webhook` only.
 - `webhook_ca_certificate` (string, optional): `generic_webhook` only; one PEM CA certificate up to 64 KiB.
 - `send_resolved` (boolean, optional): Default: true.
