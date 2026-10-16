@@ -246,12 +246,13 @@ func newWindowComparison(current, baseline LogPatternWindow, currentSpan, baseli
 
 // perMinuteScale is what a window's sampled count is divided by to get lines
 // per minute. A capped sample is extrapolated to the window's exact total; a
-// truncated search's total is only a floor, so that window's volume is unknown.
+// truncated search's total is only a floor and a zero total cannot be divided
+// by, so in both cases that window's volume is unknown.
 func perMinuteScale(w LogPatternWindow, span time.Duration) (scale float64, estimated, known bool) {
 	switch {
 	case !w.SampleLimitReached:
 		return span.Minutes(), false, true
-	case w.TotalMatchingLines == nil || (w.LogsTruncated != nil && *w.LogsTruncated):
+	case w.TotalMatchingLines == nil || *w.TotalMatchingLines <= 0 || (w.LogsTruncated != nil && *w.LogsTruncated):
 		return 0, false, false
 	default:
 		return span.Minutes() * float64(w.SampledLines) / float64(*w.TotalMatchingLines), true, true
