@@ -112,3 +112,20 @@ func TestDiagnoseErrorRateChecksLogNoveltyBeforeRawLines(t *testing.T) {
 		}
 	}
 }
+
+func TestDiagnoseErrorRateNamesDominantLogTemplatesBeforeRawLines(t *testing.T) {
+	res, err := DiagnoseErrorRate.Handler(context.Background(), &mcp.GetPromptRequest{
+		Params: &mcp.GetPromptParams{Arguments: map[string]string{"service": "checkout", "time": "1h", "env": "prod"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := res.Messages[0].Content.(*mcp.TextContent).Text
+	emerging := strings.Index(got, "get_emerging_log_patterns(service_name=checkout, env=prod")
+	aggregate := strings.Index(got, "AGGREGATE FIRST")
+	patterns := strings.Index(got, "get_log_patterns(service_name=checkout, env=prod")
+	rawLines := strings.Index(got, "before reading any raw lines")
+	if emerging < 0 || aggregate < emerging || patterns < aggregate || rawLines < patterns {
+		t.Errorf("want get_emerging_log_patterns, the aggregate, then get_log_patterns, all before raw lines:\n%s", got)
+	}
+}
