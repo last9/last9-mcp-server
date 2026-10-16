@@ -204,13 +204,13 @@ func TestGetEmergingLogPatterns_BoundsOutputWithOther(t *testing.T) {
 	current = append(current, sameLines("alpha failed", 5)...)
 	args := emergingArgs(LogPatternScopeArgs{})
 	args.TopN = 1
-	got, _ := callEmerging(t, &logSearchStub{}, map[int64][]string{patternWindowStart: current, precedingWindowStart: {"unrelated line here and there"}}, args)
+	got, _ := callEmerging(t, &logSearchStub{}, map[int64][]string{patternWindowStart: current, precedingWindowStart: {"unrelated line here and there", "beta failed now"}}, args)
 
 	if len(got.Patterns) != 1 || got.Patterns[0].Template != "alpha failed" {
 		t.Errorf("patterns = %+v, want only the largest new pattern", got.Patterns)
 	}
-	if got.Other == nil || got.Other.Patterns != 2 {
-		t.Errorf("other = %+v, want 2 more significant patterns", got.Other)
+	if got.Other == nil || got.Other.Patterns != 2 || got.Other.CurrentCount != 7 || got.Other.BaselineCount != 1 {
+		t.Errorf("other = %+v, want 2 more significant patterns holding 7 current and 1 baseline line", got.Other)
 	}
 }
 

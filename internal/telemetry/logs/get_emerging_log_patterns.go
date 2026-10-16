@@ -68,9 +68,11 @@ type EmergingLogPattern struct {
 	Sample   string          `json:"sample"`
 }
 
-// EmergingLogPatternOther counts changed patterns that fell below top_n.
+// EmergingLogPatternOther totals the changed patterns that fell below top_n.
 type EmergingLogPatternOther struct {
-	Patterns int `json:"patterns"`
+	Patterns      int `json:"patterns"`
+	CurrentCount  int `json:"current_count"`
+	BaselineCount int `json:"baseline_count"`
 }
 
 type emergingThresholds struct {
@@ -220,8 +222,12 @@ func compareLogPatterns(patterns []*logPattern, comparison windowComparison, thr
 		return a.Template < b.Template
 	})
 	if len(response.Patterns) > thresholds.topN {
-		response.Other = &EmergingLogPatternOther{Patterns: len(response.Patterns) - thresholds.topN}
-		response.Patterns = response.Patterns[:thresholds.topN]
+		other := &EmergingLogPatternOther{Patterns: len(response.Patterns) - thresholds.topN}
+		for _, p := range response.Patterns[thresholds.topN:] {
+			other.CurrentCount += p.Current.Count
+			other.BaselineCount += p.Baseline.Count
+		}
+		response.Patterns, response.Other = response.Patterns[:thresholds.topN], other
 	}
 	return response
 }

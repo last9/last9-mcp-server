@@ -12,7 +12,7 @@ Parameters:
 - sample_size: (Optional) Maximum lines sampled per window. Default 1000, maximum 5000.
 - min_count: (Optional) Minimum lines a pattern needs in the window it is larger in to be reported. Default 3.
 - change_factor: (Optional) Frequency ratio that counts as significant, greater than 1. Default 2 (doubled or halved).
-- top_n: (Optional) Changed patterns returned. Default 20, maximum 100. The rest are counted in `other`.
+- top_n: (Optional) Changed patterns returned. Default 20, maximum 100. The rest are totalled in `other` (`patterns`, `current_count`, `baseline_count`).
 
 Returns:
 - `current` and `baseline`: each window's range, `sampled_lines`, `sample_limit_reached` (true when the sample may miss matching lines), `total_matching_lines` when the API reports it, and `logs_truncated` when the search stopped early.
