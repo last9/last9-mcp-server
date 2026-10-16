@@ -527,6 +527,38 @@ func TestDumpToolsEmergingLogPatternsCouplesBaselineTimes(t *testing.T) {
 	t.Fatal("get_emerging_log_patterns missing from dump")
 }
 
+func TestDumpToolsLogPatternToolsServeDateTimeFormats(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, nil); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			InputSchema struct {
+				Properties map[string]map[string]any `json:"properties"`
+			} `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	properties := map[string]map[string]map[string]any{}
+	for _, tool := range out.Tools {
+		properties[tool.Name] = tool.InputSchema.Properties
+	}
+	for tool, times := range map[string][]string{
+		"get_log_patterns":          {"start_time_iso", "end_time_iso"},
+		"get_emerging_log_patterns": {"start_time_iso", "end_time_iso", "baseline_start_time_iso", "baseline_end_time_iso"},
+	} {
+		for _, name := range times {
+			if got := properties[tool][name]["format"]; got != "date-time" {
+				t.Errorf("%s property %q format = %v, want date-time", tool, name, got)
+			}
+		}
+	}
+}
+
 func TestDumpToolsLogPatternToolsServeTheirExplicitSchemas(t *testing.T) {
 	var buf bytes.Buffer
 	if err := dumpTools(&buf, nil); err != nil {
