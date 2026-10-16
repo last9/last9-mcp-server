@@ -1,7 +1,9 @@
-{{- $services := tools "get_service_profile" "did_you_mean" "get_service_environments" "get_profile_services" "list_datasources" -}}
+{{- $services := tools "get_service_profile" "did_you_mean" "get_service_environments" "get_profile_services" "list_datasources" "grafana_list_datasources" -}}
 {{- $attributes := tools "get_log_attributes" "get_log_attributes_for_pipeline" "get_trace_attributes" "get_trace_attributes_for_pipeline" "get_trace_attribute_values" -}}
 {{- $metricNames := tools "prometheus_labels" "prometheus_label_values" -}}
-{{- $alertRules := tools "get_alert_groups" "get_alert_config" "get_entity_alert_rules" -}}
+{{- $alertRules := tools "get_alert_groups" "get_alert_config" "get_entity_alert_rules" "get_notification_channels" -}}
+{{- $dashboards := tools "list_dashboards" "list_dashboard_snapshots" "grafana_search_dashboards" "grafana_list_folders" "grafana_list_folder_dashboards" -}}
+{{- $dashboardReads := tools "get_dashboard" "get_dashboard_snapshot" "grafana_get_dashboard" -}}
 {{- $health := tools "get_service_summary" "get_service_performance_details" "get_service_operations_summary" "get_service_dependency_graph" -}}
 {{- $alerts := tools "get_alerts" "get_alert_rule_state" -}}
 {{- $changes := tools "get_change_events" -}}
@@ -12,13 +14,14 @@
 {{- $raw := tools "prometheus_range_query" "prometheus_instant_query" "get_logs" "get_traces" -}}
 {{- $create := tools "create_dashboard" -}}
 {{- $validate := tools "validate_dashboard" -}}
+{{- $dropRules := tools "get_drop_rules" -}}
 {{- $refine := tools "update_dashboard" -}}
 {{- $destructive := tools "update_dashboard" "delete_dashboard" "delete_dashboard_snapshot" "add_drop_rule" -}}
 Last9 observability for the caller's organization. Discover names first, answer with the most specific tool, and treat writes with care.
-{{- if or $services $attributes $metricNames $alertRules}}
+{{- if or $services $attributes $metricNames $alertRules $dashboards}}
 
 ## Discover before you query
-Never guess service, environment, attribute, metric or label names; look them up and reuse the exact values.
+Never guess service, environment, attribute, metric or label names, or dashboard ids; look them up and reuse the exact values.
 {{- with $services}}
 - Services, environments and datasources: {{.}}.
 {{- end}}
@@ -29,7 +32,10 @@ Never guess service, environment, attribute, metric or label names; look them up
 - Metric and label names: {{.}}.
 {{- end}}
 {{- with $alertRules}}
-- Alert groups, rules and their KPIs: {{.}}.
+- Alert groups, rules, their KPIs and notification channels: {{.}}.
+{{- end}}
+{{- with $dashboards}}
+- Dashboards, snapshots and Grafana folders: {{.}}{{with $dashboardReads}}; open one by id with {{.}}{{end}}.
 {{- end}}
 {{- end}}
 {{- if or $health $alerts $changes $deviations $scoped $databases $profiles}}
@@ -83,7 +89,7 @@ Read these resources before writing a non-trivial query:
 - Service investigations: `last9://reference/investigation`
 {{- end}}
 {{- end}}
-{{- if or $create $validate $refine $destructive}}
+{{- if or $create $validate $dropRules $refine $destructive}}
 
 ## Write tools
 {{- with $create}}
@@ -91,6 +97,9 @@ Read these resources before writing a non-trivial query:
 {{- end}}
 {{- with $validate}}
 - Dry-run a dashboard with {{.}} before saving it.
+{{- end}}
+{{- with $dropRules}}
+- Check existing drop rules with {{.}} before adding one.
 {{- end}}
 {{- with $refine}}
 - Refine an existing object with {{.}}.

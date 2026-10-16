@@ -149,9 +149,10 @@ MCP prompts live one-per-file in `internal/workflows/`, with their text embedded
 
 `internal/prompts/server_instructions.md` is the tool-selection policy sent on `initialize`.
 It is a `text/template` rendered against `--toolsets` (`tools`/`has` drop unregistered
-tools), so a tool named there never leaks into a toolset that lacks it. When a new tool
-fits one of its groups (discovery, dedicated, raw, write), add it there.
-`instructions_test.go` fails if the policy names a tool the toolset does not serve.
+tools), so a tool named there never leaks into a toolset that lacks it. Every new tool
+goes into one of its groups (discovery, dedicated, raw, write):
+`instructions_test.go` fails, per toolset, if the policy names a tool the toolset does not
+serve or omits one it does.
 
 ### Argument structs
 

@@ -63,16 +63,25 @@ func initializeOver(t *testing.T, spec string) (string, map[string]bool) {
 
 var mentionedToolName = regexp.MustCompile("`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`")
 
-func TestServerInstructionsNameOnlyServedTools(t *testing.T) {
+// A tool registered without a line in server_instructions.md fails here, so
+// the policy cannot silently drift from tools.go.
+func TestServerInstructionsNameExactlyServedTools(t *testing.T) {
 	for _, spec := range []string{"", "logs", "traces", "metrics", "alerts", "dashboards", "profiles", "grafana", "investigate", "logs,alerts"} {
 		t.Run("toolsets="+spec, func(t *testing.T) {
 			instructions, served := initializeOver(t, spec)
-			if !strings.Contains(instructions, "Discover") {
-				t.Fatalf("initialize sent no tool-selection policy:\n%s", instructions)
+			if len(served) == 0 {
+				t.Fatalf("toolsets=%q serves no tools", spec)
 			}
+			named := map[string]bool{}
 			for _, m := range mentionedToolName.FindAllStringSubmatch(instructions, -1) {
+				named[m[1]] = true
 				if !served[m[1]] {
 					t.Errorf("instructions name %q, which toolsets=%q does not serve", m[1], spec)
+				}
+			}
+			for tool := range served {
+				if !named[tool] {
+					t.Errorf("instructions never name %q, which toolsets=%q serves", tool, spec)
 				}
 			}
 			if strings.Contains(instructions, "\n\n\n") {
@@ -161,7 +170,12 @@ func TestServerInstructionsAdaptToToolsets(t *testing.T) {
 		},
 		{
 			spec:     "alerts",
-			mentions: []string{"`get_alert_groups`", "`get_alerts`", "`add_drop_rule`"},
+			mentions: []string{"`get_alert_groups`", "`get_alerts`", "`get_notification_channels`", "`get_drop_rules`", "`add_drop_rule`"},
+		},
+		{
+			spec:      "grafana",
+			mentions:  []string{"## Discover before you query", "`grafana_search_dashboards`", "`grafana_get_dashboard`", "`grafana_list_datasources`"},
+			omissions: []string{"## Write tools", "last9://reference/"},
 		},
 	}
 	for _, tt := range tests {
