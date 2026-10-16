@@ -136,7 +136,7 @@ func NewGetEmergingLogPatternsHandler(client *http.Client, cfg models.Config) fu
 	}
 }
 
-// emptyBaselineNote explains why every current pattern is new. Only a complete
+// emptyBaselineNote explains why every current pattern is new, reported or not. Only a complete
 // baseline sample proves the window had no matching lines; a capped or
 // truncated one may have missed them.
 func emptyBaselineNote(current, baseline LogPatternWindow) string {
@@ -146,7 +146,7 @@ func emptyBaselineNote(current, baseline LogPatternWindow) string {
 	if baseline.SampleLimitReached {
 		return "Baseline sample is empty but incomplete (sample_limit_reached): the baseline search stopped before returning lines, so new means absent from the baseline sample, not from the baseline window."
 	}
-	return "Baseline window has no matching lines; every current pattern at or above min_count is reported as new."
+	return "Baseline window has no matching lines, so every current pattern is new: those with at least min_count lines are in patterns, the rest are counted in below_min_count_patterns."
 }
 
 type windowSample struct {

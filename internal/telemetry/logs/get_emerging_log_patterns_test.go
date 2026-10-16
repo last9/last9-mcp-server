@@ -262,6 +262,18 @@ func TestGetEmergingLogPatterns_EmptyBaselineIsCalledOut(t *testing.T) {
 	}
 }
 
+func TestGetEmergingLogPatterns_EmptyBaselineNoteKeepsRareNewPatternsApart(t *testing.T) {
+	current := append(sameLines("booting", 3), "disk mounted")
+	got, _ := callEmerging(t, &logSearchStub{}, map[int64][]string{patternWindowStart: current}, emergingArgs(LogPatternScopeArgs{}))
+
+	if len(got.Patterns) != 1 || got.BelowMinCountPatterns != 1 {
+		t.Fatalf("patterns = %+v below_min_count = %d, want booting reported and disk mounted below min_count", got.Patterns, got.BelowMinCountPatterns)
+	}
+	if strings.Contains(got.Note, "every current pattern at or above min_count is reported") || !strings.Contains(got.Note, "below_min_count_patterns") {
+		t.Errorf("note = %q, want it to say new patterns under min_count are counted, not reported", got.Note)
+	}
+}
+
 func TestGetEmergingLogPatterns_TruncatedEmptyBaselineIsCalledOutAsIncomplete(t *testing.T) {
 	stub := &logSearchStub{envelope: map[string]any{"logs_truncated": true}}
 	got, _ := callEmerging(t, stub, map[int64][]string{patternWindowStart: sameLines("booting", 3)}, emergingArgs(LogPatternScopeArgs{}))
