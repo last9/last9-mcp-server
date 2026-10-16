@@ -13,6 +13,7 @@ import (
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/telemetry/guardrail"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -29,6 +30,7 @@ type GetTracesArgs struct {
 
 // NewGetTracesHandler creates a handler for getting traces using tracejson_query parameter
 func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTracesArgs) (*mcp.CallToolResult, any, error) {
+	guard := guardrail.New(client, cfg)
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetTracesArgs) (*mcp.CallToolResult, any, error) {
 		// Check if tracejson_query is provided
 		if len(args.TracejsonQuery) == 0 {
@@ -40,8 +42,19 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 			return nil, nil, err
 		}
 
-		// Handle tracejson_query directly
-		result, err := handleTraceJSONQuery(ctx, client, cfg, args.TracejsonQuery, args)
+		startTime, endTime, err := parseTimeRangeFromArgs(args)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to parse time range: %v", err)
+		}
+		verdict := guard.Check(ctx, req, guardrail.Query{
+			Tool: "get_traces", Signal: guardrail.Traces, Pipeline: args.TracejsonQuery,
+			StartMs: startTime, EndMs: endTime,
+		})
+		if verdict.Blocked {
+			return verdict.RejectionResult(), nil, nil
+		}
+
+		result, err := handleTraceJSONQuery(ctx, client, cfg, getTracesQuery{args, startTime, endTime, verdict})
 		if err != nil {
 			if isTraceUpstreamError(err) {
 				return traceToolErrorResult(err), nil, nil
@@ -52,23 +65,29 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 	}
 }
 
-func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, tracejsonQuery interface{}, args GetTracesArgs) (*mcp.CallToolResult, error) {
-	// Determine time range from parameters
-	startTime, endTime, err := parseTimeRangeFromArgs(args)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse time range: %v", err)
-	}
+// getTracesQuery is a validated get_traces call: args, resolved window and
+// the guardrail verdict whose hints the result carries.
+type getTracesQuery struct {
+	args             GetTracesArgs
+	startTime        int64
+	endTime          int64
+	guardrailVerdict guardrail.Verdict
+}
 
-	result, env, err := fetchTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startTime, endTime, args)
+func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, q getTracesQuery) (*mcp.CallToolResult, error) {
+	args, startTime, endTime := q.args, q.startTime, q.endTime
+
+	result, env, err := fetchTraceJSONQuery(ctx, client, cfg, args.TracejsonQuery, startTime, endTime, args)
 	if err != nil {
 		return nil, err
 	}
+	q.guardrailVerdict.AddHints(&env)
 	addGetTracesHints(cfg, args, result, &env)
 	text := utils.FormatQueryResponse(result, &env)
 
 	// Build deep link URL
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-	dashboardURL := dlBuilder.BuildTracesLink(startTime, endTime, tracejsonQuery, "", "")
+	dashboardURL := dlBuilder.BuildTracesLink(startTime, endTime, args.TracejsonQuery, "", "")
 
 	toolResult := utils.EnvelopeToolResult(result, text, env)
 	toolResult.Meta = deeplink.ToMeta(dashboardURL)

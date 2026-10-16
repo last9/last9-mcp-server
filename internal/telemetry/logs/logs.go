@@ -14,6 +14,7 @@ import (
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/telemetry/guardrail"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -36,6 +37,7 @@ type GetLogsArgs struct {
 
 // NewGetLogsHandler creates a handler for getting logs using logjson_query parameter
 func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetLogsArgs) (*mcp.CallToolResult, any, error) {
+	guard := guardrail.New(client, cfg)
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetLogsArgs) (*mcp.CallToolResult, any, error) {
 		// Check if logjson_query is provided
 		if len(args.LogjsonQuery) == 0 {
@@ -48,8 +50,19 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 		}
 		args.LogjsonQuery = sanitizedQuery
 
-		// Handle logjson_query directly
-		result, err := handleLogJSONQuery(ctx, client, cfg, sanitizedQuery, args)
+		startTime, endTime, err := parseTimeRangeFromArgs(args)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to parse time range: %v", err)
+		}
+		verdict := guard.Check(ctx, req, guardrail.Query{
+			Tool: "get_logs", Signal: guardrail.Logs, Pipeline: sanitizedQuery,
+			StartMs: startTime, EndMs: endTime, Index: args.Index,
+		})
+		if verdict.Blocked {
+			return verdict.RejectionResult(), nil, nil
+		}
+
+		result, err := handleLogJSONQuery(ctx, client, cfg, getLogsQuery{args, startTime, endTime, verdict})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -57,17 +70,23 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 	}
 }
 
-func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, args GetLogsArgs) (*mcp.CallToolResult, error) {
-	// Determine time range from parameters
-	startTime, endTime, err := parseTimeRangeFromArgs(args)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse time range: %v", err)
-	}
+// getLogsQuery is a validated get_logs call: sanitized args, resolved window
+// and the guardrail verdict whose hints the result carries.
+type getLogsQuery struct {
+	args             GetLogsArgs
+	startTime        int64
+	endTime          int64
+	guardrailVerdict guardrail.Verdict
+}
 
-	result, env, err := fetchLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
+func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, q getLogsQuery) (*mcp.CallToolResult, error) {
+	args, startTime, endTime := q.args, q.startTime, q.endTime
+
+	result, env, err := fetchLogJSONQuery(ctx, client, cfg, args.LogjsonQuery, startTime, endTime, args)
 	if err != nil {
 		return nil, err
 	}
+	q.guardrailVerdict.AddHints(&env)
 	addGetLogsHints(cfg, args, result, &env)
 	text := utils.FormatQueryResponse(result, &env)
 
@@ -81,7 +100,7 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 			dashboardIndex = resolvedIndex
 		}
 	}
-	dashboardURL := dlBuilder.BuildLogsLink(startTime, endTime, logjsonQuery, dashboardIndex)
+	dashboardURL := dlBuilder.BuildLogsLink(startTime, endTime, args.LogjsonQuery, dashboardIndex)
 	var meta mcp.Meta
 	if !hasExplicitIndex || dashboardIndex != "" {
 		meta = deeplink.ToMeta(dashboardURL)
