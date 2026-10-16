@@ -2,6 +2,7 @@ package logs
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -276,6 +277,7 @@ func TestGetEmergingLogPatterns_FetchesBothWindowsConcurrently(t *testing.T) {
 	bothInFlight := make(chan struct{})
 	go func() { arrived.Wait(); close(bothInFlight) }()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
 		arrived.Done()
 		select {
 		case <-bothInFlight:
