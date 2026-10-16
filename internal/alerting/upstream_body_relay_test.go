@@ -59,6 +59,31 @@ func TestAlertWriteToolsRelayUpstreamBody(t *testing.T) {
 	}
 }
 
+func TestWithUpstreamBodyJoinsSentencesOnce(t *testing.T) {
+	rec := httptest.NewRecorder()
+	rec.WriteHeader(http.StatusConflict)
+	_, _ = rec.WriteString("rule is locked")
+	err := withUpstreamBody(utils.NewUpstreamHTTPError(rec.Result(), "patch alert rule"))
+	if strings.Contains(err.Error(), "..") || !strings.HasSuffix(err.Error(), ". Upstream response: rule is locked") {
+		t.Fatalf("err = %q", err)
+	}
+}
+
+func TestDeleteAlertForbiddenNamesDeleteScope(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveRuleOwner(w, r) {
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":"You don't have access to this resource."}`))
+	}))
+	defer s.Close()
+	result, _, err := NewDeleteAlertHandler(s.Client(), testAlertMutationConfig(s.URL))(context.Background(), nil, DeleteAlertArgs{EntityID: "entity-1", ID: "rule-1"})
+	if err != nil || result == nil || !result.IsError || !strings.Contains(resultText(result), "delete-scope token") {
+		t.Fatalf("result=%s err=%v", resultText(result), err)
+	}
+}
+
 func TestReassignAlertRelaysUpstreamBodyOn409(t *testing.T) {
 	s := newReassignServer(t, http.StatusConflict, "claim changed concurrently")
 	_, _, err := runReassign(s, ReassignAlertArgs{OwnerUserID: "u2"})
