@@ -252,3 +252,33 @@ func TestGetEmergingLogPatterns_BaselineMayEndExactlyWhereCurrentStarts(t *testi
 		t.Errorf("requests = %d, want both windows queried", n)
 	}
 }
+
+func TestGetEmergingLogPatterns_ExactFillKeepsRateBasisAndReportsIncrease(t *testing.T) {
+	stub := &logSearchStub{}
+	srv := stub.serve(t, map[int64][]string{
+		patternWindowStart:   sameLines("lock wait timeout", 4),
+		precedingWindowStart: sameLines("lock wait timeout", 2),
+	}, map[int64]int{patternWindowStart: 4, precedingWindowStart: 2})
+	args := emergingArgs(LogPatternScopeArgs{SampleSize: 4})
+	args.MinCount = 2
+	result, _, err := NewGetEmergingLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, args)
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	got := decodeToolJSON[GetEmergingLogPatternsResponse](t, result)
+	if got.Current.SampleLimitReached || got.ComparisonBasis != comparisonRatePerMinute {
+		t.Fatalf("basis = %q current = %+v; a complete exact fill must stay rate_per_minute", got.ComparisonBasis, got.Current)
+	}
+	if len(got.Patterns) != 1 || got.Patterns[0].Change != changeIncreased || *got.Patterns[0].Ratio != 2 {
+		t.Fatalf("patterns = %+v, want lock wait increased x2 by rate", got.Patterns)
+	}
+}
+
+func TestGetEmergingLogPatterns_RejectsAWindowWithFailedChunks(t *testing.T) {
+	stub := &logSearchStub{envelope: map[string]any{"search_stats": map[string]any{"chunks_failed": 2}}}
+	srv := stub.serve(t, map[int64][]string{patternWindowStart: sameLines("booting", 3)}, nil)
+	_, _, err := NewGetEmergingLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, emergingArgs(LogPatternScopeArgs{}))
+	if err == nil || !strings.Contains(err.Error(), "2 of its search chunks failed") {
+		t.Fatalf("err = %v, want the incomplete window rejected", err)
+	}
+}

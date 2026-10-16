@@ -17,6 +17,9 @@ import (
 type logSearchStub struct {
 	mu     sync.Mutex
 	bodies []map[string]any
+	// envelope holds extra top-level fields (logs_truncated, search_stats)
+	// added to every response.
+	envelope map[string]any
 }
 
 // serve answers each log search with the lines listed for the request's
@@ -45,6 +48,9 @@ func (s *logSearchStub) serve(t *testing.T, linesByStart map[int64][]string, tot
 		}
 		if total, ok := totals[start]; ok {
 			resp["total_matching_lines"] = total
+		}
+		for key, value := range s.envelope {
+			resp[key] = value
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
@@ -205,3 +211,67 @@ func TestGetLogPatterns_AcceptsLimitsAtTheirMaximum(t *testing.T) {
 		t.Errorf("limit = %v, want %d", reqs[0]["limit"], maxPatternSampleSize)
 	}
 }
+
+func TestGetLogPatterns_SampleLimitFollowsTheUpstreamTotal(t *testing.T) {
+	cases := []struct {
+		name      string
+		lines     int
+		total     *int
+		truncated any
+		want      bool
+	}{
+		{"exact fill with matching total", 4, intPtr(4), nil, false},
+		{"exact fill with unknown total", 4, nil, nil, true},
+		{"exact fill with a larger total", 4, intPtr(5), nil, true},
+		{"short sample with a larger total", 3, intPtr(9), nil, true},
+		{"short sample with unknown total", 3, nil, nil, false},
+		{"matching total that is only a floor", 4, intPtr(4), true, true},
+		{"empty sample of a truncated search", 0, intPtr(0), true, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stub := &logSearchStub{}
+			if c.truncated != nil {
+				stub.envelope = map[string]any{"logs_truncated": c.truncated}
+			}
+			totals := map[int64]int{}
+			if c.total != nil {
+				totals[patternWindowStart] = *c.total
+			}
+			srv := stub.serve(t, map[int64][]string{patternWindowStart: sameLines("heartbeat ok", c.lines)}, totals)
+			result, _, err := NewGetLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, GetLogPatternsArgs{
+				LogPatternScopeArgs: LogPatternScopeArgs{ServiceName: "checkout", StartTimeISO: patternWindowStartISO, EndTimeISO: patternWindowEndISO, SampleSize: 4},
+			})
+			if err != nil {
+				t.Fatalf("handler: %v", err)
+			}
+			got := decodeToolJSON[GetLogPatternsResponse](t, result)
+			if got.Window.SampleLimitReached != c.want {
+				t.Errorf("sample_limit_reached = %t, want %t (window %+v)", got.Window.SampleLimitReached, c.want, got.Window)
+			}
+			if c.truncated == true && (got.Window.LogsTruncated == nil || !*got.Window.LogsTruncated) {
+				t.Errorf("logs_truncated = %v, want true carried into the window", got.Window.LogsTruncated)
+			}
+		})
+	}
+}
+
+func TestGetLogPatterns_RejectsASearchWithFailedChunks(t *testing.T) {
+	for _, failed := range []int{0, 1} {
+		t.Run(fmt.Sprintf("chunks_failed=%d", failed), func(t *testing.T) {
+			stub := &logSearchStub{envelope: map[string]any{"search_stats": map[string]any{"chunks_failed": failed}}}
+			srv := stub.serve(t, nil, map[int64]int{patternWindowStart: 0})
+			_, _, err := NewGetLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, GetLogPatternsArgs{
+				LogPatternScopeArgs: LogPatternScopeArgs{ServiceName: "checkout", StartTimeISO: patternWindowStartISO, EndTimeISO: patternWindowEndISO},
+			})
+			if failed == 0 && err != nil {
+				t.Fatalf("complete empty search rejected: %v", err)
+			}
+			if failed > 0 && (err == nil || !strings.Contains(err.Error(), "1 of its search chunks failed")) {
+				t.Fatalf("err = %v, want the incomplete search rejected", err)
+			}
+		})
+	}
+}
+
+func intPtr(v int) *int { return &v }

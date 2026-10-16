@@ -568,7 +568,7 @@ Use `get_logs` for broad aggregate counts first; use `get_service_logs` only aft
 - `sample_size` (integer, optional): Lines sampled from the window. Default: 1000, maximum: 5000.
 - `top_n` (integer, optional): Templates returned by count. Default: 20, maximum: 100. The rest are totalled in `other`.
 
-Clustering runs in the MCP server over the sampled lines, so counts are within the sample; `window.sample_limit_reached` says when the sample did not cover the whole window. An empty `patterns` list is a valid answer.
+Clustering runs in the MCP server over the sampled lines, so counts are within the sample; `window.sample_limit_reached` says when the sample may miss matching lines (it holds `sample_size` lines and the API does not report an exact `total_matching_lines` equal to that, or the search was `logs_truncated`). A search with failed chunks is an error rather than a partial window. An empty `patterns` list is a valid answer.
 
 ### get_emerging_log_patterns
 
@@ -578,7 +578,7 @@ Takes every `get_log_patterns` parameter (the time range is the current window),
 - `min_count` (integer, optional): Lines a pattern needs to be reported. Default: 3.
 - `change_factor` (number, optional): Frequency ratio counted as significant, greater than 1. Default: 2.
 
-Returns only changed templates (`new`, `increased`, `decreased`, `disappeared`) with `current` and `baseline` counts. Frequencies are compared per minute while both samples are complete and as shares of the sample once either hits `sample_size` (`comparison_basis`). An empty `patterns` list means no log novelty.
+Returns only changed templates (`new`, `increased`, `decreased`, `disappeared`) with `current` and `baseline` counts. Frequencies are compared per minute while both samples hold every matching line and as shares of the sample once either reports `sample_limit_reached` (`comparison_basis`). An empty `patterns` list means no log novelty.
 
 ### get_log_attributes
 

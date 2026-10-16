@@ -423,6 +423,8 @@ func TestLogPatternDescriptionsCriticalRules(t *testing.T) {
 		{"Do not invent", "must forbid manufacturing findings"},
 		{"instead of paging raw lines", "must be preferred over raw log paging during triage"},
 		{"sample_size", "must say counts are within a bounded sample"},
+		{"logs_truncated", "must say a truncated search's total is not complete"},
+		{"returns an error, not a partial", "must say an incomplete search fails rather than reading as fewer patterns"},
 	}
 	for name, desc := range descriptions {
 		for _, c := range checks {

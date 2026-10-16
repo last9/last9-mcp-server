@@ -12,10 +12,10 @@ Parameters:
 - top_n: (Optional) Patterns returned, by count. Default 20, maximum 100. The rest are totalled in `other`.
 
 Returns:
-- `window`: the sampled range, `sampled_lines`, `sample_limit_reached`, and `total_matching_lines` when the API reports it.
+- `window`: the sampled range, `sampled_lines`, `sample_limit_reached` (true when the sample may miss matching lines), `total_matching_lines` when the API reports it, and `logs_truncated` when the search stopped early (its total is then only a floor).
 - `patterns`: each with `template`, `count`, `first_seen`, `last_seen`, `severity_counts` and one raw `sample` line.
 - `total_patterns` and `other` (`patterns`, `count`) for templates below `top_n`.
 
 Rules:
 - Counts, `first_seen` and `last_seen` are within the sample. When `sample_limit_reached` is true the sample holds only part of the window: report shares of the sample, not absolute volumes, or narrow the window or filters.
-- An empty `patterns` list is a valid answer: the service logged nothing matching in that window. Say so. Do not invent patterns, counts or causes that the response does not contain.
+- An empty `patterns` list with `sample_limit_reached` false is a valid answer: the service logged nothing matching in that window. Say so. A search that could not cover the whole window returns an error, not a partial result. Do not invent patterns, counts or causes that the response does not contain.

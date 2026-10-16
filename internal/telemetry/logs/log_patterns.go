@@ -236,6 +236,7 @@ type LogPatternWindow struct {
 	SampledLines       int    `json:"sampled_lines"`
 	SampleLimitReached bool   `json:"sample_limit_reached"`
 	TotalMatchingLines *int   `json:"total_matching_lines,omitempty"`
+	LogsTruncated      *bool  `json:"logs_truncated,omitempty"`
 }
 
 type logPatternScope struct {
@@ -288,13 +289,34 @@ func (s logPatternScope) sample(ctx context.Context, client *http.Client, cfg mo
 	if err != nil {
 		return nil, LogPatternWindow{}, fmt.Errorf("failed to sample logs: %w", err)
 	}
+	// A window missing a chunk would read as fewer or absent patterns, i.e.
+	// false novelty, so it fails like the chunked path does.
+	if failed, _ := logs.SearchStats["chunks_failed"].(float64); failed > 0 {
+		return nil, LogPatternWindow{}, fmt.Errorf("log search for %s to %s is incomplete: %d of its search chunks failed; retry or narrow the window",
+			start.Format(time.RFC3339), end.Format(time.RFC3339), int(failed))
+	}
 	return logs.Logs, LogPatternWindow{
 		StartTime:          start.Format(time.RFC3339),
 		EndTime:            end.Format(time.RFC3339),
 		SampledLines:       len(logs.Logs),
-		SampleLimitReached: len(logs.Logs) >= s.sampleSize,
+		SampleLimitReached: sampleIsPartial(logs, s.sampleSize),
 		TotalMatchingLines: logs.TotalMatchingLines,
+		LogsTruncated:      logs.LogsTruncated,
 	}, nil
+}
+
+// sampleIsPartial reports whether the sample may miss matching lines. An exact
+// total settles it; a truncated search's total is only a floor, and without a
+// total a full sample is assumed capped.
+func sampleIsPartial(logs *ServiceLogsResponse, sampleSize int) bool {
+	switch {
+	case logs.LogsTruncated != nil && *logs.LogsTruncated:
+		return true
+	case logs.TotalMatchingLines != nil:
+		return *logs.TotalMatchingLines > len(logs.Logs)
+	default:
+		return len(logs.Logs) >= sampleSize
+	}
 }
 
 func boundedPatternLimit(name string, value, fallback, max int) (int, error) {
