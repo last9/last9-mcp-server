@@ -18,6 +18,7 @@ import (
 	"last9-mcp/internal/change_events"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/telemetry/traces"
+	"last9-mcp/internal/toolsets"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -174,9 +175,16 @@ func flatWindow() windowData {
 
 func runTool(t *testing.T, f *fakeLast9, args AnalyzeChangeImpactArgs) (Report, error) {
 	t.Helper()
+	return runToolWith(t, f, args, func(*models.Config) {})
+}
+
+func runToolWith(t *testing.T, f *fakeLast9, args AnalyzeChangeImpactArgs, configure func(*models.Config)) (Report, error) {
+	t.Helper()
 	server := f.serve(t)
 	defer server.Close()
-	result, _, err := NewAnalyzeChangeImpactHandler(server.Client(), testConfig(server.URL))(context.Background(), &mcp.CallToolRequest{}, args)
+	cfg := testConfig(server.URL)
+	configure(&cfg)
+	result, _, err := NewAnalyzeChangeImpactHandler(server.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, args)
 	if err != nil {
 		return Report{}, err
 	}
@@ -675,5 +683,33 @@ func TestDrillDownNamesNextToolsWithWindows(t *testing.T) {
 	}
 	if tools["get_apm_service_deviations"]["baseline_end_time_iso"] != change.Format(time.RFC3339) || tools["get_service_traces"]["service_name"] != "checkout" {
 		t.Fatalf("drill_down arguments = %+v", tools)
+	}
+}
+
+func TestDrillDownNamesOnlyServedTools(t *testing.T) {
+	for _, spec := range []string{"investigate", "alerts", "metrics,alerts,traces"} {
+		t.Run(spec, func(t *testing.T) {
+			allowed, err := toolsets.Parse(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			change := recentChange()
+			f := &fakeLast9{change: change, baseline: flatWindow(), after: flatWindow()}
+			report, err := runToolWith(t, f, serviceArgs(change), func(cfg *models.Config) { cfg.AllowedTools = allowed })
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(report.DrillDown) == 0 && spec != "alerts" {
+				t.Fatal("drill_down is empty")
+			}
+			for _, d := range report.DrillDown {
+				if !allowed.Allows(d.Tool) {
+					t.Fatalf("drill_down names %s, which --toolsets=%s does not serve", d.Tool, spec)
+				}
+			}
+			if spec == "metrics,alerts,traces" && len(report.DrillDown) != 5 {
+				t.Fatalf("drill_down = %+v, want all five tools when all are served", report.DrillDown)
+			}
+		})
 	}
 }

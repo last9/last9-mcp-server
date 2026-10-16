@@ -170,7 +170,7 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 		Env:        req.Env,
 		ChangeTime: req.Change.UTC().Format(time.RFC3339),
 		Windows:    w.public(),
-		DrillDown:  drillDowns(req, w),
+		DrillDown:  drillDowns(req, w, cfg.AllowedTools),
 		Thresholds: map[string]float64{
 			"min_after_minutes":        minAfterMinutes,
 			"min_requests_per_window":  minRequestsPerWindow,

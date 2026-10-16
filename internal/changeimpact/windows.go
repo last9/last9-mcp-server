@@ -7,6 +7,7 @@ import (
 	"last9-mcp/internal/alerting"
 	"last9-mcp/internal/apm"
 	"last9-mcp/internal/telemetry/traces"
+	"last9-mcp/internal/toolsets"
 )
 
 const (
@@ -123,7 +124,9 @@ func (w changeWindows) traceDeviationArgs(req Request) traces.GetTraceAttributeD
 	}
 }
 
-func drillDowns(req Request, w changeWindows) []DrillDown {
+// drillDowns names only tools this server serves: --toolsets can leave out,
+// say, get_alerts while still serving analyze_change_impact.
+func drillDowns(req Request, w changeWindows, allowed toolsets.Set) []DrillDown {
 	withEnv := func(args map[string]any, key string) map[string]any {
 		if req.Env != "" {
 			args[key] = req.Env
@@ -173,7 +176,13 @@ func drillDowns(req Request, w changeWindows) []DrillDown {
 			Why: "which span attributes (version, host, route) changed share after the change",
 		})
 	}
-	return out
+	served := make([]DrillDown, 0, len(out))
+	for _, d := range out {
+		if allowed.Allows(d.Tool) {
+			served = append(served, d)
+		}
+	}
+	return served
 }
 
 func rfc3339(t time.Time) string {
