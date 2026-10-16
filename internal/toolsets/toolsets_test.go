@@ -141,7 +141,7 @@ func TestEveryToolsetIncludesCore(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Parse(%q): %v", spec, err)
 		}
-		for _, tool := range []string{"get_current_time"} {
+		for _, tool := range []string{"get_current_time", "get_workspace_overview"} {
 			if !set.Allows(tool) {
 				t.Errorf("toolsets=%s hides core tool %q", spec, tool)
 			}

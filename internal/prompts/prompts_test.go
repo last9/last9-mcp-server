@@ -52,6 +52,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_trace_attributes.md":              prompts.GetTraceAttributesDescription,
 	"get_trace_attributes_for_pipeline.md": prompts.GetTraceAttributesForPipelineDescription,
 	"get_trace_waterfall.md":               prompts.GetTraceWaterfallDescription,
+	"get_workspace_overview.md":            prompts.GetWorkspaceOverviewDescription,
 	"get_traces_base.md":                   prompts.GetTracesDescription,
 	"grafana_get_dashboard.md":             prompts.GrafanaGetDashboardDescription,
 	"grafana_list_datasources.md":          prompts.GrafanaListDatasourcesDescription,

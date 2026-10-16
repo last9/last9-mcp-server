@@ -220,6 +220,18 @@ func TestServerInstructionsAdaptToToolsets(t *testing.T) {
 	}
 }
 
+func TestServerInstructionsStartWithWorkspaceOverview(t *testing.T) {
+	for _, spec := range append(toolsets.ValidNames(), "") {
+		t.Run("toolsets="+spec, func(t *testing.T) {
+			instructions, _ := initializeOver(t, spec)
+			_, rest, ok := strings.Cut(instructions, "\n## ")
+			if !ok || !strings.HasPrefix(rest, "Start here\nCall `get_workspace_overview` first") {
+				t.Fatalf("first section must recommend get_workspace_overview:\n%s", instructions)
+			}
+		})
+	}
+}
+
 func TestServerInstructionsWriteSectionNamesOnlyWriteTools(t *testing.T) {
 	instructions, registry := initializeOver(t, "")
 	reads, writes, ok := strings.Cut(instructions, "## Write tools")

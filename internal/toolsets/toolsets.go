@@ -88,9 +88,10 @@ var named = map[string][]string{
 }
 
 // core tools are served under every toolset: other tools' arguments depend on
-// them, so no --toolsets value may hide them.
+// them, or the server instructions name them as the first call.
 var core = []string{
 	"get_current_time",
+	"get_workspace_overview",
 }
 
 // discovery tools included in the investigate composite (R9a).

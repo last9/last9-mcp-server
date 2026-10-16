@@ -537,15 +537,19 @@ func TestDumpToolsServesCoreToolsUnderEveryToolset(t *testing.T) {
 			if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
 				t.Fatalf("output is not valid JSON: %v", err)
 			}
-			var description string
+			descriptions := map[string]string{}
 			for _, tool := range out.Tools {
-				if tool.Name == "get_current_time" {
-					description = tool.Description
-				}
+				descriptions[tool.Name] = tool.Description
 			}
-			for _, want := range []string{"`range`", "`timezone`", "since <point>", "IST = Asia/Kolkata", "epoch_seconds"} {
-				if !strings.Contains(description, want) {
-					t.Errorf("get_current_time description missing %q", want)
+			wants := map[string][]string{
+				"get_current_time":       {"`range`", "`timezone`", "since <point>", "IST = Asia/Kolkata", "epoch_seconds"},
+				"get_workspace_overview": {"Recommended first call", "`telemetry`", "`errors`", "`null`, which means unknown"},
+			}
+			for tool, phrases := range wants {
+				for _, want := range phrases {
+					if !strings.Contains(descriptions[tool], want) {
+						t.Errorf("%s description missing %q", tool, want)
+					}
 				}
 			}
 		})

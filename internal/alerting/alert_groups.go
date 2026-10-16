@@ -104,6 +104,15 @@ func NewGetAlertGroupsHandler(client *http.Client, cfg models.Config) func(conte
 	}
 }
 
+// CountAlertGroups returns the count get_alert_groups reports with no filters.
+func CountAlertGroups(ctx context.Context, client *http.Client, cfg models.Config) (int, error) {
+	entities, err := fetchAlertGroupEntities(ctx, client, cfg, alertGroupEntityQuery{})
+	if err != nil {
+		return 0, err
+	}
+	return len(entities), nil
+}
+
 func validateGetAlertGroupsArgs(args GetAlertGroupsArgs) error {
 	key := strings.TrimSpace(args.LabelKey)
 	value := strings.TrimSpace(args.LabelValue)

@@ -85,6 +85,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: prompts.GetCurrentTimeDescription,
 	}, workspace.NewGetCurrentTimeHandler(time.Now)))
 
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_workspace_overview",
+		Annotations: readOnlyTool("Get Workspace Overview"),
+		Description: prompts.GetWorkspaceOverviewDescription,
+	}, workspace.NewGetWorkspaceOverviewHandler(client, cfg)))
+
 	// Register exceptions tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_exceptions",
