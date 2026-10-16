@@ -20,7 +20,7 @@ type CreateAlertArgs struct {
 }
 
 func NewCreateAlertHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, CreateAlertArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, args CreateAlertArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args CreateAlertArgs) (*mcp.CallToolResult, any, error) {
 		if strings.TrimSpace(args.EntityID) == "" {
 			return utils.ToolErrorResult("entity_id is required"), nil, nil
 		}
@@ -30,6 +30,7 @@ func NewCreateAlertHandler(client *http.Client, cfg models.Config) func(context.
 		overridden := args.AlertRule.IsDisabled != nil && !*args.AlertRule.IsDisabled
 		disabled := true
 		args.AlertRule.IsDisabled = &disabled
+		args.AlertRule.Properties = withCreatedViaAnnotations(args.AlertRule.Properties, newCreatedViaMarker(req))
 		body, err := entities.CreateAlertRule(ctx, last9api.NewClient(client, cfg),
 			entities.AlertRuleInput{EntityID: args.EntityID, Body: args.AlertRule})
 		if err != nil {

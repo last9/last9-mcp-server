@@ -13,7 +13,7 @@ func TestCreateAlertAlwaysCreatesDisabledDraft(t *testing.T) {
 	for name, in := range map[string]*bool{"omitted": nil, "false": &f, "true": &tr} {
 		t.Run(name, func(t *testing.T) {
 			server := newAlertRuleServer(t, http.MethodPost, "/entities/entity-1/alert-rules",
-				`{"primary_indicator":"latency","expression_args":{"latency":{"id":"kpi-1"}},"is_disabled":true,"rule_name":"latency"}`)
+				`{"primary_indicator":"latency","expression_args":{"latency":{"id":"kpi-1"}},"is_disabled":true,"rule_name":"latency","properties":{"annotations":{"_l9_created_via_":"last9-mcp","_l9_created_via_client_":"unknown/unknown"}}}`)
 			rn := "latency"
 			payload := validAlertRulePayload(&rn)
 			payload.IsDisabled = in
