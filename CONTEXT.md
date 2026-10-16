@@ -45,7 +45,7 @@ The tools whose manuals dominate description tokens and undergo progressive disc
 _Avoid_: treating every slightly long description as a whale; `get_service_traces` is not a whale by default
 
 **Log pattern**:
-A message template mined from log lines, with variables (ids, numbers, timestamps) replaced by `<*>`. Mined in the MCP server with a Drain-style miner over a bounded sample of lines, because the Last9 API has no log-pattern endpoint; counts are therefore within the sample. Move mining server-side if the API gains one. Prompts that triage an open service window (`on_call_runbook`, `diagnose_error_rate`) check pattern novelty before reading lines; prompts already anchored to one signal (an exception, a latency deviation, an attribute question) go straight to their targeted log query.
+A message template mined from log lines, with variables (ids, numbers, timestamps) replaced by `<*>`. Mined in the MCP server with a Drain-style miner over a bounded sample of lines, because the Last9 API has no log-pattern endpoint; counts are therefore within the sample. Move mining server-side if the API gains one. Prompts that triage an open service window (`on_call_runbook`, `diagnose_error_rate`) check pattern novelty before their first log search, and only on branches that search logs, since novelty samples two windows; prompts already anchored to one signal (an exception, a latency deviation, an attribute question) go straight to their targeted log query.
 _Avoid_: reporting sampled pattern counts as total log volume; paging raw lines to find what changed
 
 **Attribute discovery**:

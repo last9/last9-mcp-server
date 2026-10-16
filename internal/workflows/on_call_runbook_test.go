@@ -108,24 +108,52 @@ func TestOnCallRunbookFleetTriageWhenNoService(t *testing.T) {
 	}
 }
 
-func TestOnCallRunbookChecksLogNoveltyBeforeRawLines(t *testing.T) {
-	for _, symptom := range []string{"latency", "errors", "database", "weird"} {
-		res, err := OnCallRunbook.Handler(context.Background(), &mcp.GetPromptRequest{
-			Params: &mcp.GetPromptParams{Arguments: map[string]string{"symptom": symptom, "time": "1h", "service": "checkout"}},
-		})
-		if err != nil {
-			t.Fatalf("symptom %q: unexpected error: %v", symptom, err)
+func renderOnCallRunbook(t *testing.T, args map[string]string) string {
+	t.Helper()
+	res, err := OnCallRunbook.Handler(context.Background(), &mcp.GetPromptRequest{Params: &mcp.GetPromptParams{Arguments: args}})
+	if err != nil {
+		t.Fatalf("args %v: unexpected error: %v", args, err)
+	}
+	return res.Messages[0].Content.(*mcp.TextContent).Text
+}
+
+func TestOnCallRunbookChecksLogNoveltyOnlyBeforeLogSearches(t *testing.T) {
+	// Each name must appear, after the novelty check.
+	cases := map[string][]string{
+		"errors": {"get_service_logs", "get_logs only if", "get_log_patterns"},
+		"weird":  {"get_log_patterns"},
+	}
+	for symptom, after := range cases {
+		got := renderOnCallRunbook(t, map[string]string{"symptom": symptom, "time": "1h", "service": "checkout"})
+		novelty := strings.Index(got, "get_emerging_log_patterns(service_name=checkout)")
+		if novelty < 0 || !strings.Contains(got, "no log novelty") {
+			t.Fatalf("symptom %q render must check log novelty before searching logs:\n%s", symptom, got)
 		}
-		got := res.Messages[0].Content.(*mcp.TextContent).Text
-		// get_log_patterns costs a second sample, so only branches that go on to read logs call it.
-		for _, want := range []string{"get_emerging_log_patterns", "Call get_log_patterns only when a branch below reads logs", "no log novelty"} {
-			if !strings.Contains(got, want) {
-				t.Errorf("symptom %q render should contain %q:\n%s", symptom, want, got)
+		for _, name := range after {
+			if i := strings.Index(got, name); i < novelty {
+				t.Errorf("symptom %q render must check log novelty before %s:\n%s", symptom, name, got)
 			}
 		}
-		// Symptom branches (errors) already call get_service_logs and get_logs, so novelty must come first.
-		if novelty, routing := strings.Index(got, "get_emerging_log_patterns"), strings.Index(got, "Route by symptom"); routing < 0 || novelty > routing {
-			t.Errorf("symptom %q render must check log novelty before symptom routing:\n%s", symptom, got)
+	}
+
+	// The unknown branch learns what is firing first; novelty only matters once it leads to a log search.
+	got := renderOnCallRunbook(t, map[string]string{"symptom": "weird", "time": "1h", "service": "checkout"})
+	if alerts, novelty := strings.Index(got, "get_alerts"), strings.Index(got, "get_emerging_log_patterns"); alerts < 0 || novelty < alerts {
+		t.Errorf("unknown symptom must reach get_alerts before log novelty:\n%s", got)
+	}
+
+	// Branches that never read logs must not pay for two log samples.
+	for _, symptom := range []string{"latency", "database"} {
+		got := renderOnCallRunbook(t, map[string]string{"symptom": symptom, "time": "1h", "service": "checkout"})
+		if strings.Contains(got, "get_emerging_log_patterns") || strings.Contains(got, "get_log_patterns") {
+			t.Errorf("symptom %q reads no logs, so its render must not call the pattern tools:\n%s", symptom, got)
 		}
+	}
+}
+
+func TestOnCallRunbookLogNoveltyWithoutServiceTargetsTheTriagedService(t *testing.T) {
+	got := renderOnCallRunbook(t, map[string]string{"symptom": "errors", "time": "1h", "env": "prod"})
+	if !strings.Contains(got, "get_emerging_log_patterns(service_name=<service>, env=prod)") {
+		t.Errorf("no-service render must scope novelty to the service fleet triage picked:\n%s", got)
 	}
 }
