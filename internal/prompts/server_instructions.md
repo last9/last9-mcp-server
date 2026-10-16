@@ -1,0 +1,101 @@
+{{- $services := tools "get_service_profile" "did_you_mean" "get_service_environments" "get_profile_services" "list_datasources" -}}
+{{- $attributes := tools "get_log_attributes" "get_log_attributes_for_pipeline" "get_trace_attributes" "get_trace_attributes_for_pipeline" "get_trace_attribute_values" -}}
+{{- $metricNames := tools "prometheus_labels" "prometheus_label_values" -}}
+{{- $alertRules := tools "get_alert_groups" "get_alert_config" "get_entity_alert_rules" -}}
+{{- $health := tools "get_service_summary" "get_service_performance_details" "get_service_operations_summary" "get_service_dependency_graph" -}}
+{{- $alerts := tools "get_alerts" "get_alert_rule_state" -}}
+{{- $changes := tools "get_change_events" -}}
+{{- $deviations := tools "get_apm_service_deviations" "get_trace_attribute_deviations" -}}
+{{- $scoped := tools "get_service_logs" "get_service_traces" "get_exceptions" "get_trace_waterfall" -}}
+{{- $databases := tools "get_databases" "get_database_slow_queries" "get_database_queries" "get_database_server_metrics" -}}
+{{- $profiles := tools "get_profile_summary" "get_top_functions" "get_flamegraph" -}}
+{{- $raw := tools "prometheus_range_query" "prometheus_instant_query" "get_logs" "get_traces" -}}
+{{- $create := tools "create_dashboard" -}}
+{{- $validate := tools "validate_dashboard" -}}
+{{- $refine := tools "update_dashboard" -}}
+{{- $destructive := tools "update_dashboard" "delete_dashboard" "delete_dashboard_snapshot" "add_drop_rule" -}}
+Last9 observability for the caller's organization. Discover names first, answer with the most specific tool, and treat writes with care.
+{{- if or $services $attributes $metricNames $alertRules}}
+
+## Discover before you query
+Never guess service, environment, attribute, metric or label names; look them up and reuse the exact values.
+{{- with $services}}
+- Services, environments and datasources: {{.}}.
+{{- end}}
+{{- with $attributes}}
+- Log and trace attributes: {{.}}.
+{{- end}}
+{{- with $metricNames}}
+- Metric and label names: {{.}}.
+{{- end}}
+{{- with $alertRules}}
+- Alert groups, rules and their KPIs: {{.}}.
+{{- end}}
+{{- end}}
+{{- if or $health $alerts $changes $deviations $scoped $databases $profiles}}
+
+## Prefer dedicated tools
+They return computed answers with the right scoping; reach for them before writing a query.
+{{- with $health}}
+- Service health and performance: {{.}}.
+{{- end}}
+{{- with $alerts}}
+- Firing alerts and rule state: {{.}}.
+{{- end}}
+{{- with $changes}}
+- Deploys and other changes: {{.}}.
+{{- end}}
+{{- with $deviations}}
+- What deviates from baseline: {{.}}.
+{{- end}}
+{{- with $scoped}}
+- One service's logs, traces and errors: {{.}}.
+{{- end}}
+{{- with $databases}}
+- Databases: {{.}}.
+{{- end}}
+{{- with $profiles}}
+- Profiles: {{.}}.
+{{- end}}
+{{- end}}
+{{- with $raw}}
+
+## Raw queries are the last resort
+Use {{.}} only when no dedicated tool answers the question, and build them from discovered names.
+{{- end}}
+{{- if or (has "get_logs") (has "get_traces") (has "get_service_logs") (has "prometheus_range_query") (has "get_service_profile")}}
+
+## Reference manuals
+Read these resources before writing a non-trivial query:
+{{- if has "get_logs"}}
+- `get_logs` pipelines: `last9://reference/logjson`
+{{- end}}
+{{- if has "get_traces"}}
+- `get_traces` pipelines: `last9://reference/tracejson`
+{{- end}}
+{{- if has "get_service_logs"}}
+- `get_service_logs` filters: `last9://reference/service_logs`
+{{- end}}
+{{- if has "prometheus_range_query"}}
+- `prometheus_range_query` PromQL: `last9://reference/metrics`
+{{- end}}
+{{- if has "get_service_profile"}}
+- Service investigations: `last9://reference/investigation`
+{{- end}}
+{{- end}}
+{{- if or $create $validate $refine $destructive}}
+
+## Write tools
+{{- with $create}}
+- Create once with {{.}} and keep the returned id; never create a second copy to change the first.
+{{- end}}
+{{- with $validate}}
+- Dry-run a dashboard with {{.}} before saving it.
+{{- end}}
+{{- with $refine}}
+- Refine an existing object with {{.}}.
+{{- end}}
+{{- with $destructive}}
+- {{.}} overwrite or remove data: confirm with the user first.
+{{- end}}
+{{- end}}
