@@ -48,7 +48,7 @@ func NewHTTPServer(server *last9mcp.Last9MCPServer, config models.Config, build 
 		servers: &toolsetServers{
 			build:     build,
 			maxCached: maxToolsetServers,
-			cached:    map[string]http.Handler{},
+			cached:    map[string]*toolsetServer{},
 		},
 	}
 }
@@ -126,30 +126,54 @@ type toolsetServers struct {
 	maxCached int
 
 	mu      sync.Mutex
-	cached  map[string]http.Handler
+	cached  map[string]*toolsetServer
 	servers []*last9mcp.Last9MCPServer
+}
+
+// toolsetServer is one cache entry; ready closes once handler or err is set,
+// so concurrent misses for a set share its build.
+type toolsetServer struct {
+	ready   chan struct{}
+	handler http.Handler
+	err     error
 }
 
 // handler returns the handler for allowed and a release func the caller must
 // run after serving; release shuts down a server built past the cache bound.
+// Builds run outside mu so a slow build never stalls other toolsets.
 func (c *toolsetServers) handler(allowed toolsets.Set) (http.Handler, func(), error) {
 	key := toolSetKey(allowed)
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if h, ok := c.cached[key]; ok {
-		return h, func() {}, nil
+	if entry, ok := c.cached[key]; ok {
+		c.mu.Unlock()
+		<-entry.ready
+		return entry.handler, func() {}, entry.err
 	}
-	server, err := c.build(allowed)
-	if err != nil {
-		return nil, nil, err
-	}
-	h := server.NewStreamableHTTPHandler(streamableOptions())
 	if len(c.cached) >= c.maxCached {
-		return h, func() { shutdownServer(server) }, nil
+		c.mu.Unlock()
+		server, err := c.build(allowed)
+		if err != nil {
+			return nil, nil, err
+		}
+		return server.NewStreamableHTTPHandler(streamableOptions()), func() { shutdownServer(server) }, nil
 	}
-	c.cached[key] = h
-	c.servers = append(c.servers, server)
-	return h, func() {}, nil
+	entry := &toolsetServer{ready: make(chan struct{})}
+	c.cached[key] = entry
+	c.mu.Unlock()
+
+	server, err := c.build(allowed)
+	c.mu.Lock()
+	if err != nil {
+		// Drop the failed entry so the next request retries the build.
+		delete(c.cached, key)
+		entry.err = err
+	} else {
+		c.servers = append(c.servers, server)
+		entry.handler = server.NewStreamableHTTPHandler(streamableOptions())
+	}
+	c.mu.Unlock()
+	close(entry.ready)
+	return entry.handler, func() {}, entry.err
 }
 
 func (c *toolsetServers) shutdown(ctx context.Context) error {
