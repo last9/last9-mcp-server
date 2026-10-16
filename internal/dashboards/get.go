@@ -15,7 +15,7 @@ import (
 )
 
 type GetDashboardArgs struct {
-	ID     string `json:"id" jsonschema:"Dashboard UUID"`
+	ID     string `json:"id" jsonschema:"(Required) Dashboard UUID"`
 	Region string `json:"region,omitempty" jsonschema:"AWS region for query population (defaults to configured datasource region)"`
 }
 

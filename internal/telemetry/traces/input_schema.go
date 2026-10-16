@@ -75,7 +75,7 @@ func GetTracesInputSchema() map[string]interface{} {
 func tracejsonQuerySchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":        "array",
-		"description": "JSON pipeline query for traces. An ordered list of stages: filter → parse → transform → aggregate/window_aggregate. Each stage is an object with a 'type' field.",
+		"description": "(Required) JSON pipeline query for traces. An ordered list of stages: filter → parse → transform → aggregate/window_aggregate. Each stage is an object with a 'type' field.",
 		"items": map[string]interface{}{
 			"oneOf": []interface{}{
 				filterStageSchema(),

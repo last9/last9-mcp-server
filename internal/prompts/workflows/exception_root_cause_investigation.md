@@ -3,6 +3,8 @@ Workflow: exception root-cause investigation.
 Use this workflow when investigating server-side exceptions, especially when
 span errors may be a downstream symptom rather than the root cause.
 
+Do not repeat a successful call or broaden an empty query. If a call fails, correct its arguments once; stop after the bounded line read and report what the data supports.
+
 Steps:
 1. Call `get_exceptions` to identify the hottest aggregate service and exception
    type group. Its rows are metric aggregates, not trace samples or exact time bounds.

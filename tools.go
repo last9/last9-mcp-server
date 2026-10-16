@@ -140,6 +140,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Name:        "prometheus_range_query",
 		Annotations: readOnlyTool("Run PromQL Range Query"),
 		Description: prompts.PromqlRangeQueryDetails,
+		InputSchema: apm.PromqlRangeQueryInputSchema(),
 	}, apm.NewPromqlRangeQueryHandler(client, cfg)))
 
 	// Register PromQL instant query tool
@@ -147,6 +148,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Name:        "prometheus_instant_query",
 		Annotations: readOnlyTool("Run PromQL Instant Query"),
 		Description: prompts.PromqlInstantQueryDetails,
+		InputSchema: apm.PromqlInstantQueryInputSchema(),
 	}, apm.NewPromqlInstantQueryHandler(client, cfg)))
 
 	// Register PromQL label values tool
@@ -177,6 +179,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Meta:        mcp.Meta{"last9/coverage": true},
 		Annotations: readOnlyTool("Get Service Logs"),
 		Description: prompts.GetServiceLogsDescription,
+		InputSchema: logs.GetServiceLogsInputSchema(),
 	}, logs.NewGetServiceLogsHandler(client, cfg)))
 
 	// Register drop rules tool
@@ -247,6 +250,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Name:        "get_service_traces",
 		Annotations: readOnlyTool("Get Service Traces"),
 		Description: prompts.GetServiceTracesDescription,
+		InputSchema: traces.GetServiceTracesInputSchema(),
 	}, traces.GetServiceTracesHandler(client, cfg)))
 
 	// Register log attributes tool

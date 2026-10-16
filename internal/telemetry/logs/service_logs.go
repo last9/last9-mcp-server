@@ -45,7 +45,7 @@ type LogEntry struct {
 
 // GetServiceLogsArgs represents the input arguments for the get_service_logs tool
 type GetServiceLogsArgs struct {
-	ServiceName      string                      `json:"service_name" jsonschema:"Name of the service to retrieve logs for (e.g. api) (required)"`
+	ServiceName      string                      `json:"service_name" jsonschema:"(Required) Name of the service to retrieve logs for (e.g. api)"`
 	StartTimeISO     string                      `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2023-10-01T10:00:00Z). If not provided lookback_minutes is used"`
 	EndTimeISO       string                      `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2023-10-01T11:00:00Z). If not provided current time is used"`
 	LookbackMinutes  int                         `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time if start_time_iso not provided (default: 60, minimum: 1)"`
