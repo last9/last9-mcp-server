@@ -5,21 +5,32 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
 
 const ackClaimJSON = `{"owner_user_id":"u1","owner_name":"A","owner_email":"a@x.io","claimed_by_user_id":"u1","claimed_at":7,"muted_until":0}`
 
+// ackMonitorJSON lists the alert runAck targets by default, so the existence check passes.
+const ackMonitorJSON = `{"alert_rules":[{"alert_group_id":"g","rule_id":"r","rule_type":"static"}]}`
+
 type ackServer struct {
 	*httptest.Server
-	path, body string
+	path, body   string
+	monitor      string
+	monitorQuery url.Values
 }
 
 func newAckServer(t *testing.T, status int, respBody string) *ackServer {
-	s := &ackServer{}
+	s := &ackServer{monitor: ackMonitorJSON}
 	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
+		if r.Method == http.MethodGet && r.URL.Path == "/alerts/monitor" {
+			s.monitorQuery = r.URL.Query()
+			_, _ = w.Write([]byte(s.monitor))
+			return
+		}
 		s.path, s.body = r.URL.Path, string(b)
 		if status != 0 {
 			w.WriteHeader(status)
@@ -61,6 +72,46 @@ func TestAcknowledgeAlertWithMuteUntil(t *testing.T) {
 	_, isErr, err := runAck(s, AcknowledgeAlertArgs{Action: " ACK ", MuteUntil: 1700000000})
 	if err != nil || isErr || s.body != `{"alert_group_id":"g","rule_id":"r","rule_type":"static","mute_until":1700000000}` {
 		t.Fatalf("isErr=%v err=%v body=%s", isErr, err, s.body)
+	}
+}
+
+func TestAcknowledgeAlertRefusesAlertNotInMonitor(t *testing.T) {
+	for name, args := range map[string]AcknowledgeAlertArgs{
+		"unknown rule":  {AlertGroupID: "g", RuleID: "00000000-0000-0000-0000-000000000000", RuleType: "static"},
+		"unknown group": {AlertGroupID: "00000000-0000-0000-0000-000000000000", RuleID: "r", RuleType: "static"},
+		"other type":    {AlertGroupID: "g", RuleID: "r", RuleType: "changepoint"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newAckServer(t, 0, "")
+			text, isErr, err := runAck(s, args)
+			if err != nil || !isErr || !strings.Contains(text, "nothing was changed") || s.path != "" {
+				t.Fatalf("text=%s isErr=%v err=%v claim path=%s", text, isErr, err, s.path)
+			}
+		})
+	}
+	s := newAckServer(t, 0, "")
+	s.monitor = `{"alert_rules":[]}`
+	if text, isErr, err := runAck(s, AcknowledgeAlertArgs{}); err != nil || !isErr || s.path != "" {
+		t.Fatalf("empty monitor: text=%s isErr=%v err=%v claim path=%s", text, isErr, err, s.path)
+	}
+}
+
+func TestAcknowledgeAlertMatchesMonitorCaseInsensitively(t *testing.T) {
+	s := newAckServer(t, 0, "")
+	s.monitor = `{"alert_rules":[{"alert_group_id":"G","rule_id":"R","rule_type":"Static"}]}`
+	if text, isErr, err := runAck(s, AcknowledgeAlertArgs{}); err != nil || isErr || s.path != "/alert-episode-claims/claim" {
+		t.Fatalf("text=%s isErr=%v err=%v claim path=%s", text, isErr, err, s.path)
+	}
+	if s.monitorQuery.Get("window") != "3600" || s.monitorQuery.Get("timestamp") == "" {
+		t.Fatalf("monitor query = %v", s.monitorQuery)
+	}
+}
+
+func TestAcknowledgeAlertUnackSkipsMonitor(t *testing.T) {
+	s := newAckServer(t, 0, "")
+	s.monitor = `{"alert_rules":[]}`
+	if text, isErr, err := runAck(s, AcknowledgeAlertArgs{Action: "unack"}); err != nil || isErr || s.path != "/alert-episode-claims/unack" {
+		t.Fatalf("text=%s isErr=%v err=%v path=%s", text, isErr, err, s.path)
 	}
 }
 
