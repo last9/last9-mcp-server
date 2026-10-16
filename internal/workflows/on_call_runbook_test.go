@@ -141,6 +141,9 @@ func TestOnCallRunbookChecksLogNoveltyOnlyBeforeLogSearches(t *testing.T) {
 	if alerts, novelty := strings.Index(got, "get_alerts"), strings.Index(got, "get_emerging_log_patterns"); alerts < 0 || novelty < alerts {
 		t.Errorf("unknown symptom must reach get_alerts before log novelty:\n%s", got)
 	}
+	if skip, novelty := strings.Index(got, "Skip the pattern tools when the matched branch reads no logs."), strings.Index(got, "get_emerging_log_patterns"); skip < 0 || novelty < skip {
+		t.Errorf("unknown symptom must gate log novelty on the matched branch reading logs:\n%s", got)
+	}
 
 	// Branches that never read logs must not pay for two log samples.
 	for _, symptom := range []string{"latency", "database"} {
