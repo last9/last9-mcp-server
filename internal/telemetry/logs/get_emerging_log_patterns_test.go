@@ -241,7 +241,13 @@ func TestGetEmergingLogPatterns_RejectsInvalidArgsBeforeQuerying(t *testing.T) {
 		"negative change_factor":    withOption(func(a *GetEmergingLogPatternsArgs) { a.ChangeFactor = -2 }),
 		"negative min_count":        withOption(func(a *GetEmergingLogPatternsArgs) { a.MinCount = -1 }),
 		"min_count over max":        withOption(func(a *GetEmergingLogPatternsArgs) { a.MinCount = maxPatternSampleSize + 1 }),
-		"top_n over max":            withOption(func(a *GetEmergingLogPatternsArgs) { a.TopN = maxPatternTopN + 1 }),
+		"min_count over sample_size": withOption(func(a *GetEmergingLogPatternsArgs) {
+			a.SampleSize, a.MinCount = 10, 11
+		}),
+		"min_count over default sample_size": withOption(func(a *GetEmergingLogPatternsArgs) {
+			a.MinCount = defaultPatternSampleSize + 1
+		}),
+		"top_n over max": withOption(func(a *GetEmergingLogPatternsArgs) { a.TopN = maxPatternTopN + 1 }),
 		"current empty range": withOption(func(a *GetEmergingLogPatternsArgs) {
 			a.StartTimeISO, a.EndTimeISO = patternWindowStartISO, patternWindowStartISO
 		}),
@@ -258,6 +264,22 @@ func TestGetEmergingLogPatterns_RejectsInvalidArgsBeforeQuerying(t *testing.T) {
 				t.Errorf("made %d requests before rejecting", n)
 			}
 		})
+	}
+}
+
+func TestGetEmergingLogPatterns_MinCountMayEqualSampleSize(t *testing.T) {
+	args := emergingArgs(LogPatternScopeArgs{SampleSize: 4})
+	args.MinCount = 4
+	got, _ := callEmerging(t, &logSearchStub{}, map[int64][]string{patternWindowStart: sameLines("disk full", 4)}, args)
+	if len(got.Patterns) != 1 || got.Patterns[0].Change != changeNew {
+		t.Fatalf("patterns = %+v, want a pattern filling the sample reported as new", got.Patterns)
+	}
+}
+
+func TestGetEmergingLogPatterns_DefaultMinCountFitsASmallSample(t *testing.T) {
+	got, _ := callEmerging(t, &logSearchStub{}, map[int64][]string{patternWindowStart: sameLines("disk full", 2)}, emergingArgs(LogPatternScopeArgs{SampleSize: 2}))
+	if len(got.Patterns) != 1 || got.Patterns[0].Change != changeNew {
+		t.Fatalf("patterns = %+v, want the default min_count lowered to sample_size 2", got.Patterns)
 	}
 }
 

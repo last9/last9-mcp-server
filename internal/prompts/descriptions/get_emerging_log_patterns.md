@@ -10,7 +10,7 @@ Parameters:
 - body_filters: (Optional) Case-insensitive message substrings to keep, OR logic.
 - index: (Optional) `physical_index:<name>` or `rehydration_index:<block_name>` from `get_service_profile`. Omit for the default index.
 - sample_size: (Optional) Maximum lines sampled per window. Default 1000, maximum 5000.
-- min_count: (Optional) Minimum lines a pattern needs in the window it is larger in to be reported. Default 3.
+- min_count: (Optional) Minimum lines a pattern needs in the window it is larger in to be reported. Default 3 (or `sample_size` if smaller), maximum `sample_size`.
 - change_factor: (Optional) Frequency ratio that counts as significant, greater than 1. Default 2 (doubled or halved).
 - top_n: (Optional) Changed patterns returned. Default 20, maximum 100. The rest are totalled in `other` (`patterns`, `current_count`, `baseline_count`).
 

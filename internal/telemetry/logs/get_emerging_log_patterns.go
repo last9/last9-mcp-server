@@ -41,7 +41,7 @@ type GetEmergingLogPatternsArgs struct {
 	LogPatternScopeArgs
 	BaselineStartTimeISO string  `json:"baseline_start_time_iso,omitempty" jsonschema:"Baseline window start, RFC3339. Set together with baseline_end_time_iso. Default: the window of equal length ending where the current window starts."`
 	BaselineEndTimeISO   string  `json:"baseline_end_time_iso,omitempty" jsonschema:"Baseline window end, RFC3339, at or before the current window start. Set together with baseline_start_time_iso."`
-	MinCount             int     `json:"min_count,omitempty" jsonschema:"Minimum lines a pattern needs in the window it grew in (or, for decreases, the baseline) to be reported (default: 3, maximum: 5000)"`
+	MinCount             int     `json:"min_count,omitempty" jsonschema:"Minimum lines a pattern needs in the window it grew in (or, for decreases, the baseline) to be reported (default: 3, or sample_size if smaller; maximum: sample_size)"`
 	ChangeFactor         float64 `json:"change_factor,omitempty" jsonschema:"Frequency ratio between windows counted as significant, greater than 1 (default: 2, i.e. doubled or halved)"`
 	TopN                 int     `json:"top_n,omitempty" jsonschema:"Changed patterns returned before the rest fold into other (default: 20, maximum: 100)"`
 }
@@ -89,7 +89,7 @@ func NewGetEmergingLogPatternsHandler(client *http.Client, cfg models.Config) fu
 		if err != nil {
 			return nil, nil, err
 		}
-		thresholds, err := args.thresholds()
+		thresholds, err := args.thresholds(scope.sampleSize)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -158,10 +158,12 @@ func (s logPatternScope) sampleWindows(ctx context.Context, client *http.Client,
 	return samples
 }
 
-func (args GetEmergingLogPatternsArgs) thresholds() (emergingThresholds, error) {
-	minCount, err := boundedPatternLimit("min_count", args.MinCount, defaultEmergingMinCount, maxPatternSampleSize)
+// thresholds bounds min_count by the sample size: no pattern can count more
+// lines than were sampled, so a larger min_count guarantees an empty answer.
+func (args GetEmergingLogPatternsArgs) thresholds(sampleSize int) (emergingThresholds, error) {
+	minCount, err := boundedPatternLimit("min_count", args.MinCount, min(defaultEmergingMinCount, sampleSize), sampleSize)
 	if err != nil {
-		return emergingThresholds{}, err
+		return emergingThresholds{}, fmt.Errorf("%w (min_count cannot exceed sample_size)", err)
 	}
 	topN, err := boundedPatternLimit("top_n", args.TopN, defaultPatternTopN, maxPatternTopN)
 	if err != nil {
