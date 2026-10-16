@@ -122,5 +122,9 @@ func TestOnCallRunbookChecksLogNoveltyBeforeRawLines(t *testing.T) {
 				t.Errorf("symptom %q render should contain %q:\n%s", symptom, want, got)
 			}
 		}
+		// Symptom branches (errors) already call get_service_logs and get_logs, so novelty must come first.
+		if novelty, routing := strings.Index(got, "get_emerging_log_patterns"), strings.Index(got, "Route by symptom"); routing < 0 || novelty > routing {
+			t.Errorf("symptom %q render must check log novelty before symptom routing:\n%s", symptom, got)
+		}
 	}
 }
