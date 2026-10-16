@@ -219,3 +219,21 @@ func TestServerInstructionsAdaptToToolsets(t *testing.T) {
 		})
 	}
 }
+
+func TestServerInstructionsWriteSectionNamesOnlyWriteTools(t *testing.T) {
+	instructions, registry := initializeOver(t, "")
+	reads, writes, ok := strings.Cut(instructions, "## Write tools")
+	if !ok {
+		t.Fatalf("instructions have no write section:\n%s", instructions)
+	}
+	for tool := range namedTools(writes, registry) {
+		if _, ok := writeTools[tool]; !ok {
+			t.Errorf("read tool %q listed under write tools:\n%s", tool, instructions)
+		}
+	}
+	for tool := range namedTools(reads, registry) {
+		if _, ok := writeTools[tool]; ok {
+			t.Errorf("write tool %q listed outside write tools:\n%s", tool, instructions)
+		}
+	}
+}

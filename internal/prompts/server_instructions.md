@@ -89,17 +89,21 @@ Read these resources before writing a non-trivial query:
 - Service investigations: `last9://reference/investigation`
 {{- end}}
 {{- end}}
-{{- if or $create $validate $dropRules $refine $destructive}}
+{{- if or $validate $dropRules}}
 
-## Write tools
-{{- with $create}}
-- Create once with {{.}} and keep the returned id; never create a second copy to change the first.
-{{- end}}
+## Check before you write
 {{- with $validate}}
 - Dry-run a dashboard with {{.}} before saving it.
 {{- end}}
 {{- with $dropRules}}
-- Check existing drop rules with {{.}} before adding one.
+- List existing drop rules with {{.}} before adding one.
+{{- end}}
+{{- end}}
+{{- if or $create $refine $destructive}}
+
+## Write tools
+{{- with $create}}
+- Create once with {{.}} and keep the returned id; never create a second copy to change the first.
 {{- end}}
 {{- with $refine}}
 - Refine an existing object with {{.}}.
