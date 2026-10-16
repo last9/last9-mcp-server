@@ -219,6 +219,7 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"Ops: `$and`/`$or`/`$not`", "must retain a useful filter operator list"},
 		{"`$containsWords` args `[field,word]` (e.g. `[\"Body\",\"timeout\"]`)", "must show the required field argument for body-word filters"},
 		{"NOT SQL", "must clarify logjson_query is not SQL"},
+		{"Pass JSON stages in `logjson_query`, never `pipeline`", "must name the get_logs argument rather than a generic pipeline key"},
 		{"$neq", "must document existence idiom"},
 		{"start_time_iso", "must document absolute time on tool args"},
 		{"resources['last9.tenant']", "must document tenant scoping"},
@@ -277,6 +278,7 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 		{"`service.name`→`ServiceName`", "must map service.name to the canonical service field"},
 		{"last9://reference/tracejson", "must point at the tracejson resource"},
 		{"default **60**", "must document default lookback of 60 minutes"},
+		{"Average/mean→`{\"function\":{\"$avg\":[\"Duration\"]}", "must use average aggregation for mean duration requests"},
 		{"`$quantile` is the general/default percentile operator", "must default to approximate percentile aggregation"},
 		{"Compute from raw spans; never average percentile samples", "must document non-composable percentile semantics"},
 		{"`Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first", "must gate attribute values without gating Duration"},
@@ -452,6 +454,7 @@ func TestAPMServiceDeviationsDescription(t *testing.T) {
 		{"equal-duration baseline", "must describe comparative rather than snapshot behavior"},
 		{"get_service_summary", "must disambiguate one-window snapshots"},
 		{"call this tool first and by itself", "must prevent speculative parallel investigation"},
+		{"do not call `get_service_profile` first", "must route known-service comparisons directly"},
 		{"do not batch speculative corroboration", "must require inspecting the comparison before follow-ups"},
 		{"service_name", "must explain fleet and service scope"},
 		{"environments remain separate", "must prevent merged environment conclusions"},
@@ -473,6 +476,19 @@ func TestAPMServiceDeviationsDescription(t *testing.T) {
 	for _, check := range checks {
 		if !strings.Contains(description, check.phrase) {
 			t.Errorf("description missing %q: %s", check.phrase, check.reason)
+		}
+	}
+}
+
+func TestServiceProfileDescriptionSkipsSpecializedTools(t *testing.T) {
+	description := strings.ToLower(prompts.GetServiceProfileDescription)
+	for _, phrase := range []string{
+		"skip it when a specialized tool directly answers",
+		"get_apm_service_deviations` for equal-window comparisons",
+		"dashboard tools for dashboard changes",
+	} {
+		if !strings.Contains(description, phrase) {
+			t.Errorf("service profile description missing routing exception %q", phrase)
 		}
 	}
 }
@@ -512,6 +528,7 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 		{"dashboard.id", "must keep the returned id"},
 		{"`layout: {x, y, w, h}`", "must document the API panel layout shape"},
 		{"`legend: {type, value}`", "must document the API query legend shape"},
+		{"When the user provides only a name, use `panels: []`", "must avoid inventing metrics for a name-only dashboard"},
 		{"Do not use `gridPos` or a panel-level `type`", "must rule out the rejected legacy panel shape"},
 	} {
 		if !strings.Contains(create, c.phrase) {

@@ -1,4 +1,4 @@
-`logjson_query`: JSON stages (`filter`|`parse`|`aggregate`|`window_aggregate`), **NOT SQL**/`stage`/`conditions`.
+Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`conditions`.
 
 **Profile:** service→`get_service_profile`; `signal_shape`/`telemetry`. Stale→discovery; 400→`get_log_attributes_for_pipeline`, retry.
 

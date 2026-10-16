@@ -103,7 +103,7 @@ func TestCreateDashboardInputSchema_RestrictsQueryTypes(t *testing.T) {
 			"name": "Logs",
 			"panels": []any{map[string]any{
 				"name": "Errors", "version": 1,
-				"layout": map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+				"layout":        map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
 				"visualization": map[string]any{"type": "timeseries"},
 				"queries": []any{map[string]any{
 					"name": "A", "type": "range", "query_type": "log_ql", "telemetry": "logs", "expr": "{service_name=\"api\"}[5m]",
@@ -282,5 +282,76 @@ func TestUpdateDashboardInputSchema_RequiresIDAndDashboard(t *testing.T) {
 	}
 	if err := validateInputSchema(t, GetUpdateDashboardInputSchema(), missingIDArgs); err == nil {
 		t.Fatal("expected update args without id to fail validation")
+	}
+}
+
+func TestDashboardInputSchema_ValidatesRawLogsAndCSV(t *testing.T) {
+	query := func(queryType, telemetry, expr string) []any {
+		return []any{map[string]any{
+			"name": "A", "type": "range", "query_type": queryType, "telemetry": telemetry, "expr": expr,
+			"legend": map[string]any{"type": "auto", "value": ""},
+		}}
+	}
+	csv := map[string]any{"columns": map[string]any{}}
+	for _, tc := range []struct {
+		name          string
+		visualization string
+		fields        map[string]any
+		wantErr       bool
+	}{
+		{name: "metrics_control", visualization: "stat", fields: map[string]any{
+			"queries": query("promql", "metrics", "up"),
+		}},
+		{name: "raw_logs", visualization: "logs", fields: map[string]any{
+			"visualization": map[string]any{
+				"type":        "logs",
+				"logs_config": map[string]any{"columns": []any{"timestamp", "severity", "body"}},
+			},
+			"queries": query("log_raw", "logs", `[{"type":"filter","query":{"$eq":["ServiceName","synthetic-api"]}}]`),
+		}},
+		{name: "csv_table", visualization: "table", fields: map[string]any{"csv": csv}},
+		{name: "csv_chart", visualization: "bar", fields: map[string]any{"csv": csv}},
+		{name: "missing_queries", visualization: "stat", wantErr: true},
+		{name: "null_csv", visualization: "table", fields: map[string]any{"csv": nil}, wantErr: true},
+		{name: "string_csv", visualization: "table", fields: map[string]any{"csv": "data.csv"}, wantErr: true},
+		{name: "array_csv", visualization: "table", fields: map[string]any{"csv": []any{}}, wantErr: true},
+		{name: "csv_with_invalid_query", visualization: "table", wantErr: true, fields: map[string]any{
+			"csv": csv, "queries": []any{map[string]any{"expr": "up"}},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			panel := map[string]any{
+				"name": "Synthetic panel", "version": 1,
+				"layout":        map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+				"visualization": map[string]any{"type": tc.visualization},
+			}
+			for field, value := range tc.fields {
+				panel[field] = value
+			}
+			dashboard := map[string]any{
+				"name": "Synthetic dashboard", "panels": []any{panel},
+				"csv_datasource": map[string]any{
+					"raw_csv": "label,value\nalpha,1\n",
+					"columns": []any{
+						map[string]any{"name": "label", "type": "string"},
+						map[string]any{"name": "value", "type": "number"},
+					},
+				},
+			}
+			for _, op := range []string{"create", "update"} {
+				t.Run(op, func(t *testing.T) {
+					args := map[string]any{"dashboard": dashboard}
+					schema := GetCreateDashboardInputSchema()
+					if op == "update" {
+						args["id"] = "synthetic-id"
+						schema = GetUpdateDashboardInputSchema()
+					}
+					err := validateInputSchema(t, schema, args)
+					if (err != nil) != tc.wantErr {
+						t.Fatalf("validation error = %v, want error = %v", err, tc.wantErr)
+					}
+				})
+			}
+		})
 	}
 }

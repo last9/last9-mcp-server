@@ -9,10 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `did_you_mean` to the logs, traces, and metrics toolsets so their entity-name discovery guidance can be followed (#322).
 - Added `did_you_mean` to the logs, traces, and metrics toolsets so their entity-name discovery guidance can be followed (#312).
 
 ### Fixed
 
+- Name-only dashboard creation now starts with empty panels instead of inventing metric queries, matching the accepted dashboard schema (#322).
+- `get_logs` now names `logjson_query` as the stage-array argument instead of the invalid `pipeline` key, and `get_traces` maps average duration requests to `$avg` rather than `$quantile` (#322).
+- `create_dashboard` and `update_dashboard` now accept raw-log queries and queryless CSV-backed panels by allowing `log_raw` and a `csv` panel branch in their shared schema; remote-query panels still require `queries` (#322).
+- Equal-window APM comparisons now go directly to the comparison tool when service scope is known, so a required profile lookup cannot consume the call budget before the comparison; the description also directs answers to use raw values when no percentage is returned (#322).
+- `get_logs` now shows the field-first `$containsWords` form and stops percentile fallback after an empty result; dashboard creation exposes the API's required panel/query schema and examples while preserving section, markdown, and omitted-version panel variants (#322).
+- Log and trace tool descriptions now map message searches to `Body`, gRPC status code 14 to `attributes['rpc.grpc.status_code']`, and trace `service.name` to `ServiceName` (#322).
+- `get_logs` now includes the required `type: "window_aggregate"` discriminator in its count and percentile examples, so copied stages pass validation (#322).
+- `get_logs` now permits standalone single-predicate filters and repeats counts after narrowing broad results; `get_service_logs` documents canonical gRPC status and directs multiple-status or range queries to `get_logs` (#322).
 - `get_traces` now distinguishes literal `TraceId` substring searches (`$contains`) from wildcard patterns (`$regex`) and shows the canonical `$avg` plus `groupby` shape for per-span duration queries (#312).
 - `get_logs` now shows the field-first `$containsWords` form and stops percentile fallback after an empty result; dashboard create/update schemas validate query/legend types and logs-panel configuration, and descriptions document required log aggregates and time windows (#312).
 - Log and trace tool descriptions now map message searches to `Body`, gRPC status code 14 to `attributes['rpc.grpc.status_code']`, and trace `service.name` to `ServiceName` (#312).
@@ -24,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_logs` and `get_traces` now explicitly show compact JSON stage-array examples and reject SQL-like query construction in their tool descriptions, so description-only clients can form valid pipelines without fetching a reference manual (#309).
 
 ### Changed
+
 - Dashboard create and update schemas now restrict `query_type` to supported values and their descriptions explain the query types for logs, metrics, and traces (#312).
 - `get_service_logs`, `get_service_traces`, and the PromQL range and instant query tools now serve explicit schemas for their supported fields, so unknown names and invalid field types are rejected during input validation (#311).
 
