@@ -910,6 +910,8 @@ No parameters. Returns all custom dashboards in the org as a JSON array with `id
 - `id` (string, required): Dashboard UUID.
 - `region` (string, optional): Region for panel query population. Defaults to configured datasource region.
 
+To alert on a panel, take its PromQL `expr` into `create_kpi` on the chosen alert group, then `create_alert` as a draft (the `author-alert` prompt walks through it; see `last9://reference/alerting`).
+
 ### validate_dashboard
 
 Read-only. Never creates or updates dashboards. Accept exactly one of `dashboard_id` or `dashboard_definition`.
@@ -927,6 +929,8 @@ Net-new only. After this call returns `dashboard.id`, refine with `update_dashbo
 
 - `dashboard` (object, required): Dashboard definition with `name` and `panels[]`. Each panel requires `name`, `version`, `layout` (`x`, `y`, `w`, `h`), `visualization.type`, and `queries[]`.
 - `metadata` (object, optional): Dashboard metadata — `_category` and `_type` fields (e.g. `{"_category":"custom","_type":"metrics"}`).
+
+Creating a dashboard creates no alerts; to alert on a panel, use `create_kpi` with its PromQL, then `create_alert` as a draft.
 
 ### update_dashboard
 

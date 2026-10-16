@@ -615,6 +615,34 @@ func TestAlertToolDescriptionsPointAtAlertingReference(t *testing.T) {
 	}
 }
 
+func TestDashboardDescriptionsPointAtPanelAlertFlow(t *testing.T) {
+	for name, body := range map[string]string{
+		"get_dashboard":    prompts.GetDashboardDescription,
+		"create_dashboard": prompts.CreateDashboardDescription,
+	} {
+		assertPhrasesInOrder(t, name, body, "create_kpi", "create_alert", "author-alert", "last9://reference/alerting")
+	}
+	if !strings.Contains(prompts.CreateAlertDescription, "create one from the panel's PromQL with create_kpi") {
+		t.Error("create_alert must route custom dashboard panels through create_kpi")
+	}
+}
+
+func assertPhrasesInOrder(t *testing.T, name, body string, phrases ...string) {
+	t.Helper()
+	last := -1
+	for _, phrase := range phrases {
+		i := strings.Index(body, phrase)
+		if i < 0 {
+			t.Errorf("%s description missing %q", name, phrase)
+			return
+		}
+		if i < last {
+			t.Errorf("%s description names %q out of order", name, phrase)
+		}
+		last = i
+	}
+}
+
 func TestKPIToolDescriptionsSteerAuthoring(t *testing.T) {
 	for name, c := range map[string]struct {
 		body    string
