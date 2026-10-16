@@ -140,3 +140,31 @@ func TestGetServiceLogsSearchAPIProbesOnePastLimit(t *testing.T) {
 		})
 	}
 }
+
+func TestGetLogToolsReportFailedSearchChunksAsPartial(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"query_result":{"status":"success","data":{"resultType":"streams","result":[
+				{"stream":{"severity":"ERROR"},"values":[["1700000000000000000","boom"]]}
+			]}},
+			"total_matching_lines": 41,
+			"search_stats":{"chunks_planned":6,"chunks_failed":1}
+		}`))
+	}))
+	defer srv.Close()
+
+	serviceLogs := callGetServiceLogs(t, srv, apiModeCfg, wholeSecondWindow)
+	logs, _, err := NewGetLogsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+		LogjsonQuery: rawErrorFilter, LookbackMinutes: 5,
+	})
+	if err != nil {
+		t.Fatalf("get_logs: %v", err)
+	}
+
+	for name, result := range map[string]*mcp.CallToolResult{"get_service_logs": serviceLogs, "get_logs": logs} {
+		env := utils.GetResultEnvelope(t, result)
+		if !env.Partial || len(env.Skipped) != 1 || !strings.HasPrefix(env.Skipped[0], "1 of 6 server-side search chunks failed") {
+			t.Errorf("%s envelope = %+v, want partial naming the failed chunks", name, env)
+		}
+	}
+}

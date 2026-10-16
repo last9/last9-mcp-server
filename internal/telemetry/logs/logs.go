@@ -384,6 +384,8 @@ func fetchViaLogSearchAPI(
 	if rawLimit > 0 && applyGetLogsEntryLimit(result, rawLimit) {
 		env.Truncate(rawLimit)
 	}
+	stats, _ := result["search_stats"].(map[string]any)
+	utils.SkipFailedSearchChunks(stats, &env)
 	return result, env, nil
 }
 

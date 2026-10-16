@@ -543,6 +543,7 @@ func fetchServiceLogsViaSearchAPI(
 	if stats, ok := result["search_stats"].(map[string]any); ok {
 		response.SearchStats = stats
 	}
+	utils.SkipFailedSearchChunks(response.SearchStats, &response.envelope)
 	if truncated {
 		response.envelope.Truncate(limit)
 	}
