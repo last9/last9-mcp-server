@@ -126,11 +126,6 @@ func TestOnCallRunbookChecksRecentChangeOnLatencyAndErrors(t *testing.T) {
 		if !wantCall {
 			continue
 		}
-		perf := strings.Index(got, "get_service_performance_details")
-		events := strings.Index(got, "get_change_events")
-		if !(perf < events && events < at) {
-			t.Fatalf("symptom %q: want get_service_performance_details, then get_change_events, then analyze_change_impact:\n%s", symptom, got)
-		}
-		assertReadsChangeImpactVerdicts(t, "on-call-runbook "+symptom, got)
+		assertChecksRecentChange(t, "on-call-runbook "+symptom, got)
 	}
 }
