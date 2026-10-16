@@ -131,7 +131,10 @@ func NewGetEmergingLogPatternsHandler(client *http.Client, cfg models.Config) fu
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to format response: %w", err)
 		}
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(text)}}}, nil, nil
+		return &mcp.CallToolResult{
+			Meta:    serviceLogsDeepLink(ctx, client, cfg, scope.search(start, end)),
+			Content: []mcp.Content{&mcp.TextContent{Text: string(text)}},
+		}, nil, nil
 	}
 }
 

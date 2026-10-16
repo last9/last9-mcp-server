@@ -115,6 +115,10 @@ func (s logPatternScope) sample(ctx context.Context, client *http.Client, cfg mo
 	}, nil
 }
 
+func (s logPatternScope) search(start, end time.Time) serviceLogsSearch {
+	return serviceLogsSearch{s.query, serviceLogsScope{start, end, s.index}}
+}
+
 // sampleIsPartial reports whether the sample may miss matching lines. An exact
 // total settles it; a truncated search's total is only a floor, and without a
 // total a full sample is assumed capped.

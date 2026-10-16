@@ -1,9 +1,53 @@
 package logs
 
 import (
+	"context"
+	"fmt"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// Both pattern tools link to the logs search they sampled; the emerging tool
+// links its current window, the one being triaged.
+func TestLogPatternTools_LinkTheSampledLogsSearch(t *testing.T) {
+	scope := LogPatternScopeArgs{ServiceName: "checkout", Env: "prod", StartTimeISO: patternWindowStartISO, EndTimeISO: patternWindowEndISO}
+	tools := map[string]func(srv *httptest.Server) (*mcp.CallToolResult, error){
+		"get_log_patterns": func(srv *httptest.Server) (*mcp.CallToolResult, error) {
+			result, _, err := NewGetLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, GetLogPatternsArgs{LogPatternScopeArgs: scope})
+			return result, err
+		},
+		"get_emerging_log_patterns": func(srv *httptest.Server) (*mcp.CallToolResult, error) {
+			result, _, err := NewGetEmergingLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, GetEmergingLogPatternsArgs{LogPatternScopeArgs: scope})
+			return result, err
+		},
+	}
+	for name, call := range tools {
+		t.Run(name, func(t *testing.T) {
+			srv := (&logSearchStub{}).serve(t, nil, nil)
+			result, err := call(srv)
+			if err != nil {
+				t.Fatalf("handler: %v", err)
+			}
+			link := referenceURL(t, result)
+			if link == "" {
+				t.Fatal("expected reference_url in result meta")
+			}
+			parsed := parseRelativeURL(t, link)
+			query := parsed.Query()
+			if !strings.HasSuffix(parsed.Path, "/logs") || query.Get("from") != fmt.Sprint(patternWindowStart) || query.Get("to") != fmt.Sprint(patternWindowStart+3600) {
+				t.Errorf("reference_url = %s, want the logs view over the current window", link)
+			}
+			for _, want := range []string{`"ServiceName","checkout"`, `"resources['deployment.environment']","prod"`} {
+				if !strings.Contains(query.Get("pipeline"), want) {
+					t.Errorf("pipeline %s missing %s", query.Get("pipeline"), want)
+				}
+			}
+		})
+	}
+}
 
 func TestRankLogPatterns_BreaksTiesByTemplateAndSplitsPastTopN(t *testing.T) {
 	type item struct {
