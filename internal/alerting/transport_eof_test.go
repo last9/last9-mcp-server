@@ -58,6 +58,10 @@ func TestWriteToolsTransportEOFIsNotSuccess(t *testing.T) {
 			r, _, err := NewDetachNotificationChannelHandler(eofClient(), cfg)(ctx, nil, DetachNotificationChannelArgs{AttachmentID: 1})
 			return r, err
 		}},
+		{"delete_notification_channel", func() (*mcp.CallToolResult, error) {
+			r, _, err := NewDeleteNotificationChannelHandler(eofClient(), cfg)(ctx, nil, DeleteNotificationChannelArgs{ChannelID: 1})
+			return r, err
+		}},
 		{"create_notification_channel", func() (*mcp.CallToolResult, error) {
 			r, _, err := NewCreateNotificationChannelHandler(eofClient(), cfg)(ctx, nil, CreateNotificationChannelArgs{Name: "n", Type: "slack", Destination: "https://hooks.slack.com/services/x"})
 			return r, err

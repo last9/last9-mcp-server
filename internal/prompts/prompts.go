@@ -92,6 +92,9 @@ var AttachNotificationChannelDescription string
 //go:embed descriptions/detach_notification_channel.md
 var DetachNotificationChannelDescription string
 
+//go:embed descriptions/delete_notification_channel.md
+var DeleteNotificationChannelDescription string
+
 //go:embed descriptions/validate_alert_expression.md
 var ValidateAlertExpressionDescription string
 

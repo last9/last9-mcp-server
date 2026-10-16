@@ -271,6 +271,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	}, alerting.NewDetachNotificationChannelHandler(client, cfg)))
 
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "delete_notification_channel",
+		Annotations: writeTool("Delete Notification Channel", true, false),
+		Description: prompts.DeleteNotificationChannelDescription,
+	}, alerting.NewDeleteNotificationChannelHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "validate_alert_expression",
 		Annotations: readOnlyTool("Validate Alert Expression"),
 		Description: prompts.ValidateAlertExpressionDescription,

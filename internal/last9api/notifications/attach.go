@@ -34,3 +34,10 @@ func DetachNotificationSetting(ctx context.Context, c *last9api.Client, id int) 
 	return c.Do(ctx, "detach notification channel",
 		last9api.Request{Method: http.MethodDelete, Path: attachPath(id)}, nil)
 }
+
+// DeleteNotificationChannel calls DELETE /notification_settings/{id}/attach, where id is a
+// channel id. The API deletes the channel only when it has no attachments (otherwise 422).
+func DeleteNotificationChannel(ctx context.Context, c *last9api.Client, id int) error {
+	return c.Do(ctx, "delete notification channel",
+		last9api.Request{Method: http.MethodDelete, Path: attachPath(id)}, nil)
+}

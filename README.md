@@ -302,8 +302,9 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`create_notification_channel`** — Create a Slack, PagerDuty, Opsgenie, email, or generic webhook channel
 - **`attach_notification_channel`** — Route an existing channel to an alert group for `breach`, `threat`, or both
 - **`detach_notification_channel`** — Remove one channel-to-alert-group attachment
+- **`delete_notification_channel`** — Permanently delete a channel that has no attachments
 
-The alert write tools (`create_alert`, `update_alert`, `patch_alert`, `delete_alert`, `create_alert_from_chart`, `mute_alert_group`, `acknowledge_alert`, `reassign_alert`, `create_notification_channel`, `attach_notification_channel`, `detach_notification_channel`) need a token with write scope; `delete_alert` and `detach_notification_channel` need delete scope instead. They are exposed only in the `alerts` toolset.
+The alert write tools (`create_alert`, `update_alert`, `patch_alert`, `delete_alert`, `create_alert_from_chart`, `mute_alert_group`, `acknowledge_alert`, `reassign_alert`, `create_notification_channel`, `attach_notification_channel`, `detach_notification_channel`, `delete_notification_channel`) need a token with write scope; `delete_alert`, `detach_notification_channel` and `delete_notification_channel` need delete scope instead. They are exposed only in the `alerts` toolset.
 
 ### Custom Dashboards
 
@@ -852,6 +853,12 @@ Removes one attachment. Requires a delete-scope token; a write-scope token canno
 
 - `attachment_id` (integer, required): The `id` from `get_notification_channels` with `scope=attached`. Channel ids are refused.
 - `alert_group_id` (string, optional): Refuses if the attachment belongs to a different group.
+
+### delete_notification_channel
+
+Permanently deletes a channel that has no attachments; detach its attachments first. Requires a delete-scope token. Confirms the deletion by re-listing channels.
+
+- `channel_id` (integer, required): The `id` from `get_notification_channels` with `scope=channels`. Attachment ids are refused.
 
 ### did_you_mean
 

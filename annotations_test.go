@@ -24,6 +24,7 @@ var writeTools = map[string]struct{ destructive, idempotent bool }{
 	"create_notification_channel": {destructive: false, idempotent: false},
 	"attach_notification_channel": {destructive: false, idempotent: true},
 	"detach_notification_channel": {destructive: true, idempotent: true},
+	"delete_notification_channel": {destructive: true, idempotent: false},
 	"create_alert_from_chart":     {destructive: false, idempotent: false},
 }
 

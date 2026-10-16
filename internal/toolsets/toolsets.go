@@ -65,6 +65,7 @@ var named = map[string][]string{
 		"create_notification_channel",
 		"attach_notification_channel",
 		"detach_notification_channel",
+		"delete_notification_channel",
 		"recommend_alert_config",
 		"get_alert_groups",
 		"get_entity_alert_rules",
