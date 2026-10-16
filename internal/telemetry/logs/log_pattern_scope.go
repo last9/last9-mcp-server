@@ -3,7 +3,9 @@ package logs
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"slices"
 	"strings"
@@ -101,9 +103,13 @@ func (s logPatternScope) sample(ctx context.Context, client *http.Client, cfg mo
 	}
 	// A window missing a chunk would read as fewer or absent patterns, i.e.
 	// false novelty, so it fails like the chunked path does.
-	if failed, _ := logs.SearchStats["chunks_failed"].(float64); failed > 0 {
+	failed, err := searchChunksFailed(logs.SearchStats)
+	if err != nil {
+		return nil, LogPatternWindow{}, fmt.Errorf("log search for %s to %s: %w", start.Format(time.RFC3339), end.Format(time.RFC3339), err)
+	}
+	if failed > 0 {
 		return nil, LogPatternWindow{}, fmt.Errorf("log search for %s to %s is incomplete: %d of its search chunks failed; retry or narrow the window",
-			start.Format(time.RFC3339), end.Format(time.RFC3339), int(failed))
+			start.Format(time.RFC3339), end.Format(time.RFC3339), failed)
 	}
 	return logs.Logs, LogPatternWindow{
 		StartTime:          start.Format(time.RFC3339),
@@ -113,6 +119,35 @@ func (s logPatternScope) sample(ctx context.Context, client *http.Client, cfg mo
 		TotalMatchingLines: logs.TotalMatchingLines,
 		LogsTruncated:      logs.LogsTruncated,
 	}, nil
+}
+
+// searchChunksFailed reads search_stats.chunks_failed, absent meaning none. A
+// value it cannot read as a count is an error, not zero: guessing "complete"
+// would mine a partial search into false novelty.
+func searchChunksFailed(stats map[string]any) (int, error) {
+	var failed float64
+	switch v := stats["chunks_failed"].(type) {
+	case nil:
+		return 0, nil
+	case float64:
+		failed = v
+	case int:
+		failed = float64(v)
+	case int64:
+		failed = float64(v)
+	case json.Number:
+		n, err := v.Int64()
+		if err != nil {
+			return 0, fmt.Errorf("unreadable search_stats.chunks_failed %q", v)
+		}
+		failed = float64(n)
+	default:
+		return 0, fmt.Errorf("unreadable search_stats.chunks_failed of type %T", v)
+	}
+	if failed < 0 || failed != math.Trunc(failed) {
+		return 0, fmt.Errorf("unreadable search_stats.chunks_failed %v", failed)
+	}
+	return int(failed), nil
 }
 
 func (s logPatternScope) search(start, end time.Time) serviceLogsSearch {
