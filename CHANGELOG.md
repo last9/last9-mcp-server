@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_logs` and `get_traces` now explicitly show compact JSON stage-array examples and reject SQL-like query construction in their tool descriptions, so description-only clients can form valid pipelines without fetching a reference manual (#309).
 
 ### Changed
+- Upstream errors now name the next action. A `400`/`422` that rejects an unknown field (`unknown field`, `unknown attribute`, `missing columns`, …) tells `get_logs` and `get_service_logs` callers to run `get_log_attributes_for_pipeline`, and `get_traces` callers `get_trace_attributes_for_pipeline`, in place of "review the tool arguments". A `401` now says to regenerate the refresh token and a `403` that the token's scope or the user's role lacks access, on every tool that relays upstream HTTP errors, replacing the generic "check the connection credentials" line (#326).
 - Dashboard create and update schemas now restrict `query_type` to supported values and their descriptions explain the query types for logs, metrics, and traces (#312).
 - `get_service_logs`, `get_service_traces`, and the PromQL range and instant query tools now serve explicit schemas for their supported fields, so unknown names and invalid field types are rejected during input validation (#311).
 

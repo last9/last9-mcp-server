@@ -352,7 +352,7 @@ func fetchViaLogSearchAPI(
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, utils.NewUpstreamHTTPError(resp, "logs query", utils.LogsPipelineSchemaHint)
+		return nil, utils.NewUpstreamHTTPErrorWithAdvice(resp, "logs query", utils.LogsQueryAdvice)
 	}
 
 	result, err := utils.DecodeLogSearchResponse(resp)
@@ -441,7 +441,7 @@ func executeLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, utils.NewUpstreamHTTPError(resp, "logs query", utils.LogsPipelineSchemaHint)
+		return nil, utils.NewUpstreamHTTPErrorWithAdvice(resp, "logs query", utils.LogsQueryAdvice)
 	}
 
 	var result map[string]interface{}

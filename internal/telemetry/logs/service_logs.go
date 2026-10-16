@@ -486,7 +486,7 @@ func fetchServiceLogsViaSearchAPI(
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, utils.NewUpstreamHTTPError(resp, "service logs query", utils.LogsPipelineSchemaHint)
+		return nil, utils.NewUpstreamHTTPErrorWithAdvice(resp, "service logs query", utils.LogsQueryAdvice)
 	}
 
 	result, err := utils.DecodeLogSearchResponse(resp)
