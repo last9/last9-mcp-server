@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `analyze_change_impact` (metrics, alerts and investigate toolsets): given a change event or a service and time, it compares the windows before and after the change — golden signals for the service and its top direct callers, APM and trace-attribute deviations, alerts that started firing — and returns `regression likely`, `no significant change` or `insufficient data` with a reason and drill-down calls. A failing upstream call degrades only its section (#346).
 - Added `did_you_mean` to the logs, traces, and metrics toolsets so their entity-name discovery guidance can be followed (#312).
 
 ### Fixed

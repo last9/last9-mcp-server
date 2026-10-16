@@ -517,6 +517,47 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	}
 }
 
+func TestDumpToolsAnalyzeChangeImpactToolsets(t *testing.T) {
+	for spec, want := range map[string]bool{
+		"investigate": true, "metrics": true, "alerts": true,
+		"logs": false, "traces": false, "dashboards": false,
+	} {
+		allowed, err := toolsets.Parse(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var buf bytes.Buffer
+		if err := dumpTools(&buf, allowed); err != nil {
+			t.Fatalf("dumpTools(%s) failed: %v", spec, err)
+		}
+		var out struct {
+			Tools []struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+				Annotations struct {
+					ReadOnlyHint bool `json:"readOnlyHint"`
+				} `json:"annotations"`
+			} `json:"tools"`
+		}
+		if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		served := false
+		for _, tool := range out.Tools {
+			if tool.Name != "analyze_change_impact" {
+				continue
+			}
+			served = true
+			if tool.Description != prompts.AnalyzeChangeImpactDescription || !tool.Annotations.ReadOnlyHint {
+				t.Errorf("%s: analyze_change_impact must serve its embedded description and be read-only", spec)
+			}
+		}
+		if served != want {
+			t.Errorf("%s toolset serves analyze_change_impact = %v, want %v", spec, served, want)
+		}
+	}
+}
+
 func TestDumpToolsDashboardWriteSteer(t *testing.T) {
 	var buf bytes.Buffer
 	if err := dumpTools(&buf, nil); err != nil {

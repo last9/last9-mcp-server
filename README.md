@@ -283,6 +283,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 ### Change Events & Alerts
 
 - **`get_change_events`** — Deployments, config changes, rollbacks. Correlate incidents with what changed
+- **`analyze_change_impact`** — Did a change break anything? Compares a service and its direct callers before and after a change: golden signals, APM and trace-attribute deviations, new firing alerts, and a verdict (`regression likely` / `no significant change` / `insufficient data`)
 - **`get_alert_groups`** — Configured Compass alert groups with metadata labels, team, tier, and rule counts — including groups with zero rules and groups that are not firing
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_alerts`** — Currently firing alerts within a time window
@@ -658,6 +659,19 @@ Returns an `investigation-evidence/v1` envelope; the waterfall is under `data`.
 - `service_name` (string, optional)
 - `env` (string, optional)
 - `event_name` (string, optional): Call without this first to get `available_event_names`.
+
+### analyze_change_impact
+
+Pass exactly one of `change_event` or `service` + `timestamp`.
+
+- `change_event` (object, optional): One element of `get_change_events` `change_events[]`, unchanged. Uses `metric.service`, `metric.deployment_environment` and the earliest `values[].timestamp`.
+- `service` (string, optional): Required with `timestamp` when `change_event` is omitted.
+- `timestamp` (string, optional): RFC3339 or unix seconds.
+- `env` (string, optional): Exact environment. Default: the event's, else all.
+- `baseline_minutes` (integer, optional): Default: 60. Clamped to 30..120.
+- `after_minutes` (integer, optional): Default: `baseline_minutes`. Clamped to 30..120 and capped at now.
+
+`regression likely` when any holds: error rate up at least 1 percentage point or p95 up at least 25% for the service or one of its top 10 callers (only with at least 20 requests in each window); an alert for them starts firing after the change (matched by alert group name or a group-label value); a regression from `get_apm_service_deviations`. `insufficient data` when the after window is under 5 minutes (including a change in the future), the service has no or too few requests, or golden signals failed. `no significant change` is a valid answer, not a failure. Trace-attribute deviations run only when `env` is set, over at most 15 minutes each side. Each list keeps 10 items and reports how many it dropped; a failed upstream call leaves an `error` on its section only.
 
 ### get_alert_groups
 
