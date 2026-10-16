@@ -57,8 +57,9 @@ func serviceRegressions(service string, baseline, after apm.GoldenSignals) []str
 type verdictInputs struct {
 	afterMinutes int
 	// triggers are the regressions found, most important first.
-	triggers        []string
-	goldenErr       string
+	triggers []string
+	// unavailable names each required section that failed, with its cause.
+	unavailable     []string
 	haveChanged     bool
 	changedBaseline apm.GoldenSignals
 	changedAfter    apm.GoldenSignals
@@ -74,10 +75,14 @@ func decideVerdict(in verdictInputs) (verdict, reason, note string) {
 		if extra := len(in.triggers) - 1; extra > 0 {
 			reason += fmt.Sprintf(" (+%d more)", extra)
 		}
+		if len(in.unavailable) > 0 {
+			reason += "; " + strings.Join(in.unavailable, "; ")
+		}
 		return VerdictRegressionLikely, reason, ""
 	}
-	if in.goldenErr != "" {
-		return VerdictInsufficientData, "golden signals unavailable: " + in.goldenErr, ""
+	// Missing evidence can hide a regression, so it never clears the change.
+	if len(in.unavailable) > 0 {
+		return VerdictInsufficientData, "cannot rule the change out: " + strings.Join(in.unavailable, "; "), ""
 	}
 	if !in.haveChanged || in.changedAfter.RequestCount == 0 {
 		return VerdictInsufficientData, fmt.Sprintf("%s served no requests in the after window", orService(in.service)), ""

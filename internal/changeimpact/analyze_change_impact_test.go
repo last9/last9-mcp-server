@@ -38,6 +38,7 @@ type fakeLast9 struct {
 	alerts          []alerting.AlertRuleData
 	traceDeviations []traces.AttributeDeviation
 	fail            map[string]int // route → status
+	failQuery       map[string]int // PromQL substring → status
 
 	mu       sync.Mutex
 	requests []string
@@ -64,6 +65,12 @@ func (f *fakeLast9) serve(t *testing.T) *httptest.Server {
 			}
 			if err := json.Unmarshal(body, &req); err != nil {
 				t.Errorf("decode prom body: %v", err)
+			}
+			for substr, status := range f.failQuery {
+				if strings.Contains(req.Query, substr) {
+					w.WriteHeader(status)
+					return
+				}
 			}
 			_ = json.NewEncoder(w).Encode(f.promAnswer(req.Query, req.Timestamp))
 		case "alerts":
@@ -514,6 +521,65 @@ func TestFailingUpstreamDegradesOnlyItsSection(t *testing.T) {
 	}
 	if report.Verdict != VerdictRegressionLikely {
 		t.Fatalf("verdict = %q (%s); the golden signals still show the regression", report.Verdict, report.Reason)
+	}
+}
+
+// The on-call runbook rules a change out on `no significant change`, so a
+// section that never completed must block that verdict, not be claimed in it.
+func TestMissingEvidenceCannotClearTheChange(t *testing.T) {
+	cases := map[string]struct {
+		fail, failQuery map[string]int
+		section         func(Report) string
+		want            string
+	}{
+		"alerts": {
+			fail:    map[string]int{"alerts": http.StatusServiceUnavailable},
+			section: func(r Report) string { return r.Alerts.Error },
+			want:    "alerts",
+		},
+		"apm deviations": {
+			failQuery: map[string]int{"apdex": http.StatusServiceUnavailable},
+			section:   func(r Report) string { return r.Deviations.APM.Error },
+			want:      "APM deviations",
+		},
+		"dependents": {
+			failQuery: map[string]int{"trace_call_graph_count": http.StatusServiceUnavailable},
+			section:   func(r Report) string { return r.GoldenSignals.DependentsError },
+			want:      "direct callers",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			change := recentChange()
+			f := &fakeLast9{change: change, baseline: flatWindow(), after: flatWindow(), fail: tc.fail, failQuery: tc.failQuery}
+			report, err := runTool(t, f, serviceArgs(change))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.section(report) == "" {
+				t.Fatal("failure injection did not reach the section")
+			}
+			if report.Verdict != VerdictInsufficientData || !strings.Contains(report.Reason, tc.want) {
+				t.Fatalf("verdict = %q (%s), want %q naming %s", report.Verdict, report.Reason, VerdictInsufficientData, tc.want)
+			}
+			if strings.Contains(report.Reason, "within bounds") || report.Note != "" {
+				t.Fatalf("reason %q / note %q must not claim the signals were within bounds", report.Reason, report.Note)
+			}
+		})
+	}
+}
+
+func TestRegressionDisclosesMissingEvidence(t *testing.T) {
+	change := recentChange()
+	after := flatWindow()
+	after.errors = map[string]float64{"checkout": 60, "web": 3}
+	f := &fakeLast9{change: change, baseline: flatWindow(), after: after, fail: map[string]int{"alerts": http.StatusServiceUnavailable}}
+	report, err := runTool(t, f, serviceArgs(change))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Verdict != VerdictRegressionLikely || !strings.Contains(report.Reason, "error rate") || !strings.Contains(report.Reason, "alerts unavailable") {
+		t.Fatalf("verdict = %q (%s), want the regression with the missing alerts disclosed", report.Verdict, report.Reason)
 	}
 }
 

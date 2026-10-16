@@ -191,11 +191,11 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 	}
 
 	scope := []string{req.Service}
-	dependents, err := withTimeout(ctx, func(ctx context.Context) ([]apm.Dependent, error) {
+	dependents, dependentsErr := withTimeout(ctx, func(ctx context.Context) ([]apm.Dependent, error) {
 		return apm.QueryDirectDependents(ctx, client, cfg, apm.DependentsQuery{Service: req.Service, Env: req.Env, Window: apm.TimeWindow{Start: w.baseline.Start, End: w.after.End}})
 	})
-	if err != nil {
-		report.GoldenSignals.DependentsError = err.Error()
+	if dependentsErr != nil {
+		report.GoldenSignals.DependentsError = dependentsErr.Error()
 	}
 	report.GoldenSignals.DependentsTotal = len(dependents)
 	if len(dependents) > maxDependents {
@@ -305,9 +305,20 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 	}
 
 	in := verdictInputs{afterMinutes: w.afterMinutes, triggers: triggers, service: req.Service}
-	if goldenErr != nil {
-		in.goldenErr = goldenErr.Error()
-	} else {
+	for _, s := range []struct {
+		name string
+		err  error
+	}{
+		{"golden signals", goldenErr},
+		{"direct callers", dependentsErr},
+		{"alerts", alertsErr},
+		{"APM deviations", apmErr},
+	} {
+		if s.err != nil {
+			in.unavailable = append(in.unavailable, fmt.Sprintf("%s unavailable: %v", s.name, s.err))
+		}
+	}
+	if goldenErr == nil {
 		in.changedBaseline, in.changedAfter = baseline[req.Service], after[req.Service]
 		_, in.haveChanged = after[req.Service]
 	}

@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added `analyze_change_impact` (metrics, alerts and investigate toolsets): given a change event or a service and time, it compares the windows before and after the change — golden signals for the service and its top direct callers, APM and trace-attribute deviations, alerts that started firing — and returns `regression likely`, `no significant change` or `insufficient data` with a reason and drill-down calls. A failing upstream call degrades only its section (#346).
+- Added `analyze_change_impact` (metrics, alerts and investigate toolsets): given a change event or a service and time, it compares the windows before and after the change — golden signals for the service and its top direct callers, APM and trace-attribute deviations, alerts that started firing — and returns `regression likely`, `no significant change` or `insufficient data` with a reason and drill-down calls. A failing upstream call degrades only its section, and a failed golden-signals, caller, alerts or APM-deviations section turns a would-be `no significant change` into `insufficient data` (#352).
 - Added `did_you_mean` to the logs, traces, and metrics toolsets so their entity-name discovery guidance can be followed (#312).
 
 ### Fixed
@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_logs` and `get_traces` now explicitly show compact JSON stage-array examples and reject SQL-like query construction in their tool descriptions, so description-only clients can form valid pipelines without fetching a reference manual (#309).
 
 ### Changed
-- The `on-call-runbook` prompt's latency and errors branches now look for a change with `get_change_events` right after `get_service_performance_details` and, when one precedes the symptom, judge it with `analyze_change_impact` before deeper triage (#346).
+- The `on-call-runbook` prompt's latency and errors branches now look for a change with `get_change_events` right after `get_service_performance_details` and, when one precedes the symptom, judge it with `analyze_change_impact` before deeper triage (#352).
 - Dashboard create and update schemas now restrict `query_type` to supported values and their descriptions explain the query types for logs, metrics, and traces (#312).
 - `get_service_logs`, `get_service_traces`, and the PromQL range and instant query tools now serve explicit schemas for their supported fields, so unknown names and invalid field types are rejected during input validation (#311).
 

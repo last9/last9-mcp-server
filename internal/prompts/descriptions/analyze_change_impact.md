@@ -15,8 +15,8 @@ Answers "did the change at T break anything?" for one service by comparing the w
 - `deviations`: `get_apm_service_deviations` results and, when `env` is set, `get_trace_attribute_deviations` over at most 15 minutes each side; 10 per list, `dropped` counts the rest.
 - `alerts`: alerts for the service or its callers that started firing after T, matched by alert group name or a group-label value; 10 per list.
 - `drill_down`: the next tools to call, with arguments.
-- A failing upstream call leaves an `error` on its section; the other sections still return.
+- A failing upstream call leaves an `error` on its section; the other sections still return, and the verdict names what failed.
 
 ## Significance
 
-`regression likely` when any holds: error rate up at least 1 percentage point or p95 up at least 25% for the service or a caller (only with at least 20 requests in each window); a new firing alert; a regression from `get_apm_service_deviations`. `insufficient data` when the after window is under 5 minutes (including T in the future), the service has no or too few requests, or golden signals failed.
+`regression likely` when any holds: error rate up at least 1 percentage point or p95 up at least 25% for the service or a caller (only with at least 20 requests in each window); a new firing alert; a regression from `get_apm_service_deviations`. `insufficient data` when the after window is under 5 minutes (including T in the future), the service has no or too few requests, or golden signals, the direct-caller lookup, alerts or `get_apm_service_deviations` failed: missing evidence never yields `no significant change`, and a regression found anyway names what failed.

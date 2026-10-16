@@ -57,8 +57,9 @@ func TestDecideVerdictPrecedence(t *testing.T) {
 	}{
 		{"short after window wins", verdictInputs{afterMinutes: minAfterMinutes - 1, triggers: []string{"x"}}, VerdictInsufficientData},
 		{"any trigger", verdictInputs{afterMinutes: minAfterMinutes, haveChanged: true, changedBaseline: flat, changedAfter: flat, triggers: []string{"new alert"}}, VerdictRegressionLikely},
-		{"trigger despite missing golden signals", verdictInputs{afterMinutes: 60, goldenErr: "boom", triggers: []string{"new alert"}}, VerdictRegressionLikely},
-		{"golden signals failed", verdictInputs{afterMinutes: 60, goldenErr: "boom"}, VerdictInsufficientData},
+		{"trigger despite missing golden signals", verdictInputs{afterMinutes: 60, unavailable: []string{"golden signals unavailable: boom"}, triggers: []string{"new alert"}}, VerdictRegressionLikely},
+		{"golden signals failed", verdictInputs{afterMinutes: 60, unavailable: []string{"golden signals unavailable: boom"}}, VerdictInsufficientData},
+		{"flat but a section failed", verdictInputs{afterMinutes: 60, haveChanged: true, changedBaseline: flat, changedAfter: flat, unavailable: []string{"alerts unavailable: boom"}}, VerdictInsufficientData},
 		{"no after traffic", verdictInputs{afterMinutes: 60, haveChanged: true, changedBaseline: flat}, VerdictInsufficientData},
 		{"flat", verdictInputs{afterMinutes: 60, haveChanged: true, changedBaseline: flat, changedAfter: flat}, VerdictNoSignificantChange},
 	}
