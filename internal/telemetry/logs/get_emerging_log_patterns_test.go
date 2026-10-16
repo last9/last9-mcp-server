@@ -475,3 +475,18 @@ func TestGetEmergingLogPatterns_RejectsAWindowWithFailedChunks(t *testing.T) {
 		t.Fatalf("err = %v, want the incomplete window rejected", err)
 	}
 }
+
+// The handler never marks a zero-total sample capped, so this pins
+// newWindowComparison's own guard rather than going through a stub.
+func TestNewWindowComparison_CappedZeroTotalFallsBackToShares(t *testing.T) {
+	zero := 0
+	capped := LogPatternWindow{SampledLines: 4, SampleLimitReached: true, TotalMatchingLines: &zero}
+	complete := LogPatternWindow{SampledLines: 2}
+	got := newWindowComparison(capped, complete, time.Hour, time.Hour)
+	if got.basis != comparisonShareOfSample {
+		t.Fatalf("basis = %q, want share_of_sample when a capped total is 0", got.basis)
+	}
+	if r := got.ratio(4, 2); r != 1 {
+		t.Fatalf("ratio = %v, want the finite share ratio 1", r)
+	}
+}
