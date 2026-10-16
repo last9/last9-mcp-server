@@ -23,3 +23,4 @@ Returns:
 Rules:
 - An empty `patterns` list is a valid answer: nothing in the logs changed significantly. Report that there is no log novelty. Do not invent patterns, counts or causes that the response does not contain, and do not lower `min_count` or `change_factor` just to produce a finding.
 - Counts are within each window's sample; quote them with `comparison_basis`. A window whose search could not cover it fully returns an error, not a partial comparison.
+- When either window has `sample_limit_reached`, `new` and `disappeared` mean absent from the other window's sample, not from the window; say so when you report them.

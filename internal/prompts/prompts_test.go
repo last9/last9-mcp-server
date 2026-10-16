@@ -433,6 +433,9 @@ func TestLogPatternDescriptionsCriticalRules(t *testing.T) {
 			}
 		}
 	}
+	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "absent from the other window's sample, not from the window") {
+		t.Error("get_emerging_log_patterns must say new/disappeared are presence-in-sample once a sample is capped")
+	}
 }
 
 func TestWhaleDescriptionsBounded(t *testing.T) {
