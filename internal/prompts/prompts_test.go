@@ -240,7 +240,6 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"Use a discovered normalized route", "must discover normalized route semantics before aggregation"},
 		{"Raw URI: aggregate exact values; never normalize/merge later", "must allow exact raw URI aggregation without unsafe normalization"},
 		{"If `envelope.truncated`, preserve rows and disclose the row limit", "must tie partial disclosure to result metadata"},
-		{"`truncated`/`limit`, `trimmed_items`, `partial`/`skipped` mean incomplete: disclose; follow `hints`", "must name the result envelope fields"},
 		{"Units: report source; never convert", "must prevent inferred latency units"},
 		{"Only report returned P99 values; empty result→say unavailable and stop", "must prevent fallback counts from replacing an empty percentile result"},
 		{"ALL→`$and`; ANY→`$or`", "must document all/any-word Body searches"},
@@ -291,6 +290,18 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 	}
 	if !strings.Contains(desc, `[{"type":"filter","query":{"$and":[{"$eq":["StatusCode","STATUS_CODE_ERROR"]}]}}]`) {
 		t.Error("GetTracesDescription must include its canonical JSON stage-array example")
+	}
+}
+
+func TestQueryToolDescriptionsNameEnvelopeFields(t *testing.T) {
+	const envelope = "`truncated`/`limit`, `trimmed_items`, `partial`/`skipped` mean incomplete: disclose; follow `hints`"
+	for name, desc := range map[string]string{
+		"get_logs":   prompts.GetLogsDescription,
+		"get_traces": prompts.GetTracesDescription,
+	} {
+		if !strings.Contains(desc, envelope) {
+			t.Errorf("%s description must name the result envelope fields", name)
+		}
 	}
 }
 
