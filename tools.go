@@ -186,6 +186,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Name:        "get_log_patterns",
 		Annotations: readOnlyTool("Get Log Patterns"),
 		Description: prompts.GetLogPatternsDescription,
+		InputSchema: logs.GetLogPatternsInputSchema(),
 	}, logs.NewGetLogPatternsHandler(client, cfg)))
 
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{

@@ -10,6 +10,7 @@ import (
 
 	"last9-mcp/internal/apm"
 	"last9-mcp/internal/prompts"
+	"last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/toolsets"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -524,6 +525,48 @@ func TestDumpToolsEmergingLogPatternsCouplesBaselineTimes(t *testing.T) {
 		return
 	}
 	t.Fatal("get_emerging_log_patterns missing from dump")
+}
+
+func TestDumpToolsLogPatternToolsServeTheirExplicitSchemas(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, nil); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string          `json:"name"`
+			InputSchema json.RawMessage `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	served := map[string]json.RawMessage{}
+	for _, tool := range out.Tools {
+		served[tool.Name] = tool.InputSchema
+	}
+	for name, schema := range map[string]any{
+		"get_log_patterns":          logs.GetLogPatternsInputSchema(),
+		"get_emerging_log_patterns": logs.GetEmergingLogPatternsInputSchema(),
+	} {
+		wantBytes, err := json.Marshal(schema)
+		if err != nil {
+			t.Fatalf("marshal %s canonical schema: %v", name, err)
+		}
+		var got, want map[string]any
+		if err := json.Unmarshal(served[name], &got); err != nil {
+			t.Fatalf("%s served schema: %v", name, err)
+		}
+		if err := json.Unmarshal(wantBytes, &want); err != nil {
+			t.Fatalf("%s canonical schema: %v", name, err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("served %s schema differs from its explicit schema\nserved: %v\nwant: %v", name, got, want)
+		}
+		if got["additionalProperties"] != false {
+			t.Errorf("%s additionalProperties = %v, want false", name, got["additionalProperties"])
+		}
+	}
 }
 
 func TestDumpToolsDataToolsetsIncludeNameDiscovery(t *testing.T) {
