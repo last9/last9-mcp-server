@@ -151,14 +151,15 @@ func newToolsetHTTPServer(t *testing.T, spec string, maxCached int) (*httptest.S
 	return ts, builds
 }
 
-// listTools posts tools/list with an optional toolsets header and query.
-func listTools(t *testing.T, ts *httptest.Server, header, query string) (int, string, map[string]bool) {
+// postRPC posts one JSON-RPC body with an optional toolsets header and query,
+// and decodes the result into out when the server answers 200.
+func postRPC(t *testing.T, ts *httptest.Server, header, query, body string, out any) (int, string) {
 	t.Helper()
 	url := ts.URL + "/mcp"
 	if query != "" {
 		url += "?toolsets=" + query
 	}
-	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	if header != "" {
@@ -169,29 +170,40 @@ func listTools(t *testing.T, ts *httptest.Server, header, query string) (int, st
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return resp.StatusCode, string(body), nil
+		return resp.StatusCode, string(raw)
 	}
-	payload := string(body)
+	payload := string(raw)
 	if i := strings.Index(payload, "data: "); i >= 0 {
 		payload = strings.SplitN(payload[i+len("data: "):], "\n", 2)[0]
 	}
-	var rpc struct {
-		Result struct {
-			Tools []struct {
-				Name string `json:"name"`
-			} `json:"tools"`
-		} `json:"result"`
-	}
+	rpc := struct {
+		Result any `json:"result"`
+	}{Result: out}
 	if err := json.Unmarshal([]byte(payload), &rpc); err != nil {
-		t.Fatalf("decode tools/list %q: %v", body, err)
+		t.Fatalf("decode %q: %v", raw, err)
+	}
+	return resp.StatusCode, string(raw)
+}
+
+// listTools posts tools/list with an optional toolsets header and query.
+func listTools(t *testing.T, ts *httptest.Server, header, query string) (int, string, map[string]bool) {
+	t.Helper()
+	var result struct {
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
+	}
+	status, body := postRPC(t, ts, header, query, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, &result)
+	if status != http.StatusOK {
+		return status, body, nil
 	}
 	names := map[string]bool{}
-	for _, tool := range rpc.Result.Tools {
+	for _, tool := range result.Tools {
 		names[tool.Name] = true
 	}
-	return resp.StatusCode, string(body), names
+	return status, body, names
 }
 
 func assertTools(t *testing.T, got map[string]bool, want, deny []string) {
@@ -232,6 +244,39 @@ func TestHTTPToolsetsPerRequest(t *testing.T) {
 				t.Fatalf("status %d: %s", status, body)
 			}
 			assertTools(t, got, tt.want, tt.deny)
+		})
+	}
+}
+
+func TestHTTPToolsetsNarrowInitializeInstructions(t *testing.T) {
+	ts, _ := newToolsetHTTPServer(t, "logs,alerts", maxToolsetServers)
+	const initialize = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}`
+	tests := []struct {
+		header     string
+		want, deny []string
+	}{
+		{header: "", want: []string{"`get_logs`", "`get_alerts`"}},
+		{header: "logs", want: []string{"`get_logs`"}, deny: []string{"`get_alerts`"}},
+		{header: "alerts", want: []string{"`get_alerts`"}, deny: []string{"`get_logs`"}},
+	}
+	for _, tt := range tests {
+		t.Run("header="+tt.header, func(t *testing.T) {
+			var result struct {
+				Instructions string `json:"instructions"`
+			}
+			if status, body := postRPC(t, ts, tt.header, "", initialize, &result); status != http.StatusOK {
+				t.Fatalf("status %d: %s", status, body)
+			}
+			for _, name := range tt.want {
+				if !strings.Contains(result.Instructions, name) {
+					t.Errorf("instructions missing %s:\n%s", name, result.Instructions)
+				}
+			}
+			for _, name := range tt.deny {
+				if strings.Contains(result.Instructions, name) {
+					t.Errorf("instructions name %s outside the requested toolsets:\n%s", name, result.Instructions)
+				}
+			}
 		})
 	}
 }
