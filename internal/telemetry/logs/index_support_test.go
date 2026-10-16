@@ -3,6 +3,7 @@ package logs
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -247,6 +248,7 @@ func TestGetServiceLogsHandler_ExplicitIndexOverridesFallback(t *testing.T) {
 
 func TestGetServiceLogsHandler_OmitsSourceLinkWhenIndexCannotBeResolved(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
 		switch r.URL.Path {
 		case constants.EndpointLogsQueryRange:
 			w.Header().Set("Content-Type", "application/json")
