@@ -78,7 +78,7 @@ func (p *logPattern) stats(window int) LogPatternStats {
 // mineLogPatterns clusters every window's lines into shared templates and
 // returns those holding a line. Counting waits for learning to end: templates
 // generalise as lines arrive, so earlier counts would split identical lines.
-func mineLogPatterns(windows ...[]LogEntry) []*logPattern {
+func mineLogPatterns(windows ...[]LogEntry) ([]*logPattern, error) {
 	miner := logPatternMiner{groups: map[string][]*logPattern{}}
 	tokens := make([][][]string, len(windows))
 	for w, entries := range windows {
@@ -88,13 +88,8 @@ func mineLogPatterns(windows ...[]LogEntry) []*logPattern {
 			miner.learn(tokens[w][i])
 		}
 	}
-	for _, p := range miner.patterns {
-		p.windows = make([]patternWindow, len(windows))
-	}
-	for w, entries := range windows {
-		for i, entry := range entries {
-			miner.assign(tokens[w][i]).record(w, entry)
-		}
+	if err := miner.count(windows, tokens); err != nil {
+		return nil, err
 	}
 
 	counted := make([]*logPattern, 0, len(miner.patterns))
@@ -103,7 +98,7 @@ func mineLogPatterns(windows ...[]LogEntry) []*logPattern {
 			counted = append(counted, p)
 		}
 	}
-	return counted
+	return counted, nil
 }
 
 type logPatternMiner struct {
@@ -138,6 +133,22 @@ func (m *logPatternMiner) assign(tokens []string) *logPattern {
 		}
 	}
 	return best
+}
+
+func (m *logPatternMiner) count(windows [][]LogEntry, tokens [][][]string) error {
+	for _, p := range m.patterns {
+		p.windows = make([]patternWindow, len(windows))
+	}
+	for w, entries := range windows {
+		for i, entry := range entries {
+			pattern := m.assign(tokens[w][i])
+			if pattern == nil {
+				return fmt.Errorf("log line %q fits no log pattern, so pattern counts would be wrong", truncatePatternSample(entry.Message))
+			}
+			pattern.record(w, entry)
+		}
+	}
+	return nil
 }
 
 func (p *logPattern) fits(tokens []string) bool {

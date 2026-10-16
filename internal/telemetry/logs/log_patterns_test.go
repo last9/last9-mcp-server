@@ -14,6 +14,15 @@ func templates(patterns []*logPattern) []string {
 	return out
 }
 
+func mustMineLogPatterns(t *testing.T, windows ...[]LogEntry) []*logPattern {
+	t.Helper()
+	patterns, err := mineLogPatterns(windows...)
+	if err != nil {
+		t.Fatalf("mineLogPatterns: %v", err)
+	}
+	return patterns
+}
+
 func TestLogPatternMiner_MergesLinesThatDifferOnlyInVariables(t *testing.T) {
 	lines := []LogEntry{
 		{Timestamp: "2026-10-16T10:00:00Z", Message: "user 42 logged in from 10.0.0.1", Severity: "INFO"},
@@ -22,7 +31,7 @@ func TestLogPatternMiner_MergesLinesThatDifferOnlyInVariables(t *testing.T) {
 		{Timestamp: "2026-10-16T10:03:00Z", Message: "request 0b1c2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d failed after 2026-10-16T10:02:59.123Z", Severity: "ERROR"},
 	}
 
-	got := templates(mineLogPatterns(lines))
+	got := templates(mustMineLogPatterns(t, lines))
 	want := []string{"user <*> logged in from <*>", "request <*> failed after <*>"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("templates = %q, want %q", got, want)
@@ -35,7 +44,7 @@ func TestLogPatternMiner_GeneralisesDifferingTokensWithinOnePattern(t *testing.T
 		{Message: "connection refused to host db-replica"},
 	}
 
-	got := templates(mineLogPatterns(lines))
+	got := templates(mustMineLogPatterns(t, lines))
 	if len(got) != 1 || got[0] != "connection refused to host <*>" {
 		t.Fatalf("templates = %q, want one generalised template", got)
 	}
@@ -49,7 +58,7 @@ func TestLogPatternMiner_KeepsDistinctMessagesApart(t *testing.T) {
 		{Message: "POST /api/orders 500"},
 	}
 
-	got := templates(mineLogPatterns(lines))
+	got := templates(mustMineLogPatterns(t, lines))
 	if len(got) != 4 {
 		t.Fatalf("templates = %q, want 4 distinct patterns", got)
 	}
@@ -63,7 +72,7 @@ func TestLogPatternMiner_ClustersJSONBodiesOnTheirMessage(t *testing.T) {
 		{Message: `{"level":"info","detail":"no message key"}`},
 	}
 
-	got := templates(mineLogPatterns(lines))
+	got := templates(mustMineLogPatterns(t, lines))
 	want := []string{"order <*> rejected", "cart saved", `{"level":"info","detail":"no message key"}`}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("templates = %q, want %q", got, want)
@@ -80,7 +89,7 @@ func TestLogPatternMiner_TracksStatsPerWindow(t *testing.T) {
 		{Timestamp: "2026-10-16T10:09:00Z", Message: "retrying call 4"},
 	}
 
-	patterns := mineLogPatterns(baseline, current)
+	patterns := mustMineLogPatterns(t, baseline, current)
 	if len(patterns) != 1 {
 		t.Fatalf("templates = %q, want one", templates(patterns))
 	}
@@ -103,7 +112,7 @@ func TestLogPatternMiner_TracksStatsPerWindow(t *testing.T) {
 }
 
 func TestLogPatternMiner_NamesTheEmptyMessagePattern(t *testing.T) {
-	got := templates(mineLogPatterns([]LogEntry{{Message: ""}, {Message: "   "}}))
+	got := templates(mustMineLogPatterns(t, []LogEntry{{Message: ""}, {Message: "   "}}))
 	if len(got) != 1 || got[0] != emptyPatternTemplate {
 		t.Fatalf("templates = %q, want one %q pattern", got, emptyPatternTemplate)
 	}
@@ -116,7 +125,7 @@ func TestLogPatternMiner_CountsIdenticalWindowsIdentically(t *testing.T) {
 	lines := append(sameEntries("request handled route=checkout status=ok region=west", 3), sameEntries("request handled route=billing status=error region=west", 3)...)
 	lines = append(lines, sameEntries("request handled route=checkout status=ok region=east", 3)...)
 
-	patterns := mineLogPatterns(lines, lines)
+	patterns := mustMineLogPatterns(t, lines, lines)
 	total := 0
 	for _, p := range patterns {
 		current, baseline := p.stats(0).Count, p.stats(1).Count
@@ -145,7 +154,7 @@ func TestLogPatternMiner_DropsTemplatesLeftWithoutLines(t *testing.T) {
 		lines = append(lines, LogEntry{Message: m})
 	}
 
-	patterns := mineLogPatterns(lines)
+	patterns := mustMineLogPatterns(t, lines)
 	total := 0
 	for _, p := range patterns {
 		if p.stats(0).Count == 0 {
@@ -168,10 +177,23 @@ func TestLogPatternMiner_WildcardSlotsKeepMatchingLaterVariants(t *testing.T) {
 		for _, m := range messages {
 			lines = append(lines, LogEntry{Message: m})
 		}
-		patterns := mineLogPatterns(lines)
+		patterns := mustMineLogPatterns(t, lines)
 		if len(patterns) != 1 || patterns[0].stats(0).Count != 3 {
 			t.Errorf("templates = %q, want one generalised host pattern holding all 3 lines", templates(patterns))
 		}
+	}
+}
+
+// A line no frozen template fits cannot happen today; if a mask or routing
+// change ever breaks that, counting must fail rather than panic or drop it.
+func TestLogPatternMiner_CountFailsOnALineNoTemplateFits(t *testing.T) {
+	miner := logPatternMiner{groups: map[string][]*logPattern{}}
+	miner.learn(patternTokens("cache warmed"))
+
+	windows := [][]LogEntry{{{Message: "cache missed"}}}
+	err := miner.count(windows, [][][]string{{patternTokens("cache missed")}})
+	if err == nil || !strings.Contains(err.Error(), "fits no log pattern") {
+		t.Fatalf("err = %v, want a fits-no-log-pattern error", err)
 	}
 }
 
@@ -185,7 +207,7 @@ func sameEntries(message string, n int) []LogEntry {
 
 func TestLogPatternMiner_TruncatesLongSamples(t *testing.T) {
 	long := strings.Repeat("x", maxPatternSampleRunes+50)
-	p := mineLogPatterns([]LogEntry{{Message: long}})[0]
+	p := mustMineLogPatterns(t, []LogEntry{{Message: long}})[0]
 	if got := len([]rune(p.sample)); got != maxPatternSampleRunes+1 {
 		t.Fatalf("sample length = %d runes, want %d plus an ellipsis", got, maxPatternSampleRunes)
 	}

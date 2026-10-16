@@ -61,7 +61,11 @@ func NewGetLogPatternsHandler(client *http.Client, cfg models.Config) func(conte
 		if err != nil {
 			return nil, nil, err
 		}
-		response := summariseLogPatterns(mineLogPatterns(lines), topN)
+		patterns, err := mineLogPatterns(lines)
+		if err != nil {
+			return nil, nil, err
+		}
+		response := summariseLogPatterns(patterns, topN)
 		response.Service = scope.service
 		response.Env = scope.env
 		response.Window = window

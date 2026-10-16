@@ -112,7 +112,10 @@ func NewGetEmergingLogPatternsHandler(client *http.Client, cfg models.Config) fu
 
 		// Current lines go first so a pattern's sample comes from the window
 		// being triaged whenever the pattern appears there.
-		patterns := mineLogPatterns(samples[currentPatternWindow].lines, samples[baselinePatternWindow].lines)
+		patterns, err := mineLogPatterns(samples[currentPatternWindow].lines, samples[baselinePatternWindow].lines)
+		if err != nil {
+			return nil, nil, err
+		}
 
 		comparison := newWindowComparison(current, baseline, end.Sub(start), baselineEnd.Sub(baselineStart))
 		response := compareLogPatterns(patterns, comparison, thresholds)
