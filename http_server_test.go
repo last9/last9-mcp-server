@@ -8,7 +8,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+
+	"last9-mcp/internal/toolsets"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -117,5 +120,165 @@ func TestHandleHealthReportsBuildVersion(t *testing.T) {
 	}
 	if got["version"] != sentinel {
 		t.Errorf("version = %q, want %q (the package-level Version var)", got["version"], sentinel)
+	}
+}
+
+// newToolsetHTTPServer serves --http with startup toolsets spec and counts how
+// many MCP servers it builds.
+func newToolsetHTTPServer(t *testing.T, spec string, maxCached int) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+	allowed, err := toolsets.Parse(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := testToolRegistrationConfig()
+	cfg.AllowedTools = allowed
+	builds := &atomic.Int32{}
+	build := func(allowed toolsets.Set) (*last9mcp.Last9MCPServer, error) {
+		builds.Add(1)
+		c := cfg
+		c.AllowedTools = allowed
+		return buildServer(c)
+	}
+	startup, err := build(allowed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := NewHTTPServer(startup, cfg, build)
+	h.servers.maxCached = maxCached
+	ts := httptest.NewServer(h.Handler())
+	t.Cleanup(ts.Close)
+	return ts, builds
+}
+
+// listTools posts tools/list with an optional toolsets header and query.
+func listTools(t *testing.T, ts *httptest.Server, header, query string) (int, string, map[string]bool) {
+	t.Helper()
+	url := ts.URL + "/mcp"
+	if query != "" {
+		url += "?toolsets=" + query
+	}
+	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	if header != "" {
+		req.Header.Set("X-Last9-Toolsets", header)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return resp.StatusCode, string(body), nil
+	}
+	payload := string(body)
+	if i := strings.Index(payload, "data: "); i >= 0 {
+		payload = strings.SplitN(payload[i+len("data: "):], "\n", 2)[0]
+	}
+	var rpc struct {
+		Result struct {
+			Tools []struct {
+				Name string `json:"name"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(payload), &rpc); err != nil {
+		t.Fatalf("decode tools/list %q: %v", body, err)
+	}
+	names := map[string]bool{}
+	for _, tool := range rpc.Result.Tools {
+		names[tool.Name] = true
+	}
+	return resp.StatusCode, string(body), names
+}
+
+func assertTools(t *testing.T, got map[string]bool, want, deny []string) {
+	t.Helper()
+	for _, name := range want {
+		if !got[name] {
+			t.Errorf("tools/list missing %s", name)
+		}
+	}
+	for _, name := range deny {
+		if got[name] {
+			t.Errorf("tools/list serves %s", name)
+		}
+	}
+}
+
+func TestHTTPToolsetsPerRequest(t *testing.T) {
+	ts, _ := newToolsetHTTPServer(t, "logs,alerts", maxToolsetServers)
+	core := []string{"get_current_time", "get_workspace_overview"}
+
+	tests := []struct {
+		name          string
+		header, query string
+		want, deny    []string
+	}{
+		{name: "no header serves the startup set", want: append([]string{"get_logs", "get_alerts"}, core...), deny: []string{"get_traces"}},
+		{name: "header narrows", header: "logs", want: append([]string{"get_logs"}, core...), deny: []string{"get_alerts", "get_traces"}},
+		{name: "header cannot widen", header: "traces", want: core, deny: []string{"get_traces", "get_logs", "get_alerts"}},
+		{name: "header all keeps the startup set", header: "all", want: []string{"get_logs", "get_alerts"}, deny: []string{"get_traces"}},
+		{name: "query param narrows", query: "alerts", want: append([]string{"get_alerts"}, core...), deny: []string{"get_logs"}},
+		{name: "header beats query param", header: "logs", query: "alerts", want: []string{"get_logs"}, deny: []string{"get_alerts"}},
+		{name: "whitespace and case", header: " Logs , ", want: []string{"get_logs"}, deny: []string{"get_alerts"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status, body, got := listTools(t, ts, tt.header, tt.query)
+			if status != http.StatusOK {
+				t.Fatalf("status %d: %s", status, body)
+			}
+			assertTools(t, got, tt.want, tt.deny)
+		})
+	}
+}
+
+func TestHTTPToolsetsUnknownNameIs400(t *testing.T) {
+	ts, _ := newToolsetHTTPServer(t, "", maxToolsetServers)
+	for _, tt := range []struct{ header, query string }{
+		{header: "logs,nope"},
+		{query: "nope"},
+		{header: "nope", query: "logs"},
+	} {
+		status, body, _ := listTools(t, ts, tt.header, tt.query)
+		if status != http.StatusBadRequest || !strings.Contains(body, `unknown toolset "nope"`) {
+			t.Errorf("header %q query %q: status %d body %q, want 400 naming nope", tt.header, tt.query, status, body)
+		}
+	}
+}
+
+func TestHTTPToolsetsFullStartupServesAnyRequestedSet(t *testing.T) {
+	ts, _ := newToolsetHTTPServer(t, "", maxToolsetServers)
+	_, _, got := listTools(t, ts, "traces", "")
+	assertTools(t, got, []string{"get_traces", "get_current_time"}, []string{"get_logs", "list_dashboards"})
+	_, _, got = listTools(t, ts, "", "")
+	assertTools(t, got, []string{"get_traces", "get_logs", "list_dashboards"}, nil)
+}
+
+func TestHTTPToolsetsCachesOneServerPerEffectiveSet(t *testing.T) {
+	ts, builds := newToolsetHTTPServer(t, "", maxToolsetServers)
+	for _, header := range []string{"logs", "LOGS", "logs,logs", "traces", "logs"} {
+		listTools(t, ts, header, "")
+	}
+	// startup + logs + traces
+	if n := builds.Load(); n != 3 {
+		t.Fatalf("built %d servers, want 3", n)
+	}
+}
+
+func TestHTTPToolsetsCacheIsBounded(t *testing.T) {
+	ts, builds := newToolsetHTTPServer(t, "", 1)
+	for _, header := range []string{"logs", "traces", "traces", "logs"} {
+		_, _, got := listTools(t, ts, header, "")
+		if !got["get_"+header] {
+			t.Fatalf("header %s: tools/list = %v", header, got)
+		}
+	}
+	// startup, logs (cached), then traces twice uncached.
+	if n := builds.Load(); n != 4 {
+		t.Fatalf("built %d servers, want 4", n)
 	}
 }

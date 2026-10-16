@@ -149,7 +149,8 @@ asserts per-toolset membership and copy — update it in the same change.
 at all three call sites.** They are not tools and must not be nested inside
 `registerAllTools`.
 
-Three call sites: `main.go`, and `dump.go` twice — once for `dump-tools`, once for
+Three call sites: `buildServer` in `main.go` (stdio, and `--http` once per effective toolset
+set), and `dump.go` twice — once for `dump-tools`, once for
 `dump-prompts`. Miss one and `dump_prompts_test.go` fails on a prompt count with no hint why.
 
 MCP prompts live one-per-file in `internal/workflows/`, with their text embedded in
@@ -165,8 +166,8 @@ goes into one of its groups (discovery, dedicated, raw, write):
 serve or omits one it does. It matches backticked text against registered tool names, so
 backticking a parameter such as `service_name` in the policy is fine.
 
-`registerServerInstructions` has one call site, in `main.go` after `registerAllTools`
-(stdio and `--http` share that server). `dump.go` skips it on purpose: `tools/list` and
+`registerServerInstructions` has one call site, `buildServer` in `main.go`, after
+`registerAllTools`. `dump.go` skips it on purpose: `tools/list` and
 `prompts/list` carry no instructions, and `instructions_test.go` covers the handshake.
 
 ### Argument structs
@@ -194,6 +195,8 @@ one.
 - `core` tools in `toolsets.go` (`get_current_time`, `get_workspace_overview`) join every parsed
   set; add a tool there only when other tools' arguments depend on it or the server
   instructions name it as the first call.
+- In `--http` mode, `X-Last9-Toolsets` (or `?toolsets=`) narrows one request to its intersection
+  with the startup set; `http_server.go` caches one server per effective set.
 - `dump-tools` honors the same flags and env, and loads `.env` first. The canonical snapshot
   is unset/`all`; use `--toolsets=investigate` to measure the automation surface.
 
