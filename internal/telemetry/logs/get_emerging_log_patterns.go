@@ -175,7 +175,10 @@ func (s logPatternScope) sampleWindows(ctx context.Context, client *http.Client,
 func (args GetEmergingLogPatternsArgs) thresholds(sampleSize int) (emergingThresholds, error) {
 	minCount, err := boundedPatternLimit("min_count", args.MinCount, min(defaultEmergingMinCount, sampleSize), sampleSize)
 	if err != nil {
-		return emergingThresholds{}, fmt.Errorf("%w (min_count cannot exceed sample_size)", err)
+		if args.MinCount > sampleSize {
+			err = fmt.Errorf("%w (min_count cannot exceed sample_size)", err)
+		}
+		return emergingThresholds{}, err
 	}
 	topN, err := boundedPatternLimit("top_n", args.TopN, defaultPatternTopN, maxPatternTopN)
 	if err != nil {
