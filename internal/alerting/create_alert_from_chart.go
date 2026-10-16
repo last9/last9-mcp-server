@@ -118,6 +118,7 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 		req.Severity = args.Severity
 		req.GroupID = strings.TrimSpace(args.GroupID)
 		req.Description = args.Description
+		req.IsDisabled = true
 
 		body, err := alerts.CreateAlertFromChart(ctx, last9api.NewClient(client, cfg), req)
 		if err != nil {
@@ -145,7 +146,7 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 
 // createFromChartReport renders the post-create summary: rule/group linkage,
 // the effective condition with each applied backend default called out, and
-// an immediate-fire note so callers know the rule is live.
+// whether the persisted rule is a draft or can fire.
 func createFromChartReport(resp alerts.IntelligenceResponse, args CreateAlertFromChartArgs) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Created alert rule %s", resp.ID)
@@ -193,6 +194,30 @@ func createFromChartReport(resp alerts.IntelligenceResponse, args CreateAlertFro
 
 	b.WriteString("\n\nApplied settings:\n")
 	b.WriteString(strings.Join(settings, "\n"))
-	b.WriteString("\n\nThis rule is active now and can fire immediately — delete_alert removes it.")
+	b.WriteString("\n\n")
+	b.WriteString(createFromChartLifecycle(resp))
 	return b.String()
+}
+
+// createFromChartLifecycle states the persisted enabled state; recovery can
+// return an existing enabled rule, so a draft is claimed only when reported.
+func createFromChartLifecycle(resp alerts.IntelligenceResponse) string {
+	disabled := persistedIsDisabled(resp)
+	switch {
+	case disabled == nil:
+		return "Requested as a disabled draft, but the API did not report the rule's persisted state — check it with get_entity_alert_rules before telling the user whether it can fire. delete_alert removes it."
+	case *disabled:
+		return "The rule was created as a disabled draft and will not fire; promote with patch_alert (is_disabled=false) after the user confirms. delete_alert removes it."
+	default:
+		return "This rule is enabled, not a draft: the API returned it enabled (for example an existing rule with this name), so it can fire immediately. Tell the user; patch_alert (is_disabled=true) pauses it and delete_alert removes it."
+	}
+}
+
+func persistedIsDisabled(resp alerts.IntelligenceResponse) *bool {
+	for _, rule := range resp.Rules {
+		if rule.ID == resp.ID {
+			return rule.IsDisabled
+		}
+	}
+	return nil
 }

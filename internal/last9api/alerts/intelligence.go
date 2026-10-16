@@ -33,6 +33,7 @@ type IntelligenceRequest struct {
 	Severity          string         `json:"severity,omitempty"`
 	GroupID           string         `json:"group_id,omitempty"`
 	Description       string         `json:"description,omitempty"`
+	IsDisabled        bool           `json:"is_disabled,omitempty"`
 }
 
 // IntelligenceResponse is a permissive decode target for both operations; unknown fields
@@ -40,8 +41,17 @@ type IntelligenceRequest struct {
 type IntelligenceResponse struct {
 	ID      string   `json:"id,omitempty"`
 	Signals []Signal `json:"signals,omitempty"`
+	Rules   []Rule   `json:"rules,omitempty"`
 	GroupID string   `json:"group_id,omitempty"`
 	KPIID   string   `json:"kpi_id,omitempty"`
+}
+
+// Rule is a rule the operation returned. IsDisabled is nil when the API did not
+// report the persisted state.
+type Rule struct {
+	ID         string `json:"id,omitempty"`
+	Name       string `json:"name,omitempty"`
+	IsDisabled *bool  `json:"is_disabled,omitempty"`
 }
 
 type Signal struct {
