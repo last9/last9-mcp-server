@@ -5,8 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/alerts"
 	"last9-mcp/internal/models"
@@ -51,6 +55,9 @@ func NewAcknowledgeAlertHandler(client *http.Client, cfg models.Config) func(con
 			}
 			return alertMutationResult(cfg, nil, `{"released":true}`), nil, nil
 		}
+		if refusal, err := requireRecentAlert(ctx, api, args); refusal != nil || err != nil {
+			return refusal, nil, err
+		}
 		claim, err := alerts.ClaimAlertEpisode(ctx, api, alerts.ClaimAlertEpisodeInput{
 			AlertGroupID: args.AlertGroupID, RuleID: args.RuleID, RuleType: args.RuleType, MuteUntil: args.MuteUntil,
 		})
@@ -63,6 +70,31 @@ func NewAcknowledgeAlertHandler(client *http.Client, cfg models.Config) func(con
 		}
 		return alertMutationResult(cfg, raw, ""), nil, nil
 	}
+}
+
+// ackLookbackSeconds is the widest window the alert monitor serves (get_alerts' maximum).
+const ackLookbackSeconds = 3600
+
+// requireRecentAlert returns a tool error unless get_alerts' source lists this exact alert
+// in the last hour. The claim API records a claim for any id triple, and episodes may come
+// from scheduled searches as well as alert rules, so the monitor is the one place to check.
+func requireRecentAlert(ctx context.Context, api *last9api.Client, args AcknowledgeAlertArgs) (*mcp.CallToolResult, error) {
+	var monitor AlertsResponse
+	query := url.Values{}
+	query.Set("timestamp", strconv.FormatInt(time.Now().Unix(), 10))
+	query.Set("window", strconv.Itoa(ackLookbackSeconds))
+	err := api.Do(ctx, "list recent alerts", last9api.Request{Method: http.MethodGet, Path: constants.EndpointAlertsMonitor}, &monitor, last9api.WithQuery(query))
+	if err != nil {
+		return nil, withUpstreamBody(err)
+	}
+	for _, rule := range monitor.AlertRules {
+		if strings.EqualFold(rule.AlertGroupID, strings.TrimSpace(args.AlertGroupID)) &&
+			strings.EqualFold(rule.RuleID, strings.TrimSpace(args.RuleID)) &&
+			strings.EqualFold(rule.RuleType, strings.TrimSpace(args.RuleType)) {
+			return nil, nil
+		}
+	}
+	return utils.ToolErrorResult("no alert with this alert_group_id, rule_id and rule_type fired in the last hour; nothing was changed. Copy all three from the alert in get_alerts"), nil
 }
 
 func acknowledgeErrorResult(err error, action string) (*mcp.CallToolResult, any, error) {

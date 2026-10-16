@@ -814,7 +814,7 @@ Mutes every current and future rule in a group; to mute one rule use `patch_aler
 
 ### acknowledge_alert
 
-Takes ownership of a firing alert, or releases it. Does not resolve or mute the alert. Acknowledging an alert you already own is a safe no-op.
+Takes ownership of a firing alert, or releases it. Does not resolve or mute the alert. Acknowledging an alert you already own is a safe no-op. `ack` refuses without recording anything unless `get_alerts` lists that exact alert (all three ids) within the last hour.
 
 - `alert_group_id` / `rule_id` / `rule_type` (string, required): Copy from the alert in `get_alerts`.
 - `action` (string, optional): `ack` (default) or `unack`. Only the owner or an org admin can unack.
