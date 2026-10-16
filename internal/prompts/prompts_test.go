@@ -296,9 +296,10 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 func TestQueryToolDescriptionsNameEnvelopeFields(t *testing.T) {
 	const envelope = "`truncated`/`limit`, `trimmed_items`, `partial`/`skipped` mean incomplete: disclose; follow `hints`"
 	for name, desc := range map[string]string{
-		"get_logs":         prompts.GetLogsDescription,
-		"get_traces":       prompts.GetTracesDescription,
-		"get_service_logs": prompts.GetServiceLogsDescription,
+		"get_logs":               prompts.GetLogsDescription,
+		"get_traces":             prompts.GetTracesDescription,
+		"get_service_logs":       prompts.GetServiceLogsDescription,
+		"prometheus_range_query": prompts.PromqlRangeQueryDetails,
 	} {
 		if !strings.Contains(desc, envelope) {
 			t.Errorf("%s description must name the result envelope fields", name)

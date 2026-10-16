@@ -2,6 +2,7 @@ package apm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -48,18 +49,42 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 		if httpResp.StatusCode != http.StatusOK {
 			return promToolError(httpResp, "Prometheus range query")
 		}
-		// return the response body string as the content without parsing
 		responseBodyBytes, err := io.ReadAll(httpResp.Body)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
-
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: string(responseBodyBytes),
-				},
-			},
-		}, nil, nil
+		return promRangeQueryResult(responseBodyBytes), nil, nil
 	}
+}
+
+// promRangeQueryResult returns the series array as the upstream sent it,
+// trimming trailing series past MaxResultTextBytes. A body that is not a
+// series array is passed through untouched.
+func promRangeQueryResult(body []byte) *mcp.CallToolResult {
+	var series []json.RawMessage
+	if err := json.Unmarshal(body, &series); err != nil {
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}
+	}
+	var env utils.ResultEnvelope
+	if len(series) == 0 {
+		env.Hint("No series matched. Check the metric name with prometheus_label_values (label __name__) and label names and values with prometheus_labels and prometheus_label_values, or widen the window.")
+	}
+	text := string(body)
+	if len(body) > utils.MaxResultTextBytes {
+		kept, omitted := utils.FitItems(series, utils.MaxResultTextBytes, jsonArraySize)
+		encoded, err := json.Marshal(kept)
+		if err == nil {
+			series, text = kept, string(encoded)
+			env.Trim(omitted)
+		}
+	}
+	return utils.EnvelopeToolResult(series, text, env)
+}
+
+func jsonArraySize(items []json.RawMessage) int {
+	size := 2 + max(len(items)-1, 0)
+	for _, item := range items {
+		size += len(item)
+	}
+	return size
 }
