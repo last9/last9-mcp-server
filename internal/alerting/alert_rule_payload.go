@@ -155,7 +155,11 @@ func alertRuleWriteError(err error) (*mcp.CallToolResult, any, error) {
 func withUpstreamBody(err error) error {
 	var apiErr *utils.UpstreamHTTPError
 	if errors.As(err, &apiErr) && apiErr.Body != "" && !strings.Contains(err.Error(), apiErr.Body) {
-		return fmt.Errorf("%w. Upstream response: %s", err, apiErr.Body)
+		sep := ". "
+		if strings.HasSuffix(err.Error(), ".") {
+			sep = " "
+		}
+		return fmt.Errorf("%w%sUpstream response: %s", err, sep, apiErr.Body)
 	}
 	return err
 }
