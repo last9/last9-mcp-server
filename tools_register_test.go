@@ -67,6 +67,17 @@ func TestRegisterIfAllowedSkipsExcludedTools(t *testing.T) {
 	}
 }
 
+func TestRegisterWriteToolRequiresVerifyCall(t *testing.T) {
+	server := newRegisterTestServer(t)
+	err := registerWriteTool(server, nil, &mcp.Tool{Name: "create_thing"}, " ", noopHandler)
+	if err == nil || !strings.Contains(err.Error(), "create_thing") {
+		t.Fatalf("want an error naming create_thing, got %v", err)
+	}
+	if names := registeredToolNames(t, server); len(names) != 0 {
+		t.Fatalf("write tool without a verify call was served: %v", names)
+	}
+}
+
 func TestRegisterIfAllowedRecoversSchemaPanic(t *testing.T) {
 	server := newRegisterTestServer(t)
 	chanHandler := func(context.Context, *mcp.CallToolRequest, chan int) (*mcp.CallToolResult, any, error) {
