@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -459,9 +458,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		if env == "" {
 			env = ".*"
 		}
-		envPattern := ".*"
-		if args.Env != "" {
-			envPattern = regexp.QuoteMeta(args.Env)
+		envPattern, err := literalEnvPattern(args.Env)
+		if err != nil {
+			return nil, nil, err
 		}
 
 		// Handle service_name

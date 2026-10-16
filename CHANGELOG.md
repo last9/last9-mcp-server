@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `get_service_performance_details`, `get_service_operations_summary`, `get_service_dependency_graph` and `get_database_queries` no longer return silent all-zero results for an anchored `env` such as `^production$` (the form `get_service_summary` documents). A full `^name$` wrapper is now matched as the literal name and `.*` means all environments; an `env` with alternation or a `.*`/`.+` wildcard is rejected with an error pointing to `get_service_environments`. Other names, including `prod[blue]`, still match literally as in #301.
 - `get_exceptions` now returns only the aggregate metric dimensions and occurrence count for each ranked row. It previously fabricated or emitted empty trace/sample fields, including a query-evaluation timestamp as `last_seen`, which made metric aggregates look like exact exception samples. The tool description and investigation workflow now require treating later service traces as context rather than verified matches (#310).
 - Tool schemas now describe every argument, consistently mark required inputs, and use the canonical `$and` pipeline example across query helpers; public descriptions no longer expose transport routes (#309).
 - `get_logs` and `get_traces` now explicitly show compact JSON stage-array examples and reject SQL-like query construction in their tool descriptions, so description-only clients can form valid pipelines without fetching a reference manual (#309).

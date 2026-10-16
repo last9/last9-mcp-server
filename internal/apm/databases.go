@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -213,7 +212,10 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 			durationMin = 1
 		}
 
-		baseFilter := buildDBBaseFilter(args.DBSystem, args.Host, args.Env)
+		baseFilter, err := buildDBBaseFilter(args.DBSystem, args.Host, args.Env)
+		if err != nil {
+			return nil, nil, err
+		}
 
 		// 1. Throughput first (to check if any patterns exist)
 		patterns := make(map[string]*QueryPattern)
@@ -349,7 +351,7 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 	}
 }
 
-func buildDBBaseFilter(dbSystem, host, env string) string {
+func buildDBBaseFilter(dbSystem, host, env string) (string, error) {
 	filter := fmt.Sprintf(
 		`span_kind=~"SPAN_KIND_CLIENT|SPAN_KIND_INTERNAL", db_system="%s"`,
 		utils.EscapePromQLLabel(dbSystem),
@@ -358,9 +360,13 @@ func buildDBBaseFilter(dbSystem, host, env string) string {
 		filter += fmt.Sprintf(`, net_peer_name="%s"`, utils.EscapePromQLLabel(host))
 	}
 	if env != "" {
-		filter += fmt.Sprintf(`, env=~"%s"`, utils.EscapePromQLLabel(regexp.QuoteMeta(env)))
+		envPattern, err := literalEnvPattern(env)
+		if err != nil {
+			return "", err
+		}
+		filter += fmt.Sprintf(`, env=~"%s"`, utils.EscapePromQLLabel(envPattern))
 	}
-	return filter
+	return filter, nil
 }
 
 func fetchPromBySpanName(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64, patterns map[string]*QueryPattern, setter func(*QueryPattern, float64)) error {
