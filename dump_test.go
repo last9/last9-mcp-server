@@ -470,7 +470,7 @@ func TestDumpToolsLogsIncludesServiceProfile(t *testing.T) {
 }
 
 func TestDumpToolsLogPatternToolsServedInLogsAndInvestigate(t *testing.T) {
-	patternTools := []string{"get_log_patterns"}
+	patternTools := []string{"get_log_patterns", "get_emerging_log_patterns"}
 	for spec, want := range map[string]bool{"logs": true, "investigate": true, "": true, "metrics": false, "alerts": false} {
 		allowed, err := toolsets.Parse(spec)
 		if err != nil {

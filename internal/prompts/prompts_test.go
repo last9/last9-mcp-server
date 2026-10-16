@@ -29,6 +29,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_databases.md":                     prompts.GetDatabasesDescription,
 	"get_drop_rules.md":                    prompts.GetDropRulesDescription,
 	"get_entity_alert_rules.md":            prompts.GetEntityAlertRulesDescription,
+	"get_emerging_log_patterns.md":         prompts.GetEmergingLogPatternsDescription,
 	"get_exceptions.md":                    prompts.GetExceptionsInstructions,
 	"get_flamegraph.md":                    prompts.GetFlamegraphDescription,
 	"get_log_attributes.md":                prompts.GetLogAttributesDescription,
@@ -411,7 +412,8 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 
 func TestLogPatternDescriptionsCriticalRules(t *testing.T) {
 	descriptions := map[string]string{
-		"get_log_patterns": prompts.GetLogPatternsDescription,
+		"get_log_patterns":          prompts.GetLogPatternsDescription,
+		"get_emerging_log_patterns": prompts.GetEmergingLogPatternsDescription,
 	}
 	checks := []struct {
 		phrase string

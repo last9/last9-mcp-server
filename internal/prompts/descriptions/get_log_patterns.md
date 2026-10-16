@@ -1,4 +1,4 @@
-Cluster one service's log lines in a time window into message templates (variables such as ids, numbers and timestamps become `<*>`) and return the most frequent ones. Use it during triage to see what a service is logging instead of paging raw lines with `get_service_logs` or `get_logs`; read raw lines only to drill into a template you found here.
+Cluster one service's log lines in a time window into message templates (variables such as ids, numbers and timestamps become `<*>`) and return the most frequent ones. Use it during triage to see what a service is logging instead of paging raw lines with `get_service_logs` or `get_logs`; read raw lines only to drill into a template you found here. To ask what is new or different compared with an earlier window, use `get_emerging_log_patterns`.
 
 Parameters:
 - service_name: (Required) Service whose logs to cluster.
