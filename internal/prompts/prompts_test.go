@@ -570,3 +570,19 @@ func TestAPMServiceDeviationsDescriptionLookbackFloor(t *testing.T) {
 		t.Error("description missing short-lookback floor guidance")
 	}
 }
+
+func TestCreateAlertFromChartDescriptionDraftLifecycle(t *testing.T) {
+	description := prompts.CreateAlertFromChartDescription
+	for _, phrase := range []string{
+		"always created disabled as a draft",
+		"patch_alert (is_disabled=false) only after the user confirms",
+		"tell the user instead of calling it a draft",
+	} {
+		if !strings.Contains(description, phrase) {
+			t.Errorf("description missing draft lifecycle wording %q", phrase)
+		}
+	}
+	if strings.Contains(description, "created enabled") {
+		t.Error("description must not say chart rules are created enabled")
+	}
+}
