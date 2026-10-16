@@ -155,6 +155,10 @@ goes into one of its groups (discovery, dedicated, raw, write):
 serve or omits one it does. It matches backticked text against registered tool names, so
 backticking a parameter such as `service_name` in the policy is fine.
 
+`registerServerInstructions` has one call site, in `main.go` after `registerAllTools`
+(stdio and `--http` share that server). `dump.go` skips it on purpose: `tools/list` and
+`prompts/list` carry no instructions, and `instructions_test.go` covers the handshake.
+
 ### Argument structs
 
 **JSON tags are `snake_case`, with `omitempty` on optionals.** The `jsonschema:` tag
