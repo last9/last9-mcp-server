@@ -616,6 +616,7 @@ func formatAlertConfigResponse(
 	entityChannelsByID map[string][]NotificationChannel,
 	notificationChannelsErr string,
 	onlyWithoutNotificationChannel bool,
+	evaluationHistory map[string][]evaluationSample,
 ) string {
 	header := fmt.Sprintf("Found %d alert rules:\n\n", len(alertConfig))
 	if onlyWithoutNotificationChannel {
@@ -671,6 +672,9 @@ func formatAlertConfigResponse(
 			}
 		}
 		formattedResponse += fmt.Sprintf("  State: %s\n", rule.State)
+		for _, line := range formatEvaluationHistoryLines(evaluationHistory[rule.ID]) {
+			formattedResponse += line + "\n"
+		}
 		formattedResponse += fmt.Sprintf("  Severity: %s\n", rule.Severity)
 		formattedResponse += fmt.Sprintf("  Algorithm: %s\n", rule.Algorithm)
 		formattedResponse += fmt.Sprintf("  Entity ID: %s\n", rule.EntityID)

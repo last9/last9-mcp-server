@@ -6,3 +6,4 @@ Each query needs `name`, `type`, `query_type`, `telemetry`, `expr`, and `legend:
 Use this tool only for a net-new dashboard (no id yet). Create once. After this tool returns, keep dashboard.id and call update_dashboard for any panel, layout, or query change — including later in the same turn. If an id was returned this turn or is already known, do not call create_dashboard again.
 
 For `log_json` line, timeseries, or bar panels, use a `window_aggregate` stage with a `window`; a plain `aggregate` stage does not satisfy the API's timeslice requirement. When the user supplies a service, use it without calling `get_service_profile`, `get_service_environments`, or `did_you_mean`; discover only the metric expressions required by the panels.
+To alert on a custom dashboard panel PromQL, use the author-alert flow (create_kpi then create_alert); see last9://reference/alerting. create_alert_from_chart covers Discover charts only.

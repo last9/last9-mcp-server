@@ -20,6 +20,9 @@ var MetricsReference string
 //go:embed references/investigation.md
 var InvestigationReference string
 
+//go:embed references/alerting.md
+var AlertingReference string
+
 //go:embed descriptions/get_service_summary.md
 var GetServiceSummaryDescription string
 
@@ -106,6 +109,12 @@ var GetAlertGroupsDescription string
 
 //go:embed descriptions/get_entity_alert_rules.md
 var GetEntityAlertRulesDescription string
+
+//go:embed descriptions/get_entity_kpis.md
+var GetEntityKPIsDescription string
+
+//go:embed descriptions/create_kpi.md
+var CreateKPIDescription string
 
 //go:embed descriptions/get_alerts.md
 var GetAlertsDescription string
@@ -247,3 +256,6 @@ var AnalyzeSlowQueriesWorkflow string
 
 //go:embed workflows/on_call_runbook.md
 var OnCallRunbookWorkflow string
+
+//go:embed workflows/author_alert.md
+var AuthorAlertWorkflow string

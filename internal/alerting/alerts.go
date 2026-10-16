@@ -134,12 +134,19 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			resolveAlertConfigKPIs(ctx, client, cfg, filteredAlertConfig)
 		}
 
+		ruleIDs := make([]string, 0, len(filteredAlertConfig))
+		for _, rule := range filteredAlertConfig {
+			ruleIDs = append(ruleIDs, rule.ID)
+		}
+		evaluationHistory := fetchRecentEvaluationHistory(ctx, client, cfg, ruleIDs)
+
 		formattedResponse := formatAlertConfigResponse(
 			filteredAlertConfig,
 			entitiesByID,
 			entityChannelsByID,
 			notificationChannelsErr,
 			unconfiguredOnly,
+			evaluationHistory,
 		)
 		if unconfiguredOnly {
 			formattedResponse = globalChannelAdvisory + "\n" + formattedResponse

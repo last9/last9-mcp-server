@@ -33,6 +33,8 @@ var promptDescriptionFiles = map[string]string{
 	"get_databases.md":                     prompts.GetDatabasesDescription,
 	"get_drop_rules.md":                    prompts.GetDropRulesDescription,
 	"get_entity_alert_rules.md":            prompts.GetEntityAlertRulesDescription,
+	"get_entity_kpis.md":                   prompts.GetEntityKPIsDescription,
+	"create_kpi.md":                        prompts.CreateKPIDescription,
 	"get_exceptions.md":                    prompts.GetExceptionsInstructions,
 	"get_flamegraph.md":                    prompts.GetFlamegraphDescription,
 	"get_log_attributes.md":                prompts.GetLogAttributesDescription,
