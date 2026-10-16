@@ -286,6 +286,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_alert_groups`** — Configured Compass alert groups with metadata labels, team, tier, and rule counts — including groups with zero rules and groups that are not firing
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_entity_kpis`** — Every KPI (id, name, PromQL, unit) on one alert group, including KPIs no rule uses yet — the ids `create_alert` and `validate_alert_expression` need
+- **`create_kpi`** — Create a KPI (PromQL + unit) on an alert group when no existing KPI fits. Create once and keep the returned id
 - **`get_alerts`** — Currently firing alerts within a time window
 - **`get_alert_rule_state`** — Historical firing state (1/0) per alert rule over a time range, grouped by `rule_id`. Filterable by alert group, rule name, label filters, and state.
 - **`get_notification_channels`** — Configured notification channels (Slack, PagerDuty, email, etc.). `scope=channels` lists the channels themselves (ids for attaching); the default `attached` lists per-alert-group attachments
@@ -305,7 +306,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`detach_notification_channel`** — Remove one channel-to-alert-group attachment
 - **`delete_notification_channel`** — Permanently delete a channel that has no attachments
 
-The alert write tools (`create_alert`, `update_alert`, `patch_alert`, `delete_alert`, `create_alert_from_chart`, `mute_alert_group`, `acknowledge_alert`, `reassign_alert`, `create_notification_channel`, `attach_notification_channel`, `detach_notification_channel`, `delete_notification_channel`) need a token with write scope; `delete_alert`, `detach_notification_channel` and `delete_notification_channel` need delete scope instead. They are exposed only in the `alerts` toolset.
+The alert write tools (`create_kpi`, `create_alert`, `update_alert`, `patch_alert`, `delete_alert`, `create_alert_from_chart`, `mute_alert_group`, `acknowledge_alert`, `reassign_alert`, `create_notification_channel`, `attach_notification_channel`, `detach_notification_channel`, `delete_notification_channel`) need a token with write scope; `delete_alert`, `detach_notification_channel` and `delete_notification_channel` need delete scope instead. They are exposed only in the `alerts` toolset.
 
 ### Custom Dashboards
 
@@ -703,6 +704,19 @@ Read-only; in the `alerts` and `investigate` toolsets. Lists every KPI on one al
 - `entity_id` (string, required): Alert group/entity UUID, from `get_alert_groups` or `get_alert_config`.
 
 Returns JSON `{"entity_id","count","kpis":[{"id","name","description","query","unit"}]}`, sorted by name. `unit` is a display label: thresholds compare against the raw query value. When no KPI fits, create one with `create_kpi`.
+
+### create_kpi
+
+Creates a KPI on an existing alert group; `alerts` toolset only. Use it only when `get_entity_kpis` has no KPI with the query you need. Check the query returns data with `prometheus_range_query` first; the API also rejects a query that fails on the alert group's data source.
+
+- `entity_id` (string, required): Alert group/entity UUID.
+- `name` (string, required): Unique within the alert group; a second create with the same name is rejected as a conflict.
+- `query` (string, required): PromQL. To alert on a dashboard panel, take the panel's PromQL from `get_dashboard`.
+- `unit` (string, required): Unit of the query's raw value, e.g. `seconds`, `ms`, `percent`, `ratio`, `count`, `req/s`. It is a label only and converts nothing, so thresholds compare against the raw value.
+- `description` (string, optional)
+- `data_source_id` (string, optional): Defaults to the alert group's data source.
+
+Create once and keep the returned id for `expression_args` / `indicators_used`; on a name conflict, reuse the existing KPI's id from `get_entity_kpis`. Returns `{"id","name","query","unit"}`.
 
 ### get_alerts
 

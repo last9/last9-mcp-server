@@ -70,6 +70,7 @@ var named = map[string][]string{
 		"get_alert_groups",
 		"get_entity_alert_rules",
 		"get_entity_kpis",
+		"create_kpi",
 		"describe_alert_chart",
 		"create_alert_from_chart",
 		"get_alert_rule_state",

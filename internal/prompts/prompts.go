@@ -110,6 +110,9 @@ var GetEntityAlertRulesDescription string
 //go:embed descriptions/get_entity_kpis.md
 var GetEntityKPIsDescription string
 
+//go:embed descriptions/create_kpi.md
+var CreateKPIDescription string
+
 //go:embed descriptions/get_alerts.md
 var GetAlertsDescription string
 

@@ -14,6 +14,7 @@ var promptDescriptionFiles = map[string]string{
 	"create_alert.md":                      prompts.CreateAlertDescription,
 	"create_alert_from_chart.md":           prompts.CreateAlertFromChartDescription,
 	"create_dashboard.md":                  prompts.CreateDashboardDescription,
+	"create_kpi.md":                        prompts.CreateKPIDescription,
 	"delete_alert.md":                      prompts.DeleteAlertDescription,
 	"delete_dashboard.md":                  prompts.DeleteDashboardDescription,
 	"delete_dashboard_snapshot.md":         prompts.DeleteDashboardSnapshotDescription,
@@ -557,6 +558,27 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 	// Any mention at all, not three exact phrasings a reword would slip past.
 	if strings.Contains(create, "list_dashboards") {
 		t.Error("CreateDashboardDescription must not require list_dashboards before create")
+	}
+}
+
+func TestKPIToolDescriptionsSteerAuthoring(t *testing.T) {
+	for name, c := range map[string]struct {
+		body    string
+		phrases []string
+	}{
+		"get_entity_kpis": {prompts.GetEntityKPIsDescription, []string{
+			"never invent a KPI id", "prometheus_range_query", "`unit` is a display label only", "`create_kpi`",
+		}},
+		"create_kpi": {prompts.CreateKPIDescription, []string{
+			"`get_entity_kpis`", "`prometheus_range_query`", "Units matter", "Create once and keep the returned id",
+			"Never call create_kpi again for the same query", "`get_dashboard`",
+		}},
+	} {
+		for _, phrase := range c.phrases {
+			if !strings.Contains(c.body, phrase) {
+				t.Errorf("%s description missing %q", name, phrase)
+			}
+		}
 	}
 }
 
