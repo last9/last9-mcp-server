@@ -23,7 +23,7 @@ Last9 observability for the caller's organization. Discover names first, answer 
 {{- with $overview}}
 
 ## Start here
-Call {{.}} first: one cheap call that returns the environments, which signals (logs, traces, metrics) exist, service and alert-group counts, firing alerts and the current time. Skip tools for signals it reports absent.
+Call {{.}} first: one cheap call that returns the environments, which signals (logs, traces, metrics) were seen in the last hour, service and alert-group counts, firing alerts and the current time. A signal it reports absent was only not observed in that hour: still query it for the user's requested time range, index or datasource.
 {{- end}}
 {{- if or $time $services $attributes $metricNames $alertRules $dashboards}}
 

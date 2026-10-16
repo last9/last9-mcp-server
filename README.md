@@ -233,7 +233,7 @@ The NPM route is easier on Windows — no path management.
 
 ### Orientation
 
-- **`get_workspace_overview`** — Recommended first call: environments, which signals (logs, traces, metrics) are present, service and alert-group counts, firing alerts, and the current time in one cheap call. A failed sub-call leaves its field `null` and adds an `errors[]` entry. Served under every toolset
+- **`get_workspace_overview`** — Recommended first call: environments, which signals (logs, traces, metrics) were seen in the last hour, service and alert-group counts, firing alerts, and the current time in one cheap call. A signal not seen in that hour can still have older data, so it stays queryable. A failed sub-call leaves its field `null` and adds an `errors[]` entry. Served under every toolset
 - **`get_current_time`** — Current time, plus absolute bounds for `last 2h`, `yesterday` or `since yesterday 9am IST`, in any IANA zone or common abbreviation. Served under every toolset
 
 ### Service Health
