@@ -476,15 +476,12 @@ func fetchStartedAlerts(ctx context.Context, client *http.Client, cfg models.Con
 // startedInScope matches a rule to a scoped service by an exact group-label
 // value or by its alert group's name, and keeps instances whose firing began
 // inside the window. An instance without its own start falls back to the
-// rule's. With an env, instances labelled with another env are dropped.
+// rule's; a rule with no instances has nothing firing and yields none. With an
+// env, instances labelled with another env are dropped.
 func startedInScope(rule alerting.AlertRuleData, scope alertScope) []StartedAlert {
 	window := scope.window
-	instances := rule.Alerts
-	if len(instances) == 0 {
-		instances = []alerting.AlertInstance{{}}
-	}
 	var out []StartedAlert
-	for _, inst := range instances {
+	for _, inst := range rule.Alerts {
 		since := inst.Since
 		if since == 0 {
 			since = rule.Since

@@ -273,6 +273,25 @@ func TestNewFiringAlertAloneIsRegressionLikely(t *testing.T) {
 	}
 }
 
+func TestRuleWithoutAlertInstancesHasNotStarted(t *testing.T) {
+	change := recentChange()
+	for name, instances := range map[string][]alerting.AlertInstance{"empty": {}, "omitted": nil} {
+		t.Run(name, func(t *testing.T) {
+			f := &fakeLast9{change: change, baseline: flatWindow(), after: flatWindow(), alerts: []alerting.AlertRuleData{{
+				RuleID: "stale", RuleName: "checkout latency", AlertGroupName: "checkout",
+				Since: change.Add(5 * time.Minute).Unix(), Alerts: instances,
+			}}}
+			report, err := runTool(t, f, serviceArgs(change))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(report.Alerts.Started) != 0 || report.Verdict == VerdictRegressionLikely {
+				t.Fatalf("rule with no instances counted: verdict=%q (%s) alerts=%+v", report.Verdict, report.Reason, report.Alerts.Started)
+			}
+		})
+	}
+}
+
 func TestAlertsStayInsideTheRequestedEnv(t *testing.T) {
 	cases := []struct {
 		name, reqEnv string
