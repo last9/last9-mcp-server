@@ -192,6 +192,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Name:        "get_emerging_log_patterns",
 		Annotations: readOnlyTool("Get Emerging Log Patterns"),
 		Description: prompts.GetEmergingLogPatternsDescription,
+		InputSchema: logs.GetEmergingLogPatternsInputSchema(),
 	}, logs.NewGetEmergingLogPatternsHandler(client, cfg)))
 
 	// Register drop rules tool
