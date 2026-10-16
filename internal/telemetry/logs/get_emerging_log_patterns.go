@@ -8,13 +8,13 @@ import (
 	"math"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -104,11 +104,9 @@ func NewGetEmergingLogPatternsHandler(client *http.Client, cfg models.Config) fu
 			return nil, nil, err
 		}
 
-		samples := scope.sampleWindows(ctx, client, cfg, [][2]time.Time{{start, end}, {baselineStart, baselineEnd}})
-		for _, s := range samples {
-			if s.err != nil {
-				return nil, nil, s.err
-			}
+		samples, err := scope.sampleWindows(ctx, client, cfg, [][2]time.Time{{start, end}, {baselineStart, baselineEnd}})
+		if err != nil {
+			return nil, nil, err
 		}
 		current, baseline := samples[currentPatternWindow].window, samples[baselinePatternWindow].window
 
@@ -154,21 +152,25 @@ func emptyBaselineNote(current, baseline LogPatternWindow) string {
 type windowSample struct {
 	lines  []LogEntry
 	window LogPatternWindow
-	err    error
 }
 
 // sampleWindows fetches the windows concurrently: triage prompts call this
-// tool before anything else, so it should cost one round trip, not one per window.
-func (s logPatternScope) sampleWindows(ctx context.Context, client *http.Client, cfg models.Config, ranges [][2]time.Time) []windowSample {
+// tool before anything else, so it should cost one round trip, not one per
+// window. The first failure cancels the other fetches, since one failed window
+// fails the whole comparison.
+func (s logPatternScope) sampleWindows(ctx context.Context, client *http.Client, cfg models.Config, ranges [][2]time.Time) ([]windowSample, error) {
 	samples := make([]windowSample, len(ranges))
-	var wg sync.WaitGroup
+	g, ctx := errgroup.WithContext(ctx)
 	for i, r := range ranges {
-		wg.Go(func() {
-			samples[i].lines, samples[i].window, samples[i].err = s.sample(ctx, client, cfg, r[0], r[1])
+		g.Go(func() (err error) {
+			samples[i].lines, samples[i].window, err = s.sample(ctx, client, cfg, r[0], r[1])
+			return err
 		})
 	}
-	wg.Wait()
-	return samples
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	return samples, nil
 }
 
 // thresholds bounds min_count by the sample size: no pattern can count more

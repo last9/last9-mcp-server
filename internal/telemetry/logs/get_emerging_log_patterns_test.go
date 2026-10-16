@@ -2,6 +2,8 @@ package logs
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -399,6 +401,36 @@ func TestGetEmergingLogPatterns_FetchesBothWindowsConcurrently(t *testing.T) {
 	_, _, err := NewGetEmergingLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, emergingArgs(LogPatternScopeArgs{}))
 	if err != nil {
 		t.Fatalf("handler: %v", err)
+	}
+}
+
+func TestGetEmergingLogPatterns_CancelsTheOtherWindowOnFirstError(t *testing.T) {
+	currentCancelled := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var body map[string]any
+		_ = json.Unmarshal(raw, &body)
+		if int64(body["start"].(float64)) == precedingWindowStart {
+			http.Error(w, "baseline unavailable", http.StatusInternalServerError)
+			return
+		}
+		select {
+		case <-r.Context().Done():
+			close(currentCancelled)
+		case <-time.After(5 * time.Second):
+			_, _ = w.Write([]byte(`{"query_result":{"status":"success","data":{"resultType":"streams","result":[]}}}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	_, _, err := NewGetEmergingLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, emergingArgs(LogPatternScopeArgs{}))
+	if err == nil || errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "500") {
+		t.Fatalf("err = %v, want the baseline's failure, not the cancellation it caused", err)
+	}
+	select {
+	case <-currentCancelled:
+	case <-time.After(time.Second):
+		t.Fatal("current window request kept running after the baseline failed")
 	}
 }
 
