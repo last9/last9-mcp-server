@@ -520,12 +520,12 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	for _, tool := range out.Tools {
 		byName[tool.Name] = true
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "get_service_profile", "list_datasources"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "get_service_profile", "list_datasources", "get_entity_kpis"} {
 		if !byName[want] {
 			t.Errorf("investigate dump missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard"} {
+	for _, deny := range []string{"get_alerts", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "create_kpi", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard"} {
 		if byName[deny] {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}
