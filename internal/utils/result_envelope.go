@@ -67,6 +67,38 @@ func FitItems[T any](items []T, maxBytes int, size func([]T) int) ([]T, int) {
 	return items[:kept], len(items) - kept
 }
 
+// FormatQueryResponse renders a logs or traces query response as indented JSON,
+// dropping trailing data.result items until the text fits MaxResultTextBytes.
+func FormatQueryResponse(response map[string]any, env *ResultEnvelope) string {
+	text := formatIndentedJSON(response)
+	if len(text) <= MaxResultTextBytes {
+		return text
+	}
+	data, ok := response["data"].(map[string]any)
+	if !ok {
+		return text
+	}
+	items, ok := data["result"].([]any)
+	if !ok {
+		return text
+	}
+	kept, omitted := FitItems(items, MaxResultTextBytes, func(prefix []any) int {
+		data["result"] = prefix
+		return len(formatIndentedJSON(response))
+	})
+	data["result"] = kept
+	env.Trim(omitted)
+	return formatIndentedJSON(response)
+}
+
+func formatIndentedJSON(data any) string {
+	encoded, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("%v", data)
+	}
+	return string(encoded)
+}
+
 // EnvelopeToolResult returns text as the readable payload, adds the envelope as
 // its own text block when it carries anything, and mirrors both as
 // structuredContent {"result": payload, "envelope": env}.

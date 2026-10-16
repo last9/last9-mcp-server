@@ -109,6 +109,52 @@ func TestFitItemsKeepsLongestPrefixWithinBudget(t *testing.T) {
 	}
 }
 
+func queryResponse(items int, itemBytes int) map[string]any {
+	result := make([]any, items)
+	for i := range result {
+		result[i] = strings.Repeat("x", itemBytes)
+	}
+	return map[string]any{"status": "success", "data": map[string]any{"result": result}}
+}
+
+func TestFormatQueryResponseLeavesSmallResponsesWhole(t *testing.T) {
+	var env ResultEnvelope
+	response := queryResponse(3, 10)
+	text := FormatQueryResponse(response, &env)
+
+	want, _ := json.MarshalIndent(queryResponse(3, 10), "", "  ")
+	if text != string(want) || !env.IsEmpty() {
+		t.Fatalf("text changed or envelope marked: %q %+v", text, env)
+	}
+}
+
+func TestFormatQueryResponseTrimsToBudget(t *testing.T) {
+	var env ResultEnvelope
+	response := queryResponse(50, 4000)
+	text := FormatQueryResponse(response, &env)
+
+	if len(text) > MaxResultTextBytes {
+		t.Fatalf("text is %d bytes, over budget", len(text))
+	}
+	kept := len(response["data"].(map[string]any)["result"].([]any))
+	if kept == 0 || kept+env.TrimmedItems != 50 {
+		t.Fatalf("kept %d trimmed %d, want a non-empty prefix and the rest counted", kept, env.TrimmedItems)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(text), &decoded); err != nil {
+		t.Fatalf("trimmed text is not JSON: %v", err)
+	}
+}
+
+func TestFormatQueryResponseWithoutResultArrayIsUntouched(t *testing.T) {
+	var env ResultEnvelope
+	response := map[string]any{"blob": strings.Repeat("x", MaxResultTextBytes)}
+	FormatQueryResponse(response, &env)
+	if !env.IsEmpty() {
+		t.Fatalf("envelope = %+v, want nothing trimmed when there is no data.result", env)
+	}
+}
+
 func TestEnvelopeToolResultWithoutMarkers(t *testing.T) {
 	payload := map[string]any{"rows": []any{1.0}}
 	result := EnvelopeToolResult(payload, `{"rows":[1]}`, ResultEnvelope{})

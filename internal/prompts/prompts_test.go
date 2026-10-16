@@ -239,7 +239,8 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"excludes non-matching values from percentile calculations; disclose that exclusion in the answer", "must disclose the numeric filter's effect"},
 		{"Use a discovered normalized route", "must discover normalized route semantics before aggregation"},
 		{"Raw URI: aggregate exact values; never normalize/merge later", "must allow exact raw URI aggregation without unsafe normalization"},
-		{"If `l9_result.partial=true`, preserve rows and disclose partial coverage", "must tie partial disclosure to result metadata"},
+		{"If `envelope.truncated`, preserve rows and disclose the row limit", "must tie partial disclosure to result metadata"},
+		{"`truncated`/`limit`, `trimmed_items`, `partial`/`skipped` mean incomplete: disclose; follow `hints`", "must name the result envelope fields"},
 		{"Units: report source; never convert", "must prevent inferred latency units"},
 		{"Only report returned P99 values; empty result→say unavailable and stop", "must prevent fallback counts from replacing an empty percentile result"},
 		{"ALL→`$and`; ANY→`$or`", "must document all/any-word Body searches"},
@@ -331,7 +332,7 @@ func TestPercentileReferenceManualsMatchToolDescriptions(t *testing.T) {
 				"Discover and use a normalized route field before aggregation",
 				"group or aggregate exact raw URI values individually",
 				"never normalize or merge URI variants afterward",
-				"When `l9_result.partial=true`, preserve returned rows and explicitly disclose partial coverage",
+				"When the result envelope reports `truncated`, preserve returned rows and explicitly disclose that the row limit cut the result",
 				"never infer or convert units",
 				`"function": {"$quantile": [0.99, "attributes['latency_ms']"]}`,
 				`"window": ["24", "hours"]`,
@@ -410,7 +411,7 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 
 func TestWhaleDescriptionsBounded(t *testing.T) {
 	budgets := map[string]int{
-		"get_logs_base":         2900,
+		"get_logs_base":         3010,
 		"get_traces_base":       2200,
 		"get_service_logs_base": 2000,
 	}

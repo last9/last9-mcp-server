@@ -69,14 +69,14 @@ func TestGetLogsHandler_ForwardsLimitWhenProvided(t *testing.T) {
 		expectedLimit string
 	}{
 		{
-			name:          "forwards explicit limit",
+			name:          "forwards explicit limit plus one probe row",
 			limit:         25,
-			expectedLimit: "25",
+			expectedLimit: "26",
 		},
 		{
-			name:          "uses configured max when unset",
+			name:          "uses configured max plus one probe row when unset",
 			limit:         0,
-			expectedLimit: "5000",
+			expectedLimit: "5001",
 		},
 	}
 
