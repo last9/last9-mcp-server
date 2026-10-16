@@ -180,6 +180,7 @@ func TestGetLogPatterns_RejectsInvalidArgsBeforeQuerying(t *testing.T) {
 		"negative lookback":     {LogPatternScopeArgs: LogPatternScopeArgs{ServiceName: "a", LookbackMinutes: -5}},
 		"bad index":             {LogPatternScopeArgs: LogPatternScopeArgs{ServiceName: "a", Index: "nope"}},
 		"start after end":       {LogPatternScopeArgs: LogPatternScopeArgs{ServiceName: "a", StartTimeISO: patternWindowEndISO, EndTimeISO: patternWindowStartISO}},
+		"start equals end":      {LogPatternScopeArgs: LogPatternScopeArgs{ServiceName: "a", StartTimeISO: patternWindowStartISO, EndTimeISO: patternWindowStartISO}},
 		"unparseable timestamp": {LogPatternScopeArgs: LogPatternScopeArgs{ServiceName: "a", StartTimeISO: "yesterday"}},
 	}
 	for name, args := range cases {

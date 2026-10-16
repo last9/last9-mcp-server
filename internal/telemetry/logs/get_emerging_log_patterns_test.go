@@ -241,6 +241,9 @@ func TestGetEmergingLogPatterns_RejectsInvalidArgsBeforeQuerying(t *testing.T) {
 		"negative min_count":        withOption(func(a *GetEmergingLogPatternsArgs) { a.MinCount = -1 }),
 		"min_count over max":        withOption(func(a *GetEmergingLogPatternsArgs) { a.MinCount = maxPatternSampleSize + 1 }),
 		"top_n over max":            withOption(func(a *GetEmergingLogPatternsArgs) { a.TopN = maxPatternTopN + 1 }),
+		"current empty range": withOption(func(a *GetEmergingLogPatternsArgs) {
+			a.StartTimeISO, a.EndTimeISO = patternWindowStartISO, patternWindowStartISO
+		}),
 	}
 	for name, args := range cases {
 		t.Run(name, func(t *testing.T) {
