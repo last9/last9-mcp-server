@@ -488,6 +488,44 @@ func TestDumpToolsLogPatternToolsServedInLogsAndInvestigate(t *testing.T) {
 	}
 }
 
+func TestDumpToolsEmergingLogPatternsCouplesBaselineTimes(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, nil); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			InputSchema struct {
+				Properties        map[string]any      `json:"properties"`
+				DependentRequired map[string][]string `json:"dependentRequired"`
+			} `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	for _, tool := range out.Tools {
+		if tool.Name != "get_emerging_log_patterns" {
+			continue
+		}
+		want := map[string][]string{
+			"baseline_start_time_iso": {"baseline_end_time_iso"},
+			"baseline_end_time_iso":   {"baseline_start_time_iso"},
+		}
+		if !reflect.DeepEqual(tool.InputSchema.DependentRequired, want) {
+			t.Errorf("dependentRequired = %v, want %v", tool.InputSchema.DependentRequired, want)
+		}
+		for _, name := range []string{"service_name", "sample_size", "baseline_start_time_iso", "min_count", "change_factor"} {
+			if _, ok := tool.InputSchema.Properties[name]; !ok {
+				t.Errorf("served schema lost property %q", name)
+			}
+		}
+		return
+	}
+	t.Fatal("get_emerging_log_patterns missing from dump")
+}
+
 func TestDumpToolsDataToolsetsIncludeNameDiscovery(t *testing.T) {
 	for _, spec := range []string{"traces", "metrics"} {
 		allowed, err := toolsets.Parse(spec)
