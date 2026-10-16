@@ -145,6 +145,14 @@ Three call sites: `main.go`, and `dump.go` twice — once for `dump-tools`, once
 MCP prompts live one-per-file in `internal/workflows/`, with their text embedded in
 `internal/prompts/prompts.go` as `<Name>Workflow`.
 
+### Server instructions
+
+`internal/prompts/server_instructions.md` is the tool-selection policy sent on `initialize`.
+It is a `text/template` rendered against `--toolsets` (`tools`/`has` drop unregistered
+tools), so a tool named there never leaks into a toolset that lacks it. When a new tool
+fits one of its groups (discovery, dedicated, raw, write), add it there.
+`instructions_test.go` fails if the policy names a tool the toolset does not serve.
+
 ### Argument structs
 
 **JSON tags are `snake_case`, with `omitempty` on optionals.** The `jsonschema:` tag
