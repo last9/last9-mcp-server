@@ -6,16 +6,6 @@ import (
 	"testing"
 )
 
-func minePatterns(windows int, entries ...[]LogEntry) []*logPattern {
-	miner := newLogPatternMiner(windows)
-	for window, list := range entries {
-		for _, entry := range list {
-			miner.add(window, entry)
-		}
-	}
-	return miner.patterns
-}
-
 func templates(patterns []*logPattern) []string {
 	out := make([]string, 0, len(patterns))
 	for _, p := range patterns {
@@ -32,7 +22,7 @@ func TestLogPatternMiner_MergesLinesThatDifferOnlyInVariables(t *testing.T) {
 		{Timestamp: "2026-10-16T10:03:00Z", Message: "request 0b1c2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d failed after 2026-10-16T10:02:59.123Z", Severity: "ERROR"},
 	}
 
-	got := templates(minePatterns(1, lines))
+	got := templates(mineLogPatterns(lines))
 	want := []string{"user <*> logged in from <*>", "request <*> failed after <*>"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("templates = %q, want %q", got, want)
@@ -45,7 +35,7 @@ func TestLogPatternMiner_GeneralisesDifferingTokensWithinOnePattern(t *testing.T
 		{Message: "connection refused to host db-replica"},
 	}
 
-	got := templates(minePatterns(1, lines))
+	got := templates(mineLogPatterns(lines))
 	if len(got) != 1 || got[0] != "connection refused to host <*>" {
 		t.Fatalf("templates = %q, want one generalised template", got)
 	}
@@ -59,7 +49,7 @@ func TestLogPatternMiner_KeepsDistinctMessagesApart(t *testing.T) {
 		{Message: "POST /api/orders 500"},
 	}
 
-	got := templates(minePatterns(1, lines))
+	got := templates(mineLogPatterns(lines))
 	if len(got) != 4 {
 		t.Fatalf("templates = %q, want 4 distinct patterns", got)
 	}
@@ -73,7 +63,7 @@ func TestLogPatternMiner_ClustersJSONBodiesOnTheirMessage(t *testing.T) {
 		{Message: `{"level":"info","detail":"no message key"}`},
 	}
 
-	got := templates(minePatterns(1, lines))
+	got := templates(mineLogPatterns(lines))
 	want := []string{"order <*> rejected", "cart saved", `{"level":"info","detail":"no message key"}`}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("templates = %q, want %q", got, want)
@@ -90,7 +80,7 @@ func TestLogPatternMiner_TracksStatsPerWindow(t *testing.T) {
 		{Timestamp: "2026-10-16T10:09:00Z", Message: "retrying call 4"},
 	}
 
-	patterns := minePatterns(2, baseline, current)
+	patterns := mineLogPatterns(baseline, current)
 	if len(patterns) != 1 {
 		t.Fatalf("templates = %q, want one", templates(patterns))
 	}
@@ -113,15 +103,89 @@ func TestLogPatternMiner_TracksStatsPerWindow(t *testing.T) {
 }
 
 func TestLogPatternMiner_NamesTheEmptyMessagePattern(t *testing.T) {
-	got := templates(minePatterns(1, []LogEntry{{Message: ""}, {Message: "   "}}))
+	got := templates(mineLogPatterns([]LogEntry{{Message: ""}, {Message: "   "}}))
 	if len(got) != 1 || got[0] != emptyPatternTemplate {
 		t.Fatalf("templates = %q, want one %q pattern", got, emptyPatternTemplate)
 	}
 }
 
+// Templates generalise while lines are still arriving, so a line counted
+// early could land elsewhere than an identical line counted late. Identical
+// windows must still produce identical counts.
+func TestLogPatternMiner_CountsIdenticalWindowsIdentically(t *testing.T) {
+	lines := append(sameEntries("request handled route=checkout status=ok region=west", 3), sameEntries("request handled route=billing status=error region=west", 3)...)
+	lines = append(lines, sameEntries("request handled route=checkout status=ok region=east", 3)...)
+
+	patterns := mineLogPatterns(lines, lines)
+	total := 0
+	for _, p := range patterns {
+		current, baseline := p.stats(0).Count, p.stats(1).Count
+		if current != baseline || current == 0 {
+			t.Errorf("%q counted current=%d baseline=%d, want equal and non-zero", p.template(), current, baseline)
+		}
+		total += current
+	}
+	if total != len(lines) {
+		t.Errorf("counted %d lines per window across %q, want all %d", total, templates(patterns), len(lines))
+	}
+	// A line fitting several templates goes to the most specific one, so the
+	// checkout lines stay together rather than in the broader west template.
+	for _, p := range patterns {
+		if p.template() == "request handled route=checkout status=ok <*>" && p.stats(0).Count != 6 {
+			t.Errorf("checkout template holds %d lines, want 6", p.stats(0).Count)
+		}
+	}
+}
+
+// The first template learned here generalises past its lines, which all end
+// up in more specific templates; it must not be served with a zero count.
+func TestLogPatternMiner_DropsTemplatesLeftWithoutLines(t *testing.T) {
+	var lines []LogEntry
+	for _, m := range []string{"x y b c b c b", "x y c b a c b", "x y c b b c b", "x y c c b b b", "x y a c b c b", "x y c b c c c", "x y c b a c a", "x y a c c b c"} {
+		lines = append(lines, LogEntry{Message: m})
+	}
+
+	patterns := mineLogPatterns(lines)
+	total := 0
+	for _, p := range patterns {
+		if p.stats(0).Count == 0 {
+			t.Errorf("%q served with no lines", p.template())
+		}
+		total += p.stats(0).Count
+	}
+	if total != len(lines) {
+		t.Errorf("counted %d lines across %q, want %d", total, templates(patterns), len(lines))
+	}
+}
+
+func TestLogPatternMiner_WildcardSlotsKeepMatchingLaterVariants(t *testing.T) {
+	cases := [][]string{
+		{"connection refused to host db-primary", "connection refused to host db-replica", "connection refused to host db-canary"},
+		{"connection refused to host db-primary after retry", "connection refused to host db-replica after retry", "connection refused to host db-canary after retry"},
+	}
+	for _, messages := range cases {
+		lines := make([]LogEntry, 0, len(messages))
+		for _, m := range messages {
+			lines = append(lines, LogEntry{Message: m})
+		}
+		patterns := mineLogPatterns(lines)
+		if len(patterns) != 1 || patterns[0].stats(0).Count != 3 {
+			t.Errorf("templates = %q, want one generalised host pattern holding all 3 lines", templates(patterns))
+		}
+	}
+}
+
+func sameEntries(message string, n int) []LogEntry {
+	out := make([]LogEntry, n)
+	for i := range out {
+		out[i] = LogEntry{Message: message}
+	}
+	return out
+}
+
 func TestLogPatternMiner_TruncatesLongSamples(t *testing.T) {
 	long := strings.Repeat("x", maxPatternSampleRunes+50)
-	p := minePatterns(1, []LogEntry{{Message: long}})[0]
+	p := mineLogPatterns([]LogEntry{{Message: long}})[0]
 	if got := len([]rune(p.sample)); got != maxPatternSampleRunes+1 {
 		t.Fatalf("sample length = %d runes, want %d plus an ellipsis", got, maxPatternSampleRunes)
 	}

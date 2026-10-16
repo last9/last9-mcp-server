@@ -46,9 +46,11 @@ type LogPatternStats struct {
 }
 
 type logPattern struct {
-	tokens  []string
-	sample  string
-	windows []patternWindow
+	tokens    []string
+	wildcards int
+	sample    string
+	sampled   bool
+	windows   []patternWindow
 }
 
 type patternWindow struct {
@@ -78,34 +80,88 @@ func (p *logPattern) stats(window int) LogPatternStats {
 	return stats
 }
 
-// logPatternMiner clusters lines from one or more windows into shared
-// templates, so the same template can be compared across windows.
+// mineLogPatterns clusters every window's lines into shared templates and
+// returns those holding a line. Counting waits for learning to end: templates
+// generalise as lines arrive, so earlier counts would split identical lines.
+func mineLogPatterns(windows ...[]LogEntry) []*logPattern {
+	miner := logPatternMiner{groups: map[string][]*logPattern{}}
+	tokens := make([][][]string, len(windows))
+	for w, entries := range windows {
+		tokens[w] = make([][]string, len(entries))
+		for i, entry := range entries {
+			tokens[w][i] = patternTokens(entry.Message)
+			miner.learn(tokens[w][i])
+		}
+	}
+	for _, p := range miner.patterns {
+		p.windows = make([]patternWindow, len(windows))
+	}
+	for w, entries := range windows {
+		for i, entry := range entries {
+			miner.assign(tokens[w][i]).record(w, entry)
+		}
+	}
+
+	counted := make([]*logPattern, 0, len(miner.patterns))
+	for _, p := range miner.patterns {
+		if p.sampled {
+			counted = append(counted, p)
+		}
+	}
+	return counted
+}
+
 type logPatternMiner struct {
-	windows  int
 	groups   map[string][]*logPattern
 	patterns []*logPattern
 }
 
-func newLogPatternMiner(windows int) *logPatternMiner {
-	return &logPatternMiner{windows: windows, groups: map[string][]*logPattern{}}
+func (m *logPatternMiner) learn(tokens []string) {
+	key := patternRouteKey(tokens)
+	if pattern := bestPatternMatch(m.groups[key], tokens); pattern != nil {
+		pattern.generalise(tokens)
+		return
+	}
+	pattern := &logPattern{tokens: append([]string(nil), tokens...)}
+	for _, token := range tokens {
+		if token == patternWildcard {
+			pattern.wildcards++
+		}
+	}
+	m.groups[key] = append(m.groups[key], pattern)
+	m.patterns = append(m.patterns, pattern)
 }
 
-func (m *logPatternMiner) add(window int, entry LogEntry) {
-	tokens := patternTokens(entry.Message)
-	key := patternRouteKey(tokens)
-	pattern := bestPatternMatch(m.groups[key], tokens)
-	if pattern == nil {
-		pattern = &logPattern{
-			tokens:  tokens,
-			sample:  truncatePatternSample(entry.Message),
-			windows: make([]patternWindow, m.windows),
+// assign returns the most specific final template the line fits, earliest
+// first on ties. One always fits: the template that learned the line only
+// ever turned tokens differing from it into wildcards.
+func (m *logPatternMiner) assign(tokens []string) *logPattern {
+	var best *logPattern
+	for _, candidate := range m.groups[patternRouteKey(tokens)] {
+		if candidate.fits(tokens) && (best == nil || candidate.wildcards < best.wildcards) {
+			best = candidate
 		}
-		m.groups[key] = append(m.groups[key], pattern)
-		m.patterns = append(m.patterns, pattern)
-	} else {
-		pattern.generalise(tokens)
 	}
-	pattern.windows[window].record(entry)
+	return best
+}
+
+func (p *logPattern) fits(tokens []string) bool {
+	if len(p.tokens) != len(tokens) {
+		return false
+	}
+	for i, token := range p.tokens {
+		if token != patternWildcard && token != tokens[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (p *logPattern) record(window int, entry LogEntry) {
+	if !p.sampled {
+		p.sample, p.sampled = truncatePatternSample(entry.Message), true
+	}
+	p.windows[window].record(entry)
 }
 
 func (w *patternWindow) record(entry LogEntry) {
@@ -131,8 +187,9 @@ func (w *patternWindow) record(entry LogEntry) {
 
 func (p *logPattern) generalise(tokens []string) {
 	for i, token := range tokens {
-		if p.tokens[i] != token {
+		if p.tokens[i] != token && p.tokens[i] != patternWildcard {
 			p.tokens[i] = patternWildcard
+			p.wildcards++
 		}
 	}
 }

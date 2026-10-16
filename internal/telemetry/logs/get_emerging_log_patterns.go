@@ -110,16 +110,10 @@ func NewGetEmergingLogPatternsHandler(client *http.Client, cfg models.Config) fu
 
 		// Current lines go first so a pattern's sample comes from the window
 		// being triaged whenever the pattern appears there.
-		miner := newLogPatternMiner(2)
-		for _, line := range currentLines {
-			miner.add(currentPatternWindow, line)
-		}
-		for _, line := range baselineLines {
-			miner.add(baselinePatternWindow, line)
-		}
+		patterns := mineLogPatterns(currentLines, baselineLines)
 
 		comparison := newWindowComparison(current, baseline, end.Sub(start), baselineEnd.Sub(baselineStart))
-		response := compareLogPatterns(miner.patterns, comparison, thresholds)
+		response := compareLogPatterns(patterns, comparison, thresholds)
 		response.Service = scope.service
 		response.Env = scope.env
 		response.Current = current

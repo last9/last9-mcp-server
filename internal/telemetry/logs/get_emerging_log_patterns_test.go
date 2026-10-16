@@ -106,6 +106,16 @@ func TestGetEmergingLogPatterns_NoNoveltyReturnsEmptyPatterns(t *testing.T) {
 	}
 }
 
+func TestGetEmergingLogPatterns_IdenticalWindowsWithGeneralisingTemplatesHaveNoNovelty(t *testing.T) {
+	lines := append(sameLines("request handled route=checkout status=ok region=west", 3), sameLines("request handled route=billing status=error region=west", 3)...)
+	lines = append(lines, sameLines("request handled route=checkout status=ok region=east", 3)...)
+	got, _ := callEmerging(t, &logSearchStub{}, map[int64][]string{patternWindowStart: lines, precedingWindowStart: lines}, emergingArgs(LogPatternScopeArgs{}))
+
+	if len(got.Patterns) != 0 || got.UnchangedPatterns == 0 {
+		t.Fatalf("identical windows must have no novelty; got patterns=%+v unchanged=%d", got.Patterns, got.UnchangedPatterns)
+	}
+}
+
 func TestGetEmergingLogPatterns_ThresholdsAtTheirBoundaries(t *testing.T) {
 	cases := []struct {
 		name              string
