@@ -33,6 +33,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_flamegraph.md":                    prompts.GetFlamegraphDescription,
 	"get_log_attributes.md":                prompts.GetLogAttributesDescription,
 	"get_log_attributes_for_pipeline.md":   prompts.GetLogAttributesForPipelineDescription,
+	"get_log_patterns.md":                  prompts.GetLogPatternsDescription,
 	"get_logs_base.md":                     prompts.GetLogsDescription,
 	"get_notification_channels.md":         prompts.GetNotificationChannelsDescription,
 	"get_profile_services.md":              prompts.GetProfileServicesDescription,
@@ -404,6 +405,28 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
 			t.Errorf("GetServiceLogsDescription missing %q: %s", c.phrase, c.reason)
+		}
+	}
+}
+
+func TestLogPatternDescriptionsCriticalRules(t *testing.T) {
+	descriptions := map[string]string{
+		"get_log_patterns": prompts.GetLogPatternsDescription,
+	}
+	checks := []struct {
+		phrase string
+		reason string
+	}{
+		{"empty", "must say an empty result is a valid answer"},
+		{"Do not invent", "must forbid manufacturing findings"},
+		{"instead of paging raw lines", "must be preferred over raw log paging during triage"},
+		{"sample_size", "must say counts are within a bounded sample"},
+	}
+	for name, desc := range descriptions {
+		for _, c := range checks {
+			if !strings.Contains(desc, c.phrase) {
+				t.Errorf("%s description missing %q: %s", name, c.phrase, c.reason)
+			}
 		}
 	}
 }

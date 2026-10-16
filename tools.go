@@ -182,6 +182,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		InputSchema: logs.GetServiceLogsInputSchema(),
 	}, logs.NewGetServiceLogsHandler(client, cfg)))
 
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_log_patterns",
+		Annotations: readOnlyTool("Get Log Patterns"),
+		Description: prompts.GetLogPatternsDescription,
+	}, logs.NewGetLogPatternsHandler(client, cfg)))
+
 	// Register drop rules tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_drop_rules",

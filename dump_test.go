@@ -469,6 +469,25 @@ func TestDumpToolsLogsIncludesServiceProfile(t *testing.T) {
 	}
 }
 
+func TestDumpToolsLogPatternToolsServedInLogsAndInvestigate(t *testing.T) {
+	patternTools := []string{"get_log_patterns"}
+	for spec, want := range map[string]bool{"logs": true, "investigate": true, "": true, "metrics": false, "alerts": false} {
+		allowed, err := toolsets.Parse(spec)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", spec, err)
+		}
+		var buf bytes.Buffer
+		if err := dumpTools(&buf, allowed); err != nil {
+			t.Fatalf("dumpTools(%q) failed: %v", spec, err)
+		}
+		for _, tool := range patternTools {
+			if got := strings.Contains(buf.String(), `"name": "`+tool+`"`); got != want {
+				t.Errorf("toolset %q serves %s = %v, want %v", spec, tool, got, want)
+			}
+		}
+	}
+}
+
 func TestDumpToolsDataToolsetsIncludeNameDiscovery(t *testing.T) {
 	for _, spec := range []string{"traces", "metrics"} {
 		allowed, err := toolsets.Parse(spec)

@@ -164,6 +164,9 @@ var GetLogsDescription string
 //go:embed descriptions/get_service_logs_base.md
 var GetServiceLogsDescription string
 
+//go:embed descriptions/get_log_patterns.md
+var GetLogPatternsDescription string
+
 //go:embed descriptions/get_traces_base.md
 var GetTracesDescription string
 

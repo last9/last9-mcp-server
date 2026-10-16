@@ -16,6 +16,7 @@ var named = map[string][]string{
 		"get_service_profile",
 		"get_logs",
 		"get_service_logs",
+		"get_log_patterns",
 		"get_log_attributes",
 		"get_log_attributes_for_pipeline",
 		"get_exceptions",
