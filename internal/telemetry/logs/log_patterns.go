@@ -1,11 +1,13 @@
 package logs
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -389,6 +391,18 @@ func boundedPatternLimit(name string, value, fallback, max int) (int, error) {
 	default:
 		return value, nil
 	}
+}
+
+// rankLogPatterns orders items by compare, breaking ties by template so every
+// pattern tool ranks the same way, and splits off the items past topN.
+func rankLogPatterns[T any](items []T, topN int, template func(T) string, compare func(a, b T) int) (top, rest []T) {
+	slices.SortStableFunc(items, func(a, b T) int {
+		return cmp.Or(compare(a, b), strings.Compare(template(a), template(b)))
+	})
+	if len(items) <= topN {
+		return items, nil
+	}
+	return items[:topN], items[topN:]
 }
 
 func truncatePatternSample(message string) string {

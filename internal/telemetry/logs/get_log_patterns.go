@@ -1,11 +1,11 @@
 package logs
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sort"
 
 	"last9-mcp/internal/models"
 
@@ -79,20 +79,16 @@ func summariseLogPatterns(patterns []*logPattern, topN int) GetLogPatternsRespon
 	for _, p := range patterns {
 		summaries = append(summaries, LogPatternSummary{Template: p.template(), LogPatternStats: p.stats(0), Sample: p.sample})
 	}
-	sort.SliceStable(summaries, func(i, j int) bool {
-		if summaries[i].Count != summaries[j].Count {
-			return summaries[i].Count > summaries[j].Count
-		}
-		return summaries[i].Template < summaries[j].Template
-	})
+	top, rest := rankLogPatterns(summaries, topN,
+		func(s LogPatternSummary) string { return s.Template },
+		func(a, b LogPatternSummary) int { return cmp.Compare(b.Count, a.Count) })
 
-	response := GetLogPatternsResponse{TotalPatterns: len(summaries), Patterns: summaries}
-	if len(summaries) > topN {
-		other := &LogPatternOther{Patterns: len(summaries) - topN}
-		for _, s := range summaries[topN:] {
-			other.Count += s.Count
+	response := GetLogPatternsResponse{TotalPatterns: len(summaries), Patterns: top}
+	if len(rest) > 0 {
+		response.Other = &LogPatternOther{Patterns: len(rest)}
+		for _, s := range rest {
+			response.Other.Count += s.Count
 		}
-		response.Patterns, response.Other = summaries[:topN], other
 	}
 	return response
 }

@@ -1,12 +1,12 @@
 package logs
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -231,23 +231,21 @@ func compareLogPatterns(patterns []*logPattern, comparison windowComparison, thr
 		})
 	}
 
-	sort.SliceStable(response.Patterns, func(i, j int) bool {
-		a, b := response.Patterns[i], response.Patterns[j]
-		if changeRank[a.Change] != changeRank[b.Change] {
-			return changeRank[a.Change] < changeRank[b.Change]
+	top, rest := rankLogPatterns(response.Patterns, thresholds.topN,
+		func(p EmergingLogPattern) string { return p.Template },
+		func(a, b EmergingLogPattern) int {
+			return cmp.Or(
+				cmp.Compare(changeRank[a.Change], changeRank[b.Change]),
+				cmp.Compare(max(b.Current.Count, b.Baseline.Count), max(a.Current.Count, a.Baseline.Count)),
+			)
+		})
+	response.Patterns = top
+	if len(rest) > 0 {
+		response.Other = &EmergingLogPatternOther{Patterns: len(rest)}
+		for _, p := range rest {
+			response.Other.CurrentCount += p.Current.Count
+			response.Other.BaselineCount += p.Baseline.Count
 		}
-		if sizeA, sizeB := max(a.Current.Count, a.Baseline.Count), max(b.Current.Count, b.Baseline.Count); sizeA != sizeB {
-			return sizeA > sizeB
-		}
-		return a.Template < b.Template
-	})
-	if len(response.Patterns) > thresholds.topN {
-		other := &EmergingLogPatternOther{Patterns: len(response.Patterns) - thresholds.topN}
-		for _, p := range response.Patterns[thresholds.topN:] {
-			other.CurrentCount += p.Current.Count
-			other.BaselineCount += p.Baseline.Count
-		}
-		response.Patterns, response.Other = response.Patterns[:thresholds.topN], other
 	}
 	return response
 }
