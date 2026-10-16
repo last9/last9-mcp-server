@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"last9-mcp/internal/models"
@@ -101,18 +102,17 @@ func NewGetEmergingLogPatternsHandler(client *http.Client, cfg models.Config) fu
 			return nil, nil, err
 		}
 
-		currentLines, current, err := scope.sample(ctx, client, cfg, start, end)
-		if err != nil {
-			return nil, nil, err
+		samples := scope.sampleWindows(ctx, client, cfg, [][2]time.Time{{start, end}, {baselineStart, baselineEnd}})
+		for _, s := range samples {
+			if s.err != nil {
+				return nil, nil, s.err
+			}
 		}
-		baselineLines, baseline, err := scope.sample(ctx, client, cfg, baselineStart, baselineEnd)
-		if err != nil {
-			return nil, nil, err
-		}
+		current, baseline := samples[currentPatternWindow].window, samples[baselinePatternWindow].window
 
 		// Current lines go first so a pattern's sample comes from the window
 		// being triaged whenever the pattern appears there.
-		patterns := mineLogPatterns(currentLines, baselineLines)
+		patterns := mineLogPatterns(samples[currentPatternWindow].lines, samples[baselinePatternWindow].lines)
 
 		comparison := newWindowComparison(current, baseline, end.Sub(start), baselineEnd.Sub(baselineStart))
 		response := compareLogPatterns(patterns, comparison, thresholds)
@@ -130,6 +130,26 @@ func NewGetEmergingLogPatternsHandler(client *http.Client, cfg models.Config) fu
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(text)}}}, nil, nil
 	}
+}
+
+type windowSample struct {
+	lines  []LogEntry
+	window LogPatternWindow
+	err    error
+}
+
+// sampleWindows fetches the windows concurrently: triage prompts call this
+// tool before anything else, so it should cost one round trip, not one per window.
+func (s logPatternScope) sampleWindows(ctx context.Context, client *http.Client, cfg models.Config, ranges [][2]time.Time) []windowSample {
+	samples := make([]windowSample, len(ranges))
+	var wg sync.WaitGroup
+	for i, r := range ranges {
+		wg.Go(func() {
+			samples[i].lines, samples[i].window, samples[i].err = s.sample(ctx, client, cfg, r[0], r[1])
+		})
+	}
+	wg.Wait()
+	return samples
 }
 
 func (args GetEmergingLogPatternsArgs) thresholds() (emergingThresholds, error) {

@@ -2,8 +2,12 @@ package logs
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -260,6 +264,29 @@ func TestGetEmergingLogPatterns_BaselineMayEndExactlyWhereCurrentStarts(t *testi
 	callEmerging(t, stub, nil, args)
 	if n := len(stub.requests()); n != 2 {
 		t.Errorf("requests = %d, want both windows queried", n)
+	}
+}
+
+func TestGetEmergingLogPatterns_FetchesBothWindowsConcurrently(t *testing.T) {
+	var arrived sync.WaitGroup
+	arrived.Add(2)
+	bothInFlight := make(chan struct{})
+	go func() { arrived.Wait(); close(bothInFlight) }()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		arrived.Done()
+		select {
+		case <-bothInFlight:
+		case <-time.After(5 * time.Second):
+			http.Error(w, "windows were fetched one after the other", http.StatusGatewayTimeout)
+			return
+		}
+		_, _ = w.Write([]byte(`{"query_result":{"status":"success","data":{"resultType":"streams","result":[]}}}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	_, _, err := NewGetEmergingLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, emergingArgs(LogPatternScopeArgs{}))
+	if err != nil {
+		t.Fatalf("handler: %v", err)
 	}
 }
 
