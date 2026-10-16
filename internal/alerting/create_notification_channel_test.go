@@ -119,3 +119,43 @@ func TestCreateNotificationChannelErrorsNeverLeakSecrets(t *testing.T) {
 		}
 	}
 }
+
+func TestCreateNotificationChannelRelaysAPIRejectionReason(t *testing.T) {
+	long := strings.Repeat("x", 400)
+	email := CreateNotificationChannelArgs{Name: "n", Type: "email", Destination: "someone@gmail.com"}
+	const rejected = "the API rejected the channel: "
+	for name, tt := range map[string]struct {
+		status int
+		body   string
+		args   CreateNotificationChannelArgs
+		want   string
+	}{
+		"current personal-email text": {400, `{"error":"cannot use personal email for channel destination"}`, email,
+			rejected + "cannot use personal email for channel destination"},
+		"new backend text with status": {400, `{"status":400,"error":" personal email providers such as gmail.com are not allowed; use a work address "}`, email,
+			rejected + "personal email providers such as gmail.com are not allowed; use a work address"},
+		"422":                   {422, `{"error":"destination is invalid"}`, email, rejected + "destination is invalid"},
+		"long reason is capped": {400, `{"error":"` + long + `"}`, email, rejected + long[:300] + "…"},
+		"echoed routing key is redacted": {400, `{"error":"invalid routing key ` + channelSecret + `"}`,
+			CreateNotificationChannelArgs{Name: "n", Type: "pagerduty", Destination: channelSecret},
+			rejected + "invalid routing key [redacted]"},
+		"echoed header value is redacted": {400, `{"error":"header rejected: ` + channelSecret + `"}`,
+			CreateNotificationChannelArgs{Name: "n", Type: "generic_webhook", Destination: "https://h.example", WebhookHeaders: map[string]string{"X-Key": channelSecret}},
+			rejected + "header rejected: [redacted]"},
+		"malformed body falls back": {400, `cannot use personal email`, email, "the API rejected the channel (HTTP 400); re-check"},
+		"empty error falls back":    {400, `{"error":"  "}`, email, "the API rejected the channel (HTTP 400); re-check"},
+		"no error field falls back": {422, `{"message":"nope"}`, email, "the API rejected the channel (HTTP 422); re-check"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newChannelServer(t, func(*http.Request) (int, string) { return tt.status, tt.body })
+			text, isErr, err := runCreateChannel(s, tt.args)
+			assertNoSecret(t, text, err)
+			if err != nil || !isErr || !strings.HasPrefix(text, tt.want) {
+				t.Fatalf("text=%q isErr=%v err=%v, want prefix %q", text, isErr, err, tt.want)
+			}
+			if strings.HasPrefix(tt.want, rejected) && text != tt.want {
+				t.Fatalf("text=%q want exactly %q", text, tt.want)
+			}
+		})
+	}
+}

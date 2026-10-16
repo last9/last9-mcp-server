@@ -832,11 +832,11 @@ Hands an alert that already has an owner to another user; acknowledge it first i
 
 ### create_notification_channel
 
-Creates a channel; it routes nothing until attached with `attach_notification_channel`. Create once and keep the id; there is no update tool. Returns only `id`, `name`, `type`, and `send_resolved`.
+Creates a channel; it routes nothing until attached with `attach_notification_channel`. Create once and keep the id; there is no update tool. Returns only `id`, `name`, `type`, and `send_resolved`. A 400/422 rejection returns the API's own reason, with request secrets redacted.
 
 - `name` (string, required): Unique per type; no colon.
 - `type` (string, required): `slack`, `pagerduty`, `opsgenie`, `email`, or `generic_webhook`.
-- `destination` (string, required): Slack Incoming Webhook URL (or channel ID with `slack_app_mode`), PagerDuty routing key, Opsgenie API key, comma-separated org-domain email addresses, or an HTTPS webhook URL.
+- `destination` (string, required): Slack Incoming Webhook URL (or channel ID with `slack_app_mode`), PagerDuty routing key, Opsgenie API key, comma-separated work email addresses (personal providers such as gmail.com or outlook.com are rejected; an org signed up with a personal email can only send to its admin's address), or an HTTPS webhook URL.
 - `slack_app_mode` (boolean, optional): Slack only. Default: false.
 - `mention_handles` (string, optional): Comma-separated, e.g. `user|U123ABC|name`, `special|here`, `special|channel`.
 - `webhook_headers` (object, optional): `generic_webhook` only.
