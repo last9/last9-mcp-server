@@ -338,6 +338,10 @@ func (args LogPatternScopeArgs) timeRange() (time.Time, time.Time, error) {
 	if err != nil {
 		return time.Time{}, time.Time{}, fmt.Errorf("invalid time range: %w", err)
 	}
+	// An empty window has nothing to cluster and would scale rates by zero.
+	if !start.Before(end) {
+		return time.Time{}, time.Time{}, fmt.Errorf("invalid time range: start_time_iso must be before end_time_iso")
+	}
 	return start, end, nil
 }
 
