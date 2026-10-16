@@ -27,7 +27,13 @@ type logSearchStub struct {
 // content.
 func (s *logSearchStub) serve(t *testing.T, linesByStart map[int64][]string, totals map[int64]int) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(s.handler(linesByStart, totals))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func (s *logSearchStub) handler(linesByStart map[int64][]string, totals map[int64]int) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		var body map[string]any
 		_ = json.Unmarshal(raw, &body)
@@ -53,9 +59,7 @@ func (s *logSearchStub) serve(t *testing.T, linesByStart map[int64][]string, tot
 			resp[key] = value
 		}
 		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	t.Cleanup(srv.Close)
-	return srv
+	}
 }
 
 func (s *logSearchStub) requests() []map[string]any {

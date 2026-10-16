@@ -3,6 +3,8 @@ package logs
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -10,11 +12,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Both pattern tools link to the logs search they sampled; the emerging tool
-// links its current window, the one being triaged.
-func TestLogPatternTools_LinkTheSampledLogsSearch(t *testing.T) {
-	scope := LogPatternScopeArgs{ServiceName: "checkout", Env: "prod", StartTimeISO: patternWindowStartISO, EndTimeISO: patternWindowEndISO}
-	tools := map[string]func(srv *httptest.Server) (*mcp.CallToolResult, error){
+func logPatternToolCalls(scope LogPatternScopeArgs) map[string]func(srv *httptest.Server) (*mcp.CallToolResult, error) {
+	return map[string]func(srv *httptest.Server) (*mcp.CallToolResult, error){
 		"get_log_patterns": func(srv *httptest.Server) (*mcp.CallToolResult, error) {
 			result, _, err := NewGetLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, GetLogPatternsArgs{LogPatternScopeArgs: scope})
 			return result, err
@@ -24,7 +23,13 @@ func TestLogPatternTools_LinkTheSampledLogsSearch(t *testing.T) {
 			return result, err
 		},
 	}
-	for name, call := range tools {
+}
+
+// Both pattern tools link to the logs search they sampled; the emerging tool
+// links its current window, the one being triaged.
+func TestLogPatternTools_LinkTheSampledLogsSearch(t *testing.T) {
+	scope := LogPatternScopeArgs{ServiceName: "checkout", Env: "prod", StartTimeISO: patternWindowStartISO, EndTimeISO: patternWindowEndISO}
+	for name, call := range logPatternToolCalls(scope) {
 		t.Run(name, func(t *testing.T) {
 			srv := (&logSearchStub{}).serve(t, nil, nil)
 			result, err := call(srv)
@@ -44,6 +49,34 @@ func TestLogPatternTools_LinkTheSampledLogsSearch(t *testing.T) {
 				if !strings.Contains(query.Get("pipeline"), want) {
 					t.Errorf("pipeline %s missing %s", query.Get("pipeline"), want)
 				}
+			}
+		})
+	}
+}
+
+func TestLogPatternTools_OmitSourceLinkWhenIndexCannotBeResolved(t *testing.T) {
+	scope := LogPatternScopeArgs{ServiceName: "checkout", StartTimeISO: patternWindowStartISO, EndTimeISO: patternWindowEndISO, Index: "physical_index:missing"}
+	for name, call := range logPatternToolCalls(scope) {
+		t.Run(name, func(t *testing.T) {
+			search := (&logSearchStub{}).handler(map[int64][]string{patternWindowStart: {"timeout while calling db"}}, nil)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/logs_settings/physical_indexes" {
+					_, _ = io.Copy(io.Discard, r.Body)
+					_, _ = w.Write([]byte(`{"properties":[]}`))
+					return
+				}
+				search(w, r)
+			}))
+			t.Cleanup(srv.Close)
+			result, err := call(srv)
+			if err != nil {
+				t.Fatalf("handler: %v", err)
+			}
+			if result.IsError {
+				t.Fatalf("handler returned a tool error: %s", result.Content[0].(*mcp.TextContent).Text)
+			}
+			if got := referenceURL(t, result); got != "" {
+				t.Fatalf("expected no reference_url for an unresolvable index, got %q", got)
 			}
 		})
 	}
