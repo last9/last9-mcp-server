@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 	"testing"
@@ -92,6 +93,42 @@ func TestServerInstructionsNameOnlyServedTools(t *testing.T) {
 				if next == "" || strings.HasPrefix(next, "## ") {
 					t.Errorf("heading %q has no content under toolsets=%q", line, spec)
 				}
+			}
+		})
+	}
+}
+
+func TestInstructionsMiddleware(t *testing.T) {
+	failure := errors.New("handshake failed")
+	tests := []struct {
+		name   string
+		result mcp.Result
+		err    error
+		want   string
+	}{
+		{name: "initialize", result: &mcp.InitializeResult{}, want: "policy"},
+		{name: "discover", result: &mcp.DiscoverResult{}, want: "policy"},
+		{name: "initialize error", result: &mcp.InitializeResult{}, err: failure},
+		{name: "discover error", result: &mcp.DiscoverResult{}, err: failure},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			next := func(context.Context, string, mcp.Request) (mcp.Result, error) {
+				return tt.result, tt.err
+			}
+			res, err := instructionsMiddleware("policy")(next)(context.Background(), "", nil)
+			if err != tt.err {
+				t.Fatalf("err = %v, want %v", err, tt.err)
+			}
+			var got string
+			switch r := res.(type) {
+			case *mcp.InitializeResult:
+				got = r.Instructions
+			case *mcp.DiscoverResult:
+				got = r.Instructions
+			}
+			if got != tt.want {
+				t.Errorf("instructions = %q, want %q", got, tt.want)
 			}
 		})
 	}

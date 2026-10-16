@@ -47,9 +47,17 @@ func registerServerInstructions(server *last9mcp.Last9MCPServer, allowed toolset
 	if err != nil {
 		return err
 	}
-	server.Server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+	server.Server.AddReceivingMiddleware(instructionsMiddleware(instructions))
+	return nil
+}
+
+func instructionsMiddleware(instructions string) mcp.Middleware {
+	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 			res, err := next(ctx, method, req)
+			if err != nil {
+				return res, err
+			}
 			switch r := res.(type) {
 			case *mcp.InitializeResult:
 				r.Instructions = instructions
@@ -58,6 +66,5 @@ func registerServerInstructions(server *last9mcp.Last9MCPServer, allowed toolset
 			}
 			return res, err
 		}
-	})
-	return nil
+	}
 }
