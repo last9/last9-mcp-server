@@ -107,3 +107,20 @@ func TestOnCallRunbookFleetTriageWhenNoService(t *testing.T) {
 		t.Errorf("no-service render should call profile after fleet triage:\n%s", got)
 	}
 }
+
+func TestOnCallRunbookChecksLogNoveltyBeforeRawLines(t *testing.T) {
+	for _, symptom := range []string{"latency", "errors", "database", "weird"} {
+		res, err := OnCallRunbook.Handler(context.Background(), &mcp.GetPromptRequest{
+			Params: &mcp.GetPromptParams{Arguments: map[string]string{"symptom": symptom, "time": "1h", "service": "checkout"}},
+		})
+		if err != nil {
+			t.Fatalf("symptom %q: unexpected error: %v", symptom, err)
+		}
+		got := res.Messages[0].Content.(*mcp.TextContent).Text
+		for _, want := range []string{"get_emerging_log_patterns", "get_log_patterns", "no log novelty"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("symptom %q render should contain %q:\n%s", symptom, want, got)
+			}
+		}
+	}
+}

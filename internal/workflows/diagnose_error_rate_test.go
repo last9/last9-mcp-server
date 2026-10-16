@@ -92,3 +92,18 @@ func TestDiagnoseErrorRateRendersEnvBranches(t *testing.T) {
 		t.Errorf("env-absent step 1 must sequence env resolution and perf-details in one list item:\n%s", got2)
 	}
 }
+
+func TestDiagnoseErrorRateChecksLogNoveltyBeforeRawLines(t *testing.T) {
+	res, err := DiagnoseErrorRate.Handler(context.Background(), &mcp.GetPromptRequest{
+		Params: &mcp.GetPromptParams{Arguments: map[string]string{"service": "checkout", "time": "1h", "env": "prod"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := res.Messages[0].Content.(*mcp.TextContent).Text
+	for _, want := range []string{"get_emerging_log_patterns(service_name=checkout, env=prod", "no log novelty"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("template should contain %q:\n%s", want, got)
+		}
+	}
+}

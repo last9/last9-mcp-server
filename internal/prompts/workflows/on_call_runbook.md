@@ -8,4 +8,5 @@ Workflow: on-call triage for symptom "{{.symptom}}"{{if .service}} on {{.service
 {{else if eq .symptom "database"}}Database: get_database_slow_queries, then get_database_server_metrics. Separate query-shape problems from server-resource pressure.
 {{else}}Unknown symptom: call get_alerts first to see what is actually firing, then follow the matching branch above (latency, errors, or database).
 {{end}}
+Log novelty (when telemetry.logs != "absent"): before paging raw lines, call get_emerging_log_patterns(service_name={{if .service}}{{.service}}{{else}}<service>{{end}}{{if .env}}, env={{.env}}{{end}}) over {{.time}} to see which log templates are new or changed against the preceding window; call get_log_patterns for the window's dominant templates. An empty patterns list means no log novelty: say so and do not manufacture a log finding.
 Report the single most likely root cause and the one signal that supports it. Map {{.time}} to each tool's own time window.
