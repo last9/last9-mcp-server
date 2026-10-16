@@ -25,7 +25,8 @@ func streamsServer(t *testing.T, values []logValue, limits *[]string) *httptest.
 		if limits != nil {
 			*limits = append(*limits, r.URL.Query().Get("limit"))
 		}
-		_, _ = w.Write([]byte(streamsAPIResponse(values)))
+		// A success status lets get_service_logs verify coverage; get_logs ignores it.
+		_, _ = w.Write([]byte(strings.Replace(streamsAPIResponse(values), "{", `{"status":"success",`, 1)))
 	}))
 	t.Cleanup(server.Close)
 	return server

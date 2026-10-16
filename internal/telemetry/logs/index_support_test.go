@@ -281,8 +281,8 @@ func TestGetServiceLogsHandler_ForwardsLargeLimitWhenProvided(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case constants.EndpointLogsQueryRange:
-			if got := r.URL.Query().Get("limit"); got != "2500" {
-				t.Fatalf("expected limit %q, got %q", "2500", got)
+			if got := r.URL.Query().Get("limit"); got != "2501" {
+				t.Fatalf("expected limit %q (2500 plus one probe row), got %q", "2501", got)
 			}
 			if got := r.URL.Query().Get("index"); got != "physical_index:payments" {
 				t.Fatalf("unexpected logs query index %q", got)

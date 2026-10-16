@@ -57,8 +57,8 @@ func TestFetchServiceLogs_APIMode_SingleCallWithCoverage(t *testing.T) {
 	if len(paths) != 1 || paths[0] != "/logs/query" {
 		t.Errorf("requests = %v, want a single /logs/query", paths)
 	}
-	if got := body["limit"]; got != float64(20) {
-		t.Errorf("limit = %v, want 20", got)
+	if got := body["limit"]; got != float64(21) {
+		t.Errorf("limit = %v, want 21 (20 plus one probe row)", got)
 	}
 	// Seconds on the wire, milliseconds in the caller.
 	if got := body["start"]; got != float64(start.Unix()) {

@@ -233,7 +233,7 @@ func TestDumpTools(t *testing.T) {
 	// Description-only budgets for other whales (main tripwire values restored to 2000).
 	whaleBudgets := map[string]int{
 		"get_traces":       2100,
-		"get_service_logs": 2000,
+		"get_service_logs": 2100,
 	}
 	for _, whale := range []string{"get_traces", "get_service_logs"} {
 		budget := whaleBudgets[whale]

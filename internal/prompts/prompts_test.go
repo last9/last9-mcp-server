@@ -296,8 +296,9 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 func TestQueryToolDescriptionsNameEnvelopeFields(t *testing.T) {
 	const envelope = "`truncated`/`limit`, `trimmed_items`, `partial`/`skipped` mean incomplete: disclose; follow `hints`"
 	for name, desc := range map[string]string{
-		"get_logs":   prompts.GetLogsDescription,
-		"get_traces": prompts.GetTracesDescription,
+		"get_logs":         prompts.GetLogsDescription,
+		"get_traces":       prompts.GetTracesDescription,
+		"get_service_logs": prompts.GetServiceLogsDescription,
 	} {
 		if !strings.Contains(desc, envelope) {
 			t.Errorf("%s description must name the result envelope fields", name)
@@ -424,7 +425,7 @@ func TestWhaleDescriptionsBounded(t *testing.T) {
 	budgets := map[string]int{
 		"get_logs_base":         3010,
 		"get_traces_base":       2200,
-		"get_service_logs_base": 2000,
+		"get_service_logs_base": 2100,
 	}
 	bodies := map[string]string{
 		"get_logs_base":         prompts.GetLogsDescription,
