@@ -64,10 +64,12 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		return nil, fmt.Errorf("failed to parse time range: %v", err)
 	}
 
-	result, err := fetchLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
+	result, env, err := fetchLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
 	if err != nil {
 		return nil, err
 	}
+	addGetLogsHints(cfg, args, result, &env)
+	text := utils.FormatQueryResponse(result, &env)
 
 	// Build deep link URL
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
@@ -85,22 +87,30 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		meta = deeplink.ToMeta(dashboardURL)
 	}
 
-	// Return the result in MCP format with deep link
-	return &mcp.CallToolResult{
-		Meta: meta,
-		Content: []mcp.Content{
-			&mcp.TextContent{
-				Text: formatJSON(result),
-			},
-		},
-	}, nil
+	toolResult := utils.EnvelopeToolResult(result, text, env)
+	toolResult.Meta = meta
+	return toolResult, nil
 }
 
-func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, startTime, endTime int64, args GetLogsArgs) (map[string]interface{}, error) {
+func addGetLogsHints(cfg models.Config, args GetLogsArgs, result map[string]interface{}, env *utils.ResultEnvelope) {
+	if maxEntries := getLogsMaxEntries(cfg); args.Limit > maxEntries {
+		env.Hint(fmt.Sprintf("limit %d exceeds the configured maximum of %d rows; at most %d were requested.", args.Limit, maxEntries, maxEntries))
+	}
+	// Aggregates answer emptiness themselves: percentiles report unavailable, zero counts get l9_sanity.
+	if utils.PipelineHasAggregateStage(args.LogjsonQuery) {
+		return
+	}
+	if _, items, err := extractResultItems(result); err == nil && countLogEntriesInResultItems(items) == 0 {
+		env.Hint("No log lines matched. Before concluding there are none, confirm field names and parse stages with get_log_attributes_for_pipeline, widen the time range, or pass the index get_service_profile reports for the service.")
+	}
+}
+
+func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, startTime, endTime int64, args GetLogsArgs) (map[string]interface{}, utils.ResultEnvelope, error) {
 	if cfg.UseLogSearchAPI {
 		return fetchViaLogSearchAPI(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
 	}
 
+	var env utils.ResultEnvelope
 	chunkingDebug := chunkingDebugEnabled()
 
 	if !shouldChunkGetLogsQuery(logjsonQuery) {
@@ -121,16 +131,16 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		}
 		result, err := executeLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, queryLimit, args.Index)
 		if err != nil {
-			return nil, err
+			return nil, env, err
 		}
-		partial := false
-		if aggregateLimit > 0 {
-			partial = applyGetLogsAggregateRowLimit(result, aggregateLimit)
+		truncated := applyGetLogsAggregateRowLimit(result, aggregateLimit)
+		if truncated {
+			env.Truncate(aggregateLimit)
 		}
-		if stages, ok := logjsonQuery.([]map[string]interface{}); ok && !partial {
+		if stages, ok := logjsonQuery.([]map[string]interface{}); ok && !truncated {
 			result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
 		}
-		return result, nil
+		return result, env, nil
 	}
 
 	// ShouldOptimizeLineFilterQuery is intentionally left at the zero value
@@ -157,7 +167,7 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 				args.Index,
 			)
 		}
-		return emptyStreamsResponse(), nil
+		return emptyStreamsResponse(), env, nil
 	}
 
 	effectiveLimit := effectiveGetLogsChunkLimit(cfg, args.Limit)
@@ -199,12 +209,13 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		func(ctx context.Context, _ int, chunk utils.TimeChunk) (map[string]interface{}, error) {
 			chunkCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
 			defer cancel()
-			return executeLogJSONQuery(chunkCtx, client, cfg, logjsonQuery, chunk.StartMs, chunk.EndMs, effectiveLimit, args.Index)
+			return executeLogJSONQuery(chunkCtx, client, cfg, logjsonQuery, chunk.StartMs, chunk.EndMs, effectiveLimit+1, args.Index)
 		})
 
 	var (
 		baseResponse map[string]interface{}
 		mergedItems  []interface{}
+		matched      int
 		remaining    = effectiveLimit
 		// partialErr carries chunk context (e.g. "chunk 3/6 failed: ...") and
 		// is used both for the all-chunks-failed hard error and for the
@@ -261,6 +272,7 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		if baseResponse == nil {
 			baseResponse = r.Value
 		}
+		matched += countLogEntriesInResultItems(items)
 
 		// Track whether this chunk's results were fully truncated away so the
 		// debug log records every successful chunk, not just the ones that
@@ -288,20 +300,23 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 
 	if baseResponse == nil {
 		if partialErr != nil {
-			return nil, partialErr
+			return nil, env, partialErr
 		}
-		return emptyStreamsResponse(), nil
+		return emptyStreamsResponse(), env, nil
 	}
 
 	data, ok := baseResponse["data"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("logs API response missing data object")
+		return nil, env, fmt.Errorf("logs API response missing data object")
 	}
 
 	data["result"] = mergedItems
 	data["resultType"] = "streams"
 	if partialErr != nil {
-		return nil, fmt.Errorf("%w (window start_ms=%d end_ms=%d)", partialErr, startTime, endTime)
+		return nil, env, fmt.Errorf("%w (window start_ms=%d end_ms=%d)", partialErr, startTime, endTime)
+	}
+	if matched > effectiveLimit {
+		env.Truncate(effectiveLimit)
 	}
 	if chunkingDebug {
 		log.Printf(
@@ -313,7 +328,7 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		)
 	}
 
-	return baseResponse, nil
+	return baseResponse, env, nil
 }
 
 // fetchViaLogSearchAPI answers the whole search in one call, letting the API
@@ -323,7 +338,8 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 func fetchViaLogSearchAPI(
 	ctx context.Context, client *http.Client, cfg models.Config,
 	logjsonQuery interface{}, startTime, endTime int64, args GetLogsArgs,
-) (map[string]interface{}, error) {
+) (map[string]interface{}, utils.ResultEnvelope, error) {
+	var env utils.ResultEnvelope
 	req := utils.LogSearchRequest{
 		Pipeline: logjsonQuery,
 		StartMs:  startTime,
@@ -335,11 +351,12 @@ func fetchViaLogSearchAPI(
 	// (no LIMIT for a timesliced aggregate, 10000 for a dataframe), so the row
 	// cap is applied to the decoded result rather than requested upfront.
 	stages, hasStages := logjsonQuery.([]map[string]interface{})
-	aggregateLimit := 0
+	aggregateLimit, rawLimit := 0, 0
 	if hasStages && utils.PipelineHasAggregateStage(stages) {
 		aggregateLimit = effectiveGetLogsAggregateLimit(cfg, args.Limit)
 	} else {
-		req.Limit = effectiveGetLogsChunkLimit(cfg, args.Limit)
+		rawLimit = effectiveGetLogsChunkLimit(cfg, args.Limit)
+		req.Limit = rawLimit + 1
 	}
 
 	// The shared client's 3-minute timeout applies. Deliberately NOT wrapped in
@@ -347,33 +364,40 @@ func fetchViaLogSearchAPI(
 	// sweep inside this single call.
 	resp, err := utils.MakeLogSearchAPI(ctx, client, cfg, req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call log search API: %v", err)
+		return nil, env, fmt.Errorf("failed to call log search API: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, utils.NewUpstreamHTTPError(resp, "logs query", utils.LogsPipelineSchemaHint)
+		return nil, env, utils.NewUpstreamHTTPErrorWithAdvice(resp, "logs query", utils.LogsQueryAdvice)
 	}
 
 	result, err := utils.DecodeLogSearchResponse(resp)
 	if err != nil {
-		return nil, err
+		return nil, env, err
 	}
-	partial := false
-	if aggregateLimit > 0 {
-		partial = applyGetLogsAggregateRowLimit(result, aggregateLimit)
-	}
-	if hasStages && !partial {
+	if applyGetLogsAggregateRowLimit(result, aggregateLimit) {
+		env.Truncate(aggregateLimit)
+	} else if hasStages {
 		result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
 	}
-	return result, nil
+	if rawLimit > 0 && applyGetLogsEntryLimit(result, rawLimit) {
+		env.Truncate(rawLimit)
+	}
+	stats, _ := result["search_stats"].(map[string]any)
+	utils.SkipFailedSearchChunks(stats, &env)
+	return result, env, nil
+}
+
+func getLogsMaxEntries(cfg models.Config) int {
+	if cfg.MaxGetLogsEntries <= 0 {
+		return models.DefaultMaxGetLogsEntries
+	}
+	return cfg.MaxGetLogsEntries
 }
 
 func effectiveGetLogsAggregateLimit(cfg models.Config, requestedLimit int) int {
-	maxEntries := cfg.MaxGetLogsEntries
-	if maxEntries <= 0 {
-		maxEntries = models.DefaultMaxGetLogsEntries
-	}
+	maxEntries := getLogsMaxEntries(cfg)
 	if requestedLimit <= 0 {
 		requestedLimit = defaultGetLogsAggregateLimit
 	}
@@ -397,20 +421,23 @@ func applyGetLogsAggregateRowLimit(result map[string]interface{}, rowLimit int) 
 	}
 
 	data["result"] = slices.Clone(rows[:rowLimit])
-	result["l9_result"] = map[string]interface{}{
-		"partial":       true,
-		"reason":        "row_limit_reached",
-		"returned_rows": rowLimit,
-		"row_limit":     rowLimit,
+	return true
+}
+
+// applyGetLogsEntryLimit trims a raw result to limit log lines and reports
+// whether more matched: more lines than limit came back, or the server said it cut them.
+func applyGetLogsEntryLimit(result map[string]interface{}, limit int) bool {
+	truncated, _ := result["logs_truncated"].(bool)
+	_, items, err := extractResultItems(result)
+	if err != nil || countLogEntriesInResultItems(items) <= limit {
+		return truncated
 	}
+	result["data"].(map[string]interface{})["result"] = truncateResultItemsByEntryLimit(items, limit)
 	return true
 }
 
 func effectiveGetLogsChunkLimit(cfg models.Config, requestedLimit int) int {
-	maxEntries := cfg.MaxGetLogsEntries
-	if maxEntries <= 0 {
-		maxEntries = models.DefaultMaxGetLogsEntries
-	}
+	maxEntries := getLogsMaxEntries(cfg)
 	if requestedLimit <= 0 {
 		return maxEntries
 	}
@@ -441,7 +468,7 @@ func executeLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, utils.NewUpstreamHTTPError(resp, "logs query", utils.LogsPipelineSchemaHint)
+		return nil, utils.NewUpstreamHTTPErrorWithAdvice(resp, "logs query", utils.LogsQueryAdvice)
 	}
 
 	var result map[string]interface{}
@@ -580,13 +607,4 @@ func parseTimeRangeFromArgsAt(args GetLogsArgs, now time.Time) (int64, int64, er
 		return 0, 0, err
 	}
 	return startTime.UnixMilli(), endTime.UnixMilli(), nil
-}
-
-// formatJSON formats JSON for display
-func formatJSON(data interface{}) string {
-	bytes, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		return fmt.Sprintf("%v", data)
-	}
-	return string(bytes)
 }

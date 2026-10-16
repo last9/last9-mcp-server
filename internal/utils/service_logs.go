@@ -18,6 +18,12 @@ import (
 // of leaving it to guess from a bare status code.
 const LogsPipelineSchemaHint = `Pipeline stage schema: every stage needs "type" (filter | parse | aggregate | window_aggregate). filter: {"type":"filter","query":{"$and":[{"$eq":["ServiceName","svc"]},{"$containsWords":["Body","text"]}]}}. Field names are exact: ServiceName (not service_name), Body, SeverityText; attributes['name'] / resources['name'] for others. Body-derived JSON fields need a parse stage first. To get exact field names + required parse stages for your scope, call get_log_attributes_for_pipeline with your filter stages.`
 
+// LogsQueryAdvice is the upstream error advice every logjson query tool shares.
+var LogsQueryAdvice = UpstreamAdvice{
+	SchemaHint:    LogsPipelineSchemaHint,
+	DiscoveryTool: "get_log_attributes_for_pipeline",
+}
+
 // MakeLogsJSONQueryAPI posts a raw log JSON pipeline to the query_range API with the given time range.
 func MakeLogsJSONQueryAPI(ctx context.Context, client *http.Client, cfg models.Config, pipeline any, startMs, endMs int64, limit int, index string) (*http.Response, error) {
 	// Basic validation

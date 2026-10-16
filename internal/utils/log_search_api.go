@@ -278,6 +278,20 @@ func DecodeLogSearchResponse(resp *http.Response) (map[string]any, error) {
 	return out, nil
 }
 
+// SkipFailedSearchChunks marks env partial when the log search reports chunks it
+// could not search: the sample and total_matching_lines then miss those windows.
+func SkipFailedSearchChunks(stats map[string]any, env *ResultEnvelope) {
+	failed, _ := stats["chunks_failed"].(float64)
+	if failed <= 0 {
+		return
+	}
+	chunks := fmt.Sprintf("%d", int(failed))
+	if planned, _ := stats["chunks_planned"].(float64); planned > 0 {
+		chunks = fmt.Sprintf("%d of %d", int(failed), int(planned))
+	}
+	env.Skip(chunks + " server-side search chunks failed; total_matching_lines is a floor")
+}
+
 // bucketSecondsFrom reads the bucket width the summary needs to close each
 // bucket's interval. Zero when absent, which drops the end bound rather than
 // inventing one.

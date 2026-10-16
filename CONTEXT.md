@@ -44,6 +44,10 @@ _Avoid_: per-tool toggles as the primary UX; write-only toolset as a v1 requirem
 The tools whose manuals dominate description tokens and undergo progressive disclosure together: `get_logs`, `get_traces`, and `get_service_logs`.
 _Avoid_: treating every slightly long description as a whale; `get_service_traces` is not a whale by default
 
+**Result envelope**:
+How a query or read tool says its answer is incomplete: `partial` + `skipped` (stages or chunks that did not complete), `truncated` + `limit` (more matched, detected by fetching limit+1), `continuation` (where the tool paginates), `trimmed_items` (dropped to fit the response budget) and `hints` (next actions). Served as a trailing `envelope:` text block, only when non-empty, and as `structuredContent` `{result, envelope}`. Built with `utils.EnvelopeToolResult`; tools migrate as they are touched.
+_Avoid_: ad-hoc completeness keys inside the payload (`l9_result`); silent truncation
+
 **Attribute discovery**:
 Learning which log/trace field names exist for an org. Done via dedicated discovery tools (`get_log_attributes`, `get_log_attributes_for_pipeline`, and trace analogues) — not by injecting the full catalog into the tool description.
 _Avoid_: `{{labels}}` full-catalog injection into served tool descriptions; attribute-name allowlists in descriptions

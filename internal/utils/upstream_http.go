@@ -48,10 +48,49 @@ func SanitizeUpstreamBody(raw string) string {
 	return cleaned
 }
 
+// unknownFieldMarkers are lowercase fragments of upstream rejections for a query
+// that names a field the data does not have, including the query engine's own
+// wording that the API passes through.
+var unknownFieldMarkers = []string{
+	"unknown field",
+	"unknown attribute",
+	"unknown column",
+	"unknown identifier",
+	"missing columns",
+	"no such column",
+}
+
+// UnknownFieldNextAction returns the follow-up for an upstream body that names an
+// unknown field, pointing at discoveryTool; "" when the body is about something else.
+func UnknownFieldNextAction(body, discoveryTool string) string {
+	if discoveryTool == "" {
+		return ""
+	}
+	lower := strings.ToLower(body)
+	for _, marker := range unknownFieldMarkers {
+		if strings.Contains(lower, marker) {
+			return fmt.Sprintf("Next action: call %s with the same scope to list the field names this data has, fix the name, and retry.", discoveryTool)
+		}
+	}
+	return ""
+}
+
+// UpstreamAdvice tailors an upstream error to the calling tool.
+type UpstreamAdvice struct {
+	// SchemaHint is appended after 400/422 bodies (e.g. pipeline schema reminder).
+	SchemaHint string
+	// DiscoveryTool is named as the next action when the upstream rejects a field.
+	DiscoveryTool string
+}
+
 // NewUpstreamHTTPError maps a non-OK HTTP response to a tool-facing error.
 // 400/422 bodies are sanitized and included. 5xx bodies are drained and omitted.
-// Optional hint is appended after 400/422 bodies (e.g. pipeline schema reminder).
-func NewUpstreamHTTPError(resp *http.Response, op string, hint ...string) error {
+func NewUpstreamHTTPError(resp *http.Response, op string) error {
+	return NewUpstreamHTTPErrorWithAdvice(resp, op, UpstreamAdvice{})
+}
+
+// NewUpstreamHTTPErrorWithAdvice is NewUpstreamHTTPError with tool-specific advice.
+func NewUpstreamHTTPErrorWithAdvice(resp *http.Response, op string, advice UpstreamAdvice) error {
 	if resp == nil {
 		return fmt.Errorf("%s failed: empty upstream response", op)
 	}
@@ -66,9 +105,13 @@ func NewUpstreamHTTPError(resp *http.Response, op string, hint ...string) error 
 				MetricsTooManySamplesErrorCode,
 			)
 		}
-		msg := fmt.Sprintf("%s failed with HTTP %d. Review the tool arguments and retry. Upstream response: %s", op, status, body)
-		if len(hint) > 0 && strings.TrimSpace(hint[0]) != "" {
-			msg += "\n\n" + hint[0]
+		next := UnknownFieldNextAction(body, advice.DiscoveryTool)
+		if next == "" {
+			next = "Review the tool arguments and retry."
+		}
+		msg := fmt.Sprintf("%s failed with HTTP %d. %s Upstream response: %s", op, status, next, body)
+		if strings.TrimSpace(advice.SchemaHint) != "" {
+			msg += "\n\n" + advice.SchemaHint
 		}
 		return fmt.Errorf("%s", msg)
 	}
@@ -76,10 +119,21 @@ func NewUpstreamHTTPError(resp *http.Response, op string, hint ...string) error 
 	return fmt.Errorf("%s failed with HTTP %d. %s", op, status, upstreamStatusAdvice(status))
 }
 
+// UpstreamAuthAdvice is the next action for a 401 or 403; "" for any other status.
+func UpstreamAuthAdvice(statusCode int) string {
+	switch statusCode {
+	case http.StatusUnauthorized:
+		return "The Last9 credentials were rejected: regenerate the refresh token under Settings → API Access, or sign in again for OAuth connections. Do not retry unchanged."
+	case http.StatusForbidden:
+		return "The credentials lack access to this data: the token's scope or the user's role must allow reading it. Ask a Last9 admin to grant that access or issue a token that has it. Do not retry unchanged."
+	}
+	return ""
+}
+
 func upstreamStatusAdvice(statusCode int) string {
 	switch statusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return "Check the connection credentials and data access."
+		return UpstreamAuthAdvice(statusCode)
 	case http.StatusNotFound:
 		return "The capability may be unavailable or disabled."
 	case http.StatusRequestTimeout:

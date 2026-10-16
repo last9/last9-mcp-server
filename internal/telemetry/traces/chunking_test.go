@@ -94,8 +94,8 @@ func TestGetTracesHandlerChunksAndHonorsLimit(t *testing.T) {
 		t.Fatalf("expected 6 chunk requests (range/6 sizing), got %d", got)
 	}
 	for _, q := range rec.all() {
-		if got := q.Get("limit"); got != "3" {
-			t.Fatalf("expected every chunk limit=3 (effective), got %q", got)
+		if got := q.Get("limit"); got != "4" {
+			t.Fatalf("expected every chunk limit=4 (effective 3 plus one probe row), got %q", got)
 		}
 	}
 
@@ -141,8 +141,8 @@ func TestGetTracesHandlerCapsAtConfiguredMax(t *testing.T) {
 	}
 
 	for _, q := range rec.all() {
-		if got := q.Get("limit"); got != "3" {
-			t.Fatalf("expected every chunk capped at limit=3, got %q", got)
+		if got := q.Get("limit"); got != "4" {
+			t.Fatalf("expected every chunk capped at limit=3 plus one probe row, got %q", got)
 		}
 	}
 
@@ -238,8 +238,8 @@ func TestGetTracesHandlerExactTraceIDUsesSingleRequest(t *testing.T) {
 		t.Fatalf("expected 1 request for exact trace ID lookup, got %d", rec.count())
 	}
 	q := rec.all()[0]
-	if got := q.Get("limit"); got != "3" {
-		t.Fatalf("expected full-window request limit=3, got %q", got)
+	if got := q.Get("limit"); got != "4" {
+		t.Fatalf("expected full-window request limit=3 plus one probe row, got %q", got)
 	}
 	if got := q.Get("start"); got != "0" || q.Get("end") != "1800" {
 		t.Fatalf("expected full-window bounds start=0 end=1800, got %v", q)
