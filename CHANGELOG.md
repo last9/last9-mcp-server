@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `delete_alert` with a write-scope token now returns a tool error naming the delete-scope token it needs, like `detach_notification_channel` and `delete_notification_channel`, instead of generic credential advice (#190).
 - `create_alert` and `update_alert` now explain the API's bare `Invalid expression_args` 400: each `expression_args` key must be the bound KPI's exact name. `validate_alert_expression` accepts any name, so its description and schema no longer suggest placeholders such as `x, y, z` (#190).
 - `acknowledge_alert` `ack` now refuses, without recording a claim, unless the alert monitor behind `get_alerts` lists that exact `alert_group_id`, `rule_id` and `rule_type` within the last hour; the claim API accepted any ids and wrote phantom claims (#190).
 - `patch_alert`, `update_alert` and `delete_alert` now look the rule up first and refuse, without writing, when it does not exist or belongs to an alert group other than `entity_id`; the API acted on the rule id alone, so a mismatched pair changed or deleted another group's rule. An unknown id now reads "no alert rule … exists" instead of a generic 404 or a retryable 500 (#190).

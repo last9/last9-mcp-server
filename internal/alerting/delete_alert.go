@@ -2,6 +2,7 @@ package alerting
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -34,6 +35,10 @@ func NewDeleteAlertHandler(client *http.Client, cfg models.Config) func(context.
 		body, err := entities.DeleteAlertRule(ctx, api,
 			entities.AlertRuleInput{EntityID: args.EntityID, RuleID: args.ID})
 		if err != nil {
+			var apiErr *utils.UpstreamHTTPError
+			if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusForbidden {
+				return utils.ToolErrorResult("deleting an alert rule requires a delete-scope token; a write-scope token cannot delete, and nothing was deleted"), nil, nil
+			}
 			return nil, nil, withUpstreamBody(err)
 		}
 		return alertMutationResult(cfg, body, fmt.Sprintf(`{"deleted":true,"id":%q}`, args.ID)), nil, nil
