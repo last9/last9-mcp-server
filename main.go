@@ -54,13 +54,16 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	fs.BoolVar(&cfg.HTTPMode, "http", false, "Run as HTTP server instead of STDIO")
 	fs.StringVar(&cfg.Port, "port", "8080", "HTTP server port")
 	fs.StringVar(&cfg.Host, "host", "localhost", "HTTP server host")
-	fs.StringVar(&cfg.Toolsets, "toolsets", toolsets.SpecFromEnv(), "Comma-separated MCP toolsets to expose (logs,traces,metrics,alerts,dashboards,profiles,investigate,all). Empty or all = full surface")
+	filterFlags, err := bindToolFilterFlags(fs)
+	if err != nil {
+		return cfg, err
+	}
 	versionFlag := fs.Bool("version", false, "Print version information")
 
 	var configFile string
 	fs.StringVar(&configFile, "config", "", "config file path")
 
-	err := ff.Parse(fs, os.Args[1:],
+	err = ff.Parse(fs, os.Args[1:],
 		ff.WithEnvVarPrefix("LAST9"),
 		ff.WithConfigFileFlag("config"),
 		ff.WithConfigFileParser(ff.JSONParser),
@@ -85,43 +88,64 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 		cfg.MaxGetLogsEntries = models.DefaultMaxGetLogsEntries
 	}
 
-	allowed, err := toolsets.Parse(cfg.Toolsets)
-	if err != nil {
+	cfg.Toolsets = filterFlags.toolsets
+	if cfg.ToolFilter, err = filterFlags.filter(); err != nil {
 		return cfg, err
 	}
-	cfg.ToolFilter = toolsets.Filter{Tools: allowed}
 
 	return cfg, nil
 }
 
-// parseDumpToolsets loads .env then parses --toolsets / LAST9_TOOLSETS for dump-tools
-// (which short-circuits before SetupConfig and needs no credentials).
-func parseDumpToolsets() (toolsets.Set, error) {
-	_ = godotenv.Load()
-	fs := flag.NewFlagSet("dump-tools", flag.ContinueOnError)
-	spec := toolsets.SpecFromEnv()
-	fs.StringVar(&spec, "toolsets", spec, "Comma-separated MCP toolsets to dump")
-	args := []string{}
-	if len(os.Args) > 2 {
-		args = os.Args[2:]
-	}
-	if err := fs.Parse(args); err != nil {
+// toolFilterFlags holds the flags that decide the served tool surface. Serving
+// and dump-tools both bind them, so a dump matches what a deployment serves.
+type toolFilterFlags struct {
+	toolsets   string
+	readOnly   bool
+	allowWrite string
+}
+
+func bindToolFilterFlags(fs *flag.FlagSet) (*toolFilterFlags, error) {
+	readOnly, err := toolsets.ReadOnlyFromEnv()
+	if err != nil {
 		return nil, err
 	}
-	return toolsets.Parse(spec)
+	f := &toolFilterFlags{}
+	fs.StringVar(&f.toolsets, "toolsets", toolsets.SpecFromEnv(), "Comma-separated MCP toolsets to expose (logs,traces,metrics,alerts,dashboards,profiles,grafana,investigate,all). Empty or all = full surface")
+	fs.BoolVar(&f.readOnly, "read-only", readOnly, "Serve only read-only tools (env LAST9_MCP_READ_ONLY)")
+	fs.StringVar(&f.allowWrite, "allow-write-tools", toolsets.AllowWriteSpecFromEnv(), "Comma-separated write tools still served with --read-only (env LAST9_MCP_ALLOW_WRITE_TOOLS)")
+	return f, nil
+}
+
+func (f *toolFilterFlags) filter() (toolsets.Filter, error) {
+	return toolsets.NewFilter(f.toolsets, f.readOnly, f.allowWrite)
+}
+
+// parseDumpToolFilter loads .env then parses the tool filter flags and env for
+// dump-tools (which short-circuits before SetupConfig and needs no credentials).
+func parseDumpToolFilter(args []string) (toolsets.Filter, error) {
+	_ = godotenv.Load()
+	fs := flag.NewFlagSet("dump-tools", flag.ContinueOnError)
+	flags, err := bindToolFilterFlags(fs)
+	if err != nil {
+		return toolsets.Filter{}, err
+	}
+	if err := fs.Parse(args); err != nil {
+		return toolsets.Filter{}, err
+	}
+	return flags.filter()
 }
 
 func main() {
 	// dump-tools runs before full config parsing: it needs no credentials
 	// and must work in CI and eval harnesses without a refresh token.
-	// It still honors --toolsets / LAST9_TOOLSETS (and loads .env) so
-	// snapshots match the served surface.
+	// It still honors --toolsets, --read-only and --allow-write-tools and
+	// their env vars (and loads .env) so snapshots match the served surface.
 	if len(os.Args) > 1 && os.Args[1] == "dump-tools" {
-		allowed, err := parseDumpToolsets()
+		filter, err := parseDumpToolFilter(os.Args[2:])
 		if err != nil {
 			log.Fatalf("dump-tools failed: %v", err)
 		}
-		if err := dumpTools(os.Stdout, toolsets.Filter{Tools: allowed}); err != nil {
+		if err := dumpTools(os.Stdout, filter); err != nil {
 			log.Fatalf("dump-tools failed: %v", err)
 		}
 		return
