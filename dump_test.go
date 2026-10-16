@@ -469,6 +469,59 @@ func TestDumpToolsLogsIncludesServiceProfile(t *testing.T) {
 	}
 }
 
+func TestDumpToolsServesReadOnlyAlertCoverage(t *testing.T) {
+	for _, tc := range []struct {
+		spec string
+		want bool
+	}{
+		{"alerts", true},
+		{"investigate", true},
+		{"logs", false},
+		{"dashboards", false},
+	} {
+		t.Run(tc.spec, func(t *testing.T) {
+			allowed, err := toolsets.Parse(tc.spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var buf bytes.Buffer
+			if err := dumpTools(&buf, allowed); err != nil {
+				t.Fatalf("dumpTools failed: %v", err)
+			}
+			var out struct {
+				Tools []struct {
+					Name        string `json:"name"`
+					Description string `json:"description"`
+					Annotations struct {
+						ReadOnlyHint bool `json:"readOnlyHint"`
+					} `json:"annotations"`
+				} `json:"tools"`
+			}
+			if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+				t.Fatalf("output is not valid JSON: %v", err)
+			}
+			for _, tool := range out.Tools {
+				if tool.Name != "get_alert_coverage" {
+					continue
+				}
+				if !tc.want {
+					t.Fatalf("%s dump should exclude get_alert_coverage", tc.spec)
+				}
+				if !tool.Annotations.ReadOnlyHint {
+					t.Error("get_alert_coverage must be served read-only")
+				}
+				if tool.Description != prompts.GetAlertCoverageDescription {
+					t.Error("served get_alert_coverage description != embed")
+				}
+				return
+			}
+			if tc.want {
+				t.Fatalf("%s dump missing get_alert_coverage", tc.spec)
+			}
+		})
+	}
+}
+
 func TestDumpToolsDataToolsetsIncludeNameDiscovery(t *testing.T) {
 	for _, spec := range []string{"traces", "metrics"} {
 		allowed, err := toolsets.Parse(spec)

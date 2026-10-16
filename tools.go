@@ -216,6 +216,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: prompts.GetAlertGroupsDescription,
 	}, alerting.NewGetAlertGroupsHandler(client, cfg)))
 
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_alert_coverage",
+		Annotations: readOnlyTool("Get Alert Coverage"),
+		Description: prompts.GetAlertCoverageDescription,
+	}, alerting.NewGetAlertCoverageHandler(client, cfg)))
+
 	// Register entity alert rules tool (entity-scoped, includes expression_args and resolved PromQL)
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_entity_alert_rules",

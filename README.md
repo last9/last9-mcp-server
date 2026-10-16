@@ -284,6 +284,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 - **`get_change_events`** — Deployments, config changes, rollbacks. Correlate incidents with what changed
 - **`get_alert_groups`** — Configured Compass alert groups with metadata labels, team, tier, and rule counts — including groups with zero rules and groups that are not firing
+- **`get_alert_coverage`** — What you are not alerting on: uncovered golden signals, fully disabled or unrouted alert groups, and rules muted too long, each with a suggested fix tool. Read-only.
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_alerts`** — Currently firing alerts within a time window
 - **`get_alert_rule_state`** — Historical firing state (1/0) per alert rule over a time range, grouped by `rule_id`. Filterable by alert group, rule name, label filters, and state.
@@ -334,7 +335,7 @@ Read-only tools against the org's Grafana instance (via Last9's Grafana proxy). 
 
 **Deep links on every response.** Every tool returns a `deep_link` field — a direct URL into the Last9 dashboard for that exact query and time range. The agent can hand you the link; you click it; you're there.
 
-**Toolsets.** By default the server exposes every tool. Automation hosts that only need investigation (logs/traces/metrics/profiles) can set `LAST9_TOOLSETS=investigate` (or pass `--toolsets=investigate`) so `tools/list` stays small without client-side mass-disable. Named packs: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`. Unknown names fail fast. The `metrics` pack alone does **not** include `list_datasources` or `did_you_mean` — use `investigate` (or combine toolsets) when you need those discovery helpers.
+**Toolsets.** By default the server exposes every tool. Automation hosts that only need investigation (logs/traces/metrics/profiles, plus read-only `get_alert_coverage`) can set `LAST9_TOOLSETS=investigate` (or pass `--toolsets=investigate`) so `tools/list` stays small without client-side mass-disable. Named packs: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`. Unknown names fail fast. The `metrics` pack alone does **not** include `list_datasources` or `did_you_mean` — use `investigate` (or combine toolsets) when you need those discovery helpers.
 
 **Tool reference resources.** Long logjson/tracejson/service-logs/metrics manuals are MCP resources (`last9://reference/logjson`, `last9://reference/tracejson`, `last9://reference/service_logs`, `last9://reference/metrics`, `last9://reference/investigation`), not always-on tool description text. Critical query rules stay on the tool description so agents that never call `resources/read` still get correct construction guidance. Discover org-specific fields with `get_log_attributes` / `get_log_attributes_for_pipeline` (and the trace equivalents)—they are not injected into descriptions.
 
@@ -668,6 +669,19 @@ Configured Compass alert-group inventory for changeboard / label-coverage audits
 - `label_key` + `label_value` (string, optional): Must be set together. Exact case-insensitive match on one `metadata.labels` pair — both key and value.
 
 Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `entity_class`, `team`, `tier`, `metadata.labels`, and rule counts. Empty `team` / `labels` means unset.
+
+### get_alert_coverage
+
+Answers "what am I not alerting on?" for a service, an environment, one alert group, or the whole organization when no scope is given. Read-only: it never creates, changes, or unmutes anything. Also served in the `investigate` toolset.
+
+- `service` (string, optional): Service name.
+- `environment` (string, optional): Deployment environment (for example `prod`).
+- `entity_id` (string, optional): Alert group (entity) id, as returned by `get_alert_groups`.
+- `muted_days` (integer, optional): Whole days, at least 1. Default: 7. A rule muted longer than this is a `muted_too_long` gap.
+
+Values are trimmed; blank strings are ignored. Gap kinds: **uncovered_signal** (no enabled rule on latency, error_rate, throughput, or saturation), **all_rules_disabled** (an alert group whose rules are all disabled), **no_notification_channel** (an alert group routed to no channel), **muted_too_long**.
+
+Returns compact JSON `{scope, generated_at, complete, summary, counts, groups}`. `groups` holds one `{kind, count, gaps}` entry per kind present; each gap carries `suggested_tool` (`create_alert`, `create_alert_from_chart`, `attach_notification_channel`, or `patch_alert`) and `suggested_args` (whichever of `entity_id`, `rule_id`, `signal` apply). Call the suggested tool only if it is available in the session and the user confirms. `complete` is true only when the scope has no gaps, and `summary` then says coverage is complete for that scope.
 
 ### get_alert_config
 

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added the read-only `get_alert_coverage` tool (alerts and investigate toolsets): answers "what am I not alerting on?" for a service, environment, alert group, or the whole org, grouping gaps by kind (`uncovered_signal`, `all_rules_disabled`, `no_notification_channel`, `muted_too_long`, with `muted_days` default 7), each with the suggested fix tool and its `entity_id` / `rule_id` / `signal` arguments. It reports coverage complete only when the API returns no gaps and counts none (#341).
 - Added `did_you_mean` to the logs, traces, and metrics toolsets so their entity-name discovery guidance can be followed (#312).
 
 ### Fixed

@@ -55,6 +55,7 @@ var named = map[string][]string{
 		"get_alerts",
 		"get_alert_config",
 		"get_alert_groups",
+		"get_alert_coverage",
 		"get_entity_alert_rules",
 		"get_alert_rule_state",
 		"get_notification_channels",
@@ -88,10 +89,13 @@ var named = map[string][]string{
 }
 
 // discovery tools included in the investigate composite (R9a).
+// get_alert_coverage joins them so an investigation can ask what is not alerted on
+// without pulling in the rest of the alerts toolset.
 var investigateExtras = []string{
 	"did_you_mean",
 	"get_service_profile",
 	"list_datasources",
+	"get_alert_coverage",
 }
 
 // ValidNames returns sorted valid toolset tokens for error messages.
