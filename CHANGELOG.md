@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `describe_alert_chart` and `create_alert_from_chart` label a 400/422 that is not a coverage miss (for example `group_id does not match chart group`) as `invalid_request` with fix-the-arguments guidance, instead of an upstream failure to retry (#190).
 - `delete_alert` with a write-scope token now returns a tool error naming the delete-scope token it needs, like `detach_notification_channel` and `delete_notification_channel`, instead of generic credential advice (#190).
 - `create_alert` and `update_alert` now explain the API's bare `Invalid expression_args` 400: each `expression_args` key must be the bound KPI's exact name. `validate_alert_expression` accepts any name, so its description and schema no longer suggest placeholders such as `x, y, z` (#190).
 - `acknowledge_alert` `ack` now refuses, without recording a claim, unless the alert monitor behind `get_alerts` lists that exact `alert_group_id`, `rule_id` and `rule_type` within the last hour; the claim API accepted any ids and wrote phantom claims (#190).

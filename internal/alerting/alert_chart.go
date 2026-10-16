@@ -13,14 +13,17 @@ import (
 type alertIntelErrorClass int
 
 const (
-	classUpstream      alertIntelErrorClass = iota
-	classCoverageMiss                       // chart/signal/entity not covered by the catalog
-	classPermissions                        // token lacks create/read scope for intelligence
-	classDuplicateName                      // rule name already exists on the group
+	classUpstream       alertIntelErrorClass = iota
+	classCoverageMiss                        // chart/signal/entity not covered by the catalog
+	classPermissions                         // token lacks create/read scope for intelligence
+	classDuplicateName                       // rule name already exists on the group
+	classInvalidRequest                      // other 400/422: the arguments were rejected
 )
 
 func (c alertIntelErrorClass) String() string {
 	switch c {
+	case classInvalidRequest:
+		return "invalid_request"
 	case classCoverageMiss:
 		return "coverage_miss"
 	case classPermissions:
@@ -41,7 +44,7 @@ var alertIntelCoverageMissSentinels = []string{
 
 // classifyAlertIntelligenceError maps an HTTP status plus response body onto
 // a stable failure class. Only 400s carrying a coverage-miss sentinel count
-// as coverage misses; every other status — including bare 400s — is upstream.
+// as coverage misses; other 400/422s are invalid requests, never retryable.
 func classifyAlertIntelligenceError(statusCode int, body string) alertIntelErrorClass {
 	if statusCode == http.StatusBadRequest {
 		for _, sentinel := range alertIntelCoverageMissSentinels {
@@ -49,9 +52,10 @@ func classifyAlertIntelligenceError(statusCode int, body string) alertIntelError
 				return classCoverageMiss
 			}
 		}
-		return classUpstream
 	}
 	switch statusCode {
+	case http.StatusBadRequest, http.StatusUnprocessableEntity:
+		return classInvalidRequest
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return classPermissions
 	case http.StatusConflict:
@@ -98,6 +102,8 @@ func alertIntelGuidance(e *utils.UpstreamHTTPError) string {
 		b.WriteString("\n\nThe configured credentials are not permitted on this route: alert intelligence requires a token whose role and scopes clear its POST gate; viewer-role tokens are rejected.")
 	case classDuplicateName:
 		b.WriteString("\n\nAn alert rule with this name already exists. Pick a different name before retrying. To inspect existing rules, use get_alert_config filtering by rule name (its output includes the entity_id), then get_entity_alert_rules with that id. After a timeout, never retry blindly — verify with get_alert_config whether the rule was actually created first, or you will create a duplicate.")
+	case classInvalidRequest:
+		b.WriteString("\n\nThe API rejected these arguments for the reason above; fix them and do not retry unchanged. Normally omit group_id: the API accepts only the chart's own alert group.")
 	case classUpstream:
 		b.WriteString("\n\nThis is an upstream server-side failure; retry once before reporting it.")
 	}

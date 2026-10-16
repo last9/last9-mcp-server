@@ -20,6 +20,7 @@ func TestAlertIntelGuidanceFirstLine(t *testing.T) {
 		{400, `unknown chart key: p95`, "alert intelligence API returned status 400 (coverage_miss): unknown chart key: p95", "not covered by the alert-coverage catalog"},
 		{403, "Not allowed for viewer role", "alert intelligence API returned status 403 (permissions): Not allowed for viewer role", "viewer-role tokens are rejected"},
 		{409, "duplicate rule name", "alert intelligence API returned status 409 (duplicate_name): duplicate rule name", "already exists"},
+		{400, "group_id does not match chart group", "alert intelligence API returned status 400 (invalid_request): group_id does not match chart group", "do not retry unchanged"},
 		{502, "", "alert intelligence API returned status 502 (upstream): Bad Gateway", "retry once"},
 	} {
 		got := alertIntelGuidance(&utils.UpstreamHTTPError{StatusCode: tt.status, Body: tt.body})
