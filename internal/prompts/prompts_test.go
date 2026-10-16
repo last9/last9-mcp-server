@@ -234,28 +234,36 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"window", "must document window key for window_aggregate"},
 		{"function", "must document function key for window_aggregate"},
 		{"\"function\":{\"$count\":[]},\"as\":\"count\",\"window\":[\"5\",\"minutes\"]", "must show a generic windowed count"},
+		{"\"type\":\"window_aggregate\",\"function\":{\"$count\":[]}", "must include the required stage type in the windowed count example"},
 		{"Ops: `$and`/`$or`/`$not`", "must retain a useful filter operator list"},
+		{"`$containsWords` args `[field,word]` (e.g. `[\"Body\",\"timeout\"]`)", "must show the required field argument for body-word filters"},
 		{"NOT SQL", "must clarify logjson_query is not SQL"},
 		{"$neq", "must document existence idiom"},
 		{"start_time_iso", "must document absolute time on tool args"},
 		{"resources['last9.tenant']", "must document tenant scoping"},
 		{"resources['deployment.environment']", "must document env scoping"},
+		{"no `service_name` arg; filter ServiceName in query", "must place service scope in the get_logs pipeline"},
 		{"last9://reference/logjson", "must point at the logjson resource"},
+		{"Predicates: one standalone, many in `$and`", "must allow valid standalone predicates"},
+		{"high→add filter, recount", "must repeat counts after narrowing broad filters"},
 		{"community_member_id", "must document bare single-token field mistake"},
 		{"attributes['key']", "must require attributes/resources wrapping"},
+		{"Parse Body-derived fields before filtering, grouping, or aggregation", "must parse Body fields before grouping or aggregation"},
 		{"`$quantile` is the general/default percentile operator", "must default to approximate percentile aggregation"},
 		{"\"function\":{\"$quantile\":[0.99,\"attributes['latency_ms']\"]},\"as\":\"p99\",\"window\":[\"24\",\"hours\"]", "must show a complete day-wise percentile window"},
+		{"\"type\":\"window_aggregate\",\"function\":{\"$quantile\":[0.99,\"attributes['latency_ms']\"]}", "must include the required stage type in the windowed percentile example"},
 		{"Day-wise: exactly ONE get_logs call over the full half-open start_time_iso/end_time_iso range with one window_aggregate; NEVER one call per day; honor requested timezone.", "must require one timezone-aware full-range day-wise call"},
 		{"Never template/merge/recombine aggregated percentile rows", "must forbid client-side percentile reconstruction"},
 		{"use the canonical anchored numeric `$regex` shown", "must require the deliberate canonical numeric allowlist"},
 		{"excludes non-matching values from percentile calculations; disclose that exclusion in the answer", "must disclose the numeric filter's effect"},
 		{"Use a discovered normalized route", "must discover normalized route semantics before aggregation"},
-		{"Raw URI: aggregate exact values only; never normalize/merge variants afterward", "must allow exact raw URI aggregation without unsafe normalization"},
+		{"Raw URI: aggregate exact values; never normalize/merge later", "must allow exact raw URI aggregation without unsafe normalization"},
 		{"If `l9_result.partial=true`, preserve rows and disclose partial coverage", "must tie partial disclosure to result metadata"},
-		{"never infer/convert", "must prevent inferred latency units"},
-		{"ALL → `$and` of one `$containsWords` per word", "must document all-word Body searches"},
-		{"ANY → `$or`", "must document any-word Body searches"},
+		{"Units: report source; never convert", "must prevent inferred latency units"},
+		{"Only report returned P99 values; empty result→say unavailable and stop", "must prevent fallback counts from replacing an empty percentile result"},
+		{"ALL→`$and`; ANY→`$or`", "must document all/any-word Body searches"},
 		{"never `$icontainsWords`", "must avoid the slower case-insensitive word operator"},
+		{"no service→search `Body` with `$contains` (even service-like)", "must distinguish standalone identifiers from service names"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
@@ -285,6 +293,7 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 		{"aggregates", "must document aggregate key name"},
 		{"groupby", "must document groupby key name"},
 		{"resources['last9.tenant']", "must document tenant scoping"},
+		{"`service.name`→`ServiceName`", "must map service.name to the canonical service field"},
 		{"last9://reference/tracejson", "must point at the tracejson resource"},
 		{"default **60**", "must document default lookback of 60 minutes"},
 		{"`$quantile` is the general/default percentile operator", "must default to approximate percentile aggregation"},
@@ -409,6 +418,7 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 		{"get_log_attributes", "must tell model to check attributes before body_filters"},
 		{"body_filters", "must explicitly label body_filters as last resort"},
 		{"last9://reference/service_logs", "must point at the service_logs resource"},
+		{"multiple HTTP statuses in one `$or`", "must direct multiple status alternatives to get_logs"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
@@ -519,6 +529,9 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 		{"update_dashboard", "must name the refine tool"},
 		{"do not call create_dashboard again", "must forbid same-turn re-create"},
 		{"dashboard.id", "must keep the returned id"},
+		{"`layout: {x, y, w, h}`", "must document the API panel layout shape"},
+		{"`legend: {type, value}`", "must document the API query legend shape"},
+		{"Do not use `gridPos` or a panel-level `type`", "must rule out the rejected legacy panel shape"},
 	} {
 		if !strings.Contains(create, c.phrase) {
 			t.Errorf("CreateDashboardDescription missing %q: %s", c.phrase, c.reason)
@@ -533,6 +546,7 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 		{"existing dashboard id", "must pass the known id"},
 		{"do not call create_dashboard", "must not create-for-refine"},
 		{"full replacement", "must state PUT is a full replacement"},
+		{"same panel/query shape as create_dashboard", "must retain create's required dashboard payload shape"},
 	} {
 		if !strings.Contains(update, c.phrase) {
 			t.Errorf("UpdateDashboardDescription missing %q: %s", c.phrase, c.reason)

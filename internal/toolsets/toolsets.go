@@ -12,6 +12,7 @@ import (
 // handled in Parse, not listed here as flat membership.
 var named = map[string][]string{
 	"logs": {
+		"did_you_mean",
 		"get_service_profile",
 		"get_logs",
 		"get_service_logs",
@@ -21,6 +22,7 @@ var named = map[string][]string{
 		"prometheus_instant_query",
 	},
 	"traces": {
+		"did_you_mean",
 		"get_service_profile",
 		"get_traces",
 		"get_service_traces",
@@ -31,6 +33,7 @@ var named = map[string][]string{
 		"get_trace_waterfall",
 	},
 	"metrics": {
+		"did_you_mean",
 		"get_service_profile",
 		"prometheus_range_query",
 		"prometheus_instant_query",
