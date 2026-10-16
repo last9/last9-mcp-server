@@ -78,6 +78,11 @@ NO:  const getFooDescription = "Fetches..."   // in a handler package
 `get_service_performance_details`, `get_service_dependency_graph`) or `…Instructions`
 (`get_exceptions`). Leave them alone; do not copy the pattern.
 
+**Stay inside the metadata checks.** `tool_metadata_test.go` holds every served tool to a
+description byte budget (default plus a reviewed override map), registered `last9://` URIs,
+string-only schema enums, a max schema depth, and lowercase verb-first names (`get_`, `list_`,
+`create_`, …; `grafana_` may prefix the verb). Raising an override is a decision for the PR.
+
 **Preserve file bytes exactly.** Several description files intentionally end without a
 trailing newline. No test enforces this — an editor or formatter that auto-appends one
 silently changes the served description and breaks `dump-tools` snapshot diffs.

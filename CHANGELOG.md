@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `create_dashboard` and `update_dashboard` no longer serve an integer `enum` for a panel's `version`; it is pinned to 1 with `minimum`/`maximum`, which providers that accept only string enums can load. A new `tool_metadata_test.go` check fails the build on any non-string enum, a description over its byte budget, a `last9://` URI with no registered resource, a schema nested deeper than 8, or a tool name that is not lowercase and verb-first (#344).
 - `get_service_profile` now includes observed domains and physical log indexes with their own environments in its investigation brief, enabling profile-derived index selection instead of silently querying the default index (#314).
 - `get_traces` now distinguishes literal `TraceId` substring searches (`$contains`) from wildcard patterns (`$regex`) and shows the canonical `$avg` plus `groupby` shape for per-span duration queries (#312).
 - `get_logs` now shows the field-first `$containsWords` form and stops percentile fallback after an empty result; dashboard create/update schemas validate query/legend types and logs-panel configuration, and descriptions document required log aggregates and time windows (#312).
