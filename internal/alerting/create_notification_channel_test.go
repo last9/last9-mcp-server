@@ -47,6 +47,7 @@ func TestValidateCreateNotificationChannel(t *testing.T) {
 		"ok opsgenie":           {CreateNotificationChannelArgs{Name: "n", Type: "opsgenie", Destination: channelSecret}, ""},
 		"ok email":              {CreateNotificationChannelArgs{Name: "n", Type: "email", Destination: "a@x.io, b@x.io"}, ""},
 		"ok webhook with cert":  {CreateNotificationChannelArgs{Name: "n", Type: "generic_webhook", Destination: "https://h.example", WebhookCACertificate: cert, WebhookHeaders: map[string]string{"Authorization": channelSecret}}, ""},
+		"webhook plain http":    {CreateNotificationChannelArgs{Name: "n", Type: "generic_webhook", Destination: "http://example.invalid/hook"}, "HTTPS"},
 		"ok mentions":           {CreateNotificationChannelArgs{Name: "n", Type: "slack", Destination: hook, MentionHandles: "alice, user|U123|bob,usergroup|S1|g,special|here"}, ""},
 		"empty name":            {CreateNotificationChannelArgs{Name: "", Type: "slack", Destination: hook}, "name is required"},
 		"colon in name":         {CreateNotificationChannelArgs{Name: "a:b", Type: "slack", Destination: hook}, "name is required"},

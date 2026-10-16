@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `create_notification_channel` now rejects a `generic_webhook` `destination` that is not an `https://` URL instead of silently creating a plain-HTTP channel; the description already documented an HTTPS-only destination (#190).
 - `get_service_profile` now includes observed domains and physical log indexes with their own environments in its investigation brief, enabling profile-derived index selection instead of silently querying the default index (#314).
 - `get_traces` now distinguishes literal `TraceId` substring searches (`$contains`) from wildcard patterns (`$regex`) and shows the canonical `$avg` plus `groupby` shape for per-span duration queries (#312).
 - `get_logs` now shows the field-first `$containsWords` form and stops percentile fallback after an empty result; dashboard create/update schemas validate query/legend types and logs-panel configuration, and descriptions document required log aggregates and time windows (#312).

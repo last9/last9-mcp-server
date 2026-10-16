@@ -118,6 +118,10 @@ func validateDestinationForType(args CreateNotificationChannelArgs) string {
 				return "an email destination must be comma-separated email addresses"
 			}
 		}
+	case "generic_webhook":
+		if !strings.HasPrefix(args.Destination, "https://") {
+			return "a generic_webhook destination must be an HTTPS URL"
+		}
 	}
 	return ""
 }
