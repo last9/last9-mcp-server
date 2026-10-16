@@ -2,7 +2,7 @@ Compare APM performance across a current window and an equal-duration baseline w
 
 **Answer from returned evidence:** use returned percentages and deltas as given; never calculate percentage changes or ratios from raw counts, latency, Apdex values, or samples. If a percentage is absent, report the raw values or direction without adding a calculated percentage. When `operation_apdex_reconciliations` is nonempty, include a returned operation, both request-coverage values, and `unexplained_delta` as the residual. Coverage and `unexplained_delta` explain only the reported coverage, not the full service result, and do not establish cause.
 
-**Routing:** For an equal-window comparison, call this tool first and by itself; do not call `get_service_profile` first. This tool determines whether the workload shape is supported. Use `get_service_profile` only when the user asks for broader investigation across signals or explicitly requests follow-up after the comparison.
+**Routing:** For an equal-window comparison, call this tool first and by itself; do not call `get_service_profile` first. This tool determines whether the workload shape is supported. Use `get_service_profile` only when the user asks for broader investigation across signals or explicitly requests follow-up after the comparison. Use `signal_shape` and `telemetry` for routing — see `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
 
 Use `get_service_summary` for a one-window fleet ranking of interval request count, rpm, HTTP 4xx/5xx, and gRPC errors. Use `get_apm_service_deviations` when the question requires an equal-duration baseline comparison.
 

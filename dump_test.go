@@ -289,6 +289,9 @@ func TestDumpTools(t *testing.T) {
 	if !strings.Contains(tracesDesc, "default **60**") {
 		t.Fatal("get_traces description missing lookback default 60")
 	}
+	if !strings.Contains(tracesDesc, "Trace ID substring → `$contains` on `TraceId`") {
+		t.Fatal("get_traces description must distinguish trace ID substring searches from regex patterns")
+	}
 	for _, name := range []string{"get_log_attributes_for_pipeline", "get_trace_attributes_for_pipeline", "get_trace_attribute_values"} {
 		var schema struct {
 			Properties map[string]struct {
@@ -529,6 +532,14 @@ func TestDumpToolsDashboardWriteSteer(t *testing.T) {
 	}
 	if got, want := byName["update_dashboard"], prompts.UpdateDashboardDescription; got != want {
 		t.Errorf("served update_dashboard description != embed\ngot:  %q\nwant: %q", got, want)
+	}
+	for _, name := range []string{"create_dashboard", "update_dashboard"} {
+		if !strings.Contains(byName[name], "plain `aggregate` stage does not satisfy the API's timeslice requirement") {
+			t.Errorf("%s description must distinguish window_aggregate from aggregate", name)
+		}
+	}
+	if !strings.Contains(byName["create_dashboard"], "use it without calling `get_service_profile`, `get_service_environments`, or `did_you_mean`") {
+		t.Error("create_dashboard description must avoid rediscovering a service the user already supplied")
 	}
 }
 
