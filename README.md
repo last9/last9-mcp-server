@@ -575,10 +575,10 @@ Clustering runs in the MCP server over the sampled lines, so counts are within t
 Takes every `get_log_patterns` parameter (the time range is the current window), plus:
 
 - `baseline_start_time_iso` / `baseline_end_time_iso` (string, optional): Set both or neither. Default: the window of equal length immediately before the current one.
-- `min_count` (integer, optional): Lines a pattern needs to be reported. Default: 3.
-- `change_factor` (number, optional): Frequency ratio counted as significant, greater than 1. Default: 2.
+- `min_count` (integer, optional): Lines a changed pattern needs in the window it is larger in: current for `new`/`increased`, baseline for `decreased`/`disappeared`. Default: 3.
+- `change_factor` (number, optional): Frequency ratio, greater than 1, that a pattern seen in both windows must reach (`increased`) or fall to the inverse of (`decreased`). Default: 2.
 
-Returns only changed templates (`new`, `increased`, `decreased`, `disappeared`) with `current` and `baseline` counts. Frequencies are compared per minute while both samples hold every matching line and as shares of the sample once either reports `sample_limit_reached` (`comparison_basis`). An empty `patterns` list means no log novelty.
+Both thresholds must hold, so a high-volume template whose frequency did not change by `change_factor` is never reported. Returns only changed templates (`new`, `increased`, `decreased`, `disappeared`) with `current` and `baseline` counts. Frequencies are compared per minute while both samples hold every matching line and as shares of the sample once either reports `sample_limit_reached` (`comparison_basis`). An empty `patterns` list means no log novelty.
 
 ### get_log_attributes
 
