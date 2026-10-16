@@ -48,23 +48,13 @@ func dumpTools(w io.Writer, allowed toolsets.Set) error {
 	if err := registerAllTools(server, cfg); err != nil {
 		return fmt.Errorf("failed to register tools: %w", err)
 	}
-	// The round-trip is over in-memory transports and won't hang in practice,
-	// but a timeout makes a wedged tools/list fail loudly in CI rather than
-	// hanging the gate.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), dumpTimeout)
 	defer cancel()
-	clientTransport, serverTransport := mcp.NewInMemoryTransports()
-	serverSession, err := server.Server.Connect(ctx, serverTransport, nil)
+	session, closeSessions, err := connectInMemory(ctx, server, "dump-tools")
 	if err != nil {
-		return fmt.Errorf("failed to connect server: %w", err)
+		return err
 	}
-	defer serverSession.Close()
-	client := mcp.NewClient(&mcp.Implementation{Name: "dump-tools", Version: Version}, nil)
-	session, err := client.Connect(ctx, clientTransport, nil)
-	if err != nil {
-		return fmt.Errorf("failed to connect client: %w", err)
-	}
-	defer session.Close()
+	defer closeSessions()
 
 	var tools []*mcp.Tool
 	for tool, err := range session.Tools(ctx, nil) {
@@ -91,20 +81,13 @@ func dumpPrompts(w io.Writer) error {
 	registerReferenceResources(server)
 	workflows.Register(server)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), dumpTimeout)
 	defer cancel()
-	clientTransport, serverTransport := mcp.NewInMemoryTransports()
-	serverSession, err := server.Server.Connect(ctx, serverTransport, nil)
+	session, closeSessions, err := connectInMemory(ctx, server, "dump-prompts")
 	if err != nil {
-		return fmt.Errorf("failed to connect server: %w", err)
+		return err
 	}
-	defer serverSession.Close()
-	client := mcp.NewClient(&mcp.Implementation{Name: "dump-prompts", Version: Version}, nil)
-	session, err := client.Connect(ctx, clientTransport, nil)
-	if err != nil {
-		return fmt.Errorf("failed to connect client: %w", err)
-	}
-	defer session.Close()
+	defer closeSessions()
 
 	var promptList []*mcp.Prompt
 	for prompt, err := range session.Prompts(ctx, nil) {
@@ -118,4 +101,29 @@ func dumpPrompts(w io.Writer) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(map[string]any{"prompts": promptList})
+}
+
+// The round-trips are over in-memory transports and won't hang in practice,
+// but a timeout makes a wedged dump fail loudly in CI rather than hanging the
+// gate.
+const dumpTimeout = 30 * time.Second
+
+// connectInMemory connects a client named clientName to server over in-memory
+// transports. The returned func closes both sessions.
+func connectInMemory(ctx context.Context, server *last9mcp.Last9MCPServer, clientName string) (*mcp.ClientSession, func(), error) {
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverSession, err := server.Server.Connect(ctx, serverTransport, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to connect server: %w", err)
+	}
+	client := mcp.NewClient(&mcp.Implementation{Name: clientName, Version: Version}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		serverSession.Close()
+		return nil, nil, fmt.Errorf("failed to connect client: %w", err)
+	}
+	return session, func() {
+		session.Close()
+		serverSession.Close()
+	}, nil
 }

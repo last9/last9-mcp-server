@@ -5,7 +5,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
@@ -35,20 +34,13 @@ func initializeOver(t *testing.T, spec string) (string, map[string]bool) {
 		t.Fatal(err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), dumpTimeout)
 	defer cancel()
-	clientTransport, serverTransport := mcp.NewInMemoryTransports()
-	serverSession, err := server.Server.Connect(ctx, serverTransport, nil)
+	session, closeSessions, err := connectInMemory(ctx, server, "instructions-test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer serverSession.Close()
-	client := mcp.NewClient(&mcp.Implementation{Name: "instructions-test", Version: Version}, nil)
-	session, err := client.Connect(ctx, clientTransport, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer session.Close()
+	defer closeSessions()
 
 	served := map[string]bool{}
 	for tool, err := range session.Tools(ctx, nil) {
