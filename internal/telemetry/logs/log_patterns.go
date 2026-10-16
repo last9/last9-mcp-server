@@ -24,6 +24,8 @@ const (
 var patternMasks = []*regexp.Regexp{
 	regexp.MustCompile(`\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b`),
 	regexp.MustCompile(`\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?`),
+	// Four-part versions (1.2.3.4) mask like IPs. That merges nothing extra:
+	// the bare-number mask below would wildcard every part of them anyway.
 	regexp.MustCompile(`\b\d{1,3}(\.\d{1,3}){3}(:\d+)?\b`),
 	regexp.MustCompile(`\b0x[0-9a-fA-F]+\b`),
 	regexp.MustCompile(`\b[0-9a-fA-F]{16,}\b`),

@@ -197,6 +197,19 @@ func TestLogPatternMiner_CountFailsOnALineNoTemplateFits(t *testing.T) {
 	}
 }
 
+func TestLogPatternTokens_DottedQuadsMaskWhetherIPOrVersion(t *testing.T) {
+	for _, message := range []string{"deployed build 1.2.3.4", "deployed build 10.20.30.40:8080"} {
+		if got := strings.Join(patternTokens(message), " "); got != "deployed build <*>" {
+			t.Errorf("patternTokens(%q) = %q, want the dotted quad as one wildcard", message, got)
+		}
+	}
+	// Without the dotted-quad mask a version still loses every digit, so
+	// versions would merge into one template either way.
+	if got := strings.Join(patternTokens("deployed build 1.2.3"), " "); got != "deployed build <*>.<*>" {
+		t.Errorf("three-part version = %q, want only its digits wildcarded", got)
+	}
+}
+
 func sameEntries(message string, n int) []LogEntry {
 	out := make([]LogEntry, n)
 	for i := range out {
