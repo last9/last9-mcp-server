@@ -122,21 +122,23 @@ func TestGetEmergingLogPatterns_IdenticalWindowsWithGeneralisingTemplatesHaveNoN
 }
 
 func TestGetEmergingLogPatterns_ThresholdsAtTheirBoundaries(t *testing.T) {
+	const unchanged, belowMinCount = "unchanged", "below min_count"
 	cases := []struct {
 		name              string
 		current, baseline int
 		want              string
 	}{
 		{"new at min_count", 3, 0, changeNew},
-		{"new below min_count", 2, 0, ""},
+		{"new below min_count", 2, 0, belowMinCount},
 		{"disappeared at min_count", 0, 3, changeDisappeared},
-		{"disappeared below min_count", 0, 2, ""},
+		{"disappeared below min_count", 0, 2, belowMinCount},
 		{"increased at factor", 6, 3, changeIncreased},
-		{"just below factor", 5, 3, ""},
-		{"increased but current below min_count", 2, 1, ""},
+		{"just below factor", 5, 3, unchanged},
+		{"increased but current below min_count", 2, 1, belowMinCount},
 		{"decreased at factor", 3, 6, changeDecreased},
-		{"just above 1/factor", 4, 6, ""},
-		{"decreased but baseline below min_count", 1, 2, ""},
+		{"just above 1/factor", 4, 6, unchanged},
+		{"decreased but baseline below min_count", 1, 2, belowMinCount},
+		{"stable below min_count", 1, 1, unchanged},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -145,12 +147,17 @@ func TestGetEmergingLogPatterns_ThresholdsAtTheirBoundaries(t *testing.T) {
 				precedingWindowStart: sameLines("queue depth alarm", c.baseline),
 			}
 			got, _ := callEmerging(t, &logSearchStub{}, lines, emergingArgs(LogPatternScopeArgs{}))
-			change := ""
-			if len(got.Patterns) == 1 {
-				change = got.Patterns[0].Change
+			outcome := ""
+			switch {
+			case len(got.Patterns) == 1 && got.UnchangedPatterns+got.BelowMinCountPatterns == 0:
+				outcome = got.Patterns[0].Change
+			case len(got.Patterns) == 0 && got.UnchangedPatterns == 1 && got.BelowMinCountPatterns == 0:
+				outcome = unchanged
+			case len(got.Patterns) == 0 && got.UnchangedPatterns == 0 && got.BelowMinCountPatterns == 1:
+				outcome = belowMinCount
 			}
-			if change != c.want || len(got.Patterns)+got.UnchangedPatterns != 1 {
-				t.Errorf("change = %q (patterns=%d unchanged=%d), want %q", change, len(got.Patterns), got.UnchangedPatterns, c.want)
+			if outcome != c.want {
+				t.Errorf("patterns=%+v unchanged=%d below_min_count=%d, want %q", got.Patterns, got.UnchangedPatterns, got.BelowMinCountPatterns, c.want)
 			}
 		})
 	}

@@ -48,15 +48,16 @@ type GetEmergingLogPatternsArgs struct {
 
 // GetEmergingLogPatternsResponse is the output of the get_emerging_log_patterns tool.
 type GetEmergingLogPatternsResponse struct {
-	Service           string                   `json:"service"`
-	Env               string                   `json:"env,omitempty"`
-	Current           LogPatternWindow         `json:"current"`
-	Baseline          LogPatternWindow         `json:"baseline"`
-	ComparisonBasis   string                   `json:"comparison_basis"`
-	Patterns          []EmergingLogPattern     `json:"patterns"`
-	UnchangedPatterns int                      `json:"unchanged_patterns"`
-	Other             *EmergingLogPatternOther `json:"other,omitempty"`
-	Note              string                   `json:"note,omitempty"`
+	Service               string                   `json:"service"`
+	Env                   string                   `json:"env,omitempty"`
+	Current               LogPatternWindow         `json:"current"`
+	Baseline              LogPatternWindow         `json:"baseline"`
+	ComparisonBasis       string                   `json:"comparison_basis"`
+	Patterns              []EmergingLogPattern     `json:"patterns"`
+	UnchangedPatterns     int                      `json:"unchanged_patterns"`
+	BelowMinCountPatterns int                      `json:"below_min_count_patterns"`
+	Other                 *EmergingLogPatternOther `json:"other,omitempty"`
+	Note                  string                   `json:"note,omitempty"`
 }
 
 // EmergingLogPattern is a template whose frequency changed between windows.
@@ -240,9 +241,13 @@ func compareLogPatterns(patterns []*logPattern, comparison windowComparison, thr
 	response := GetEmergingLogPatternsResponse{ComparisonBasis: comparison.basis, Patterns: []EmergingLogPattern{}}
 	for _, p := range patterns {
 		current, baseline := p.stats(currentPatternWindow), p.stats(baselinePatternWindow)
-		change, ratio := classifyPatternChange(current.Count, baseline.Count, comparison, thresholds)
-		if change == "" {
+		change, ratio := classifyPatternChange(current.Count, baseline.Count, comparison, thresholds.changeFactor)
+		switch {
+		case change == "":
 			response.UnchangedPatterns++
+			continue
+		case !meetsMinCount(change, current.Count, baseline.Count, thresholds.minCount):
+			response.BelowMinCountPatterns++
 			continue
 		}
 		response.Patterns = append(response.Patterns, EmergingLogPattern{
@@ -269,23 +274,32 @@ func compareLogPatterns(patterns []*logPattern, comparison windowComparison, thr
 	return response
 }
 
-func classifyPatternChange(current, baseline int, comparison windowComparison, thresholds emergingThresholds) (string, *float64) {
+// classifyPatternChange names the direction of a pattern's change, ignoring
+// min_count so callers can tell a stable pattern from a change too small to report.
+func classifyPatternChange(current, baseline int, comparison windowComparison, changeFactor float64) (string, *float64) {
 	switch {
-	case baseline == 0 && current >= thresholds.minCount:
+	case baseline == 0:
 		return changeNew, nil
-	case current == 0 && baseline >= thresholds.minCount:
+	case current == 0:
 		return changeDisappeared, nil
-	case current == 0 || baseline == 0:
-		return "", nil
 	}
 	ratio := comparison.ratio(current, baseline)
 	rounded := math.Round(ratio*100) / 100
 	switch {
-	case ratio >= thresholds.changeFactor && current >= thresholds.minCount:
+	case ratio >= changeFactor:
 		return changeIncreased, &rounded
-	case ratio*thresholds.changeFactor <= 1 && baseline >= thresholds.minCount:
+	case ratio*changeFactor <= 1:
 		return changeDecreased, &rounded
 	default:
 		return "", nil
 	}
+}
+
+// meetsMinCount checks the window a change is measured in: where the pattern
+// grew, or the baseline it shrank from.
+func meetsMinCount(change string, current, baseline, minCount int) bool {
+	if change == changeNew || change == changeIncreased {
+		return current >= minCount
+	}
+	return baseline >= minCount
 }

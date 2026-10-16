@@ -437,6 +437,9 @@ func TestLogPatternDescriptionsCriticalRules(t *testing.T) {
 			t.Errorf("%s description says incomplete searches never return partial results, but truncated ones do", name)
 		}
 	}
+	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "`below_min_count_patterns`: templates that changed") {
+		t.Error("get_emerging_log_patterns must keep changes below min_count apart from unchanged templates")
+	}
 	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "absent from the other window's sample, not from the window") {
 		t.Error("get_emerging_log_patterns must say new/disappeared are presence-in-sample once a sample is capped")
 	}

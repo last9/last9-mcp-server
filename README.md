@@ -578,7 +578,7 @@ Takes every `get_log_patterns` parameter (the time range is the current window),
 - `min_count` (integer, optional): Lines a changed pattern needs in the window it is larger in: current for `new`/`increased`, baseline for `decreased`/`disappeared`. Default: 3 (or `sample_size` if smaller), maximum: `sample_size`.
 - `change_factor` (number, optional): Frequency ratio, greater than 1, that a pattern seen in both windows must reach (`increased`) or fall to the inverse of (`decreased`). Default: 2.
 
-Both thresholds must hold, so a high-volume template whose frequency did not change by `change_factor` is never reported. Returns only changed templates (`new`, `increased`, `decreased`, `disappeared`) with `current` and `baseline` counts. Frequencies are compared per minute while both samples hold every matching line and as shares of the sample once either reports `sample_limit_reached` (`comparison_basis`). An empty `patterns` list means no log novelty.
+Both thresholds must hold, so a high-volume template whose frequency did not change by `change_factor` is never reported. Returns only changed templates (`new`, `increased`, `decreased`, `disappeared`) with `current` and `baseline` counts; `unchanged_patterns` counts templates in both windows that changed by less than `change_factor`, and `below_min_count_patterns` counts changes dropped for having fewer than `min_count` lines. Frequencies are compared per minute while both samples hold every matching line and as shares of the sample once either reports `sample_limit_reached` (`comparison_basis`). An empty `patterns` list means no log novelty.
 
 ### get_log_attributes
 
