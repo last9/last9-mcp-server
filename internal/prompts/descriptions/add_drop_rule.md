@@ -41,3 +41,5 @@
 
 	Rule Names
 	- Rule names are unique. Call get_drop_rules to check which names are already in use.
+
+	On a timeout or connection error the create may or may not have been applied; check by name with get_drop_rules before retrying.
