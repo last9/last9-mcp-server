@@ -22,6 +22,7 @@ const (
 	ReasonScanBudgetExceeded  = "scan_budget_exceeded"
 	ReasonSessionBudget80     = "session_budget_80pct"
 	ReasonEstimateUnavailable = "estimate_unavailable"
+	ReasonInvalidMode         = "invalid_mode"
 )
 
 const serviceFilterExample = `{"$eq":["ServiceName","<service>"]}`

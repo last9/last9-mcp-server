@@ -73,12 +73,18 @@ type Verdict struct {
 // runs, on the locally detected scope; the scope threshold and the budgets
 // need the estimate's bytes and are skipped.
 func (g *Guard) Check(ctx context.Context, req *mcp.CallToolRequest, q Query) Verdict {
+	var v Verdict
 	mode, err := ParseMode(g.limits.Mode)
-	if err != nil || mode == ModeOff {
+	if err != nil {
+		// Validate rejects a bad mode at startup, so this one was set after it: fail closed.
+		slog.Error("query guardrail mode invalid; enforcing", "tool", q.Tool, "err", err)
+		mode = ModeEnforce
+		v.Hints = append(v.Hints, hint(ReasonInvalidMode, "", fmt.Sprintf("The configured guardrail mode %q is invalid, so the checks ran in enforce mode.", g.limits.Mode)))
+	}
+	if mode == ModeOff {
 		return Verdict{Decision: Decision{Action: Allow}}
 	}
 
-	var v Verdict
 	s := scan{Range: time.Duration(q.EndMs-q.StartMs) * time.Millisecond, Scoped: PipelineScoped(q.Pipeline)}
 	if est, err := g.fetchEstimate(ctx, q); err != nil {
 		slog.Info("query guardrail estimate unavailable", "tool", q.Tool, "mode", mode, "err", err)

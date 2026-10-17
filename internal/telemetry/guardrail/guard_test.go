@@ -118,6 +118,19 @@ func TestCheck_ModeMatrix(t *testing.T) {
 	}
 }
 
+// Validate rejects a bad mode at startup; one set later must fail closed.
+func TestCheck_InvalidModeEnforces(t *testing.T) {
+	g := testGuard("not-a-mode", &stubEstimator{bytes: 1})
+	v := g.Check(context.Background(), nil, query(unscopedPipeline, 48*time.Hour))
+	if !v.Blocked || v.Decision.Reason != ReasonRangeTooWide || !hasHint(v, ReasonInvalidMode) {
+		t.Fatalf("over-cap query under an invalid mode: %+v", v)
+	}
+	v = g.Check(context.Background(), nil, query(scopedPipeline, time.Hour))
+	if v.Blocked || !hasHint(v, ReasonInvalidMode) {
+		t.Fatalf("allowed query under an invalid mode: %+v", v)
+	}
+}
+
 func TestCheck_EstimateUnavailableKeepsRangeCheck(t *testing.T) {
 	for _, mode := range []string{ModeShadow, ModeEnforce} {
 		t.Run(mode, func(t *testing.T) {
