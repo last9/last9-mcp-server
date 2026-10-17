@@ -14,6 +14,7 @@ import (
 	"last9-mcp/internal/alerting"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/toolsets"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -93,6 +94,11 @@ func healthyResponses() map[string]string {
 
 func runOverview(t *testing.T, api *overviewAPI, callTimeout time.Duration) map[string]any {
 	t.Helper()
+	return runOverviewAllowing(t, api, callTimeout, nil)
+}
+
+func runOverviewAllowing(t *testing.T, api *overviewAPI, callTimeout time.Duration, allowed toolsets.Set) map[string]any {
+	t.Helper()
 	api.requests, api.bodies = map[string]*http.Request{}, map[string]map[string]any{}
 	srv := httptest.NewServer(api)
 	t.Cleanup(srv.Close)
@@ -103,6 +109,7 @@ func runOverview(t *testing.T, api *overviewAPI, callTimeout time.Duration) map[
 		PrometheusUsername: "user",
 		PrometheusPassword: "pass",
 		TokenManager:       &auth.TokenManager{AccessToken: "mock-token", ExpiresAt: time.Now().Add(time.Hour)},
+		AllowedTools:       allowed,
 	}
 	opts := overviewOptions{now: fixedClock(time.Date(2026, 10, 16, 19, 0, 0, 0, time.UTC)), callTimeout: callTimeout}
 	res, _, err := newWorkspaceOverviewHandler(srv.Client(), cfg, opts)(context.Background(), &mcp.CallToolRequest{}, GetWorkspaceOverviewArgs{})
@@ -180,6 +187,25 @@ func TestWorkspaceOverviewAllOK(t *testing.T) {
 	}
 	if q := api.requests[routeAlerts].URL.Query(); q.Get("timestamp") != "1792177200" || q.Get("window") != "900" {
 		t.Errorf("alerts monitor query = %v", q)
+	}
+}
+
+// Toolsets filter the served tools, not backend reads (README, AGENTS.md):
+// under a logs-only surface the overview still probes every source.
+func TestWorkspaceOverviewProbesEverySourceUnderNarrowToolsets(t *testing.T) {
+	allowed, err := toolsets.Parse("logs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := &overviewAPI{responses: healthyResponses()}
+	out := runOverviewAllowing(t, api, time.Second, allowed)
+	for _, route := range allRoutes {
+		if api.requests[route] == nil {
+			t.Errorf("%s was not probed under --toolsets=logs", route)
+		}
+	}
+	if fields := errorFields(t, out); len(fields) != 0 {
+		t.Errorf("errors = %v, want none", fields)
 	}
 }
 
