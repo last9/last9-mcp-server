@@ -29,7 +29,7 @@ func GetServiceSummaryInputSchema() map[string]interface{} {
 			},
 			"env": map[string]interface{}{
 				"type":        "string",
-				"description": "Environment PromQL regex (default: .*). Exact one-env match needs anchors (e.g. ^prod$). Invalid regex is rejected before querying.",
+				"description": "(Optional) PromQL regular expression (default .*). Unanchored prod also matches production; an exact single environment needs anchors (^prod$). For literal-name matching without anchors use get_service_performance_details or get_service_operations_summary. Invalid regex is rejected before querying.",
 			},
 			"sort_by": map[string]interface{}{
 				"type":        "string",
