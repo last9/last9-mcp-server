@@ -9,4 +9,4 @@ Workflow: on-call triage for symptom "{{.symptom}}"{{if .service}} on {{.service
 {{else}}Unknown symptom: call get_alerts first to see what is actually firing, then follow the matching branch above (latency, errors, or database). If it matches latency or database, do not call the log-pattern tools. If it matches errors: {{template "errorLogTemplates" .}}
 {{end}}
 Report the single most likely root cause and the one signal that supports it. Map {{.time}} to each tool's own time window.
-{{- define "errorLogTemplates"}}Before the first log search (only when telemetry.logs != "absent"), {{template "logNovelty" .}} Before reading raw lines, call get_log_patterns, with the same severity_filters rule, for the window's dominant templates.{{end}}
+{{- define "errorLogTemplates"}}Before the first log search (only when telemetry.logs != "absent"), {{template "logNovelty" .}} Before reading raw lines, call get_log_patterns, with the same severity_filters and body_filters rules, for the window's dominant templates.{{end}}

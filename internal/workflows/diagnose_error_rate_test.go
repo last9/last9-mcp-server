@@ -109,6 +109,11 @@ func TestDiagnoseErrorRateChecksLogNoveltyBeforeRawLines(t *testing.T) {
 		"sample_limit_reached",
 		// Error triage compares error templates, but severity_filters drop body-level lines when severity_set is none or partial.
 		`severity_filters=["error", "fatal", "critical"] only when severity_set is "all"`,
+		// Unfiltered, info and debug churn can fill the sample and top_n and fold error templates into other.
+		`When severity_set is none or partial`,
+		`body_filters=["error", "exception", "fatal"]`,
+		`raise top_n`,
+		"get_log_patterns(service_name=checkout, env=prod) over 1h, with the same severity_filters and body_filters rules",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("template should contain %q:\n%s", want, got)

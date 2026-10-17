@@ -168,13 +168,20 @@ func TestOnCallRunbookLogNoveltyFiltersSeverityOnlyWhenSeveritySetIsAll(t *testi
 	const rule = `severity_filters=["error", "fatal", "critical"] only when severity_set is "all"`
 	for _, symptom := range []string{"errors", "weird"} {
 		got := renderOnCallRunbook(t, map[string]string{"symptom": symptom, "time": "1h", "service": "checkout"})
-		if novelty, filter := strings.Index(got, "get_emerging_log_patterns"), strings.Index(got, rule); filter < novelty {
+		novelty := strings.Index(got, "get_emerging_log_patterns")
+		if filter := strings.Index(got, rule); filter < novelty {
 			t.Errorf("symptom %q render must scope log novelty to error severities per severity_set:\n%s", symptom, got)
 		}
 		// Unfiltered dominant templates would surface info/debug volume next to error-scoped novelty.
 		patterns := strings.Index(got, "get_log_patterns")
-		if patterns < 0 || !strings.Contains(got[patterns:], "with the same severity_filters rule") {
-			t.Errorf("symptom %q render must apply the novelty severity rule to get_log_patterns:\n%s", symptom, got)
+		if patterns < 0 || !strings.Contains(got[patterns:], "with the same severity_filters and body_filters rules") {
+			t.Errorf("symptom %q render must apply the novelty filter rules to get_log_patterns:\n%s", symptom, got)
+		}
+		// Without severity_filters, info/debug churn can fill the sample and top_n, hiding error templates.
+		for _, want := range []string{`When severity_set is none or partial`, `body_filters=["error", "exception", "fatal"]`, `raise top_n`} {
+			if i := strings.Index(got, want); i < novelty || i > patterns {
+				t.Errorf("symptom %q render must say %q between the novelty and pattern calls:\n%s", symptom, want, got)
+			}
 		}
 	}
 }
