@@ -341,6 +341,8 @@ func TestAlertsStayInsideTheRequestedEnv(t *testing.T) {
 		wantEnvMatch string
 	}{
 		{"same env", "prod", map[string]interface{}{"service_name": "checkout", "env": "prod"}, true, envMatchExact},
+		{"same env, label case differs", "prod", map[string]interface{}{"service_name": "checkout", "env": "Prod"}, true, envMatchExact},
+		{"same env, request case differs", "PROD", map[string]interface{}{"service_name": "checkout", "deployment.environment": "prod"}, true, envMatchExact},
 		{"other env", "prod", map[string]interface{}{"service_name": "checkout", "env": "staging"}, false, ""},
 		{"other environment label", "prod", map[string]interface{}{"service_name": "checkout", "deployment_environment": "staging"}, false, ""},
 		{"no env label", "prod", map[string]interface{}{"service_name": "checkout"}, true, envMatchUnlabelled},
