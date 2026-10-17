@@ -10,10 +10,12 @@ import (
 	"last9-mcp/internal/toolsets"
 )
 
-// sectionedTools are the 15 tools eval cases exercise most (tool-name
-// references across last9-mcp-evals cases/*.jsonl at 07c82ee). Their
-// descriptions carry the five routing sections below.
+// sectionedTools are get_workspace_overview, the recommended first call, and
+// the 15 tools eval cases exercise most (tool-name references across
+// last9-mcp-evals cases/*.jsonl at 07c82ee). Their descriptions carry the five
+// routing sections below. get_current_time is exempt: it routes nowhere.
 var sectionedTools = []string{
+	"get_workspace_overview",
 	"get_logs",
 	"get_service_summary",
 	"prometheus_range_query",
@@ -96,8 +98,8 @@ func TestTopToolDescriptionsHaveRoutingSections(t *testing.T) {
 		served[tool.Name] = true
 		descriptions[tool.Name] = tool.Description
 	}
-	if len(sectionedTools) != 15 {
-		t.Fatalf("sectionedTools has %d entries, want 15", len(sectionedTools))
+	if len(sectionedTools) != 16 {
+		t.Fatalf("sectionedTools has %d entries, want 16", len(sectionedTools))
 	}
 	for _, name := range sectionedTools {
 		description, ok := descriptions[name]
