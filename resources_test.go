@@ -26,7 +26,7 @@ func TestReferenceResourcesAvailableUnderMetricsToolset(t *testing.T) {
 	registerReferenceResources(server)
 
 	cfg := models.Config{TokenManager: &auth.TokenManager{}, ToolFilter: toolsets.Filter{Tools: allowed}}
-	if err := registerAllTools(server, cfg); err != nil {
+	if _, err := registerAllTools(server, cfg); err != nil {
 		t.Fatal(err)
 	}
 

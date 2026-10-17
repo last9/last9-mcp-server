@@ -19,6 +19,7 @@
 {{- $refine := tools "update_dashboard" -}}
 {{- $alertDesign := tools "recommend_alert_config" "describe_alert_chart" -}}
 {{- $alertCreate := tools "create_alert" "create_alert_from_chart" "create_notification_channel" -}}
+{{- $enable := tools "patch_alert" -}}
 {{- $alertRefine := tools "update_alert" "patch_alert" "attach_notification_channel" "detach_notification_channel" -}}
 {{- $alertTriage := tools "acknowledge_alert" "reassign_alert" "mute_alert_group" -}}
 {{- $alertDestructive := tools "delete_alert" "delete_notification_channel" -}}
@@ -121,7 +122,7 @@ Read these resources before writing a non-trivial query:
 - Refine an existing object with {{.}}.
 {{- end}}
 {{- with $alertCreate}}
-- Create alert rules and notification channels once with {{.}}; alert rules start disabled, so enable one with patch_alert only after review.
+- Create alert rules and notification channels once with {{.}}; alert rules start disabled{{with $enable}}, so enable one with {{.}} only after review{{end}}.
 {{- end}}
 {{- with $alertRefine}}
 - Change existing alert rules and routing with {{.}}.

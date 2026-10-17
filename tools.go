@@ -51,17 +51,22 @@ func boolPtr(b bool) *bool { return &b }
 type toolGate struct {
 	filter   toolsets.Filter
 	readOnly map[string]bool // every offered tool name → its readOnlyHint
+	served   toolsets.Set    // every admitted tool name
 }
 
 func newToolGate(filter toolsets.Filter) *toolGate {
-	return &toolGate{filter: filter, readOnly: make(map[string]bool)}
+	return &toolGate{filter: filter, readOnly: make(map[string]bool), served: make(toolsets.Set)}
 }
 
 func (g *toolGate) admit(tool *mcp.Tool) bool {
 	// Missing annotations count as write, so read-only mode fails closed.
 	readOnly := tool.Annotations != nil && tool.Annotations.ReadOnlyHint
 	g.readOnly[tool.Name] = readOnly
-	return g.filter.Allows(tool.Name, readOnly)
+	if !g.filter.Allows(tool.Name, readOnly) {
+		return false
+	}
+	g.served[tool.Name] = struct{}{}
+	return true
 }
 
 // checkAllowWrite fails when an --allow-write-tools name is not a registered
@@ -116,8 +121,9 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, gate *toolG
 	return nil
 }
 
-// registerAllTools registers all tools with the MCP server using the new SDK pattern
-func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error {
+// registerAllTools registers all tools with the MCP server using the new SDK
+// pattern and returns the names it served.
+func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) (toolsets.Set, error) {
 	client := auth.GetHTTPClient()
 	gate := newToolGate(cfg.ToolFilter)
 
@@ -612,5 +618,5 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	}, grafana.NewListDatasourcesHandler(client, cfg)))
 
 	reg(gate.checkAllowWrite())
-	return regErr
+	return gate.served, regErr
 }

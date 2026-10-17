@@ -120,7 +120,7 @@ func TestRegisterAllTools_ExposesDashboardObjectSchemas(t *testing.T) {
 	defer server.Shutdown(context.Background())
 
 	cfg := testToolRegistrationConfig()
-	if err := registerAllTools(server, cfg); err != nil {
+	if _, err := registerAllTools(server, cfg); err != nil {
 		t.Fatal(err)
 	}
 

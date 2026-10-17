@@ -40,10 +40,7 @@ func initializeWith(t *testing.T, filter toolsets.Filter) (string, map[string]bo
 		t.Fatal(err)
 	}
 	cfg := models.Config{TokenManager: &auth.TokenManager{}, ToolFilter: filter}
-	if err := registerAllTools(server, cfg); err != nil {
-		t.Fatal(err)
-	}
-	if err := registerServerInstructions(server, filter.Tools); err != nil {
+	if err := registerToolsAndInstructions(server, cfg); err != nil {
 		t.Fatal(err)
 	}
 

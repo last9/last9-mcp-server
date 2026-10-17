@@ -45,7 +45,7 @@ func dumpTools(w io.Writer, filter toolsets.Filter) error {
 	registerReferenceResources(server)
 	workflows.Register(server)
 
-	if err := registerAllTools(server, cfg); err != nil {
+	if _, err := registerAllTools(server, cfg); err != nil {
 		return fmt.Errorf("failed to register tools: %w", err)
 	}
 	// The round-trip is over in-memory transports and won't hang in practice,

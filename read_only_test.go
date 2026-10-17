@@ -154,7 +154,7 @@ func TestHTTPModeHonorsReadOnly(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
 	cfg := models.Config{TokenManager: &auth.TokenManager{}, ToolFilter: toolsets.Filter{ReadOnly: true}}
-	if err := registerAllTools(server, cfg); err != nil {
+	if _, err := registerAllTools(server, cfg); err != nil {
 		t.Fatalf("registerAllTools: %v", err)
 	}
 	ts := httptest.NewServer(server.NewStreamableHTTPHandler(&mcp.StreamableHTTPOptions{Stateless: true}))

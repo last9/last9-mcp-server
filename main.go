@@ -245,12 +245,8 @@ func main() {
 	registerReferenceResources(server)
 	workflows.Register(server)
 
-	// Register all tools
-	if err := registerAllTools(server, cfg); err != nil {
-		log.Fatalf("failed to register tools: %v", err)
-	}
-	if err := registerServerInstructions(server, cfg.ToolFilter.Tools); err != nil {
-		log.Fatalf("failed to register server instructions: %v", err)
+	if err := registerToolsAndInstructions(server, cfg); err != nil {
+		log.Fatalf("failed to build the served surface: %v", err)
 	}
 
 	if cfg.HTTPMode {
