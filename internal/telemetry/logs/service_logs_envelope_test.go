@@ -143,6 +143,7 @@ func TestGetServiceLogsSearchAPIProbesOnePastLimit(t *testing.T) {
 
 func TestGetLogToolsReportFailedSearchChunksAsPartial(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
 		_, _ = w.Write([]byte(`{
 			"query_result":{"status":"success","data":{"resultType":"streams","result":[
 				{"stream":{"severity":"ERROR"},"values":[["1700000000000000000","boom"]]}

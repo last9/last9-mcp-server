@@ -22,6 +22,7 @@ var rawErrorFilter = []map[string]interface{}{
 func streamsServer(t *testing.T, values []logValue, limits *[]string) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
 		if limits != nil {
 			*limits = append(*limits, r.URL.Query().Get("limit"))
 		}
@@ -91,6 +92,7 @@ func TestGetLogsChunkedRawMarksTruncatedWhenChunksTogetherExceedLimit(t *testing
 	var limits []string
 	var mu sync.Mutex
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
 		mu.Lock()
 		limits = append(limits, r.URL.Query().Get("limit"))
 		mu.Unlock()
@@ -132,6 +134,7 @@ func TestGetLogsRawEmptyResultHintsDiscovery(t *testing.T) {
 
 func TestGetLogsAggregateEmptyResultAddsNoHint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
 		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
 	}))
 	t.Cleanup(server.Close)
@@ -155,6 +158,7 @@ func TestGetLogsWarnsWhenLimitIsCapped(t *testing.T) {
 
 func TestGetLogsTrimsOversizedResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
 		streams := make([]any, 40)
 		for i := range streams {
 			streams[i] = map[string]any{

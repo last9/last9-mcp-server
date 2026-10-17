@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,6 +21,7 @@ import (
 func callPromRangeQuery(t *testing.T, body string) *mcp.CallToolResult {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
 		_, _ = w.Write([]byte(body))
 	}))
 	t.Cleanup(server.Close)
