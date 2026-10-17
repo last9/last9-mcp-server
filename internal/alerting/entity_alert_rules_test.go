@@ -170,9 +170,11 @@ func TestGetEntityAlertRulesHandler_ShowsPatchedFields(t *testing.T) {
 			Properties: map[string]interface{}{
 				"description": "Checkout errors",
 				"runbook":     map[string]interface{}{"link": "https://runbook.example/checkout"},
+				"annotations": nil,
 			},
 		},
-		{ID: "rule-2", RuleName: "Untouched", RecurringMuteSchedule: json.RawMessage(`null`)},
+		// The API returns unset properties as null; they are noise, not values.
+		{ID: "rule-2", RuleName: "Untouched", RecurringMuteSchedule: json.RawMessage(`null`), Properties: map[string]interface{}{"annotations": nil, "description": ""}},
 	}
 	state := &entityAlertRulesTestServerState{rulesByEntityID: map[string]AlertConfigResponse{entityID: rules}}
 
@@ -185,11 +187,14 @@ func TestGetEntityAlertRulesHandler_ShowsPatchedFields(t *testing.T) {
 		"  Mute Until: 2026-10-17 18:00:00 UTC\n",
 		`  Recurring Mute Schedule: {"enabled":true,"timezone":"Asia/Kolkata","windows":[{"weekdays":["sat"],"start_time":"00:00","end_time":"23:59"}]}` + "\n",
 		"    description: Checkout errors\n",
-		"    runbook: map[link:https://runbook.example/checkout]\n",
+		`    runbook: {"link":"https://runbook.example/checkout"}` + "\n",
 	} {
 		if !strings.Contains(patched, want) {
 			t.Errorf("missing %q in:\n%s", want, patched)
 		}
+	}
+	if strings.Contains(patched, "annotations") {
+		t.Errorf("null annotations should not be shown:\n%s", patched)
 	}
 	if strings.Contains(untouched, "Mute Until") || strings.Contains(untouched, "Recurring Mute Schedule") || strings.Contains(untouched, "Properties") {
 		t.Errorf("unpatched rule should show no mute or properties lines:\n%s", untouched)
