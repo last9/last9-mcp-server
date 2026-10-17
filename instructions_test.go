@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -214,6 +215,38 @@ func TestServerInstructionsAdaptToToolsets(t *testing.T) {
 			for _, unwanted := range tt.omissions {
 				if strings.Contains(instructions, unwanted) {
 					t.Errorf("instructions contain %q:\n%s", unwanted, instructions)
+				}
+			}
+		})
+	}
+}
+
+// The confirmation lines must read correctly whichever subset of their tools
+// a toolset serves, and say what each tool actually destroys.
+func TestServerInstructionsConfirmationLines(t *testing.T) {
+	dashboardLine := "- Confirm with the user before overwriting or deleting dashboards and snapshots with `update_dashboard`, `delete_dashboard`, `delete_dashboard_snapshot`."
+	dropRuleLine := "- Confirm with the user before calling `add_drop_rule`: matching logs are dropped at ingestion and cannot be recovered."
+	tests := []struct {
+		spec   string
+		want   []string
+		absent []string
+	}{
+		{spec: "", want: []string{dashboardLine, dropRuleLine}},
+		{spec: "alerts", want: []string{dropRuleLine}, absent: []string{dashboardLine}},
+		{spec: "dashboards", want: []string{dashboardLine}, absent: []string{dropRuleLine}},
+	}
+	for _, tt := range tests {
+		t.Run("toolsets="+tt.spec, func(t *testing.T) {
+			instructions, _ := initializeOver(t, tt.spec)
+			lines := strings.Split(instructions, "\n")
+			for _, want := range tt.want {
+				if !slices.Contains(lines, want) {
+					t.Errorf("instructions missing line %q:\n%s", want, instructions)
+				}
+			}
+			for _, unwanted := range tt.absent {
+				if slices.Contains(lines, unwanted) {
+					t.Errorf("instructions contain line %q:\n%s", unwanted, instructions)
 				}
 			}
 		})
