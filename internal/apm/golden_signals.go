@@ -48,8 +48,9 @@ type Dependent struct {
 	ThroughputRPM float64 `json:"throughput_rpm"`
 }
 
-// QueryGoldenSignals returns golden signals keyed by service name, summed
-// across environments. Services with no series are absent from the map.
+// QueryGoldenSignals returns golden signals keyed by service name. Counts are
+// summed across environments; latencies are the slowest environment's. Services
+// with no series are absent from the map.
 func QueryGoldenSignals(ctx context.Context, client *http.Client, cfg models.Config, q GoldenSignalsQuery) (map[string]GoldenSignals, error) {
 	matcher := goldenSignalsMatcher(q.Services, q.Env)
 	windowMin := intervalMinutes(q.Window.Start.Unix(), q.Window.End.Unix())
@@ -153,11 +154,12 @@ func goldenSignalsMatcher(services []string, env string) string {
 		utils.EscapePromQLLabel(exactEnvPattern(env)), utils.EscapePromQLLabel(strings.Join(quoted, "|")))
 }
 
-// goldenLatencyQuery aggregates each latency quantile series the way
-// get_service_dependency_graph and get_service_operations_summary do.
+// goldenLatencyQuery aggregates each latency quantile series within one env the
+// way get_service_dependency_graph and get_service_operations_summary do, then
+// keeps the slowest env: quantile gauges from different envs cannot be summed.
 func goldenLatencyQuery(matcher string, windowMin int) string {
 	return fmt.Sprintf(
-		`quantile_over_time(0.95, sum by (service_name, quantile) (trace_service_response_time{%s, quantile=~"p50|p95|p99"}[%dm]))`,
+		`max by (service_name, quantile) (quantile_over_time(0.95, sum by (service_name, env, quantile) (trace_service_response_time{%s, quantile=~"p50|p95|p99"}[%dm])))`,
 		matcher, windowMin,
 	)
 }
