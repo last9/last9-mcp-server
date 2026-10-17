@@ -69,8 +69,9 @@ type Verdict struct {
 	Hints    []string
 }
 
-// Check never fails: when the estimate is unavailable the range and scope
-// checks still run on the locally detected scope, and the budgets are skipped.
+// Check never fails: when the estimate is unavailable only the range cap
+// runs, on the locally detected scope; the scope threshold and the budgets
+// need the estimate's bytes and are skipped.
 func (g *Guard) Check(ctx context.Context, req *mcp.CallToolRequest, q Query) Verdict {
 	mode, err := ParseMode(g.limits.Mode)
 	if err != nil || mode == ModeOff {
@@ -81,7 +82,7 @@ func (g *Guard) Check(ctx context.Context, req *mcp.CallToolRequest, q Query) Ve
 	s := scan{Range: time.Duration(q.EndMs-q.StartMs) * time.Millisecond, Scoped: PipelineScoped(q.Pipeline)}
 	if est, err := g.fetchEstimate(ctx, q); err != nil {
 		slog.Info("query guardrail estimate unavailable", "tool", q.Tool, "mode", mode, "err", err)
-		v.Hints = append(v.Hints, hint(ReasonEstimateUnavailable, "", "The scan estimate could not be fetched, so the scan and session budgets were not checked."))
+		v.Hints = append(v.Hints, hint(ReasonEstimateUnavailable, "", "The scan estimate could not be fetched, so only the range cap was checked; the scope threshold and the scan and session budgets were not."))
 	} else {
 		s.Estimate = &est.Bytes
 		s.Scoped = s.Scoped || est.Scoped
