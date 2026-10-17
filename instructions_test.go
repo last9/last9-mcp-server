@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -15,23 +16,34 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// initializeOver connects a client to a server built like main's for spec and
-// returns the instructions from initialize plus the served tool names.
+// initializeOver connects a client to a server built like main's for the
+// --toolsets spec and returns the instructions from initialize plus the served
+// tool names.
 func initializeOver(t *testing.T, spec string) (string, map[string]bool) {
 	t.Helper()
-	allowed, err := toolsets.Parse(spec)
+	return initializeWith(t, toolFilter(t, spec, false, ""))
+}
+
+func toolFilter(t *testing.T, spec string, readOnly bool, allowWrite string) toolsets.Filter {
+	t.Helper()
+	filter, err := toolsets.NewFilter(spec, readOnly, allowWrite)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return filter
+}
+
+func initializeWith(t *testing.T, filter toolsets.Filter) (string, map[string]bool) {
+	t.Helper()
 	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := models.Config{TokenManager: &auth.TokenManager{}, ToolFilter: toolsets.Filter{Tools: allowed}}
+	cfg := models.Config{TokenManager: &auth.TokenManager{}, ToolFilter: filter}
 	if err := registerAllTools(server, cfg); err != nil {
 		t.Fatal(err)
 	}
-	if err := registerServerInstructions(server, allowed); err != nil {
+	if err := registerServerInstructions(server, filter.Tools); err != nil {
 		t.Fatal(err)
 	}
 
@@ -89,24 +101,45 @@ func TestNamedToolsMatchesOnlyRegisteredNames(t *testing.T) {
 }
 
 // A tool registered without a line in server_instructions.md fails here, so
-// the policy cannot silently drift from tools.go.
+// the policy cannot silently drift from tools.go. Read-only variants keep the
+// policy from recommending write tools that tools/list hides.
 func TestServerInstructionsNameExactlyServedTools(t *testing.T) {
 	_, registry := initializeOver(t, "")
+	type variant struct {
+		name   string
+		filter toolsets.Filter
+	}
+	var variants []variant
 	for _, spec := range []string{"", "logs", "traces", "metrics", "alerts", "dashboards", "profiles", "grafana", "investigate", "logs,alerts"} {
-		t.Run("toolsets="+spec, func(t *testing.T) {
-			instructions, served := initializeOver(t, spec)
+		variants = append(variants, variant{"toolsets=" + spec, toolFilter(t, spec, false, "")})
+	}
+	variants = append(variants,
+		variant{"read-only", toolFilter(t, "", true, "")},
+		variant{"alerts read-only", toolFilter(t, "alerts", true, "")},
+		variant{"alerts read-only allow mute_alert_group", toolFilter(t, "alerts", true, "mute_alert_group")},
+		variant{"read-only allow create_alert", toolFilter(t, "", true, "create_alert")},
+		variant{"dashboards read-only allow update_dashboard", toolFilter(t, "dashboards", true, "update_dashboard")},
+	)
+	for _, v := range variants {
+		t.Run(v.name, func(t *testing.T) {
+			instructions, served := initializeWith(t, v.filter)
 			if len(served) == 0 {
-				t.Fatalf("toolsets=%q serves no tools", spec)
+				t.Fatalf("%s serves no tools", v.name)
 			}
 			named := namedTools(instructions, registry)
 			for tool := range named {
 				if !served[tool] {
-					t.Errorf("instructions name %q, which toolsets=%q does not serve", tool, spec)
+					t.Errorf("instructions name %q, which %s does not serve", tool, v.name)
 				}
 			}
 			for tool := range served {
 				if !named[tool] {
-					t.Errorf("instructions never name %q, which toolsets=%q serves", tool, spec)
+					t.Errorf("instructions never name %q, which %s serves", tool, v.name)
+				}
+			}
+			for tool := range registry {
+				if !served[tool] && regexp.MustCompile(`\b`+regexp.QuoteMeta(tool)+`\b`).MatchString(instructions) {
+					t.Errorf("instructions mention %q, which %s does not serve", tool, v.name)
 				}
 			}
 			if strings.Contains(instructions, "\n\n\n") {
@@ -125,7 +158,7 @@ func TestServerInstructionsNameExactlyServedTools(t *testing.T) {
 					}
 				}
 				if next == "" || strings.HasPrefix(next, "## ") {
-					t.Errorf("heading %q has no content under toolsets=%q", line, spec)
+					t.Errorf("heading %q has no content under %s", line, v.name)
 				}
 			}
 		})
