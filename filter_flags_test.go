@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"last9-mcp/internal/models"
@@ -20,12 +21,14 @@ func clearFilterEnv(t *testing.T) {
 	}
 }
 
+const allowWriteNeedsReadOnly = "--allow-write-tools requires --read-only"
+
 type filterFlagCase struct {
 	name    string
 	env     map[string]string
 	args    []string
 	want    toolsets.Filter
-	wantErr bool
+	wantErr string // substring of the expected startup error; "" expects none
 }
 
 func filterFlagCases(t *testing.T) []filterFlagCase {
@@ -39,7 +42,7 @@ func filterFlagCases(t *testing.T) []filterFlagCase {
 		{name: "env true", env: map[string]string{"LAST9_MCP_READ_ONLY": "true"}, want: toolsets.Filter{ReadOnly: true}},
 		{name: "env 1", env: map[string]string{"LAST9_MCP_READ_ONLY": "1"}, want: toolsets.Filter{ReadOnly: true}},
 		{name: "env false", env: map[string]string{"LAST9_MCP_READ_ONLY": "false"}, want: toolsets.Filter{}},
-		{name: "env garbage is a startup error", env: map[string]string{"LAST9_MCP_READ_ONLY": "maybe"}, wantErr: true},
+		{name: "env garbage is a startup error", env: map[string]string{"LAST9_MCP_READ_ONLY": "maybe"}, wantErr: "maybe"},
 		{name: "alias env true", env: map[string]string{"LAST9_READ_ONLY": "true"}, want: toolsets.Filter{ReadOnly: true}},
 		{name: "alias env true wins over prefixed false", env: map[string]string{"LAST9_READ_ONLY": "true", "LAST9_MCP_READ_ONLY": "false"}, want: toolsets.Filter{ReadOnly: true}},
 		{name: "alias env false wins over prefixed true", env: map[string]string{"LAST9_READ_ONLY": "false", "LAST9_MCP_READ_ONLY": "true"}, want: toolsets.Filter{}},
@@ -49,7 +52,11 @@ func filterFlagCases(t *testing.T) []filterFlagCase {
 		{name: "alias env allow list", env: map[string]string{"LAST9_READ_ONLY": "true", "LAST9_ALLOW_WRITE_TOOLS": "create_alert"}, want: toolsets.Filter{ReadOnly: true, AllowWrite: toolsets.Set{"create_alert": {}}}},
 		{name: "alias env allow list wins over prefixed", env: map[string]string{"LAST9_READ_ONLY": "true", "LAST9_ALLOW_WRITE_TOOLS": "create_alert", "LAST9_MCP_ALLOW_WRITE_TOOLS": "patch_alert"}, want: toolsets.Filter{ReadOnly: true, AllowWrite: toolsets.Set{"create_alert": {}}}},
 		{name: "empty env allow list", env: map[string]string{"LAST9_MCP_READ_ONLY": "true", "LAST9_MCP_ALLOW_WRITE_TOOLS": " "}, want: toolsets.Filter{ReadOnly: true}},
-		{name: "allow list without read-only is a startup error", args: []string{"--allow-write-tools=create_alert"}, wantErr: true},
+		{name: "allow list without read-only is a startup error", args: []string{"--allow-write-tools=create_alert"}, wantErr: allowWriteNeedsReadOnly},
+		{name: "env allow list without read-only is a startup error", env: map[string]string{"LAST9_MCP_ALLOW_WRITE_TOOLS": "create_alert"}, wantErr: allowWriteNeedsReadOnly},
+		{name: "alias env allow list without read-only is a startup error", env: map[string]string{"LAST9_ALLOW_WRITE_TOOLS": "create_alert"}, wantErr: allowWriteNeedsReadOnly},
+		{name: "env allow list with env read-only false is a startup error", env: map[string]string{"LAST9_MCP_READ_ONLY": "false", "LAST9_MCP_ALLOW_WRITE_TOOLS": "create_alert"}, wantErr: allowWriteNeedsReadOnly},
+		{name: "env allow list with flag read-only false is a startup error", env: map[string]string{"LAST9_MCP_READ_ONLY": "true", "LAST9_MCP_ALLOW_WRITE_TOOLS": "create_alert"}, args: []string{"--read-only=false"}, wantErr: allowWriteNeedsReadOnly},
 		{name: "all three flags", args: []string{"--toolsets=alerts", "--read-only", "--allow-write-tools=create_alert"}, want: toolsets.Filter{Tools: alerts, ReadOnly: true, AllowWrite: toolsets.Set{"create_alert": {}}}},
 	}
 }
@@ -67,9 +74,9 @@ func TestParseDumpToolFilter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			setFilterEnv(t, tt.env)
 			got, err := parseDumpToolFilter(tt.args)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("parseDumpToolFilter(%v) = %+v, want error", tt.args, got)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("parseDumpToolFilter(%v) = %+v, %v; want error containing %q", tt.args, got, err, tt.wantErr)
 				}
 				return
 			}
@@ -91,9 +98,9 @@ func TestSetupConfigToolFilter(t *testing.T) {
 			setFilterEnv(t, tt.env)
 			os.Args = append([]string{"last9-mcp"}, tt.args...)
 			cfg, err := SetupConfig(models.Config{RefreshToken: "test-token"})
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("SetupConfig(%v) filter = %+v, want error", tt.args, cfg.ToolFilter)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("SetupConfig(%v) filter = %+v, %v; want error containing %q", tt.args, cfg.ToolFilter, err, tt.wantErr)
 				}
 				return
 			}
