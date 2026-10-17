@@ -796,7 +796,7 @@ Partial change that preserves the rule ID. At least one change is required. Refu
 - `recurring_mute_schedule` (object, optional): Replaces the weekly schedule: `enabled` (default false), `timezone` (IANA name, required), and `windows` (1–20 of `weekdays` as `sun`..`sat`, `start_time` / `end_time` as 24-hour `HH:MM`). An end at or before the start ends the next day. Send every window to keep.
 - `clear_recurring_mute_schedule` (boolean, optional): Removes the schedule entirely; cannot be combined with `recurring_mute_schedule`. Differs from `enabled=false`, which keeps the windows stored.
 
-Viewer-role users may only change `mute_until`. Rule-level mute changes are rejected while the group or entity is muted.
+Viewer-role users may only change `mute_until`. Rule-level mute changes are rejected while the group or entity is muted. Read changes back with `get_entity_alert_rules`, which shows `mute_until`, `recurring_mute_schedule` and `properties`.
 
 ### delete_alert
 

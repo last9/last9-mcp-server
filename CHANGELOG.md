@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `get_entity_alert_rules` now shows each rule's `mute_until`, `recurring_mute_schedule` and `properties` (description, runbook, annotations) when set, and `get_alert_config` shows `mute_until` and `recurring_mute_schedule`, so changes made with `patch_alert` can be read back; previously a patched schedule or description was visible through no tool. The org-wide list behind `get_alert_config` returns only annotations in `properties` (#190).
 - `create_notification_channel` now says why the API rejected an `email` destination (a personal-provider address such as Gmail, a non-admin address on a personal-login org, or an address the API finds invalid) instead of only `the API rejected the channel (HTTP 400)`. The upstream body is still never relayed: only these fixed API messages are recognised (#190).
 - `create_alert` and `update_alert` now name the missing field (`alert_rule.condition`, `alert_rule.alert_condition` or `alert_rule.eval_window`) when the API rejects a static rule without it, instead of relaying the raw `HTTP 400 … {"error":"condition required"}` (#190).
 - `reassign_alert` with an `owner_email` that matches no active user now first checks the alert, so ids that match no alert report `no alert with this alert_group_id, rule_id and rule_type fired in the last hour` instead of `no active user with that email` (#190).
