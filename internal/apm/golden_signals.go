@@ -109,10 +109,7 @@ func QueryGoldenSignals(ctx context.Context, client *http.Client, cfg models.Con
 // QueryDirectDependents returns the services calling q.Service, busiest first.
 // Self-calls and callers without a service name are excluded.
 func QueryDirectDependents(ctx context.Context, client *http.Client, cfg models.Config, q DependentsQuery) ([]Dependent, error) {
-	windowMin := int(q.Window.End.Sub(q.Window.Start).Minutes())
-	if windowMin < 1 {
-		windowMin = 1
-	}
+	windowMin := intervalMinutes(q.Window.Start.Unix(), q.Window.End.Unix())
 	query := incomingCallersQuery(utils.EscapePromQLLabel(q.Service), utils.EscapePromQLLabel(exactEnvPattern(q.Env)), windowMin)
 	series, err := fetchPromInstantSeries(ctx, client, cfg, "direct dependents", query, q.Window.End.Unix())
 	if err != nil {
