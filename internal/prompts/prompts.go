@@ -5,6 +5,12 @@ import _ "embed"
 //go:embed descriptions/get_exceptions.md
 var GetExceptionsInstructions string
 
+// ServerInstructions is a text/template rendered against the active toolsets
+// and sent as the server's initialize instructions.
+//
+//go:embed server_instructions.md
+var ServerInstructions string
+
 //go:embed references/logjson.md
 var LogjsonReference string
 
