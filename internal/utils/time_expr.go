@@ -24,7 +24,6 @@ var timeZoneAbbreviations = map[string]string{
 	"MST":  "America/Denver",
 	"MDT":  "America/Denver",
 	"MT":   "America/Denver",
-	"CST":  "America/Chicago",
 	"CDT":  "America/Chicago",
 	"CT":   "America/Chicago",
 	"EST":  "America/New_York",
@@ -39,12 +38,21 @@ var timeZoneAbbreviations = map[string]string{
 	"AEDT": "Australia/Sydney",
 }
 
+// ambiguousTimeZones are abbreviations common for zones hours apart; guessing
+// one would silently shift every bound, so they are rejected with the choices.
+var ambiguousTimeZones = map[string]string{
+	"CST": "America/Chicago (US Central) or Asia/Shanghai (China)",
+}
+
 // ResolveTimeZone resolves an IANA zone name or a known abbreviation (IST →
 // Asia/Kolkata). Empty means UTC.
 func ResolveTimeZone(name string) (*time.Location, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return time.UTC, nil
+	}
+	if choices, ok := ambiguousTimeZones[strings.ToUpper(name)]; ok {
+		return nil, fmt.Errorf("ambiguous timezone %q: use %s", name, choices)
 	}
 	if iana, ok := timeZoneAbbreviations[strings.ToUpper(name)]; ok {
 		name = iana
@@ -65,7 +73,8 @@ func unknownTimeZoneError(name string) error {
 
 func isTimeZoneToken(tok string) bool {
 	_, known := timeZoneAbbreviations[strings.ToUpper(tok)]
-	return known || strings.Contains(tok, "/")
+	_, ambiguous := ambiguousTimeZones[strings.ToUpper(tok)]
+	return known || ambiguous || strings.Contains(tok, "/")
 }
 
 // ParseTimeRangeExpr resolves a range expression against now. Calendar words

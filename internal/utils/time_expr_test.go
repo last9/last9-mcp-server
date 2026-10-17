@@ -30,6 +30,10 @@ func TestResolveTimeZone(t *testing.T) {
 		{name: "ist", want: "Asia/Kolkata"},
 		{name: "PST", want: "America/Los_Angeles"},
 		{name: "EDT", want: "America/New_York"},
+		{name: "CDT", want: "America/Chicago"},
+		{name: "CT", want: "America/Chicago"},
+		{name: "CST", wantErr: `ambiguous timezone "CST": use America/Chicago (US Central) or Asia/Shanghai (China)`},
+		{name: "cst", wantErr: `ambiguous timezone "cst"`},
 		{name: "Asia/Kolkata", want: "Asia/Kolkata"},
 		{name: "America/New_York", want: "America/New_York"},
 		{name: "Mars/Olympus", wantErr: `unknown timezone "Mars/Olympus"`},
@@ -133,6 +137,7 @@ func TestParseTimeRangeExprErrors(t *testing.T) {
 		wantErr string
 	}{
 		{expr: "since yesterday 9am Mars/Olympus", wantErr: `unknown timezone "Mars/Olympus"`},
+		{expr: "since yesterday 9am CST", wantErr: `ambiguous timezone "CST"`},
 		{expr: "last", wantErr: "duration"},
 		{expr: "last 0h", wantErr: "positive"},
 		{expr: "last 2 fortnights", wantErr: `unknown unit "fortnights"`},

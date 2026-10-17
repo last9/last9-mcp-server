@@ -2,6 +2,6 @@ Return the current time, and resolve a human time range ("last 2h", "since yeste
 
 Parameters:
 - `range`: (Optional) Expression to resolve. Forms: `last 2h`, `past 30 minutes`, `last hour`, `last 7d` (units s, m, h, d = 24h, w = 7d); `today` (local midnight to now); `yesterday` (the full local day); `since <point>`; `<point> to <point>`. A point is an RFC3339 timestamp, or `today` / `yesterday` / `YYYY-MM-DD` with an optional clock time (`9am`, `9:30pm`, `14:30`). A trailing zone (`IST`, `Asia/Kolkata`) overrides `timezone` for the bounds.
-- `timezone`: (Optional) Zone for calendar words and for the `local` renderings: an IANA name or an abbreviation (IST = Asia/Kolkata, PST/PDT = America/Los_Angeles, EST/EDT = America/New_York, UTC, GMT). Default UTC. Unknown zones are an error.
+- `timezone`: (Optional) Zone for calendar words and for the `local` renderings: an IANA name or an abbreviation (IST = Asia/Kolkata, PST/PDT = America/Los_Angeles, EST/EDT = America/New_York, UTC, GMT). Default UTC. Unknown zones are an error, and so is the ambiguous CST: pass America/Chicago or Asia/Shanghai.
 
 Returns JSON: `now`, `timezone`, and with `range` also `range`, `start`, `end`. Each time is `{iso, epoch_seconds, local}`: `iso` is UTC RFC3339, `epoch_seconds` is Unix seconds, `local` (only for a non-UTC timezone) is RFC3339 in that zone. Pass `iso` to `*_time_iso` parameters.
