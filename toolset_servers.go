@@ -16,7 +16,7 @@ import (
 // toolsetServers caches one MCP server per distinct effective tool set, keyed
 // by its sorted tool names; like the startup server, each is shared by every
 // stateless request for that set. Parse accepts only named toolsets, so the
-// cache is bounded by their combinations (135, under 1 MB each) without eviction.
+// cache is bounded by their combinations (135, ~75 MB live heap together) without eviction.
 type toolsetServers struct {
 	build func(toolsets.Set) (*last9mcp.Last9MCPServer, error)
 
