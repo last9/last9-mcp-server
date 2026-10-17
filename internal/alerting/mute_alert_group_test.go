@@ -32,7 +32,7 @@ func TestMuteAlertGroupHandler(t *testing.T) {
 			}))
 			defer server.Close()
 			result, _, err := NewMuteAlertGroupHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil,
-				MuteAlertGroupArgs{EntityID: "entity-1", Until: tt.until})
+				MuteAlertGroupArgs{EntityID: "entity-1", Until: &tt.until})
 			if err != nil || result.IsError || resultText(result) != `{"ident":"entity-1"}` {
 				t.Fatalf("result=%+v err=%v", result, err)
 			}
@@ -41,7 +41,7 @@ func TestMuteAlertGroupHandler(t *testing.T) {
 }
 
 func TestMuteAlertGroupRequiresEntityID(t *testing.T) {
-	result, _, err := NewMuteAlertGroupHandler(http.DefaultClient, testAlertMutationConfig("http://unused"))(context.Background(), nil, MuteAlertGroupArgs{Until: 1})
+	result, _, err := NewMuteAlertGroupHandler(http.DefaultClient, testAlertMutationConfig("http://unused"))(context.Background(), nil, MuteAlertGroupArgs{Until: new(int64)})
 	if err != nil || !result.IsError {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
