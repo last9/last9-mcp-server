@@ -261,6 +261,28 @@ func TestCountAlertGroupsMatchesUnfilteredGetAlertGroups(t *testing.T) {
 	}
 }
 
+// The overview counts groups from the lookup alone: get_alert_groups' rule
+// fetch only adds per-group rule counts, so an unreadable rules endpoint
+// fails get_alert_groups but leaves the count known.
+func TestCountAlertGroupsNeedsNoAlertRules(t *testing.T) {
+	state := alertConfigTestServerState{
+		entityGroups:       sampleAlertGroupsWithZeroRuleEntity(),
+		alertRulesStatus:   http.StatusInternalServerError,
+		entityLookupStatus: http.StatusOK,
+	}
+	if _, _, err := executeGetAlertGroups(t, &state, GetAlertGroupsArgs{}); err == nil {
+		t.Fatal("get_alert_groups succeeded with alert rules unreadable")
+	}
+	server, cfg := newAlertGroupsTestServer(t, &state)
+	n, err := CountAlertGroups(context.Background(), server.Client(), cfg)
+	if err != nil {
+		t.Fatalf("CountAlertGroups failed on the rules endpoint it does not need: %v", err)
+	}
+	if n == 0 {
+		t.Fatal("CountAlertGroups = 0, want the looked-up groups")
+	}
+}
+
 func executeGetAlertGroups(
 	t *testing.T,
 	state *alertConfigTestServerState,
