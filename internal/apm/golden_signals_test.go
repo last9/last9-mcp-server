@@ -111,6 +111,17 @@ func TestGoldenSignalsMatcherEscapesServicesAndEnv(t *testing.T) {
 	}
 }
 
+// Quantile gauges cannot be summed: two envs at p95 100 ms and 400 ms are not a
+// 500 ms service. Each env is aggregated on its own, and with no env the
+// slowest one is reported.
+func TestGoldenLatencyQueryNeverSumsQuantilesAcrossEnvs(t *testing.T) {
+	got := goldenLatencyQuery(goldenSignalsMatcher([]string{"checkout"}, ""), 30)
+	want := `max by (service_name, quantile) (quantile_over_time(0.95, sum by (service_name, env, quantile) (trace_service_response_time{env=~".*",service_name=~"checkout", quantile=~"p50|p95|p99"}[30m])))`
+	if got != want {
+		t.Fatalf("latency query =\n%s\nwant\n%s", got, want)
+	}
+}
+
 func TestQueryDirectDependentsRanksCallersByThroughput(t *testing.T) {
 	q := DependentsQuery{Service: "checkout", Env: "prod", Window: goldenTestWindow()}
 	answers := map[string][]promStubSample{
