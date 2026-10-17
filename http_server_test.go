@@ -280,6 +280,18 @@ func TestHTTPToolsetsJoinsRepeatedHeaders(t *testing.T) {
 	assertTools(t, got, []string{"get_logs", "get_alerts"}, []string{"get_traces"})
 }
 
+// A header line with no toolsets in it does not override the query parameter.
+func TestHTTPToolsetsBlankHeaderDefersToQuery(t *testing.T) {
+	ts, _ := newToolsetHTTPServer(t, "logs,alerts")
+	for _, headers := range [][]string{{""}, {" "}, {"", " "}} {
+		status, body, got := listToolsWithHeaders(t, ts.URL+"/mcp?toolsets=alerts", headers)
+		if status != http.StatusOK {
+			t.Fatalf("headers %q: status %d: %s", headers, status, body)
+		}
+		assertTools(t, got, []string{"get_alerts"}, []string{"get_logs"})
+	}
+}
+
 func TestHTTPToolsetsNarrowInitializeInstructions(t *testing.T) {
 	ts, _ := newToolsetHTTPServer(t, "logs,alerts")
 	const initialize = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}`
