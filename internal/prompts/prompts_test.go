@@ -447,6 +447,12 @@ func TestAlertRuleDescriptionsRequireKPINames(t *testing.T) {
 	}
 }
 
+func TestCreateAlertDescriptionStatesDuplicateNameRefusal(t *testing.T) {
+	if !strings.Contains(prompts.CreateAlertDescription, "already uses (case-insensitive) is refused") {
+		t.Error("create_alert does not say a duplicate rule_name is refused")
+	}
+}
+
 func TestWhaleDescriptionsBounded(t *testing.T) {
 	budgets := map[string]int{
 		"get_logs_base":         2900,

@@ -754,7 +754,7 @@ Read-only. Lists the alertable signals (`key`, `unit`, `eval_query`, `query_kind
 
 ### create_alert
 
-Creates a rule in an existing alert group, always disabled (a draft, even if `is_disabled=false` is passed). Call `recommend_alert_config` first, then promote with `patch_alert` `is_disabled=false` only after the user confirms. Create once and keep the returned rule ID.
+Creates a rule in an existing alert group, always disabled (a draft, even if `is_disabled=false` is passed). Call `recommend_alert_config` first, then promote with `patch_alert` `is_disabled=false` only after the user confirms. Create once and keep the returned rule ID. A `rule_name` the alert group already uses (case-insensitive) is refused without creating anything, naming the existing rule's id.
 
 - `entity_id` (string, required): Alert group/entity UUID.
 - `alert_rule` (object, required): Complete typed rule body, including `primary_indicator` and `expression_args` bound to real KPIs of the entity. Each `expression_args` key must be the exact name of the KPI it binds (not a placeholder such as `x`), and `primary_indicator` and `expression` use those names. Static rules require `condition`, `alert_condition`, and `eval_window` (0–60 minutes). Adaptive rules use `expression` = `adaptive_std_cmp(<primary_indicator>, sensitivity, window)`; the three fields are then optional (defaults `expr > 0`, `count_true(result) >= 1`, `1`). `algorithm` cannot be set. Responder context goes in `properties` (description, runbook, annotations, `query_mode`).
