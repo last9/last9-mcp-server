@@ -160,8 +160,6 @@ func validMentionHandles(handles string) bool {
 			ok = len(parts) == 3 && slackUsergroupIDPattern.MatchString(parts[1])
 		case "special":
 			ok = len(parts) == 2 && (parts[1] == "here" || parts[1] == "channel")
-		default:
-			ok = true
 		}
 		if !ok {
 			return false
