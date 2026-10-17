@@ -198,6 +198,18 @@ func TestGetServiceLogsGuardrailShadowRunsAndHints(t *testing.T) {
 	}
 }
 
+func TestGetLogsGuardrailScopedFilterSkipsRangeCapWhenEstimateUnavailable(t *testing.T) {
+	s := newGuardrailServer(t, http.StatusNotFound, `404 page not found`)
+	result := callGuardedGetLogs(t, s, guardrail.ModeEnforce, GetLogsArgs{LogjsonQuery: serviceErrorFilter, LookbackMinutes: twoDaysMinutes})
+
+	if result.IsError || s.queryCalls.Load() == 0 {
+		t.Fatalf("scoped query blocked without an estimate: isError=%v queries=%d", result.IsError, s.queryCalls.Load())
+	}
+	if envelopeHint(t, result, "query_guardrail["+guardrail.ReasonRangeTooWide+"]") != "" {
+		t.Fatalf("range cap applied to a scoped query: %v", utils.GetResultEnvelope(t, result).Hints)
+	}
+}
+
 func TestGetLogsGuardrailEstimateUnavailableStillRuns(t *testing.T) {
 	s := newGuardrailServer(t, http.StatusNotFound, `404 page not found`)
 	result := callGuardedGetLogs(t, s, guardrail.ModeEnforce, GetLogsArgs{LogjsonQuery: rawErrorFilter, LookbackMinutes: 60})
