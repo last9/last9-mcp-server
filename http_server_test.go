@@ -339,6 +339,64 @@ func TestHTTPToolsetsUnknownNameIs400(t *testing.T) {
 	}
 }
 
+// drainTracker records whether the handler read the request body to EOF.
+type drainTracker struct {
+	io.Reader
+	drained bool
+}
+
+func (d *drainTracker) Read(p []byte) (int, error) {
+	n, err := d.Reader.Read(p)
+	if err == io.EOF {
+		d.drained = true
+	}
+	return n, err
+}
+
+// Requests rejected before reaching an MCP server still drain their body, so
+// keep-alive clients can reuse the connection; a failed build is a generic 500.
+func TestHTTPToolsetsRejectionsDrainTheBody(t *testing.T) {
+	startup, err := last9mcp.NewServerWithOptions("t", "0", last9mcp.WithSkipProviderInit())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = startup.Shutdown(context.Background()) })
+	builds := 0
+	h := NewHTTPServer(startup, testToolRegistrationConfig(), func(toolsets.Set) (*last9mcp.Last9MCPServer, error) {
+		builds++
+		return nil, errors.New("boom: internal detail")
+	})
+	tests := []struct {
+		header   string
+		status   int
+		wantBody string
+	}{
+		{header: "nope", status: http.StatusBadRequest, wantBody: `unknown toolset "nope"`},
+		{header: "logs", status: http.StatusInternalServerError, wantBody: "failed to build server for the requested toolsets"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.header, func(t *testing.T) {
+			body := &drainTracker{Reader: strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)}
+			req := httptest.NewRequest(http.MethodPost, "/mcp", body)
+			req.Header.Set("X-Last9-Toolsets", tt.header)
+			rec := httptest.NewRecorder()
+			h.Handler().ServeHTTP(rec, req)
+			if rec.Code != tt.status || !strings.Contains(rec.Body.String(), tt.wantBody) {
+				t.Fatalf("status %d body %q, want %d containing %q", rec.Code, rec.Body, tt.status, tt.wantBody)
+			}
+			if strings.Contains(rec.Body.String(), "internal detail") {
+				t.Errorf("response leaks the build error: %q", rec.Body)
+			}
+			if !body.drained {
+				t.Error("request body was not drained")
+			}
+		})
+	}
+	if builds != 1 {
+		t.Fatalf("built %d servers, want 1", builds)
+	}
+}
+
 func TestHTTPToolsetsFullStartupServesAnyRequestedSet(t *testing.T) {
 	ts, _ := newToolsetHTTPServer(t, "")
 	_, _, got := listTools(t, ts, "traces", "")
