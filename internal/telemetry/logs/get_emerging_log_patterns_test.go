@@ -25,6 +25,8 @@ func sameLines(line string, n int) []string {
 	return out
 }
 
+func floatPtr(v float64) *float64 { return &v }
+
 func emergingArgs(scope LogPatternScopeArgs) GetEmergingLogPatternsArgs {
 	scope.ServiceName = "checkout"
 	scope.StartTimeISO = patternWindowStartISO
@@ -322,8 +324,8 @@ func TestGetEmergingLogPatterns_RejectsInvalidArgsBeforeQuerying(t *testing.T) {
 		"baseline unparseable":      withBaseline("yesterday", "2026-10-15T11:00:00Z"),
 		"baseline empty range":      withBaseline("2026-10-15T11:00:00Z", "2026-10-15T11:00:00Z"),
 		"baseline overlaps current": withBaseline("2026-10-16T09:30:00Z", "2026-10-16T10:30:00Z"),
-		"change_factor of 1":        withOption(func(a *GetEmergingLogPatternsArgs) { a.ChangeFactor = 1 }),
-		"negative change_factor":    withOption(func(a *GetEmergingLogPatternsArgs) { a.ChangeFactor = -2 }),
+		"change_factor of 1":        withOption(func(a *GetEmergingLogPatternsArgs) { a.ChangeFactor = floatPtr(1) }),
+		"negative change_factor":    withOption(func(a *GetEmergingLogPatternsArgs) { a.ChangeFactor = floatPtr(-2) }),
 		"negative min_count":        withOption(func(a *GetEmergingLogPatternsArgs) { a.MinCount = -1 }),
 		"min_count over max":        withOption(func(a *GetEmergingLogPatternsArgs) { a.MinCount = maxPatternSampleSize + 1 }),
 		"min_count over sample_size": withOption(func(a *GetEmergingLogPatternsArgs) {

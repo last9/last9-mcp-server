@@ -40,11 +40,11 @@ var changeRank = map[string]int{changeNew: 0, changeIncreased: 1, changeDecrease
 // The embedded scope's time range is the current window.
 type GetEmergingLogPatternsArgs struct {
 	LogPatternScopeArgs
-	BaselineStartTimeISO string  `json:"baseline_start_time_iso,omitempty" jsonschema:"Baseline window start, RFC3339. Set together with baseline_end_time_iso. Default: the window of equal length ending where the current window starts."`
-	BaselineEndTimeISO   string  `json:"baseline_end_time_iso,omitempty" jsonschema:"Baseline window end, RFC3339, at or before the current window start. Set together with baseline_start_time_iso."`
-	MinCount             int     `json:"min_count,omitempty" jsonschema:"Minimum lines a pattern needs in the window it grew in (or, for decreases, the baseline) to be reported (default: 3, or sample_size if smaller; maximum: sample_size)"`
-	ChangeFactor         float64 `json:"change_factor,omitempty" jsonschema:"Frequency ratio between windows counted as significant, greater than 1 (default: 2, i.e. doubled or halved)"`
-	TopN                 int     `json:"top_n,omitempty" jsonschema:"Changed patterns returned before the rest fold into other (default: 20, maximum: 100)"`
+	BaselineStartTimeISO string   `json:"baseline_start_time_iso,omitempty" jsonschema:"Baseline window start, RFC3339. Set together with baseline_end_time_iso. Default: the window of equal length ending where the current window starts."`
+	BaselineEndTimeISO   string   `json:"baseline_end_time_iso,omitempty" jsonschema:"Baseline window end, RFC3339, at or before the current window start. Set together with baseline_start_time_iso."`
+	MinCount             int      `json:"min_count,omitempty" jsonschema:"Minimum lines a pattern needs in the window it grew in (or, for decreases, the baseline) to be reported (default: 3, or sample_size if smaller; maximum: sample_size)"`
+	ChangeFactor         *float64 `json:"change_factor,omitempty" jsonschema:"Frequency ratio between windows counted as significant, greater than 1 (default: 2, i.e. doubled or halved)"`
+	TopN                 int      `json:"top_n,omitempty" jsonschema:"Changed patterns returned before the rest fold into other (default: 20, maximum: 100)"`
 }
 
 // GetEmergingLogPatternsResponse is the output of the get_emerging_log_patterns tool.
@@ -187,12 +187,13 @@ func (args GetEmergingLogPatternsArgs) thresholds(sampleSize int) (emergingThres
 	if err != nil {
 		return emergingThresholds{}, err
 	}
-	factor := args.ChangeFactor
-	if factor == 0 {
-		factor = defaultEmergingChangeFactor
+	// A pointer, so an explicit 0 is rejected like 1 rather than read as omitted.
+	factor := defaultEmergingChangeFactor
+	if args.ChangeFactor != nil {
+		factor = *args.ChangeFactor
 	}
 	if !(factor > 1) || math.IsInf(factor, 0) {
-		return emergingThresholds{}, fmt.Errorf("change_factor must be a finite number greater than 1, got %v", args.ChangeFactor)
+		return emergingThresholds{}, fmt.Errorf("change_factor must be a finite number greater than 1, got %v", factor)
 	}
 	return emergingThresholds{minCount: minCount, changeFactor: factor, topN: topN}, nil
 }
