@@ -11,6 +11,7 @@ import (
 
 var promptDescriptionFiles = map[string]string{
 	"add_drop_rule.md":                     prompts.AddDropRuleDescription,
+	"analyze_change_impact.md":             prompts.AnalyzeChangeImpactDescription,
 	"create_dashboard.md":                  prompts.CreateDashboardDescription,
 	"delete_dashboard.md":                  prompts.DeleteDashboardDescription,
 	"delete_dashboard_snapshot.md":         prompts.DeleteDashboardSnapshotDescription,

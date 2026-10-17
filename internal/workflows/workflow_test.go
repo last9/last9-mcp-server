@@ -29,6 +29,24 @@ func lineStartingWith(t *testing.T, text, prefix string) string {
 	return found
 }
 
+// assertChecksRecentChange requires get_service_performance_details, then
+// get_change_events, then analyze_change_impact, and both verdict rules: only
+// `no significant change` clears a change; `insufficient data` is missing evidence.
+func assertChecksRecentChange(t *testing.T, name, text string) {
+	t.Helper()
+	perf := strings.Index(text, "get_service_performance_details")
+	events := strings.Index(text, "get_change_events")
+	impact := strings.Index(text, "analyze_change_impact")
+	if perf < 0 || !(perf < events && events < impact) {
+		t.Fatalf("%s: want get_service_performance_details, then get_change_events, then analyze_change_impact:\n%s", name, text)
+	}
+	for _, rule := range []string{"`no significant change` rules the change out", "`insufficient data` does not"} {
+		if !strings.Contains(text, rule) {
+			t.Fatalf("%s: the prompt must say %q:\n%s", name, rule, text)
+		}
+	}
+}
+
 // handlerText calls a workflow's handler and returns the single message's text.
 func handlerText(t *testing.T, w Workflow) string {
 	t.Helper()

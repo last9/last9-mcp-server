@@ -92,3 +92,19 @@ func TestDiagnoseErrorRateRendersEnvBranches(t *testing.T) {
 		t.Errorf("env-absent step 1 must sequence env resolution and perf-details in one list item:\n%s", got2)
 	}
 }
+
+// The change check sits right after the performance read, in its own step.
+func TestDiagnoseErrorRateChecksRecentChange(t *testing.T) {
+	res, err := DiagnoseErrorRate.Handler(context.Background(), &mcp.GetPromptRequest{
+		Params: &mcp.GetPromptParams{Arguments: map[string]string{"service": "checkout", "time": "1h", "env": "prod"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := res.Messages[0].Content.(*mcp.TextContent).Text
+	assertChecksRecentChange(t, DiagnoseErrorRate.Name, got)
+	step2 := lineStartingWith(t, got, "2.")
+	if !strings.Contains(step2, "get_change_events (service_name=checkout)") || !strings.Contains(step2, "analyze_change_impact") {
+		t.Errorf("step 2 must find the change and judge it:\n%s", step2)
+	}
+}

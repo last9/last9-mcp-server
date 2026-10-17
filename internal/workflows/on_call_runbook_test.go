@@ -107,3 +107,25 @@ func TestOnCallRunbookFleetTriageWhenNoService(t *testing.T) {
 		t.Errorf("no-service render should call profile after fleet triage:\n%s", got)
 	}
 }
+
+// Latency and error triage check a recent change with analyze_change_impact
+// right after the first performance read; other branches never call it.
+func TestOnCallRunbookChecksRecentChangeOnLatencyAndErrors(t *testing.T) {
+	for symptom, wantCall := range map[string]bool{"latency": true, "errors": true, "database": false, "weird": false} {
+		res, err := OnCallRunbook.Handler(context.Background(), &mcp.GetPromptRequest{
+			Params: &mcp.GetPromptParams{Arguments: map[string]string{"symptom": symptom, "time": "1h", "service": "checkout"}},
+		})
+		if err != nil {
+			t.Fatalf("symptom %q: %v", symptom, err)
+		}
+		got := res.Messages[0].Content.(*mcp.TextContent).Text
+		at := strings.Index(got, "analyze_change_impact")
+		if (at >= 0) != wantCall {
+			t.Fatalf("symptom %q: analyze_change_impact rendered = %v, want %v:\n%s", symptom, at >= 0, wantCall, got)
+		}
+		if !wantCall {
+			continue
+		}
+		assertChecksRecentChange(t, "on-call-runbook "+symptom, got)
+	}
+}
