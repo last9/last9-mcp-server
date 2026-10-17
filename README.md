@@ -285,9 +285,28 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_change_events`** — Deployments, config changes, rollbacks. Correlate incidents with what changed
 - **`get_alert_groups`** — Configured Compass alert groups with metadata labels, team, tier, and rule counts — including groups with zero rules and groups that are not firing
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
+- **`get_entity_kpis`** — Every KPI (id, name, PromQL, unit) on one alert group, including KPIs no rule uses yet — the ids `create_alert` and `validate_alert_expression` need
+- **`create_kpi`** — Create a KPI (PromQL + unit) on an alert group when no existing KPI fits. Create once and keep the returned id
 - **`get_alerts`** — Currently firing alerts within a time window
 - **`get_alert_rule_state`** — Historical firing state (1/0) per alert rule over a time range, grouped by `rule_id`. Filterable by alert group, rule name, label filters, and state.
-- **`get_notification_channels`** — Configured notification channels (Slack, PagerDuty, email, etc.)
+- **`get_notification_channels`** — Configured notification channels (Slack, PagerDuty, email, etc.). `scope=channels` lists the channels themselves (ids for attaching); the default `attached` lists per-alert-group attachments
+- **`recommend_alert_config`** — Read-only design guidance (lifecycle, validation gates, responder context) before creating an alert rule
+- **`validate_alert_expression`** — Dry-run an alert expression against an alert group's KPIs without saving anything
+- **`describe_alert_chart`** — Read-only: the alertable signals (key, unit) on a Discover chart (`discover-service`, `discover-exceptions`)
+- **`create_alert`** — Create an alert rule (static, or adaptive via `adaptive_std_cmp`) in an existing alert group; always created disabled as a draft. Create once; refine with `update_alert` / `patch_alert`
+- **`create_alert_from_chart`** — Create a static-threshold alert rule from a Discover chart in one call. Unlike `create_alert`, the rule is enabled immediately
+- **`update_alert`** — Full replacement of a rule's evaluation config (may return a replacement rule ID)
+- **`patch_alert`** — Partial change to a rule: enable/pause, `mute_until`, responder `properties`, weekly `recurring_mute_schedule` (or `clear_recurring_mute_schedule`)
+- **`delete_alert`** — Permanently delete an alert rule
+- **`mute_alert_group`** — Mute (or unmute) every rule in an alert group until a deadline
+- **`acknowledge_alert`** — Take ownership of a firing alert, or release it
+- **`reassign_alert`** — Hand an already-acknowledged alert to another user
+- **`create_notification_channel`** — Create a Slack, PagerDuty, Opsgenie, email, or generic webhook channel
+- **`attach_notification_channel`** — Route an existing channel to an alert group for `breach`, `threat`, or both
+- **`detach_notification_channel`** — Remove one channel-to-alert-group attachment
+- **`delete_notification_channel`** — Permanently delete a channel that has no attachments
+
+The alert write tools (`create_kpi`, `create_alert`, `update_alert`, `patch_alert`, `delete_alert`, `create_alert_from_chart`, `mute_alert_group`, `acknowledge_alert`, `reassign_alert`, `create_notification_channel`, `attach_notification_channel`, `detach_notification_channel`, `delete_notification_channel`) need a token with write scope; `delete_alert`, `detach_notification_channel` and `delete_notification_channel` need delete scope instead. They are exposed only in the `alerts` toolset.
 
 ### Custom Dashboards
 
@@ -336,7 +355,7 @@ Read-only tools against the org's Grafana instance (via Last9's Grafana proxy). 
 
 **Toolsets.** By default the server exposes every tool. Automation hosts that only need investigation (logs/traces/metrics/profiles) can set `LAST9_TOOLSETS=investigate` (or pass `--toolsets=investigate`) so `tools/list` stays small without client-side mass-disable. Named packs: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`. Unknown names fail fast. The `metrics` pack alone does **not** include `list_datasources` or `did_you_mean` — use `investigate` (or combine toolsets) when you need those discovery helpers.
 
-**Tool reference resources.** Long logjson/tracejson/service-logs/metrics manuals are MCP resources (`last9://reference/logjson`, `last9://reference/tracejson`, `last9://reference/service_logs`, `last9://reference/metrics`, `last9://reference/investigation`), not always-on tool description text. Critical query rules stay on the tool description so agents that never call `resources/read` still get correct construction guidance. Discover org-specific fields with `get_log_attributes` / `get_log_attributes_for_pipeline` (and the trace equivalents)—they are not injected into descriptions.
+**Tool reference resources.** Long logjson/tracejson/service-logs/metrics manuals are MCP resources (`last9://reference/logjson`, `last9://reference/tracejson`, `last9://reference/service_logs`, `last9://reference/metrics`, `last9://reference/investigation`, `last9://reference/alerting`), not always-on tool description text. The alerting manual covers the alert expression grammar, static vs adaptive fields, units, what `validate_alert_expression` checks, and latency / error-rate / saturation rule templates. Critical query rules stay on the tool description so agents that never call `resources/read` still get correct construction guidance. Discover org-specific fields with `get_log_attributes` / `get_log_attributes_for_pipeline` (and the trace equivalents)—they are not injected into descriptions.
 
 **Chunked large results.** `get_logs` and `get_traces` handle large result sets through chunking rather than truncating. The default limit is 5000 entries for logs; configurable via `LAST9_MAX_GET_LOGS_ENTRIES`.
 
@@ -678,6 +697,27 @@ Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `en
 - `alert_group_name` / `alert_group_type` / `data_source_name` (string, optional)
 - `tags` (array, optional): All must match (AND logic).
 
+### get_entity_kpis
+
+Read-only; in the `alerts` and `investigate` toolsets. Lists every KPI on one alert group, including KPIs no alert rule uses yet. Use the returned ids in `expression_args` / `indicators_used`; never invent one.
+
+- `entity_id` (string, required): Alert group/entity UUID, from `get_alert_groups` or `get_alert_config`.
+
+Returns JSON `{"entity_id","count","kpis":[{"id","name","description","query","unit"}]}`, sorted by name. `unit` is a display label: thresholds compare against the raw query value. When no KPI fits, create one with `create_kpi`.
+
+### create_kpi
+
+Creates a KPI on an existing alert group; `alerts` toolset only. Use it only when `get_entity_kpis` has no KPI with the query you need. Check the query returns data with `prometheus_range_query` first; the API also rejects a query that fails on the alert group's data source.
+
+- `entity_id` (string, required): Alert group/entity UUID.
+- `name` (string, required): Unique within the alert group; a second create with the same name is rejected as a conflict.
+- `query` (string, required): PromQL. To alert on a dashboard panel, take the panel's PromQL from `get_dashboard`.
+- `unit` (string, required): Unit of the query's raw value, e.g. `seconds`, `ms`, `percent`, `ratio`, `count`, `req/s`. It is a label only and converts nothing, so thresholds compare against the raw value.
+- `description` (string, optional)
+- `data_source_id` (string, optional): Defaults to the alert group's data source.
+
+Create once and keep the returned id for `expression_args` / `indicators_used`; on a name conflict, reuse the existing KPI's id from `get_entity_kpis`. Returns `{"id","name","query","unit"}`.
+
 ### get_alerts
 
 - `time_iso` (string, optional): Evaluation time in RFC3339.
@@ -699,7 +739,151 @@ Returns a JSON map of `rule_id -> [{timestamp, is_firing}]`. A timestamp at whic
 
 ### get_notification_channels
 
-No parameters. Returns all configured notification channels (Slack, PagerDuty, email, webhooks, etc.).
+- `scope` (string, optional): `attached` (default) returns one row per alert-group attachment; the `id` is an attachment id, as taken by `detach_notification_channel`. `channels` returns the org's channels (`id`, `name`, `type`, `send_resolved`); the `id` is a channel id, as taken by `attach_notification_channel`. Destinations, headers, and certificates are never returned.
+
+Returns configured notification channels (Slack, PagerDuty, email, webhooks, etc.) as a TSV table.
+
+### recommend_alert_config
+
+Read-only. Returns lifecycle guidance, validation gates, and responder-context requirements; it is not evidence by itself, so ground thresholds with telemetry tools.
+
+- `signal` (string, required): Metric or user-impact signal, including unit and dimensions.
+- `objective` (string, required): Symptom or user impact to detect.
+- `rule_type` (string, optional): `static` (default) or `anomaly`.
+- `severity` (string, optional): `breach` (default) or `threat`.
+- `environment` (string, optional): Environment and traffic profile.
+
+### validate_alert_expression
+
+Dry-runs an expression without saving. Use before `create_alert` / `update_alert`.
+
+- `entity_id` (string, required): Alert group/entity UUID.
+- `expression` (string, required): Arithmetic over indicator names, e.g. `x / y`. At most 3 indicators.
+- `indicators_used` (object, required, non-empty): Indicator name to KPI UUID owned by `entity_id`; list the group's KPI ids with `get_entity_kpis`.
+
+Only the arithmetic expression is checked (pass the inner metric expression, not an `adaptive_std_cmp(...)` wrapper); `condition` / `alert_condition` are not. The at-least-one-timeseries check runs only when more than one indicator is used.
+
+Returns `{"valid":true}` or `{"valid":false,"reason":"..."}`; an invalid expression is a normal result, not a tool error.
+
+### describe_alert_chart
+
+Read-only. Lists the alertable signals (key, name, unit, query metadata) on a covered Discover chart. Viewer-role tokens are rejected.
+
+- `surface` (string, required): `discover-service` or `discover-exceptions`.
+- `chart_key` (string, required): e.g. `apdex`, `error_rate`, `response_time`, `exception_count`.
+- `service_name` (string, required)
+- `env` (string, optional)
+- `attributes` (object, optional): Extra identity dimensions, using the key names this tool reports.
+
+### create_alert
+
+Creates a rule in an existing alert group, always disabled (a draft, even if `is_disabled=false` is passed). Call `recommend_alert_config` first, then promote with `patch_alert` `is_disabled=false` only after the user confirms. Create once and keep the returned rule ID.
+
+- `entity_id` (string, required): Alert group/entity UUID.
+- `alert_rule` (object, required): Complete typed rule body, including `primary_indicator` and `expression_args` bound to real KPIs of the entity. Static rules require `condition`, `alert_condition`, and `eval_window` (0–60 minutes). Adaptive rules use `expression` = `adaptive_std_cmp(<primary_indicator>, sensitivity, window)`; the three fields are then optional (defaults `expr > 0`, `count_true(result) >= 1`, `1`). `algorithm` cannot be set. Responder context goes in `properties` (description, runbook, annotations, `query_mode`).
+
+Notification routing is configured on the alert group, not the rule.
+
+### create_alert_from_chart
+
+Creates a static-threshold rule from a chart described by `describe_alert_chart`. The rule is created enabled and fires as soon as its condition is met.
+
+- `surface` / `chart_key` / `service_name` / `signal_key` / `name` (string, required)
+- `env` (string, optional)
+- `attributes` (object, optional)
+- `threshold` (number, optional): In the signal's unit. Score-unit signals such as apdex need an explicit value.
+- `threshold_operator` (string, optional): `>` (default), `<`, `>=`, `<=`, `==`, `!=`.
+- `eval_window` (integer, optional): Minutes, 1–60. Default: 5.
+- `bad_minutes` (integer, optional): 1–`eval_window`. Default: 3.
+- `severity` (string, optional): `breach` or `threat`.
+- `description` (string, optional)
+- `group_id` (string, optional): Normally omit.
+
+### update_alert
+
+Full replacement of a rule's evaluation config. Retrieve the rule first with `get_alert_config` or `get_entity_alert_rules`. May soft-delete and recreate the rule, so use the returned replacement ID afterwards.
+
+- `entity_id` (string, required)
+- `id` (string, required): Alert rule UUID.
+- `alert_rule` (object, required): Complete configuration; same shape as `create_alert`.
+
+### patch_alert
+
+Partial change that preserves the rule ID. At least one change is required.
+
+- `entity_id` (string, required)
+- `id` (string, required): Alert rule UUID.
+- `is_disabled` (boolean, optional): `false` promotes/enables, `true` pauses.
+- `mute_until` (integer, optional): Unix epoch deadline; `0` unmutes.
+- `properties` (object, optional): Replaces description, runbook, annotations, and `query_mode`.
+- `recurring_mute_schedule` (object, optional): Replaces the weekly schedule: `enabled` (default false), `timezone` (IANA name, required), and `windows` (1–20 of `weekdays` as `sun`..`sat`, `start_time` / `end_time` as 24-hour `HH:MM`). An end at or before the start ends the next day. Send every window to keep.
+- `clear_recurring_mute_schedule` (boolean, optional): Removes the schedule entirely; cannot be combined with `recurring_mute_schedule`. Differs from `enabled=false`, which keeps the windows stored.
+
+Viewer-role users may only change `mute_until`. Rule-level mute changes are rejected while the group or entity is muted.
+
+### delete_alert
+
+Permanently deletes a rule. Verify with `get_alert_config` and get explicit user confirmation first.
+
+- `entity_id` (string, required)
+- `id` (string, required): Alert rule UUID.
+
+### mute_alert_group
+
+Mutes every current and future rule in a group; to mute one rule use `patch_alert` with `mute_until`. Requires editor access.
+
+- `entity_id` (string, required): Alert group/entity UUID.
+- `until` (integer, required): Unix epoch seconds when the mute ends. `0` unmutes; a negative value such as `-1` mutes indefinitely.
+
+### acknowledge_alert
+
+Takes ownership of a firing alert, or releases it. Does not resolve or mute the alert. Acknowledging an alert you already own is a safe no-op.
+
+- `alert_group_id` / `rule_id` / `rule_type` (string, required): Copy from the alert in `get_alerts`.
+- `action` (string, optional): `ack` (default) or `unack`. Only the owner or an org admin can unack.
+- `mute_until` (integer, optional): `ack` only. Records a mute you already applied with `mute_alert_group` or `patch_alert`; does not mute anything.
+
+### reassign_alert
+
+Hands an alert that already has an owner to another user; acknowledge it first if it has none. Last9 does not notify the new owner.
+
+- `alert_group_id` / `rule_id` / `rule_type` (string, required): Copy from the alert in `get_alerts`.
+- `owner_email` (string, optional): Preferred; matched case-insensitively against active org users.
+- `owner_user_id` (string, optional): Provide exactly one of `owner_email` or `owner_user_id`.
+
+### create_notification_channel
+
+Creates a channel; it routes nothing until attached with `attach_notification_channel`. Create once and keep the id; there is no update tool. Returns only `id`, `name`, `type`, and `send_resolved`.
+
+- `name` (string, required): Unique per type; no colon.
+- `type` (string, required): `slack`, `pagerduty`, `opsgenie`, `email`, or `generic_webhook`.
+- `destination` (string, required): Slack Incoming Webhook URL (or channel ID with `slack_app_mode`), PagerDuty routing key, Opsgenie API key, comma-separated org-domain email addresses, or an HTTPS webhook URL.
+- `slack_app_mode` (boolean, optional): Slack only. Default: false.
+- `mention_handles` (string, optional): Comma-separated, e.g. `user|U123ABC|name`, `special|here`, `special|channel`.
+- `webhook_headers` (object, optional): `generic_webhook` only.
+- `webhook_ca_certificate` (string, optional): `generic_webhook` only; one PEM CA certificate up to 64 KiB.
+- `send_resolved` (boolean, optional): Default: true.
+
+### attach_notification_channel
+
+Routes an existing channel to one alert group. Idempotent. Attachments copy the channel's delivery settings (headers, certificate, mentions) at attach time; if the channel's settings change later, reattach.
+
+- `channel_id` (integer, required): A channel id (`get_notification_channels` with `scope=channels`), not an attachment id.
+- `alert_group_id` (string, required): From `get_alert_groups`.
+- `severity` (string, required): `breach`, `threat`, or `both`. `both` makes two attachments.
+
+### detach_notification_channel
+
+Removes one attachment. Requires a delete-scope token; a write-scope token cannot detach.
+
+- `attachment_id` (integer, required): The `id` from `get_notification_channels` with `scope=attached`. Channel ids are refused.
+- `alert_group_id` (string, optional): Refuses if the attachment belongs to a different group.
+
+### delete_notification_channel
+
+Permanently deletes a channel that has no attachments; detach its attachments first. Requires a delete-scope token. Confirms the deletion by re-listing channels.
+
+- `channel_id` (integer, required): The `id` from `get_notification_channels` with `scope=channels`. Attachment ids are refused.
 
 ### did_you_mean
 
@@ -726,6 +910,8 @@ No parameters. Returns all custom dashboards in the org as a JSON array with `id
 - `id` (string, required): Dashboard UUID.
 - `region` (string, optional): Region for panel query population. Defaults to configured datasource region.
 
+To alert on a panel, take its PromQL `expr` into `create_kpi` on the chosen alert group, then `create_alert` as a draft (the `author-alert` prompt walks through it; see `last9://reference/alerting`).
+
 ### validate_dashboard
 
 Read-only. Never creates or updates dashboards. Accept exactly one of `dashboard_id` or `dashboard_definition`.
@@ -743,6 +929,8 @@ Net-new only. After this call returns `dashboard.id`, refine with `update_dashbo
 
 - `dashboard` (object, required): Dashboard definition with `name` and `panels[]`. Each panel requires `name`, `version`, `layout` (`x`, `y`, `w`, `h`), `visualization.type`, and `queries[]`.
 - `metadata` (object, optional): Dashboard metadata — `_category` and `_type` fields (e.g. `{"_category":"custom","_type":"metrics"}`).
+
+Creating a dashboard creates no alerts; to alert on a panel, use `create_kpi` with its PromQL, then `create_alert` as a draft.
 
 ### update_dashboard
 

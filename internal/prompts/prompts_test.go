@@ -11,9 +11,14 @@ import (
 
 var promptDescriptionFiles = map[string]string{
 	"add_drop_rule.md":                     prompts.AddDropRuleDescription,
+	"create_alert.md":                      prompts.CreateAlertDescription,
+	"create_alert_from_chart.md":           prompts.CreateAlertFromChartDescription,
 	"create_dashboard.md":                  prompts.CreateDashboardDescription,
+	"create_kpi.md":                        prompts.CreateKPIDescription,
+	"delete_alert.md":                      prompts.DeleteAlertDescription,
 	"delete_dashboard.md":                  prompts.DeleteDashboardDescription,
 	"delete_dashboard_snapshot.md":         prompts.DeleteDashboardSnapshotDescription,
+	"describe_alert_chart.md":              prompts.DescribeAlertChartDescription,
 	"did_you_mean.md":                      prompts.DidYouMeanDescription,
 	"get_alert_config.md":                  prompts.GetAlertConfigDescription,
 	"get_alert_groups.md":                  prompts.GetAlertGroupsDescription,
@@ -29,6 +34,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_databases.md":                     prompts.GetDatabasesDescription,
 	"get_drop_rules.md":                    prompts.GetDropRulesDescription,
 	"get_entity_alert_rules.md":            prompts.GetEntityAlertRulesDescription,
+	"get_entity_kpis.md":                   prompts.GetEntityKPIsDescription,
 	"get_exceptions.md":                    prompts.GetExceptionsInstructions,
 	"get_flamegraph.md":                    prompts.GetFlamegraphDescription,
 	"get_log_attributes.md":                prompts.GetLogAttributesDescription,
@@ -60,15 +66,31 @@ var promptDescriptionFiles = map[string]string{
 	"list_dashboard_snapshots.md":          prompts.ListDashboardSnapshotsDescription,
 	"list_dashboards.md":                   prompts.ListDashboardsDescription,
 	"list_datasources.md":                  prompts.ListDatasourcesDescription,
+	"mute_alert_group.md":                  prompts.MuteAlertGroupDescription,
+	"acknowledge_alert.md":                 prompts.AcknowledgeAlertDescription,
+	"reassign_alert.md":                    prompts.ReassignAlertDescription,
+	"create_notification_channel.md":       prompts.CreateNotificationChannelDescription,
+	"attach_notification_channel.md":       prompts.AttachNotificationChannelDescription,
+	"detach_notification_channel.md":       prompts.DetachNotificationChannelDescription,
+	"delete_notification_channel.md":       prompts.DeleteNotificationChannelDescription,
+	"patch_alert.md":                       prompts.PatchAlertDescription,
 	"prometheus_instant_query.md":          prompts.PromqlInstantQueryDetails,
 	"prometheus_label_values.md":           prompts.PromqlLabelValuesQueryDetails,
 	"prometheus_labels.md":                 prompts.PromqlLabelsQueryDetails,
 	"prometheus_range_query_base.md":       prompts.PromqlRangeQueryDetails,
+	"recommend_alert_config.md":            prompts.RecommendAlertConfigDescription,
+	"update_alert.md":                      prompts.UpdateAlertDescription,
 	"update_dashboard.md":                  prompts.UpdateDashboardDescription,
+	"validate_alert_expression.md":         prompts.ValidateAlertExpressionDescription,
 	"validate_dashboard.md":                prompts.ValidateDashboardDescription,
 }
 
 var simplePromptDescriptionFiles = map[string]bool{
+	"create_alert.md":              true,
+	"delete_alert.md":              true,
+	"patch_alert.md":               true,
+	"recommend_alert_config.md":    true,
+	"update_alert.md":              true,
 	"add_drop_rule.md":             true,
 	"create_dashboard.md":          true,
 	"delete_dashboard.md":          true,
@@ -436,6 +458,7 @@ func TestReferenceManualsEmbedded(t *testing.T) {
 		"tracejson":    prompts.TracejsonReference,
 		"service_logs": prompts.ServiceLogsReference,
 		"metrics":      prompts.MetricsReference,
+		"alerting":     prompts.AlertingReference,
 	} {
 		if len(body) < 1000 {
 			t.Errorf("%s reference too short (%d chars) — embed may be wrong", name, len(body))
@@ -536,6 +559,108 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 	// Any mention at all, not three exact phrasings a reword would slip past.
 	if strings.Contains(create, "list_dashboards") {
 		t.Error("CreateDashboardDescription must not require list_dashboards before create")
+	}
+}
+
+func TestAlertingReferenceCoversAuthoringContract(t *testing.T) {
+	for _, phrase := range []string{
+		"adaptive_std_cmp(<primary_indicator>, <sensitivity>, <window>)",
+		"One to three distinct indicator names",
+		"There is **no `for:` clause**",
+		`"count_true(result) >= <bad_minutes>"` + "` with `eval_window: <total_minutes>`",
+		"**required**, minutes, 0-60",
+		"default `expr > 0`",
+		"default `count_true(result) >= 1`",
+		"The KPI `unit` is a label",
+		"**inner metric expression**",
+		"`invalid indicator details for <name>`",
+		"`missing indicator details for <name>`",
+		"`expression yields 0 timeseries`",
+		"It does **not** check `condition`, `alert_condition`, `eval_window`",
+		"### Latency", "### Error rate", "### Saturation",
+		"## Alert from a dashboard panel",
+		"only after the user explicitly confirms",
+	} {
+		if !strings.Contains(prompts.AlertingReference, phrase) {
+			t.Errorf("alerting reference missing %q", phrase)
+		}
+	}
+	// Each template section must show both a static and an adaptive rule.
+	for _, section := range strings.Split(strings.SplitN(prompts.AlertingReference, "## Templates", 2)[1], "\n### ")[1:] {
+		title := strings.SplitN(section, "\n", 2)[0]
+		if title == "Saturation" {
+			section = strings.SplitN(section, "\n## ", 2)[0]
+		}
+		if !strings.Contains(section, `"condition": "expr >`) || !strings.Contains(section, `"expression": "adaptive_std_cmp(`) {
+			t.Errorf("template %q must show a static and an adaptive rule", title)
+		}
+	}
+}
+
+func TestAlertToolDescriptionsPointAtAlertingReference(t *testing.T) {
+	for name, body := range map[string]string{
+		"create_alert":              prompts.CreateAlertDescription,
+		"update_alert":              prompts.UpdateAlertDescription,
+		"validate_alert_expression": prompts.ValidateAlertExpressionDescription,
+		"recommend_alert_config":    prompts.RecommendAlertConfigDescription,
+		"get_entity_kpis":           prompts.GetEntityKPIsDescription,
+		"create_kpi":                prompts.CreateKPIDescription,
+	} {
+		if !strings.Contains(body, "last9://reference/alerting") {
+			t.Errorf("%s description must point at last9://reference/alerting", name)
+		}
+	}
+	if !strings.Contains(prompts.ValidateAlertExpressionDescription, "get_entity_kpis") {
+		t.Error("validate_alert_expression must send agents to get_entity_kpis for KPI ids")
+	}
+}
+
+func TestDashboardDescriptionsPointAtPanelAlertFlow(t *testing.T) {
+	for name, body := range map[string]string{
+		"get_dashboard":    prompts.GetDashboardDescription,
+		"create_dashboard": prompts.CreateDashboardDescription,
+	} {
+		assertPhrasesInOrder(t, name, body, "create_kpi", "create_alert", "author-alert", "last9://reference/alerting")
+	}
+	if !strings.Contains(prompts.CreateAlertDescription, "create one from the panel's PromQL with create_kpi") {
+		t.Error("create_alert must route custom dashboard panels through create_kpi")
+	}
+}
+
+func assertPhrasesInOrder(t *testing.T, name, body string, phrases ...string) {
+	t.Helper()
+	last := -1
+	for _, phrase := range phrases {
+		i := strings.Index(body, phrase)
+		if i < 0 {
+			t.Errorf("%s description missing %q", name, phrase)
+			return
+		}
+		if i < last {
+			t.Errorf("%s description names %q out of order", name, phrase)
+		}
+		last = i
+	}
+}
+
+func TestKPIToolDescriptionsSteerAuthoring(t *testing.T) {
+	for name, c := range map[string]struct {
+		body    string
+		phrases []string
+	}{
+		"get_entity_kpis": {prompts.GetEntityKPIsDescription, []string{
+			"never invent a KPI id", "prometheus_range_query", "`unit` is a display label only", "`create_kpi`",
+		}},
+		"create_kpi": {prompts.CreateKPIDescription, []string{
+			"`get_entity_kpis`", "`prometheus_range_query`", "Units matter", "Create once and keep the returned id",
+			"Never call create_kpi again for the same query", "`get_dashboard`",
+		}},
+	} {
+		for _, phrase := range c.phrases {
+			if !strings.Contains(c.body, phrase) {
+				t.Errorf("%s description missing %q", name, phrase)
+			}
+		}
 	}
 }
 

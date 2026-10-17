@@ -1,1 +1,1 @@
-Get a custom dashboard by ID. Requires region (query param) for panel query population; defaults to configured datasource region.
+Get a custom dashboard by ID. Requires region (query param) for panel query population; defaults to configured datasource region. To alert on a panel, take its PromQL `expr` into create_kpi on the chosen alert group, then create_alert as a draft (author-alert prompt; last9://reference/alerting).

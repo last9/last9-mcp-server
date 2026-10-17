@@ -54,8 +54,25 @@ var named = map[string][]string{
 	"alerts": {
 		"get_alerts",
 		"get_alert_config",
+		"create_alert",
+		"update_alert",
+		"patch_alert",
+		"delete_alert",
+		"validate_alert_expression",
+		"mute_alert_group",
+		"acknowledge_alert",
+		"reassign_alert",
+		"create_notification_channel",
+		"attach_notification_channel",
+		"detach_notification_channel",
+		"delete_notification_channel",
+		"recommend_alert_config",
 		"get_alert_groups",
 		"get_entity_alert_rules",
+		"get_entity_kpis",
+		"create_kpi",
+		"describe_alert_chart",
+		"create_alert_from_chart",
 		"get_alert_rule_state",
 		"get_notification_channels",
 		"get_drop_rules",
@@ -92,6 +109,7 @@ var investigateExtras = []string{
 	"did_you_mean",
 	"get_service_profile",
 	"list_datasources",
+	"get_entity_kpis",
 }
 
 // ValidNames returns sorted valid toolset tokens for error messages.

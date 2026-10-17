@@ -9,11 +9,24 @@ import (
 // writeTools is every tool that changes Last9 state. A new write tool must be
 // added here on purpose; any tool not listed must be served as read-only.
 var writeTools = map[string]struct{ destructive, idempotent bool }{
-	"add_drop_rule":             {destructive: true, idempotent: false},
-	"create_dashboard":          {destructive: false, idempotent: false},
-	"update_dashboard":          {destructive: true, idempotent: true},
-	"delete_dashboard":          {destructive: true, idempotent: true},
-	"delete_dashboard_snapshot": {destructive: true, idempotent: true},
+	"add_drop_rule":               {destructive: true, idempotent: false},
+	"create_dashboard":            {destructive: false, idempotent: false},
+	"update_dashboard":            {destructive: true, idempotent: true},
+	"delete_dashboard":            {destructive: true, idempotent: true},
+	"delete_dashboard_snapshot":   {destructive: true, idempotent: true},
+	"create_alert":                {destructive: false, idempotent: false},
+	"update_alert":                {destructive: true, idempotent: true},
+	"patch_alert":                 {destructive: true, idempotent: true},
+	"delete_alert":                {destructive: true, idempotent: true},
+	"mute_alert_group":            {destructive: true, idempotent: true},
+	"acknowledge_alert":           {destructive: false, idempotent: true},
+	"reassign_alert":              {destructive: false, idempotent: true},
+	"create_notification_channel": {destructive: false, idempotent: false},
+	"attach_notification_channel": {destructive: false, idempotent: true},
+	"detach_notification_channel": {destructive: true, idempotent: true},
+	"delete_notification_channel": {destructive: true, idempotent: false},
+	"create_alert_from_chart":     {destructive: false, idempotent: false},
+	"create_kpi":                  {destructive: false, idempotent: false},
 }
 
 func TestDumpToolsServesAnnotations(t *testing.T) {

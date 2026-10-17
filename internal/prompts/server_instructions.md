@@ -1,7 +1,7 @@
 {{- $services := tools "get_service_profile" "did_you_mean" "get_service_environments" "get_profile_services" "list_datasources" "grafana_list_datasources" -}}
 {{- $attributes := tools "get_log_attributes" "get_log_attributes_for_pipeline" "get_trace_attributes" "get_trace_attributes_for_pipeline" "get_trace_attribute_values" -}}
 {{- $metricNames := tools "prometheus_labels" "prometheus_label_values" -}}
-{{- $alertRules := tools "get_alert_groups" "get_alert_config" "get_entity_alert_rules" "get_notification_channels" -}}
+{{- $alertRules := tools "get_alert_groups" "get_alert_config" "get_entity_alert_rules" "get_entity_kpis" "get_notification_channels" -}}
 {{- $dashboards := tools "list_dashboards" "list_dashboard_snapshots" "grafana_search_dashboards" "grafana_list_folders" "grafana_list_folder_dashboards" -}}
 {{- $dashboardReads := tools "get_dashboard" "get_dashboard_snapshot" "grafana_get_dashboard" -}}
 {{- $health := tools "get_service_summary" "get_service_performance_details" "get_service_operations_summary" "get_service_dependency_graph" -}}
@@ -12,11 +12,12 @@
 {{- $databases := tools "get_databases" "get_database_slow_queries" "get_database_queries" "get_database_server_metrics" -}}
 {{- $profiles := tools "get_profile_summary" "get_top_functions" "get_flamegraph" -}}
 {{- $raw := tools "prometheus_range_query" "prometheus_instant_query" "get_logs" "get_traces" -}}
-{{- $create := tools "create_dashboard" -}}
+{{- $create := tools "create_dashboard" "create_alert" "create_alert_from_chart" "create_kpi" "create_notification_channel" -}}
 {{- $validate := tools "validate_dashboard" -}}
+{{- $alertChecks := tools "describe_alert_chart" "recommend_alert_config" "validate_alert_expression" -}}
 {{- $dropRules := tools "get_drop_rules" -}}
-{{- $refine := tools "update_dashboard" -}}
-{{- $destructive := tools "update_dashboard" "delete_dashboard" "delete_dashboard_snapshot" "add_drop_rule" -}}
+{{- $refine := tools "update_dashboard" "update_alert" "patch_alert" "attach_notification_channel" "acknowledge_alert" -}}
+{{- $destructive := tools "update_dashboard" "delete_dashboard" "delete_dashboard_snapshot" "add_drop_rule" "delete_alert" "mute_alert_group" "reassign_alert" "detach_notification_channel" "delete_notification_channel" -}}
 Last9 observability for the caller's organization. Discover names first, answer with the most specific tool, and treat writes with care.
 {{- if or $services $attributes $metricNames $alertRules $dashboards}}
 
@@ -89,11 +90,14 @@ Read these resources before writing a non-trivial query:
 - Service investigations: `last9://reference/investigation`
 {{- end}}
 {{- end}}
-{{- if or $validate $dropRules}}
+{{- if or $validate $alertChecks $dropRules}}
 
 ## Check before you write
 {{- with $validate}}
 - Dry-run a dashboard with {{.}} before saving it.
+{{- end}}
+{{- with $alertChecks}}
+- Design and dry-run an alert rule with {{.}} before creating it; alerts are created as drafts.
 {{- end}}
 {{- with $dropRules}}
 - List existing drop rules with {{.}} before adding one.
