@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -70,6 +69,7 @@ const (
 type ServicePerformanceDetails struct {
 	ServiceName   string       `json:"service_name"`
 	Env           string       `json:"env"`
+	EnvRequested  string       `json:"env_requested,omitempty"`
 	Throughput    []TimeSeries `json:"throughput"` // by status code
 	ErrorRate     []TimeSeries `json:"error_rate"` // by status code
 	ErrorPercent  []TimeSeries `json:"error_percentage"`
@@ -455,13 +455,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}
 
 		// Handle environment
-		env := args.Env
-		if env == "" {
-			env = ".*"
-		}
-		envPattern := ".*"
-		if args.Env != "" {
-			envPattern = regexp.QuoteMeta(args.Env)
+		envPattern, literalEnv, envDisplay, err := literalEnvPattern(args.Env)
+		if err != nil {
+			return nil, nil, err
 		}
 
 		// Handle service_name
@@ -499,8 +495,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}
 
 		details := ServicePerformanceDetails{
-			ServiceName: serviceName,
-			Env:         env,
+			ServiceName:  serviceName,
+			Env:          envDisplay,
+			EnvRequested: envRequested(args.Env, envDisplay),
 		}
 
 		// Get Apdex Score over time range as a vector
@@ -674,7 +671,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 
 		// Build deep link URL
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, deeplink.APMCatalogEnvExact(env), "")
+		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, deeplink.APMCatalogEnvExact(literalEnv), "")
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
