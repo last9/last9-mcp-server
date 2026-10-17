@@ -809,7 +809,7 @@ Partial change that preserves the rule ID. At least one change is required. Refu
 - `id` (string, required): Alert rule UUID.
 - `is_disabled` (boolean, optional): `false` promotes/enables, `true` pauses.
 - `mute_until` (integer, optional): Unix epoch deadline; `0` unmutes.
-- `properties` (object, optional): Replaces description, runbook, annotations, and `query_mode`.
+- `properties` (object, optional): `description`, `runbook`, `annotations`, `query_mode`. Each field sent replaces the stored one; omitted or blank fields keep their stored value. `annotations` replaces the whole map, so send every key to keep; `{}` clears it.
 - `recurring_mute_schedule` (object, optional): Replaces the weekly schedule: `enabled` (default false), `timezone` (IANA name, required), and `windows` (1–20 of `weekdays` as `sun`..`sat`, `start_time` / `end_time` as 24-hour `HH:MM`). An end at or before the start ends the next day. Send every window to keep.
 - `clear_recurring_mute_schedule` (boolean, optional): Removes the schedule entirely; cannot be combined with `recurring_mute_schedule`. Differs from `enabled=false`, which keeps the windows stored.
 
