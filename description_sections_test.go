@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"regexp"
-	"slices"
 	"strings"
 	"testing"
 
@@ -124,43 +123,67 @@ func TestTopToolDescriptionsHaveRoutingSections(t *testing.T) {
 	}
 }
 
-// A sectioned tool served under a narrow --toolsets must not route to a tool
-// that set leaves out.
+// servedDescriptions maps each tool served under spec to its description.
+func servedDescriptions(t *testing.T, spec string) map[string]string {
+	t.Helper()
+	set, err := toolsets.Parse(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, set); err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	descriptions := map[string]string{}
+	for _, tool := range out.Tools {
+		descriptions[tool.Name] = tool.Description
+	}
+	return descriptions
+}
+
+// A tool served under a narrow --toolsets must not route to a tool that set
+// leaves out.
 func TestRoutingSectionsNameToolsServedAlongside(t *testing.T) {
 	for _, spec := range toolsets.ValidNames() {
 		if spec == "all" {
 			continue
 		}
-		set, err := toolsets.Parse(spec)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var buf bytes.Buffer
-		if err := dumpTools(&buf, set); err != nil {
-			t.Fatal(err)
-		}
-		var out struct {
-			Tools []struct {
-				Name        string `json:"name"`
-				Description string `json:"description"`
-			} `json:"tools"`
-		}
-		if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
-			t.Fatal(err)
-		}
+		descriptions := servedDescriptions(t, spec)
 		served := map[string]bool{}
-		for _, tool := range out.Tools {
-			served[tool.Name] = true
+		for name := range descriptions {
+			served[name] = true
 		}
-		for _, tool := range out.Tools {
-			if !slices.Contains(sectionedTools, tool.Name) {
-				continue
-			}
-			for _, v := range sectionViolations(tool.Description, served) {
+		for name, description := range descriptions {
+			for _, v := range sectionViolations(description, served) {
 				if strings.Contains(v, "which is not a served tool") {
-					t.Errorf("--toolsets=%s %s: %s", spec, tool.Name, v)
+					t.Errorf("--toolsets=%s %s: %s", spec, name, v)
 				}
 			}
+		}
+	}
+}
+
+// get_workspace_overview is served under every toolset, so its follow-up
+// pointers must be routes TrimRoutes can drop.
+func TestWorkspaceOverviewRoutesFollowToolset(t *testing.T) {
+	routes := []string{"`get_service_summary`", "`get_alerts`"}
+	_, full := splitSections(servedDescriptions(t, "")["get_workspace_overview"])
+	logs := servedDescriptions(t, "logs")["get_workspace_overview"]
+	for _, route := range routes {
+		if !strings.Contains(full["Pairs well with"], route) {
+			t.Errorf("full-surface overview description does not route to %s", route)
+		}
+		if strings.Contains(logs, "- "+route) {
+			t.Errorf("--toolsets=logs overview description routes to %s, which logs does not serve", route)
 		}
 	}
 }
