@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"last9-mcp/internal/alerting"
+	"last9-mcp/internal/apm"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/toolsets"
@@ -164,10 +165,16 @@ func TestWorkspaceOverviewAllOK(t *testing.T) {
 			t.Fatalf("%s was never called", route)
 		}
 	}
+	// environments reads what get_service_environments reads; service_count
+	// reads the series get_service_summary ranks, so the counts agree.
+	wantMatch := map[string]string{
+		routeEnvs:     "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}",
+		routeServices: apm.ServiceSummarySeries,
+	}
 	for _, route := range []string{routeEnvs, routeServices} {
 		matches, _ := api.bodies[route]["matches"].([]any)
-		if len(matches) != 1 || matches[0] != "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}" {
-			t.Errorf("%s matches = %v", route, matches)
+		if len(matches) != 1 || matches[0] != wantMatch[route] {
+			t.Errorf("%s matches = %v, want [%s]", route, matches, wantMatch[route])
 		}
 		if api.bodies[route]["timestamp"] != float64(1792177200) || api.bodies[route]["window"] != float64(3600) {
 			t.Errorf("%s window = %v..%v", route, api.bodies[route]["timestamp"], api.bodies[route]["window"])
