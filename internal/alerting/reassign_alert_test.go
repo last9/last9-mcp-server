@@ -96,8 +96,26 @@ func TestReassignAlertValidation(t *testing.T) {
 func TestReassignAlertEmailNotFound(t *testing.T) {
 	s := newReassignServer(t, 0, "")
 	text, isErr, err := runReassign(s, ReassignAlertArgs{OwnerEmail: "nobody@x.io"})
-	if err != nil || !isErr || text != "no active user with that email" || s.reassigned {
-		t.Fatalf("text=%s isErr=%v err=%v", text, isErr, err)
+	if err != nil || !isErr || text != "no active user with that email" || s.reassigned || !s.monitored {
+		t.Fatalf("text=%s isErr=%v err=%v monitored=%v", text, isErr, err, s.monitored)
+	}
+}
+
+// An unknown email and an unknown alert are both wrong; the alert is the more basic mistake,
+// so it is named first.
+func TestReassignAlertEmailNotFoundNamesUnknownAlert(t *testing.T) {
+	s := newReassignServer(t, 0, "")
+	s.monitor = `{"alert_rules":[{"alert_group_id":"g","rule_id":"other","rule_type":"static"}]}`
+	text, isErr, err := runReassign(s, ReassignAlertArgs{OwnerEmail: "nobody@x.io"})
+	if err != nil || !isErr || !strings.Contains(text, "no alert with this alert_group_id, rule_id and rule_type fired in the last hour") || s.reassigned {
+		t.Fatalf("text=%s isErr=%v err=%v reassigned=%v", text, isErr, err, s.reassigned)
+	}
+}
+
+func TestReassignAlertEmailFoundSkipsMonitor(t *testing.T) {
+	s := newReassignServer(t, 0, "")
+	if _, isErr, err := runReassign(s, ReassignAlertArgs{OwnerEmail: "b@x.io"}); err != nil || isErr || s.monitored {
+		t.Fatalf("isErr=%v err=%v monitored=%v", isErr, err, s.monitored)
 	}
 }
 
