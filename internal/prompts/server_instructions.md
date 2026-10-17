@@ -14,8 +14,14 @@
 {{- $raw := tools "prometheus_range_query" "prometheus_instant_query" "get_logs" "get_traces" -}}
 {{- $create := tools "create_dashboard" -}}
 {{- $validate := tools "validate_dashboard" -}}
+{{- $validateAlert := tools "validate_alert_expression" -}}
 {{- $dropRules := tools "get_drop_rules" -}}
 {{- $refine := tools "update_dashboard" -}}
+{{- $alertDesign := tools "recommend_alert_config" "describe_alert_chart" -}}
+{{- $alertCreate := tools "create_alert" "create_alert_from_chart" "create_notification_channel" -}}
+{{- $alertRefine := tools "update_alert" "patch_alert" "attach_notification_channel" "detach_notification_channel" -}}
+{{- $alertTriage := tools "acknowledge_alert" "reassign_alert" "mute_alert_group" -}}
+{{- $alertDestructive := tools "delete_alert" "delete_notification_channel" -}}
 {{- $destructive := tools "update_dashboard" "delete_dashboard" "delete_dashboard_snapshot" "add_drop_rule" -}}
 Last9 observability for the caller's organization. Discover names first, answer with the most specific tool, and treat writes with care.
 {{- if or $services $attributes $metricNames $alertRules $dashboards}}
@@ -89,17 +95,23 @@ Read these resources before writing a non-trivial query:
 - Service investigations: `last9://reference/investigation`
 {{- end}}
 {{- end}}
-{{- if or $validate $dropRules}}
+{{- if or $validate $validateAlert $alertDesign $dropRules}}
 
 ## Check before you write
 {{- with $validate}}
 - Dry-run a dashboard with {{.}} before saving it.
 {{- end}}
+{{- with $validateAlert}}
+- Dry-run an alert expression with {{.}} before saving it.
+{{- end}}
+{{- with $alertDesign}}
+- Design an alert rule with {{.}} before creating it.
+{{- end}}
 {{- with $dropRules}}
 - List existing drop rules with {{.}} before adding one.
 {{- end}}
 {{- end}}
-{{- if or $create $refine $destructive}}
+{{- if or $create $refine $destructive $alertCreate $alertRefine $alertTriage $alertDestructive}}
 
 ## Write tools
 {{- with $create}}
@@ -107,6 +119,18 @@ Read these resources before writing a non-trivial query:
 {{- end}}
 {{- with $refine}}
 - Refine an existing object with {{.}}.
+{{- end}}
+{{- with $alertCreate}}
+- Create alert rules and notification channels once with {{.}}; alert rules start disabled, so enable one with patch_alert only after review.
+{{- end}}
+{{- with $alertRefine}}
+- Change existing alert rules and routing with {{.}}.
+{{- end}}
+{{- with $alertTriage}}
+- Take ownership of, hand over or mute firing alerts with {{.}}.
+{{- end}}
+{{- with $alertDestructive}}
+- {{.}} remove alert data: confirm with the user first.
 {{- end}}
 {{- with $destructive}}
 - {{.}} overwrite or remove data: confirm with the user first.

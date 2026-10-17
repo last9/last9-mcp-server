@@ -1025,3 +1025,12 @@ func assertAlertConfigResultIDs(t *testing.T, text string, expectedIDs []string)
 		}
 	}
 }
+
+func TestAdaptiveAlertRuleType(t *testing.T) {
+	if err := validateGetAlertConfigArgs(GetAlertConfigArgs{RuleType: "adaptive"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := alertConfigRuleType(AlertRule{Algorithm: "adaptive-threshold-v1"}); got != "adaptive" {
+		t.Fatalf("rule type = %q", got)
+	}
+}

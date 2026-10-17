@@ -27,7 +27,7 @@ func initializeOver(t *testing.T, spec string) (string, map[string]bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := models.Config{TokenManager: &auth.TokenManager{}, AllowedTools: allowed}
+	cfg := models.Config{TokenManager: &auth.TokenManager{}, ToolFilter: toolsets.Filter{Tools: allowed}}
 	if err := registerAllTools(server, cfg); err != nil {
 		t.Fatal(err)
 	}

@@ -11,6 +11,7 @@ import (
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/toolsets"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -100,7 +101,7 @@ func TestRegisterIfAllowedConvertsSchemaPanicToError(t *testing.T) {
 	type badIn struct {
 		Ch chan int `json:"ch"`
 	}
-	err = registerIfAllowed(server, nil, &mcp.Tool{Name: "bad_tool", Description: "bad"}, func(_ context.Context, _ *mcp.CallToolRequest, _ badIn) (*mcp.CallToolResult, any, error) {
+	err = registerIfAllowed(server, newToolGate(toolsets.Filter{}), &mcp.Tool{Name: "bad_tool", Description: "bad"}, func(_ context.Context, _ *mcp.CallToolRequest, _ badIn) (*mcp.CallToolResult, any, error) {
 		return nil, nil, nil
 	})
 	if err == nil {
