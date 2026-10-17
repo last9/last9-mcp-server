@@ -3,10 +3,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"regexp"
 	"strings"
 	"testing"
 
+	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/toolsets"
 )
 
@@ -33,32 +33,20 @@ var sectionedTools = []string{
 
 var descriptionSections = []string{"When to use", "When not to use", "Pairs well with", "Output shape", "Known traps"}
 
-// routingSections may name only tools: they are where a model looks for the
-// next tool to call, so a stale or misspelled name sends it nowhere.
-var routingSections = map[string]bool{"When not to use": true, "Pairs well with": true}
-
-var headingLine = regexp.MustCompile(`(?m)^[ \t]*## (.+?)[ \t]*$`)
-
-var backticked = regexp.MustCompile("`([^`]+)`")
-
-// splitSections maps each "## " heading in description to the text under it.
+// splitSections maps each "## " heading in description to the text under it,
+// parsed as prompts.TrimRoutes parses it.
 func splitSections(description string) (order []string, bodies map[string]string) {
 	bodies = map[string]string{}
-	locs := headingLine.FindAllStringSubmatchIndex(description, -1)
-	for i, loc := range locs {
-		name := description[loc[2]:loc[3]]
-		end := len(description)
-		if i+1 < len(locs) {
-			end = locs[i+1][0]
-		}
-		order = append(order, name)
-		bodies[name] = description[loc[1]:end]
+	for _, section := range prompts.Sections(description) {
+		order = append(order, section.Name)
+		bodies[section.Name] = section.Body
 	}
 	return order, bodies
 }
 
 // sectionViolations reports missing or misordered sections and routing
-// sections that name anything but a served tool.
+// sections that name anything but a served tool: they are where a model looks
+// for the next tool to call, so a stale or misspelled name sends it nowhere.
 func sectionViolations(description string, served map[string]bool) []string {
 	var out []string
 	order, bodies := splitSections(description)
@@ -79,7 +67,7 @@ func sectionViolations(description string, served map[string]bool) []string {
 		if strings.TrimSpace(body) == "" {
 			out = append(out, "empty section: "+section)
 		}
-		if !routingSections[section] {
+		if !prompts.IsRoutingSection(section) {
 			continue
 		}
 		for _, line := range strings.Split(body, "\n") {
@@ -87,13 +75,13 @@ func sectionViolations(description string, served map[string]bool) []string {
 				out = append(out, section+" line is not a \"- \" bullet: "+line)
 			}
 		}
-		names := backticked.FindAllStringSubmatch(body, -1)
+		names := prompts.RouteNames(body)
 		if len(names) == 0 {
 			out = append(out, section+" names no tool")
 		}
-		for _, m := range names {
-			if !served[m[1]] {
-				out = append(out, section+" names "+m[1]+", which is not a served tool")
+		for _, name := range names {
+			if !served[name] {
+				out = append(out, section+" names "+name+", which is not a served tool")
 			}
 		}
 	}

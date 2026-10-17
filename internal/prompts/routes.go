@@ -14,6 +14,50 @@ var (
 	backtickedName = regexp.MustCompile("`([^`]+)`")
 )
 
+// Section is one "## " heading of a description and the text under it.
+type Section struct {
+	Name string
+	Body string
+}
+
+// Sections splits description at its "## " headings, in order; text before
+// the first heading belongs to no section.
+func Sections(description string) []Section {
+	var sections []Section
+	var body []string
+	flush := func() {
+		if len(sections) > 0 {
+			sections[len(sections)-1].Body = strings.Join(body, "\n")
+		}
+		body = nil
+	}
+	for _, line := range strings.Split(description, "\n") {
+		if m := sectionHeading.FindStringSubmatch(line); m != nil {
+			flush()
+			sections = append(sections, Section{Name: m[1]})
+			continue
+		}
+		body = append(body, line)
+	}
+	flush()
+	return sections
+}
+
+// IsRoutingSection reports whether the section named name may hold only
+// "- " bullets naming tools.
+func IsRoutingSection(name string) bool {
+	return routingSections[name]
+}
+
+// RouteNames returns the backticked names in text, in order.
+func RouteNames(text string) []string {
+	var names []string
+	for _, m := range backtickedName.FindAllStringSubmatch(text, -1) {
+		names = append(names, m[1])
+	}
+	return names
+}
+
 // TrimRoutes drops each routing bullet that names a tool serves rejects, and
 // any routing section left without a bullet, so a narrowed toolset never sends
 // a model to a tool it does not serve.
@@ -31,7 +75,7 @@ func TrimRoutes(description string, serves func(tool string) bool) string {
 	for _, line := range lines {
 		if m := sectionHeading.FindStringSubmatch(line); m != nil {
 			flush()
-			routing = routingSections[m[1]]
+			routing = IsRoutingSection(m[1])
 		}
 		if !routing {
 			out = append(out, line)
@@ -50,8 +94,8 @@ func TrimRoutes(description string, serves func(tool string) bool) string {
 }
 
 func namesServed(line string, serves func(string) bool) bool {
-	for _, m := range backtickedName.FindAllStringSubmatch(line, -1) {
-		if !serves(m[1]) {
+	for _, name := range RouteNames(line) {
+		if !serves(name) {
 			return false
 		}
 	}

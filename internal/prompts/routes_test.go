@@ -1,6 +1,26 @@
 package prompts
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
+
+func TestSections(t *testing.T) {
+	got := Sections("Intro.\n\t## When to use \nx\ny\n## Pairs well with\n- `a` and `b`")
+	want := []Section{
+		{Name: "When to use", Body: "x\ny"},
+		{Name: "Pairs well with", Body: "- `a` and `b`"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Sections = %#v, want %#v", got, want)
+	}
+	if names := RouteNames(got[1].Body); !reflect.DeepEqual(names, []string{"a", "b"}) {
+		t.Fatalf("RouteNames = %q", names)
+	}
+	if !IsRoutingSection("Pairs well with") || IsRoutingSection("When to use") {
+		t.Fatal("IsRoutingSection must accept only routing sections")
+	}
+}
 
 func TestTrimRoutes(t *testing.T) {
 	const description = "Intro names `get_traces`.\n\n" +
