@@ -23,10 +23,13 @@ If unsure of `service_name` or `env` spelling, call `did_you_mean` first.
 One exact trace by `trace_id`, or recent traces for one service.
 
 ## When not to use
-Pipeline filters or aggregates over spans: `get_traces`. A span tree with timing for one trace: `get_trace_waterfall`.
+- Pipeline filters or aggregates over spans: `get_traces`
+- A span tree with timing for one trace: `get_trace_waterfall`
 
 ## Pairs well with
-`get_exceptions` (find the hot service), `get_service_environments` (env values), `did_you_mean` (service spelling).
+- `get_exceptions` (find the hot service)
+- `get_service_environments` (env values)
+- `did_you_mean` (service spelling)
 
 ## Output shape
 Spans with trace_id, span_id, span_name, span_kind, service_name, duration, timestamp and status_code.

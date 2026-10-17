@@ -20,10 +20,13 @@ Full service-logs reference: `last9://reference/service_logs`. Logjson: `last9:/
 Raw lines for one known service, filtered by severity, HTTP status, named attributes or body text.
 
 ## When not to use
-Aggregates, percentiles, several statuses at once, or numeric comparisons: `get_logs`. Reading root-cause lines after `get_exceptions`: `get_logs` with a small limit.
+- Aggregates, percentiles, several statuses at once, or numeric comparisons: `get_logs`
+- Reading root-cause lines after `get_exceptions`: `get_logs` with a small limit
 
 ## Pairs well with
-`get_service_profile` (index and env), `get_log_attributes` (field names), `did_you_mean` (service spelling).
+- `get_service_profile` (index and env)
+- `get_log_attributes` (field names)
+- `did_you_mean` (service spelling)
 
 ## Output shape
 Log entries (timestamp, message, severity) up to `limit`, with truncation and total-matching counts.

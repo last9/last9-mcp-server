@@ -12,10 +12,14 @@
 	Pick a datasource name for the `datasource` parameter of the Prometheus tools.
 
 	## When not to use
-	Grafana datasources: `grafana_list_datasources`. Whether metrics exist at all: `get_workspace_overview`.
+	- Grafana datasources: `grafana_list_datasources`
+	- Whether metrics exist at all: `get_workspace_overview`
 
 	## Pairs well with
-	`prometheus_range_query`, `prometheus_instant_query`, `prometheus_label_values`, `prometheus_labels`.
+	- `prometheus_range_query`
+	- `prometheus_instant_query`
+	- `prometheus_label_values`
+	- `prometheus_labels`
 
 	## Output shape
 	Array of `{name, is_default}`.

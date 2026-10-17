@@ -19,10 +19,14 @@
 	The valid values of one label (env, service) for a metric selector, before filtering on it.
 
 	## When not to use
-	Label names: `prometheus_labels`. APM service environments: `get_service_environments`. Fuzzy name lookup: `did_you_mean`.
+	- Label names: `prometheus_labels`
+	- APM service environments: `get_service_environments`
+	- Fuzzy name lookup: `did_you_mean`
 
 	## Pairs well with
-	`prometheus_labels`, `prometheus_range_query`, `prometheus_instant_query`.
+	- `prometheus_labels`
+	- `prometheus_range_query`
+	- `prometheus_instant_query`
 
 	## Output shape
 	A JSON array of strings.

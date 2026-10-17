@@ -10,7 +10,8 @@ Fleet ranking by volume, rpm, HTTP 4xx, HTTP 5xx, or gRPC errors. It is the only
 - One service's RED charts → `get_service_performance_details`
 
 ## Pairs well with
-`get_service_environments` (env values), `get_service_performance_details` (drill into a ranked row).
+- `get_service_environments` (env values)
+- `get_service_performance_details` (drill into a ranked row)
 
 ## Output shape
 `rows` of (service, env) with rank and the counts above, plus the envelope listed below.

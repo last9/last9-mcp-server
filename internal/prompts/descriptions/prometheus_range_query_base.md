@@ -38,10 +38,14 @@
 	A PromQL expression's trend over a window, for metrics no dedicated tool covers.
 
 	## When not to use
-	One value at one time: `prometheus_instant_query`. Fleet service ranking: `get_service_summary`. One service's RED charts: `get_service_performance_details`. Change against a baseline: `get_apm_service_deviations`.
+	- One value at one time: `prometheus_instant_query`
+	- Fleet service ranking: `get_service_summary`
+	- One service's RED charts: `get_service_performance_details`
+	- Change against a baseline: `get_apm_service_deviations`
 
 	## Pairs well with
-	`prometheus_labels` and `prometheus_label_values` (discover names first), `list_datasources` (pick a datasource).
+	- `prometheus_labels` and `prometheus_label_values` (discover names first)
+	- `list_datasources` (pick a datasource)
 
 	## Output shape
 	Series `[{metric, value}]`; each value is `[timestamp, "string"]`.

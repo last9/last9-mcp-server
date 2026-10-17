@@ -57,6 +57,7 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, allowed too
 	if tool.Title == "" && tool.Annotations != nil {
 		tool.Title = tool.Annotations.Title
 	}
+	tool.Description = prompts.TrimRoutes(tool.Description, allowed.Allows)
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("register %q: %v", tool.Name, r)

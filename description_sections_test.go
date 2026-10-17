@@ -83,6 +83,11 @@ func sectionViolations(description string, served map[string]bool) []string {
 		if !routingSections[section] {
 			continue
 		}
+		for _, line := range strings.Split(body, "\n") {
+			if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "- ") {
+				out = append(out, section+" line is not a \"- \" bullet: "+line)
+			}
+		}
 		names := backticked.FindAllStringSubmatch(body, -1)
 		if len(names) == 0 {
 			out = append(out, section+" names no tool")
@@ -162,7 +167,7 @@ func TestRoutingSectionsNameToolsServedAlongside(t *testing.T) {
 
 func TestSectionViolationsCatchBadFixtures(t *testing.T) {
 	served := map[string]bool{"get_logs": true, "get_traces": true}
-	good := "Intro.\n\n## When to use\nx\n\n## When not to use\nUse `get_traces`.\n\n## Pairs well with\n`get_logs`.\n\n## Output shape\nJSON.\n\n## Known traps\nNone.\n"
+	good := "Intro.\n\n## When to use\nx\n\n## When not to use\n- Use `get_traces`\n\n## Pairs well with\n- `get_logs`\n\n## Output shape\nJSON.\n\n## Known traps\nNone.\n"
 	tests := []struct {
 		name        string
 		description string
@@ -173,8 +178,9 @@ func TestSectionViolationsCatchBadFixtures(t *testing.T) {
 		{name: "missing section", description: strings.Replace(good, "## Known traps\nNone.\n", "", 1), want: "missing or out of order: ## Known traps"},
 		{name: "out of order", description: strings.Replace(strings.Replace(good, "## Output shape", "## Tmp", 1), "## Known traps", "## Output shape", 1), want: "missing or out of order: ## Known traps"},
 		{name: "unknown tool", description: strings.Replace(good, "`get_traces`", "`get_trace`", 1), want: "When not to use names get_trace, which is not a served tool"},
-		{name: "parameter in routing section", description: strings.Replace(good, "`get_logs`.", "`get_logs` with `limit`.", 1), want: "Pairs well with names limit, which is not a served tool"},
-		{name: "routing section without tool", description: strings.Replace(good, "Use `get_traces`.", "Use something else.", 1), want: "When not to use names no tool"},
+		{name: "parameter in routing section", description: strings.Replace(good, "- `get_logs`", "- `get_logs` with `limit`", 1), want: "Pairs well with names limit, which is not a served tool"},
+		{name: "routing section without tool", description: strings.Replace(good, "Use `get_traces`", "Use something else", 1), want: "When not to use names no tool"},
+		{name: "routing prose", description: strings.Replace(good, "- `get_logs`", "`get_logs`.", 1), want: "Pairs well with line is not a \"- \" bullet: `get_logs`."},
 		{name: "empty section", description: strings.Replace(good, "JSON.\n", "\n", 1), want: "empty section: Output shape"},
 	}
 	for _, tt := range tests {

@@ -26,10 +26,14 @@
 	Alerts firing now or recently: `window` is default 15 minutes, at most 1 hour.
 
 	## When not to use
-	Firing history over a longer range: `get_alert_rule_state`. Rule definitions: `get_alert_config`. Only a count of firing alerts: `get_workspace_overview`.
+	- Firing history over a longer range: `get_alert_rule_state`
+	- Rule definitions: `get_alert_config`
+	- Only a count of firing alerts: `get_workspace_overview`
 
 	## Pairs well with
-	`get_alert_config` (rule details), `get_entity_alert_rules` (PromQL behind a rule), `get_current_time` (evaluation time).
+	- `get_alert_config` (rule details)
+	- `get_entity_alert_rules` (PromQL behind a rule)
+	- `get_current_time` (evaluation time)
 
 	## Output shape
 	Text listing each alert rule with its group, state, severity and alert instances.

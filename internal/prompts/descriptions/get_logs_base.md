@@ -32,10 +32,14 @@ Manual: `last9://reference/logjson`
 Counts, aggregates, percentiles or ad-hoc filters over logs, across services or with no known service.
 
 ## When not to use
-Raw lines for one known service: `get_service_logs`. Ranked exceptions: `get_exceptions`. APM fleet error ranking: `get_service_summary`.
+- Raw lines for one known service: `get_service_logs`
+- Ranked exceptions: `get_exceptions`
+- APM fleet error ranking: `get_service_summary`
 
 ## Pairs well with
-`get_log_attributes_for_pipeline` (field names), `get_service_profile` (index routing), `get_current_time` (absolute bounds).
+- `get_log_attributes_for_pipeline` (field names)
+- `get_service_profile` (index routing)
+- `get_current_time` (absolute bounds)
 
 ## Output shape
 Log rows or aggregate rows, with `l9_result` / `l9_sanity` metadata on partial or suspicious counts.

@@ -108,8 +108,10 @@ wrong queries in production.
 
 **The most-used tools carry routing sections.** The tools in `description_sections_test.go`
 `sectionedTools` have `## When to use`, `## When not to use`, `## Pairs well with`,
-`## Output shape` and `## Known traps`, in that order. The two routing sections name tools in
-backticks and nothing else; the test checks each name is served.
+`## Output shape` and `## Known traps`, in that order. The two routing sections are `- `
+bullets, one route each, naming tools in backticks and nothing else. `prompts.TrimRoutes`
+drops a bullet when `--toolsets` leaves out a tool it names, so put cross-domain routes in
+their own bullet; the test checks every name is served under each toolset.
 
 **Point at discovery tools, not attribute allowlists.** Models over-anchor on a list and
 stop discovering. Never inject an org's attribute catalog into a description.

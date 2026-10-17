@@ -33,10 +33,13 @@ For a comparative question, call this tool first and by itself. Do not batch spe
 What regressed, improved or changed against an equal-duration baseline.
 
 ## When not to use
-One-window fleet ranking: `get_service_summary`. Attribute cohorts that explain slow or failing traces: `get_trace_attribute_deviations`.
+- One-window fleet ranking: `get_service_summary`
+- Attribute cohorts that explain slow or failing traces: `get_trace_attribute_deviations`
 
 ## Pairs well with
-`get_service_profile` (first), `get_change_events` (what deployed), `get_service_performance_details` (one service's charts).
+- `get_service_profile` (first)
+- `get_change_events` (what deployed)
+- `get_service_performance_details` (one service's charts)
 
 ## Output shape
 An outcome with returned percentages, deltas and evidence per service and operation, as described above.

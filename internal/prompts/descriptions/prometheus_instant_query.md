@@ -31,10 +31,12 @@
 	One value per series at one time, usually a rollup over a window.
 
 	## When not to use
-	A trend over time: `prometheus_range_query`. Fleet service ranking: `get_service_summary`.
+	- A trend over time: `prometheus_range_query`
+	- Fleet service ranking: `get_service_summary`
 
 	## Pairs well with
-	`prometheus_labels` and `prometheus_label_values` (discover names first), `list_datasources` (pick a datasource).
+	- `prometheus_labels` and `prometheus_label_values` (discover names first)
+	- `list_datasources` (pick a datasource)
 
 	## Output shape
 	Series `[{metric, value}]`; value is `[timestamp, "string"]`.

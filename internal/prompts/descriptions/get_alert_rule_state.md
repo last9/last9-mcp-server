@@ -21,10 +21,12 @@ The number of samples ((end_time - start_time) / step + 1) is capped at 100.
 Whether alert rules were firing at each step of a past range.
 
 ## When not to use
-Alerts firing now: `get_alerts`. Rule configuration: `get_alert_config`.
+- Alerts firing now: `get_alerts`
+- Rule configuration: `get_alert_config`
 
 ## Pairs well with
-`get_current_time` (epoch bounds), `get_alert_config` (rule ids and names).
+- `get_current_time` (epoch bounds)
+- `get_alert_config` (rule ids and names)
 
 ## Output shape
 JSON map of rule_id to `[{timestamp, is_firing}]`.

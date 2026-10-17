@@ -11,10 +11,11 @@ For `log_json` line, timeseries, or bar panels, use a `window_aggregate` stage w
 Build a net-new dashboard that has no id yet.
 
 ## When not to use
-Change an existing dashboard: `update_dashboard`.
+- Change an existing dashboard: `update_dashboard`
 
 ## Pairs well with
-`validate_dashboard` (dry-run the payload), `update_dashboard` (refine with the returned id).
+- `validate_dashboard` (dry-run the payload)
+- `update_dashboard` (refine with the returned id)
 
 ## Output shape
 The created dashboard, including its `id`.
