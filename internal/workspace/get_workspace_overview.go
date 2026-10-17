@@ -29,9 +29,6 @@ const overviewLookback = time.Hour
 // field, not the whole first call.
 const overviewCallTimeout = 10 * time.Second
 
-// firingAlertsWindow matches get_alerts' default window.
-const firingAlertsWindow = 15 * time.Minute
-
 const apmServerSpans = "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}"
 
 type GetWorkspaceOverviewArgs struct{}
@@ -218,7 +215,7 @@ func (p overviewProbe) hasTraces(ctx context.Context) (bool, error) {
 }
 
 func (p overviewProbe) firingAlerts(ctx context.Context) (int, error) {
-	resp, err := alerts.GetMonitor(ctx, p.api, alerts.GetMonitorInput{Timestamp: p.now.Unix(), Window: int64(firingAlertsWindow / time.Second)})
+	resp, err := alerts.GetMonitor(ctx, p.api, alerts.GetMonitorInput{Timestamp: p.now.Unix(), Window: int64(alerting.DefaultAlertsWindow / time.Second)})
 	if err != nil {
 		return 0, err
 	}

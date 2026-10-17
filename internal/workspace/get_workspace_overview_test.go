@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"last9-mcp/internal/alerting"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
 
@@ -172,6 +173,45 @@ func TestWorkspaceOverviewAllOK(t *testing.T) {
 	}
 	if q := api.requests[routeAlerts].URL.Query(); q.Get("timestamp") != "1792177200" || q.Get("window") != "900" {
 		t.Errorf("alerts monitor query = %v", q)
+	}
+}
+
+// The description promises firing_alert_count counts what get_alerts lists:
+// instances in state firing over get_alerts' default window. A firing rule
+// with no instances, and pending or resolved instances, count for nothing.
+func TestWorkspaceOverviewFiringCountMatchesGetAlerts(t *testing.T) {
+	const monitor = `{"alert_rules":[
+		{"rule_id":"r1","state":"firing","alerts":[{"state":"firing"},{"state":"resolved"},{"state":"pending"}]},
+		{"rule_id":"r2","state":"Firing","alerts":[{"state":"FIRING"}]},
+		{"rule_id":"r3","state":"firing","alerts":[]},
+		{"rule_id":"r4","state":"pending","alerts":[{"state":"pending"}]}]}`
+	responses := healthyResponses()
+	responses[routeAlerts] = monitor
+	api := &overviewAPI{responses: responses}
+	out := runOverview(t, api, time.Second)
+	overviewWindow := api.requests[routeAlerts].URL.Query().Get("window")
+
+	alertsAPI := &overviewAPI{responses: map[string]string{routeAlerts: monitor}, requests: map[string]*http.Request{}, bodies: map[string]map[string]any{}}
+	srv := httptest.NewServer(alertsAPI)
+	t.Cleanup(srv.Close)
+	cfg := models.Config{APIBaseURL: srv.URL, TokenManager: &auth.TokenManager{AccessToken: "t", ExpiresAt: time.Now().Add(time.Hour)}}
+	res, _, err := alerting.NewGetAlertsHandler(srv.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, alerting.GetAlertsArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listedFiring := 0
+	for _, line := range strings.Split(res.Content[0].(*mcp.TextContent).Text, "\n") {
+		// Instance states are indented under "Instance N:"; rule states are not.
+		if strings.HasPrefix(line, "      State: ") && strings.EqualFold(strings.TrimPrefix(line, "      State: "), "firing") {
+			listedFiring++
+		}
+	}
+
+	if got := out["firing_alert_count"]; got != float64(listedFiring) || listedFiring != 2 {
+		t.Errorf("firing_alert_count = %v, get_alerts lists %d firing instances, want 2 each", got, listedFiring)
+	}
+	if alertsWindow := alertsAPI.requests[routeAlerts].URL.Query().Get("window"); overviewWindow != alertsWindow {
+		t.Errorf("overview window = %s, get_alerts default window = %s", overviewWindow, alertsWindow)
 	}
 }
 

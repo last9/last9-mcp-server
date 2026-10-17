@@ -7,7 +7,7 @@ Returns JSON:
 - `telemetry`: `{logs, traces, metrics}` booleans for the window in the default scope. `false` means not observed in this window, not that the signal is missing: still query it for the user's requested time range, index or datasource.
 - `service_count`: number of services on APM service metrics.
 - `alert_group_count`: number of alert groups (as `get_alert_groups` counts them).
-- `firing_alert_count`: alert instances currently firing (15-minute window, as `get_alerts`).
+- `firing_alert_count`: alert instances in state `firing` that `get_alerts` lists over its default 15-minute window; pending and resolved instances are not counted.
 - `errors`: `[{field, error}]` for each sub-call that failed or timed out. That field is `null`, which means unknown, not zero or false; the rest of the snapshot is still valid.
 
 Sub-calls run concurrently, each bounded by a short timeout. For per-service detail follow up with `get_service_summary`; for firing alert details use `get_alerts`.
