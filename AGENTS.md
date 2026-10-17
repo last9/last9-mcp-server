@@ -196,7 +196,9 @@ one.
 - Empty / unset / `all` → full surface. Unknown names fail fast with the valid list.
 - `core` tools in `toolsets.go` (`get_current_time`, `get_workspace_overview`) join every parsed
   set; add a tool there only when other tools' arguments depend on it or the server
-  instructions name it as the first call.
+  instructions name it as the first call. Toolsets narrow the tool surface, not backend
+  access: `get_workspace_overview` still probes logs, traces, metrics and alerts under
+  `--toolsets=logs`. The API token's scope is what limits backend reads.
 - In `--http` mode, `X-Last9-Toolsets` (or `?toolsets=`) narrows one request to its intersection
   with the startup set; `http_server.go` caches one server per effective set.
 - `dump-tools` honors the same flags and env, and loads `.env` first. The canonical snapshot

@@ -10,4 +10,8 @@ Returns JSON:
 - `firing_alert_count`: alert instances in state `firing` that `get_alerts` lists over its default 15-minute window; pending and resolved instances are not counted.
 - `errors`: `[{field, error}]` for each sub-call that failed or timed out. That field is `null`, which means unknown, not zero or false; the rest of the snapshot is still valid.
 
-Sub-calls run concurrently, each bounded by a short timeout. For per-service detail follow up with `get_service_summary`; for firing alert details use `get_alerts`.
+Sub-calls run concurrently, each bounded by a short timeout.
+
+## Pairs well with
+- `get_service_summary` (per-service detail)
+- `get_alerts` (firing alert details)
