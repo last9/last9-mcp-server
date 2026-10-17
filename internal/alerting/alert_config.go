@@ -19,8 +19,9 @@ const (
 	alertGroupEntityClassGrafanaAlerts = "grafana-alerts"
 	alertGroupEntityClassAlertManager  = "alert-manager"
 
-	alertConfigRuleTypeStatic  = "static"
-	alertConfigRuleTypeAnomaly = "anomaly"
+	alertConfigRuleTypeStatic   = "static"
+	alertConfigRuleTypeAnomaly  = "anomaly"
+	alertConfigRuleTypeAdaptive = "adaptive"
 
 	entityFilterContains    = "contains"
 	entityFilterEqual       = "equal"
@@ -110,8 +111,8 @@ func validateGetAlertConfigArgs(args GetAlertConfigArgs) error {
 		return nil
 	}
 
-	if ruleType != alertConfigRuleTypeStatic && ruleType != alertConfigRuleTypeAnomaly {
-		return fmt.Errorf("rule_type must be one of %q or %q", alertConfigRuleTypeStatic, alertConfigRuleTypeAnomaly)
+	if ruleType != alertConfigRuleTypeStatic && ruleType != alertConfigRuleTypeAnomaly && ruleType != alertConfigRuleTypeAdaptive {
+		return fmt.Errorf("rule_type must be one of %q, %q, or %q", alertConfigRuleTypeStatic, alertConfigRuleTypeAnomaly, alertConfigRuleTypeAdaptive)
 	}
 
 	return nil
@@ -560,7 +561,11 @@ func matchesAlertConfigSearchTerm(
 }
 
 func alertConfigRuleType(rule AlertRule) string {
-	if strings.Contains(strings.ToLower(rule.Algorithm), alertConfigRuleTypeStatic) {
+	algorithm := strings.ToLower(rule.Algorithm)
+	if strings.Contains(algorithm, alertConfigRuleTypeAdaptive) {
+		return alertConfigRuleTypeAdaptive
+	}
+	if strings.Contains(algorithm, alertConfigRuleTypeStatic) {
 		return alertConfigRuleTypeStatic
 	}
 
@@ -603,6 +608,33 @@ func formatAlertGroupLabels(labels map[string]string) string {
 		parts = append(parts, fmt.Sprintf("%s=%s", key, labels[key]))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// formatAlertRulePatchableFields renders what patch_alert changes besides state, so a patch
+// can be read back; each line is omitted when the field is unset.
+func formatAlertRulePatchableFields(rule AlertRule) string {
+	var out string
+	switch {
+	case rule.MuteUntil < 0:
+		out += "  Mute Until: indefinitely\n"
+	case rule.MuteUntil > 0:
+		out += fmt.Sprintf("  Mute Until: %s\n", time.Unix(rule.MuteUntil, 0).UTC().Format("2006-01-02 15:04:05 UTC"))
+	}
+	if schedule := bytes.TrimSpace(rule.RecurringMuteSchedule); len(schedule) > 0 && string(schedule) != "null" {
+		out += fmt.Sprintf("  Recurring Mute Schedule: %s\n", schedule)
+	}
+	if len(rule.Properties) > 0 {
+		out += "  Properties:\n"
+		propKeys := make([]string, 0, len(rule.Properties))
+		for k := range rule.Properties {
+			propKeys = append(propKeys, k)
+		}
+		sort.Strings(propKeys)
+		for _, k := range propKeys {
+			out += fmt.Sprintf("    %s: %v\n", k, rule.Properties[k])
+		}
+	}
+	return out
 }
 
 func formatAlertConfigResponse(
@@ -708,17 +740,7 @@ func formatAlertConfigResponse(
 			formattedResponse += fmt.Sprintf("  Error Since: %s\n", errorTime)
 		}
 
-		if len(rule.Properties) > 0 {
-			formattedResponse += "  Properties:\n"
-			propKeys := make([]string, 0, len(rule.Properties))
-			for k := range rule.Properties {
-				propKeys = append(propKeys, k)
-			}
-			sort.Strings(propKeys)
-			for _, k := range propKeys {
-				formattedResponse += fmt.Sprintf("    %s: %v\n", k, rule.Properties[k])
-			}
-		}
+		formattedResponse += formatAlertRulePatchableFields(rule)
 
 		createdTime := time.Unix(rule.CreatedAt, 0).UTC().Format("2006-01-02 15:04:05 UTC")
 		updatedTime := time.Unix(rule.UpdatedAt, 0).UTC().Format("2006-01-02 15:04:05 UTC")
