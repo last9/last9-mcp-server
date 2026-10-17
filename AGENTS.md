@@ -201,7 +201,7 @@ one.
   access: `get_workspace_overview` still probes logs, traces, metrics and alerts under
   `--toolsets=logs`. The API token's scope is what limits backend reads.
 - In `--http` mode, `X-Last9-Toolsets` (or `?toolsets=`) narrows one request to its intersection
-  with the startup set; `http_server.go` caches one server per effective set.
+  with the startup set; `toolset_servers.go` caches one server per effective set.
 - `dump-tools` honors the same flags and env, and loads `.env` first. The canonical snapshot
   is unset/`all`; use `--toolsets=investigate` to measure the automation surface.
 
