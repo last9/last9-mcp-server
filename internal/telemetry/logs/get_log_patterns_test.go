@@ -291,41 +291,6 @@ func TestGetLogPatterns_RejectsAnUnreadableChunksFailed(t *testing.T) {
 	}
 }
 
-func TestSearchChunksFailed_ReadsEveryNumericType(t *testing.T) {
-	cases := map[string]struct {
-		stats   map[string]any
-		want    int
-		wantErr bool
-	}{
-		"absent stats":    {stats: nil, want: 0},
-		"absent field":    {stats: map[string]any{"chunks_planned": float64(6)}, want: 0},
-		"null field":      {stats: map[string]any{"chunks_failed": nil}, want: 0},
-		"float64":         {stats: map[string]any{"chunks_failed": float64(2)}, want: 2},
-		"int":             {stats: map[string]any{"chunks_failed": 3}, want: 3},
-		"int64":           {stats: map[string]any{"chunks_failed": int64(4)}, want: 4},
-		"json.Number":     {stats: map[string]any{"chunks_failed": json.Number("5")}, want: 5},
-		"zero":            {stats: map[string]any{"chunks_failed": float64(0)}, want: 0},
-		"string":          {stats: map[string]any{"chunks_failed": "1"}, wantErr: true},
-		"bad json.Number": {stats: map[string]any{"chunks_failed": json.Number("1.5")}, wantErr: true},
-		"fractional":      {stats: map[string]any{"chunks_failed": 0.5}, wantErr: true},
-		"negative":        {stats: map[string]any{"chunks_failed": float64(-1)}, wantErr: true},
-	}
-	for name, c := range cases {
-		t.Run(name, func(t *testing.T) {
-			got, err := searchChunksFailed(c.stats)
-			if c.wantErr {
-				if err == nil {
-					t.Fatalf("got %d, want an error", got)
-				}
-				return
-			}
-			if err != nil || got != c.want {
-				t.Fatalf("got %d, %v; want %d", got, err, c.want)
-			}
-		})
-	}
-}
-
 func intPtr(v int) *int { return &v }
 
 // chunkedLogsServer answers the pre-search-API chunked path, which reports no

@@ -3,9 +3,7 @@ package logs
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"fmt"
-	"math"
 	"net/http"
 	"slices"
 	"strings"
@@ -103,7 +101,7 @@ func (s logPatternScope) sample(ctx context.Context, client *http.Client, cfg mo
 	}
 	// A window missing a chunk would read as fewer or absent patterns, i.e.
 	// false novelty, so it fails like the chunked path does.
-	failed, err := searchChunksFailed(logs.SearchStats)
+	failed, err := logs.chunksFailed()
 	if err != nil {
 		return nil, LogPatternWindow{}, fmt.Errorf("log search for %s to %s: %w", start.Format(time.RFC3339), end.Format(time.RFC3339), err)
 	}
@@ -115,57 +113,14 @@ func (s logPatternScope) sample(ctx context.Context, client *http.Client, cfg mo
 		StartTime:          start.Format(time.RFC3339),
 		EndTime:            end.Format(time.RFC3339),
 		SampledLines:       len(logs.Logs),
-		SampleLimitReached: sampleIsPartial(logs, s.sampleSize),
+		SampleLimitReached: logs.mayMissLines(s.sampleSize),
 		TotalMatchingLines: logs.TotalMatchingLines,
 		LogsTruncated:      logs.LogsTruncated,
 	}, nil
 }
 
-// searchChunksFailed reads search_stats.chunks_failed, absent meaning none. A
-// value it cannot read as a count is an error, not zero: guessing "complete"
-// would mine a partial search into false novelty.
-func searchChunksFailed(stats map[string]any) (int, error) {
-	var failed float64
-	switch v := stats["chunks_failed"].(type) {
-	case nil:
-		return 0, nil
-	case float64:
-		failed = v
-	case int:
-		failed = float64(v)
-	case int64:
-		failed = float64(v)
-	case json.Number:
-		n, err := v.Int64()
-		if err != nil {
-			return 0, fmt.Errorf("unreadable search_stats.chunks_failed %q", v)
-		}
-		failed = float64(n)
-	default:
-		return 0, fmt.Errorf("unreadable search_stats.chunks_failed of type %T", v)
-	}
-	if failed < 0 || failed != math.Trunc(failed) {
-		return 0, fmt.Errorf("unreadable search_stats.chunks_failed %v", failed)
-	}
-	return int(failed), nil
-}
-
 func (s logPatternScope) search(start, end time.Time) serviceLogsSearch {
 	return serviceLogsSearch{s.query, serviceLogsScope{start, end, s.index}}
-}
-
-// sampleIsPartial reports whether the sample may miss matching lines. An exact
-// total settles it; a truncated search's total is only a floor, and without a
-// total a full sample is assumed capped.
-func sampleIsPartial(logs *ServiceLogsResponse, sampleSize int) bool {
-	switch {
-	case logs.LogsTruncated != nil && *logs.LogsTruncated:
-		return true
-	case logs.TotalMatchingLines != nil:
-		return *logs.TotalMatchingLines > len(logs.Logs)
-	default:
-		return len(logs.Logs) >= sampleSize
-	}
 }
 
 func boundedPatternLimit(name string, value, fallback, max int) (int, error) {
