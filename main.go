@@ -235,6 +235,9 @@ func main() {
 	if err := registerAllTools(server, cfg); err != nil {
 		log.Fatalf("failed to register tools: %v", err)
 	}
+	if err := registerServerInstructions(server, cfg.AllowedTools); err != nil {
+		log.Fatalf("failed to register server instructions: %v", err)
+	}
 
 	if cfg.HTTPMode {
 		httpServer := NewHTTPServer(server, cfg)
