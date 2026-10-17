@@ -25,7 +25,7 @@ func TestSetupConfig_QueryGuardrailDefaults(t *testing.T) {
 		t.Fatalf("SetupConfig: %v", err)
 	}
 	want := models.QueryGuardrail{
-		Mode:                guardrail.ModeShadow,
+		Mode:                guardrail.ModeOff,
 		RangeCap:            24 * time.Hour,
 		ScopeThresholdBytes: guardrail.DefaultScopeThresholdBytes,
 		QueryBudgetBytes:    guardrail.DefaultQueryBudgetBytes,

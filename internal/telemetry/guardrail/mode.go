@@ -14,10 +14,11 @@ const (
 	ModeEnforce = "enforce"
 )
 
-// Defaults are starting points for shadow mode; tune them from its telemetry
-// before switching to enforce.
+// Off by default until the estimate routes are live: before then shadow pays
+// an estimate round trip per query to learn nothing. The thresholds are
+// starting points for shadow mode; tune them before switching to enforce.
 const (
-	DefaultMode                = ModeShadow
+	DefaultMode                = ModeOff
 	DefaultRangeCap            = 24 * time.Hour
 	DefaultScopeThresholdBytes = 50 << 30
 	DefaultQueryBudgetBytes    = 500 << 30

@@ -150,6 +150,18 @@ func TestGetLogsGuardrailOffSkipsEstimate(t *testing.T) {
 	}
 }
 
+func TestGetLogsGuardrailDefaultModeSkipsEstimate(t *testing.T) {
+	s := newGuardrailServer(t, http.StatusNotFound, `404 page not found`)
+	result := callGuardedGetLogs(t, s, guardrail.DefaultMode, GetLogsArgs{LogjsonQuery: rawErrorFilter, LookbackMinutes: 60})
+
+	if result.IsError || s.estimateCalls.Load() != 0 || s.queryCalls.Load() == 0 {
+		t.Fatalf("isError=%v estimates=%d queries=%d", result.IsError, s.estimateCalls.Load(), s.queryCalls.Load())
+	}
+	if h := envelopeHint(t, result, "query_guardrail"); h != "" {
+		t.Fatalf("default mode added a guardrail hint: %q", h)
+	}
+}
+
 func callGuardedGetServiceLogs(t *testing.T, s *guardrailServer, mode string, args GetServiceLogsArgs) *mcp.CallToolResult {
 	t.Helper()
 	result, _, err := NewGetServiceLogsHandler(s.Client(), guardrailConfig(s.URL, mode))(context.Background(), &mcp.CallToolRequest{}, args)

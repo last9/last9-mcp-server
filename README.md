@@ -222,7 +222,7 @@ The NPM route is easier on Windows — no path management.
 | `LAST9_MAX_GET_LOGS_ENTRIES` | `5000`               | Max entries for chunked `get_logs` requests |
 | `LAST9_USE_LOG_SEARCH_API`   | `false`              | Set `true` to answer `get_logs` and `get_service_logs` with one server-side search call instead of client-side chunking |
 | `LAST9_DEBUG_CHUNKING`       | `false`              | Set `true` to log chunk-planning details for `get_logs`, `get_service_logs`, `get_traces` |
-| `LAST9_QUERY_GUARDRAIL`      | `shadow`             | Query cost guardrail for `get_logs`, `get_traces`, `get_service_logs`, `get_service_traces`: `off`, `shadow` (log and hint, never block) or `enforce` (reject over-limit queries before they run) |
+| `LAST9_QUERY_GUARDRAIL`      | `off`                | Query cost guardrail for `get_logs`, `get_traces`, `get_service_logs`, `get_service_traces`: `off`, `shadow` (log and hint, never block) or `enforce` (reject over-limit queries before they run) |
 | `LAST9_QUERY_GUARDRAIL_RANGE_CAP` | `24h`           | Longest window a query without a service or stream filter may span |
 | `LAST9_QUERY_GUARDRAIL_SCOPE_THRESHOLD_BYTES` | `53687091200` (50 GiB) | Estimated scan above which a query needs a service or stream filter |
 | `LAST9_QUERY_GUARDRAIL_QUERY_BUDGET_BYTES` | `536870912000` (500 GiB) | Estimated scan above which any query is rejected |

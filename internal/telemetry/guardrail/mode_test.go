@@ -22,6 +22,18 @@ func TestParseMode(t *testing.T) {
 	}
 }
 
+// The flag default and an unset config must mean the same mode, or callers
+// that skip flag parsing silently run a different guardrail than operators.
+func TestDefaultModeIsZeroValueMode(t *testing.T) {
+	zero, err := ParseMode("")
+	if err != nil || zero != DefaultMode {
+		t.Fatalf("ParseMode(\"\") = %q, %v; want DefaultMode %q", zero, err, DefaultMode)
+	}
+	if DefaultMode != ModeOff {
+		t.Fatalf("DefaultMode = %q; want off until the estimate routes are live", DefaultMode)
+	}
+}
+
 func TestValidate(t *testing.T) {
 	valid := models.QueryGuardrail{Mode: "Enforce", RangeCap: time.Hour, ScopeThresholdBytes: 1, QueryBudgetBytes: 1}
 	c := valid
