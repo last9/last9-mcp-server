@@ -794,7 +794,7 @@ Partial change that preserves the rule ID. At least one change is required. Refu
 - `id` (string, required): Alert rule UUID.
 - `is_disabled` (boolean, optional): `false` promotes/enables, `true` pauses.
 - `mute_until` (integer, optional): Unix epoch deadline; `0` unmutes.
-- `properties` (object, optional): Replaces description, runbook, annotations, and `query_mode`.
+- `properties` (object, optional): Replaces description, runbook, annotations, and `query_mode` as one object; omitted fields are cleared, so send every field to keep (read them with `get_alert_config`).
 - `recurring_mute_schedule` (object, optional): Replaces the weekly schedule: `enabled` (default false), `timezone` (IANA name, required), and `windows` (1–20 of `weekdays` as `sun`..`sat`, `start_time` / `end_time` as 24-hour `HH:MM`). An end at or before the start ends the next day. Send every window to keep.
 - `clear_recurring_mute_schedule` (boolean, optional): Removes the schedule entirely; cannot be combined with `recurring_mute_schedule`. Differs from `enabled=false`, which keeps the windows stored.
 

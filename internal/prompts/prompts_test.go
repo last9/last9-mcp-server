@@ -444,6 +444,14 @@ func TestAlertRuleDescriptionsRequireKPINames(t *testing.T) {
 	}
 }
 
+// The API stores properties as one object, so a partial one clears the omitted fields.
+func TestPatchAlertDescriptionStatesPropertiesAreReplacedWhole(t *testing.T) {
+	if !strings.Contains(prompts.PatchAlertDescription, "omitted fields are cleared") ||
+		!strings.Contains(prompts.PatchAlertDescription, "get_alert_config") {
+		t.Error("patch_alert does not warn that properties replace the whole object")
+	}
+}
+
 func TestWhaleDescriptionsBounded(t *testing.T) {
 	budgets := map[string]int{
 		"get_logs_base":         2900,

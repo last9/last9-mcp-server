@@ -21,7 +21,7 @@ type PatchAlertArgs struct {
 	ID         string           `json:"id" jsonschema:"(Required) Alert rule UUID"`
 	IsDisabled *bool            `json:"is_disabled,omitempty" jsonschema:"Set false to promote/enable or true to pause/disable"`
 	MuteUntil  *int64           `json:"mute_until,omitempty" jsonschema:"Unix epoch mute deadline; 0 unmutes when the entity itself is not snoozed"`
-	Properties *AlertProperties `json:"properties,omitempty" jsonschema:"Replace responder description, runbook, annotations, and query mode without recreating the rule"`
+	Properties *AlertProperties `json:"properties,omitempty" jsonschema:"Replace responder description, runbook, annotations, and query mode without recreating the rule; the whole object is replaced and omitted fields are cleared"`
 
 	RecurringMuteSchedule      *RecurringMuteSchedule `json:"recurring_mute_schedule,omitempty" jsonschema:"Replace the weekly recurring mute schedule (timezone plus up to 20 windows)"`
 	ClearRecurringMuteSchedule bool                   `json:"clear_recurring_mute_schedule,omitempty" jsonschema:"Set true to remove the rule's recurring mute schedule entirely (default false); cannot be combined with recurring_mute_schedule"`
