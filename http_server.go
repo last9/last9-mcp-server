@@ -27,9 +27,6 @@ const (
 	// is for clients that cannot set headers. The header wins when both are sent.
 	toolsetsHeader     = "X-Last9-Toolsets"
 	toolsetsQueryParam = "toolsets"
-	// maxToolsetServers bounds the cached per-toolset servers. A set past the
-	// bound is served by a server built for that request alone.
-	maxToolsetServers = 32
 )
 
 // HTTPServer wraps the MCP server for HTTP transport
@@ -46,9 +43,8 @@ func NewHTTPServer(server *last9mcp.Last9MCPServer, config models.Config, build 
 		server: server,
 		config: config,
 		servers: &toolsetServers{
-			build:     build,
-			maxCached: maxToolsetServers,
-			cached:    map[string]*toolsetServer{},
+			build:  build,
+			cached: map[string]*toolsetServer{},
 		},
 	}
 }
@@ -69,13 +65,12 @@ func (h *HTTPServer) Handler() http.Handler {
 			startup.ServeHTTP(w, r)
 			return
 		}
-		handler, release, err := h.servers.handler(allowed)
+		handler, err := h.servers.handler(allowed)
 		if err != nil {
 			log.Printf("❌ build server for toolsets: %v", err)
 			http.Error(w, "failed to build server for the requested toolsets", http.StatusInternalServerError)
 			return
 		}
-		defer release()
 		handler.ServeHTTP(w, r)
 	})
 
@@ -120,10 +115,10 @@ func requestToolsets(r *http.Request, startup toolsets.Set) (toolsets.Set, bool,
 
 // toolsetServers caches one MCP server per distinct effective tool set, keyed
 // by its sorted tool names; like the startup server, each is shared by every
-// stateless request for that set.
+// stateless request for that set. It needs no bound or eviction: Parse accepts
+// only named toolsets, so there is at most one set per combination of them.
 type toolsetServers struct {
-	build     func(toolsets.Set) (*last9mcp.Last9MCPServer, error)
-	maxCached int
+	build func(toolsets.Set) (*last9mcp.Last9MCPServer, error)
 
 	mu      sync.Mutex
 	cached  map[string]*toolsetServer
@@ -138,24 +133,15 @@ type toolsetServer struct {
 	err     error
 }
 
-// handler returns the handler for allowed and a release func the caller must
-// run after serving; release shuts down a server built past the cache bound.
+// handler returns the handler for allowed, building its server on first use.
 // Builds run outside mu so a slow build never stalls other toolsets.
-func (c *toolsetServers) handler(allowed toolsets.Set) (http.Handler, func(), error) {
+func (c *toolsetServers) handler(allowed toolsets.Set) (http.Handler, error) {
 	key := toolSetKey(allowed)
 	c.mu.Lock()
 	if entry, ok := c.cached[key]; ok {
 		c.mu.Unlock()
 		<-entry.ready
-		return entry.handler, func() {}, entry.err
-	}
-	if len(c.cached) >= c.maxCached {
-		c.mu.Unlock()
-		server, err := c.build(allowed)
-		if err != nil {
-			return nil, nil, err
-		}
-		return server.NewStreamableHTTPHandler(streamableOptions()), func() { shutdownServer(server) }, nil
+		return entry.handler, entry.err
 	}
 	entry := &toolsetServer{ready: make(chan struct{})}
 	c.cached[key] = entry
@@ -173,7 +159,7 @@ func (c *toolsetServers) handler(allowed toolsets.Set) (http.Handler, func(), er
 	}
 	c.mu.Unlock()
 	close(entry.ready)
-	return entry.handler, func() {}, entry.err
+	return entry.handler, entry.err
 }
 
 func (c *toolsetServers) shutdown(ctx context.Context) error {
@@ -184,14 +170,6 @@ func (c *toolsetServers) shutdown(ctx context.Context) error {
 		errs = append(errs, server.Shutdown(ctx))
 	}
 	return errors.Join(errs...)
-}
-
-func shutdownServer(server *last9mcp.Last9MCPServer) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := server.Shutdown(ctx); err != nil {
-		log.Printf("❌ per-request MCP server shutdown error: %v", err)
-	}
 }
 
 func toolSetKey(allowed toolsets.Set) string {

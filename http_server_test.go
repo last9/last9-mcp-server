@@ -129,7 +129,7 @@ func TestHandleHealthReportsBuildVersion(t *testing.T) {
 
 // newToolsetHTTPServer serves --http with startup toolsets spec and counts how
 // many MCP servers it builds.
-func newToolsetHTTPServer(t *testing.T, spec string, maxCached int) (*httptest.Server, *atomic.Int32) {
+func newToolsetHTTPServer(t *testing.T, spec string) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
 	allowed, err := toolsets.Parse(spec)
 	if err != nil {
@@ -149,7 +149,6 @@ func newToolsetHTTPServer(t *testing.T, spec string, maxCached int) (*httptest.S
 		t.Fatal(err)
 	}
 	h := NewHTTPServer(startup, cfg, build)
-	h.servers.maxCached = maxCached
 	ts := httptest.NewServer(h.Handler())
 	t.Cleanup(ts.Close)
 	return ts, builds
@@ -225,7 +224,7 @@ func assertTools(t *testing.T, got map[string]bool, want, deny []string) {
 }
 
 func TestHTTPToolsetsPerRequest(t *testing.T) {
-	ts, _ := newToolsetHTTPServer(t, "logs,alerts", maxToolsetServers)
+	ts, _ := newToolsetHTTPServer(t, "logs,alerts")
 	core := []string{"get_current_time", "get_workspace_overview"}
 
 	tests := []struct {
@@ -253,7 +252,7 @@ func TestHTTPToolsetsPerRequest(t *testing.T) {
 }
 
 func TestHTTPToolsetsNarrowInitializeInstructions(t *testing.T) {
-	ts, _ := newToolsetHTTPServer(t, "logs,alerts", maxToolsetServers)
+	ts, _ := newToolsetHTTPServer(t, "logs,alerts")
 	const initialize = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}`
 	tests := []struct {
 		header     string
@@ -286,7 +285,7 @@ func TestHTTPToolsetsNarrowInitializeInstructions(t *testing.T) {
 }
 
 func TestHTTPToolsetsUnknownNameIs400(t *testing.T) {
-	ts, _ := newToolsetHTTPServer(t, "", maxToolsetServers)
+	ts, _ := newToolsetHTTPServer(t, "")
 	for _, tt := range []struct{ header, query string }{
 		{header: "logs,nope"},
 		{query: "nope"},
@@ -300,7 +299,7 @@ func TestHTTPToolsetsUnknownNameIs400(t *testing.T) {
 }
 
 func TestHTTPToolsetsFullStartupServesAnyRequestedSet(t *testing.T) {
-	ts, _ := newToolsetHTTPServer(t, "", maxToolsetServers)
+	ts, _ := newToolsetHTTPServer(t, "")
 	_, _, got := listTools(t, ts, "traces", "")
 	assertTools(t, got, []string{"get_traces", "get_current_time"}, []string{"get_logs", "list_dashboards"})
 	_, _, got = listTools(t, ts, "", "")
@@ -308,7 +307,7 @@ func TestHTTPToolsetsFullStartupServesAnyRequestedSet(t *testing.T) {
 }
 
 func TestHTTPToolsetsCachesOneServerPerEffectiveSet(t *testing.T) {
-	ts, builds := newToolsetHTTPServer(t, "", maxToolsetServers)
+	ts, builds := newToolsetHTTPServer(t, "")
 	for _, header := range []string{"logs", "LOGS", "logs,logs", "traces", "logs"} {
 		listTools(t, ts, header, "")
 	}
@@ -318,17 +317,38 @@ func TestHTTPToolsetsCachesOneServerPerEffectiveSet(t *testing.T) {
 	}
 }
 
-func TestHTTPToolsetsCacheIsBounded(t *testing.T) {
-	ts, builds := newToolsetHTTPServer(t, "", 1)
-	for _, header := range []string{"logs", "traces", "traces", "logs"} {
-		_, _, got := listTools(t, ts, header, "")
-		if !got["get_"+header] {
-			t.Fatalf("header %s: tools/list = %v", header, got)
+// A client rotating toolset combinations must not force a build per request:
+// every set it can name is built once, then served from the cache.
+func TestToolsetServersBuildEveryRequestableSetOnce(t *testing.T) {
+	c, b := newBlockingCache(t)
+	b.gate = ""
+	var names []string
+	for _, name := range toolsets.ValidNames() {
+		if name != "all" {
+			names = append(names, name)
 		}
 	}
-	// startup, logs (cached), then traces twice uncached.
-	if n := builds.Load(); n != 4 {
-		t.Fatalf("built %d servers, want 4", n)
+	sets := map[string]toolsets.Set{}
+	for range 2 {
+		for mask := 1; mask < 1<<len(names); mask++ {
+			var spec []string
+			for i, name := range names {
+				if mask&(1<<i) != 0 {
+					spec = append(spec, name)
+				}
+			}
+			allowed, err := toolsets.Parse(strings.Join(spec, ","))
+			if err != nil {
+				t.Fatal(err)
+			}
+			sets[toolSetKey(allowed)] = allowed
+			handlerWithin(t, c, allowed)
+		}
+	}
+	for key, allowed := range sets {
+		if n := b.count(allowed); n != 1 {
+			t.Errorf("built %q %d times, want 1", key, n)
+		}
 	}
 }
 
@@ -385,10 +405,7 @@ func handlerWithin(t *testing.T, c *toolsetServers, allowed toolsets.Set) http.H
 	}
 	done := make(chan result, 1)
 	go func() {
-		h, release, err := c.handler(allowed)
-		if release != nil {
-			release()
-		}
+		h, err := c.handler(allowed)
 		done <- result{h, err}
 	}()
 	select {
@@ -412,7 +429,7 @@ func TestToolsetServersBuildOutsideTheLock(t *testing.T) {
 
 	slow := make(chan error, 1)
 	go func() {
-		_, _, err := c.handler(logs)
+		_, err := c.handler(logs)
 		slow <- err
 	}()
 	<-b.started
@@ -431,7 +448,7 @@ func TestToolsetServersBuildEachSetOnce(t *testing.T) {
 	handlers := make(chan http.Handler, 2)
 	for range 2 {
 		go func() {
-			h, _, err := c.handler(logs)
+			h, err := c.handler(logs)
 			if err != nil {
 				t.Error(err)
 			}
@@ -454,7 +471,7 @@ func TestToolsetServersRetryAFailedBuild(t *testing.T) {
 	c, b := newBlockingCache(t)
 	traces := toolsets.Set{"get_traces": {}}
 	b.failNext.Store(true)
-	if _, _, err := c.handler(traces); err == nil {
+	if _, err := c.handler(traces); err == nil {
 		t.Fatal("want the build error")
 	}
 	handlerWithin(t, c, traces)
