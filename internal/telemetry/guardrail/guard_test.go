@@ -3,6 +3,7 @@ package guardrail
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -403,6 +404,28 @@ func TestSessions_EvictIdlePeersWhileActiveKeyStaysHot(t *testing.T) {
 	}
 	if _, ok := s.usage["idle"]; ok {
 		t.Fatal("idle session survived while another session stayed active")
+	}
+}
+
+func TestSessions_CapDropsLeastRecentlySeen(t *testing.T) {
+	now := time.Unix(0, 0)
+	s := newSessions(func() time.Time { return now })
+	s.add("kept", 7)
+	for i := range maxSessions + 1000 {
+		now = now.Add(time.Millisecond)
+		s.add(fmt.Sprintf("minted-%d", i), 1)
+		if i%1000 == 0 {
+			s.add("kept", 0)
+		}
+	}
+	if got := len(s.usage); got != maxSessions {
+		t.Fatalf("sessions tracked = %d, want the cap %d", got, maxSessions)
+	}
+	if _, ok := s.usage["minted-0"]; ok {
+		t.Error("least recently seen session survived past the cap")
+	}
+	if got := s.add("kept", 0); got != 7 {
+		t.Errorf("recently seen session usage = %d, want 7 (kept under the cap)", got)
 	}
 }
 
