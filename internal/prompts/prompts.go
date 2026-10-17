@@ -208,3 +208,8 @@ var AnalyzeSlowQueriesWorkflow string
 
 //go:embed workflows/on_call_runbook.md
 var OnCallRunbookWorkflow string
+
+// WorkflowPartials holds the {{define}} blocks workflow templates share.
+//
+//go:embed workflows/partials.md
+var WorkflowPartials string
