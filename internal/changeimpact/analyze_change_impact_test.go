@@ -212,6 +212,30 @@ func signalsFor(t *testing.T, r Report, service string) ServiceSignals {
 	return ServiceSignals{}
 }
 
+func TestReportThresholdsMirrorVerdictConstants(t *testing.T) {
+	change := recentChange()
+	f := &fakeLast9{change: change, baseline: flatWindow(), after: flatWindow()}
+	report, err := runTool(t, f, serviceArgs(change))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]float64{
+		"min_after_minutes":        minAfterMinutes,
+		"min_requests_per_window":  minRequestsPerWindow,
+		"error_rate_increase_pp":   errorRateIncreasePP,
+		"p95_latency_increase_pct": p95LatencyIncreasePct,
+		"throughput_drop_pct":      throughputDropPct,
+	}
+	if len(report.Thresholds) != len(want) {
+		t.Fatalf("thresholds = %v, want %v", report.Thresholds, want)
+	}
+	for k, v := range want {
+		if got, ok := report.Thresholds[k]; !ok || got != v {
+			t.Fatalf("thresholds[%q] = %v (ok=%v), want %v; full=%v", k, got, ok, v, report.Thresholds)
+		}
+	}
+}
+
 func TestPlantedRegressionIsRegressionLikely(t *testing.T) {
 	change := recentChange()
 	after := flatWindow()
