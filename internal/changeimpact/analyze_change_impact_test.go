@@ -333,6 +333,23 @@ func TestAlertsMatchAServiceOnlyByServiceLabelsOrGroupName(t *testing.T) {
 	}
 }
 
+// A deploy that sheds most traffic while errors and p95 stay flat must not
+// read as safe: the requests that vanished may be failing before the service.
+func TestTrafficCollapseIsRegressionLikely(t *testing.T) {
+	change := recentChange()
+	after := flatWindow()
+	after.requests = map[string]float64{"checkout": 25, "web": 600}
+	after.errors = map[string]float64{"checkout": 0, "web": 3}
+	f := &fakeLast9{change: change, baseline: flatWindow(), after: after}
+	report, err := runTool(t, f, serviceArgs(change))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Verdict != VerdictRegressionLikely || !strings.Contains(report.Reason, "checkout throughput fell") {
+		t.Fatalf("verdict=%q reason=%q; a ~98%% traffic drop must not clear the change", report.Verdict, report.Reason)
+	}
+}
+
 func TestAlertsStayInsideTheRequestedEnv(t *testing.T) {
 	cases := []struct {
 		name, reqEnv string

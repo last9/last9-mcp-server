@@ -8,7 +8,7 @@ import (
 )
 
 func signals(requests, errors, p95 float64) apm.GoldenSignals {
-	s := apm.GoldenSignals{RequestCount: requests, ErrorCount: errors}
+	s := apm.GoldenSignals{RequestCount: requests, ErrorCount: errors, ThroughputRPM: requests / 60}
 	if requests > 0 {
 		rate := errors / requests * 100
 		s.ErrorRatePct = &rate
@@ -32,6 +32,10 @@ func TestServiceRegressionThresholds(t *testing.T) {
 		{"too little baseline traffic", signals(minRequestsPerWindow-1, 0, 100), signals(1000, 500, 900), ""},
 		{"too little after traffic", signals(1000, 0, 100), signals(minRequestsPerWindow-1, 10, 900), ""},
 		{"traffic at the minimum", signals(minRequestsPerWindow, 0, 100), signals(minRequestsPerWindow, 10, 100), "error rate"},
+		{"throughput drop below threshold", signals(1000, 0, 100), signals(501, 0, 100), ""},
+		{"throughput drop at threshold", signals(1000, 0, 100), signals(500, 0, 100), "throughput fell"},
+		{"throughput drop to the minimum traffic", signals(1200, 0, 100), signals(minRequestsPerWindow, 0, 100), "throughput fell"},
+		{"throughput rise", signals(500, 0, 100), signals(5000, 0, 100), ""},
 		{"no baseline p95", signals(1000, 0, 0), signals(1000, 0, 900), ""},
 		{"improvement", signals(1000, 50, 300), signals(1000, 0, 100), ""},
 	}
