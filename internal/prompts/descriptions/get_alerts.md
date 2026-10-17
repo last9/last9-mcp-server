@@ -23,7 +23,7 @@
 	- fingerprint: Unique fingerprint for this alert instance
 
 	## When to use
-	Alerts firing now or within the last hour.
+	Alerts firing now or recently: `window` is default 15 minutes, at most 1 hour.
 
 	## When not to use
 	Firing history over a longer range: `get_alert_rule_state`. Rule definitions: `get_alert_config`. Only a count of firing alerts: `get_workspace_overview`.
