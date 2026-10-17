@@ -447,6 +447,14 @@ func TestAlertRuleDescriptionsRequireKPINames(t *testing.T) {
 	}
 }
 
+// The API accepts any work-domain address, not only the org's own domain.
+func TestCreateNotificationChannelDescriptionStatesEmailDomains(t *testing.T) {
+	desc := prompts.CreateNotificationChannelDescription
+	if strings.Contains(desc, "org-domain") || !strings.Contains(desc, "rejects personal-provider addresses") {
+		t.Errorf("create_notification_channel misstates which email addresses are accepted: %s", desc)
+	}
+}
+
 func TestCreateAlertDescriptionStatesDuplicateNameRefusal(t *testing.T) {
 	if !strings.Contains(prompts.CreateAlertDescription, "already uses (case-insensitive) is refused") {
 		t.Error("create_alert does not say a duplicate rule_name is refused")
