@@ -111,6 +111,25 @@ func TestLogPatternMiner_TracksStatsPerWindow(t *testing.T) {
 	}
 }
 
+func TestLogPatternMiner_SeenTimesSkipUnparseableTimestamps(t *testing.T) {
+	patterns := mustMineLogPatterns(t,
+		[]LogEntry{{Timestamp: "not-a-time", Message: "retrying call 1"}, {Message: "retrying call 2"}},
+		[]LogEntry{
+			{Timestamp: "not-a-time", Message: "retrying call 3"},
+			{Timestamp: "2026-10-16T10:01:00Z", Message: "retrying call 4"},
+		},
+	)
+	if len(patterns) != 1 {
+		t.Fatalf("templates = %q, want one", templates(patterns))
+	}
+	if got := patterns[0].stats(0); got.Count != 2 || got.FirstSeen != "" || got.LastSeen != "" {
+		t.Errorf("stats with no parseable timestamp = %+v, want count 2 and no seen times", got)
+	}
+	if got := patterns[0].stats(1); got.Count != 2 || got.FirstSeen != "2026-10-16T10:01:00Z" || got.LastSeen != "2026-10-16T10:01:00Z" {
+		t.Errorf("stats = %+v, want count 2 and seen times only from the parseable line", got)
+	}
+}
+
 func TestLogPatternMiner_NamesTheEmptyMessagePattern(t *testing.T) {
 	got := templates(mustMineLogPatterns(t, []LogEntry{{Message: ""}, {Message: "   "}}))
 	if len(got) != 1 || got[0] != emptyPatternTemplate {
