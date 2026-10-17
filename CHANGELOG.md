@@ -7,16 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The server now sends `instructions` on `initialize` with a tool-selection policy: discover services, environments, attributes, metric/label names, alert rules and dashboards first; prefer the dedicated service, alert, change-event and deviation tools over raw `prometheus_*`, `get_logs` and `get_traces`; read the `last9://reference/...` manuals; create once and refine write targets, confirming destructive calls. The policy is rendered from `internal/prompts/server_instructions.md` against `--toolsets`, so it names only registered tools; previously clients got no instructions and chose tools from descriptions alone (#335).
+- Added `did_you_mean` to the logs, traces, and metrics toolsets so their entity-name discovery guidance can be followed (#312).
+
 ### Fixed
 
 - `get_service_performance_details`, `get_service_operations_summary` and `get_service_dependency_graph` now build their `reference_url` deep link from the normalized literal `env` instead of the raw argument. For an anchored `env` such as `^production$`, the link previously carried the literal catalog filter `deployment_environment="^production$"`, which selects an environment distinct from the one the returned metrics were queried against (normally showing no data in the linked dashboard); an all-environments form such as `^.*$` also left a spurious catalog filter. The link now carries the matched environment name, or no filter at all for an all-environments `env` (#323).
-- `get_service_performance_details`, `get_service_operations_summary`, `get_service_dependency_graph` and `get_database_queries` no longer return silent all-zero results for an anchored `env` such as `^production$` (the form `get_service_summary` documents). A full `^name$` wrapper is now matched as the literal name and `.*` means all environments; an `env` with alternation or a `.*`/`.+` wildcard is rejected with an error pointing to `get_service_environments`. Other names, including `prod[blue]`, still match literally as in #301.
+- `get_service_performance_details`, `get_service_operations_summary`, `get_service_dependency_graph` and `get_database_queries` no longer return silent all-zero results for an anchored `env` such as `^production$` (the form `get_service_summary` documents). A full `^name$` wrapper is now matched as the literal name and `.*` means all environments; an `env` with alternation or a `.*`/`.+` wildcard is rejected with an error pointing to `get_service_environments`. Other names, including `prod[blue]`, still match literally as in #301 (#323).
+- `get_service_profile` now includes observed domains and physical log indexes with their own environments in its investigation brief, enabling profile-derived index selection instead of silently querying the default index (#314).
+- `get_traces` now distinguishes literal `TraceId` substring searches (`$contains`) from wildcard patterns (`$regex`) and shows the canonical `$avg` plus `groupby` shape for per-span duration queries (#312).
+- `get_logs` now shows the field-first `$containsWords` form and stops percentile fallback after an empty result; dashboard create/update schemas validate query/legend types and logs-panel configuration, and descriptions document required log aggregates and time windows (#312).
+- Log and trace tool descriptions now map message searches to `Body`, gRPC status code 14 to `attributes['rpc.grpc.status_code']`, and trace `service.name` to `ServiceName` (#312).
+- `get_logs` now includes the required `type: "window_aggregate"` discriminator in its count and percentile examples, so copied stages pass validation (#312).
+- Tool-call telemetry preserves the requesting agent's trace parent and records `mcp.turn.id` from trace context or explicit turn metadata; unrelated calls no longer share a synthetic session query span (#312).
+- `get_logs` now permits standalone single-predicate filters and repeats counts after narrowing broad results; `get_service_logs` documents canonical gRPC status and directs multiple-status or range queries to `get_logs` (#312).
 - `get_exceptions` now returns only the aggregate metric dimensions and occurrence count for each ranked row. It previously fabricated or emitted empty trace/sample fields, including a query-evaluation timestamp as `last_seen`, which made metric aggregates look like exact exception samples. The tool description and investigation workflow now require treating later service traces as context rather than verified matches (#310).
 - Tool schemas now describe every argument, consistently mark required inputs, and use the canonical `$and` pipeline example across query helpers; public descriptions no longer expose transport routes (#309).
 - `get_logs` and `get_traces` now explicitly show compact JSON stage-array examples and reject SQL-like query construction in their tool descriptions, so description-only clients can form valid pipelines without fetching a reference manual (#309).
 
 ### Changed
+- Dashboard create and update schemas now restrict `query_type` to supported values and their descriptions explain the query types for logs, metrics, and traces (#312).
 - `get_service_logs`, `get_service_traces`, and the PromQL range and instant query tools now serve explicit schemas for their supported fields, so unknown names and invalid field types are rejected during input validation (#311).
+
+### Changed
+
+- Bumped `github.com/last9/mcp-go-sdk` 0.1.4 → 0.1.5 (#313).
 
 ## [0.19.4] - 2026-10-06
 

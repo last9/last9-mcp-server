@@ -1,5 +1,7 @@
 Compare APM performance across a current window and an equal-duration baseline window. Use this tool for questions such as what regressed, improved, or changed; incident-versus-prior-period comparisons; recovery or post-mitigation verification; and fleet deviation discovery.
 
+**Answer from returned evidence:** use returned percentages and deltas as given; never calculate percentage changes or ratios from raw counts, Apdex values, or samples. When `operation_apdex_reconciliations` is nonempty, include a returned operation, both request-coverage values, and `unexplained_delta` as the residual. Coverage and `unexplained_delta` explain only the reported coverage, not the full service result, and do not establish cause.
+
 **Profile first:** Call `get_service_profile` for this service before using this tool. Use `signal_shape` and `telemetry` for routing — see `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
 
 Use `get_service_summary` for a one-window fleet ranking of interval request count, rpm, HTTP 4xx/5xx, and gRPC errors. Use `get_apm_service_deviations` when the question requires an equal-duration baseline comparison.
