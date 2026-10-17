@@ -768,7 +768,7 @@ Creates a static-threshold rule from a chart described by `describe_alert_chart`
 - `surface` / `chart_key` / `service_name` / `signal_key` / `name` (string, required)
 - `env` (string, optional)
 - `attributes` (object, optional)
-- `threshold` (number, optional): In the signal's unit. Score-unit signals such as apdex need an explicit value.
+- `threshold` (number, optional): In the signal's unit; must be 0 or more. Score-unit signals such as apdex need an explicit value.
 - `threshold_operator` (string, optional): `>` (default), `<`, `>=`, `<=`, `==`, `!=`.
 - `eval_window` (integer, optional): Minutes, 1–60. Default: 5.
 - `bad_minutes` (integer, optional): 1–`eval_window`. Default: 3.

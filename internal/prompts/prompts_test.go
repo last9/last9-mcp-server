@@ -463,6 +463,13 @@ func TestGetNotificationChannelsDescriptionPointsSendResolvedAtChannel(t *testin
 	}
 }
 
+// create_alert_from_chart rejects a negative threshold before calling the API.
+func TestCreateAlertFromChartDescriptionStatesThresholdFloor(t *testing.T) {
+	if !strings.Contains(prompts.CreateAlertFromChartDescription, "must be 0 or more") {
+		t.Error("create_alert_from_chart does not say threshold must be 0 or more")
+	}
+}
+
 func TestCreateAlertDescriptionStatesDuplicateNameRefusal(t *testing.T) {
 	if !strings.Contains(prompts.CreateAlertDescription, "already uses (case-insensitive) is refused") {
 		t.Error("create_alert does not say a duplicate rule_name is refused")
