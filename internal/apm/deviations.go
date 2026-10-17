@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -94,6 +95,8 @@ type apmDeviationResult struct {
 	PartialErrors                 []deviationPartialError        `json:"partial_errors,omitempty"`
 	Provenance                    deviationProvenance            `json:"provenance"`
 	DashboardURL                  string                         `json:"dashboard_url"`
+
+	serviceErrors []deviationPartialError
 }
 
 type aggregateWindowSummary struct {
@@ -119,19 +122,37 @@ func defaultDeviationHandlerDeps() deviationHandlerDeps {
 	}
 }
 
-// QueryServiceDeviations runs the get_apm_service_deviations comparison and
-// returns its deviating entries in that tool's priority order: regressions,
-// then improvements, then throughput shifts.
-func QueryServiceDeviations(ctx context.Context, client *http.Client, cfg models.Config, args DeviationArgs) ([]LeaderboardEntry, error) {
-	result, err := runAPMServiceDeviations(ctx, client, cfg, defaultDeviationHandlerDeps(), args)
+// ServiceDeviations is the get_apm_service_deviations comparison as a
+// composite tool consumes it.
+type ServiceDeviations struct {
+	// Entries are the deviating signals in that tool's priority order:
+	// regressions, then improvements, then throughput shifts.
+	Entries []LeaderboardEntry
+	// FailedQueries names each service-level query that failed or returned an
+	// invalid value while others succeeded; those signals were not compared.
+	// Operation-correlation failures are left out: they never classify a signal.
+	FailedQueries []string
+}
+
+// QueryServiceDeviations runs the get_apm_service_deviations comparison.
+func QueryServiceDeviations(ctx context.Context, client *http.Client, cfg models.Config, args DeviationArgs) (ServiceDeviations, error) {
+	return queryServiceDeviations(ctx, client, cfg, defaultDeviationHandlerDeps(), args)
+}
+
+func queryServiceDeviations(ctx context.Context, client *http.Client, cfg models.Config, deps deviationHandlerDeps, args DeviationArgs) (ServiceDeviations, error) {
+	result, err := runAPMServiceDeviations(ctx, client, cfg, deps, args)
 	if err != nil {
-		return nil, err
+		return ServiceDeviations{}, err
 	}
-	entries := make([]LeaderboardEntry, 0)
+	out := ServiceDeviations{Entries: make([]LeaderboardEntry, 0), FailedQueries: make([]string, 0, len(result.serviceErrors))}
 	for _, slice := range orderedDeviationSlices(result) {
-		entries = append(entries, slice...)
+		out.Entries = append(out.Entries, slice...)
 	}
-	return entries, nil
+	for _, e := range result.serviceErrors {
+		out.FailedQueries = append(out.FailedQueries, fmt.Sprintf("%s (%s, %s)", e.Signal, e.Window, e.Kind))
+	}
+	out.FailedQueries = uniqueSorted(out.FailedQueries)
+	return out, nil
 }
 
 func newAPMServiceDeviationsHandler(client *http.Client, baseCfg models.Config, deps deviationHandlerDeps) func(context.Context, *mcp.CallToolRequest, DeviationArgs) (*mcp.CallToolResult, any, error) {
@@ -194,6 +215,7 @@ func runAPMServiceDeviations(ctx context.Context, client *http.Client, baseCfg m
 	}
 
 	result := buildDeviationResult(args, queryCfg, windows, execution)
+	result.serviceErrors = slices.Clone(result.PartialErrors)
 	limitDeviationResult(&result, maxServices)
 	if args.ServiceName != "" && len(result.Services) == 0 && len(result.TelemetryChanges) == 0 {
 		present, detectErr := deps.hasAnyAPMTelemetry(ctx, runner, args, windows)

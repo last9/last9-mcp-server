@@ -29,6 +29,7 @@ func TestDescriptionDocumentsVerdictsAndThresholds(t *testing.T) {
 		fmt.Sprintf("top %d", maxDependents),
 		fmt.Sprintf("%d per list", sectionTopN),
 		"get_change_events",
+		"wholly or in any query listed in `apm.unavailable`",
 		"Trace-attribute deviations explain a verdict but never set one",
 	} {
 		if !strings.Contains(description, want) {

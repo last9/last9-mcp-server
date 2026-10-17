@@ -7,10 +7,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"last9-mcp/internal/models"
 )
 
 type promStubSample struct {
@@ -200,10 +203,46 @@ func TestQueryServiceDeviationsReturnsEmptyWithoutData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 0 {
-		t.Fatalf("entries = %v, want none", got)
+	if len(got.Entries) != 0 || len(got.FailedQueries) != 0 {
+		t.Fatalf("result = %+v, want no entries and no failed queries", got)
 	}
 	if len(queries()) == 0 {
 		t.Fatal("expected the deviation queries to run")
+	}
+}
+
+func TestQueryServiceDeviationsReportsServiceQueryFailuresOnly(t *testing.T) {
+	deps := testDeviationHandlerDeps()
+	calls := 0
+	deps.execute = func(context.Context, deviationQueryRunner, deviationQueryPlan) deviationQueryExecution {
+		calls++
+		if calls == 1 {
+			return deviationQueryExecution{
+				Current:  deviationQueryResult{Records: []deviationAggregate{aggregate("api", "prod", "", 600, 6, 60, 6, 420, 600, 6, 250, 300, 350, 400, 6)}},
+				Baseline: deviationQueryResult{Records: []deviationAggregate{aggregate("api", "prod", "", 600, 6, 6, 6, 570, 600, 6, 80, 100, 120, 130, 6)}},
+				Errors: []deviationQueryError{
+					{Window: "current", Signal: "apdex_numerator", Kind: deviationQueryErrorKindRejected},
+					{Window: "baseline", Signal: "apdex_numerator", Kind: deviationQueryErrorKindRejected},
+					{Window: "current", Signal: "apdex_numerator", Kind: deviationQueryErrorKindRejected},
+				},
+			}
+		}
+		return deviationQueryExecution{Errors: []deviationQueryError{{Window: "current", Signal: "latency_q75", Kind: "query_failed"}}}
+	}
+	args := sixMinuteDeviationArgs()
+	args.ServiceName, args.Env = "api", "prod"
+	got, err := queryServiceDeviations(context.Background(), http.DefaultClient, models.Config{}, deps, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatalf("execute calls = %d, want the service and operation passes", calls)
+	}
+	want := []string{"apdex_numerator (baseline, query_rejected)", "apdex_numerator (current, query_rejected)"}
+	if !slices.Equal(got.FailedQueries, want) {
+		t.Fatalf("failed queries = %v, want %v", got.FailedQueries, want)
+	}
+	if len(got.Entries) == 0 {
+		t.Fatal("regressions measured despite the failures were dropped")
 	}
 }

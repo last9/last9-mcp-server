@@ -213,7 +213,7 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 	var (
 		baseline, after       map[string]apm.GoldenSignals
 		baselineErr, afterErr error
-		apmEntries            []apm.LeaderboardEntry
+		apmResult             apm.ServiceDeviations
 		apmErr                error
 		traceResult           traces.AttributeDeviations
 		traceErr              error
@@ -233,7 +233,7 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 		})
 	})
 	wg.Go(func() {
-		apmEntries, apmErr = withTimeout(ctx, func(ctx context.Context) ([]apm.LeaderboardEntry, error) {
+		apmResult, apmErr = withTimeout(ctx, func(ctx context.Context) (apm.ServiceDeviations, error) {
 			return apm.QueryServiceDeviations(ctx, client, cfg, w.apmDeviationArgs(req))
 		})
 	})
@@ -291,7 +291,8 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 		report.Deviations.APM.Error = apmErr.Error()
 	} else {
 		var apmTriggers []string
-		report.Deviations.APM, apmTriggers = summarizeAPMDeviations(apmEntries)
+		report.Deviations.APM, apmTriggers = summarizeAPMDeviations(apmResult.Entries)
+		report.Deviations.APM.Unavailable = apmResult.FailedQueries
 		triggers = append(triggers, apmTriggers...)
 	}
 
@@ -322,6 +323,9 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 		if s.err != nil {
 			in.unavailable = append(in.unavailable, fmt.Sprintf("%s unavailable: %v", s.name, s.err))
 		}
+	}
+	if failed := report.Deviations.APM.Unavailable; len(failed) > 0 {
+		in.unavailable = append(in.unavailable, "APM deviations partially unavailable: failed "+strings.Join(failed, ", "))
 	}
 	if goldenErr == nil {
 		in.changedBaseline, in.changedAfter = baseline[req.Service], after[req.Service]
