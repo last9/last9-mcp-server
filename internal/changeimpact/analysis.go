@@ -110,8 +110,10 @@ type APMDeviation struct {
 type APMDeviations struct {
 	Items   []APMDeviation `json:"items"`
 	Dropped int            `json:"dropped"`
-	Error   string         `json:"error,omitempty"`
-	Skipped string         `json:"skipped,omitempty"`
+	// Unavailable names each service measurement that failed while the rest succeeded.
+	Unavailable []string `json:"unavailable,omitempty"`
+	Error       string   `json:"error,omitempty"`
+	Skipped     string   `json:"skipped,omitempty"`
 }
 
 type TraceDeviations struct {
