@@ -88,7 +88,8 @@ func streamableOptions() *mcp.StreamableHTTPOptions {
 
 // requestToolsets returns the tools a request may see: the startup set
 // intersected with the toolsets it asks for, so a request can narrow but never
-// widen. narrowed is false when the request asks for nothing or for all.
+// widen. narrowed is false when the request asks for nothing, for all, or for
+// a set whose intersection is the whole startup set.
 func requestToolsets(r *http.Request, startup toolsets.Set) (toolsets.Set, bool, error) {
 	spec := r.URL.Query().Get(toolsetsQueryParam)
 	if values := r.Header.Values(toolsetsHeader); len(values) > 0 {
@@ -109,6 +110,10 @@ func requestToolsets(r *http.Request, startup toolsets.Set) (toolsets.Set, bool,
 		if startup.Allows(tool) {
 			effective[tool] = struct{}{}
 		}
+	}
+	// effective ⊆ startup, so equal sizes mean the request restates startup.
+	if len(effective) == len(startup) {
+		return startup, false, nil
 	}
 	return effective, true, nil
 }

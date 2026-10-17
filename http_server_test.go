@@ -352,6 +352,17 @@ func TestToolsetServersBuildEveryRequestableSetOnce(t *testing.T) {
 	}
 }
 
+func TestHTTPToolsetsRestatingStartupReusesIt(t *testing.T) {
+	ts, builds := newToolsetHTTPServer(t, "logs,alerts")
+	for _, header := range []string{"alerts,logs", "logs,alerts,alerts", "all"} {
+		_, _, got := listTools(t, ts, header, "")
+		assertTools(t, got, []string{"get_logs", "get_alerts"}, []string{"get_traces"})
+	}
+	if n := builds.Load(); n != 1 {
+		t.Fatalf("built %d servers, want only the startup one", n)
+	}
+}
+
 // blockingBuilds builds a bare server per set; a build for gate's tool waits
 // until release is closed, after signalling started.
 type blockingBuilds struct {
