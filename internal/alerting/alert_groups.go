@@ -72,11 +72,9 @@ func NewGetAlertGroupsHandler(client *http.Client, cfg models.Config) func(conte
 		}
 
 		counts := countAlertRulesByEntity(rules)
-		groups := make([]alertGroupResult, 0, len(entitiesByID))
-		for _, entity := range entitiesByID {
-			if !matchesAlertGroupEntityFilters(entity, true, query) {
-				continue
-			}
+		matched := matchingAlertGroups(entitiesByID, query)
+		groups := make([]alertGroupResult, 0, len(matched))
+		for _, entity := range matched {
 			groups = append(groups, projectAlertGroupResult(entity, counts[entity.ID]))
 		}
 		sort.Slice(groups, func(i, j int) bool {
@@ -106,11 +104,24 @@ func NewGetAlertGroupsHandler(client *http.Client, cfg models.Config) func(conte
 
 // CountAlertGroups returns the count get_alert_groups reports with no filters.
 func CountAlertGroups(ctx context.Context, client *http.Client, cfg models.Config) (int, error) {
-	entities, err := fetchAlertGroupEntities(ctx, client, cfg, alertGroupEntityQuery{})
+	query := alertGroupEntityQueryFromGroups(GetAlertGroupsArgs{})
+	entities, err := fetchAlertGroupEntities(ctx, client, cfg, query)
 	if err != nil {
 		return 0, err
 	}
-	return len(entities), nil
+	return len(matchingAlertGroups(entities, query)), nil
+}
+
+// matchingAlertGroups applies get_alert_groups' client-side filters; the API
+// lookup does not enforce all of them.
+func matchingAlertGroups(entitiesByID map[string]alertGroupEntity, query alertGroupEntityQuery) []alertGroupEntity {
+	matched := make([]alertGroupEntity, 0, len(entitiesByID))
+	for _, entity := range entitiesByID {
+		if matchesAlertGroupEntityFilters(entity, true, query) {
+			matched = append(matched, entity)
+		}
+	}
+	return matched
 }
 
 func validateGetAlertGroupsArgs(args GetAlertGroupsArgs) error {
