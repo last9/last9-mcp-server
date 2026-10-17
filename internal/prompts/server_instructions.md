@@ -6,6 +6,7 @@
 {{- $dashboardReads := tools "get_dashboard" "get_dashboard_snapshot" "grafana_get_dashboard" -}}
 {{- $health := tools "get_service_summary" "get_service_performance_details" "get_service_operations_summary" "get_service_dependency_graph" -}}
 {{- $alerts := tools "get_alerts" "get_alert_rule_state" -}}
+{{- $coverage := tools "get_alert_coverage" -}}
 {{- $changes := tools "get_change_events" -}}
 {{- $deviations := tools "get_apm_service_deviations" "get_trace_attribute_deviations" -}}
 {{- $scoped := tools "get_service_logs" "get_service_traces" "get_exceptions" "get_trace_waterfall" -}}
@@ -38,7 +39,7 @@ Never guess service, environment, attribute, metric or label names, or dashboard
 - Dashboards, snapshots and Grafana folders: {{.}}{{with $dashboardReads}}; open one by id with {{.}}{{end}}.
 {{- end}}
 {{- end}}
-{{- if or $health $alerts $changes $deviations $scoped $databases $profiles}}
+{{- if or $health $alerts $coverage $changes $deviations $scoped $databases $profiles}}
 
 ## Prefer dedicated tools
 They return computed answers with the right scoping; reach for them before writing a query.
@@ -47,6 +48,9 @@ They return computed answers with the right scoping; reach for them before writi
 {{- end}}
 {{- with $alerts}}
 - Firing alerts and rule state: {{.}}.
+{{- end}}
+{{- with $coverage}}
+- Alerting gaps ("what am I not alerting on?"): {{.}}.
 {{- end}}
 {{- with $changes}}
 - Deploys and other changes: {{.}}.

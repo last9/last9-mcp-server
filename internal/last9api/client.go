@@ -36,9 +36,10 @@ type Request struct {
 }
 
 type options struct {
-	query        url.Values
-	regionHeader bool
-	regionQuery  bool
+	query            url.Values
+	regionHeader     bool
+	regionQuery      bool
+	maxResponseBytes int64
 }
 
 type Option func(*options)
@@ -48,6 +49,9 @@ func WithQuery(q url.Values) Option { return func(o *options) { o.query = q } }
 func WithRegionHeader() Option { return func(o *options) { o.regionHeader = true } }
 
 func WithRegionQuery() Option { return func(o *options) { o.regionQuery = true } }
+
+// WithMaxResponseBytes fails a success response larger than n bytes instead of decoding it.
+func WithMaxResponseBytes(n int64) Option { return func(o *options) { o.maxResponseBytes = n } }
 
 func (c *Client) Do(ctx context.Context, op string, r Request, out any, opts ...Option) error {
 	o := applyOptions(opts)
@@ -71,7 +75,7 @@ func (c *Client) Do(ctx context.Context, op string, r Request, out any, opts ...
 	if !isSuccess(resp.StatusCode) {
 		return utils.NewUpstreamHTTPError(resp, op)
 	}
-	return decodeResponse(resp, op, out)
+	return decodeResponse(resp, op, out, o.maxResponseBytes)
 }
 
 func applyOptions(opts []Option) options {
@@ -173,12 +177,23 @@ func isSuccess(status int) bool {
 	return status >= http.StatusOK && status < http.StatusMultipleChoices
 }
 
-func decodeResponse(resp *http.Response, op string, out any) error {
+func decodeResponse(resp *http.Response, op string, out any, maxBytes int64) error {
 	if out == nil {
 		utils.DrainResponseBody(resp.Body)
 		return nil
 	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+	var body io.Reader = resp.Body
+	if maxBytes > 0 {
+		raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+		if err != nil {
+			return fmt.Errorf("%s: read response: %w", op, err)
+		}
+		if int64(len(raw)) > maxBytes {
+			return fmt.Errorf("%s: response exceeds %d bytes; narrow the request", op, maxBytes)
+		}
+		body = bytes.NewReader(raw)
+	}
+	if err := json.NewDecoder(body).Decode(out); err != nil {
 		return fmt.Errorf("%s: decode response: %w", op, err)
 	}
 	return nil
