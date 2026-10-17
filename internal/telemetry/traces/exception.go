@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"sort"
@@ -32,6 +33,7 @@ type exceptionAggregate struct {
 	SpanKind              string
 	DeploymentEnvironment string
 	Count                 float64
+	SeriesKey             string
 }
 
 // GetExceptionsArgs defines the input structure for getting exceptions
@@ -91,6 +93,17 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 		baseFilter := buildExceptionBaseFilter(args)
 		exceptionsQuery := buildExceptionsPromQL(baseFilter, fmt.Sprintf("%dm", durationMinutes))
 
+		seenCtx, cancelSeen := context.WithCancel(ctx)
+		defer cancelSeen()
+		seenResult := make(chan map[string]exceptionSeen, 1)
+		go func() {
+			seen, err := fetchExceptionSeen(seenCtx, client, cfg, exceptionSeenQuery{BaseFilter: baseFilter, Start: startTime, End: endTime})
+			if err != nil {
+				slog.Warn("get_exceptions: first_seen/last_seen omitted", "error", err)
+			}
+			seenResult <- seen
+		}()
+
 		// Frontend parity: exceptions list is fetched from prom_query_instant over trace_*_count.
 		resp, err := utils.MakePromInstantAPIQuery(ctx, client, exceptionsQuery, endTime.Unix(), cfg)
 		if err != nil {
@@ -131,6 +144,7 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 				SpanKind:              spanKind,
 				DeploymentEnvironment: deploymentEnvironment,
 				Count:                 count,
+				SeriesKey:             exceptionSeriesKey(point.Metric),
 			})
 		}
 
@@ -147,11 +161,12 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 		isAllEnvs := args.Env == ""
+		seenByKey := <-seenResult
 
 		exceptions := make([]map[string]interface{}, 0, len(aggregates))
 		for _, exceptionData := range aggregates {
 			identity := identifyException(exceptionData, isAllEnvs)
-			exceptions = append(exceptions, map[string]interface{}{
+			row := map[string]interface{}{
 				"fingerprint":            identity.Fingerprint,
 				"exception_id":           identity.ID,
 				"url":                    dlBuilder.BuildExceptionLink(startMs, endMs, exceptionLinkRow(exceptionData, identity)),
@@ -161,7 +176,12 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 				"deployment_environment": exceptionData.DeploymentEnvironment,
 				"span_kind":              exceptionData.SpanKind,
 				"count":                  exceptionData.Count,
-			})
+			}
+			if seen, ok := seenByKey[exceptionData.SeriesKey]; ok {
+				row["first_seen"] = seen.First.Format(time.RFC3339)
+				row["last_seen"] = seen.Last.Format(time.RFC3339)
+			}
+			exceptions = append(exceptions, row)
 		}
 
 		// Format response
