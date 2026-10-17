@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added `get_log_patterns` and `get_emerging_log_patterns` to the logs and investigate toolsets. The first clusters a service's sampled log lines into templates with count, first/last seen, severity mix and a sample; the second compares a current window against a baseline and returns only new, increased, decreased or disappeared templates with counts from both windows. Both link the sampled logs search (the current window for the second) in `reference_url`, like `get_service_logs`. Clustering runs in the MCP server over a bounded sample because the Last9 API has no log-pattern endpoint. The on-call and error-rate prompts check log novelty with them before reading raw lines (#333).
+- The server now sends `instructions` on `initialize` with a tool-selection policy: discover services, environments, attributes, metric/label names, alert rules and dashboards first; prefer the dedicated service, alert, change-event and deviation tools over raw `prometheus_*`, `get_logs` and `get_traces`; read the `last9://reference/...` manuals; create once and refine write targets, confirming destructive calls. The policy is rendered from `internal/prompts/server_instructions.md` against `--toolsets`, so it names only registered tools; previously clients got no instructions and chose tools from descriptions alone (#335).
 - Added `did_you_mean` to the logs, traces, and metrics toolsets so their entity-name discovery guidance can be followed (#312).
 
 ### Fixed
