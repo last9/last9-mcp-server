@@ -177,14 +177,29 @@ func parseLookback(tokens []string) (time.Duration, error) {
 	if !ok {
 		return 0, fmt.Errorf("unknown unit %q: use s, m, h, d or w", unit)
 	}
+	// Checked before multiplying: a large count overflows time.Duration.
+	if n > int(maxLookback/per) {
+		return 0, lookbackTooLongError(count + unit)
+	}
 	return positiveLookback(time.Duration(n) * per)
 }
+
+// maxLookback bounds last <n><unit>: a typo such as 100000d would otherwise
+// resolve to a start centuries ago, or overflow.
+const maxLookback = 365 * 24 * time.Hour
 
 func positiveLookback(d time.Duration) (time.Duration, error) {
 	if d <= 0 {
 		return 0, fmt.Errorf("duration must be positive")
 	}
+	if d > maxLookback {
+		return 0, lookbackTooLongError(d.String())
+	}
 	return d, nil
+}
+
+func lookbackTooLongError(d string) error {
+	return fmt.Errorf("duration %s exceeds the 365d maximum: for an older start use since YYYY-MM-DD", d)
 }
 
 // parsePoint reads an RFC3339 timestamp (via ParseToolTimestamp) or a calendar

@@ -441,7 +441,7 @@ No parameters. Probes the last 60 minutes concurrently, each sub-call with a sho
 
 ### get_current_time
 
-- `range` (string, optional): `last 2h`, `past 30 minutes`, `last 7d` (s, m, h, d = 24h, w = 7d); `today`; `yesterday`; `since <point>`; `<point> to <point>`. A point is RFC3339, or `today` / `yesterday` / `YYYY-MM-DD` with an optional `9am`, `9:30pm` or `14:30`. A trailing zone overrides `timezone`. Omit for just `now`.
+- `range` (string, optional): `last 2h`, `past 30 minutes`, `last 7d` (s, m, h, d = 24h, w = 7d; at most 365d); `today`; `yesterday`; `since <point>`; `<point> to <point>`. A point is RFC3339, or `today` / `yesterday` / a weekday (`monday`, `mon`: its latest occurrence, today included) / `YYYY-MM-DD` with an optional `9am`, `9:30pm` or `14:30`. A trailing zone overrides `timezone` for both bounds; a zone anywhere else is an error. Omit for just `now`.
 - `timezone` (string, optional): IANA name or abbreviation (IST = Asia/Kolkata, PST/PDT, EST/EDT, UTC, GMT). Default UTC. Unknown zones are an error, and so is the ambiguous `CST` (pass `America/Chicago` or `Asia/Shanghai`).
 
 Returns `now` (and `start`/`end` with `range`) as `{iso, epoch_seconds, local}`; `local` appears only for a non-UTC zone.
