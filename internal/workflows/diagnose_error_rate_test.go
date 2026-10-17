@@ -105,7 +105,7 @@ func TestDiagnoseErrorRateChecksLogNoveltyBeforeRawLines(t *testing.T) {
 		"get_emerging_log_patterns(service_name=checkout, env=prod",
 		"no log novelty",
 		// Error triage compares error templates, but severity_filters drop body-level lines when severity_set is none or partial.
-		`severity_filters=["error", "fatal"] only when severity_set is "all"`,
+		`severity_filters=["error", "fatal", "critical"] only when severity_set is "all"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("template should contain %q:\n%s", want, got)

@@ -160,7 +160,7 @@ func TestOnCallRunbookChecksLogNoveltyOnlyBeforeLogSearches(t *testing.T) {
 func TestOnCallRunbookLogNoveltyFiltersSeverityOnlyWhenSeveritySetIsAll(t *testing.T) {
 	// Error triage should not let info/debug churn crowd error templates out of top_n,
 	// but severity_filters drop body-level lines when severity_set is none or partial.
-	const rule = `severity_filters=["error", "fatal"] only when severity_set is "all"`
+	const rule = `severity_filters=["error", "fatal", "critical"] only when severity_set is "all"`
 	for _, symptom := range []string{"errors", "weird"} {
 		got := renderOnCallRunbook(t, map[string]string{"symptom": symptom, "time": "1h", "service": "checkout"})
 		if novelty, filter := strings.Index(got, "get_emerging_log_patterns"), strings.Index(got, rule); filter < novelty {
