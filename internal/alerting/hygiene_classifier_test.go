@@ -82,6 +82,7 @@ func TestClassifyHygieneRule_Categories(t *testing.T) {
 		{"last fired before the window", func(r *alerts.HygieneRule) { r.LastFiredAt = i64(testWindowFr - 1); r.FireCount = 0 }, []string{"stale"}},
 		{"last fired at window start", func(r *alerts.HygieneRule) { r.LastFiredAt = i64(testWindowFr) }, []string{}},
 		{"never fired with history covering the window", func(r *alerts.HygieneRule) { r.LastFiredAt = nil; r.FireCount = 0 }, []string{"stale"}},
+		{"null last fire with a positive fire count is not never-fired", func(r *alerts.HygieneRule) { r.LastFiredAt = nil; r.FireCount = 1 }, []string{}},
 		{"never fired with no history recorded", func(r *alerts.HygieneRule) { r.LastFiredAt = nil; r.FireCount = 0; r.HistorySince = nil }, []string{}},
 		{"never fired with history starting mid-window", func(r *alerts.HygieneRule) {
 			r.LastFiredAt = nil

@@ -151,14 +151,16 @@ func flappingFinding(rule alerts.HygieneRule, _ hygieneWindow) *hygieneFinding {
 }
 
 // A rule that never fired is stale only when its history covers the whole window;
-// otherwise the silence may just predate recording.
+// otherwise the silence may just predate recording. A positive fire_count contradicts
+// "never fired", so that payload gets no verdict rather than a delete suggestion.
 func staleFinding(rule alerts.HygieneRule, w hygieneWindow) *hygieneFinding {
 	var reason string
 	switch {
 	case rule.LastFiredAt != nil && *rule.LastFiredAt < w.From:
 		reason = fmt.Sprintf("last fired %s, before the %s window began %s",
 			formatUnix(*rule.LastFiredAt), w.Label, formatUnix(w.From))
-	case rule.LastFiredAt == nil && rule.HistorySince != nil && *rule.HistorySince <= w.From:
+	case rule.LastFiredAt == nil && rule.FireCount == 0 &&
+		rule.HistorySince != nil && *rule.HistorySince <= w.From:
 		reason = fmt.Sprintf("never fired since history began %s, which covers the whole %s window",
 			formatUnix(*rule.HistorySince), w.Label)
 	default:
