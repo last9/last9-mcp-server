@@ -455,6 +455,14 @@ func TestCreateNotificationChannelDescriptionStatesEmailDomains(t *testing.T) {
 	}
 }
 
+// Delivery joins each attachment to its channel's send_resolved; the attachment row's own
+// column is a default nothing reads.
+func TestGetNotificationChannelsDescriptionPointsSendResolvedAtChannel(t *testing.T) {
+	if !strings.Contains(prompts.GetNotificationChannelsDescription, "resolve notifications follow the channel's own send_resolved") {
+		t.Error("get_notification_channels does not say attachment rows' send_resolved is not what delivery uses")
+	}
+}
+
 func TestCreateAlertDescriptionStatesDuplicateNameRefusal(t *testing.T) {
 	if !strings.Contains(prompts.CreateAlertDescription, "already uses (case-insensitive) is refused") {
 		t.Error("create_alert does not say a duplicate rule_name is refused")

@@ -718,7 +718,7 @@ Returns a JSON map of `rule_id -> [{timestamp, is_firing}]`. A timestamp at whic
 
 - `scope` (string, optional): `attached` (default) returns one row per alert-group attachment; the `id` is an attachment id, as taken by `detach_notification_channel`. `channels` returns the org's channels (`id`, `name`, `type`, `send_resolved`); the `id` is a channel id, as taken by `attach_notification_channel`. Destinations, headers, and certificates are never returned.
 
-Returns configured notification channels (Slack, PagerDuty, email, webhooks, etc.) as a TSV table.
+Returns configured notification channels (Slack, PagerDuty, email, webhooks, etc.) as a TSV table. On attachment rows `send_resolved` is the row's stored default, not what delivery uses; resolve notifications follow the channel's own `send_resolved` (`scope=channels`).
 
 ### recommend_alert_config
 

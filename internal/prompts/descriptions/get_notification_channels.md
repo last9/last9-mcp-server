@@ -3,7 +3,7 @@
 	Returns all notification channels configured in the organization as a TSV table.
 
 	Columns: id, name, type, global, in_use, send_resolved, snoozed_until, severity, priority, services, service_fqid
-	- send_resolved: true/false/null (null = not explicitly configured)
+	- send_resolved: true/false/null (null = not explicitly configured). On attachment rows (service_fqid set) this is the row's stored default, not what delivery uses: resolve notifications follow the channel's own send_resolved, shown by scope=channels.
 	- snoozed_until: UTC timestamp if snoozed, else "-"
 	- severity: breach or threat for this binding row (which alert severities route to this channel)
 	- services: comma-separated namespace/name pairs, "-" if global
