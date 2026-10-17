@@ -6,9 +6,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	// The release image is alpine without tzdata; embed the zone database so
-	// LoadLocation works wherever the binary runs.
-	_ "time/tzdata"
 )
 
 // timeZoneAbbreviations maps the abbreviations users type to the zone they

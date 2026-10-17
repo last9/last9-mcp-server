@@ -12,6 +12,9 @@ import (
 	"os"
 	"strconv"
 	"time"
+	// The release image is alpine without tzdata; embed the zone database so
+	// get_current_time's LoadLocation works wherever the binary runs.
+	_ "time/tzdata"
 
 	"github.com/joho/godotenv"
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
