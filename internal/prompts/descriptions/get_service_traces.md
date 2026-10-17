@@ -18,3 +18,5 @@ Rules:
 - Empty `trace_id` result: retry with explicit `start_time_iso`/`end_time_iso` or larger `lookback_minutes`.
 
 If unsure of `service_name` or `env` spelling, call `did_you_mean` first.
+
+**Envelope:** `truncated`/`limit`, `trimmed_items`, `partial`/`skipped` mean incomplete: disclose; follow `hints`.
