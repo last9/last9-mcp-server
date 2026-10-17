@@ -166,6 +166,11 @@ func TestOnCallRunbookLogNoveltyFiltersSeverityOnlyWhenSeveritySetIsAll(t *testi
 		if novelty, filter := strings.Index(got, "get_emerging_log_patterns"), strings.Index(got, rule); filter < novelty {
 			t.Errorf("symptom %q render must scope log novelty to error severities per severity_set:\n%s", symptom, got)
 		}
+		// Unfiltered dominant templates would surface info/debug volume next to error-scoped novelty.
+		patterns := strings.Index(got, "get_log_patterns")
+		if patterns < 0 || !strings.Contains(got[patterns:], "with the same severity_filters rule") {
+			t.Errorf("symptom %q render must apply the novelty severity rule to get_log_patterns:\n%s", symptom, got)
+		}
 	}
 }
 
