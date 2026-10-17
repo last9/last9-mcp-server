@@ -78,12 +78,40 @@ func (b *Builder) BuildTracesLink(fromMs, toMs int64, pipeline any, traceID, spa
 
 // BuildExceptionsLink creates an exceptions dashboard deep link
 func (b *Builder) BuildExceptionsLink(fromMs, toMs int64) string {
+	return b.exceptionsLink(b.exceptionsParams(fromMs, toMs))
+}
+
+// ExceptionRow names one row of the exceptions page. A non-empty Env narrows the page to that
+// environment, and ID must then be the row's id without the env suffix the All view adds.
+type ExceptionRow struct {
+	ID  string
+	Env string
+}
+
+// BuildExceptionLink creates an exceptions deep link that opens one row's detail panel. The page
+// opens it only if the row is among those it loads for the window.
+func (b *Builder) BuildExceptionLink(fromMs, toMs int64, row ExceptionRow) string {
+	params := b.exceptionsParams(fromMs, toMs)
+	params.Set("exception_id", row.ID)
+	if row.Env != "" {
+		if filterValue, err := json.Marshal([]string{fmt.Sprintf(`deployment_environment="%s"`, row.Env)}); err == nil {
+			params.Set("filter", string(filterValue))
+		}
+	}
+	return b.exceptionsLink(params)
+}
+
+func (b *Builder) exceptionsParams(fromMs, toMs int64) url.Values {
 	params := url.Values{}
 	params.Set("from", fmt.Sprintf("%d", fromMs/1000))
 	params.Set("to", fmt.Sprintf("%d", toMs/1000))
 	if b.clusterID != "" {
 		params.Set("cluster", b.clusterID)
 	}
+	return params
+}
+
+func (b *Builder) exceptionsLink(params url.Values) string {
 	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteExceptions, params.Encode())
 }
 
