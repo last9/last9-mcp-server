@@ -2,9 +2,11 @@ package alerting
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -42,5 +44,33 @@ func TestMuteAlertGroupRequiresEntityID(t *testing.T) {
 	result, _, err := NewMuteAlertGroupHandler(http.DefaultClient, testAlertMutationConfig("http://unused"))(context.Background(), nil, MuteAlertGroupArgs{Until: 1})
 	if err != nil || !result.IsError {
 		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestMuteAlertGroupRejectsOmittedOrNullUntil(t *testing.T) {
+	for name, raw := range map[string]string{
+		"omitted": `{"entity_id":"entity-1"}`,
+		"null":    `{"entity_id":"entity-1","until":null}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			var calls int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				_, _ = io.Copy(io.Discard, r.Body)
+				_, _ = w.Write([]byte(`{"ident":"entity-1"}`))
+			}))
+			defer server.Close()
+			var args MuteAlertGroupArgs
+			if err := json.Unmarshal([]byte(raw), &args); err != nil {
+				t.Fatal(err)
+			}
+			result, _, err := NewMuteAlertGroupHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil, args)
+			if err != nil || !result.IsError || !strings.Contains(resultText(result), "until is required") {
+				t.Fatalf("result=%s err=%v", resultText(result), err)
+			}
+			if calls != 0 {
+				t.Fatalf("snooze called %d times; an omitted until must not unmute the group", calls)
+			}
+		})
 	}
 }
