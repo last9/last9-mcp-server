@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Server instructions: move `get_service_profile` under dedicated tools (keep `get_profile_services` as the lister), describe `add_drop_rule` as dropping matching future logs, note when `prometheus_instant_query` is served without label discovery, treat reference manuals as lookups, and steer `get_traces` lookback percentiles to `aggregate`+$quantile rather than `window_aggregate`. The `get_traces` base description matches (#ENG-2634).
+- Server instructions: move `get_service_profile` under dedicated tools (keep `get_profile_services` as the lister), describe `add_drop_rule` as dropping matching future logs, note when `prometheus_instant_query` is served without label discovery, treat reference manuals as lookups, and steer `get_traces` lookback percentiles to `aggregate`+$quantile rather than `window_aggregate`. The `get_traces` base description matches (#358).
 - `get_service_profile` now includes observed domains and physical log indexes with their own environments in its investigation brief, enabling profile-derived index selection instead of silently querying the default index (#314).
 - `get_traces` now distinguishes literal `TraceId` substring searches (`$contains`) from wildcard patterns (`$regex`) and shows the canonical `$avg` plus `groupby` shape for per-span duration queries (#312).
 - `get_logs` now shows the field-first `$containsWords` form and stops percentile fallback after an empty result; dashboard create/update schemas validate query/legend types and logs-panel configuration, and descriptions document required log aggregates and time windows (#312).
