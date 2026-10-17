@@ -2,6 +2,7 @@ package alerting
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -58,6 +59,11 @@ func refuseDuplicateRuleName(ctx context.Context, api *last9api.Client, entityID
 	}
 	name := strings.TrimSpace(*ruleName)
 	rules, err := entities.ListAlertRules(ctx, api, entityID)
+	var upstream *utils.UpstreamHTTPError
+	if errors.As(err, &upstream) && (upstream.StatusCode == http.StatusBadRequest || upstream.StatusCode == http.StatusNotFound) {
+		// The list takes only entity_id, so its 4xx means the group is unknown.
+		return utils.ToolErrorResult(fmt.Sprintf("entity_id %q is not an alert group; nothing was created. Copy the alert group id from get_alert_groups", entityID)), nil
+	}
 	if err != nil {
 		return nil, withUpstreamBody(err)
 	}
