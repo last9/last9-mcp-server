@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `reassign_alert` now reports ids that match no alert as `no alert with this alert_group_id, rule_id and rule_type fired in the last hour` instead of `this alert has no owner yet`: on the API's 404, which covers both cases, it checks the alert monitor behind `get_alerts`, as `acknowledge_alert` does (#190).
 - `create_alert` now refuses, without creating anything, a `rule_name` its alert group already uses (compared case-insensitively) and names the existing rule's id; the API accepted the duplicate, so a repeated or retried create silently added a second rule with the same name (#190).
 - `validate_alert_expression` now accepts indicator names that its parser cannot read bare, such as KPI names with spaces (`Test Alert`), dots or dashes, by sending them as `[name]`. It used to report `Cannot transition token types from VARIABLE [Test] to VARIABLE [Alert]` for expressions that `create_alert` and `update_alert` save (#190).
 - `describe_alert_chart` and `create_alert_from_chart` reject a `surface` other than `discover-service` or `discover-exceptions` before calling the API and point to `create_alert`, instead of relaying a misleading "unknown chart key". The describe description no longer promises a per-signal `name` (#190).

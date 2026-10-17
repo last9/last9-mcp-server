@@ -53,7 +53,7 @@ func NewReassignAlertHandler(client *http.Client, cfg models.Config) func(contex
 			AlertGroupID: args.AlertGroupID, RuleID: args.RuleID, RuleType: args.RuleType, OwnerUserID: ownerID,
 		})
 		if err != nil {
-			return reassignErrorResult(err)
+			return reassignErrorResult(ctx, api, err, alertEpisode{AlertGroupID: args.AlertGroupID, RuleID: args.RuleID, RuleType: args.RuleType})
 		}
 		raw, err := json.Marshal(claim)
 		if err != nil {
@@ -63,13 +63,18 @@ func NewReassignAlertHandler(client *http.Client, cfg models.Config) func(contex
 	}
 }
 
-func reassignErrorResult(err error) (*mcp.CallToolResult, any, error) {
+// The API answers 404 both for an unclaimed alert and for ids that match no alert, so a 404
+// asks the monitor which one it is.
+func reassignErrorResult(ctx context.Context, api *last9api.Client, err error, episode alertEpisode) (*mcp.CallToolResult, any, error) {
 	var upstream *utils.UpstreamHTTPError
 	if !errors.As(err, &upstream) {
 		return nil, nil, err
 	}
 	switch {
 	case upstream.StatusCode == http.StatusNotFound:
+		if refusal, err := requireRecentAlert(ctx, api, episode); refusal != nil || err != nil {
+			return refusal, nil, err
+		}
 		return utils.ToolErrorResult("this alert has no owner yet; it must be acknowledged (acknowledge_alert) before it can be reassigned"), nil, nil
 	case upstream.StatusCode == http.StatusForbidden:
 		return utils.ToolErrorResult("reassigning requires a write-scope token and being an org admin or the alert's current owner"), nil, nil

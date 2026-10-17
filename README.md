@@ -822,7 +822,7 @@ Takes ownership of a firing alert, or releases it. Does not resolve or mute the 
 
 ### reassign_alert
 
-Hands an alert that already has an owner to another user; acknowledge it first if it has none. Last9 does not notify the new owner.
+Hands an alert that already has an owner to another user; acknowledge it first if it has none. When nothing is reassigned because the alert has no owner, it says whether `get_alerts` lists that alert in the last hour at all. Last9 does not notify the new owner.
 
 - `alert_group_id` / `rule_id` / `rule_type` (string, required): Copy from the alert in `get_alerts`.
 - `owner_email` (string, optional): Preferred; matched case-insensitively against active org users.
