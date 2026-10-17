@@ -34,6 +34,7 @@ var descriptionBudgetOverrides = map[string]int{
 	"get_trace_waterfall":             2700,
 	"get_traces":                      2700,
 	"get_service_logs":                2700,
+	"get_service_performance_details": 2800,
 }
 
 // servedSizeBudgets cap description plus compact input schema JSON for tools
