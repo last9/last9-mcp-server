@@ -2,8 +2,8 @@ package alerting
 
 import (
 	"context"
+	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"last9-mcp/internal/last9api"
@@ -72,6 +72,9 @@ func attachNotificationChannelFailure(err error, severity string, done []notific
 	if rerr != nil || len(done) == 0 {
 		return res, nil, rerr
 	}
+	// No rollback: detaching needs a delete-scope token this write may not have. The API
+	// upserts attachments per alert group and severity, so either retry finishes the job.
 	cause := res.Content[0].(*mcp.TextContent).Text
-	return utils.ToolErrorResult("attached " + done[0].Severity + " (attachment_id " + strconv.Itoa(done[0].AttachmentID) + ") but " + severity + " failed: " + cause), nil, nil
+	return utils.ToolErrorResult(fmt.Sprintf("attached %s (attachment_id %d) but %s failed: %s. %s stays attached; to finish, retry with severity=%s (re-attaching is idempotent, so severity=both is also safe)",
+		done[0].Severity, done[0].AttachmentID, severity, cause, done[0].Severity, severity)), nil, nil
 }

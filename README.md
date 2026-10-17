@@ -864,7 +864,7 @@ Routes an existing channel to one alert group. Idempotent. Attachments copy the 
 
 - `channel_id` (integer, required): A channel id (`get_notification_channels` with `scope=channels`), not an attachment id.
 - `alert_group_id` (string, required): From `get_alert_groups`.
-- `severity` (string, required): `breach`, `threat`, or `both`. `both` makes two attachments.
+- `severity` (string, required): `breach`, `threat`, or `both`. `both` makes two attachments; if the second fails, the first stays attached and the error names the severity to retry.
 
 ### detach_notification_channel
 
