@@ -16,6 +16,7 @@ import (
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/otelids"
+	"last9-mcp/internal/telemetry/guardrail"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -224,6 +225,7 @@ func buildTraceDetailsRequestURL(cfg models.Config, params *GetTracesQueryParams
 
 // GetServiceTracesHandler creates a handler for getting traces by service or ID
 func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetServiceTracesArgs) (*mcp.CallToolResult, any, error) {
+	guard := guardrail.New(client, cfg)
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetServiceTracesArgs) (*mcp.CallToolResult, any, error) {
 		// Parse and validate parameters
 		queryParams, err := parseGetServiceTraceParams(args, cfg)
@@ -244,6 +246,24 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 		startTime, endTime, err := utils.GetTimeRange(arguments, queryParams.LookbackMinutes)
 		if err != nil {
 			return nil, nil, err
+		}
+
+		pipeline := []map[string]interface{}{
+			{
+				"type":  "filter",
+				"query": map[string]interface{}{"$and": buildGetTracesFilters(queryParams)},
+			},
+		}
+		// An exact trace lookup reads one trace by id from its own endpoint: no scan to estimate.
+		var verdict guardrail.Verdict
+		if queryParams.TraceID == "" {
+			verdict = guard.Check(ctx, req, guardrail.Query{
+				Tool: "get_service_traces", Signal: guardrail.Traces, Pipeline: pipeline,
+				StartMs: startTime.UnixMilli(), EndMs: endTime.UnixMilli(),
+			})
+			if verdict.Blocked {
+				return verdict.RejectionResult(), nil, nil
+			}
 		}
 
 		traceResponse, err := fetchServiceTraceResponse(ctx, client, cfg, queryParams, startTime.Unix(), endTime.Unix())
@@ -278,27 +298,17 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 
 		// Build deep link URL
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		// Build pipeline from filters
-		pipeline := []map[string]interface{}{
-			{
-				"type":  "filter",
-				"query": map[string]interface{}{"$and": buildGetTracesFilters(queryParams)},
-			},
-		}
 		dashboardURL := dlBuilder.BuildTracesLink(startTime.UnixMilli(), endTime.UnixMilli(), pipeline, queryParams.TraceID, "")
 
-		return &mcp.CallToolResult{
-			// Escalate soft failures (e.g. malformed 200 body) per the
-			// package convention while preserving the structured
-			// success:false JSON and the dashboard deep link.
-			IsError: !traceResponse.Success,
-			Meta:    deeplink.ToMeta(dashboardURL),
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: string(jsonData),
-				},
-			},
-		}, nil, nil
+		var env utils.ResultEnvelope
+		verdict.AddHints(&env)
+		result := utils.EnvelopeToolResult(traceResponse, string(jsonData), env)
+		// Escalate soft failures (e.g. malformed 200 body) per the
+		// package convention while preserving the structured
+		// success:false JSON and the dashboard deep link.
+		result.IsError = !traceResponse.Success
+		result.Meta = deeplink.ToMeta(dashboardURL)
+		return result, nil, nil
 	}
 }
 

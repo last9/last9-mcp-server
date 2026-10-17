@@ -26,4 +26,6 @@ For calendar buckets, use explicit ISO bounds and time zone. P99 `Duration` outp
 
 **Aggregate example:** `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`.
 
+**Envelope:** `truncated`/`limit`, `trimmed_items`, `partial`/`skipped` mean incomplete: disclose; follow `hints`.
+
 Full manual: resource `last9://reference/tracejson`

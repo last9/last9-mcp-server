@@ -14,6 +14,7 @@ import (
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/telemetry/guardrail"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -33,6 +34,7 @@ type ServiceLogsResponse struct {
 	LogsTruncated      *bool          `json:"logs_truncated,omitempty"`
 	SearchStats        map[string]any `json:"search_stats,omitempty"`
 	coverageStatus     string
+	envelope           utils.ResultEnvelope
 }
 
 // LogEntry represents a single log entry
@@ -68,6 +70,7 @@ type ServiceLogAttributeFilter struct {
 
 // NewGetServiceLogsHandler creates a new handler for the get_service_logs tool
 func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetServiceLogsArgs) (*mcp.CallToolResult, any, error) {
+	guard := guardrail.New(client, cfg)
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetServiceLogsArgs) (*mcp.CallToolResult, any, error) {
 		// Validate required parameters
 		if args.ServiceName == "" {
@@ -119,16 +122,27 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, err
 		}
 
+		verdict := guard.Check(ctx, req, guardrail.Query{
+			Tool: "get_service_logs", Signal: guardrail.Logs, Pipeline: logjsonQuery,
+			StartMs: startTime.UnixMilli(), EndMs: endTime.UnixMilli(), Index: normalizedIndex,
+		})
+		if verdict.Blocked {
+			return verdict.RejectionResult(), nil, nil
+		}
+
 		// Fetch raw logs using the existing logs API approach. When index is omitted,
 		// keep the query on the no-index path that matches the live dashboard/API.
 		logs, err := fetchServiceLogs(ctx, client, cfg, args.ServiceName, startTime, endTime, limit, logjsonQuery, normalizedIndex)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
+		verdict.AddHints(&logs.envelope)
 		logs.HTTPStatusField = statusField
+		if logs.Count == 0 {
+			logs.envelope.Hint("No log lines matched. Before concluding there are none, confirm the service name with did_you_mean or get_service_profile, check env and index against the profile, relax filters, or widen the window.")
+		}
 
-		// Format response as JSON for better readability
-		responseJSON, err := json.MarshalIndent(logs, "", "  ")
+		responseJSON, err := formatServiceLogs(logs)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to format response: %w", err)
 		}
@@ -156,15 +170,30 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			meta["last9/coverage"] = coverage
 		}
 
-		return &mcp.CallToolResult{
-			Meta: meta,
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: string(responseJSON),
-				},
-			},
-		}, nil, nil
+		result := utils.EnvelopeToolResult(logs, responseJSON, logs.envelope)
+		result.Meta = meta
+		return result, nil, nil
 	}
+}
+
+// formatServiceLogs renders logs as indented JSON, dropping trailing entries
+// until it fits MaxResultTextBytes. A trimmed answer no longer covers its scope.
+func formatServiceLogs(logs *ServiceLogsResponse) (string, error) {
+	kept, omitted := utils.FitItems(logs.Logs, utils.MaxResultTextBytes, func(entries []LogEntry) int {
+		probe := *logs
+		probe.Logs, probe.Count = entries, len(entries)
+		encoded, _ := json.MarshalIndent(&probe, "", "  ")
+		return len(encoded)
+	})
+	logs.Logs, logs.Count = kept, len(kept)
+	if omitted > 0 {
+		logs.envelope.Trim(omitted)
+		if logs.coverageStatus == "complete" {
+			logs.coverageStatus = "partial"
+		}
+	}
+	encoded, err := json.MarshalIndent(logs, "", "  ")
+	return string(encoded), err
 }
 
 type serviceLogsScope struct {
@@ -372,12 +401,12 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		func(ctx context.Context, _ int, chunk utils.TimeChunk) (serviceLogsChunkResult, error) {
 			chunkCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
 			defer cancel()
-			return fetchServiceLogsChunk(chunkCtx, client, cfg, service, logjsonQuery, chunk.StartMs, chunk.EndMs, limit, index)
+			return fetchServiceLogsChunk(chunkCtx, client, cfg, service, logjsonQuery, chunk.StartMs, chunk.EndMs, limit+1, index)
 		})
 
 	logs := make([]LogEntry, 0, limit)
 	verified := len(chunks) > 0 && startTime.Nanosecond() == 0 && endTime.Nanosecond() == 0
-	bounded := false
+	matched := 0
 	var (
 		// partialErr carries chunk context (e.g. "chunk 3/6 failed: ...") and
 		// is used both for the all-chunks-failed hard error and for the
@@ -408,7 +437,7 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		remaining := limit - len(logs)
 		chunkLogs := r.Value.logs
 		verified = verified && r.Value.verified
-		bounded = bounded || len(chunkLogs) >= limit || len(chunkLogs) > remaining
+		matched += len(chunkLogs)
 		// Track whether this chunk's results were fully truncated away so the
 		// debug log records every successful chunk, not just the ones that
 		// fit inside the limit.
@@ -447,21 +476,26 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		)
 	}
 
+	truncated := matched > limit
 	coverageStatus := ""
 	if verified {
 		coverageStatus = "complete"
-		if bounded {
+		if truncated {
 			coverageStatus = "partial"
 		}
 	}
-	return &ServiceLogsResponse{
+	response := &ServiceLogsResponse{
 		Service:        service,
 		StartTime:      startTime.Format(time.RFC3339),
 		EndTime:        endTime.Format(time.RFC3339),
 		Count:          len(logs),
 		Logs:           logs,
 		coverageStatus: coverageStatus,
-	}, nil
+	}
+	if truncated {
+		response.envelope.Truncate(limit)
+	}
+	return response, nil
 }
 
 // Same hard-fail rule as get_logs: no retry through the chunked path, so the
@@ -477,7 +511,7 @@ func fetchServiceLogsViaSearchAPI(
 		Pipeline: logjsonQuery,
 		StartMs:  startTime.UnixMilli(),
 		EndMs:    endTime.UnixMilli(),
-		Limit:    limit,
+		Limit:    limit + 1,
 		Index:    index,
 	})
 	if err != nil {
@@ -486,7 +520,7 @@ func fetchServiceLogsViaSearchAPI(
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, utils.NewUpstreamHTTPError(resp, "service logs query", utils.LogsPipelineSchemaHint)
+		return nil, utils.NewUpstreamHTTPErrorWithAdvice(resp, "service logs query", utils.LogsQueryAdvice)
 	}
 
 	result, err := utils.DecodeLogSearchResponse(resp)
@@ -499,6 +533,8 @@ func fetchServiceLogsViaSearchAPI(
 	logs := parseServiceLogEntries(result, service)
 	// The server bounds lines across the whole sample; this tool's contract is
 	// an entry count, so hold it here too.
+	logsTruncated, _ := result["logs_truncated"].(bool)
+	truncated := logsTruncated || len(logs) > limit
 	if len(logs) > limit {
 		logs = logs[:limit]
 	}
@@ -518,6 +554,10 @@ func fetchServiceLogsViaSearchAPI(
 	}
 	if stats, ok := result["search_stats"].(map[string]any); ok {
 		response.SearchStats = stats
+	}
+	utils.SkipFailedSearchChunks(response.SearchStats, &response.envelope)
+	if truncated {
+		response.envelope.Truncate(limit)
 	}
 	return response, nil
 }

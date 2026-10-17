@@ -71,8 +71,8 @@ func TestTraceUpstreamStatusGuidance(t *testing.T) {
 		status int
 		want   string
 	}{
-		{status: http.StatusUnauthorized, want: "credentials"},
-		{status: http.StatusForbidden, want: "access"},
+		{status: http.StatusUnauthorized, want: "regenerate the refresh token"},
+		{status: http.StatusForbidden, want: "the token's scope or the user's role"},
 		{status: http.StatusNotFound, want: "unavailable or disabled"},
 		{status: http.StatusRequestTimeout, want: "smaller time window"},
 		{status: http.StatusTooManyRequests, want: "short delay"},
@@ -101,6 +101,24 @@ func TestNewTracePipelineHTTPError400IncludesSchemaHint(t *testing.T) {
 	}
 	if !strings.Contains(message, "get_trace_attributes_for_pipeline") {
 		t.Fatalf("expected schema hint in 400 message, got: %s", message)
+	}
+	if !strings.Contains(message, "Next action: call get_trace_attributes_for_pipeline") {
+		t.Fatalf("expected unknown field to lead with the discovery tool, got: %s", message)
+	}
+	if strings.Contains(message, "Review the tool arguments") {
+		t.Fatalf("generic advice should give way to the next action: %s", message)
+	}
+}
+
+func TestNewTracePipelineHTTPError400OtherErrorsKeepGenericAdvice(t *testing.T) {
+	response := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader(`invalid stage type`)),
+	}
+	message := newTracePipelineHTTPError(response).Error()
+	if strings.Contains(message, "Next action") || !strings.Contains(message, "Review the tool arguments") {
+		t.Fatalf("non-field 400 should keep generic advice, got: %s", message)
 	}
 }
 
