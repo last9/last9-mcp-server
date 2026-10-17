@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_logs` and `get_traces` now explicitly show compact JSON stage-array examples and reject SQL-like query construction in their tool descriptions, so description-only clients can form valid pipelines without fetching a reference manual (#309).
 
 ### Changed
+- The `alerts` toolset now also serves `get_change_events`, the input `analyze_change_impact` takes as `change_event` (#352).
 - The `on-call-runbook` prompt's latency and errors branches, `investigate-latency-spike` and `diagnose-error-rate` now look for a change with `get_change_events` right after `get_service_performance_details` and, when one precedes the symptom, judge it with `analyze_change_impact` before deeper triage: `no significant change` rules the change out, `insufficient data` does not (#352).
 - Dashboard create and update schemas now restrict `query_type` to supported values and their descriptions explain the query types for logs, metrics, and traces (#312).
 - `get_service_logs`, `get_service_traces`, and the PromQL range and instant query tools now serve explicit schemas for their supported fields, so unknown names and invalid field types are rejected during input validation (#311).
