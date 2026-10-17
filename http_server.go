@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -58,7 +59,7 @@ func (h *HTTPServer) Handler() http.Handler {
 	mcpHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		allowed, narrowed, err := requestToolsets(r, h.config.AllowedTools)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			reject(w, r, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if !narrowed {
@@ -68,7 +69,7 @@ func (h *HTTPServer) Handler() http.Handler {
 		handler, err := h.servers.handler(allowed)
 		if err != nil {
 			log.Printf("❌ build server for toolsets: %v", err)
-			http.Error(w, "failed to build server for the requested toolsets", http.StatusInternalServerError)
+			reject(w, r, "failed to build server for the requested toolsets", http.StatusInternalServerError)
 			return
 		}
 		handler.ServeHTTP(w, r)
@@ -80,6 +81,13 @@ func (h *HTTPServer) Handler() http.Handler {
 	mux.Handle("/mcp", mcpHandler) // /mcp endpoint for explicit MCP usage
 	mux.HandleFunc("/health", h.handleHealth)
 	return mux
+}
+
+// reject drains the body before answering: an unread body makes net/http
+// close the connection instead of reusing it for the client's next request.
+func reject(w http.ResponseWriter, r *http.Request, msg string, status int) {
+	_, _ = io.Copy(io.Discard, r.Body)
+	http.Error(w, msg, status)
 }
 
 func streamableOptions() *mcp.StreamableHTTPOptions {
