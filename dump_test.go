@@ -341,6 +341,17 @@ func TestDumpTools(t *testing.T) {
 	if !strings.Contains(excDesc, "not verified samples") {
 		t.Fatal("get_exceptions must prevent exact-trace inference")
 	}
+	for _, phrase := range []string{
+		"hashing `exception_type:service_name:span_name`, identical to the fingerprint Discover Exceptions shows",
+		"stays stable across deploys",
+		"plus `-<env>` only when `env` is not given",
+		"summed from trace-derived exception counters",
+		"first and last query step inside the window",
+	} {
+		if !strings.Contains(excDesc, phrase) {
+			t.Fatalf("get_exceptions must document its row identity and time semantics: missing %q", phrase)
+		}
+	}
 
 	if !strings.Contains(logsDesc, "get_service_logs") {
 		t.Fatal("get_logs whale must name get_service_logs as the structured HTTP-status alternative")
