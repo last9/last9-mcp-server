@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
+
+	"last9-mcp/internal/toolsets"
 )
 
 // sectionedTools are the 15 tools eval cases exercise most (tool-name
@@ -110,6 +115,47 @@ func TestTopToolDescriptionsHaveRoutingSections(t *testing.T) {
 		}
 		for _, v := range sectionViolations(description, served) {
 			t.Errorf("%s: %s", name, v)
+		}
+	}
+}
+
+// A sectioned tool served under a narrow --toolsets must not route to a tool
+// that set leaves out.
+func TestRoutingSectionsNameToolsServedAlongside(t *testing.T) {
+	for _, spec := range toolsets.ValidNames() {
+		if spec == "all" {
+			continue
+		}
+		set, err := toolsets.Parse(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var buf bytes.Buffer
+		if err := dumpTools(&buf, set); err != nil {
+			t.Fatal(err)
+		}
+		var out struct {
+			Tools []struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+			} `json:"tools"`
+		}
+		if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		served := map[string]bool{}
+		for _, tool := range out.Tools {
+			served[tool.Name] = true
+		}
+		for _, tool := range out.Tools {
+			if !slices.Contains(sectionedTools, tool.Name) {
+				continue
+			}
+			for _, v := range sectionViolations(tool.Description, served) {
+				if strings.Contains(v, "which is not a served tool") {
+					t.Errorf("--toolsets=%s %s: %s", spec, tool.Name, v)
+				}
+			}
 		}
 	}
 }
