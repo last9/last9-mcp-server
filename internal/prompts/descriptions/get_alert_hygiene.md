@@ -11,13 +11,16 @@ Categories (a rule may have several; disabled rules are never flagged):
 - noisy: fires at least 5 times/day with under 20% of episodes acked, or muted for at least 25%
   of the observed window.
 - flapping: more than 4 flaps/day.
-- stale: has not fired in the window. A rule that never fired counts only when its history
-  covers the whole window.
+- stale: has not fired in the window. A rule that never fired (null `last_fired_at` and zero
+  `fire_count`) counts only when its history covers the whole window.
 - unrouted: its alert group has no notification channel.
 
 Rates use the observed span: the window, or the part since history recording began
-(`history_since`), and never less than one day. A null `ack`, `muted_seconds` or
-`history_since` means no history was recorded yet, never zero, so it yields no verdict.
+(`history_since`), and never less than one day. A null field means the data was not recorded,
+never zero or false, and skips only the check that reads it: null `ack` skips noisy-by-ack,
+null `muted_seconds` skips noisy-by-mute, null `routed` skips unrouted, and null
+`history_since` skips never-fired stale while rates use the full window. Other categories
+still apply.
 
 Suggested fixes (each finding has `suggested_fix` and sometimes `alternative_fix`, as
 `{parameter, current, proposed}`):
