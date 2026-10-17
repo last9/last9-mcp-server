@@ -198,34 +198,49 @@ func parsePoint(tokens []string, now time.Time, loc *time.Location) (time.Time, 
 			return ts, nil
 		}
 	}
-	day := startOfDay(now, loc, 0)
-	clock := tokens
-	switch head := strings.ToLower(tokens[0]); {
-	case head == "today":
-		clock = tokens[1:]
-	case head == "yesterday":
-		day, clock = startOfDay(now, loc, -1), tokens[1:]
-	case isWeekday(head):
-		day, clock = latestWeekday(now, loc, weekdays[head]), tokens[1:]
-	default:
-		if d, err := time.ParseInLocation("2006-01-02", tokens[0], loc); err == nil {
-			day, clock = d, tokens[1:]
+	for _, tok := range tokens[1:] {
+		if isTimeZoneToken(tok) {
+			return time.Time{}, fmt.Errorf("timezone %q must come last in the range, e.g. \"yesterday 9am to today IST\"", tok)
 		}
 	}
+	day, clock, named := parseDay(tokens, now, loc)
 	if len(clock) == 0 {
 		return day, nil
 	}
-	hour, minute, err := parseClock(strings.ToLower(strings.Join(clock, "")))
+	hour, minute, err := parseClock(clock)
+	if err != nil && !named {
+		return time.Time{}, fmt.Errorf("unrecognized point %q: use today, yesterday, a weekday or YYYY-MM-DD, "+
+			"optionally followed by a time of day (9am, 14:30), or an RFC3339 timestamp", strings.Join(tokens, " "))
+	}
 	if err != nil {
 		return time.Time{}, err
 	}
 	return time.Date(day.Year(), day.Month(), day.Day(), hour, minute, 0, 0, loc), nil
 }
 
+// parseDay reads a leading day word and returns the tokens left for the clock.
+// Without one, the point is a time of day today and named is false.
+func parseDay(tokens []string, now time.Time, loc *time.Location) (day time.Time, clock []string, named bool) {
+	switch head := strings.ToLower(tokens[0]); {
+	case head == "today":
+		return startOfDay(now, loc, 0), tokens[1:], true
+	case head == "yesterday":
+		return startOfDay(now, loc, -1), tokens[1:], true
+	case isWeekday(head):
+		return latestWeekday(now, loc, weekdays[head]), tokens[1:], true
+	}
+	if d, err := time.ParseInLocation("2006-01-02", tokens[0], loc); err == nil {
+		return d, tokens[1:], true
+	}
+	return startOfDay(now, loc, 0), tokens, false
+}
+
 var clockPattern = regexp.MustCompile(`^(\d{1,2})(?::(\d{2}))?(am|pm)?$`)
 
-func parseClock(s string) (hour, minute int, err error) {
-	m := clockPattern.FindStringSubmatch(s)
+// parseClock joins its tokens so "9 am" reads as "9am"; errors quote them as typed.
+func parseClock(tokens []string) (hour, minute int, err error) {
+	s := strings.Join(tokens, " ")
+	m := clockPattern.FindStringSubmatch(strings.ToLower(strings.Join(tokens, "")))
 	if m == nil {
 		return 0, 0, fmt.Errorf("unrecognized time of day %q: use 9am, 9:30pm or 14:30", s)
 	}
