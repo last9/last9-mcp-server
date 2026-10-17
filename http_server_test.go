@@ -158,15 +158,29 @@ func newToolsetHTTPServer(t *testing.T, spec string) (*httptest.Server, *atomic.
 // and decodes the result into out when the server answers 200.
 func postRPC(t *testing.T, ts *httptest.Server, header, query, body string, out any) (int, string) {
 	t.Helper()
+	url, headers := rpcTarget(ts, header, query)
+	return postRPCWithHeaders(t, url, headers, body, out)
+}
+
+func rpcTarget(ts *httptest.Server, header, query string) (string, []string) {
 	url := ts.URL + "/mcp"
 	if query != "" {
 		url += "?toolsets=" + query
 	}
+	if header == "" {
+		return url, nil
+	}
+	return url, []string{header}
+}
+
+// postRPCWithHeaders sends each of headers as a separate X-Last9-Toolsets line.
+func postRPCWithHeaders(t *testing.T, url string, headers []string, body string, out any) (int, string) {
+	t.Helper()
 	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	if header != "" {
-		req.Header.Set("X-Last9-Toolsets", header)
+	for _, header := range headers {
+		req.Header.Add("X-Last9-Toolsets", header)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -193,12 +207,18 @@ func postRPC(t *testing.T, ts *httptest.Server, header, query, body string, out 
 // listTools posts tools/list with an optional toolsets header and query.
 func listTools(t *testing.T, ts *httptest.Server, header, query string) (int, string, map[string]bool) {
 	t.Helper()
+	url, headers := rpcTarget(ts, header, query)
+	return listToolsWithHeaders(t, url, headers)
+}
+
+func listToolsWithHeaders(t *testing.T, url string, headers []string) (int, string, map[string]bool) {
+	t.Helper()
 	var result struct {
 		Tools []struct {
 			Name string `json:"name"`
 		} `json:"tools"`
 	}
-	status, body := postRPC(t, ts, header, query, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, &result)
+	status, body := postRPCWithHeaders(t, url, headers, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, &result)
 	if status != http.StatusOK {
 		return status, body, nil
 	}
@@ -249,6 +269,15 @@ func TestHTTPToolsetsPerRequest(t *testing.T) {
 			assertTools(t, got, tt.want, tt.deny)
 		})
 	}
+}
+
+func TestHTTPToolsetsJoinsRepeatedHeaders(t *testing.T) {
+	ts, _ := newToolsetHTTPServer(t, "logs,alerts,traces")
+	status, body, got := listToolsWithHeaders(t, ts.URL+"/mcp", []string{"logs", "alerts"})
+	if status != http.StatusOK {
+		t.Fatalf("status %d: %s", status, body)
+	}
+	assertTools(t, got, []string{"get_logs", "get_alerts"}, []string{"get_traces"})
 }
 
 func TestHTTPToolsetsNarrowInitializeInstructions(t *testing.T) {
