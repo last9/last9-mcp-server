@@ -135,6 +135,20 @@ func TestParseUnknown(t *testing.T) {
 	}
 }
 
+func TestEveryToolsetIncludesCore(t *testing.T) {
+	for _, spec := range append(ValidNames(), "logs,alerts") {
+		set, err := Parse(spec)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", spec, err)
+		}
+		for _, tool := range []string{"get_current_time", "get_workspace_overview"} {
+			if !set.Allows(tool) {
+				t.Errorf("toolsets=%s hides core tool %q", spec, tool)
+			}
+		}
+	}
+}
+
 func TestNilSetAllowsEverything(t *testing.T) {
 	var set Set
 	if !set.Allows("anything") {

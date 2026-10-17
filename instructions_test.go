@@ -9,6 +9,7 @@ import (
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/toolsets"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
@@ -217,6 +218,35 @@ func TestServerInstructionsAdaptToToolsets(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestServerInstructionsStartWithWorkspaceOverview(t *testing.T) {
+	for _, spec := range append(toolsets.ValidNames(), "") {
+		t.Run("toolsets="+spec, func(t *testing.T) {
+			instructions, _ := initializeOver(t, spec)
+			_, rest, ok := strings.Cut(instructions, "\n## ")
+			if !ok || !strings.HasPrefix(rest, "Start here\nCall `get_workspace_overview` first") {
+				t.Fatalf("first section must recommend get_workspace_overview:\n%s", instructions)
+			}
+		})
+	}
+}
+
+// The overview probes only the last hour in the default scope, so an empty
+// probe must not steer agents away from a signal's tools for older windows.
+func TestOverviewAbsenceKeepsSignalToolsQueryable(t *testing.T) {
+	instructions, _ := initializeOver(t, "")
+	start, _, _ := strings.Cut(instructions, "\n## Discover")
+	_, telemetry, _ := strings.Cut(prompts.GetWorkspaceOverviewDescription, "- `telemetry`")
+	telemetry, _, _ = strings.Cut(telemetry, "\n")
+	for name, text := range map[string]string{"initialize instructions": start, "overview telemetry field": telemetry} {
+		if strings.Contains(strings.ToLower(text), "skip") {
+			t.Errorf("%s tells agents to skip a signal after an empty probe:\n%s", name, text)
+		}
+		if !strings.Contains(text, "requested time range, index or datasource") {
+			t.Errorf("%s must keep the signal queryable for the user's requested scope:\n%s", name, text)
+		}
 	}
 }
 
