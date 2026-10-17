@@ -152,6 +152,27 @@ func TestQueryDirectDependentsRanksCallersByThroughput(t *testing.T) {
 	}
 }
 
+// Dependents and golden signals must read the same range for one window, so a
+// partial minute rounds up in both.
+func TestQueryDirectDependentsSizesWindowLikeGoldenSignals(t *testing.T) {
+	w := goldenTestWindow()
+	w.End = w.End.Add(30 * time.Second)
+	server, queries := newPromQueryStub(t, nil)
+	defer server.Close()
+	cfg := testSummaryConfig(server.URL)
+	if _, err := QueryDirectDependents(context.Background(), server.Client(), cfg, DependentsQuery{Service: "checkout", Window: w}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := QueryGoldenSignals(context.Background(), server.Client(), cfg, GoldenSignalsQuery{Services: []string{"checkout"}, Window: w}); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range queries() {
+		if !strings.Contains(q, "[31m]") {
+			t.Errorf("query %s must cover the 30m30s window as 31m", q)
+		}
+	}
+}
+
 func TestQueryDirectDependentsSurfacesUpstreamStatus(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
