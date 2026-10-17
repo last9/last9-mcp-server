@@ -11,9 +11,13 @@ import (
 
 var promptDescriptionFiles = map[string]string{
 	"add_drop_rule.md":                     prompts.AddDropRuleDescription,
+	"create_alert.md":                      prompts.CreateAlertDescription,
+	"create_alert_from_chart.md":           prompts.CreateAlertFromChartDescription,
 	"create_dashboard.md":                  prompts.CreateDashboardDescription,
+	"delete_alert.md":                      prompts.DeleteAlertDescription,
 	"delete_dashboard.md":                  prompts.DeleteDashboardDescription,
 	"delete_dashboard_snapshot.md":         prompts.DeleteDashboardSnapshotDescription,
+	"describe_alert_chart.md":              prompts.DescribeAlertChartDescription,
 	"did_you_mean.md":                      prompts.DidYouMeanDescription,
 	"get_alert_config.md":                  prompts.GetAlertConfigDescription,
 	"get_alert_groups.md":                  prompts.GetAlertGroupsDescription,
@@ -60,15 +64,31 @@ var promptDescriptionFiles = map[string]string{
 	"list_dashboard_snapshots.md":          prompts.ListDashboardSnapshotsDescription,
 	"list_dashboards.md":                   prompts.ListDashboardsDescription,
 	"list_datasources.md":                  prompts.ListDatasourcesDescription,
+	"mute_alert_group.md":                  prompts.MuteAlertGroupDescription,
+	"acknowledge_alert.md":                 prompts.AcknowledgeAlertDescription,
+	"reassign_alert.md":                    prompts.ReassignAlertDescription,
+	"create_notification_channel.md":       prompts.CreateNotificationChannelDescription,
+	"attach_notification_channel.md":       prompts.AttachNotificationChannelDescription,
+	"detach_notification_channel.md":       prompts.DetachNotificationChannelDescription,
+	"delete_notification_channel.md":       prompts.DeleteNotificationChannelDescription,
+	"patch_alert.md":                       prompts.PatchAlertDescription,
 	"prometheus_instant_query.md":          prompts.PromqlInstantQueryDetails,
 	"prometheus_label_values.md":           prompts.PromqlLabelValuesQueryDetails,
 	"prometheus_labels.md":                 prompts.PromqlLabelsQueryDetails,
 	"prometheus_range_query_base.md":       prompts.PromqlRangeQueryDetails,
+	"recommend_alert_config.md":            prompts.RecommendAlertConfigDescription,
+	"update_alert.md":                      prompts.UpdateAlertDescription,
 	"update_dashboard.md":                  prompts.UpdateDashboardDescription,
+	"validate_alert_expression.md":         prompts.ValidateAlertExpressionDescription,
 	"validate_dashboard.md":                prompts.ValidateDashboardDescription,
 }
 
 var simplePromptDescriptionFiles = map[string]bool{
+	"create_alert.md":              true,
+	"delete_alert.md":              true,
+	"patch_alert.md":               true,
+	"recommend_alert_config.md":    true,
+	"update_alert.md":              true,
 	"add_drop_rule.md":             true,
 	"create_dashboard.md":          true,
 	"delete_dashboard.md":          true,
@@ -404,6 +424,44 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
 			t.Errorf("GetServiceLogsDescription missing %q: %s", c.phrase, c.reason)
+		}
+	}
+}
+
+// The API rejects expression_args keys other than the bound KPI's own name.
+func TestAlertRuleDescriptionsRequireKPINames(t *testing.T) {
+	for name, desc := range map[string]string{
+		"create_alert":              prompts.CreateAlertDescription,
+		"update_alert":              prompts.UpdateAlertDescription,
+		"validate_alert_expression": prompts.ValidateAlertExpressionDescription,
+	} {
+		if !strings.Contains(desc, "exact name") {
+			t.Errorf("%s does not require each indicator to use its KPI's exact name", name)
+		}
+	}
+	if strings.Contains(prompts.ValidateAlertExpressionDescription, "x, y, z") {
+		t.Error("validate_alert_expression still suggests placeholder indicator names")
+	}
+}
+
+// Cleanup and bulk removals must stay on resources an MCP agent created unless the user
+// names one; each tool must also say where the marker is listed.
+func TestRemovalDescriptionsScopeCleanupToMarkedResources(t *testing.T) {
+	for name, tc := range map[string]struct{ desc, listing string }{
+		"delete_alert":                {prompts.DeleteAlertDescription, "get_entity_alert_rules"},
+		"delete_notification_channel": {prompts.DeleteNotificationChannelDescription, "get_notification_channels scope=channels"},
+		"detach_notification_channel": {prompts.DetachNotificationChannelDescription, "get_notification_channels scope=attached"},
+	} {
+		for _, phrase := range []string{
+			"clean up",
+			"whose created_via is last9-mcp",
+			"shown by " + tc.listing,
+			"only when the user names that specific",
+			"explicitly says to include ones created elsewhere",
+		} {
+			if !strings.Contains(tc.desc, phrase) {
+				t.Errorf("%s missing cleanup-scope wording %q", name, phrase)
+			}
 		}
 	}
 }
