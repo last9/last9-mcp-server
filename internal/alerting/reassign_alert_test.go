@@ -15,12 +15,17 @@ type reassignServer struct {
 	*httptest.Server
 	body       string
 	reassigned bool
+	monitor    string
+	monitored  bool
 }
 
 func newReassignServer(t *testing.T, status int, errBody string) *reassignServer {
-	s := &reassignServer{}
+	s := &reassignServer{monitor: ackMonitorJSON}
 	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/alerts/monitor":
+			s.monitored = true
+			_, _ = w.Write([]byte(s.monitor))
 		case "/users":
 			_, _ = w.Write([]byte(`[{"id":"old","email":"b@x.io","deleted_at":1},{"id":"u2","email":"B@X.io"}]`))
 		case "/alert-episode-claims/reassign":
@@ -120,5 +125,31 @@ func TestReassignAlertErrorMapping(t *testing.T) {
 		if _, _, err := runReassign(s, ReassignAlertArgs{OwnerUserID: "u2"}); err == nil {
 			t.Errorf("status %d should pass through as error", status)
 		}
+	}
+}
+
+// The reassign API answers 404 both for an unclaimed alert and for ids that match no
+// alert, so only the monitor can tell the two apart.
+func TestReassignAlertNotFoundNamesUnknownAlert(t *testing.T) {
+	s := newReassignServer(t, 404, "")
+	s.monitor = `{"alert_rules":[{"alert_group_id":"g","rule_id":"other","rule_type":"static"}]}`
+	text, isErr, err := runReassign(s, ReassignAlertArgs{OwnerUserID: "u2"})
+	if err != nil || !isErr || !strings.Contains(text, "no alert with this alert_group_id, rule_id and rule_type fired in the last hour") || strings.Contains(text, "no owner yet") {
+		t.Fatalf("text=%s isErr=%v err=%v", text, isErr, err)
+	}
+}
+
+func TestReassignAlertChecksMonitorOnlyAfterNotFound(t *testing.T) {
+	s := newReassignServer(t, 0, "")
+	if _, isErr, err := runReassign(s, ReassignAlertArgs{OwnerUserID: "u2"}); err != nil || isErr || s.monitored {
+		t.Fatalf("isErr=%v err=%v monitored=%v", isErr, err, s.monitored)
+	}
+}
+
+func TestReassignAlertNotFoundMonitorFailureIsError(t *testing.T) {
+	s := newReassignServer(t, 404, "")
+	s.monitor = `not json`
+	if _, _, err := runReassign(s, ReassignAlertArgs{OwnerUserID: "u2"}); err == nil {
+		t.Fatal("a failed monitor lookup must not be reported as a missing owner")
 	}
 }
