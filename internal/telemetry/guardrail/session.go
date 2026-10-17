@@ -40,9 +40,9 @@ func (s *sessions) add(key string, bytes int64) int64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
+	s.evictIdle(now)
 	u, ok := s.usage[key]
-	if !ok || now.Sub(u.lastSeen) > sessionTTL {
-		s.evictIdle(now)
+	if !ok {
 		u = &sessionUsage{}
 		s.usage[key] = u
 	}

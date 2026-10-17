@@ -357,6 +357,23 @@ func TestSessions_ExpireAfterTTL(t *testing.T) {
 	}
 }
 
+func TestSessions_EvictIdlePeersWhileActiveKeyStaysHot(t *testing.T) {
+	now := time.Unix(0, 0)
+	s := newSessions(func() time.Time { return now })
+	s.add("sticky", 1)
+	s.add("idle", 1)
+
+	now = now.Add(sessionTTL / 2)
+	s.add("sticky", 1)
+	now = now.Add(sessionTTL/2 + time.Second)
+	if got := s.add("sticky", 1); got != 3 {
+		t.Fatalf("sticky usage = %d, want 3 (still live)", got)
+	}
+	if _, ok := s.usage["idle"]; ok {
+		t.Fatal("idle session survived while another session stayed active")
+	}
+}
+
 func TestRejectionResult(t *testing.T) {
 	v := testGuard(ModeEnforce, &stubEstimator{}).Check(context.Background(), nil, query(unscopedPipeline, 48*time.Hour))
 	r := v.RejectionResult()
