@@ -46,6 +46,10 @@ func NewReassignAlertHandler(client *http.Client, cfg models.Config) func(contex
 				}
 			}
 			if ownerID == "" {
+				// Name an unknown alert before the email: it is the more basic mistake.
+				if refusal, err := requireRecentAlert(ctx, api, alertEpisode{AlertGroupID: args.AlertGroupID, RuleID: args.RuleID, RuleType: args.RuleType}); refusal != nil || err != nil {
+					return refusal, nil, err
+				}
 				return utils.ToolErrorResult("no active user with that email"), nil, nil
 			}
 		}
