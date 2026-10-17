@@ -287,6 +287,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_alerts`** — Currently firing alerts within a time window
 - **`get_alert_rule_state`** — Historical firing state (1/0) per alert rule over a time range, grouped by `rule_id`. Filterable by alert group, rule name, label filters, and state.
+- **`get_alert_hygiene`** — Noisy, flapping, stale and unrouted alert rules over 7 or 30 days, ranked, each with the numbers behind the verdict and a suggested fix. Read-only.
 - **`get_notification_channels`** — Configured notification channels (Slack, PagerDuty, email, etc.)
 
 ### Custom Dashboards
@@ -696,6 +697,17 @@ Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `en
 - `state` (string, optional): Filter by state (e.g. `firing`).
 
 Returns a JSON map of `rule_id -> [{timestamp, is_firing}]`. A timestamp at which a rule is absent from the upstream response is reported as `is_firing=0` — this means "not observed as firing", not a confirmed normal state.
+
+### get_alert_hygiene
+
+Read-only audit of enabled alert rules. It never changes anything: a suggested fix is applied in the Last9 alerting UI, and only once the user explicitly confirms it.
+
+- `window` (string, optional): `7d` or `30d`. Default: `7d`.
+- `limit` (integer, optional): Maximum flagged rules to return, worst first. Default: 20. Range: 1–100.
+
+Categories (a rule may have several): **noisy** (≥ 5 fires/day with < 20% acked, or muted ≥ 25% of the observed window), **flapping** (> 4 flaps/day), **stale** (no firing in the window; a never-fired rule, with null `last_fired_at` and zero `fire_count`, counts only when its history covers the whole window), **unrouted** (alert group has no notification channel). A null field means the data was not recorded, never zero or false, and skips only the check that reads it: null `ack` skips noisy-by-ack, null `muted_seconds` skips noisy-by-mute, null `routed` skips unrouted, and null `history_since` skips never-fired stale while rates use the full window; other categories still apply. Fixes: raise `bad_minutes` (the N in `count_true(result) >= N`) or lengthen `eval_window`; for noisy static thresholds, move the threshold or switch the expression to `adaptive_std_cmp(metric, sensitivity, window)`; attach a notification channel; disable or delete stale rules.
+
+Returns compact JSON `{window, from, to, rules_evaluated, flagged_rules, truncated, rules}`; each rule has `findings` (`category`, `reason`, `suggested_fix`, optional `alternative_fix`) and the raw `stats`.
 
 ### get_notification_channels
 

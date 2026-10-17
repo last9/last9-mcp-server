@@ -5,7 +5,7 @@
 {{- $dashboards := tools "list_dashboards" "list_dashboard_snapshots" "grafana_search_dashboards" "grafana_list_folders" "grafana_list_folder_dashboards" -}}
 {{- $dashboardReads := tools "get_dashboard" "get_dashboard_snapshot" "grafana_get_dashboard" -}}
 {{- $health := tools "get_service_summary" "get_service_performance_details" "get_service_operations_summary" "get_service_dependency_graph" -}}
-{{- $alerts := tools "get_alerts" "get_alert_rule_state" -}}
+{{- $alerts := tools "get_alerts" "get_alert_rule_state" "get_alert_hygiene" -}}
 {{- $changes := tools "get_change_events" -}}
 {{- $deviations := tools "get_apm_service_deviations" "get_trace_attribute_deviations" -}}
 {{- $scoped := tools "get_service_logs" "get_service_traces" "get_exceptions" "get_trace_waterfall" -}}
@@ -46,7 +46,7 @@ They return computed answers with the right scoping; reach for them before writi
 - Service health and performance: {{.}}.
 {{- end}}
 {{- with $alerts}}
-- Firing alerts and rule state: {{.}}.
+- Firing alerts, rule state and noisy, flapping, stale or unrouted rules: {{.}}.
 {{- end}}
 {{- with $changes}}
 - Deploys and other changes: {{.}}.

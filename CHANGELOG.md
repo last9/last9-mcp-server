@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added the read-only `get_alert_hygiene` tool (alerts toolset): ranks enabled alert rules that are noisy, flapping, stale or unrouted over a 7d or 30d window, with the numbers behind each verdict and a suggested parameter change (`bad_minutes`, `eval_window`, threshold or `adaptive_std_cmp`, notification channel, disable). It never changes anything; a null ack, mute, routing or history field skips only the check that reads it instead of counting as zero or false (#353).
 - The server now sends `instructions` on `initialize` with a tool-selection policy: discover services, environments, attributes, metric/label names, alert rules and dashboards first; prefer the dedicated service, alert, change-event and deviation tools over raw `prometheus_*`, `get_logs` and `get_traces`; read the `last9://reference/...` manuals; create once and refine write targets, confirming destructive calls. The policy is rendered from `internal/prompts/server_instructions.md` against `--toolsets`, so it names only registered tools; previously clients got no instructions and chose tools from descriptions alone (#335).
 - Added `did_you_mean` to the logs, traces, and metrics toolsets so their entity-name discovery guidance can be followed (#312).
 

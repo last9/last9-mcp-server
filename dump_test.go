@@ -469,6 +469,48 @@ func TestDumpToolsLogsIncludesServiceProfile(t *testing.T) {
 	}
 }
 
+func TestDumpToolsAlertsServesReadOnlyAlertHygiene(t *testing.T) {
+	allowed, err := toolsets.Parse("alerts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, allowed); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			Annotations struct {
+				ReadOnlyHint bool `json:"readOnlyHint"`
+			} `json:"annotations"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	for _, tool := range out.Tools {
+		if tool.Name != "get_alert_hygiene" {
+			continue
+		}
+		if !tool.Annotations.ReadOnlyHint {
+			t.Error("get_alert_hygiene must be served read-only")
+		}
+		for _, want := range []string{"never changes anything", "explicitly confirms", "Last9 alerting UI", "`7d` or `30d`", "count_true(result) >= N", "adaptive_std_cmp"} {
+			if !strings.Contains(tool.Description, want) {
+				t.Errorf("served get_alert_hygiene description missing %q", want)
+			}
+		}
+		// No alert rule write tool is served yet; naming one invites the model to invent it.
+		if strings.Contains(tool.Description, "write tool") {
+			t.Error("get_alert_hygiene description must not point at alert rule write tools")
+		}
+		return
+	}
+	t.Fatal("alerts dump missing get_alert_hygiene")
+}
+
 func TestDumpToolsDataToolsetsIncludeNameDiscovery(t *testing.T) {
 	for _, spec := range []string{"traces", "metrics"} {
 		allowed, err := toolsets.Parse(spec)
@@ -507,7 +549,7 @@ func TestDumpToolsInvestigate(t *testing.T) {
 			t.Errorf("investigate dump missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "get_alert_groups", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard"} {
+	for _, deny := range []string{"get_alerts", "get_alert_groups", "get_alert_hygiene", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard"} {
 		if byName[deny] {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}
