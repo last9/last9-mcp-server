@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -326,6 +327,9 @@ func TestGetEmergingLogPatterns_RejectsInvalidArgsBeforeQuerying(t *testing.T) {
 		"baseline overlaps current": withBaseline("2026-10-16T09:30:00Z", "2026-10-16T10:30:00Z"),
 		"change_factor of 1":        withOption(func(a *GetEmergingLogPatternsArgs) { a.ChangeFactor = floatPtr(1) }),
 		"negative change_factor":    withOption(func(a *GetEmergingLogPatternsArgs) { a.ChangeFactor = floatPtr(-2) }),
+		"infinite change_factor":    withOption(func(a *GetEmergingLogPatternsArgs) { a.ChangeFactor = floatPtr(math.Inf(1)) }),
+		"-infinite change_factor":   withOption(func(a *GetEmergingLogPatternsArgs) { a.ChangeFactor = floatPtr(math.Inf(-1)) }),
+		"NaN change_factor":         withOption(func(a *GetEmergingLogPatternsArgs) { a.ChangeFactor = floatPtr(math.NaN()) }),
 		"negative min_count":        withOption(func(a *GetEmergingLogPatternsArgs) { a.MinCount = -1 }),
 		"min_count over max":        withOption(func(a *GetEmergingLogPatternsArgs) { a.MinCount = maxPatternSampleSize + 1 }),
 		"min_count over sample_size": withOption(func(a *GetEmergingLogPatternsArgs) {
