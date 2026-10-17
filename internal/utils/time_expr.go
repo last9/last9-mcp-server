@@ -83,8 +83,8 @@ func isTimeZoneToken(tok string) bool {
 //	since <point>                                  e.g. since yesterday 9am IST
 //	<point> to <point>
 //
-// A point is an RFC3339 timestamp, or [today|yesterday|YYYY-MM-DD] [<clock>],
-// where clock is 9am, 9:30pm, 9 am or 14:30.
+// A point is an RFC3339 timestamp, or [today|yesterday|<weekday>|YYYY-MM-DD]
+// [<clock>], where clock is 9am, 9:30pm, 9 am or 14:30.
 func ParseTimeRangeExpr(expr string, now time.Time, loc *time.Location) (start, end time.Time, err error) {
 	tokens := strings.Fields(expr)
 	if n := len(tokens); n > 1 && isTimeZoneToken(tokens[n-1]) {
@@ -205,6 +205,8 @@ func parsePoint(tokens []string, now time.Time, loc *time.Location) (time.Time, 
 		clock = tokens[1:]
 	case head == "yesterday":
 		day, clock = startOfDay(now, loc, -1), tokens[1:]
+	case isWeekday(head):
+		day, clock = latestWeekday(now, loc, weekdays[head]), tokens[1:]
 	default:
 		if d, err := time.ParseInLocation("2006-01-02", tokens[0], loc); err == nil {
 			day, clock = d, tokens[1:]
@@ -242,6 +244,28 @@ func parseClock(s string) (hour, minute int, err error) {
 		hour += 12
 	}
 	return hour, minute, nil
+}
+
+var weekdays = map[string]time.Weekday{
+	"sunday": time.Sunday, "sun": time.Sunday,
+	"monday": time.Monday, "mon": time.Monday,
+	"tuesday": time.Tuesday, "tue": time.Tuesday,
+	"wednesday": time.Wednesday, "wed": time.Wednesday,
+	"thursday": time.Thursday, "thu": time.Thursday,
+	"friday": time.Friday, "fri": time.Friday,
+	"saturday": time.Saturday, "sat": time.Saturday,
+}
+
+func isWeekday(s string) bool {
+	_, ok := weekdays[s]
+	return ok
+}
+
+// latestWeekday returns local midnight of the most recent day named wd, today
+// included: on a Monday, "since monday" means since this morning.
+func latestWeekday(now time.Time, loc *time.Location, wd time.Weekday) time.Time {
+	back := (int(now.In(loc).Weekday()) - int(wd) + 7) % 7
+	return startOfDay(now, loc, -back)
 }
 
 // startOfDay returns local midnight offset by days. time.Date normalizes, so a
