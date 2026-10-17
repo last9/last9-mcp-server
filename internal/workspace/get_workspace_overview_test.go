@@ -18,6 +18,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// hangRelease bounds a hanging route, so a sub-call that ignores its context
+// fails the elapsed-time check instead of the whole test run.
+const hangRelease = 3 * time.Second
+
 // overviewAPI stands in for the Last9 API. responses maps a route ("POST
 // /prom_label_values env") to a body; failing routes answer 500, hanging
 // routes block until the caller gives up.
@@ -47,7 +51,10 @@ func (a *overviewAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case a.hanging[route]:
-		<-r.Context().Done()
+		select {
+		case <-r.Context().Done():
+		case <-time.After(hangRelease):
+		}
 	case a.failing[route]:
 		http.Error(w, `{"message":"boom"}`, http.StatusInternalServerError)
 	default:
@@ -238,21 +245,23 @@ func TestWorkspaceOverviewEmptyWorkspace(t *testing.T) {
 	}
 }
 
+// subCalls maps each overview sub-call's route to the field it fills.
+var subCalls = []struct {
+	route string
+	field string
+	path  []string
+}{
+	{route: routeEnvs, field: "environments", path: []string{"environments"}},
+	{route: routeServices, field: "service_count", path: []string{"service_count"}},
+	{route: routeMetrics, field: "telemetry.metrics", path: []string{"telemetry", "metrics"}},
+	{route: routeLogs, field: "telemetry.logs", path: []string{"telemetry", "logs"}},
+	{route: routeTraces, field: "telemetry.traces", path: []string{"telemetry", "traces"}},
+	{route: routeGroups, field: "alert_group_count", path: []string{"alert_group_count"}},
+	{route: routeAlerts, field: "firing_alert_count", path: []string{"firing_alert_count"}},
+}
+
 func TestWorkspaceOverviewOneSubCallFails(t *testing.T) {
-	tests := []struct {
-		route string
-		field string
-		path  []string
-	}{
-		{route: routeEnvs, field: "environments", path: []string{"environments"}},
-		{route: routeServices, field: "service_count", path: []string{"service_count"}},
-		{route: routeMetrics, field: "telemetry.metrics", path: []string{"telemetry", "metrics"}},
-		{route: routeLogs, field: "telemetry.logs", path: []string{"telemetry", "logs"}},
-		{route: routeTraces, field: "telemetry.traces", path: []string{"telemetry", "traces"}},
-		{route: routeGroups, field: "alert_group_count", path: []string{"alert_group_count"}},
-		{route: routeAlerts, field: "firing_alert_count", path: []string{"firing_alert_count"}},
-	}
-	for _, tt := range tests {
+	for _, tt := range subCalls {
 		t.Run(tt.field, func(t *testing.T) {
 			api := &overviewAPI{responses: healthyResponses(), failing: map[string]bool{tt.route: true}}
 			out := runOverview(t, api, time.Second)
@@ -277,18 +286,21 @@ func TestWorkspaceOverviewOneSubCallFails(t *testing.T) {
 	}
 }
 
+// The stub hangs until the client drops the request, so each case also pins
+// that its sub-call's HTTP path cancels in flight when its context times out.
 func TestWorkspaceOverviewSubCallTimesOut(t *testing.T) {
-	api := &overviewAPI{responses: healthyResponses(), hanging: map[string]bool{routeLogs: true}}
-	start := time.Now()
-	out := runOverview(t, api, 100*time.Millisecond)
-	if elapsed := time.Since(start); elapsed > 5*time.Second {
-		t.Fatalf("overview waited %s for a hung sub-call", elapsed)
-	}
-	if fields := errorFields(t, out); len(fields) != 1 || fields[0] != "telemetry.logs" {
-		t.Fatalf("errors = %v, want only telemetry.logs", fields)
-	}
-	if out["service_count"] != float64(3) {
-		t.Fatalf("healthy sub-calls must still report: service_count = %v", out["service_count"])
+	for _, tt := range subCalls {
+		t.Run(tt.field, func(t *testing.T) {
+			api := &overviewAPI{responses: healthyResponses(), hanging: map[string]bool{tt.route: true}}
+			start := time.Now()
+			out := runOverview(t, api, 100*time.Millisecond)
+			if elapsed := time.Since(start); elapsed >= hangRelease {
+				t.Fatalf("overview waited %s for a hung sub-call", elapsed)
+			}
+			if fields := errorFields(t, out); len(fields) != 1 || fields[0] != tt.field {
+				t.Fatalf("errors = %v, want only %s", fields, tt.field)
+			}
+		})
 	}
 }
 
