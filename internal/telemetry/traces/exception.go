@@ -109,9 +109,9 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 
 		aggregates := make([]exceptionAggregate, 0, len(instantSeries))
 		for _, point := range instantSeries {
-			exceptionType := orDefault(point.Metric["exception_type"], "Unknown")
-			serviceName := orDefault(point.Metric["service_name"], "Unknown")
-			spanName := orDefault(point.Metric["span_name"], "Unknown")
+			exceptionType := orDefault(point.Metric["exception_type"], exceptionUnknownLabel)
+			serviceName := orDefault(point.Metric["service_name"], exceptionUnknownLabel)
+			spanName := orDefault(point.Metric["span_name"], exceptionUnknownLabel)
 			spanKind := orDefault(point.Metric["span_kind"], "UNKNOWN")
 
 			var count float64
@@ -145,9 +145,16 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 			aggregates = aggregates[:limit]
 		}
 
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
+		isAllEnvs := args.Env == ""
+
 		exceptions := make([]map[string]interface{}, 0, len(aggregates))
 		for _, exceptionData := range aggregates {
+			identity := identifyException(exceptionData, isAllEnvs)
 			exceptions = append(exceptions, map[string]interface{}{
+				"fingerprint":            identity.Fingerprint,
+				"exception_id":           identity.ID,
+				"url":                    dlBuilder.BuildExceptionLink(startMs, endMs, exceptionLinkRow(exceptionData, identity)),
 				"service_name":           exceptionData.ServiceName,
 				"span_name":              exceptionData.SpanName,
 				"exception_type":         exceptionData.ExceptionType,
@@ -171,7 +178,6 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 		}
 
 		// Build deep link URL
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 		dashboardURL := dlBuilder.BuildExceptionsLink(startMs, endMs)
 
 		return &mcp.CallToolResult{

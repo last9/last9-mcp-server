@@ -1,10 +1,23 @@
 package traces
 
 import (
+	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"regexp"
 	"testing"
+	"time"
+
+	"last9-mcp/internal/auth"
+	"last9-mcp/internal/constants"
+	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type exceptionIdentityVector struct {
@@ -80,5 +93,145 @@ func TestIdentifyException_EnvSuffixOnlyInAllEnvsMode(t *testing.T) {
 	}
 	if got := identifyException(row, true).ID; got != "1b589f62-web-View-production" {
 		t.Errorf("all-envs id = %q, want env suffix", got)
+	}
+}
+
+var exceptionTestWindow = struct{ start, end time.Time }{
+	start: time.Date(2026, 1, 20, 10, 0, 0, 0, time.UTC),
+	end:   time.Date(2026, 1, 20, 11, 0, 0, 0, time.UTC),
+}
+
+func exceptionTestConfig(apiURL string) models.Config {
+	return models.Config{
+		APIBaseURL:         apiURL,
+		PrometheusReadURL:  "https://prom.example.com",
+		PrometheusUsername: "prom-user",
+		PrometheusPassword: "prom-pass",
+		OrgSlug:            "acme",
+		ClusterID:          "cluster-1",
+		TokenManager: &auth.TokenManager{
+			AccessToken: "test-access-token",
+			ExpiresAt:   time.Now().Add(24 * time.Hour),
+		},
+	}
+}
+
+// runGetExceptions serves instantBody for the instant query and rangeHandler (nil = 500) for the
+// range query, and returns the decoded exception rows.
+func runGetExceptions(t *testing.T, args GetExceptionsArgs, instantBody string, rangeHandler http.HandlerFunc) []map[string]any {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case constants.EndpointPromQueryInstant:
+			io.WriteString(w, instantBody)
+		case constants.EndpointPromQuery:
+			if rangeHandler == nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			rangeHandler(w, r)
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	args.StartTimeISO = exceptionTestWindow.start.Format(time.RFC3339)
+	args.EndTimeISO = exceptionTestWindow.end.Format(time.RFC3339)
+	result, _, err := NewGetExceptionsHandler(server.Client(), exceptionTestConfig(server.URL))(context.Background(), &mcp.CallToolRequest{}, args)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("tool error: %s", utils.GetTextContent(t, result))
+	}
+
+	var payload struct {
+		Exceptions []map[string]any `json:"exceptions"`
+	}
+	if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &payload); err != nil {
+		t.Fatalf("decode tool response: %v", err)
+	}
+	return payload.Exceptions
+}
+
+func exceptionLinkParams(t *testing.T, row map[string]any) url.Values {
+	t.Helper()
+	link, ok := row["url"].(string)
+	if !ok {
+		t.Fatalf("row has no url: %#v", row)
+	}
+	parsed, err := url.Parse(link)
+	if err != nil {
+		t.Fatalf("parse url %q: %v", link, err)
+	}
+	if parsed.Path != "/v2/organizations/acme/exceptions" {
+		t.Fatalf("url path = %q", parsed.Path)
+	}
+	return parsed.Query()
+}
+
+func TestGetExceptionsHandler_IdentifiesRowsInAllEnvsMode(t *testing.T) {
+	rows := runGetExceptions(t, GetExceptionsArgs{}, `[
+		{"metric":{"exception_type":"TypeError","service_name":"web","span_name":"View","span_kind":"SPAN_KIND_SERVER","env":"production"},"value":[1768906800,"7"]},
+		{"metric":{"exception_type":"TypeError","service_name":"web","span_name":"View","span_kind":"SPAN_KIND_SERVER"},"value":[1768906800,"2"]}
+	]`, nil)
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2", len(rows))
+	}
+
+	withEnv, withoutEnv := rows[0], rows[1]
+	if withEnv["fingerprint"] != "1b589f62" || withoutEnv["fingerprint"] != "1b589f62" {
+		t.Fatalf("fingerprints = %v, %v; want 1b589f62 (dashboard vector)", withEnv["fingerprint"], withoutEnv["fingerprint"])
+	}
+	if withEnv["exception_id"] != "1b589f62-web-View-production" {
+		t.Errorf("exception_id = %v, want env suffix in All-envs mode", withEnv["exception_id"])
+	}
+	if withoutEnv["exception_id"] != "1b589f62-web-View-" {
+		t.Errorf("exception_id = %v, want the dashboard's empty env suffix", withoutEnv["exception_id"])
+	}
+
+	params := exceptionLinkParams(t, withEnv)
+	if params.Get("exception_id") != "1b589f62-web-View" {
+		t.Errorf("link exception_id = %q, want the id the env-narrowed page gives the row", params.Get("exception_id"))
+	}
+	if params.Get("filter") != `["deployment_environment=\"production\""]` {
+		t.Errorf("link filter = %q, want the row's env", params.Get("filter"))
+	}
+	if params.Get("from") != "1768903200" || params.Get("to") != "1768906800" || params.Get("cluster") != "cluster-1" {
+		t.Errorf("link window/cluster = %v", params)
+	}
+
+	params = exceptionLinkParams(t, withoutEnv)
+	if params.Get("exception_id") != "1b589f62-web-View-" || params.Has("filter") {
+		t.Errorf("link for a row without env = %v, want the All-view id and no filter", params)
+	}
+}
+
+func TestGetExceptionsHandler_IdentifiesRowsWithEnvArg(t *testing.T) {
+	rows := runGetExceptions(t, GetExceptionsArgs{Env: "prod"}, `[
+		{"metric":{"exception_type":"","service_name":"","span_name":"","env":"prod"},"value":[1768906800,"3"]}
+	]`, nil)
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+
+	row := rows[0]
+	if row["exception_type"] != "Unknown" || row["service_name"] != "Unknown" || row["span_name"] != "Unknown" {
+		t.Fatalf("missing labels must default to the dashboard's Unknown label: %#v", row)
+	}
+	if row["fingerprint"] != "7b5bae37" {
+		t.Errorf("fingerprint = %v, want 7b5bae37 (dashboard vector for Unknown defaults)", row["fingerprint"])
+	}
+	if row["exception_id"] != "7b5bae37-Unknown-Unknown" {
+		t.Errorf("exception_id = %v, want no env suffix when env is given", row["exception_id"])
+	}
+
+	params := exceptionLinkParams(t, row)
+	if params.Get("exception_id") != "7b5bae37-Unknown-Unknown" {
+		t.Errorf("link exception_id = %q", params.Get("exception_id"))
+	}
+	if params.Get("filter") != `["deployment_environment=\"prod\""]` {
+		t.Errorf("link filter = %q, want the env arg", params.Get("filter"))
 	}
 }

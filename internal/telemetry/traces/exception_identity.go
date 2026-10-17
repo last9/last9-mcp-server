@@ -4,7 +4,13 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf16"
+
+	"last9-mcp/internal/deeplink"
 )
+
+// exceptionUnknownLabel is the Discover Exceptions dashboard's label for a missing value; the
+// fingerprint hashes it, so it must stay byte-identical to the dashboard's.
+const exceptionUnknownLabel = "Unknown"
 
 type exceptionIdentity struct {
 	Fingerprint string
@@ -20,6 +26,15 @@ func identifyException(e exceptionAggregate, isAllEnvs bool) exceptionIdentity {
 		parts = append(parts, e.DeploymentEnvironment)
 	}
 	return exceptionIdentity{Fingerprint: fingerprint, ID: strings.Join(parts, "-")}
+}
+
+// exceptionLinkRow narrows the page to the row's environment when it has one, so the link stays
+// valid whatever environment the reader last picked; the narrowed page drops the id's env suffix.
+func exceptionLinkRow(e exceptionAggregate, identity exceptionIdentity) deeplink.ExceptionRow {
+	if e.DeploymentEnvironment == "" {
+		return deeplink.ExceptionRow{ID: identity.ID}
+	}
+	return deeplink.ExceptionRow{ID: identifyException(e, false).ID, Env: e.DeploymentEnvironment}
 }
 
 // exceptionFingerprint ports the dashboard's djb2: JavaScript hashes UTF-16 code units with
