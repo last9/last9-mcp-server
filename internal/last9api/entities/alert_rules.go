@@ -21,10 +21,12 @@ type AlertRuleInput struct {
 	Body     any
 }
 
-// AlertRule is the subset of a stored rule callers need to confirm which group owns it.
+// AlertRule is the subset of a stored rule callers need to confirm which group owns it
+// and to merge a partial properties change into the stored properties.
 type AlertRule struct {
-	ID       string `json:"id"`
-	EntityID string `json:"entity_id"`
+	ID         string          `json:"id"`
+	EntityID   string          `json:"entity_id"`
+	Properties json.RawMessage `json:"properties"`
 }
 
 // GetAlertRule calls GET /entities/{entity_id}/alert-rules/{rule_id}. The API looks the
