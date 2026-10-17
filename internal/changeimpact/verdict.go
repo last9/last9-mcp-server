@@ -27,12 +27,15 @@ const (
 	errorRateIncreasePP = 1.0
 	// p95 latency rising by at least this percentage is a regression.
 	p95LatencyIncreasePct = 25.0
+	// Throughput (rpm) falling by at least this percentage is a regression:
+	// requests that stop arriving may be failing before the service sees them.
+	throughputDropPct = 50.0
 	// Any alert for the service or a dependent that starts firing in the after
 	// window is a regression, as is any regression get_apm_service_deviations
 	// classifies for the changed service.
 )
 
-const noChangeNote = "No significant change is a valid answer, not a failure: the change did not move error rate, p95 latency or alerts past the thresholds."
+const noChangeNote = "No significant change is a valid answer, not a failure: the change did not move error rate, p95 latency, throughput or alerts past the thresholds."
 
 // thresholdEpsilon absorbs float noise in deltas computed exactly at a threshold.
 const thresholdEpsilon = 1e-9
@@ -50,6 +53,10 @@ func serviceRegressions(service string, baseline, after apm.GoldenSignals) []str
 	}
 	if pct := deltaPct(baseline.LatencyP95Ms, after.LatencyP95Ms); pct != nil && *pct >= p95LatencyIncreasePct-thresholdEpsilon {
 		found = append(found, fmt.Sprintf("%s p95 latency rose %.0f%% (%.1f ms → %.1f ms)", service, *pct, *baseline.LatencyP95Ms, *after.LatencyP95Ms))
+	}
+	// Windows can differ in length, so compare rates, not request counts.
+	if pct := deltaPct(&baseline.ThroughputRPM, &after.ThroughputRPM); pct != nil && -*pct >= throughputDropPct-thresholdEpsilon {
+		found = append(found, fmt.Sprintf("%s throughput fell %.0f%% (%.1f → %.1f rpm)", service, -*pct, baseline.ThroughputRPM, after.ThroughputRPM))
 	}
 	return found
 }
@@ -90,7 +97,7 @@ func decideVerdict(in verdictInputs) (verdict, reason, note string) {
 	if in.changedBaseline.RequestCount < minRequestsPerWindow || in.changedAfter.RequestCount < minRequestsPerWindow {
 		return VerdictInsufficientData, fmt.Sprintf("%s served fewer than %d requests in a window, too few to judge", orService(in.service), minRequestsPerWindow), ""
 	}
-	return VerdictNoSignificantChange, "no threshold crossed: error rate, p95 latency, alerts and APM deviations are within bounds", noChangeNote
+	return VerdictNoSignificantChange, "no threshold crossed: error rate, p95 latency, throughput, alerts and APM deviations are within bounds", noChangeNote
 }
 
 func orService(s string) string {
