@@ -64,6 +64,7 @@ func TestValidateCreateNotificationChannel(t *testing.T) {
 		"cert too large":        {CreateNotificationChannelArgs{Name: "n", Type: "generic_webhook", Destination: "https://h", WebhookCACertificate: "-----BEGIN CERTIFICATE-----" + strings.Repeat("A", 65*1024)}, "64 KiB"},
 		"bad user mention":      {CreateNotificationChannelArgs{Name: "n", Type: "slack", Destination: hook, MentionHandles: "user|bad|x"}, "mention_handles"},
 		"bad special mention":   {CreateNotificationChannelArgs{Name: "n", Type: "slack", Destination: hook, MentionHandles: "special|everyone"}, "mention_handles"},
+		"unknown typed mention": {CreateNotificationChannelArgs{Name: "n", Type: "slack", Destination: hook, MentionHandles: "alice, usr|U123|bob"}, "mention_handles"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			got := validateCreateNotificationChannel(tt.args)
