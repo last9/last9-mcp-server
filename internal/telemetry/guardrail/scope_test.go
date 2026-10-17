@@ -29,6 +29,8 @@ func TestPipelineScoped(t *testing.T) {
 		{"or of service variants", `[{"type":"filter","query":{"$or":[{"$eq":["ServiceName","api"]},{"$eq":["ServiceName","api-canary"]}]}}]`, true},
 		{"nested and inside or", `[{"type":"filter","query":{"$or":[{"$and":[{"$eq":["ServiceName","a"]}]},{"$eq":["ServiceName","b"]}]}}]`, true},
 		{"scope in second filter stage", `[{"type":"parse","parser":"json"},{"type":"filter","query":{"$eq":["ServiceName","api"]}}]`, true},
+		{"where alias for filter", `[{"type":"where","query":{"$eq":["ServiceName","api"]}}]`, true},
+		{"where alias with or of service variants", `[{"type":"where","query":{"$or":[{"$eq":["ServiceName","a"]},{"$eq":["ServiceName","b"]}]}}]`, true},
 
 		{"empty pipeline", `[]`, false},
 		{"body search only", `[{"type":"filter","query":{"$and":[{"$containsWords":["Body","timeout"]}]}}]`, false},
@@ -41,6 +43,8 @@ func TestPipelineScoped(t *testing.T) {
 		{"empty or", `[{"type":"filter","query":{"$or":[]}}]`, false},
 		{"not service", `[{"type":"filter","query":{"$not":[{"$eq":["ServiceName","api"]}]}}]`, false},
 		{"filter after aggregate", `[{"type":"aggregate","function":{"$count":[]},"as":"n","groupby":{"ServiceName":"s"}},{"type":"filter","query":{"$eq":["ServiceName","api"]}}]`, false},
+		{"where after aggregate", `[{"type":"aggregate","function":{"$count":[]},"as":"n","groupby":{"ServiceName":"s"}},{"type":"where","query":{"$eq":["ServiceName","api"]}}]`, false},
+		{"where with an unscoped or branch", `[{"type":"where","query":{"$or":[{"$eq":["ServiceName","api"]},{"$containsWords":["Body","x"]}]}}]`, false},
 		{"filter after window aggregate", `[{"type":"window_aggregate","function":{"$count":[]},"as":"n","window":["5","minutes"]},{"type":"filter","query":{"$eq":["ServiceName","api"]}}]`, false},
 		{"service name in a non-filter stage", `[{"type":"parse","query":{"$eq":["ServiceName","api"]}}]`, false},
 	}

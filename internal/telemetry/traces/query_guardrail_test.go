@@ -182,6 +182,25 @@ func TestGetServiceTracesGuardrailSkipsTraceIDLookup(t *testing.T) {
 	}
 }
 
+// The tracejson sanitizer accepts `where` as a `filter` alias, so a scoped
+// `where` must escape the unscoped range cap when no estimate is available.
+func TestGetTracesGuardrailScopedStageAliasesSkipRangeCap(t *testing.T) {
+	for _, stage := range []string{"filter", "where"} {
+		t.Run(stage, func(t *testing.T) {
+			s := newGuardrailServer(t, http.StatusNotFound, `404 page not found`)
+			pipeline := []map[string]interface{}{
+				{"type": stage, "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "checkout"}}},
+			}
+			result := callGuardedGetTraces(t, s, guardrail.ModeEnforce, GetTracesArgs{TracejsonQuery: pipeline, LookbackMinutes: twoDaysMinutes})
+
+			if result.IsError || s.queryCalls.Load() == 0 {
+				t.Fatalf("service-scoped %s query blocked: isError=%v queries=%d text=%q",
+					stage, result.IsError, s.queryCalls.Load(), utils.GetTextContent(t, result))
+			}
+		})
+	}
+}
+
 func TestGetTracesGuardrailEstimateUnavailableStillRuns(t *testing.T) {
 	s := newGuardrailServer(t, http.StatusBadRequest, `{"error":"bad pipeline"}`)
 	result := callGuardedGetTraces(t, s, guardrail.ModeEnforce, GetTracesArgs{TracejsonQuery: serviceSpanFilter, LookbackMinutes: 60})
