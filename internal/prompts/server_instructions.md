@@ -16,7 +16,8 @@
 {{- $validate := tools "validate_dashboard" -}}
 {{- $dropRules := tools "get_drop_rules" -}}
 {{- $refine := tools "update_dashboard" -}}
-{{- $destructive := tools "update_dashboard" "delete_dashboard" "delete_dashboard_snapshot" "add_drop_rule" -}}
+{{- $dashboardOverwrites := tools "update_dashboard" "delete_dashboard" "delete_dashboard_snapshot" -}}
+{{- $dropRuleWrites := tools "add_drop_rule" -}}
 Last9 observability for the caller's organization. Discover names first, answer with the most specific tool, and treat writes with care.
 {{- if or $services $attributes $metricNames $alertRules $dashboards}}
 
@@ -99,7 +100,7 @@ Read these resources before writing a non-trivial query:
 - List existing drop rules with {{.}} before adding one.
 {{- end}}
 {{- end}}
-{{- if or $create $refine $destructive}}
+{{- if or $create $refine $dashboardOverwrites $dropRuleWrites}}
 
 ## Write tools
 {{- with $create}}
@@ -108,7 +109,10 @@ Read these resources before writing a non-trivial query:
 {{- with $refine}}
 - Refine an existing object with {{.}}.
 {{- end}}
-{{- with $destructive}}
-- {{.}} overwrite or remove data: confirm with the user first.
+{{- with $dashboardOverwrites}}
+- Confirm with the user before overwriting or deleting dashboards and snapshots with {{.}}.
+{{- end}}
+{{- with $dropRuleWrites}}
+- Confirm with the user before calling {{.}}: matching logs are dropped at ingestion and cannot be recovered.
 {{- end}}
 {{- end}}
