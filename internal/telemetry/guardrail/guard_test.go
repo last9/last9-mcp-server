@@ -303,6 +303,22 @@ func TestCheck_EnforceRejectDoesNotSpendSessionBudget(t *testing.T) {
 	}
 }
 
+// Handler tests run the real New, which shares processSessions; with the
+// session budget off they must leave it untouched.
+func TestCheck_SessionBudgetOffRecordsNothing(t *testing.T) {
+	g := httpGuard(t, ModeShadow, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		_, _ = w.Write([]byte(`{"data":{"bytes":10}}`))
+	})
+	g.sessions = processSessions
+	g.limits.SessionBudgetBytes = 0
+	before := processSessions.add(stdioSessionKey, 0)
+	g.Check(context.Background(), nil, query(scopedPipeline, time.Hour))
+	if got := processSessions.add(stdioSessionKey, 0); got != before {
+		t.Fatalf("process session bytes %d -> %d with the session budget off", before, got)
+	}
+}
+
 func httpRequest(sessionID string) *mcp.CallToolRequest {
 	h := http.Header{}
 	if sessionID != "" {

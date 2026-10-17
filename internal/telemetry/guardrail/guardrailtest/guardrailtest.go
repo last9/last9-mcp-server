@@ -44,7 +44,8 @@ func NewServer(t *testing.T, estimateStatus int, estimate, queryBody string) *Se
 }
 
 // Limits are small enough for a stub estimate to cross each threshold: scope
-// at 1000 bytes, per-query budget at 5000, range cap at 24h.
+// at 1000 bytes, per-query budget at 5000, range cap at 24h. The session
+// budget stays off so tests never charge the process-wide session usage.
 func Limits(mode string) models.QueryGuardrail {
 	return models.QueryGuardrail{
 		Mode:                mode,

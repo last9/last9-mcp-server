@@ -90,7 +90,7 @@ func (g *Guard) Check(ctx context.Context, req *mcp.CallToolRequest, q Query) Ve
 
 	d := decide(g.limits, s)
 	v.Blocked = d.Action == Reject && mode == ModeEnforce
-	if !v.Blocked && s.Estimate != nil {
+	if !v.Blocked && s.Estimate != nil && g.limits.SessionBudgetBytes > 0 {
 		if key, ok := sessionKey(req); ok {
 			used := g.sessions.add(key, *s.Estimate)
 			if d.Action == Allow {
