@@ -77,6 +77,7 @@ func TestAuthorAlertFlowAndGates(t *testing.T) {
 		"never call create_alert again",
 		"Call patch_alert(entity_id, id, is_disabled=false) only after the user explicitly confirms",
 		"Do not call mute_alert_group",
+		"key each indicator by its KPI's exact name",
 	} {
 		if !strings.Contains(got, gate) {
 			t.Errorf("render missing gate %q:\n%s", gate, got)

@@ -6,7 +6,7 @@ How to write a Last9 alert rule that validates, saves, and fires on the right th
 
 An **alert group** (entity, `entity_id`) owns **KPIs** (indicators). A KPI is a PromQL query plus a unit. An **alert rule** belongs to one alert group and binds one to three of that group's KPIs:
 
-- `expression_args` maps an **indicator name** you choose (for example `latency`, `errors`, `total`) to `{"id": "<kpi-uuid>"}`. The indicator name is a variable in the expression; it need not equal the KPI's own name.
+- `expression_args` maps an **indicator name** to `{"id": "<kpi-uuid>"}`. Each key must be the exact name of the KPI it binds (as `get_entity_kpis` lists it), not a placeholder such as `x`: `create_alert` and `update_alert` reject any other key. `expression` and `primary_indicator` use the same names; write names with spaces, dots or dashes as-is (`Test Alert / errors`).
 - `primary_indicator` must be one of the `expression_args` keys.
 - Every KPI id must belong to the same `entity_id`. Get ids from `get_entity_kpis`; never invent one, and never reuse an id from another alert group. If no KPI fits, create one with `create_kpi` and keep its id.
 
@@ -65,7 +65,7 @@ The KPI `unit` is a label. Nothing converts values: `condition` compares against
 A dry run that saves nothing. Use it before every `create_alert` and `update_alert`, and repeat it until it returns `{"valid":true}`.
 
 - Pass the **inner metric expression** (`errors / total`, or just `latency`), never the `adaptive_std_cmp(...)` wrapper; wrappers fail to parse.
-- `indicators_used` maps each indicator name to its KPI id: `{"errors": "<kpi-uuid>", "total": "<kpi-uuid>"}`. It is the same mapping as `expression_args`, flattened to ids.
+- `indicators_used` maps each indicator name to its KPI id: `{"errors": "<kpi-uuid>", "total": "<kpi-uuid>"}`. It is the same mapping as `expression_args`, flattened to ids. The dry run accepts any name, so key it by the KPI names `create_alert` will require.
 
 It checks, in order:
 1. every id in `indicators_used` is a KPI of `entity_id` — otherwise `invalid indicator details for <name>` (the id is invented, mistyped, or from another group: re-read `get_entity_kpis`);
@@ -83,7 +83,7 @@ Replace `<...>` with values discovered for this alert group. Find metric names w
 
 ### Latency
 
-KPI `p99_latency`, unit `seconds`: `histogram_quantile(0.99, sum by (le) (rate(<duration_histogram>_bucket{<selector>}[5m])))`.
+KPI `latency`, unit `seconds`: `histogram_quantile(0.99, sum by (le) (rate(<duration_histogram>_bucket{<selector>}[5m])))`.
 
 Static: fire when p99 is above 500 ms for 3 of 5 minutes.
 
@@ -103,7 +103,7 @@ Adaptive: fire when p99 leaves its learned 2-hour band.
 
 ### Error rate
 
-Two KPIs with the same `by (...)` labels, unit `req/s`: errors `sum by (<labels>) (rate(<requests_total>{<selector>, <error_matcher>}[5m]))` and total `sum by (<labels>) (rate(<requests_total>{<selector>}[5m]))`.
+Two KPIs with the same `by (...)` labels, unit `req/s`: KPI `errors` `sum by (<labels>) (rate(<requests_total>{<selector>, <error_matcher>}[5m]))` and KPI `total` `sum by (<labels>) (rate(<requests_total>{<selector>}[5m]))`.
 
 Static: fire when more than 5% of requests fail for 3 of 5 minutes. Validate `errors / total` with both ids.
 
@@ -115,7 +115,7 @@ Static: fire when more than 5% of requests fail for 3 of 5 minutes. Validate `er
  "rule_name": "<service> error rate > 5%"}
 ```
 
-Adaptive: `adaptive_std_cmp` takes one indicator, so use a single KPI whose query is the ratio (unit `ratio`), for example `sum(rate(<requests_total>{<selector>, <error_matcher>}[5m])) / sum(rate(<requests_total>{<selector>}[5m]))`.
+Adaptive: `adaptive_std_cmp` takes one indicator, so use a single KPI `error_ratio` whose query is the ratio (unit `ratio`), for example `sum(rate(<requests_total>{<selector>, <error_matcher>}[5m])) / sum(rate(<requests_total>{<selector>}[5m]))`.
 
 ```json
 {"primary_indicator": "error_ratio", "expression_args": {"error_ratio": {"id": "<ratio-kpi-uuid>"}},
@@ -125,7 +125,7 @@ Adaptive: `adaptive_std_cmp` takes one indicator, so use a single KPI whose quer
 
 ### Saturation
 
-KPI `cpu_utilization`, unit `ratio` (0-1): for example `sum by (<labels>) (rate(<cpu_seconds_total>{<selector>}[5m])) / sum by (<labels>) (<cpu_limit>{<selector>})`.
+KPI `cpu`, unit `ratio` (0-1): for example `sum by (<labels>) (rate(<cpu_seconds_total>{<selector>}[5m])) / sum by (<labels>) (<cpu_limit>{<selector>})`.
 
 Static: fire when above 85% for 8 of 10 minutes.
 

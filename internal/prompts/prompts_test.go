@@ -2,6 +2,7 @@ package prompts_test
 
 import (
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -621,6 +622,8 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 	}
 }
 
+var templateIndicatorKey = regexp.MustCompile(`"([^"]+)": \{"id":`)
+
 func TestAlertingReferenceCoversAuthoringContract(t *testing.T) {
 	for _, phrase := range []string{
 		"adaptive_std_cmp(<primary_indicator>, <sensitivity>, <window>)",
@@ -639,10 +642,14 @@ func TestAlertingReferenceCoversAuthoringContract(t *testing.T) {
 		"### Latency", "### Error rate", "### Saturation",
 		"## Alert from a dashboard panel",
 		"only after the user explicitly confirms",
+		"must be the exact name of the KPI it binds",
 	} {
 		if !strings.Contains(prompts.AlertingReference, phrase) {
 			t.Errorf("alerting reference missing %q", phrase)
 		}
+	}
+	if strings.Contains(prompts.AlertingReference, "need not equal the KPI's own name") {
+		t.Error("alerting reference says indicator names need not match KPI names; create_alert rejects that")
 	}
 	// Each template section must show both a static and an adaptive rule.
 	for _, section := range strings.Split(strings.SplitN(prompts.AlertingReference, "## Templates", 2)[1], "\n### ")[1:] {
@@ -652,6 +659,12 @@ func TestAlertingReferenceCoversAuthoringContract(t *testing.T) {
 		}
 		if !strings.Contains(section, `"condition": "expr >`) || !strings.Contains(section, `"expression": "adaptive_std_cmp(`) {
 			t.Errorf("template %q must show a static and an adaptive rule", title)
+		}
+		// create_alert rejects expression_args keys that are not the bound KPI's name.
+		for _, key := range templateIndicatorKey.FindAllStringSubmatch(section, -1) {
+			if !strings.Contains(section, "KPI `"+key[1]+"`") {
+				t.Errorf("template %q binds indicator %q without declaring a KPI of that name", title, key[1])
+			}
 		}
 	}
 }
