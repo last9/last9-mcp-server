@@ -103,7 +103,10 @@ func TestDiagnoseErrorRateChecksLogNoveltyBeforeRawLines(t *testing.T) {
 	got := res.Messages[0].Content.(*mcp.TextContent).Text
 	for _, want := range []string{
 		"get_emerging_log_patterns(service_name=checkout, env=prod",
-		"no log novelty",
+		// An empty result rules out only changes above both thresholds, so rarer or sample-only changes must still be checked.
+		"no log novelty above min_count and change_factor, not unchanged logs",
+		"below_min_count_patterns",
+		"sample_limit_reached",
 		// Error triage compares error templates, but severity_filters drop body-level lines when severity_set is none or partial.
 		`severity_filters=["error", "fatal", "critical"] only when severity_set is "all"`,
 	} {

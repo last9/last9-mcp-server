@@ -126,8 +126,13 @@ func TestOnCallRunbookChecksLogNoveltyOnlyBeforeLogSearches(t *testing.T) {
 	for symptom, after := range cases {
 		got := renderOnCallRunbook(t, map[string]string{"symptom": symptom, "time": "1h", "service": "checkout"})
 		novelty := strings.Index(got, "get_emerging_log_patterns(service_name=checkout)")
-		if novelty < 0 || !strings.Contains(got, "no log novelty") {
+		if novelty < 0 || !strings.Contains(got, "no log novelty above min_count and change_factor, not unchanged logs") {
 			t.Fatalf("symptom %q render must check log novelty before searching logs:\n%s", symptom, got)
+		}
+		for _, field := range []string{"below_min_count_patterns", "sample_limit_reached"} {
+			if !strings.Contains(got, field) {
+				t.Errorf("symptom %q render must qualify an empty novelty result with %s:\n%s", symptom, field, got)
+			}
 		}
 		for _, name := range after {
 			if i := strings.Index(got, name); i < novelty {

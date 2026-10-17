@@ -446,6 +446,10 @@ func TestLogPatternDescriptionsCriticalRules(t *testing.T) {
 	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "`below_min_count_patterns`: templates that changed") {
 		t.Error("get_emerging_log_patterns must keep changes below min_count apart from unchanged templates")
 	}
+	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "not that the windows are unchanged") ||
+		strings.Contains(prompts.GetEmergingLogPatternsDescription, "Report that there is no log novelty") {
+		t.Error("get_emerging_log_patterns must say an empty result rules out only changes above both thresholds")
+	}
 	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "absent from the other window's sample, not from the window") {
 		t.Error("get_emerging_log_patterns must say new/disappeared are presence-in-sample once a sample is capped")
 	}
