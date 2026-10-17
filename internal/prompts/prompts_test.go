@@ -552,3 +552,15 @@ func TestAPMServiceDeviationsDescriptionLookbackFloor(t *testing.T) {
 		t.Error("description missing short-lookback floor guidance")
 	}
 }
+
+// The routing section must quote the window parameter's default and cap, or
+// agents pass a full hour when the user asks for current alerts.
+func TestGetAlertsRoutingStatesDefaultWindow(t *testing.T) {
+	_, routing, _ := strings.Cut(prompts.GetAlertsDescription, "## When to use")
+	routing, _, _ = strings.Cut(routing, "##")
+	for _, phrase := range []string{"default 15 minutes", "at most 1 hour"} {
+		if !strings.Contains(routing, phrase) {
+			t.Errorf("get_alerts When to use section missing %q:\n%s", phrase, routing)
+		}
+	}
+}
