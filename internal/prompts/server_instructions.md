@@ -12,11 +12,13 @@
 {{- $databases := tools "get_databases" "get_database_slow_queries" "get_database_queries" "get_database_server_metrics" -}}
 {{- $profiles := tools "get_profile_summary" "get_top_functions" "get_flamegraph" -}}
 {{- $raw := tools "prometheus_range_query" "prometheus_instant_query" "get_logs" "get_traces" -}}
-{{- $create := tools "create_dashboard" -}}
+{{- $create := tools "create_dashboard" "create_alert" "create_alert_from_chart" "create_notification_channel" -}}
 {{- $validate := tools "validate_dashboard" -}}
 {{- $dropRules := tools "get_drop_rules" -}}
-{{- $refine := tools "update_dashboard" -}}
-{{- $destructive := tools "update_dashboard" "delete_dashboard" "delete_dashboard_snapshot" "add_drop_rule" -}}
+{{- $refine := tools "update_dashboard" "update_alert" "patch_alert" "attach_notification_channel" -}}
+{{- $alertPlan := tools "recommend_alert_config" "describe_alert_chart" "validate_alert_expression" -}}
+{{- $alertTriage := tools "acknowledge_alert" "reassign_alert" "mute_alert_group" -}}
+{{- $destructive := tools "update_dashboard" "delete_dashboard" "delete_dashboard_snapshot" "add_drop_rule" "update_alert" "delete_alert" "detach_notification_channel" "delete_notification_channel" -}}
 Last9 observability for the caller's organization. Discover names first, answer with the most specific tool, and treat writes with care.
 {{- if or $services $attributes $metricNames $alertRules $dashboards}}
 
@@ -89,7 +91,7 @@ Read these resources before writing a non-trivial query:
 - Service investigations: `last9://reference/investigation`
 {{- end}}
 {{- end}}
-{{- if or $validate $dropRules}}
+{{- if or $validate $dropRules $alertPlan}}
 
 ## Check before you write
 {{- with $validate}}
@@ -98,8 +100,11 @@ Read these resources before writing a non-trivial query:
 {{- with $dropRules}}
 - List existing drop rules with {{.}} before adding one.
 {{- end}}
+{{- with $alertPlan}}
+- Design and dry-run an alert rule with {{.}} before creating it.
 {{- end}}
-{{- if or $create $refine $destructive}}
+{{- end}}
+{{- if or $create $refine $destructive $alertTriage}}
 
 ## Write tools
 {{- with $create}}
@@ -107,6 +112,9 @@ Read these resources before writing a non-trivial query:
 {{- end}}
 {{- with $refine}}
 - Refine an existing object with {{.}}.
+{{- end}}
+{{- with $alertTriage}}
+- Take ownership of, hand off or mute a firing alert with {{.}}.
 {{- end}}
 {{- with $destructive}}
 - {{.}} overwrite or remove data: confirm with the user first.

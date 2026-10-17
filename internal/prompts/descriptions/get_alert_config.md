@@ -9,7 +9,7 @@
 	- search_term: Case-insensitive substring search across rule name, alert group name/type, data source name, tags, team, tier, and labels (label keys and values)
 	- rule_name: Case-insensitive substring match on rule name
 	- severity: Exact case-insensitive match
-	- rule_type: Exact case-insensitive match on derived rule type ("static" or "anomaly")
+	- rule_type: Exact case-insensitive match on derived rule type ("static", "anomaly", or "adaptive")
 	- alert_group_name: Case-insensitive substring match on alert group name
 	- alert_group_type: Case-insensitive substring match on alert group type
 	- data_source_name: Case-insensitive substring match on alert group data source name
@@ -47,7 +47,11 @@
 	- tier: The alert group's configured tier, when set
 	- labels: The alert group's configured metadata labels as k=v pairs, when set
 	  For a full inventory of groups (including zero-rule groups) use get_alert_groups.
-	- state: Current state of the alert rule (active, inactive, etc.)
+	- state: Current state of the alert rule (disabled, error-stale, muted or active, in that precedence)
+	- disabled: true when the rule is paused (patch_alert is_disabled)
+	- muted_until: none, indefinitely, or an RFC3339 UTC time
+	- recurring_mute_schedule: none, or its timezone (enabled: false when paused) and one "Mon,Tue 22:00-06:00" line per window
+	- next_transition: RFC3339 time the rule's state next changes, when known
 	- severity: Alert severity level
 	- algorithm: Detection algorithm (static_threshold, high_spike, inc_trend, etc.)
 	- created_at: When the alert rule was created
