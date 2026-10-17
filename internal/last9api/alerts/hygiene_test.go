@@ -59,9 +59,10 @@ func TestGetAlertHygiene_DecodesNullHistoryAsNil(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		_, _ = w.Write([]byte(`{"window":"7d","from":1000,"to":2000,"rules":[
-			{"rule_id":"r-null","fire_count":0,"last_fired_at":null,"ack":null,"muted_seconds":null,"history_since":null,"routed":false,"channels":[]},
+			{"rule_id":"r-null","fire_count":0,"last_fired_at":null,"ack":null,"muted_seconds":null,"history_since":null,"routed":null,"channels":[]},
 			{"rule_id":"r-zero","fire_count":3,"last_fired_at":1500,"ack":{"acked_episodes":0,"ack_rate":0,"median_seconds_to_ack":null},"muted_seconds":0,"history_since":900,"routed":true,
-			 "channels":[{"type":"slack","destination":"#oncall"}]}
+			 "channels":[{"type":"slack","destination":"#oncall"}]},
+			{"rule_id":"r-absent","fire_count":0}
 		]}`))
 	})
 
@@ -69,12 +70,15 @@ func TestGetAlertHygiene_DecodesNullHistoryAsNil(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAlertHygiene: %v", err)
 	}
-	if resp.From != 1000 || resp.To != 2000 || len(resp.Rules) != 2 {
+	if resp.From != 1000 || resp.To != 2000 || len(resp.Rules) != 3 {
 		t.Fatalf("resp = %+v", resp)
 	}
 	null := resp.Rules[0]
-	if null.LastFiredAt != nil || null.Ack != nil || null.MutedSeconds != nil || null.HistorySince != nil {
+	if null.LastFiredAt != nil || null.Ack != nil || null.MutedSeconds != nil || null.HistorySince != nil || null.Routed != nil {
 		t.Errorf("null history decoded as values: %+v", null)
+	}
+	if absent := resp.Rules[2]; absent.Routed != nil {
+		t.Errorf("absent routed decoded as %v, want nil", *absent.Routed)
 	}
 	zero := resp.Rules[1]
 	if zero.Ack == nil || zero.Ack.AckRate != 0 || zero.Ack.MedianSecondsToAck != nil {
@@ -85,6 +89,9 @@ func TestGetAlertHygiene_DecodesNullHistoryAsNil(t *testing.T) {
 	}
 	if zero.LastFiredAt == nil || *zero.LastFiredAt != 1500 || zero.HistorySince == nil || *zero.HistorySince != 900 {
 		t.Errorf("timestamps = %v %v", zero.LastFiredAt, zero.HistorySince)
+	}
+	if zero.Routed == nil || !*zero.Routed {
+		t.Errorf("routed = %v, want recorded true", zero.Routed)
 	}
 	if len(zero.Channels) != 1 || zero.Channels[0].Type != "slack" || zero.Channels[0].Destination != "#oncall" {
 		t.Errorf("channels = %+v", zero.Channels)

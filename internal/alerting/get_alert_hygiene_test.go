@@ -75,7 +75,7 @@ func unroutedRules(n int) []alerts.HygieneRule {
 	rules := make([]alerts.HygieneRule, 0, n)
 	for i := range n {
 		r := healthyRule(fmt.Sprintf("r%02d", i))
-		r.Routed = false
+		r.Routed = boolp(false)
 		r.FireCount = int64(i)
 		rules = append(rules, r)
 	}

@@ -172,8 +172,9 @@ func staleFinding(rule alerts.HygieneRule, w hygieneWindow) *hygieneFinding {
 	}
 }
 
+// Null routing means the API could not tell, so it never counts as unrouted.
 func unroutedFinding(rule alerts.HygieneRule, _ hygieneWindow) *hygieneFinding {
-	if rule.Routed {
+	if rule.Routed == nil || *rule.Routed {
 		return nil
 	}
 	return &hygieneFinding{

@@ -16,6 +16,7 @@ const (
 
 func i64(v int64) *int64                  { return &v }
 func f64(v float64) *float64              { return &v }
+func boolp(v bool) *bool                  { return &v }
 func ack(rate float64) *alerts.HygieneAck { return &alerts.HygieneAck{AckRate: rate} }
 
 // healthyRule is enabled, routed, fired inside the window, has full history and
@@ -35,7 +36,7 @@ func healthyRule(id string) alerts.HygieneRule {
 		Ack:            ack(1),
 		MutedSeconds:   f64(0),
 		HistorySince:   i64(testWindowFr - 30*testDay),
-		Routed:         true,
+		Routed:         boolp(true),
 	}
 }
 
@@ -87,19 +88,20 @@ func TestClassifyHygieneRule_Categories(t *testing.T) {
 			r.FireCount = 0
 			r.HistorySince = i64(testWindowFr + 1)
 		}, []string{}},
-		{"unrouted", func(r *alerts.HygieneRule) { r.Routed = false }, []string{"unrouted"}},
+		{"unrouted", func(r *alerts.HygieneRule) { r.Routed = boolp(false) }, []string{"unrouted"}},
+		{"null routing gives no unrouted verdict", func(r *alerts.HygieneRule) { r.Routed = nil }, []string{}},
 		{"several categories", func(r *alerts.HygieneRule) {
 			r.FireCount = 70
 			r.Ack = ack(0)
 			r.FlapsPerDay = 9
-			r.Routed = false
+			r.Routed = boolp(false)
 		}, []string{"noisy", "flapping", "unrouted"}},
 		{"disabled rule is never flagged", func(r *alerts.HygieneRule) {
 			r.IsDisabled = true
 			r.FireCount = 70
 			r.Ack = ack(0)
 			r.FlapsPerDay = 9
-			r.Routed = false
+			r.Routed = boolp(false)
 			r.LastFiredAt = nil
 		}, []string{}},
 	}
@@ -120,7 +122,7 @@ func TestClassifyHygieneRule_ReasonsCarryTheNumbers(t *testing.T) {
 	rule.FireCount = 70
 	rule.Ack = ack(0.05)
 	rule.FlapsPerDay = 6.5
-	rule.Routed = false
+	rule.Routed = boolp(false)
 
 	findings := classifyOne(rule)
 	want := map[string][]string{
@@ -230,7 +232,7 @@ func TestClassifyHygieneRule_Fixes(t *testing.T) {
 		},
 		{
 			name:     "unrouted",
-			mutate:   func(r *alerts.HygieneRule) { r.Routed = false },
+			mutate:   func(r *alerts.HygieneRule) { r.Routed = boolp(false) },
 			category: "unrouted",
 			fix:      hygieneFix{Parameter: "notification_channel", Proposed: `attach a notification channel to alert group "checkout" (group-1)`},
 		},
@@ -264,25 +266,25 @@ func TestRankAlertHygiene_OrdersFlaggedRules(t *testing.T) {
 	healthy := healthyRule("healthy")
 
 	oneFinding := healthyRule("one-finding")
-	oneFinding.Routed = false
+	oneFinding.Routed = boolp(false)
 
 	quieter := healthyRule("two-findings-quieter")
-	quieter.Routed = false
+	quieter.Routed = boolp(false)
 	quieter.FlapsPerDay = 5
 	quieter.FireCount = 3
 
 	louder := healthyRule("two-findings-louder")
-	louder.Routed = false
+	louder.Routed = boolp(false)
 	louder.FlapsPerDay = 5
 	louder.FireCount = 4
 
 	moreFlaps := healthyRule("two-findings-louder-more-flaps")
-	moreFlaps.Routed = false
+	moreFlaps.Routed = boolp(false)
 	moreFlaps.FlapsPerDay = 6
 	moreFlaps.FireCount = 4
 
 	threeFindings := healthyRule("three-findings")
-	threeFindings.Routed = false
+	threeFindings.Routed = boolp(false)
 	threeFindings.FlapsPerDay = 5
 	threeFindings.FireCount = 70
 	threeFindings.Ack = ack(0)

@@ -21,7 +21,8 @@ type GetAlertHygieneInput struct {
 	Window string
 }
 
-// Nullable fields are pointers: null means no history was recorded yet, never zero.
+// Nullable fields are pointers: null or absent means no history (or, for routed, no
+// routing data) was recorded, never zero or false.
 type HygieneRule struct {
 	RuleID         string           `json:"rule_id"`
 	RuleName       string           `json:"rule_name"`
@@ -40,7 +41,7 @@ type HygieneRule struct {
 	Ack            *HygieneAck      `json:"ack"`
 	MutedSeconds   *float64         `json:"muted_seconds"`
 	HistorySince   *int64           `json:"history_since"`
-	Routed         bool             `json:"routed"`
+	Routed         *bool            `json:"routed"`
 	Channels       []HygieneChannel `json:"channels"`
 }
 
