@@ -20,8 +20,16 @@ import (
 // literal is the normalized exact environment name, meant for exact-match
 // callers such as deeplink.APMCatalogEnvExact — never the escaped pattern,
 // since dotted/bracketed names must stay literal rather than regex-escaped.
-// literal is "" for the all-environments case (pattern ".*").
-func literalEnvPattern(env string) (pattern, literal string, err error) {
+// literal is "" for the all-environments case (pattern ".*"). display is the
+// normalized value tools echo back: literal, or ".*" for all environments.
+func envRequested(raw, display string) string {
+	if raw == display {
+		return ""
+	}
+	return raw
+}
+
+func literalEnvPattern(env string) (pattern, literal, display string, err error) {
 	lit := env
 	if strings.HasPrefix(lit, "^") && strings.HasSuffix(lit, "$") && len(lit) >= 2 {
 		lit = lit[1 : len(lit)-1]
@@ -32,10 +40,10 @@ func literalEnvPattern(env string) (pattern, literal string, err error) {
 		}
 	}
 	if lit == ".*" || (env == "" && lit == "") {
-		return ".*", "", nil
+		return ".*", "", ".*", nil
 	}
 	if lit == "" || strings.Contains(lit, "|") || strings.Contains(lit, ".*") || strings.Contains(lit, ".+") {
-		return "", "", fmt.Errorf("env %q looks like a regular expression; this tool matches one environment name exactly (for example \"production\"). Use get_service_environments to list names.", env)
+		return "", "", "", fmt.Errorf("env %q looks like a regular expression; this tool matches one environment name exactly (for example \"production\"). Use get_service_environments to list names.", env)
 	}
-	return regexp.QuoteMeta(lit), lit, nil
+	return regexp.QuoteMeta(lit), lit, lit, nil
 }

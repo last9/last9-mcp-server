@@ -69,6 +69,7 @@ const (
 type ServicePerformanceDetails struct {
 	ServiceName   string       `json:"service_name"`
 	Env           string       `json:"env"`
+	EnvRequested  string       `json:"env_requested,omitempty"`
 	Throughput    []TimeSeries `json:"throughput"` // by status code
 	ErrorRate     []TimeSeries `json:"error_rate"` // by status code
 	ErrorPercent  []TimeSeries `json:"error_percentage"`
@@ -454,11 +455,7 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}
 
 		// Handle environment
-		env := args.Env
-		if env == "" {
-			env = ".*"
-		}
-		envPattern, literalEnv, err := literalEnvPattern(args.Env)
+		envPattern, literalEnv, envDisplay, err := literalEnvPattern(args.Env)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -498,8 +495,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		}
 
 		details := ServicePerformanceDetails{
-			ServiceName: serviceName,
-			Env:         env,
+			ServiceName:  serviceName,
+			Env:          envDisplay,
+			EnvRequested: envRequested(args.Env, envDisplay),
 		}
 
 		// Get Apdex Score over time range as a vector

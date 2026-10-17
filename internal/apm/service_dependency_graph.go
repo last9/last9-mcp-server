@@ -23,6 +23,7 @@ type RedMetrics struct {
 type ServiceDependencyGraphDetails struct {
 	ServiceName      string                `json:"service_name"`
 	Env              string                `json:"env"`
+	EnvRequested     string                `json:"env_requested,omitempty"`
 	Incoming         map[string]RedMetrics `json:"incoming"`
 	Outgoing         map[string]RedMetrics `json:"outgoing"`
 	MessagingSystems map[string]RedMetrics `json:"messaging_systems"`
@@ -37,7 +38,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 
 		env := args.Env
-		envForQuery, literalEnv, err := literalEnvPattern(env)
+		envForQuery, literalEnv, envDisplay, err := literalEnvPattern(env)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -438,7 +439,8 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		// Prepare the final response structure
 		details := ServiceDependencyGraphDetails{
 			ServiceName:      serviceName,
-			Env:              env,
+			Env:              envDisplay,
+			EnvRequested:     envRequested(env, envDisplay),
 			Incoming:         incoming,
 			Outgoing:         outgoing,
 			Databases:        databases,
