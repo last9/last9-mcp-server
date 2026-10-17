@@ -180,8 +180,9 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 // until it fits MaxResultTextBytes. A trimmed answer no longer covers its scope.
 func formatServiceLogs(logs *ServiceLogsResponse) (string, error) {
 	kept, omitted := utils.FitItems(logs.Logs, utils.MaxResultTextBytes, func(entries []LogEntry) int {
-		logs.Logs, logs.Count = entries, len(entries)
-		encoded, _ := json.MarshalIndent(logs, "", "  ")
+		probe := *logs
+		probe.Logs, probe.Count = entries, len(entries)
+		encoded, _ := json.MarshalIndent(&probe, "", "  ")
 		return len(encoded)
 	})
 	logs.Logs, logs.Count = kept, len(kept)

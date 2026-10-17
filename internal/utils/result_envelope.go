@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sort"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -56,7 +57,8 @@ func (e ResultEnvelope) IsEmpty() bool {
 }
 
 // FitItems returns the longest prefix of items whose rendered size is within
-// maxBytes, and how many items it dropped. size must grow with the prefix.
+// maxBytes, and how many items it dropped. size must grow with the prefix and
+// must not mutate state: it runs on every probe of the binary search.
 func FitItems[T any](items []T, maxBytes int, size func([]T) int) ([]T, int) {
 	if size(items) <= maxBytes {
 		return items, 0
@@ -82,9 +84,11 @@ func FormatQueryResponse(response map[string]any, env *ResultEnvelope) string {
 	if !ok {
 		return text
 	}
+	probe, probeData := maps.Clone(response), maps.Clone(data)
+	probe["data"] = probeData
 	kept, omitted := FitItems(items, MaxResultTextBytes, func(prefix []any) int {
-		data["result"] = prefix
-		return len(formatIndentedJSON(response))
+		probeData["result"] = prefix
+		return len(formatIndentedJSON(probe))
 	})
 	data["result"] = kept
 	env.Trim(omitted)
