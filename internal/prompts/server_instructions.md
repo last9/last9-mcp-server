@@ -9,6 +9,7 @@
 {{- $changes := tools "get_change_events" -}}
 {{- $deviations := tools "get_apm_service_deviations" "get_trace_attribute_deviations" -}}
 {{- $scoped := tools "get_service_logs" "get_service_traces" "get_exceptions" "get_trace_waterfall" -}}
+{{- $patterns := tools "get_log_patterns" "get_emerging_log_patterns" -}}
 {{- $databases := tools "get_databases" "get_database_slow_queries" "get_database_queries" "get_database_server_metrics" -}}
 {{- $profiles := tools "get_profile_summary" "get_top_functions" "get_flamegraph" -}}
 {{- $raw := tools "prometheus_range_query" "prometheus_instant_query" "get_logs" "get_traces" -}}
@@ -38,7 +39,7 @@ Never guess service, environment, attribute, metric or label names, or dashboard
 - Dashboards, snapshots and Grafana folders: {{.}}{{with $dashboardReads}}; open one by id with {{.}}{{end}}.
 {{- end}}
 {{- end}}
-{{- if or $health $alerts $changes $deviations $scoped $databases $profiles}}
+{{- if or $health $alerts $changes $deviations $scoped $patterns $databases $profiles}}
 
 ## Prefer dedicated tools
 They return computed answers with the right scoping; reach for them before writing a query.
@@ -56,6 +57,9 @@ They return computed answers with the right scoping; reach for them before writi
 {{- end}}
 {{- with $scoped}}
 - One service's logs, traces and errors: {{.}}.
+{{- end}}
+{{- with $patterns}}
+- Log templates and what is new in them, before reading raw lines: {{.}}.
 {{- end}}
 {{- with $databases}}
 - Databases: {{.}}.

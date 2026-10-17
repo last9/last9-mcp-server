@@ -29,10 +29,12 @@ var promptDescriptionFiles = map[string]string{
 	"get_databases.md":                     prompts.GetDatabasesDescription,
 	"get_drop_rules.md":                    prompts.GetDropRulesDescription,
 	"get_entity_alert_rules.md":            prompts.GetEntityAlertRulesDescription,
+	"get_emerging_log_patterns.md":         prompts.GetEmergingLogPatternsDescription,
 	"get_exceptions.md":                    prompts.GetExceptionsInstructions,
 	"get_flamegraph.md":                    prompts.GetFlamegraphDescription,
 	"get_log_attributes.md":                prompts.GetLogAttributesDescription,
 	"get_log_attributes_for_pipeline.md":   prompts.GetLogAttributesForPipelineDescription,
+	"get_log_patterns.md":                  prompts.GetLogPatternsDescription,
 	"get_logs_base.md":                     prompts.GetLogsDescription,
 	"get_notification_channels.md":         prompts.GetNotificationChannelsDescription,
 	"get_profile_services.md":              prompts.GetProfileServicesDescription,
@@ -405,6 +407,54 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 		if !strings.Contains(desc, c.phrase) {
 			t.Errorf("GetServiceLogsDescription missing %q: %s", c.phrase, c.reason)
 		}
+	}
+}
+
+func TestLogPatternDescriptionsCriticalRules(t *testing.T) {
+	descriptions := map[string]string{
+		"get_log_patterns":          prompts.GetLogPatternsDescription,
+		"get_emerging_log_patterns": prompts.GetEmergingLogPatternsDescription,
+	}
+	checks := []struct {
+		phrase string
+		reason string
+	}{
+		{"empty", "must say an empty result is a valid answer"},
+		{"Do not invent", "must forbid manufacturing findings"},
+		{"instead of paging raw lines", "must be preferred over raw log paging during triage"},
+		{"sample_size", "must say counts are within a bounded sample"},
+		{"logs_truncated", "must say a truncated search's total is not complete"},
+		{"Failed search chunks return a tool error", "must say an incomplete search fails rather than reading as fewer patterns"},
+		{"A truncated or capped search still returns", "must say truncation is a success flagged by sample_limit_reached, not a failure"},
+	}
+	for name, desc := range descriptions {
+		for _, c := range checks {
+			if !strings.Contains(desc, c.phrase) {
+				t.Errorf("%s description missing %q: %s", name, c.phrase, c.reason)
+			}
+		}
+		if strings.Contains(desc, "Parameters:") {
+			t.Errorf("%s description carries a parameter catalog; per-argument docs belong on the input schema", name)
+		}
+		if strings.Contains(desc, "not a partial") {
+			t.Errorf("%s description says incomplete searches never return partial results, but truncated ones do", name)
+		}
+	}
+	if !strings.Contains(prompts.GetLogPatternsDescription, "An empty `patterns` list with `sample_limit_reached` true is not proof of an empty window") {
+		t.Error("get_log_patterns must say an empty but capped sample may have missed matching lines")
+	}
+	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "`below_min_count_patterns`: templates that changed") {
+		t.Error("get_emerging_log_patterns must keep changes below min_count apart from unchanged templates")
+	}
+	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "not that the windows are unchanged") ||
+		strings.Contains(prompts.GetEmergingLogPatternsDescription, "Report that there is no log novelty") {
+		t.Error("get_emerging_log_patterns must say an empty result rules out only changes above both thresholds")
+	}
+	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "absent from the other window's sample, not from the window") {
+		t.Error("get_emerging_log_patterns must say new/disappeared are presence-in-sample once a sample is capped")
+	}
+	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "`increased` and `decreased` mean the template's share of its sample changed, not its rate") {
+		t.Error("get_emerging_log_patterns must say share_of_sample changes are composition, not rate")
 	}
 }
 
