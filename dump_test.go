@@ -527,7 +527,7 @@ func TestDumpToolsEmergingLogPatternsCouplesBaselineTimes(t *testing.T) {
 	t.Fatal("get_emerging_log_patterns missing from dump")
 }
 
-func TestDumpToolsLogPatternToolsServeDateTimeFormats(t *testing.T) {
+func TestDumpToolsLogPatternToolsServeScopeSchemaHints(t *testing.T) {
 	var buf bytes.Buffer
 	if err := dumpTools(&buf, nil); err != nil {
 		t.Fatalf("dumpTools failed: %v", err)
@@ -555,6 +555,11 @@ func TestDumpToolsLogPatternToolsServeDateTimeFormats(t *testing.T) {
 			if got := properties[tool][name]["format"]; got != "date-time" {
 				t.Errorf("%s property %q format = %v, want date-time", tool, name, got)
 			}
+		}
+		// Callers outside the triage prompts must still learn that severity
+		// filters drop body-level severities on none/partial services.
+		if got, _ := properties[tool]["severity_filters"]["description"].(string); !strings.Contains(got, `only when get_service_profile reports severity_set "all"`) {
+			t.Errorf("%s severity_filters description = %q, want the severity_set routing rule", tool, got)
 		}
 	}
 }

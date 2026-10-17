@@ -563,7 +563,7 @@ Use `get_logs` for broad aggregate counts first; use `get_service_logs` only aft
 - `env` (string, optional)
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `lookback_minutes` (integer, optional): Default: 60.
-- `severity_filters` / `body_filters` (array, optional): OR logic, as in `get_service_logs`.
+- `severity_filters` / `body_filters` (array, optional): OR logic, as in `get_service_logs`. Set `severity_filters` only when `get_service_profile` reports `severity_set` `all`; with `none` or `partial` it drops lines whose severity is in the body.
 - `index` (string, optional)
 - `sample_size` (integer, optional): Lines sampled from the window. Default: 1000, maximum: 5000.
 - `top_n` (integer, optional): Templates returned by count. Default: 20, maximum: 100. The rest are totalled in `other`.
