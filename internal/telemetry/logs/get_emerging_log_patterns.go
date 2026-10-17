@@ -14,7 +14,6 @@ import (
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -147,30 +146,6 @@ func emptyBaselineNote(current, baseline LogPatternWindow) string {
 		return "Baseline sample is empty but incomplete (sample_limit_reached): the baseline search stopped before returning lines, so new means absent from the baseline sample, not from the baseline window."
 	}
 	return "Baseline window has no matching lines, so every current pattern is new: those with at least min_count lines are in patterns, the rest are counted in below_min_count_patterns."
-}
-
-type windowSample struct {
-	lines  []LogEntry
-	window LogPatternWindow
-}
-
-// sampleWindows fetches the windows concurrently: triage prompts call this
-// tool before anything else, so it should cost one round trip, not one per
-// window. The first failure cancels the other fetches, since one failed window
-// fails the whole comparison.
-func (s logPatternScope) sampleWindows(ctx context.Context, client *http.Client, cfg models.Config, ranges [][2]time.Time) ([]windowSample, error) {
-	samples := make([]windowSample, len(ranges))
-	g, ctx := errgroup.WithContext(ctx)
-	for i, r := range ranges {
-		g.Go(func() (err error) {
-			samples[i].lines, samples[i].window, err = s.sample(ctx, client, cfg, r[0], r[1])
-			return err
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-	return samples, nil
 }
 
 // thresholds bounds min_count by the sample size: no pattern can count more

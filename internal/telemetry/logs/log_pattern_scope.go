@@ -11,6 +11,8 @@ import (
 
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // LogPatternScopeArgs selects the lines a pattern tool clusters. Both pattern
@@ -117,6 +119,30 @@ func (s logPatternScope) sample(ctx context.Context, client *http.Client, cfg mo
 		TotalMatchingLines: logs.TotalMatchingLines,
 		LogsTruncated:      logs.LogsTruncated,
 	}, nil
+}
+
+type windowSample struct {
+	lines  []LogEntry
+	window LogPatternWindow
+}
+
+// sampleWindows fetches the windows concurrently: triage prompts call the
+// pattern tools before anything else, so they should cost one round trip, not
+// one per window. The first failure cancels the other fetches, since one failed
+// window fails the whole comparison.
+func (s logPatternScope) sampleWindows(ctx context.Context, client *http.Client, cfg models.Config, ranges [][2]time.Time) ([]windowSample, error) {
+	samples := make([]windowSample, len(ranges))
+	g, ctx := errgroup.WithContext(ctx)
+	for i, r := range ranges {
+		g.Go(func() (err error) {
+			samples[i].lines, samples[i].window, err = s.sample(ctx, client, cfg, r[0], r[1])
+			return err
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	return samples, nil
 }
 
 func (s logPatternScope) search(start, end time.Time) serviceLogsSearch {
