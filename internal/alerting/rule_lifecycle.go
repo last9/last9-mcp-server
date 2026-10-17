@@ -53,12 +53,19 @@ func writeRecurringMuteSchedule(b *strings.Builder, s *RecurringMuteSchedule) {
 	}
 	b.WriteString("\n")
 	for _, w := range s.Windows {
-		days := make([]string, len(w.Weekdays))
-		for i, d := range w.Weekdays {
-			if d != "" {
-				days[i] = strings.ToUpper(d[:1]) + strings.ToLower(d[1:])
-			}
-		}
-		fmt.Fprintf(b, "    %s %s-%s\n", strings.Join(days, ","), w.StartTime, w.EndTime)
+		fmt.Fprintf(b, "    %s %s-%s\n", formatWeekdays(w.Weekdays), w.StartTime, w.EndTime)
 	}
+}
+
+func formatWeekdays(weekdays []string) string {
+	days := make([]string, 0, len(weekdays))
+	for _, d := range weekdays {
+		if d = strings.TrimSpace(d); d != "" {
+			days = append(days, strings.ToUpper(d[:1])+strings.ToLower(d[1:]))
+		}
+	}
+	if len(days) == 0 {
+		return "(no weekdays)"
+	}
+	return strings.Join(days, ",")
 }

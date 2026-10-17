@@ -65,9 +65,13 @@ func TestFormatRuleLifecycle(t *testing.T) {
 			`{"state":"active","recurring_mute_schedule":{"enabled":false,"timezone":"UTC","windows":[{"weekdays":["wed"],"start_time":"01:00","end_time":"02:00"}]}}`,
 			"  Disabled: false\n  Muted until: none\n  Recurring mute schedule: timezone UTC (enabled: false)\n    Wed 01:00-02:00\n",
 		},
-		"schedule empty weekday": {
-			`{"state":"active","recurring_mute_schedule":{"enabled":true,"timezone":"UTC","windows":[{"weekdays":["","sat"],"start_time":"01:00","end_time":"02:00"}]}}`,
-			"  Disabled: false\n  Muted until: none\n  Recurring mute schedule: timezone UTC\n    ,Sat 01:00-02:00\n",
+		"schedule blank weekdays are skipped": {
+			`{"state":"active","recurring_mute_schedule":{"enabled":true,"timezone":"UTC","windows":[{"weekdays":["","sat"," ","sun"],"start_time":"01:00","end_time":"02:00"}]}}`,
+			"  Disabled: false\n  Muted until: none\n  Recurring mute schedule: timezone UTC\n    Sat,Sun 01:00-02:00\n",
+		},
+		"schedule window with only blank weekdays": {
+			`{"state":"active","recurring_mute_schedule":{"enabled":true,"timezone":"UTC","windows":[{"weekdays":[""],"start_time":"01:00","end_time":"02:00"}]}}`,
+			"  Disabled: false\n  Muted until: none\n  Recurring mute schedule: timezone UTC\n    (no weekdays) 01:00-02:00\n",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
