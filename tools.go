@@ -11,6 +11,7 @@ import (
 	"last9-mcp/internal/grafana"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/prompts"
+	"last9-mcp/internal/remapping"
 	"last9-mcp/internal/suggest"
 	"last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/telemetry/profiles"
@@ -195,6 +196,19 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Annotations: writeTool("Add Log Drop Rule", true, false),
 		Description: prompts.AddDropRuleDescription,
 	}, logs.NewAddDropRuleHandler(client, cfg)))
+
+	// Register remapping rules tools
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_remapping_rules",
+		Annotations: readOnlyTool("Get Remapping Rules"),
+		Description: prompts.GetRemappingRulesDescription,
+	}, remapping.NewGetRemappingRulesHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "add_remapping_rule",
+		Annotations: writeTool("Add Remapping Rule", false, false),
+		Description: prompts.AddRemappingRuleDescription,
+	}, remapping.NewAddRemappingRuleHandler(client, cfg)))
 
 	// Register notification channels tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{

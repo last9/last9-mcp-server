@@ -35,6 +35,12 @@ const (
 	// Organization and configuration endpoints
 	EndpointDatasources          = "/datasources"
 	EndpointOAuthAccessToken     = "/api/v4/oauth/access_token"
+	EndpointLogsSettingsRouting  = "/logs_settings/routing"
+
+	// Remapping rule endpoints (otel_settings control plane)
+	EndpointRemappingLogsExtract = "/otel_settings/remapping/logs_extract"
+	EndpointRemappingLogsMap     = "/otel_settings/remapping/logs_map"
+	EndpointRemappingTracesMap   = "/otel_settings/remapping/traces_map"
 	EndpointOTelSettingsDrop     = "/otel_settings/drop"
 	EndpointAlertRules           = "/alert-rules"
 	EndpointAlertsMonitor        = "/alerts/monitor"
