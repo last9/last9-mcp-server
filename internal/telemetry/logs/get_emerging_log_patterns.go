@@ -40,7 +40,7 @@ var changeRank = map[string]int{changeNew: 0, changeIncreased: 1, changeDecrease
 // The embedded scope's time range is the current window.
 type GetEmergingLogPatternsArgs struct {
 	LogPatternScopeArgs
-	BaselineStartTimeISO string   `json:"baseline_start_time_iso,omitempty" jsonschema:"Baseline window start, RFC3339. Set together with baseline_end_time_iso. Default: the window of equal length ending where the current window starts."`
+	BaselineStartTimeISO string   `json:"baseline_start_time_iso,omitempty" jsonschema:"Baseline window start, RFC3339. Set together with baseline_end_time_iso. Default: the window of equal length ending where the current window starts. For same time yesterday, pass that window."`
 	BaselineEndTimeISO   string   `json:"baseline_end_time_iso,omitempty" jsonschema:"Baseline window end, RFC3339, at or before the current window start. Set together with baseline_start_time_iso."`
 	MinCount             int      `json:"min_count,omitempty" jsonschema:"Minimum lines a pattern needs in the window it grew in (or, for decreases, the baseline) to be reported (default: 3, or sample_size if smaller; maximum: sample_size)"`
 	ChangeFactor         *float64 `json:"change_factor,omitempty" jsonschema:"Frequency ratio between windows counted as significant, greater than 1 (default: 2, i.e. doubled or halved)"`

@@ -433,6 +433,9 @@ func TestLogPatternDescriptionsCriticalRules(t *testing.T) {
 				t.Errorf("%s description missing %q: %s", name, c.phrase, c.reason)
 			}
 		}
+		if strings.Contains(desc, "Parameters:") {
+			t.Errorf("%s description carries a parameter catalog; per-argument docs belong on the input schema", name)
+		}
 		if strings.Contains(desc, "not a partial") {
 			t.Errorf("%s description says incomplete searches never return partial results, but truncated ones do", name)
 		}
