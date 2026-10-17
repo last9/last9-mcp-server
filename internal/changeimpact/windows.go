@@ -99,6 +99,17 @@ func (w changeWindows) comparisonWindows(limit time.Duration) (current, baseline
 	return apm.TimeWindow{Start: w.change, End: w.change.Add(length)}, apm.TimeWindow{Start: w.change.Add(-length), End: w.change}
 }
 
+// alertMonitorSlices splits window into consecutive monitor calls, latest
+// first: one call accepts at most MaxAlertsMonitorWindowSeconds.
+func alertMonitorSlices(window apm.TimeWindow) []alerting.AlertsMonitorQuery {
+	var slices []alerting.AlertsMonitorQuery
+	for end := window.End.Unix(); end > window.Start.Unix(); end -= alerting.MaxAlertsMonitorWindowSeconds {
+		span := min(end-window.Start.Unix(), alerting.MaxAlertsMonitorWindowSeconds)
+		slices = append(slices, alerting.AlertsMonitorQuery{Timestamp: end, Window: span})
+	}
+	return slices
+}
+
 func (w changeWindows) apmDeviationArgs(req Request) apm.DeviationArgs {
 	current, baseline := w.comparisonWindows(maxWindowMinutes * time.Minute)
 	return apm.DeviationArgs{
@@ -134,7 +145,6 @@ func drillDowns(req Request, w changeWindows, allowed toolsets.Set) []DrillDown 
 		return args
 	}
 	dev := w.apmDeviationArgs(req)
-	alertWindow := min(max(int64(w.afterMinutes)*60, 60), alerting.MaxAlertsMonitorWindowSeconds)
 	out := []DrillDown{
 		{
 			Tool: "get_service_performance_details",
@@ -158,12 +168,8 @@ func drillDowns(req Request, w changeWindows, allowed toolsets.Set) []DrillDown 
 			}, "env"),
 			Why: "sample traces from after the change",
 		},
-		{
-			Tool:      "get_alerts",
-			Arguments: map[string]any{"time_iso": rfc3339(w.after.End), "window": alertWindow},
-			Why:       "every alert active after the change, not only those matched to these services",
-		},
 	}
+	out = append(out, alertDrillDowns(w.after)...)
 	if req.Env != "" {
 		trace := w.traceDeviationArgs(req)
 		out = append(out, DrillDown{
@@ -183,6 +189,33 @@ func drillDowns(req Request, w changeWindows, allowed toolsets.Set) []DrillDown 
 		}
 	}
 	return served
+}
+
+// alertDrillDowns covers the after window with the same slices Analyze reads,
+// so every alert it reports stays reachable through get_alerts.
+func alertDrillDowns(after apm.TimeWindow) []DrillDown {
+	after.Start = minTime(after.Start, after.End.Add(-time.Minute))
+	slices := alertMonitorSlices(after)
+	out := make([]DrillDown, 0, len(slices))
+	for i, q := range slices {
+		why := "every alert active after the change, not only those matched to these services"
+		if len(slices) > 1 {
+			why = fmt.Sprintf("%s (part %d of %d: get_alerts reads at most an hour per call)", why, i+1, len(slices))
+		}
+		out = append(out, DrillDown{
+			Tool:      "get_alerts",
+			Arguments: map[string]any{"time_iso": rfc3339(time.Unix(q.Timestamp, 0)), "window": q.Window},
+			Why:       why,
+		})
+	}
+	return out
+}
+
+func minTime(a, b time.Time) time.Time {
+	if b.Before(a) {
+		return b
+	}
+	return a
 }
 
 func rfc3339(t time.Time) string {

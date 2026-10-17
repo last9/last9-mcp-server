@@ -442,15 +442,12 @@ type alertScope struct {
 }
 
 // fetchStartedAlerts returns alerts for scope that started firing inside
-// its window, earliest first. The monitor call caps its window, so a longer
-// window is read in consecutive slices.
+// its window, earliest first.
 func fetchStartedAlerts(ctx context.Context, client *http.Client, cfg models.Config, scope alertScope) ([]StartedAlert, error) {
-	window := scope.window
 	seen := map[string]bool{}
 	var started []StartedAlert
-	for end := window.End.Unix(); end > window.Start.Unix(); end -= alerting.MaxAlertsMonitorWindowSeconds {
-		span := min(end-window.Start.Unix(), alerting.MaxAlertsMonitorWindowSeconds)
-		resp, err := alerting.FetchAlertsMonitor(ctx, client, cfg, alerting.AlertsMonitorQuery{Timestamp: end, Window: span})
+	for _, q := range alertMonitorSlices(scope.window) {
+		resp, err := alerting.FetchAlertsMonitor(ctx, client, cfg, q)
 		if err != nil {
 			return nil, err
 		}
