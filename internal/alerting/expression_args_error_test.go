@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// The API accepts an expression_args key only when it equals the bound KPI's own name,
-// while validate_alert_expression accepts any key, so the raw 400 reads as a dead end.
+// The API accepts an expression_args key only when it equals the bound KPI's own name and the
+// KPI belongs to the group, and answers both mistakes with one bare 400.
 func TestAlertRuleWritesExplainInvalidExpressionArgs(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if serveRuleOwner(w, r) {
@@ -32,7 +32,8 @@ func TestAlertRuleWritesExplainInvalidExpressionArgs(t *testing.T) {
 		"create_alert": {resultText(create), create != nil && create.IsError, createErr},
 		"update_alert": {resultText(update), update != nil && update.IsError, updateErr},
 	} {
-		if got.err != nil || !got.isErr || !strings.Contains(got.text, "exact name") || !strings.Contains(got.text, "nothing was saved") {
+		if got.err != nil || !got.isErr || !strings.Contains(got.text, "exact name") || !strings.Contains(got.text, "nothing was saved") ||
+			!strings.Contains(got.text, "a KPI id is not a KPI of entity_id") || !strings.Contains(got.text, "invalid indicator details") {
 			t.Errorf("%s: text=%s isErr=%v err=%v", tool, got.text, got.isErr, got.err)
 		}
 	}
