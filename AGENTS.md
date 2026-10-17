@@ -79,7 +79,8 @@ NO:  const getFooDescription = "Fetches..."   // in a handler package
 (`get_exceptions`). Leave them alone; do not copy the pattern.
 
 **Stay inside the metadata checks.** `tool_metadata_test.go` holds every served tool to a
-description byte budget (default plus a reviewed override map), registered `last9://` URIs,
+description byte budget (default plus a reviewed override map, and a description-plus-schema
+budget for `get_logs`; no other test sets size budgets), registered `last9://` URIs,
 string-only schema enums, a max schema depth, and lowercase verb-first names (`get_`, `list_`,
 `create_`, …; `grafana_` may prefix the verb). Raising an override is a decision for the PR.
 

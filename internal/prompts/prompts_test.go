@@ -410,28 +410,6 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 	}
 }
 
-func TestWhaleDescriptionsBounded(t *testing.T) {
-	budgets := map[string]int{
-		"get_logs_base":         3600,
-		"get_traces_base":       2700,
-		"get_service_logs_base": 2700,
-	}
-	bodies := map[string]string{
-		"get_logs_base":         prompts.GetLogsDescription,
-		"get_traces_base":       prompts.GetTracesDescription,
-		"get_service_logs_base": prompts.GetServiceLogsDescription,
-	}
-	for name, body := range bodies {
-		if len(body) == 0 {
-			t.Errorf("%s empty", name)
-		}
-		budget := budgets[name]
-		if len(body) > budget {
-			t.Errorf("%s length %d exceeds %d-char budget", name, len(body), budget)
-		}
-	}
-}
-
 func TestReferenceManualsEmbedded(t *testing.T) {
 	for name, body := range map[string]string{
 		"logjson":      prompts.LogjsonReference,

@@ -19,20 +19,27 @@ const defaultDescriptionBudget = 2500
 
 // descriptionBudgetOverrides lists the tools allowed past the default, each
 // near its current size so growth is a reviewed decision. Raise an entry in
-// the PR that grows the description, and say why.
+// the PR that grows the description, and say why. These and servedSizeBudgets
+// are the only description size budgets; add none elsewhere.
 var descriptionBudgetOverrides = map[string]int{
 	"get_apm_service_deviations":      6300,
 	"get_exceptions":                  4900,
 	"get_service_summary":             4600,
 	"get_alert_config":                4600,
 	"get_trace_attribute_deviations":  4400,
-	"get_logs":                        3700,
+	"get_logs":                        3600,
 	"create_dashboard":                3200,
 	"prometheus_range_query":          3000,
 	"get_log_attributes_for_pipeline": 2800,
 	"get_trace_waterfall":             2700,
 	"get_traces":                      2700,
 	"get_service_logs":                2700,
+}
+
+// servedSizeBudgets cap description plus compact input schema JSON for tools
+// whose hand-built schema weighs as much as their description.
+var servedSizeBudgets = map[string]int{
+	"get_logs": 7500,
 }
 
 // maxSchemaDepth bounds input schema nesting (root = 1). The dashboard write
@@ -68,6 +75,14 @@ func toolMetadataViolations(tool *mcp.Tool, resources map[string]bool) []string 
 	}
 	if n := len(tool.Description); n > budget {
 		out = append(out, fmt.Sprintf("description is %d bytes, budget %d", n, budget))
+	}
+	if budget, ok := servedSizeBudgets[tool.Name]; ok {
+		schema, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			out = append(out, fmt.Sprintf("input schema does not encode: %v", err))
+		} else if n := len(tool.Description) + len(schema); n > budget {
+			out = append(out, fmt.Sprintf("description and input schema are %d bytes, served-size budget %d", n, budget))
+		}
 	}
 	for _, uri := range resourceURIPattern.FindAllString(tool.Description, -1) {
 		if !resources[uri] {
@@ -217,6 +232,11 @@ func TestServedToolMetadata(t *testing.T) {
 			t.Errorf("descriptionBudgetOverrides names %q, which is not served", name)
 		}
 	}
+	for name := range servedSizeBudgets {
+		if !served[name] {
+			t.Errorf("servedSizeBudgets names %q, which is not served", name)
+		}
+	}
 	for name := range legacyToolNames {
 		if !served[name] {
 			t.Errorf("legacyToolNames names %q, which is not served", name)
@@ -243,7 +263,8 @@ func TestToolMetadataViolationsCatchBadFixtures(t *testing.T) {
 		{name: "legacy name", tool: &mcp.Tool{Name: "prometheus_labels", Description: "ok", InputSchema: okSchema}},
 		{name: "namespaced verb", tool: &mcp.Tool{Name: "grafana_list_fixtures", Description: "ok", InputSchema: okSchema}},
 		{name: "over default budget", tool: &mcp.Tool{Name: "get_fixture", Description: strings.Repeat("x", defaultDescriptionBudget+1), InputSchema: okSchema}, want: "budget 2500"},
-		{name: "over override budget", tool: &mcp.Tool{Name: "get_logs", Description: strings.Repeat("x", descriptionBudgetOverrides["get_logs"]+1), InputSchema: okSchema}, want: "budget 3700"},
+		{name: "over override budget", tool: &mcp.Tool{Name: "get_logs", Description: strings.Repeat("x", descriptionBudgetOverrides["get_logs"]+1), InputSchema: okSchema}, want: "budget 3600"},
+		{name: "over served-size budget", tool: &mcp.Tool{Name: "get_logs", Description: "ok", InputSchema: map[string]any{"description": strings.Repeat("x", servedSizeBudgets["get_logs"])}}, want: "served-size budget 7500"},
 		{name: "unregistered resource", tool: &mcp.Tool{Name: "get_fixture", Description: "See last9://reference/nope.", InputSchema: okSchema}, want: "unregistered resource last9://reference/nope"},
 		{name: "integer enum", tool: &mcp.Tool{Name: "get_fixture", Description: "ok", InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 			"version": map[string]any{"type": "integer", "enum": []any{float64(1)}},
