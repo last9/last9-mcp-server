@@ -277,6 +277,23 @@ func TestMissingEvidenceCannotClearTheChange(t *testing.T) {
 	}
 }
 
+// Trace-attribute deviations explain a verdict but never set one, so losing
+// them hides no regression the verdict would have found.
+func TestFailingTraceDeviationsLeaveTheVerdictAlone(t *testing.T) {
+	change := recentChange()
+	f := &fakeLast9{change: change, baseline: flatWindow(), after: flatWindow(), fail: map[string]int{"trace_deviations": http.StatusInternalServerError}}
+	report, err := runTool(t, f, serviceArgs(change))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Deviations.TraceAttributes.Error == "" {
+		t.Fatal("failure injection did not reach the trace deviations section")
+	}
+	if report.Verdict != VerdictNoSignificantChange {
+		t.Fatalf("verdict = %q (%s), want %q", report.Verdict, report.Reason, VerdictNoSignificantChange)
+	}
+}
+
 func TestRegressionDisclosesMissingEvidence(t *testing.T) {
 	change := recentChange()
 	after := flatWindow()

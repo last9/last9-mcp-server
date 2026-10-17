@@ -306,6 +306,8 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 	}
 
 	in := verdictInputs{afterMinutes: w.afterMinutes, triggers: triggers, service: req.Service}
+	// Trace deviations are left out: they explain a verdict and never trigger
+	// one, so losing them cannot hide a regression the verdict would find.
 	for _, s := range []struct {
 		name string
 		err  error

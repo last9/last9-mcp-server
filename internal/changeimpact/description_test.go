@@ -29,6 +29,7 @@ func TestDescriptionDocumentsVerdictsAndThresholds(t *testing.T) {
 		fmt.Sprintf("top %d", maxDependents),
 		fmt.Sprintf("%d per list", sectionTopN),
 		"get_change_events",
+		"Trace-attribute deviations explain a verdict but never set one",
 	} {
 		if !strings.Contains(description, want) {
 			t.Errorf("description must state %q", want)
