@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"last9-mcp/internal/alerting"
-	"last9-mcp/internal/apm"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/toolsets"
@@ -71,7 +70,7 @@ func (a *overviewAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 const (
 	routeEnvs     = "POST /prom_label_values env"
-	routeServices = "POST /prom_label_values service_name"
+	routeServices = "POST /prom_query_instant"
 	routeMetrics  = "POST /prom_label_values __name__"
 	routeLogs     = "GET /logs/api/v1/labels"
 	routeTraces   = "GET /cat/api/search/tags"
@@ -84,7 +83,7 @@ var allRoutes = []string{routeEnvs, routeServices, routeMetrics, routeLogs, rout
 func healthyResponses() map[string]string {
 	return map[string]string{
 		routeEnvs:     `["staging","prod"]`,
-		routeServices: `["api","web","worker"]`,
+		routeServices: `[{"metric":{"service_name":"api"},"value":[1,"10"]},{"metric":{"service_name":"web"},"value":[1,"5"]},{"metric":{"service_name":"worker"},"value":[1,"0"]},{"metric":{"service_name":""},"value":[1,"9"]},{"metric":{"service_name":"nan-svc"},"value":[1,"NaN"]},{"metric":{"service_name":"api"},"value":[1,"3"]}]`,
 		routeMetrics:  `["up"]`,
 		routeLogs:     `{"status":"success","data":["service","severity"]}`,
 		routeTraces:   `{"scopes":[{"name":"span","tags":["http.method"]}]}`,
@@ -165,16 +164,14 @@ func TestWorkspaceOverviewAllOK(t *testing.T) {
 			t.Fatalf("%s was never called", route)
 		}
 	}
-	// environments reads what get_service_environments reads; service_count
-	// reads the series get_service_summary ranks, so the counts agree.
-	wantMatch := map[string]string{
-		routeEnvs:     "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}",
-		routeServices: apm.ServiceSummarySeries,
+	if q, _ := api.bodies[routeServices]["query"].(string); q != serviceCountQuery || strings.Contains(q, "domain_attributes_count") ||
+		api.bodies[routeServices]["timestamp"] != float64(1792177200) || api.bodies[routeServices]["password"] != "pass" {
+		t.Errorf("services body = %v", api.bodies[routeServices])
 	}
-	for _, route := range []string{routeEnvs, routeServices} {
+	for _, route := range []string{routeEnvs} {
 		matches, _ := api.bodies[route]["matches"].([]any)
-		if len(matches) != 1 || matches[0] != wantMatch[route] {
-			t.Errorf("%s matches = %v, want [%s]", route, matches, wantMatch[route])
+		if len(matches) != 1 || matches[0] != "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}" {
+			t.Errorf("%s matches = %v", route, matches)
 		}
 		if api.bodies[route]["timestamp"] != float64(1792177200) || api.bodies[route]["window"] != float64(3600) {
 			t.Errorf("%s window = %v..%v", route, api.bodies[route]["timestamp"], api.bodies[route]["window"])

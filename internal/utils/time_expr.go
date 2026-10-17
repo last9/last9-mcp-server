@@ -97,6 +97,9 @@ func ParseTimeRangeExpr(expr string, now time.Time, loc *time.Location) (start, 
 	if err != nil {
 		return time.Time{}, time.Time{}, err
 	}
+	if start.Year() < 1970 {
+		return time.Time{}, time.Time{}, fmt.Errorf("range %q starts before 1970-01-01", strings.TrimSpace(expr))
+	}
 	if !start.Before(end) {
 		return time.Time{}, time.Time{}, fmt.Errorf("range %q starts after it ends (%s ≥ %s)",
 			expr, start.UTC().Format(time.RFC3339), end.UTC().Format(time.RFC3339))
@@ -186,7 +189,7 @@ func parseLookback(tokens []string) (time.Duration, error) {
 
 // maxLookback bounds last <n><unit>: a typo such as 100000d would otherwise
 // resolve to a start centuries ago, or overflow.
-const maxLookback = 365 * 24 * time.Hour
+const maxLookback = 366 * 24 * time.Hour
 
 func positiveLookback(d time.Duration) (time.Duration, error) {
 	if d <= 0 {
@@ -199,7 +202,7 @@ func positiveLookback(d time.Duration) (time.Duration, error) {
 }
 
 func lookbackTooLongError(d string) error {
-	return fmt.Errorf("duration %s exceeds the 365d maximum: for an older start use since YYYY-MM-DD", d)
+	return fmt.Errorf("duration %s exceeds the 366d maximum: for an older start use since YYYY-MM-DD", d)
 }
 
 // parsePoint reads an RFC3339 timestamp (via ParseToolTimestamp) or a calendar
@@ -230,7 +233,11 @@ func parsePoint(tokens []string, now time.Time, loc *time.Location) (time.Time, 
 	if err != nil {
 		return time.Time{}, err
 	}
-	return time.Date(day.Year(), day.Month(), day.Day(), hour, minute, 0, 0, loc), nil
+	t := time.Date(day.Year(), day.Month(), day.Day(), hour, minute, 0, 0, loc)
+	if isWeekday(strings.ToLower(tokens[0])) && t.After(now) {
+		t = time.Date(day.Year(), day.Month(), day.Day()-7, hour, minute, 0, 0, loc)
+	}
+	return t, nil
 }
 
 // parseDay reads a leading day word and returns the tokens left for the clock.

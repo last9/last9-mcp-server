@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,8 +32,12 @@ const overviewLookback = time.Hour
 // field, not the whole first call.
 const overviewCallTimeout = 10 * time.Second
 
-// apmServerSpans is the series get_service_environments reads.
 const apmServerSpans = "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}"
+
+// serviceCountQuery is get_service_summary's trace_endpoint_count query (same
+// window, all envs) grouped by service. label_values reads the series index,
+// which also lists services whose last sample is outside the window.
+const serviceCountQuery = `sum by (service_name)(sum_over_time(` + apm.ServiceSummarySeries + `[60m]))`
 
 type GetWorkspaceOverviewArgs struct{}
 
@@ -111,15 +117,14 @@ type result[T any] struct {
 
 func (p overviewProbe) run(ctx context.Context, current CurrentTime) WorkspaceOverview {
 	var (
-		envs, services        result[[]string]
-		logs, traces, metrics result[bool]
-		groups, firing        result[int]
-		wg                    sync.WaitGroup
+		envs                     result[[]string]
+		logs, traces, metrics    result[bool]
+		services, groups, firing result[int]
+		wg                       sync.WaitGroup
 	)
 	countGroups := func(ctx context.Context) (int, error) { return alerting.CountAlertGroups(ctx, p.http, p.cfg) }
-	listServices := p.labelValues("service_name", apm.ServiceSummarySeries)
-	wg.Go(func() { envs = withTimeout(ctx, p.timeout, p.labelValues("env", apmServerSpans)) })
-	wg.Go(func() { services = withTimeout(ctx, p.timeout, listServices) })
+	wg.Go(func() { envs = withTimeout(ctx, p.timeout, p.apmLabelValues("env")) })
+	wg.Go(func() { services = withTimeout(ctx, p.timeout, p.activeServices) })
 	wg.Go(func() { logs = withTimeout(ctx, p.timeout, p.hasLogs) })
 	wg.Go(func() { traces = withTimeout(ctx, p.timeout, p.hasTraces) })
 	wg.Go(func() { metrics = withTimeout(ctx, p.timeout, p.hasMetrics) })
@@ -143,7 +148,7 @@ func (p overviewProbe) run(ctx context.Context, current CurrentTime) WorkspaceOv
 		slices.Sort(out.Environments)
 	}
 	if note("service_count", services.err) {
-		out.ServiceCount = ptr(len(services.value))
+		out.ServiceCount = ptr(services.value)
 	}
 	if note("telemetry.logs", logs.err) {
 		out.Telemetry.Logs = ptr(logs.value)
@@ -174,16 +179,42 @@ func (p overviewProbe) datasource() prom.Datasource {
 	return prom.Datasource{ReadURL: p.cfg.PrometheusReadURL, Username: p.cfg.PrometheusUsername, Password: p.cfg.PrometheusPassword}
 }
 
-func (p overviewProbe) labelValues(label, series string) func(context.Context) ([]string, error) {
+func (p overviewProbe) apmLabelValues(label string) func(context.Context) ([]string, error) {
 	return func(ctx context.Context) ([]string, error) {
 		return prom.GetLabelValues(ctx, p.api, prom.GetLabelValuesInput{
 			Datasource: p.datasource(),
 			Label:      label,
-			Matches:    []string{series},
+			Matches:    []string{apmServerSpans},
 			Timestamp:  p.now.Unix(),
 			Window:     int64(overviewLookback / time.Second),
 		})
 	}
+}
+
+func (p overviewProbe) activeServices(ctx context.Context) (int, error) {
+	series, err := prom.QueryInstant(ctx, p.api, prom.QueryInstantInput{Datasource: p.datasource(), Query: serviceCountQuery, Timestamp: p.now.Unix()})
+	if err != nil {
+		return 0, err
+	}
+	names := map[string]bool{}
+	for _, s := range series {
+		if name := s.Metric["service_name"]; name != "" && finiteSample(s.Value) {
+			names[name] = true
+		}
+	}
+	return len(names), nil
+}
+
+func finiteSample(value []any) bool {
+	if len(value) < 2 {
+		return false
+	}
+	str, ok := value[1].(string)
+	if !ok {
+		return false
+	}
+	f, err := strconv.ParseFloat(str, 64)
+	return err == nil && !math.IsNaN(f) && !math.IsInf(f, 0)
 }
 
 func (p overviewProbe) hasMetrics(ctx context.Context) (bool, error) {
