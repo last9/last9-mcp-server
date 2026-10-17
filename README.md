@@ -735,7 +735,7 @@ Read-only. Returns lifecycle guidance, validation gates, and responder-context r
 Dry-runs an expression without saving. Use before `create_alert` / `update_alert`.
 
 - `entity_id` (string, required): Alert group/entity UUID.
-- `expression` (string, required): Arithmetic over indicators named by their KPI's exact name, e.g. `errors / requests`. At most 3 indicators.
+- `expression` (string, required): Arithmetic over indicators named by their KPI's exact name, e.g. `errors / requests`. At most 3 indicators. Write names with spaces, dots or dashes as-is (`Test Alert / errors`), exactly as `create_alert` saves them.
 - `indicators_used` (object, required, non-empty): Indicator name to KPI UUID owned by `entity_id`. Use each KPI's exact name: this dry-run accepts any name, but `create_alert` and `update_alert` reject `expression_args` keys that are not the bound KPI's name.
 
 Only the arithmetic expression is checked (pass the inner metric expression, not an `adaptive_std_cmp(...)` wrapper); `condition` / `alert_condition` are not. The at-least-one-timeseries check runs only when more than one indicator is used.

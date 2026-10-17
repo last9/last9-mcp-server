@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `validate_alert_expression` now accepts indicator names that its parser cannot read bare, such as KPI names with spaces (`Test Alert`), dots or dashes, by sending them as `[name]`. It used to report `Cannot transition token types from VARIABLE [Test] to VARIABLE [Alert]` for expressions that `create_alert` and `update_alert` save (#190).
 - `describe_alert_chart` and `create_alert_from_chart` reject a `surface` other than `discover-service` or `discover-exceptions` before calling the API and point to `create_alert`, instead of relaying a misleading "unknown chart key". The describe description no longer promises a per-signal `name` (#190).
 - `describe_alert_chart` and `create_alert_from_chart` label a 400/422 that is not a coverage miss (for example `group_id does not match chart group`) as `invalid_request` with fix-the-arguments guidance, instead of an upstream failure to retry (#190).
 - `delete_alert` with a write-scope token now returns a tool error naming the delete-scope token it needs, like `detach_notification_channel` and `delete_notification_channel`, instead of generic credential advice (#190).

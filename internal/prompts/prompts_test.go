@@ -442,6 +442,9 @@ func TestAlertRuleDescriptionsRequireKPINames(t *testing.T) {
 	if strings.Contains(prompts.ValidateAlertExpressionDescription, "x, y, z") {
 		t.Error("validate_alert_expression still suggests placeholder indicator names")
 	}
+	if !strings.Contains(prompts.ValidateAlertExpressionDescription, "Write names with spaces, dots or dashes as-is") {
+		t.Error("validate_alert_expression does not say spaced KPI names are written as-is")
+	}
 }
 
 func TestWhaleDescriptionsBounded(t *testing.T) {
