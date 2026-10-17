@@ -35,6 +35,18 @@ const (
 	// classifies for the changed service.
 )
 
+// reportThresholds publishes every significance constant above, so callers can
+// explain a verdict from the report alone.
+func reportThresholds() map[string]float64 {
+	return map[string]float64{
+		"min_after_minutes":        minAfterMinutes,
+		"min_requests_per_window":  minRequestsPerWindow,
+		"error_rate_increase_pp":   errorRateIncreasePP,
+		"p95_latency_increase_pct": p95LatencyIncreasePct,
+		"throughput_drop_pct":      throughputDropPct,
+	}
+}
+
 const noChangeNote = "No significant change is a valid answer, not a failure: the change did not move error rate, p95 latency, throughput or alerts past the thresholds."
 
 // thresholdEpsilon absorbs float noise in deltas computed exactly at a threshold.

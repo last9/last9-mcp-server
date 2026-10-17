@@ -165,18 +165,13 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 	req, notes := normalizeRequest(req)
 	w := resolveWindows(req)
 	report := Report{
-		Notes:      notes,
-		Service:    req.Service,
-		Env:        req.Env,
-		ChangeTime: req.Change.UTC().Format(time.RFC3339),
-		Windows:    w.public(),
-		DrillDown:  drillDowns(req, w, cfg.AllowedTools),
-		Thresholds: map[string]float64{
-			"min_after_minutes":        minAfterMinutes,
-			"min_requests_per_window":  minRequestsPerWindow,
-			"error_rate_increase_pp":   errorRateIncreasePP,
-			"p95_latency_increase_pct": p95LatencyIncreasePct,
-		},
+		Notes:         notes,
+		Service:       req.Service,
+		Env:           req.Env,
+		ChangeTime:    req.Change.UTC().Format(time.RFC3339),
+		Windows:       w.public(),
+		DrillDown:     drillDowns(req, w, cfg.AllowedTools),
+		Thresholds:    reportThresholds(),
 		GoldenSignals: GoldenSection{Services: []ServiceSignals{}},
 		Deviations: DeviationsSection{
 			APM:             APMDeviations{Items: []APMDeviation{}},
