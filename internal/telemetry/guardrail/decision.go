@@ -33,9 +33,17 @@ type Decision struct {
 }
 
 type scan struct {
-	Range    time.Duration
-	Scoped   bool
-	Estimate *int64 // nil when the estimate is unavailable
+	Range  time.Duration
+	Scoped bool // a filter detected in the pipeline itself
+	// ServerScoped is the estimate's own scope verdict. It waives the scope
+	// threshold but never the range cap, the one limit an over-eager verdict
+	// must not lift.
+	ServerScoped bool
+	Estimate     *int64 // nil when the estimate is unavailable
+}
+
+func (s scan) anyScope() bool {
+	return s.Scoped || s.ServerScoped
 }
 
 // decide runs the range, scope and scan-budget checks in that order and
@@ -52,7 +60,7 @@ func decide(l models.QueryGuardrail, s scan) Decision {
 		return Decision{Action: Allow}
 	}
 	bytes := *s.Estimate
-	if !s.Scoped && bytes > l.ScopeThresholdBytes {
+	if !s.anyScope() && bytes > l.ScopeThresholdBytes {
 		return Decision{Reject, ReasonUnscopedQuery, fmt.Sprintf(
 			"The query would scan about %s with no service or stream filter; above %s one is required. Add a service filter such as %s. To find the service, first count by ServiceName over a short window.",
 			formatBytes(bytes), formatBytes(l.ScopeThresholdBytes), serviceFilterExample)}
@@ -65,7 +73,7 @@ func decide(l models.QueryGuardrail, s scan) Decision {
 
 func budgetGuidance(l models.QueryGuardrail, s scan, bytes int64) string {
 	g := fmt.Sprintf("The query would scan about %s, over the %s per-query budget.", formatBytes(bytes), formatBytes(l.QueryBudgetBytes))
-	if !s.Scoped {
+	if !s.anyScope() {
 		g += " Add a service filter such as " + serviceFilterExample + "."
 	}
 	if window := fittingWindow(s.Range, l.QueryBudgetBytes, bytes); window > 0 {

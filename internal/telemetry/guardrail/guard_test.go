@@ -146,14 +146,27 @@ func TestCheck_NegativeEstimateIsUnavailable(t *testing.T) {
 	}
 }
 
-func TestCheck_ServerScopeCountsAsScope(t *testing.T) {
+func serverScopedGuard(bytes int64) *Guard {
 	g := testGuard(ModeEnforce, nil)
 	g.estimate = func(context.Context, Query) (last9api.QueryEstimate, error) {
-		return last9api.QueryEstimate{Bytes: testLimits.ScopeThresholdBytes + 1, Scoped: true}, nil
+		return last9api.QueryEstimate{Bytes: bytes, Scoped: true}, nil
 	}
-	v := g.Check(context.Background(), nil, query(unscopedPipeline, testLimits.RangeCap+time.Hour))
+	return g
+}
+
+func TestCheck_ServerScopeWaivesScopeThreshold(t *testing.T) {
+	v := serverScopedGuard(testLimits.ScopeThresholdBytes+1).Check(context.Background(), nil, query(unscopedPipeline, time.Hour))
 	if v.Blocked || v.Decision.Action != Allow {
 		t.Fatalf("a query the estimate reports scoped was rejected: %+v", v)
+	}
+}
+
+// The range cap is the one limit that holds when bytes are low or budgets
+// loose, so only a filter detected in the pipeline itself waives it.
+func TestCheck_ServerScopeDoesNotWaiveRangeCap(t *testing.T) {
+	v := serverScopedGuard(1).Check(context.Background(), nil, query(unscopedPipeline, testLimits.RangeCap+time.Second))
+	if !v.Blocked || v.Decision.Reason != ReasonRangeTooWide {
+		t.Fatalf("an over-cap query the estimate alone reports scoped: %+v", v)
 	}
 }
 

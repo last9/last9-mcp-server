@@ -35,6 +35,8 @@ func TestDecide(t *testing.T) {
 		{"unscoped estimate at threshold", scan{Range: time.Hour, Estimate: bytesPtr(1000)}, Allow, ""},
 		{"unscoped estimate threshold+1", scan{Range: time.Hour, Estimate: bytesPtr(1001)}, Reject, ReasonUnscopedQuery},
 		{"scoped estimate threshold+1", scan{Range: time.Hour, Scoped: true, Estimate: bytesPtr(1001)}, Allow, ""},
+		{"server-scoped estimate threshold+1", scan{Range: time.Hour, ServerScoped: true, Estimate: bytesPtr(1001)}, Allow, ""},
+		{"server-scoped range cap+1s", scan{Range: cap + time.Second, ServerScoped: true, Estimate: bytesPtr(1)}, Reject, ReasonRangeTooWide},
 
 		{"scoped estimate budget-1", scan{Range: time.Hour, Scoped: true, Estimate: bytesPtr(4999)}, Allow, ""},
 		{"scoped estimate at budget", scan{Range: time.Hour, Scoped: true, Estimate: bytesPtr(5000)}, Allow, ""},

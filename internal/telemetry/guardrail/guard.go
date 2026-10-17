@@ -85,7 +85,7 @@ func (g *Guard) Check(ctx context.Context, req *mcp.CallToolRequest, q Query) Ve
 		v.Hints = append(v.Hints, hint(ReasonEstimateUnavailable, "", "The scan estimate could not be fetched, so only the range cap was checked; the scope threshold and the scan and session budgets were not."))
 	} else {
 		s.Estimate = &est.Bytes
-		s.Scoped = s.Scoped || est.Scoped
+		s.ServerScoped = est.Scoped
 	}
 
 	d := decide(g.limits, s)
@@ -147,6 +147,7 @@ func logDecision(mode string, q Query, s scan, v Verdict) {
 		"estimate_bytes", estimate,
 		"range", s.Range.String(),
 		"scoped", s.Scoped,
+		"server_scoped", s.ServerScoped,
 	)
 }
 
