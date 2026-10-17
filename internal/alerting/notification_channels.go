@@ -64,7 +64,9 @@ func NewGetNotificationChannelsHandler(client *http.Client, cfg models.Config) f
 		if scope == "channels" {
 			rows, err := notifications.ListNotificationSettings(ctx, last9api.NewClient(client, cfg), false)
 			if err != nil {
-				return nil, nil, err
+				return notificationChannelErrorResult(err, map[int]string{
+					http.StatusForbidden: "listing channels requires a token that can read notification channels",
+				})
 			}
 			return &mcp.CallToolResult{
 				Meta:    deeplink.ToMeta(dashboardURL),
