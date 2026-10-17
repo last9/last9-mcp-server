@@ -282,6 +282,7 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 		{"`Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first", "must gate attribute values without gating Duration"},
 		{"For calendar buckets, use explicit ISO bounds and time zone", "must make calendar boundaries explicit"},
 		{"P99 `Duration` output remains nanoseconds", "must preserve Duration units"},
+		{"overall percentiles use `aggregate`", "must steer P99/lookback percentiles to aggregate, not window_aggregate"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
@@ -290,6 +291,9 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 	}
 	if !strings.Contains(desc, `[{"type":"filter","query":{"$and":[{"$eq":["StatusCode","STATUS_CODE_ERROR"]}]}}]`) {
 		t.Error("GetTracesDescription must include its canonical JSON stage-array example")
+	}
+	if strings.Contains(desc, `"type":"window_aggregate","function":{"$quantile"`) {
+		t.Error("GetTracesDescription must not exemplify window_aggregate+$quantile for percentiles")
 	}
 }
 
@@ -411,7 +415,7 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 func TestWhaleDescriptionsBounded(t *testing.T) {
 	budgets := map[string]int{
 		"get_logs_base":         2900,
-		"get_traces_base":       2200,
+		"get_traces_base":       2000,
 		"get_service_logs_base": 2000,
 	}
 	bodies := map[string]string{
