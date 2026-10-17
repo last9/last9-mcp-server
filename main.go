@@ -114,6 +114,16 @@ func parseDumpToolsets() (toolsets.Set, error) {
 	return toolsets.Parse(spec)
 }
 
+// toolsetServerBuilder returns what --http calls to build the server for a
+// request's narrowed toolsets: cfg with only AllowedTools replaced.
+func toolsetServerBuilder(cfg models.Config) func(toolsets.Set) (*last9mcp.Last9MCPServer, error) {
+	return func(allowed toolsets.Set) (*last9mcp.Last9MCPServer, error) {
+		c := cfg
+		c.AllowedTools = allowed
+		return buildServer(c)
+	}
+}
+
 // buildServer creates the served MCP server for cfg.AllowedTools: resources,
 // prompts, tools and the instructions that name them.
 func buildServer(cfg models.Config) (*last9mcp.Last9MCPServer, error) {
@@ -240,11 +250,7 @@ func main() {
 	}
 
 	if cfg.HTTPMode {
-		httpServer := NewHTTPServer(server, cfg, func(allowed toolsets.Set) (*last9mcp.Last9MCPServer, error) {
-			c := cfg
-			c.AllowedTools = allowed
-			return buildServer(c)
-		})
+		httpServer := NewHTTPServer(server, cfg, toolsetServerBuilder(cfg))
 		if err := httpServer.Start(); err != nil {
 			log.Fatalf("HTTP server error: %v", err)
 		}

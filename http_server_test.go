@@ -124,8 +124,8 @@ func TestHandleHealthReportsBuildVersion(t *testing.T) {
 	}
 }
 
-// newToolsetHTTPServer serves --http with startup toolsets spec and counts how
-// many MCP servers it builds.
+// newToolsetHTTPServer serves --http with startup toolsets spec through
+// main's per-request builder and counts how many MCP servers it builds.
 func newToolsetHTTPServer(t *testing.T, spec string) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
 	allowed, err := toolsets.Parse(spec)
@@ -135,11 +135,10 @@ func newToolsetHTTPServer(t *testing.T, spec string) (*httptest.Server, *atomic.
 	cfg := testToolRegistrationConfig()
 	cfg.AllowedTools = allowed
 	builds := &atomic.Int32{}
+	buildFor := toolsetServerBuilder(cfg)
 	build := func(allowed toolsets.Set) (*last9mcp.Last9MCPServer, error) {
 		builds.Add(1)
-		c := cfg
-		c.AllowedTools = allowed
-		return buildServer(c)
+		return buildFor(allowed)
 	}
 	startup, err := build(allowed)
 	if err != nil {
