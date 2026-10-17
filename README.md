@@ -437,7 +437,7 @@ LAST9_HTTP=true ./last9-mcp-server
 
 ### get_workspace_overview
 
-No parameters. Probes the last 60 minutes concurrently, each sub-call with a short timeout, and returns `current_time`, `lookback_minutes`, `environments`, `telemetry` (`logs`/`traces`/`metrics` booleans), `service_count`, `alert_group_count`, `firing_alert_count` and `errors` (`[{field, error}]`). A field whose sub-call failed is `null` (unknown), never `0` or `false`. The probes are not narrowed by `--toolsets`: toolsets filter which tools are served, and the API token scopes what the server can read.
+No parameters. Probes the last 60 minutes concurrently, each sub-call with a short timeout, and returns `current_time`, `lookback_minutes`, `environments`, `telemetry` (`logs`/`traces`/`metrics` booleans), `service_count` (distinct services `get_service_summary` ranks, every env), `alert_group_count`, `firing_alert_count` and `errors` (`[{field, error}]`). A field whose sub-call failed is `null` (unknown), never `0` or `false`. The probes are not narrowed by `--toolsets`: toolsets filter which tools are served, and the API token scopes what the server can read.
 
 ### get_current_time
 

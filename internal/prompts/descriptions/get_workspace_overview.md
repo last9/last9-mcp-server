@@ -18,7 +18,7 @@ JSON:
 - `lookback_minutes`: window the probes read (60).
 - `environments`: sorted `env` values seen on APM service metrics; `[]` when none.
 - `telemetry`: `{logs, traces, metrics}` booleans for the window in the default scope. `false` means not observed in this window, not that the signal is missing: still query it for the user's requested time range, index or datasource.
-- `service_count`: number of services on APM service metrics.
+- `service_count`: distinct services `get_service_summary` ranks over the window, across every env.
 - `alert_group_count`: number of groups `get_alert_groups` lists with no filters, read from the group lookup alone, so it stays known when alert rules cannot be read.
 - `firing_alert_count`: alert instances in state `firing` that `get_alerts` lists over its default 15-minute window; pending and resolved instances are not counted.
 - `errors`: `[{field, error}]` for each sub-call that failed or timed out. That field is `null`, which means unknown, not zero or false; the rest of the snapshot is still valid.

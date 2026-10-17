@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"last9-mcp/internal/alerting"
+	"last9-mcp/internal/apm"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/alerts"
 	apilogs "last9-mcp/internal/last9api/logs"
@@ -29,6 +30,7 @@ const overviewLookback = time.Hour
 // field, not the whole first call.
 const overviewCallTimeout = 10 * time.Second
 
+// apmServerSpans is the series get_service_environments reads.
 const apmServerSpans = "domain_attributes_count{span_kind='SPAN_KIND_SERVER'}"
 
 type GetWorkspaceOverviewArgs struct{}
@@ -115,8 +117,9 @@ func (p overviewProbe) run(ctx context.Context, current CurrentTime) WorkspaceOv
 		wg                    sync.WaitGroup
 	)
 	countGroups := func(ctx context.Context) (int, error) { return alerting.CountAlertGroups(ctx, p.http, p.cfg) }
-	wg.Go(func() { envs = withTimeout(ctx, p.timeout, p.apmLabelValues("env")) })
-	wg.Go(func() { services = withTimeout(ctx, p.timeout, p.apmLabelValues("service_name")) })
+	listServices := p.labelValues("service_name", apm.ServiceSummarySeries)
+	wg.Go(func() { envs = withTimeout(ctx, p.timeout, p.labelValues("env", apmServerSpans)) })
+	wg.Go(func() { services = withTimeout(ctx, p.timeout, listServices) })
 	wg.Go(func() { logs = withTimeout(ctx, p.timeout, p.hasLogs) })
 	wg.Go(func() { traces = withTimeout(ctx, p.timeout, p.hasTraces) })
 	wg.Go(func() { metrics = withTimeout(ctx, p.timeout, p.hasMetrics) })
@@ -171,12 +174,12 @@ func (p overviewProbe) datasource() prom.Datasource {
 	return prom.Datasource{ReadURL: p.cfg.PrometheusReadURL, Username: p.cfg.PrometheusUsername, Password: p.cfg.PrometheusPassword}
 }
 
-func (p overviewProbe) apmLabelValues(label string) func(context.Context) ([]string, error) {
+func (p overviewProbe) labelValues(label, series string) func(context.Context) ([]string, error) {
 	return func(ctx context.Context) ([]string, error) {
 		return prom.GetLabelValues(ctx, p.api, prom.GetLabelValuesInput{
 			Datasource: p.datasource(),
 			Label:      label,
-			Matches:    []string{apmServerSpans},
+			Matches:    []string{series},
 			Timestamp:  p.now.Unix(),
 			Window:     int64(overviewLookback / time.Second),
 		})
