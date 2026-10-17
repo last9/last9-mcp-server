@@ -352,6 +352,30 @@ func TestGetEmergingLogPatterns_RejectsInvalidArgsBeforeQuerying(t *testing.T) {
 	}
 }
 
+func TestGetEmergingLogPatterns_ChangeFactorZeroIsRejectedNotDefaulted(t *testing.T) {
+	cases := map[string]bool{
+		`{"service_name":"checkout"}`:                      false,
+		`{"service_name":"checkout","change_factor":null}`: false,
+		`{"service_name":"checkout","change_factor":0}`:    true,
+	}
+	for input, wantErr := range cases {
+		var args GetEmergingLogPatternsArgs
+		if err := json.Unmarshal([]byte(input), &args); err != nil {
+			t.Fatalf("%s: %v", input, err)
+		}
+		got, err := args.thresholds(10)
+		if wantErr {
+			if err == nil || !strings.Contains(err.Error(), "greater than 1") {
+				t.Errorf("%s: err = %v, want a greater-than-1 rejection", input, err)
+			}
+			continue
+		}
+		if err != nil || got.changeFactor != defaultEmergingChangeFactor {
+			t.Errorf("%s: change factor %v, err %v; want the default %v", input, got.changeFactor, err, defaultEmergingChangeFactor)
+		}
+	}
+}
+
 func TestGetEmergingLogPatterns_MinCountErrorBlamesSampleSizeOnlyWhenOverIt(t *testing.T) {
 	const blame = "min_count cannot exceed sample_size"
 	cases := map[int]bool{-1: false, 11: true, maxPatternSampleSize + 1: true}
