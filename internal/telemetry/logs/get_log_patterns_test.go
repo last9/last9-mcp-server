@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -326,3 +327,71 @@ func TestSearchChunksFailed_ReadsEveryNumericType(t *testing.T) {
 }
 
 func intPtr(v int) *int { return &v }
+
+// chunkedLogsServer answers the pre-search-API chunked path, which reports no
+// totals or search_stats, so completeness rests on the sample size alone.
+func chunkedLogsServer(t *testing.T, status int, lines ...string) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		hits.Add(1)
+		if status != http.StatusOK {
+			http.Error(w, "chunk failed", status)
+			return
+		}
+		values := make([]any, 0, len(lines))
+		for i, line := range lines {
+			values = append(values, []any{fmt.Sprint((patternWindowStart + int64(i)) * 1e9), line})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{
+			"resultType": "streams",
+			"result":     []any{map[string]any{"stream": map[string]any{"severity": "ERROR"}, "values": values}},
+		}})
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &hits
+}
+
+func callLogPatternsChunked(srv *httptest.Server, sampleSize int) (*mcp.CallToolResult, error) {
+	cfg := apiModeCfg(srv.URL)
+	cfg.UseLogSearchAPI = false
+	result, _, err := NewGetLogPatternsHandler(srv.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetLogPatternsArgs{
+		LogPatternScopeArgs: LogPatternScopeArgs{ServiceName: "checkout", StartTimeISO: patternWindowStartISO, EndTimeISO: patternWindowEndISO, SampleSize: sampleSize},
+	})
+	return result, err
+}
+
+func TestGetLogPatterns_ChunkedPathSamplesWithoutTotals(t *testing.T) {
+	cases := []struct {
+		name       string
+		sampleSize int
+		wantLimit  bool
+	}{
+		{"short sample", 1000, false},
+		{"filled sample", 2, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			srv, hits := chunkedLogsServer(t, http.StatusOK, "timeout calling db 1", "timeout calling db 2")
+			result, err := callLogPatternsChunked(srv, c.sampleSize)
+			if err != nil {
+				t.Fatalf("handler: %v", err)
+			}
+			got := decodeToolJSON[GetLogPatternsResponse](t, result)
+			if hits.Load() == 0 || got.TotalPatterns != 1 || got.Patterns[0].Template != "timeout calling db <*>" {
+				t.Fatalf("hits=%d response=%+v; want the chunked upstream sampled into one template", hits.Load(), got)
+			}
+			if got.Window.SampleLimitReached != c.wantLimit || got.Window.TotalMatchingLines != nil || got.Window.LogsTruncated != nil {
+				t.Errorf("window = %+v, want sample_limit_reached %t and no total or truncation flag", got.Window, c.wantLimit)
+			}
+		})
+	}
+}
+
+func TestGetLogPatterns_ChunkedPathRejectsAFailedChunk(t *testing.T) {
+	srv, _ := chunkedLogsServer(t, http.StatusBadGateway)
+	if _, err := callLogPatternsChunked(srv, 0); err == nil {
+		t.Fatal("want an error when a chunk fails, not an empty pattern list that reads as no logs")
+	}
+}
