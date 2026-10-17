@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dashboard create and update schemas now restrict `query_type` to supported values and their descriptions explain the query types for logs, metrics, and traces (#312).
 - `get_service_logs`, `get_service_traces`, and the PromQL range and instant query tools now serve explicit schemas for their supported fields, so unknown names and invalid field types are rejected during input validation (#311).
 
+### Changed
+
+- Bumped `github.com/last9/mcp-go-sdk` 0.1.4 → 0.1.5 (#313).
+
 ## [0.19.4] - 2026-10-06
 
 ### Added
