@@ -319,6 +319,38 @@ func TestSessionKey(t *testing.T) {
 	}
 }
 
+// sessionKey reads a nil Extra as stdio. That is safe only while streamable
+// HTTP, the server's one HTTP transport, sets Extra.Header on every call.
+func TestSessionKey_StreamableHTTPNeverFallsBackToStdio(t *testing.T) {
+	server := mcp.NewServer(&mcp.Implementation{Name: "guardrail-test"}, nil)
+	keys := make(chan string, 1)
+	mcp.AddTool(server, &mcp.Tool{Name: "probe"}, func(_ context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+		key, ok := sessionKey(req)
+		if !ok {
+			key = "<untracked>"
+		}
+		keys <- key
+		return &mcp.CallToolResult{}, nil, nil
+	})
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true})
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	ctx := context.Background()
+	client := mcp.NewClient(&mcp.Implementation{Name: "guardrail-test-client"}, nil)
+	cs, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: srv.URL}, nil)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() { _ = cs.Close() })
+	if _, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "probe"}); err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if key := <-keys; key == stdioSessionKey {
+		t.Fatal("an HTTP call was keyed as the shared stdio session")
+	}
+}
+
 func TestCheck_SessionsAreKeyedByHeader(t *testing.T) {
 	est := &stubEstimator{bytes: testLimits.SessionBudgetBytes * 8 / 10}
 	g := testGuard(ModeEnforce, est)
