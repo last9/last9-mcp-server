@@ -395,7 +395,7 @@ curl -s -X POST http://localhost:8080/mcp \
 
 ### Per-request toolsets
 
-In HTTP mode a request can narrow its tool surface with the `X-Last9-Toolsets` header, or the `toolsets` query parameter for clients that cannot set headers (`/mcp?toolsets=logs,traces`). The header wins when both are sent. The value takes the same comma-separated names as `--toolsets`. The request sees the intersection with the startup `--toolsets`: it can narrow, never widen, and `all` or an empty value keeps the startup set. An unknown name returns `400` naming it. `tools/list`, `tools/call` and the `initialize` instructions all follow the effective set; `get_current_time` and `get_workspace_overview` stay in every set.
+In HTTP mode a request can narrow its tool surface with the `X-Last9-Toolsets` header, or the `toolsets` query parameter for clients that cannot set headers (`/mcp?toolsets=logs,traces`). A non-blank header wins when both are sent. The value takes the same comma-separated names as `--toolsets`. The request sees the intersection with the startup `--toolsets`: it can narrow, never widen, and `all` or an empty value keeps the startup set. An unknown name returns `400` naming it. `tools/list`, `tools/call` and the `initialize` instructions all follow the effective set; `get_current_time` and `get_workspace_overview` stay in every set.
 
 ```bash
 curl -s -X POST http://localhost:8080/mcp \

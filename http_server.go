@@ -24,7 +24,7 @@ import (
 
 const (
 	// toolsetsHeader narrows one request's tool surface; the query parameter
-	// is for clients that cannot set headers. The header wins when both are sent.
+	// is for clients that cannot set headers. A non-blank header wins over it.
 	toolsetsHeader     = "X-Last9-Toolsets"
 	toolsetsQueryParam = "toolsets"
 )
@@ -91,11 +91,7 @@ func streamableOptions() *mcp.StreamableHTTPOptions {
 // widen. narrowed is false when the request asks for nothing, for all, or for
 // a set whose intersection is the whole startup set.
 func requestToolsets(r *http.Request, startup toolsets.Set) (toolsets.Set, bool, error) {
-	spec := r.URL.Query().Get(toolsetsQueryParam)
-	if values := r.Header.Values(toolsetsHeader); len(values) > 0 {
-		spec = strings.Join(values, ",")
-	}
-	requested, err := toolsets.Parse(spec)
+	requested, err := toolsets.Parse(requestToolsetsSpec(r))
 	if err != nil {
 		return nil, false, err
 	}
@@ -116,6 +112,21 @@ func requestToolsets(r *http.Request, startup toolsets.Set) (toolsets.Set, bool,
 		return startup, false, nil
 	}
 	return effective, true, nil
+}
+
+// requestToolsetsSpec prefers the header to the query parameter, treating
+// blank header lines as absent so they cannot discard the query's toolsets.
+func requestToolsetsSpec(r *http.Request) string {
+	var values []string
+	for _, value := range r.Header.Values(toolsetsHeader) {
+		if strings.TrimSpace(value) != "" {
+			values = append(values, value)
+		}
+	}
+	if len(values) == 0 {
+		return r.URL.Query().Get(toolsetsQueryParam)
+	}
+	return strings.Join(values, ",")
 }
 
 // toolsetServers caches one MCP server per distinct effective tool set, keyed
