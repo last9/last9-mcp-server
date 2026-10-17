@@ -2,9 +2,39 @@
   "contract_version": "investigation-evidence/v1",
   "analysis_version": "trace-attribute-deviations/v1",
   "request": {
-    "scope": { "service_name": "checkout", "environment": "production", "operation": "POST /checkout" },
-    "requested_window": { "start": "2026-07-15T08:25:00Z", "end": "2026-07-15T08:40:00Z", "boundary": "half-open" },
-    "effective_window": { "start": "2026-07-15T08:25:00Z", "end": "2026-07-15T08:40:00Z", "boundary": "half-open" },
+    "scope": {
+      "service_name": "checkout",
+      "environment": "production",
+      "population": "service"
+    },
+    "requested_window": {
+      "start": "2026-07-15T08:00:00Z",
+      "end": "2026-07-15T08:15:00Z",
+      "boundary": "half-open"
+    },
+    "effective_window": {
+      "start": "2026-07-15T08:00:00Z",
+      "end": "2026-07-15T08:15:00Z",
+      "boundary": "half-open"
+    },
+    "target_cohort": {
+      "name": "target",
+      "window": {
+        "start": "2026-07-15T08:00:00Z",
+        "end": "2026-07-15T08:15:00Z",
+        "boundary": "half-open"
+      },
+      "definition": "duration_above_threshold"
+    },
+    "control_cohort": {
+      "name": "control",
+      "window": {
+        "start": "2026-07-15T08:00:00Z",
+        "end": "2026-07-15T08:15:00Z",
+        "boundary": "half-open"
+      },
+      "definition": "duration_at_or_below_threshold"
+    },
     "comparison_mode": "latency",
     "latency_threshold_ms": 500
   },
@@ -13,19 +43,90 @@
     "truncated": false,
     "warnings": [],
     "partial_errors": [],
-    "target_count": 240,
-    "control_count": 920,
-    "provenance": { "source": "trace-analytics", "observed_at": "2026-07-15T08:41:00Z", "query_id": "seed-deviation-001" }
+    "target_count": 100,
+    "control_count": 100,
+    "normalized_population_count": 200,
+    "candidate_coverage": {
+      "requested": 1,
+      "analyzed": 1,
+      "excluded": 0,
+      "auto_discover": false
+    },
+    "threshold": {
+      "source": "explicit_threshold",
+      "effective_latency_threshold_ms": 500,
+      "population": {
+        "scope": {
+          "service_name": "checkout",
+          "environment": "production",
+          "population": "service"
+        },
+        "window": {
+          "start": "2026-07-15T08:00:00Z",
+          "end": "2026-07-15T08:15:00Z",
+          "boundary": "half-open"
+        },
+        "count": 200
+      }
+    },
+    "backend_duration_ms": 0,
+    "provenance": {
+      "source": "trace-analytics",
+      "observed_at": "2026-07-15T08:16:00Z",
+      "query_id": null
+    }
   },
   "interpretation": {
     "evidence_quality": "medium",
     "claim_type": "correlation",
-    "summary": "pricing-service version 1.14.0 is 31.5 percentage points more common in the slow cohort.",
-    "limitations": ["Association is not proof of cause."]
+    "summary": "service.version=v2 differs by 40.00 percentage points between the compared cohorts.",
+    "limitations": [
+      "Association is not proof of cause."
+    ]
   },
   "data": {
-    "deviations": [{ "attribute": "service.version", "value": "1.14.0", "target_count": 156, "control_count": 307, "target_share": 0.65, "control_share": 0.335, "percentage_point_delta": 31.5, "score": 31.5, "rank": 1 }],
-    "representative_traces": [{ "trace_id": "seed-trace-confirming-01", "relation": "confirming", "duration_ms": 1450 }]
+    "candidates": [
+      {
+        "attribute": "service.version",
+        "target_missing": 0,
+        "control_missing": 0,
+        "distinct_values": 1
+      }
+    ],
+    "deviations": [
+      {
+        "attribute": "service.version",
+        "value": "v2",
+        "target_count": 60,
+        "control_count": 20,
+        "target_share": 0.6,
+        "control_share": 0.2,
+        "percentage_point_delta": 40,
+        "ratio": 3,
+        "direction": "target",
+        "score": 40,
+        "rank": 1,
+        "interpretation": "v2 for service.version differs by 40.00 percentage points between target (60/100) and control (20/100). This is an association, not proof of cause."
+      }
+    ],
+    "representative_traces": [
+      {
+        "trace_id": "seed-trace-confirming-01",
+        "attribute": "service.version",
+        "value": "v2",
+        "cohort": "target",
+        "relation": "value_present"
+      },
+      {
+        "trace_id": "seed-trace-control-01",
+        "attribute": "service.version",
+        "value": "v2",
+        "cohort": "control",
+        "relation": "value_present"
+      }
+    ]
   },
-  "follow_ups": ["Inspect a confirming and contradicting trace before recommending action."]
+  "follow_ups": [
+    "Inspect confirming and contradicting traces before recommending action."
+  ]
 }

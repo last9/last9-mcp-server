@@ -18,6 +18,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+func deviationFloat64(value float64) *float64 { return &value }
+
 func TestBuildDeviationAPIRequestUsesSameWindowForErrors(t *testing.T) {
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
 	request, err := buildDeviationAPIRequest(GetTraceAttributeDeviationsArgs{
@@ -51,8 +53,50 @@ func TestBuildDeviationAPIRequestValidatesTimeAndLatencyModes(t *testing.T) {
 		t.Fatalf("expected equal-duration error, got %v", err)
 	}
 	latencyArgs := GetTraceAttributeDeviationsArgs{ComparisonMode: "latency", ServiceName: "checkout", Environment: "production"}
-	if _, err := buildDeviationAPIRequest(latencyArgs, time.Now()); err == nil || !strings.Contains(err.Error(), "latency_threshold_ms") {
-		t.Fatalf("expected latency threshold error, got %v", err)
+	if _, err := buildDeviationAPIRequest(latencyArgs, time.Now()); err == nil || !strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("expected latency selector error, got %v", err)
+	}
+}
+
+func TestBuildDeviationAPIRequestSupportsPercentileAndPopulation(t *testing.T) {
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	request, err := buildDeviationAPIRequest(GetTraceAttributeDeviationsArgs{
+		ComparisonMode: "latency", ServiceName: "checkout", Environment: "production",
+		Operation: "POST /checkout", LatencyPercentile: deviationFloat64(95),
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.Scope.Population != "operation" || request.Comparison.LatencyPercentile == nil || *request.Comparison.LatencyPercentile != 95 {
+		t.Fatalf("unexpected request: %+v", request)
+	}
+	if request.Comparison.LatencyThresholdMs != nil {
+		t.Fatalf("percentile selector must omit threshold: %+v", request.Comparison)
+	}
+
+	invalid := []GetTraceAttributeDeviationsArgs{
+		{ComparisonMode: "latency", ServiceName: "checkout", Environment: "production", LatencyThresholdMs: deviationFloat64(500), LatencyPercentile: deviationFloat64(95)},
+		{ComparisonMode: "latency", ServiceName: "checkout", Environment: "production", LatencyPercentile: deviationFloat64(100)},
+		{ComparisonMode: "errors", ServiceName: "checkout", Environment: "production", LatencyPercentile: deviationFloat64(95)},
+		{ComparisonMode: "errors", ServiceName: "checkout", Environment: "production", LatencyThresholdMs: deviationFloat64(0)},
+		{ComparisonMode: "errors", ServiceName: "checkout", Environment: "production", Population: "operation"},
+		{ComparisonMode: "errors", ServiceName: "checkout", Environment: "production", Population: "service", Operation: "POST /checkout"},
+	}
+	for i, args := range invalid {
+		if _, err := buildDeviationAPIRequest(args, now); err == nil {
+			t.Fatalf("invalid selector/scope case %d was accepted: %+v", i, args)
+		}
+	}
+
+	legacy, err := buildDeviationAPIRequest(GetTraceAttributeDeviationsArgs{
+		ComparisonMode: "latency", ServiceName: "checkout", Environment: "production",
+		LatencyThresholdMs: deviationFloat64(500),
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.Comparison.LatencyThresholdMs == nil || *legacy.Comparison.LatencyThresholdMs != 500 || legacy.Comparison.LatencyPercentile != nil {
+		t.Fatalf("legacy threshold selector changed: %+v", legacy.Comparison)
 	}
 }
 
@@ -72,7 +116,7 @@ func TestTraceAttributeDeviationsHandlerCallsAtomicEndpoint(t *testing.T) {
 			t.Fatalf("unexpected payload: %+v", request)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"contract_version":"investigation-evidence/v1","analysis_version":"trace-attribute-deviations/v1"}`))
+		w.Write(deviationEndpointFixture(t))
 	}))
 	defer server.Close()
 	handler := NewGetTraceAttributeDeviationsHandler(server.Client(), tracesTestConfig(server.URL))
@@ -83,7 +127,7 @@ func TestTraceAttributeDeviationsHandlerCallsAtomicEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	text, ok := result.Content[0].(*mcp.TextContent)
-	if !ok || !strings.Contains(text.Text, `"analysis_version":"trace-attribute-deviations/v1"`) {
+	if !ok || !strings.Contains(text.Text, attributeDeviationsVersion) {
 		t.Fatalf("unexpected MCP result: %+v", result.Content)
 	}
 }
@@ -102,7 +146,7 @@ func TestTraceAttributeDeviationsHandler_SplitsFoldedFiltersOnTheWire(t *testing
 			t.Fatal(err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"contract_version":"investigation-evidence/v1","analysis_version":"trace-attribute-deviations/v1"}`))
+		w.Write(deviationEndpointFixture(t))
 	}))
 	defer server.Close()
 	handler := NewGetTraceAttributeDeviationsHandler(server.Client(), tracesTestConfig(server.URL))
@@ -110,7 +154,7 @@ func TestTraceAttributeDeviationsHandler_SplitsFoldedFiltersOnTheWire(t *testing
 		ComparisonMode:     "latency",
 		ServiceName:        "checkout",
 		Environment:        "prod",
-		LatencyThresholdMs: 100,
+		LatencyThresholdMs: deviationFloat64(100),
 		Filters: []map[string]interface{}{
 			{
 				"$notnull": []interface{}{"SpanName"},
@@ -157,7 +201,7 @@ func TestTraceAttributeDeviationsHandler_ForwardsBareFiltersUnchanged(t *testing
 			t.Fatal(err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"contract_version":"investigation-evidence/v1","analysis_version":"trace-attribute-deviations/v1"}`))
+		w.Write(deviationEndpointFixture(t))
 	}))
 	defer server.Close()
 	handler := NewGetTraceAttributeDeviationsHandler(server.Client(), tracesTestConfig(server.URL))
@@ -165,7 +209,7 @@ func TestTraceAttributeDeviationsHandler_ForwardsBareFiltersUnchanged(t *testing
 		ComparisonMode:     "latency",
 		ServiceName:        "checkout",
 		Environment:        "prod",
-		LatencyThresholdMs: 100,
+		LatencyThresholdMs: deviationFloat64(100),
 		Filters: []map[string]interface{}{
 			{"$neq": []interface{}{"SpanName", ""}},
 			{"$eq": []interface{}{"SpanKind", "SPAN_KIND_SERVER"}},
@@ -238,7 +282,7 @@ func TestDeviationLimitsApplyDocumentedDefaultsAndBounds(t *testing.T) {
 	want := deviationAPILimits{
 		MinimumCohortSize:    100,
 		MinimumValueSupport:  20,
-		MaximumRankedResults: 10,
+		MaximumRankedResults: 5,
 	}
 	if request.Limits != want {
 		t.Fatalf("limits=%+v, want %+v", request.Limits, want)
@@ -254,6 +298,16 @@ func TestDeviationLimitsApplyDocumentedDefaultsAndBounds(t *testing.T) {
 	if explicit.Limits.MinimumCohortSize != 50 ||
 		explicit.Limits.MinimumValueSupport != 15 || explicit.Limits.MaximumRankedResults != 5 {
 		t.Fatalf("limits=%+v", explicit.Limits)
+	}
+
+	legacy, err := buildDeviationAPIRequest(GetTraceAttributeDeviationsArgs{
+		ComparisonMode: "errors", ServiceName: "last9-api", Environment: "production", Limit: 10,
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.Limits.MaximumRankedResults != 10 {
+		t.Fatalf("legacy request limit=%d, want 10 so the backend can emit typed truncation metadata", legacy.Limits.MaximumRankedResults)
 	}
 }
 
@@ -442,7 +496,7 @@ func TestDeviationDisallowedFilterFieldsMakeZeroUpstreamRequests(t *testing.T) {
 				ComparisonMode:     "latency",
 				ServiceName:        "checkout",
 				Environment:        "prod",
-				LatencyThresholdMs: 100,
+				LatencyThresholdMs: deviationFloat64(100),
 				Filters: []map[string]interface{}{
 					{
 						"$notnull": []interface{}{"SpanName"},
@@ -472,7 +526,7 @@ func TestDeviationAllowsCohortFilterFields(t *testing.T) {
 			ComparisonMode:     "latency",
 			ServiceName:        "checkout",
 			Environment:        "prod",
-			LatencyThresholdMs: 100,
+			LatencyThresholdMs: deviationFloat64(100),
 			Filters: []map[string]interface{}{
 				{"$neq": []interface{}{field, ""}},
 			},
@@ -485,7 +539,7 @@ func TestDeviationAllowsCohortFilterFields(t *testing.T) {
 		ComparisonMode:     "latency",
 		ServiceName:        "checkout",
 		Environment:        "prod",
-		LatencyThresholdMs: 100,
+		LatencyThresholdMs: deviationFloat64(100),
 		Filters: []map[string]interface{}{
 			{"$eq": []interface{}{"attributes['http.method']", "GET"}},
 		},
@@ -511,7 +565,7 @@ func TestGetTraceAttributeDeviationsHandler_Integration(t *testing.T) {
 		ComparisonMode:     "latency",
 		ServiceName:        "checkout",
 		Environment:        "prod",
-		LatencyThresholdMs: 100,
+		LatencyThresholdMs: deviationFloat64(100),
 		Filters: []map[string]interface{}{
 			{
 				"$notnull": []interface{}{"SpanName"},

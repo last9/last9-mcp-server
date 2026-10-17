@@ -62,7 +62,7 @@ func TestGetTraceAttributeDeviations_ValidatesFilterTraceIDs(t *testing.T) {
 		ComparisonMode:     "latency",
 		ServiceName:        "checkout",
 		Environment:        "prod",
-		LatencyThresholdMs: 100,
+		LatencyThresholdMs: deviationFloat64(100),
 		Filters: []map[string]interface{}{
 			{"$eq": []interface{}{"TraceId", testSpanIDAsTraceID}},
 		},
@@ -82,7 +82,7 @@ func TestGetTraceAttributeDeviations_RejectsFilterTraceIDs(t *testing.T) {
 		ComparisonMode:     "latency",
 		ServiceName:        "checkout",
 		Environment:        "prod",
-		LatencyThresholdMs: 100,
+		LatencyThresholdMs: deviationFloat64(100),
 		Filters: []map[string]interface{}{
 			{"$eq": []interface{}{"TraceId", strings.ToUpper(testValidTraceID)}},
 		},
