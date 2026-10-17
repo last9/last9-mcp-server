@@ -50,6 +50,7 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, allowed too
 	if !allowed.Allows(tool.Name) {
 		return nil
 	}
+	tool.Description = prompts.BuildEnhancedDescription(tool.Description, nil)
 	// Serve the annotation title as the tool's title too, so clients that read
 	// either field show the same name.
 	if tool.Title == "" && tool.Annotations != nil {
