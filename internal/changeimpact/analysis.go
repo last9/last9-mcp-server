@@ -526,8 +526,9 @@ func matchService(rule alerting.AlertRuleData, inst alerting.AlertInstance, scop
 	return "", false
 }
 
-// matchEnv rejects an instance whose env label names another environment. One
-// without any env label is kept but marked unlabelled, not claimed as a match.
+// matchEnv rejects an instance whose env label names another environment,
+// ignoring case as matchService does. One without any env label is kept but
+// marked unlabelled, not claimed as a match.
 func matchEnv(inst alerting.AlertInstance, env string) (string, bool) {
 	if env == "" {
 		return "", true
@@ -538,7 +539,7 @@ func matchEnv(inst alerting.AlertInstance, env string) (string, bool) {
 		if !ok {
 			continue
 		}
-		if fmt.Sprint(v) != env {
+		if !strings.EqualFold(fmt.Sprint(v), env) {
 			return "", false
 		}
 		labelled = true
