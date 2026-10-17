@@ -542,8 +542,11 @@ func TestDumpToolsAnalyzeChangeImpactToolsets(t *testing.T) {
 		if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
 			t.Fatal(err)
 		}
-		served := false
+		served, servesChangeEvents := false, false
 		for _, tool := range out.Tools {
+			if tool.Name == "get_change_events" {
+				servesChangeEvents = true
+			}
 			if tool.Name != "analyze_change_impact" {
 				continue
 			}
@@ -554,6 +557,10 @@ func TestDumpToolsAnalyzeChangeImpactToolsets(t *testing.T) {
 		}
 		if served != want {
 			t.Errorf("%s toolset serves analyze_change_impact = %v, want %v", spec, served, want)
+		}
+		// Its documented input is a get_change_events element.
+		if served && !servesChangeEvents {
+			t.Errorf("%s toolset serves analyze_change_impact without get_change_events", spec)
 		}
 	}
 }
