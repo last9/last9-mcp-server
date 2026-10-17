@@ -1,8 +1,7 @@
 Audit alert rules for hygiene problems over the last 7 or 30 days and suggest a fix for each.
 
-Read-only: this tool never changes anything. Present the suggested fixes to the user and apply
-one only after the user explicitly confirms it, using the alert rule write tools or the Last9
-alerting UI.
+Read-only: this tool never changes anything. Present the suggested fixes to the user; a fix is
+applied in the Last9 alerting UI, and only once the user explicitly confirms it.
 
 Parameters:
 - window: `7d` or `30d` (default `7d`).

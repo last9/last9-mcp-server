@@ -700,7 +700,7 @@ Returns a JSON map of `rule_id -> [{timestamp, is_firing}]`. A timestamp at whic
 
 ### get_alert_hygiene
 
-Read-only audit of enabled alert rules. It never changes anything: apply a suggested fix only after the user explicitly confirms it, using the alert rule write tools or the Last9 alerting UI.
+Read-only audit of enabled alert rules. It never changes anything: a suggested fix is applied in the Last9 alerting UI, and only once the user explicitly confirms it.
 
 - `window` (string, optional): `7d` or `30d`. Default: `7d`.
 - `limit` (integer, optional): Maximum flagged rules to return, worst first. Default: 20. Range: 1–100.
