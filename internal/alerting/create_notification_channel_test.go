@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"math/big"
 	"net/http"
@@ -123,6 +124,10 @@ func TestCreateNotificationChannelErrorsNeverLeakSecrets(t *testing.T) {
 func TestCreateNotificationChannelRelaysAPIRejectionReason(t *testing.T) {
 	long := strings.Repeat("x", 400)
 	email := CreateNotificationChannelArgs{Name: "n", Type: "email", Destination: "someone@gmail.com"}
+	cert := testCACertPEM(t)
+	certFragment := strings.Split(cert, "\n")[1][10:42]
+	certHead, _ := json.Marshal(strings.Join(strings.Split(cert, "\n")[:2], "\n"))
+	withCert := CreateNotificationChannelArgs{Name: "n", Type: "generic_webhook", Destination: "https://h.example", WebhookCACertificate: cert}
 	const rejected = "the API rejected the channel: "
 	for name, tt := range map[string]struct {
 		status int
@@ -142,6 +147,10 @@ func TestCreateNotificationChannelRelaysAPIRejectionReason(t *testing.T) {
 		"echoed header value is redacted": {400, `{"error":"header rejected: ` + channelSecret + `"}`,
 			CreateNotificationChannelArgs{Name: "n", Type: "generic_webhook", Destination: "https://h.example", WebhookHeaders: map[string]string{"X-Key": channelSecret}},
 			rejected + "header rejected: [redacted]"},
+		"echoed CA certificate head is redacted": {400, `{"error":"certificate rejected: ` + string(certHead[1:len(certHead)-1]) + `"}`, withCert,
+			rejected + "certificate rejected: [redacted] [redacted]\n[redacted]"},
+		"echoed CA certificate fragment is redacted": {400, `{"error":"invalid ca: ` + certFragment + `"}`, withCert,
+			rejected + "invalid ca: [redacted]"},
 		"malformed body falls back": {400, `cannot use personal email`, email, "the API rejected the channel (HTTP 400); re-check"},
 		"empty error falls back":    {400, `{"error":"  "}`, email, "the API rejected the channel (HTTP 400); re-check"},
 		"no error field falls back": {422, `{"message":"nope"}`, email, "the API rejected the channel (HTTP 422); re-check"},

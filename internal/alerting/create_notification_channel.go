@@ -85,7 +85,7 @@ func channelSecrets(args CreateNotificationChannelArgs) []string {
 	for _, v := range args.WebhookHeaders {
 		secrets = append(secrets, strings.TrimSpace(v))
 	}
-	return secrets
+	return append(secrets, strings.TrimSpace(args.WebhookCACertificate))
 }
 
 func validateCreateNotificationChannel(args CreateNotificationChannelArgs) string {

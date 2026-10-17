@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"last9-mcp/internal/deeplink"
@@ -15,6 +16,8 @@ import (
 )
 
 const maxChannelRejectionReasonRunes = 300
+
+var secretFragmentPattern = regexp.MustCompile(`[A-Za-z0-9+/=_-]{8,}`)
 
 // Upstream bodies are never relayed: channel requests carry secrets that a rejection can echo.
 // channelRejectionResult is the one exception, for the API's own 400/422 reason.
@@ -43,13 +46,7 @@ func channelRejectionResult(err error, secrets []string) (res *mcp.CallToolResul
 	if json.Unmarshal([]byte(upstream.Body), &body) != nil {
 		return nil, false
 	}
-	reason := body.Error
-	for _, secret := range secrets {
-		if secret != "" {
-			reason = strings.ReplaceAll(reason, secret, "[redacted]")
-		}
-	}
-	reason = strings.TrimSpace(reason)
+	reason := strings.TrimSpace(redactSecrets(body.Error, secrets))
 	if reason == "" {
 		return nil, false
 	}
@@ -57,6 +54,26 @@ func channelRejectionResult(err error, secrets []string) (res *mcp.CallToolResul
 		reason = string(r[:maxChannelRejectionReasonRunes]) + "…"
 	}
 	return utils.ToolErrorResult("the API rejected the channel: " + reason), true
+}
+
+// A rejection can echo part of a secret, such as one line of a PEM certificate, so
+// besides whole secrets every long token found inside a secret is redacted too.
+func redactSecrets(text string, secrets []string) string {
+	compact := make([]string, 0, len(secrets))
+	for _, secret := range secrets {
+		if secret != "" {
+			text = strings.ReplaceAll(text, secret, "[redacted]")
+			compact = append(compact, strings.Join(strings.Fields(secret), ""))
+		}
+	}
+	return secretFragmentPattern.ReplaceAllStringFunc(text, func(token string) string {
+		for _, secret := range compact {
+			if strings.Contains(secret, token) {
+				return "[redacted]"
+			}
+		}
+		return token
+	})
 }
 
 func notificationChannelJSONResult(cfg models.Config, v any) (*mcp.CallToolResult, any, error) {
