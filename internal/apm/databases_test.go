@@ -140,6 +140,8 @@ func TestGetDatabaseQueries_EnvRegexQuoting(t *testing.T) {
 		{name: "plain env", env: "prod", wantMatch: "prod", wantReject: "staging"},
 		{name: "dotted env", env: "prod.v1", wantMatch: "prod.v1", wantReject: "prodXv1"},
 		{name: "bracketed env", env: "prod[blue]", wantMatch: "prod[blue]", wantReject: "prodb"},
+		{name: "anchored env", env: "^production$", wantMatch: "production", wantReject: "production-eu"},
+		{name: "anchored group env", env: "^(?:production)$", wantMatch: "production", wantReject: "production-eu"},
 	}
 
 	for _, tt := range tests {
@@ -205,6 +207,31 @@ func TestGetDatabaseQueries_EnvRegexQuoting(t *testing.T) {
 			}
 			if !found {
 				t.Fatal("expected at least one query with an env matcher to be captured")
+			}
+		})
+	}
+}
+
+func TestGetDatabaseQueries_RejectsRegexEnv(t *testing.T) {
+	for _, env := range []string{"prod|staging", "prod.*", ".+x"} {
+		t.Run(env, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				t.Errorf("no query may be issued for rejected env %q", env)
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("[]"))
+			}))
+			defer server.Close()
+
+			now := time.Now().UTC()
+			handler := NewGetDatabaseQueriesHandler(server.Client(), testDBConfig(server.URL))
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabaseQueriesArgs{
+				DBSystem:     "redis",
+				Env:          env,
+				StartTimeISO: now.Add(-60 * time.Minute).Format(time.RFC3339),
+				EndTimeISO:   now.Format(time.RFC3339),
+			})
+			if err == nil || !strings.Contains(err.Error(), "looks like a regular expression") {
+				t.Fatalf("expected regex-env error, got %v", err)
 			}
 		})
 	}
