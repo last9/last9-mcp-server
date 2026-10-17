@@ -470,6 +470,17 @@ func TestCreateAlertFromChartDescriptionStatesThresholdFloor(t *testing.T) {
 	}
 }
 
+// Write tools return their UI link in _meta, which many clients do not show the model.
+func TestDescriptionsSayWhereTheLinkIs(t *testing.T) {
+	for file, desc := range promptDescriptionFiles {
+		for _, promise := range []string{"a link to Alerting", "a link to notification channels"} {
+			if strings.Contains(desc, promise) && !strings.Contains(desc, promise+" in the result's _meta.reference_url") {
+				t.Errorf("%s promises %q without saying it is in _meta.reference_url", file, promise)
+			}
+		}
+	}
+}
+
 func TestCreateAlertDescriptionStatesDuplicateNameRefusal(t *testing.T) {
 	if !strings.Contains(prompts.CreateAlertDescription, "already uses (case-insensitive) is refused") {
 		t.Error("create_alert does not say a duplicate rule_name is refused")

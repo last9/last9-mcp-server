@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The alert write-tool descriptions that promise "a link to Alerting" or "to notification channels" now say the link is in the result's `_meta.reference_url`; it was never in the result text, so agents reading only the text found none (#190).
 - The `create_alert_from_chart` description and `threshold` schema now say the threshold must be 0 or more; the tool already rejected a negative value with `threshold must be a non-negative number`, but nothing told the agent beforehand (#190).
 - The `get_notification_channels` description now says that `send_resolved` on attachment rows (the default `attached` scope) is the row's stored default, not what delivery uses: resolve notifications follow the channel's own value, shown by `scope=channels`. A channel created with `send_resolved:false` listed `true` on its attachments (#190).
 - The `create_notification_channel` description no longer claims email destinations are limited to the org's own domain: the API accepts work addresses on any domain, rejects personal-provider addresses (for example Gmail), and accepts only the admin's address for orgs on a personal login (#190).
