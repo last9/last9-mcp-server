@@ -4,11 +4,11 @@
 ```json
 [{"type":"filter","query":{"$and":[{"$eq":["StatusCode","STATUS_CODE_ERROR"]}]}}]
 ```
-`query` uses `$and`/`$or` of operator:[field,value] pairs; values are strings. Always `$and`-wrap; no SQL/tags.
+`query` uses `$and`/`$or` of operator:[field,value] pairs; values are strings. Always `$and`-wrap.
 
 **Pattern:** wildcards like `checkout.*` → `$regex`. Trace ID substring → `$contains` on `TraceId`; exact ID → `get_service_traces`.
 
-**Existence:** `{"$neq":["attributes['key']",""]}`; never `$exists`/`$notnull`.
+**Existence:** `{"$neq":["attributes['key']",""]}`; never `$exists`.
 
 **Scope:** `service.name`→`ServiceName`; tenant→`resources['last9.tenant']`; env→`resources['deployment.environment']`.
 
@@ -16,13 +16,13 @@
 
 **Fields:** OTel enums: `SPAN_KIND_SERVER`, `STATUS_CODE_ERROR`; Duration is ns. Use `attributes['key']`/`resources['key']`, not `SpanAttributes.foo`.
 
-**Aggregate:** use `aggregates`+`groupby`. Average by span: `{"type":"aggregate","aggregates":[{"function":{"$avg":["Duration"]},"as":"avg"}],"groupby":{"SpanName":"span"}}`. `$quantile` is the general/default percentile operator. Compute from raw spans; never average percentile samples. `Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first.
+**Aggregate:** use `aggregates`+`groupby`. `$quantile` is the general/default percentile operator. Compute from raw spans; never average percentile samples. `Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first. Lookback / overall percentiles use `aggregate` with `$quantile` (not `window_aggregate`): `{"type":"aggregate","aggregates":[{"function":{"$quantile":[0.99,"Duration"]},"as":"p99"}],"groupby":{"SpanName":"span"}}`.
 
-**window_aggregate:** `{"type":"window_aggregate","function":{"$quantile":[0.99,"Duration"]},"as":"p99","window":["24","hours"],"groupby":{"SpanName":"endpoint"}}`.
+**window_aggregate:** rates/over-time only: `{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"],"groupby":{"SpanName":"endpoint"}}`.
 
 For calendar buckets, use explicit ISO bounds and time zone. P99 `Duration` output remains nanoseconds.
 
-**Order:** filter first (match-all TraceId/SpanId before aggregate). Show/find → filter only; analysis → aggregate/window_aggregate.
+**Order:** filter first (before aggregate). Find → filter; analysis → aggregate/window_aggregate.
 
 **Aggregate example:** `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`.
 

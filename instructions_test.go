@@ -237,3 +237,98 @@ func TestServerInstructionsWriteSectionNamesOnlyWriteTools(t *testing.T) {
 		}
 	}
 }
+
+// sectionBody returns the text under "## heading" until the next "## " line.
+func sectionBody(instructions, heading string) string {
+	marker := "## " + heading
+	_, rest, ok := strings.Cut(instructions, marker)
+	if !ok {
+		return ""
+	}
+	if i := strings.Index(rest, "\n## "); i >= 0 {
+		rest = rest[:i]
+	}
+	return rest
+}
+
+func TestServerInstructionsPlaceServiceProfileWithDedicatedTools(t *testing.T) {
+	instructions, _ := initializeOver(t, "")
+	discover := sectionBody(instructions, "Discover before you query")
+	dedicated := sectionBody(instructions, "Prefer dedicated tools")
+	if strings.Contains(discover, "`get_service_profile`") {
+		t.Errorf("get_service_profile must not sit under discovery; it is the per-service pre-investigation tool:\n%s", discover)
+	}
+	if !strings.Contains(discover, "`get_profile_services`") {
+		t.Errorf("get_profile_services must remain the discovery lister:\n%s", discover)
+	}
+	if !strings.Contains(dedicated, "`get_service_profile`") {
+		t.Errorf("get_service_profile must appear under Prefer dedicated tools:\n%s", dedicated)
+	}
+}
+
+func TestServerInstructionsDropRuleWording(t *testing.T) {
+	instructions, _ := initializeOver(t, "alerts")
+	writes := sectionBody(instructions, "Write tools")
+	if writes == "" {
+		t.Fatalf("alerts toolset missing Write tools:\n%s", instructions)
+	}
+	if strings.Contains(writes, "overwrite or remove") {
+		t.Errorf("add_drop_rule must not be described as overwriting or removing data:\n%s", writes)
+	}
+	if !strings.Contains(writes, "future logs") {
+		t.Errorf("add_drop_rule must say it drops future logs:\n%s", writes)
+	}
+	if strings.Contains(writes, "`add_drop_rule` overwrite") {
+		t.Errorf("single-tool write lines must not use bare 'overwrite' after the tool name:\n%s", writes)
+	}
+}
+
+func TestServerInstructionsLogsPromQLWithoutLabelDiscovery(t *testing.T) {
+	instructions, _ := initializeOver(t, "logs")
+	if !strings.Contains(instructions, "`prometheus_instant_query`") {
+		t.Fatalf("logs toolset must still name prometheus_instant_query:\n%s", instructions)
+	}
+	if strings.Contains(instructions, "`prometheus_labels`") || strings.Contains(instructions, "`prometheus_label_values`") {
+		t.Fatalf("logs toolset must not claim label discovery tools it does not serve:\n%s", instructions)
+	}
+	raw := sectionBody(instructions, "Raw queries are the last resort")
+	if !strings.Contains(raw, "without metric/label discovery") {
+		t.Errorf("logs raw section must note PromQL is served without label discovery:\n%s", raw)
+	}
+}
+
+func TestServerInstructionsManualsAreLookups(t *testing.T) {
+	instructions, _ := initializeOver(t, "")
+	manuals := sectionBody(instructions, "Reference manuals")
+	if manuals == "" {
+		t.Fatalf("missing Reference manuals:\n%s", instructions)
+	}
+	if strings.Contains(manuals, "before writing a non-trivial query") {
+		t.Errorf("manuals must be a lookup, not a push into advanced stages:\n%s", manuals)
+	}
+	if !strings.Contains(manuals, "Look up these resources when unsure") {
+		t.Errorf("manuals should invite lookup when unsure:\n%s", manuals)
+	}
+}
+
+func TestServerInstructionsTracePercentileStageChoice(t *testing.T) {
+	instructions, _ := initializeOver(t, "traces")
+	if !strings.Contains(instructions, "`aggregate`") {
+		t.Errorf("traces instructions must name aggregate for overall percentiles:\n%s", instructions)
+	}
+	if !strings.Contains(instructions, "window_aggregate") {
+		t.Errorf("traces instructions must contrast window_aggregate for rates/over time:\n%s", instructions)
+	}
+}
+
+// Nil toolsets.Set allows every name, so tools "create_alert" would leak into
+// instructions before that tool is registered. Keep this until #190 lands.
+func TestServerInstructionsOmitUnregisteredCreateAlert(t *testing.T) {
+	instructions, served := initializeOver(t, "")
+	if served["create_alert"] {
+		t.Fatal("create_alert is registered; add the disabled-draft write line to server_instructions.md")
+	}
+	if strings.Contains(instructions, "`create_alert`") {
+		t.Errorf("instructions name create_alert before it is registered:\n%s", instructions)
+	}
+}
