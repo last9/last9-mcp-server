@@ -449,6 +449,10 @@ func TestToolsetServersBuildEveryRequestableSetOnce(t *testing.T) {
 			t.Errorf("built %q %d times, want 1", key, n)
 		}
 	}
+	// The cache's bound: one entry per set a request can name, never more.
+	if len(c.cached) != len(sets) {
+		t.Fatalf("cache holds %d servers for %d requestable sets", len(c.cached), len(sets))
+	}
 }
 
 func TestHTTPToolsetsRestatingStartupReusesIt(t *testing.T) {
