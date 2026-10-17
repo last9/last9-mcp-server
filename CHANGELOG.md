@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `create_alert` and `update_alert` now name the missing field (`alert_rule.condition`, `alert_rule.alert_condition` or `alert_rule.eval_window`) when the API rejects a static rule without it, instead of relaying the raw `HTTP 400 … {"error":"condition required"}` (#190).
 - `reassign_alert` with an `owner_email` that matches no active user now first checks the alert, so ids that match no alert report `no alert with this alert_group_id, rule_id and rule_type fired in the last hour` instead of `no active user with that email` (#190).
 - The alert write-tool descriptions that promise "a link to Alerting" or "to notification channels" now say the link is in the result's `_meta.reference_url`; it was never in the result text, so agents reading only the text found none (#190).
 - The `create_alert_from_chart` description and `threshold` schema now say the threshold must be 0 or more; the tool already rejected a negative value with `threshold must be a non-negative number`, but nothing told the agent beforehand (#190).
