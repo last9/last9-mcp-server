@@ -299,6 +299,7 @@ func TestQueryToolDescriptionsNameEnvelopeFields(t *testing.T) {
 		"get_logs":               prompts.GetLogsDescription,
 		"get_traces":             prompts.GetTracesDescription,
 		"get_service_logs":       prompts.GetServiceLogsDescription,
+		"get_service_traces":     prompts.GetServiceTracesDescription,
 		"prometheus_range_query": prompts.PromqlRangeQueryDetails,
 	} {
 		if !strings.Contains(desc, envelope) {
