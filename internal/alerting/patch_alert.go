@@ -64,7 +64,11 @@ func NewPatchAlertHandler(client *http.Client, cfg models.Config) func(context.C
 			}
 			body.RecurringMuteSchedule = raw
 		}
-		err := entities.PatchAlertRule(ctx, last9api.NewClient(client, cfg), entities.AlertRuleInput{
+		api := last9api.NewClient(client, cfg)
+		if refusal, err := requireRuleInGroup(ctx, api, args.EntityID, args.ID); refusal != nil || err != nil {
+			return refusal, nil, err
+		}
+		err := entities.PatchAlertRule(ctx, api, entities.AlertRuleInput{
 			EntityID: args.EntityID,
 			RuleID:   args.ID,
 			Body:     body,

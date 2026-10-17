@@ -47,6 +47,7 @@ func TestValidateCreateNotificationChannel(t *testing.T) {
 		"ok opsgenie":           {CreateNotificationChannelArgs{Name: "n", Type: "opsgenie", Destination: channelSecret}, ""},
 		"ok email":              {CreateNotificationChannelArgs{Name: "n", Type: "email", Destination: "a@x.io, b@x.io"}, ""},
 		"ok webhook with cert":  {CreateNotificationChannelArgs{Name: "n", Type: "generic_webhook", Destination: "https://h.example", WebhookCACertificate: cert, WebhookHeaders: map[string]string{"Authorization": channelSecret}}, ""},
+		"webhook plain http":    {CreateNotificationChannelArgs{Name: "n", Type: "generic_webhook", Destination: "http://example.invalid/hook"}, "HTTPS"},
 		"ok mentions":           {CreateNotificationChannelArgs{Name: "n", Type: "slack", Destination: hook, MentionHandles: "alice, user|U123|bob,usergroup|S1|g,special|here"}, ""},
 		"empty name":            {CreateNotificationChannelArgs{Name: "", Type: "slack", Destination: hook}, "name is required"},
 		"colon in name":         {CreateNotificationChannelArgs{Name: "a:b", Type: "slack", Destination: hook}, "name is required"},
@@ -98,6 +99,27 @@ func TestCreateNotificationChannelValidationSendsNothing(t *testing.T) {
 	assertNoSecret(t, text, err)
 	if err != nil || !isErr || len(s.calls) != 0 {
 		t.Fatalf("text=%s isErr=%v err=%v calls=%d", text, isErr, err, len(s.calls))
+	}
+}
+
+// The API's email-destination rejections are fixed strings that echo no input, so the tool
+// can name the cause without relaying the body.
+func TestCreateNotificationChannelNamesEmailRejection(t *testing.T) {
+	for upstream, want := range map[string]string{
+		"cannot use personal email for channel destination":  "personal-provider",
+		"cannot use non-admin email for channel destination": "only the org admin's address",
+		"invalid email":                        "is not a valid email address",
+		"no admin user found for organization": "HTTP 400",
+		"cannot use personal email for channel destination " + channelSecret: "HTTP 400",
+	} {
+		s := newChannelServer(t, func(*http.Request) (int, string) {
+			return 400, `{"error":"` + upstream + `"}`
+		})
+		text, isErr, err := runCreateChannel(s, CreateNotificationChannelArgs{Name: "n", Type: "email", Destination: "a@gmail.com"})
+		assertNoSecret(t, text, err)
+		if err != nil || !isErr || !strings.Contains(text, want) || strings.Contains(text, "a@gmail.com") {
+			t.Errorf("%q: text=%q isErr=%v err=%v", upstream, text, isErr, err)
+		}
 	}
 }
 

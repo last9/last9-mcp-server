@@ -2,12 +2,16 @@ package alerting
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"last9-mcp/internal/deeplink"
+	"last9-mcp/internal/last9api"
+	"last9-mcp/internal/last9api/entities"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -38,7 +42,7 @@ type AlertProperties struct {
 
 type AlertRulePayload struct {
 	PrimaryIndicator             string                        `json:"primary_indicator" jsonschema:"(Required) Primary KPI name; must be a key in expression_args"`
-	ExpressionArgs               map[string]AlertExpressionArg `json:"expression_args" jsonschema:"(Required) Indicator name to KPI binding; all KPIs must belong to entity_id"`
+	ExpressionArgs               map[string]AlertExpressionArg `json:"expression_args" jsonschema:"(Required) KPI name to KPI binding; each key must be the bound KPI's exact name (not a placeholder such as x), and all KPIs must belong to entity_id"`
 	Expression                   *string                       `json:"expression,omitempty" jsonschema:"Rule expression. Plain arithmetic over indicators (static) or adaptive_std_cmp(<primary_indicator>, sensitivity, window) (adaptive); clients cannot set algorithm directly."`
 	Condition                    *string                       `json:"condition,omitempty" jsonschema:"Required for static rules; boolean expression over expr, for example expr > 100"`
 	AlertCondition               *string                       `json:"alert_condition,omitempty" jsonschema:"Required for static rules; firing window expression, for example count_true(result) >= 3"`
@@ -89,6 +93,28 @@ func validateAlertRulePayload(rule AlertRulePayload) error {
 	return nil
 }
 
+// requireRuleInGroup returns a tool error unless ruleID exists and belongs to groupID.
+// The API acts on the rule id alone, so without this a mismatched id pair would write to
+// (or claim) a rule in another alert group.
+func requireRuleInGroup(ctx context.Context, api *last9api.Client, groupID, ruleID string) (*mcp.CallToolResult, error) {
+	rule, err := entities.GetAlertRule(ctx, api, entities.AlertRuleInput{EntityID: groupID, RuleID: ruleID})
+	if err != nil {
+		var apiErr *utils.UpstreamHTTPError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			return utils.ToolErrorResult(fmt.Sprintf("no alert rule %s exists (it may have been deleted or replaced by update_alert); nothing was changed. Look up current rule ids with get_alert_config", ruleID)), nil
+		}
+		return nil, withUpstreamBody(err)
+	}
+	owner := strings.TrimSpace(rule.EntityID)
+	if owner == "" {
+		return utils.ToolErrorResult(fmt.Sprintf("could not confirm which alert group owns rule %s; nothing was changed", ruleID)), nil
+	}
+	if !strings.EqualFold(owner, strings.TrimSpace(groupID)) {
+		return utils.ToolErrorResult(fmt.Sprintf("alert rule %s belongs to alert group %s, not %s; nothing was changed. Re-check both ids with get_alert_config", ruleID, owner, groupID)), nil
+	}
+	return nil, nil
+}
+
 func validateMutationIDResponse(body []byte) error {
 	var response struct {
 		ID string `json:"id"`
@@ -114,11 +140,46 @@ func alertMutationResult(cfg models.Config, body []byte, fallback string) *mcp.C
 	return &mcp.CallToolResult{Meta: deeplink.ToMeta(link), Content: []mcp.Content{&mcp.TextContent{Text: text}}}
 }
 
+// staticRuleRequiredFields maps the API's errors for a static rule missing a field to that
+// field. The API decides whether a rule is static, so the tool maps its answer rather than
+// re-deriving the algorithm from the expression.
+var staticRuleRequiredFields = map[string]string{
+	"condition required":       "alert_rule.condition",
+	"alert condition required": "alert_rule.alert_condition",
+	"eval window required":     "alert_rule.eval_window",
+}
+
+// alertRuleWriteError turns create/update failures into results. The API answers a key that
+// is not the bound KPI's own name and a KPI of another group with the same bare
+// "Invalid expression_args", so the hint names both and how to tell them apart.
+func alertRuleWriteError(err error) (*mcp.CallToolResult, any, error) {
+	var apiErr *utils.UpstreamHTTPError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusBadRequest {
+		return nil, nil, withUpstreamBody(err)
+	}
+	if strings.Contains(apiErr.Body, "Invalid expression_args") {
+		return utils.ToolErrorResult("the API rejected expression_args; nothing was saved. Either a KPI id is not a KPI of entity_id, or a key is not the exact name of the KPI it binds (not a placeholder such as x). To tell which, run validate_alert_expression with the same bindings: \"invalid indicator details for <name>\" means that KPI belongs to another alert group. Otherwise use each KPI's exact name (existing rules show them under Indicators in get_entity_alert_rules) as its key, in primary_indicator and in the expression."), nil, nil
+	}
+	var body struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal([]byte(apiErr.Body), &body) == nil {
+		if field, ok := staticRuleRequiredFields[body.Error]; ok {
+			return utils.ToolErrorResult(field + " is required for a static rule (an expression without adaptive_std_cmp); nothing was saved. Static rules need condition, alert_condition and eval_window."), nil, nil
+		}
+	}
+	return nil, nil, withUpstreamBody(err)
+}
+
 // withUpstreamBody relays a sanitized upstream 4xx body that the error text omits (403/404/409).
 func withUpstreamBody(err error) error {
 	var apiErr *utils.UpstreamHTTPError
 	if errors.As(err, &apiErr) && apiErr.Body != "" && !strings.Contains(err.Error(), apiErr.Body) {
-		return fmt.Errorf("%w. Upstream response: %s", err, apiErr.Body)
+		sep := ". "
+		if strings.HasSuffix(err.Error(), ".") {
+			sep = " "
+		}
+		return fmt.Errorf("%w%sUpstream response: %s", err, sep, apiErr.Body)
 	}
 	return err
 }

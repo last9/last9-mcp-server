@@ -3,7 +3,9 @@ package alerting
 import (
 	"context"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"net/http"
 	"regexp"
 	"strings"
@@ -60,6 +62,9 @@ func NewCreateNotificationChannelHandler(client *http.Client, cfg models.Config)
 		}
 		created, err := notifications.CreateNotificationSetting(ctx, last9api.NewClient(client, cfg), in)
 		if err != nil {
+			if msg := emailDestinationRejection(err); msg != "" {
+				return utils.ToolErrorResult(msg), nil, nil
+			}
 			return notificationChannelErrorResult(err, map[int]string{
 				http.StatusBadRequest:          "the API rejected the channel (HTTP 400); re-check name, type, destination and the optional fields against the tool description",
 				http.StatusUnprocessableEntity: "the API rejected the channel (HTTP 422); re-check name, type, destination and the optional fields against the tool description",
@@ -103,6 +108,28 @@ func validateCreateNotificationChannel(args CreateNotificationChannelArgs) strin
 	return ""
 }
 
+// emailDestinationRejections maps the API's email-destination 400s, fixed strings that echo
+// no input, to the cause. Only exact matches are used, so no other body text is relayed.
+var emailDestinationRejections = map[string]string{
+	"cannot use personal email for channel destination":  "the API rejects personal-provider email addresses (for example Gmail) as a channel destination; use work addresses. Nothing was created",
+	"cannot use non-admin email for channel destination": "this org is on a personal login, so the API accepts only the org admin's address as an email destination. Nothing was created",
+	"invalid email": "an address in destination is not a valid email address according to the API; nothing was created",
+}
+
+func emailDestinationRejection(err error) string {
+	var upstream *utils.UpstreamHTTPError
+	if !errors.As(err, &upstream) || upstream.StatusCode != http.StatusBadRequest {
+		return ""
+	}
+	var body struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal([]byte(upstream.Body), &body) != nil {
+		return ""
+	}
+	return emailDestinationRejections[body.Error]
+}
+
 func validateDestinationForType(args CreateNotificationChannelArgs) string {
 	switch args.Type {
 	case "slack":
@@ -117,6 +144,10 @@ func validateDestinationForType(args CreateNotificationChannelArgs) string {
 			if a := strings.TrimSpace(addr); !strings.Contains(a, "@") || strings.ContainsAny(a, " \t") {
 				return "an email destination must be comma-separated email addresses"
 			}
+		}
+	case "generic_webhook":
+		if !strings.HasPrefix(args.Destination, "https://") {
+			return "a generic_webhook destination must be an HTTPS URL"
 		}
 	}
 	return ""

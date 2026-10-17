@@ -51,6 +51,9 @@ func NewAcknowledgeAlertHandler(client *http.Client, cfg models.Config) func(con
 			}
 			return alertMutationResult(cfg, nil, `{"released":true}`), nil, nil
 		}
+		if refusal, err := requireRecentAlert(ctx, api, alertEpisode{AlertGroupID: args.AlertGroupID, RuleID: args.RuleID, RuleType: args.RuleType}); refusal != nil || err != nil {
+			return refusal, nil, err
+		}
 		claim, err := alerts.ClaimAlertEpisode(ctx, api, alerts.ClaimAlertEpisodeInput{
 			AlertGroupID: args.AlertGroupID, RuleID: args.RuleID, RuleType: args.RuleType, MuteUntil: args.MuteUntil,
 		})

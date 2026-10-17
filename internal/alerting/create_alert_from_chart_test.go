@@ -151,6 +151,7 @@ func TestCreateAlertFromChartLocalValidationRejects(t *testing.T) {
 		}},
 		{"unknown operator", func(a *CreateAlertFromChartArgs) { a.ThresholdOperator = "~" }},
 		{"unknown severity", func(a *CreateAlertFromChartArgs) { a.Severity = "critical" }},
+		{"uncovered surface", func(a *CreateAlertFromChartArgs) { a.Surface = "dashboards" }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

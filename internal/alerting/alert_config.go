@@ -610,6 +610,60 @@ func formatAlertGroupLabels(labels map[string]string) string {
 	return strings.Join(parts, ", ")
 }
 
+// formatAlertRulePatchableFields renders what patch_alert changes besides state, so a patch
+// can be read back; each line is omitted when the field is unset.
+func formatAlertRulePatchableFields(rule AlertRule) string {
+	var out string
+	switch {
+	case rule.MuteUntil < 0:
+		out += "  Mute Until: indefinitely\n"
+	case rule.MuteUntil > 0:
+		out += fmt.Sprintf("  Mute Until: %s\n", time.Unix(rule.MuteUntil, 0).UTC().Format("2006-01-02 15:04:05 UTC"))
+	}
+	if schedule := bytes.TrimSpace(rule.RecurringMuteSchedule); len(schedule) > 0 && string(schedule) != "null" {
+		out += fmt.Sprintf("  Recurring Mute Schedule: %s\n", schedule)
+	}
+	propKeys := make([]string, 0, len(rule.Properties))
+	for k := range rule.Properties {
+		propKeys = append(propKeys, k)
+	}
+	sort.Strings(propKeys)
+	var props string
+	for _, k := range propKeys {
+		if value, ok := formatAlertRuleProperty(rule.Properties[k]); ok {
+			props += fmt.Sprintf("    %s: %s\n", k, value)
+		}
+	}
+	if props != "" {
+		out += "  Properties:\n" + props
+	}
+	return out
+}
+
+// formatAlertRuleProperty renders a property value, nested ones as JSON. ok is false for the
+// null and empty values the API returns for unset properties.
+func formatAlertRuleProperty(v any) (value string, ok bool) {
+	switch v := v.(type) {
+	case nil:
+		return "", false
+	case string:
+		return v, strings.TrimSpace(v) != ""
+	case map[string]any:
+		if len(v) == 0 {
+			return "", false
+		}
+	case []any:
+		if len(v) == 0 {
+			return "", false
+		}
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprintf("%v", v), true
+	}
+	return string(b), true
+}
+
 func formatAlertConfigResponse(
 	alertConfig AlertConfigResponse,
 	entitiesByID map[string]alertGroupEntity,
@@ -713,17 +767,7 @@ func formatAlertConfigResponse(
 			formattedResponse += fmt.Sprintf("  Error Since: %s\n", errorTime)
 		}
 
-		if len(rule.Properties) > 0 {
-			formattedResponse += "  Properties:\n"
-			propKeys := make([]string, 0, len(rule.Properties))
-			for k := range rule.Properties {
-				propKeys = append(propKeys, k)
-			}
-			sort.Strings(propKeys)
-			for _, k := range propKeys {
-				formattedResponse += fmt.Sprintf("    %s: %v\n", k, rule.Properties[k])
-			}
-		}
+		formattedResponse += formatAlertRulePatchableFields(rule)
 
 		createdTime := time.Unix(rule.CreatedAt, 0).UTC().Format("2006-01-02 15:04:05 UTC")
 		updatedTime := time.Unix(rule.UpdatedAt, 0).UTC().Format("2006-01-02 15:04:05 UTC")

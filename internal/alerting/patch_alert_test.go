@@ -82,6 +82,9 @@ func TestPatchAlertRejectsInvalidScheduleBeforeRequest(t *testing.T) {
 
 func TestPatchAlertForbiddenExplainsViewerRole(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveRuleOwner(w, r) {
+			return
+		}
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte(`{"error":"Not allowed for viewer role"}`))
 	}))

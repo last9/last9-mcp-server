@@ -42,7 +42,7 @@ type CreateAlertFromChartArgs struct {
 	Name              string            `json:"name" jsonschema:"(Required) Alert rule name; duplicate names are rejected with a conflict"`
 	Env               string            `json:"env,omitempty" jsonschema:"Environment when the chart distinguishes one, for example prod"`
 	Attributes        map[string]string `json:"attributes,omitempty" jsonschema:"Extra identity dimensions some charts need; use exactly the key names describe_alert_chart reports"`
-	Threshold         *float64          `json:"threshold,omitempty" jsonschema:"Breach threshold in the signal's own unit as reported by describe_alert_chart; omit for the backend default 0.01 (rate/count signals only — score-unit signals like apdex need an explicit threshold)"`
+	Threshold         *float64          `json:"threshold,omitempty" jsonschema:"Breach threshold in the signal's own unit as reported by describe_alert_chart; must be 0 or more; omit for the backend default 0.01 (rate/count signals only — score-unit signals like apdex need an explicit threshold)"`
 	ThresholdOperator string            `json:"threshold_operator,omitempty" jsonschema:"Comparison operator: > < >= <= == or !=; default >"`
 	EvalWindow        *int              `json:"eval_window,omitempty" jsonschema:"Evaluation window in minutes, range 1-60; default 5"`
 	BadMinutes        *int              `json:"bad_minutes,omitempty" jsonschema:"Minutes within eval_window the condition must hold before firing, range 1-eval_window; default 3"`
@@ -59,6 +59,9 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 		surface := strings.TrimSpace(args.Surface)
 		if surface == "" {
 			return utils.ToolErrorResult("surface is required"), nil, nil
+		}
+		if msg := uncoveredSurfaceError(surface); msg != "" {
+			return utils.ToolErrorResult(msg), nil, nil
 		}
 		chartKey := strings.TrimSpace(args.ChartKey)
 		if chartKey == "" {
