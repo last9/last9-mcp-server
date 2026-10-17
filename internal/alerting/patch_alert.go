@@ -94,6 +94,8 @@ func NewPatchAlertHandler(client *http.Client, cfg models.Config) func(context.C
 
 // The API overwrites the whole stored properties object on PATCH, so fields the caller
 // left out or blank are carried over from the stored rule instead of being cleared.
+// AlertProperties mirrors every key the API stores: it decodes properties into a struct
+// with exactly these four fields on every write, so no other stored key can be lost.
 func mergeAlertProperties(stored json.RawMessage, change AlertProperties) (AlertProperties, error) {
 	var merged AlertProperties
 	if len(stored) > 0 {
