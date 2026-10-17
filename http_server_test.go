@@ -268,6 +268,16 @@ func TestHTTPToolsetsPerRequest(t *testing.T) {
 	}
 }
 
+// Narrowing gates tools/call too, not only what tools/list advertises.
+func TestHTTPToolsetsRejectCallsOutsideTheEffectiveSet(t *testing.T) {
+	ts, _ := newToolsetHTTPServer(t, "logs,alerts")
+	const call = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_alerts","arguments":{}}}`
+	status, body := postRPC(t, ts, "logs", "", call, &struct{}{})
+	if status != http.StatusOK || !strings.Contains(body, `"error"`) || !strings.Contains(body, "get_alerts") {
+		t.Fatalf("status %d body %q, want a JSON-RPC error naming get_alerts", status, body)
+	}
+}
+
 func TestHTTPToolsetsJoinsRepeatedHeaders(t *testing.T) {
 	ts, _ := newToolsetHTTPServer(t, "logs,alerts,traces")
 	status, body, got := listToolsWithHeaders(t, ts.URL+"/mcp", []string{"logs", "alerts"})
