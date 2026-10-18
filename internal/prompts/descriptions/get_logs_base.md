@@ -4,7 +4,7 @@
 
 **Order:** scope→parse→filter→group/aggregate.
 
-**Filter:** `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`. Predicates: one standalone, many in `$and`. Ops: `$and`/`$or`/`$not`, `$eq`/`$neq`/`$gt`/`$gte`/`$lt`/`$lte`, `$regex`. Body words: `$containsWords` args `[field,word]` (e.g. `["Body","timeout"]`); ALL→`$and`; ANY→`$or`; never `$icontainsWords`.
+**Filter:** `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`. Predicates: one standalone, many in `$and`. Ops: `$and`/`$or`/`$not`, `$eq`/`$neq` (is not X; never `$not`+`$eq`)/`$gt`/`$gte`/`$lt`/`$lte`, `$regex`. Body words: `$containsWords` args `[field,word]` (e.g. `["Body","timeout"]`); ALL→`$and`; ANY→`$or`; never `$icontainsWords`.
 
 **Parse:** JSON `{"type":"parse","parser":"json","field":"Body","labels":{"key":"key"}}`; also logfmt/regexp. Parse Body-derived fields before filtering, grouping, or aggregation. `attributes['key']`.
 
