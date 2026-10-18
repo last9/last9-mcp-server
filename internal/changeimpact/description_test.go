@@ -55,6 +55,7 @@ func TestDescriptionDocumentsVerdictsAndThresholds(t *testing.T) {
 		fmt.Sprintf("top %d", maxDependents),
 		fmt.Sprintf("%d per list", sectionTopN),
 		"get_change_events",
+		"rounded down to the minute",
 		"wholly or in any query listed in `" + apmUnavailablePath + "`",
 		"Trace-attribute deviations explain a verdict but never set one",
 	} {

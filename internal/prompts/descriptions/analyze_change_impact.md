@@ -3,7 +3,7 @@ Answers "did the change at T break anything?" for one service by comparing the w
 ## Parameters
 
 - `change_event`: one element of `get_change_events` `change_events[]`, passed unchanged. Uses `metric.service`, `metric.deployment_environment` and the earliest `values[].timestamp`.
-- `service` + `timestamp`: the alternative to `change_event`; `timestamp` is RFC3339 or unix seconds. Pass exactly one form.
+- `service` + `timestamp`: the alternative to `change_event`; `timestamp` is RFC3339 or unix seconds, rounded down to the minute. Pass exactly one form.
 - `env`: exact environment (default: the event's, else all).
 - `baseline_minutes`: minutes before T, default 60, clamped to 30..120.
 - `after_minutes`: minutes after T, default `baseline_minutes`, clamped to 30..120 and capped at now.

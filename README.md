@@ -714,7 +714,7 @@ Pass exactly one of `change_event` or `service` + `timestamp`.
 
 - `change_event` (object, optional): One element of `get_change_events` `change_events[]`, unchanged. Uses `metric.service`, `metric.deployment_environment` and the earliest `values[].timestamp`.
 - `service` (string, optional): Required with `timestamp` when `change_event` is omitted.
-- `timestamp` (string, optional): RFC3339 or unix seconds.
+- `timestamp` (string, optional): RFC3339 or unix seconds, rounded down to the minute.
 - `env` (string, optional): Exact environment. Default: the event's, else all.
 - `baseline_minutes` (integer, optional): Default: 60. Clamped to 30..120.
 - `after_minutes` (integer, optional): Default: `baseline_minutes`. Clamped to 30..120 and capped at now.
