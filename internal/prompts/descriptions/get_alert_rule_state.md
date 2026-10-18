@@ -16,3 +16,20 @@ Optional filters forwarded to the upstream API (no client-side filtering is appl
 Output is a JSON map of rule_id -> [{timestamp, is_firing}]. A timestamp at which a rule is absent from the upstream
 response is reported as is_firing=0; this reflects "not observed as firing" and not necessarily a confirmed normal state.
 The number of samples ((end_time - start_time) / step + 1) is capped at 100.
+
+## When to use
+Whether alert rules were firing at each step of a past range.
+
+## When not to use
+- Alerts firing now: `get_alerts`
+- Rule configuration: `get_alert_config`
+
+## Pairs well with
+- `get_current_time` (epoch bounds)
+- `get_alert_config` (rule ids and names)
+
+## Output shape
+JSON map of rule_id to `[{timestamp, is_firing}]`.
+
+## Known traps
+`start_time` and `end_time` are Unix seconds, not ISO; at most 100 samples per call.

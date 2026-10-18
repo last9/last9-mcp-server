@@ -59,6 +59,9 @@ type AlertInstance struct {
 	Since             int64                  `json:"since"`
 }
 
+// DefaultAlertsWindow is get_alerts' window when the caller sets none.
+const DefaultAlertsWindow = 15 * time.Minute
+
 type GetAlertsArgs struct {
 	TimeISO         string  `json:"time_iso,omitempty" jsonschema:"Evaluation time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
 	Timestamp       float64 `json:"timestamp,omitempty" jsonschema:"Unix timestamp for query time (deprecated alias; defaults to current time)"`
@@ -68,8 +71,7 @@ type GetAlertsArgs struct {
 
 func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetAlertsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetAlertsArgs) (*mcp.CallToolResult, any, error) {
-		// Parse window parameter (defaults to 900 seconds = 15 minutes).
-		window := int64(900)
+		window := int64(DefaultAlertsWindow / time.Second)
 		if args.Window != 0 {
 			window = int64(args.Window)
 		} else if args.LookbackMinutes != 0 {
