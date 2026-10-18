@@ -12,4 +12,22 @@
 
 	match_query should be a well formed, valid promql query
 	Prefer an explicit lookback_minutes (or start_time_iso/end_time_iso) sized to the metric's emission cadence.
-	Do not treat an empty result under the default 60-minute window as proof a daily/sparse metric is absent.
+
+	## When to use
+	The valid values of one label (env, service) for a metric selector, before filtering on it.
+
+	## When not to use
+	- Label names: `prometheus_labels`
+	- APM service environments: `get_service_environments`
+	- Fuzzy name lookup: `did_you_mean`
+
+	## Pairs well with
+	- `prometheus_labels`
+	- `prometheus_range_query`
+	- `prometheus_instant_query`
+
+	## Output shape
+	A JSON array of strings.
+
+	## Known traps
+	An empty array usually means the window is too short or the selector matches nothing; widen or fix it before concluding the value does not exist. An empty result under the default 60-minute window does not prove a daily/sparse metric is absent.

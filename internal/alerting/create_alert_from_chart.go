@@ -125,10 +125,11 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 		body, err := alerts.CreateAlertFromChart(ctx, last9api.NewClient(client, cfg), req)
 		if err != nil {
 			var apiErr *utils.UpstreamHTTPError
-			if errors.As(err, &apiErr) {
+			var unknown *utils.WriteOutcomeUnknownError
+			if errors.As(err, &apiErr) && !errors.As(err, &unknown) {
 				return utils.ToolErrorResult(alertIntelGuidance(apiErr)), nil, nil
 			}
-			return utils.ToolErrorResult("alert intelligence request failed at the transport level and may or may not have been applied - verify whether the rule exists (get_alert_config filtered by rule name) before retrying"), nil, nil
+			return nil, nil, err
 		}
 
 		var resp alerts.IntelligenceResponse
