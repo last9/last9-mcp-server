@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 	// The release image is alpine without tzdata; embed the zone database so
@@ -154,9 +153,7 @@ func main() {
 // normal exit, not an error.
 func serveStdio(ctx context.Context, server *last9mcp.Last9MCPServer, t mcp.Transport) error {
 	err := server.Serve(ctx, t)
-	// A reply written after stdin hit EOF comes back as "server is closing: EOF",
-	// which the SDK formats with %v, so errors.Is cannot see the EOF.
-	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) || strings.HasSuffix(err.Error(), ": EOF") {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
 		return nil
 	}
 	return err
