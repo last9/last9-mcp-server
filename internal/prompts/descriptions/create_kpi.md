@@ -12,4 +12,4 @@ Parameters:
 - `description` (optional): what the KPI measures.
 - `data_source_id` (optional): data source UUID; defaults to the alert group's data source.
 
-Create once and keep the returned id: bind it in `expression_args` (`create_alert`, `update_alert`) and `indicators_used` (`validate_alert_expression`). Never call create_kpi again for the same query; on a name conflict, call `get_entity_kpis` and reuse the existing id. Returns `{"id", "name", "query", "unit"}` and a link to Alerting in the result's _meta.reference_url. Alert authoring guide: `last9://reference/alerting`.
+A created KPI is permanent here: no MCP tool deletes or edits a KPI (that needs the Last9 UI), so confirm name, query and unit before calling. Create once and keep the returned id: bind it in `expression_args` (`create_alert`, `update_alert`) and `indicators_used` (`validate_alert_expression`). Never call create_kpi again for the same query; on a name conflict, call `get_entity_kpis` and reuse the existing id. Returns `{"id", "name", "query", "unit"}` and a link to Alerting in the result's _meta.reference_url. Alert authoring guide: `last9://reference/alerting`.

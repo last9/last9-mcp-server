@@ -708,7 +708,7 @@ func TestKPIToolDescriptionsSteerAuthoring(t *testing.T) {
 		"create_kpi": {prompts.CreateKPIDescription, []string{
 			"`get_entity_kpis`", "`prometheus_range_query`", "Units matter", "Create once and keep the returned id",
 			"Never call create_kpi again for the same query", "`get_dashboard`",
-			"rejects only a query that does not parse",
+			"rejects only a query that does not parse", "no MCP tool deletes or edits a KPI",
 		}},
 	} {
 		for _, phrase := range c.phrases {
