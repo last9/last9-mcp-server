@@ -238,7 +238,7 @@ func TestServerInstructionsStartWithWorkspaceOverview(t *testing.T) {
 func TestServerInstructionsSkipOverviewWhenRequestNamesTarget(t *testing.T) {
 	instructions, _ := initializeOver(t, "")
 	start, _, _ := strings.Cut(instructions, "\n## Discover")
-	if !strings.Contains(start, "When it names a service, signal or tool, go straight to the most specific tool for it") {
+	if !strings.Contains(start, "Otherwise go straight to the most specific tool.") {
 		t.Errorf("Start here must send requests that name their target straight to its tool:\n%s", start)
 	}
 }
@@ -257,6 +257,32 @@ func TestOverviewAbsenceKeepsSignalToolsQueryable(t *testing.T) {
 		if !strings.Contains(text, "requested time range, index or datasource") {
 			t.Errorf("%s must keep the signal queryable for the user's requested scope:\n%s", name, text)
 		}
+	}
+}
+
+// Discover before you query is about names the model must look up and reuse
+// exactly; a date line there repeated "never guess" beside the attribute rule.
+func TestDiscoverSectionListsOnlyNameLookups(t *testing.T) {
+	instructions, _ := initializeOver(t, "investigate")
+	start, discover, _ := strings.Cut(instructions, "\n## Discover before you query\n")
+	discover, _, _ = strings.Cut(discover, "\n## ")
+	if strings.Contains(discover, "`get_current_time`") {
+		t.Errorf("Discover before you query must list name lookups only, not get_current_time:\n%s", discover)
+	}
+	if !strings.Contains(start, "`get_current_time`") {
+		t.Errorf("Start here must point to get_current_time for dates and relative windows:\n%s", start)
+	}
+}
+
+// maxInvestigateInstructionsBytes caps the policy automation sessions receive,
+// near its size, so growth is a reviewed decision: it precedes every tool
+// description, and growing it moved log_query evals.
+const maxInvestigateInstructionsBytes = 2550
+
+func TestInvestigateInstructionsBounded(t *testing.T) {
+	instructions, _ := initializeOver(t, "investigate")
+	if len(instructions) > maxInvestigateInstructionsBytes {
+		t.Errorf("investigate instructions are %d bytes, budget %d", len(instructions), maxInvestigateInstructionsBytes)
 	}
 }
 
