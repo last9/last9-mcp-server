@@ -51,7 +51,8 @@ go run . dump-prompts        # served prompts/list
    `internal/prompts/prompts.go` as `<Tool>Description` — see *Tool descriptions*.
 3. **Tool** — create `<package>/<tool_name>.go` with its `Args` struct, its
    `New<Tool>Handler`, and its private helpers — see *Go conventions*.
-4. **Register** — add to `tools.go` via `registerIfAllowed`, and add the tool name to its
+4. **Register** — add to `tools.go` via `registerIfAllowed` (`registerWriteTool` for a
+   tool that changes state), and add the tool name to its
    domain in `internal/toolsets/toolsets.go` — see *Registration*.
 5. **Test** — `<tool_name>_test.go` using `httptest.NewServer`; run `go test -race ./...`.
 6. **Verify** — `go run . dump-tools` shows the tool with the intended description and
@@ -129,6 +130,21 @@ registered directly leaks into every toolset.
 reg(registerIfAllowed(server, cfg.AllowedTools,
     &mcp.Tool{Name: "get_foo", Description: prompts.GetFooDescription},
     foo.NewGetFooHandler(client, cfg)))
+```
+
+**A tool that changes Last9 state registers through `registerWriteTool`** with a verify
+call: the read call, starting with the read tool's name, that shows whether the write
+landed; every toolset in `internal/toolsets/toolsets.go` that lists the write tool must also
+list that read tool, or registration fails. Its write requests must go through `last9api.Client.Do` (or mark failures with
+`utils.MarkUnknownWriteOutcome`), and are never retried. After a timeout or lost connection
+the agent is told to run the verify call instead of retrying, so a create cannot duplicate.
+`write_tools_test.go` fails until the tool has a fixture there and passes those checks.
+
+```go
+reg(registerWriteTool(server, cfg.AllowedTools,
+    &mcp.Tool{Name: "create_foo", Annotations: writeTool("Create Foo", false, false), Description: prompts.CreateFooDescription},
+    "get_foos, looking for one with the name you passed",
+    foo.NewCreateFooHandler(client, cfg)))
 ```
 
 Then add `get_foo` to its domain in `internal/toolsets/toolsets.go`, and verify with
