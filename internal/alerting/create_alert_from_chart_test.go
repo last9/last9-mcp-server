@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 )
 
 func createAlertFromChartTestConfig(baseURL string) models.Config {
@@ -237,35 +239,29 @@ func TestAlertIntelEntityAttrsCannotOverrideReservedKeys(t *testing.T) {
 	}
 }
 
-func TestCreateAlertFromChartTransportFailureIsToolError(t *testing.T) {
+func TestCreateAlertFromChartRefusedConnectionIsNotUnknownOutcome(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	baseURL := server.URL
 	client := server.Client()
-	server.Close() // nothing is listening; the request fails at the transport level
+	server.Close() // nothing is listening, so the request never leaves this process
 
 	handler := NewCreateAlertFromChartHandler(client, createAlertFromChartTestConfig(baseURL))
-	result, _, err := handler(context.Background(), nil, CreateAlertFromChartArgs{
+	_, _, err := handler(context.Background(), nil, CreateAlertFromChartArgs{
 		Surface:     "discover-service",
 		ChartKey:    "error_rate",
 		ServiceName: "checkout",
 		SignalKey:   "error_ratio",
 		Name:        "checkout-error-rate",
 	})
-	if err != nil {
-		t.Fatalf("transport failure must surface as tool error result, got Go error: %v", err)
-	}
-	if !result.IsError {
-		t.Fatalf("expected error result, got: %s", resultText(result))
-	}
-	text := resultText(result)
-	for _, want := range []string{"may or may not have been applied", "get_alert_config"} {
-		if !strings.Contains(text, want) {
-			t.Errorf("transport-failure guidance missing %q:\n%s", want, text)
-		}
+	var unknown *utils.WriteOutcomeUnknownError
+	if err == nil || errors.As(err, &unknown) {
+		t.Fatalf("a refused connection was not applied; want a plain error, got %v", err)
 	}
 }
 
-func TestCreateAlertFromChartGarbageBodyIsVerifyFirstToolError(t *testing.T) {
+// A 2xx whose body cannot be read most likely created the rule, so it must not read as a
+// plain failure the agent would retry.
+func TestCreateAlertFromChartGarbageBodyIsUnknownOutcome(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`not-json{{`))
 	}))
@@ -279,8 +275,9 @@ func TestCreateAlertFromChartGarbageBodyIsVerifyFirstToolError(t *testing.T) {
 		SignalKey:   "error_ratio",
 		Name:        "checkout-error-rate",
 	})
-	if err != nil || !result.IsError || !strings.Contains(resultText(result), "may or may not have been applied") {
-		t.Fatalf("expected verify-first tool error, got result %v err %v", result, err)
+	var unknown *utils.WriteOutcomeUnknownError
+	if !errors.As(err, &unknown) {
+		t.Fatalf("expected an unknown-outcome error, got result %v err %v", result, err)
 	}
 }
 
