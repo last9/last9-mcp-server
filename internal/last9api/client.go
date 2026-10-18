@@ -178,7 +178,14 @@ func decodeResponse(resp *http.Response, op string, out any) error {
 		utils.DrainResponseBody(resp.Body)
 		return nil
 	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("%s: read response: %w", op, err)
+	}
+	if len(raw) == 0 {
+		return nil
+	}
+	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(out); err != nil {
 		return fmt.Errorf("%s: decode response: %w", op, err)
 	}
 	return nil

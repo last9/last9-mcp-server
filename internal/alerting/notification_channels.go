@@ -12,7 +12,10 @@ import (
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
+	"last9-mcp/internal/last9api"
+	"last9-mcp/internal/last9api/notifications"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -40,22 +43,45 @@ type NotificationChannel struct {
 	Services     []notificationChannelService `json:"services"`
 }
 
+// orgWide reports whether the row is unscoped. The API's global flag reflects only the
+// legacy service/namespace binding, so it is true on alert-group attachment rows too.
+func (ch NotificationChannel) orgWide() bool {
+	return ch.Global && strings.TrimSpace(ch.ServiceFQID) == ""
+}
+
 type notificationChannelService struct {
 	Name      string `json:"name"`
 	Namespace string `json:"namespace"`
 }
 
-type GetNotificationChannelsArgs struct{}
+type GetNotificationChannelsArgs struct {
+	Scope string `json:"scope,omitempty" jsonschema:"attached (default) lists per-alert-group attachment rows; channels lists the org's channels (id, name, type, send_resolved), the ids create_notification_channel returns and attach_notification_channel takes"`
+}
 
 func NewGetNotificationChannelsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetNotificationChannelsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetNotificationChannelsArgs) (*mcp.CallToolResult, any, error) {
+		scope := strings.ToLower(strings.TrimSpace(args.Scope))
+		if scope != "" && scope != "attached" && scope != "channels" {
+			return utils.ToolErrorResult("scope must be attached or channels"), nil, nil
+		}
+		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
+		dashboardURL := dlBuilder.BuildNotificationChannelsLink()
+
+		if scope == "channels" {
+			rows, err := notifications.ListNotificationSettings(ctx, last9api.NewClient(client, cfg), false)
+			if err != nil {
+				return nil, nil, err
+			}
+			return &mcp.CallToolResult{
+				Meta:    deeplink.ToMeta(dashboardURL),
+				Content: []mcp.Content{&mcp.TextContent{Text: formatChannelsScopeResponse(rows)}},
+			}, nil, nil
+		}
+
 		channels, err := fetchNotificationChannels(ctx, client, cfg)
 		if err != nil {
 			return nil, nil, err
 		}
-
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardURL := dlBuilder.BuildNotificationChannelsLink()
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
@@ -66,6 +92,21 @@ func NewGetNotificationChannelsHandler(client *http.Client, cfg models.Config) f
 			},
 		}, nil, nil
 	}
+}
+
+func formatChannelsScopeResponse(rows []notifications.NotificationSetting) string {
+	lines := []string{"id\tname\ttype\tsend_resolved"}
+	for _, r := range rows {
+		if strings.TrimSpace(r.ServiceFQID) != "" {
+			continue
+		}
+		sendResolved := "null"
+		if r.SendResolved != nil {
+			sendResolved = fmt.Sprintf("%v", *r.SendResolved)
+		}
+		lines = append(lines, fmt.Sprintf("%d\t%s\t%s\t%s", r.ID, escapeTSV(r.Name), escapeTSV(r.Type), sendResolved))
+	}
+	return fmt.Sprintf("Found %d notification channel(s):\n", len(lines)-1) + strings.Join(lines, "\n")
 }
 
 func fetchNotificationChannels(ctx context.Context, client *http.Client, cfg models.Config) ([]NotificationChannel, error) {
@@ -154,7 +195,7 @@ func formatNotificationChannelsResponse(channels []NotificationChannel) string {
 		}
 
 		rows = append(rows, fmt.Sprintf("%d\t%s\t%s\t%v\t%v\t%s\t%s\t%s\t%d\t%s\t%s",
-			ch.ID, escapeTSV(ch.Name), escapeTSV(ch.Type), ch.Global, ch.InUse,
+			ch.ID, escapeTSV(ch.Name), escapeTSV(ch.Type), ch.orgWide(), ch.InUse,
 			escapeTSV(sendResolved), escapeTSV(snoozeUntil), escapeTSV(ch.Severity), ch.Priority, escapeTSV(services),
 			escapeTSV(serviceFQID),
 		))

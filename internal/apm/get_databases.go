@@ -15,7 +15,7 @@ import (
 )
 
 type GetDatabasesArgs struct {
-	Env             string  `json:"env,omitempty" jsonschema:"Deployment environment to filter by (e.g. production). Accepts a regular expression, e.g. prod|staging"`
+	Env             string  `json:"env,omitempty" jsonschema:"(Optional) Regular expression over deployment environment, e.g. prod|staging matches either. Default all environments. For one exact environment use get_database_queries or get_service_performance_details, which take a literal name."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60, minimum: 1, maximum window: 7 days)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339 format"`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339 format"`

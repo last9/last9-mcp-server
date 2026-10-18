@@ -68,6 +68,45 @@ var GetNotificationChannelsDescription string
 //go:embed descriptions/get_alert_config.md
 var GetAlertConfigDescription string
 
+//go:embed descriptions/create_alert.md
+var CreateAlertDescription string
+
+//go:embed descriptions/update_alert.md
+var UpdateAlertDescription string
+
+//go:embed descriptions/patch_alert.md
+var PatchAlertDescription string
+
+//go:embed descriptions/delete_alert.md
+var DeleteAlertDescription string
+
+//go:embed descriptions/mute_alert_group.md
+var MuteAlertGroupDescription string
+
+//go:embed descriptions/acknowledge_alert.md
+var AcknowledgeAlertDescription string
+
+//go:embed descriptions/reassign_alert.md
+var ReassignAlertDescription string
+
+//go:embed descriptions/create_notification_channel.md
+var CreateNotificationChannelDescription string
+
+//go:embed descriptions/attach_notification_channel.md
+var AttachNotificationChannelDescription string
+
+//go:embed descriptions/detach_notification_channel.md
+var DetachNotificationChannelDescription string
+
+//go:embed descriptions/delete_notification_channel.md
+var DeleteNotificationChannelDescription string
+
+//go:embed descriptions/validate_alert_expression.md
+var ValidateAlertExpressionDescription string
+
+//go:embed descriptions/recommend_alert_config.md
+var RecommendAlertConfigDescription string
+
 //go:embed descriptions/get_alert_groups.md
 var GetAlertGroupsDescription string
 
@@ -79,6 +118,12 @@ var GetAlertsDescription string
 
 //go:embed descriptions/get_alert_rule_state.md
 var GetAlertRuleStateDescription string
+
+//go:embed descriptions/describe_alert_chart.md
+var DescribeAlertChartDescription string
+
+//go:embed descriptions/create_alert_from_chart.md
+var CreateAlertFromChartDescription string
 
 //go:embed descriptions/get_log_attributes.md
 var GetLogAttributesDescription string
