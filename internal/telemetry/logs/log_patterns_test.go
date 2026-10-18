@@ -1,6 +1,7 @@
 package logs
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -262,6 +263,62 @@ func TestLogPatternMiner_TruncatesLongSamplesAndTemplates(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A JSON body with no message key templates as the whole body; both tools must
+// serve it cut, at full counts, or default top_n of them fills the context.
+func TestLogPatternTools_ServeLongJSONBodiesCut(t *testing.T) {
+	var bodies []string
+	for i := 0; i < defaultPatternTopN; i++ {
+		bodies = append(bodies, `{"payload":"`+strings.Repeat(string(rune('g'+i)), 16384)+`"}`)
+	}
+	lines := map[int64][]string{patternWindowStart: bodies}
+	scope := LogPatternScopeArgs{ServiceName: "checkout", StartTimeISO: patternWindowStartISO, EndTimeISO: patternWindowEndISO, SampleSize: len(bodies)}
+	assertCut := func(t *testing.T, template, sample string, count int) {
+		t.Helper()
+		if got := len([]rune(template)); got != maxPatternTextRunes+1 || !strings.HasSuffix(template, "…") {
+			t.Errorf("template = %d runes, want %d ending in an ellipsis", got, maxPatternTextRunes+1)
+		}
+		if got := len([]rune(sample)); got != maxPatternTextRunes+1 {
+			t.Errorf("sample = %d runes, want %d", got, maxPatternTextRunes+1)
+		}
+		if count != 1 {
+			t.Errorf("count = %d, want 1", count)
+		}
+	}
+
+	t.Run("get_log_patterns", func(t *testing.T) {
+		srv := (&logSearchStub{}).serve(t, lines, nil)
+		result, _, err := NewGetLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), nil, GetLogPatternsArgs{LogPatternScopeArgs: scope})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := decodeToolJSON[GetLogPatternsResponse](t, result)
+		if len(got.Patterns) != len(bodies) {
+			t.Fatalf("patterns = %d, want %d", len(got.Patterns), len(bodies))
+		}
+		for _, p := range got.Patterns {
+			assertCut(t, p.Template, p.Sample, p.Count)
+		}
+	})
+
+	t.Run("get_emerging_log_patterns", func(t *testing.T) {
+		srv := (&logSearchStub{}).serve(t, lines, nil)
+		result, _, err := NewGetEmergingLogPatternsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), nil, GetEmergingLogPatternsArgs{LogPatternScopeArgs: scope, MinCount: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := decodeToolJSON[GetEmergingLogPatternsResponse](t, result)
+		if len(got.Patterns) != len(bodies) {
+			t.Fatalf("patterns = %d, want %d", len(got.Patterns), len(bodies))
+		}
+		for _, p := range got.Patterns {
+			if p.Change != "new" {
+				t.Errorf("change = %q, want new", p.Change)
+			}
+			assertCut(t, p.Template, p.Sample, p.Current.Count)
+		}
+	})
 }
 
 // Truncation is for display only: templates differing past the cut still count
