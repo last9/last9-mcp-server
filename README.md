@@ -694,7 +694,7 @@ Answers "what am I not alerting on?" for a service, an environment, one alert gr
 - `service` (string, optional): Service name.
 - `environment` (string, optional): Deployment environment (for example `prod`).
 - `entity_id` (string, optional): Alert group (entity) id, as returned by `get_alert_groups`.
-- `muted_days` (integer, optional): Whole days, at least 1. Default: 7. A rule muted longer than this is a `muted_too_long` gap.
+- `muted_days` (integer, optional): Whole days, 1 to 3650. Default: 7. A rule muted longer than this is a `muted_too_long` gap.
 
 Values are trimmed; blank strings are ignored. Gap kinds: **uncovered_signal** (no enabled rule on latency, error_rate, throughput, or saturation), **all_rules_disabled** (an alert group whose rules are all disabled), **no_notification_channel** (an alert group routed to no channel), **muted_too_long**.
 

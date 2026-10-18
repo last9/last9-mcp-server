@@ -19,6 +19,9 @@ import (
 
 const defaultCoverageMutedDays = 7
 
+// The API rejects larger values with a 400.
+const maxCoverageMutedDays = 3650
+
 // Kinds outside this list are still rendered, after these, so a gap kind the API adds
 // later is never dropped.
 var coverageKindOrder = []string{
@@ -32,7 +35,7 @@ type GetAlertCoverageArgs struct {
 	Service     string `json:"service,omitempty" jsonschema:"Service name to check (optional)"`
 	Environment string `json:"environment,omitempty" jsonschema:"Deployment environment to check, e.g. prod (optional)"`
 	EntityID    string `json:"entity_id,omitempty" jsonschema:"Alert group (entity) id from get_alert_groups (optional)"`
-	MutedDays   int    `json:"muted_days,omitempty" jsonschema:"A rule muted for more than this many days is a gap (default: 7, minimum: 1)"`
+	MutedDays   int    `json:"muted_days,omitempty" jsonschema:"A rule muted for more than this many days is a gap (default: 7, minimum: 1, maximum: 3650)"`
 }
 
 type alertCoverageScope struct {
@@ -97,8 +100,8 @@ func parseAlertCoverageArgs(args GetAlertCoverageArgs) (alerts.GetAlertCoverageI
 	if mutedDays == 0 {
 		mutedDays = defaultCoverageMutedDays
 	}
-	if mutedDays < 1 {
-		return alerts.GetAlertCoverageInput{}, fmt.Errorf("muted_days must be at least 1, got %d", args.MutedDays)
+	if mutedDays < 1 || mutedDays > maxCoverageMutedDays {
+		return alerts.GetAlertCoverageInput{}, fmt.Errorf("muted_days must be between 1 and %d, got %d", maxCoverageMutedDays, args.MutedDays)
 	}
 	return alerts.GetAlertCoverageInput{
 		Service:     strings.TrimSpace(args.Service),

@@ -93,6 +93,7 @@ func TestGetAlertCoverage_QueryBuilding(t *testing.T) {
 		{"entity only", GetAlertCoverageArgs{EntityID: "ent-1"}, url.Values{"entity_id": {"ent-1"}, "muted_days": {"7"}}},
 		{"muted_days minimum", GetAlertCoverageArgs{MutedDays: 1}, url.Values{"muted_days": {"1"}}},
 		{"muted_days set", GetAlertCoverageArgs{MutedDays: 30}, url.Values{"muted_days": {"30"}}},
+		{"muted_days maximum", GetAlertCoverageArgs{MutedDays: 3650}, url.Values{"muted_days": {"3650"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stub := &coverageStub{body: emptyCoverageBody}
@@ -110,10 +111,10 @@ func TestGetAlertCoverage_QueryBuilding(t *testing.T) {
 }
 
 func TestGetAlertCoverage_RejectsInvalidMutedDays(t *testing.T) {
-	for _, days := range []int{-1, -30} {
+	for _, days := range []int{-1, -30, 3651} {
 		stub := &coverageStub{body: emptyCoverageBody}
 		_, err := callAlertCoverage(t, stub, GetAlertCoverageArgs{MutedDays: days})
-		if err == nil || !strings.Contains(err.Error(), "muted_days") {
+		if err == nil || !strings.Contains(err.Error(), "muted_days must be between 1 and 3650, got "+strconv.Itoa(days)) {
 			t.Errorf("muted_days=%d: err = %v, want a muted_days error", days, err)
 		}
 		if len(stub.queries) != 0 {

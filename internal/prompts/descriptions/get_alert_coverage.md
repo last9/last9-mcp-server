@@ -13,7 +13,7 @@ Optional parameters (values are trimmed; blank strings are ignored):
 - service: Service name.
 - environment: Deployment environment (for example prod).
 - entity_id: Alert group (entity) id, as returned by get_alert_groups.
-- muted_days: Whole days, at least 1. Default: 7. A rule muted longer than this is a
+- muted_days: Whole days, 1 to 3650. Default: 7. A rule muted longer than this is a
   muted_too_long gap.
 
 Output is compact JSON {scope, generated_at, complete, summary, counts, groups}:
