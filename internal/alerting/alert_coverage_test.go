@@ -134,9 +134,11 @@ func TestGetAlertCoverage_RendersEachGapKind(t *testing.T) {
 			"uncovered_signal", "create_alert", map[string]string{"entity_id": "ent-1", "signal": "latency"}},
 		{`{"kind":"all_rules_disabled","entity_id":"ent-2","entity_name":"Payments","detail":"3 rules, all disabled","suggested_tool":"patch_alert"}`,
 			"all_rules_disabled", "patch_alert", map[string]string{"entity_id": "ent-2"}},
-		{`{"kind":"no_notification_channel","entity_id":"ent-3","entity_name":"Search","suggested_tool":"attach_notification_channel"}`,
-			"no_notification_channel", "attach_notification_channel", map[string]string{"entity_id": "ent-3"}},
-		{`{"kind":"muted_too_long","entity_id":"ent-4","rule_id":"rule-9","rule_name":"p99 latency","severity":"breach","muted_since":1690000000,"mute_until":0,"suggested_tool":"patch_alert"}`,
+		{`{"kind":"uncovered_signal","entity_id":"ent-1","entity_name":"Checkout","service":"checkout","signal":"error_rate","rule_id":"rule-2","rule_name":"errors","detail":"re-enable it","suggested_tool":"patch_alert"}`,
+			"uncovered_signal", "patch_alert", map[string]string{"entity_id": "ent-1", "rule_id": "rule-2", "signal": "error_rate"}},
+		{`{"kind":"no_notification_channel","entity_id":"ent-3","entity_name":"Search","rule_id":"rule-5","rule_name":"5xx","severity":"critical","detail":"no channel routes it","suggested_tool":"attach_notification_channel"}`,
+			"no_notification_channel", "attach_notification_channel", map[string]string{"entity_id": "ent-3", "rule_id": "rule-5"}},
+		{`{"kind":"muted_too_long","entity_id":"ent-4","rule_id":"rule-9","rule_name":"p99 latency","severity":"breach","muted_since":1690000000,"mute_until":-1,"suggested_tool":"patch_alert"}`,
 			"muted_too_long", "patch_alert", map[string]string{"entity_id": "ent-4", "rule_id": "rule-9"}},
 	} {
 		t.Run(tc.kind, func(t *testing.T) {
@@ -169,7 +171,7 @@ func TestGetAlertCoverage_RendersEachGapKind(t *testing.T) {
 func TestGetAlertCoverage_MutedGapTimes(t *testing.T) {
 	stub := &coverageStub{body: `{"generated_at":1700000000,"muted_days":7,"gaps":[
 		{"kind":"muted_too_long","rule_id":"r-1","muted_since":1690000000,"mute_until":1700086400,"suggested_tool":"patch_alert"},
-		{"kind":"muted_too_long","rule_id":"r-2","muted_since":1690000000,"mute_until":0,"suggested_tool":"patch_alert"}],
+		{"kind":"muted_too_long","rule_id":"r-2","muted_since":1690000000,"mute_until":-1,"suggested_tool":"patch_alert"}],
 		"counts":{"muted_too_long":2}}`}
 	result, err := callAlertCoverage(t, stub, GetAlertCoverageArgs{})
 	if err != nil {
@@ -183,8 +185,8 @@ func TestGetAlertCoverage_MutedGapTimes(t *testing.T) {
 	if gaps[0].MutedSince != "2023-07-22T04:26:40Z" || gaps[0].MuteUntil != "2023-11-15T22:13:20Z" {
 		t.Errorf("timed mute = %q .. %q", gaps[0].MutedSince, gaps[0].MuteUntil)
 	}
-	if gaps[1].MuteUntil != "" {
-		t.Errorf("open-ended mute_until = %q, want omitted", gaps[1].MuteUntil)
+	if gaps[1].MutedSince != "2023-07-22T04:26:40Z" || gaps[1].MuteUntil != "" {
+		t.Errorf("indefinite mute = %q .. %q, want mute_until omitted", gaps[1].MutedSince, gaps[1].MuteUntil)
 	}
 }
 

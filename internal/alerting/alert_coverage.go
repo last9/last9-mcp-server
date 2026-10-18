@@ -36,7 +36,7 @@ var coverageKindOrder = []string{
 type GetAlertCoverageArgs struct {
 	Service     string `json:"service,omitempty" jsonschema:"Service name to check (optional)"`
 	Environment string `json:"environment,omitempty" jsonschema:"Deployment environment to check, e.g. prod (optional)"`
-	EntityID    string `json:"entity_id,omitempty" jsonschema:"Alert group (entity) id from get_alert_groups (optional)"`
+	EntityID    string `json:"entity_id,omitempty" jsonschema:"Alert group (entity) UUID from get_alert_groups (optional)"`
 	MutedDays   int    `json:"muted_days,omitempty" jsonschema:"A rule muted for more than this many days is a gap (default: 7, minimum: 1, maximum: 3650)"`
 }
 

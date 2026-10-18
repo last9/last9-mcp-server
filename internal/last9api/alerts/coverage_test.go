@@ -68,7 +68,7 @@ func TestGetAlertCoverage_DecodesGaps(t *testing.T) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		_, _ = w.Write([]byte(`{"generated_at":1700000000,"muted_days":14,
 			"gaps":[{"kind":"muted_too_long","entity_id":"ent-1","entity_name":"Checkout","service":"checkout",
-				"rule_id":"rule-9","rule_name":"p99 latency","severity":"breach","muted_since":1690000000,"mute_until":0,
+				"rule_id":"rule-9","rule_name":"p99 latency","severity":"breach","muted_since":1690000000,"mute_until":-1,
 				"detail":"muted 20 days","suggested_tool":"patch_alert"}],
 			"counts":{"uncovered_signal":0,"all_rules_disabled":0,"no_notification_channel":0,"muted_too_long":1}}`))
 	})
@@ -82,7 +82,7 @@ func TestGetAlertCoverage_DecodesGaps(t *testing.T) {
 	}
 	want := CoverageGap{
 		Kind: CoverageGapMutedTooLong, EntityID: "ent-1", EntityName: "Checkout", Service: "checkout",
-		RuleID: "rule-9", RuleName: "p99 latency", Severity: "breach", MutedSince: 1690000000,
+		RuleID: "rule-9", RuleName: "p99 latency", Severity: "breach", MutedSince: 1690000000, MuteUntil: -1,
 		Detail: "muted 20 days", SuggestedTool: "patch_alert",
 	}
 	if resp.Gaps[0] != want {

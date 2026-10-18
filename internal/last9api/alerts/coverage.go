@@ -31,7 +31,8 @@ type GetAlertCoverageInput struct {
 	MutedDays   int
 }
 
-// MutedSince and MuteUntil are unix seconds; 0 means not reported.
+// MutedSince and MuteUntil are unix seconds, sent only on muted_too_long gaps (absent
+// decodes to 0); MuteUntil is -1 for an indefinite mute.
 type CoverageGap struct {
 	Kind          string `json:"kind"`
 	EntityID      string `json:"entity_id"`
