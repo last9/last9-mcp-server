@@ -17,8 +17,6 @@ import (
 )
 
 const (
-	// Only stamp this once the payload satisfies contracts/investigation-evidence-v1.schema.json.
-	investigationEvidenceVersion  = "investigation-evidence/v1"
 	traceWaterfallAnalysisVersion = "trace-waterfall/v1"
 	traceWaterfallSource          = "trace-details"
 	// Half-open [start,end), per contracts/README.md.

@@ -330,29 +330,8 @@ func callAttributeDeviationsAPI(ctx context.Context, client *http.Client, cfg mo
 	if !json.Valid(responseBody) {
 		return nil, newTraceInvalidResponseError(nil)
 	}
-	if err := checkDeviationResponseContract(responseBody); err != nil {
+	if err := checkEvidenceContract(responseBody, attributeDeviationsVersion); err != nil {
 		return nil, err
 	}
 	return responseBody, nil
-}
-
-// The handler forwards this body verbatim, so a payload that is not the promised
-// envelope would have the model reasoning over fields that do not exist.
-func checkDeviationResponseContract(body []byte) error {
-	var envelope struct {
-		ContractVersion string `json:"contract_version"`
-		AnalysisVersion string `json:"analysis_version"`
-	}
-	if err := json.Unmarshal(body, &envelope); err != nil {
-		return newTraceInvalidResponseError(err)
-	}
-	if envelope.ContractVersion != investigationEvidenceVersion {
-		return newTraceInvalidResponseError(fmt.Errorf(
-			"expected contract_version %q, got %q", investigationEvidenceVersion, envelope.ContractVersion))
-	}
-	if envelope.AnalysisVersion != attributeDeviationsVersion {
-		return newTraceInvalidResponseError(fmt.Errorf(
-			"expected analysis_version %q, got %q", attributeDeviationsVersion, envelope.AnalysisVersion))
-	}
-	return nil
 }
