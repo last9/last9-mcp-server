@@ -16,6 +16,7 @@ import (
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/prompts"
 )
 
 // 2023-11-14 22:13:20 UTC; the newest completed-and-settled minute ends at 22:12.
@@ -291,5 +292,19 @@ func TestGetAlertConfigPrependsEvaluationNote(t *testing.T) {
 
 	if !strings.HasPrefix(text, "Recent Evaluations omitted: 26 enabled rules matched") {
 		t.Errorf("missing note:\n%s", text)
+	}
+}
+
+func TestGetAlertConfigDescriptionStatesEvaluationLimits(t *testing.T) {
+	for _, phrase := range []string{
+		fmt.Sprintf("%d one-minute samples, newest first", evaluationHistorySamples),
+		"the newest ends 1-2 minutes before the call",
+		"unknown = no monitor row for it",
+		"Disabled rules show none",
+		fmt.Sprintf("more than %d enabled rules match", evaluationHistoryMaxRules),
+	} {
+		if !strings.Contains(prompts.GetAlertConfigDescription, phrase) {
+			t.Errorf("get_alert_config description is missing %q", phrase)
+		}
 	}
 }

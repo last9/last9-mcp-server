@@ -48,6 +48,10 @@
 	- labels: The alert group's configured metadata labels as k=v pairs, when set
 	  For a full inventory of groups (including zero-rule groups) use get_alert_groups.
 	- state: Current state of the alert rule (active, inactive, etc.)
+	- Recent Evaluations: 5 one-minute samples, newest first, labelled by the UTC minute they end;
+	  the newest ends 1-2 minutes before the call. firing; ok = monitor saw the rule not firing;
+	  unknown = no monitor row for it (not evaluated yet, or the lookup failed, noted at the top).
+	  Disabled rules show none. Omitted for all rules when more than 25 enabled rules match.
 	- severity: Alert severity level
 	- algorithm: Detection algorithm (static_threshold, high_spike, inc_trend, etc.)
 	- created_at: When the alert rule was created
@@ -60,7 +64,7 @@
 
 	## When not to use
 	- What is firing now: `get_alerts`
-	- Firing history: `get_alert_rule_state`
+	- Firing history beyond 5 minutes: `get_alert_rule_state`
 	- Alert groups and rule counts only: `get_alert_groups`
 
 	## Pairs well with
@@ -68,7 +72,7 @@
 	- `get_notification_channels` (channel names and types)
 
 	## Output shape
-	Text listing matching rules with ids, alert group, severity, state and resolved indicators.
+	Text listing matching rules with ids, alert group, severity, state, recent evaluations and resolved indicators.
 
 	## Known traps
 	Channel filters match per-entity bindings only; org-wide global channels do not satisfy them.
