@@ -34,6 +34,14 @@ func withEnv(s apm.GoldenSignals, env string, requests, p95 float64) apm.GoldenS
 	return s
 }
 
+// withTraffic adds an environment's requests to s without any latency.
+func withTraffic(s apm.GoldenSignals, env string, requests float64) apm.GoldenSignals {
+	s.RequestCount += requests
+	s.RequestsByEnv = maps.Clone(s.RequestsByEnv)
+	s.RequestsByEnv[env] = requests
+	return s
+}
+
 // Without an env, both windows must compare one environment's latency: the
 // busiest. Picking the slowest per window compared staging's baseline against
 // prod's after window, and hid prod's own rise.
@@ -82,11 +90,17 @@ func TestServiceRegressionThresholds(t *testing.T) {
 		{"p95 below threshold", signals(1000, 0, 100), signals(1000, 0, 124.9), ""},
 		{"p95 at threshold", signals(1000, 0, 100), signals(1000, 0, 125), "p95"},
 		{"too little baseline traffic", signals(minRequestsPerWindow-1, 0, 100), signals(1000, 500, 900), ""},
-		{"too little after traffic", signals(1000, 0, 100), signals(minRequestsPerWindow-1, 10, 900), ""},
+		{"too little after traffic", signals(minRequestsPerWindow, 0, 100), signals(minRequestsPerWindow-1, 10, 900), ""},
 		{"traffic at the minimum", signals(minRequestsPerWindow, 0, 100), signals(minRequestsPerWindow, 10, 100), "error rate"},
 		{"throughput drop below threshold", signals(1000, 0, 100), signals(501, 0, 100), ""},
 		{"throughput drop at threshold", signals(1000, 0, 100), signals(500, 0, 100), "throughput fell"},
 		{"throughput drop to the minimum traffic", signals(1200, 0, 100), signals(minRequestsPerWindow, 0, 100), "throughput fell"},
+		{"throughput collapse below the minimum traffic", signals(1200, 0, 100), signals(5, 0, 100), "throughput fell"},
+		{"throughput to zero", signals(1200, 0, 100), signals(0, 0, 0), ""},
+		// A p95 over a few dozen requests rests on its slowest one or two.
+		{"thin baseline p95 spike", signals(73, 0, 100), signals(1000, 0, 493), ""},
+		{"thin baseline error spike", signals(73, 0, 100), signals(1000, 50, 100), ""},
+		{"latency env thinner than the service", withTraffic(signals(60, 0, 100), "eu", 60), withTraffic(signals(60, 0, 200), "eu", 60), ""},
 		{"throughput rise", signals(500, 0, 100), signals(5000, 0, 100), ""},
 		{"no baseline p95", signals(1000, 0, 0), signals(1000, 0, 900), ""},
 		{"improvement", signals(1000, 50, 300), signals(1000, 0, 100), ""},
@@ -117,6 +131,7 @@ func TestDecideVerdictPrecedence(t *testing.T) {
 		{"golden signals failed", verdictInputs{afterMinutes: 60, unavailable: []string{"golden signals unavailable: boom"}}, VerdictInsufficientData},
 		{"flat but a section failed", verdictInputs{afterMinutes: 60, haveChanged: true, changedBaseline: flat, changedAfter: flat, unavailable: []string{"alerts unavailable: boom"}}, VerdictInsufficientData},
 		{"no after traffic", verdictInputs{afterMinutes: 60, haveChanged: true, changedBaseline: flat}, VerdictInsufficientData},
+		{"thin baseline", verdictInputs{afterMinutes: 60, haveChanged: true, changedBaseline: signals(73, 0, 100), changedAfter: flat}, VerdictInsufficientData},
 		{"flat", verdictInputs{afterMinutes: 60, haveChanged: true, changedBaseline: flat, changedAfter: flat}, VerdictNoSignificantChange},
 	}
 	for _, tc := range cases {
