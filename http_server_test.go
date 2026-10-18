@@ -236,6 +236,47 @@ func TestNarrowedToolsetServersEnforceUserToken(t *testing.T) {
 	}
 }
 
+// TestStrictModeGuardsStartupCachedDatasources pins that list_datasources,
+// which answers from data cached at startup under the server's credentials,
+// is released only to a token the API accepts: valid claims are not enough.
+func TestStrictModeGuardsStartupCachedDatasources(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer api.Close()
+	forged := testUserJWT(t, map[string]any{"exp": time.Now().Add(time.Hour).Unix(), "aud": api.URL})
+	expired := testUserJWT(t, map[string]any{"exp": int64(1), "aud": api.URL})
+	for _, shadow := range []bool{false, true} {
+		cfg := testToolRegistrationConfig()
+		cfg.APIBaseURL = api.URL
+		cfg.HTTPMode = true
+		cfg.UserTokenFallback = shadow
+		cfg.Datasources = []models.DatasourceInfo{{Name: "startup-cached-datasource", IsDefault: true}}
+		ts, _ := newToolsetHTTPServerFor(t, cfg, "all")
+		for _, tc := range []struct{ name, token, want string }{
+			{"missing", "", "user token required"},
+			{"expired", expired, "user token rejected: expired"},
+			{"forged", forged, "user token rejected: unauthorized"},
+		} {
+			params := map[string]any{"name": "list_datasources", "arguments": map[string]any{}}
+			if tc.token != "" {
+				params["_meta"] = map[string]any{"last9_user_token": tc.token}
+			}
+			call, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params})
+			for _, header := range []string{"", "investigate"} {
+				_, body := postRPC(t, ts, header, "", string(call), nil)
+				exposed := strings.Contains(body, "startup-cached-datasource")
+				if shadow && !exposed {
+					t.Errorf("shadow %s toolsets %q: cached datasource not served: %s", tc.name, header, body)
+				}
+				if !shadow && (exposed || !strings.Contains(body, tc.want)) {
+					t.Errorf("strict %s toolsets %q: want rejection %q without cached data: %s", tc.name, header, tc.want, body)
+				}
+			}
+		}
+	}
+}
+
 // TestHandleHealthReportsBuildVersion pins that /health reports the ldflag
 // Version var, not a hardcoded literal (this regressed once before).
 func TestHandleHealthReportsBuildVersion(t *testing.T) {
