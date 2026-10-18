@@ -222,6 +222,7 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"`$containsWords` args `[field,word]` (e.g. `[\"Body\",\"timeout\"]`)", "must show the required field argument for body-word filters"},
 		{"NOT SQL", "must clarify logjson_query is not SQL"},
 		{"$neq", "must document existence idiom"},
+		{"`$neq` (is not X; never `$not`+`$eq`)", "must route negated equality to $neq"},
 		{"start_time_iso", "must document absolute time on tool args"},
 		{"resources['last9.tenant']", "must document tenant scoping"},
 		{"resources['deployment.environment']", "must document env scoping"},
