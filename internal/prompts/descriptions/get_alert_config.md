@@ -54,3 +54,21 @@
 	- updated_at: When the alert rule was last modified
 	- mute_until and recurring_mute_schedule, when set; properties show only annotations here, so read
 	  description and runbook with get_entity_alert_rules
+
+	## When to use
+	Find alert rules by name, severity, group, tags, team or notification channel.
+
+	## When not to use
+	- What is firing now: `get_alerts`
+	- Firing history: `get_alert_rule_state`
+	- Alert groups and rule counts only: `get_alert_groups`
+
+	## Pairs well with
+	- `get_entity_alert_rules` (PromQL per indicator)
+	- `get_notification_channels` (channel names and types)
+
+	## Output shape
+	Text listing matching rules with ids, alert group, severity, state and resolved indicators.
+
+	## Known traps
+	Channel filters match per-entity bindings only; org-wide global channels do not satisfy them.

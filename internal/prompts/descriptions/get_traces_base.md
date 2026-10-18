@@ -27,3 +27,22 @@ For calendar buckets, use explicit ISO bounds and time zone. P99 `Duration` outp
 **Aggregate example:** `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`.
 
 Full manual: resource `last9://reference/tracejson`
+
+## When to use
+Span filters, counts, averages or percentiles across services with a tracejson pipeline.
+
+## When not to use
+- Exact trace ID: `get_service_traces`
+- One trace's span tree: `get_trace_waterfall`
+- Ranked exceptions: `get_exceptions`
+- Change against a baseline: `get_apm_service_deviations`
+
+## Pairs well with
+- `get_trace_attributes` and `get_trace_attribute_values` (field names and values)
+- `get_current_time` (absolute bounds)
+
+## Output shape
+Span rows for filter-only pipelines; aggregate rows when the pipeline aggregates.
+
+## Known traps
+Field values in filters are strings, enums included (`STATUS_CODE_ERROR`).

@@ -231,6 +231,11 @@ The NPM route is easier on Windows — no path management.
 
 ## What It Can Do
 
+### Orientation
+
+- **`get_workspace_overview`** — Recommended first call when a request names no service or tool (one that does goes straight to its tool): environments, which signals (logs, traces, metrics) were seen in the last hour, service and alert-group counts, firing alerts, and the current time in one cheap call. A signal not seen in that hour can still have older data, so it stays queryable. A failed sub-call leaves its field `null` and adds an `errors[]` entry. Served under every toolset
+- **`get_current_time`** — Current time, plus absolute bounds for `last 2h`, `yesterday` or `since yesterday 9am IST`, in any IANA zone or common abbreviation. Served under every toolset
+
 ### Service Health
 
 - **`get_service_summary`** — Ranked fleet `(service, env)` rows: interval request_count, throughput_rpm, HTTP 4xx/5xx counts, and gRPC error counts
@@ -353,7 +358,7 @@ Read-only tools against the org's Grafana instance (via Last9's Grafana proxy). 
 
 **Deep links on every response.** Every tool returns a `deep_link` field — a direct URL into the Last9 dashboard for that exact query and time range. The agent can hand you the link; you click it; you're there.
 
-**Toolsets.** By default the server exposes every tool. Automation hosts that only need investigation (logs/traces/metrics/profiles) can set `LAST9_TOOLSETS=investigate` (or pass `--toolsets=investigate`) so `tools/list` stays small without client-side mass-disable. Named packs: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`. Unknown names fail fast. The `metrics` pack alone does **not** include `list_datasources` or `did_you_mean` — use `investigate` (or combine toolsets) when you need those discovery helpers.
+**Toolsets.** By default the server exposes every tool. Automation hosts that only need investigation (logs/traces/metrics/profiles) can set `LAST9_TOOLSETS=investigate` (or pass `--toolsets=investigate`) so `tools/list` stays small without client-side mass-disable. Named packs: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`. Unknown names fail fast. `get_current_time` and `get_workspace_overview` are served under every toolset. In HTTP mode a request can narrow this further with the `X-Last9-Toolsets` header (see [Per-request toolsets](#per-request-toolsets)). The `metrics` pack alone does **not** include `list_datasources` or `did_you_mean` — use `investigate` (or combine toolsets) when you need those discovery helpers.
 
 **Tool reference resources.** Long logjson/tracejson/service-logs/metrics manuals are MCP resources (`last9://reference/logjson`, `last9://reference/tracejson`, `last9://reference/service_logs`, `last9://reference/metrics`, `last9://reference/investigation`), not always-on tool description text. Critical query rules stay on the tool description so agents that never call `resources/read` still get correct construction guidance. Discover org-specific fields with `get_log_attributes` / `get_log_attributes_for_pipeline` (and the trace equivalents)—they are not injected into descriptions.
 
@@ -407,6 +412,20 @@ curl -s -X POST http://localhost:8080/mcp \
     }'
 ```
 
+### Per-request toolsets
+
+In HTTP mode a request can narrow its tool surface with the `X-Last9-Toolsets` header, or the `toolsets` query parameter for clients that cannot set headers (`/mcp?toolsets=logs,traces`). A non-blank header wins when both are sent. The value takes the same comma-separated names as `--toolsets`. The request sees the intersection with the startup `--toolsets`: it can narrow, never widen, and `all` or an empty value keeps the startup set. An unknown name returns `400` naming it. `tools/list`, `tools/call` and the `initialize` instructions all follow the effective set; `get_current_time` and `get_workspace_overview` stay in every set.
+
+```bash
+curl -s -X POST http://localhost:8080/mcp \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
+    -H "X-Last9-Toolsets: logs,alerts" \
+    -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}'
+```
+
+Each distinct effective set is served by its own server, built on its first request (tens of milliseconds) and kept until shutdown; a request restating the startup set reuses the startup server. There is no eviction: only named toolsets are accepted, so the cache holds at most one server per combination of them (135 today, about 75 MB of live heap together; a full cache settled near 230 MB resident in testing).
+
 ### Build from Source
 
 ```bash
@@ -433,6 +452,18 @@ LAST9_HTTP=true ./last9-mcp-server
 - For relative windows: use `lookback_minutes`.
 - For absolute windows: use RFC3339/ISO8601 — `2026-02-09T15:04:05Z`.
 - Legacy `YYYY-MM-DD HH:MM:SS` is accepted for compatibility only.
+- Resolve phrases like `since yesterday 9am IST` to RFC3339 bounds with `get_current_time`.
+
+### get_workspace_overview
+
+No parameters. Probes the last 60 minutes concurrently, each sub-call with a short timeout, and returns `current_time`, `lookback_minutes`, `environments`, `telemetry` (`logs`/`traces`/`metrics` booleans), `service_count` (distinct services `get_service_summary` ranks, every env), `alert_group_count`, `firing_alert_count` and `errors` (`[{field, error}]`). A field whose sub-call failed is `null` (unknown), never `0` or `false`. The probes are not narrowed by `--toolsets`: toolsets filter which tools are served, and the API token scopes what the server can read.
+
+### get_current_time
+
+- `range` (string, optional): `last 2h`, `past 30 minutes`, `last 7d` (s, m, h, d = 24h, w = 7d; at most 366d); `today`; `yesterday`; `since <point>`; `<point> to <point>`. A point is RFC3339, or `today` / `yesterday` / a weekday (`monday`, `mon`: its latest occurrence, today included) / `YYYY-MM-DD` with an optional `9am`, `9:30pm` or `14:30`. A trailing zone overrides `timezone` for both bounds; a zone anywhere else is an error. Omit for just `now`.
+- `timezone` (string, optional): IANA name or abbreviation (IST = Asia/Kolkata, PST/PDT, EST/EDT, UTC, GMT). Default UTC. Unknown zones are an error, and so is the ambiguous `CST` (pass `America/Chicago` or `Asia/Shanghai`).
+
+Returns `now` (and `start`/`end` with `range`) as `{iso, epoch_seconds, local}`; `local` appears only for a non-UTC zone.
 
 ### get_exceptions
 

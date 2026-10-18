@@ -1,3 +1,5 @@
+{{- $overview := tools "get_workspace_overview" -}}
+{{- $time := tools "get_current_time" -}}
 {{- $services := tools "did_you_mean" "get_service_environments" "get_profile_services" "list_datasources" "grafana_list_datasources" -}}
 {{- $attributes := tools "get_log_attributes" "get_log_attributes_for_pipeline" "get_trace_attributes" "get_trace_attributes_for_pipeline" "get_trace_attribute_values" -}}
 {{- $metricNames := tools "prometheus_labels" "prometheus_label_values" -}}
@@ -9,8 +11,7 @@
 {{- $alerts := tools "get_alerts" "get_alert_rule_state" -}}
 {{- $changes := tools "get_change_events" -}}
 {{- $deviations := tools "get_apm_service_deviations" "get_trace_attribute_deviations" -}}
-{{- $scoped := tools "get_service_logs" "get_service_traces" "get_exceptions" "get_trace_waterfall" -}}
-{{- $patterns := tools "get_log_patterns" "get_emerging_log_patterns" -}}
+{{- $scoped := tools "get_service_logs" "get_log_patterns" "get_emerging_log_patterns" "get_service_traces" "get_exceptions" "get_trace_waterfall" -}}
 {{- $databases := tools "get_databases" "get_database_slow_queries" "get_database_queries" "get_database_server_metrics" -}}
 {{- $profiles := tools "get_profile_summary" "get_top_functions" "get_flamegraph" -}}
 {{- $raw := tools "get_logs" "get_traces" -}}
@@ -26,6 +27,16 @@
 {{- $addDropRule := tools "add_drop_rule" -}}
 {{- $destructive := tools "update_dashboard" "delete_dashboard" "delete_dashboard_snapshot" "update_alert" "patch_alert" "delete_alert" "mute_alert_group" "detach_notification_channel" "delete_notification_channel" -}}
 Last9 observability for the caller's organization. Discover names first, answer with the most specific tool, and treat writes with care.
+{{- if or $overview $time}}
+
+## Start here
+{{- with $overview}}
+When a request names no service or tool, call {{.}} first: it returns environments, signals seen in the last hour, service and alert-group counts, firing alerts and the current time. Otherwise go straight to the most specific tool. A signal it reports absent was only not observed in that hour: still query it for the user's requested time range, index or datasource.
+{{- end}}
+{{- with $time}}
+For today's date or a relative window ("since 9am IST"), call {{.}}.
+{{- end}}
+{{- end}}
 {{- if or $services $attributes $metricNames $logInventory $alertRules $dashboards}}
 
 ## Discover before you query
@@ -49,7 +60,7 @@ Never guess service, environment, attribute, metric or label names, or dashboard
 - Dashboards, snapshots and Grafana folders: {{.}}{{with $dashboardReads}}; open one by id with {{.}}{{end}}.
 {{- end}}
 {{- end}}
-{{- if or $serviceProfile $health $alerts $changes $deviations $scoped $patterns $databases $profiles}}
+{{- if or $serviceProfile $health $alerts $changes $deviations $scoped $databases $profiles}}
 
 ## Prefer dedicated tools
 They return computed answers with the right scoping; reach for them before writing a query.
@@ -71,9 +82,6 @@ They return computed answers with the right scoping; reach for them before writi
 {{- with $scoped}}
 - One service's logs, traces and errors: {{.}}.
 {{- end}}
-{{- with $patterns}}
-- Log templates and what is new in them, before reading raw lines: {{.}}.
-{{- end}}
 {{- with $databases}}
 - Databases: {{.}}.
 {{- end}}
@@ -89,7 +97,7 @@ Use {{.}} only when no dedicated tool answers the question, and build each query
 {{- if or (has "get_logs") (has "get_traces") (has "get_service_logs") (has "prometheus_range_query") (has "get_service_profile")}}
 
 ## Reference manuals
-Read these resources before writing a non-trivial query:
+Read these resources before writing a non-trivial query{{if has "get_logs"}}. After a parse stage, reference extracted fields as attributes['name'], never as a bare name{{end}}:
 {{- if has "get_logs"}}
 - `get_logs` pipelines: `last9://reference/logjson`
 {{- end}}

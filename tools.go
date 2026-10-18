@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"last9-mcp/internal/alerting"
 	"last9-mcp/internal/apm"
@@ -21,6 +22,7 @@ import (
 	"last9-mcp/internal/telemetry/traces"
 	"last9-mcp/internal/toolsets"
 	"last9-mcp/internal/utils"
+	"last9-mcp/internal/workspace"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -60,6 +62,7 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, allowed too
 	if tool.Title == "" && tool.Annotations != nil {
 		tool.Title = tool.Annotations.Title
 	}
+	tool.Description = prompts.TrimRoutes(tool.Description, allowed.Allows)
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("register %q: %v", tool.Name, r)
@@ -122,6 +125,18 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 			regErr = err
 		}
 	}
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_current_time",
+		Annotations: readOnlyTool("Get Current Time"),
+		Description: prompts.GetCurrentTimeDescription,
+	}, workspace.NewGetCurrentTimeHandler(time.Now)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_workspace_overview",
+		Annotations: readOnlyTool("Get Workspace Overview"),
+		Description: prompts.GetWorkspaceOverviewDescription,
+	}, workspace.NewGetWorkspaceOverviewHandler(client, cfg)))
 
 	// Register exceptions tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
