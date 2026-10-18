@@ -61,6 +61,7 @@ func TestDescriptionDocumentsVerdictsAndThresholds(t *testing.T) {
 		"`latency_env`",
 		"also counts error-status spans and 429s",
 		"client-only ones show 0 rpm",
+		"label, else annotation",
 	} {
 		if !strings.Contains(description, want) {
 			t.Errorf("description must state %q", want)
