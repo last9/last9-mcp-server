@@ -23,18 +23,20 @@
 {{- $claim := tools "acknowledge_alert" "reassign_alert" -}}
 {{- $destructive := tools "update_dashboard" "delete_dashboard" "delete_dashboard_snapshot" "add_drop_rule" "update_alert" "patch_alert" "delete_alert" "mute_alert_group" "detach_notification_channel" "delete_notification_channel" -}}
 Last9 observability for the caller's organization. Discover names first, answer with the most specific tool, and treat writes with care.
-{{- with $overview}}
+{{- if or $overview $time}}
 
 ## Start here
-When a request names no service or tool, call {{.}} first: one cheap call that returns the environments, which signals (logs, traces, metrics) were seen in the last hour, service and alert-group counts, firing alerts and the current time. When it names a service, signal or tool, go straight to the most specific tool for it. A signal it reports absent was only not observed in that hour: still query it for the user's requested time range, index or datasource.
+{{- with $overview}}
+When a request names no service or tool, call {{.}} first: it returns environments, signals seen in the last hour, service and alert-group counts, firing alerts and the current time. Otherwise go straight to the most specific tool. A signal it reports absent was only not observed in that hour: still query it for the user's requested time range, index or datasource.
 {{- end}}
-{{- if or $time $services $attributes $metricNames $alertRules $dashboards}}
+{{- with $time}}
+For today's date or the bounds of a relative window ("since 9am IST"), call {{.}}.
+{{- end}}
+{{- end}}
+{{- if or $services $attributes $metricNames $alertRules $dashboards}}
 
 ## Discover before you query
 Never guess service, environment, attribute, metric or label names, or dashboard ids; look them up and reuse the exact values.
-{{- with $time}}
-- Today's date, and absolute bounds for "last 2h" or "since yesterday 9am IST": {{.}}; never guess the date.
-{{- end}}
 {{- with $services}}
 - Services, environments and datasources: {{.}}.
 {{- end}}
