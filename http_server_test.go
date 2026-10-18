@@ -152,8 +152,8 @@ func TestStatelessHTTPUserToken(t *testing.T) {
 			t.Fatalf("tokenless request failed: %v", result["error"])
 		}
 	}
-	if result := post(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"probe","arguments":{"id":"missing"}}}`); result["error"] == nil {
-		t.Fatalf("tokenless call succeeded: %v", result)
+	if result := post(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"probe","arguments":{"id":"missing"}}}`); !isToolError(result, "user token required") {
+		t.Fatalf("tokenless call was not a tool error: %v", result)
 	}
 
 	tokens := []string{
@@ -180,6 +180,17 @@ func TestStatelessHTTPUserToken(t *testing.T) {
 	if seen["a"] != "Bearer "+tokens[0] || seen["b"] != "Bearer "+tokens[1] || seen["header"] != "Bearer "+tokens[0] {
 		t.Fatalf("downstream tokens did not match their calls: %v", seen)
 	}
+}
+
+// isToolError reports whether a decoded JSON-RPC response is a tools/call
+// result with isError set and text containing want.
+func isToolError(response map[string]any, want string) bool {
+	result, _ := response["result"].(map[string]any)
+	if result == nil || result["isError"] != true {
+		return false
+	}
+	raw, _ := json.Marshal(result["content"])
+	return strings.Contains(string(raw), want)
 }
 
 // TestNarrowedToolsetServersEnforceUserToken pins that every server main

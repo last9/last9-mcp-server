@@ -11,6 +11,7 @@ import (
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -46,19 +47,27 @@ func userTokenMiddleware(cfg models.Config) mcp.Middleware {
 			case present:
 				result = validateUserToken(token, expectedHost)
 			}
+			tool := safeToolName(call.Params.Name)
 			if cfg.UserTokenFallback {
-				log.Printf("user_token_shadow result=%s method=tools/call tool=%s", result, safeToolName(call.Params.Name))
+				log.Printf("user_token_shadow result=%s method=tools/call tool=%s", result, tool)
 				return next(ctx, method, req)
 			}
-			if result == "missing" {
-				return nil, errors.New("user token required")
-			}
 			if result != "ok" {
-				return nil, errors.New(result)
+				log.Printf("user_token_rejected result=%s method=tools/call tool=%s", result, tool)
+				return userTokenRejection(result), nil
 			}
 			return next(auth.WithRequestToken(ctx, token), method, req)
 		}
 	}
+}
+
+// userTokenRejection is a tool error rather than a JSON-RPC error, so the
+// agent reads why the call was refused instead of a bare code 0.
+func userTokenRejection(result string) *mcp.CallToolResult {
+	if result == "missing" {
+		return utils.ToolErrorResult("user token required: send a Last9 access token in _meta.last9_user_token or an Authorization: Bearer header")
+	}
+	return utils.ToolErrorResult("user token rejected: " + result)
 }
 
 func safeToolName(name string) string {
