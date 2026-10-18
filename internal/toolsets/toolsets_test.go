@@ -14,7 +14,7 @@ func TestParse(t *testing.T) {
 				want[tool] = true
 			}
 		}
-		for _, tool := range investigateExtras {
+		for _, tool := range append(investigateExtras, core...) {
 			want[tool] = true
 		}
 		return want
@@ -27,12 +27,12 @@ func TestParse(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "empty means all", spec: "", wantNil: true},
-		{name: "whitespace trims and lowercases", spec: " Alerts ", wantSet: toSet(named["alerts"])},
+		{name: "whitespace trims and lowercases", spec: " Alerts ", wantSet: toSet(named["alerts"], core)},
 		{name: "unknown token errors", spec: "bogus", wantErr: true},
 		{name: "all supersedes others", spec: "all", wantNil: true},
 		{name: "all supersedes later tokens", spec: "all,logs", wantNil: true},
 		{name: "investigate composite excludes alerts domain", spec: "investigate", wantSet: investigate},
-		{name: "uppercase valid token", spec: "METRICS", wantSet: toSet(named["metrics"])},
+		{name: "uppercase valid token", spec: "METRICS", wantSet: toSet(named["metrics"], core)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -117,10 +117,12 @@ func TestAllows(t *testing.T) {
 	}
 }
 
-func toSet(names []string) map[string]bool {
-	m := make(map[string]bool, len(names))
-	for _, n := range names {
-		m[n] = true
+func toSet(lists ...[]string) map[string]bool {
+	m := map[string]bool{}
+	for _, names := range lists {
+		for _, n := range names {
+			m[n] = true
+		}
 	}
 	return m
 }
@@ -284,6 +286,20 @@ func TestParseUnknown(t *testing.T) {
 	for _, name := range []string{"logs", "investigate", "all"} {
 		if !strings.Contains(msg, name) {
 			t.Errorf("error should list %q; got %q", name, msg)
+		}
+	}
+}
+
+func TestEveryToolsetIncludesCore(t *testing.T) {
+	for _, spec := range append(ValidNames(), "logs,alerts") {
+		set, err := Parse(spec)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", spec, err)
+		}
+		for _, tool := range []string{"get_current_time", "get_workspace_overview"} {
+			if !set.Allows(tool) {
+				t.Errorf("toolsets=%s hides core tool %q", spec, tool)
+			}
 		}
 	}
 }
