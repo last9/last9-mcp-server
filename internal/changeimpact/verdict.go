@@ -57,35 +57,38 @@ const noChangeNote = "No significant change is a valid answer, not a failure: th
 // thresholdEpsilon absorbs float noise in deltas computed exactly at a threshold.
 const thresholdEpsilon = 1e-9
 
-// serviceRegressions lists the thresholds service crossed between the windows.
-func serviceRegressions(service string, baseline, after apm.GoldenSignals) []string {
+// serviceRegressions lists the thresholds s crossed between the windows.
+func serviceRegressions(s scopedService, baseline, after apm.GoldenSignals) []Regression {
 	if baseline.RequestCount < minRequestsPerWindow {
 		return nil
 	}
-	var found []string
+	var found []Regression
 	if after.RequestCount >= minRequestsPerWindow && baseline.ErrorRatePct != nil && after.ErrorRatePct != nil {
 		if delta := *after.ErrorRatePct - *baseline.ErrorRatePct; delta >= errorRateIncreasePP-thresholdEpsilon {
-			found = append(found, fmt.Sprintf("%s error rate rose %.2f pp (%.2f%% → %.2f%%) (threshold %g pp)", service, delta, *baseline.ErrorRatePct, *after.ErrorRatePct, errorRateIncreasePP))
+			found = append(found, s.regression(MetricErrorRatePct, *baseline.ErrorRatePct, *after.ErrorRatePct,
+				fmt.Sprintf("%s error rate rose %.2f pp (%.2f%% → %.2f%%) (threshold %g pp)", s.name, delta, *baseline.ErrorRatePct, *after.ErrorRatePct, errorRateIncreasePP)))
 		}
 	}
 	env := latencyEnv(baseline, after)
 	before, now := baseline.LatencyByEnv[env].P95Ms, after.LatencyByEnv[env].P95Ms
 	judgeLatency := baseline.RequestsByEnv[env] >= minRequestsPerWindow && after.RequestsByEnv[env] >= minRequestsPerWindow
 	if pct := deltaPct(before, now); judgeLatency && pct != nil && *pct >= p95LatencyIncreasePct-thresholdEpsilon {
-		found = append(found, fmt.Sprintf("%s p95 latency rose %.0f%% (%.1f ms → %.1f ms) in %s (threshold %g%%)", service, *pct, *before, *now, env, p95LatencyIncreasePct))
+		found = append(found, s.regression(MetricLatencyP95Ms, *before, *now,
+			fmt.Sprintf("%s p95 latency rose %.0f%% (%.1f ms → %.1f ms) in %s (threshold %g%%)", s.name, *pct, *before, *now, env, p95LatencyIncreasePct)))
 	}
 	// Windows can differ in length, so compare rates, not request counts. A
 	// collapse is what thins the after window, so only an empty one is skipped.
 	if pct := deltaPct(&baseline.ThroughputRPM, &after.ThroughputRPM); after.RequestCount > 0 && pct != nil && -*pct >= throughputDropPct-thresholdEpsilon {
-		found = append(found, fmt.Sprintf("%s throughput fell %.0f%% (%.1f → %.1f rpm) (threshold %g%%)", service, -*pct, baseline.ThroughputRPM, after.ThroughputRPM, throughputDropPct))
+		found = append(found, s.regression(MetricThroughputRPM, baseline.ThroughputRPM, after.ThroughputRPM,
+			fmt.Sprintf("%s throughput fell %.0f%% (%.1f → %.1f rpm) (threshold %g%%)", s.name, -*pct, baseline.ThroughputRPM, after.ThroughputRPM, throughputDropPct)))
 	}
 	return found
 }
 
 type verdictInputs struct {
 	afterMinutes int
-	// triggers are the regressions found, most important first.
-	triggers []string
+	// regressions are the triggers found, most important first.
+	regressions []Regression
 	// unavailable names each required section that failed, with its cause.
 	unavailable     []string
 	haveChanged     bool
@@ -98,9 +101,9 @@ func decideVerdict(in verdictInputs) (verdict, reason, note string) {
 	if in.afterMinutes < minAfterMinutes {
 		return VerdictInsufficientData, fmt.Sprintf("after window is %d min; at least %d min after the change is needed", max(in.afterMinutes, 0), minAfterMinutes), ""
 	}
-	if len(in.triggers) > 0 {
-		reason = in.triggers[0]
-		if extra := len(in.triggers) - 1; extra > 0 {
+	if len(in.regressions) > 0 {
+		reason = in.regressions[0].trigger
+		if extra := len(in.regressions) - 1; extra > 0 {
 			reason += fmt.Sprintf(" (+%d more)", extra)
 		}
 		if len(in.unavailable) > 0 {
