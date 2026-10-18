@@ -115,7 +115,7 @@ func (f *fakeLast9) promAnswer(query string, ts int64) []map[string]any {
 		}
 	case strings.Contains(query, "trace_service_response_time") && strings.Contains(query, "p99"):
 		for svc, v := range w.p95 {
-			out = append(out, sample(map[string]string{"service_name": svc, "quantile": "p95"}, v))
+			out = append(out, sample(map[string]string{"service_name": svc, "env": "prod", "quantile": "p95"}, v))
 		}
 	case strings.HasPrefix(query, "sum by (service_name, env)(sum_over_time(trace_endpoint_count{"):
 		values := w.requests

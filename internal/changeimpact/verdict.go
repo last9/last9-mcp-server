@@ -2,7 +2,9 @@ package changeimpact
 
 import (
 	"fmt"
+	"maps"
 	"math"
+	"slices"
 	"strings"
 
 	"last9-mcp/internal/apm"
@@ -63,8 +65,10 @@ func serviceRegressions(service string, baseline, after apm.GoldenSignals) []str
 			found = append(found, fmt.Sprintf("%s error rate rose %.2f pp (%.2f%% → %.2f%%)", service, delta, *baseline.ErrorRatePct, *after.ErrorRatePct))
 		}
 	}
-	if pct := deltaPct(baseline.LatencyP95Ms, after.LatencyP95Ms); pct != nil && *pct >= p95LatencyIncreasePct-thresholdEpsilon {
-		found = append(found, fmt.Sprintf("%s p95 latency rose %.0f%% (%.1f ms → %.1f ms)", service, *pct, *baseline.LatencyP95Ms, *after.LatencyP95Ms))
+	env := latencyEnv(baseline, after)
+	before, now := baseline.LatencyByEnv[env].P95Ms, after.LatencyByEnv[env].P95Ms
+	if pct := deltaPct(before, now); pct != nil && *pct >= p95LatencyIncreasePct-thresholdEpsilon {
+		found = append(found, fmt.Sprintf("%s p95 latency rose %.0f%% (%.1f ms → %.1f ms) in %s", service, *pct, *before, *now, env))
 	}
 	// Windows can differ in length, so compare rates, not request counts.
 	if pct := deltaPct(&baseline.ThroughputRPM, &after.ThroughputRPM); pct != nil && -*pct >= throughputDropPct-thresholdEpsilon {
@@ -117,6 +121,22 @@ func orService(s string) string {
 		return "the service"
 	}
 	return s
+}
+
+// latencyEnv is the environment whose latency both windows compare: of those
+// reporting latency in either window, the one serving the most requests over
+// both, ties by name. Picking per window could compare two environments.
+func latencyEnv(baseline, after apm.GoldenSignals) string {
+	envs := slices.Sorted(maps.Keys(baseline.LatencyByEnv))
+	envs = append(envs, slices.Sorted(maps.Keys(after.LatencyByEnv))...)
+	best, bestRequests := "", -1.0
+	for _, env := range envs {
+		requests := baseline.RequestsByEnv[env] + after.RequestsByEnv[env]
+		if requests > bestRequests || (requests == bestRequests && env < best) {
+			best, bestRequests = env, requests
+		}
+	}
+	return best
 }
 
 // deltaPct is (after-baseline)/baseline as a percentage; nil when either side

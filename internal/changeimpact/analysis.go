@@ -81,9 +81,11 @@ type ServiceSignals struct {
 	Role          string       `json:"role"`
 	ThroughputRPM SignalChange `json:"throughput_rpm"`
 	ErrorRatePct  SignalChange `json:"error_rate_pct"`
-	LatencyP50Ms  SignalChange `json:"latency_p50_ms"`
-	LatencyP95Ms  SignalChange `json:"latency_p95_ms"`
-	LatencyP99Ms  SignalChange `json:"latency_p99_ms"`
+	// LatencyEnv is the one environment both windows' latencies come from.
+	LatencyEnv   string       `json:"latency_env,omitempty"`
+	LatencyP50Ms SignalChange `json:"latency_p50_ms"`
+	LatencyP95Ms SignalChange `json:"latency_p95_ms"`
+	LatencyP99Ms SignalChange `json:"latency_p99_ms"`
 }
 
 type GoldenSection struct {
@@ -371,14 +373,17 @@ func compareSignals(service, role string, baseline, after apm.GoldenSignals) Ser
 	if baseline.ErrorRatePct != nil && after.ErrorRatePct != nil {
 		errorRate.DeltaPP = rounded(*after.ErrorRatePct - *baseline.ErrorRatePct)
 	}
+	env := latencyEnv(baseline, after)
+	before, now := baseline.LatencyByEnv[env], after.LatencyByEnv[env]
 	return ServiceSignals{
 		Service:       service,
 		Role:          role,
 		ThroughputRPM: change(&baseRPM, &afterRPM),
 		ErrorRatePct:  errorRate,
-		LatencyP50Ms:  change(baseline.LatencyP50Ms, after.LatencyP50Ms),
-		LatencyP95Ms:  change(baseline.LatencyP95Ms, after.LatencyP95Ms),
-		LatencyP99Ms:  change(baseline.LatencyP99Ms, after.LatencyP99Ms),
+		LatencyEnv:    env,
+		LatencyP50Ms:  change(before.P50Ms, now.P50Ms),
+		LatencyP95Ms:  change(before.P95Ms, now.P95Ms),
+		LatencyP99Ms:  change(before.P99Ms, now.P99Ms),
 	}
 }
 

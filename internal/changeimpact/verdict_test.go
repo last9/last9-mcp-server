@@ -1,6 +1,7 @@
 package changeimpact
 
 import (
+	"maps"
 	"strings"
 	"testing"
 
@@ -8,15 +9,66 @@ import (
 )
 
 func signals(requests, errors, p95 float64) apm.GoldenSignals {
-	s := apm.GoldenSignals{RequestCount: requests, ErrorCount: errors, ThroughputRPM: requests / 60}
+	s := apm.GoldenSignals{RequestCount: requests, ErrorCount: errors, ThroughputRPM: requests / 60, RequestsByEnv: map[string]float64{"prod": requests}}
 	if requests > 0 {
 		rate := errors / requests * 100
 		s.ErrorRatePct = &rate
 	}
 	if p95 > 0 {
-		s.LatencyP95Ms = &p95
+		s.LatencyByEnv = map[string]apm.Latency{"prod": {P95Ms: &p95}}
 	}
 	return s
+}
+
+// withEnv adds an environment's traffic and p95 to s, as a query with no env
+// returns them.
+func withEnv(s apm.GoldenSignals, env string, requests, p95 float64) apm.GoldenSignals {
+	s.RequestCount += requests
+	s.RequestsByEnv = maps.Clone(s.RequestsByEnv)
+	s.RequestsByEnv[env] = requests
+	s.LatencyByEnv = maps.Clone(s.LatencyByEnv)
+	if s.LatencyByEnv == nil {
+		s.LatencyByEnv = map[string]apm.Latency{}
+	}
+	s.LatencyByEnv[env] = apm.Latency{P95Ms: &p95}
+	return s
+}
+
+// Without an env, both windows must compare one environment's latency: the
+// busiest. Picking the slowest per window compared staging's baseline against
+// prod's after window, and hid prod's own rise.
+func TestLatencyComparesOneEnvironmentAcrossWindows(t *testing.T) {
+	baseline := withEnv(signals(1000, 0, 100), "staging", 10, 1500)
+	after := withEnv(signals(1000, 0, 130), "staging", 0, 90)
+
+	got := strings.Join(serviceRegressions("checkout", baseline, after), "; ")
+	if !strings.Contains(got, "p95 latency rose 30% (100.0 ms → 130.0 ms) in prod") {
+		t.Fatalf("regressions = %q, want prod's p95 rise", got)
+	}
+	compared := compareSignals("checkout", "changed", baseline, after)
+	if compared.LatencyEnv != "prod" || *compared.LatencyP95Ms.Baseline != 100 || *compared.LatencyP95Ms.After != 130 {
+		t.Fatalf("compared latency = env %q, p95 %+v; want prod 100 → 130", compared.LatencyEnv, compared.LatencyP95Ms)
+	}
+}
+
+func TestLatencyEnvPrefersTheBusiestThenTheName(t *testing.T) {
+	cases := []struct {
+		name            string
+		baseline, after apm.GoldenSignals
+		want            string
+	}{
+		{"busiest over both windows", withEnv(signals(100, 0, 100), "eu", 60, 100), withEnv(signals(10, 0, 100), "eu", 60, 100), "eu"},
+		{"tie by name", withEnv(signals(100, 0, 100), "eu", 100, 100), signals(0, 0, 0), "eu"},
+		{"busy env without latency is skipped", withEnv(signals(1000, 0, 0), "eu", 1, 100), signals(1000, 0, 0), "eu"},
+		{"no latency anywhere", signals(1000, 0, 0), signals(1000, 0, 0), ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := latencyEnv(tc.baseline, tc.after); got != tc.want {
+				t.Fatalf("latencyEnv = %q, want %q", got, tc.want)
+			}
+		})
+	}
 }
 
 func TestServiceRegressionThresholds(t *testing.T) {

@@ -74,8 +74,8 @@ func TestQueryGoldenSignalsJoinsCountsAndLatencyPerService(t *testing.T) {
 			{map[string]string{"service_name": "checkout", "env": "prod"}, "3"},
 		},
 		goldenLatencyQuery(matcher, 30): {
-			{map[string]string{"service_name": "checkout", "quantile": "p50"}, "20"},
-			{map[string]string{"service_name": "checkout", "quantile": "p95"}, "120"},
+			{map[string]string{"service_name": "checkout", "env": "prod", "quantile": "p50"}, "20"},
+			{map[string]string{"service_name": "checkout", "env": "prod", "quantile": "p95"}, "120"},
 		},
 	}
 	server, _ := newPromQueryStub(t, answers)
@@ -92,11 +92,15 @@ func TestQueryGoldenSignalsJoinsCountsAndLatencyPerService(t *testing.T) {
 	if checkout.ErrorRatePct == nil || *checkout.ErrorRatePct != 2 {
 		t.Fatalf("checkout error rate = %v, want 2", checkout.ErrorRatePct)
 	}
-	if checkout.LatencyP50Ms == nil || *checkout.LatencyP50Ms != 20 || checkout.LatencyP95Ms == nil || *checkout.LatencyP95Ms != 120 {
-		t.Fatalf("checkout latency = %+v", checkout)
+	if checkout.RequestsByEnv["prod"] != 600 {
+		t.Fatalf("checkout requests by env = %v", checkout.RequestsByEnv)
 	}
-	if checkout.LatencyP99Ms != nil {
-		t.Fatalf("p99 must be nil when the series has no p99 quantile, got %v", *checkout.LatencyP99Ms)
+	prod, ok := checkout.LatencyByEnv["prod"]
+	if !ok || prod.P50Ms == nil || *prod.P50Ms != 20 || prod.P95Ms == nil || *prod.P95Ms != 120 {
+		t.Fatalf("checkout latency by env = %+v", checkout.LatencyByEnv)
+	}
+	if prod.P99Ms != nil {
+		t.Fatalf("p99 must be nil when the series has no p99 quantile, got %v", *prod.P99Ms)
 	}
 	if pay := got["pay.svc"]; pay.ErrorRatePct != nil {
 		t.Fatalf("error rate must be nil with zero requests, got %v", *pay.ErrorRatePct)
@@ -115,11 +119,10 @@ func TestGoldenSignalsMatcherEscapesServicesAndEnv(t *testing.T) {
 }
 
 // Quantile gauges cannot be summed: two envs at p95 100 ms and 400 ms are not a
-// 500 ms service. Each env is aggregated on its own, and with no env the
-// slowest one is reported.
+// 500 ms service. Each env is aggregated and returned on its own.
 func TestGoldenLatencyQueryNeverSumsQuantilesAcrossEnvs(t *testing.T) {
 	got := goldenLatencyQuery(goldenSignalsMatcher([]string{"checkout"}, ""), 30)
-	want := `max by (service_name, quantile) (quantile_over_time(0.95, (sum by (service_name, env, quantile) (trace_service_response_time{env=~".*",service_name=~"checkout", quantile=~"p50|p95|p99"}))[30m:1m]))`
+	want := `quantile_over_time(0.95, (sum by (service_name, env, quantile) (trace_service_response_time{env=~".*",service_name=~"checkout", quantile=~"p50|p95|p99"}))[30m:1m])`
 	if got != want {
 		t.Fatalf("latency query =\n%s\nwant\n%s", got, want)
 	}

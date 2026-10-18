@@ -23,15 +23,23 @@ type GoldenSignalsQuery struct {
 
 // GoldenSignals are one service's server-span aggregates over one window.
 // Errors are 5xx plus gRPC error spans, the error classes get_service_summary
-// counts. Latencies are nil when the service reports no such quantile.
+// counts. Latency stays per environment: quantile gauges from different
+// environments cannot be combined, so callers pick one.
 type GoldenSignals struct {
-	RequestCount  float64  `json:"request_count"`
-	ErrorCount    float64  `json:"error_count"`
-	ThroughputRPM float64  `json:"throughput_rpm"`
-	ErrorRatePct  *float64 `json:"error_rate_pct"`
-	LatencyP50Ms  *float64 `json:"latency_p50_ms"`
-	LatencyP95Ms  *float64 `json:"latency_p95_ms"`
-	LatencyP99Ms  *float64 `json:"latency_p99_ms"`
+	RequestCount  float64            `json:"request_count"`
+	ErrorCount    float64            `json:"error_count"`
+	ThroughputRPM float64            `json:"throughput_rpm"`
+	ErrorRatePct  *float64           `json:"error_rate_pct"`
+	RequestsByEnv map[string]float64 `json:"requests_by_env"`
+	LatencyByEnv  map[string]Latency `json:"latency_by_env"`
+}
+
+// Latency is one environment's quantiles in ms, each nil when the service
+// reports no such quantile there.
+type Latency struct {
+	P50Ms *float64 `json:"p50_ms"`
+	P95Ms *float64 `json:"p95_ms"`
+	P99Ms *float64 `json:"p99_ms"`
 }
 
 // DependentsQuery scopes QueryDirectDependents. Env is an exact environment;
@@ -49,8 +57,8 @@ type Dependent struct {
 }
 
 // QueryGoldenSignals returns golden signals keyed by service name. Counts are
-// summed across environments; latencies are the slowest environment's. Services
-// with no series are absent from the map.
+// summed across environments and also kept per environment, as latencies are.
+// Services with no series are absent from the map.
 func QueryGoldenSignals(ctx context.Context, client *http.Client, cfg models.Config, q GoldenSignalsQuery) (map[string]GoldenSignals, error) {
 	matcher := goldenSignalsMatcher(q.Services, q.Env)
 	windowMin := intervalMinutes(q.Window.Start.Unix(), q.Window.End.Unix())
@@ -65,6 +73,10 @@ func QueryGoldenSignals(ctx context.Context, client *http.Client, cfg models.Con
 		s := signals[row.Service]
 		s.RequestCount += row.RequestCount
 		s.ErrorCount += row.HTTP5xxCount + row.GRPCErrorCount
+		if s.RequestsByEnv == nil {
+			s.RequestsByEnv = map[string]float64{}
+		}
+		s.RequestsByEnv[row.Env] += row.RequestCount
 		signals[row.Service] = s
 	}
 	for service, s := range signals {
@@ -93,14 +105,20 @@ func QueryGoldenSignals(ctx context.Context, client *http.Client, cfg models.Con
 			continue
 		}
 		s := signals[service]
+		if s.LatencyByEnv == nil {
+			s.LatencyByEnv = map[string]Latency{}
+		}
+		env := r.Metric["env"]
+		l := s.LatencyByEnv[env]
 		switch r.Metric["quantile"] {
 		case "p50":
-			s.LatencyP50Ms = &val
+			l.P50Ms = &val
 		case "p95":
-			s.LatencyP95Ms = &val
+			l.P95Ms = &val
 		case "p99":
-			s.LatencyP99Ms = &val
+			l.P99Ms = &val
 		}
+		s.LatencyByEnv[env] = l
 		signals[service] = s
 	}
 	return signals, nil
@@ -152,13 +170,13 @@ func goldenSignalsMatcher(services []string, env string) string {
 }
 
 // goldenLatencyQuery aggregates each latency quantile series within one env the
-// way get_service_dependency_graph and get_service_operations_summary do, then
-// keeps the slowest env: quantile gauges from different envs cannot be summed.
-// The window is a subquery over the summed gauge: a range inside sum would be
+// way get_service_dependency_graph and get_service_operations_summary do; envs
+// stay apart, since quantile gauges from different envs cannot be summed. The
+// window is a subquery over the summed gauge: a range inside sum would be
 // reduced to one sample before quantile_over_time sees it.
 func goldenLatencyQuery(matcher string, windowMin int) string {
 	return fmt.Sprintf(
-		`max by (service_name, quantile) (quantile_over_time(0.95, (sum by (service_name, env, quantile) (trace_service_response_time{%s, quantile=~"p50|p95|p99"}))[%dm:1m]))`,
+		`quantile_over_time(0.95, (sum by (service_name, env, quantile) (trace_service_response_time{%s, quantile=~"p50|p95|p99"}))[%dm:1m])`,
 		matcher, windowMin,
 	)
 }
