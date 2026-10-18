@@ -58,6 +58,9 @@ func TestDescriptionDocumentsVerdictsAndThresholds(t *testing.T) {
 		"rounded down to the minute",
 		"wholly or in any query listed in `" + apmUnavailablePath + "`",
 		"Trace-attribute deviations explain a verdict but never set one",
+		"`latency_env`",
+		"also counts error-status spans and 429s",
+		"client-only ones show 0 rpm",
 	} {
 		if !strings.Contains(description, want) {
 			t.Errorf("description must state %q", want)
