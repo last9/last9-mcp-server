@@ -15,7 +15,7 @@ const (
 	emptyPatternTemplate   = "(empty message)"
 	patternRouteTokens     = 2
 	patternSimilarity      = 0.5
-	maxPatternSampleRunes  = 500
+	maxPatternTextRunes    = 500
 	unknownPatternSeverity = "unknown"
 )
 
@@ -57,11 +57,13 @@ type patternWindow struct {
 	severities map[string]int
 }
 
+// template is cut like a sample: a JSON body without a message key templates
+// as the whole body, and a few of those would otherwise fill the response.
 func (p *logPattern) template() string {
 	if len(p.tokens) == 0 {
 		return emptyPatternTemplate
 	}
-	return strings.Join(p.tokens, " ")
+	return truncatePatternText(strings.Join(p.tokens, " "))
 }
 
 func (p *logPattern) stats(window int) LogPatternStats {
@@ -145,7 +147,7 @@ func (m *logPatternMiner) count(windows [][]LogEntry, tokens [][][]string) error
 		for i, entry := range entries {
 			pattern := m.assign(tokens[w][i])
 			if pattern == nil {
-				return fmt.Errorf("log line %q fits no log pattern, so pattern counts would be wrong", truncatePatternSample(entry.Message))
+				return fmt.Errorf("log line %q fits no log pattern, so pattern counts would be wrong", truncatePatternText(entry.Message))
 			}
 			pattern.record(w, entry)
 		}
@@ -167,7 +169,7 @@ func (p *logPattern) fits(tokens []string) bool {
 
 func (p *logPattern) record(window int, entry LogEntry) {
 	if !p.sampled {
-		p.sample, p.sampled = truncatePatternSample(entry.Message), true
+		p.sample, p.sampled = truncatePatternText(entry.Message), true
 	}
 	p.windows[window].record(entry)
 }
@@ -272,10 +274,10 @@ func patternText(message string) string {
 	return message
 }
 
-func truncatePatternSample(message string) string {
+func truncatePatternText(message string) string {
 	runes := []rune(message)
-	if len(runes) <= maxPatternSampleRunes {
+	if len(runes) <= maxPatternTextRunes {
 		return message
 	}
-	return string(runes[:maxPatternSampleRunes]) + "…"
+	return string(runes[:maxPatternTextRunes]) + "…"
 }

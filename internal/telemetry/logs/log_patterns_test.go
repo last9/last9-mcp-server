@@ -237,10 +237,48 @@ func sameEntries(message string, n int) []LogEntry {
 	return out
 }
 
-func TestLogPatternMiner_TruncatesLongSamples(t *testing.T) {
-	long := strings.Repeat("x", maxPatternSampleRunes+50)
-	p := mustMineLogPatterns(t, []LogEntry{{Message: long}})[0]
-	if got := len([]rune(p.sample)); got != maxPatternSampleRunes+1 {
-		t.Fatalf("sample length = %d runes, want %d plus an ellipsis", got, maxPatternSampleRunes)
+func TestLogPatternMiner_TruncatesLongSamplesAndTemplates(t *testing.T) {
+	cases := []struct {
+		name      string
+		runes     int
+		wantRunes int
+	}{
+		{"one under the limit", maxPatternTextRunes - 1, maxPatternTextRunes - 1},
+		{"at the limit", maxPatternTextRunes, maxPatternTextRunes},
+		{"one over the limit", maxPatternTextRunes + 1, maxPatternTextRunes + 1},
+		{"far over the limit", maxPatternTextRunes * 20, maxPatternTextRunes + 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := mustMineLogPatterns(t, []LogEntry{{Message: strings.Repeat("é", c.runes)}})[0]
+			if got := len([]rune(p.sample)); got != c.wantRunes {
+				t.Errorf("sample length = %d runes, want %d", got, c.wantRunes)
+			}
+			if got := len([]rune(p.template())); got != c.wantRunes {
+				t.Errorf("template length = %d runes, want %d", got, c.wantRunes)
+			}
+			if truncated := c.runes > maxPatternTextRunes; truncated != strings.HasSuffix(p.template(), "…") {
+				t.Errorf("template ends in an ellipsis = %t, want %t", !truncated, truncated)
+			}
+		})
+	}
+}
+
+// Truncation is for display only: templates differing past the cut still count
+// apart, even though both render as the same truncated text.
+func TestLogPatternMiner_CountsTemplatesDifferingPastTheCutApart(t *testing.T) {
+	prefix := strings.Repeat("k ", maxPatternTextRunes)
+	lines := append(sameEntries(prefix+"alpha", 3), sameEntries(prefix+"gamma delta", 2)...)
+	patterns := mustMineLogPatterns(t, lines)
+	if len(patterns) != 2 {
+		t.Fatalf("patterns = %d, want 2", len(patterns))
+	}
+	if patterns[0].template() != patterns[1].template() {
+		t.Fatalf("templates differ, want both cut to the shared prefix")
+	}
+	for i, want := range []int{3, 2} {
+		if got := patterns[i].stats(0).Count; got != want {
+			t.Errorf("pattern %d count = %d, want %d", i, got, want)
+		}
 	}
 }

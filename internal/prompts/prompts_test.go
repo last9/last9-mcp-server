@@ -449,6 +449,7 @@ func TestLogPatternDescriptionsCriticalRules(t *testing.T) {
 		{"logs_truncated", "must say a truncated search's total is not complete"},
 		{"Failed search chunks return a tool error", "must say an incomplete search fails rather than reading as fewer patterns"},
 		{"A truncated or capped search still returns", "must say truncation is a success flagged by sample_limit_reached, not a failure"},
+		{"cut at 500 char", "must say templates and samples are cut, so a cut template is not read as the whole message"},
 	}
 	for name, desc := range descriptions {
 		for _, c := range checks {

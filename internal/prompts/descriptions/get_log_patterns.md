@@ -2,7 +2,7 @@ Cluster one service's log lines in a time window into message templates (variabl
 
 Returns:
 - `window`: the sampled range, `sampled_lines`, `sample_limit_reached` (true when the sample may miss matching lines), `total_matching_lines` when the API reports it, and `logs_truncated` when the search stopped early (its total is then only a floor).
-- `patterns`: each with `template`, `count`, `first_seen`, `last_seen`, `severity_counts` and one raw `sample` line.
+- `patterns`: each with `template`, `count`, `first_seen`, `last_seen`, `severity_counts` and one raw `sample` line; templates and samples are cut at 500 characters, ending in `…`.
 - `total_patterns` and `other` (`patterns`, `count`) for templates below `top_n`.
 
 Rules:
