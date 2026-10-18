@@ -266,11 +266,12 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Description: prompts.GetRemappingRulesDescription,
 	}, remapping.NewGetRemappingRulesHandler(client, cfg)))
 
-	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+	reg(registerWriteTool(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "add_remapping_rule",
 		Annotations: writeTool("Add Remapping Rule", false, false),
 		Description: prompts.AddRemappingRuleDescription,
-	}, remapping.NewAddRemappingRuleHandler(client, cfg)))
+	}, "get_remapping_rules with the same rule_type, looking for a rule with the name you passed",
+		remapping.NewAddRemappingRuleHandler(client, cfg)))
 
 	// Register notification channels tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
