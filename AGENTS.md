@@ -109,7 +109,8 @@ wrong queries in production.
 
 **The most-used tools carry routing sections.** The tools in `description_sections_test.go`
 `sectionedTools` have `## When to use`, `## When not to use`, `## Pairs well with`,
-`## Output shape` and `## Known traps`, in that order. The two routing sections are `- `
+`## Output shape` and `## Known traps`, in that order, except sections `omittedSections` leaves
+out for a tool whose evals regressed with them (`get_logs`). The two routing sections are `- `
 bullets, one route each, naming tools in backticks and nothing else. `prompts.TrimRoutes`
 drops a bullet when `--toolsets` leaves out a tool it names, so put cross-domain routes in
 their own bullet; the test checks every name is served under each toolset.

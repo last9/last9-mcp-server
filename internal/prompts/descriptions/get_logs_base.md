@@ -36,13 +36,5 @@ Counts, aggregates, percentiles or ad-hoc filters over logs, across services or 
 - Ranked exceptions: `get_exceptions`
 - APM fleet error ranking: `get_service_summary`
 
-## Pairs well with
-- `get_log_attributes_for_pipeline` (field names)
-- `get_service_profile` (index routing)
-- `get_current_time` (absolute bounds)
-
 ## Output shape
 Log rows or aggregate rows, with `l9_result` / `l9_sanity` metadata on partial or suspicious counts.
-
-## Known traps
-Default lookback is only 5 minutes. HTTP status lives in Body or attributes, never SeverityText.
