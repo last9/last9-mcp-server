@@ -30,6 +30,6 @@
 	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
 	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
-	- env: (Required) Environment to filter by. Use "get_service_environments" tool to get available environments.
+	- env: (Optional) Exact environment name, e.g. production. Use "get_service_environments" tool to get available environments. Default all environments (empty or .*). Anchored ^production$ is accepted and matched exactly; alternation (a|b) and wildcards (prod.*) are rejected. For regex matching use get_service_summary. The response echoes the matched `env`, plus `env_requested` when it differed.
 	- service_name: (Required) Service name to filter by. Defaults to all services.
 	- If unsure of the service_name or env spelling, call "did_you_mean" first.
