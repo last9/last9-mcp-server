@@ -57,6 +57,9 @@ func TestDescriptionDocumentsVerdictsAndThresholds(t *testing.T) {
 		"get_change_events",
 		"wholly or in any query listed in `" + apmUnavailablePath + "`",
 		"Trace-attribute deviations explain a verdict but never set one",
+		"`regressions`",
+		"exactly one of `" + strings.Join([]string{MetricErrorRatePct, MetricLatencyP95Ms, MetricThroughputRPM, MetricAlert, MetricAPMDeviation}, "`, `") + "`",
+		"(`" + RoleChanged + "` or `" + RoleDependent + "`)",
 	} {
 		if !strings.Contains(description, want) {
 			t.Errorf("description must state %q", want)
