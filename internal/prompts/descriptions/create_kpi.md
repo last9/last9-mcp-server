@@ -2,7 +2,7 @@ Create a KPI (indicator) on an existing alert group so alert rules can bind to i
 
 On a timeout or connection error the create may or may not have been applied; check by name with get_entity_kpis before retrying.
 
-Before creating: run the query with `prometheus_range_query` over a representative window and confirm it returns data with the series and labels you expect; the API also rejects a query that fails on the alert group's data source.
+Before creating: run the query with `prometheus_range_query` over a representative window and confirm it returns data with the series and labels you expect. The API rejects only a query that does not parse; it saves a valid query for a metric that does not exist.
 
 Parameters:
 - `entity_id` (required): alert group/entity UUID.

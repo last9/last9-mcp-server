@@ -708,6 +708,7 @@ func TestKPIToolDescriptionsSteerAuthoring(t *testing.T) {
 		"create_kpi": {prompts.CreateKPIDescription, []string{
 			"`get_entity_kpis`", "`prometheus_range_query`", "Units matter", "Create once and keep the returned id",
 			"Never call create_kpi again for the same query", "`get_dashboard`",
+			"rejects only a query that does not parse",
 		}},
 	} {
 		for _, phrase := range c.phrases {
@@ -715,6 +716,10 @@ func TestKPIToolDescriptionsSteerAuthoring(t *testing.T) {
 				t.Errorf("%s description missing %q", name, phrase)
 			}
 		}
+	}
+	// The API saves a parseable query for a metric that does not exist.
+	if strings.Contains(prompts.CreateKPIDescription, "fails on the alert group's data source") {
+		t.Error("create_kpi claims the API rejects queries that fail on the data source; it only rejects unparseable ones")
 	}
 }
 

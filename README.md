@@ -738,7 +738,7 @@ Returns JSON `{"entity_id","count","kpis":[{"id","name","description","query","u
 
 ### create_kpi
 
-Creates a KPI on an existing alert group; `alerts` toolset only. Use it only when `get_entity_kpis` has no KPI with the query you need. Check the query returns data with `prometheus_range_query` first; the API also rejects a query that fails on the alert group's data source.
+Creates a KPI on an existing alert group; `alerts` toolset only. Use it only when `get_entity_kpis` has no KPI with the query you need. Check the query returns data with `prometheus_range_query` first: the API rejects only a query that does not parse, and saves a valid query for a metric that does not exist.
 
 - `entity_id` (string, required): Alert group/entity UUID.
 - `name` (string, required): Unique within the alert group; a second create with the same name is rejected as a conflict.
