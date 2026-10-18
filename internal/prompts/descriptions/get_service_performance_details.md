@@ -14,7 +14,7 @@ Counter-style fields (throughput, error rate) carry explicit zero values for int
 
 Parameters:
 - `service_name`: (Required) Service to query.
-- `env`: (Required) Environment. Use `get_service_environments` to list values.
+- `env`: (Optional) Exact environment name, e.g. production. Use `get_service_environments` to list values. Default all environments (empty or .*). Anchored ^production$ is accepted and matched exactly; alternation (a|b) and wildcards (prod.*) are rejected. For regex matching use get_service_summary. The response echoes the matched `env`, plus `env_requested` when it differed.
 - `lookback_minutes`: (Optional) Minutes to look back. Default 60.
 - `start_time_iso` / `end_time_iso`: (Optional) RFC3339/ISO8601 bounds (e.g. `2026-02-09T15:04:05Z`). Override lookback when set; end defaults to now.
 - `top_n`: (Optional) Max entries for `top_operations_by_response_time`, `top_operations_by_error_rate`, and `top_errors`. Default 10. Values above 100 clamp to 100.
