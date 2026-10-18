@@ -60,10 +60,7 @@ They return computed answers with the right scoping; reach for them before writi
 - Service health and performance: {{.}}.
 {{- end}}
 {{- with $alerts}}
-- Firing alerts and rule state: {{.}}.
-{{- end}}
-{{- with $coverage}}
-- Alerting gaps ("what am I not alerting on?"): {{.}}.
+- Firing alerts and rule state: {{.}}{{with $coverage}}; coverage gaps: {{.}}{{end}}.
 {{- end}}
 {{- with $changes}}
 - Deploys and other changes: {{.}}.
@@ -79,6 +76,9 @@ They return computed answers with the right scoping; reach for them before writi
 {{- end}}
 {{- with $profiles}}
 - Profiles: {{.}}.
+{{- end}}
+{{- if and $coverage (not $alerts)}}
+- Alert coverage gaps: {{$coverage}}.
 {{- end}}
 {{- end}}
 {{- with $raw}}
