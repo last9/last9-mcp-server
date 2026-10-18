@@ -538,6 +538,9 @@ func TestAPMServiceDeviationsDescription(t *testing.T) {
 			t.Errorf("description missing %q: %s", check.phrase, check.reason)
 		}
 	}
+	if strings.Contains(description, "`get_service_profile` (first)") {
+		t.Error("Pairs well with must not send comparisons to get_service_profile first; routing says to skip it")
+	}
 }
 
 func TestServiceProfileDescriptionSkipsSpecializedTools(t *testing.T) {
