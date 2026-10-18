@@ -445,6 +445,30 @@ func TestServerInstructionsSayCreateAlertRulesStartDisabled(t *testing.T) {
 	}
 }
 
+// With the Start here block, log_query evals referenced parsed fields by bare
+// name (rejected by the validator) until this line named the attributes form;
+// it is about get_logs pipelines, so other query tools don't carry it.
+func TestReferenceManualsNameParsedLogFieldsAsAttributes(t *testing.T) {
+	const parsedFields = "Read these resources before writing a non-trivial query. After a parse stage, reference extracted fields as attributes['name'], never as a bare name:"
+	tests := []struct {
+		name  string
+		tools []string
+		want  string
+	}{
+		{name: "with get_logs", tools: []string{"get_logs", "get_traces"}, want: parsedFields},
+		{name: "without get_logs", tools: []string{"get_traces", "get_service_logs"}, want: "Read these resources before writing a non-trivial query:"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			_, manuals, _ := strings.Cut(instructions, "## Reference manuals\n")
+			if got, _, _ := strings.Cut(manuals, "\n"); got != tt.want {
+				t.Errorf("reference manuals intro = %q, want %q:\n%s", got, tt.want, instructions)
+			}
+		})
+	}
+}
+
 // lineNaming returns the first instructions line that names tool in backticks.
 func lineNaming(instructions, tool string) string {
 	for _, line := range strings.Split(instructions, "\n") {
