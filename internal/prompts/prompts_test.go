@@ -612,9 +612,29 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 			t.Errorf("UpdateDashboardDescription missing %q: %s", c.phrase, c.reason)
 		}
 	}
-	// Any mention at all, not three exact phrasings a reword would slip past.
-	if strings.Contains(create, "list_dashboards") {
+	// Any mention outside the timeout-recovery sentence, not three exact phrasings a reword
+	// would slip past.
+	if strings.Contains(strings.Replace(create, createRetrySentence("list_dashboards"), "", 1), "list_dashboards") {
 		t.Error("CreateDashboardDescription must not require list_dashboards before create")
+	}
+}
+
+func createRetrySentence(readCall string) string {
+	return "On a timeout or connection error the create may or may not have been applied; check by name with " + readCall + " before retrying."
+}
+
+// A create whose response was lost may still have landed; a blind retry duplicates it.
+func TestCreateToolDescriptionsExplainUnknownOutcome(t *testing.T) {
+	for name, c := range map[string]struct{ desc, readCall string }{
+		"add_drop_rule":               {prompts.AddDropRuleDescription, "get_drop_rules"},
+		"create_alert":                {prompts.CreateAlertDescription, "get_alert_config (rule_name)"},
+		"create_alert_from_chart":     {prompts.CreateAlertFromChartDescription, "get_alert_config (rule_name)"},
+		"create_dashboard":            {prompts.CreateDashboardDescription, "list_dashboards"},
+		"create_notification_channel": {prompts.CreateNotificationChannelDescription, "get_notification_channels (scope=channels)"},
+	} {
+		if !strings.Contains(c.desc, createRetrySentence(c.readCall)) {
+			t.Errorf("%s description does not say how to check a create after a timeout: want %q", name, createRetrySentence(c.readCall))
+		}
 	}
 }
 
