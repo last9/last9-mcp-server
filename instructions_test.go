@@ -334,6 +334,32 @@ func TestServerInstructionsOfferPrometheusQueriesOnlyWithMetricDiscovery(t *test
 	}
 }
 
+func TestServerInstructionsSayCreateAlertRulesStartDisabled(t *testing.T) {
+	tests := []struct {
+		name  string
+		tools []string
+		want  string
+	}{
+		{name: "with patch_alert", tools: []string{"create_alert", "patch_alert"}, want: "- Alert rules from `create_alert` are created disabled; enable them with `patch_alert` after validating."},
+		{name: "without patch_alert", tools: []string{"create_alert"}, want: "- Alert rules from `create_alert` are created disabled."},
+		{name: "without create_alert", tools: []string{"patch_alert", "create_alert_from_chart"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			var got string
+			for _, line := range strings.Split(instructions, "\n") {
+				if strings.Contains(line, "created disabled") {
+					got = line
+				}
+			}
+			if got != tt.want {
+				t.Errorf("created-disabled line = %q, want %q:\n%s", got, tt.want, instructions)
+			}
+		})
+	}
+}
+
 // lineNaming returns the first instructions line that names tool in backticks.
 func lineNaming(instructions, tool string) string {
 	for _, line := range strings.Split(instructions, "\n") {

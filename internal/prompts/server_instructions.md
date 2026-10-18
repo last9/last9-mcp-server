@@ -124,6 +124,9 @@ Read these resources before writing a non-trivial query:
 {{- with $create}}
 - Create once with {{.}} and keep the returned id; never create a second copy to change the first.
 {{- end}}
+{{- with tools "create_alert"}}
+- Alert rules from {{.}} are created disabled{{with tools "patch_alert"}}; enable them with {{.}} after validating{{end}}.
+{{- end}}
 {{- with $refine}}
 - Refine an existing object with {{.}}.
 {{- end}}
