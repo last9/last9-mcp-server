@@ -80,7 +80,7 @@ They return computed answers with the right scoping; reach for them before writi
 {{- with $raw}}
 
 ## Raw queries are the last resort
-Use {{.}} only when no dedicated tool answers the question, and build them from discovered names.
+Use {{.}} only when no dedicated tool answers the question, and build each query from discovered names.
 {{- end}}
 {{- if or (has "get_logs") (has "get_traces") (has "get_service_logs") (has "prometheus_range_query") (has "get_service_profile")}}
 
