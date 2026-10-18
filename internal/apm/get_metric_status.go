@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"sort"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"last9-mcp/internal/last9api"
+	"last9-mcp/internal/last9api/prom"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -139,24 +140,13 @@ func queryInstantScalar(ctx context.Context, client *http.Client, cfg models.Con
 }
 
 func queryInstantValues(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64) ([]float64, error) {
-	httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, query, endTime, cfg)
+	series, err := prom.QueryInstant(ctx, last9api.NewClient(client, cfg), prom.QueryInstantInput{
+		Datasource: prom.Datasource{ReadURL: cfg.PrometheusReadURL, Username: cfg.PrometheusUsername, Password: cfg.PrometheusPassword},
+		Query:      query,
+		Timestamp:  endTime,
+	})
 	if err != nil {
 		return nil, err
-	}
-	if httpResp == nil {
-		return nil, fmt.Errorf("received nil response from Prometheus")
-	}
-	defer httpResp.Body.Close()
-	if httpResp.StatusCode != http.StatusOK {
-		return nil, promErr(httpResp, "get_metric_status instant query")
-	}
-	body, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read Prometheus response: %w", err)
-	}
-	var series apiPromInstantResp
-	if err := json.Unmarshal(body, &series); err != nil {
-		return nil, fmt.Errorf("failed to decode Prometheus instant response: %w", err)
 	}
 	out := make([]float64, 0, len(series))
 	for _, s := range series {
