@@ -33,7 +33,7 @@ func GetLogsInputSchema() map[string]interface{} {
 			},
 			"index": map[string]interface{}{
 				"type":        []string{"string", "null"},
-				"description": "Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Omit when the user did not specify an index.",
+				"description": "Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Use a user-named index or a non-default physical index discovered by get_service_profile; omit for default or when unknown.",
 			},
 		},
 		"required":             []string{"logjson_query"},
@@ -50,7 +50,7 @@ func GetLogsInputSchema() map[string]interface{} {
 func logjsonQuerySchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type":        "array",
-		"description": "JSON pipeline query for logs. An ordered list of stages: filter → parse → aggregate/window_aggregate. NOT SQL, NOT a query string. Each stage is an object with a 'type' field.",
+		"description": "(Required) JSON pipeline query for logs. An ordered list of stages: filter → parse → aggregate/window_aggregate. NOT SQL, NOT a query string. Each stage is an object with a 'type' field.",
 		"items": map[string]interface{}{
 			"anyOf": []interface{}{
 				logFilterStageSchema(),

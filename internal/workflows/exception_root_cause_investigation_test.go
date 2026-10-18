@@ -38,4 +38,7 @@ func TestExceptionRootCauseInvestigationIncludesProfileStep(t *testing.T) {
 	if !strings.Contains(got, "telemetry.logs == \"absent\"") {
 		t.Errorf("workflow must skip logs when profile reports logs absent:\n%s", got)
 	}
+	if !strings.Contains(normalized, "Do not repeat a successful call or broaden an empty query") {
+		t.Errorf("workflow must stop rather than repeat successful queries with broader filters:\n%s", got)
+	}
 }

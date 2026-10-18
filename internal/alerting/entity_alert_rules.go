@@ -19,8 +19,8 @@ import (
 
 // GetEntityAlertRulesArgs holds the input arguments for get_entity_alert_rules.
 type GetEntityAlertRulesArgs struct {
-	EntityID string `json:"entity_id"`
-	Severity string `json:"severity,omitempty"`
+	EntityID string `json:"entity_id" jsonschema:"(Required) Entity or alert-group UUID from get_alert_config"`
+	Severity string `json:"severity,omitempty" jsonschema:"Optional case-insensitive severity filter (e.g. breach or threat)"`
 }
 
 // NewGetEntityAlertRulesHandler returns the MCP tool handler for get_entity_alert_rules.
@@ -101,9 +101,10 @@ func fetchEntityAlertRules(
 	return wrapper.Rules, nil
 }
 
-// formatEntityAlertRulesResponse formats entity-scoped rules showing only
-// expression/indicator fields. Basic metadata (state, severity, timestamps, etc.)
-// is omitted because callers already have it from get_alert_config.
+// formatEntityAlertRulesResponse formats entity-scoped rules showing expression/indicator
+// fields and the fields patch_alert changes (mutes and properties, whose description and
+// runbook the org-wide list behind get_alert_config omits). Basic metadata (state, severity,
+// timestamps, etc.) is omitted because callers already have it from get_alert_config.
 func formatEntityAlertRulesResponse(rules AlertConfigResponse) string {
 	out := fmt.Sprintf("Found %d alert rules for entity:\n\n", len(rules))
 	for i, rule := range rules {
@@ -150,6 +151,7 @@ func formatEntityAlertRulesResponse(rules AlertConfigResponse) string {
 				}
 			}
 		}
+		out += formatAlertRulePatchableFields(rule)
 		out += "\n"
 	}
 	return out

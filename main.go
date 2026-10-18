@@ -12,6 +12,9 @@ import (
 	"os"
 	"strconv"
 	"time"
+	// The release image is alpine without tzdata; embed the zone database so
+	// get_current_time's LoadLocation works wherever the binary runs.
+	_ "time/tzdata"
 
 	"github.com/joho/godotenv"
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
@@ -111,6 +114,34 @@ func parseDumpToolsets() (toolsets.Set, error) {
 	return toolsets.Parse(spec)
 }
 
+// toolsetServerBuilder returns what --http calls to build the server for a
+// request's narrowed toolsets: cfg with only AllowedTools replaced.
+func toolsetServerBuilder(cfg models.Config) func(toolsets.Set) (*last9mcp.Last9MCPServer, error) {
+	return func(allowed toolsets.Set) (*last9mcp.Last9MCPServer, error) {
+		c := cfg
+		c.AllowedTools = allowed
+		return buildServer(c)
+	}
+}
+
+// buildServer creates the served MCP server for cfg.AllowedTools: resources,
+// prompts, tools and the instructions that name them.
+func buildServer(cfg models.Config) (*last9mcp.Last9MCPServer, error) {
+	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create MCP server: %w", err)
+	}
+	registerReferenceResources(server)
+	workflows.Register(server)
+	if err := registerAllTools(server, cfg); err != nil {
+		return nil, fmt.Errorf("failed to register tools: %w", err)
+	}
+	if err := registerServerInstructions(server, cfg.AllowedTools); err != nil {
+		return nil, fmt.Errorf("failed to register server instructions: %w", err)
+	}
+	return server, nil
+}
+
 func main() {
 	// dump-tools runs before full config parsing: it needs no credentials
 	// and must work in CI and eval harnesses without a refresh token.
@@ -190,9 +221,9 @@ func main() {
 		"version", Version,
 	)
 
-	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
+	server, err := buildServer(cfg)
 	if err != nil {
-		log.Fatalf("failed to create MCP server: %v", err)
+		log.Fatal(err)
 	}
 
 	if !cfg.DisableTelemetry {
@@ -218,16 +249,8 @@ func main() {
 		}
 	}
 
-	registerReferenceResources(server)
-	workflows.Register(server)
-
-	// Register all tools
-	if err := registerAllTools(server, cfg); err != nil {
-		log.Fatalf("failed to register tools: %v", err)
-	}
-
 	if cfg.HTTPMode {
-		httpServer := NewHTTPServer(server, cfg)
+		httpServer := NewHTTPServer(server, cfg, toolsetServerBuilder(cfg))
 		if err := httpServer.Start(); err != nil {
 			log.Fatalf("HTTP server error: %v", err)
 		}

@@ -1,7 +1,12 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net/http"
+	"strings"
+	"time"
 
 	"last9-mcp/internal/alerting"
 	"last9-mcp/internal/apm"
@@ -17,6 +22,8 @@ import (
 	"last9-mcp/internal/telemetry/profiles"
 	"last9-mcp/internal/telemetry/traces"
 	"last9-mcp/internal/toolsets"
+	"last9-mcp/internal/utils"
+	"last9-mcp/internal/workspace"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -56,6 +63,7 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, allowed too
 	if tool.Title == "" && tool.Annotations != nil {
 		tool.Title = tool.Annotations.Title
 	}
+	tool.Description = prompts.TrimRoutes(tool.Description, allowed.Allows)
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("register %q: %v", tool.Name, r)
@@ -67,16 +75,69 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, allowed too
 	return nil
 }
 
+// registerWriteTool registers a tool that changes Last9 state. verify is the read call
+// that shows whether a write landed, starting with the read tool's name; the agent gets
+// it whenever a failure leaves the outcome unknown, so a toolset serving the write tool
+// must serve that read tool too.
+func registerWriteTool[In, Out any](server *last9mcp.Last9MCPServer, allowed toolsets.Set, tool *mcp.Tool, verify string, handler mcp.ToolHandlerFor[In, Out]) error {
+	readTool := verifyToolName(verify)
+	if readTool == "" {
+		return fmt.Errorf("register %q: a write tool needs a verify call", tool.Name)
+	}
+	if allowed.Allows(tool.Name) && !allowed.Allows(readTool) {
+		return fmt.Errorf("register %q: its verify tool %q is not in the same toolsets", tool.Name, readTool)
+	}
+	return registerIfAllowed(server, allowed, tool, checkBeforeRetry(tool.Name, verify, handler))
+}
+
+// verifyToolName returns the read tool a verify call starts with.
+func verifyToolName(verify string) string {
+	verify = strings.TrimSpace(verify)
+	end := strings.IndexFunc(verify, func(r rune) bool { return r != '_' && (r < 'a' || r > 'z') })
+	if end < 0 {
+		return verify
+	}
+	return verify[:end]
+}
+
+// checkBeforeRetry turns an unknown write outcome into a tool error that tells the agent
+// how to check it, since retrying blindly can duplicate a create.
+func checkBeforeRetry[In, Out any](name, verify string, handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+		result, out, err := handler(ctx, req, in)
+		var unknown *utils.WriteOutcomeUnknownError
+		if errors.As(err, &unknown) {
+			return utils.ToolErrorResult(fmt.Sprintf("%s may or may not have been applied (%s). Do not retry until you have checked: %s.",
+				name, unknown.Cause, verify)), out, nil
+		}
+		return result, out, err
+	}
+}
+
 // registerAllTools registers all tools with the MCP server using the new SDK pattern
 func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error {
-	client := auth.GetHTTPClient()
+	return registerTools(server, cfg, auth.GetHTTPClient())
+}
 
+func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *http.Client) error {
 	var regErr error
 	reg := func(err error) {
 		if err != nil && regErr == nil {
 			regErr = err
 		}
 	}
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_current_time",
+		Annotations: readOnlyTool("Get Current Time"),
+		Description: prompts.GetCurrentTimeDescription,
+	}, workspace.NewGetCurrentTimeHandler(time.Now)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_workspace_overview",
+		Annotations: readOnlyTool("Get Workspace Overview"),
+		Description: prompts.GetWorkspaceOverviewDescription,
+	}, workspace.NewGetWorkspaceOverviewHandler(client, cfg)))
 
 	// Register exceptions tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
@@ -141,6 +202,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Name:        "prometheus_range_query",
 		Annotations: readOnlyTool("Run PromQL Range Query"),
 		Description: prompts.PromqlRangeQueryDetails,
+		InputSchema: apm.PromqlRangeQueryInputSchema(),
 	}, apm.NewPromqlRangeQueryHandler(client, cfg)))
 
 	// Register PromQL instant query tool
@@ -148,6 +210,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Name:        "prometheus_instant_query",
 		Annotations: readOnlyTool("Run PromQL Instant Query"),
 		Description: prompts.PromqlInstantQueryDetails,
+		InputSchema: apm.PromqlInstantQueryInputSchema(),
 	}, apm.NewPromqlInstantQueryHandler(client, cfg)))
 
 	// Register PromQL label values tool
@@ -175,8 +238,10 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	// Register service logs tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_service_logs",
+		Meta:        mcp.Meta{"last9/coverage": true},
 		Annotations: readOnlyTool("Get Service Logs"),
 		Description: prompts.GetServiceLogsDescription,
+		InputSchema: logs.GetServiceLogsInputSchema(),
 	}, logs.NewGetServiceLogsHandler(client, cfg)))
 
 	// Register drop rules tool
@@ -187,11 +252,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	}, logs.NewGetDropRulesHandler(client, cfg)))
 
 	// Register add drop rule tool
-	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+	reg(registerWriteTool(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "add_drop_rule",
 		Annotations: writeTool("Add Log Drop Rule", true, false),
 		Description: prompts.AddDropRuleDescription,
-	}, logs.NewAddDropRuleHandler(client, cfg)))
+	}, "get_drop_rules, looking for a rule with the name you passed",
+		logs.NewAddDropRuleHandler(client, cfg)))
 
 	// Register remapping rules tools
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
@@ -220,6 +286,95 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: prompts.GetAlertConfigDescription,
 	}, alerting.NewGetAlertConfigHandler(client, cfg)))
 
+	reg(registerWriteTool(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "create_alert",
+		Annotations: writeTool("Create Alert", false, false),
+		Description: prompts.CreateAlertDescription,
+	}, "get_alert_config with rule_name set to the rule_name you passed (if you passed none, get_entity_alert_rules for entity_id)",
+		alerting.NewCreateAlertHandler(client, cfg)))
+
+	reg(registerWriteTool(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "update_alert",
+		Annotations: writeTool("Update Alert", true, true),
+		Description: prompts.UpdateAlertDescription,
+	}, "get_entity_alert_rules for entity_id, comparing the rule to the alert_rule you sent (an update may replace the rule id)",
+		alerting.NewUpdateAlertHandler(client, cfg)))
+
+	reg(registerWriteTool(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "patch_alert",
+		Annotations: writeTool("Patch Alert", true, true),
+		Description: prompts.PatchAlertDescription,
+	}, "get_entity_alert_rules for entity_id, checking the fields you changed on rule id",
+		alerting.NewPatchAlertHandler(client, cfg)))
+
+	reg(registerWriteTool(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "delete_alert",
+		Annotations: writeTool("Delete Alert", true, true),
+		Description: prompts.DeleteAlertDescription,
+	}, "get_entity_alert_rules for entity_id; rule id is no longer listed if the delete landed",
+		alerting.NewDeleteAlertHandler(client, cfg)))
+
+	reg(registerWriteTool(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "mute_alert_group",
+		Annotations: writeTool("Mute Alert Group", true, true),
+		Description: prompts.MuteAlertGroupDescription,
+	}, "get_entity_alert_rules for entity_id, checking mute_until on its rules",
+		alerting.NewMuteAlertGroupHandler(client, cfg)))
+
+	reg(registerWriteTool(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "acknowledge_alert",
+		Annotations: writeTool("Acknowledge Alert", false, true),
+		Description: prompts.AcknowledgeAlertDescription,
+	}, "get_alerts, checking the claim on this alert",
+		alerting.NewAcknowledgeAlertHandler(client, cfg)))
+
+	reg(registerWriteTool(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "reassign_alert",
+		Annotations: writeTool("Reassign Alert", false, true),
+		Description: prompts.ReassignAlertDescription,
+	}, "get_alerts, checking the claim owner on this alert",
+		alerting.NewReassignAlertHandler(client, cfg)))
+
+	reg(registerWriteTool(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "create_notification_channel",
+		Annotations: writeTool("Create Notification Channel", false, false),
+		Description: prompts.CreateNotificationChannelDescription,
+	}, "get_notification_channels with scope=channels, looking for a channel with the name you passed",
+		alerting.NewCreateNotificationChannelHandler(client, cfg)))
+
+	reg(registerWriteTool(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "attach_notification_channel",
+		Annotations: writeTool("Attach Notification Channel", false, true),
+		Description: prompts.AttachNotificationChannelDescription,
+	}, "get_notification_channels with scope=attached, looking for channel_id on alert_group_id",
+		alerting.NewAttachNotificationChannelHandler(client, cfg)))
+
+	reg(registerWriteTool(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "detach_notification_channel",
+		Annotations: writeTool("Detach Notification Channel", true, true),
+		Description: prompts.DetachNotificationChannelDescription,
+	}, "get_notification_channels with scope=attached; attachment_id is no longer listed if the detach landed",
+		alerting.NewDetachNotificationChannelHandler(client, cfg)))
+
+	reg(registerWriteTool(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "delete_notification_channel",
+		Annotations: writeTool("Delete Notification Channel", true, false),
+		Description: prompts.DeleteNotificationChannelDescription,
+	}, "get_notification_channels with scope=channels; channel_id is no longer listed if the delete landed",
+		alerting.NewDeleteNotificationChannelHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "validate_alert_expression",
+		Annotations: readOnlyTool("Validate Alert Expression"),
+		Description: prompts.ValidateAlertExpressionDescription,
+	}, alerting.NewValidateAlertExpressionHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "recommend_alert_config",
+		Annotations: readOnlyTool("Recommend Alert Config"),
+		Description: prompts.RecommendAlertConfigDescription,
+	}, alerting.NewRecommendAlertConfigHandler(client, cfg)))
+
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_alert_groups",
 		Annotations: readOnlyTool("Get Alert Groups"),
@@ -232,6 +387,21 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Annotations: readOnlyTool("Get Entity Alert Rules"),
 		Description: prompts.GetEntityAlertRulesDescription,
 	}, alerting.NewGetEntityAlertRulesHandler(client, cfg)))
+
+	// Register describe alert chart tool (read-only enumerate of alertable signals on a covered Discover chart)
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "describe_alert_chart",
+		Annotations: readOnlyTool("Describe Alert Chart"),
+		Description: prompts.DescribeAlertChartDescription,
+	}, alerting.NewDescribeAlertChartHandler(client, cfg)))
+
+	// Register create alert from chart tool (one-call static-threshold rule from chart identity)
+	reg(registerWriteTool(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "create_alert_from_chart",
+		Annotations: writeTool("Create Alert From Chart", false, false),
+		Description: prompts.CreateAlertFromChartDescription,
+	}, "get_alert_config with rule_name set to the name you passed",
+		alerting.NewCreateAlertFromChartHandler(client, cfg)))
 
 	// Register alerts tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
@@ -260,6 +430,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Name:        "get_service_traces",
 		Annotations: readOnlyTool("Get Service Traces"),
 		Description: prompts.GetServiceTracesDescription,
+		InputSchema: traces.GetServiceTracesInputSchema(),
 	}, traces.GetServiceTracesHandler(client, cfg)))
 
 	// Register log attributes tool
@@ -408,25 +579,28 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		InputSchema: dashboards.GetValidateDashboardInputSchema(),
 	}, dashboards.NewValidateDashboardHandler(client, cfg)))
 
-	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+	reg(registerWriteTool(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "create_dashboard",
 		Annotations: writeTool("Create Dashboard", false, false),
 		Description: prompts.CreateDashboardDescription,
 		InputSchema: dashboards.GetCreateDashboardInputSchema(),
-	}, dashboards.NewCreateDashboardHandler(client, cfg)))
+	}, "list_dashboards, looking for a dashboard with the name you passed",
+		dashboards.NewCreateDashboardHandler(client, cfg)))
 
-	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+	reg(registerWriteTool(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "update_dashboard",
 		Annotations: writeTool("Update Dashboard", true, true),
 		Description: prompts.UpdateDashboardDescription,
 		InputSchema: dashboards.GetUpdateDashboardInputSchema(),
-	}, dashboards.NewUpdateDashboardHandler(client, cfg)))
+	}, "get_dashboard for id, comparing it to the dashboard you sent",
+		dashboards.NewUpdateDashboardHandler(client, cfg)))
 
-	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+	reg(registerWriteTool(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "delete_dashboard",
 		Annotations: writeTool("Delete Dashboard", true, true),
 		Description: prompts.DeleteDashboardDescription,
-	}, dashboards.NewDeleteDashboardHandler(client, cfg)))
+	}, "list_dashboards; id is no longer listed if the delete landed",
+		dashboards.NewDeleteDashboardHandler(client, cfg)))
 
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "list_dashboard_snapshots",
@@ -440,11 +614,12 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Description: prompts.GetDashboardSnapshotDescription,
 	}, dashboards.NewGetDashboardSnapshotHandler(client, cfg)))
 
-	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+	reg(registerWriteTool(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "delete_dashboard_snapshot",
 		Annotations: writeTool("Delete Dashboard Snapshot", true, true),
 		Description: prompts.DeleteDashboardSnapshotDescription,
-	}, dashboards.NewDeleteDashboardSnapshotHandler(client, cfg)))
+	}, "get_dashboard_snapshot for id; it reports not found if the delete landed",
+		dashboards.NewDeleteDashboardSnapshotHandler(client, cfg)))
 
 	// Register Grafana read tools
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
