@@ -182,6 +182,27 @@ func TestStatelessHTTPUserToken(t *testing.T) {
 	}
 }
 
+// TestNarrowedToolsetServersEnforceUserToken pins that every server main
+// builds under --http, startup and per-request narrowed ones alike, runs the
+// user token middleware: a narrowed request must not bypass strict mode.
+func TestNarrowedToolsetServersEnforceUserToken(t *testing.T) {
+	cfg := testToolRegistrationConfig()
+	cfg.HTTPMode = true
+	cfg.UserTokenFallback = false
+	cfg.Datasources = []models.DatasourceInfo{{Name: "startup-cached-datasource", IsDefault: true}}
+	ts, builds := newToolsetHTTPServerFor(t, cfg, "all")
+	call := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_datasources","arguments":{}}}`
+	for _, header := range []string{"", "investigate"} {
+		_, body := postRPC(t, ts, header, "", call, nil)
+		if !strings.Contains(body, "user token required") || strings.Contains(body, "startup-cached-datasource") {
+			t.Errorf("toolsets %q: tokenless call was not rejected: %s", header, body)
+		}
+	}
+	if got := builds.Load(); got != 2 {
+		t.Fatalf("builds = %d, want startup plus one narrowed server", got)
+	}
+}
+
 // TestHandleHealthReportsBuildVersion pins that /health reports the ldflag
 // Version var, not a hardcoded literal (this regressed once before).
 func TestHandleHealthReportsBuildVersion(t *testing.T) {
@@ -233,11 +254,15 @@ func TestHandleHealthReportsBuildVersion(t *testing.T) {
 // main's per-request builder and counts how many MCP servers it builds.
 func newToolsetHTTPServer(t *testing.T, spec string) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
+	return newToolsetHTTPServerFor(t, testToolRegistrationConfig(), spec)
+}
+
+func newToolsetHTTPServerFor(t *testing.T, cfg models.Config, spec string) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
 	allowed, err := toolsets.Parse(spec)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := testToolRegistrationConfig()
 	cfg.AllowedTools = allowed
 	builds := &atomic.Int32{}
 	buildFor := toolsetServerBuilder(cfg)
