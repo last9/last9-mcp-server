@@ -716,7 +716,7 @@ Creates a KPI on an existing alert group; `alerts` toolset only. Use it only whe
 - `description` (string, optional)
 - `data_source_id` (string, optional): Defaults to the alert group's data source.
 
-Create once and keep the returned id for `expression_args` / `indicators_used`; on a name conflict, reuse the existing KPI's id from `get_entity_kpis`. Returns `{"id","name","query","unit"}`.
+Create once and keep the returned id for `expression_args` / `indicators_used`; on a name conflict, reuse the existing KPI's id from `get_entity_kpis`. On a timeout or connection error the create may or may not have been applied: check by name with `get_entity_kpis` before retrying. Returns `{"id","name","query","unit"}`.
 
 ### get_alerts
 
