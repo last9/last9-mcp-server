@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"reflect"
 	"strings"
 	"testing"
@@ -75,6 +76,36 @@ func TestRegisterWriteToolRequiresVerifyCall(t *testing.T) {
 	}
 	if names := registeredToolNames(t, server); len(names) != 0 {
 		t.Fatalf("write tool without a verify call was served: %v", names)
+	}
+}
+
+func TestRegisterWriteToolRequiresVerifyToolInSameToolset(t *testing.T) {
+	server := newRegisterTestServer(t)
+	allowed := toolsets.Set{"create_thing": {}}
+	err := registerWriteTool(server, allowed, &mcp.Tool{Name: "create_thing"}, "get_things (name)", noopHandler)
+	if err == nil || !strings.Contains(err.Error(), "get_things") {
+		t.Fatalf("want an error naming get_things, got %v", err)
+	}
+	if names := registeredToolNames(t, server); len(names) != 0 {
+		t.Fatalf("write tool whose verify tool is filtered out was served: %v", names)
+	}
+}
+
+// Every toolset that serves a write tool must also serve the read tool its unknown-outcome
+// error tells the agent to call.
+func TestEveryToolsetServesWriteToolsVerifyCalls(t *testing.T) {
+	for _, name := range toolsets.ValidNames() {
+		t.Run(name, func(t *testing.T) {
+			allowed, err := toolsets.Parse(name)
+			if err != nil {
+				t.Fatalf("parse %q: %v", name, err)
+			}
+			cfg := writeToolTestConfig("http://unused.invalid")
+			cfg.AllowedTools = allowed
+			if err := registerTools(newRegisterTestServer(t), cfg, http.DefaultClient); err != nil {
+				t.Fatalf("register tools: %v", err)
+			}
+		})
 	}
 }
 

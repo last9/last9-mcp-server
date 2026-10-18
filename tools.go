@@ -73,12 +73,27 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, allowed too
 
 // registerWriteTool registers a tool that changes Last9 state. verify is the read call
 // that shows whether a write landed, starting with the read tool's name; the agent gets
-// it whenever a failure leaves the outcome unknown.
+// it whenever a failure leaves the outcome unknown, so a toolset serving the write tool
+// must serve that read tool too.
 func registerWriteTool[In, Out any](server *last9mcp.Last9MCPServer, allowed toolsets.Set, tool *mcp.Tool, verify string, handler mcp.ToolHandlerFor[In, Out]) error {
-	if strings.TrimSpace(verify) == "" {
+	readTool := verifyToolName(verify)
+	if readTool == "" {
 		return fmt.Errorf("register %q: a write tool needs a verify call", tool.Name)
 	}
+	if allowed.Allows(tool.Name) && !allowed.Allows(readTool) {
+		return fmt.Errorf("register %q: its verify tool %q is not in the same toolsets", tool.Name, readTool)
+	}
 	return registerIfAllowed(server, allowed, tool, checkBeforeRetry(tool.Name, verify, handler))
+}
+
+// verifyToolName returns the read tool a verify call starts with.
+func verifyToolName(verify string) string {
+	verify = strings.TrimSpace(verify)
+	end := strings.IndexFunc(verify, func(r rune) bool { return r != '_' && (r < 'a' || r > 'z') })
+	if end < 0 {
+		return verify
+	}
+	return verify[:end]
 }
 
 // checkBeforeRetry turns an unknown write outcome into a tool error that tells the agent

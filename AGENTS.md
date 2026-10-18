@@ -132,7 +132,8 @@ reg(registerIfAllowed(server, cfg.AllowedTools,
 
 **A tool that changes Last9 state registers through `registerWriteTool`** with a verify
 call: the read call, starting with the read tool's name, that shows whether the write
-landed. Its write requests must go through `last9api.Client.Do` (or mark failures with
+landed; every toolset in `internal/toolsets/toolsets.go` that lists the write tool must also
+list that read tool, or registration fails. Its write requests must go through `last9api.Client.Do` (or mark failures with
 `utils.MarkUnknownWriteOutcome`), and are never retried. After a timeout or lost connection
 the agent is told to run the verify call instead of retrying, so a create cannot duplicate.
 `write_tools_test.go` fails until the tool has a fixture there and passes those checks.

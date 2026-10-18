@@ -201,8 +201,7 @@ func TestWriteToolsNeverRetryAndExplainUnknownOutcomes(t *testing.T) {
 				if !found {
 					t.Fatalf("result names no verify call:\n%s", text)
 				}
-				readTool := verify[:strings.IndexFunc(verify+" ", func(r rune) bool { return r != '_' && (r < 'a' || r > 'z') })]
-				if !reads[readTool] {
+				if !reads[verifyToolName(verify)] {
 					t.Fatalf("verify call %q does not start with a served read-only tool", verify)
 				}
 			})
