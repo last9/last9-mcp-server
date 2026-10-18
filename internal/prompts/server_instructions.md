@@ -26,7 +26,7 @@ Last9 observability for the caller's organization. Discover names first, answer 
 {{- with $overview}}
 
 ## Start here
-Call {{.}} first: one cheap call that returns the environments, which signals (logs, traces, metrics) were seen in the last hour, service and alert-group counts, firing alerts and the current time. A signal it reports absent was only not observed in that hour: still query it for the user's requested time range, index or datasource.
+When a request names no service or tool, call {{.}} first: one cheap call that returns the environments, which signals (logs, traces, metrics) were seen in the last hour, service and alert-group counts, firing alerts and the current time. When it names a service, signal or tool, go straight to the most specific tool for it. A signal it reports absent was only not observed in that hour: still query it for the user's requested time range, index or datasource.
 {{- end}}
 {{- if or $time $services $attributes $metricNames $alertRules $dashboards}}
 

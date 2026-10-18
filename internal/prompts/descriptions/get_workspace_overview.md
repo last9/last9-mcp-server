@@ -1,9 +1,10 @@
-Recommended first call: one cheap orientation snapshot of the workspace, and the current time. Takes no parameters.
+Recommended first call when a request names no service or tool: one cheap orientation snapshot of the workspace, and the current time. Takes no parameters.
 
 ## When to use
-At the start of an investigation, to learn which environments exist and which signals (logs, traces, metrics) were seen in the last hour before choosing a query tool.
+At the start of an open-ended investigation, to learn which environments exist and which signals (logs, traces, metrics) were seen in the last hour before choosing a query tool.
 
 ## When not to use
+- The request names a service, signal or tool: call its tool directly
 - Resolving a time range like "last 2h": `get_current_time`
 - Per-service traffic and error rates: `get_service_summary`
 - Which alerts are firing, and their labels: `get_alerts`
