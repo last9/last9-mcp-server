@@ -119,9 +119,22 @@ func TestGoldenSignalsMatcherEscapesServicesAndEnv(t *testing.T) {
 // slowest one is reported.
 func TestGoldenLatencyQueryNeverSumsQuantilesAcrossEnvs(t *testing.T) {
 	got := goldenLatencyQuery(goldenSignalsMatcher([]string{"checkout"}, ""), 30)
-	want := `max by (service_name, quantile) (quantile_over_time(0.95, sum by (service_name, env, quantile) (trace_service_response_time{env=~".*",service_name=~"checkout", quantile=~"p50|p95|p99"}[30m])))`
+	want := `max by (service_name, quantile) (quantile_over_time(0.95, (sum by (service_name, env, quantile) (trace_service_response_time{env=~".*",service_name=~"checkout", quantile=~"p50|p95|p99"}))[30m:1m]))`
 	if got != want {
 		t.Fatalf("latency query =\n%s\nwant\n%s", got, want)
+	}
+}
+
+// A range selector inside sum is reduced to one sample per series before
+// quantile_over_time sees it, so the window length would not matter. The
+// window must be a subquery over the summed gauge.
+func TestGoldenLatencyQueryTakesQuantileOverTheWholeWindow(t *testing.T) {
+	got := goldenLatencyQuery(goldenSignalsMatcher([]string{"checkout"}, "prod"), 45)
+	if strings.Contains(got, "}[") {
+		t.Fatalf("range selector applies to the raw series, not the summed gauge: %s", got)
+	}
+	if !strings.Contains(got, "))[45m:1m])") {
+		t.Fatalf("latency query must read the summed gauge over a 45m subquery grid: %s", got)
 	}
 }
 
@@ -170,7 +183,7 @@ func TestQueryDirectDependentsSizesWindowLikeGoldenSignals(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, q := range queries() {
-		if !strings.Contains(q, "[31m]") {
+		if !strings.Contains(q, "[31m]") && !strings.Contains(q, "[31m:1m]") {
 			t.Errorf("query %s must cover the 30m30s window as 31m", q)
 		}
 	}

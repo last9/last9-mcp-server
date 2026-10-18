@@ -154,9 +154,11 @@ func goldenSignalsMatcher(services []string, env string) string {
 // goldenLatencyQuery aggregates each latency quantile series within one env the
 // way get_service_dependency_graph and get_service_operations_summary do, then
 // keeps the slowest env: quantile gauges from different envs cannot be summed.
+// The window is a subquery over the summed gauge: a range inside sum would be
+// reduced to one sample before quantile_over_time sees it.
 func goldenLatencyQuery(matcher string, windowMin int) string {
 	return fmt.Sprintf(
-		`max by (service_name, quantile) (quantile_over_time(0.95, sum by (service_name, env, quantile) (trace_service_response_time{%s, quantile=~"p50|p95|p99"}[%dm])))`,
+		`max by (service_name, quantile) (quantile_over_time(0.95, (sum by (service_name, env, quantile) (trace_service_response_time{%s, quantile=~"p50|p95|p99"}))[%dm:1m]))`,
 		matcher, windowMin,
 	)
 }
