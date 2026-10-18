@@ -238,6 +238,62 @@ func TestServerInstructionsWriteSectionNamesOnlyWriteTools(t *testing.T) {
 	}
 }
 
+func renderInstructions(t *testing.T, tools ...string) string {
+	t.Helper()
+	allowed := toolsets.Set{}
+	for _, tool := range tools {
+		allowed[tool] = struct{}{}
+	}
+	instructions, err := serverInstructions(allowed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return instructions
+}
+
+func TestServerInstructionsDestructiveLinesMatchEachToolsEffect(t *testing.T) {
+	const dropRuleLine = "- `add_drop_rule` drops matching future logs: confirm with the user first."
+	tests := []struct {
+		name  string
+		tools []string
+		want  []string
+	}{
+		{
+			name:  "add_drop_rule alone",
+			tools: []string{"add_drop_rule"},
+			want:  []string{dropRuleLine},
+		},
+		{
+			name:  "one overwriting tool",
+			tools: []string{"delete_dashboard"},
+			want:  []string{"- Confirm with the user before overwriting or removing data with `delete_dashboard`."},
+		},
+		{
+			name:  "several overwriting tools and add_drop_rule",
+			tools: []string{"add_drop_rule", "update_dashboard", "delete_alert"},
+			want: []string{
+				"- Confirm with the user before overwriting or removing data with `update_dashboard`, `delete_alert`.",
+				dropRuleLine,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			_, writes, _ := strings.Cut(instructions, "## Write tools")
+			var got []string
+			for _, line := range strings.Split(writes, "\n") {
+				if strings.Contains(line, "confirm") || strings.Contains(line, "Confirm") {
+					got = append(got, line)
+				}
+			}
+			if strings.Join(got, "\n") != strings.Join(tt.want, "\n") {
+				t.Errorf("confirmation lines = %q, want %q:\n%s", got, tt.want, instructions)
+			}
+		})
+	}
+}
+
 // lineNaming returns the first instructions line that names tool in backticks.
 func lineNaming(instructions, tool string) string {
 	for _, line := range strings.Split(instructions, "\n") {

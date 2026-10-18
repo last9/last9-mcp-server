@@ -20,7 +20,8 @@
 {{- $dropRules := tools "get_drop_rules" -}}
 {{- $refine := tools "update_dashboard" "update_alert" "patch_alert" "attach_notification_channel" -}}
 {{- $claim := tools "acknowledge_alert" "reassign_alert" -}}
-{{- $destructive := tools "update_dashboard" "delete_dashboard" "delete_dashboard_snapshot" "add_drop_rule" "update_alert" "patch_alert" "delete_alert" "mute_alert_group" "detach_notification_channel" "delete_notification_channel" -}}
+{{- $addDropRule := tools "add_drop_rule" -}}
+{{- $destructive := tools "update_dashboard" "delete_dashboard" "delete_dashboard_snapshot" "update_alert" "patch_alert" "delete_alert" "mute_alert_group" "detach_notification_channel" "delete_notification_channel" -}}
 Last9 observability for the caller's organization. Discover names first, answer with the most specific tool, and treat writes with care.
 {{- if or $services $attributes $metricNames $alertRules $dashboards}}
 
@@ -112,7 +113,7 @@ Read these resources before writing a non-trivial query:
 - List existing drop rules with {{.}} before adding one.
 {{- end}}
 {{- end}}
-{{- if or $create $refine $claim $destructive}}
+{{- if or $create $refine $claim $destructive $addDropRule}}
 
 ## Write tools
 {{- with $create}}
@@ -125,6 +126,9 @@ Read these resources before writing a non-trivial query:
 - Claim, release or hand off an alert with {{.}}; these change ownership, not data.
 {{- end}}
 {{- with $destructive}}
-- {{.}} overwrite or remove data: confirm with the user first.
+- Confirm with the user before overwriting or removing data with {{.}}.
+{{- end}}
+{{- with $addDropRule}}
+- {{.}} drops matching future logs: confirm with the user first.
 {{- end}}
 {{- end}}
