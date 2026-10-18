@@ -21,4 +21,4 @@ Build a net-new dashboard that has no id yet.
 The created dashboard, including its `id`.
 
 ## Known traps
-A second create makes a duplicate dashboard; refine the first instead.
+A second create makes a duplicate dashboard; refine the first instead. On a timeout or connection error the create may or may not have been applied; check by name with list_dashboards before retrying.

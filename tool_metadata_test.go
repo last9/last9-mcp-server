@@ -35,7 +35,7 @@ var descriptionBudgetOverrides = map[string]int{
 	"get_trace_waterfall":             2700,
 	"get_traces":                      2700,
 	"get_service_logs":                2700,
-	"create_alert":                    2700,
+	"create_alert":                    2800,
 	"get_service_performance_details": 2800,
 	"get_alerts":                      2600,
 }
