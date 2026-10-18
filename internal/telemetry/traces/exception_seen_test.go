@@ -79,6 +79,29 @@ func TestGetExceptionsHandler_FirstAndLastSeenComeFromRangeData(t *testing.T) {
 	}
 }
 
+func TestGetExceptionsHandler_FirstAndLastSeenNeedFinitePositiveCounts(t *testing.T) {
+	start := exceptionTestWindow.start.Unix()
+	for _, value := range []string{"NaN", "+Inf", "-Inf", "0", "-1", "invalid", "2"} {
+		t.Run(value, func(t *testing.T) {
+			rows := runGetExceptions(t, GetExceptionsArgs{}, twoEnvRows, func(w http.ResponseWriter, r *http.Request) {
+				io.WriteString(w, fmt.Sprintf(`[
+					{"metric":{"exception_type":"TypeError","service_name":"web","span_name":"View","span_kind":"SPAN_KIND_SERVER","env":"prod"},
+					 "values":[[%d,%q],[%d,"1"],[%d,%q]]}
+				]`, start+60, value, start+120, start+180, value))
+			})
+
+			first, last := "2026-01-20T10:02:00Z", "2026-01-20T10:02:00Z"
+			if value == "2" {
+				first, last = "2026-01-20T10:01:00Z", "2026-01-20T10:03:00Z"
+			}
+			if rows[0]["first_seen"] != first || rows[0]["last_seen"] != last {
+				t.Errorf("sample %q: first/last seen = %v / %v, want %s / %s (only a finite positive count is an occurrence)",
+					value, rows[0]["first_seen"], rows[0]["last_seen"], first, last)
+			}
+		})
+	}
+}
+
 func TestGetExceptionsHandler_FirstAndLastSeenRangeFiltersMatchInstantQuery(t *testing.T) {
 	var query string
 	runGetExceptions(t, GetExceptionsArgs{ServiceName: "last9-api", SpanName: "GET /a", Env: "prod"}, `[]`, func(w http.ResponseWriter, r *http.Request) {
