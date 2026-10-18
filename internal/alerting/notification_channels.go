@@ -43,6 +43,12 @@ type NotificationChannel struct {
 	Services     []notificationChannelService `json:"services"`
 }
 
+// orgWide reports whether the row is unscoped. The API's global flag reflects only the
+// legacy service/namespace binding, so it is true on alert-group attachment rows too.
+func (ch NotificationChannel) orgWide() bool {
+	return ch.Global && strings.TrimSpace(ch.ServiceFQID) == ""
+}
+
 type notificationChannelService struct {
 	Name      string `json:"name"`
 	Namespace string `json:"namespace"`
@@ -189,7 +195,7 @@ func formatNotificationChannelsResponse(channels []NotificationChannel) string {
 		}
 
 		rows = append(rows, fmt.Sprintf("%d\t%s\t%s\t%v\t%v\t%s\t%s\t%s\t%d\t%s\t%s",
-			ch.ID, escapeTSV(ch.Name), escapeTSV(ch.Type), ch.Global, ch.InUse,
+			ch.ID, escapeTSV(ch.Name), escapeTSV(ch.Type), ch.orgWide(), ch.InUse,
 			escapeTSV(sendResolved), escapeTSV(snoozeUntil), escapeTSV(ch.Severity), ch.Priority, escapeTSV(services),
 			escapeTSV(serviceFQID),
 		))

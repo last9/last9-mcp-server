@@ -8,7 +8,7 @@ Parameters:
 - name (Required): Alert rule name; duplicate names are rejected upstream with a conflict.
 - env: Environment when the chart distinguishes one, for example prod; omit otherwise.
 - attributes: Extra identity dimensions some charts need; use exactly the key names describe_alert_chart reports.
-- threshold: Breach threshold in the signal's own unit as reported by describe_alert_chart; omit for the backend default 0.01.
+- threshold: Breach threshold in the signal's own unit as reported by describe_alert_chart; must be 0 or more (chart signals are never negative); omit for the backend default 0.01.
 - threshold_operator: One of > < >= <= == !=; default >.
 - eval_window: Evaluation window in minutes, range 1-60; default 5.
 - bad_minutes: Minutes within eval_window the condition must hold before firing, range 1-eval_window; default 3.

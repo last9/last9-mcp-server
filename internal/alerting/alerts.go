@@ -2,6 +2,7 @@ package alerting
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -44,6 +45,7 @@ type AlertRule struct {
 	MuteUntil                    int64                             `json:"mute_until"`
 	Properties                   map[string]interface{}            `json:"properties"`
 	GroupTimeseriesNotifications bool                              `json:"group_timeseries_notifications"`
+	RecurringMuteSchedule        json.RawMessage                   `json:"recurring_mute_schedule,omitempty"`
 }
 
 // AlertConfigResponse represents the response from alert rules API (direct array)

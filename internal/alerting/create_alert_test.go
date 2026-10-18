@@ -50,3 +50,79 @@ func TestCreateAlertAPIError(t *testing.T) {
 		t.Fatal("expected API error")
 	}
 }
+
+func TestCreateAlertRefusesNameAlreadyInGroup(t *testing.T) {
+	var posted bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.EscapedPath() == "/entities/entity-1/alert-rules" {
+			_, _ = w.Write([]byte(`{"rules":[{"id":"rule-8","entity_id":"entity-1","rule_name":"errors"},{"id":"rule-9","entity_id":"entity-1","rule_name":"Latency"}]}`))
+			return
+		}
+		posted = true
+		_, _ = w.Write([]byte(`{"id":"rule-1"}`))
+	}))
+	defer server.Close()
+	name := " latency "
+	result, _, err := NewCreateAlertHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil,
+		CreateAlertArgs{EntityID: "entity-1", AlertRuleMutation: AlertRuleMutation{AlertRule: validAlertRulePayload(&name)}})
+	if err != nil || !result.IsError {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	text := resultText(result)
+	for _, want := range []string{"rule-9", "update_alert", "nothing was created"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("text missing %q: %s", want, text)
+		}
+	}
+	if posted {
+		t.Error("create was sent despite the duplicate name")
+	}
+}
+
+func TestCreateAlertNamesEntityIDWhenTheGroupIsUnknown(t *testing.T) {
+	var posted bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			http.Error(w, `{"error":"invalid entity id"}`, http.StatusBadRequest)
+			return
+		}
+		posted = true
+	}))
+	defer server.Close()
+	name := "latency"
+	result, _, err := NewCreateAlertHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil,
+		CreateAlertArgs{EntityID: "no-such-group", AlertRuleMutation: AlertRuleMutation{AlertRule: validAlertRulePayload(&name)}})
+	if err != nil || result == nil || !result.IsError {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	text := resultText(result)
+	for _, want := range []string{`entity_id "no-such-group"`, "get_alert_groups", "nothing was created"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("text missing %q: %s", want, text)
+		}
+	}
+	if strings.Contains(text, "list alert rules") {
+		t.Errorf("text names the internal duplicate-name lookup: %s", text)
+	}
+	if posted {
+		t.Error("create was sent for an unknown alert group")
+	}
+}
+
+func TestCreateAlertFailsWhenExistingNamesCannotBeListed(t *testing.T) {
+	var posted bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		posted = true
+	}))
+	defer server.Close()
+	name := "latency"
+	_, _, err := NewCreateAlertHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil,
+		CreateAlertArgs{EntityID: "entity-1", AlertRuleMutation: AlertRuleMutation{AlertRule: validAlertRulePayload(&name)}})
+	if err == nil || posted {
+		t.Fatalf("err=%v posted=%v", err, posted)
+	}
+}

@@ -105,6 +105,27 @@ func TestCreateNotificationChannelValidationSendsNothing(t *testing.T) {
 	}
 }
 
+// The API's email-destination rejections are fixed strings that echo no input, so the tool
+// can name the cause without relaying the body.
+func TestCreateNotificationChannelNamesEmailRejection(t *testing.T) {
+	for upstream, want := range map[string]string{
+		"cannot use personal email for channel destination":  "personal-provider",
+		"cannot use non-admin email for channel destination": "only the org admin's address",
+		"invalid email":                        "is not a valid email address",
+		"no admin user found for organization": "HTTP 400",
+		"cannot use personal email for channel destination " + channelSecret: "HTTP 400",
+	} {
+		s := newChannelServer(t, func(*http.Request) (int, string) {
+			return 400, `{"error":"` + upstream + `"}`
+		})
+		text, isErr, err := runCreateChannel(s, CreateNotificationChannelArgs{Name: "n", Type: "email", Destination: "a@gmail.com"})
+		assertNoSecret(t, text, err)
+		if err != nil || !isErr || !strings.Contains(text, want) || strings.Contains(text, "a@gmail.com") {
+			t.Errorf("%q: text=%q isErr=%v err=%v", upstream, text, isErr, err)
+		}
+	}
+}
+
 func TestCreateNotificationChannelErrorsNeverLeakSecrets(t *testing.T) {
 	for status, want := range map[int]string{
 		400: "HTTP 400", 422: "HTTP 422", 403: "write-scope", 500: "HTTP 500",

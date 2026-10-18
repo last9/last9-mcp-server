@@ -468,6 +468,29 @@ func TestGetAlertConfigHandler_NotificationChannelEnrichmentOnRule(t *testing.T)
 	}
 }
 
+// The org-wide rule list returns mute_until and recurring_mute_schedule (not description or
+// runbook), so a patched mute can be read back here.
+func TestGetAlertConfigHandler_ShowsMutes(t *testing.T) {
+	rules := sampleAlertConfigRules()
+	rules[0].MuteUntil = 1792260000
+	rules[0].RecurringMuteSchedule = json.RawMessage(`{"enabled":false,"timezone":"UTC","windows":[]}`)
+	state := alertConfigTestServerState{
+		alertRules:         rules,
+		entityGroups:       sampleAlertGroupEntities(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusOK,
+	}
+
+	text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{RuleID: rules[0].ID})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if !strings.Contains(text, "  Mute Until: 2026-10-17 18:00:00 UTC\n") ||
+		!strings.Contains(text, `  Recurring Mute Schedule: {"enabled":false,"timezone":"UTC","windows":[]}`+"\n") {
+		t.Fatalf("expected mute lines, got:\n%s", text)
+	}
+}
+
 func TestGetAlertConfigHandler_NotificationChannelTypeFilter(t *testing.T) {
 	state := alertConfigTestServerState{
 		alertRules:         sampleAlertConfigRules(),

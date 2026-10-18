@@ -52,3 +52,5 @@
 	- algorithm: Detection algorithm (static_threshold, high_spike, inc_trend, etc.)
 	- created_at: When the alert rule was created
 	- updated_at: When the alert rule was last modified
+	- mute_until and recurring_mute_schedule, when set; properties show only annotations here, so read
+	  description and runbook with get_entity_alert_rules
