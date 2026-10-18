@@ -447,15 +447,23 @@ func TestGetEmergingLogPatterns_FetchesBothWindowsConcurrently(t *testing.T) {
 }
 
 func TestGetEmergingLogPatterns_CancelsTheOtherWindowOnFirstError(t *testing.T) {
+	currentArrived := make(chan struct{})
 	currentCancelled := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		var body map[string]any
 		_ = json.Unmarshal(raw, &body)
 		if int64(body["start"].(float64)) == precedingWindowStart {
+			// Fail only once the current window is in flight; failing earlier
+			// cancels it before it is sent, leaving nothing to observe.
+			select {
+			case <-currentArrived:
+			case <-time.After(5 * time.Second):
+			}
 			http.Error(w, "baseline unavailable", http.StatusInternalServerError)
 			return
 		}
+		close(currentArrived)
 		select {
 		case <-r.Context().Done():
 			close(currentCancelled)
