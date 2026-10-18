@@ -12,6 +12,9 @@ import (
 	"os"
 	"strconv"
 	"time"
+	// The release image is alpine without tzdata; embed the zone database so
+	// get_current_time's LoadLocation works wherever the binary runs.
+	_ "time/tzdata"
 
 	"github.com/joho/godotenv"
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
@@ -112,6 +115,41 @@ func parseDumpToolsets() (toolsets.Set, error) {
 	return toolsets.Parse(spec)
 }
 
+// toolsetServerBuilder returns what main calls to build the startup server and,
+// under --http, the server for a request's narrowed toolsets: cfg with only
+// AllowedTools replaced. In --http mode every built server shares one user
+// token middleware, so a narrowed server never skips token enforcement.
+func toolsetServerBuilder(cfg models.Config) func(toolsets.Set) (*last9mcp.Last9MCPServer, error) {
+	var middleware []mcp.Middleware
+	if cfg.HTTPMode {
+		middleware = append(middleware, userTokenMiddleware(cfg))
+	}
+	return func(allowed toolsets.Set) (*last9mcp.Last9MCPServer, error) {
+		c := cfg
+		c.AllowedTools = allowed
+		return buildServer(c, middleware...)
+	}
+}
+
+// buildServer creates the served MCP server for cfg.AllowedTools: resources,
+// prompts, tools and the instructions that name them, behind middleware.
+func buildServer(cfg models.Config, middleware ...mcp.Middleware) (*last9mcp.Last9MCPServer, error) {
+	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create MCP server: %w", err)
+	}
+	server.Server.AddReceivingMiddleware(middleware...)
+	registerReferenceResources(server)
+	workflows.Register(server)
+	if err := registerAllTools(server, cfg); err != nil {
+		return nil, fmt.Errorf("failed to register tools: %w", err)
+	}
+	if err := registerServerInstructions(server, cfg.AllowedTools); err != nil {
+		return nil, fmt.Errorf("failed to register server instructions: %w", err)
+	}
+	return server, nil
+}
+
 func main() {
 	// dump-tools runs before full config parsing: it needs no credentials
 	// and must work in CI and eval harnesses without a refresh token.
@@ -191,9 +229,10 @@ func main() {
 		"version", Version,
 	)
 
-	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
+	build := toolsetServerBuilder(cfg)
+	server, err := build(cfg.AllowedTools)
 	if err != nil {
-		log.Fatalf("failed to create MCP server: %v", err)
+		log.Fatal(err)
 	}
 
 	if !cfg.DisableTelemetry {
@@ -219,20 +258,8 @@ func main() {
 		}
 	}
 
-	registerReferenceResources(server)
-	workflows.Register(server)
-
-	// Register all tools
-	if err := registerAllTools(server, cfg); err != nil {
-		log.Fatalf("failed to register tools: %v", err)
-	}
-	if err := registerServerInstructions(server, cfg.AllowedTools); err != nil {
-		log.Fatalf("failed to register server instructions: %v", err)
-	}
-
 	if cfg.HTTPMode {
-		server.Server.AddReceivingMiddleware(userTokenMiddleware(cfg))
-		httpServer := NewHTTPServer(server, cfg)
+		httpServer := NewHTTPServer(server, cfg, build)
 		if err := httpServer.Start(); err != nil {
 			log.Fatalf("HTTP server error: %v", err)
 		}
