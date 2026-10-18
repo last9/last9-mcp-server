@@ -37,7 +37,7 @@ What regressed, improved or changed against an equal-duration baseline.
 - Attribute cohorts that explain slow or failing traces: `get_trace_attribute_deviations`
 
 ## Pairs well with
-- `get_service_profile` (first)
+- `get_service_profile` (broader follow-up)
 - `get_change_events` (what deployed)
 - `get_service_performance_details` (one service's charts)
 
