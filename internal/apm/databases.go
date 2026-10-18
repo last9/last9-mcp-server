@@ -245,7 +245,7 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 				Content: []mcp.Content{
 					&mcp.TextContent{Text: apmEmptyAdvice(
 						"query patterns",
-						apmGuidanceArgs{env: args.Env, dbSystem: args.DBSystem, startUnix: startTime, endUnix: endTime},
+						apmGuidanceArgs{env: envLiteral(envDisplay), dbSystem: args.DBSystem, startUnix: startTime, endUnix: endTime},
 						"ensure services are instrumented with OpenTelemetry database client spans",
 						"verify host if one was supplied",
 					)},

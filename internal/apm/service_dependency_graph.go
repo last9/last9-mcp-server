@@ -452,7 +452,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 				"dependency graph data",
 				apmGuidanceArgs{
 					serviceName: serviceName,
-					env:         env,
+					env:         literalEnv,
 					startUnix:   startTimeParam,
 					endUnix:     endTimeParam,
 				},

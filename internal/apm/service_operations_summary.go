@@ -568,7 +568,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 				"operations",
 				apmGuidanceArgs{
 					serviceName: serviceName,
-					env:         env,
+					env:         literalEnv,
 					startUnix:   startTimeParam,
 					endUnix:     endTimeParam,
 				},
