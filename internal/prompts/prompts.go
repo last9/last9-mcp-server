@@ -11,6 +11,12 @@ var GetExceptionsInstructions string
 //go:embed server_instructions.md
 var ServerInstructions string
 
+//go:embed descriptions/get_current_time.md
+var GetCurrentTimeDescription string
+
+//go:embed descriptions/get_workspace_overview.md
+var GetWorkspaceOverviewDescription string
+
 //go:embed references/logjson.md
 var LogjsonReference string
 

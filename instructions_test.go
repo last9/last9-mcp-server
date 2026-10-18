@@ -9,6 +9,7 @@ import (
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/toolsets"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
@@ -220,6 +221,73 @@ func TestServerInstructionsAdaptToToolsets(t *testing.T) {
 	}
 }
 
+func TestServerInstructionsStartWithWorkspaceOverview(t *testing.T) {
+	for _, spec := range append(toolsets.ValidNames(), "") {
+		t.Run("toolsets="+spec, func(t *testing.T) {
+			instructions, _ := initializeOver(t, spec)
+			_, rest, ok := strings.Cut(instructions, "\n## ")
+			if !ok || !strings.HasPrefix(rest, "Start here\nWhen a request names no service or tool, call `get_workspace_overview` first") {
+				t.Fatalf("first section must recommend get_workspace_overview:\n%s", instructions)
+			}
+		})
+	}
+}
+
+// An unconditional first call cost agentic evals a hop when the request already
+// named its service or tool, and pulled agents off that tool.
+func TestServerInstructionsSkipOverviewWhenRequestNamesTarget(t *testing.T) {
+	instructions, _ := initializeOver(t, "")
+	start, _, _ := strings.Cut(instructions, "\n## Discover")
+	if !strings.Contains(start, "Otherwise go straight to the most specific tool.") {
+		t.Errorf("Start here must send requests that name their target straight to its tool:\n%s", start)
+	}
+}
+
+// The overview probes only the last hour in the default scope, so an empty
+// probe must not steer agents away from a signal's tools for older windows.
+func TestOverviewAbsenceKeepsSignalToolsQueryable(t *testing.T) {
+	instructions, _ := initializeOver(t, "")
+	start, _, _ := strings.Cut(instructions, "\n## Discover")
+	_, telemetry, _ := strings.Cut(prompts.GetWorkspaceOverviewDescription, "- `telemetry`")
+	telemetry, _, _ = strings.Cut(telemetry, "\n")
+	for name, text := range map[string]string{"initialize instructions": start, "overview telemetry field": telemetry} {
+		if strings.Contains(strings.ToLower(text), "skip") {
+			t.Errorf("%s tells agents to skip a signal after an empty probe:\n%s", name, text)
+		}
+		if !strings.Contains(text, "requested time range, index or datasource") {
+			t.Errorf("%s must keep the signal queryable for the user's requested scope:\n%s", name, text)
+		}
+	}
+}
+
+// Discover before you query is about names the model must look up and reuse
+// exactly; a date line there repeated "never guess" beside the attribute rule.
+func TestDiscoverSectionListsOnlyNameLookups(t *testing.T) {
+	instructions, _ := initializeOver(t, "investigate")
+	start, discover, _ := strings.Cut(instructions, "\n## Discover before you query\n")
+	discover, _, _ = strings.Cut(discover, "\n## ")
+	if strings.Contains(discover, "`get_current_time`") {
+		t.Errorf("Discover before you query must list name lookups only, not get_current_time:\n%s", discover)
+	}
+	if !strings.Contains(start, "`get_current_time`") {
+		t.Errorf("Start here must point to get_current_time for dates and relative windows:\n%s", start)
+	}
+}
+
+// maxInvestigateInstructionsBytes caps the policy automation sessions receive,
+// near its size, so growth is a reviewed decision: it precedes every tool
+// description, and growing it moved log_query evals. The parsed-field line
+// was a reviewed increase, validated on the full log_query suite; the
+// infrastructure bullet adds 76 bytes (two tool names plus a short label).
+const maxInvestigateInstructionsBytes = 2730
+
+func TestInvestigateInstructionsBounded(t *testing.T) {
+	instructions, _ := initializeOver(t, "investigate")
+	if len(instructions) > maxInvestigateInstructionsBytes {
+		t.Errorf("investigate instructions are %d bytes, budget %d", len(instructions), maxInvestigateInstructionsBytes)
+	}
+}
+
 func TestServerInstructionsWriteSectionNamesOnlyWriteTools(t *testing.T) {
 	instructions, registry := initializeOver(t, "")
 	reads, writes, ok := strings.Cut(instructions, "## Write tools")
@@ -374,6 +442,30 @@ func TestServerInstructionsSayCreateAlertRulesStartDisabled(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("created-disabled line = %q, want %q:\n%s", got, tt.want, instructions)
+			}
+		})
+	}
+}
+
+// With the Start here block, log_query evals referenced parsed fields by bare
+// name (rejected by the validator) until this line named the attributes form;
+// it is about get_logs pipelines, so other query tools don't carry it.
+func TestReferenceManualsNameParsedLogFieldsAsAttributes(t *testing.T) {
+	const parsedFields = "Read these resources before writing a non-trivial query. After a parse stage, reference extracted fields as attributes['name'], never as a bare name:"
+	tests := []struct {
+		name  string
+		tools []string
+		want  string
+	}{
+		{name: "with get_logs", tools: []string{"get_logs", "get_traces"}, want: parsedFields},
+		{name: "without get_logs", tools: []string{"get_traces", "get_service_logs"}, want: "Read these resources before writing a non-trivial query:"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			_, manuals, _ := strings.Cut(instructions, "## Reference manuals\n")
+			if got, _, _ := strings.Cut(manuals, "\n"); got != tt.want {
+				t.Errorf("reference manuals intro = %q, want %q:\n%s", got, tt.want, instructions)
 			}
 		})
 	}
