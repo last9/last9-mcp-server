@@ -442,6 +442,49 @@ func TestAlertRuleDescriptionsRequireKPINames(t *testing.T) {
 	if strings.Contains(prompts.ValidateAlertExpressionDescription, "x, y, z") {
 		t.Error("validate_alert_expression still suggests placeholder indicator names")
 	}
+	if !strings.Contains(prompts.ValidateAlertExpressionDescription, "Write names with spaces, dots or dashes as-is") {
+		t.Error("validate_alert_expression does not say spaced KPI names are written as-is")
+	}
+}
+
+// The API accepts any work-domain address, not only the org's own domain.
+func TestCreateNotificationChannelDescriptionStatesEmailDomains(t *testing.T) {
+	desc := prompts.CreateNotificationChannelDescription
+	if strings.Contains(desc, "org-domain") || !strings.Contains(desc, "rejects personal-provider addresses") {
+		t.Errorf("create_notification_channel misstates which email addresses are accepted: %s", desc)
+	}
+}
+
+// Delivery joins each attachment to its channel's send_resolved; the attachment row's own
+// column is a default nothing reads.
+func TestGetNotificationChannelsDescriptionPointsSendResolvedAtChannel(t *testing.T) {
+	if !strings.Contains(prompts.GetNotificationChannelsDescription, "resolve notifications follow the channel's own send_resolved") {
+		t.Error("get_notification_channels does not say attachment rows' send_resolved is not what delivery uses")
+	}
+}
+
+// create_alert_from_chart rejects a negative threshold before calling the API.
+func TestCreateAlertFromChartDescriptionStatesThresholdFloor(t *testing.T) {
+	if !strings.Contains(prompts.CreateAlertFromChartDescription, "must be 0 or more") {
+		t.Error("create_alert_from_chart does not say threshold must be 0 or more")
+	}
+}
+
+// Write tools return their UI link in _meta, which many clients do not show the model.
+func TestDescriptionsSayWhereTheLinkIs(t *testing.T) {
+	for file, desc := range promptDescriptionFiles {
+		for _, promise := range []string{"a link to Alerting", "a link to notification channels"} {
+			if strings.Contains(desc, promise) && !strings.Contains(desc, promise+" in the result's _meta.reference_url") {
+				t.Errorf("%s promises %q without saying it is in _meta.reference_url", file, promise)
+			}
+		}
+	}
+}
+
+func TestCreateAlertDescriptionStatesDuplicateNameRefusal(t *testing.T) {
+	if !strings.Contains(prompts.CreateAlertDescription, "already uses (case-insensitive) is refused") {
+		t.Error("create_alert does not say a duplicate rule_name is refused")
+	}
 }
 
 // Cleanup and bulk removals must stay on resources an MCP agent created unless the user
