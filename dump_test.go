@@ -122,7 +122,7 @@ func TestDumpTools(t *testing.T) {
 	for i, tool := range out.Tools {
 		byName[tool.Name] = i
 	}
-	for _, name := range []string{"get_traces", "get_service_summary", "prometheus_label_values", "get_logs", "get_alert_groups"} {
+	for _, name := range []string{"get_traces", "get_service_summary", "prometheus_label_values", "get_logs", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel"} {
 		i, ok := byName[name]
 		if !ok {
 			t.Fatalf("tool %q missing from dump", name)
@@ -133,6 +133,13 @@ func TestDumpTools(t *testing.T) {
 		if out.Tools[i].InputSchema == nil {
 			t.Fatalf("tool %q has no inputSchema", name)
 		}
+	}
+	labelValuesDesc := out.Tools[byName["prometheus_label_values"]].Description
+	if !strings.Contains(labelValuesDesc, "5760") {
+		t.Fatal("prometheus_label_values description must document a wide lookback (5760) for daily/sparse metrics")
+	}
+	if !strings.Contains(strings.ToLower(labelValuesDesc), "sparse") && !strings.Contains(strings.ToLower(labelValuesDesc), "daily") {
+		t.Fatal("prometheus_label_values description must warn that daily/sparse metrics need a widened lookback")
 	}
 	for _, tool := range out.Tools {
 		var schema struct {
@@ -213,33 +220,8 @@ func TestDumpTools(t *testing.T) {
 	if strings.Contains(out.Tools[byName["get_logs"]].Description, "{{labels}}") {
 		t.Fatal("get_logs description still contains unsubstituted {{labels}} placeholder")
 	}
-	// get_logs: budget covers combined (description + inputSchema JSON) served size
-	// because get_logs ships a hand-crafted schema that contributes meaningfully to
-	// the context window. Budget is 7000 with headroom over the baseline ~6283.
-	logsIdx := byName["get_logs"]
-	logsSchemaBytes, err := json.Marshal(out.Tools[logsIdx].InputSchema)
-	if err != nil {
-		t.Fatalf("marshal get_logs inputSchema: %v", err)
-	}
-	logsServedSize := len(out.Tools[logsIdx].Description) + len(logsSchemaBytes)
-	const logsServedBudget = 7000
-	if logsServedSize > logsServedBudget {
-		t.Fatalf("get_logs combined (description + inputSchema) served size %d exceeds %d-char budget", logsServedSize, logsServedBudget)
-	}
-	if !strings.Contains(out.Tools[logsIdx].Description, "last9://reference/") {
-		t.Fatal("get_logs description missing resource URI pointer")
-	}
-
-	// Description-only budgets for other whales (main tripwire values restored to 2000).
-	whaleBudgets := map[string]int{
-		"get_traces":       2000,
-		"get_service_logs": 2000,
-	}
-	for _, whale := range []string{"get_traces", "get_service_logs"} {
-		budget := whaleBudgets[whale]
-		if len(out.Tools[byName[whale]].Description) > budget {
-			t.Fatalf("%s served description length %d exceeds %d-char budget", whale, len(out.Tools[byName[whale]].Description), budget)
-		}
+	// Size budgets live in tool_metadata_test.go.
+	for _, whale := range []string{"get_logs", "get_traces", "get_service_logs"} {
 		if !strings.Contains(out.Tools[byName[whale]].Description, "last9://reference/") {
 			t.Fatalf("%s description missing resource URI pointer", whale)
 		}
@@ -429,6 +411,24 @@ func TestDumpTools(t *testing.T) {
 	}
 }
 
+func TestDumpToolsHonorsToolsetsFilter(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, toolsets.Set{"get_exceptions": {}}); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if len(out.Tools) != 1 || out.Tools[0].Name != "get_exceptions" {
+		t.Fatalf("filtered dump = %+v, want exactly [get_exceptions]", out.Tools)
+	}
+}
+
 func TestDumpToolsLogsIncludesServiceProfile(t *testing.T) {
 	allowed, err := toolsets.Parse("logs")
 	if err != nil {
@@ -440,7 +440,8 @@ func TestDumpToolsLogsIncludesServiceProfile(t *testing.T) {
 	}
 	var out struct {
 		Tools []struct {
-			Name string `json:"name"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
 		} `json:"tools"`
 	}
 	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
@@ -449,6 +450,13 @@ func TestDumpToolsLogsIncludesServiceProfile(t *testing.T) {
 	byName := make(map[string]bool, len(out.Tools))
 	for _, tool := range out.Tools {
 		byName[tool.Name] = true
+		if tool.Name == "get_service_profile" {
+			for _, want := range []string{"`domains`", "`domain_envs`", "`log_indexes`", "`log_index_envs`", "physical_index:<name>", "Query each matching index separately", "never infer their environments from `deployment.envs`"} {
+				if !strings.Contains(tool.Description, want) {
+					t.Errorf("served profile description missing %q", want)
+				}
+			}
+		}
 	}
 	if !byName["get_service_profile"] {
 		t.Error("logs dump missing get_service_profile (required by profile-first firing rules on get_exceptions)")
@@ -499,13 +507,52 @@ func TestDumpToolsInvestigate(t *testing.T) {
 			t.Errorf("investigate dump missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "get_alert_groups", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard"} {
+	for _, deny := range []string{"get_alerts", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard"} {
 		if byName[deny] {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}
 	}
 	if len(out.Tools) >= 38 {
 		t.Fatalf("investigate should expose fewer than full surface; got %d", len(out.Tools))
+	}
+}
+
+func TestDumpToolsServesCoreToolsUnderEveryToolset(t *testing.T) {
+	for _, spec := range append(toolsets.ValidNames(), "") {
+		t.Run("toolsets="+spec, func(t *testing.T) {
+			allowed, err := toolsets.Parse(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var buf bytes.Buffer
+			if err := dumpTools(&buf, allowed); err != nil {
+				t.Fatalf("dumpTools failed: %v", err)
+			}
+			var out struct {
+				Tools []struct {
+					Name        string `json:"name"`
+					Description string `json:"description"`
+				} `json:"tools"`
+			}
+			if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+				t.Fatalf("output is not valid JSON: %v", err)
+			}
+			descriptions := map[string]string{}
+			for _, tool := range out.Tools {
+				descriptions[tool.Name] = tool.Description
+			}
+			wants := map[string][]string{
+				"get_current_time":       {"`range`", "`timezone`", "since <point>", "IST = Asia/Kolkata", "epoch_seconds"},
+				"get_workspace_overview": {"Recommended first call when a request names no service or tool", "names a service, signal or tool: call its tool directly", "`telemetry`", "`errors`", "`null`, which means unknown"},
+			}
+			for tool, phrases := range wants {
+				for _, want := range phrases {
+					if !strings.Contains(descriptions[tool], want) {
+						t.Errorf("%s description missing %q", tool, want)
+					}
+				}
+			}
+		})
 	}
 }
 

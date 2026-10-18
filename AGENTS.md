@@ -51,7 +51,8 @@ go run . dump-prompts        # served prompts/list
    `internal/prompts/prompts.go` as `<Tool>Description` — see *Tool descriptions*.
 3. **Tool** — create `<package>/<tool_name>.go` with its `Args` struct, its
    `New<Tool>Handler`, and its private helpers — see *Go conventions*.
-4. **Register** — add to `tools.go` via `registerIfAllowed`, and add the tool name to its
+4. **Register** — add to `tools.go` via `registerIfAllowed` (`registerWriteTool` for a
+   tool that changes state), and add the tool name to its
    domain in `internal/toolsets/toolsets.go` — see *Registration*.
 5. **Test** — `<tool_name>_test.go` using `httptest.NewServer`; run `go test -race ./...`.
 6. **Verify** — `go run . dump-tools` shows the tool with the intended description and
@@ -78,6 +79,12 @@ NO:  const getFooDescription = "Fetches..."   // in a handler package
 `get_service_performance_details`, `get_service_dependency_graph`) or `…Instructions`
 (`get_exceptions`). Leave them alone; do not copy the pattern.
 
+**Stay inside the metadata checks.** `tool_metadata_test.go` holds every served tool to a
+description byte budget (default plus a reviewed override map, and a description-plus-schema
+budget for `get_logs`; no other test sets size budgets), registered `last9://` URIs,
+string-only schema enums, a max schema depth, and lowercase verb-first names (`get_`, `list_`,
+`create_`, …; `grafana_` may prefix the verb). Raising an override is a decision for the PR.
+
 **Preserve file bytes exactly.** Several description files intentionally end without a
 trailing newline. No test enforces this — an editor or formatter that auto-appends one
 silently changes the served description and breaks `dump-tools` snapshot diffs.
@@ -100,6 +107,14 @@ rules + a `last9://reference/...` pointer). Their full manuals live in
 **Document every parameter, its default, and its unit.** Unit mistakes propagate straight
 into model behavior — a doc example using milliseconds for a nanosecond field produced
 wrong queries in production.
+
+**The most-used tools carry routing sections.** The tools in `description_sections_test.go`
+`sectionedTools` have `## When to use`, `## When not to use`, `## Pairs well with`,
+`## Output shape` and `## Known traps`, in that order, except sections `omittedSections` leaves
+out for a tool whose evals regressed with them (`get_logs`). The two routing sections are `- `
+bullets, one route each, naming tools in backticks and nothing else. `prompts.TrimRoutes`
+drops a bullet when `--toolsets` leaves out a tool it names, so put cross-domain routes in
+their own bullet; the test checks every name is served under each toolset.
 
 **Point at discovery tools, not attribute allowlists.** Models over-anchor on a list and
 stop discovering. Never inject an org's attribute catalog into a description.
@@ -129,6 +144,21 @@ reg(registerIfAllowed(server, cfg.AllowedTools,
     foo.NewGetFooHandler(client, cfg)))
 ```
 
+**A tool that changes Last9 state registers through `registerWriteTool`** with a verify
+call: the read call, starting with the read tool's name, that shows whether the write
+landed; every toolset in `internal/toolsets/toolsets.go` that lists the write tool must also
+list that read tool, or registration fails. Its write requests must go through `last9api.Client.Do` (or mark failures with
+`utils.MarkUnknownWriteOutcome`), and are never retried. After a timeout or lost connection
+the agent is told to run the verify call instead of retrying, so a create cannot duplicate.
+`write_tools_test.go` fails until the tool has a fixture there and passes those checks.
+
+```go
+reg(registerWriteTool(server, cfg.AllowedTools,
+    &mcp.Tool{Name: "create_foo", Annotations: writeTool("Create Foo", false, false), Description: prompts.CreateFooDescription},
+    "get_foos, looking for one with the name you passed",
+    foo.NewCreateFooHandler(client, cfg)))
+```
+
 Then add `get_foo` to its domain in `internal/toolsets/toolsets.go`, and verify with
 `go run . dump-tools --toolsets=<other-domain>` that it is absent there. `dump_test.go`
 asserts per-toolset membership and copy — update it in the same change.
@@ -139,11 +169,26 @@ asserts per-toolset membership and copy — update it in the same change.
 at all three call sites.** They are not tools and must not be nested inside
 `registerAllTools`.
 
-Three call sites: `main.go`, and `dump.go` twice — once for `dump-tools`, once for
+Three call sites: `buildServer` in `main.go` (stdio, and `--http` once per effective toolset
+set), and `dump.go` twice — once for `dump-tools`, once for
 `dump-prompts`. Miss one and `dump_prompts_test.go` fails on a prompt count with no hint why.
 
 MCP prompts live one-per-file in `internal/workflows/`, with their text embedded in
 `internal/prompts/prompts.go` as `<Name>Workflow`.
+
+### Server instructions
+
+`internal/prompts/server_instructions.md` is the tool-selection policy sent on `initialize`.
+It is a `text/template` rendered against `--toolsets` (`tools`/`has` drop unregistered
+tools), so a tool named there never leaks into a toolset that lacks it. Every new tool
+goes into one of its groups (discovery, dedicated, raw, write):
+`instructions_test.go` fails, per toolset, if the policy names a tool the toolset does not
+serve or omits one it does. It matches backticked text against registered tool names, so
+backticking a parameter such as `service_name` in the policy is fine.
+
+`registerServerInstructions` has one call site, `buildServer` in `main.go`, after
+`registerAllTools`. `dump.go` skips it on purpose: `tools/list` and
+`prompts/list` carry no instructions, and `instructions_test.go` covers the handshake.
 
 ### Argument structs
 
@@ -167,6 +212,13 @@ one.
 - CLI/env: `--toolsets` / `LAST9_TOOLSETS` (alias `LAST9_MCP_TOOLSETS`). Comma-separated:
   `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`.
 - Empty / unset / `all` → full surface. Unknown names fail fast with the valid list.
+- `core` tools in `toolsets.go` (`get_current_time`, `get_workspace_overview`) join every parsed
+  set; add a tool there only when other tools' arguments depend on it or the server
+  instructions name it as the first call. Toolsets narrow the tool surface, not backend
+  access: `get_workspace_overview` still probes logs, traces, metrics and alerts under
+  `--toolsets=logs`. The API token's scope is what limits backend reads.
+- In `--http` mode, `X-Last9-Toolsets` (or `?toolsets=`) narrows one request to its intersection
+  with the startup set; `toolset_servers.go` caches one server per effective set.
 - `dump-tools` honors the same flags and env, and loads `.env` first. The canonical snapshot
   is unset/`all`; use `--toolsets=investigate` to measure the automation surface.
 

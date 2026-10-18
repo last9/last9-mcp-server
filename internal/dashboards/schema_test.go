@@ -97,6 +97,27 @@ func TestCreateDashboardInputSchema_ValidatesDashboardObject(t *testing.T) {
 	}
 }
 
+// The panel version is pinned with bounds rather than an integer enum: some
+// providers reject enums whose values are not strings.
+func TestDashboardInputSchema_PinsPanelVersionToOne(t *testing.T) {
+	for _, version := range []any{0, 1, 2} {
+		args := map[string]any{
+			"dashboard": map[string]any{
+				"name": "Created",
+				"panels": []any{map[string]any{
+					"name": "Notes", "version": version,
+					"layout":        map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+					"visualization": map[string]any{"type": "markdown", "markdown": "Synthetic notes"},
+				}},
+			},
+		}
+		err := validateInputSchema(t, GetCreateDashboardInputSchema(), args)
+		if (err == nil) != (version == 1) {
+			t.Errorf("version %v: validate error = %v", version, err)
+		}
+	}
+}
+
 func TestCreateDashboardInputSchema_RestrictsQueryTypes(t *testing.T) {
 	args := map[string]any{
 		"dashboard": map[string]any{

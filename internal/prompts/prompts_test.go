@@ -11,9 +11,13 @@ import (
 
 var promptDescriptionFiles = map[string]string{
 	"add_drop_rule.md":                     prompts.AddDropRuleDescription,
+	"create_alert.md":                      prompts.CreateAlertDescription,
+	"create_alert_from_chart.md":           prompts.CreateAlertFromChartDescription,
 	"create_dashboard.md":                  prompts.CreateDashboardDescription,
+	"delete_alert.md":                      prompts.DeleteAlertDescription,
 	"delete_dashboard.md":                  prompts.DeleteDashboardDescription,
 	"delete_dashboard_snapshot.md":         prompts.DeleteDashboardSnapshotDescription,
+	"describe_alert_chart.md":              prompts.DescribeAlertChartDescription,
 	"did_you_mean.md":                      prompts.DidYouMeanDescription,
 	"get_alert_config.md":                  prompts.GetAlertConfigDescription,
 	"get_alert_groups.md":                  prompts.GetAlertGroupsDescription,
@@ -21,6 +25,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_alerts.md":                        prompts.GetAlertsDescription,
 	"get_apm_service_deviations.md":        prompts.GetAPMServiceDeviationsDescription,
 	"get_change_events.md":                 prompts.GetChangeEventsDescription,
+	"get_current_time.md":                  prompts.GetCurrentTimeDescription,
 	"get_dashboard.md":                     prompts.GetDashboardDescription,
 	"get_dashboard_snapshot.md":            prompts.GetDashboardSnapshotDescription,
 	"get_database_queries.md":              prompts.GetDatabaseQueriesDescription,
@@ -51,6 +56,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_trace_attributes.md":              prompts.GetTraceAttributesDescription,
 	"get_trace_attributes_for_pipeline.md": prompts.GetTraceAttributesForPipelineDescription,
 	"get_trace_waterfall.md":               prompts.GetTraceWaterfallDescription,
+	"get_workspace_overview.md":            prompts.GetWorkspaceOverviewDescription,
 	"get_traces_base.md":                   prompts.GetTracesDescription,
 	"grafana_get_dashboard.md":             prompts.GrafanaGetDashboardDescription,
 	"grafana_list_datasources.md":          prompts.GrafanaListDatasourcesDescription,
@@ -60,15 +66,31 @@ var promptDescriptionFiles = map[string]string{
 	"list_dashboard_snapshots.md":          prompts.ListDashboardSnapshotsDescription,
 	"list_dashboards.md":                   prompts.ListDashboardsDescription,
 	"list_datasources.md":                  prompts.ListDatasourcesDescription,
+	"mute_alert_group.md":                  prompts.MuteAlertGroupDescription,
+	"acknowledge_alert.md":                 prompts.AcknowledgeAlertDescription,
+	"reassign_alert.md":                    prompts.ReassignAlertDescription,
+	"create_notification_channel.md":       prompts.CreateNotificationChannelDescription,
+	"attach_notification_channel.md":       prompts.AttachNotificationChannelDescription,
+	"detach_notification_channel.md":       prompts.DetachNotificationChannelDescription,
+	"delete_notification_channel.md":       prompts.DeleteNotificationChannelDescription,
+	"patch_alert.md":                       prompts.PatchAlertDescription,
 	"prometheus_instant_query.md":          prompts.PromqlInstantQueryDetails,
 	"prometheus_label_values.md":           prompts.PromqlLabelValuesQueryDetails,
 	"prometheus_labels.md":                 prompts.PromqlLabelsQueryDetails,
 	"prometheus_range_query_base.md":       prompts.PromqlRangeQueryDetails,
+	"recommend_alert_config.md":            prompts.RecommendAlertConfigDescription,
+	"update_alert.md":                      prompts.UpdateAlertDescription,
 	"update_dashboard.md":                  prompts.UpdateDashboardDescription,
+	"validate_alert_expression.md":         prompts.ValidateAlertExpressionDescription,
 	"validate_dashboard.md":                prompts.ValidateDashboardDescription,
 }
 
 var simplePromptDescriptionFiles = map[string]bool{
+	"create_alert.md":              true,
+	"delete_alert.md":              true,
+	"patch_alert.md":               true,
+	"recommend_alert_config.md":    true,
+	"update_alert.md":              true,
 	"add_drop_rule.md":             true,
 	"create_dashboard.md":          true,
 	"delete_dashboard.md":          true,
@@ -221,6 +243,7 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"NOT SQL", "must clarify logjson_query is not SQL"},
 		{"Pass JSON stages in `logjson_query`, never `pipeline`", "must name the get_logs argument rather than a generic pipeline key"},
 		{"$neq", "must document existence idiom"},
+		{"`$neq` (is not X; never `$not`+`$eq`)", "must route negated equality to $neq"},
 		{"start_time_iso", "must document absolute time on tool args"},
 		{"resources['last9.tenant']", "must document tenant scoping"},
 		{"resources['deployment.environment']", "must document env scoping"},
@@ -410,25 +433,62 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 	}
 }
 
-func TestWhaleDescriptionsBounded(t *testing.T) {
-	budgets := map[string]int{
-		"get_logs_base":         2900,
-		"get_traces_base":       2200,
-		"get_service_logs_base": 2000,
-	}
-	bodies := map[string]string{
-		"get_logs_base":         prompts.GetLogsDescription,
-		"get_traces_base":       prompts.GetTracesDescription,
-		"get_service_logs_base": prompts.GetServiceLogsDescription,
-	}
-	for name, body := range bodies {
-		if len(body) == 0 {
-			t.Errorf("%s empty", name)
+// The API rejects expression_args keys other than the bound KPI's own name.
+func TestAlertRuleDescriptionsRequireKPINames(t *testing.T) {
+	for name, desc := range map[string]string{
+		"create_alert":              prompts.CreateAlertDescription,
+		"update_alert":              prompts.UpdateAlertDescription,
+		"validate_alert_expression": prompts.ValidateAlertExpressionDescription,
+	} {
+		if !strings.Contains(desc, "exact name") {
+			t.Errorf("%s does not require each indicator to use its KPI's exact name", name)
 		}
-		budget := budgets[name]
-		if len(body) > budget {
-			t.Errorf("%s length %d exceeds %d-char budget", name, len(body), budget)
+	}
+	if strings.Contains(prompts.ValidateAlertExpressionDescription, "x, y, z") {
+		t.Error("validate_alert_expression still suggests placeholder indicator names")
+	}
+	if !strings.Contains(prompts.ValidateAlertExpressionDescription, "Write names with spaces, dots or dashes as-is") {
+		t.Error("validate_alert_expression does not say spaced KPI names are written as-is")
+	}
+}
+
+// The API accepts any work-domain address, not only the org's own domain.
+func TestCreateNotificationChannelDescriptionStatesEmailDomains(t *testing.T) {
+	desc := prompts.CreateNotificationChannelDescription
+	if strings.Contains(desc, "org-domain") || !strings.Contains(desc, "rejects personal-provider addresses") {
+		t.Errorf("create_notification_channel misstates which email addresses are accepted: %s", desc)
+	}
+}
+
+// Delivery joins each attachment to its channel's send_resolved; the attachment row's own
+// column is a default nothing reads.
+func TestGetNotificationChannelsDescriptionPointsSendResolvedAtChannel(t *testing.T) {
+	if !strings.Contains(prompts.GetNotificationChannelsDescription, "resolve notifications follow the channel's own send_resolved") {
+		t.Error("get_notification_channels does not say attachment rows' send_resolved is not what delivery uses")
+	}
+}
+
+// create_alert_from_chart rejects a negative threshold before calling the API.
+func TestCreateAlertFromChartDescriptionStatesThresholdFloor(t *testing.T) {
+	if !strings.Contains(prompts.CreateAlertFromChartDescription, "must be 0 or more") {
+		t.Error("create_alert_from_chart does not say threshold must be 0 or more")
+	}
+}
+
+// Write tools return their UI link in _meta, which many clients do not show the model.
+func TestDescriptionsSayWhereTheLinkIs(t *testing.T) {
+	for file, desc := range promptDescriptionFiles {
+		for _, promise := range []string{"a link to Alerting", "a link to notification channels"} {
+			if strings.Contains(desc, promise) && !strings.Contains(desc, promise+" in the result's _meta.reference_url") {
+				t.Errorf("%s promises %q without saying it is in _meta.reference_url", file, promise)
+			}
 		}
+	}
+}
+
+func TestCreateAlertDescriptionStatesDuplicateNameRefusal(t *testing.T) {
+	if !strings.Contains(prompts.CreateAlertDescription, "already uses (case-insensitive) is refused") {
+		t.Error("create_alert does not say a duplicate rule_name is refused")
 	}
 }
 
@@ -550,9 +610,29 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 			t.Errorf("UpdateDashboardDescription missing %q: %s", c.phrase, c.reason)
 		}
 	}
-	// Any mention at all, not three exact phrasings a reword would slip past.
-	if strings.Contains(create, "list_dashboards") {
+	// Any mention outside the timeout-recovery sentence, not three exact phrasings a reword
+	// would slip past.
+	if strings.Contains(strings.Replace(create, createRetrySentence("list_dashboards"), "", 1), "list_dashboards") {
 		t.Error("CreateDashboardDescription must not require list_dashboards before create")
+	}
+}
+
+func createRetrySentence(readCall string) string {
+	return "On a timeout or connection error the create may or may not have been applied; check by name with " + readCall + " before retrying."
+}
+
+// A create whose response was lost may still have landed; a blind retry duplicates it.
+func TestCreateToolDescriptionsExplainUnknownOutcome(t *testing.T) {
+	for name, c := range map[string]struct{ desc, readCall string }{
+		"add_drop_rule":               {prompts.AddDropRuleDescription, "get_drop_rules"},
+		"create_alert":                {prompts.CreateAlertDescription, "get_alert_config (rule_name)"},
+		"create_alert_from_chart":     {prompts.CreateAlertFromChartDescription, "get_alert_config (rule_name)"},
+		"create_dashboard":            {prompts.CreateDashboardDescription, "list_dashboards"},
+		"create_notification_channel": {prompts.CreateNotificationChannelDescription, "get_notification_channels (scope=channels)"},
+	} {
+		if !strings.Contains(c.desc, createRetrySentence(c.readCall)) {
+			t.Errorf("%s description does not say how to check a create after a timeout: want %q", name, createRetrySentence(c.readCall))
+		}
 	}
 }
 
@@ -565,5 +645,17 @@ func TestAPMServiceDeviationsDescriptionLookbackFloor(t *testing.T) {
 	description := strings.ToLower(prompts.GetAPMServiceDeviationsDescription)
 	if !strings.Contains(description, "short lookbacks are unreliable") {
 		t.Error("description missing short-lookback floor guidance")
+	}
+}
+
+// The routing section must quote the window parameter's default and cap, or
+// agents pass a full hour when the user asks for current alerts.
+func TestGetAlertsRoutingStatesDefaultWindow(t *testing.T) {
+	_, routing, _ := strings.Cut(prompts.GetAlertsDescription, "## When to use")
+	routing, _, _ = strings.Cut(routing, "##")
+	for _, phrase := range []string{"default 15 minutes", "at most 1 hour"} {
+		if !strings.Contains(routing, phrase) {
+			t.Errorf("get_alerts When to use section missing %q:\n%s", phrase, routing)
+		}
 	}
 }

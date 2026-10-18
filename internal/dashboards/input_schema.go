@@ -21,7 +21,7 @@ func panelObjectSchema() map[string]interface{} {
 		"required": []string{"name", "layout", "visualization"},
 		"properties": map[string]interface{}{
 			"name":    map[string]interface{}{"type": "string"},
-			"version": map[string]interface{}{"type": "integer", "enum": []int{1}},
+			"version": map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 1},
 			"layout": map[string]interface{}{
 				"type":     "object",
 				"required": []string{"x", "y", "w", "h"},

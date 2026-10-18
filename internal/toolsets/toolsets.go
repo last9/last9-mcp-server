@@ -54,8 +54,23 @@ var named = map[string][]string{
 	"alerts": {
 		"get_alerts",
 		"get_alert_config",
+		"create_alert",
+		"update_alert",
+		"patch_alert",
+		"delete_alert",
+		"validate_alert_expression",
+		"mute_alert_group",
+		"acknowledge_alert",
+		"reassign_alert",
+		"create_notification_channel",
+		"attach_notification_channel",
+		"detach_notification_channel",
+		"delete_notification_channel",
+		"recommend_alert_config",
 		"get_alert_groups",
 		"get_entity_alert_rules",
+		"describe_alert_chart",
+		"create_alert_from_chart",
 		"get_alert_rule_state",
 		"get_notification_channels",
 		"get_drop_rules",
@@ -85,6 +100,13 @@ var named = map[string][]string{
 		"grafana_list_folder_dashboards",
 		"grafana_list_datasources",
 	},
+}
+
+// core tools are served under every toolset: other tools' arguments depend on
+// them, or the server instructions name them as the first call.
+var core = []string{
+	"get_current_time",
+	"get_workspace_overview",
 }
 
 // discovery tools included in the investigate composite (R9a).
@@ -119,6 +141,7 @@ func (s Set) Allows(toolName string) bool {
 
 // Parse expands a comma-separated toolset spec into allowed tool names.
 // Empty / whitespace-only → nil (all tools). "all" supersedes other tokens.
+// Every non-nil result includes the core tools.
 // Unknown names return an error listing ValidNames.
 func Parse(spec string) (Set, error) {
 	spec = strings.TrimSpace(spec)
@@ -158,6 +181,9 @@ func Parse(spec string) (Set, error) {
 	}
 
 	out := make(Set)
+	for _, tool := range core {
+		out[tool] = struct{}{}
+	}
 	for _, t := range tokens {
 		switch t {
 		case "investigate":

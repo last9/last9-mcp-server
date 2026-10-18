@@ -12,3 +12,4 @@ Output per rule (expression-focused; basic metadata such as state/severity/times
 - id, rule_name
 - expression, condition, alert_condition, eval_window
 - indicators: each indicator name with resolved PromQL and unit
+- mute_until, recurring_mute_schedule and properties (description, runbook, annotations), when set; read patch_alert changes back here
