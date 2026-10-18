@@ -15,7 +15,7 @@ import (
 	"last9-mcp/internal/models"
 )
 
-func testClient(t *testing.T, h http.HandlerFunc) *last9api.Client {
+func estimateTestClient(t *testing.T, h http.HandlerFunc) *last9api.Client {
 	t.Helper()
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
@@ -33,7 +33,7 @@ func TestEstimateQueryRange_RequestShape(t *testing.T) {
 	var path string
 	var query map[string][]string
 	var body map[string]any
-	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := estimateTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		path = r.URL.Path
 		query = r.URL.Query()
 		_ = json.NewDecoder(r.Body).Decode(&body)
@@ -66,7 +66,7 @@ func TestEstimateQueryRange_RequestShape(t *testing.T) {
 
 func TestEstimateQueryRange_OmitsEmptyIndex(t *testing.T) {
 	var query map[string][]string
-	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := estimateTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		query = r.URL.Query()
 		_, _ = io.Copy(io.Discard, r.Body)
 		_, _ = w.Write([]byte(`{"data":{"bytes":0}}`))
@@ -94,7 +94,7 @@ func TestEstimateQueryRange_Errors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+			c := estimateTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 				_, _ = io.Copy(io.Discard, r.Body)
 				w.WriteHeader(tt.status)
 				_, _ = w.Write([]byte(tt.body))
@@ -108,7 +108,7 @@ func TestEstimateQueryRange_Errors(t *testing.T) {
 
 func TestEstimateQueryRange_RejectsInvalidIndexBeforeCalling(t *testing.T) {
 	calls := 0
-	c := testClient(t, func(w http.ResponseWriter, r *http.Request) { calls++ })
+	c := estimateTestClient(t, func(w http.ResponseWriter, r *http.Request) { calls++ })
 	if _, err := EstimateQueryRange(context.Background(), c, EstimateQueryRangeInput{Index: "bogus"}); err == nil {
 		t.Fatal("want an error for an invalid index")
 	}

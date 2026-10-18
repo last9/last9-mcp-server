@@ -14,6 +14,24 @@ Fetch raw log lines for one service (`service_name`, optional `severity_filters`
 
 **Time/index:** Prefer `lookback_minutes` for relative windows; `start_time_iso`+`end_time_iso` (RFC3339) for absolute. Use a user-named `index` (`physical_index:<name>` / `rehydration_index:<block>`) or one from `get_service_profile`. Match env via `log_index_envs`; query matching indexes separately. Omit `index` for `default` or unknown.
 
-**Envelope:** `truncated`/`limit`, `trimmed_items`, `partial`/`skipped` mean incomplete: disclose; follow `hints`.
+**Envelope:** `truncated`, `trimmed_items`, `partial`: disclose; follow `hints`.
 
 Full service-logs reference: `last9://reference/service_logs`. Logjson: `last9://reference/logjson`
+
+## When to use
+Raw lines for one known service, filtered by severity, HTTP status, named attributes or body text.
+
+## When not to use
+- Aggregates, percentiles, several statuses at once, or numeric comparisons: `get_logs`
+- Reading root-cause lines after `get_exceptions`: `get_logs` with a small limit
+
+## Pairs well with
+- `get_service_profile` (index and env)
+- `get_log_attributes` (field names)
+- `did_you_mean` (service spelling)
+
+## Output shape
+Log entries (timestamp, message, severity) up to `limit`, with truncation and total-matching counts.
+
+## Known traps
+A service whose logs live only in a named index returns nothing until `index` is set.
