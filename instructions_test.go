@@ -226,10 +226,20 @@ func TestServerInstructionsStartWithWorkspaceOverview(t *testing.T) {
 		t.Run("toolsets="+spec, func(t *testing.T) {
 			instructions, _ := initializeOver(t, spec)
 			_, rest, ok := strings.Cut(instructions, "\n## ")
-			if !ok || !strings.HasPrefix(rest, "Start here\nCall `get_workspace_overview` first") {
+			if !ok || !strings.HasPrefix(rest, "Start here\nWhen a request names no service or tool, call `get_workspace_overview` first") {
 				t.Fatalf("first section must recommend get_workspace_overview:\n%s", instructions)
 			}
 		})
+	}
+}
+
+// An unconditional first call cost agentic evals a hop when the request already
+// named its service or tool, and pulled agents off that tool.
+func TestServerInstructionsSkipOverviewWhenRequestNamesTarget(t *testing.T) {
+	instructions, _ := initializeOver(t, "")
+	start, _, _ := strings.Cut(instructions, "\n## Discover")
+	if !strings.Contains(start, "When it names a service, signal or tool, go straight to the most specific tool for it") {
+		t.Errorf("Start here must send requests that name their target straight to its tool:\n%s", start)
 	}
 }
 

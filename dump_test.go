@@ -536,7 +536,7 @@ func TestDumpToolsServesCoreToolsUnderEveryToolset(t *testing.T) {
 			}
 			wants := map[string][]string{
 				"get_current_time":       {"`range`", "`timezone`", "since <point>", "IST = Asia/Kolkata", "epoch_seconds"},
-				"get_workspace_overview": {"Recommended first call", "`telemetry`", "`errors`", "`null`, which means unknown"},
+				"get_workspace_overview": {"Recommended first call when a request names no service or tool", "names a service, signal or tool: call its tool directly", "`telemetry`", "`errors`", "`null`, which means unknown"},
 			}
 			for tool, phrases := range wants {
 				for _, want := range phrases {
