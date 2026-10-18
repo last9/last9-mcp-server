@@ -593,10 +593,15 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 		{"`legend: {type, value}`", "must document the API query legend shape"},
 		{"When the user provides only a name, use `panels: []`", "must avoid inventing metrics for a name-only dashboard"},
 		{"Do not use `gridPos` or a panel-level `type`", "must rule out the rejected legacy panel shape"},
+		{"grouping by service or environment does not replace the window", "must keep groupby from standing in for the timeslice"},
 	} {
 		if !strings.Contains(create, c.phrase) {
 			t.Errorf("CreateDashboardDescription missing %q: %s", c.phrase, c.reason)
 		}
+	}
+	// The description sits near its byte budget; state the log_json window rule once.
+	if n := strings.Count(create, "For `log_json` line, timeseries, or bar panels"); n != 1 {
+		t.Errorf("CreateDashboardDescription states the log_json window rule %d times, want 1", n)
 	}
 	for _, c := range []struct {
 		phrase string
