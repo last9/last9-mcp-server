@@ -6,7 +6,7 @@ Returns JSON:
 - live: true when at least one series has a sample in the window
 - series_count: number of series with a sample in the window (0 when absent)
 - last_sample_age_seconds: seconds since the newest sample across series (0 when absent)
-- inferred_interval_seconds: median consecutive sample-timestamp delta in the window (0 when fewer than 2 samples)
+- inferred_interval_seconds: raw-sample interval from a scrape_interval rollup over the window, median across series (0 when fewer than 2 samples); independent of the window width
 - suggested_window: "$__interval" for high-cadence metrics; otherwise a duration string such as "3d" sized to roughly 3× last_sample_age so last_over_time does not blank between slow emissions
 
 Parameters:

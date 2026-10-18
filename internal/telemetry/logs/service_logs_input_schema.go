@@ -23,7 +23,7 @@ func GetServiceLogsInputSchema() map[string]interface{} {
 				},
 			}},
 			"env":   map[string]interface{}{"type": []string{"string", "null"}, "description": "Environment to filter by; omit when unknown."},
-			"index": map[string]interface{}{"type": []string{"string", "null"}, "description": "Optional physical_index:<name> or rehydration_index:<block_name>."},
+			"index": map[string]interface{}{"type": []string{"string", "null"}, "description": "Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Use a user-named index or a non-default physical index discovered by get_service_profile; omit for default or when unknown."},
 		},
 	}
 }

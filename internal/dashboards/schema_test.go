@@ -75,8 +75,16 @@ func validateInputSchema(t *testing.T, inputSchema map[string]interface{}, args 
 func TestCreateDashboardInputSchema_ValidatesDashboardObject(t *testing.T) {
 	validArgs := map[string]any{
 		"dashboard": map[string]any{
-			"name":   "Created",
-			"panels": []any{},
+			"name": "Created",
+			"panels": []any{map[string]any{
+				"name": "Request rate", "version": 1,
+				"layout":        map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+				"visualization": map[string]any{"type": "timeseries"},
+				"queries": []any{map[string]any{
+					"name": "A", "type": "range", "query_type": "promql", "telemetry": "metrics", "expr": "up",
+					"legend": map[string]any{"type": "auto", "value": ""},
+				}},
+			}},
 		},
 		"metadata": map[string]any{
 			"_category": "custom",
@@ -86,6 +94,169 @@ func TestCreateDashboardInputSchema_ValidatesDashboardObject(t *testing.T) {
 
 	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), validArgs); err != nil {
 		t.Fatalf("expected dashboard object args to validate: %v", err)
+	}
+}
+
+// The panel version is pinned with bounds rather than an integer enum: some
+// providers reject enums whose values are not strings.
+func TestDashboardInputSchema_PinsPanelVersionToOne(t *testing.T) {
+	for _, version := range []any{0, 1, 2} {
+		args := map[string]any{
+			"dashboard": map[string]any{
+				"name": "Created",
+				"panels": []any{map[string]any{
+					"name": "Notes", "version": version,
+					"layout":        map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+					"visualization": map[string]any{"type": "markdown", "markdown": "Synthetic notes"},
+				}},
+			},
+		}
+		err := validateInputSchema(t, GetCreateDashboardInputSchema(), args)
+		if (err == nil) != (version == 1) {
+			t.Errorf("version %v: validate error = %v", version, err)
+		}
+	}
+}
+
+func TestCreateDashboardInputSchema_RestrictsQueryTypes(t *testing.T) {
+	args := map[string]any{
+		"dashboard": map[string]any{
+			"name": "Logs",
+			"panels": []any{map[string]any{
+				"name": "Errors", "version": 1,
+				"layout": map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+				"visualization": map[string]any{"type": "timeseries"},
+				"queries": []any{map[string]any{
+					"name": "A", "type": "range", "query_type": "log_ql", "telemetry": "logs", "expr": "{service_name=\"api\"}[5m]",
+					"legend": map[string]any{"type": "auto", "value": ""},
+				}},
+			}},
+		},
+	}
+	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), args); err != nil {
+		t.Fatalf("expected log_ql query to validate: %v", err)
+	}
+
+	query := args["dashboard"].(map[string]any)["panels"].([]any)[0].(map[string]any)["queries"].([]any)[0].(map[string]any)
+	query["query_type"] = "logs"
+	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), args); err == nil {
+		t.Fatal("expected telemetry name used as query_type to fail validation")
+	}
+	query["query_type"] = "log_ql"
+	query["legend"].(map[string]any)["type"] = "invalid"
+	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), args); err == nil {
+		t.Fatal("expected unsupported legend type to fail validation")
+	}
+}
+
+func TestDashboardInputSchema_AllowsSupportedPanelVariants(t *testing.T) {
+	queryPanel := map[string]any{
+		"name": "Request rate", "version": 1,
+		"layout":        map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+		"visualization": map[string]any{"type": "stat"},
+		"queries": []any{map[string]any{
+			"name": "A", "type": "range", "query_type": "promql", "telemetry": "metrics", "expr": "up",
+			"legend": map[string]any{"type": "auto", "value": ""},
+		}},
+	}
+
+	for _, tc := range []struct {
+		name  string
+		panel map[string]any
+	}{
+		{name: "query_control", panel: queryPanel},
+		{name: "section", panel: map[string]any{
+			"name":          "Overview",
+			"layout":        map[string]any{"x": 0, "y": 0, "w": 24, "h": 1},
+			"visualization": map[string]any{"type": "section"},
+		}},
+		{name: "markdown", panel: map[string]any{
+			"name": "Notes", "version": 1,
+			"layout":        map[string]any{"x": 0, "y": 1, "w": 24, "h": 3},
+			"visualization": map[string]any{"type": "markdown", "markdown": "Synthetic notes"},
+		}},
+		{name: "default_version", panel: map[string]any{
+			"name":          "Request rate",
+			"layout":        map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+			"visualization": map[string]any{"type": "stat"},
+			"queries": []any{map[string]any{
+				"name": "A", "type": "range", "query_type": "promql", "telemetry": "metrics", "expr": "up",
+				"legend": map[string]any{"type": "auto", "value": ""},
+			}},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dashboard := map[string]any{"name": "Created", "panels": []any{tc.panel}}
+			for _, op := range []string{"create", "update"} {
+				args := map[string]any{"dashboard": dashboard}
+				schema := GetCreateDashboardInputSchema()
+				if op == "update" {
+					args["id"] = "uuid-1"
+					schema = GetUpdateDashboardInputSchema()
+				}
+				if err := validateInputSchema(t, schema, args); err != nil {
+					t.Fatalf("%s schema rejected supported %s panel: %v", op, tc.name, err)
+				}
+			}
+		})
+	}
+}
+
+func TestDashboardInputSchema_RequiresQueriesForQueryPanels(t *testing.T) {
+	args := map[string]any{"dashboard": map[string]any{
+		"name": "Created",
+		"panels": []any{map[string]any{
+			"name":          "Request rate",
+			"layout":        map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+			"visualization": map[string]any{"type": "stat"},
+		}},
+	}}
+
+	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), args); err == nil {
+		t.Fatal("expected query panel without queries to fail validation")
+	}
+}
+
+func TestDashboardInputSchema_RequiresLogsConfigForLogsVisualization(t *testing.T) {
+	args := map[string]any{"dashboard": map[string]any{
+		"name": "Created",
+		"panels": []any{map[string]any{
+			"name": "Recent errors", "version": 1,
+			"layout":        map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+			"visualization": map[string]any{"type": "logs"},
+			"queries": []any{map[string]any{
+				"name": "Errors", "type": "range", "query_type": "log_ql", "telemetry": "logs", "expr": "{}",
+				"legend": map[string]any{"type": "auto", "value": ""},
+			}},
+		}},
+	}}
+	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), args); err == nil {
+		t.Fatal("expected logs visualization without logs_config to fail validation")
+	}
+	panel := args["dashboard"].(map[string]any)["panels"].([]any)[0].(map[string]any)
+	panel["visualization"].(map[string]any)["logs_config"] = map[string]any{"columns": []any{"timestamp", "severity", "body"}}
+	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), args); err != nil {
+		t.Fatalf("expected supported logs_config to validate: %v", err)
+	}
+	panel["visualization"].(map[string]any)["logs_config"].(map[string]any)["columns"] = []any{"unknown"}
+	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), args); err == nil {
+		t.Fatal("expected unsupported logs_config column to fail validation")
+	}
+}
+
+func TestCreateDashboardInputSchema_RejectsLegacyPanelShape(t *testing.T) {
+	args := map[string]any{"dashboard": map[string]any{
+		"name": "Created",
+		"panels": []any{map[string]any{
+			"name":    "Log Volume",
+			"type":    "timeseries",
+			"gridPos": map[string]any{"x": 0, "y": 0, "w": 12, "h": 8},
+			"queries": []any{map[string]any{"query": "sum(rate(logs_total[5m]))"}},
+		}},
+	}}
+
+	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), args); err == nil {
+		t.Fatal("expected legacy panel shape to fail validation")
 	}
 }
 

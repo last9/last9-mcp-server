@@ -17,7 +17,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestMetricStatus_AbsentMetric(t *testing.T) {
+func TestGetMetricStatus_AbsentMetric(t *testing.T) {
 	var queries []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -38,8 +38,8 @@ func TestMetricStatus_AbsentMetric(t *testing.T) {
 		ExpiresAt:   time.Now().Add(time.Hour),
 	}
 
-	handler := NewMetricStatusHandler(server.Client(), cfg)
-	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, MetricStatusArgs{
+	handler := NewGetMetricStatusHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetMetricStatusArgs{
 		Metric:        "metric_that_does_not_exist",
 		WindowMinutes: 60,
 	})
@@ -51,7 +51,7 @@ func TestMetricStatus_AbsentMetric(t *testing.T) {
 	}
 	text := result.Content[0].(*mcp.TextContent).Text
 
-	var status MetricStatusResult
+	var status GetMetricStatusResult
 	if err := json.Unmarshal([]byte(text), &status); err != nil {
 		t.Fatalf("unmarshal: %v\nbody: %s", err, text)
 	}
@@ -69,10 +69,9 @@ func TestMetricStatus_AbsentMetric(t *testing.T) {
 	}
 }
 
-func TestMetricStatus_DailyMetricSuggestedWindow(t *testing.T) {
+func TestGetMetricStatus_DailyMetricSuggestedWindow(t *testing.T) {
 	now := time.Now().UTC().Unix()
-	dayAgo := now - 86400
-	var instantN, rangeN int
+	var instantN int
 	var queries []string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -95,14 +94,11 @@ func TestMetricStatus_DailyMetricSuggestedWindow(t *testing.T) {
 				_, _ = w.Write([]byte(fmt.Sprintf(`[{"metric":{},"value":[%d,"86400"]}]`, now)))
 				return
 			}
+			if strings.Contains(payload.Query, "scrape_interval(") {
+				_, _ = w.Write([]byte(fmt.Sprintf(`[{"metric":{},"value":[%d,"86400"]}]`, now)))
+				return
+			}
 			t.Fatalf("unexpected instant query: %s", payload.Query)
-		case strings.Contains(r.URL.Path, "/prom_query"):
-			rangeN++
-			// Three daily samples → median delta ≈ 86400s
-			_, _ = w.Write([]byte(fmt.Sprintf(
-				`[{"metric":{"bucket":"a"},"values":[[%d,"1"],[%d,"1"],[%d,"1"]]}]`,
-				dayAgo-86400, dayAgo, now,
-			)))
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -115,8 +111,8 @@ func TestMetricStatus_DailyMetricSuggestedWindow(t *testing.T) {
 		ExpiresAt:   time.Now().Add(time.Hour),
 	}
 
-	handler := NewMetricStatusHandler(server.Client(), cfg)
-	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, MetricStatusArgs{
+	handler := NewGetMetricStatusHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetMetricStatusArgs{
 		Metric:        "amazonaws_com_AWS_S3_BucketSizeBytes",
 		WindowMinutes: 5760,
 	})
@@ -125,7 +121,7 @@ func TestMetricStatus_DailyMetricSuggestedWindow(t *testing.T) {
 	}
 	text := result.Content[0].(*mcp.TextContent).Text
 
-	var status MetricStatusResult
+	var status GetMetricStatusResult
 	if err := json.Unmarshal([]byte(text), &status); err != nil {
 		t.Fatalf("unmarshal: %v\nbody: %s", err, text)
 	}
@@ -144,8 +140,8 @@ func TestMetricStatus_DailyMetricSuggestedWindow(t *testing.T) {
 	if status.SuggestedWindow != "3d" {
 		t.Fatalf("suggested_window=%q, want %q", status.SuggestedWindow, "3d")
 	}
-	if instantN != 2 || rangeN != 1 {
-		t.Fatalf("expected 2 instant + 1 range calls; got instant=%d range=%d", instantN, rangeN)
+	if instantN != 3 {
+		t.Fatalf("expected 3 instant calls; got %d", instantN)
 	}
 	joined := strings.Join(queries, "\n")
 	if strings.Contains(joined, "timestamp(last_over_time(") {
@@ -156,7 +152,7 @@ func TestMetricStatus_DailyMetricSuggestedWindow(t *testing.T) {
 	}
 }
 
-func TestMetricStatus_LiveHighCadenceUsesInterval(t *testing.T) {
+func TestGetMetricStatus_LiveHighCadenceUsesInterval(t *testing.T) {
 	now := time.Now().UTC().Unix()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -173,10 +169,7 @@ func TestMetricStatus_LiveHighCadenceUsesInterval(t *testing.T) {
 			_, _ = w.Write([]byte(fmt.Sprintf(`[{"metric":{},"value":[%d,"15"]}]`, now)))
 			return
 		}
-		_, _ = w.Write([]byte(fmt.Sprintf(
-			`[{"metric":{},"values":[[%d,"1"],[%d,"1"],[%d,"1"],[%d,"1"]]}]`,
-			now-45, now-30, now-15, now,
-		)))
+		t.Errorf("unexpected non-instant request: %s", r.URL.Path)
 	}))
 	defer server.Close()
 
@@ -186,15 +179,15 @@ func TestMetricStatus_LiveHighCadenceUsesInterval(t *testing.T) {
 		ExpiresAt:   time.Now().Add(time.Hour),
 	}
 
-	handler := NewMetricStatusHandler(server.Client(), cfg)
-	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, MetricStatusArgs{
+	handler := NewGetMetricStatusHandler(server.Client(), cfg)
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetMetricStatusArgs{
 		Metric:        "up",
 		WindowMinutes: 15,
 	})
 	if err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
-	var status MetricStatusResult
+	var status GetMetricStatusResult
 	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &status); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -206,18 +199,18 @@ func TestMetricStatus_LiveHighCadenceUsesInterval(t *testing.T) {
 	}
 }
 
-func TestMetricStatus_RequiresMetricAndWindow(t *testing.T) {
+func TestGetMetricStatus_RequiresMetricAndWindow(t *testing.T) {
 	cfg := models.Config{APIBaseURL: "http://example.invalid", Region: "us-east-1"}
 	cfg.TokenManager = &auth.TokenManager{
 		AccessToken: "mock-access-token",
 		ExpiresAt:   time.Now().Add(time.Hour),
 	}
-	handler := NewMetricStatusHandler(http.DefaultClient, cfg)
+	handler := NewGetMetricStatusHandler(http.DefaultClient, cfg)
 
-	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, MetricStatusArgs{WindowMinutes: 60}); err == nil {
+	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetMetricStatusArgs{WindowMinutes: 60}); err == nil {
 		t.Fatal("expected error for empty metric")
 	}
-	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, MetricStatusArgs{Metric: "up"}); err == nil {
+	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetMetricStatusArgs{Metric: "up"}); err == nil {
 		t.Fatal("expected error for missing window_minutes")
 	}
 }
@@ -244,5 +237,47 @@ func TestSuggestWindow_SlowEmitterSoonAfterSample(t *testing.T) {
 	}
 	if got := suggestWindow(10, 0); got != "$__interval" {
 		t.Fatalf("unknown cadence + fresh sample: got %q, want $__interval", got)
+	}
+}
+
+func TestGetMetricStatus_IntervalIndependentOfWindow(t *testing.T) {
+	now := time.Now().UTC().Unix()
+	for _, minutes := range []float64{60, 5760} {
+		var intervalQuery string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var payload struct {
+				Query string `json:"query"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			if !strings.Contains(r.URL.Path, "/prom_query_instant") {
+				t.Errorf("unexpected non-instant request: %s", r.URL.Path)
+			}
+			val := "0"
+			switch {
+			case strings.Contains(payload.Query, "count(last_over_time("):
+				val = "1"
+			case strings.Contains(payload.Query, "scrape_interval("):
+				intervalQuery = payload.Query
+				val = "60"
+			}
+			_, _ = w.Write([]byte(fmt.Sprintf(`[{"metric":{},"value":[%d,%q]}]`, now, val)))
+		}))
+		cfg := models.Config{APIBaseURL: server.URL, Region: "us-east-1"}
+		cfg.TokenManager = &auth.TokenManager{AccessToken: "mock-access-token", ExpiresAt: time.Now().Add(time.Hour)}
+		result, _, err := NewGetMetricStatusHandler(server.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetMetricStatusArgs{Metric: "up", WindowMinutes: minutes})
+		server.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var status GetMetricStatusResult
+		if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &status); err != nil {
+			t.Fatal(err)
+		}
+		if status.InferredIntervalSeconds != 60 || status.SuggestedWindow != "$__interval" {
+			t.Fatalf("window=%vm: interval=%v window=%q; want 60 and $__interval", minutes, status.InferredIntervalSeconds, status.SuggestedWindow)
+		}
+		if !strings.HasPrefix(intervalQuery, "scrape_interval(") {
+			t.Fatalf("cadence must come from a raw-sample rollup, got %q", intervalQuery)
+		}
 	}
 }

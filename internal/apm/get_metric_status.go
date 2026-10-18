@@ -18,13 +18,13 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-type MetricStatusArgs struct {
+type GetMetricStatusArgs struct {
 	Metric        string  `json:"metric" jsonschema:"(Required) Metric name (e.g. up) or PromQL series selector (e.g. up{job=\"api\"})"`
 	WindowMinutes float64 `json:"window_minutes" jsonschema:"(Required) Lookback window in minutes for liveness and cadence probes (minimum: 1). Prefer a window that can cover at least a few emission intervals for slow metrics (e.g. 5760 for daily CloudWatch metrics)."`
 	Datasource    string  `json:"datasource,omitempty" jsonschema:"Name of the datasource to query. If omitted, uses the default configured datasource."`
 }
 
-type MetricStatusResult struct {
+type GetMetricStatusResult struct {
 	Live                    bool    `json:"live"`
 	SeriesCount             int     `json:"series_count"`
 	LastSampleAgeSeconds    float64 `json:"last_sample_age_seconds"`
@@ -32,15 +32,15 @@ type MetricStatusResult struct {
 	SuggestedWindow         string  `json:"suggested_window"`
 }
 
-func NewMetricStatusHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, MetricStatusArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, args MetricStatusArgs) (*mcp.CallToolResult, any, error) {
-		status, err := computeMetricStatus(ctx, client, cfg, args)
+func NewGetMetricStatusHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetMetricStatusArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args GetMetricStatusArgs) (*mcp.CallToolResult, any, error) {
+		status, err := computeGetMetricStatus(ctx, client, cfg, args)
 		if err != nil {
 			return nil, nil, err
 		}
 		payload, err := json.Marshal(status)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to marshal metric_status response: %w", err)
+			return nil, nil, fmt.Errorf("failed to marshal get_metric_status response: %w", err)
 		}
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: string(payload)}},
@@ -48,33 +48,31 @@ func NewMetricStatusHandler(client *http.Client, cfg models.Config) func(context
 	}
 }
 
-func computeMetricStatus(ctx context.Context, client *http.Client, cfg models.Config, args MetricStatusArgs) (MetricStatusResult, error) {
+func computeGetMetricStatus(ctx context.Context, client *http.Client, cfg models.Config, args GetMetricStatusArgs) (GetMetricStatusResult, error) {
 	metric := strings.TrimSpace(args.Metric)
 	if metric == "" {
-		return MetricStatusResult{}, fmt.Errorf("metric is required")
+		return GetMetricStatusResult{}, fmt.Errorf("metric is required")
 	}
 	if args.WindowMinutes < 1 {
-		return MetricStatusResult{}, fmt.Errorf("window_minutes must be at least 1")
+		return GetMetricStatusResult{}, fmt.Errorf("window_minutes must be at least 1")
 	}
 
 	queryCfg, err := resolveDatasourceCfg(cfg, args.Datasource)
 	if err != nil {
-		return MetricStatusResult{}, err
+		return GetMetricStatusResult{}, err
 	}
 
 	endTime := time.Now().UTC().Unix()
-	windowSec := int64(args.WindowMinutes * 60)
-	startTime := endTime - windowSec
 	dur := promDurationFromMinutes(args.WindowMinutes)
 	sel := metricSelector(metric)
 
 	countQuery := fmt.Sprintf("count(last_over_time(%s[%s]))", sel, dur)
 	seriesCount, err := queryInstantScalar(ctx, client, queryCfg, countQuery, endTime)
 	if err != nil {
-		return MetricStatusResult{}, err
+		return GetMetricStatusResult{}, err
 	}
 	if seriesCount <= 0 {
-		return MetricStatusResult{
+		return GetMetricStatusResult{
 			Live:        false,
 			SeriesCount: 0,
 		}, nil
@@ -83,16 +81,16 @@ func computeMetricStatus(ctx context.Context, client *http.Client, cfg models.Co
 	ageQuery := fmt.Sprintf("time() - timestamp(%s[%s])", sel, dur)
 	ages, err := queryInstantValues(ctx, client, queryCfg, ageQuery, endTime)
 	if err != nil {
-		return MetricStatusResult{}, err
+		return GetMetricStatusResult{}, err
 	}
 	lastAge := minPositiveOrZero(ages)
 
-	interval, err := inferIntervalSeconds(ctx, client, queryCfg, sel, startTime, endTime)
+	interval, err := inferIntervalSeconds(ctx, client, queryCfg, sel, dur, endTime)
 	if err != nil {
-		return MetricStatusResult{}, err
+		return GetMetricStatusResult{}, err
 	}
 
-	return MetricStatusResult{
+	return GetMetricStatusResult{
 		Live:                    true,
 		SeriesCount:             int(math.Round(seriesCount)),
 		LastSampleAgeSeconds:    lastAge,
@@ -150,7 +148,7 @@ func queryInstantValues(ctx context.Context, client *http.Client, cfg models.Con
 	}
 	defer httpResp.Body.Close()
 	if httpResp.StatusCode != http.StatusOK {
-		return nil, promErr(httpResp, "metric_status instant query")
+		return nil, promErr(httpResp, "get_metric_status instant query")
 	}
 	body, err := io.ReadAll(httpResp.Body)
 	if err != nil {
@@ -174,51 +172,25 @@ func queryInstantValues(ctx context.Context, client *http.Client, cfg models.Con
 	return out, nil
 }
 
-func inferIntervalSeconds(ctx context.Context, client *http.Client, cfg models.Config, sel string, startTime, endTime int64) (float64, error) {
-	httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, sel, startTime, endTime, cfg, utils.PromResolution{MaxDataPoints: 500})
+func inferIntervalSeconds(ctx context.Context, client *http.Client, cfg models.Config, sel, dur string, endTime int64) (float64, error) {
+	vals, err := queryInstantValues(ctx, client, cfg, fmt.Sprintf("scrape_interval(%s[%s])", sel, dur), endTime)
 	if err != nil {
 		return 0, err
 	}
-	if httpResp == nil {
-		return 0, fmt.Errorf("received nil response from Prometheus")
-	}
-	defer httpResp.Body.Close()
-	if httpResp.StatusCode != http.StatusOK {
-		return 0, promErr(httpResp, "metric_status range query")
-	}
-	body, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		return 0, fmt.Errorf("failed to read Prometheus range response: %w", err)
-	}
-	series, err := parsePromTimeSeries(body)
-	if err != nil {
-		return 0, err
-	}
-	return medianSampleDeltaSeconds(series), nil
+	return medianFloat(vals), nil
 }
 
-func medianSampleDeltaSeconds(series []TimeSeries) float64 {
-	deltas := make([]float64, 0)
-	for _, s := range series {
-		if len(s.Values) < 2 {
-			continue
-		}
-		for i := 1; i < len(s.Values); i++ {
-			d := float64(s.Values[i].Timestamp) - float64(s.Values[i-1].Timestamp)
-			if d > 0 {
-				deltas = append(deltas, d)
-			}
-		}
-	}
-	if len(deltas) == 0 {
+func medianFloat(vals []float64) float64 {
+	if len(vals) == 0 {
 		return 0
 	}
-	sort.Float64s(deltas)
-	mid := len(deltas) / 2
-	if len(deltas)%2 == 0 {
-		return (deltas[mid-1] + deltas[mid]) / 2
+	sorted := append([]float64(nil), vals...)
+	sort.Float64s(sorted)
+	mid := len(sorted) / 2
+	if len(sorted)%2 == 0 {
+		return (sorted[mid-1] + sorted[mid]) / 2
 	}
-	return deltas[mid]
+	return sorted[mid]
 }
 
 func minPositiveOrZero(vals []float64) float64 {
