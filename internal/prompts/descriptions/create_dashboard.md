@@ -7,6 +7,20 @@ Use this tool only for a net-new dashboard (no id yet). Create once. After this 
 
 For `log_json` line, timeseries, or bar panels, use a `window_aggregate` stage with a `window`; a plain `aggregate` stage does not satisfy the API's timeslice requirement. When the user supplies a service, use it without calling `get_service_profile`, `get_service_environments`, or `did_you_mean`; discover only the metric expressions required by the panels.
 
-Creating a dashboard creates no alerts. To alert on a panel, take its PromQL `expr` into create_kpi on the chosen alert group, then create_alert as a draft (author-alert prompt; last9://reference/alerting).
+## When to use
+Build a net-new dashboard that has no id yet.
 
-On a timeout or connection error the create may or may not have been applied; check by name with list_dashboards before retrying.
+## When not to use
+- Change an existing dashboard: `update_dashboard`
+
+## Pairs well with
+- `validate_dashboard` (dry-run the payload)
+- `update_dashboard` (refine with the returned id)
+
+## Output shape
+The created dashboard, including its `id`.
+
+## Known traps
+A second create makes a duplicate dashboard; refine the first instead. On a timeout or connection error the create may or may not have been applied; check by name with list_dashboards before retrying.
+
+Creating a dashboard creates no alerts. To alert on a panel, take its PromQL `expr` into create_kpi on the chosen alert group, then create_alert as a draft (author-alert prompt; last9://reference/alerting).
