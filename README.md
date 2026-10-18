@@ -422,7 +422,7 @@ curl -s -X POST http://localhost:8080/mcp \
     -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}'
 ```
 
-Each distinct effective set is served by its own server, built on its first request (tens of milliseconds) and kept until shutdown; a request restating the startup set reuses the startup server. There is no eviction: only named toolsets are accepted, so the cache holds at most one server per combination of them (135 today, about 75 MB of live heap together; a full cache settled near 200 MB resident in testing).
+Each distinct effective set is served by its own server, built on its first request (tens of milliseconds) and kept until shutdown; a request restating the startup set reuses the startup server. There is no eviction: only named toolsets are accepted, so the cache holds at most one server per combination of them (135 today, about 75 MB of live heap together; a full cache settled near 230 MB resident in testing).
 
 ### Build from Source
 
