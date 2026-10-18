@@ -2,6 +2,7 @@ package alerts
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -60,7 +61,7 @@ type GetAlertCoverageResponse struct {
 func GetAlertCoverage(
 	ctx context.Context, c *last9api.Client, in GetAlertCoverageInput,
 ) (*GetAlertCoverageResponse, error) {
-	var out GetAlertCoverageResponse
+	var out *GetAlertCoverageResponse
 	err := c.Do(ctx, opAlertCoverage,
 		last9api.Request{Method: http.MethodGet, Path: pathAlertCoverage},
 		&out,
@@ -70,7 +71,11 @@ func GetAlertCoverage(
 	if err != nil {
 		return nil, err
 	}
-	return &out, nil
+	// Do accepts an empty 2xx body; read as a zero-gap report it would claim full coverage.
+	if out == nil {
+		return nil, errors.New(opAlertCoverage + ": response held no coverage report, so coverage was not checked")
+	}
+	return out, nil
 }
 
 func coverageQuery(in GetAlertCoverageInput) url.Values {
