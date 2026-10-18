@@ -28,12 +28,12 @@ func fetchSearchMetrics(ctx context.Context, q searchQuery, ts int64) ([]map[str
 		return nil, fmt.Errorf("infrastructure search query failed: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, utils.NewUpstreamHTTPError(resp, "infrastructure search")
+	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxSearchBodyBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read search response: %w", err)
-	}
-	if resp.StatusCode >= http.StatusBadRequest {
-		return nil, fmt.Errorf("infrastructure search returned status %d: %s", resp.StatusCode, truncateAPIError(body, resp.StatusCode))
 	}
 	if int64(len(body)) > maxSearchBodyBytes {
 		return nil, fmt.Errorf("infrastructure search response exceeds %d bytes", maxSearchBodyBytes)
