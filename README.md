@@ -613,10 +613,10 @@ Use `get_logs` for broad aggregate counts first; use `get_service_logs` only aft
 - `lookback_minutes` (integer, optional): Default: 60.
 - `severity_filters` / `body_filters` (array, optional): OR logic, as in `get_service_logs`. Set `severity_filters` only when `get_service_profile` reports `severity_set` `all`; with `none` or `partial` it drops lines whose severity is in the body.
 - `index` (string, optional)
-- `sample_size` (integer, optional): Lines sampled from the window. Default: 1000, maximum: 5000.
+- `sample_size` (integer, optional): Lines sampled from the window, newest first. Default: 1000, maximum: 5000.
 - `top_n` (integer, optional): Templates returned by count. Default: 20, maximum: 100. The rest are totalled in `other`.
 
-Clustering runs in the MCP server over the sampled lines, so counts are within the sample; `window.sample_limit_reached` says when the sample may miss matching lines (it holds `sample_size` lines and the API does not report an exact `total_matching_lines` equal to that, or the search was `logs_truncated`). Each `template` and `sample` is cut at 500 characters, ending in `…`, so a body that does not cluster (such as JSON without a `message` field) cannot fill the response. A search with failed chunks is a tool error; a truncated or capped search still returns patterns, flagged by `sample_limit_reached`. An empty `patterns` list means nothing matched only while `sample_limit_reached` is false; when it is true the search stopped early and may have missed matching lines.
+Clustering runs in the MCP server over the sampled lines, so counts, `first_seen` and `last_seen` are within the sample; `window.sample_limit_reached` says when the sample may miss matching lines (it holds `sample_size` lines and the API does not report an exact `total_matching_lines` equal to that, or the search was `logs_truncated`), in which case it holds only the window's newest lines. Each `template` and `sample` is cut at 500 characters, ending in `…`, so a body that does not cluster (such as JSON without a `message` field) cannot fill the response. A search with failed chunks is a tool error; a truncated or capped search still returns patterns, flagged by `sample_limit_reached`. An empty `patterns` list means nothing matched only while `sample_limit_reached` is false; when it is true the search stopped early and may have missed matching lines.
 
 ### get_emerging_log_patterns
 

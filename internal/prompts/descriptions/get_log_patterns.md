@@ -6,5 +6,5 @@ Returns:
 - `total_patterns` and `other` (`patterns`, `count`) for templates below `top_n`.
 
 Rules:
-- Counts, `first_seen` and `last_seen` are within the sample of at most `sample_size` lines. When `sample_limit_reached` is true the sample holds only part of the window: report shares of the sample, not absolute volumes, or narrow the window or filters.
+- Counts, `first_seen` and `last_seen` are within the sample of at most `sample_size` lines. When `sample_limit_reached` is true the sample holds only the window's newest lines: report shares of the sample, not absolute volumes, or narrow the window or filters.
 - An empty `patterns` list with `sample_limit_reached` false is a valid answer: the service logged nothing matching in that window. Say so. An empty `patterns` list with `sample_limit_reached` true is not proof of an empty window: the search stopped before returning lines, so say the sample is empty, not the window, and narrow the window or retry. Failed search chunks return a tool error. A truncated or capped search still returns patterns, with `sample_limit_reached` true: apply the share-of-sample rule above. Do not invent patterns, counts or causes that the response does not contain.

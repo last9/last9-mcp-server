@@ -467,6 +467,9 @@ func TestLogPatternDescriptionsCriticalRules(t *testing.T) {
 	if !strings.Contains(prompts.GetLogPatternsDescription, "An empty `patterns` list with `sample_limit_reached` true is not proof of an empty window") {
 		t.Error("get_log_patterns must say an empty but capped sample may have missed matching lines")
 	}
+	if !strings.Contains(prompts.GetLogPatternsDescription, "the sample holds only the window's newest lines") {
+		t.Error("get_log_patterns must say a capped sample (and its first_seen) covers only the newest lines")
+	}
 	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "`below_min_count_patterns`: templates that changed") {
 		t.Error("get_emerging_log_patterns must keep changes below min_count apart from unchanged templates")
 	}

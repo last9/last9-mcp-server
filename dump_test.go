@@ -561,6 +561,10 @@ func TestDumpToolsLogPatternToolsServeScopeSchemaHints(t *testing.T) {
 		if got, _ := properties[tool]["severity_filters"]["description"].(string); !strings.Contains(got, `only when get_service_profile reports severity_set "all"`) {
 			t.Errorf("%s severity_filters description = %q, want the severity_set routing rule", tool, got)
 		}
+		// A capped sample's first_seen is not the window start.
+		if got, _ := properties[tool]["sample_size"]["description"].(string); !strings.Contains(got, "newest first") {
+			t.Errorf("%s sample_size description = %q, want it to say lines are sampled newest first", tool, got)
+		}
 	}
 }
 
