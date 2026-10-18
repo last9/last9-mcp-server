@@ -89,6 +89,23 @@ func TestGetNotificationChannelsHandler_TSVFormat(t *testing.T) {
 	}
 }
 
+// The API sets global from the legacy service/namespace binding alone, so it reports
+// true on every alert-group attachment row.
+func TestGetNotificationChannelsAttachmentRowsAreNotGlobal(t *testing.T) {
+	channels := []NotificationChannel{
+		{ID: 1, Name: "org", Type: "slack", Global: true},
+		{ID: 2, Name: "oncall", Type: "slack", Global: true, ServiceFQID: "g1", Severity: "breach"},
+	}
+	text, _, err := executeGetNotificationChannels(t, channels, http.StatusOK)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rows := assertStableNotificationChannelsTSV(t, text, len(channels))
+	if rows[0][3] != "true" || rows[1][3] != "false" {
+		t.Fatalf("global: master=%q attachment=%q, want true and false", rows[0][3], rows[1][3])
+	}
+}
+
 func TestFormatNotificationChannelSummary(t *testing.T) {
 	if got := formatNotificationChannelSummary(nil); got != "Not configured" {
 		t.Fatalf("empty bindings: got %q", got)

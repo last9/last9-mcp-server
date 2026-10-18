@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/json"
 	"encoding/pem"
 	"math/big"
 	"net/http"
@@ -103,6 +102,27 @@ func TestCreateNotificationChannelValidationSendsNothing(t *testing.T) {
 	}
 }
 
+// The API's email-destination rejections are fixed strings that echo no input, so the tool
+// can name the cause without relaying the body.
+func TestCreateNotificationChannelNamesEmailRejection(t *testing.T) {
+	for upstream, want := range map[string]string{
+		"cannot use personal email for channel destination":  "personal-provider",
+		"cannot use non-admin email for channel destination": "only the org admin's address",
+		"invalid email":                        "is not a valid email address",
+		"no admin user found for organization": "HTTP 400",
+		"cannot use personal email for channel destination " + channelSecret: "HTTP 400",
+	} {
+		s := newChannelServer(t, func(*http.Request) (int, string) {
+			return 400, `{"error":"` + upstream + `"}`
+		})
+		text, isErr, err := runCreateChannel(s, CreateNotificationChannelArgs{Name: "n", Type: "email", Destination: "a@gmail.com"})
+		assertNoSecret(t, text, err)
+		if err != nil || !isErr || !strings.Contains(text, want) || strings.Contains(text, "a@gmail.com") {
+			t.Errorf("%q: text=%q isErr=%v err=%v", upstream, text, isErr, err)
+		}
+	}
+}
+
 func TestCreateNotificationChannelErrorsNeverLeakSecrets(t *testing.T) {
 	for status, want := range map[int]string{
 		400: "HTTP 400", 422: "HTTP 422", 403: "write-scope", 500: "HTTP 500", 502: "HTTP 502",
@@ -118,53 +138,5 @@ func TestCreateNotificationChannelErrorsNeverLeakSecrets(t *testing.T) {
 		if err != nil || !isErr || !strings.Contains(text, want) {
 			t.Errorf("status %d: text=%q isErr=%v err=%v", status, text, isErr, err)
 		}
-	}
-}
-
-func TestCreateNotificationChannelRelaysAPIRejectionReason(t *testing.T) {
-	long := strings.Repeat("x", 400)
-	email := CreateNotificationChannelArgs{Name: "n", Type: "email", Destination: "someone@gmail.com"}
-	cert := testCACertPEM(t)
-	certFragment := strings.Split(cert, "\n")[1][10:42]
-	certHead, _ := json.Marshal(strings.Join(strings.Split(cert, "\n")[:2], "\n"))
-	withCert := CreateNotificationChannelArgs{Name: "n", Type: "generic_webhook", Destination: "https://h.example", WebhookCACertificate: cert}
-	const rejected = "the API rejected the channel: "
-	for name, tt := range map[string]struct {
-		status int
-		body   string
-		args   CreateNotificationChannelArgs
-		want   string
-	}{
-		"current personal-email text": {400, `{"error":"cannot use personal email for channel destination"}`, email,
-			rejected + "cannot use personal email for channel destination"},
-		"new backend text with status": {400, `{"status":400,"error":" personal email providers such as gmail.com are not allowed; use a work address "}`, email,
-			rejected + "personal email providers such as gmail.com are not allowed; use a work address"},
-		"422":                   {422, `{"error":"destination is invalid"}`, email, rejected + "destination is invalid"},
-		"long reason is capped": {400, `{"error":"` + long + `"}`, email, rejected + long[:300] + "…"},
-		"echoed routing key is redacted": {400, `{"error":"invalid routing key ` + channelSecret + `"}`,
-			CreateNotificationChannelArgs{Name: "n", Type: "pagerduty", Destination: channelSecret},
-			rejected + "invalid routing key [redacted]"},
-		"echoed header value is redacted": {400, `{"error":"header rejected: ` + channelSecret + `"}`,
-			CreateNotificationChannelArgs{Name: "n", Type: "generic_webhook", Destination: "https://h.example", WebhookHeaders: map[string]string{"X-Key": channelSecret}},
-			rejected + "header rejected: [redacted]"},
-		"echoed CA certificate head is redacted": {400, `{"error":"certificate rejected: ` + string(certHead[1:len(certHead)-1]) + `"}`, withCert,
-			rejected + "certificate rejected: [redacted] [redacted]\n[redacted]"},
-		"echoed CA certificate fragment is redacted": {400, `{"error":"invalid ca: ` + certFragment + `"}`, withCert,
-			rejected + "invalid ca: [redacted]"},
-		"malformed body falls back": {400, `cannot use personal email`, email, "the API rejected the channel (HTTP 400); re-check"},
-		"empty error falls back":    {400, `{"error":"  "}`, email, "the API rejected the channel (HTTP 400); re-check"},
-		"no error field falls back": {422, `{"message":"nope"}`, email, "the API rejected the channel (HTTP 422); re-check"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			s := newChannelServer(t, func(*http.Request) (int, string) { return tt.status, tt.body })
-			text, isErr, err := runCreateChannel(s, tt.args)
-			assertNoSecret(t, text, err)
-			if err != nil || !isErr || !strings.HasPrefix(text, tt.want) {
-				t.Fatalf("text=%q isErr=%v err=%v, want prefix %q", text, isErr, err, tt.want)
-			}
-			if strings.HasPrefix(tt.want, rejected) && text != tt.want {
-				t.Fatalf("text=%q want exactly %q", text, tt.want)
-			}
-		})
 	}
 }

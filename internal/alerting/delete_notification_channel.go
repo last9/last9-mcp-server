@@ -2,6 +2,7 @@ package alerting
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -26,6 +27,10 @@ func findNotificationSetting(rows []notifications.NotificationSetting, id int) *
 	return nil
 }
 
+func attachmentIDResult(row *notifications.NotificationSetting) *mcp.CallToolResult {
+	return utils.ToolErrorResult(fmt.Sprintf("channel_id %d is an attachment id (alert group %s, severity %s), not a channel; nothing was deleted. Remove the attachment with detach_notification_channel, or take a channel id from get_notification_channels with scope=channels", row.ID, row.ServiceFQID, row.Severity))
+}
+
 func NewDeleteNotificationChannelHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, DeleteNotificationChannelArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args DeleteNotificationChannelArgs) (*mcp.CallToolResult, any, error) {
 		if args.ChannelID <= 0 {
@@ -39,10 +44,18 @@ func NewDeleteNotificationChannelHandler(client *http.Client, cfg models.Config)
 		}
 		row := findNotificationSetting(rows, args.ChannelID)
 		if row == nil {
-			return utils.ToolErrorResult("no channel with that id; nothing was deleted"), nil, nil
+			// The channel list omits attachment rows, so look there before calling the id unknown.
+			attachments, err := notifications.ListNotificationSettings(ctx, api, true)
+			if err != nil {
+				return notificationChannelErrorResult(err, listHints)
+			}
+			if attachment := findNotificationSetting(attachments, args.ChannelID); attachment != nil {
+				return attachmentIDResult(attachment), nil, nil
+			}
+			return utils.ToolErrorResult("no channel or attachment with that id; nothing was deleted. Copy channel_id from get_notification_channels with scope=channels"), nil, nil
 		}
 		if strings.TrimSpace(row.ServiceFQID) != "" {
-			return utils.ToolErrorResult("channel_id is an attachment row, not a channel; nothing was deleted. Use detach_notification_channel to remove an attachment"), nil, nil
+			return attachmentIDResult(row), nil, nil
 		}
 		// Attachments link to a channel by its secret destination, so the API's 422 is the guard.
 		if err := notifications.DeleteNotificationChannel(ctx, api, row.ID); err != nil {

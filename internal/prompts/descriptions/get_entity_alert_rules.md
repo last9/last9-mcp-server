@@ -10,6 +10,7 @@ Input:
 
 Output per rule (expression-focused; other metadata such as state/severity/timestamps is in get_alert_config):
 - id, rule_name
-- Disabled (true|false), Muted until (none, indefinitely, or an RFC3339 UTC time), Recurring mute schedule (none, or its timezone, enabled: false when paused, and one "Mon,Tue 22:00-06:00" line per window), Next transition (RFC3339, when known); read these back after patch_alert
+- Disabled (true|false), Muted until (none, indefinitely, or an RFC3339 UTC time), Recurring mute schedule (none, or its timezone, enabled: false when paused, and one "Mon,Tue 22:00-06:00" line per window), Next transition (RFC3339, when known)
 - expression, condition, alert_condition, eval_window
 - indicators: each indicator name with resolved PromQL and unit
+- properties (description, runbook, annotations), when set; read patch_alert changes back here

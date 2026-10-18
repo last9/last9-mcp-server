@@ -3,7 +3,9 @@ package alerting
 import (
 	"context"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"net/http"
 	"regexp"
 	"strings"
@@ -26,7 +28,7 @@ var (
 type CreateNotificationChannelArgs struct {
 	Name                 string            `json:"name" jsonschema:"(Required) Channel name; must be unique per type and must not contain ':'"`
 	Type                 string            `json:"type" jsonschema:"(Required) One of slack, pagerduty, opsgenie, email, generic_webhook"`
-	Destination          string            `json:"destination" jsonschema:"(Required) Where notifications go; format depends on type: slack Incoming Webhook URL (https://hooks.slack.com/...) or, with slack_app_mode, a Slack channel ID; pagerduty routing key; opsgenie API key; email comma-separated work addresses (personal providers such as gmail.com or outlook.com are rejected; an org signed up with a personal email can only send to its admin's address); generic_webhook the HTTPS URL"`
+	Destination          string            `json:"destination" jsonschema:"(Required) Where notifications go; format depends on type: slack Incoming Webhook URL (https://hooks.slack.com/...) or, with slack_app_mode, a Slack channel ID; pagerduty routing key; opsgenie API key; email comma-separated addresses; generic_webhook the HTTPS URL"`
 	SlackAppMode         bool              `json:"slack_app_mode,omitempty" jsonschema:"slack only. true sends through the Last9 Slack app and destination is a channel ID rather than a webhook URL. Default false"`
 	MentionHandles       string            `json:"mention_handles,omitempty" jsonschema:"Comma-separated handles to mention or notify, e.g. user|U123ABC|name, usergroup|S123ABC|name, special|here, special|channel. Default none"`
 	WebhookHeaders       map[string]string `json:"webhook_headers,omitempty" jsonschema:"generic_webhook only. Extra HTTP headers sent with each call, e.g. an Authorization header. Default none"`
@@ -60,8 +62,8 @@ func NewCreateNotificationChannelHandler(client *http.Client, cfg models.Config)
 		}
 		created, err := notifications.CreateNotificationSetting(ctx, last9api.NewClient(client, cfg), in)
 		if err != nil {
-			if res, ok := channelRejectionResult(err, channelSecrets(args)); ok {
-				return res, nil, nil
+			if msg := emailDestinationRejection(err); msg != "" {
+				return utils.ToolErrorResult(msg), nil, nil
 			}
 			return notificationChannelErrorResult(err, map[int]string{
 				http.StatusBadRequest:          "the API rejected the channel (HTTP 400); re-check name, type, destination and the optional fields against the tool description",
@@ -74,18 +76,6 @@ func NewCreateNotificationChannelHandler(client *http.Client, cfg models.Config)
 			ID: created.ID, Name: created.Name, Type: created.Type, SendResolved: created.SendResolved,
 		})
 	}
-}
-
-// Email addresses are not secret, and a personal-email rejection is about them.
-func channelSecrets(args CreateNotificationChannelArgs) []string {
-	var secrets []string
-	if args.Type != "email" {
-		secrets = append(secrets, args.Destination)
-	}
-	for _, v := range args.WebhookHeaders {
-		secrets = append(secrets, strings.TrimSpace(v))
-	}
-	return append(secrets, strings.TrimSpace(args.WebhookCACertificate))
 }
 
 func validateCreateNotificationChannel(args CreateNotificationChannelArgs) string {
@@ -116,6 +106,28 @@ func validateCreateNotificationChannel(args CreateNotificationChannelArgs) strin
 		return "mention_handles contains a malformed typed mention; use user|<U or W id>|name, usergroup|<S id>|name, special|here or special|channel"
 	}
 	return ""
+}
+
+// emailDestinationRejections maps the API's email-destination 400s, fixed strings that echo
+// no input, to the cause. Only exact matches are used, so no other body text is relayed.
+var emailDestinationRejections = map[string]string{
+	"cannot use personal email for channel destination":  "the API rejects personal-provider email addresses (for example Gmail) as a channel destination; use work addresses. Nothing was created",
+	"cannot use non-admin email for channel destination": "this org is on a personal login, so the API accepts only the org admin's address as an email destination. Nothing was created",
+	"invalid email": "an address in destination is not a valid email address according to the API; nothing was created",
+}
+
+func emailDestinationRejection(err error) string {
+	var upstream *utils.UpstreamHTTPError
+	if !errors.As(err, &upstream) || upstream.StatusCode != http.StatusBadRequest {
+		return ""
+	}
+	var body struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal([]byte(upstream.Body), &body) != nil {
+		return ""
+	}
+	return emailDestinationRejections[body.Error]
 }
 
 func validateDestinationForType(args CreateNotificationChannelArgs) string {

@@ -720,7 +720,7 @@ Returns a JSON map of `rule_id -> [{timestamp, is_firing}]`. A timestamp at whic
 
 - `scope` (string, optional): `attached` (default) returns one row per alert-group attachment; the `id` is an attachment id, as taken by `detach_notification_channel`. `channels` returns the org's channels (`id`, `name`, `type`, `send_resolved`); the `id` is a channel id, as taken by `attach_notification_channel`. Destinations, headers, and certificates are never returned.
 
-Returns configured notification channels (Slack, PagerDuty, email, webhooks, etc.) as a TSV table.
+Returns configured notification channels (Slack, PagerDuty, email, webhooks, etc.) as a TSV table. Attachment rows (`service_fqid` set) show `global` false and `services` `-`; `services` lists only legacy service bindings. On attachment rows `send_resolved` is the row's stored default, not what delivery uses; resolve notifications follow the channel's own `send_resolved` (`scope=channels`).
 
 ### recommend_alert_config
 
@@ -737,7 +737,7 @@ Read-only. Returns lifecycle guidance, validation gates, and responder-context r
 Dry-runs an expression without saving. Use before `create_alert` / `update_alert`.
 
 - `entity_id` (string, required): Alert group/entity UUID.
-- `expression` (string, required): Arithmetic over indicators named by their KPI's exact name, e.g. `errors / requests`. At most 3 indicators.
+- `expression` (string, required): Arithmetic over indicators named by their KPI's exact name, e.g. `errors / requests`. At most 3 indicators. Write names with spaces, dots or dashes as-is (`Test Alert / errors`), exactly as `create_alert` saves them.
 - `indicators_used` (object, required, non-empty): Indicator name to KPI UUID owned by `entity_id`. Use each KPI's exact name: this dry-run accepts any name, but `create_alert` and `update_alert` reject `expression_args` keys that are not the bound KPI's name.
 
 Only the arithmetic expression is checked (pass the inner metric expression, not an `adaptive_std_cmp(...)` wrapper); `condition` / `alert_condition` are not. The at-least-one-timeseries check runs only when more than one indicator is used.
@@ -756,7 +756,7 @@ Read-only. Lists the alertable signals (`key`, `unit`, `eval_query`, `query_kind
 
 ### create_alert
 
-Creates a rule in an existing alert group, always disabled (a draft, even if `is_disabled=false` is passed). Call `recommend_alert_config` first, then promote with `patch_alert` `is_disabled=false` only after the user confirms. Create once and keep the returned rule ID.
+Creates a rule in an existing alert group, always disabled (a draft, even if `is_disabled=false` is passed). Call `recommend_alert_config` first, then promote with `patch_alert` `is_disabled=false` only after the user confirms. Create once and keep the returned rule ID. A `rule_name` the alert group already uses (case-insensitive) is refused without creating anything, naming the existing rule's id.
 
 - `entity_id` (string, required): Alert group/entity UUID.
 - `alert_rule` (object, required): Complete typed rule body, including `primary_indicator` and `expression_args` bound to real KPIs of the entity. Each `expression_args` key must be the exact name of the KPI it binds (not a placeholder such as `x`), and `primary_indicator` and `expression` use those names. Static rules require `condition`, `alert_condition`, and `eval_window` (0–60 minutes). Adaptive rules use `expression` = `adaptive_std_cmp(<primary_indicator>, sensitivity, window)`; the three fields are then optional (defaults `expr > 0`, `count_true(result) >= 1`, `1`). `algorithm` cannot be set. Responder context goes in `properties` (description, runbook, annotations, `query_mode`).
@@ -770,7 +770,7 @@ Creates a static-threshold rule from a chart described by `describe_alert_chart`
 - `surface` / `chart_key` / `service_name` / `signal_key` / `name` (string, required)
 - `env` (string, optional)
 - `attributes` (object, optional)
-- `threshold` (number, optional): In the signal's unit. Score-unit signals such as apdex need an explicit value.
+- `threshold` (number, optional): In the signal's unit; must be 0 or more. Score-unit signals such as apdex need an explicit value.
 - `threshold_operator` (string, optional): `>` (default), `<`, `>=`, `<=`, `==`, `!=`.
 - `eval_window` (integer, optional): Minutes, 1–60. Default: 5.
 - `bad_minutes` (integer, optional): 1–`eval_window`. Default: 3.
@@ -798,7 +798,7 @@ Partial change that preserves the rule ID. At least one change is required. Refu
 - `recurring_mute_schedule` (object, optional): Replaces the weekly schedule: `enabled` (default false), `timezone` (IANA name, required), and `windows` (1–20 of `weekdays` as `sun`..`sat`, `start_time` / `end_time` as 24-hour `HH:MM`). An end at or before the start ends the next day. Send every window to keep.
 - `clear_recurring_mute_schedule` (boolean, optional): Removes the schedule entirely; cannot be combined with `recurring_mute_schedule`. Differs from `enabled=false`, which keeps the windows stored.
 
-Viewer-role users may only change `mute_until`. Rule-level mute changes are rejected while the group or entity is muted.
+Viewer-role users may only change `mute_until`. Rule-level mute changes are rejected while the group or entity is muted. Read changes back with `get_entity_alert_rules`, which shows `mute_until`, `recurring_mute_schedule` and `properties`.
 
 ### delete_alert
 
@@ -824,7 +824,7 @@ Takes ownership of a firing alert, or releases it. Does not resolve or mute the 
 
 ### reassign_alert
 
-Hands an alert that already has an owner to another user; acknowledge it first if it has none. Last9 does not notify the new owner.
+Hands an alert that already has an owner to another user; acknowledge it first if it has none. When nothing is reassigned because the alert has no owner, it says whether `get_alerts` lists that alert in the last hour at all. Last9 does not notify the new owner.
 
 - `alert_group_id` / `rule_id` / `rule_type` (string, required): Copy from the alert in `get_alerts`.
 - `owner_email` (string, optional): Preferred; matched case-insensitively against active org users.
@@ -832,11 +832,11 @@ Hands an alert that already has an owner to another user; acknowledge it first i
 
 ### create_notification_channel
 
-Creates a channel; it routes nothing until attached with `attach_notification_channel`. Create once and keep the id; there is no update tool. Returns only `id`, `name`, `type`, and `send_resolved`. A 400/422 rejection returns the API's own reason, with request secrets redacted.
+Creates a channel; it routes nothing until attached with `attach_notification_channel`. Create once and keep the id; there is no update tool. Returns only `id`, `name`, `type`, and `send_resolved`.
 
 - `name` (string, required): Unique per type; no colon.
 - `type` (string, required): `slack`, `pagerduty`, `opsgenie`, `email`, or `generic_webhook`.
-- `destination` (string, required): Slack Incoming Webhook URL (or channel ID with `slack_app_mode`), PagerDuty routing key, Opsgenie API key, comma-separated work email addresses (personal providers such as gmail.com or outlook.com are rejected; an org signed up with a personal email can only send to its admin's address), or an HTTPS webhook URL.
+- `destination` (string, required): Slack Incoming Webhook URL (or channel ID with `slack_app_mode`), PagerDuty routing key, Opsgenie API key, comma-separated work email addresses on any domain, not only the org's (the API rejects personal-provider addresses such as Gmail, and an org on a personal login accepts only its admin's address), or an HTTPS webhook URL.
 - `slack_app_mode` (boolean, optional): Slack only. Default: false.
 - `mention_handles` (string, optional): Comma-separated, e.g. `user|U123ABC|name`, `special|here`, `special|channel`.
 - `webhook_headers` (object, optional): `generic_webhook` only.
