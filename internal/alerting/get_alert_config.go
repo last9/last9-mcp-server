@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"last9-mcp/internal/deeplink"
+	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/models"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -96,6 +98,8 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			resolveAlertConfigKPIs(ctx, client, cfg, filteredAlertConfig)
 		}
 
+		evaluationNote := attachRecentEvaluations(ctx, last9api.NewClient(client, cfg), filteredAlertConfig, time.Now())
+
 		formattedResponse := formatAlertConfigResponse(
 			filteredAlertConfig,
 			entitiesByID,
@@ -106,6 +110,7 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 		if unconfiguredOnly {
 			formattedResponse = globalChannelAdvisory + "\n" + formattedResponse
 		}
+		formattedResponse = evaluationNote + formattedResponse
 
 		// Build deep link URL to alerting groups page
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)

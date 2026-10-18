@@ -38,6 +38,8 @@ type AlertRule struct {
 	Properties                   map[string]interface{}            `json:"properties"`
 	GroupTimeseriesNotifications bool                              `json:"group_timeseries_notifications"`
 	RecurringMuteSchedule        json.RawMessage                   `json:"recurring_mute_schedule,omitempty"`
+	// RecentEvaluations is sampled from the alert monitor by get_alert_config, not part of the API response.
+	RecentEvaluations []evaluationSample `json:"-"`
 }
 
 // AlertConfigResponse represents the response from alert rules API (direct array)

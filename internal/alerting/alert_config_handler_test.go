@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,6 +30,9 @@ type alertConfigTestServerState struct {
 	lastEntityRequest          filterAlertGroupEntitiesRequest
 	kpiResponses               map[string]kpiResponse // kpiID → response (empty = 404)
 	emulateUpstreamFilters     bool
+	monitorRules               []AlertRuleData
+	monitorStatus              int
+	monitorCalls               atomic.Int32
 }
 
 func applyUpstreamFilters(
@@ -758,6 +762,14 @@ func newAlertConfigTestServer(
 				return
 			}
 			_, _ = w.Write([]byte(`{"error":"alert rules failed"}`))
+		case constants.EndpointAlertsMonitor:
+			state.monitorCalls.Add(1)
+			if state.monitorStatus != 0 && state.monitorStatus != http.StatusOK {
+				w.WriteHeader(state.monitorStatus)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(AlertsResponse{AlertRules: state.monitorRules})
 		case constants.EndpointEntitiesList:
 			state.entityLookupCalls++
 			defer r.Body.Close()

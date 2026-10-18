@@ -725,6 +725,7 @@ func formatAlertConfigResponse(
 			}
 		}
 		formattedResponse += fmt.Sprintf("  State: %s\n", rule.State)
+		formattedResponse += formatRecentEvaluations(rule)
 		formattedResponse += fmt.Sprintf("  Severity: %s\n", rule.Severity)
 		formattedResponse += fmt.Sprintf("  Algorithm: %s\n", rule.Algorithm)
 		formattedResponse += fmt.Sprintf("  Entity ID: %s\n", rule.EntityID)
