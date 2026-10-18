@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"last9-mcp/internal/auth"
+	apiinfrastructure "last9-mcp/internal/last9api/infrastructure"
 	"last9-mcp/internal/models"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -31,7 +32,7 @@ func testResolveConfig(apiBase string) models.Config {
 
 func TestGetInfrastructureContext_SendsRegionHeaderAndClusterID(t *testing.T) {
 	var gotRegion, gotPath, gotAuth, gotQuery string
-	var payload resolvePayload
+	var payload apiinfrastructure.ResolveInfrastructureInput
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotRegion = r.Header.Get("region")
 		gotPath = r.URL.Path
@@ -85,7 +86,7 @@ func TestGetInfrastructureContext_SendsRegionHeaderAndClusterID(t *testing.T) {
 
 func TestGetInfrastructureContext_OverridesClusterAndRegion(t *testing.T) {
 	var gotRegion string
-	var payload resolvePayload
+	var payload apiinfrastructure.ResolveInfrastructureInput
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotRegion = r.Header.Get("region")
 		_ = json.NewDecoder(r.Body).Decode(&payload)
@@ -212,13 +213,13 @@ func TestGetInfrastructureContext_MissingTokenManager(t *testing.T) {
 		Selectors:  InfrastructureSelectors{Instance: "a:1"},
 		Timestamp:  1,
 	})
-	if err == nil || !strings.Contains(err.Error(), "token manager is not configured") {
+	if err == nil || !strings.Contains(err.Error(), "token manager is nil") {
 		t.Fatalf("got %v", err)
 	}
 }
 
 func TestGetInfrastructureContext_DefaultsTimestamp(t *testing.T) {
-	var payload resolvePayload
+	var payload apiinfrastructure.ResolveInfrastructureInput
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&payload)
 		_, _ = w.Write([]byte(`{"status":"matched","relationships":[]}`))

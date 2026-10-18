@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"last9-mcp/internal/deeplink"
+	"last9-mcp/internal/last9api"
+	apiinfrastructure "last9-mcp/internal/last9api/infrastructure"
 	"last9-mcp/internal/models"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -37,13 +39,6 @@ type InfrastructureSelectors struct {
 	Job       string `json:"job,omitempty" jsonschema:"Optional Prometheus job label to disambiguate hosts."`
 }
 
-type resolvePayload struct {
-	ClusterID  string            `json:"cluster_id"`
-	EntityType string            `json:"entity_type"`
-	Timestamp  int64             `json:"timestamp"`
-	Selectors  map[string]string `json:"selectors"`
-}
-
 type resolveUI struct {
 	Href string `json:"href"`
 }
@@ -59,15 +54,13 @@ type resolveResult struct {
 // NewGetInfrastructureContextHandler returns the handler for get_infrastructure_context.
 func NewGetInfrastructureContextHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetInfrastructureContextArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args GetInfrastructureContextArgs) (*mcp.CallToolResult, any, error) {
-		payload, region, err := buildResolveRequest(cfg, args)
+		in, region, err := buildResolveRequest(cfg, args)
 		if err != nil {
 			return nil, nil, err
 		}
-		body, err := json.Marshal(payload)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to marshal request: %w", err)
-		}
-		respBody, err := doJSONRequest(ctx, jsonCall{client: client, cfg: cfg, region: region, body: body})
+		regionCfg := cfg
+		regionCfg.Region = region
+		respBody, err := apiinfrastructure.ResolveInfrastructure(ctx, last9api.NewClient(client, regionCfg), in)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -75,27 +68,27 @@ func NewGetInfrastructureContextHandler(client *http.Client, cfg models.Config) 
 	}
 }
 
-func buildResolveRequest(cfg models.Config, args GetInfrastructureContextArgs) (resolvePayload, string, error) {
+func buildResolveRequest(cfg models.Config, args GetInfrastructureContextArgs) (apiinfrastructure.ResolveInfrastructureInput, string, error) {
 	entityType := strings.TrimSpace(args.EntityType)
 	if err := validateEntityType(entityType); err != nil {
-		return resolvePayload{}, "", err
+		return apiinfrastructure.ResolveInfrastructureInput{}, "", err
 	}
 	clusterID := strings.TrimSpace(args.ClusterID)
 	if clusterID == "" {
 		clusterID = strings.TrimSpace(cfg.ClusterID)
 	}
 	if clusterID == "" {
-		return resolvePayload{}, "", errors.New("cluster_id is required: pass cluster_id or configure LAST9_DATASOURCE")
+		return apiinfrastructure.ResolveInfrastructureInput{}, "", errors.New("cluster_id is required: pass cluster_id or configure LAST9_DATASOURCE")
 	}
 	region, err := resolveRegion(cfg, args.Region)
 	if err != nil {
-		return resolvePayload{}, "", err
+		return apiinfrastructure.ResolveInfrastructureInput{}, "", err
 	}
 	ts := args.Timestamp
 	if ts <= 0 {
 		ts = time.Now().Unix()
 	}
-	return resolvePayload{
+	return apiinfrastructure.ResolveInfrastructureInput{
 		ClusterID:  clusterID,
 		EntityType: entityType,
 		Timestamp:  ts,

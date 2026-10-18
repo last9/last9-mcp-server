@@ -44,8 +44,6 @@ const (
 	EndpointNotificationSettings = "/notification_settings"
 	// EndpointSuggest returns fuzzy entity-name suggestions for the did_you_mean tool.
 	EndpointSuggest = "/suggest"
-	// EndpointInfrastructureResolve returns host ↔ Kubernetes relationships.
-	EndpointInfrastructureResolve = "/infrastructure/resolve"
 	// EndpointServiceProfile derives per-service telemetry shape (POST body mirrors /suggest + region).
 	EndpointServiceProfile = "/service_profile"
 
