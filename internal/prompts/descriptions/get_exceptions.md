@@ -1,18 +1,18 @@
-Get server side exceptions aggregated over the given time range.
-Returns exception type, service name, span name, occurrence count, first_seen, and last_seen timestamps.
+Get aggregate server-side exception heat over the requested time range.
+Returns ranked aggregate groups: exception type, service name, span name, span kind, deployment environment, and occurrence count.
 
-IMPORTANT: trace_id is always null in this response. The data comes from aggregated metrics, not raw spans.
+IMPORTANT: This data comes from aggregated metrics, not raw spans. It does not return trace or span IDs, event timestamps, messages, stack traces, durations, status, or exact exception samples. A row identifies a hot aggregate group only; do not infer that any later trace is an exact match for that group.
 
 **Profile first (service-scoped):** When investigating a specific `service_name`, call `get_service_profile` before using this tool. Use `signal_shape` and `telemetry` for routing — see `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
 
 Investigation flow — follow this exactly:
-1. Call get_exceptions to identify which service/exception_type is problematic.
-2. Call get_service_traces with:
+1. Call get_exceptions to identify the hottest service/exception_type group.
+2. To inspect contextual traces, call get_service_traces with:
    - service_name = exception.service_name
-   - start_time_iso = exception.first_seen
-   - end_time_iso = exception.last_seen
+   - start_time_iso / end_time_iso = the same requested tool window
    - env = exception.deployment_environment (if present)
-   - If you somehow have a trace_id, use get_service_traces with trace_id instead of service_name.
+   - These are service-scoped context traces, not verified samples of the aggregate exception row.
+   - If another tool provides a trace_id, use get_service_traces with trace_id instead of service_name.
      Never use get_traces for trace_id lookups.
 3. Decide whether exceptions are the ANSWER or a SYMPTOM before reporting:
    - Exceptions here are SPAN-DERIVED. For a well trace-instrumented service they are usually

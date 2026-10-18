@@ -12,6 +12,7 @@ import (
 // handled in Parse, not listed here as flat membership.
 var named = map[string][]string{
 	"logs": {
+		"did_you_mean",
 		"get_service_profile",
 		"get_logs",
 		"get_service_logs",
@@ -21,6 +22,7 @@ var named = map[string][]string{
 		"prometheus_instant_query",
 	},
 	"traces": {
+		"did_you_mean",
 		"get_service_profile",
 		"get_traces",
 		"get_service_traces",
@@ -31,6 +33,7 @@ var named = map[string][]string{
 		"get_trace_waterfall",
 	},
 	"metrics": {
+		"did_you_mean",
 		"get_service_profile",
 		"prometheus_range_query",
 		"prometheus_instant_query",
@@ -51,8 +54,23 @@ var named = map[string][]string{
 	"alerts": {
 		"get_alerts",
 		"get_alert_config",
+		"create_alert",
+		"update_alert",
+		"patch_alert",
+		"delete_alert",
+		"validate_alert_expression",
+		"mute_alert_group",
+		"acknowledge_alert",
+		"reassign_alert",
+		"create_notification_channel",
+		"attach_notification_channel",
+		"detach_notification_channel",
+		"delete_notification_channel",
+		"recommend_alert_config",
 		"get_alert_groups",
 		"get_entity_alert_rules",
+		"describe_alert_chart",
+		"create_alert_from_chart",
 		"get_alert_rule_state",
 		"get_notification_channels",
 		"get_drop_rules",

@@ -51,7 +51,8 @@ go run . dump-prompts        # served prompts/list
    `internal/prompts/prompts.go` as `<Tool>Description` — see *Tool descriptions*.
 3. **Tool** — create `<package>/<tool_name>.go` with its `Args` struct, its
    `New<Tool>Handler`, and its private helpers — see *Go conventions*.
-4. **Register** — add to `tools.go` via `registerIfAllowed`, and add the tool name to its
+4. **Register** — add to `tools.go` via `registerIfAllowed` (`registerWriteTool` for a
+   tool that changes state), and add the tool name to its
    domain in `internal/toolsets/toolsets.go` — see *Registration*.
 5. **Test** — `<tool_name>_test.go` using `httptest.NewServer`; run `go test -race ./...`.
 6. **Verify** — `go run . dump-tools` shows the tool with the intended description and
@@ -129,6 +130,21 @@ reg(registerIfAllowed(server, cfg.AllowedTools,
     foo.NewGetFooHandler(client, cfg)))
 ```
 
+**A tool that changes Last9 state registers through `registerWriteTool`** with a verify
+call: the read call, starting with the read tool's name, that shows whether the write
+landed; every toolset in `internal/toolsets/toolsets.go` that lists the write tool must also
+list that read tool, or registration fails. Its write requests must go through `last9api.Client.Do` (or mark failures with
+`utils.MarkUnknownWriteOutcome`), and are never retried. After a timeout or lost connection
+the agent is told to run the verify call instead of retrying, so a create cannot duplicate.
+`write_tools_test.go` fails until the tool has a fixture there and passes those checks.
+
+```go
+reg(registerWriteTool(server, cfg.AllowedTools,
+    &mcp.Tool{Name: "create_foo", Annotations: writeTool("Create Foo", false, false), Description: prompts.CreateFooDescription},
+    "get_foos, looking for one with the name you passed",
+    foo.NewCreateFooHandler(client, cfg)))
+```
+
 Then add `get_foo` to its domain in `internal/toolsets/toolsets.go`, and verify with
 `go run . dump-tools --toolsets=<other-domain>` that it is absent there. `dump_test.go`
 asserts per-toolset membership and copy — update it in the same change.
@@ -144,6 +160,20 @@ Three call sites: `main.go`, and `dump.go` twice — once for `dump-tools`, once
 
 MCP prompts live one-per-file in `internal/workflows/`, with their text embedded in
 `internal/prompts/prompts.go` as `<Name>Workflow`.
+
+### Server instructions
+
+`internal/prompts/server_instructions.md` is the tool-selection policy sent on `initialize`.
+It is a `text/template` rendered against `--toolsets` (`tools`/`has` drop unregistered
+tools), so a tool named there never leaks into a toolset that lacks it. Every new tool
+goes into one of its groups (discovery, dedicated, raw, write):
+`instructions_test.go` fails, per toolset, if the policy names a tool the toolset does not
+serve or omits one it does. It matches backticked text against registered tool names, so
+backticking a parameter such as `service_name` in the policy is fine.
+
+`registerServerInstructions` has one call site, in `main.go` after `registerAllTools`
+(stdio and `--http` share that server). `dump.go` skips it on purpose: `tools/list` and
+`prompts/list` carry no instructions, and `instructions_test.go` covers the handshake.
 
 ### Argument structs
 

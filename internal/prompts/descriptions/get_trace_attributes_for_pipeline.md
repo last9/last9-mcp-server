@@ -7,7 +7,7 @@ scoped to your in-progress pipeline, so it only reports attributes that are real
 present for that slice of spans.
 
 Use it before filtering on an attribute:
-1. First narrow with a filter stage, e.g. {"type":"filter","query":{"$eq":["ServiceName","<service>"]}}.
+1. First narrow with a filter stage, e.g. {"type":"filter","query":{"$and":[{"$eq":["ServiceName","<service>"]}]}}.
 2. Call this tool with that pipeline.
 3. Build your get_traces filter using only the filter_field values it returns.
 
