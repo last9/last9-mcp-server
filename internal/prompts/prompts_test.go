@@ -748,6 +748,7 @@ func TestCreateToolDescriptionsExplainUnknownOutcome(t *testing.T) {
 		"create_alert":                {prompts.CreateAlertDescription, "get_alert_config (rule_name)"},
 		"create_alert_from_chart":     {prompts.CreateAlertFromChartDescription, "get_alert_config (rule_name)"},
 		"create_dashboard":            {prompts.CreateDashboardDescription, "list_dashboards"},
+		"create_kpi":                  {prompts.CreateKPIDescription, "get_entity_kpis"},
 		"create_notification_channel": {prompts.CreateNotificationChannelDescription, "get_notification_channels (scope=channels)"},
 	} {
 		if !strings.Contains(c.desc, createRetrySentence(c.readCall)) {

@@ -45,6 +45,7 @@ var writeToolFixtures = map[string]writeToolFixture{
 	"patch_alert":      {args: `{"entity_id":"entity-1","id":"rule-1","is_disabled":true}`, reads: ruleOwnedByEntity},
 	"delete_alert":     {args: `{"entity_id":"entity-1","id":"rule-1"}`, reads: ruleOwnedByEntity},
 	"mute_alert_group": {args: `{"entity_id":"entity-1","until":1900000000}`},
+	"create_kpi":       {args: `{"entity_id":"entity-1","name":"checkout latency","query":"histogram_quantile(0.95, rate(http_duration_seconds_bucket[5m]))","unit":"seconds"}`},
 	"acknowledge_alert": {
 		args:  `{"alert_group_id":"group-1","rule_id":"rule-1","rule_type":"static"}`,
 		reads: map[string]string{"/alerts/monitor": `{"alert_rules":[{"alert_group_id":"group-1","rule_id":"rule-1","rule_type":"static"}]}`},
