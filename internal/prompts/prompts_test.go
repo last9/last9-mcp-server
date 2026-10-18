@@ -11,6 +11,7 @@ import (
 
 var promptDescriptionFiles = map[string]string{
 	"add_drop_rule.md":                     prompts.AddDropRuleDescription,
+	"add_remapping_rule.md":                prompts.AddRemappingRuleDescription,
 	"create_alert.md":                      prompts.CreateAlertDescription,
 	"create_alert_from_chart.md":           prompts.CreateAlertFromChartDescription,
 	"create_dashboard.md":                  prompts.CreateDashboardDescription,
@@ -33,6 +34,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_database_slow_queries.md":         prompts.GetDatabaseSlowQueriesDescription,
 	"get_databases.md":                     prompts.GetDatabasesDescription,
 	"get_drop_rules.md":                    prompts.GetDropRulesDescription,
+	"get_remapping_rules.md":               prompts.GetRemappingRulesDescription,
 	"get_entity_alert_rules.md":            prompts.GetEntityAlertRulesDescription,
 	"get_exceptions.md":                    prompts.GetExceptionsInstructions,
 	"get_flamegraph.md":                    prompts.GetFlamegraphDescription,
@@ -608,6 +610,7 @@ func createRetrySentence(readCall string) string {
 func TestCreateToolDescriptionsExplainUnknownOutcome(t *testing.T) {
 	for name, c := range map[string]struct{ desc, readCall string }{
 		"add_drop_rule":               {prompts.AddDropRuleDescription, "get_drop_rules"},
+		"add_remapping_rule":          {prompts.AddRemappingRuleDescription, "get_remapping_rules"},
 		"create_alert":                {prompts.CreateAlertDescription, "get_alert_config (rule_name)"},
 		"create_alert_from_chart":     {prompts.CreateAlertFromChartDescription, "get_alert_config (rule_name)"},
 		"create_dashboard":            {prompts.CreateDashboardDescription, "list_dashboards"},

@@ -1,92 +1,40 @@
-Create a remapping rule in the Last9 control plane (ingestion-time transform, before storage).
-
-Each call creates **one** rule. Map rules (`logs_map`, `traces_map`) need a separate call per `target_attribute` — the UI batches these, the API does not.
+Create one remapping rule in the Last9 control plane (an ingestion-time transform, applied before storage). Map rules need one call per `target_attribute`.
 
 ## Workflow
 
-1. Call `get_remapping_rules` for the target `rule_type` — check existing names and avoid duplicates.
-2. Discover source fields before writing:
-   - **logs_map / traces_map**: call `get_log_attributes` (or `get_trace_attributes` for traces) to find real attribute paths.
-   - **logs_extract (json)**: call `get_logs` on sample lines to identify JSON field names in the body (e.g. `level`, not `severity` on the attribute).
-   - **logs_extract (pattern)**: inspect raw log bodies in `get_logs` to craft the regex.
-3. Call `add_remapping_rule` with a unique `name`.
+1. Call `get_remapping_rules` for the target `rule_type` and pick a `name` not already in use.
+2. Discover the real source fields first; never guess attribute paths or body field names.
+3. Call `add_remapping_rule`.
 
-## All types
+On a timeout or connection error the create may or may not have been applied; check by name with get_remapping_rules before retrying.
 
-Required: `rule_type`, `name`, `remap_keys`, `target_attribute`.
-
-Optional: `region` (defaults to configured datasource region).
+Required for every type: `rule_type`, `name`, `remap_keys`, `target_attribute`. Optional: `region` (default: the configured datasource region).
 
 ## logs_extract
 
-Extract fields from log line **bodies** into log or resource attributes.
+Extract fields from log line bodies into attributes.
 
-- `extract_type` (required): `json` or `pattern`
-- `target_attribute` (required): `log_attributes` or `resource_attributes`
-- `action` (optional): `upsert` (default, replace existing values) or `insert` (keep history)
-- `prefix` (optional, json only): prepended to extracted field names (e.g. `ec2_` → `ec2_id`)
-- `preconditions` (optional): at most **one** scope filter. Omit for all lines; include one to match specific lines only.
+- `extract_type` (required): `json` or `pattern`.
+- `target_attribute`: `log_attributes` or `resource_attributes`.
+- `remap_keys`: for `json`, plain body field names such as `["level"]`, not `attributes["..."]` paths; for `pattern`, exactly one regex with named capture groups, e.g. `["\\[(?P<severity>DEBUG|INFO|WARN|ERROR)[ |]"]`.
+- `action` (optional): `upsert` (default, replace existing values) or `insert` (keep existing values).
+- `prefix` (optional): prepended to extracted field names (`ec2_` → `ec2_id`).
+- `preconditions` (optional): at most one `{key, value, operator}` filter; omit to apply to all lines. Keys are `attributes["k"]` or `resource.attributes["k"]`; `operator` is `equals` (default), `not_equals` or `like` (value must be a valid regex). Scope when possible: unscoped extraction can add ingestion delay.
 
-### remap_keys for logs_extract
+## logs_map and traces_map
 
-**json** — plain JSON field names from the log body, **not** `attributes["..."]` paths:
+Promote existing attributes to a standard field, one rule per target.
 
-```json
-["level"]
-["app_team", "app_name"]
-```
-
-**pattern** — exactly **one** regex with named capture groups:
+- `target_attribute`: logs_map takes `service`, `severity` or `resource_deployment.environment`; traces_map takes `service`.
+- `remap_keys`: attribute paths, evaluated left to right; the first non-empty value wins.
+- Do not pass `extract_type`, `action`, `prefix` or `preconditions`.
 
 ```json
-["\\[(?P<severity>DEBUG|INFO|WARN|ERROR)[ |]"]
+{"rule_type": "logs_map", "name": "map-service-from-attrs", "target_attribute": "service", "remap_keys": ["attributes[\"service_name\"]", "attributes[\"app_name\"]"]}
 ```
 
-### preconditions (logs_extract only)
+## Pairs well with
 
-Scope extraction to matching lines. Keys use attribute paths:
-
-- Log attributes: `attributes["key_name"]`
-- Resource attributes: `resource.attributes["key_name"]`
-
-Operators: `equals`, `not_equals`, `like` (`like` value must be valid regex).
-
-Omit `preconditions` to apply to all lines (may increase ingestion delay — prefer scoping when possible).
-
-## logs_map
-
-Promote existing attributes to standardized log fields. **One rule per target.**
-
-- `target_attribute` (required): `service`, `severity`, or `resource_deployment.environment`
-- `remap_keys`: attribute paths, evaluated **left to right** — first non-empty value wins
-- Do not pass `extract_type`, `action`, `prefix`, or `preconditions`
-
-Example — map service from two fallback attributes:
-
-```json
-{
-  "rule_type": "logs_map",
-  "name": "map-service-from-attrs",
-  "target_attribute": "service",
-  "remap_keys": ["attributes[\"service_name\"]", "attributes[\"app_name\"]"]
-}
-```
-
-## traces_map
-
-Promote trace attributes to standardized service name. **One rule per target.**
-
-- `target_attribute` (required): `service`
-- `remap_keys`: attribute paths, left-to-right priority (first non-empty wins)
-- Do not pass `extract_type`, `action`, `prefix`, or `preconditions`
-
-Example:
-
-```json
-{
-  "rule_type": "traces_map",
-  "name": "map-trace-service",
-  "target_attribute": "service",
-  "remap_keys": ["resource.attributes[\"service.name\"]", "attributes[\"service\"]"]
-}
-```
+- `get_log_attributes`: real log attribute paths for logs_map remap_keys and logs_extract preconditions.
+- `get_trace_attributes`: real trace attribute paths for traces_map remap_keys.
+- `get_logs`: sample log bodies, to find JSON field names or craft a pattern regex for logs_extract.
