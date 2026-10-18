@@ -484,6 +484,20 @@ func TestDescriptionsSayWhereTheLinkIs(t *testing.T) {
 	}
 }
 
+// Redaction is server-side and per org; an agent that works around it leaks what the
+// org chose to hide.
+func TestGetTraceWaterfallDescriptionSendsRedactionToAnAdmin(t *testing.T) {
+	for _, phrase := range []string{
+		"redacted on the server under a per-org policy",
+		"ask an org admin to adjust the policy rather than working around it",
+		"span list truncated to satisfy trace-evidence-sanitizer/v1 serialized-byte limit",
+	} {
+		if !strings.Contains(prompts.GetTraceWaterfallDescription, phrase) {
+			t.Errorf("get_trace_waterfall description lacks %q", phrase)
+		}
+	}
+}
+
 func TestCreateAlertDescriptionStatesDuplicateNameRefusal(t *testing.T) {
 	if !strings.Contains(prompts.CreateAlertDescription, "already uses (case-insensitive) is refused") {
 		t.Error("create_alert does not say a duplicate rule_name is refused")
