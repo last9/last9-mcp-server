@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -35,6 +36,25 @@ var sectionedTools = []string{
 
 var descriptionSections = []string{"When to use", "When not to use", "Pairs well with", "Output shape", "Known traps"}
 
+// omittedSections lists sections a tool leaves out because they measurably
+// pull the model off its query pipeline. get_logs' body already names its
+// discovery tools and traps; restating them as sections dropped eval lq-017
+// from 9/10 to 2/10 and 3/10 (#354).
+var omittedSections = map[string][]string{
+	"get_logs": {"Pairs well with", "Known traps"},
+}
+
+// requiredSections is descriptionSections minus the tool's omittedSections.
+func requiredSections(tool string) []string {
+	var out []string
+	for _, section := range descriptionSections {
+		if !slices.Contains(omittedSections[tool], section) {
+			out = append(out, section)
+		}
+	}
+	return out
+}
+
 // splitSections maps each "## " heading in description to the text under it,
 // parsed as prompts.TrimRoutes parses it.
 func splitSections(description string) (order []string, bodies map[string]string) {
@@ -46,20 +66,21 @@ func splitSections(description string) (order []string, bodies map[string]string
 	return order, bodies
 }
 
-// sectionViolations reports missing or misordered sections and routing
-// sections that name anything but a served tool: they are where a model looks
-// for the next tool to call, so a stale or misspelled name sends it nowhere.
-func sectionViolations(description string, served map[string]bool) []string {
+// sectionViolations reports missing or misordered required sections and
+// routing sections that name anything but a served tool: they are where a
+// model looks for the next tool to call, so a stale or misspelled name sends
+// it nowhere.
+func sectionViolations(description string, required []string, served map[string]bool) []string {
 	var out []string
 	order, bodies := splitSections(description)
 	next := 0
 	for _, name := range order {
-		if next < len(descriptionSections) && name == descriptionSections[next] {
+		if next < len(required) && name == required[next] {
 			next++
 		}
 	}
-	if next < len(descriptionSections) {
-		out = append(out, "missing or out of order: ## "+descriptionSections[next])
+	if next < len(required) {
+		out = append(out, "missing or out of order: ## "+required[next])
 	}
 	for _, section := range descriptionSections {
 		body, ok := bodies[section]
@@ -107,7 +128,7 @@ func TestTopToolDescriptionsHaveRoutingSections(t *testing.T) {
 			t.Errorf("%s is not served", name)
 			continue
 		}
-		for _, v := range sectionViolations(description, served) {
+		for _, v := range sectionViolations(description, requiredSections(name), served) {
 			t.Errorf("%s: %s", name, v)
 		}
 	}
@@ -153,10 +174,22 @@ func TestRoutingSectionsNameToolsServedAlongside(t *testing.T) {
 			served[name] = true
 		}
 		for name, description := range descriptions {
-			for _, v := range sectionViolations(description, served) {
+			for _, v := range sectionViolations(description, descriptionSections, served) {
 				if strings.Contains(v, "which is not a served tool") {
 					t.Errorf("--toolsets=%s %s: %s", spec, name, v)
 				}
+			}
+		}
+	}
+}
+
+func TestOmittedSectionsAreNotServed(t *testing.T) {
+	descriptions := servedDescriptions(t, "")
+	for tool, sections := range omittedSections {
+		_, bodies := splitSections(descriptions[tool])
+		for _, section := range sections {
+			if _, ok := bodies[section]; ok {
+				t.Errorf("%s serves ## %s, which omittedSections leaves out", tool, section)
 			}
 		}
 	}
@@ -198,7 +231,7 @@ func TestSectionViolationsCatchBadFixtures(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := sectionViolations(tt.description, served)
+			got := sectionViolations(tt.description, descriptionSections, served)
 			if tt.want == "" {
 				if len(got) != 0 {
 					t.Fatalf("violations = %v, want none", got)
