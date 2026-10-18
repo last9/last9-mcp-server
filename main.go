@@ -7,10 +7,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"os"
+	"os/signal"
 	"strconv"
+	"strings"
+	"syscall"
 	"time"
 	// The release image is alpine without tzdata; embed the zone database so
 	// get_current_time's LoadLocation works wherever the binary runs.
@@ -143,6 +147,22 @@ func buildServer(cfg models.Config) (*last9mcp.Last9MCPServer, error) {
 }
 
 func main() {
+	os.Exit(run())
+}
+
+// serveStdio serves one stdio session. A closed stdin or a cancelled ctx is a
+// normal exit, not an error.
+func serveStdio(ctx context.Context, server *last9mcp.Last9MCPServer, t mcp.Transport) error {
+	err := server.Serve(ctx, t)
+	// A reply written after stdin hit EOF comes back as "server is closing: EOF",
+	// which the SDK formats with %v, so errors.Is cannot see the EOF.
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) || strings.HasSuffix(err.Error(), ": EOF") {
+		return nil
+	}
+	return err
+}
+
+func run() int {
 	// dump-tools runs before full config parsing: it needs no credentials
 	// and must work in CI and eval harnesses without a refresh token.
 	// It still honors --toolsets / LAST9_TOOLSETS (and loads .env) so
@@ -155,14 +175,14 @@ func main() {
 		if err := dumpTools(os.Stdout, allowed); err != nil {
 			log.Fatalf("dump-tools failed: %v", err)
 		}
-		return
+		return 0
 	}
 
 	if len(os.Args) > 1 && os.Args[1] == "dump-prompts" {
 		if err := dumpPrompts(os.Stdout); err != nil {
 			log.Fatalf("dump-prompts failed: %v", err)
 		}
-		return
+		return 0
 	}
 
 	log.Printf("Starting Last9 MCP Server v%s", Version)
@@ -221,9 +241,11 @@ func main() {
 		"version", Version,
 	)
 
+	// From here on, return instead of log.Fatal: os.Exit would skip the deferred telemetry flush.
 	server, err := buildServer(cfg)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("failed to build server", "error", err)
+		return 1
 	}
 
 	if !cfg.DisableTelemetry {
@@ -252,9 +274,17 @@ func main() {
 	if cfg.HTTPMode {
 		httpServer := NewHTTPServer(server, cfg, toolsetServerBuilder(cfg))
 		if err := httpServer.Start(); err != nil {
-			log.Fatalf("HTTP server error: %v", err)
+			slog.Error("HTTP server error", "error", err)
+			return 1
 		}
-	} else {
-		log.Fatal(server.Serve(context.Background(), &mcp.StdioTransport{}))
+		return 0
 	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := serveStdio(ctx, server, &mcp.StdioTransport{}); err != nil {
+		slog.Error("stdio server error", "error", err)
+		return 1
+	}
+	return 0
 }
