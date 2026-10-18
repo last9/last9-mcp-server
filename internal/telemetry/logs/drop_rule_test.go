@@ -3,15 +3,19 @@ package logs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
+	"last9-mcp/internal/writefault"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -141,6 +145,38 @@ func TestAddDropRuleHandlerContextCancellation(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("expected error from cancelled context, got nil")
+	}
+}
+
+func TestAddDropRuleHandlerMarksUnknownOutcome(t *testing.T) {
+	faults := map[string]func(http.ResponseWriter, *http.Request){
+		"gateway 504": func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusGatewayTimeout) },
+	}
+	for _, fault := range writefault.All {
+		faults[string(fault)] = func(w http.ResponseWriter, r *http.Request) { writefault.Serve(w, r, fault) }
+	}
+	for name, serve := range faults {
+		t.Run(name, func(t *testing.T) {
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				serve(w, r)
+			}))
+			defer server.Close()
+
+			handler := NewAddDropRuleHandler(&http.Client{Timeout: 200 * time.Millisecond}, testDropRuleConfig(server.URL))
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AddDropRuleArgs{
+				Name:    "test-rule",
+				Filters: []DropRuleFilter{{Key: `attributes["service_name"]`, Value: "checkout"}},
+			})
+			var unknown *utils.WriteOutcomeUnknownError
+			if !errors.As(err, &unknown) {
+				t.Fatalf("outcome not marked unknown: %v", err)
+			}
+			if n := requests.Load(); n != 1 {
+				t.Errorf("server saw %d requests, want exactly 1", n)
+			}
+		})
 	}
 }
 

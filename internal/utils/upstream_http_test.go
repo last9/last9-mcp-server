@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -140,5 +141,41 @@ func TestSanitizeUpstreamBodyRedactsAndBounds(t *testing.T) {
 	}
 	if !utf8.ValidString(got) {
 		t.Fatalf("invalid utf8: %q", got)
+	}
+}
+
+func TestNewUpstreamHTTPErrorIsTyped(t *testing.T) {
+	resp := &http.Response{StatusCode: http.StatusBadRequest, Body: io.NopCloser(strings.NewReader("unknown chart key"))}
+	var typed *UpstreamHTTPError
+	if !errors.As(NewUpstreamHTTPError(resp, "op"), &typed) || typed.StatusCode != http.StatusBadRequest || typed.Body != "unknown chart key" {
+		t.Fatalf("unexpected typed error: %+v", typed)
+	}
+	resp = &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(strings.NewReader("boom"))}
+	if !errors.As(NewUpstreamHTTPError(resp, "op"), &typed) || typed.StatusCode != http.StatusBadGateway || typed.Body != "" {
+		t.Fatalf("unexpected typed error: %+v", typed)
+	}
+}
+
+func TestNewUpstreamHTTPErrorKeeps4xxBodyOutOfMessage(t *testing.T) {
+	for _, tt := range []struct {
+		status    int
+		wantBody  string
+		inMessage bool
+	}{
+		{http.StatusForbidden, "Not allowed for viewer role", false},
+		{http.StatusConflict, "Not allowed for viewer role", false},
+		{http.StatusBadRequest, "Not allowed for viewer role", true},
+		{http.StatusUnprocessableEntity, "Not allowed for viewer role", true},
+		{http.StatusBadGateway, "", false},
+	} {
+		resp := &http.Response{StatusCode: tt.status, Body: io.NopCloser(strings.NewReader("Not allowed for viewer role"))}
+		err := NewUpstreamHTTPError(resp, "op")
+		var typed *UpstreamHTTPError
+		if !errors.As(err, &typed) || typed.Body != tt.wantBody {
+			t.Fatalf("status %d: Body = %+v", tt.status, typed)
+		}
+		if got := strings.Contains(err.Error(), "viewer role"); got != tt.inMessage {
+			t.Fatalf("status %d: body in Error() = %v: %s", tt.status, got, err)
+		}
 	}
 }

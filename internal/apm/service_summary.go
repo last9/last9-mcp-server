@@ -34,7 +34,12 @@ const (
 	serviceSummarySort5xx        = "http_5xx_count"
 	serviceSummarySortGRPC       = "grpc_error_count"
 	serviceSummaryFingerprintEnv = "<env>"
+	serviceSummaryMetric         = "trace_endpoint_count"
 )
+
+// ServiceSummarySeries selects the server-span series get_service_summary
+// ranks, across every env.
+const ServiceSummarySeries = serviceSummaryMetric + "{" + serviceSummarySpanKind + "}"
 
 type ServiceSummaryRow struct {
 	Rank           int     `json:"rank"`
@@ -263,7 +268,7 @@ func serviceSummaryCountQuery(envMatcher string, windowMin int, extraMatcher str
 	if extraMatcher != "" {
 		matchers += "," + extraMatcher
 	}
-	return fmt.Sprintf("sum by (service_name, env)(sum_over_time(trace_endpoint_count{%s}[%dm]))", matchers, windowMin)
+	return fmt.Sprintf("sum by (service_name, env)(sum_over_time(%s{%s}[%dm]))", serviceSummaryMetric, matchers, windowMin)
 }
 
 func serviceSummaryFingerprint(windowMin int) string {

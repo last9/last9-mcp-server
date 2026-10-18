@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -193,7 +192,7 @@ func NewGetDatabaseSlowQueriesHandler(client *http.Client, cfg models.Config) fu
 type GetDatabaseQueriesArgs struct {
 	DBSystem        string  `json:"db_system" jsonschema:"(Required) Database system (e.g. postgresql, mysql, mongodb, redis)"`
 	Host            string  `json:"host,omitempty" jsonschema:"Database host filter (net_peer_name)"`
-	Env             string  `json:"env,omitempty" jsonschema:"Deployment environment filter"`
+	Env             string  `json:"env,omitempty" jsonschema:"(Optional) Exact deployment environment name, e.g. production. Default all environments (empty or .*). Anchored forms like ^production$ are accepted and matched exactly. Alternation (a|b) and wildcards (prod.*) are rejected; list names with get_service_environments."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339 format"`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339 format"`
@@ -224,7 +223,10 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 			durationMin = 1
 		}
 
-		baseFilter := buildDBBaseFilter(args.DBSystem, args.Host, args.Env)
+		baseFilter, envDisplay, err := buildDBBaseFilter(args.DBSystem, args.Host, args.Env)
+		if err != nil {
+			return nil, nil, err
+		}
 
 		// 1. Throughput first (to check if any patterns exist)
 		patterns := make(map[string]*QueryPattern)
@@ -351,6 +353,10 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 			"sort_by":   sortBy,
 			"queries":   result,
 		}
+		response["env"] = envDisplay
+		if requested := envRequested(args.Env, envDisplay); requested != "" {
+			response["env_requested"] = requested
+		}
 
 		jsonBytes, err := json.Marshal(response)
 		if err != nil {
@@ -365,8 +371,9 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 	}
 }
 
-func buildDBBaseFilter(dbSystem, host, env string) string {
-	filter := fmt.Sprintf(
+func buildDBBaseFilter(dbSystem, host, env string) (filter, envDisplay string, err error) {
+	envDisplay = ".*"
+	filter = fmt.Sprintf(
 		`span_kind=~"SPAN_KIND_CLIENT|SPAN_KIND_INTERNAL", db_system="%s"`,
 		utils.EscapePromQLLabel(dbSystem),
 	)
@@ -374,9 +381,14 @@ func buildDBBaseFilter(dbSystem, host, env string) string {
 		filter += fmt.Sprintf(`, net_peer_name="%s"`, utils.EscapePromQLLabel(host))
 	}
 	if env != "" {
-		filter += fmt.Sprintf(`, env=~"%s"`, utils.EscapePromQLLabel(regexp.QuoteMeta(env)))
+		var envPattern string
+		envPattern, _, envDisplay, err = literalEnvPattern(env)
+		if err != nil {
+			return "", "", err
+		}
+		filter += fmt.Sprintf(`, env=~"%s"`, utils.EscapePromQLLabel(envPattern))
 	}
-	return filter
+	return filter, envDisplay, nil
 }
 
 func fetchPromBySpanName(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64, patterns map[string]*QueryPattern, setter func(*QueryPattern, float64)) error {

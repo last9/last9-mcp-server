@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
 
 	"last9-mcp/internal/deeplink"
@@ -24,6 +23,7 @@ type RedMetrics struct {
 type ServiceDependencyGraphDetails struct {
 	ServiceName      string                `json:"service_name"`
 	Env              string                `json:"env"`
+	EnvRequested     string                `json:"env_requested,omitempty"`
 	Incoming         map[string]RedMetrics `json:"incoming"`
 	Outgoing         map[string]RedMetrics `json:"outgoing"`
 	MessagingSystems map[string]RedMetrics `json:"messaging_systems"`
@@ -39,11 +39,9 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		}
 
 		env := args.Env
-		envForQuery := env
-		if envForQuery == "" {
-			envForQuery = ".*" // default environment
-		} else {
-			envForQuery = regexp.QuoteMeta(envForQuery)
+		envForQuery, literalEnv, envDisplay, err := literalEnvPattern(env)
+		if err != nil {
+			return nil, nil, err
 		}
 		serviceName := args.ServiceName
 		if serviceName == "" {
@@ -442,7 +440,8 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 		// Prepare the final response structure
 		details := ServiceDependencyGraphDetails{
 			ServiceName:      serviceName,
-			Env:              env,
+			Env:              envDisplay,
+			EnvRequested:     envRequested(env, envDisplay),
 			Incoming:         incoming,
 			Outgoing:         outgoing,
 			Databases:        databases,
@@ -469,7 +468,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 
 		// Build deep link URL
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, deeplink.APMCatalogEnvExact(env), "dependency")
+		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, deeplink.APMCatalogEnvExact(literalEnv), "dependency")
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
