@@ -202,9 +202,14 @@ func TestGetExceptionsHandler_IdentifiesRowsInAllEnvsMode(t *testing.T) {
 		t.Errorf("link window/cluster = %v", params)
 	}
 
+	// Without a URL env filter the page applies the env the reader last picked in Discover,
+	// which would hide this row, so the link selects Not Set explicitly.
 	params = exceptionLinkParams(t, withoutEnv)
-	if params.Get("exception_id") != "1b589f62-web-View-" || params.Has("filter") {
-		t.Errorf("link for a row without env = %v, want the All-view id and no filter", params)
+	if params.Get("exception_id") != "1b589f62-web-View" {
+		t.Errorf("link exception_id = %q, want the id the Not Set page gives the row", params.Get("exception_id"))
+	}
+	if params.Get("filter") != `["deployment_environment=\"\""]` {
+		t.Errorf("link filter = %q, want the dashboard's Not Set selection", params.Get("filter"))
 	}
 }
 

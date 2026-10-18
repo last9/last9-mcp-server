@@ -43,12 +43,16 @@ func TestBuildExceptionLink(t *testing.T) {
 		t.Fatalf("filter = %s, want the dashboard's getFilterString shape", got)
 	}
 
-	allEnvs := b.BuildExceptionLink(1_700_000_000_000, 1_700_003_600_000, ExceptionRow{ID: "1b589f62-web-View-"})
-	if strings.Contains(allEnvs, "filter=") {
-		t.Fatalf("a row without env must not narrow the page: %s", allEnvs)
+	notSet := b.BuildExceptionLink(1_700_000_000_000, 1_700_003_600_000, ExceptionRow{ID: "1b589f62-web-View"})
+	parsed, err = url.Parse(notSet)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(allEnvs, "exception_id=1b589f62-web-View-&") {
-		t.Fatalf("exception_id missing: %s", allEnvs)
+	if got := parsed.Query().Get("filter"); got != `["deployment_environment=\"\""]` {
+		t.Fatalf("a row without env must select Not Set, overriding the reader's saved env; filter = %s", got)
+	}
+	if got := parsed.Query().Get("exception_id"); got != "1b589f62-web-View" {
+		t.Fatalf("exception_id = %q", got)
 	}
 }
 
