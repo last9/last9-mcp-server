@@ -267,6 +267,35 @@ func TestGetAlertCoverage_CountsWithoutGapsIsNotComplete(t *testing.T) {
 	}
 }
 
+func TestGetAlertCoverage_SummaryAgreesInNumber(t *testing.T) {
+	oneGap := `{"kind":"all_rules_disabled","entity_id":"e-1"}`
+	for _, tc := range []struct {
+		name string
+		body string
+		args GetAlertCoverageArgs
+		want string
+	}{
+		{"one muted day", strings.Replace(emptyCoverageBody, `"muted_days":7`, `"muted_days":1`, 1), GetAlertCoverageArgs{MutedDays: 1},
+			"rules muted for more than 1 day."},
+		{"one listed gap", `{"generated_at":1,"muted_days":7,"gaps":[` + oneGap + `],"counts":{"all_rules_disabled":1}}`, GetAlertCoverageArgs{},
+			"1 alert coverage gap for the whole organization."},
+		{"two listed gaps", `{"generated_at":1,"muted_days":7,"gaps":[` + oneGap + `,` + oneGap + `],"counts":{"all_rules_disabled":2}}`, GetAlertCoverageArgs{},
+			"2 alert coverage gaps for the whole organization."},
+		{"one unlisted gap", `{"generated_at":1,"muted_days":7,"gaps":[],"counts":{"uncovered_signal":1}}`, GetAlertCoverageArgs{},
+			"The API counted 1 coverage gap for the whole organization but listed none"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := callAlertCoverage(t, &coverageStub{body: tc.body}, tc.args)
+			if err != nil {
+				t.Fatalf("handler: %v", err)
+			}
+			if out := decodeAlertCoverage(t, result); !strings.Contains(out.Summary, tc.want) {
+				t.Errorf("summary = %q, want %q", out.Summary, tc.want)
+			}
+		})
+	}
+}
+
 func TestGetAlertCoverage_UpstreamErrors(t *testing.T) {
 	for _, status := range []int{http.StatusForbidden, http.StatusInternalServerError} {
 		t.Run(http.StatusText(status), func(t *testing.T) {

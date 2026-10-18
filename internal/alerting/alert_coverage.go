@@ -151,15 +151,22 @@ func buildAlertCoverageResult(in alerts.GetAlertCoverageInput, resp *alerts.GetA
 	switch {
 	case len(resp.Gaps) == 0 && counted == 0:
 		result.Complete = true
-		result.Summary = fmt.Sprintf("Alert coverage is complete for %s: no uncovered signals, fully disabled alert groups, unrouted alert groups, or rules muted for more than %d days.",
-			describeCoverageScope(scope), scope.MutedDays)
+		result.Summary = fmt.Sprintf("Alert coverage is complete for %s: no uncovered signals, fully disabled alert groups, unrouted alert groups, or rules muted for more than %s.",
+			describeCoverageScope(scope), pluralize(scope.MutedDays, "day", "days"))
 	case len(resp.Gaps) == 0:
-		result.Summary = fmt.Sprintf("The API counted %d coverage gaps for %s but listed none; coverage is not confirmed complete.",
-			counted, describeCoverageScope(scope))
+		result.Summary = fmt.Sprintf("The API counted %s for %s but listed none; coverage is not confirmed complete.",
+			pluralize(counted, "coverage gap", "coverage gaps"), describeCoverageScope(scope))
 	default:
-		result.Summary = fmt.Sprintf("%d alert coverage gaps for %s.", len(resp.Gaps), describeCoverageScope(scope))
+		result.Summary = fmt.Sprintf("%s for %s.", pluralize(len(resp.Gaps), "alert coverage gap", "alert coverage gaps"), describeCoverageScope(scope))
 	}
 	return result
+}
+
+func pluralize(n int, singular, plural string) string {
+	if n == 1 {
+		return "1 " + singular
+	}
+	return fmt.Sprintf("%d %s", n, plural)
 }
 
 func groupCoverageGaps(gaps []alerts.CoverageGap) []alertCoverageGroup {
