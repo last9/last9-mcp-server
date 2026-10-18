@@ -83,6 +83,17 @@ type UpstreamAdvice struct {
 	DiscoveryTool string
 }
 
+// UpstreamHTTPError is the typed form of a non-OK upstream response; use errors.As to
+// branch on StatusCode. Body is the sanitized 4xx body (relayed in Error() only for 400/422)
+// and empty for 5xx.
+type UpstreamHTTPError struct {
+	StatusCode int
+	Body       string
+	message    string
+}
+
+func (e *UpstreamHTTPError) Error() string { return e.message }
+
 // NewUpstreamHTTPError maps a non-OK HTTP response to a tool-facing error.
 // 400/422 bodies are sanitized and included. 5xx bodies are drained and omitted.
 func NewUpstreamHTTPError(resp *http.Response, op string) error {
@@ -98,12 +109,12 @@ func NewUpstreamHTTPErrorWithAdvice(resp *http.Response, op string, advice Upstr
 	if status == http.StatusBadRequest || status == http.StatusUnprocessableEntity {
 		body := ReadLimitedResponseBody(resp.Body, 4<<10)
 		if status == http.StatusUnprocessableEntity && strings.Contains(strings.ToLower(body), "too many samples") {
-			return fmt.Errorf(
+			return &UpstreamHTTPError{StatusCode: status, Body: body, message: fmt.Sprintf(
 				"%s failed with HTTP %d (%s). The generated metrics query would scan too many samples. Agent action required: do not ask the user to edit PromQL. Retry with narrower filters already known from the request (for example, service, environment, operation, or label). If the full time range is still required, split it into smaller subranges only when the results can be combined correctly; preserve the requested coverage and disclose any limitations. Never average percentile values across subranges. Ask the user to narrow the scope only when the requested result cannot be computed correctly. Do not retry the same query unchanged.",
 				op,
 				status,
 				MetricsTooManySamplesErrorCode,
-			)
+			)}
 		}
 		next := UnknownFieldNextAction(body, advice.DiscoveryTool)
 		if next == "" {
@@ -113,10 +124,15 @@ func NewUpstreamHTTPErrorWithAdvice(resp *http.Response, op string, advice Upstr
 		if strings.TrimSpace(advice.SchemaHint) != "" {
 			msg += "\n\n" + advice.SchemaHint
 		}
-		return fmt.Errorf("%s", msg)
+		return &UpstreamHTTPError{StatusCode: status, Body: body, message: msg}
 	}
-	DrainResponseBody(resp.Body)
-	return fmt.Errorf("%s failed with HTTP %d. %s", op, status, upstreamStatusAdvice(status))
+	var body string
+	if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
+		body = ReadLimitedResponseBody(resp.Body, 4<<10)
+	} else {
+		DrainResponseBody(resp.Body)
+	}
+	return &UpstreamHTTPError{StatusCode: status, Body: body, message: fmt.Sprintf("%s failed with HTTP %d. %s", op, status, upstreamStatusAdvice(status))}
 }
 
 // UpstreamAuthAdvice is the next action for a 401 or 403; "" for any other status.
