@@ -215,6 +215,102 @@ func TestGetMetricStatus_RequiresMetricAndWindow(t *testing.T) {
 	}
 }
 
+func TestGetMetricStatus_NamedDatasourceRouting(t *testing.T) {
+	var requests []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		requests = append(requests, payload)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	cfg := models.Config{
+		APIBaseURL:         server.URL,
+		Region:             "us-east-1",
+		PrometheusReadURL:  "https://default.example/read",
+		PrometheusUsername: "default-user",
+		PrometheusPassword: "default-pass",
+		Datasources: []models.DatasourceInfo{{
+			Name: "secondary", ReadURL: "https://secondary.example/read",
+			Username: "secondary-user", Password: "secondary-pass", Region: "eu-west-1",
+		}},
+	}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "mock-access-token", ExpiresAt: time.Now().Add(time.Hour)}
+
+	if _, _, err := NewGetMetricStatusHandler(server.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetMetricStatusArgs{Metric: "up", WindowMinutes: 60, Datasource: "secondary"}); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if len(requests) != 1 {
+		t.Fatalf("got %d requests, want 1", len(requests))
+	}
+	for field, want := range map[string]string{"read_url": "https://secondary.example/read", "username": "secondary-user", "password": "secondary-pass"} {
+		if got := requests[0][field]; got != want {
+			t.Errorf("%s=%v, want %q", field, got, want)
+		}
+	}
+
+	_, _, err := NewGetMetricStatusHandler(server.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetMetricStatusArgs{Metric: "up", WindowMinutes: 60, Datasource: "missing"})
+	if err == nil || !strings.Contains(err.Error(), `datasource "missing" not found`) {
+		t.Fatalf("unknown datasource: err=%v", err)
+	}
+	if len(requests) != 1 {
+		t.Fatalf("unknown datasource must not issue a request; got %d", len(requests))
+	}
+}
+
+func TestGetMetricStatus_UpstreamErrorFailsTool(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{APIBaseURL: server.URL, Region: "us-east-1"}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "mock-access-token", ExpiresAt: time.Now().Add(time.Hour)}
+
+	_, _, err := NewGetMetricStatusHandler(server.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetMetricStatusArgs{Metric: "up", WindowMinutes: 60})
+	if err == nil || !strings.Contains(err.Error(), "502") {
+		t.Fatalf("err=%v, want an error naming the 502", err)
+	}
+}
+
+func TestGetMetricStatus_DropsNonFiniteSamples(t *testing.T) {
+	now := time.Now().UTC().Unix()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Query string `json:"query"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(payload.Query, "count(last_over_time("):
+			_, _ = fmt.Fprintf(w, `[{"metric":{},"value":[%d,"2"]},{"metric":{},"value":[%d,"NaN"]}]`, now, now)
+		case strings.Contains(payload.Query, "time() - timestamp("):
+			_, _ = fmt.Fprintf(w, `[{"metric":{},"value":[%d,"-Inf"]},{"metric":{},"value":[%d,"30"]}]`, now, now)
+		default:
+			_, _ = fmt.Fprintf(w, `[{"metric":{},"value":[%d,"+Inf"]},{"metric":{},"value":[%d,"60"]}]`, now, now)
+		}
+	}))
+	defer server.Close()
+
+	cfg := models.Config{APIBaseURL: server.URL, Region: "us-east-1"}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "mock-access-token", ExpiresAt: time.Now().Add(time.Hour)}
+
+	result, _, err := NewGetMetricStatusHandler(server.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetMetricStatusArgs{Metric: "up", WindowMinutes: 60})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	var status GetMetricStatusResult
+	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.SeriesCount != 2 || status.LastSampleAgeSeconds != 30 || status.InferredIntervalSeconds != 60 {
+		t.Fatalf("got %+v; want series_count=2 age=30 interval=60", status)
+	}
+}
+
 func TestFormatSuggestedDuration(t *testing.T) {
 	if got := formatSuggestedDuration(3 * 86400); got != "3d" {
 		t.Fatalf("got %q, want 3d", got)
