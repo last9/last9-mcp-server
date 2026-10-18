@@ -334,6 +334,25 @@ func TestServerInstructionsOfferPrometheusQueriesOnlyWithMetricDiscovery(t *test
 	}
 }
 
+func TestServerInstructionsRawQueryLineReadsForOneOrManyTools(t *testing.T) {
+	tests := []struct {
+		name  string
+		tools []string
+		want  string
+	}{
+		{name: "one tool", tools: []string{"get_logs"}, want: "Use `get_logs` only when no dedicated tool answers the question, and build each query from discovered names."},
+		{name: "several tools", tools: []string{"get_logs", "get_traces"}, want: "Use `get_logs`, `get_traces` only when no dedicated tool answers the question, and build each query from discovered names."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			if got := lineNaming(instructions, tt.tools[0]); got != tt.want {
+				t.Errorf("raw-query line = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestServerInstructionsSayCreateAlertRulesStartDisabled(t *testing.T) {
 	tests := []struct {
 		name  string
