@@ -70,8 +70,32 @@ func TestGetAlertRuleDecodesOwner(t *testing.T) {
 	}))
 	defer srv.Close()
 	rule, err := GetAlertRule(context.Background(), newTestClient(srv), AlertRuleInput{EntityID: "entity/1", RuleID: "rule/1"})
-	if err != nil || rule.ID != "rule/1" || rule.EntityID != "entity-2" || string(rule.Properties) != `{"description":"d"}` {
+	if err != nil || rule.ID != "rule/1" || rule.EntityID != "entity-2" || rule.RuleName != "x" || string(rule.Properties) != `{"description":"d"}` {
 		t.Fatalf("rule=%+v err=%v", rule, err)
+	}
+}
+
+func TestListAlertRulesDecodesRules(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.EscapedPath() != "/entities/entity%2F1/alert-rules" {
+			t.Errorf("request = %s %s", r.Method, r.URL.EscapedPath())
+		}
+		_, _ = w.Write([]byte(`{"rules":[{"id":"rule-1","entity_id":"entity/1","rule_name":"latency"}]}`))
+	}))
+	defer srv.Close()
+	rules, err := ListAlertRules(context.Background(), newTestClient(srv), "entity/1")
+	if err != nil || len(rules) != 1 || rules[0].ID != "rule-1" || rules[0].EntityID != "entity/1" || rules[0].RuleName != "latency" {
+		t.Fatalf("rules=%+v err=%v", rules, err)
+	}
+}
+
+func TestListAlertRulesReturnsUpstreamError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	if _, err := ListAlertRules(context.Background(), newTestClient(srv), "e"); err == nil {
+		t.Fatal("expected an error")
 	}
 }
 

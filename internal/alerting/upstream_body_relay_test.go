@@ -32,7 +32,7 @@ func TestAlertIntelGuidanceFirstLine(t *testing.T) {
 
 func conflictServer(t *testing.T) *httptest.Server {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if serveRuleOwner(w, r) {
+		if serveRuleOwner(w, r) || serveEmptyRuleList(w, r) {
 			return
 		}
 		w.WriteHeader(http.StatusConflict)

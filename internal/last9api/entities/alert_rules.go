@@ -21,12 +21,23 @@ type AlertRuleInput struct {
 	Body     any
 }
 
-// AlertRule is the subset of a stored rule callers need to confirm which group owns it
-// and to merge a partial properties change into the stored properties.
+// AlertRule is the subset of a stored rule callers need to confirm which group owns it,
+// refuse a duplicate name, and merge a partial properties change into the stored properties.
 type AlertRule struct {
 	ID         string          `json:"id"`
 	EntityID   string          `json:"entity_id"`
+	RuleName   string          `json:"rule_name"`
 	Properties json.RawMessage `json:"properties"`
+}
+
+// ListAlertRules calls GET /entities/{entity_id}/alert-rules.
+func ListAlertRules(ctx context.Context, c *last9api.Client, entityID string) ([]AlertRule, error) {
+	var out struct {
+		Rules []AlertRule `json:"rules"`
+	}
+	path := fmt.Sprintf(pathAlertRules, url.PathEscape(entityID))
+	err := c.Do(ctx, "list alert rules", last9api.Request{Method: http.MethodGet, Path: path}, &out)
+	return out.Rules, err
 }
 
 // GetAlertRule calls GET /entities/{entity_id}/alert-rules/{rule_id}. The API looks the
