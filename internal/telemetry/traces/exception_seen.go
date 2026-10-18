@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -75,7 +76,7 @@ func fetchExceptionSeen(ctx context.Context, client *http.Client, cfg models.Con
 	for _, s := range series {
 		var seen exceptionSeen
 		for _, point := range s.Values {
-			if len(point) < 2 || parsePromNumber(point[1]) <= 0 {
+			if len(point) < 2 || !isOccurrenceCount(parsePromNumber(point[1])) {
 				continue
 			}
 			at := time.Unix(int64(parsePromNumber(point[0])), 0).UTC()
@@ -94,4 +95,10 @@ func fetchExceptionSeen(ctx context.Context, client *http.Client, cfg models.Con
 		}
 	}
 	return seenByKey, nil
+}
+
+// isOccurrenceCount accepts only finite positive counts. Prometheus can serve "NaN" and "+Inf";
+// NaN fails every comparison, so keep the check positive rather than skipping "<= 0".
+func isOccurrenceCount(count float64) bool {
+	return count > 0 && !math.IsInf(count, 1)
 }
