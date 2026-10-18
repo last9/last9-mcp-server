@@ -97,7 +97,7 @@ Use {{.}} only when no dedicated tool answers the question, and build each query
 {{- if or (has "get_logs") (has "get_traces") (has "get_service_logs") (has "prometheus_range_query") (has "get_service_profile")}}
 
 ## Reference manuals
-Read these resources before writing a non-trivial query:
+Read these resources before writing a non-trivial query{{if has "get_logs"}}. After a parse stage, reference extracted fields as attributes['name'], never as a bare name{{end}}:
 {{- if has "get_logs"}}
 - `get_logs` pipelines: `last9://reference/logjson`
 {{- end}}
