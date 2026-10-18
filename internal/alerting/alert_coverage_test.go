@@ -316,6 +316,26 @@ func TestGetAlertCoverage_UpstreamErrors(t *testing.T) {
 	}
 }
 
+func TestGetAlertCoverage_MissingReportIsNeverComplete(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"empty 200", http.StatusOK, ""},
+		{"empty 204", http.StatusNoContent, ""},
+		{"null", http.StatusOK, "null"},
+		{"invalid JSON", http.StatusOK, "not JSON"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := callAlertCoverage(t, &coverageStub{status: tc.status, body: tc.body}, GetAlertCoverageArgs{})
+			if err == nil {
+				t.Fatalf("result = %+v, want an error", result)
+			}
+		})
+	}
+}
+
 func TestGetAlertCoverage_EndpointMissingSaysCoverageUnchecked(t *testing.T) {
 	stub := &coverageStub{status: http.StatusNotFound, body: `404 page not found`}
 	result, err := callAlertCoverage(t, stub, GetAlertCoverageArgs{})

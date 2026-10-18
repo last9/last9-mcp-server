@@ -113,6 +113,43 @@ func TestGetAlertCoverage_UpstreamErrorSurfaces(t *testing.T) {
 	}
 }
 
+func TestGetAlertCoverage_RejectsMissingReport(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"empty 200", http.StatusOK, ""},
+		{"empty 204", http.StatusNoContent, ""},
+		{"null", http.StatusOK, "null"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newCoverageTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			})
+
+			resp, err := GetAlertCoverage(context.Background(), c, GetAlertCoverageInput{})
+			if err == nil || !strings.Contains(err.Error(), "alert coverage: response held no coverage report") {
+				t.Fatalf("resp = %+v, err = %v; want a missing-report error", resp, err)
+			}
+		})
+	}
+}
+
+func TestGetAlertCoverage_AcceptsEmptyReport(t *testing.T) {
+	c := newCoverageTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		_, _ = w.Write([]byte(`{"generated_at":1,"muted_days":7,"gaps":[],"counts":{}}`))
+	})
+
+	resp, err := GetAlertCoverage(context.Background(), c, GetAlertCoverageInput{})
+	if err != nil || resp == nil || resp.GeneratedAt != 1 {
+		t.Fatalf("resp = %+v, err = %v; want the empty report", resp, err)
+	}
+}
+
 func TestGetAlertCoverage_BodyCap(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
