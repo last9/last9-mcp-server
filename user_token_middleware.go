@@ -25,7 +25,7 @@ func userTokenFallbackFromEnv() bool {
 	}
 }
 
-func userTokenMiddleware(cfg models.Config) mcp.Middleware {
+func userTokenMiddleware(cfg models.Config, verifier *userTokenVerifier) mcp.Middleware {
 	expectedHost := tokenHost(cfg.APIBaseURL)
 	if expectedHost == "" {
 		expectedHost = tokenHost(cfg.APIHost)
@@ -41,16 +41,21 @@ func userTokenMiddleware(cfg models.Config) mcp.Middleware {
 			}
 			token, present, malformed := requestUserToken(call)
 			result := "missing"
+			var exp time.Time
 			switch {
 			case malformed:
 				result = "malformed"
 			case present:
-				result = validateUserToken(token, expectedHost)
+				result, exp = validateUserToken(token, expectedHost)
 			}
 			tool := safeToolName(call.Params.Name)
 			if cfg.UserTokenFallback {
 				log.Printf("user_token_shadow result=%s method=tools/call tool=%s", result, tool)
 				return next(ctx, method, req)
+			}
+			// Claims are unsigned: only the API can prove the token is genuine.
+			if result == "ok" {
+				result = verifier.verify(ctx, token, exp)
 			}
 			if result != "ok" {
 				log.Printf("user_token_rejected result=%s method=tools/call tool=%s", result, tool)
@@ -101,34 +106,37 @@ func requestUserToken(req *mcp.CallToolRequest) (string, bool, bool) {
 	return token, true, false
 }
 
-func validateUserToken(token, expectedHost string) string {
+// validateUserToken checks the token's claims (shape, exp, aud host) and
+// returns its expiry with the result. It cannot check the signature.
+func validateUserToken(token, expectedHost string) (string, time.Time) {
 	claims, err := auth.ExtractClaimsFromToken(token)
 	if err != nil {
-		return "malformed"
+		return "malformed", time.Time{}
 	}
 	exp, ok := claims["exp"].(float64)
 	if !ok || exp <= 0 {
-		return "malformed"
+		return "malformed", time.Time{}
 	}
 	if exp <= float64(time.Now().Unix()) {
-		return "expired"
+		return "expired", time.Time{}
 	}
+	expiry := time.Unix(int64(exp), 0)
 	if expectedHost == "" {
-		return "ok"
+		return "ok", expiry
 	}
 	switch aud := claims["aud"].(type) {
 	case string:
 		if strings.EqualFold(tokenHost(aud), expectedHost) {
-			return "ok"
+			return "ok", expiry
 		}
 	case []any:
 		for _, value := range aud {
 			if audience, ok := value.(string); ok && strings.EqualFold(tokenHost(audience), expectedHost) {
-				return "ok"
+				return "ok", expiry
 			}
 		}
 	}
-	return "audience_mismatch"
+	return "audience_mismatch", time.Time{}
 }
 
 func tokenHost(value string) string {

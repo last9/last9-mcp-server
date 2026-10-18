@@ -83,12 +83,24 @@ func TestStatelessStreamableHandler(t *testing.T) {
 }
 
 func TestStatelessHTTPUserToken(t *testing.T) {
+	// forged has valid claims but the API refuses it, as it would a bad signature.
+	forged := testUserJWT(t, map[string]any{"exp": time.Now().Add(time.Hour).Unix(), "aud": []string{"http://127.0.0.1"}, "forged": true})
 	var mu sync.Mutex
 	seen := map[string]string{}
+	verified := map[string]int{}
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		seen[r.URL.Query().Get("id")] = r.Header.Get("X-LAST9-API-TOKEN")
-		mu.Unlock()
+		defer mu.Unlock()
+		token := r.Header.Get("X-LAST9-API-TOKEN")
+		if r.URL.Path == "/datasources" {
+			verified[token]++
+			if token == "Bearer "+forged {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+		} else {
+			seen[r.URL.Query().Get("id")] = token
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{}`))
 	}))
@@ -100,7 +112,7 @@ func TestStatelessHTTPUserToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
-	srv.Server.AddReceivingMiddleware(userTokenMiddleware(cfg))
+	srv.Server.AddReceivingMiddleware(userTokenMiddleware(cfg, newUserTokenVerifier(apiUserTokenCheck(cfg))))
 	mcp.AddTool(srv.Server, &mcp.Tool{Name: "probe"}, func(ctx context.Context, _ *mcp.CallToolRequest, in struct {
 		ID string `json:"id"`
 	}) (*mcp.CallToolResult, any, error) {
@@ -175,10 +187,20 @@ func TestStatelessHTTPUserToken(t *testing.T) {
 	if result := post(`{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"probe","arguments":{"id":"header"}}}`, tokens[0]); result["error"] != nil {
 		t.Fatalf("header call: %v", result["error"])
 	}
+	if result := post(`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"probe","arguments":{"id":"forged"}}}`, forged); !isToolError(result, "user token rejected: unauthorized") {
+		t.Fatalf("forged token call was not rejected: %v", result)
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	if seen["a"] != "Bearer "+tokens[0] || seen["b"] != "Bearer "+tokens[1] || seen["header"] != "Bearer "+tokens[0] {
 		t.Fatalf("downstream tokens did not match their calls: %v", seen)
+	}
+	if _, ran := seen["forged"]; ran {
+		t.Fatal("tool ran with a token the API refused")
+	}
+	// One verification per token: the header call reused tokens[0]'s.
+	if verified["Bearer "+tokens[0]] != 1 || verified["Bearer "+tokens[1]] != 1 || verified["Bearer "+forged] != 1 {
+		t.Fatalf("verification calls per token = %v, want 1 each", verified)
 	}
 }
 

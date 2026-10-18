@@ -14,6 +14,7 @@ import (
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -32,6 +33,9 @@ func TestUserTokenMiddleware(t *testing.T) {
 	other := testUserJWT(t, map[string]any{"exp": time.Now().Add(time.Hour).Unix(), "aud": []string{"api.example.test"}})
 	expired := testUserJWT(t, map[string]any{"exp": time.Now().Add(-time.Hour).Unix(), "aud": []string{"api.example.test"}})
 	wrongAud := testUserJWT(t, map[string]any{"exp": time.Now().Add(time.Hour).Unix(), "aud": []string{"elsewhere.test"}})
+	// forged has valid claims; only the API can tell its signature is bad.
+	forged := testUserJWT(t, map[string]any{"exp": time.Now().Add(time.Hour).Unix(), "aud": []string{"api.example.test"}, "forged": true})
+	unverifiable := testUserJWT(t, map[string]any{"exp": time.Now().Add(time.Hour).Unix(), "aud": []string{"api.example.test"}, "unverifiable": true})
 	tests := []struct {
 		name, method, meta, header, wantToken, wantError, wantResult string
 		shadow                                                       bool
@@ -45,7 +49,11 @@ func TestUserTokenMiddleware(t *testing.T) {
 		{"expired", "tools/call", expired, "", "", "user token rejected: expired", "expired", false},
 		{"malformed", "tools/call", "bad-token", "", "", "user token rejected: malformed", "malformed", false},
 		{"audience", "tools/call", wrongAud, "", "", "user token rejected: audience_mismatch", "audience_mismatch", false},
+		{"forged signature", "tools/call", forged, "", "", "user token rejected: unauthorized", "unauthorized", false},
+		{"forged header", "tools/call", "", forged, "", "user token rejected: unauthorized", "unauthorized", false},
+		{"verification unavailable", "tools/call", unverifiable, "", "", "user token rejected: verify_failed", "verify_failed", false},
 		{"shadow valid", "tools/call", valid, "", "", "", "", true},
+		{"shadow forged", "tools/call", forged, "", "", "", "", true},
 		{"shadow missing", "tools/call", "", "", "", "", "", true},
 		{"shadow malformed", "tools/call", "bad-token", "", "", "", "", true},
 		{"shadow expired", "tools/call", expired, "", "", "", "", true},
@@ -59,7 +67,18 @@ func TestUserTokenMiddleware(t *testing.T) {
 			defer log.SetOutput(original)
 			cfg := models.Config{APIBaseURL: "https://api.example.test/api/v4/organizations/test", UserTokenFallback: tt.shadow}
 			called := false
-			mw := userTokenMiddleware(cfg)
+			var checked []string
+			verifier := newUserTokenVerifier(func(_ context.Context, token string) error {
+				checked = append(checked, token)
+				switch token {
+				case forged:
+					return &utils.UpstreamHTTPError{StatusCode: http.StatusUnauthorized}
+				case unverifiable:
+					return &utils.UpstreamHTTPError{StatusCode: http.StatusBadGateway}
+				}
+				return nil
+			})
+			mw := userTokenMiddleware(cfg, verifier)
 			h := mw(func(ctx context.Context, _ string, _ mcp.Request) (mcp.Result, error) {
 				called = true
 				got, _ := auth.RequestTokenFromContext(ctx)
@@ -99,6 +118,14 @@ func TestUserTokenMiddleware(t *testing.T) {
 				t.Fatal("next was not called")
 			} else if !tt.shadow && logs.Len() != 0 {
 				t.Fatalf("accepted call logged %q", logs.String())
+			}
+			// Only strict mode verifies, and only tokens whose claims passed.
+			wantChecked := tt.wantToken
+			if tt.wantResult == "unauthorized" || tt.wantResult == "verify_failed" {
+				wantChecked = tt.meta + tt.header
+			}
+			if gotChecked := strings.Join(checked, ","); gotChecked != wantChecked {
+				t.Fatalf("verified tokens = %q, want %q", gotChecked, wantChecked)
 			}
 			if tt.shadow {
 				wantResult := "ok"

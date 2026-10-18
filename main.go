@@ -122,7 +122,7 @@ func parseDumpToolsets() (toolsets.Set, error) {
 func toolsetServerBuilder(cfg models.Config) func(toolsets.Set) (*last9mcp.Last9MCPServer, error) {
 	var middleware []mcp.Middleware
 	if cfg.HTTPMode {
-		middleware = append(middleware, userTokenMiddleware(cfg))
+		middleware = append(middleware, userTokenMiddleware(cfg, newUserTokenVerifier(apiUserTokenCheck(cfg))))
 	}
 	return func(allowed toolsets.Set) (*last9mcp.Last9MCPServer, error) {
 		c := cfg
