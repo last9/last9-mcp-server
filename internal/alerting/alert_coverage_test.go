@@ -268,7 +268,7 @@ func TestGetAlertCoverage_CountsWithoutGapsIsNotComplete(t *testing.T) {
 func TestGetAlertCoverage_UpstreamErrors(t *testing.T) {
 	for _, status := range []int{http.StatusForbidden, http.StatusInternalServerError} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
-			stub := &coverageStub{status: status, body: `{"error":"nope"}`}
+			stub := &coverageStub{status: status, body: `{"error":"nope https://internal.example token=s3cret"}`}
 			result, err := callAlertCoverage(t, stub, GetAlertCoverageArgs{})
 			if err == nil {
 				t.Fatalf("result = %+v, want an error for HTTP %d", result, status)
@@ -276,6 +276,24 @@ func TestGetAlertCoverage_UpstreamErrors(t *testing.T) {
 			if !strings.Contains(err.Error(), strconv.Itoa(status)) {
 				t.Errorf("error = %v, want the status", err)
 			}
+			for _, leak := range []string{"nope", "internal.example", "s3cret"} {
+				if strings.Contains(err.Error(), leak) {
+					t.Errorf("error = %v, leaks upstream body %q", err, leak)
+				}
+			}
 		})
+	}
+}
+
+func TestGetAlertCoverage_EndpointMissingSaysCoverageUnchecked(t *testing.T) {
+	stub := &coverageStub{status: http.StatusNotFound, body: `404 page not found`}
+	result, err := callAlertCoverage(t, stub, GetAlertCoverageArgs{})
+	if err == nil {
+		t.Fatalf("result = %+v, want an error", result)
+	}
+	for _, want := range []string{"not available on this Last9 deployment", "coverage was not checked", "404"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, missing %q", err, want)
+		}
 	}
 }

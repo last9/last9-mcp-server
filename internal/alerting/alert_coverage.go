@@ -3,6 +3,7 @@ package alerting
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -13,6 +14,7 @@ import (
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/alerts"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -81,7 +83,7 @@ func NewGetAlertCoverageHandler(client *http.Client, cfg models.Config) func(con
 
 		resp, err := alerts.GetAlertCoverage(ctx, last9api.NewClient(client, cfg), in)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, alertCoverageError(err)
 		}
 
 		payload, err := json.Marshal(buildAlertCoverageResult(in, resp))
@@ -109,6 +111,16 @@ func parseAlertCoverageArgs(args GetAlertCoverageArgs) (alerts.GetAlertCoverageI
 		EntityID:    strings.TrimSpace(args.EntityID),
 		MutedDays:   mutedDays,
 	}, nil
+}
+
+// The route is org-scoped and takes no path params, so a 404 means the deployment
+// predates it; say so plainly so an agent never reads the failure as "no gaps".
+func alertCoverageError(err error) error {
+	var upstream *utils.UpstreamHTTPError
+	if errors.As(err, &upstream) && upstream.StatusCode == http.StatusNotFound {
+		return errors.New("alert coverage is not available on this Last9 deployment yet (HTTP 404), so coverage was not checked; do not report it as complete")
+	}
+	return err
 }
 
 func buildAlertCoverageResult(in alerts.GetAlertCoverageInput, resp *alerts.GetAlertCoverageResponse) alertCoverageResult {
