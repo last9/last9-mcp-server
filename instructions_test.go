@@ -371,11 +371,20 @@ func lineNaming(instructions, tool string) string {
 }
 
 func TestServerInstructionsStartInvestigationWithServiceProfile(t *testing.T) {
-	for _, spec := range []string{"", "logs", "traces"} {
-		t.Run("toolsets="+spec, func(t *testing.T) {
-			instructions, _ := initializeOver(t, spec)
-			if got, want := lineNaming(instructions, "get_service_profile"), "- Start a service investigation with `get_service_profile`."; got != want {
-				t.Errorf("get_service_profile line = %q, want %q", got, want)
+	tests := []struct {
+		spec string
+		want string
+	}{
+		{spec: "", want: "- Start a service investigation with `get_service_profile`."},
+		{spec: "logs", want: "- Start a service investigation with `get_service_profile`."},
+		{spec: "traces", want: "- Start a service investigation with `get_service_profile`."},
+		{spec: "alerts"},
+	}
+	for _, tt := range tests {
+		t.Run("toolsets="+tt.spec, func(t *testing.T) {
+			instructions, _ := initializeOver(t, tt.spec)
+			if got := lineNaming(instructions, "get_service_profile"); got != tt.want {
+				t.Errorf("get_service_profile line = %q, want %q", got, tt.want)
 			}
 			if discovery, _, _ := strings.Cut(instructions, "## Prefer dedicated tools"); strings.Contains(discovery, "`get_service_profile`") {
 				t.Errorf("get_service_profile listed with discovery tools:\n%s", instructions)
