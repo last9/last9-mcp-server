@@ -1,5 +1,5 @@
 Gets the historical firing state of alert rules over a specified time range, grouped by rule_id.
-It polls the /alerts/monitor API at each step within the time range and returns 1 for firing and 0 otherwise at each timestamp.
+It samples alert state at each step within the time range and returns 1 for firing and 0 otherwise at each timestamp.
 
 Required parameters:
 - start_time: Unix epoch start of the range (inclusive)

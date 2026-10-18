@@ -141,6 +141,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Name:        "prometheus_range_query",
 		Annotations: readOnlyTool("Run PromQL Range Query"),
 		Description: prompts.PromqlRangeQueryDetails,
+		InputSchema: apm.PromqlRangeQueryInputSchema(),
 	}, apm.NewPromqlRangeQueryHandler(client, cfg)))
 
 	// Register PromQL instant query tool
@@ -148,6 +149,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Name:        "prometheus_instant_query",
 		Annotations: readOnlyTool("Run PromQL Instant Query"),
 		Description: prompts.PromqlInstantQueryDetails,
+		InputSchema: apm.PromqlInstantQueryInputSchema(),
 	}, apm.NewPromqlInstantQueryHandler(client, cfg)))
 
 	// Register PromQL label values tool
@@ -175,8 +177,10 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	// Register service logs tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_service_logs",
+		Meta:        mcp.Meta{"last9/coverage": true},
 		Annotations: readOnlyTool("Get Service Logs"),
 		Description: prompts.GetServiceLogsDescription,
+		InputSchema: logs.GetServiceLogsInputSchema(),
 	}, logs.NewGetServiceLogsHandler(client, cfg)))
 
 	// Register drop rules tool
@@ -208,6 +212,84 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 	}, alerting.NewGetAlertConfigHandler(client, cfg)))
 
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "create_alert",
+		Annotations: writeTool("Create Alert", false, false),
+		Description: prompts.CreateAlertDescription,
+	}, alerting.NewCreateAlertHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "update_alert",
+		Annotations: writeTool("Update Alert", true, true),
+		Description: prompts.UpdateAlertDescription,
+	}, alerting.NewUpdateAlertHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "patch_alert",
+		Annotations: writeTool("Patch Alert", true, true),
+		Description: prompts.PatchAlertDescription,
+	}, alerting.NewPatchAlertHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "delete_alert",
+		Annotations: writeTool("Delete Alert", true, true),
+		Description: prompts.DeleteAlertDescription,
+	}, alerting.NewDeleteAlertHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "mute_alert_group",
+		Annotations: writeTool("Mute Alert Group", true, true),
+		Description: prompts.MuteAlertGroupDescription,
+	}, alerting.NewMuteAlertGroupHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "acknowledge_alert",
+		Annotations: writeTool("Acknowledge Alert", false, true),
+		Description: prompts.AcknowledgeAlertDescription,
+	}, alerting.NewAcknowledgeAlertHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "reassign_alert",
+		Annotations: writeTool("Reassign Alert", false, true),
+		Description: prompts.ReassignAlertDescription,
+	}, alerting.NewReassignAlertHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "create_notification_channel",
+		Annotations: writeTool("Create Notification Channel", false, false),
+		Description: prompts.CreateNotificationChannelDescription,
+	}, alerting.NewCreateNotificationChannelHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "attach_notification_channel",
+		Annotations: writeTool("Attach Notification Channel", false, true),
+		Description: prompts.AttachNotificationChannelDescription,
+	}, alerting.NewAttachNotificationChannelHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "detach_notification_channel",
+		Annotations: writeTool("Detach Notification Channel", true, true),
+		Description: prompts.DetachNotificationChannelDescription,
+	}, alerting.NewDetachNotificationChannelHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "delete_notification_channel",
+		Annotations: writeTool("Delete Notification Channel", true, false),
+		Description: prompts.DeleteNotificationChannelDescription,
+	}, alerting.NewDeleteNotificationChannelHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "validate_alert_expression",
+		Annotations: readOnlyTool("Validate Alert Expression"),
+		Description: prompts.ValidateAlertExpressionDescription,
+	}, alerting.NewValidateAlertExpressionHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "recommend_alert_config",
+		Annotations: readOnlyTool("Recommend Alert Config"),
+		Description: prompts.RecommendAlertConfigDescription,
+	}, alerting.NewRecommendAlertConfigHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_alert_groups",
 		Annotations: readOnlyTool("Get Alert Groups"),
 		Description: prompts.GetAlertGroupsDescription,
@@ -219,6 +301,20 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Annotations: readOnlyTool("Get Entity Alert Rules"),
 		Description: prompts.GetEntityAlertRulesDescription,
 	}, alerting.NewGetEntityAlertRulesHandler(client, cfg)))
+
+	// Register describe alert chart tool (read-only enumerate of alertable signals on a covered Discover chart)
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "describe_alert_chart",
+		Annotations: readOnlyTool("Describe Alert Chart"),
+		Description: prompts.DescribeAlertChartDescription,
+	}, alerting.NewDescribeAlertChartHandler(client, cfg)))
+
+	// Register create alert from chart tool (one-call static-threshold rule from chart identity)
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "create_alert_from_chart",
+		Annotations: writeTool("Create Alert From Chart", false, false),
+		Description: prompts.CreateAlertFromChartDescription,
+	}, alerting.NewCreateAlertFromChartHandler(client, cfg)))
 
 	// Register alerts tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
@@ -247,6 +343,7 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) error 
 		Name:        "get_service_traces",
 		Annotations: readOnlyTool("Get Service Traces"),
 		Description: prompts.GetServiceTracesDescription,
+		InputSchema: traces.GetServiceTracesInputSchema(),
 	}, traces.GetServiceTracesHandler(client, cfg)))
 
 	// Register log attributes tool

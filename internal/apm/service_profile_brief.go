@@ -19,6 +19,10 @@ type serviceProfileResponse struct {
 	ErrorDetection *errorDetectionResponse   `json:"error_detection,omitempty"`
 	Dependencies   *dependenciesResponse     `json:"dependencies,omitempty"`
 	Sources        []string                  `json:"sources,omitempty"`
+	Domains        []string                  `json:"domains,omitempty"`
+	DomainEnvs     map[string][]string       `json:"domain_envs,omitempty"`
+	LogIndexes     []string                  `json:"log_indexes,omitempty"`
+	LogIndexEnvs   map[string][]string       `json:"log_index_envs,omitempty"`
 }
 
 type derivationStatusResponse struct {
@@ -80,6 +84,12 @@ func formatInvestigationBrief(p serviceProfileResponse) string {
 	if p.SignalShape.LevelField != "" {
 		fmt.Fprintf(&b, " | level_field: %s", p.SignalShape.LevelField)
 	}
+	if domains := formatProfileRoutes(p.Domains, p.DomainEnvs); domains != "" {
+		fmt.Fprintf(&b, "\n  → domain: %s", domains)
+	}
+	if indexes := formatProfileRoutes(p.LogIndexes, p.LogIndexEnvs); indexes != "" {
+		fmt.Fprintf(&b, "\n  → log index: %s", indexes)
+	}
 
 	// Severity routing is advice about querying logs; with no logs to query it
 	// is noise competing with the name-check hint below.
@@ -112,4 +122,19 @@ func formatInvestigationBrief(p serviceProfileResponse) string {
 		fmt.Fprintf(&b, "\n  ingest fix: %s", p.ErrorDetection.RecommendedIngestFix)
 	}
 	return b.String()
+}
+
+func formatProfileRoutes(names []string, envs map[string][]string) string {
+	var routes []string
+	for _, name := range names {
+		if name == "" {
+			continue
+		}
+		route := name
+		if environments := envs[name]; len(environments) > 0 {
+			route += " (" + strings.Join(environments, ", ") + ")"
+		}
+		routes = append(routes, route)
+	}
+	return strings.Join(routes, ", ")
 }

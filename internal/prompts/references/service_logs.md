@@ -48,16 +48,36 @@ Do not invent org-specific attribute names. Discover fields with `get_log_attrib
 - When the user has not named an exact service, do not use this raw-log tool for broad discovery.
 - Use `prometheus_instant_query` first with `sum by (name, service_name, env) (physical_index_service_count{destination="logs"})`.
 - Use `service_name` as the service argument, `env` as the environment when present, and `name` as the physical index name.
-- If `name="default"`, omit the `index` parameter. For a non-default physical index selected by the user, use `index: "physical_index:<name>"`.
+- If `name="default"`, omit the `index` parameter. For a non-default physical index selected by the user or reported by `get_service_profile`, use `index: "physical_index:<name>"`. Match the requested environment using `log_index_envs`; query matching indexes separately.
 - If the backend rejects explicit physical index filtering, retry without `index` and tell the user that explicit physical index filtering is unavailable for that backend.
 - Prefer `get_logs` for aggregate counts. Use this tool after the service/env/index and pattern are already narrowed, and request a small `limit` for samples.
+
+## Coverage metadata for clients
+
+`tools/list` advertises `_meta: {"last9/coverage": true}` for this tool. Successful
+calls may return `_meta["last9/coverage"]` with `version: 1`, `subject: "logs"`,
+`attempted_scope`, `covered_scope`, `status` (`complete` or `partial`), and
+`result_state` (`data` or `empty`). The scope identifies the resolved UTC time
+bounds, selected index, and SHA-256 of the compiled filter pipeline.
+
+`complete` requires every planned time chunk to return a valid successful log
+result, without warnings, result caps, or discarded entries, and without losing
+sub-millisecond precision from the requested bounds. A reached cap or discarded
+entries makes a verified response `partial`; its `covered_scope` is empty because
+the available sample does not establish an exhaustive sub-window. Other uncertain
+responses omit the descriptor. The search response currently lacks an established
+completion contract and therefore omits the descriptor. An empty result alone
+never establishes completeness. Coverage applies to this tool's resolved query,
+not to all telemetry or the user's wider investigation. Existing JSON content and
+dashboard reference metadata are preserved. Clients must treat absent descriptors
+as unknown.
 
 ## Rules
 
 - Output a JSON object of tool arguments, not a query pipeline.
 - Prefer `start_time_iso` and `end_time_iso` over `lookback_minutes` when the user provides absolute times.
 - Keep `severity_filters` and `body_filters` as arrays of strings.
-- Do not invent `index` or `env` unless the user explicitly asked for them or supplied that context.
+- Do not invent `index` or `env`. Use user-supplied context or profile routing fields; never infer index environments from `deployment.envs`. Omit `index` for `default` or when unknown.
 - **NEVER use `body_filters` for HTTP status codes or values stored as structured attributes.** Use `http_status_*` or `attribute_filters`.
 
 ## Examples

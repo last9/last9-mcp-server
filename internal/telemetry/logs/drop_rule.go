@@ -31,8 +31,8 @@ type DropRuleFilter struct {
 
 // AddDropRuleArgs represents the input arguments for adding drop rules
 type AddDropRuleArgs struct {
-	Name    string           `json:"name" jsonschema:"Name for the drop rule (e.g. test-service-drop-rule)"`
-	Filters []DropRuleFilter `json:"filters" jsonschema:"Array of filter conditions to match logs for dropping"`
+	Name    string           `json:"name" jsonschema:"(Required) Name for the drop rule (e.g. test-service-drop-rule)"`
+	Filters []DropRuleFilter `json:"filters" jsonschema:"(Required) Array of filter conditions to match logs for dropping"`
 }
 
 func dropOTelSettingsListURL(cfg models.Config) (*url.URL, error) {
