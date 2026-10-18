@@ -276,6 +276,40 @@ func TestGetMetricStatus_UpstreamErrorFailsTool(t *testing.T) {
 	}
 }
 
+func TestGetMetricStatus_MissingPayloadFailsTool(t *testing.T) {
+	now := time.Now().UTC().Unix()
+	for _, stage := range []string{"count(last_over_time(", "time() - timestamp(", "scrape_interval("} {
+		for _, body := range []string{"", "null"} {
+			t.Run(fmt.Sprintf("%s body=%q", stage, body), func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var payload struct {
+						Query string `json:"query"`
+					}
+					_ = json.NewDecoder(r.Body).Decode(&payload)
+					w.Header().Set("Content-Type", "application/json")
+					if strings.Contains(payload.Query, stage) {
+						_, _ = fmt.Fprint(w, body)
+						return
+					}
+					_, _ = fmt.Fprintf(w, `[{"metric":{},"value":[%d,"60"]}]`, now)
+				}))
+				defer server.Close()
+
+				cfg := models.Config{APIBaseURL: server.URL, Region: "us-east-1"}
+				cfg.TokenManager = &auth.TokenManager{AccessToken: "mock-access-token", ExpiresAt: time.Now().Add(time.Hour)}
+
+				result, _, err := NewGetMetricStatusHandler(server.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetMetricStatusArgs{Metric: "up", WindowMinutes: 60})
+				if err == nil {
+					t.Fatalf("missing payload became a successful status: %s", result.Content[0].(*mcp.TextContent).Text)
+				}
+				if !strings.Contains(err.Error(), "empty response") {
+					t.Fatalf("err=%v, want it to name the empty response", err)
+				}
+			})
+		}
+	}
+}
+
 func TestGetMetricStatus_DropsNonFiniteSamples(t *testing.T) {
 	now := time.Now().UTC().Unix()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
