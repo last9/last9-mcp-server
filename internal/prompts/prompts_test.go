@@ -512,6 +512,24 @@ func TestRemovalDescriptionsScopeCleanupToMarkedResources(t *testing.T) {
 	}
 }
 
+// Models sent "42" for channel_id once cleanup prose preceded the parameter line, and the
+// schema rejects strings; the id's type is stated before any cleanup guidance.
+func TestRemovalDescriptionsStateIntegerIDBeforeCleanupScope(t *testing.T) {
+	for name, tc := range map[string]struct{ desc, param string }{
+		"delete_notification_channel": {prompts.DeleteNotificationChannelDescription, "channel_id (required, integer"},
+		"detach_notification_channel": {prompts.DetachNotificationChannelDescription, "attachment_id (required, integer"},
+	} {
+		param, cleanup := strings.Index(tc.desc, tc.param), strings.Index(tc.desc, "To clean up")
+		if param < 0 {
+			t.Errorf("%s does not state %q", name, tc.param)
+			continue
+		}
+		if cleanup >= 0 && cleanup < param {
+			t.Errorf("%s puts cleanup scope before its id parameter", name)
+		}
+	}
+}
+
 func TestReferenceManualsEmbedded(t *testing.T) {
 	for name, body := range map[string]string{
 		"logjson":      prompts.LogjsonReference,
