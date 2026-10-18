@@ -530,6 +530,13 @@ func TestRemovalDescriptionsStateIntegerIDBeforeCleanupScope(t *testing.T) {
 	}
 }
 
+// delete_alert points at this listing for the marker, so name the label it prints.
+func TestEntityAlertRulesDescriptionNamesCreatedViaLabel(t *testing.T) {
+	if !strings.Contains(prompts.GetEntityAlertRulesDescription, `"Created Via:"`) {
+		t.Error(`get_entity_alert_rules does not name its "Created Via:" output line`)
+	}
+}
+
 func TestReferenceManualsEmbedded(t *testing.T) {
 	for name, body := range map[string]string{
 		"logjson":      prompts.LogjsonReference,
