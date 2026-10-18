@@ -28,12 +28,9 @@ func identifyException(e exceptionAggregate, isAllEnvs bool) exceptionIdentity {
 	return exceptionIdentity{Fingerprint: fingerprint, ID: strings.Join(parts, "-")}
 }
 
-// exceptionLinkRow narrows the page to the row's environment when it has one, so the link stays
+// exceptionLinkRow narrows the page to the row's environment, Not Set included, so the link stays
 // valid whatever environment the reader last picked; the narrowed page drops the id's env suffix.
-func exceptionLinkRow(e exceptionAggregate, identity exceptionIdentity) deeplink.ExceptionRow {
-	if e.DeploymentEnvironment == "" {
-		return deeplink.ExceptionRow{ID: identity.ID}
-	}
+func exceptionLinkRow(e exceptionAggregate) deeplink.ExceptionRow {
 	return deeplink.ExceptionRow{ID: identifyException(e, false).ID, Env: e.DeploymentEnvironment}
 }
 

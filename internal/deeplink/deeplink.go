@@ -81,22 +81,21 @@ func (b *Builder) BuildExceptionsLink(fromMs, toMs int64) string {
 	return b.exceptionsLink(b.exceptionsParams(fromMs, toMs))
 }
 
-// ExceptionRow names one row of the exceptions page. A non-empty Env narrows the page to that
-// environment, and ID must then be the row's id without the env suffix the All view adds.
+// ExceptionRow names one row of the exceptions page. The link narrows the page to Env (empty is
+// the dashboard's Not Set), so ID is the row's id without the env suffix the All view adds.
 type ExceptionRow struct {
 	ID  string
 	Env string
 }
 
 // BuildExceptionLink creates an exceptions deep link that opens one row's detail panel. The page
-// opens it only if the row is among those it loads for the window.
+// opens it only if the row is among those it loads for the window. The env filter is always set:
+// without one the page applies the environment the reader last picked, which can hide the row.
 func (b *Builder) BuildExceptionLink(fromMs, toMs int64, row ExceptionRow) string {
 	params := b.exceptionsParams(fromMs, toMs)
 	params.Set("exception_id", row.ID)
-	if row.Env != "" {
-		if filterValue, err := json.Marshal([]string{fmt.Sprintf(`deployment_environment="%s"`, row.Env)}); err == nil {
-			params.Set("filter", string(filterValue))
-		}
+	if filterValue, err := json.Marshal([]string{fmt.Sprintf(`deployment_environment="%s"`, row.Env)}); err == nil {
+		params.Set("filter", string(filterValue))
 	}
 	return b.exceptionsLink(params)
 }

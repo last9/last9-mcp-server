@@ -169,7 +169,7 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 			row := map[string]interface{}{
 				"fingerprint":            identity.Fingerprint,
 				"exception_id":           identity.ID,
-				"url":                    dlBuilder.BuildExceptionLink(startMs, endMs, exceptionLinkRow(exceptionData, identity)),
+				"url":                    dlBuilder.BuildExceptionLink(startMs, endMs, exceptionLinkRow(exceptionData)),
 				"service_name":           exceptionData.ServiceName,
 				"span_name":              exceptionData.SpanName,
 				"exception_type":         exceptionData.ExceptionType,
