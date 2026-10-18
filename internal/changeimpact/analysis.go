@@ -252,47 +252,43 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 	})
 	wg.Wait()
 
-	var triggers []string
+	var regressions []Regression
 	goldenErr := firstErr(baselineErr, afterErr)
 	if goldenErr != nil {
 		report.GoldenSignals.Error = goldenErr.Error()
 	} else {
 		for i, service := range scope {
-			role := "dependent"
+			role := RoleDependent
 			if i == 0 {
-				role = "changed"
+				role = RoleChanged
 			}
 			report.GoldenSignals.Services = append(report.GoldenSignals.Services, compareSignals(service, role, baseline[service], after[service]))
 		}
-		triggers = append(triggers, serviceRegressions(req.Service, baseline[req.Service], after[req.Service])...)
+		regressions = append(regressions, serviceRegressions(scopedService{name: req.Service, role: RoleChanged}, baseline[req.Service], after[req.Service])...)
 	}
 
 	if alertsErr != nil {
 		report.Alerts.Error = alertsErr.Error()
 	} else {
 		for _, a := range alertsStarted {
-			trigger := fmt.Sprintf("alert %q started firing for %s at %s", firstNonEmpty(a.RuleName, a.RuleID), a.Service, a.StartedAt)
-			if a.EnvMatch == envMatchUnlabelled {
-				trigger += " (no env label)"
-			}
-			triggers = append(triggers, trigger)
+			regressions = append(regressions, alertRegression(a, req.Service))
 		}
 		report.Alerts.Started, report.Alerts.Dropped = truncate(alertsStarted, sectionTopN)
 	}
 
 	if goldenErr == nil {
 		for _, service := range scope[1:] {
-			triggers = append(triggers, serviceRegressions(service, baseline[service], after[service])...)
+			regressions = append(regressions, serviceRegressions(scopedService{name: service, role: RoleDependent}, baseline[service], after[service])...)
 		}
 	}
 
 	if apmErr != nil {
 		report.Deviations.APM.Error = apmErr.Error()
 	} else {
-		var apmTriggers []string
-		report.Deviations.APM, apmTriggers = summarizeAPMDeviations(apmResult.Entries)
+		var apmRegressions []Regression
+		report.Deviations.APM, apmRegressions = summarizeAPMDeviations(apmResult.Entries, req.Service)
 		report.Deviations.APM.Unavailable = apmResult.FailedQueries
-		triggers = append(triggers, apmTriggers...)
+		regressions = append(regressions, apmRegressions...)
 	}
 
 	switch {
@@ -307,7 +303,7 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 		report.Deviations.TraceAttributes.Warnings = traceResult.Warnings
 	}
 
-	in := verdictInputs{afterMinutes: w.afterMinutes, triggers: triggers, service: req.Service}
+	in := verdictInputs{afterMinutes: w.afterMinutes, regressions: regressions, service: req.Service}
 	// Trace deviations are left out: they explain a verdict and never trigger
 	// one, so losing them cannot hide a regression the verdict would find.
 	for _, s := range []struct {
@@ -403,18 +399,19 @@ func rounded(v float64) *float64 {
 
 // summarizeAPMDeviations bounds the entries for the report and lists each
 // regression get_apm_service_deviations classifies as a verdict trigger.
-func summarizeAPMDeviations(entries []apm.LeaderboardEntry) (APMDeviations, []string) {
+func summarizeAPMDeviations(entries []apm.LeaderboardEntry, changed string) (APMDeviations, []Regression) {
 	var section APMDeviations
-	var triggers []string
+	var regressions []Regression
 	items := make([]APMDeviation, 0, len(entries))
 	for _, e := range entries {
-		items = append(items, apmDeviation(e))
-		if e.Comparison.Classification == "regression" {
-			triggers = append(triggers, fmt.Sprintf("get_apm_service_deviations classifies %s %s as a regression", e.ServiceName, e.Comparison.Definition.Name))
+		d := apmDeviation(e)
+		items = append(items, d)
+		if d.Classification == "regression" {
+			regressions = append(regressions, apmRegression(d, changed))
 		}
 	}
 	section.Items, section.Dropped = truncate(items, sectionTopN)
-	return section, triggers
+	return section, regressions
 }
 
 func apmDeviation(e apm.LeaderboardEntry) APMDeviation {
