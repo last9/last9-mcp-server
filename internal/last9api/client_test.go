@@ -3,16 +3,21 @@ package last9api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
+	"last9-mcp/internal/writefault"
 )
 
 func testCfg(baseURL string) models.Config {
@@ -213,5 +218,70 @@ func TestDo_TransportEOFIsError(t *testing.T) {
 	var out json.RawMessage
 	if err := c.Do(context.Background(), "op", Request{Method: http.MethodDelete, Path: "/x"}, &out); err == nil {
 		t.Fatal("transport EOF returned nil error")
+	}
+}
+
+func TestDo_MarksWriteFaultsAsUnknownOutcome(t *testing.T) {
+	for _, fault := range writefault.All {
+		for _, out := range []any{&json.RawMessage{}, nil} {
+			t.Run(fmt.Sprintf("%s/decode=%v", fault, out != nil), func(t *testing.T) {
+				var requests atomic.Int32
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests.Add(1)
+					writefault.Serve(w, r, fault)
+				}))
+				defer srv.Close()
+				c := NewClient(&http.Client{Timeout: 200 * time.Millisecond}, testCfg(srv.URL))
+
+				err := c.Do(context.Background(), "create thing", Request{Method: http.MethodPost, Path: "/things/", Body: map[string]any{}}, out)
+				var unknown *utils.WriteOutcomeUnknownError
+				if !errors.As(err, &unknown) {
+					t.Fatalf("outcome not marked unknown: %v", err)
+				}
+				if !strings.Contains(err.Error(), "create thing") {
+					t.Errorf("error does not name the operation: %v", err)
+				}
+				if n := requests.Load(); n != 1 {
+					t.Errorf("server saw %d requests, want exactly 1", n)
+				}
+			})
+		}
+	}
+}
+
+func TestDo_MarksGatewayStatusOnWriteOnly(t *testing.T) {
+	for _, status := range []int{http.StatusBadGateway, http.StatusGatewayTimeout, http.StatusInternalServerError} {
+		for _, method := range []string{http.MethodPut, http.MethodGet} {
+			t.Run(fmt.Sprintf("%s/%d", method, status), func(t *testing.T) {
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(status)
+				}))
+				defer srv.Close()
+				c := NewClient(srv.Client(), testCfg(srv.URL))
+				err := c.Do(context.Background(), "op", Request{Method: method, Path: "/x"}, nil)
+				var upstream *utils.UpstreamHTTPError
+				if !errors.As(err, &upstream) || upstream.StatusCode != status {
+					t.Fatalf("want UpstreamHTTPError %d, got %v", status, err)
+				}
+				var unknown *utils.WriteOutcomeUnknownError
+				want := method == http.MethodPut && status != http.StatusInternalServerError
+				if got := errors.As(err, &unknown); got != want {
+					t.Fatalf("marked unknown = %v, want %v (%v)", got, want, err)
+				}
+			})
+		}
+	}
+}
+
+func TestDo_ReadFaultIsNotUnknownWriteOutcome(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writefault.Serve(w, r, writefault.Close)
+	}))
+	defer srv.Close()
+	c := NewClient(srv.Client(), testCfg(srv.URL))
+	err := c.Do(context.Background(), "op", Request{Method: http.MethodGet, Path: "/x"}, nil)
+	var unknown *utils.WriteOutcomeUnknownError
+	if err == nil || errors.As(err, &unknown) {
+		t.Fatalf("want a plain error for a failed read, got %v", err)
 	}
 }

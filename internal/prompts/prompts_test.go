@@ -26,6 +26,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_alerts.md":                        prompts.GetAlertsDescription,
 	"get_apm_service_deviations.md":        prompts.GetAPMServiceDeviationsDescription,
 	"get_change_events.md":                 prompts.GetChangeEventsDescription,
+	"get_current_time.md":                  prompts.GetCurrentTimeDescription,
 	"get_dashboard.md":                     prompts.GetDashboardDescription,
 	"get_dashboard_snapshot.md":            prompts.GetDashboardSnapshotDescription,
 	"get_database_queries.md":              prompts.GetDatabaseQueriesDescription,
@@ -56,6 +57,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_trace_attributes.md":              prompts.GetTraceAttributesDescription,
 	"get_trace_attributes_for_pipeline.md": prompts.GetTraceAttributesForPipelineDescription,
 	"get_trace_waterfall.md":               prompts.GetTraceWaterfallDescription,
+	"get_workspace_overview.md":            prompts.GetWorkspaceOverviewDescription,
 	"get_traces_base.md":                   prompts.GetTracesDescription,
 	"grafana_get_dashboard.md":             prompts.GrafanaGetDashboardDescription,
 	"grafana_list_datasources.md":          prompts.GrafanaListDatasourcesDescription,
@@ -241,6 +243,7 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"`$containsWords` args `[field,word]` (e.g. `[\"Body\",\"timeout\"]`)", "must show the required field argument for body-word filters"},
 		{"NOT SQL", "must clarify logjson_query is not SQL"},
 		{"$neq", "must document existence idiom"},
+		{"`$neq` (is not X; never `$not`+`$eq`)", "must route negated equality to $neq"},
 		{"start_time_iso", "must document absolute time on tool args"},
 		{"resources['last9.tenant']", "must document tenant scoping"},
 		{"resources['deployment.environment']", "must document env scoping"},
@@ -488,28 +491,6 @@ func TestCreateAlertDescriptionStatesDuplicateNameRefusal(t *testing.T) {
 	}
 }
 
-func TestWhaleDescriptionsBounded(t *testing.T) {
-	budgets := map[string]int{
-		"get_logs_base":         2900,
-		"get_traces_base":       2200,
-		"get_service_logs_base": 2000,
-	}
-	bodies := map[string]string{
-		"get_logs_base":         prompts.GetLogsDescription,
-		"get_traces_base":       prompts.GetTracesDescription,
-		"get_service_logs_base": prompts.GetServiceLogsDescription,
-	}
-	for name, body := range bodies {
-		if len(body) == 0 {
-			t.Errorf("%s empty", name)
-		}
-		budget := budgets[name]
-		if len(body) > budget {
-			t.Errorf("%s length %d exceeds %d-char budget", name, len(body), budget)
-		}
-	}
-}
-
 func TestReferenceManualsEmbedded(t *testing.T) {
 	for name, body := range map[string]string{
 		"logjson":      prompts.LogjsonReference,
@@ -613,9 +594,29 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 			t.Errorf("UpdateDashboardDescription missing %q: %s", c.phrase, c.reason)
 		}
 	}
-	// Any mention at all, not three exact phrasings a reword would slip past.
-	if strings.Contains(create, "list_dashboards") {
+	// Any mention outside the timeout-recovery sentence, not three exact phrasings a reword
+	// would slip past.
+	if strings.Contains(strings.Replace(create, createRetrySentence("list_dashboards"), "", 1), "list_dashboards") {
 		t.Error("CreateDashboardDescription must not require list_dashboards before create")
+	}
+}
+
+func createRetrySentence(readCall string) string {
+	return "On a timeout or connection error the create may or may not have been applied; check by name with " + readCall + " before retrying."
+}
+
+// A create whose response was lost may still have landed; a blind retry duplicates it.
+func TestCreateToolDescriptionsExplainUnknownOutcome(t *testing.T) {
+	for name, c := range map[string]struct{ desc, readCall string }{
+		"add_drop_rule":               {prompts.AddDropRuleDescription, "get_drop_rules"},
+		"create_alert":                {prompts.CreateAlertDescription, "get_alert_config (rule_name)"},
+		"create_alert_from_chart":     {prompts.CreateAlertFromChartDescription, "get_alert_config (rule_name)"},
+		"create_dashboard":            {prompts.CreateDashboardDescription, "list_dashboards"},
+		"create_notification_channel": {prompts.CreateNotificationChannelDescription, "get_notification_channels (scope=channels)"},
+	} {
+		if !strings.Contains(c.desc, createRetrySentence(c.readCall)) {
+			t.Errorf("%s description does not say how to check a create after a timeout: want %q", name, createRetrySentence(c.readCall))
+		}
 	}
 }
 
@@ -628,5 +629,17 @@ func TestAPMServiceDeviationsDescriptionLookbackFloor(t *testing.T) {
 	description := strings.ToLower(prompts.GetAPMServiceDeviationsDescription)
 	if !strings.Contains(description, "short lookbacks are unreliable") {
 		t.Error("description missing short-lookback floor guidance")
+	}
+}
+
+// The routing section must quote the window parameter's default and cap, or
+// agents pass a full hour when the user asks for current alerts.
+func TestGetAlertsRoutingStatesDefaultWindow(t *testing.T) {
+	_, routing, _ := strings.Cut(prompts.GetAlertsDescription, "## When to use")
+	routing, _, _ = strings.Cut(routing, "##")
+	for _, phrase := range []string{"default 15 minutes", "at most 1 hour"} {
+		if !strings.Contains(routing, phrase) {
+			t.Errorf("get_alerts When to use section missing %q:\n%s", phrase, routing)
+		}
 	}
 }

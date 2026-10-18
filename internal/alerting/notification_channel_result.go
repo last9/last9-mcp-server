@@ -15,7 +15,8 @@ import (
 // Upstream bodies are never relayed: channel requests carry secrets that a rejection can echo.
 func notificationChannelErrorResult(err error, hints map[int]string) (*mcp.CallToolResult, any, error) {
 	var upstream *utils.UpstreamHTTPError
-	if !errors.As(err, &upstream) {
+	var unknown *utils.WriteOutcomeUnknownError
+	if !errors.As(err, &upstream) || errors.As(err, &unknown) {
 		return nil, nil, err
 	}
 	if hint, ok := hints[upstream.StatusCode]; ok {
