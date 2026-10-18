@@ -15,8 +15,8 @@ Optional parameters (values are trimmed; blank strings are ignored):
 - service: Service name.
 - environment: Deployment environment (for example prod).
 - entity_id: Alert group (entity) UUID, as returned by get_alert_groups.
-- muted_days: Whole days, 1 to 3650. Default: 7. A rule muted longer than this is a
-  muted_too_long gap.
+- muted_days: Whole days, 1 to 3650. Default: 7; 0 means the default. A rule muted
+  longer than this is a muted_too_long gap.
 
 Output is compact JSON {scope, generated_at, complete, summary, counts, groups}:
 - groups: one entry per gap kind present, as {kind, count, gaps}, in the order above.
@@ -25,8 +25,8 @@ Output is compact JSON {scope, generated_at, complete, summary, counts, groups}:
   is not recorded; mute_until is omitted for an indefinite mute),
   suggested_tool, and suggested_args (whichever of entity_id, rule_id, signal apply).
 - counts: the API's total per gap kind.
-- complete: true only when there are no gaps in the scope; summary then says coverage
-  is complete for that scope.
+- complete: true only when the API lists no gaps and every count is 0; summary then
+  says coverage is complete for that scope. Counts with no listed gaps are not complete.
 
 suggested_tool names the tool that would close the gap: create_alert,
 create_alert_from_chart, attach_notification_channel, or patch_alert. Call it only
