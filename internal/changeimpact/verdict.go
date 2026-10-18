@@ -23,8 +23,9 @@ const (
 	// An after window shorter than this cannot show a regression yet.
 	minAfterMinutes = 5
 	// Error-rate and latency shifts are judged only when both windows carry at
-	// least this many server requests.
-	minRequestsPerWindow = 20
+	// least this many server requests, latency in the compared environment.
+	// Below 100, a p95 rests on fewer than 5 requests and one error is >1 pp.
+	minRequestsPerWindow = 100
 	// Error rate rising by at least this many percentage points is a regression.
 	errorRateIncreasePP = 1.0
 	// p95 latency rising by at least this percentage is a regression.
@@ -56,22 +57,24 @@ const thresholdEpsilon = 1e-9
 
 // serviceRegressions lists the thresholds service crossed between the windows.
 func serviceRegressions(service string, baseline, after apm.GoldenSignals) []string {
-	if baseline.RequestCount < minRequestsPerWindow || after.RequestCount < minRequestsPerWindow {
+	if baseline.RequestCount < minRequestsPerWindow {
 		return nil
 	}
 	var found []string
-	if baseline.ErrorRatePct != nil && after.ErrorRatePct != nil {
+	if after.RequestCount >= minRequestsPerWindow && baseline.ErrorRatePct != nil && after.ErrorRatePct != nil {
 		if delta := *after.ErrorRatePct - *baseline.ErrorRatePct; delta >= errorRateIncreasePP-thresholdEpsilon {
 			found = append(found, fmt.Sprintf("%s error rate rose %.2f pp (%.2f%% → %.2f%%)", service, delta, *baseline.ErrorRatePct, *after.ErrorRatePct))
 		}
 	}
 	env := latencyEnv(baseline, after)
 	before, now := baseline.LatencyByEnv[env].P95Ms, after.LatencyByEnv[env].P95Ms
-	if pct := deltaPct(before, now); pct != nil && *pct >= p95LatencyIncreasePct-thresholdEpsilon {
+	judgeLatency := baseline.RequestsByEnv[env] >= minRequestsPerWindow && after.RequestsByEnv[env] >= minRequestsPerWindow
+	if pct := deltaPct(before, now); judgeLatency && pct != nil && *pct >= p95LatencyIncreasePct-thresholdEpsilon {
 		found = append(found, fmt.Sprintf("%s p95 latency rose %.0f%% (%.1f ms → %.1f ms) in %s", service, *pct, *before, *now, env))
 	}
-	// Windows can differ in length, so compare rates, not request counts.
-	if pct := deltaPct(&baseline.ThroughputRPM, &after.ThroughputRPM); pct != nil && -*pct >= throughputDropPct-thresholdEpsilon {
+	// Windows can differ in length, so compare rates, not request counts. A
+	// collapse is what thins the after window, so only an empty one is skipped.
+	if pct := deltaPct(&baseline.ThroughputRPM, &after.ThroughputRPM); after.RequestCount > 0 && pct != nil && -*pct >= throughputDropPct-thresholdEpsilon {
 		found = append(found, fmt.Sprintf("%s throughput fell %.0f%% (%.1f → %.1f rpm)", service, -*pct, baseline.ThroughputRPM, after.ThroughputRPM))
 	}
 	return found
