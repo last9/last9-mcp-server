@@ -43,12 +43,15 @@ type Request struct {
 }
 
 type Report struct {
-	Service       string             `json:"service"`
-	Env           string             `json:"env,omitempty"`
-	ChangeTime    string             `json:"change_time"`
-	Verdict       string             `json:"verdict"`
-	Reason        string             `json:"reason"`
-	Note          string             `json:"note,omitempty"`
+	Service    string `json:"service"`
+	Env        string `json:"env,omitempty"`
+	ChangeTime string `json:"change_time"`
+	Verdict    string `json:"verdict"`
+	Reason     string `json:"reason"`
+	Note       string `json:"note,omitempty"`
+	// Regressions lists each trigger behind a "regression likely" verdict, in
+	// reason's order; it is empty for the other verdicts.
+	Regressions   []Regression       `json:"regressions"`
 	Windows       Windows            `json:"windows"`
 	GoldenSignals GoldenSection      `json:"golden_signals"`
 	Deviations    DeviationsSection  `json:"deviations"`
@@ -169,6 +172,7 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 	w := resolveWindows(req)
 	report := Report{
 		Notes:         notes,
+		Regressions:   []Regression{},
 		Service:       req.Service,
 		Env:           req.Env,
 		ChangeTime:    req.Change.UTC().Format(time.RFC3339),
@@ -329,6 +333,9 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 		_, in.haveChanged = after[req.Service]
 	}
 	report.Verdict, report.Reason, report.Note = decideVerdict(in)
+	if report.Verdict == VerdictRegressionLikely {
+		report.Regressions = regressions
+	}
 	return report
 }
 

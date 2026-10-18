@@ -62,6 +62,9 @@ func TestDescriptionDocumentsVerdictsAndThresholds(t *testing.T) {
 		"also counts error-status spans and 429s",
 		"client-only ones show 0 rpm",
 		"label, else annotation",
+		"`regressions`",
+		"exactly one of `" + strings.Join([]string{MetricErrorRatePct, MetricLatencyP95Ms, MetricThroughputRPM, MetricAlert, MetricAPMDeviation}, "`, `") + "`",
+		"(`" + RoleChanged + "` or `" + RoleDependent + "`)",
 	} {
 		if !strings.Contains(description, want) {
 			t.Errorf("description must state %q", want)

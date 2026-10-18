@@ -118,6 +118,7 @@ func TestAlertsStayInsideTheRequestedEnv(t *testing.T) {
 			if len(report.Alerts.Started) != 1 || report.Verdict != VerdictRegressionLikely {
 				t.Fatalf("verdict=%q (%s) alerts=%+v, want the alert kept", report.Verdict, report.Reason, report.Alerts.Started)
 			}
+			assertRegressionsMatchReason(t, report)
 			if got := report.Alerts.Started[0].EnvMatch; got != tc.wantEnvMatch {
 				t.Fatalf("env_match = %q, want %q", got, tc.wantEnvMatch)
 			}
