@@ -1,9 +1,10 @@
-{{- $services := tools "get_service_profile" "did_you_mean" "get_service_environments" "get_profile_services" "list_datasources" "grafana_list_datasources" -}}
+{{- $services := tools "did_you_mean" "get_service_environments" "get_profile_services" "list_datasources" "grafana_list_datasources" -}}
 {{- $attributes := tools "get_log_attributes" "get_log_attributes_for_pipeline" "get_trace_attributes" "get_trace_attributes_for_pipeline" "get_trace_attribute_values" -}}
 {{- $metricNames := tools "prometheus_labels" "prometheus_label_values" -}}
 {{- $alertRules := tools "get_alert_groups" "get_alert_config" "get_entity_alert_rules" "get_notification_channels" -}}
 {{- $dashboards := tools "list_dashboards" "list_dashboard_snapshots" "grafana_search_dashboards" "grafana_list_folders" "grafana_list_folder_dashboards" -}}
 {{- $dashboardReads := tools "get_dashboard" "get_dashboard_snapshot" "grafana_get_dashboard" -}}
+{{- $serviceProfile := tools "get_service_profile" -}}
 {{- $health := tools "get_service_summary" "get_service_performance_details" "get_service_operations_summary" "get_service_dependency_graph" -}}
 {{- $alerts := tools "get_alerts" "get_alert_rule_state" -}}
 {{- $changes := tools "get_change_events" -}}
@@ -41,10 +42,13 @@ Never guess service, environment, attribute, metric or label names, or dashboard
 - Dashboards, snapshots and Grafana folders: {{.}}{{with $dashboardReads}}; open one by id with {{.}}{{end}}.
 {{- end}}
 {{- end}}
-{{- if or $health $alerts $changes $deviations $scoped $databases $profiles}}
+{{- if or $serviceProfile $health $alerts $changes $deviations $scoped $databases $profiles}}
 
 ## Prefer dedicated tools
 They return computed answers with the right scoping; reach for them before writing a query.
+{{- with $serviceProfile}}
+- Start a service investigation with {{.}}.
+{{- end}}
 {{- with $health}}
 - Service health and performance: {{.}}.
 {{- end}}

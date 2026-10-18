@@ -237,3 +237,27 @@ func TestServerInstructionsWriteSectionNamesOnlyWriteTools(t *testing.T) {
 		}
 	}
 }
+
+// lineNaming returns the first instructions line that names tool in backticks.
+func lineNaming(instructions, tool string) string {
+	for _, line := range strings.Split(instructions, "\n") {
+		if strings.Contains(line, "`"+tool+"`") {
+			return line
+		}
+	}
+	return ""
+}
+
+func TestServerInstructionsStartInvestigationWithServiceProfile(t *testing.T) {
+	for _, spec := range []string{"", "logs", "traces"} {
+		t.Run("toolsets="+spec, func(t *testing.T) {
+			instructions, _ := initializeOver(t, spec)
+			if got, want := lineNaming(instructions, "get_service_profile"), "- Start a service investigation with `get_service_profile`."; got != want {
+				t.Errorf("get_service_profile line = %q, want %q", got, want)
+			}
+			if discovery, _, _ := strings.Cut(instructions, "## Prefer dedicated tools"); strings.Contains(discovery, "`get_service_profile`") {
+				t.Errorf("get_service_profile listed with discovery tools:\n%s", instructions)
+			}
+		})
+	}
+}
