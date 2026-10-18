@@ -21,6 +21,12 @@
 	- annotations: Additional context and descriptions
 	- generator_url: URL to the source of the alert
 	- fingerprint: Unique fingerprint for this alert instance
+	
+	Each alert rule that has been acknowledged or has an owner also carries a claim block (omitted when the rule is unclaimed):
+	- owner_user_id / owner_name / owner_email: the responder who owns the rule
+	- claimed_by_user_id: the user who recorded the claim
+	- claimed_at: when the claim was made (Unix seconds, shown as UTC)
+	- muted_until: mute deadline chosen while acknowledging (Unix seconds, shown as UTC); omitted when the acknowledgement carried no mute
 
 	## When to use
 	Alerts firing now or recently: `window` is default 15 minutes, at most 1 hour.

@@ -30,11 +30,14 @@ var descriptionBudgetOverrides = map[string]int{
 	"get_logs":                        3600,
 	"create_dashboard":                3200,
 	"prometheus_range_query":          3000,
+	"create_alert_from_chart":         3000,
 	"get_log_attributes_for_pipeline": 2800,
 	"get_trace_waterfall":             2700,
 	"get_traces":                      2700,
 	"get_service_logs":                2700,
+	"create_alert":                    2700,
 	"get_service_performance_details": 2800,
+	"get_alerts":                      2600,
 }
 
 // servedSizeBudgets cap description plus compact input schema JSON for tools
@@ -49,7 +52,10 @@ const maxSchemaDepth = 8
 
 var toolNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
-var toolNameVerbs = []string{"get", "list", "create", "update", "delete", "add", "validate", "search"}
+var toolNameVerbs = []string{
+	"get", "list", "create", "update", "patch", "delete", "add", "validate", "search",
+	"describe", "recommend", "acknowledge", "reassign", "mute", "attach", "detach",
+}
 
 // toolNamespaces prefix a verb-first name with the product it reads.
 var toolNamespaces = []string{"grafana_"}
