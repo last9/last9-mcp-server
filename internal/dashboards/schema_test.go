@@ -283,6 +283,18 @@ func TestCreateDashboardInputSchema_RejectsRawMessageByteArray(t *testing.T) {
 	}
 }
 
+func TestCreateDashboardInputSchema_AcceptsNameOnlyDashboard(t *testing.T) {
+	nameOnly := map[string]any{"dashboard": map[string]any{"name": "Checkout", "panels": []any{}}}
+	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), nameOnly); err != nil {
+		t.Fatalf("expected name-only dashboard with empty panels to validate: %v", err)
+	}
+
+	missingPanels := map[string]any{"dashboard": map[string]any{"name": "Checkout"}}
+	if err := validateInputSchema(t, GetCreateDashboardInputSchema(), missingPanels); err == nil {
+		t.Fatal("expected dashboard without panels to fail validation")
+	}
+}
+
 func TestUpdateDashboardInputSchema_RequiresIDAndDashboard(t *testing.T) {
 	validArgs := map[string]any{
 		"id": "uuid-1",
