@@ -152,11 +152,26 @@ func main() {
 // serveStdio serves one stdio session. A closed stdin or a cancelled ctx is a
 // normal exit, not an error.
 func serveStdio(ctx context.Context, server *last9mcp.Last9MCPServer, t mcp.Transport) error {
+	server.Server.AddReceivingMiddleware(cancelRequestsOn(ctx))
 	err := server.Serve(ctx, t)
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
 		return nil
 	}
 	return err
+}
+
+// cancelRequestsOn cancels in-flight requests when shutdown is cancelled. The
+// SDK hides session cancellation from handlers and waits for them on close,
+// while refusing to write their replies, so draining would only delay the exit.
+func cancelRequestsOn(shutdown context.Context) mcp.Middleware {
+	return func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			defer context.AfterFunc(shutdown, cancel)()
+			return next(ctx, method, req)
+		}
+	}
 }
 
 func run() int {
@@ -279,6 +294,9 @@ func run() int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// Restore default signal handling once shutdown starts, so a second signal
+	// still kills a process stuck in shutdown.
+	context.AfterFunc(ctx, stop)
 	if err := serveStdio(ctx, server, &mcp.StdioTransport{}); err != nil {
 		slog.Error("stdio server error", "error", err)
 		return 1

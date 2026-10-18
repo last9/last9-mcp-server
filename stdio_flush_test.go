@@ -26,6 +26,16 @@ const stdioSession = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"p
 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_current_time","arguments":{}}}
 `
 
+// stdioExit is how a flush scenario ends the server.
+type stdioExit int
+
+const (
+	exitOnStdinClose stdioExit = iota
+	exitOnIdleSIGTERM
+	// exitOnInFlightSIGTERM signals while a get_databases call is blocked in the API.
+	exitOnInFlightSIGTERM
+)
+
 func stubJWT(aud string) string {
 	enc := func(v any) string {
 		b, _ := json.Marshal(v)
@@ -40,7 +50,7 @@ func stubJWT(aud string) string {
 
 // runStdioFlushScenario starts the built binary against local stubs and returns
 // its exit code and the number of trace and metric exports the receiver saw.
-func runStdioFlushScenario(t *testing.T, sigterm bool) (exitCode int, traces, metrics int32) {
+func runStdioFlushScenario(t *testing.T, exit stdioExit) (exitCode int, traces, metrics int32) {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("builds and runs the binary")
@@ -66,7 +76,14 @@ func runStdioFlushScenario(t *testing.T, sigterm bool) (exitCode int, traces, me
 	}))
 	defer oauth.Close()
 
+	apiEntered := make(chan struct{})
 	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/database-query") {
+			io.Copy(io.Discard, r.Body)
+			close(apiEntered)
+			<-r.Context().Done()
+			return
+		}
 		fmt.Fprint(w, `[{"name":"stub","is_default":true,"url":"http://127.0.0.1:1","region":"r","properties":{"username":"u","password":"p","levitate_cluster_id":"c"}}]`)
 	}))
 	defer api.Close()
@@ -101,7 +118,11 @@ func runStdioFlushScenario(t *testing.T, sigterm bool) (exitCode int, traces, me
 	}
 
 	io.WriteString(stdin, stdioSession)
-	if sigterm {
+	if exit == exitOnStdinClose {
+		stdin.Close()
+	} else {
+		// Read every reply first: a reply still being written when shutdown
+		// starts fails, and the SDK then cancels in-flight requests on its own.
 		sc := bufio.NewScanner(stdout)
 		sc.Buffer(make([]byte, 1<<20), 1<<24)
 		for sc.Scan() {
@@ -109,9 +130,21 @@ func runStdioFlushScenario(t *testing.T, sigterm bool) (exitCode int, traces, me
 				break
 			}
 		}
+	}
+	if exit == exitOnInFlightSIGTERM {
+		io.WriteString(stdin, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_databases","arguments":{}}}`+"\n")
+		select {
+		case <-apiEntered:
+		case <-time.After(10 * time.Second):
+			cmd.Process.Kill()
+			t.Fatalf("get_databases never reached the API\n%s", stderr.String())
+		}
+		// A signal within milliseconds of the call can race the SDK into
+		// cancelling it itself; let the call settle so the test pins our cancel.
+		time.Sleep(time.Second)
+	}
+	if exit != exitOnStdinClose {
 		cmd.Process.Signal(syscall.SIGTERM)
-	} else {
-		stdin.Close()
 	}
 	go io.Copy(io.Discard, stdout)
 
@@ -136,14 +169,21 @@ func runStdioFlushScenario(t *testing.T, sigterm bool) (exitCode int, traces, me
 }
 
 func TestStdioFlushesTelemetryOnStdinClose(t *testing.T) {
-	code, traces, _ := runStdioFlushScenario(t, false)
+	code, traces, _ := runStdioFlushScenario(t, exitOnStdinClose)
 	if code != 0 || traces == 0 {
 		t.Fatalf("exit=%d traces=%d, want exit 0 and at least one trace export", code, traces)
 	}
 }
 
 func TestStdioFlushesTelemetryOnSIGTERM(t *testing.T) {
-	code, traces, _ := runStdioFlushScenario(t, true)
+	code, traces, _ := runStdioFlushScenario(t, exitOnIdleSIGTERM)
+	if code != 0 || traces == 0 {
+		t.Fatalf("exit=%d traces=%d, want exit 0 and at least one trace export", code, traces)
+	}
+}
+
+func TestStdioFlushesTelemetryOnSIGTERMDuringToolCall(t *testing.T) {
+	code, traces, _ := runStdioFlushScenario(t, exitOnInFlightSIGTERM)
 	if code != 0 || traces == 0 {
 		t.Fatalf("exit=%d traces=%d, want exit 0 and at least one trace export", code, traces)
 	}

@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -9,12 +12,17 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func serveInMemory(t *testing.T, ctx context.Context) (*mcp.ClientSession, chan error) {
+func newTestServer(t *testing.T) *last9mcp.Last9MCPServer {
 	t.Helper()
 	server, err := last9mcp.NewServerWithOptions("last9-mcp-test", "dev", last9mcp.WithSkipProviderInit())
 	if err != nil {
 		t.Fatal(err)
 	}
+	return server
+}
+
+func serveInMemory(t *testing.T, ctx context.Context, server *last9mcp.Last9MCPServer) (*mcp.ClientSession, chan error) {
+	t.Helper()
 	st, ct := mcp.NewInMemoryTransports()
 	done := make(chan error, 1)
 	go func() { done <- serveStdio(ctx, server, st) }()
@@ -39,15 +47,58 @@ func waitServe(t *testing.T, done chan error) {
 }
 
 func TestServeStdioClientCloseIsClean(t *testing.T) {
-	cs, done := serveInMemory(t, context.Background())
+	cs, done := serveInMemory(t, context.Background(), newTestServer(t))
 	cs.Close()
 	waitServe(t, done)
 }
 
 func TestServeStdioCancelIsClean(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	cs, done := serveInMemory(t, ctx)
+	cs, done := serveInMemory(t, ctx, newTestServer(t))
 	defer cs.Close()
 	cancel()
 	waitServe(t, done)
+}
+
+func TestServeStdioCancelAbortsInFlightToolCall(t *testing.T) {
+	entered, cancelled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		close(entered)
+		select {
+		case <-r.Context().Done():
+			close(cancelled)
+		case <-release:
+		}
+	}))
+	defer api.Close()
+
+	cfg := testToolRegistrationConfig()
+	cfg.APIBaseURL = api.URL
+	server := newTestServer(t)
+	if err := registerTools(server, cfg, api.Client()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cs, done := serveInMemory(t, ctx, server)
+	defer cs.Close()
+	defer close(release)
+
+	go func() {
+		_, _ = cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "get_databases", Arguments: map[string]any{}})
+	}()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("tool call never reached the API")
+	}
+	cancel()
+
+	waitServe(t, done)
+	select {
+	case <-cancelled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the in-flight API request was never cancelled")
+	}
 }
