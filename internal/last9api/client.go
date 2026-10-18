@@ -64,14 +64,14 @@ func (c *Client) Do(ctx context.Context, op string, r Request, out any, opts ...
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
+		return utils.MarkUnknownWriteOutcome(req, nil, fmt.Errorf("%s: %w", op, err))
 	}
 	defer resp.Body.Close()
 
 	if !isSuccess(resp.StatusCode) {
-		return utils.NewUpstreamHTTPError(resp, op)
+		return utils.MarkUnknownWriteOutcome(req, resp, utils.NewUpstreamHTTPError(resp, op))
 	}
-	return decodeResponse(resp, op, out)
+	return utils.MarkUnknownWriteOutcome(req, resp, decodeResponse(resp, op, out))
 }
 
 func applyOptions(opts []Option) options {
@@ -175,10 +175,20 @@ func isSuccess(status int) bool {
 
 func decodeResponse(resp *http.Response, op string, out any) error {
 	if out == nil {
-		utils.DrainResponseBody(resp.Body)
+		// A body cut off mid-read means the answer never fully arrived, even after a 2xx.
+		if _, err := io.CopyN(io.Discard, resp.Body, 4<<10); err != nil && err != io.EOF {
+			return fmt.Errorf("%s: read response: %w", op, err)
+		}
 		return nil
 	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("%s: read response: %w", op, err)
+	}
+	if len(raw) == 0 {
+		return nil
+	}
+	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(out); err != nil {
 		return fmt.Errorf("%s: decode response: %w", op, err)
 	}
 	return nil

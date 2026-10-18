@@ -1388,6 +1388,7 @@ func TestServicePerformanceDetails_EnvMatcherScope(t *testing.T) {
 		{name: "explicit_env_uses_regex_matcher", env: "prod", matches: "prod", rejects: "staging"},
 		{name: "dotted_env_is_literal_not_regex", env: "prod.v1", matches: "prod.v1", rejects: "prodXv1"},
 		{name: "bracketed_env_is_literal_not_regex", env: "prod[blue]", matches: "prod[blue]", rejects: "prodb"},
+		{name: "anchored_env_is_normalised_to_literal", env: "^production$", matches: "production", rejects: "production-eu"},
 	}
 
 	envMatcherRe := regexp.MustCompile(`env(=~|=)("(?:[^"\\]|\\.)*")`)
