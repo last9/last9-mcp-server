@@ -12,7 +12,9 @@
 {{- $scoped := tools "get_service_logs" "get_service_traces" "get_exceptions" "get_trace_waterfall" -}}
 {{- $databases := tools "get_databases" "get_database_slow_queries" "get_database_queries" "get_database_server_metrics" -}}
 {{- $profiles := tools "get_profile_summary" "get_top_functions" "get_flamegraph" -}}
-{{- $raw := tools "prometheus_range_query" "prometheus_instant_query" "get_logs" "get_traces" -}}
+{{- $raw := tools "get_logs" "get_traces" -}}
+{{- $logInventory := "" -}}
+{{- with $metricNames}}{{$raw = tools "prometheus_range_query" "prometheus_instant_query" "get_logs" "get_traces"}}{{else}}{{$logInventory = tools "prometheus_instant_query"}}{{end -}}
 {{- $create := tools "create_dashboard" "create_alert" "create_notification_channel" "create_alert_from_chart" -}}
 {{- $validate := tools "validate_dashboard" -}}
 {{- $alertValidate := tools "validate_alert_expression" -}}
@@ -23,7 +25,7 @@
 {{- $addDropRule := tools "add_drop_rule" -}}
 {{- $destructive := tools "update_dashboard" "delete_dashboard" "delete_dashboard_snapshot" "update_alert" "patch_alert" "delete_alert" "mute_alert_group" "detach_notification_channel" "delete_notification_channel" -}}
 Last9 observability for the caller's organization. Discover names first, answer with the most specific tool, and treat writes with care.
-{{- if or $services $attributes $metricNames $alertRules $dashboards}}
+{{- if or $services $attributes $metricNames $logInventory $alertRules $dashboards}}
 
 ## Discover before you query
 Never guess service, environment, attribute, metric or label names, or dashboard ids; look them up and reuse the exact values.
@@ -35,6 +37,9 @@ Never guess service, environment, attribute, metric or label names, or dashboard
 {{- end}}
 {{- with $metricNames}}
 - Metric and label names: {{.}}.
+{{- end}}
+{{- with $logInventory}}
+- Log-sending services and their indexes: {{.}} over `physical_index_service_count`; no other metric names can be discovered here.
 {{- end}}
 {{- with $alertRules}}
 - Alert groups, rules, their KPIs and notification channels: {{.}}.

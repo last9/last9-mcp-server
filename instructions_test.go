@@ -294,6 +294,46 @@ func TestServerInstructionsDestructiveLinesMatchEachToolsEffect(t *testing.T) {
 	}
 }
 
+// The logs toolset serves prometheus_instant_query for the log index inventory
+// metric only; it serves no tool that discovers other metric names.
+func TestServerInstructionsOfferPrometheusQueriesOnlyWithMetricDiscovery(t *testing.T) {
+	const inventoryLine = "- Log-sending services and their indexes: `prometheus_instant_query` over `physical_index_service_count`; no other metric names can be discovered here."
+	tests := []struct {
+		spec          string
+		rawNames      []string
+		rawOmits      []string
+		wantInventory bool
+	}{
+		{spec: "logs", rawNames: []string{"get_logs"}, rawOmits: []string{"prometheus_instant_query", "prometheus_range_query"}, wantInventory: true},
+		{spec: "logs,traces", rawNames: []string{"get_logs", "get_traces"}, rawOmits: []string{"prometheus_instant_query", "prometheus_range_query"}, wantInventory: true},
+		{spec: "metrics", rawNames: []string{"prometheus_range_query", "prometheus_instant_query"}},
+		{spec: "logs,metrics", rawNames: []string{"prometheus_range_query", "prometheus_instant_query", "get_logs"}},
+		{spec: "investigate", rawNames: []string{"prometheus_range_query", "prometheus_instant_query", "get_logs", "get_traces"}},
+	}
+	for _, tt := range tests {
+		t.Run("toolsets="+tt.spec, func(t *testing.T) {
+			instructions, _ := initializeOver(t, tt.spec)
+			raw := lineNaming(instructions, tt.rawNames[0])
+			if !strings.HasPrefix(raw, "Use ") {
+				t.Fatalf("first line naming %q is %q, want the raw-query line:\n%s", tt.rawNames[0], raw, instructions)
+			}
+			for _, tool := range tt.rawNames {
+				if !strings.Contains(raw, "`"+tool+"`") {
+					t.Errorf("raw-query line %q does not name %q", raw, tool)
+				}
+			}
+			for _, tool := range tt.rawOmits {
+				if strings.Contains(raw, "`"+tool+"`") {
+					t.Errorf("raw-query line %q names %q without a metric-name discovery tool", raw, tool)
+				}
+			}
+			if got := strings.Contains(instructions, inventoryLine); got != tt.wantInventory {
+				t.Errorf("inventory line present = %v, want %v:\n%s", got, tt.wantInventory, instructions)
+			}
+		})
+	}
+}
+
 // lineNaming returns the first instructions line that names tool in backticks.
 func lineNaming(instructions, tool string) string {
 	for _, line := range strings.Split(instructions, "\n") {
