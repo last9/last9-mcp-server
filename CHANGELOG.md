@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `patch_alert`'s description, schema and README now say that `properties` replaces the whole stored object, so omitted fields (runbook, annotations, `query_mode`) are cleared; the old wording ("replace its description, runbook, annotations, or query_mode") read as a per-field merge, and a description-only patch silently wiped the runbook. Agents are told to read the current properties with `get_entity_alert_rules` (the list behind `get_alert_config` returns only annotations) and send every field to keep (#355).
+
 - `get_notification_channels` now shows `global` as false on alert-group attachment rows (`service_fqid` set). It relayed the API's flag, which reflects only a legacy service binding, so every per-group attachment read `global=true`; the description now says `services` lists only legacy service bindings (#190).
 - `delete_notification_channel` given an attachment id (the `id` column of the default `attached` scope) now says it is an attachment, names its alert group and severity, and points to `detach_notification_channel`, instead of `no channel with that id`: the channel list it checked omits attachment rows (#190).
 - `create_alert` with an `entity_id` that is not an alert group now says so and points to `get_alert_groups`, instead of `list alert rules failed with HTTP 400`, which named its internal duplicate-name lookup (#190).
