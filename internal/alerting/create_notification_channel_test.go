@@ -8,11 +8,14 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	"last9-mcp/internal/utils"
 )
 
 func testCACertPEM(t *testing.T) string {
@@ -126,8 +129,10 @@ func TestCreateNotificationChannelNamesEmailRejection(t *testing.T) {
 
 func TestCreateNotificationChannelErrorsNeverLeakSecrets(t *testing.T) {
 	for status, want := range map[int]string{
-		400: "HTTP 400", 422: "HTTP 422", 403: "write-scope", 500: "HTTP 500", 502: "HTTP 502",
+		400: "HTTP 400", 422: "HTTP 422", 403: "write-scope", 500: "HTTP 500",
 		409: "get_notification_channels scope=channels",
+		// 502/504 are unknown outcomes, passed through for the registration layer to explain.
+		502: "", 504: "",
 	} {
 		s := newChannelServer(t, func(*http.Request) (int, string) {
 			return status, `invalid destination ` + channelSecret + ` header ` + channelSecret
@@ -136,6 +141,13 @@ func TestCreateNotificationChannelErrorsNeverLeakSecrets(t *testing.T) {
 			Name: "n", Type: "generic_webhook", Destination: "https://h/" + channelSecret, WebhookHeaders: map[string]string{"k": channelSecret},
 		})
 		assertNoSecret(t, text, err)
+		if want == "" {
+			var unknown *utils.WriteOutcomeUnknownError
+			if !errors.As(err, &unknown) {
+				t.Errorf("status %d: want an unknown-outcome error, got text=%q err=%v", status, text, err)
+			}
+			continue
+		}
 		if err != nil || !isErr || !strings.Contains(text, want) {
 			t.Errorf("status %d: text=%q isErr=%v err=%v", status, text, isErr, err)
 		}
