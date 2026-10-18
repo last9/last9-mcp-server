@@ -5,86 +5,66 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
-	"time"
-
-	"last9-mcp/internal/auth"
-	"last9-mcp/internal/models"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func testRemappingConfig(actionURL string) models.Config {
-	return models.Config{
-		APIBaseURL: actionURL,
-		ActionURL:  actionURL,
-		Region:     "us-east-1",
-		OrgSlug:    "test-org",
-		ClusterID:  "cluster-1",
-		TokenManager: &auth.TokenManager{
-			AccessToken: "test-token",
-			ExpiresAt:   time.Now().Add(24 * time.Hour),
-		},
-	}
+var validMapRule = AddRemappingRuleArgs{
+	RuleType:        ruleTypeLogsMap,
+	Name:            "map-service",
+	RemapKeys:       []string{`attributes["service_name"]`},
+	TargetAttribute: "service",
 }
 
-func TestGetRemappingRulesHandlerContextCancellation(t *testing.T) {
-	blocked := make(chan struct{})
-	defer close(blocked)
+func TestAddRemappingRuleHandlerAcceptsEmptyCreatedBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		<-blocked
+		w.WriteHeader(http.StatusCreated)
 	}))
 	defer server.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	handler := NewGetRemappingRulesHandler(server.Client(), testRemappingConfig(server.URL))
-	_, _, err := handler(ctx, &mcp.CallToolRequest{}, GetRemappingRulesArgs{RuleType: ruleTypeLogsExtract})
-	if err == nil {
-		t.Fatal("expected error from cancelled context, got nil")
+	handler := NewAddRemappingRuleHandler(server.Client(), testRemappingConfig(server.URL))
+	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, validMapRule); err != nil {
+		t.Fatalf("a 201 with no body means the rule was created, got error: %v", err)
 	}
 }
 
-func TestGetRemappingRulesHandlerRequiresRuleType(t *testing.T) {
+func TestAddRemappingRuleHandlerDoesNotEchoServerErrorBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("server should not be called for invalid input")
+		http.Error(w, "panic at internal-db-7: token=secret", http.StatusInternalServerError)
 	}))
 	defer server.Close()
 
-	handler := NewGetRemappingRulesHandler(server.Client(), testRemappingConfig(server.URL))
-	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetRemappingRulesArgs{})
+	handler := NewAddRemappingRuleHandler(server.Client(), testRemappingConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, validMapRule)
 	if err == nil {
-		t.Fatal("expected validation error, got nil")
+		t.Fatal("expected error for HTTP 500")
+	}
+	if strings.Contains(err.Error(), "secret") {
+		t.Fatalf("5xx body leaked into the tool error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "HTTP 500") {
+		t.Fatalf("error does not name the status: %v", err)
 	}
 }
 
-func TestGetRemappingRulesHandlerSendsGETWithRegion(t *testing.T) {
-	var capturedMethod, capturedRegion string
-
+func TestAddRemappingRuleHandlerSendsRegionArgument(t *testing.T) {
+	var capturedRegion string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedMethod = r.Method
 		capturedRegion = r.URL.Query().Get("region")
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]map[string]string{{"id": "rule-1", "name": "test"}})
+		_, _ = w.Write([]byte(`{"id":"rule-1"}`))
 	}))
 	defer server.Close()
 
-	handler := NewGetRemappingRulesHandler(server.Client(), testRemappingConfig(server.URL))
-	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetRemappingRulesArgs{
-		RuleType: ruleTypeLogsMap,
-	})
-	if err != nil {
+	args := validMapRule
+	args.Region = "eu-west-1"
+	handler := NewAddRemappingRuleHandler(server.Client(), testRemappingConfig(server.URL))
+	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Fatal("expected result, got nil")
-	}
-	if capturedMethod != http.MethodGet {
-		t.Fatalf("expected GET, got %s", capturedMethod)
-	}
-	if capturedRegion != "us-east-1" {
-		t.Fatalf("expected region=us-east-1, got %q", capturedRegion)
+	if capturedRegion != "eu-west-1" {
+		t.Fatalf("expected region=eu-west-1, got %q", capturedRegion)
 	}
 }
 
