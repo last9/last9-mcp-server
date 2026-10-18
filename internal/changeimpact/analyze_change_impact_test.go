@@ -1,6 +1,8 @@
 package changeimpact
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -154,6 +156,25 @@ func TestFlatSignalsAreNoSignificantChange(t *testing.T) {
 	delta := signalsFor(t, report, "checkout").ThroughputRPM.DeltaPct
 	if delta == nil || *delta != 0 {
 		t.Fatalf("throughput delta = %v, want 0", delta)
+	}
+}
+
+// An empty list is [] whether its section ran or was skipped, so callers never
+// tell "nothing found" from "not queried" by null.
+func TestEmptyListsAreNeverNull(t *testing.T) {
+	change := recentChange()
+	f := &fakeLast9{change: change, baseline: flatWindow(), after: flatWindow()}
+	server := f.serve(t)
+	defer server.Close()
+	report := Analyze(context.Background(), server.Client(), testConfig(server.URL), Request{Service: "checkout", Env: "prod", Change: change})
+	raw, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, list := range []string{`"started":null`, `"items":null`, `"services":null`, `"drill_down":null`} {
+		if strings.Contains(string(raw), list) {
+			t.Errorf("report has %s: %s", list, raw)
+		}
 	}
 }
 

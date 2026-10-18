@@ -360,7 +360,12 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// truncate never returns nil: an empty list serialises as [], as it does when
+// its section is skipped.
 func truncate[T any](items []T, limit int) ([]T, int) {
+	if items == nil {
+		return []T{}, 0
+	}
 	if len(items) <= limit {
 		return items, 0
 	}
