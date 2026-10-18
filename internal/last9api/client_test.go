@@ -3,6 +3,7 @@ package last9api
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -210,5 +211,46 @@ func TestDo_MapsNon2xxToUpstreamError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "429") {
 		t.Errorf("error does not carry the status: %v", err)
+	}
+}
+
+type rtFunc func(*http.Request) (*http.Response, error)
+
+func (f rtFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestDo_EmptySuccessBodyLeavesOutUntouched(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	c := NewClient(srv.Client(), testCfg(srv.URL))
+	out := struct{ A string }{A: "keep"}
+	if err := c.Do(context.Background(), "op", Request{Method: http.MethodDelete, Path: "/x"}, &out); err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	if out.A != "keep" {
+		t.Errorf("out modified: %+v", out)
+	}
+}
+
+func TestDo_GarbageSuccessBodyIsDecodeError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("not json"))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.Client(), testCfg(srv.URL))
+	var out map[string]any
+	err := c.Do(context.Background(), "op", Request{Method: http.MethodGet, Path: "/x"}, &out)
+	if err == nil || !strings.Contains(err.Error(), "decode response") {
+		t.Fatalf("want decode error, got %v", err)
+	}
+}
+
+func TestDo_TransportEOFIsError(t *testing.T) {
+	hc := &http.Client{Transport: rtFunc(func(*http.Request) (*http.Response, error) { return nil, io.EOF })}
+	c := NewClient(hc, testCfg("http://unused.invalid"))
+	var out json.RawMessage
+	if err := c.Do(context.Background(), "op", Request{Method: http.MethodDelete, Path: "/x"}, &out); err == nil {
+		t.Fatal("transport EOF returned nil error")
 	}
 }

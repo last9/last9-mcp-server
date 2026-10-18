@@ -11,9 +11,13 @@ import (
 
 var promptDescriptionFiles = map[string]string{
 	"add_drop_rule.md":                     prompts.AddDropRuleDescription,
+	"create_alert.md":                      prompts.CreateAlertDescription,
+	"create_alert_from_chart.md":           prompts.CreateAlertFromChartDescription,
 	"create_dashboard.md":                  prompts.CreateDashboardDescription,
+	"delete_alert.md":                      prompts.DeleteAlertDescription,
 	"delete_dashboard.md":                  prompts.DeleteDashboardDescription,
 	"delete_dashboard_snapshot.md":         prompts.DeleteDashboardSnapshotDescription,
+	"describe_alert_chart.md":              prompts.DescribeAlertChartDescription,
 	"did_you_mean.md":                      prompts.DidYouMeanDescription,
 	"get_alert_config.md":                  prompts.GetAlertConfigDescription,
 	"get_alert_coverage.md":                prompts.GetAlertCoverageDescription,
@@ -61,15 +65,31 @@ var promptDescriptionFiles = map[string]string{
 	"list_dashboard_snapshots.md":          prompts.ListDashboardSnapshotsDescription,
 	"list_dashboards.md":                   prompts.ListDashboardsDescription,
 	"list_datasources.md":                  prompts.ListDatasourcesDescription,
+	"mute_alert_group.md":                  prompts.MuteAlertGroupDescription,
+	"acknowledge_alert.md":                 prompts.AcknowledgeAlertDescription,
+	"reassign_alert.md":                    prompts.ReassignAlertDescription,
+	"create_notification_channel.md":       prompts.CreateNotificationChannelDescription,
+	"attach_notification_channel.md":       prompts.AttachNotificationChannelDescription,
+	"detach_notification_channel.md":       prompts.DetachNotificationChannelDescription,
+	"delete_notification_channel.md":       prompts.DeleteNotificationChannelDescription,
+	"patch_alert.md":                       prompts.PatchAlertDescription,
 	"prometheus_instant_query.md":          prompts.PromqlInstantQueryDetails,
 	"prometheus_label_values.md":           prompts.PromqlLabelValuesQueryDetails,
 	"prometheus_labels.md":                 prompts.PromqlLabelsQueryDetails,
 	"prometheus_range_query_base.md":       prompts.PromqlRangeQueryDetails,
+	"recommend_alert_config.md":            prompts.RecommendAlertConfigDescription,
+	"update_alert.md":                      prompts.UpdateAlertDescription,
 	"update_dashboard.md":                  prompts.UpdateDashboardDescription,
+	"validate_alert_expression.md":         prompts.ValidateAlertExpressionDescription,
 	"validate_dashboard.md":                prompts.ValidateDashboardDescription,
 }
 
 var simplePromptDescriptionFiles = map[string]bool{
+	"create_alert.md":              true,
+	"delete_alert.md":              true,
+	"patch_alert.md":               true,
+	"recommend_alert_config.md":    true,
+	"update_alert.md":              true,
 	"add_drop_rule.md":             true,
 	"create_dashboard.md":          true,
 	"delete_dashboard.md":          true,
@@ -406,6 +426,65 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 		if !strings.Contains(desc, c.phrase) {
 			t.Errorf("GetServiceLogsDescription missing %q: %s", c.phrase, c.reason)
 		}
+	}
+}
+
+// The API rejects expression_args keys other than the bound KPI's own name.
+func TestAlertRuleDescriptionsRequireKPINames(t *testing.T) {
+	for name, desc := range map[string]string{
+		"create_alert":              prompts.CreateAlertDescription,
+		"update_alert":              prompts.UpdateAlertDescription,
+		"validate_alert_expression": prompts.ValidateAlertExpressionDescription,
+	} {
+		if !strings.Contains(desc, "exact name") {
+			t.Errorf("%s does not require each indicator to use its KPI's exact name", name)
+		}
+	}
+	if strings.Contains(prompts.ValidateAlertExpressionDescription, "x, y, z") {
+		t.Error("validate_alert_expression still suggests placeholder indicator names")
+	}
+	if !strings.Contains(prompts.ValidateAlertExpressionDescription, "Write names with spaces, dots or dashes as-is") {
+		t.Error("validate_alert_expression does not say spaced KPI names are written as-is")
+	}
+}
+
+// The API accepts any work-domain address, not only the org's own domain.
+func TestCreateNotificationChannelDescriptionStatesEmailDomains(t *testing.T) {
+	desc := prompts.CreateNotificationChannelDescription
+	if strings.Contains(desc, "org-domain") || !strings.Contains(desc, "rejects personal-provider addresses") {
+		t.Errorf("create_notification_channel misstates which email addresses are accepted: %s", desc)
+	}
+}
+
+// Delivery joins each attachment to its channel's send_resolved; the attachment row's own
+// column is a default nothing reads.
+func TestGetNotificationChannelsDescriptionPointsSendResolvedAtChannel(t *testing.T) {
+	if !strings.Contains(prompts.GetNotificationChannelsDescription, "resolve notifications follow the channel's own send_resolved") {
+		t.Error("get_notification_channels does not say attachment rows' send_resolved is not what delivery uses")
+	}
+}
+
+// create_alert_from_chart rejects a negative threshold before calling the API.
+func TestCreateAlertFromChartDescriptionStatesThresholdFloor(t *testing.T) {
+	if !strings.Contains(prompts.CreateAlertFromChartDescription, "must be 0 or more") {
+		t.Error("create_alert_from_chart does not say threshold must be 0 or more")
+	}
+}
+
+// Write tools return their UI link in _meta, which many clients do not show the model.
+func TestDescriptionsSayWhereTheLinkIs(t *testing.T) {
+	for file, desc := range promptDescriptionFiles {
+		for _, promise := range []string{"a link to Alerting", "a link to notification channels"} {
+			if strings.Contains(desc, promise) && !strings.Contains(desc, promise+" in the result's _meta.reference_url") {
+				t.Errorf("%s promises %q without saying it is in _meta.reference_url", file, promise)
+			}
+		}
+	}
+}
+
+func TestCreateAlertDescriptionStatesDuplicateNameRefusal(t *testing.T) {
+	if !strings.Contains(prompts.CreateAlertDescription, "already uses (case-insensitive) is refused") {
+		t.Error("create_alert does not say a duplicate rule_name is refused")
 	}
 }
 
