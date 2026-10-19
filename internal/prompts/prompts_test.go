@@ -620,6 +620,7 @@ func TestAlertingReferenceCoversAuthoringContract(t *testing.T) {
 		"`invalid indicator details for <name>`",
 		"`missing indicator details for <name>`",
 		"`expression yields 0 timeseries`",
+		"`data source client not in context`",
 		"It does **not** check `condition`, `alert_condition`, `eval_window`",
 		"### Latency", "### Error rate", "### Saturation",
 		"## Alert from a dashboard panel",
