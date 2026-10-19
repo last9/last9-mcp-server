@@ -74,7 +74,7 @@ They return computed answers with the right scoping; reach for them before writi
 - Firing alerts and rule state: {{.}}.
 {{- end}}
 {{- with $changes}}
-- Deploys and other changes, and their impact: {{.}}.
+- Deploys and other changes: {{.}}.
 {{- end}}
 {{- with $deviations}}
 - What deviates from baseline: {{.}}.

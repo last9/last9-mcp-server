@@ -280,7 +280,7 @@ func TestDiscoverSectionListsOnlyNameLookups(t *testing.T) {
 // was a reviewed increase, validated on the full log_query suite; naming
 // analyze_change_impact on the changes line and the log-pattern tools joining
 // the one-service bullet were others.
-const maxInvestigateInstructionsBytes = 2730
+const maxInvestigateInstructionsBytes = 2705
 
 func TestInvestigateInstructionsBounded(t *testing.T) {
 	instructions, _ := initializeOver(t, "investigate")
