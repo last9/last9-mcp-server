@@ -41,6 +41,7 @@ type NotificationChannel struct {
 	ServiceFQID  string                       `json:"service_fqid"`
 	SendResolved *bool                        `json:"send_resolved"`
 	Services     []notificationChannelService `json:"services"`
+	CreatedVia   string                       `json:"created_via"`
 }
 
 // orgWide reports whether the row is unscoped. The API's global flag reflects only the
@@ -97,7 +98,7 @@ func NewGetNotificationChannelsHandler(client *http.Client, cfg models.Config) f
 }
 
 func formatChannelsScopeResponse(rows []notifications.NotificationSetting) string {
-	lines := []string{"id\tname\ttype\tsend_resolved"}
+	lines := []string{"id\tname\ttype\tsend_resolved\tcreated_via"}
 	for _, r := range rows {
 		if strings.TrimSpace(r.ServiceFQID) != "" {
 			continue
@@ -106,7 +107,7 @@ func formatChannelsScopeResponse(rows []notifications.NotificationSetting) strin
 		if r.SendResolved != nil {
 			sendResolved = fmt.Sprintf("%v", *r.SendResolved)
 		}
-		lines = append(lines, fmt.Sprintf("%d\t%s\t%s\t%s", r.ID, escapeTSV(r.Name), escapeTSV(r.Type), sendResolved))
+		lines = append(lines, fmt.Sprintf("%d\t%s\t%s\t%s\t%s", r.ID, escapeTSV(r.Name), escapeTSV(r.Type), sendResolved, escapeTSV(orDash(r.CreatedVia))))
 	}
 	return fmt.Sprintf("Found %d notification channel(s):\n", len(lines)-1) + strings.Join(lines, "\n")
 }
@@ -163,7 +164,7 @@ func fetchNotificationChannels(ctx context.Context, client *http.Client, cfg mod
 func formatNotificationChannelsResponse(channels []NotificationChannel) string {
 	rows := make([]string, 0, len(channels)+2)
 	rows = append(rows, fmt.Sprintf("Found %d notification channel(s):", len(channels)))
-	rows = append(rows, "id\tname\ttype\tglobal\tin_use\tsend_resolved\tsnoozed_until\tseverity\tpriority\tservices\tservice_fqid")
+	rows = append(rows, "id\tname\ttype\tglobal\tin_use\tsend_resolved\tsnoozed_until\tseverity\tpriority\tservices\tservice_fqid\tcreated_via")
 
 	for _, ch := range channels {
 		sendResolved := "null"
@@ -196,14 +197,21 @@ func formatNotificationChannelsResponse(channels []NotificationChannel) string {
 			serviceFQID = "-"
 		}
 
-		rows = append(rows, fmt.Sprintf("%d\t%s\t%s\t%v\t%v\t%s\t%s\t%s\t%d\t%s\t%s",
+		rows = append(rows, fmt.Sprintf("%d\t%s\t%s\t%v\t%v\t%s\t%s\t%s\t%d\t%s\t%s\t%s",
 			ch.ID, escapeTSV(ch.Name), escapeTSV(ch.Type), ch.orgWide(), ch.InUse,
 			escapeTSV(sendResolved), escapeTSV(snoozeUntil), escapeTSV(ch.Severity), ch.Priority, escapeTSV(services),
-			escapeTSV(serviceFQID),
+			escapeTSV(serviceFQID), escapeTSV(orDash(ch.CreatedVia)),
 		))
 	}
 
 	return strings.Join(rows, "\n")
+}
+
+func orDash(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "-"
+	}
+	return value
 }
 
 func escapeTSV(value string) string {

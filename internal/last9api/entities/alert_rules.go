@@ -22,7 +22,7 @@ type AlertRuleInput struct {
 }
 
 // AlertRule is the subset of a stored rule callers need to confirm which group owns it,
-// refuse a duplicate name, and merge a partial properties change into the stored properties.
+// refuse a duplicate name, and carry its stored properties (annotations included) through edits.
 type AlertRule struct {
 	ID         string          `json:"id"`
 	EntityID   string          `json:"entity_id"`

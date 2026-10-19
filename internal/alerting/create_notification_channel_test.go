@@ -90,7 +90,7 @@ func TestCreateNotificationChannelSendsBodyAndHidesSecrets(t *testing.T) {
 		Name: " oncall ", Type: "Slack", Destination: "https://hooks.slack.com/services/" + channelSecret, SendResolved: &no, MentionHandles: "special|here",
 	})
 	assertNoSecret(t, text, err)
-	want := `{"name":"oncall","type":"slack","destination":"https://hooks.slack.com/services/` + channelSecret + `","send_resolved":false,"property":{"service_owner_handle":"special|here"}}`
+	want := `{"name":"oncall","type":"slack","destination":"https://hooks.slack.com/services/` + channelSecret + `","send_resolved":false,"property":{"service_owner_handle":"special|here"},"created_via":"last9-mcp","created_via_client":"unknown/unknown"}`
 	if err != nil || isErr || text != `{"id":9,"name":"oncall","type":"slack","send_resolved":true}` ||
 		len(s.calls) != 1 || s.calls[0].method != "POST" || s.calls[0].uri != "/notification_settings/" || s.calls[0].body != want {
 		t.Fatalf("text=%s isErr=%v err=%v calls=%+v", text, isErr, err, s.calls)

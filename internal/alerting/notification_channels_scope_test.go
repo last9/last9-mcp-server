@@ -18,12 +18,12 @@ func runGetChannels(s *channelServer, scope string) (string, bool, error) {
 func TestGetNotificationChannelsScopeChannels(t *testing.T) {
 	s := newChannelServer(t, func(*http.Request) (int, string) {
 		return 200, `[{"id":4,"name":"oncall","type":"slack","send_resolved":true,"destination":"` + channelSecret + `"},
-{"id":5,"name":"mail","type":"email","send_resolved":null},
+{"id":5,"name":"mail","type":"email","send_resolved":null,"created_via":"last9-mcp"},
 {"id":6,"name":"attached","type":"slack","service_fqid":"g1","severity":"breach"}]`
 	})
 	text, isErr, err := runGetChannels(s, " Channels ")
 	assertNoSecret(t, text, err)
-	want := "Found 2 notification channel(s):\nid\tname\ttype\tsend_resolved\n4\toncall\tslack\ttrue\n5\tmail\temail\tnull"
+	want := "Found 2 notification channel(s):\nid\tname\ttype\tsend_resolved\tcreated_via\n4\toncall\tslack\ttrue\t-\n5\tmail\temail\tnull\tlast9-mcp"
 	if err != nil || isErr || text != want || len(s.calls) != 1 || s.calls[0].uri != "/notification_settings/" {
 		t.Fatalf("text=%q isErr=%v err=%v calls=%+v", text, isErr, err, s.calls)
 	}

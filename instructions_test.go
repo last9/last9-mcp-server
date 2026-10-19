@@ -307,9 +307,10 @@ func TestDiscoverSectionListsOnlyNameLookups(t *testing.T) {
 // maxInvestigateInstructionsBytes caps the policy automation sessions receive,
 // near its size, so growth is a reviewed decision: it precedes every tool
 // description, and growing it moved log_query evals. The parsed-field line
-// was a reviewed increase, validated on the full log_query suite; the
-// log-pattern tools join the one-service bullet (+49 bytes served).
-const maxInvestigateInstructionsBytes = 2700
+// was a reviewed increase, validated on the full log_query suite; naming
+// analyze_change_impact on the changes line and the log-pattern tools joining
+// the one-service bullet were others.
+const maxInvestigateInstructionsBytes = 2705
 
 func TestInvestigateInstructionsBounded(t *testing.T) {
 	instructions, _ := initializeOver(t, "investigate")
@@ -496,6 +497,28 @@ func TestReferenceManualsNameParsedLogFieldsAsAttributes(t *testing.T) {
 			_, manuals, _ := strings.Cut(instructions, "## Reference manuals\n")
 			if got, _, _ := strings.Cut(manuals, "\n"); got != tt.want {
 				t.Errorf("reference manuals intro = %q, want %q:\n%s", got, tt.want, instructions)
+			}
+		})
+	}
+}
+
+// Rewording this line ("..., and their impact") dropped trace_query eval tq-017
+// from 17/20 to 4/20 on absolute time bounds, so analyze_change_impact only
+// joins main's wording.
+func TestServerInstructionsChangesLineKeepsItsWording(t *testing.T) {
+	tests := []struct {
+		name  string
+		tools []string
+		want  string
+	}{
+		{name: "change events only", tools: []string{"get_change_events"}, want: "- Deploys and other changes: `get_change_events`."},
+		{name: "with analyze_change_impact", tools: []string{"get_change_events", "analyze_change_impact"}, want: "- Deploys and other changes: `get_change_events`, `analyze_change_impact`."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			if got := lineNaming(instructions, "get_change_events"); got != tt.want {
+				t.Errorf("changes line = %q, want %q", got, tt.want)
 			}
 		})
 	}

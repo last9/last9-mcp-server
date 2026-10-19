@@ -31,6 +31,10 @@ func validateMutationIDResponse(body []byte) error {
 	return nil
 }
 
+func unreadableStoredPropertiesResult(ruleID string, err error) *mcp.CallToolResult {
+	return utils.ToolErrorResult(fmt.Sprintf("could not read the stored properties of alert rule %s (%v); nothing was changed", ruleID, err))
+}
+
 func alertMutationResult(cfg models.Config, body []byte, fallback string) *mcp.CallToolResult {
 	text := strings.TrimSpace(string(body))
 	if text == "" {

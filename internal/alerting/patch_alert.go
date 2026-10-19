@@ -65,16 +65,20 @@ func NewPatchAlertHandler(client *http.Client, cfg models.Config) func(context.C
 			body.RecurringMuteSchedule = raw
 		}
 		api := last9api.NewClient(client, cfg)
-		rule, refusal, err := requireRuleInGroup(ctx, api, args.EntityID, args.ID)
+		stored, refusal, err := requireRuleInGroup(ctx, api, args.EntityID, args.ID)
 		if refusal != nil || err != nil {
 			return refusal, nil, err
 		}
 		if args.Properties != nil {
-			merged, err := mergeAlertProperties(rule.Properties, *args.Properties)
+			merged, err := mergeAlertProperties(stored.Properties, *args.Properties)
 			if err != nil {
-				return utils.ToolErrorResult(fmt.Sprintf("could not read the stored properties of alert rule %s (%v); nothing was changed", args.ID, err)), nil, nil
+				return unreadableStoredPropertiesResult(args.ID, err), nil, nil
 			}
-			body.Properties = &merged
+			marker, err := storedCreatedViaMarker(stored)
+			if err != nil {
+				return unreadableStoredPropertiesResult(args.ID, err), nil, nil
+			}
+			body.Properties = withCreatedViaAnnotations(&merged, marker)
 		}
 		err = entities.PatchAlertRule(ctx, api, entities.AlertRuleInput{
 			EntityID: args.EntityID,
