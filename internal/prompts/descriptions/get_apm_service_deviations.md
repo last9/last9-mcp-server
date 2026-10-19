@@ -1,12 +1,12 @@
 Compare APM performance across a current window and an equal-duration baseline window. Use this tool for questions such as what regressed, improved, or changed; incident-versus-prior-period comparisons; recovery or post-mitigation verification; and fleet deviation discovery.
 
-**Answer from returned evidence:** use returned percentages and deltas as given; never calculate percentage changes or ratios from raw counts, Apdex values, or samples. When `operation_apdex_reconciliations` is nonempty, include a returned operation, both request-coverage values, and `unexplained_delta` as the residual. Coverage and `unexplained_delta` explain only the reported coverage, not the full service result, and do not establish cause.
+**Answer from returned evidence:** use returned percentages and deltas as given; never calculate percentage changes or ratios from raw counts, latency, Apdex values, or samples. If a percentage is absent, report the raw values or direction without adding a calculated percentage. When `operation_apdex_reconciliations` is nonempty, include a returned operation, both request-coverage values, and `unexplained_delta` as the residual. Coverage and `unexplained_delta` explain only the reported coverage, not the full service result, and do not establish cause.
 
-**Profile first:** Call `get_service_profile` for this service before using this tool. Use `signal_shape` and `telemetry` for routing — see `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
+**Routing:** For an equal-window comparison, call this tool first and by itself; do not call `get_service_profile` first. Use `get_service_profile` only when the user asks for broader investigation across signals or explicitly requests follow-up after the comparison. Use `signal_shape` and `telemetry` for routing — see `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
 
-Use `get_service_summary` for a one-window fleet ranking of interval request count, rpm, HTTP 4xx/5xx, and gRPC errors. Use `get_apm_service_deviations` when the question requires an equal-duration baseline comparison.
+Use `get_service_summary` for a one-window fleet ranking of interval request count, rpm, HTTP 4xx/5xx, and gRPC errors.
 
-For a comparative question, call this tool first and by itself. Do not batch speculative corroboration or duplicate comparison calls. Inspect the returned outcome and evidence before deciding whether the user explicitly requested any deeper investigation.
+Do not batch speculative corroboration or duplicate comparison calls. Inspect the returned outcome and evidence before deciding whether the user explicitly requested any deeper investigation.
 
 ## Scope and inputs
 
@@ -37,7 +37,7 @@ What regressed, improved or changed against an equal-duration baseline.
 - Attribute cohorts that explain slow or failing traces: `get_trace_attribute_deviations`
 
 ## Pairs well with
-- `get_service_profile` (first)
+- `get_service_profile` (broader follow-up)
 - `get_change_events` (what deployed)
 - `get_service_performance_details` (one service's charts)
 
