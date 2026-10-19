@@ -472,6 +472,28 @@ func TestReferenceManualsNameParsedLogFieldsAsAttributes(t *testing.T) {
 	}
 }
 
+// Rewording this line ("..., and their impact") dropped trace_query eval tq-017
+// from 17/20 to 4/20 on absolute time bounds, so analyze_change_impact only
+// joins main's wording.
+func TestServerInstructionsChangesLineKeepsItsWording(t *testing.T) {
+	tests := []struct {
+		name  string
+		tools []string
+		want  string
+	}{
+		{name: "change events only", tools: []string{"get_change_events"}, want: "- Deploys and other changes: `get_change_events`."},
+		{name: "with analyze_change_impact", tools: []string{"get_change_events", "analyze_change_impact"}, want: "- Deploys and other changes: `get_change_events`, `analyze_change_impact`."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			if got := lineNaming(instructions, "get_change_events"); got != tt.want {
+				t.Errorf("changes line = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // lineNaming returns the first instructions line that names tool in backticks.
 func lineNaming(instructions, tool string) string {
 	for _, line := range strings.Split(instructions, "\n") {
