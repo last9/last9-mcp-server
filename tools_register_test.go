@@ -55,12 +55,15 @@ func noopHandler(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallTool
 
 func TestRegisterIfAllowedSkipsExcludedTools(t *testing.T) {
 	server := newRegisterTestServer(t)
-	allowed := toolsets.Set{"included_tool": {}}
-	if err := registerIfAllowed(server, allowed, &mcp.Tool{Name: "excluded_tool"}, noopHandler); err != nil {
+	gate := newToolGate(toolsets.Filter{Tools: toolsets.Set{"included_tool": {}}})
+	if err := registerIfAllowed(server, gate, &mcp.Tool{Name: "excluded_tool"}, noopHandler); err != nil {
 		t.Fatalf("skipped registration returned error: %v", err)
 	}
-	if err := registerIfAllowed(server, allowed, &mcp.Tool{Name: "included_tool"}, noopHandler); err != nil {
+	if err := registerIfAllowed(server, gate, &mcp.Tool{Name: "included_tool"}, noopHandler); err != nil {
 		t.Fatalf("allowed registration failed: %v", err)
+	}
+	if err := gate.registerAdmitted(); err != nil {
+		t.Fatalf("register admitted tools: %v", err)
 	}
 	names := registeredToolNames(t, server)
 	if !reflect.DeepEqual(names, []string{"included_tool"}) {
@@ -70,7 +73,7 @@ func TestRegisterIfAllowedSkipsExcludedTools(t *testing.T) {
 
 func TestRegisterWriteToolRequiresVerifyCall(t *testing.T) {
 	server := newRegisterTestServer(t)
-	err := registerWriteTool(server, nil, &mcp.Tool{Name: "create_thing"}, " ", noopHandler)
+	err := registerWriteTool(server, newToolGate(toolsets.Filter{}), &mcp.Tool{Name: "create_thing"}, " ", noopHandler)
 	if err == nil || !strings.Contains(err.Error(), "create_thing") {
 		t.Fatalf("want an error naming create_thing, got %v", err)
 	}
@@ -82,7 +85,7 @@ func TestRegisterWriteToolRequiresVerifyCall(t *testing.T) {
 func TestRegisterWriteToolRequiresVerifyToolInSameToolset(t *testing.T) {
 	server := newRegisterTestServer(t)
 	allowed := toolsets.Set{"create_thing": {}}
-	err := registerWriteTool(server, allowed, &mcp.Tool{Name: "create_thing"}, "get_things (name)", noopHandler)
+	err := registerWriteTool(server, newToolGate(toolsets.Filter{Tools: allowed}), &mcp.Tool{Name: "create_thing"}, "get_things (name)", noopHandler)
 	if err == nil || !strings.Contains(err.Error(), "get_things") {
 		t.Fatalf("want an error naming get_things, got %v", err)
 	}
@@ -101,8 +104,8 @@ func TestEveryToolsetServesWriteToolsVerifyCalls(t *testing.T) {
 				t.Fatalf("parse %q: %v", name, err)
 			}
 			cfg := writeToolTestConfig("http://unused.invalid")
-			cfg.AllowedTools = allowed
-			if err := registerTools(newRegisterTestServer(t), cfg, http.DefaultClient); err != nil {
+			cfg.ToolFilter = toolsets.Filter{Tools: allowed}
+			if _, err := registerTools(newRegisterTestServer(t), cfg, http.DefaultClient); err != nil {
 				t.Fatalf("register tools: %v", err)
 			}
 		})
@@ -114,7 +117,11 @@ func TestRegisterIfAllowedRecoversSchemaPanic(t *testing.T) {
 	chanHandler := func(context.Context, *mcp.CallToolRequest, chan int) (*mcp.CallToolResult, any, error) {
 		return nil, nil, nil
 	}
-	err := registerIfAllowed(server, nil, &mcp.Tool{Name: "bad_schema_tool"}, chanHandler)
+	gate := newToolGate(toolsets.Filter{})
+	if err := registerIfAllowed(server, gate, &mcp.Tool{Name: "bad_schema_tool"}, chanHandler); err != nil {
+		t.Fatalf("queueing an admitted tool returned error: %v", err)
+	}
+	err := gate.registerAdmitted()
 	if err == nil {
 		t.Fatal("expected error from panicking tool registration, got nil")
 	}

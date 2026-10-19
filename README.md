@@ -219,6 +219,8 @@ The NPM route is easier on Windows — no path management.
 | `LAST9_DATASOURCE`           | org default          | Datasource/cluster name — useful when you have multiple Levitate clusters |
 | `LAST9_API_HOST`             | `app.last9.io`       | Override the API host |
 | `LAST9_TOOLSETS`             | all tools            | Comma-separated toolsets to expose (`logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`). Alias: `LAST9_MCP_TOOLSETS` |
+| `LAST9_MCP_READ_ONLY`        | `false`              | Set `true` to serve only read-only tools; see [Read-only mode](#read-only-mode). A value that is not a boolean is a startup error. Alias: `LAST9_READ_ONLY` |
+| `LAST9_MCP_ALLOW_WRITE_TOOLS`| —                    | Comma-separated write tools still served in read-only mode. Alias: `LAST9_ALLOW_WRITE_TOOLS` |
 | `LAST9_MAX_GET_LOGS_ENTRIES` | `5000`               | Max entries for chunked `get_logs` requests |
 | `LAST9_USE_LOG_SEARCH_API`   | `false`              | Set `true` to answer `get_logs` and `get_service_logs` with one server-side search call instead of client-side chunking |
 | `LAST9_DEBUG_CHUNKING`       | `false`              | Set `true` to log chunk-planning details for `get_logs`, `get_service_logs`, `get_traces` |
@@ -226,6 +228,22 @@ The NPM route is easier on Windows — no path management.
 | `OTEL_SDK_DISABLED`          | —                    | Standard OTel env var. Overrides `LAST9_DISABLE_TELEMETRY` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`| —                    | OTLP collector endpoint (only when telemetry is enabled) |
 | `OTEL_EXPORTER_OTLP_HEADERS` | —                    | OTLP auth headers (only when telemetry is enabled) |
+
+### Read-only mode
+
+`--read-only` (or `LAST9_MCP_READ_ONLY=true`) serves only tools annotated `readOnlyHint: true`, so no tool can create, change or delete alert rules, notification channels, dashboards or drop rules, acknowledge or reassign alerts, or mute groups. A tool without annotations counts as a write tool and is hidden.
+
+To keep a few write tools, list them with `--allow-write-tools` (or `LAST9_MCP_ALLOW_WRITE_TOOLS`):
+
+```bash
+last9-mcp --read-only --allow-write-tools=acknowledge_alert,mute_alert_group
+```
+
+- The server refuses to start if an allowed name is not a write tool (a typo, or a read tool's name); the error lists the valid write tools.
+- `--allow-write-tools` without `--read-only` is a startup error, because every write tool is already served.
+- Read-only combines with `--toolsets`: a tool is served only when it passes both. `--toolsets=alerts --read-only --allow-write-tools=mute_alert_group` serves the alerts read tools plus `mute_alert_group`; an allowed write tool outside the chosen toolsets stays hidden.
+- `--http` mode and `dump-tools` honor the same flags and env vars: `go run . dump-tools --read-only` prints the read-only surface.
+- Read tools' descriptions, schemas and results, and the server instructions, never name a hidden write tool. An allowed write tool can still name its hidden siblings (`create_alert` creates a disabled rule that `patch_alert` enables), so allow such pairs together.
 
 ---
 
@@ -290,6 +308,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 ### Change Events & Alerts
 
 - **`get_change_events`** — Deployments, config changes, rollbacks. Correlate incidents with what changed
+- **`analyze_change_impact`** — Did a change break anything? Compares a service and its direct callers before and after a change: golden signals, APM and trace-attribute deviations, new firing alerts, and a verdict (`regression likely` / `no significant change` / `insufficient data`)
 - **`get_alert_groups`** — Configured Compass alert groups with metadata labels, team, tier, and rule counts — including groups with zero rules and groups that are not firing
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_alerts`** — Currently firing alerts within a time window
@@ -734,6 +753,19 @@ Returns an `investigation-evidence/v1` envelope; the waterfall is under `data`.
 - `env` (string, optional)
 - `event_name` (string, optional): Call without this first to get `available_event_names`.
 
+### analyze_change_impact
+
+Pass exactly one of `change_event` or `service` + `timestamp`.
+
+- `change_event` (object, optional): One element of `get_change_events` `change_events[]`, unchanged. Uses `metric.service`, `metric.deployment_environment` and the earliest `values[].timestamp`.
+- `service` (string, optional): Required with `timestamp` when `change_event` is omitted.
+- `timestamp` (string, optional): RFC3339 or unix seconds, rounded down to the minute.
+- `env` (string, optional): Exact environment. Default: the event's, else all.
+- `baseline_minutes` (integer, optional): Default: 60. Clamped to 30..120.
+- `after_minutes` (integer, optional): Default: `baseline_minutes`. Clamped to 30..120 and capped at now.
+
+`regression likely` when any holds: error rate up at least 1 percentage point, p95 up at least 40%, or throughput (rpm) down at least 50% for the service or one of its top 10 callers, ranked by throughput over both windows together (only with at least 100 requests before the change and, but for throughput, after it; p95 counts only `latency_env`'s requests); an alert for them starts firing after the change (matched case-insensitively by alert group name or a `service`, `service_name` or `service.name` label, else annotation (never free text such as a summary); with `env`, alerts labelled with another environment, ignoring case, are dropped and unlabelled ones are marked `env_match: unlabelled`); a regression from `get_apm_service_deviations`. `insufficient data` when the after window is under 5 minutes (including a change in the future), the service has too few requests, or golden signals, the direct-caller lookup, alerts or `get_apm_service_deviations` failed, wholly or in any query listed in `deviations.apm.unavailable`: missing evidence never yields `no significant change`, and a regression found anyway names what failed. `no significant change` is a valid answer, not a failure. Trace-attribute deviations run only when `env` is set, over at most 15 minutes each side; they explain a verdict but never set one, so skipping them or failing to fetch them leaves it unchanged. Each list keeps 10 items and reports how many it dropped; a failed upstream call leaves an `error` on its section only. Golden-signal latency comes from one environment in both windows, named in `latency_env`: with no `env`, the busiest. Golden-signal error rate counts 5xx and gRPC errors; `deviations.apm` also counts error-status spans and 429s. A caller's signals are its own server spans, so client-only callers show 0 rpm.
+
 ### get_alert_groups
 
 Configured Compass alert-group inventory for changeboard / label-coverage audits. Includes groups with zero rules and groups that are not firing. Does not return PromQL.
@@ -850,7 +882,7 @@ Partial change that preserves the rule ID. At least one change is required. Refu
 - `id` (string, required): Alert rule UUID.
 - `is_disabled` (boolean, optional): `false` promotes/enables, `true` pauses.
 - `mute_until` (integer, optional): Unix epoch deadline; `0` unmutes.
-- `properties` (object, optional): Replaces description, runbook, annotations, and `query_mode`.
+- `properties` (object, optional): `description`, `runbook`, `annotations`, `query_mode`. Each field sent replaces the stored one; omitted or blank fields keep their stored value. `annotations` replaces the whole map, so send every key to keep; `{}` clears it.
 - `recurring_mute_schedule` (object, optional): Replaces the weekly schedule: `enabled` (default false), `timezone` (IANA name, required), and `windows` (1–20 of `weekdays` as `sun`..`sat`, `start_time` / `end_time` as 24-hour `HH:MM`). An end at or before the start ends the next day. Send every window to keep.
 - `clear_recurring_mute_schedule` (boolean, optional): Removes the schedule entirely; cannot be combined with `recurring_mute_schedule`. Differs from `enabled=false`, which keeps the windows stored.
 
@@ -905,7 +937,7 @@ Routes an existing channel to one alert group. Idempotent. Attachments copy the 
 
 - `channel_id` (integer, required): A channel id (`get_notification_channels` with `scope=channels`), not an attachment id.
 - `alert_group_id` (string, required): From `get_alert_groups`.
-- `severity` (string, required): `breach`, `threat`, or `both`. `both` makes two attachments.
+- `severity` (string, required): `breach`, `threat`, or `both`. `both` makes two attachments; if the second fails, the first stays attached and the error names the severity to retry.
 
 ### detach_notification_channel
 

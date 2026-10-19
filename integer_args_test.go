@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"last9-mcp/internal/telemetry/logs"
+	"last9-mcp/internal/toolsets"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -35,8 +36,12 @@ func callIntegerArgsTool(t *testing.T, args string) (*integerArgsTestInput, *mcp
 		seen = &in
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "ok"}}}, nil, nil
 	}
-	if err := registerIfAllowed(server, nil, &mcp.Tool{Name: "int_tool"}, handler); err != nil {
+	gate := newToolGate(toolsets.Filter{})
+	if err := registerIfAllowed(server, gate, &mcp.Tool{Name: "int_tool"}, handler); err != nil {
 		t.Fatalf("register: %v", err)
+	}
+	if err := gate.registerAdmitted(); err != nil {
+		t.Fatalf("register admitted: %v", err)
 	}
 	ctx := context.Background()
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
