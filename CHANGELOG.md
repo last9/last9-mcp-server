@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `did_you_mean` to the logs, traces, and metrics toolsets so their entity-name discovery guidance can be followed (#312).
 
 ### Fixed
+- Every tool now accepts a number-like string for an integer argument, so `{"channel_id": "42"}` runs as `42` instead of failing with `type: 42 has type "string", want "integer"`. Before schema validation, a string matching `^-?\d+$` (and fitting int64) under a property whose schema allows integers but not strings, at any depth, is replaced by its number; other strings such as `"4x2"`, `"4.2"` or `""` are still rejected with the same error naming the argument, and unknown arguments are still refused (#372).
 
 - Outbound API calls now inject W3C `traceparent` (and baggage) after `InitProviders` registers the global TextMapPropagator, so MCP spans can join backend traces when telemetry is enabled (#317).
 - `prometheus_label_values` now documents that daily/sparse metrics need a widened `lookback_minutes` (for example `5760` for 4 days). The default 60-minute window omitted those series from discovery and led to false "not streaming" decisions; handler tests pin default, 4-day, and explicit ISO window wiring (#315).

@@ -52,7 +52,8 @@ func boolPtr(b bool) *bool { return &b }
 
 // registerIfAllowed registers a tool only when it is in the active toolset set.
 // The MCP SDK panics on invalid tool schemas; recover and return an error so
-// registerAllTools can fail fast instead of crashing the process.
+// registerAllTools can fail fast instead of crashing the process. Number-like strings
+// sent for the tool's integer arguments are accepted as numbers.
 func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, allowed toolsets.Set, tool *mcp.Tool, handler mcp.ToolHandlerFor[In, Out]) (err error) {
 	if !allowed.Allows(tool.Name) {
 		return nil
@@ -70,6 +71,9 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, allowed too
 	}()
 	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, handler); regErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, regErr)
+	}
+	if coerceErr := addIntegerArgsCoercion[In](server.Server, tool); coerceErr != nil {
+		return fmt.Errorf("register %q: %w", tool.Name, coerceErr)
 	}
 	return nil
 }

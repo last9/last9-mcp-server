@@ -9,6 +9,9 @@ import (
 	"sync"
 	"testing"
 
+	"last9-mcp/internal/telemetry/logs"
+
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -116,6 +119,27 @@ func TestIntegerArgsKeepRejectingUnknownProperties(t *testing.T) {
 	seen, res := callIntegerArgsTool(t, `{"channel_id":"42","channel":"42"}`)
 	if seen != nil || !res.IsError {
 		t.Fatalf("want unknown property rejected, handler saw %+v", seen)
+	}
+}
+
+// Seven tools pass a hand-built map InputSchema instead of inferring one from their args.
+func TestIntegerArgsReadHandBuiltSchemas(t *testing.T) {
+	schema, err := inputSchemaFor[struct{}](&mcp.Tool{InputSchema: logs.GetLogsInputSchema()})
+	if err != nil {
+		t.Fatalf("input schema: %v", err)
+	}
+	got := coerceIntegerArguments(schema, json.RawMessage(`{"limit":"5","logjson_query":[]}`))
+	if string(got) != `{"limit":5,"logjson_query":[]}` {
+		t.Fatalf("coerced args = %s", got)
+	}
+}
+
+func TestIntegerArgsLeaveStringUnionsAlone(t *testing.T) {
+	schema := &jsonschema.Schema{Type: "object", Properties: map[string]*jsonschema.Schema{
+		"id": {Types: []string{"integer", "string"}},
+	}}
+	if got := coerceIntegerArguments(schema, json.RawMessage(`{"id":"42"}`)); string(got) != `{"id":"42"}` {
+		t.Fatalf("coerced a value the schema accepts as a string: %s", got)
 	}
 }
 
