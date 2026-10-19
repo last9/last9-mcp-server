@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Name-only dashboard creation now starts with empty panels instead of inventing metric queries, matching the accepted dashboard schema (#322).
+- `get_logs` now names `logjson_query` as the stage-array argument instead of the invalid `pipeline` key, and `get_traces` maps average duration requests to `$avg` rather than `$quantile` (#322).
+- `create_dashboard` and `update_dashboard` now accept queryless CSV-backed panels through a `csv` panel branch in their shared schema, while remote-query panels still require `queries`; their descriptions say `log_raw` queries use `telemetry: "logs"` and a non-aggregate JSON pipeline (#322).
+- Equal-window APM comparisons now go directly to the comparison tool when service scope is known, so a required profile lookup cannot consume the call budget before the comparison; the description also directs answers to use raw values when no percentage is returned (#322).
 - Outbound API calls now inject W3C `traceparent` (and baggage) after `InitProviders` registers the global TextMapPropagator, so MCP spans can join backend traces when telemetry is enabled (#317).
 - `prometheus_label_values` now documents that daily/sparse metrics need a widened `lookback_minutes` (for example `5760` for 4 days). The default 60-minute window omitted those series from discovery and led to false "not streaming" decisions; handler tests pin default, 4-day, and explicit ISO window wiring (#315).
 - `create_dashboard` and `update_dashboard` no longer serve an integer `enum` for a panel's `version`; it is pinned to 1 with `minimum`/`maximum`, which providers that accept only string enums can load. A new `tool_metadata_test.go` check fails the build on any non-string enum, a description over its byte budget, a `last9://` URI with no registered resource, a schema nested deeper than 8, or a tool name that is not lowercase and verb-first (#354).
