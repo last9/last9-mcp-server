@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -152,6 +153,35 @@ func TestDumpToolsReadOnlyRoutesNameOnlyServedTools(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Prose and schemas are not trimmed like routes, so in read-only mode a served
+// tool must not name a write tool anywhere: it would send the model to a tool
+// the server rejects as unknown.
+func TestDumpToolsReadOnlyNamesNoHiddenWriteTool(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, toolsets.Filter{ReadOnly: true}); err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Tools []json.RawMessage `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range out.Tools {
+		var tool struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(raw, &tool); err != nil {
+			t.Fatal(err)
+		}
+		for name := range writeTools {
+			if regexp.MustCompile(`\b` + name + `\b`).Match(raw) {
+				t.Errorf("%s names hidden write tool %s", tool.Name, name)
+			}
+		}
 	}
 }
 
