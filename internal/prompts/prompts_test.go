@@ -11,6 +11,7 @@ import (
 
 var promptDescriptionFiles = map[string]string{
 	"add_drop_rule.md":                     prompts.AddDropRuleDescription,
+	"analyze_change_impact.md":             prompts.AnalyzeChangeImpactDescription,
 	"create_alert.md":                      prompts.CreateAlertDescription,
 	"create_alert_from_chart.md":           prompts.CreateAlertFromChartDescription,
 	"create_dashboard.md":                  prompts.CreateDashboardDescription,
@@ -545,6 +546,53 @@ func TestDescriptionsSayWhereTheLinkIs(t *testing.T) {
 func TestCreateAlertDescriptionStatesDuplicateNameRefusal(t *testing.T) {
 	if !strings.Contains(prompts.CreateAlertDescription, "already uses (case-insensitive) is refused") {
 		t.Error("create_alert does not say a duplicate rule_name is refused")
+	}
+}
+
+// Cleanup and bulk removals must stay on resources an MCP agent created unless the user
+// names one; each tool must also say where the marker is listed.
+func TestRemovalDescriptionsScopeCleanupToMarkedResources(t *testing.T) {
+	for name, tc := range map[string]struct{ desc, listing string }{
+		"delete_alert":                {prompts.DeleteAlertDescription, "get_entity_alert_rules"},
+		"delete_notification_channel": {prompts.DeleteNotificationChannelDescription, "get_notification_channels scope=channels"},
+		"detach_notification_channel": {prompts.DetachNotificationChannelDescription, "get_notification_channels scope=attached"},
+	} {
+		for _, phrase := range []string{
+			"clean up",
+			"whose created_via is last9-mcp",
+			"shown by " + tc.listing,
+			"only when the user names that specific",
+			"explicitly says to include ones created elsewhere",
+		} {
+			if !strings.Contains(tc.desc, phrase) {
+				t.Errorf("%s missing cleanup-scope wording %q", name, phrase)
+			}
+		}
+	}
+}
+
+// Models sent channel_id as "42", which the schema rejects, once get_entity_alert_rules listed
+// created_via; eval alc-022 recovered with exactly this wording, so pin it, not a paraphrase.
+func TestRemovalDescriptionsStateIntegerIDBeforeCleanupScope(t *testing.T) {
+	for name, tc := range map[string]struct{ desc, param string }{
+		"delete_notification_channel": {prompts.DeleteNotificationChannelDescription, "channel_id (required, an integer such as 42)"},
+		"detach_notification_channel": {prompts.DetachNotificationChannelDescription, "attachment_id (required, an integer such as 42)"},
+	} {
+		param, cleanup := strings.Index(tc.desc, tc.param), strings.Index(tc.desc, "To clean up")
+		if param < 0 {
+			t.Errorf("%s does not state %q", name, tc.param)
+			continue
+		}
+		if cleanup >= 0 && cleanup < param {
+			t.Errorf("%s puts cleanup scope before its id parameter", name)
+		}
+	}
+}
+
+// delete_alert points at this listing for the marker, so name the label it prints.
+func TestEntityAlertRulesDescriptionNamesCreatedViaLabel(t *testing.T) {
+	if !strings.Contains(prompts.GetEntityAlertRulesDescription, `"Created Via:"`) {
+		t.Error(`get_entity_alert_rules does not name its "Created Via:" output line`)
 	}
 }
 
