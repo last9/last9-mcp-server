@@ -71,8 +71,9 @@ func GetAlertCoverage(
 	if err != nil {
 		return nil, err
 	}
-	// Do accepts an empty 2xx body; read as a zero-gap report it would claim full coverage.
-	if out == nil {
+	// Do accepts an empty 2xx body, and the API always sends counts; a body with neither
+	// gaps nor counts, read as a zero-gap report, would claim full coverage.
+	if out == nil || (out.Counts == nil && len(out.Gaps) == 0) {
 		return nil, errors.New(opAlertCoverage + ": response held no coverage report, so coverage was not checked")
 	}
 	return out, nil
