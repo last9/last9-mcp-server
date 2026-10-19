@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -94,6 +95,8 @@ type apmDeviationResult struct {
 	PartialErrors                 []deviationPartialError        `json:"partial_errors,omitempty"`
 	Provenance                    deviationProvenance            `json:"provenance"`
 	DashboardURL                  string                         `json:"dashboard_url"`
+
+	serviceErrors []deviationPartialError
 }
 
 type aggregateWindowSummary struct {
@@ -105,107 +108,59 @@ type aggregateWindowSummary struct {
 
 // NewAPMServiceDeviationsHandler compares bounded APM RED aggregates across equal windows.
 func NewAPMServiceDeviationsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, DeviationArgs) (*mcp.CallToolResult, any, error) {
-	return newAPMServiceDeviationsHandler(client, cfg, deviationHandlerDeps{
+	return newAPMServiceDeviationsHandler(client, cfg, defaultDeviationHandlerDeps())
+}
+
+func defaultDeviationHandlerDeps() deviationHandlerDeps {
+	return deviationHandlerDeps{
 		now:                func() time.Time { return time.Now().UTC() },
 		queryStep:          deviationQueryStep,
 		resolveDatasource:  resolveDatasourceCfg,
 		runnerFactory:      newHTTPDeviationQueryRunner,
 		execute:            executeDeviationQueries,
 		hasAnyAPMTelemetry: hasAnyAPMTelemetry,
-	})
+	}
+}
+
+// ServiceDeviations is the get_apm_service_deviations comparison as a
+// composite tool consumes it.
+type ServiceDeviations struct {
+	// Entries are the deviating signals in that tool's priority order:
+	// regressions, then improvements, then throughput shifts.
+	Entries []LeaderboardEntry
+	// FailedQueries names each service-level query that failed or returned an
+	// invalid value while others succeeded; those signals were not compared.
+	// Operation-correlation failures are left out: they never classify a signal.
+	FailedQueries []string
+}
+
+// QueryServiceDeviations runs the get_apm_service_deviations comparison.
+func QueryServiceDeviations(ctx context.Context, client *http.Client, cfg models.Config, args DeviationArgs) (ServiceDeviations, error) {
+	return queryServiceDeviations(ctx, client, cfg, defaultDeviationHandlerDeps(), args)
+}
+
+func queryServiceDeviations(ctx context.Context, client *http.Client, cfg models.Config, deps deviationHandlerDeps, args DeviationArgs) (ServiceDeviations, error) {
+	result, err := runAPMServiceDeviations(ctx, client, cfg, deps, args)
+	if err != nil {
+		return ServiceDeviations{}, err
+	}
+	out := ServiceDeviations{Entries: make([]LeaderboardEntry, 0), FailedQueries: make([]string, 0, len(result.serviceErrors))}
+	for _, slice := range orderedDeviationSlices(result) {
+		out.Entries = append(out.Entries, slice...)
+	}
+	for _, e := range result.serviceErrors {
+		out.FailedQueries = append(out.FailedQueries, fmt.Sprintf("%s (%s, %s)", e.Signal, e.Window, e.Kind))
+	}
+	out.FailedQueries = uniqueSorted(out.FailedQueries)
+	return out, nil
 }
 
 func newAPMServiceDeviationsHandler(client *http.Client, baseCfg models.Config, deps deviationHandlerDeps) func(context.Context, *mcp.CallToolRequest, DeviationArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args DeviationArgs) (*mcp.CallToolResult, any, error) {
-		maxServices, err := deviationLimit("max_services", args.MaxServices)
+		result, err := runAPMServiceDeviations(ctx, client, baseCfg, deps, args)
 		if err != nil {
 			return nil, nil, err
 		}
-		maxOperations, err := deviationLimit("max_operations", args.MaxOperations)
-		if err != nil {
-			return nil, nil, err
-		}
-		queryCfg, err := deps.resolveDatasource(baseCfg, args.Datasource)
-		if err != nil {
-			return nil, nil, err
-		}
-		now := deps.now().UTC()
-		windows, err := resolveDeviationWindows(args, now, deps.queryStep)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		runner := deps.runnerFactory(client, queryCfg)
-		scope := deviationQueryScope{ServiceName: args.ServiceName, Env: args.Env, Limit: maxServices}
-		plan := buildServiceRollupQueries(scope, effectiveCurrentWindow(windows), effectiveBaselineWindow(windows), deps.queryStep)
-		execution := deps.execute(ctx, runner, plan)
-		if execution.Err != nil {
-			return nil, nil, execution.Err
-		}
-		if err := ctx.Err(); err != nil {
-			return nil, nil, err
-		}
-		recordCount := len(execution.Current.Records) + len(execution.Baseline.Records)
-		if recordCount == 0 && len(execution.Errors) > 0 {
-			if hasInvalidAggregateErrors(execution.Errors) {
-				return nil, nil, fmt.Errorf("metric queries returned no valid aggregate values")
-			}
-			return nil, nil, fmt.Errorf("metric queries returned no valid RED measurements")
-		}
-		if recordCount > 0 && !executionHasValidREDMeasurement(execution) {
-			return nil, nil, fmt.Errorf("metric queries returned no valid RED measurements")
-		}
-
-		result := buildDeviationResult(args, queryCfg, windows, execution)
-		limitDeviationResult(&result, maxServices)
-		if args.ServiceName != "" && len(result.Services) == 0 && len(result.TelemetryChanges) == 0 {
-			present, detectErr := deps.hasAnyAPMTelemetry(ctx, runner, args, windows)
-			if detectErr != nil {
-				if err := ctx.Err(); err != nil {
-					return nil, nil, err
-				}
-				if errors.Is(detectErr, context.Canceled) || errors.Is(detectErr, context.DeadlineExceeded) {
-					return nil, nil, detectErr
-				}
-				result.Warnings = append(result.Warnings, "Workload telemetry presence could not be confirmed; comparison evidence remains empty.")
-			} else if present {
-				result.Outcome = "unsupported_workload_shape"
-				result.Warnings = append(result.Warnings, "The named workload has APM telemetry but no server-request series supported by this comparison.")
-			}
-		}
-
-		if args.ServiceName != "" && shouldQueryOperations(result) {
-			opScope := deviationQueryScope{ServiceName: args.ServiceName, Env: args.Env, Limit: maxOperations}
-			opPlan := buildOperationRollupQueries(opScope, effectiveCurrentWindow(windows), effectiveBaselineWindow(windows), deps.queryStep)
-			opExecution := deps.execute(ctx, runner, opPlan)
-			if opExecution.Err != nil {
-				if ctx.Err() != nil {
-					return nil, nil, ctx.Err()
-				}
-				result.Warnings = append(result.Warnings, "Operation correlation was unavailable.")
-			} else {
-				result.PartialErrors = append(result.PartialErrors, publicDeviationErrors(opExecution.Errors)...)
-				if n := distinctOperationIdentities(opExecution); n > operationCardinalityWarningThreshold {
-					result.Warnings = append(result.Warnings, fmt.Sprintf(
-						"Operation analysis parsed %d distinct span names for this service; high span-name cardinality slows this tool and usually means unbounded span names (for example URLs with embedded IDs) — check the service's instrumentation.", n))
-				}
-				result.OperationCorrelations = correlateOperations(result, opExecution, windows, maxOperations)
-				result.OperationApdexReconciliations = reconcileOperationApdex(result, opExecution, windows, maxOperations)
-			}
-		}
-		result.RecommendedFollowups = recommendedDeviationFollowups(result, args)
-		result.Warnings = uniqueSorted(result.Warnings)
-		result.PartialErrors = sortedPartialErrors(result.PartialErrors)
-		if len(result.PartialErrors) > 0 {
-			result.Warnings = uniqueSorted(append(result.Warnings, "Some metric signals were unavailable; conclusions use the successful measurements only."))
-		}
-		if hasRejectedDeviationErrors(result.PartialErrors) {
-			result.Warnings = uniqueSorted(append(result.Warnings, "The datasource rejected or timed out on some queries; the unnarrowed scope may be too large. Narrow with env or service_name and retry."))
-		}
-		builder := deeplink.NewBuilder(queryCfg.OrgSlug, queryCfg.ClusterID)
-		result.DashboardURL = builder.BuildAPMServiceLink(
-			windows.RequestedCurrentStart.UnixMilli(), windows.RequestedCurrentEnd.UnixMilli(), args.ServiceName, deeplink.APMCatalogEnvExact(args.Env), "",
-		)
 		payload, err := json.Marshal(result)
 		if err != nil {
 			return nil, nil, fmt.Errorf("marshal APM deviation response: %w", err)
@@ -216,6 +171,101 @@ func newAPMServiceDeviationsHandler(client *http.Client, baseCfg models.Config, 
 			StructuredContent: result,
 		}, nil, nil
 	}
+}
+
+func runAPMServiceDeviations(ctx context.Context, client *http.Client, baseCfg models.Config, deps deviationHandlerDeps, args DeviationArgs) (apmDeviationResult, error) {
+	var none apmDeviationResult
+	maxServices, err := deviationLimit("max_services", args.MaxServices)
+	if err != nil {
+		return none, err
+	}
+	maxOperations, err := deviationLimit("max_operations", args.MaxOperations)
+	if err != nil {
+		return none, err
+	}
+	queryCfg, err := deps.resolveDatasource(baseCfg, args.Datasource)
+	if err != nil {
+		return none, err
+	}
+	now := deps.now().UTC()
+	windows, err := resolveDeviationWindows(args, now, deps.queryStep)
+	if err != nil {
+		return none, err
+	}
+
+	runner := deps.runnerFactory(client, queryCfg)
+	scope := deviationQueryScope{ServiceName: args.ServiceName, Env: args.Env, Limit: maxServices}
+	plan := buildServiceRollupQueries(scope, effectiveCurrentWindow(windows), effectiveBaselineWindow(windows), deps.queryStep)
+	execution := deps.execute(ctx, runner, plan)
+	if execution.Err != nil {
+		return none, execution.Err
+	}
+	if err := ctx.Err(); err != nil {
+		return none, err
+	}
+	recordCount := len(execution.Current.Records) + len(execution.Baseline.Records)
+	if recordCount == 0 && len(execution.Errors) > 0 {
+		if hasInvalidAggregateErrors(execution.Errors) {
+			return none, fmt.Errorf("metric queries returned no valid aggregate values")
+		}
+		return none, fmt.Errorf("metric queries returned no valid RED measurements")
+	}
+	if recordCount > 0 && !executionHasValidREDMeasurement(execution) {
+		return none, fmt.Errorf("metric queries returned no valid RED measurements")
+	}
+
+	result := buildDeviationResult(args, queryCfg, windows, execution)
+	result.serviceErrors = slices.Clone(result.PartialErrors)
+	limitDeviationResult(&result, maxServices)
+	if args.ServiceName != "" && len(result.Services) == 0 && len(result.TelemetryChanges) == 0 {
+		present, detectErr := deps.hasAnyAPMTelemetry(ctx, runner, args, windows)
+		if detectErr != nil {
+			if err := ctx.Err(); err != nil {
+				return none, err
+			}
+			if errors.Is(detectErr, context.Canceled) || errors.Is(detectErr, context.DeadlineExceeded) {
+				return none, detectErr
+			}
+			result.Warnings = append(result.Warnings, "Workload telemetry presence could not be confirmed; comparison evidence remains empty.")
+		} else if present {
+			result.Outcome = "unsupported_workload_shape"
+			result.Warnings = append(result.Warnings, "The named workload has APM telemetry but no server-request series supported by this comparison.")
+		}
+	}
+
+	if args.ServiceName != "" && shouldQueryOperations(result) {
+		opScope := deviationQueryScope{ServiceName: args.ServiceName, Env: args.Env, Limit: maxOperations}
+		opPlan := buildOperationRollupQueries(opScope, effectiveCurrentWindow(windows), effectiveBaselineWindow(windows), deps.queryStep)
+		opExecution := deps.execute(ctx, runner, opPlan)
+		if opExecution.Err != nil {
+			if ctx.Err() != nil {
+				return none, ctx.Err()
+			}
+			result.Warnings = append(result.Warnings, "Operation correlation was unavailable.")
+		} else {
+			result.PartialErrors = append(result.PartialErrors, publicDeviationErrors(opExecution.Errors)...)
+			if n := distinctOperationIdentities(opExecution); n > operationCardinalityWarningThreshold {
+				result.Warnings = append(result.Warnings, fmt.Sprintf(
+					"Operation analysis parsed %d distinct span names for this service; high span-name cardinality slows this tool and usually means unbounded span names (for example URLs with embedded IDs) — check the service's instrumentation.", n))
+			}
+			result.OperationCorrelations = correlateOperations(result, opExecution, windows, maxOperations)
+			result.OperationApdexReconciliations = reconcileOperationApdex(result, opExecution, windows, maxOperations)
+		}
+	}
+	result.RecommendedFollowups = recommendedDeviationFollowups(result, args)
+	result.Warnings = uniqueSorted(result.Warnings)
+	result.PartialErrors = sortedPartialErrors(result.PartialErrors)
+	if len(result.PartialErrors) > 0 {
+		result.Warnings = uniqueSorted(append(result.Warnings, "Some metric signals were unavailable; conclusions use the successful measurements only."))
+	}
+	if hasRejectedDeviationErrors(result.PartialErrors) {
+		result.Warnings = uniqueSorted(append(result.Warnings, "The datasource rejected or timed out on some queries; the unnarrowed scope may be too large. Narrow with env or service_name and retry."))
+	}
+	builder := deeplink.NewBuilder(queryCfg.OrgSlug, queryCfg.ClusterID)
+	result.DashboardURL = builder.BuildAPMServiceLink(
+		windows.RequestedCurrentStart.UnixMilli(), windows.RequestedCurrentEnd.UnixMilli(), args.ServiceName, deeplink.APMCatalogEnvExact(args.Env), "",
+	)
+	return result, nil
 }
 
 func deviationLimit(name string, value int) (int, error) {

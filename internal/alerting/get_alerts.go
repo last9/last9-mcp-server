@@ -59,6 +59,51 @@ type AlertInstance struct {
 	Since             int64                  `json:"since"`
 }
 
+// MaxAlertsMonitorWindowSeconds is the widest window one alerts-monitor call accepts.
+const MaxAlertsMonitorWindowSeconds = 3600
+
+// AlertsMonitorQuery asks for the alert rules active in the Window seconds
+// ending at Timestamp (unix seconds).
+type AlertsMonitorQuery struct {
+	Timestamp int64
+	Window    int64
+}
+
+// FetchAlertsMonitor calls GET /alerts/monitor. The datasource comes from cfg.
+func FetchAlertsMonitor(ctx context.Context, client *http.Client, cfg models.Config, q AlertsMonitorQuery) (AlertsResponse, error) {
+	queryParams := url.Values{}
+	queryParams.Set("timestamp", fmt.Sprintf("%d", q.Timestamp))
+	queryParams.Set("window", fmt.Sprintf("%d", q.Window))
+	finalURL := fmt.Sprintf("%s%s?%s", cfg.APIBaseURL, constants.EndpointAlertsMonitor, queryParams.Encode())
+
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", finalURL, nil)
+	if err != nil {
+		return AlertsResponse{}, fmt.Errorf("failed to create request: %w", err)
+	}
+	httpReq.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
+	httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return AlertsResponse{}, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return AlertsResponse{}, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return AlertsResponse{}, fmt.Errorf("failed to read response: %w", err)
+	}
+	var alertsResp AlertsResponse
+	if err := json.Unmarshal(body, &alertsResp); err != nil {
+		return AlertsResponse{}, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return alertsResp, nil
+}
+
 // DefaultAlertsWindow is get_alerts' window when the caller sets none.
 const DefaultAlertsWindow = 15 * time.Minute
 
@@ -81,8 +126,8 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 			window = int64(args.LookbackMinutes * 60)
 		}
 
-		if window < 1 || window > 3600 {
-			return nil, nil, fmt.Errorf("window must be between 1 and 3600 seconds")
+		if window < 1 || window > MaxAlertsMonitorWindowSeconds {
+			return nil, nil, fmt.Errorf("window must be between 1 and %d seconds", MaxAlertsMonitorWindowSeconds)
 		}
 
 		// Resolve timestamp using shared time-range logic.
@@ -109,50 +154,9 @@ func NewGetAlertsHandler(client *http.Client, cfg models.Config) func(context.Co
 		}
 		timestamp := endTime.Unix()
 
-		// Build the base URL for alerts monitoring API
-		// Datasource is already configured in cfg via PopulateAPICfg
-		baseURL := fmt.Sprintf("%s%s", cfg.APIBaseURL, constants.EndpointAlertsMonitor)
-		queryParams := url.Values{}
-		queryParams.Set("timestamp", fmt.Sprintf("%d", timestamp))
-		queryParams.Set("window", fmt.Sprintf("%d", window))
-		// Note: read_url is not needed here as datasource is configured at config level
-
-		// Build final URL with query parameters
-		finalURL := fmt.Sprintf("%s?%s", baseURL, queryParams.Encode())
-
-		// Create HTTP request
-		httpReq, err := http.NewRequestWithContext(ctx, "GET", finalURL, nil)
+		alertsResp, err := FetchAlertsMonitor(ctx, client, cfg, AlertsMonitorQuery{Timestamp: timestamp, Window: window})
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create request: %w", err)
-		}
-
-		// Set headers
-		httpReq.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
-		httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
-
-		// Make the request
-		resp, err := client.Do(httpReq)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to make request: %w", err)
-		}
-		defer resp.Body.Close()
-
-		// Check response status
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return nil, nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-		}
-
-		// Read response body
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read response: %w", err)
-		}
-
-		// Parse JSON response
-		var alertsResp AlertsResponse
-		if err := json.Unmarshal(body, &alertsResp); err != nil {
-			return nil, nil, fmt.Errorf("failed to parse response: %w", err)
+			return nil, nil, err
 		}
 
 		// Format the response
