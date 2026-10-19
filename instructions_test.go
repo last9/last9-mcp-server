@@ -196,7 +196,7 @@ func TestServerInstructionsAdaptToToolsets(t *testing.T) {
 		},
 		{
 			spec:     "alerts",
-			mentions: []string{"`get_alert_groups`", "`get_alerts`", "`get_notification_channels`", "`get_drop_rules`", "`add_drop_rule`"},
+			mentions: []string{"`get_alert_groups`", "`get_alerts`", "`get_notification_channels`", "`get_drop_rules`", "`add_drop_rule`", "- Open a dashboard by id with `get_dashboard`.", "last9://reference/metrics"},
 		},
 		{
 			spec:      "grafana",

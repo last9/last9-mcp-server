@@ -71,6 +71,8 @@ var named = map[string][]string{
 		"get_entity_alert_rules",
 		"get_entity_kpis",
 		"create_kpi",
+		"prometheus_range_query",
+		"get_dashboard",
 		"describe_alert_chart",
 		"create_alert_from_chart",
 		"get_alert_rule_state",
