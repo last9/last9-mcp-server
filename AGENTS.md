@@ -136,15 +136,21 @@ a Go schema string. Do not require list-before-create unless product asks.
 ### Tools
 
 **Register through `registerIfAllowed`, never `last9mcp.RegisterInstrumentedTool`.**
-`registerIfAllowed` is what enforces `--toolsets` filtering, surfaces registration errors
-instead of discarding them, and recovers the SDK's panic on an invalid tool schema. A tool
-registered directly leaks into every toolset.
+`registerIfAllowed` is what enforces `--toolsets` and `--read-only` filtering, surfaces
+registration errors instead of discarding them, and recovers the SDK's panic on an invalid
+tool schema. A tool registered directly leaks into every toolset and into read-only mode.
 
 ```go
-reg(registerIfAllowed(server, cfg.AllowedTools,
-    &mcp.Tool{Name: "get_foo", Description: prompts.GetFooDescription},
+reg(registerIfAllowed(server, gate,
+    &mcp.Tool{Name: "get_foo", Annotations: readOnlyTool("Get Foo"),
+        Description: prompts.GetFooDescription},
     foo.NewGetFooHandler(client, cfg)))
 ```
+
+**Annotate every tool:** `readOnlyTool(title)` or `writeTool(title, destructive, idempotent)`.
+Read-only mode serves a tool only when its `readOnlyHint` is true, and a tool without
+annotations counts as a write tool. A new write tool also goes in `writeTools` in
+`annotations_test.go`.
 
 **A tool that changes Last9 state registers through `registerWriteTool`** with a verify
 call: the read call, starting with the read tool's name, that shows whether the write
@@ -155,7 +161,7 @@ the agent is told to run the verify call instead of retrying, so a create cannot
 `write_tools_test.go` fails until the tool has a fixture there and passes those checks.
 
 ```go
-reg(registerWriteTool(server, cfg.AllowedTools,
+reg(registerWriteTool(server, gate,
     &mcp.Tool{Name: "create_foo", Annotations: writeTool("Create Foo", false, false), Description: prompts.CreateFooDescription},
     "get_foos, looking for one with the name you passed",
     foo.NewCreateFooHandler(client, cfg)))
@@ -181,15 +187,16 @@ MCP prompts live one-per-file in `internal/workflows/`, with their text embedded
 ### Server instructions
 
 `internal/prompts/server_instructions.md` is the tool-selection policy sent on `initialize`.
-It is a `text/template` rendered against `--toolsets` (`tools`/`has` drop unregistered
-tools), so a tool named there never leaks into a toolset that lacks it. Every new tool
-goes into one of its groups (discovery, dedicated, raw, write):
-`instructions_test.go` fails, per toolset, if the policy names a tool the toolset does not
-serve or omits one it does. It matches backticked text against registered tool names, so
-backticking a parameter such as `service_name` in the policy is fine.
+It is a `text/template` rendered against the tools `registerAllTools` actually served
+(`tools`/`has` drop the rest), so a tool named there never leaks into a toolset that lacks
+it or a `--read-only` server that hides it. Name a tool only through `tools`/`has`, never
+as bare text. Every new tool goes into one of its groups (discovery, dedicated, raw, write):
+`instructions_test.go` fails, per toolset and read-only variant, if the policy names a tool
+that is not served or omits one that is. It matches backticked text against registered tool
+names, so backticking a parameter such as `service_name` in the policy is fine.
 
-`registerServerInstructions` has one call site, `buildServer` in `main.go`, after
-`registerAllTools`. `dump.go` skips it on purpose: `tools/list` and
+`registerToolsAndInstructions` registers both and has one call site, `buildServer` in
+`main.go` (startup and each per-request `--http` toolset server). `dump.go` skips it on purpose: `tools/list` and
 `prompts/list` carry no instructions, and `instructions_test.go` covers the handshake.
 
 ### Argument structs

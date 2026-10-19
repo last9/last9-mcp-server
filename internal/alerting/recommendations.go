@@ -20,7 +20,16 @@ type RecommendAlertConfigArgs struct {
 	Severity    string `json:"severity,omitempty" jsonschema:"Desired severity: breach or threat (default: breach)"`
 }
 
-func NewRecommendAlertConfigHandler(_ *http.Client, _ models.Config) func(context.Context, *mcp.CallToolRequest, RecommendAlertConfigArgs) (*mcp.CallToolResult, any, error) {
+func NewRecommendAlertConfigHandler(_ *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, RecommendAlertConfigArgs) (*mcp.CallToolResult, any, error) {
+	// The lifecycle names each write tool only when it is served; otherwise it
+	// names the operation, so a read-only server still explains the lifecycle.
+	tool := func(name, operation string) string {
+		if cfg.ToolFilter.ServesWrite(name) {
+			return name
+		}
+		return operation
+	}
+	createKPI, create, patch, update := tool("create_kpi", "the KPI-creation tool"), tool("create_alert", "the API"), tool("patch_alert", "a PATCH"), tool("update_alert", "a full update")
 	return func(_ context.Context, _ *mcp.CallToolRequest, args RecommendAlertConfigArgs) (*mcp.CallToolResult, any, error) {
 		if strings.TrimSpace(args.Signal) == "" {
 			return utils.ToolErrorResult("signal is required"), nil, nil
@@ -58,14 +67,14 @@ Severity: %s
 Strategy: %s
 
 Lifecycle:
-1. Discover and verify the alert group, labels, and alert-group notification routing. Take KPI ids from get_entity_kpis; if none fits, create one once with create_kpi. Never invent a KPI id.
+1. Discover and verify the alert group, labels, and alert-group notification routing. Take KPI ids from get_entity_kpis; if none fits, create one once with %s. Never invent a KPI id.
 2. Check each KPI query and its unit against real data with prometheus_range_query; thresholds compare against the raw value.
 3. Run validate_alert_expression until it returns {"valid":true}.
-4. Create the rule once (create_alert always creates it disabled, is_disabled=true). The backend derives the algorithm from expression; clients must not send algorithm.
+4. Create the rule once (%s always creates it disabled, is_disabled=true). The backend derives the algorithm from expression; clients must not send algorithm.
 5. Read the rule back with get_entity_alert_rules and confirm it matches the design.
 6. Observe or replay representative traffic, checking no-data behavior, cardinality, grouped notifications, and recovery.
-7. Promote it with patch_alert by setting is_disabled=false, only after the user confirms; PATCH preserves the rule ID.
-8. Tune evaluation configuration with update_alert, use patch_alert for mute/pause/metadata, and delete only after explicit confirmation.
+7. Promote it with %s by setting is_disabled=false, only after the user confirms; PATCH preserves the rule ID.
+8. Tune evaluation configuration with %s, use %s for mute/pause/metadata, and delete only after explicit confirmation.
 
 Grammar, units, and static/adaptive templates: last9://reference/alerting.
 
@@ -77,7 +86,8 @@ Required responder context under properties:
 Notification routing is configured on the alert group, not inside the alert rule.
 
 Quality gates: actionable and user-impacting; resistant to low-volume/no-data noise; bounded cardinality; grouped where appropriate; recovery notifications enabled; linked dashboard/runbook; distinct warning/page severities; threshold or sensitivity justified by evidence.`,
-			ruleType, args.Signal, args.Objective, defaultText(args.Environment, "not supplied — inspect before promotion"), severity, strategy)
+			ruleType, args.Signal, args.Objective, defaultText(args.Environment, "not supplied — inspect before promotion"), severity, strategy,
+			createKPI, create, patch, update, patch)
 
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil, nil
 	}
