@@ -32,6 +32,8 @@
 
 	**Time:** Prefer `lookback_minutes` for relative windows; `start_time_iso`+`end_time_iso` (RFC3339) override lookback. On lookback validation errors, retry with explicit ISO bounds instead of `lookback_minutes`.
 
+	**Envelope:** `truncated`/`limit`, `trimmed_items`, `partial`/`skipped` mean incomplete: disclose; follow `hints`.
+
 	Full metrics usage guide: resource `last9://reference/metrics`
 
 	## When to use

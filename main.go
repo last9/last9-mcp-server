@@ -32,6 +32,7 @@ import (
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
 	l9telemetry "last9-mcp/internal/telemetry"
+	"last9-mcp/internal/telemetry/guardrail"
 	"last9-mcp/internal/toolsets"
 	"last9-mcp/internal/utils"
 	"last9-mcp/internal/workflows"
@@ -61,6 +62,11 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	fs.StringVar(&cfg.Port, "port", "8080", "HTTP server port")
 	fs.StringVar(&cfg.Host, "host", "localhost", "HTTP server host")
 	fs.StringVar(&cfg.Toolsets, "toolsets", toolsets.SpecFromEnv(), "Comma-separated MCP toolsets to expose (logs,traces,metrics,alerts,dashboards,profiles,investigate,all). Empty or all = full surface")
+	fs.StringVar(&cfg.QueryGuardrail.Mode, "query_guardrail", guardrail.DefaultMode, "Query cost guardrail for log and trace tools: off, shadow (log and hint, never block) or enforce (reject over-limit queries)")
+	fs.DurationVar(&cfg.QueryGuardrail.RangeCap, "query_guardrail_range_cap", guardrail.DefaultRangeCap, "Longest window a log or trace query without a service or stream filter may span")
+	fs.Int64Var(&cfg.QueryGuardrail.ScopeThresholdBytes, "query_guardrail_scope_threshold_bytes", guardrail.DefaultScopeThresholdBytes, "Estimated scan in bytes above which a log or trace query needs a service or stream filter")
+	fs.Int64Var(&cfg.QueryGuardrail.QueryBudgetBytes, "query_guardrail_query_budget_bytes", guardrail.DefaultQueryBudgetBytes, "Estimated scan in bytes above which a log or trace query is rejected")
+	fs.Int64Var(&cfg.QueryGuardrail.SessionBudgetBytes, "query_guardrail_session_budget_bytes", guardrail.DefaultSessionBudgetBytes, "Estimated scan in bytes per MCP session that triggers a warning at 80%; 0 disables")
 	versionFlag := fs.Bool("version", false, "Print version information")
 
 	var configFile string
@@ -89,6 +95,9 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	}
 	if cfg.MaxGetLogsEntries <= 0 {
 		cfg.MaxGetLogsEntries = models.DefaultMaxGetLogsEntries
+	}
+	if err := guardrail.Validate(&cfg.QueryGuardrail); err != nil {
+		return cfg, err
 	}
 
 	allowed, err := toolsets.Parse(cfg.Toolsets)
@@ -250,6 +259,7 @@ func run() int {
 		"http_mode", cfg.HTTPMode,
 		"max_get_logs_entries", cfg.MaxGetLogsEntries,
 		"telemetry_disabled", cfg.DisableTelemetry,
+		"query_guardrail", cfg.QueryGuardrail.Mode,
 		"version", Version,
 	)
 

@@ -1,6 +1,8 @@
 package models
 
 import (
+	"time"
+
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/toolsets"
 )
@@ -69,6 +71,22 @@ type Config struct {
 	Toolsets string
 	// AllowedTools is the expanded allow-list from Toolsets. nil means all tools.
 	AllowedTools toolsets.Set
+
+	QueryGuardrail QueryGuardrail
+}
+
+// QueryGuardrail bounds how much a log or trace query may scan. The zero value
+// (empty Mode) turns the guardrail off.
+type QueryGuardrail struct {
+	Mode string // off, shadow or enforce
+	// RangeCap is the longest window a query without a service or stream filter may span.
+	RangeCap time.Duration
+	// ScopeThresholdBytes is the estimated scan above which a service or stream filter is required.
+	ScopeThresholdBytes int64
+	// QueryBudgetBytes is the estimated scan above which any query is rejected.
+	QueryBudgetBytes int64
+	// SessionBudgetBytes is the cumulative estimate per MCP session that warns at 80%; 0 disables it.
+	SessionBudgetBytes int64
 }
 
 // ResolveDatasource looks up a datasource by name from the cached list.

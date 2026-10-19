@@ -272,7 +272,7 @@ Percentile buckets:
 ]
 ```
 
-Discover and use a normalized route field before aggregation. If only raw URI exists, group or aggregate exact raw URI values individually; never normalize or merge URI variants afterward. When `l9_result.partial=true`, preserve returned rows and explicitly disclose partial coverage. Pass explicit RFC3339 bounds and state their time zone. Report source units exactly; never infer or convert units.
+Discover and use a normalized route field before aggregation. If only raw URI exists, group or aggregate exact raw URI values individually; never normalize or merge URI variants afterward. When the result envelope reports `truncated`, preserve returned rows and explicitly disclose that the row limit cut the result. Pass explicit RFC3339 bounds and state their time zone. Report source units exactly; never infer or convert units.
 
 ## Field Reference Format:
 

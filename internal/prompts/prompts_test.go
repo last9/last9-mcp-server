@@ -266,7 +266,7 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"excludes non-matching values from percentile calculations; disclose that exclusion in the answer", "must disclose the numeric filter's effect"},
 		{"Use a discovered normalized route", "must discover normalized route semantics before aggregation"},
 		{"Raw URI: aggregate exact values; never normalize/merge later", "must allow exact raw URI aggregation without unsafe normalization"},
-		{"If `l9_result.partial=true`, preserve rows and disclose partial coverage", "must tie partial disclosure to result metadata"},
+		{"If `envelope.truncated`, preserve rows and disclose the row limit", "must tie partial disclosure to result metadata"},
 		{"Units: report source; never convert", "must prevent inferred latency units"},
 		{"Only report returned P99 values; empty result→say unavailable and stop", "must prevent fallback counts from replacing an empty percentile result"},
 		{"ALL→`$and`; ANY→`$or`", "must document all/any-word Body searches"},
@@ -321,6 +321,22 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 	}
 }
 
+func TestQueryToolDescriptionsNameEnvelopeFields(t *testing.T) {
+	// Tail shared by the short form (size-budgeted tools) and prometheus's longer one.
+	const envelope = "`trimmed_items`, `partial`"
+	for name, desc := range map[string]string{
+		"get_logs":               prompts.GetLogsDescription,
+		"get_traces":             prompts.GetTracesDescription,
+		"get_service_logs":       prompts.GetServiceLogsDescription,
+		"get_service_traces":     prompts.GetServiceTracesDescription,
+		"prometheus_range_query": prompts.PromqlRangeQueryDetails,
+	} {
+		if !strings.Contains(desc, envelope) || !strings.Contains(desc, "disclose; follow `hints`") {
+			t.Errorf("%s description must name the result envelope fields", name)
+		}
+	}
+}
+
 func TestPrometheusQueryDescriptionsUseValidPercentileSources(t *testing.T) {
 	for name, desc := range map[string]string{
 		"instant": prompts.PromqlInstantQueryDetails,
@@ -359,7 +375,7 @@ func TestPercentileReferenceManualsMatchToolDescriptions(t *testing.T) {
 				"Discover and use a normalized route field before aggregation",
 				"group or aggregate exact raw URI values individually",
 				"never normalize or merge URI variants afterward",
-				"When `l9_result.partial=true`, preserve returned rows and explicitly disclose partial coverage",
+				"When the result envelope reports `truncated`, preserve returned rows and explicitly disclose that the row limit cut the result",
 				"never infer or convert units",
 				`"function": {"$quantile": [0.99, "attributes['latency_ms']"]}`,
 				`"window": ["24", "hours"]`,

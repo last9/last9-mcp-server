@@ -50,7 +50,7 @@ func (e *traceUpstreamError) Unwrap() error {
 func traceUpstreamStatusMessage(statusCode int) string {
 	switch statusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return "Check the connection credentials and trace-data access."
+		return utils.UpstreamAuthAdvice(statusCode)
 	case http.StatusNotFound:
 		return "The trace capability may be unavailable or disabled."
 	case http.StatusRequestTimeout:
@@ -68,14 +68,17 @@ func traceUpstreamStatusMessage(statusCode int) string {
 }
 
 func newTraceHTTPError(response *http.Response) error {
-	return newTraceHTTPErrorWithHint(response, "")
+	return newTraceHTTPErrorWithAdvice(response, utils.UpstreamAdvice{})
 }
 
 func newTracePipelineHTTPError(response *http.Response) error {
-	return newTraceHTTPErrorWithHint(response, tracePipelineSchemaHint)
+	return newTraceHTTPErrorWithAdvice(response, utils.UpstreamAdvice{
+		SchemaHint:    tracePipelineSchemaHint,
+		DiscoveryTool: "get_trace_attributes_for_pipeline",
+	})
 }
 
-func newTraceHTTPErrorWithHint(response *http.Response, hint string) error {
+func newTraceHTTPErrorWithAdvice(response *http.Response, advice utils.UpstreamAdvice) error {
 	status := response.StatusCode
 	err := &traceUpstreamError{
 		statusCode: status,
@@ -83,9 +86,13 @@ func newTraceHTTPErrorWithHint(response *http.Response, hint string) error {
 	}
 	if status == http.StatusBadRequest || status == http.StatusUnprocessableEntity {
 		body := utils.ReadLimitedResponseBody(response.Body, 4<<10)
-		err.message = fmt.Sprintf("Review the tool arguments and retry. Upstream response: %s", body)
-		if hint != "" {
-			err.message += "\n\n" + hint
+		next := utils.UnknownFieldNextAction(body, advice.DiscoveryTool)
+		if next == "" {
+			next = "Review the tool arguments and retry."
+		}
+		err.message = fmt.Sprintf("%s Upstream response: %s", next, body)
+		if advice.SchemaHint != "" {
+			err.message += "\n\n" + advice.SchemaHint
 		}
 		return err
 	}

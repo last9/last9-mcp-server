@@ -12,7 +12,7 @@ Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`cond
 
 **window_aggregate:** type+function+as+window (not `aggregates`). Count: `{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"]}`. P99: `{"type":"window_aggregate","function":{"$quantile":[0.99,"attributes['latency_ms']"]},"as":"p99","window":["24","hours"],"groupby":{"attributes['route']":"route"}}`.
 
-**Percentiles:** Day-wise: exactly ONE get_logs call over the full half-open start_time_iso/end_time_iso range with one window_aggregate; NEVER one call per day; honor requested timezone. Parse, then use the canonical anchored numeric `$regex` shown: `^[0-9]+(?:\\.[0-9]+)?$`. It excludes non-matching values from percentile calculations; disclose that exclusion in the answer. Only report returned P99 values; empty result→say unavailable and stop (no count/sample substitute). Never template/merge/recombine aggregated percentile rows. Use a discovered normalized route. Raw URI: aggregate exact values; never normalize/merge later. If `l9_result.partial=true`, preserve rows and disclose partial coverage. Units: report source; never convert.
+**Percentiles:** Day-wise: exactly ONE get_logs call over the full half-open start_time_iso/end_time_iso range with one window_aggregate; NEVER one call per day; honor requested timezone. Parse, then use the canonical anchored numeric `$regex` shown: `^[0-9]+(?:\\.[0-9]+)?$`. It excludes non-matching values from percentile calculations; disclose that exclusion in the answer. Only report returned P99 values; empty result→say unavailable and stop (no count/sample substitute). Never template/merge/recombine aggregated percentile rows. Use a discovered normalized route. Raw URI: aggregate exact values; never normalize/merge later. If `envelope.truncated`, preserve rows and disclose the row limit. Units: report source; never convert.
 
 **Attrs:** exists→neq(field,"") (not `$exists`). Dotted (`community_member_id`)→`attributes['key']`/`resources['key']`; bare: ServiceName/Body/SeverityText/Timestamp.
 
@@ -25,6 +25,8 @@ Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`cond
 **Time:** `lookback_minutes` default **5**; absolute→`start_time_iso`+`end_time_iso` (not Timestamp).
 
 **l9_sanity:** high→add filter, recount; zero→inspect samples.
+
+**Envelope:** `truncated`, `trimmed_items`, `partial`: disclose; follow `hints`.
 
 Manual: `last9://reference/logjson`
 
