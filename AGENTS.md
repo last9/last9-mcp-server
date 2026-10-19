@@ -273,8 +273,9 @@ type Request struct{ Method, Path string; Body any }
   messages, so make it readable.
 - `out` may be `nil` when the response body is not needed.
 - `Do` maps every non-2xx to a sanitized error — endpoint code never inspects status codes.
-- Options (`WithQuery`, `WithRegionHeader`, `WithRegionQuery`) are passed only by endpoints
-  that need them. `WithQuery` merges with the region parameter.
+- Options (`WithQuery`, `WithRegionHeader`, `WithRegionQuery`, `WithMaxResponseBytes`) are
+  passed only by endpoints that need them. `WithQuery` merges with the region parameter.
+  `WithMaxResponseBytes` turns an oversized success body into an error instead of decoding it.
 - A response the API reports as partial comes back alongside its field errors rather than as
   a failure; the tool surfaces them.
 

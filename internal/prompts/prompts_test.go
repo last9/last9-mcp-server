@@ -21,6 +21,7 @@ var promptDescriptionFiles = map[string]string{
 	"describe_alert_chart.md":              prompts.DescribeAlertChartDescription,
 	"did_you_mean.md":                      prompts.DidYouMeanDescription,
 	"get_alert_config.md":                  prompts.GetAlertConfigDescription,
+	"get_alert_coverage.md":                prompts.GetAlertCoverageDescription,
 	"get_alert_groups.md":                  prompts.GetAlertGroupsDescription,
 	"get_alert_rule_state.md":              prompts.GetAlertRuleStateDescription,
 	"get_alerts.md":                        prompts.GetAlertsDescription,
@@ -755,6 +756,22 @@ func TestAPMServiceDeviationsDescriptionLookbackFloor(t *testing.T) {
 	description := strings.ToLower(prompts.GetAPMServiceDeviationsDescription)
 	if !strings.Contains(description, "short lookbacks are unreliable") {
 		t.Error("description missing short-lookback floor guidance")
+	}
+}
+
+func TestAlertCoverageDescription(t *testing.T) {
+	for _, want := range []string{
+		`"what am I not alerting on?"`,
+		"Read-only",
+		"uncovered_signal", "all_rules_disabled", "no_notification_channel", "muted_too_long",
+		"Default: 7", "0 means the default",
+		"no gaps and every count is 0",
+		"if available in this session",
+		"## Pairs well with", "`create_alert`", "`create_alert_from_chart`", "`attach_notification_channel`", "`patch_alert`",
+	} {
+		if !strings.Contains(prompts.GetAlertCoverageDescription, want) {
+			t.Errorf("get_alert_coverage description missing %q", want)
+		}
 	}
 }
 
