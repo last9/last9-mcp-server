@@ -495,6 +495,18 @@ func TestServerInstructionsChangesLineKeepsItsWording(t *testing.T) {
 	}
 }
 
+// "; alerts are created as drafts" on this line repeated the created-disabled
+// write rule and was most of the instruction text #336 added when log_query
+// eval lq-mf-005 fell from 30/30 to 21/30 in snapshot mode, so the line keeps
+// main's wording.
+func TestServerInstructionsAlertDesignLineKeepsItsWording(t *testing.T) {
+	instructions := renderInstructions(t, "recommend_alert_config", "describe_alert_chart", "create_alert")
+	const want = "- Design an alert rule with `recommend_alert_config`, `describe_alert_chart` before creating it."
+	if got := lineNaming(instructions, "recommend_alert_config"); got != want {
+		t.Errorf("alert design line = %q, want %q", got, want)
+	}
+}
+
 // lineNaming returns the first instructions line that names tool in backticks.
 func lineNaming(instructions, tool string) string {
 	for _, line := range strings.Split(instructions, "\n") {
