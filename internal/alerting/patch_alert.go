@@ -21,7 +21,7 @@ type PatchAlertArgs struct {
 	ID         string           `json:"id" jsonschema:"(Required) Alert rule UUID"`
 	IsDisabled *bool            `json:"is_disabled,omitempty" jsonschema:"Set false to promote/enable or true to pause/disable"`
 	MuteUntil  *int64           `json:"mute_until,omitempty" jsonschema:"Unix epoch mute deadline; 0 unmutes when the entity itself is not snoozed"`
-	Properties *AlertProperties `json:"properties,omitempty" jsonschema:"Replace responder description, runbook, annotations, and query mode without recreating the rule; the whole object is replaced and omitted fields are cleared"`
+	Properties *AlertProperties `json:"properties,omitempty" jsonschema:"Change responder description, runbook, annotations, or query mode without recreating the rule. Each field sent replaces the stored one (annotations as a whole map; {} clears them); omitted or blank fields keep their stored value"`
 
 	RecurringMuteSchedule      *RecurringMuteSchedule `json:"recurring_mute_schedule,omitempty" jsonschema:"Replace the weekly recurring mute schedule (timezone plus up to 20 windows)"`
 	ClearRecurringMuteSchedule bool                   `json:"clear_recurring_mute_schedule,omitempty" jsonschema:"Set true to remove the rule's recurring mute schedule entirely (default false); cannot be combined with recurring_mute_schedule"`
@@ -54,7 +54,7 @@ func NewPatchAlertHandler(client *http.Client, cfg models.Config) func(context.C
 				return utils.ToolErrorResult(err.Error()), nil, nil
 			}
 		}
-		body := alertPatchBody{IsDisabled: args.IsDisabled, MuteUntil: args.MuteUntil, Properties: args.Properties}
+		body := alertPatchBody{IsDisabled: args.IsDisabled, MuteUntil: args.MuteUntil}
 		if args.ClearRecurringMuteSchedule {
 			body.RecurringMuteSchedule = json.RawMessage("null")
 		} else if args.RecurringMuteSchedule != nil {
@@ -69,8 +69,16 @@ func NewPatchAlertHandler(client *http.Client, cfg models.Config) func(context.C
 		if refusal != nil || err != nil {
 			return refusal, nil, err
 		}
-		if body.Properties != nil {
-			body.Properties = withCreatedViaAnnotations(body.Properties, storedCreatedViaMarker(stored))
+		if args.Properties != nil {
+			merged, err := mergeAlertProperties(stored.Properties, *args.Properties)
+			if err != nil {
+				return unreadableStoredPropertiesResult(args.ID, err), nil, nil
+			}
+			marker, err := storedCreatedViaMarker(stored)
+			if err != nil {
+				return unreadableStoredPropertiesResult(args.ID, err), nil, nil
+			}
+			body.Properties = withCreatedViaAnnotations(&merged, marker)
 		}
 		err = entities.PatchAlertRule(ctx, api, entities.AlertRuleInput{
 			EntityID: args.EntityID,
@@ -86,4 +94,30 @@ func NewPatchAlertHandler(client *http.Client, cfg models.Config) func(context.C
 		}
 		return alertMutationResult(cfg, nil, fmt.Sprintf(`{"patched":true,"id":%q}`, args.ID)), nil, nil
 	}
+}
+
+// The API overwrites the whole stored properties object on PATCH, so fields the caller
+// left out or blank are carried over from the stored rule instead of being cleared.
+// AlertProperties mirrors every key the API stores: it decodes properties into a struct
+// with exactly these four fields on every write, so no other stored key can be lost.
+func mergeAlertProperties(stored json.RawMessage, change AlertProperties) (AlertProperties, error) {
+	var merged AlertProperties
+	if len(stored) > 0 {
+		if err := json.Unmarshal(stored, &merged); err != nil {
+			return merged, err
+		}
+	}
+	if strings.TrimSpace(change.Description) != "" {
+		merged.Description = change.Description
+	}
+	if change.Runbook != nil {
+		merged.Runbook = change.Runbook
+	}
+	if change.Annotations != nil {
+		merged.Annotations = change.Annotations
+	}
+	if strings.TrimSpace(change.QueryMode) != "" {
+		merged.QueryMode = change.QueryMode
+	}
+	return merged, nil
 }

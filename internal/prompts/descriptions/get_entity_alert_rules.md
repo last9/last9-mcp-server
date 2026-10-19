@@ -14,4 +14,7 @@ Output per rule (expression-focused; other metadata such as state/severity/times
 - created_via, printed as "Created Via:": last9-mcp (with the creating client) for rules an MCP agent created, else "-"
 - expression, condition, alert_condition, eval_window
 - indicators: each indicator name with resolved PromQL and unit
-- properties (description, runbook, annotations), when set; read patch_alert changes back here
+- properties (description, runbook, annotations), when set
+
+## Pairs well with
+- `patch_alert` (read its changes back here)

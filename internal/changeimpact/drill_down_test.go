@@ -98,7 +98,7 @@ func TestDrillDownNamesOnlyServedTools(t *testing.T) {
 			}
 			change := recentChange()
 			f := &fakeLast9{change: change, baseline: flatWindow(), after: flatWindow()}
-			report, err := runToolWith(t, f, serviceArgs(change), func(cfg *models.Config) { cfg.AllowedTools = allowed })
+			report, err := runToolWith(t, f, serviceArgs(change), func(cfg *models.Config) { cfg.ToolFilter.Tools = allowed })
 			if err != nil {
 				t.Fatal(err)
 			}

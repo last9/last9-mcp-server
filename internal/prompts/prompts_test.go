@@ -547,15 +547,6 @@ func TestCreateAlertDescriptionStatesDuplicateNameRefusal(t *testing.T) {
 	}
 }
 
-// The API stores properties as one object, so a partial one clears the omitted fields. Only
-// the entity endpoint returns description and runbook; get_alert_config shows annotations alone.
-func TestPatchAlertDescriptionStatesPropertiesAreReplacedWhole(t *testing.T) {
-	if !strings.Contains(prompts.PatchAlertDescription, "omitted fields are cleared") ||
-		!strings.Contains(prompts.PatchAlertDescription, "read the current properties with get_entity_alert_rules") {
-		t.Error("patch_alert does not warn that properties replace the whole object")
-	}
-}
-
 // Cleanup and bulk removals must stay on resources an MCP agent created unless the user
 // names one; each tool must also say where the marker is listed.
 func TestRemovalDescriptionsScopeCleanupToMarkedResources(t *testing.T) {
