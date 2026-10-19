@@ -310,7 +310,7 @@ func TestDiscoverSectionListsOnlyNameLookups(t *testing.T) {
 // was a reviewed increase, validated on the full log_query suite; naming
 // analyze_change_impact and get_metric_status and the log-pattern tools joining
 // the one-service bullet were others.
-const maxInvestigateInstructionsBytes = 2742
+const maxInvestigateInstructionsBytes = 2744
 
 func TestInvestigateInstructionsBounded(t *testing.T) {
 	instructions, _ := initializeOver(t, "investigate")
@@ -521,6 +521,21 @@ func TestServerInstructionsChangesLineKeepsItsWording(t *testing.T) {
 				t.Errorf("changes line = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// get_metric_status answers a question rather than looking a name up, so it
+// stays out of Discover; rewording the metric-names line regressed tq-017 evals.
+func TestServerInstructionsMetricStatusIsADedicatedTool(t *testing.T) {
+	instructions, _ := initializeOver(t, "metrics")
+	if got, want := lineNaming(instructions, "prometheus_labels"), "- Metric and label names: `prometheus_labels`, `prometheus_label_values`."; got != want {
+		t.Errorf("metric-names line = %q, want %q", got, want)
+	}
+	if got, want := lineNaming(instructions, "get_metric_status"), "- Metric liveness: `get_metric_status`."; got != want {
+		t.Errorf("get_metric_status line = %q, want %q", got, want)
+	}
+	if _, dedicated, _ := strings.Cut(instructions, "## Prefer dedicated tools"); !strings.Contains(dedicated, "`get_metric_status`") {
+		t.Errorf("get_metric_status not listed under Prefer dedicated tools:\n%s", instructions)
 	}
 }
 
