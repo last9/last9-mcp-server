@@ -65,19 +65,19 @@ func serviceRegressions(service string, baseline, after apm.GoldenSignals) []str
 	var found []string
 	if after.RequestCount >= minRequestsPerWindow && baseline.ErrorRatePct != nil && after.ErrorRatePct != nil {
 		if delta := *after.ErrorRatePct - *baseline.ErrorRatePct; delta >= errorRateIncreasePP-thresholdEpsilon {
-			found = append(found, fmt.Sprintf("%s error rate rose %.2f pp (%.2f%% → %.2f%%)", service, delta, *baseline.ErrorRatePct, *after.ErrorRatePct))
+			found = append(found, fmt.Sprintf("%s error rate rose %.2f pp (%.2f%% → %.2f%%) (threshold %g pp)", service, delta, *baseline.ErrorRatePct, *after.ErrorRatePct, errorRateIncreasePP))
 		}
 	}
 	env := latencyEnv(baseline, after)
 	before, now := baseline.LatencyByEnv[env].P95Ms, after.LatencyByEnv[env].P95Ms
 	judgeLatency := baseline.RequestsByEnv[env] >= minRequestsPerWindow && after.RequestsByEnv[env] >= minRequestsPerWindow
 	if pct := deltaPct(before, now); judgeLatency && pct != nil && *pct >= p95LatencyIncreasePct-thresholdEpsilon {
-		found = append(found, fmt.Sprintf("%s p95 latency rose %.0f%% (%.1f ms → %.1f ms) in %s", service, *pct, *before, *now, env))
+		found = append(found, fmt.Sprintf("%s p95 latency rose %.0f%% (%.1f ms → %.1f ms) in %s (threshold %g%%)", service, *pct, *before, *now, env, p95LatencyIncreasePct))
 	}
 	// Windows can differ in length, so compare rates, not request counts. A
 	// collapse is what thins the after window, so only an empty one is skipped.
 	if pct := deltaPct(&baseline.ThroughputRPM, &after.ThroughputRPM); after.RequestCount > 0 && pct != nil && -*pct >= throughputDropPct-thresholdEpsilon {
-		found = append(found, fmt.Sprintf("%s throughput fell %.0f%% (%.1f → %.1f rpm)", service, -*pct, baseline.ThroughputRPM, after.ThroughputRPM))
+		found = append(found, fmt.Sprintf("%s throughput fell %.0f%% (%.1f → %.1f rpm) (threshold %g%%)", service, -*pct, baseline.ThroughputRPM, after.ThroughputRPM, throughputDropPct))
 	}
 	return found
 }

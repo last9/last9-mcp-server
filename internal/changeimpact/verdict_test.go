@@ -121,6 +121,28 @@ func TestServiceRegressionThresholds(t *testing.T) {
 	}
 }
 
+// The agent explains a verdict from its reason, so each trigger names the
+// threshold it crossed.
+func TestRegressionsNameTheThresholdCrossed(t *testing.T) {
+	cases := []struct {
+		name            string
+		baseline, after apm.GoldenSignals
+		want            string
+	}{
+		{"error rate", signals(1000, 100, 100), signals(1000, 130, 100), "checkout error rate rose 3.00 pp (10.00% → 13.00%) (threshold 1 pp)"},
+		{"p95", signals(1000, 0, 100), signals(1000, 0, 141), "checkout p95 latency rose 41% (100.0 ms → 141.0 ms) in prod (threshold 40%)"},
+		{"throughput", signals(1200, 0, 100), signals(600, 0, 100), "checkout throughput fell 50% (20.0 → 10.0 rpm) (threshold 50%)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := serviceRegressions("checkout", tc.baseline, tc.after)
+			if len(got) != 1 || got[0] != tc.want {
+				t.Fatalf("regressions = %q, want [%q]", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestDecideVerdictPrecedence(t *testing.T) {
 	flat := signals(1000, 5, 100)
 	cases := []struct {
