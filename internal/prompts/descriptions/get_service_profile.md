@@ -1,4 +1,4 @@
-Call this tool before any service-scoped investigation (logs, traces, exceptions, latency, errors). Returns a telemetry profile for one service: signal presence, severity routing, and ingest hints.
+Use this tool first for a broad service-scoped investigation across logs, traces, exceptions, latency, or errors. Skip it when a specialized tool directly answers the request: use `get_apm_service_deviations` for equal-window comparisons, `get_service_performance_details` for a performance snapshot, and dashboard tools for dashboard changes. Returns a telemetry profile for one service: signal presence, severity routing, and ingest hints.
 
 **Tri-state semantics:** telemetry fields use `present`, `absent`, or `unknown`. `unknown` means not yet derived — not the same as `absent`. Do not treat unknown as missing data.
 
