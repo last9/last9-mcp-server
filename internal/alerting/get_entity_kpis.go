@@ -12,6 +12,7 @@ import (
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/entities"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/toolsets"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -64,9 +65,18 @@ func NewGetEntityKPIsHandler(client *http.Client, cfg models.Config) func(contex
 		}
 		text := string(body)
 		if len(results) == 0 {
-			text += "\n\nThis alert group has no KPIs. Create one with create_kpi (alerts toolset) before writing an alert rule."
+			text += "\n\n" + emptyKPIsHint(cfg.ToolFilter)
 		}
 		link := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildAlertingGroupsLink()
 		return &mcp.CallToolResult{Meta: deeplink.ToMeta(link), Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil, nil
 	}
+}
+
+// emptyKPIsHint names create_kpi only when filter serves it: the investigate
+// toolset and --read-only serve this tool without it.
+func emptyKPIsHint(filter toolsets.Filter) string {
+	if filter.ServesWrite("create_kpi") {
+		return "This alert group has no KPIs. Create one with create_kpi before writing an alert rule."
+	}
+	return "This alert group has no KPIs. Creating one needs a session that serves the KPI-creation tool (alerts toolset, not read-only)."
 }

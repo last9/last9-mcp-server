@@ -793,7 +793,7 @@ Read-only; in the `alerts` and `investigate` toolsets. Lists every KPI on one al
 
 - `entity_id` (string, required): Alert group/entity UUID, from `get_alert_groups` or `get_alert_config`.
 
-Returns JSON `{"entity_id","count","kpis":[{"id","name","description","query","unit"}]}`, sorted by name. `unit` is a display label: thresholds compare against the raw query value. When no KPI fits, create one with `create_kpi`.
+Returns JSON `{"entity_id","count","kpis":[{"id","name","description","query","unit"}]}`, sorted by name. `unit` is a display label: thresholds compare against the raw query value. When no KPI fits, create one with `create_kpi`. An empty group's result names `create_kpi` only when the session serves it; with `--read-only` (unless `--allow-write-tools=create_kpi`) or the `investigate` toolset it says KPI creation needs a writable `alerts` session instead.
 
 ### create_kpi
 
