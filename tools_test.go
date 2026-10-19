@@ -11,6 +11,7 @@ import (
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/toolsets"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -100,9 +101,14 @@ func TestRegisterIfAllowedConvertsSchemaPanicToError(t *testing.T) {
 	type badIn struct {
 		Ch chan int `json:"ch"`
 	}
-	err = registerIfAllowed(server, nil, &mcp.Tool{Name: "bad_tool", Description: "bad"}, func(_ context.Context, _ *mcp.CallToolRequest, _ badIn) (*mcp.CallToolResult, any, error) {
+	gate := newToolGate(toolsets.Filter{})
+	err = registerIfAllowed(server, gate, &mcp.Tool{Name: "bad_tool", Description: "bad"}, func(_ context.Context, _ *mcp.CallToolRequest, _ badIn) (*mcp.CallToolResult, any, error) {
 		return nil, nil, nil
 	})
+	if err != nil {
+		t.Fatalf("queueing an admitted tool returned error: %v", err)
+	}
+	err = gate.registerAdmitted()
 	if err == nil {
 		t.Fatal("expected registration error for invalid tool schema")
 	}
@@ -119,7 +125,7 @@ func TestRegisterAllTools_ExposesDashboardObjectSchemas(t *testing.T) {
 	defer server.Shutdown(context.Background())
 
 	cfg := testToolRegistrationConfig()
-	if err := registerAllTools(server, cfg); err != nil {
+	if _, err := registerAllTools(server, cfg); err != nil {
 		t.Fatal(err)
 	}
 

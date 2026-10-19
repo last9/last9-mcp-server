@@ -193,7 +193,7 @@ func servedSurface(t *testing.T) ([]*mcp.Tool, map[string]bool) {
 		t.Fatal(err)
 	}
 	registerReferenceResources(server)
-	if err := registerAllTools(server, testToolRegistrationConfig()); err != nil {
+	if _, err := registerAllTools(server, testToolRegistrationConfig()); err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
