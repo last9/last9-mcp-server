@@ -622,7 +622,7 @@ func TestDumpToolsAlertsServesReadOnlyAlertHygiene(t *testing.T) {
 	for _, readOnly := range []bool{false, true} {
 		t.Run("read-only="+strconv.FormatBool(readOnly), func(t *testing.T) {
 			description := servedAlertHygieneDescription(t, toolsets.Filter{Tools: allowed, ReadOnly: readOnly})
-			for _, want := range []string{"never changes anything", "explicitly confirms", "proposal", "`7d` or `30d`", "count_true(result) >= N", "adaptive_std_cmp", "fire rate alone", "`null_fields`", "`partial_window`", "`get_alert_rule_state`"} {
+			for _, want := range []string{"never changes anything", "explicitly confirms", "proposal", "`7d` or `30d`", "count_true(result) >= N", "adaptive_std_cmp", "fire rate alone", "`null_fields`", "`partial_window`", "`omitted_for_size`", "`get_alert_rule_state`"} {
 				if !strings.Contains(description, want) {
 					t.Errorf("served get_alert_hygiene description missing %q", want)
 				}

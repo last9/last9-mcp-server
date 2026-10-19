@@ -20,6 +20,9 @@ import (
 const (
 	defaultHygieneLimit = 20
 	maxHygieneLimit     = 100
+
+	// limit bounds the count, not the bytes: names and expressions are user text.
+	maxHygieneResponseBytes = 32 * 1024
 )
 
 type GetAlertHygieneArgs struct {
@@ -36,6 +39,7 @@ type alertHygieneResult struct {
 	RulesEvaluated int               `json:"rules_evaluated"`
 	FlaggedRules   int               `json:"flagged_rules"`
 	Truncated      bool              `json:"truncated"`
+	OmittedForSize int               `json:"omitted_for_size"`
 	NullFields     hygieneNullFields `json:"null_fields"`
 	Rules          []hygieneVerdict  `json:"rules"`
 }
@@ -70,7 +74,7 @@ func NewGetAlertHygieneHandler(client *http.Client, cfg models.Config) func(cont
 			NullFields:     countNullFields(resp.Rules),
 			Rules:          ranked[:min(limit, len(ranked))],
 		}
-		payload, err := json.Marshal(result)
+		payload, err := marshalHygieneResult(result)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
@@ -80,6 +84,40 @@ func NewGetAlertHygieneHandler(client *http.Client, cfg models.Config) func(cont
 			Content: []mcp.Content{&mcp.TextContent{Text: string(payload)}},
 		}, nil, nil
 	}
+}
+
+// marshalHygieneResult keeps the longest prefix of the ranked rules that fits
+// maxHygieneResponseBytes, at least one so the worst rule is always reported.
+func marshalHygieneResult(result alertHygieneResult) ([]byte, error) {
+	payload, err := json.Marshal(result)
+	if err != nil || len(payload) <= maxHygieneResponseBytes {
+		return payload, err
+	}
+	ranked := result.Rules
+	// Size the rest of the result at its largest: truncated true and the most
+	// rules omitted cannot render longer than this.
+	result.Rules, result.Truncated, result.OmittedForSize = []hygieneVerdict{}, true, len(ranked)
+	base, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	size, keep := len(base), 0
+	for _, verdict := range ranked {
+		rule, err := json.Marshal(verdict)
+		if err != nil {
+			return nil, err
+		}
+		if keep > 0 {
+			size++ // comma
+		}
+		if size+len(rule) > maxHygieneResponseBytes && keep > 0 {
+			break
+		}
+		size += len(rule)
+		keep++
+	}
+	result.Rules, result.OmittedForSize = ranked[:keep], len(ranked)-keep
+	return json.Marshal(result)
 }
 
 func parseAlertHygieneArgs(args GetAlertHygieneArgs) (string, int, error) {

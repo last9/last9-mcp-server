@@ -155,8 +155,9 @@ func TestGetAlertHygiene_LimitsRankedRules(t *testing.T) {
 				t.Fatalf("handler: %v", err)
 			}
 			out := decodeHygieneResult(t, result)
-			if len(out.Rules) != tc.returned || out.Truncated != tc.truncated {
-				t.Fatalf("returned %d truncated=%v, want %d truncated=%v", len(out.Rules), out.Truncated, tc.returned, tc.truncated)
+			// The byte cap may return fewer; it counts those in omitted_for_size.
+			if got := len(out.Rules) + out.OmittedForSize; got != tc.returned || out.Truncated != tc.truncated {
+				t.Fatalf("returned %d+%d omitted truncated=%v, want %d truncated=%v", len(out.Rules), out.OmittedForSize, out.Truncated, tc.returned, tc.truncated)
 			}
 			if out.RulesEvaluated != tc.flagged+1 || out.FlaggedRules != tc.flagged {
 				t.Errorf("rules_evaluated=%d flagged_rules=%d", out.RulesEvaluated, out.FlaggedRules)
@@ -250,6 +251,66 @@ func TestGetAlertHygiene_CountsNullFieldsOfEnabledRules(t *testing.T) {
 	const wantJSON = `"null_fields":{"ack":1,"muted_seconds":1,"routed":1,"history_since":1}`
 	if body := utils.GetTextContent(t, result); !strings.Contains(body, wantJSON) {
 		t.Errorf("payload does not carry %s:\n%s", wantJSON, body)
+	}
+}
+
+// limit bounds the count, not the bytes: rules with long names or expressions
+// must still fit the response cap, dropping the lowest-ranked first.
+func TestGetAlertHygiene_CapsResponseBytes(t *testing.T) {
+	cases := []struct {
+		name       string
+		flagged    int
+		nameLength int
+		wantCut    bool
+	}{
+		{"default limit fits", defaultHygieneLimit, 10, false},
+		{"long names are cut to the cap", maxHygieneLimit, 2000, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rules := unroutedRules(tc.flagged)
+			for i := range rules {
+				rules[i].RuleName = strings.Repeat("n", tc.nameLength) + rules[i].RuleID
+			}
+			stub := &hygieneStub{rules: rules}
+			result, err := callGetAlertHygiene(t, stub, GetAlertHygieneArgs{Limit: maxHygieneLimit})
+			if err != nil {
+				t.Fatalf("handler: %v", err)
+			}
+			body := utils.GetTextContent(t, result)
+			if len(body) > maxHygieneResponseBytes {
+				t.Errorf("response is %d bytes, cap %d", len(body), maxHygieneResponseBytes)
+			}
+			out := decodeHygieneResult(t, result)
+			if cut := len(out.Rules) < tc.flagged; cut != tc.wantCut || out.Truncated != tc.wantCut {
+				t.Fatalf("returned %d of %d, truncated=%v; want cut=%v", len(out.Rules), tc.flagged, out.Truncated, tc.wantCut)
+			}
+			if out.OmittedForSize != tc.flagged-len(out.Rules) {
+				t.Errorf("omitted_for_size = %d, want %d", out.OmittedForSize, tc.flagged-len(out.Rules))
+			}
+			// Highest fire count ranks first; the cut keeps the top of the ranking.
+			if top := fmt.Sprintf("r%02d", tc.flagged-1); len(out.Rules) == 0 || out.Rules[0].Stats.RuleID != top {
+				t.Fatalf("first returned rule is not the top-ranked %s", top)
+			}
+			// Each long-named rule is a little over 2000 bytes, so a cut response
+			// with room for one more dropped a rule it did not need to.
+			if tc.wantCut && len(body)+2200 <= maxHygieneResponseBytes {
+				t.Errorf("response is %d bytes; another rule would have fit under %d", len(body), maxHygieneResponseBytes)
+			}
+		})
+	}
+}
+
+func TestGetAlertHygiene_KeepsTheWorstRulePastTheByteCap(t *testing.T) {
+	rules := unroutedRules(2)
+	rules[1].Expression = strings.Repeat("x", maxHygieneResponseBytes)
+	result, err := callGetAlertHygiene(t, &hygieneStub{rules: rules}, GetAlertHygieneArgs{})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	out := decodeHygieneResult(t, result)
+	if len(out.Rules) != 1 || out.Rules[0].Stats.RuleID != "r01" || out.OmittedForSize != 1 || !out.Truncated {
+		t.Fatalf("returned %d rules, omitted_for_size=%d truncated=%v; want only r01", len(out.Rules), out.OmittedForSize, out.Truncated)
 	}
 }
 

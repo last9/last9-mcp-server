@@ -1,4 +1,4 @@
-Audit alert rules for hygiene problems over the last 7 or 30 days and suggest a fix for each.
+Audit alert rules for hygiene problems over 7 or 30 days, suggesting a fix for each.
 
 Read-only: it never changes anything. Present each fix as a proposal; apply it only after the
 user explicitly confirms it.
@@ -11,8 +11,8 @@ Categories (a rule may have several; disabled rules are never flagged):
   of the observed span. With null `ack` (not recorded yet) it is judged on fire rate alone and
   the reason says so.
 - flapping: more than 4 flaps/day.
-- stale: has not fired in the window. A rule that never fired (null `last_fired_at`, zero
-  `fire_count`) counts only when its history covers the whole window.
+- stale: no firing in the window. A never-fired rule (null `last_fired_at`, zero `fire_count`)
+  counts only when its history covers the whole window.
 - unrouted: its alert group has no notification channel.
 
 Alert history is kept about 21 days, so `from` is where covered history starts, `covered_days`
@@ -32,7 +32,8 @@ Suggested fixes (`suggested_fix`, sometimes `alternative_fix`, each `{parameter,
 - unrouted: attach a notification channel to the alert group.
 - stale: set `is_disabled` to true, or delete the rule, once confirmed unneeded.
 
-Output is compact JSON: `{window, from, to, covered_days, partial_window, rules_evaluated, flagged_rules, truncated, null_fields, rules}`.
+Output is compact JSON: `{window, from, to, covered_days, partial_window, rules_evaluated, flagged_rules, truncated, omitted_for_size, null_fields, rules}`.
+`truncated`: more flagged rules than `limit` or 32 KB holds (`omitted_for_size` counts size cuts).
 Each rule has `findings` (`category`, `reason` with the numbers, `suggested_fix`) and `stats`,
 the raw per-rule API data (timestamps in unix seconds).
 
