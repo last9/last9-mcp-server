@@ -122,7 +122,8 @@ func TestGetAlertCoverage_RejectsMissingReport(t *testing.T) {
 		{"empty 200", http.StatusOK, ""},
 		{"empty 204", http.StatusNoContent, ""},
 		{"null", http.StatusOK, "null"},
-	} {
+		{"empty object", http.StatusOK, "{}"},
+		{"null gaps and counts", http.StatusOK, `{"generated_at":1,"muted_days":7,"gaps":null,"counts":null}`}} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := newCoverageTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 				_, _ = io.Copy(io.Discard, r.Body)
