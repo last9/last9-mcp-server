@@ -179,16 +179,21 @@ func TestRuleEditsKeepStoredMarkerAndDropForgedOnes(t *testing.T) {
 			"team": "new", annotationCreatedVia: "last9-mcp", annotationCreatedViaClient: "forged/1",
 		}}
 	}
+	// patch_alert merges omitted fields from the stored rule, so it keeps stored annotations
+	// the caller left out, and refuses stored properties the API's string map cannot hold.
 	for _, tt := range []struct {
-		name   string
-		stored string
-		props  *AlertProperties
-		want   map[string]any
+		name         string
+		stored       string
+		props        *AlertProperties
+		want         map[string]any
+		patchWant    map[string]any // nil: same as want
+		patchRefuses bool
 	}{
-		{"marked, caller forges", marked, forged(), map[string]any{"team": "new", annotationCreatedVia: "last9-mcp", annotationCreatedViaClient: "claude-code/2.1.0"}},
-		{"marked, caller sends no annotations", marked, &AlertProperties{Description: "d"}, storedMarker},
-		{"unmarked, caller forges", unmarked, forged(), map[string]any{"team": "new"}},
-		{"stored annotation values not strings", `{"id":"rule-1","entity_id":"entity-1","properties":{"annotations":{"_l9_created_via_":"last9-mcp","n":3}}}`, &AlertProperties{}, map[string]any{annotationCreatedVia: "last9-mcp"}},
+		{name: "marked, caller forges", stored: marked, props: forged(), want: map[string]any{"team": "new", annotationCreatedVia: "last9-mcp", annotationCreatedViaClient: "claude-code/2.1.0"}},
+		{name: "marked, caller sends no annotations", stored: marked, props: &AlertProperties{Description: "d"}, want: storedMarker,
+			patchWant: map[string]any{"team": "old", annotationCreatedVia: "last9-mcp", annotationCreatedViaClient: "claude-code/2.1.0"}},
+		{name: "unmarked, caller forges", stored: unmarked, props: forged(), want: map[string]any{"team": "new"}},
+		{name: "stored annotation values not strings", stored: `{"id":"rule-1","entity_id":"entity-1","properties":{"annotations":{"_l9_created_via_":"last9-mcp","n":3}}}`, props: &AlertProperties{}, want: map[string]any{annotationCreatedVia: "last9-mcp"}, patchRefuses: true},
 	} {
 		for tool, call := range map[string]func(*bodyRecorder) (*mcp.CallToolResult, error){
 			"update_alert": func(rec *bodyRecorder) (*mcp.CallToolResult, error) {
@@ -208,11 +213,23 @@ func TestRuleEditsKeepStoredMarkerAndDropForgedOnes(t *testing.T) {
 				rec := newBodyRecorder(t, `{"id":"rule-2"}`)
 				rec.getReply = tt.stored
 				result, err := call(rec)
+				want := tt.want
+				if tool == "patch_alert" {
+					if tt.patchRefuses {
+						if err != nil || result == nil || !result.IsError || len(rec.bodies) != 0 {
+							t.Fatalf("result=%s err=%v writes=%d, want a refusal and no write", resultText(result), err, len(rec.bodies))
+						}
+						return
+					}
+					if tt.patchWant != nil {
+						want = tt.patchWant
+					}
+				}
 				if err != nil || result.IsError {
 					t.Fatalf("result=%s err=%v", resultText(result), err)
 				}
-				if got := ruleAnnotations(t, rec.only(t)); !mapsEqual(got, tt.want) {
-					t.Fatalf("annotations = %v, want %v", got, tt.want)
+				if got := ruleAnnotations(t, rec.only(t)); !mapsEqual(got, want) {
+					t.Fatalf("annotations = %v, want %v", got, want)
 				}
 			})
 		}

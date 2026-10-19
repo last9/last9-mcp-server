@@ -39,7 +39,7 @@ func TestWriteToolsTransportEOFIsNotSuccess(t *testing.T) {
 			return r, err
 		}},
 		{"mute_alert_group", func() (*mcp.CallToolResult, error) {
-			r, _, err := NewMuteAlertGroupHandler(eofClient(), cfg)(ctx, nil, MuteAlertGroupArgs{EntityID: "entity-1", Until: until})
+			r, _, err := NewMuteAlertGroupHandler(eofClient(), cfg)(ctx, nil, MuteAlertGroupArgs{EntityID: "entity-1", Until: &until})
 			return r, err
 		}},
 		{"acknowledge_alert", func() (*mcp.CallToolResult, error) {

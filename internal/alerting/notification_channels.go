@@ -56,7 +56,7 @@ type notificationChannelService struct {
 }
 
 type GetNotificationChannelsArgs struct {
-	Scope string `json:"scope,omitempty" jsonschema:"attached (default) lists per-alert-group attachment rows; channels lists the org's channels (id, name, type, send_resolved), the ids create_notification_channel returns and attach_notification_channel takes"`
+	Scope string `json:"scope,omitempty" jsonschema:"attached (default) lists per-alert-group attachment rows; channels lists the org's channels (id, name, type, send_resolved), keyed by channel id rather than attachment id"`
 }
 
 func NewGetNotificationChannelsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetNotificationChannelsArgs) (*mcp.CallToolResult, any, error) {
@@ -71,7 +71,9 @@ func NewGetNotificationChannelsHandler(client *http.Client, cfg models.Config) f
 		if scope == "channels" {
 			rows, err := notifications.ListNotificationSettings(ctx, last9api.NewClient(client, cfg), false)
 			if err != nil {
-				return nil, nil, err
+				return notificationChannelErrorResult(err, map[int]string{
+					http.StatusForbidden: "listing channels requires a token that can read notification channels",
+				})
 			}
 			return &mcp.CallToolResult{
 				Meta:    deeplink.ToMeta(dashboardURL),

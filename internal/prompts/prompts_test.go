@@ -767,7 +767,7 @@ func TestAlertCoverageDescription(t *testing.T) {
 		"Default: 7", "0 means the default",
 		"no gaps and every count is 0",
 		"if available in this session",
-		"create_alert", "create_alert_from_chart", "attach_notification_channel", "patch_alert",
+		"## Pairs well with", "`create_alert`", "`create_alert_from_chart`", "`attach_notification_channel`", "`patch_alert`",
 	} {
 		if !strings.Contains(prompts.GetAlertCoverageDescription, want) {
 			t.Errorf("get_alert_coverage description missing %q", want)

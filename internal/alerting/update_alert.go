@@ -36,7 +36,11 @@ func NewUpdateAlertHandler(client *http.Client, cfg models.Config) func(context.
 		if refusal != nil || err != nil {
 			return refusal, nil, err
 		}
-		args.AlertRule.Properties = withCreatedViaAnnotations(args.AlertRule.Properties, storedCreatedViaMarker(stored))
+		marker, err := storedCreatedViaMarker(stored)
+		if err != nil {
+			return unreadableStoredPropertiesResult(args.ID, err), nil, nil
+		}
+		args.AlertRule.Properties = withCreatedViaAnnotations(args.AlertRule.Properties, marker)
 		body, err := entities.UpdateAlertRule(ctx, api,
 			entities.AlertRuleInput{EntityID: args.EntityID, RuleID: args.ID, Body: args.AlertRule})
 		if err != nil {

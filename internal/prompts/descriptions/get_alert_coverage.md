@@ -28,7 +28,12 @@ Output is compact JSON {scope, generated_at, complete, summary, counts, groups}:
 - complete: true only when the API lists no gaps and every count is 0; summary then
   says coverage is complete for that scope. Counts with no listed gaps are not complete.
 
-suggested_tool names the tool that would close the gap: create_alert,
-create_alert_from_chart, attach_notification_channel, or patch_alert. Call it only
+suggested_tool names the tool that would close the gap. Call it only
 if available in this session and only after the user confirms the change; otherwise
 describe the fix for the Last9 alerting UI.
+
+## Pairs well with
+- `create_alert` (an uncovered_signal gap)
+- `create_alert_from_chart` (an uncovered_signal gap, from a chart)
+- `attach_notification_channel` (a no_notification_channel gap)
+- `patch_alert` (re-enable or unmute a rule)

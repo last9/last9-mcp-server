@@ -18,7 +18,7 @@ import (
 
 func TestServedQueryToolSchemas(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dumpTools(&buf, nil); err != nil {
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
 		t.Fatal(err)
 	}
 	var out struct {
@@ -94,7 +94,7 @@ func TestServedQueryToolSchemas(t *testing.T) {
 
 func TestDumpTools(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dumpTools(&buf, nil); err != nil {
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
 		t.Fatalf("dumpTools failed: %v", err)
 	}
 
@@ -414,7 +414,7 @@ func TestDumpTools(t *testing.T) {
 
 func TestDumpToolsHonorsToolsetsFilter(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dumpTools(&buf, toolsets.Set{"get_exceptions": {}}); err != nil {
+	if err := dumpTools(&buf, toolsets.Filter{Tools: toolsets.Set{"get_exceptions": {}}}); err != nil {
 		t.Fatalf("dumpTools failed: %v", err)
 	}
 	var out struct {
@@ -436,7 +436,7 @@ func TestDumpToolsLogsIncludesServiceProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := dumpTools(&buf, allowed); err != nil {
+	if err := dumpTools(&buf, toolsets.Filter{Tools: allowed}); err != nil {
 		t.Fatalf("dumpTools failed: %v", err)
 	}
 	var out struct {
@@ -486,7 +486,7 @@ func TestDumpToolsServesReadOnlyAlertCoverage(t *testing.T) {
 				t.Fatal(err)
 			}
 			var buf bytes.Buffer
-			if err := dumpTools(&buf, allowed); err != nil {
+			if err := dumpTools(&buf, toolsets.Filter{Tools: allowed}); err != nil {
 				t.Fatalf("dumpTools failed: %v", err)
 			}
 			var out struct {
@@ -511,8 +511,12 @@ func TestDumpToolsServesReadOnlyAlertCoverage(t *testing.T) {
 				if !tool.Annotations.ReadOnlyHint {
 					t.Error("get_alert_coverage must be served read-only")
 				}
-				if tool.Description != prompts.GetAlertCoverageDescription {
-					t.Error("served get_alert_coverage description != embed")
+				served := map[string]bool{}
+				for _, other := range out.Tools {
+					served[other.Name] = true
+				}
+				if want := prompts.TrimRoutes(prompts.GetAlertCoverageDescription, func(n string) bool { return served[n] }); tool.Description != want {
+					t.Error("served get_alert_coverage description != embed trimmed to the served tools")
 				}
 				return
 			}
@@ -531,7 +535,7 @@ func TestDumpToolsLogPatternToolsServedInLogsAndInvestigate(t *testing.T) {
 			t.Fatalf("Parse(%q): %v", spec, err)
 		}
 		var buf bytes.Buffer
-		if err := dumpTools(&buf, allowed); err != nil {
+		if err := dumpTools(&buf, toolsets.Filter{Tools: allowed}); err != nil {
 			t.Fatalf("dumpTools(%q) failed: %v", spec, err)
 		}
 		for _, tool := range patternTools {
@@ -544,7 +548,7 @@ func TestDumpToolsLogPatternToolsServedInLogsAndInvestigate(t *testing.T) {
 
 func TestDumpToolsEmergingLogPatternsCouplesBaselineTimes(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dumpTools(&buf, nil); err != nil {
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
 		t.Fatalf("dumpTools failed: %v", err)
 	}
 	var out struct {
@@ -582,7 +586,7 @@ func TestDumpToolsEmergingLogPatternsCouplesBaselineTimes(t *testing.T) {
 
 func TestDumpToolsLogPatternToolsServeScopeSchemaHints(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dumpTools(&buf, nil); err != nil {
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
 		t.Fatalf("dumpTools failed: %v", err)
 	}
 	var out struct {
@@ -623,7 +627,7 @@ func TestDumpToolsLogPatternToolsServeScopeSchemaHints(t *testing.T) {
 
 func TestDumpToolsLogPatternToolsServeTheirExplicitSchemas(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dumpTools(&buf, nil); err != nil {
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
 		t.Fatalf("dumpTools failed: %v", err)
 	}
 	var out struct {
@@ -681,7 +685,7 @@ func TestDumpToolsInvestigate(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := dumpTools(&buf, allowed); err != nil {
+	if err := dumpTools(&buf, toolsets.Filter{Tools: allowed}); err != nil {
 		t.Fatalf("dumpTools failed: %v", err)
 	}
 	var out struct {
@@ -721,7 +725,7 @@ func TestDumpToolsAnalyzeChangeImpactToolsets(t *testing.T) {
 			t.Fatal(err)
 		}
 		var buf bytes.Buffer
-		if err := dumpTools(&buf, allowed); err != nil {
+		if err := dumpTools(&buf, toolsets.Filter{Tools: allowed}); err != nil {
 			t.Fatalf("dumpTools(%s) failed: %v", spec, err)
 		}
 		var out struct {
@@ -767,7 +771,7 @@ func TestDumpToolsServesCoreToolsUnderEveryToolset(t *testing.T) {
 				t.Fatal(err)
 			}
 			var buf bytes.Buffer
-			if err := dumpTools(&buf, allowed); err != nil {
+			if err := dumpTools(&buf, toolsets.Filter{Tools: allowed}); err != nil {
 				t.Fatalf("dumpTools failed: %v", err)
 			}
 			var out struct {
@@ -800,7 +804,7 @@ func TestDumpToolsServesCoreToolsUnderEveryToolset(t *testing.T) {
 
 func TestDumpToolsDashboardWriteSteer(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dumpTools(&buf, nil); err != nil {
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
 		t.Fatalf("dumpTools failed: %v", err)
 	}
 	var out struct {

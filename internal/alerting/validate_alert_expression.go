@@ -21,7 +21,7 @@ import (
 type ValidateAlertExpressionArgs struct {
 	EntityID       string            `json:"entity_id" jsonschema:"(Required) Alert group/entity UUID whose KPIs the expression uses"`
 	Expression     string            `json:"expression" jsonschema:"(Required) Arithmetic expression over KPI names, for example errors / requests"`
-	IndicatorsUsed map[string]string `json:"indicators_used" jsonschema:"(Required) Non-empty map of each KPI name used in the expression to its KPI UUID owned by entity_id, for example {\"errors\":\"<kpi-uuid>\"}; every name in the expression must be present. Use each KPI's exact name: this check accepts any name, but create_alert and update_alert reject other names"`
+	IndicatorsUsed map[string]string `json:"indicators_used" jsonschema:"(Required) Non-empty map of each KPI name used in the expression to its KPI UUID owned by entity_id, for example {\"errors\":\"<kpi-uuid>\"}; every name in the expression must be present. Use each KPI's exact name: this check accepts any name, but saving an alert rule rejects other names"`
 }
 
 func NewValidateAlertExpressionHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ValidateAlertExpressionArgs) (*mcp.CallToolResult, any, error) {
