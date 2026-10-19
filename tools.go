@@ -500,7 +500,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Description: prompts.GetAlertRuleStateDescription,
 	}, alerting.NewAlertRuleStateHandler(client, cfg)))
 
-	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "get_alert_hygiene",
 		Annotations: readOnlyTool("Get Alert Hygiene"),
 		Description: prompts.GetAlertHygieneDescription,

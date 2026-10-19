@@ -616,7 +616,7 @@ func TestDumpToolsAlertsServesReadOnlyAlertHygiene(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := dumpTools(&buf, allowed); err != nil {
+	if err := dumpTools(&buf, toolsets.Filter{Tools: allowed}); err != nil {
 		t.Fatalf("dumpTools failed: %v", err)
 	}
 	var out struct {
