@@ -53,11 +53,13 @@ func boolPtr(b bool) *bool { return &b }
 
 // toolGate applies the served-tool filter and records every tool offered to
 // it, so --allow-write-tools names are checked against the real registry
-// rather than a hand-kept list.
+// rather than a hand-kept list. Admitted tools register only in
+// registerAdmitted, once the served set is final.
 type toolGate struct {
 	filter   toolsets.Filter
 	readOnly map[string]bool // every offered tool name → its readOnlyHint
 	served   toolsets.Set    // every admitted tool name
+	pending  []func() error  // registrations of admitted tools, in offer order
 }
 
 func newToolGate(filter toolsets.Filter) *toolGate {
@@ -103,20 +105,44 @@ func (g *toolGate) checkAllowWrite() error {
 	return fmt.Errorf("--allow-write-tools: %s; write tools: %s", strings.Join(problems, "; "), strings.Join(writeNames, ", "))
 }
 
-// registerIfAllowed is the single registration gate: it registers a tool only
-// when the gate's filter admits it (toolset, and read-only mode).
-// The MCP SDK panics on invalid tool schemas; recover and return an error so
-// registerAllTools can fail fast instead of crashing the process.
-func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, gate *toolGate, tool *mcp.Tool, handler mcp.ToolHandlerFor[In, Out]) (err error) {
+// registerAdmitted registers every admitted tool. It runs after every tool has
+// been offered because description routes are trimmed to the served set, and
+// a route may name a tool offered later or held back by read-only mode.
+func (g *toolGate) registerAdmitted() error {
+	pending := g.pending
+	g.pending = nil
+	for _, register := range pending {
+		if err := register(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// registerIfAllowed is the single registration gate: it queues a tool for
+// registerAdmitted only when the gate's filter admits it (toolset, and
+// read-only mode).
+func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, gate *toolGate, tool *mcp.Tool, handler mcp.ToolHandlerFor[In, Out]) error {
 	if !gate.admit(tool) {
 		return nil
 	}
+	gate.pending = append(gate.pending, func() error {
+		return registerTool(server, tool, handler, gate.served.Allows)
+	})
+	return nil
+}
+
+// registerTool registers one admitted tool, keeping only the description
+// routes to tools served alongside it.
+// The MCP SDK panics on invalid tool schemas; recover and return an error so
+// registerAllTools can fail fast instead of crashing the process.
+func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, handler mcp.ToolHandlerFor[In, Out], served func(string) bool) (err error) {
 	// Serve the annotation title as the tool's title too, so clients that read
 	// either field show the same name.
 	if tool.Title == "" && tool.Annotations != nil {
 		tool.Title = tool.Annotations.Title
 	}
-	tool.Description = prompts.TrimRoutes(tool.Description, gate.filter.Tools.Allows)
+	tool.Description = prompts.TrimRoutes(tool.Description, served)
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("register %q: %v", tool.Name, r)
@@ -709,5 +735,8 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 	}, grafana.NewListDatasourcesHandler(client, cfg)))
 
 	reg(gate.checkAllowWrite())
-	return gate.served, regErr
+	if regErr != nil {
+		return nil, regErr
+	}
+	return gate.served, gate.registerAdmitted()
 }

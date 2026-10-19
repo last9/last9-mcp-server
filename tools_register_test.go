@@ -62,6 +62,9 @@ func TestRegisterIfAllowedSkipsExcludedTools(t *testing.T) {
 	if err := registerIfAllowed(server, gate, &mcp.Tool{Name: "included_tool"}, noopHandler); err != nil {
 		t.Fatalf("allowed registration failed: %v", err)
 	}
+	if err := gate.registerAdmitted(); err != nil {
+		t.Fatalf("register admitted tools: %v", err)
+	}
 	names := registeredToolNames(t, server)
 	if !reflect.DeepEqual(names, []string{"included_tool"}) {
 		t.Fatalf("served tools = %v, want [included_tool]", names)
@@ -114,7 +117,11 @@ func TestRegisterIfAllowedRecoversSchemaPanic(t *testing.T) {
 	chanHandler := func(context.Context, *mcp.CallToolRequest, chan int) (*mcp.CallToolResult, any, error) {
 		return nil, nil, nil
 	}
-	err := registerIfAllowed(server, newToolGate(toolsets.Filter{}), &mcp.Tool{Name: "bad_schema_tool"}, chanHandler)
+	gate := newToolGate(toolsets.Filter{})
+	if err := registerIfAllowed(server, gate, &mcp.Tool{Name: "bad_schema_tool"}, chanHandler); err != nil {
+		t.Fatalf("queueing an admitted tool returned error: %v", err)
+	}
+	err := gate.registerAdmitted()
 	if err == nil {
 		t.Fatal("expected error from panicking tool registration, got nil")
 	}

@@ -191,6 +191,9 @@ func TestRegisterIfAllowedReadOnlyFailsClosedWithoutAnnotations(t *testing.T) {
 			t.Fatalf("register %s: %v", tool.Name, err)
 		}
 	}
+	if err := gate.registerAdmitted(); err != nil {
+		t.Fatalf("register admitted tools: %v", err)
+	}
 	if names := registeredToolNames(t, server); !reflect.DeepEqual(names, []string{"read_tool"}) {
 		t.Fatalf("served tools = %v, want [read_tool]", names)
 	}
