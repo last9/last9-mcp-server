@@ -71,7 +71,7 @@ They return computed answers with the right scoping; reach for them before writi
 - Service health and performance: {{.}}.
 {{- end}}
 {{- with $alerts}}
-- Firing alerts, rule state and noisy, flapping, stale or unrouted rules: {{.}}.
+- Firing alerts and rule state: {{.}}.
 {{- end}}
 {{- with $changes}}
 - Deploys and other changes: {{.}}.
