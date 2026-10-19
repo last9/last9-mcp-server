@@ -51,8 +51,8 @@ func TestAttachNotificationChannelBothMakesTwoCalls(t *testing.T) {
 	assertNoSecret(t, text, err)
 	if err != nil || isErr || len(s.calls) != 3 ||
 		s.calls[0] != (recordedCall{"GET", "/notification_settings/", ""}) ||
-		s.calls[1] != (recordedCall{"POST", "/notification_settings/7/attach", `{"entity_id":"g1","severity":"breach","property":` + masterProperty + `}`}) ||
-		s.calls[2] != (recordedCall{"POST", "/notification_settings/7/attach", `{"entity_id":"g1","severity":"threat","property":` + masterProperty + `}`}) ||
+		s.calls[1] != (recordedCall{"POST", "/notification_settings/7/attach", `{"entity_id":"g1","severity":"breach","property":` + masterProperty + `,"created_via":"last9-mcp","created_via_client":"unknown/unknown"}`}) ||
+		s.calls[2] != (recordedCall{"POST", "/notification_settings/7/attach", `{"entity_id":"g1","severity":"threat","property":` + masterProperty + `,"created_via":"last9-mcp","created_via_client":"unknown/unknown"}`}) ||
 		text != `{"attachments":[{"attachment_id":1,"alert_group_id":"g1","severity":"breach"},{"attachment_id":2,"alert_group_id":"g1","severity":"threat"}]}` {
 		t.Fatalf("text=%s isErr=%v err=%v calls=%+v", text, isErr, err, s.calls)
 	}

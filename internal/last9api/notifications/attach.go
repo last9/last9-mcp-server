@@ -13,6 +13,7 @@ type AttachNotificationSettingInput struct {
 	EntityID string          `json:"entity_id"`
 	Severity string          `json:"severity"`
 	Property json.RawMessage `json:"property,omitempty"`
+	last9api.CreatedVia
 }
 
 func attachPath(id int) string { return pathNotificationSettings + strconv.Itoa(id) + "/attach" }
