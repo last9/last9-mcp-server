@@ -59,6 +59,38 @@ type hygieneVerdict struct {
 	Stats    alerts.HygieneRule `json:"stats"`
 }
 
+// hygieneNullFields counts enabled rules per null field, each of which skips or
+// (for ack) weakens a check, so a short list of findings is never mistaken for
+// a clean bill of health.
+type hygieneNullFields struct {
+	Ack          int `json:"ack"`
+	MutedSeconds int `json:"muted_seconds"`
+	Routed       int `json:"routed"`
+	HistorySince int `json:"history_since"`
+}
+
+func countNullFields(rules []alerts.HygieneRule) hygieneNullFields {
+	var n hygieneNullFields
+	for _, rule := range rules {
+		if rule.IsDisabled {
+			continue
+		}
+		if rule.Ack == nil {
+			n.Ack++
+		}
+		if rule.MutedSeconds == nil {
+			n.MutedSeconds++
+		}
+		if rule.Routed == nil {
+			n.Routed++
+		}
+		if rule.HistorySince == nil {
+			n.HistorySince++
+		}
+	}
+	return n
+}
+
 // rankAlertHygiene returns only flagged rules: most categories first, then the
 // loudest (fire count, then flaps), then by name and id so the order is stable.
 func rankAlertHygiene(resp *alerts.GetAlertHygieneResponse) []hygieneVerdict {
@@ -105,16 +137,22 @@ func classifyHygieneRule(rule alerts.HygieneRule, w hygieneWindow) []hygieneFind
 }
 
 // Null ack or mute history means none was recorded, so it never counts as zero.
+// The API does not record acks yet, so a null ack judges the fire rate alone
+// and says so, rather than leaving every loud rule unflagged.
 func noisyFinding(rule alerts.HygieneRule, w hygieneWindow) *hygieneFinding {
 	observed := observedSeconds(rule, w)
+	perDay := float64(rule.FireCount) / (float64(observed) / 86400)
 	var reasons []string
-	if rule.Ack != nil {
-		perDay := float64(rule.FireCount) / (float64(observed) / 86400)
-		if perDay >= hygieneNoisyMinFiresPerDay && rule.Ack.AckRate < hygieneNoisyMaxAckRate {
-			reasons = append(reasons, fmt.Sprintf(
-				"fired %d times (%.1f/day) with %.0f%% of episodes acked (noisy at >= %.0f/day and < %.0f%% acked)",
-				rule.FireCount, perDay, rule.Ack.AckRate*100, hygieneNoisyMinFiresPerDay, hygieneNoisyMaxAckRate*100))
-		}
+	switch {
+	case perDay < hygieneNoisyMinFiresPerDay:
+	case rule.Ack == nil:
+		reasons = append(reasons, fmt.Sprintf(
+			"fired %d times (%.1f/day; noisy at >= %.0f/day); ack history is not recorded, so acknowledgement was not checked",
+			rule.FireCount, perDay, hygieneNoisyMinFiresPerDay))
+	case rule.Ack.AckRate < hygieneNoisyMaxAckRate:
+		reasons = append(reasons, fmt.Sprintf(
+			"fired %d times (%.1f/day) with %.0f%% of episodes acked (noisy at >= %.0f/day and < %.0f%% acked)",
+			rule.FireCount, perDay, rule.Ack.AckRate*100, hygieneNoisyMinFiresPerDay, hygieneNoisyMaxAckRate*100))
 	}
 	if rule.MutedSeconds != nil {
 		fraction := *rule.MutedSeconds / float64(observed)

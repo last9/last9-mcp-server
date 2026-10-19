@@ -64,10 +64,11 @@ func TestClassifyHygieneRule_Categories(t *testing.T) {
 		{"fires one below threshold", func(r *alerts.HygieneRule) { r.FireCount = 34; r.Ack = ack(0.1) }, []string{}},
 		{"ack rate at threshold is not low", func(r *alerts.HygieneRule) { r.FireCount = 70; r.Ack = ack(0.2) }, []string{}},
 		{"ack rate just below threshold", func(r *alerts.HygieneRule) { r.FireCount = 70; r.Ack = ack(0.19) }, []string{"noisy"}},
-		{"null ack gives no noisy-by-ack verdict", func(r *alerts.HygieneRule) { r.FireCount = 700; r.Ack = nil }, []string{}},
+		{"null ack judges noisy on fire rate alone", func(r *alerts.HygieneRule) { r.FireCount = 35; r.Ack = nil }, []string{"noisy"}},
+		{"null ack below fire threshold", func(r *alerts.HygieneRule) { r.FireCount = 34; r.Ack = nil }, []string{}},
 		{"muted at threshold", func(r *alerts.HygieneRule) { r.MutedSeconds = f64(0.25 * float64(7*testDay)) }, []string{"noisy"}},
 		{"muted just below threshold", func(r *alerts.HygieneRule) { r.MutedSeconds = f64(0.24 * float64(7*testDay)) }, []string{}},
-		{"null mute history gives no noisy verdict", func(r *alerts.HygieneRule) { r.MutedSeconds = nil; r.Ack = nil; r.FireCount = 700 }, []string{}},
+		{"null mute history gives no noisy-by-mute verdict", func(r *alerts.HygieneRule) { r.MutedSeconds = nil; r.FireCount = 700 }, []string{}},
 		{"fire rate uses the observed span when history starts mid-window", func(r *alerts.HygieneRule) {
 			r.HistorySince = i64(testWindowTo - 2*testDay)
 			r.FireCount = 10
@@ -144,6 +145,19 @@ func TestClassifyHygieneRule_ReasonsCarryTheNumbers(t *testing.T) {
 			if !strings.Contains(f.Reason, s) {
 				t.Errorf("%s reason %q missing %q", f.Category, f.Reason, s)
 			}
+		}
+	}
+
+	unacked := healthyRule("r3")
+	unacked.FireCount = 70
+	unacked.Ack = nil
+	unackedFindings := classifyOne(unacked)
+	if len(unackedFindings) != 1 {
+		t.Fatalf("null-ack findings = %+v", unackedFindings)
+	}
+	for _, s := range []string{"70", "10.0/day", "ack history is not recorded"} {
+		if !strings.Contains(unackedFindings[0].Reason, s) {
+			t.Errorf("null-ack noisy reason %q missing %q", unackedFindings[0].Reason, s)
 		}
 	}
 

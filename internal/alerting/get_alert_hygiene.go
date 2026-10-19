@@ -28,13 +28,14 @@ type GetAlertHygieneArgs struct {
 }
 
 type alertHygieneResult struct {
-	Window         string           `json:"window"`
-	From           string           `json:"from"`
-	To             string           `json:"to"`
-	RulesEvaluated int              `json:"rules_evaluated"`
-	FlaggedRules   int              `json:"flagged_rules"`
-	Truncated      bool             `json:"truncated"`
-	Rules          []hygieneVerdict `json:"rules"`
+	Window         string            `json:"window"`
+	From           string            `json:"from"`
+	To             string            `json:"to"`
+	RulesEvaluated int               `json:"rules_evaluated"`
+	FlaggedRules   int               `json:"flagged_rules"`
+	Truncated      bool              `json:"truncated"`
+	NullFields     hygieneNullFields `json:"null_fields"`
+	Rules          []hygieneVerdict  `json:"rules"`
 }
 
 func NewGetAlertHygieneHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetAlertHygieneArgs) (*mcp.CallToolResult, any, error) {
@@ -61,6 +62,7 @@ func NewGetAlertHygieneHandler(client *http.Client, cfg models.Config) func(cont
 			RulesEvaluated: len(resp.Rules),
 			FlaggedRules:   len(ranked),
 			Truncated:      len(ranked) > limit,
+			NullFields:     countNullFields(resp.Rules),
 			Rules:          ranked[:min(limit, len(ranked))],
 		}
 		payload, err := json.Marshal(result)

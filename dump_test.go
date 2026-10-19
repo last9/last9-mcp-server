@@ -638,7 +638,7 @@ func TestDumpToolsAlertsServesReadOnlyAlertHygiene(t *testing.T) {
 		if !tool.Annotations.ReadOnlyHint {
 			t.Error("get_alert_hygiene must be served read-only")
 		}
-		for _, want := range []string{"never changes anything", "explicitly confirms", "Last9 alerting UI", "`7d` or `30d`", "count_true(result) >= N", "adaptive_std_cmp"} {
+		for _, want := range []string{"never changes anything", "explicitly confirms", "Last9 alerting UI", "`7d` or `30d`", "count_true(result) >= N", "adaptive_std_cmp", "fire rate alone", "`null_fields`"} {
 			if !strings.Contains(tool.Description, want) {
 				t.Errorf("served get_alert_hygiene description missing %q", want)
 			}

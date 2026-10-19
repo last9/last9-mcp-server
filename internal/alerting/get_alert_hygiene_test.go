@@ -220,3 +220,30 @@ func TestGetAlertHygiene_NotFoundSaysNothingWasChecked(t *testing.T) {
 		t.Fatalf("err = %v, want it to say no alert rules were checked", err)
 	}
 }
+
+// Each null field skips or weakens a check, so the result counts them instead of
+// letting "no noisy rules" hide that the inputs were missing.
+func TestGetAlertHygiene_CountsNullFieldsOfEnabledRules(t *testing.T) {
+	unacked := healthyRule("unacked")
+	unacked.Ack = nil
+	unacked.MutedSeconds = nil
+	unknownRouting := healthyRule("unknown-routing")
+	unknownRouting.Routed = nil
+	noHistory := healthyRule("no-history")
+	noHistory.HistorySince = nil
+	disabled := alerts.HygieneRule{RuleID: "disabled", IsDisabled: true}
+
+	stub := &hygieneStub{rules: []alerts.HygieneRule{unacked, unknownRouting, noHistory, disabled, healthyRule("ok")}}
+	result, err := callGetAlertHygiene(t, stub, GetAlertHygieneArgs{})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	want := hygieneNullFields{Ack: 1, MutedSeconds: 1, Routed: 1, HistorySince: 1}
+	if got := decodeHygieneResult(t, result).NullFields; got != want {
+		t.Errorf("null_fields = %+v, want %+v", got, want)
+	}
+	const wantJSON = `"null_fields":{"ack":1,"muted_seconds":1,"routed":1,"history_since":1}`
+	if body := utils.GetTextContent(t, result); !strings.Contains(body, wantJSON) {
+		t.Errorf("payload does not carry %s:\n%s", wantJSON, body)
+	}
+}
