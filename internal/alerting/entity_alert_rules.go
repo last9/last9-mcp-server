@@ -112,6 +112,7 @@ func formatEntityAlertRulesResponse(rules AlertConfigResponse) string {
 		out += fmt.Sprintf("  ID: %s\n", rule.ID)
 		out += fmt.Sprintf("  Rule Name: %s\n", rule.RuleName)
 		out += formatRuleLifecycle(rule)
+		out += fmt.Sprintf("  Created Via: %s\n", formatRuleCreatedVia(rule))
 		if rule.Expression != "" {
 			out += fmt.Sprintf("  Expression: %s\n", rule.Expression)
 		}
