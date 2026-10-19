@@ -48,7 +48,7 @@
 	- labels: The alert group's configured metadata labels as k=v pairs, when set
 	  For a full inventory of groups (including zero-rule groups) use get_alert_groups.
 	- state: disabled, error-stale, muted or active, in that precedence
-	- disabled, muted_until (none, indefinitely or RFC3339 UTC), recurring_mute_schedule (timezone, one "Mon,Tue 22:00-06:00" line per window) and next_transition, as set by patch_alert
+	- disabled, muted_until (none, indefinitely or RFC3339 UTC), recurring_mute_schedule (timezone, one "Mon,Tue 22:00-06:00" line per window) and next_transition
 	- severity: Alert severity level
 	- algorithm: Detection algorithm (static_threshold, high_spike, inc_trend, etc.)
 	- created_at, updated_at: Rule creation and last-modified times
