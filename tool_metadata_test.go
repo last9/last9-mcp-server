@@ -28,7 +28,7 @@ var descriptionBudgetOverrides = map[string]int{
 	"get_alert_config":                4600,
 	"get_trace_attribute_deviations":  4400,
 	"get_logs":                        3400,
-	"create_dashboard":                3420,
+	"create_dashboard":                3500,
 	"prometheus_range_query":          3000,
 	"create_alert_from_chart":         3000,
 	"get_log_attributes_for_pipeline": 2800,
@@ -38,6 +38,7 @@ var descriptionBudgetOverrides = map[string]int{
 	"create_alert":                    3050,
 	"get_service_performance_details": 2800,
 	"get_alerts":                      2600,
+	"get_emerging_log_patterns":       2700,
 }
 
 // servedSizeBudgets cap description plus compact input schema JSON for tools
