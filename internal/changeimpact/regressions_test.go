@@ -86,8 +86,8 @@ func TestRegressionsCarryValuesAndReasonText(t *testing.T) {
 
 func assertRegression(t *testing.T, got, want Regression) {
 	t.Helper()
-	if got.Service != want.Service || got.Role != want.Role || got.Metric != want.Metric || got.Endpoint != "" {
-		t.Errorf("got %+v, want %+v with an empty endpoint", got, want)
+	if got.Service != want.Service || got.Role != want.Role || got.Metric != want.Metric {
+		t.Errorf("got %+v, want %+v", got, want)
 	}
 	for _, v := range []struct {
 		name      string

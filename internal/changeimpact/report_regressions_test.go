@@ -178,7 +178,8 @@ func TestRegressionsSerializeEveryField(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"service":"checkout","role":"changed","metric":"alert","endpoint":"","baseline":null,"after":null}`
+	// No endpoint: every regression is service-wide, which a filer keys as '*'.
+	want := `{"service":"checkout","role":"changed","metric":"alert","baseline":null,"after":null}`
 	if string(raw) != want {
 		t.Fatalf("got %s, want %s", raw, want)
 	}

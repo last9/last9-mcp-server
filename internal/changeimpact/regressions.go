@@ -7,7 +7,8 @@ import (
 )
 
 // Regression metrics. last9/ai files one ticket per (service, env, endpoint,
-// metric) and matches these strings exactly.
+// metric) and matches these strings exactly; every regression is service-wide,
+// so it carries no endpoint.
 const (
 	MetricErrorRatePct  = "error_rate_pct"
 	MetricLatencyP95Ms  = "latency_p95_ms"
@@ -22,14 +23,12 @@ const (
 	RoleDependent = "dependent"
 )
 
-// Regression is one verdict trigger. Endpoint is empty for a service-wide
-// regression, which every current trigger is. Baseline and After are in the
-// metric's unit (percent, ms, rpm, or the APM signal's own) and null for alerts.
+// Regression is one verdict trigger. Baseline and After are in the metric's
+// unit (percent, ms, rpm, or the APM signal's own) and null for alerts.
 type Regression struct {
 	Service  string   `json:"service"`
 	Role     string   `json:"role"`
 	Metric   string   `json:"metric"`
-	Endpoint string   `json:"endpoint"`
 	Baseline *float64 `json:"baseline"`
 	After    *float64 `json:"after"`
 
