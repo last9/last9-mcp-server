@@ -12,6 +12,7 @@ import (
 	"last9-mcp/internal/apm"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/change_events"
+	"last9-mcp/internal/changeimpact"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/grafana"
 	"last9-mcp/internal/models"
@@ -491,6 +492,12 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Annotations: readOnlyTool("Get Change Events"),
 		Description: prompts.GetChangeEventsDescription,
 	}, change_events.NewGetChangeEventsHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "analyze_change_impact",
+		Annotations: readOnlyTool("Analyze Change Impact"),
+		Description: prompts.AnalyzeChangeImpactDescription,
+	}, changeimpact.NewAnalyzeChangeImpactHandler(client, cfg)))
 
 	// Register database discovery tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{

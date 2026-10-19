@@ -157,6 +157,35 @@ func TestGetEntityAlertRulesHandler_ReturnsRules(t *testing.T) {
 	}
 }
 
+func TestGetEntityAlertRulesHandler_ShowsCreatedVia(t *testing.T) {
+	entityID := "entity-abc"
+	rules := AlertConfigResponse{
+		{ID: "rule-mcp", EntityID: entityID, RuleName: "mcp", Properties: map[string]interface{}{
+			"annotations": map[string]interface{}{"_l9_created_via_": "last9-mcp", "_l9_created_via_client_": "claude-code/2.1.0"},
+		}},
+		{ID: "rule-forged-newline", EntityID: entityID, RuleName: "nl", Properties: map[string]interface{}{
+			"annotations": map[string]interface{}{"_l9_created_via_": "x\nRule 9:"},
+		}},
+		{ID: "rule-plain", EntityID: entityID, RuleName: "plain", Properties: map[string]interface{}{
+			"annotations": map[string]interface{}{"team": "core"},
+		}},
+	}
+	state := &entityAlertRulesTestServerState{rulesByEntityID: map[string]AlertConfigResponse{entityID: rules}}
+	text, _, err := executeGetEntityAlertRules(t, state, GetEntityAlertRulesArgs{EntityID: entityID})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	blocks := strings.Split(text, "\n\n")
+	if len(blocks) < 4 {
+		t.Fatalf("unexpected output:\n%s", text)
+	}
+	for i, want := range []string{"  Created Via: last9-mcp (client claude-code/2.1.0)\n", "  Created Via: x\\nRule 9:\n", "  Created Via: -\n"} {
+		if !strings.Contains(blocks[i+1]+"\n", want) {
+			t.Fatalf("rule %d block lacks %q:\n%s", i+1, want, blocks[i+1])
+		}
+	}
+}
+
 // patch_alert changes mute_until, recurring_mute_schedule and properties; the entity endpoint
 // returns all three, so this tool is where an agent reads a patch back.
 func TestGetEntityAlertRulesHandler_ShowsPatchedFields(t *testing.T) {
