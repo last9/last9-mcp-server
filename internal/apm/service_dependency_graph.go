@@ -30,6 +30,15 @@ type ServiceDependencyGraphDetails struct {
 	Databases        map[string]RedMetrics `json:"databases"`
 }
 
+// incomingCallersQuery ranks the services calling escSvc by requests per minute.
+// escSvc and escEnv must already be PromQL-label escaped.
+func incomingCallersQuery(escSvc, escEnv string, windowMin int) string {
+	return fmt.Sprintf(
+		`sum by (client)(sum_over_time(trace_call_graph_count{server="%s", env=~"%s"}[%dm])) / %d`,
+		escSvc, escEnv, windowMin, windowMin,
+	)
+}
+
 func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServiceDependencyGraphArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args ServiceDependencyGraphArgs) (*mcp.CallToolResult, any, error) {
 		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
@@ -58,10 +67,7 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 
 		// Incoming requests (HTTP server operations):
 		// throughput
-		incomingThroughputQuery := fmt.Sprintf(
-			`sum by (client)(sum_over_time(trace_call_graph_count{server="%s", env=~"%s"}[%s])) / %d`,
-			escSvc, escEnv, timeRange, int((endTimeParam-startTimeParam)/60),
-		)
+		incomingThroughputQuery := incomingCallersQuery(escSvc, escEnv, int((endTimeParam-startTimeParam)/60))
 		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, incomingThroughputQuery, endTimeParam, cfg)
 		if err != nil {
 			return nil, nil, err
