@@ -108,3 +108,48 @@ func TestDiagnoseErrorRateChecksRecentChange(t *testing.T) {
 		t.Errorf("step 2 must find the change and judge it:\n%s", step2)
 	}
 }
+
+func TestDiagnoseErrorRateChecksLogNoveltyBeforeRawLines(t *testing.T) {
+	res, err := DiagnoseErrorRate.Handler(context.Background(), &mcp.GetPromptRequest{
+		Params: &mcp.GetPromptParams{Arguments: map[string]string{"service": "checkout", "time": "1h", "env": "prod"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := res.Messages[0].Content.(*mcp.TextContent).Text
+	for _, want := range []string{
+		"get_emerging_log_patterns(service_name=checkout, env=prod",
+		// An empty result rules out only changes above both thresholds, so rarer or sample-only changes must still be checked.
+		"no log novelty above min_count and change_factor, not unchanged logs",
+		"below_min_count_patterns",
+		"sample_limit_reached",
+		// Error triage compares error templates, but severity_filters drop body-level lines when severity_set is none or partial.
+		`severity_filters=["error", "fatal", "critical"] only when severity_set is "all"`,
+		// Unfiltered, info and debug churn can fill the sample and top_n and fold error templates into other.
+		`When severity_set is none or partial`,
+		`body_filters=["error", "exception", "fatal"]`,
+		`raise top_n`,
+		"get_log_patterns(service_name=checkout, env=prod) over 1h, with the same severity_filters and body_filters rules",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("template should contain %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestDiagnoseErrorRateNamesDominantLogTemplatesBeforeRawLines(t *testing.T) {
+	res, err := DiagnoseErrorRate.Handler(context.Background(), &mcp.GetPromptRequest{
+		Params: &mcp.GetPromptParams{Arguments: map[string]string{"service": "checkout", "time": "1h", "env": "prod"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := res.Messages[0].Content.(*mcp.TextContent).Text
+	emerging := strings.Index(got, "get_emerging_log_patterns(service_name=checkout, env=prod")
+	aggregate := strings.Index(got, "AGGREGATE FIRST")
+	patterns := strings.Index(got, "get_log_patterns(service_name=checkout, env=prod")
+	rawLines := strings.Index(got, "before reading any raw lines")
+	if emerging < 0 || aggregate < emerging || patterns < aggregate || rawLines < patterns {
+		t.Errorf("want get_emerging_log_patterns, the aggregate, then get_log_patterns, all before raw lines:\n%s", got)
+	}
+}
