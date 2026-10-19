@@ -270,6 +270,8 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 
 - **`get_logs`** — Full JSON pipeline log queries (aggregations, filters, field extraction)
 - **`get_service_logs`** — Raw log lines for a service, filterable by severity and body content
+- **`get_log_patterns`** — A service's log lines in a window clustered into message templates, with count, first/last seen, severity mix and a sample
+- **`get_emerging_log_patterns`** — Log templates that are new, increased, decreased or disappeared against a baseline window, with counts from both
 - **`get_log_attributes`** — Global catalog of attributes in the log schema for a time window
 - **`get_log_attributes_for_pipeline`** — Log fields actually present for an in-progress pipeline (scoped discovery), each with its exact `filter_field`
 - **`get_drop_rules`** — Log drop rules from [Last9 Control Plane](https://last9.io/control-plane)
@@ -310,6 +312,8 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`delete_notification_channel`** — Permanently delete a channel that has no attachments
 
 The alert write tools (`create_alert`, `update_alert`, `patch_alert`, `delete_alert`, `create_alert_from_chart`, `mute_alert_group`, `acknowledge_alert`, `reassign_alert`, `create_notification_channel`, `attach_notification_channel`, `detach_notification_channel`, `delete_notification_channel`) need a token with write scope; `delete_alert`, `detach_notification_channel` and `delete_notification_channel` need delete scope instead. They are exposed only in the `alerts` toolset.
+
+Rules, channels and attachments these tools create are marked `created_via: last9-mcp` together with the MCP client's name and version (on rules, the `_l9_created_via_` and `_l9_created_via_client_` annotations, which `patch_alert` and `update_alert` keep and callers cannot set). `get_entity_alert_rules` and `get_notification_channels` show the marker, and `delete_alert`, `detach_notification_channel` and `delete_notification_channel` tell agents to clean up only marked resources unless the user names one.
 
 ### Custom Dashboards
 
@@ -603,6 +607,29 @@ Use `service_name` as `ServiceName`, `env` as the environment when present, and 
 Multiple filter types combine with AND. Each array uses OR internally.
 Use `get_logs` for broad aggregate counts first; use `get_service_logs` only after narrowing to a service/env/index and a small sample set.
 
+### get_log_patterns
+
+- `service_name` (string, required)
+- `env` (string, optional)
+- `start_time_iso` / `end_time_iso` (string, optional)
+- `lookback_minutes` (integer, optional): Default: 60.
+- `severity_filters` / `body_filters` (array, optional): OR logic, as in `get_service_logs`. Set `severity_filters` only when `get_service_profile` reports `severity_set` `all`; with `none` or `partial` it drops lines whose severity is in the body.
+- `index` (string, optional)
+- `sample_size` (integer, optional): Lines sampled from the window, newest first. Default: 1000, maximum: 5000.
+- `top_n` (integer, optional): Templates returned by count. Default: 20, maximum: 100. The rest are totalled in `other`.
+
+Clustering runs in the MCP server over the sampled lines, so counts, `first_seen` and `last_seen` are within the sample; `window.sample_limit_reached` says when the sample may miss matching lines (it holds `sample_size` lines and the API does not report an exact `total_matching_lines` equal to that, or the search was `logs_truncated`), in which case it holds only the window's newest lines. Each `template` and `sample` is cut at 500 characters, ending in `…`, so a body that does not cluster (such as JSON without a `message` field) cannot fill the response. A search with failed chunks is a tool error; a truncated or capped search still returns patterns, flagged by `sample_limit_reached`. An empty `patterns` list means nothing matched only while `sample_limit_reached` is false; when it is true the search stopped early and may have missed matching lines.
+
+### get_emerging_log_patterns
+
+Takes every `get_log_patterns` parameter (the time range is the current window), plus:
+
+- `baseline_start_time_iso` / `baseline_end_time_iso` (string, optional): Set both or neither. Default: the window of equal length immediately before the current one.
+- `min_count` (integer, optional): Lines a changed pattern needs in the window it is larger in: current for `new`/`increased`, baseline for `decreased`/`disappeared`. Default: 3 (or `sample_size` if smaller), maximum: `sample_size`.
+- `change_factor` (number, optional): Frequency ratio, greater than 1, that a pattern seen in both windows must reach (`increased`) or fall to the inverse of (`decreased`). Default: 2.
+
+Both thresholds must hold, so a high-volume template whose frequency did not change by `change_factor` is never reported. Returns only changed templates (`new`, `increased`, `decreased`, `disappeared`) with `current` and `baseline` counts; `unchanged_patterns` counts templates in both windows that changed by less than `change_factor`, and `below_min_count_patterns` counts changes dropped for having fewer than `min_count` lines. Frequencies are compared per minute while both samples hold every matching line, per minute estimated from a capped sample's exact `total_matching_lines`, and otherwise as shares of the sample, where `increased`/`decreased` describe composition rather than rate (`comparison_basis`). An empty `patterns` list means no change above both thresholds, not unchanged logs: rarer changes are counted in `below_min_count_patterns`, and a window with `sample_limit_reached` compares samples, not whole windows.
+
 ### get_log_attributes
 
 - `lookback_minutes` (integer, optional): Default: 15.
@@ -747,9 +774,9 @@ Returns a JSON map of `rule_id -> [{timestamp, is_firing}]`. A timestamp at whic
 
 ### get_notification_channels
 
-- `scope` (string, optional): `attached` (default) returns one row per alert-group attachment; the `id` is an attachment id, as taken by `detach_notification_channel`. `channels` returns the org's channels (`id`, `name`, `type`, `send_resolved`); the `id` is a channel id, as taken by `attach_notification_channel`. Destinations, headers, and certificates are never returned.
+- `scope` (string, optional): `attached` (default) returns one row per alert-group attachment; the `id` is an attachment id, as taken by `detach_notification_channel`. `channels` returns the org's channels (`id`, `name`, `type`, `send_resolved`, `created_via`); the `id` is a channel id, as taken by `attach_notification_channel`. Destinations, headers, and certificates are never returned.
 
-Returns configured notification channels (Slack, PagerDuty, email, webhooks, etc.) as a TSV table. Attachment rows (`service_fqid` set) show `global` false and `services` `-`; `services` lists only legacy service bindings. On attachment rows `send_resolved` is the row's stored default, not what delivery uses; resolve notifications follow the channel's own `send_resolved` (`scope=channels`).
+Returns configured notification channels (Slack, PagerDuty, email, webhooks, etc.) as a TSV table. Attachment rows (`service_fqid` set) show `global` false and `services` `-`; `services` lists only legacy service bindings. On attachment rows `send_resolved` is the row's stored default, not what delivery uses; resolve notifications follow the channel's own `send_resolved` (`scope=channels`). Both scopes include `created_via` (`last9-mcp` for rows an MCP agent created, else `-`).
 
 ### recommend_alert_config
 
