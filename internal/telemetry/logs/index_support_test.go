@@ -3,6 +3,7 @@ package logs
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -242,6 +243,39 @@ func TestGetServiceLogsHandler_ExplicitIndexOverridesFallback(t *testing.T) {
 
 	if parsed := parseRelativeURL(t, referenceURL(t, result)); parsed.Query().Get("index") != "physical:idx-123" {
 		t.Fatalf("expected dashboard index physical:idx-123, got %q", parsed.Query().Get("index"))
+	}
+}
+
+func TestGetServiceLogsHandler_OmitsSourceLinkWhenIndexCannotBeResolved(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		switch r.URL.Path {
+		case constants.EndpointLogsQueryRange:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(serviceLogsAPIResponse("timeout while calling db")))
+		case "/logs_settings/physical_indexes":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"properties":[]}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	handler := NewGetServiceLogsHandler(server.Client(), testLogsConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{
+		ServiceName:     "api",
+		LookbackMinutes: 5,
+		Index:           "physical_index:missing",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if got := referenceURL(t, result); got != "" {
+		t.Fatalf("expected no reference_url when index resolution fails, got %q", got)
 	}
 }
 

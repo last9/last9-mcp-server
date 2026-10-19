@@ -147,23 +147,9 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, fmt.Errorf("failed to format response: %w", err)
 		}
 
-		// Build deep link URL with filters matching dashboard conventions
-		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardQuery := cloneLogJSONQuery(logjsonQuery)
-
-		dashboardIndex := ""
-		if normalizedIndex != "" {
-			resolvedIndex, err := utils.ResolveLogIndexDashboardParam(ctx, client, cfg, normalizedIndex)
-			if err == nil {
-				dashboardIndex = resolvedIndex
-			}
-		}
-		dashboardURL := dlBuilder.BuildLogsLink(startTime.UnixMilli(), endTime.UnixMilli(), dashboardQuery, dashboardIndex)
-		var meta mcp.Meta
-		if normalizedIndex == "" || dashboardIndex != "" {
-			meta = deeplink.ToMeta(dashboardURL)
-		}
-		if coverage := serviceLogsCoverage(logs, logjsonQuery, serviceLogsScope{startTime, endTime, normalizedIndex}); coverage != nil {
+		bounds := serviceLogsScope{startTime, endTime, normalizedIndex}
+		meta := serviceLogsDeepLink(ctx, client, cfg, serviceLogsSearch{logjsonQuery, bounds})
+		if coverage := serviceLogsCoverage(logs, logjsonQuery, bounds); coverage != nil {
 			if meta == nil {
 				meta = mcp.Meta{}
 			}
@@ -199,6 +185,27 @@ func formatServiceLogs(logs *ServiceLogsResponse) (string, error) {
 type serviceLogsScope struct {
 	start, end time.Time
 	index      string
+}
+
+type serviceLogsSearch struct {
+	query []map[string]interface{}
+	serviceLogsScope
+}
+
+// serviceLogsDeepLink links the dashboard logs view for a search. An explicit
+// index the dashboard cannot resolve gets no link: without it the view would
+// show the default index's lines instead.
+func serviceLogsDeepLink(ctx context.Context, client *http.Client, cfg models.Config, search serviceLogsSearch) mcp.Meta {
+	dashboardIndex := ""
+	if search.index != "" {
+		resolved, err := utils.ResolveLogIndexDashboardParam(ctx, client, cfg, search.index)
+		if err != nil || resolved == "" {
+			return nil
+		}
+		dashboardIndex = resolved
+	}
+	dashboardURL := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildLogsLink(search.start.UnixMilli(), search.end.UnixMilli(), cloneLogJSONQuery(search.query), dashboardIndex)
+	return deeplink.ToMeta(dashboardURL)
 }
 
 func serviceLogsCoverage(logs *ServiceLogsResponse, query []map[string]interface{}, bounds serviceLogsScope) map[string]any {

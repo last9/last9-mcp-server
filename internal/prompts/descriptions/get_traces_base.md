@@ -1,10 +1,7 @@
 `tracejson_query`: JSON stage array, **NOT SQL**. Stages use `"type"`: `filter`|`parse`|`aggregate`|`window_aggregate`; no `"stage"`/`"conditions"`.
 
-**Filter shape:**
-```json
-[{"type":"filter","query":{"$and":[{"$eq":["StatusCode","STATUS_CODE_ERROR"]}]}}]
-```
-`query` uses `$and`/`$or` of operator:[field,value] pairs; values are strings. Always `$and`-wrap; no SQL/tags.
+**Filter:** `[{"type":"filter","query":{"$and":[{"$eq":["StatusCode","STATUS_CODE_ERROR"]}]}}]`
+`query`: `$and`/`$or` of `$eq`/`$neq`/`$contains`/`$regex`/`$gt` `[field,value]`; string values, `$and`-wrap. No filter_tags/tags.
 
 **Pattern:** wildcards like `checkout.*` → `$regex`. Trace ID substring → `$contains` on `TraceId`; exact ID → `get_service_traces`.
 
@@ -12,11 +9,11 @@
 
 **Scope:** `service.name`→`ServiceName`; tenant→`resources['last9.tenant']`; env→`resources['deployment.environment']`.
 
-**Time args:** `lookback_minutes` (default **60**); RFC3339 uses `start_time_iso`+`end_time_iso`, never pipeline Timestamp.
+**Time:** `lookback_minutes` (default **60**); RFC3339 uses `start_time_iso`+`end_time_iso`, not Timestamp filters.
 
 **Fields:** OTel enums: `SPAN_KIND_SERVER`, `STATUS_CODE_ERROR`; Duration is ns. Use `attributes['key']`/`resources['key']`, not `SpanAttributes.foo`.
 
-**Aggregate:** use `aggregates`+`groupby`. Average by span: `{"type":"aggregate","aggregates":[{"function":{"$avg":["Duration"]},"as":"avg"}],"groupby":{"SpanName":"span"}}`. `$quantile` is the general/default percentile operator. Compute from raw spans; never average percentile samples. `Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first.
+**Aggregate:** use `aggregates`+`groupby`. Average/mean→`{"function":{"$avg":["Duration"]}}`, not `$quantile`. By span: `{"type":"aggregate","aggregates":[{"function":{"$avg":["Duration"]},"as":"avg"}],"groupby":{"SpanName":"span"}}`. `$quantile` is the general/default percentile operator. Compute from raw spans; never average percentile samples. `Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first.
 
 **window_aggregate:** `{"type":"window_aggregate","function":{"$quantile":[0.99,"Duration"]},"as":"p99","window":["24","hours"],"groupby":{"SpanName":"endpoint"}}`.
 
@@ -28,7 +25,7 @@ For calendar buckets, use explicit ISO bounds and time zone. P99 `Duration` outp
 
 **Envelope:** `truncated`, `trimmed_items`, `partial`: disclose; follow `hints`.
 
-Full manual: resource `last9://reference/tracejson`
+Manual: `last9://reference/tracejson`
 
 ## When to use
 Span filters, counts, averages or percentiles across services with a tracejson pipeline.
