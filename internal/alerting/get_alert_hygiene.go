@@ -31,6 +31,8 @@ type alertHygieneResult struct {
 	Window         string            `json:"window"`
 	From           string            `json:"from"`
 	To             string            `json:"to"`
+	CoveredDays    float64           `json:"covered_days"`
+	PartialWindow  bool              `json:"partial_window"`
 	RulesEvaluated int               `json:"rules_evaluated"`
 	FlaggedRules   int               `json:"flagged_rules"`
 	Truncated      bool              `json:"truncated"`
@@ -55,10 +57,13 @@ func NewGetAlertHygieneHandler(client *http.Client, cfg models.Config) func(cont
 		}
 
 		ranked := rankAlertHygiene(resp)
+		covered := newHygieneWindow(resp.Window, resp.From, resp.To)
 		result := alertHygieneResult{
 			Window:         resp.Window,
 			From:           formatUnix(resp.From),
 			To:             formatUnix(resp.To),
+			CoveredDays:    covered.coveredDays(),
+			PartialWindow:  covered.Partial,
 			RulesEvaluated: len(resp.Rules),
 			FlaggedRules:   len(ranked),
 			Truncated:      len(ranked) > limit,

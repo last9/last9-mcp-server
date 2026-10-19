@@ -2,6 +2,7 @@ package alerting
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
 	"strconv"
@@ -36,9 +37,35 @@ var (
 	staticConditionPattern = regexp.MustCompile(`^\s*expr\s*(>=|>|<=|<)\s*([-+]?[0-9]*\.?[0-9]+)\s*$`)
 )
 
+var hygieneWindowSeconds = map[string]int64{
+	alerts.HygieneWindow7d:  7 * 86400,
+	alerts.HygieneWindow30d: 30 * 86400,
+}
+
+// hygieneWindow is the history the API covered: From starts later than To minus
+// the window when alert retention (about 21 days) is shorter than the window.
 type hygieneWindow struct {
 	Label    string
 	From, To int64
+	Partial  bool
+}
+
+func newHygieneWindow(label string, from, to int64) hygieneWindow {
+	full, ok := hygieneWindowSeconds[label]
+	return hygieneWindow{Label: label, From: from, To: to, Partial: ok && to-from < full}
+}
+
+func (w hygieneWindow) coveredDays() float64 {
+	return math.Round(float64(w.To-w.From)/86400*10) / 10
+}
+
+// span names what the verdicts read, so a retention-cut window never claims a
+// rule was silent for the whole window.
+func (w hygieneWindow) span() string {
+	if w.Partial {
+		return fmt.Sprintf("%.1f days retained of the %s window", w.coveredDays(), w.Label)
+	}
+	return w.Label + " window"
 }
 
 type hygieneFix struct {
@@ -94,7 +121,7 @@ func countNullFields(rules []alerts.HygieneRule) hygieneNullFields {
 // rankAlertHygiene returns only flagged rules: most categories first, then the
 // loudest (fire count, then flaps), then by name and id so the order is stable.
 func rankAlertHygiene(resp *alerts.GetAlertHygieneResponse) []hygieneVerdict {
-	w := hygieneWindow{Label: resp.Window, From: resp.From, To: resp.To}
+	w := newHygieneWindow(resp.Window, resp.From, resp.To)
 	verdicts := []hygieneVerdict{}
 	for _, rule := range resp.Rules {
 		if findings := classifyHygieneRule(rule, w); len(findings) > 0 {
@@ -195,12 +222,12 @@ func staleFinding(rule alerts.HygieneRule, w hygieneWindow) *hygieneFinding {
 	var reason string
 	switch {
 	case rule.LastFiredAt != nil && *rule.LastFiredAt < w.From:
-		reason = fmt.Sprintf("last fired %s, before the %s window began %s",
-			formatUnix(*rule.LastFiredAt), w.Label, formatUnix(w.From))
+		reason = fmt.Sprintf("last fired %s, before the %s, which began %s",
+			formatUnix(*rule.LastFiredAt), w.span(), formatUnix(w.From))
 	case rule.LastFiredAt == nil && rule.FireCount == 0 &&
 		rule.HistorySince != nil && *rule.HistorySince <= w.From:
-		reason = fmt.Sprintf("never fired since history began %s, which covers the whole %s window",
-			formatUnix(*rule.HistorySince), w.Label)
+		reason = fmt.Sprintf("never fired since history began %s, which covers the whole %s",
+			formatUnix(*rule.HistorySince), w.span())
 	default:
 		return nil
 	}

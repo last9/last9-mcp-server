@@ -25,6 +25,7 @@ import (
 type hygieneStub struct {
 	rules    []alerts.HygieneRule
 	status   int
+	from     int64 // response from; zero means testWindowFr
 	requests atomic.Int32
 	window   atomic.Value
 }
@@ -41,8 +42,12 @@ func (s *hygieneStub) serve(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(s.status)
 		return
 	}
+	from := s.from
+	if from == 0 {
+		from = testWindowFr
+	}
 	_ = json.NewEncoder(w).Encode(alerts.GetAlertHygieneResponse{
-		Window: r.URL.Query().Get("window"), From: testWindowFr, To: testWindowTo,
+		Window: r.URL.Query().Get("window"), From: from, To: testWindowTo,
 		Rules: append([]alerts.HygieneRule{}, s.rules...),
 	})
 }
@@ -245,5 +250,38 @@ func TestGetAlertHygiene_CountsNullFieldsOfEnabledRules(t *testing.T) {
 	const wantJSON = `"null_fields":{"ack":1,"muted_seconds":1,"routed":1,"history_since":1}`
 	if body := utils.GetTextContent(t, result); !strings.Contains(body, wantJSON) {
 		t.Errorf("payload does not carry %s:\n%s", wantJSON, body)
+	}
+}
+
+// Alert history is retained for about 21 days, so the API starts a 30d window
+// late; the result must say how much of the window was actually covered.
+func TestGetAlertHygiene_ReportsTheCoveredWindow(t *testing.T) {
+	cases := []struct {
+		name        string
+		window      string
+		from        int64
+		coveredDays float64
+		partial     bool
+	}{
+		{"7d fully covered", "7d", testWindowTo - 7*testDay, 7, false},
+		{"30d fully covered", "30d", testWindowTo - 30*testDay, 30, false},
+		{"30d cut to retention", "30d", testWindowTo - 21*testDay, 21, true},
+		{"one second short", "7d", testWindowTo - 7*testDay + 1, 7, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stub := &hygieneStub{from: tc.from}
+			result, err := callGetAlertHygiene(t, stub, GetAlertHygieneArgs{Window: tc.window})
+			if err != nil {
+				t.Fatalf("handler: %v", err)
+			}
+			out := decodeHygieneResult(t, result)
+			if out.CoveredDays != tc.coveredDays || out.PartialWindow != tc.partial {
+				t.Errorf("covered_days=%v partial_window=%v, want %v %v", out.CoveredDays, out.PartialWindow, tc.coveredDays, tc.partial)
+			}
+			if want := time.Unix(tc.from, 0).UTC().Format(time.RFC3339); out.From != want {
+				t.Errorf("from = %q, want the covered start %q", out.From, want)
+			}
+		})
 	}
 }

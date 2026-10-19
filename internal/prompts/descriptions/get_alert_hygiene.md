@@ -16,7 +16,9 @@ Categories (a rule may have several; disabled rules are never flagged):
   `fire_count`) counts only when its history covers the whole window.
 - unrouted: its alert group has no notification channel.
 
-Rates use the observed span: the window, or the part since `history_since`, at least one day.
+Alert history is kept about 21 days, so `from` is where covered history starts, `covered_days`
+its length; `partial_window` is true when shorter than `window`. Rates use the span from
+`from`, or `history_since` if later, at least one day.
 A null field means not recorded, never zero or false: null `muted_seconds` skips noisy-by-mute,
 null `routed` skips unrouted, null `history_since` skips never-fired stale. `null_fields`
 counts enabled rules per null field.
@@ -31,11 +33,9 @@ Suggested fixes (`suggested_fix`, sometimes `alternative_fix`, each `{parameter,
 - unrouted: attach a notification channel to the alert group.
 - stale: set `is_disabled` to true, or delete the rule, once confirmed unneeded.
 
-Output is compact JSON: `{window, from, to, rules_evaluated, flagged_rules, truncated, null_fields, rules}`.
+Output is compact JSON: `{window, from, to, covered_days, partial_window, rules_evaluated, flagged_rules, truncated, null_fields, rules}`.
 Each rule has `findings` (`category`, `reason` with the numbers, `suggested_fix`) and `stats`,
-the raw per-rule data (ids, names, expression, condition, eval_window, alert_condition,
-fire_count, flaps_per_day, ack, muted_seconds, history_since, routed, channels); its timestamps
-are unix seconds.
+the raw per-rule API data (timestamps in unix seconds).
 
 Ranked by number of categories, then fire count, then flaps/day. For a rule's
 firing timeline use get_alert_rule_state; for its full configuration use get_alert_config.

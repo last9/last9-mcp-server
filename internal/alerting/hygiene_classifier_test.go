@@ -360,3 +360,20 @@ func TestRankAlertHygiene_OrdersFlaggedRules(t *testing.T) {
 		t.Fatalf("order = %v, want %v", got, want)
 	}
 }
+
+// A window cut short by retention must not claim the rule was silent for all of it.
+func TestClassifyHygieneRule_StaleReasonNamesTheCoveredSpan(t *testing.T) {
+	from := testWindowTo - 21*testDay
+	w := newHygieneWindow("30d", from, testWindowTo)
+	rule := healthyRule("r1")
+	rule.LastFiredAt = nil
+	rule.FireCount = 0
+	rule.HistorySince = i64(from)
+	findings := classifyHygieneRule(rule, w)
+	if len(findings) != 1 || findings[0].Category != hygieneCategoryStale {
+		t.Fatalf("findings = %+v", findings)
+	}
+	if r := findings[0].Reason; !strings.Contains(r, "21.0 days retained of the 30d window") {
+		t.Errorf("stale reason = %q, want it to name the 21.0 retained days", r)
+	}
+}
