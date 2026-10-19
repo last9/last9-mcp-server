@@ -84,7 +84,7 @@ func connectTestSession(t *testing.T, cfg models.Config, client *http.Client) *m
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
-	if err := registerTools(server, cfg, client); err != nil {
+	if _, err := registerTools(server, cfg, client); err != nil {
 		t.Fatalf("register tools: %v", err)
 	}
 	ctx := context.Background()

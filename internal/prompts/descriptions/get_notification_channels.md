@@ -13,5 +13,9 @@
 	- created_via: last9-mcp when an MCP agent created the row, else "-" (created elsewhere or not recorded).
 
 	Optional scope (default attached):
-	- attached: the table above, one row per alert-group attachment. The id column is an attachment id (what detach_notification_channel takes).
-	- channels: the org's channels as a TSV table with columns id, name, type, send_resolved, created_via. The id is a channel id (what attach_notification_channel takes). Destinations, headers and certificates are never returned.
+	- attached: the table above, one row per alert-group attachment. The id column is an attachment id.
+	- channels: the org's channels as a TSV table with columns id, name, type, send_resolved, created_via. The id is a channel id. Destinations, headers and certificates are never returned.
+
+	## Pairs well with
+	- `detach_notification_channel` (takes an attachment id from scope=attached)
+	- `attach_notification_channel` (takes a channel id from scope=channels)
