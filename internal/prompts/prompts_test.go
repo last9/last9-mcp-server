@@ -512,12 +512,12 @@ func TestRemovalDescriptionsScopeCleanupToMarkedResources(t *testing.T) {
 	}
 }
 
-// Models sent "42" for channel_id once cleanup prose preceded the parameter line, and the
-// schema rejects strings; the id's type is stated before any cleanup guidance.
+// Models sent channel_id as "42", which the schema rejects, once get_entity_alert_rules listed
+// created_via; eval alc-022 recovered with exactly this wording, so pin it, not a paraphrase.
 func TestRemovalDescriptionsStateIntegerIDBeforeCleanupScope(t *testing.T) {
 	for name, tc := range map[string]struct{ desc, param string }{
-		"delete_notification_channel": {prompts.DeleteNotificationChannelDescription, "channel_id (required, integer"},
-		"detach_notification_channel": {prompts.DetachNotificationChannelDescription, "attachment_id (required, integer"},
+		"delete_notification_channel": {prompts.DeleteNotificationChannelDescription, "channel_id (required, an integer such as 42)"},
+		"detach_notification_channel": {prompts.DetachNotificationChannelDescription, "attachment_id (required, an integer such as 42)"},
 	} {
 		param, cleanup := strings.Index(tc.desc, tc.param), strings.Index(tc.desc, "To clean up")
 		if param < 0 {
