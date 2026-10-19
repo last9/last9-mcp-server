@@ -25,12 +25,16 @@ const (
 
 // Regression is one verdict trigger. Env is the environment the metric was
 // measured in, empty when it sums every environment. Baseline and After are in
-// the metric's unit (percent, ms, rpm, or the APM signal's own) and null for alerts.
+// the metric's unit (percent, ms, rpm, or the APM signal's own) and null for
+// alerts, which instead name their rule and its state, so two alerts on one
+// service stay apart and a filer can skip one that already resolved.
 type Regression struct {
 	Service  string   `json:"service"`
 	Role     string   `json:"role"`
 	Env      string   `json:"env"`
 	Metric   string   `json:"metric"`
+	RuleID   string   `json:"rule_id,omitempty"`
+	State    string   `json:"state,omitempty"`
 	Baseline *float64 `json:"baseline"`
 	After    *float64 `json:"after"`
 
@@ -62,7 +66,10 @@ func alertRegression(a StartedAlert, changed string) Regression {
 	if a.EnvMatch == envMatchUnlabelled {
 		trigger += " (no env label)"
 	}
-	return Regression{Service: a.Service, Role: roleOf(a.Service, changed), Env: a.env, Metric: MetricAlert, trigger: trigger}
+	return Regression{
+		Service: a.Service, Role: roleOf(a.Service, changed), Env: a.env, Metric: MetricAlert,
+		RuleID: a.RuleID, State: a.State, trigger: trigger,
+	}
 }
 
 func apmRegression(d APMDeviation, changed string) Regression {

@@ -55,8 +55,10 @@ func analyzePlanted(t *testing.T, p plantedRegression) Report {
 		after.p95["web"] = 200
 	}
 	if p.alert {
+		// Resolved by the end of the after window, as most deploy alerts are:
+		// the item says so, so a filer can skip it.
 		f.alerts = []alerting.AlertRuleData{{RuleID: "r1", RuleName: "checkout errors", AlertGroupName: "checkout",
-			Alerts: []alerting.AlertInstance{{Since: change.Add(10 * time.Minute).Unix(), GroupLabels: map[string]interface{}{"env": "prod"}}}}}
+			Alerts: []alerting.AlertInstance{{Since: change.Add(10 * time.Minute).Unix(), State: "normal", GroupLabels: map[string]interface{}{"env": "prod"}}}}}
 	}
 	rollup := apmRollup{}
 	if p.apmP95 {
@@ -75,7 +77,7 @@ func TestRegressionsListEveryTriggerInReasonOrder(t *testing.T) {
 	errorRate := Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricErrorRatePct, Baseline: ptr(0.5), After: ptr(5)}
 	p95 := Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricLatencyP95Ms, Baseline: ptr(100), After: ptr(180)}
 	throughput := Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricThroughputRPM, Baseline: ptr(20), After: ptr(5)}
-	alert := Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricAlert}
+	alert := Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricAlert, RuleID: "r1", State: "normal"}
 	dependentP95 := Regression{Service: "web", Role: RoleDependent, Env: "prod", Metric: MetricLatencyP95Ms, Baseline: ptr(80), After: ptr(200)}
 	apmP95 := Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricAPMDeviation, Baseline: ptr(100), After: ptr(200)}
 	everyEnvErrorRate := errorRate
@@ -183,14 +185,34 @@ func TestRegressionsAreAnEmptyArrayUnlessRegressionLikely(t *testing.T) {
 	}
 }
 
+// No endpoint: every regression is service-wide, which a filer keys as '*'.
+// Only alerts carry a rule id and state.
 func TestRegressionsSerializeEveryField(t *testing.T) {
-	raw, err := json.Marshal(Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricAlert, trigger: "x"})
-	if err != nil {
-		t.Fatal(err)
+	cases := []struct {
+		name string
+		in   Regression
+		want string
+	}{
+		{
+			"alert",
+			Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricAlert, RuleID: "r1", State: "firing", trigger: "x"},
+			`{"service":"checkout","role":"changed","env":"prod","metric":"alert","rule_id":"r1","state":"firing","baseline":null,"after":null}`,
+		},
+		{
+			"signal",
+			Regression{Service: "checkout", Role: RoleChanged, Metric: MetricErrorRatePct, Baseline: ptr(1), After: ptr(6), trigger: "x"},
+			`{"service":"checkout","role":"changed","env":"","metric":"error_rate_pct","baseline":1,"after":6}`,
+		},
 	}
-	// No endpoint: every regression is service-wide, which a filer keys as '*'.
-	want := `{"service":"checkout","role":"changed","env":"prod","metric":"alert","baseline":null,"after":null}`
-	if string(raw) != want {
-		t.Fatalf("got %s, want %s", raw, want)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := json.Marshal(tc.in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(raw) != tc.want {
+				t.Fatalf("got %s, want %s", raw, tc.want)
+			}
+		})
 	}
 }

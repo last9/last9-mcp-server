@@ -64,14 +64,14 @@ func TestRegressionsCarryValuesAndReasonText(t *testing.T) {
 		},
 		{
 			name:        "alert on the changed service",
-			got:         alertRegression(StartedAlert{RuleID: "r1", RuleName: "checkout errors", Service: "checkout", StartedAt: "2026-10-17T06:10:00Z", EnvMatch: envMatchExact, env: "prod"}, "checkout"),
-			want:        Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricAlert},
+			got:         alertRegression(StartedAlert{RuleID: "r1", RuleName: "checkout errors", State: "firing", Service: "checkout", StartedAt: "2026-10-17T06:10:00Z", EnvMatch: envMatchExact, env: "prod"}, "checkout"),
+			want:        Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricAlert, RuleID: "r1", State: "firing"},
 			wantTrigger: `alert "checkout errors" started firing for checkout at 2026-10-17T06:10:00Z`,
 		},
 		{
 			name:        "unlabelled alert on a dependent, named by rule id",
-			got:         alertRegression(StartedAlert{RuleID: "r2", Service: "web", StartedAt: "2026-10-17T06:15:00Z", EnvMatch: envMatchUnlabelled}, "checkout"),
-			want:        Regression{Service: "web", Role: RoleDependent, Metric: MetricAlert},
+			got:         alertRegression(StartedAlert{RuleID: "r2", State: "normal", Service: "web", StartedAt: "2026-10-17T06:15:00Z", EnvMatch: envMatchUnlabelled}, "checkout"),
+			want:        Regression{Service: "web", Role: RoleDependent, Metric: MetricAlert, RuleID: "r2", State: "normal"},
 			wantTrigger: `alert "r2" started firing for web at 2026-10-17T06:15:00Z (no env label)`,
 		},
 		{
@@ -93,7 +93,8 @@ func TestRegressionsCarryValuesAndReasonText(t *testing.T) {
 
 func assertRegression(t *testing.T, got, want Regression) {
 	t.Helper()
-	if got.Service != want.Service || got.Role != want.Role || got.Env != want.Env || got.Metric != want.Metric {
+	if got.Service != want.Service || got.Role != want.Role || got.Env != want.Env || got.Metric != want.Metric ||
+		got.RuleID != want.RuleID || got.State != want.State {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
 	for _, v := range []struct {
