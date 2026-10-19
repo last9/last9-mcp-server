@@ -22,5 +22,3 @@ The created dashboard, including its `id`.
 
 ## Known traps
 A second create makes a duplicate dashboard; refine the first instead. On a timeout or connection error the create may or may not have been applied; check by name with list_dashboards before retrying.
-
-Creating a dashboard creates no alerts. To alert on a panel, take its PromQL `expr` into create_kpi on the chosen alert group, then create_alert as a draft (author-alert prompt; last9://reference/alerting).

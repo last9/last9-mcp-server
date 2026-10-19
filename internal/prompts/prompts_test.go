@@ -670,12 +670,25 @@ func TestAlertToolDescriptionsPointAtAlertingReference(t *testing.T) {
 	}
 }
 
-func TestDashboardDescriptionsPointAtPanelAlertFlow(t *testing.T) {
+// Dashboard descriptions only point at the alerting manual: the eval bisect on
+// #336 showed any KPI -> alert chain in them makes the model skip
+// update_dashboard (dash-010) or invent get_custom_dashboard (dash-005).
+func TestDashboardDescriptionsOnlyPointAtAlertingReference(t *testing.T) {
+	if !strings.HasSuffix(prompts.GetDashboardDescription, "\n\nTo alert on a panel, see last9://reference/alerting.") {
+		t.Errorf("get_dashboard must end with its own pointer paragraph to last9://reference/alerting:\n%s", prompts.GetDashboardDescription)
+	}
 	for name, body := range map[string]string{
 		"get_dashboard":    prompts.GetDashboardDescription,
 		"create_dashboard": prompts.CreateDashboardDescription,
 	} {
-		assertPhrasesInOrder(t, name, body, "create_kpi", "create_alert", "author-alert", "last9://reference/alerting")
+		for _, phrase := range []string{"create_kpi", "create_alert", "author-alert"} {
+			if strings.Contains(body, phrase) {
+				t.Errorf("%s description must not spell out the alert flow (%q)", name, phrase)
+			}
+		}
+	}
+	if strings.Contains(prompts.CreateDashboardDescription, "last9://reference/alerting") {
+		t.Error("create_dashboard must not mention alerting")
 	}
 	if !strings.Contains(prompts.CreateAlertDescription, "create one from the panel's PromQL with create_kpi") {
 		t.Error("create_alert must route custom dashboard panels through create_kpi")
