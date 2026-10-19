@@ -3,6 +3,7 @@ package alerting
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/alerts"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -43,6 +45,10 @@ func NewGetAlertHygieneHandler(client *http.Client, cfg models.Config) func(cont
 		}
 
 		resp, err := alerts.GetAlertHygiene(ctx, last9api.NewClient(client, cfg), alerts.GetAlertHygieneInput{Window: window})
+		var upstream *utils.UpstreamHTTPError
+		if errors.As(err, &upstream) && upstream.StatusCode == http.StatusNotFound {
+			return nil, nil, fmt.Errorf("%w This Last9 deployment may not serve alert hygiene yet; no alert rules were checked.", err)
+		}
 		if err != nil {
 			return nil, nil, err
 		}

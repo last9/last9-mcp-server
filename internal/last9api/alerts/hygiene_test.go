@@ -101,6 +101,35 @@ func TestGetAlertHygiene_DecodesNullHistoryAsNil(t *testing.T) {
 	}
 }
 
+// The tool reads an empty rules list as "nothing to fix", so a body without one must fail.
+func TestGetAlertHygiene_RejectsResponseWithoutRules(t *testing.T) {
+	for _, body := range []string{``, `null`, `{}`, `{"window":"7d","from":1,"to":2}`, `{"window":"7d","from":1,"to":2,"rules":null}`} {
+		t.Run(body, func(t *testing.T) {
+			c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				_, _ = w.Write([]byte(body))
+			})
+			if resp, err := GetAlertHygiene(context.Background(), c, GetAlertHygieneInput{Window: HygieneWindow7d}); err == nil {
+				t.Fatalf("expected an error, got %+v", resp)
+			}
+		})
+	}
+}
+
+func TestGetAlertHygiene_AcceptsEmptyRules(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		_, _ = w.Write([]byte(`{"window":"7d","from":1,"to":2,"rules":[]}`))
+	})
+	resp, err := GetAlertHygiene(context.Background(), c, GetAlertHygieneInput{Window: HygieneWindow7d})
+	if err != nil {
+		t.Fatalf("GetAlertHygiene: %v", err)
+	}
+	if resp.Rules == nil || len(resp.Rules) != 0 {
+		t.Fatalf("rules = %#v, want empty", resp.Rules)
+	}
+}
+
 func TestGetAlertHygiene_UpstreamErrorSurfaces(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)

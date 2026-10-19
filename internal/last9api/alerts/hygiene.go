@@ -2,6 +2,7 @@ package alerts
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 
@@ -78,6 +79,10 @@ func GetAlertHygiene(
 	)
 	if err != nil {
 		return nil, err
+	}
+	// Do accepts an empty 2xx; a missing rules list must not read as "every rule is fine".
+	if out.Rules == nil {
+		return nil, fmt.Errorf("%s: response has no rules list", opAlertHygiene)
 	}
 	return &out, nil
 }

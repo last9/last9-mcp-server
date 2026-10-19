@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -40,7 +42,8 @@ func (s *hygieneStub) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(alerts.GetAlertHygieneResponse{
-		Window: r.URL.Query().Get("window"), From: testWindowFr, To: testWindowTo, Rules: s.rules,
+		Window: r.URL.Query().Get("window"), From: testWindowFr, To: testWindowTo,
+		Rules: append([]alerts.HygieneRule{}, s.rules...),
 	})
 }
 
@@ -195,8 +198,25 @@ func TestGetAlertHygiene_NoFlaggedRules(t *testing.T) {
 }
 
 func TestGetAlertHygiene_UpstreamError(t *testing.T) {
-	stub := &hygieneStub{status: http.StatusBadGateway}
-	if _, err := callGetAlertHygiene(t, stub, GetAlertHygieneArgs{}); err == nil {
-		t.Fatal("expected upstream error")
+	for _, status := range []int{http.StatusNotFound, http.StatusForbidden, http.StatusBadGateway} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			stub := &hygieneStub{status: status}
+			result, err := callGetAlertHygiene(t, stub, GetAlertHygieneArgs{})
+			if err == nil {
+				t.Fatalf("expected upstream error, got %+v", result)
+			}
+			if !strings.Contains(err.Error(), strconv.Itoa(status)) {
+				t.Errorf("error %q does not name HTTP %d", err, status)
+			}
+		})
+	}
+}
+
+// A route the deployment does not serve yet must never read as "no rules to fix".
+func TestGetAlertHygiene_NotFoundSaysNothingWasChecked(t *testing.T) {
+	stub := &hygieneStub{status: http.StatusNotFound}
+	_, err := callGetAlertHygiene(t, stub, GetAlertHygieneArgs{})
+	if err == nil || !strings.Contains(err.Error(), "no alert rules were checked") {
+		t.Fatalf("err = %v, want it to say no alert rules were checked", err)
 	}
 }
