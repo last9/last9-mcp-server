@@ -51,9 +51,10 @@ type HygieneAck struct {
 	MedianSecondsToAck *float64 `json:"median_seconds_to_ack"`
 }
 
+// The API names channels and never sends their destinations, which hold webhook URLs.
 type HygieneChannel struct {
-	Type        string `json:"type"`
-	Destination string `json:"destination"`
+	Type string `json:"type"`
+	Name string `json:"name"`
 }
 
 // From, To, LastFiredAt and HistorySince are unix seconds.
