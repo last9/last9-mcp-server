@@ -11,7 +11,7 @@
 
 **Time:** `lookback_minutes` (default **60**); RFC3339 uses `start_time_iso`+`end_time_iso`, not Timestamp filters.
 
-**Fields:** OTel enums: `SPAN_KIND_SERVER`, `STATUS_CODE_ERROR`; Duration is ns. Use `attributes['key']`/`resources['key']`, not `SpanAttributes.foo`.
+**Fields:** OTel enums like `SPAN_KIND_SERVER`; Duration is ns. Use `attributes['key']`/`resources['key']`, not `SpanAttributes.foo`.
 
 **Aggregate:** use `aggregates`+`groupby`. Average/mean→`{"function":{"$avg":["Duration"]}}`, not `$quantile`. By span: `{"type":"aggregate","aggregates":[{"function":{"$avg":["Duration"]},"as":"avg"}],"groupby":{"SpanName":"span"}}`. `$quantile` is the general/default percentile operator. Compute from raw spans; never average percentile samples. `Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first.
 
@@ -21,7 +21,7 @@ For calendar buckets, use explicit ISO bounds and time zone. P99 `Duration` outp
 
 **Order:** filter first (match-all TraceId/SpanId before aggregate). Show/find → filter only; analysis → aggregate/window_aggregate.
 
-**Aggregate example:** `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`.
+**Count:** `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`.
 
 **Envelope:** `truncated`, `trimmed_items`, `partial`: disclose; follow `hints`.
 
