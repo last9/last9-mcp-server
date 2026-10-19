@@ -27,6 +27,7 @@ var descriptionBudgetOverrides = map[string]int{
 	"get_service_summary":             4600,
 	"get_alert_config":                4600,
 	"get_trace_attribute_deviations":  4400,
+	"analyze_change_impact":           3100,
 	"get_logs":                        3400,
 	"create_dashboard":                3500,
 	"prometheus_range_query":          3000,
@@ -55,7 +56,7 @@ var toolNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 var toolNameVerbs = []string{
 	"get", "list", "create", "update", "patch", "delete", "add", "validate", "search",
-	"describe", "recommend", "acknowledge", "reassign", "mute", "attach", "detach",
+	"describe", "recommend", "acknowledge", "reassign", "mute", "attach", "detach", "analyze",
 }
 
 // toolNamespaces prefix a verb-first name with the product it reads.
@@ -192,7 +193,7 @@ func servedSurface(t *testing.T) ([]*mcp.Tool, map[string]bool) {
 		t.Fatal(err)
 	}
 	registerReferenceResources(server)
-	if err := registerAllTools(server, testToolRegistrationConfig()); err != nil {
+	if _, err := registerAllTools(server, testToolRegistrationConfig()); err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()

@@ -32,7 +32,7 @@ func NewDescribeAlertChartHandler(client *http.Client, cfg models.Config) func(c
 		if surface == "" {
 			return utils.ToolErrorResult("surface is required"), nil, nil
 		}
-		if msg := uncoveredSurfaceError(surface); msg != "" {
+		if msg := uncoveredSurfaceError(surface, cfg.ToolFilter); msg != "" {
 			return utils.ToolErrorResult(msg), nil, nil
 		}
 		chartKey := strings.TrimSpace(args.ChartKey)
