@@ -1,10 +1,12 @@
 Compare APM performance across a current window and an equal-duration baseline window. Use this tool for questions such as what regressed, improved, or changed; incident-versus-prior-period comparisons; recovery or post-mitigation verification; and fleet deviation discovery.
 
-**Profile first:** Call `get_service_profile` for this service before using this tool. Use `signal_shape` and `telemetry` for routing — see `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
+**Answer from returned evidence:** use returned percentages and deltas as given; never calculate percentage changes or ratios from raw counts, latency, Apdex values, or samples. If a percentage is absent, report the raw values or direction without adding a calculated percentage. When `operation_apdex_reconciliations` is nonempty, include a returned operation, both request-coverage values, and `unexplained_delta` as the residual. Coverage and `unexplained_delta` explain only the reported coverage, not the full service result, and do not establish cause.
 
-Use `get_service_summary` for a one-window fleet ranking of interval request count, rpm, HTTP 4xx/5xx, and gRPC errors. Use `get_apm_service_deviations` when the question requires an equal-duration baseline comparison.
+**Routing:** For an equal-window comparison, call this tool first and by itself; do not call `get_service_profile` first. Use `get_service_profile` only when the user asks for broader investigation across signals or explicitly requests follow-up after the comparison. Use `signal_shape` and `telemetry` for routing — see `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
 
-For a comparative question, call this tool first and by itself. Do not batch speculative corroboration or duplicate comparison calls. Inspect the returned outcome and evidence before deciding whether the user explicitly requested any deeper investigation.
+Use `get_service_summary` for a one-window fleet ranking of interval request count, rpm, HTTP 4xx/5xx, and gRPC errors.
+
+Do not batch speculative corroboration or duplicate comparison calls. Inspect the returned outcome and evidence before deciding whether the user explicitly requested any deeper investigation.
 
 ## Scope and inputs
 
@@ -26,3 +28,21 @@ For a comparative question, call this tool first and by itself. Do not batch spe
 - `partial_errors` or warnings mean successful evidence remains usable, but explicitly qualify conclusions with the missing evidence. If all metric queries fail, the tool returns an error rather than a partial result.
 - `operation_apdex_reconciliations` mathematically decomposes the service Apdex delta across comparable returned operations. State `current_request_coverage` and `baseline_request_coverage`; treat `observed_operation_delta` as explained only over that reported coverage. `unexplained_delta` is the residual from unreported operations and metric-population differences, not evidence of an unknown cause.
 - Operation correlations and structured, non-executing follow-ups help narrow an investigation. Correlation is supporting evidence only and does not establish contribution, attribution, cause, or root cause. Corroborate conclusions with traces, logs, and change events.
+
+## When to use
+What regressed, improved or changed against an equal-duration baseline.
+
+## When not to use
+- One-window fleet ranking: `get_service_summary`
+- Attribute cohorts that explain slow or failing traces: `get_trace_attribute_deviations`
+
+## Pairs well with
+- `get_service_profile` (broader follow-up)
+- `get_change_events` (what deployed)
+- `get_service_performance_details` (one service's charts)
+
+## Output shape
+An outcome with returned percentages, deltas and evidence per service and operation, as described above.
+
+## Known traps
+Never recompute percentages from raw counts; quote the returned values.
