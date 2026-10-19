@@ -123,7 +123,7 @@ Read these resources before writing a non-trivial query{{if has "get_logs"}}. Af
 - Dry-run a dashboard with {{.}} before saving it.
 {{- end}}
 {{- with $alertDesign}}
-- Design an alert rule with {{.}} before creating it; alerts are created as drafts.
+- Design an alert rule with {{.}} before creating it.
 {{- end}}
 {{- with $alertValidate}}
 - Dry-run an alert expression with {{.}} before creating or updating a rule.
