@@ -52,7 +52,7 @@ func TestAlertWriteToolsRelayUpstreamBody(t *testing.T) {
 	_, _, updateErr := NewUpdateAlertHandler(s.Client(), cfg)(ctx, nil, UpdateAlertArgs{EntityID: "e", ID: "r", AlertRuleMutation: AlertRuleMutation{AlertRule: validAlertRulePayload(&name)}})
 	_, _, patchErr := NewPatchAlertHandler(s.Client(), cfg)(ctx, nil, PatchAlertArgs{EntityID: "e", ID: "r", IsDisabled: &enabled})
 	_, _, deleteErr := NewDeleteAlertHandler(s.Client(), cfg)(ctx, nil, DeleteAlertArgs{EntityID: "e", ID: "r"})
-	_, _, muteErr := NewMuteAlertGroupHandler(s.Client(), cfg)(ctx, nil, MuteAlertGroupArgs{EntityID: "e", Until: 1})
+	_, _, muteErr := NewMuteAlertGroupHandler(s.Client(), cfg)(ctx, nil, MuteAlertGroupArgs{EntityID: "e", Until: new(int64)})
 	for tool, err := range map[string]error{"create": createErr, "update": updateErr, "patch": patchErr, "delete": deleteErr, "mute": muteErr} {
 		if err == nil || !strings.Contains(err.Error(), "HTTP 409") || !strings.Contains(err.Error(), "rule is locked by another editor") {
 			t.Errorf("%s: %v", tool, err)
