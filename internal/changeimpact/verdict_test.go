@@ -47,15 +47,15 @@ func withTraffic(s apm.GoldenSignals, env string, requests float64) apm.GoldenSi
 // prod's after window, and hid prod's own rise.
 func TestLatencyComparesOneEnvironmentAcrossWindows(t *testing.T) {
 	baseline := withEnv(signals(1000, 0, 100), "staging", 10, 1500)
-	after := withEnv(signals(1000, 0, 130), "staging", 0, 90)
+	after := withEnv(signals(1000, 0, 150), "staging", 0, 90)
 
 	got := strings.Join(serviceRegressions("checkout", baseline, after), "; ")
-	if !strings.Contains(got, "p95 latency rose 30% (100.0 ms → 130.0 ms) in prod") {
+	if !strings.Contains(got, "p95 latency rose 50% (100.0 ms → 150.0 ms) in prod") {
 		t.Fatalf("regressions = %q, want prod's p95 rise", got)
 	}
 	compared := compareSignals("checkout", "changed", baseline, after)
-	if compared.LatencyEnv != "prod" || *compared.LatencyP95Ms.Baseline != 100 || *compared.LatencyP95Ms.After != 130 {
-		t.Fatalf("compared latency = env %q, p95 %+v; want prod 100 → 130", compared.LatencyEnv, compared.LatencyP95Ms)
+	if compared.LatencyEnv != "prod" || *compared.LatencyP95Ms.Baseline != 100 || *compared.LatencyP95Ms.After != 150 {
+		t.Fatalf("compared latency = env %q, p95 %+v; want prod 100 → 150", compared.LatencyEnv, compared.LatencyP95Ms)
 	}
 }
 
@@ -87,8 +87,11 @@ func TestServiceRegressionThresholds(t *testing.T) {
 	}{
 		{"error rate below threshold", signals(1000, 10, 100), signals(1000, 19.9, 100), ""},
 		{"error rate at threshold", signals(1000, 10, 100), signals(1000, 20, 100), "error rate"},
-		{"p95 below threshold", signals(1000, 0, 100), signals(1000, 0, 124.9), ""},
-		{"p95 at threshold", signals(1000, 0, 100), signals(1000, 0, 125), "p95"},
+		{"error rate up 30% relative", signals(1000, 100, 100), signals(1000, 130, 100), "error rate"},
+		{"p95 below threshold", signals(1000, 0, 100), signals(1000, 0, 139.9), ""},
+		{"p95 at threshold", signals(1000, 0, 100), signals(1000, 0, 140), "p95"},
+		{"p95 up 35%", signals(1000, 0, 100), signals(1000, 0, 135), ""},
+		{"p95 up 45%", signals(1000, 0, 100), signals(1000, 0, 145), "p95"},
 		{"too little baseline traffic", signals(minRequestsPerWindow-1, 0, 100), signals(1000, 500, 900), ""},
 		{"too little after traffic", signals(minRequestsPerWindow, 0, 100), signals(minRequestsPerWindow-1, 10, 900), ""},
 		{"traffic at the minimum", signals(minRequestsPerWindow, 0, 100), signals(minRequestsPerWindow, 10, 100), "error rate"},

@@ -28,8 +28,10 @@ const (
 	minRequestsPerWindow = 100
 	// Error rate rising by at least this many percentage points is a regression.
 	errorRateIncreasePP = 1.0
-	// p95 latency rising by at least this percentage is a regression.
-	p95LatencyIncreasePct = 25.0
+	// p95 latency rising by at least this percentage is a regression. 25%
+	// flagged ordinary p95 variation; #376 tracks judging it against the
+	// service's own variability instead.
+	p95LatencyIncreasePct = 40.0
 	// Throughput (rpm) falling by at least this percentage is a regression:
 	// requests that stop arriving may be failing before the service sees them.
 	throughputDropPct = 50.0
