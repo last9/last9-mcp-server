@@ -1,9 +1,11 @@
 package workflows
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
+	"text/template"
 
 	"last9-mcp/internal/prompts"
 
@@ -146,12 +148,41 @@ func TestWorkflowsUseNestedSignalShapePaths(t *testing.T) {
 		"investigate_latency_spike":          prompts.InvestigateLatencySpikeWorkflow,
 		"on_call_runbook":                    prompts.OnCallRunbookWorkflow,
 		"scoped_log_attribute_discovery":     prompts.ScopedLogAttributeDiscoveryWorkflow,
+		"partials":                           prompts.WorkflowPartials,
 		"references/investigation":           prompts.InvestigationReference,
 	} {
 		for _, field := range []string{"level_field", "parse_hint", "severity_set", "log_format"} {
 			if bad := "profile." + field; strings.Contains(body, bad) {
 				t.Errorf("%s uses %s; the field is nested under signal_shape", name, bad)
 			}
+		}
+	}
+}
+
+// Error triage workflows render one shared log-novelty define, so a wording
+// fix lands in every workflow at once.
+func TestErrorWorkflowsRenderTheSharedLogNoveltyText(t *testing.T) {
+	args := map[string]string{"service": "checkout", "env": "prod", "time": "1h"}
+	partials := template.Must(template.New("partials").Parse(prompts.WorkflowPartials))
+	var shared bytes.Buffer
+	if err := partials.ExecuteTemplate(&shared, "logNovelty", args); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(shared.String(), "get_emerging_log_patterns(service_name=checkout, env=prod)") {
+		t.Fatalf("logNovelty should render the scoped novelty call:\n%s", shared.String())
+	}
+
+	diagnose, err := DiagnoseErrorRate.Handler(context.Background(), &mcp.GetPromptRequest{Params: &mcp.GetPromptParams{Arguments: args}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, got := range map[string]string{
+		"diagnose-error-rate":    diagnose.Messages[0].Content.(*mcp.TextContent).Text,
+		"on-call-runbook errors": renderOnCallRunbook(t, map[string]string{"symptom": "errors", "service": "checkout", "env": "prod", "time": "1h"}),
+		"on-call-runbook weird":  renderOnCallRunbook(t, map[string]string{"symptom": "weird", "service": "checkout", "env": "prod", "time": "1h"}),
+	} {
+		if !strings.Contains(got, shared.String()) {
+			t.Errorf("%s should render the shared logNovelty text verbatim:\n%s", name, got)
 		}
 	}
 }

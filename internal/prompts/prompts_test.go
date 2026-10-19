@@ -34,10 +34,12 @@ var promptDescriptionFiles = map[string]string{
 	"get_databases.md":                     prompts.GetDatabasesDescription,
 	"get_drop_rules.md":                    prompts.GetDropRulesDescription,
 	"get_entity_alert_rules.md":            prompts.GetEntityAlertRulesDescription,
+	"get_emerging_log_patterns.md":         prompts.GetEmergingLogPatternsDescription,
 	"get_exceptions.md":                    prompts.GetExceptionsInstructions,
 	"get_flamegraph.md":                    prompts.GetFlamegraphDescription,
 	"get_log_attributes.md":                prompts.GetLogAttributesDescription,
 	"get_log_attributes_for_pipeline.md":   prompts.GetLogAttributesForPipelineDescription,
+	"get_log_patterns.md":                  prompts.GetLogPatternsDescription,
 	"get_logs_base.md":                     prompts.GetLogsDescription,
 	"get_notification_channels.md":         prompts.GetNotificationChannelsDescription,
 	"get_profile_services.md":              prompts.GetProfileServicesDescription,
@@ -241,6 +243,7 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"Ops: `$and`/`$or`/`$not`", "must retain a useful filter operator list"},
 		{"`$containsWords` args `[field,word]` (e.g. `[\"Body\",\"timeout\"]`)", "must show the required field argument for body-word filters"},
 		{"NOT SQL", "must clarify logjson_query is not SQL"},
+		{"Pass JSON stages in `logjson_query`, never `pipeline`", "must name the get_logs argument rather than a generic pipeline key"},
 		{"$neq", "must document existence idiom"},
 		{"`$neq` (is not X; never `$not`+`$eq`)", "must route negated equality to $neq"},
 		{"start_time_iso", "must document absolute time on tool args"},
@@ -300,6 +303,7 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 		{"`service.name`→`ServiceName`", "must map service.name to the canonical service field"},
 		{"last9://reference/tracejson", "must point at the tracejson resource"},
 		{"default **60**", "must document default lookback of 60 minutes"},
+		{"Average/mean→`{\"function\":{\"$avg\":[\"Duration\"]}", "must use average aggregation for mean duration requests"},
 		{"`$quantile` is the general/default percentile operator", "must default to approximate percentile aggregation"},
 		{"Compute from raw spans; never average percentile samples", "must document non-composable percentile semantics"},
 		{"`Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first", "must gate attribute values without gating Duration"},
@@ -431,6 +435,58 @@ func TestGetServiceLogsDescriptionCriticalRules(t *testing.T) {
 	}
 }
 
+func TestLogPatternDescriptionsCriticalRules(t *testing.T) {
+	descriptions := map[string]string{
+		"get_log_patterns":          prompts.GetLogPatternsDescription,
+		"get_emerging_log_patterns": prompts.GetEmergingLogPatternsDescription,
+	}
+	checks := []struct {
+		phrase string
+		reason string
+	}{
+		{"empty", "must say an empty result is a valid answer"},
+		{"Do not invent", "must forbid manufacturing findings"},
+		{"instead of paging raw lines", "must be preferred over raw log paging during triage"},
+		{"sample_size", "must say counts are within a bounded sample"},
+		{"logs_truncated", "must say a truncated search's total is not complete"},
+		{"Failed search chunks return a tool error", "must say an incomplete search fails rather than reading as fewer patterns"},
+		{"A truncated or capped search still returns", "must say truncation is a success flagged by sample_limit_reached, not a failure"},
+		{"cut at 500 char", "must say templates and samples are cut, so a cut template is not read as the whole message"},
+	}
+	for name, desc := range descriptions {
+		for _, c := range checks {
+			if !strings.Contains(desc, c.phrase) {
+				t.Errorf("%s description missing %q: %s", name, c.phrase, c.reason)
+			}
+		}
+		if strings.Contains(desc, "Parameters:") {
+			t.Errorf("%s description carries a parameter catalog; per-argument docs belong on the input schema", name)
+		}
+		if strings.Contains(desc, "not a partial") {
+			t.Errorf("%s description says incomplete searches never return partial results, but truncated ones do", name)
+		}
+	}
+	if !strings.Contains(prompts.GetLogPatternsDescription, "An empty `patterns` list with `sample_limit_reached` true is not proof of an empty window") {
+		t.Error("get_log_patterns must say an empty but capped sample may have missed matching lines")
+	}
+	if !strings.Contains(prompts.GetLogPatternsDescription, "the sample holds only the window's newest lines") {
+		t.Error("get_log_patterns must say a capped sample (and its first_seen) covers only the newest lines")
+	}
+	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "`below_min_count_patterns`: templates that changed") {
+		t.Error("get_emerging_log_patterns must keep changes below min_count apart from unchanged templates")
+	}
+	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "not that the windows are unchanged") ||
+		strings.Contains(prompts.GetEmergingLogPatternsDescription, "Report that there is no log novelty") {
+		t.Error("get_emerging_log_patterns must say an empty result rules out only changes above both thresholds")
+	}
+	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "absent from the other window's sample, not from the window") {
+		t.Error("get_emerging_log_patterns must say new/disappeared are presence-in-sample once a sample is capped")
+	}
+	if !strings.Contains(prompts.GetEmergingLogPatternsDescription, "`increased` and `decreased` mean the template's share of its sample changed, not its rate") {
+		t.Error("get_emerging_log_patterns must say share_of_sample changes are composition, not rate")
+	}
+}
+
 // The API rejects expression_args keys other than the bound KPI's own name.
 func TestAlertRuleDescriptionsRequireKPINames(t *testing.T) {
 	for name, desc := range map[string]string{
@@ -512,6 +568,7 @@ func TestAPMServiceDeviationsDescription(t *testing.T) {
 		{"equal-duration baseline", "must describe comparative rather than snapshot behavior"},
 		{"get_service_summary", "must disambiguate one-window snapshots"},
 		{"call this tool first and by itself", "must prevent speculative parallel investigation"},
+		{"do not call `get_service_profile` first", "must route known-service comparisons directly"},
 		{"do not batch speculative corroboration", "must require inspecting the comparison before follow-ups"},
 		{"service_name", "must explain fleet and service scope"},
 		{"environments remain separate", "must prevent merged environment conclusions"},
@@ -533,6 +590,22 @@ func TestAPMServiceDeviationsDescription(t *testing.T) {
 	for _, check := range checks {
 		if !strings.Contains(description, check.phrase) {
 			t.Errorf("description missing %q: %s", check.phrase, check.reason)
+		}
+	}
+	if strings.Contains(description, "`get_service_profile` (first)") {
+		t.Error("Pairs well with must not send comparisons to get_service_profile first; routing says to skip it")
+	}
+}
+
+func TestServiceProfileDescriptionSkipsSpecializedTools(t *testing.T) {
+	description := strings.ToLower(prompts.GetServiceProfileDescription)
+	for _, phrase := range []string{
+		"skip it when a specialized tool directly answers",
+		"get_apm_service_deviations` for equal-window comparisons",
+		"dashboard tools for dashboard changes",
+	} {
+		if !strings.Contains(description, phrase) {
+			t.Errorf("service profile description missing routing exception %q", phrase)
 		}
 	}
 }
@@ -572,11 +645,17 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 		{"dashboard.id", "must keep the returned id"},
 		{"`layout: {x, y, w, h}`", "must document the API panel layout shape"},
 		{"`legend: {type, value}`", "must document the API query legend shape"},
+		{"When the user provides only a name, use `panels: []`", "must avoid inventing metrics for a name-only dashboard"},
 		{"Do not use `gridPos` or a panel-level `type`", "must rule out the rejected legacy panel shape"},
+		{"grouping by service or environment does not replace the window", "must keep groupby from standing in for the timeslice"},
 	} {
 		if !strings.Contains(create, c.phrase) {
 			t.Errorf("CreateDashboardDescription missing %q: %s", c.phrase, c.reason)
 		}
+	}
+	// The description sits near its byte budget; state the log_json window rule once.
+	if n := strings.Count(create, "For `log_json` line, timeseries, or bar panels"); n != 1 {
+		t.Errorf("CreateDashboardDescription states the log_json window rule %d times, want 1", n)
 	}
 	for _, c := range []struct {
 		phrase string
