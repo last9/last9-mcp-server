@@ -12,6 +12,7 @@ import (
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/toolsets"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
@@ -20,6 +21,7 @@ import (
 
 type servedTool struct {
 	Name        string `json:"name"`
+	Description string `json:"description"`
 	Annotations *struct {
 		ReadOnlyHint bool `json:"readOnlyHint"`
 	} `json:"annotations"`
@@ -103,6 +105,53 @@ func TestDumpToolsReadOnlyWithToolsets(t *testing.T) {
 	}
 	if len(want) < 2 {
 		t.Fatalf("alerts read surface unexpectedly empty: %v", want)
+	}
+}
+
+// Routing sections may only name tools the same server serves, so a write
+// tool admitted by --allow-write-tools must not route to a hidden sibling.
+func TestDumpToolsReadOnlyRoutesNameOnlyServedTools(t *testing.T) {
+	dashboards, err := toolsets.Parse("dashboards")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name   string
+		filter toolsets.Filter
+		routes []string // a route that must survive, proving the check is live
+	}{
+		{name: "create only", filter: toolsets.Filter{Tools: dashboards, ReadOnly: true, AllowWrite: toolsets.Set{"create_dashboard": {}}}, routes: []string{"validate_dashboard"}},
+		{name: "create and update", filter: toolsets.Filter{Tools: dashboards, ReadOnly: true, AllowWrite: toolsets.Set{"create_dashboard": {}, "update_dashboard": {}}}, routes: []string{"update_dashboard"}},
+		{name: "full read-only surface", filter: toolsets.Filter{ReadOnly: true}},
+		{name: "full surface plus create_alert", filter: toolsets.Filter{ReadOnly: true, AllowWrite: toolsets.Set{"create_alert": {}}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tools := dumpServedTools(t, tt.filter)
+			served := toolsets.Set{}
+			for _, tool := range tools {
+				served[tool.Name] = struct{}{}
+			}
+			routed := toolsets.Set{}
+			for _, tool := range tools {
+				for _, section := range prompts.Sections(tool.Description) {
+					if !prompts.IsRoutingSection(section.Name) {
+						continue
+					}
+					for _, name := range prompts.RouteNames(section.Body) {
+						routed[name] = struct{}{}
+						if !served.Allows(name) {
+							t.Errorf("%s routes to unserved %s in %q", tool.Name, name, section.Name)
+						}
+					}
+				}
+			}
+			for _, name := range tt.routes {
+				if !routed.Allows(name) {
+					t.Errorf("no served description routes to %s; routes = %v", name, routed)
+				}
+			}
+		})
 	}
 }
 
