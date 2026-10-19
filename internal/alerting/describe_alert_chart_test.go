@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"last9-mcp/internal/last9api/alerts"
+	"last9-mcp/internal/toolsets"
 	"last9-mcp/internal/utils"
 )
 
@@ -154,6 +155,20 @@ func TestDescribeAlertChartRejectsUncoveredSurface(t *testing.T) {
 		if !strings.Contains(resultText(result), want) {
 			t.Errorf("message missing %q: %s", want, resultText(result))
 		}
+	}
+}
+
+func TestDescribeAlertChartUncoveredSurfaceReadOnlyNamesNoHiddenTool(t *testing.T) {
+	cfg := testAlertMutationConfig("http://unused.invalid")
+	cfg.ToolFilter = toolsets.Filter{ReadOnly: true}
+	result, _, err := NewDescribeAlertChartHandler(http.DefaultClient, cfg)(context.Background(), nil,
+		DescribeAlertChartArgs{Surface: "dashboards", ChartKey: "apdex", ServiceName: "checkout"})
+	if err != nil || !result.IsError {
+		t.Fatalf("result=%s err=%v", resultText(result), err)
+	}
+	text := resultText(result)
+	if strings.Contains(text, "create_alert") || !strings.Contains(text, "KPI of the alert group") {
+		t.Fatalf("read-only message should point at a KPI rule without naming create_alert: %s", text)
 	}
 }
 

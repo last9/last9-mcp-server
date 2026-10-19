@@ -133,7 +133,7 @@ func newToolsetHTTPServer(t *testing.T, spec string) (*httptest.Server, *atomic.
 		t.Fatal(err)
 	}
 	cfg := testToolRegistrationConfig()
-	cfg.AllowedTools = allowed
+	cfg.ToolFilter.Tools = allowed
 	builds := &atomic.Int32{}
 	buildFor := toolsetServerBuilder(cfg)
 	build := func(allowed toolsets.Set) (*last9mcp.Last9MCPServer, error) {

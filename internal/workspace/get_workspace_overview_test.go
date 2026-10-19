@@ -109,7 +109,7 @@ func runOverviewAllowing(t *testing.T, api *overviewAPI, callTimeout time.Durati
 		PrometheusUsername: "user",
 		PrometheusPassword: "pass",
 		TokenManager:       &auth.TokenManager{AccessToken: "mock-token", ExpiresAt: time.Now().Add(time.Hour)},
-		AllowedTools:       allowed,
+		ToolFilter:         toolsets.Filter{Tools: allowed},
 	}
 	opts := overviewOptions{now: fixedClock(time.Date(2026, 10, 16, 19, 0, 0, 0, time.UTC)), callTimeout: callTimeout}
 	res, _, err := newWorkspaceOverviewHandler(srv.Client(), cfg, opts)(context.Background(), &mcp.CallToolRequest{}, GetWorkspaceOverviewArgs{})
