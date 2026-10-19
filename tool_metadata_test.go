@@ -40,6 +40,9 @@ var descriptionBudgetOverrides = map[string]int{
 	"get_service_performance_details": 2800,
 	"get_alerts":                      2600,
 	"get_emerging_log_patterns":       2700,
+	// The write tools a confirmed fix goes through, plus null_fields and the
+	// retention-covered window, asked for in QA on #353.
+	"get_alert_hygiene": 2700,
 }
 
 // servedSizeBudgets cap description plus compact input schema JSON for tools
