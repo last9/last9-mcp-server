@@ -173,7 +173,7 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 		Env:           req.Env,
 		ChangeTime:    req.Change.UTC().Format(time.RFC3339),
 		Windows:       w.public(),
-		DrillDown:     drillDowns(req, w, cfg.AllowedTools),
+		DrillDown:     drillDowns(req, w, cfg.ToolFilter.Tools),
 		Thresholds:    reportThresholds(),
 		GoldenSignals: GoldenSection{Services: []ServiceSignals{}},
 		Deviations: DeviationsSection{

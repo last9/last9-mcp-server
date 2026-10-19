@@ -61,13 +61,16 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	cfg.UserTokenFallback = userTokenFallbackFromEnv()
 	fs.StringVar(&cfg.Port, "port", "8080", "HTTP server port")
 	fs.StringVar(&cfg.Host, "host", "localhost", "HTTP server host")
-	fs.StringVar(&cfg.Toolsets, "toolsets", toolsets.SpecFromEnv(), "Comma-separated MCP toolsets to expose (logs,traces,metrics,alerts,dashboards,profiles,investigate,all). Empty or all = full surface")
+	filterFlags, err := bindToolFilterFlags(fs)
+	if err != nil {
+		return cfg, err
+	}
 	versionFlag := fs.Bool("version", false, "Print version information")
 
 	var configFile string
 	fs.StringVar(&configFile, "config", "", "config file path")
 
-	err := ff.Parse(fs, os.Args[1:],
+	err = ff.Parse(fs, os.Args[1:],
 		ff.WithEnvVarPrefix("LAST9"),
 		ff.WithConfigFileFlag("config"),
 		ff.WithConfigFileParser(ff.JSONParser),
@@ -92,35 +95,56 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 		cfg.MaxGetLogsEntries = models.DefaultMaxGetLogsEntries
 	}
 
-	allowed, err := toolsets.Parse(cfg.Toolsets)
-	if err != nil {
+	cfg.Toolsets = filterFlags.toolsets
+	if cfg.ToolFilter, err = filterFlags.filter(); err != nil {
 		return cfg, err
 	}
-	cfg.AllowedTools = allowed
 
 	return cfg, nil
 }
 
-// parseDumpToolsets loads .env then parses --toolsets / LAST9_TOOLSETS for dump-tools
-// (which short-circuits before SetupConfig and needs no credentials).
-func parseDumpToolsets() (toolsets.Set, error) {
-	_ = godotenv.Load()
-	fs := flag.NewFlagSet("dump-tools", flag.ContinueOnError)
-	spec := toolsets.SpecFromEnv()
-	fs.StringVar(&spec, "toolsets", spec, "Comma-separated MCP toolsets to dump")
-	args := []string{}
-	if len(os.Args) > 2 {
-		args = os.Args[2:]
-	}
-	if err := fs.Parse(args); err != nil {
+// toolFilterFlags holds the flags that decide the served tool surface. Serving
+// and dump-tools both bind them, so a dump matches what a deployment serves.
+type toolFilterFlags struct {
+	toolsets   string
+	readOnly   bool
+	allowWrite string
+}
+
+func bindToolFilterFlags(fs *flag.FlagSet) (*toolFilterFlags, error) {
+	readOnly, err := toolsets.ReadOnlyFromEnv()
+	if err != nil {
 		return nil, err
 	}
-	return toolsets.Parse(spec)
+	f := &toolFilterFlags{}
+	fs.StringVar(&f.toolsets, "toolsets", toolsets.SpecFromEnv(), "Comma-separated MCP toolsets to expose (logs,traces,metrics,alerts,dashboards,profiles,grafana,investigate,all). Empty or all = full surface")
+	fs.BoolVar(&f.readOnly, "read-only", readOnly, "Serve only read-only tools (env LAST9_MCP_READ_ONLY)")
+	fs.StringVar(&f.allowWrite, "allow-write-tools", toolsets.AllowWriteSpecFromEnv(), "Comma-separated write tools still served with --read-only (env LAST9_MCP_ALLOW_WRITE_TOOLS)")
+	return f, nil
+}
+
+func (f *toolFilterFlags) filter() (toolsets.Filter, error) {
+	return toolsets.NewFilter(f.toolsets, f.readOnly, f.allowWrite)
+}
+
+// parseDumpToolFilter loads .env then parses the tool filter flags and env for
+// dump-tools (which short-circuits before SetupConfig and needs no credentials).
+func parseDumpToolFilter(args []string) (toolsets.Filter, error) {
+	_ = godotenv.Load()
+	fs := flag.NewFlagSet("dump-tools", flag.ContinueOnError)
+	flags, err := bindToolFilterFlags(fs)
+	if err != nil {
+		return toolsets.Filter{}, err
+	}
+	if err := fs.Parse(args); err != nil {
+		return toolsets.Filter{}, err
+	}
+	return flags.filter()
 }
 
 // toolsetServerBuilder returns what main calls to build the startup server and,
 // under --http, the server for a request's narrowed toolsets: cfg with only
-// AllowedTools replaced. In --http mode every built server shares one user
+// the toolsets replaced. In --http mode every built server shares one user
 // token middleware, so a narrowed server never skips token enforcement.
 func toolsetServerBuilder(cfg models.Config) func(toolsets.Set) (*last9mcp.Last9MCPServer, error) {
 	var middleware []mcp.Middleware
@@ -129,12 +153,12 @@ func toolsetServerBuilder(cfg models.Config) func(toolsets.Set) (*last9mcp.Last9
 	}
 	return func(allowed toolsets.Set) (*last9mcp.Last9MCPServer, error) {
 		c := cfg
-		c.AllowedTools = allowed
+		c.ToolFilter.Tools = allowed
 		return buildServer(c, middleware...)
 	}
 }
 
-// buildServer creates the served MCP server for cfg.AllowedTools: resources,
+// buildServer creates the served MCP server for cfg.ToolFilter: resources,
 // prompts, tools and the instructions that name them, behind middleware.
 func buildServer(cfg models.Config, middleware ...mcp.Middleware) (*last9mcp.Last9MCPServer, error) {
 	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
@@ -144,11 +168,8 @@ func buildServer(cfg models.Config, middleware ...mcp.Middleware) (*last9mcp.Las
 	server.Server.AddReceivingMiddleware(middleware...)
 	registerReferenceResources(server)
 	workflows.Register(server)
-	if err := registerAllTools(server, cfg); err != nil {
-		return nil, fmt.Errorf("failed to register tools: %w", err)
-	}
-	if err := registerServerInstructions(server, cfg.AllowedTools); err != nil {
-		return nil, fmt.Errorf("failed to register server instructions: %w", err)
+	if err := registerToolsAndInstructions(server, cfg); err != nil {
+		return nil, fmt.Errorf("failed to build the served surface: %w", err)
 	}
 	return server, nil
 }
@@ -185,14 +206,14 @@ func cancelRequestsOn(shutdown context.Context) mcp.Middleware {
 func run() int {
 	// dump-tools runs before full config parsing: it needs no credentials
 	// and must work in CI and eval harnesses without a refresh token.
-	// It still honors --toolsets / LAST9_TOOLSETS (and loads .env) so
-	// snapshots match the served surface.
+	// It still honors --toolsets, --read-only and --allow-write-tools and
+	// their env vars (and loads .env) so snapshots match the served surface.
 	if len(os.Args) > 1 && os.Args[1] == "dump-tools" {
-		allowed, err := parseDumpToolsets()
+		filter, err := parseDumpToolFilter(os.Args[2:])
 		if err != nil {
 			log.Fatalf("dump-tools failed: %v", err)
 		}
-		if err := dumpTools(os.Stdout, allowed); err != nil {
+		if err := dumpTools(os.Stdout, filter); err != nil {
 			log.Fatalf("dump-tools failed: %v", err)
 		}
 		return 0
@@ -263,7 +284,7 @@ func run() int {
 
 	// From here on, return instead of log.Fatal: os.Exit would skip the deferred telemetry flush.
 	build := toolsetServerBuilder(cfg)
-	server, err := build(cfg.AllowedTools)
+	server, err := build(cfg.ToolFilter.Tools)
 	if err != nil {
 		slog.Error("failed to build server", "error", err)
 		return 1

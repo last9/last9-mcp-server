@@ -337,7 +337,7 @@ func newToolsetHTTPServerFor(t *testing.T, cfg models.Config, spec string) (*htt
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg.AllowedTools = allowed
+	cfg.ToolFilter.Tools = allowed
 	builds := &atomic.Int32{}
 	buildFor := toolsetServerBuilder(cfg)
 	build := func(allowed toolsets.Set) (*last9mcp.Last9MCPServer, error) {
