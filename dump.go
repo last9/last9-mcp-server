@@ -25,16 +25,17 @@ import (
 // present. The shape is compatible with .mcpc.json contract-snapshot tooling
 // (e.g. mcpdiff).
 //
+// No credentials or network access required: registration never calls the
 // API. Descriptions do not embed org attribute catalogs. External consumers
 // (eval harness, docs generation) should treat this as the canonical source
 // instead of maintaining parallel description files.
-func dumpTools(w io.Writer, allowed toolsets.Set) error {
+func dumpTools(w io.Writer, filter toolsets.Filter) error {
 	cfg := models.Config{}
 	// Purely defensive: registration and tools/list never dereference the
 	// token manager (only tools/call handlers do), but set it so a future
 	// handler constructor that touches it can't nil-panic on this path.
 	cfg.TokenManager = &auth.TokenManager{}
-	cfg.AllowedTools = allowed
+	cfg.ToolFilter = filter
 
 	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
 	if err != nil {
@@ -44,7 +45,7 @@ func dumpTools(w io.Writer, allowed toolsets.Set) error {
 	registerReferenceResources(server)
 	workflows.Register(server)
 
-	if err := registerAllTools(server, cfg); err != nil {
+	if _, err := registerAllTools(server, cfg); err != nil {
 		return fmt.Errorf("failed to register tools: %w", err)
 	}
 	// The round-trip is over in-memory transports and won't hang in practice,

@@ -21,7 +21,7 @@ func newInMemoryClientSession(t *testing.T) *mcp.ClientSession {
 		t.Fatalf("NewServerWithOptions error = %v", err)
 	}
 
-	if err := registerAllTools(server, cfg); err != nil {
+	if _, err := registerAllTools(server, cfg); err != nil {
 		t.Fatalf("registerAllTools error = %v", err)
 	}
 

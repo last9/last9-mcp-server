@@ -22,14 +22,12 @@ type AlertRuleInput struct {
 }
 
 // AlertRule is the subset of a stored rule callers need to confirm which group owns it,
-// match its name, and carry its annotations through edits.
+// refuse a duplicate name, and carry its stored properties (annotations included) through edits.
 type AlertRule struct {
-	ID         string `json:"id"`
-	EntityID   string `json:"entity_id"`
-	RuleName   string `json:"rule_name"`
-	Properties struct {
-		Annotations map[string]any `json:"annotations"`
-	} `json:"properties"`
+	ID         string          `json:"id"`
+	EntityID   string          `json:"entity_id"`
+	RuleName   string          `json:"rule_name"`
+	Properties json.RawMessage `json:"properties"`
 }
 
 // ListAlertRules calls GET /entities/{entity_id}/alert-rules.
