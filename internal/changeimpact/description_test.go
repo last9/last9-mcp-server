@@ -65,6 +65,7 @@ func TestDescriptionDocumentsVerdictsAndThresholds(t *testing.T) {
 		"`regressions`",
 		"exactly one of `" + strings.Join([]string{MetricErrorRatePct, MetricLatencyP95Ms, MetricThroughputRPM, MetricAlert, MetricAPMDeviation}, "`, `") + "`",
 		"(`" + RoleChanged + "` or `" + RoleDependent + "`)",
+		"`env` it was measured in (`\"\"` = all; p95 uses `latency_env`)",
 	} {
 		if !strings.Contains(description, want) {
 			t.Errorf("description must state %q", want)

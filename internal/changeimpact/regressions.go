@@ -23,11 +23,13 @@ const (
 	RoleDependent = "dependent"
 )
 
-// Regression is one verdict trigger. Baseline and After are in the metric's
-// unit (percent, ms, rpm, or the APM signal's own) and null for alerts.
+// Regression is one verdict trigger. Env is the environment the metric was
+// measured in, empty when it sums every environment. Baseline and After are in
+// the metric's unit (percent, ms, rpm, or the APM signal's own) and null for alerts.
 type Regression struct {
 	Service  string   `json:"service"`
 	Role     string   `json:"role"`
+	Env      string   `json:"env"`
 	Metric   string   `json:"metric"`
 	Baseline *float64 `json:"baseline"`
 	After    *float64 `json:"after"`
@@ -40,10 +42,12 @@ type Regression struct {
 type scopedService struct {
 	name string
 	role string
+	// env is the request's exact env; empty means every environment.
+	env string
 }
 
 func (s scopedService) regression(metric string, baseline, after float64, trigger string) Regression {
-	return Regression{Service: s.name, Role: s.role, Metric: metric, Baseline: rounded(baseline), After: rounded(after), trigger: trigger}
+	return Regression{Service: s.name, Role: s.role, Env: s.env, Metric: metric, Baseline: rounded(baseline), After: rounded(after), trigger: trigger}
 }
 
 func roleOf(service, changed string) string {
@@ -58,12 +62,12 @@ func alertRegression(a StartedAlert, changed string) Regression {
 	if a.EnvMatch == envMatchUnlabelled {
 		trigger += " (no env label)"
 	}
-	return Regression{Service: a.Service, Role: roleOf(a.Service, changed), Metric: MetricAlert, trigger: trigger}
+	return Regression{Service: a.Service, Role: roleOf(a.Service, changed), Env: a.env, Metric: MetricAlert, trigger: trigger}
 }
 
 func apmRegression(d APMDeviation, changed string) Regression {
 	return Regression{
-		Service: d.Service, Role: roleOf(d.Service, changed), Metric: MetricAPMDeviation,
+		Service: d.Service, Role: roleOf(d.Service, changed), Env: d.Env, Metric: MetricAPMDeviation,
 		Baseline: finite(d.Baseline), After: finite(d.After),
 		trigger: fmt.Sprintf("get_apm_service_deviations classifies %s %s as a regression", d.Service, d.Signal),
 	}

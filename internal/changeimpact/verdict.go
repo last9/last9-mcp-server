@@ -73,7 +73,9 @@ func serviceRegressions(s scopedService, baseline, after apm.GoldenSignals) []Re
 	before, now := baseline.LatencyByEnv[env].P95Ms, after.LatencyByEnv[env].P95Ms
 	judgeLatency := baseline.RequestsByEnv[env] >= minRequestsPerWindow && after.RequestsByEnv[env] >= minRequestsPerWindow
 	if pct := deltaPct(before, now); judgeLatency && pct != nil && *pct >= p95LatencyIncreasePct-thresholdEpsilon {
-		found = append(found, s.regression(MetricLatencyP95Ms, *before, *now,
+		inLatencyEnv := s
+		inLatencyEnv.env = env
+		found = append(found, inLatencyEnv.regression(MetricLatencyP95Ms, *before, *now,
 			fmt.Sprintf("%s p95 latency rose %.0f%% (%.1f ms → %.1f ms) in %s (threshold %g%%)", s.name, *pct, *before, *now, env, p95LatencyIncreasePct)))
 	}
 	// Windows can differ in length, so compare rates, not request counts. A

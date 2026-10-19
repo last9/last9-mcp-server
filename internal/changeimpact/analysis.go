@@ -143,6 +143,8 @@ type StartedAlert struct {
 	Service    string `json:"service"`
 	EnvMatch   string `json:"env_match,omitempty"`
 
+	// env is the instance's env label, empty when it has none.
+	env         string
 	startedUnix int64
 }
 
@@ -270,7 +272,7 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 			}
 			report.GoldenSignals.Services = append(report.GoldenSignals.Services, compareSignals(service, role, baseline[service], after[service]))
 		}
-		regressions = append(regressions, serviceRegressions(scopedService{name: req.Service, role: RoleChanged}, baseline[req.Service], after[req.Service])...)
+		regressions = append(regressions, serviceRegressions(scopedService{name: req.Service, role: RoleChanged, env: req.Env}, baseline[req.Service], after[req.Service])...)
 	}
 
 	if alertsErr != nil {
@@ -284,7 +286,7 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 
 	if goldenErr == nil {
 		for _, service := range scope[1:] {
-			regressions = append(regressions, serviceRegressions(scopedService{name: service, role: RoleDependent}, baseline[service], after[service])...)
+			regressions = append(regressions, serviceRegressions(scopedService{name: service, role: RoleDependent, env: req.Env}, baseline[service], after[service])...)
 		}
 	}
 

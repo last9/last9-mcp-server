@@ -83,7 +83,7 @@ func startedInScope(rule alerting.AlertRuleData, scope alertScope) []StartedAler
 			RuleID: rule.RuleID, RuleName: rule.RuleName, AlertGroup: rule.AlertGroupName,
 			Severity: rule.Severity, State: firstNonEmpty(inst.State, rule.State),
 			StartedAt: time.Unix(since, 0).UTC().Format(time.RFC3339), Service: service,
-			EnvMatch: envMatch, startedUnix: since,
+			EnvMatch: envMatch, env: envLabel(inst), startedUnix: since,
 		})
 	}
 	return out
@@ -118,6 +118,15 @@ func hasServiceKey(m map[string]interface{}) bool {
 		}
 	}
 	return false
+}
+
+func envLabel(inst alerting.AlertInstance) string {
+	for _, key := range envLabels {
+		if v, ok := inst.GroupLabels[key]; ok {
+			return fmt.Sprint(v)
+		}
+	}
+	return ""
 }
 
 // matchEnv rejects an instance whose env label names another environment,

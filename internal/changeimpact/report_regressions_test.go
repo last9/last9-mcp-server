@@ -27,6 +27,8 @@ func TestRegressionMetricsAreTheAutoFileContract(t *testing.T) {
 
 type plantedRegression struct {
 	errorRate, p95, throughput, alert, dependentP95, apmP95 bool
+	// everyEnv requests no env, so counts sum over every environment.
+	everyEnv bool
 }
 
 // analyzePlanted runs Analyze against a fake that moves only the planted
@@ -54,24 +56,30 @@ func analyzePlanted(t *testing.T, p plantedRegression) Report {
 	}
 	if p.alert {
 		f.alerts = []alerting.AlertRuleData{{RuleID: "r1", RuleName: "checkout errors", AlertGroupName: "checkout",
-			Alerts: []alerting.AlertInstance{{Since: change.Add(10 * time.Minute).Unix()}}}}
+			Alerts: []alerting.AlertInstance{{Since: change.Add(10 * time.Minute).Unix(), GroupLabels: map[string]interface{}{"env": "prod"}}}}}
 	}
 	rollup := apmRollup{}
 	if p.apmP95 {
 		rollup.p95Ms = map[string]float64{"baseline": 100, "after": 200}
 	}
+	env := "prod"
+	if p.everyEnv {
+		env = ""
+	}
 	srv := apmRollupServer(t, f, rollup)
 	return Analyze(context.Background(), srv.Client(), testConfig(srv.URL),
-		Request{Service: "checkout", Env: "prod", Change: change, Now: change.Add(2 * time.Hour), BaselineMinutes: 60, AfterMinutes: 60})
+		Request{Service: "checkout", Env: env, Change: change, Now: change.Add(2 * time.Hour), BaselineMinutes: 60, AfterMinutes: 60})
 }
 
 func TestRegressionsListEveryTriggerInReasonOrder(t *testing.T) {
-	errorRate := Regression{Service: "checkout", Role: RoleChanged, Metric: MetricErrorRatePct, Baseline: ptr(0.5), After: ptr(5)}
-	p95 := Regression{Service: "checkout", Role: RoleChanged, Metric: MetricLatencyP95Ms, Baseline: ptr(100), After: ptr(180)}
-	throughput := Regression{Service: "checkout", Role: RoleChanged, Metric: MetricThroughputRPM, Baseline: ptr(20), After: ptr(5)}
-	alert := Regression{Service: "checkout", Role: RoleChanged, Metric: MetricAlert}
-	dependentP95 := Regression{Service: "web", Role: RoleDependent, Metric: MetricLatencyP95Ms, Baseline: ptr(80), After: ptr(200)}
-	apmP95 := Regression{Service: "checkout", Role: RoleChanged, Metric: MetricAPMDeviation, Baseline: ptr(100), After: ptr(200)}
+	errorRate := Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricErrorRatePct, Baseline: ptr(0.5), After: ptr(5)}
+	p95 := Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricLatencyP95Ms, Baseline: ptr(100), After: ptr(180)}
+	throughput := Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricThroughputRPM, Baseline: ptr(20), After: ptr(5)}
+	alert := Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricAlert}
+	dependentP95 := Regression{Service: "web", Role: RoleDependent, Env: "prod", Metric: MetricLatencyP95Ms, Baseline: ptr(80), After: ptr(200)}
+	apmP95 := Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricAPMDeviation, Baseline: ptr(100), After: ptr(200)}
+	everyEnvErrorRate := errorRate
+	everyEnvErrorRate.Env = ""
 	cases := []struct {
 		name    string
 		planted plantedRegression
@@ -83,11 +91,13 @@ func TestRegressionsListEveryTriggerInReasonOrder(t *testing.T) {
 		{"alert", plantedRegression{alert: true}, []Regression{alert}},
 		{"dependent p95 latency", plantedRegression{dependentP95: true}, []Regression{dependentP95}},
 		{"APM deviation", plantedRegression{apmP95: true}, []Regression{apmP95}},
+		// Counts sum over every env, while p95 and alerts name the env they came from.
+		{"no env requested", plantedRegression{everyEnv: true, errorRate: true, p95: true, alert: true}, []Regression{everyEnvErrorRate, p95, alert}},
 		{
 			// 60 errors in 300 requests: the error rate rises to 20%.
 			"all together",
 			plantedRegression{errorRate: true, p95: true, throughput: true, alert: true, dependentP95: true, apmP95: true},
-			[]Regression{{Service: "checkout", Role: RoleChanged, Metric: MetricErrorRatePct, Baseline: ptr(0.5), After: ptr(20)}, p95, throughput, alert, dependentP95, apmP95},
+			[]Regression{{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricErrorRatePct, Baseline: ptr(0.5), After: ptr(20)}, p95, throughput, alert, dependentP95, apmP95},
 		},
 	}
 	for _, tc := range cases {
@@ -174,12 +184,12 @@ func TestRegressionsAreAnEmptyArrayUnlessRegressionLikely(t *testing.T) {
 }
 
 func TestRegressionsSerializeEveryField(t *testing.T) {
-	raw, err := json.Marshal(Regression{Service: "checkout", Role: RoleChanged, Metric: MetricAlert, trigger: "x"})
+	raw, err := json.Marshal(Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricAlert, trigger: "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// No endpoint: every regression is service-wide, which a filer keys as '*'.
-	want := `{"service":"checkout","role":"changed","metric":"alert","baseline":null,"after":null}`
+	want := `{"service":"checkout","role":"changed","env":"prod","metric":"alert","baseline":null,"after":null}`
 	if string(raw) != want {
 		t.Fatalf("got %s, want %s", raw, want)
 	}
