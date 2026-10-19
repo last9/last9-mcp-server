@@ -243,6 +243,7 @@ last9-mcp --read-only --allow-write-tools=acknowledge_alert,mute_alert_group
 - `--allow-write-tools` without `--read-only` is a startup error, because every write tool is already served.
 - Read-only combines with `--toolsets`: a tool is served only when it passes both. `--toolsets=alerts --read-only --allow-write-tools=mute_alert_group` serves the alerts read tools plus `mute_alert_group`; an allowed write tool outside the chosen toolsets stays hidden.
 - `--http` mode and `dump-tools` honor the same flags and env vars: `go run . dump-tools --read-only` prints the read-only surface.
+- Read tools' descriptions, schemas and results, and the server instructions, never name a hidden write tool. An allowed write tool can still name its hidden siblings (`create_alert` creates a disabled rule that `patch_alert` enables), so allow such pairs together.
 
 ---
 

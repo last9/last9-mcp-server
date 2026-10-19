@@ -36,6 +36,16 @@ func TestFilterAllows(t *testing.T) {
 	}
 }
 
+func TestFilterServesWrite(t *testing.T) {
+	allowCreate := Filter{ReadOnly: true, AllowWrite: Set{"create_alert": {}}}
+	if !(Filter{}).ServesWrite("create_alert") || !allowCreate.ServesWrite("create_alert") {
+		t.Fatal("ServesWrite(create_alert) = false where the write tool is served")
+	}
+	if (Filter{ReadOnly: true}).ServesWrite("create_alert") || allowCreate.ServesWrite("patch_alert") {
+		t.Fatal("ServesWrite = true for a write tool read-only mode hides")
+	}
+}
+
 func TestNewFilter(t *testing.T) {
 	alerts, err := Parse("alerts")
 	if err != nil {

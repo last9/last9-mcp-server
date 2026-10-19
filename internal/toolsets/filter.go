@@ -54,6 +54,13 @@ func (f Filter) Allows(toolName string, readOnly bool) bool {
 	return ok
 }
 
+// ServesWrite reports whether the write tool name is served. Tool results
+// check it before naming a write tool, so --read-only never sends a model to
+// a tool the server rejects as unknown.
+func (f Filter) ServesWrite(name string) bool {
+	return f.Allows(name, false)
+}
+
 // ReadOnlyFromEnv returns the read-only default from the environment.
 // LAST9_READ_ONLY (the ff flag env) wins over LAST9_MCP_READ_ONLY, as for
 // toolsets. A value that is not a boolean is an error, never a silent false.
