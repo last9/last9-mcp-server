@@ -249,6 +249,20 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		InputSchema: logs.GetServiceLogsInputSchema(),
 	}, logs.NewGetServiceLogsHandler(client, cfg)))
 
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_log_patterns",
+		Annotations: readOnlyTool("Get Log Patterns"),
+		Description: prompts.GetLogPatternsDescription,
+		InputSchema: logs.GetLogPatternsInputSchema(),
+	}, logs.NewGetLogPatternsHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
+		Name:        "get_emerging_log_patterns",
+		Annotations: readOnlyTool("Get Emerging Log Patterns"),
+		Description: prompts.GetEmergingLogPatternsDescription,
+		InputSchema: logs.GetEmergingLogPatternsInputSchema(),
+	}, logs.NewGetEmergingLogPatternsHandler(client, cfg)))
+
 	// Register drop rules tool
 	reg(registerIfAllowed(server, cfg.AllowedTools, &mcp.Tool{
 		Name:        "get_drop_rules",
