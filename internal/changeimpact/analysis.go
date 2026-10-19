@@ -43,15 +43,12 @@ type Request struct {
 }
 
 type Report struct {
-	Service    string `json:"service"`
-	Env        string `json:"env,omitempty"`
-	ChangeTime string `json:"change_time"`
-	Verdict    string `json:"verdict"`
-	Reason     string `json:"reason"`
-	Note       string `json:"note,omitempty"`
-	// Regressions lists each trigger behind a "regression likely" verdict, in
-	// reason's order; it is empty for the other verdicts.
-	Regressions   []Regression       `json:"regressions"`
+	Service       string             `json:"service"`
+	Env           string             `json:"env,omitempty"`
+	ChangeTime    string             `json:"change_time"`
+	Verdict       string             `json:"verdict"`
+	Reason        string             `json:"reason"`
+	Note          string             `json:"note,omitempty"`
 	Windows       Windows            `json:"windows"`
 	GoldenSignals GoldenSection      `json:"golden_signals"`
 	Deviations    DeviationsSection  `json:"deviations"`
@@ -84,9 +81,11 @@ type ServiceSignals struct {
 	Role          string       `json:"role"`
 	ThroughputRPM SignalChange `json:"throughput_rpm"`
 	ErrorRatePct  SignalChange `json:"error_rate_pct"`
-	LatencyP50Ms  SignalChange `json:"latency_p50_ms"`
-	LatencyP95Ms  SignalChange `json:"latency_p95_ms"`
-	LatencyP99Ms  SignalChange `json:"latency_p99_ms"`
+	// LatencyEnv is the one environment both windows' latencies come from.
+	LatencyEnv   string       `json:"latency_env,omitempty"`
+	LatencyP50Ms SignalChange `json:"latency_p50_ms"`
+	LatencyP95Ms SignalChange `json:"latency_p95_ms"`
+	LatencyP99Ms SignalChange `json:"latency_p99_ms"`
 }
 
 type GoldenSection struct {
@@ -170,7 +169,6 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 	w := resolveWindows(req)
 	report := Report{
 		Notes:         notes,
-		Regressions:   []Regression{},
 		Service:       req.Service,
 		Env:           req.Env,
 		ChangeTime:    req.Change.UTC().Format(time.RFC3339),
@@ -256,43 +254,47 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 	})
 	wg.Wait()
 
-	var regressions []Regression
+	var triggers []string
 	goldenErr := firstErr(baselineErr, afterErr)
 	if goldenErr != nil {
 		report.GoldenSignals.Error = goldenErr.Error()
 	} else {
 		for i, service := range scope {
-			role := RoleDependent
+			role := "dependent"
 			if i == 0 {
-				role = RoleChanged
+				role = "changed"
 			}
 			report.GoldenSignals.Services = append(report.GoldenSignals.Services, compareSignals(service, role, baseline[service], after[service]))
 		}
-		regressions = append(regressions, serviceRegressions(scopedService{name: req.Service, role: RoleChanged}, baseline[req.Service], after[req.Service])...)
+		triggers = append(triggers, serviceRegressions(req.Service, baseline[req.Service], after[req.Service])...)
 	}
 
 	if alertsErr != nil {
 		report.Alerts.Error = alertsErr.Error()
 	} else {
 		for _, a := range alertsStarted {
-			regressions = append(regressions, alertRegression(a, req.Service))
+			trigger := fmt.Sprintf("alert %q started firing for %s at %s", firstNonEmpty(a.RuleName, a.RuleID), a.Service, a.StartedAt)
+			if a.EnvMatch == envMatchUnlabelled {
+				trigger += " (no env label)"
+			}
+			triggers = append(triggers, trigger)
 		}
 		report.Alerts.Started, report.Alerts.Dropped = truncate(alertsStarted, sectionTopN)
 	}
 
 	if goldenErr == nil {
 		for _, service := range scope[1:] {
-			regressions = append(regressions, serviceRegressions(scopedService{name: service, role: RoleDependent}, baseline[service], after[service])...)
+			triggers = append(triggers, serviceRegressions(service, baseline[service], after[service])...)
 		}
 	}
 
 	if apmErr != nil {
 		report.Deviations.APM.Error = apmErr.Error()
 	} else {
-		var apmRegressions []Regression
-		report.Deviations.APM, apmRegressions = summarizeAPMDeviations(apmResult.Entries, req.Service)
+		var apmTriggers []string
+		report.Deviations.APM, apmTriggers = summarizeAPMDeviations(apmResult.Entries)
 		report.Deviations.APM.Unavailable = apmResult.FailedQueries
-		regressions = append(regressions, apmRegressions...)
+		triggers = append(triggers, apmTriggers...)
 	}
 
 	switch {
@@ -307,7 +309,7 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 		report.Deviations.TraceAttributes.Warnings = traceResult.Warnings
 	}
 
-	in := verdictInputs{afterMinutes: w.afterMinutes, regressions: regressions, service: req.Service}
+	in := verdictInputs{afterMinutes: w.afterMinutes, triggers: triggers, service: req.Service}
 	// Trace deviations are left out: they explain a verdict and never trigger
 	// one, so losing them cannot hide a regression the verdict would find.
 	for _, s := range []struct {
@@ -331,9 +333,6 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 		_, in.haveChanged = after[req.Service]
 	}
 	report.Verdict, report.Reason, report.Note = decideVerdict(in)
-	if report.Verdict == VerdictRegressionLikely {
-		report.Regressions = regressions
-	}
 	return report
 }
 
@@ -361,7 +360,12 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// truncate never returns nil: an empty list serialises as [], as it does when
+// its section is skipped.
 func truncate[T any](items []T, limit int) ([]T, int) {
+	if items == nil {
+		return []T{}, 0
+	}
 	if len(items) <= limit {
 		return items, 0
 	}
@@ -374,14 +378,17 @@ func compareSignals(service, role string, baseline, after apm.GoldenSignals) Ser
 	if baseline.ErrorRatePct != nil && after.ErrorRatePct != nil {
 		errorRate.DeltaPP = rounded(*after.ErrorRatePct - *baseline.ErrorRatePct)
 	}
+	env := latencyEnv(baseline, after)
+	before, now := baseline.LatencyByEnv[env], after.LatencyByEnv[env]
 	return ServiceSignals{
 		Service:       service,
 		Role:          role,
 		ThroughputRPM: change(&baseRPM, &afterRPM),
 		ErrorRatePct:  errorRate,
-		LatencyP50Ms:  change(baseline.LatencyP50Ms, after.LatencyP50Ms),
-		LatencyP95Ms:  change(baseline.LatencyP95Ms, after.LatencyP95Ms),
-		LatencyP99Ms:  change(baseline.LatencyP99Ms, after.LatencyP99Ms),
+		LatencyEnv:    env,
+		LatencyP50Ms:  change(before.P50Ms, now.P50Ms),
+		LatencyP95Ms:  change(before.P95Ms, now.P95Ms),
+		LatencyP99Ms:  change(before.P99Ms, now.P99Ms),
 	}
 }
 
@@ -406,19 +413,18 @@ func rounded(v float64) *float64 {
 
 // summarizeAPMDeviations bounds the entries for the report and lists each
 // regression get_apm_service_deviations classifies as a verdict trigger.
-func summarizeAPMDeviations(entries []apm.LeaderboardEntry, changed string) (APMDeviations, []Regression) {
+func summarizeAPMDeviations(entries []apm.LeaderboardEntry) (APMDeviations, []string) {
 	var section APMDeviations
-	var regressions []Regression
+	var triggers []string
 	items := make([]APMDeviation, 0, len(entries))
 	for _, e := range entries {
-		d := apmDeviation(e)
-		items = append(items, d)
-		if d.Classification == "regression" {
-			regressions = append(regressions, apmRegression(d, changed))
+		items = append(items, apmDeviation(e))
+		if e.Comparison.Classification == "regression" {
+			triggers = append(triggers, fmt.Sprintf("get_apm_service_deviations classifies %s %s as a regression", e.ServiceName, e.Comparison.Definition.Name))
 		}
 	}
 	section.Items, section.Dropped = truncate(items, sectionTopN)
-	return section, regressions
+	return section, triggers
 }
 
 func apmDeviation(e apm.LeaderboardEntry) APMDeviation {

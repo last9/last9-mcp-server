@@ -55,11 +55,13 @@ func TestDescriptionDocumentsVerdictsAndThresholds(t *testing.T) {
 		fmt.Sprintf("top %d", maxDependents),
 		fmt.Sprintf("%d per list", sectionTopN),
 		"get_change_events",
+		"rounded down to the minute",
 		"wholly or in any query listed in `" + apmUnavailablePath + "`",
 		"Trace-attribute deviations explain a verdict but never set one",
-		"`regressions`",
-		"exactly one of `" + strings.Join([]string{MetricErrorRatePct, MetricLatencyP95Ms, MetricThroughputRPM, MetricAlert, MetricAPMDeviation}, "`, `") + "`",
-		"(`" + RoleChanged + "` or `" + RoleDependent + "`)",
+		"`latency_env`",
+		"also counts error-status spans and 429s",
+		"client-only ones show 0 rpm",
+		"label, else annotation",
 	} {
 		if !strings.Contains(description, want) {
 			t.Errorf("description must state %q", want)

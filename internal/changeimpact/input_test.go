@@ -99,6 +99,23 @@ func TestUnixSecondsTimestampIsAccepted(t *testing.T) {
 	}
 }
 
+func TestChangeTimeIsRoundedDownToTheMinute(t *testing.T) {
+	change := recentChange()
+	f := &fakeLast9{change: change, baseline: flatWindow(), after: flatWindow()}
+	args := serviceArgs(change)
+	args.Timestamp = change.Add(37 * time.Second).Format(time.RFC3339)
+	report, err := runTool(t, f, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.ChangeTime != change.Format(time.RFC3339) || report.Windows.AfterStart != change.Format(time.RFC3339) {
+		t.Fatalf("change_time = %q, windows = %+v, want both at %s", report.ChangeTime, report.Windows, change.Format(time.RFC3339))
+	}
+	if !strings.Contains(strings.Join(report.Notes, " "), "rounded down to the minute") {
+		t.Fatalf("notes = %v, want the rounding noted", report.Notes)
+	}
+}
+
 func TestWindowMinutesAreClamped(t *testing.T) {
 	cases := []struct {
 		baseline, after         int

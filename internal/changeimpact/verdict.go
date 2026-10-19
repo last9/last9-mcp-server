@@ -2,7 +2,9 @@ package changeimpact
 
 import (
 	"fmt"
+	"maps"
 	"math"
+	"slices"
 	"strings"
 
 	"last9-mcp/internal/apm"
@@ -21,12 +23,15 @@ const (
 	// An after window shorter than this cannot show a regression yet.
 	minAfterMinutes = 5
 	// Error-rate and latency shifts are judged only when both windows carry at
-	// least this many server requests.
-	minRequestsPerWindow = 20
+	// least this many server requests, latency in the compared environment.
+	// Below 100, a p95 rests on fewer than 5 requests and one error is >1 pp.
+	minRequestsPerWindow = 100
 	// Error rate rising by at least this many percentage points is a regression.
 	errorRateIncreasePP = 1.0
-	// p95 latency rising by at least this percentage is a regression.
-	p95LatencyIncreasePct = 25.0
+	// p95 latency rising by at least this percentage is a regression. 25%
+	// flagged ordinary p95 variation; #376 tracks judging it against the
+	// service's own variability instead.
+	p95LatencyIncreasePct = 40.0
 	// Throughput (rpm) falling by at least this percentage is a regression:
 	// requests that stop arriving may be failing before the service sees them.
 	throughputDropPct = 50.0
@@ -52,34 +57,35 @@ const noChangeNote = "No significant change is a valid answer, not a failure: th
 // thresholdEpsilon absorbs float noise in deltas computed exactly at a threshold.
 const thresholdEpsilon = 1e-9
 
-// serviceRegressions lists the thresholds s crossed between the windows.
-func serviceRegressions(s scopedService, baseline, after apm.GoldenSignals) []Regression {
-	if baseline.RequestCount < minRequestsPerWindow || after.RequestCount < minRequestsPerWindow {
+// serviceRegressions lists the thresholds service crossed between the windows.
+func serviceRegressions(service string, baseline, after apm.GoldenSignals) []string {
+	if baseline.RequestCount < minRequestsPerWindow {
 		return nil
 	}
-	var found []Regression
-	if baseline.ErrorRatePct != nil && after.ErrorRatePct != nil {
+	var found []string
+	if after.RequestCount >= minRequestsPerWindow && baseline.ErrorRatePct != nil && after.ErrorRatePct != nil {
 		if delta := *after.ErrorRatePct - *baseline.ErrorRatePct; delta >= errorRateIncreasePP-thresholdEpsilon {
-			found = append(found, s.regression(MetricErrorRatePct, *baseline.ErrorRatePct, *after.ErrorRatePct,
-				fmt.Sprintf("%s error rate rose %.2f pp (%.2f%% → %.2f%%)", s.name, delta, *baseline.ErrorRatePct, *after.ErrorRatePct)))
+			found = append(found, fmt.Sprintf("%s error rate rose %.2f pp (%.2f%% → %.2f%%) (threshold %g pp)", service, delta, *baseline.ErrorRatePct, *after.ErrorRatePct, errorRateIncreasePP))
 		}
 	}
-	if pct := deltaPct(baseline.LatencyP95Ms, after.LatencyP95Ms); pct != nil && *pct >= p95LatencyIncreasePct-thresholdEpsilon {
-		found = append(found, s.regression(MetricLatencyP95Ms, *baseline.LatencyP95Ms, *after.LatencyP95Ms,
-			fmt.Sprintf("%s p95 latency rose %.0f%% (%.1f ms → %.1f ms)", s.name, *pct, *baseline.LatencyP95Ms, *after.LatencyP95Ms)))
+	env := latencyEnv(baseline, after)
+	before, now := baseline.LatencyByEnv[env].P95Ms, after.LatencyByEnv[env].P95Ms
+	judgeLatency := baseline.RequestsByEnv[env] >= minRequestsPerWindow && after.RequestsByEnv[env] >= minRequestsPerWindow
+	if pct := deltaPct(before, now); judgeLatency && pct != nil && *pct >= p95LatencyIncreasePct-thresholdEpsilon {
+		found = append(found, fmt.Sprintf("%s p95 latency rose %.0f%% (%.1f ms → %.1f ms) in %s (threshold %g%%)", service, *pct, *before, *now, env, p95LatencyIncreasePct))
 	}
-	// Windows can differ in length, so compare rates, not request counts.
-	if pct := deltaPct(&baseline.ThroughputRPM, &after.ThroughputRPM); pct != nil && -*pct >= throughputDropPct-thresholdEpsilon {
-		found = append(found, s.regression(MetricThroughputRPM, baseline.ThroughputRPM, after.ThroughputRPM,
-			fmt.Sprintf("%s throughput fell %.0f%% (%.1f → %.1f rpm)", s.name, -*pct, baseline.ThroughputRPM, after.ThroughputRPM)))
+	// Windows can differ in length, so compare rates, not request counts. A
+	// collapse is what thins the after window, so only an empty one is skipped.
+	if pct := deltaPct(&baseline.ThroughputRPM, &after.ThroughputRPM); after.RequestCount > 0 && pct != nil && -*pct >= throughputDropPct-thresholdEpsilon {
+		found = append(found, fmt.Sprintf("%s throughput fell %.0f%% (%.1f → %.1f rpm) (threshold %g%%)", service, -*pct, baseline.ThroughputRPM, after.ThroughputRPM, throughputDropPct))
 	}
 	return found
 }
 
 type verdictInputs struct {
 	afterMinutes int
-	// regressions are the triggers found, most important first.
-	regressions []Regression
+	// triggers are the regressions found, most important first.
+	triggers []string
 	// unavailable names each required section that failed, with its cause.
 	unavailable     []string
 	haveChanged     bool
@@ -92,9 +98,9 @@ func decideVerdict(in verdictInputs) (verdict, reason, note string) {
 	if in.afterMinutes < minAfterMinutes {
 		return VerdictInsufficientData, fmt.Sprintf("after window is %d min; at least %d min after the change is needed", max(in.afterMinutes, 0), minAfterMinutes), ""
 	}
-	if len(in.regressions) > 0 {
-		reason = in.regressions[0].trigger
-		if extra := len(in.regressions) - 1; extra > 0 {
+	if len(in.triggers) > 0 {
+		reason = in.triggers[0]
+		if extra := len(in.triggers) - 1; extra > 0 {
 			reason += fmt.Sprintf(" (+%d more)", extra)
 		}
 		if len(in.unavailable) > 0 {
@@ -120,6 +126,22 @@ func orService(s string) string {
 		return "the service"
 	}
 	return s
+}
+
+// latencyEnv is the environment whose latency both windows compare: of those
+// reporting latency in either window, the one serving the most requests over
+// both, ties by name. Picking per window could compare two environments.
+func latencyEnv(baseline, after apm.GoldenSignals) string {
+	envs := slices.Sorted(maps.Keys(baseline.LatencyByEnv))
+	envs = append(envs, slices.Sorted(maps.Keys(after.LatencyByEnv))...)
+	best, bestRequests := "", -1.0
+	for _, env := range envs {
+		requests := baseline.RequestsByEnv[env] + after.RequestsByEnv[env]
+		if requests > bestRequests || (requests == bestRequests && env < best) {
+			best, bestRequests = env, requests
+		}
+	}
+	return best
 }
 
 // deltaPct is (after-baseline)/baseline as a percentage; nil when either side

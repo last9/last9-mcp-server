@@ -34,21 +34,27 @@ func TestRuleWithoutAlertInstancesHasNotStarted(t *testing.T) {
 	}
 }
 
-func TestAlertsMatchAServiceOnlyByServiceLabelsOrGroupName(t *testing.T) {
+func TestAlertsMatchAServiceOnlyByServiceKeysOrGroupName(t *testing.T) {
 	cases := []struct {
 		name        string
 		group       string
 		labels      map[string]interface{}
 		wantService string
+		annotations map[string]interface{}
 	}{
-		{"service_name label", "", map[string]interface{}{"service_name": "web"}, "web"},
-		{"service label", "", map[string]interface{}{"service": "web"}, "web"},
-		{"service.name label", "", map[string]interface{}{"service.name": "web"}, "web"},
-		{"service label in another case", "", map[string]interface{}{"service_name": "Web"}, "web"},
-		{"group name in another case", "Checkout", nil, "checkout"},
-		{"team label", "", map[string]interface{}{"team": "web"}, ""},
-		{"exported_job label", "", map[string]interface{}{"exported_job": "checkout"}, ""},
-		{"other service named", "", map[string]interface{}{"service_name": "billing", "component": "checkout"}, ""},
+		{"service_name label", "", map[string]interface{}{"service_name": "web"}, "web", nil},
+		{"service label", "", map[string]interface{}{"service": "web"}, "web", nil},
+		{"service.name label", "", map[string]interface{}{"service.name": "web"}, "web", nil},
+		{"service label in another case", "", map[string]interface{}{"service_name": "Web"}, "web", nil},
+		{"group name in another case", "Checkout", nil, "checkout", nil},
+		{"team label", "", map[string]interface{}{"team": "web"}, "", nil},
+		{"exported_job label", "", map[string]interface{}{"exported_job": "checkout"}, "", nil},
+		{"other service named", "", map[string]interface{}{"service_name": "billing", "component": "checkout"}, "", nil},
+		{"service annotation", "", nil, "web", map[string]interface{}{"service": "web"}},
+		{"service.name annotation in another case", "", nil, "checkout", map[string]interface{}{"service.name": "Checkout"}},
+		{"service named only in free text", "", nil, "", map[string]interface{}{"summary": "checkout error rate high"}},
+		{"team annotation", "", nil, "", map[string]interface{}{"team": "web"}},
+		{"service label overrides the annotation", "", map[string]interface{}{"service_name": "billing"}, "", map[string]interface{}{"service_name": "web"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -56,7 +62,7 @@ func TestAlertsMatchAServiceOnlyByServiceLabelsOrGroupName(t *testing.T) {
 			f := &fakeLast9{change: change, baseline: flatWindow(), after: flatWindow(), callers: map[string]float64{"web": 10},
 				alerts: []alerting.AlertRuleData{{
 					RuleID: "r", RuleName: "some alert", AlertGroupName: tc.group,
-					Alerts: []alerting.AlertInstance{{Since: change.Add(10 * time.Minute).Unix(), GroupLabels: tc.labels}},
+					Alerts: []alerting.AlertInstance{{Since: change.Add(10 * time.Minute).Unix(), GroupLabels: tc.labels, Annotations: tc.annotations}},
 				}}}
 			report, err := runTool(t, f, serviceArgs(change))
 			if err != nil {
@@ -112,7 +118,6 @@ func TestAlertsStayInsideTheRequestedEnv(t *testing.T) {
 			if len(report.Alerts.Started) != 1 || report.Verdict != VerdictRegressionLikely {
 				t.Fatalf("verdict=%q (%s) alerts=%+v, want the alert kept", report.Verdict, report.Reason, report.Alerts.Started)
 			}
-			assertRegressionsMatchReason(t, report)
 			if got := report.Alerts.Started[0].EnvMatch; got != tc.wantEnvMatch {
 				t.Fatalf("env_match = %q, want %q", got, tc.wantEnvMatch)
 			}

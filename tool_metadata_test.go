@@ -27,6 +27,7 @@ var descriptionBudgetOverrides = map[string]int{
 	"get_service_summary":             4600,
 	"get_alert_config":                4600,
 	"get_trace_attribute_deviations":  4400,
+	"analyze_change_impact":           3100,
 	"get_logs":                        3400,
 	"create_dashboard":                3500,
 	"prometheus_range_query":          3000,
@@ -38,7 +39,6 @@ var descriptionBudgetOverrides = map[string]int{
 	"create_alert":                    2800,
 	"get_service_performance_details": 2800,
 	"get_alerts":                      2600,
-	"analyze_change_impact":           3600,
 	"get_emerging_log_patterns":       2700,
 }
 
@@ -56,7 +56,7 @@ var toolNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 var toolNameVerbs = []string{
 	"get", "list", "create", "update", "patch", "delete", "add", "validate", "search",
-	"describe", "analyze", "recommend", "acknowledge", "reassign", "mute", "attach", "detach",
+	"describe", "recommend", "acknowledge", "reassign", "mute", "attach", "detach", "analyze",
 }
 
 // toolNamespaces prefix a verb-first name with the product it reads.

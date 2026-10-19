@@ -13,20 +13,11 @@ import (
 	"time"
 )
 
-// apmRollup shapes apmRollupServer's answers.
-type apmRollup struct {
-	// failApdex fails every Apdex query with 503, counted in rejected.
-	failApdex bool
-	rejected  *atomic.Int32
-	// p95Ms is the steady p95 latency per window, keyed "baseline" and
-	// "after"; nil answers no latency at all.
-	p95Ms map[string]float64
-}
-
 // apmRollupServer answers get_apm_service_deviations' service rollup queries
-// (the ones evaluated with "@") with flat request and error aggregates, shaped
-// by rollup. Everything else falls through to f.
-func apmRollupServer(t *testing.T, f *fakeLast9, rollup apmRollup) *httptest.Server {
+// (the ones evaluated with "@") with flat request and error aggregates, failing
+// every Apdex query with 503 when failApdex is set. Everything else falls
+// through to f.
+func apmRollupServer(t *testing.T, f *fakeLast9, failApdex bool, rejected *atomic.Int32) *httptest.Server {
 	t.Helper()
 	fallback := f.serve(t)
 	t.Cleanup(fallback.Close)
@@ -42,17 +33,10 @@ func apmRollupServer(t *testing.T, f *fakeLast9, rollup apmRollup) *httptest.Ser
 			fallback.Config.Handler.ServeHTTP(w, r)
 			return
 		}
-		window := "after"
-		if q.Timestamp <= f.change.Unix() {
-			window = "baseline"
-		}
 		switch {
-		case strings.Contains(q.Query, "apdex") && rollup.failApdex:
-			rollup.rejected.Add(1)
+		case strings.Contains(q.Query, "apdex") && failApdex:
+			rejected.Add(1)
 			w.WriteHeader(http.StatusServiceUnavailable)
-			return
-		case strings.Contains(q.Query, "trace_service_response_time") && rollup.p95Ms != nil:
-			_ = json.NewEncoder(w).Encode([]any{rollupSample(q.Timestamp, latencyStat(q.Query, rollup.p95Ms[window]))})
 			return
 		case strings.Contains(q.Query, "apdex"), strings.Contains(q.Query, "trace_service_response_time"), strings.Contains(q.Query, "deviation_stat"):
 			_ = json.NewEncoder(w).Encode([]any{})
@@ -65,33 +49,13 @@ func apmRollupServer(t *testing.T, f *fakeLast9, rollup apmRollup) *httptest.Ser
 		if strings.HasPrefix(q.Query, "count_over_time") {
 			value = 60
 		}
-		_ = json.NewEncoder(w).Encode([]any{rollupSample(q.Timestamp, value)})
+		_ = json.NewEncoder(w).Encode([]any{map[string]any{
+			"metric": map[string]string{"service_name": "checkout", "env": "prod"},
+			"value":  []any{float64(q.Timestamp), strconv.FormatFloat(value, 'f', -1, 64)},
+		}})
 	}))
 	t.Cleanup(srv.Close)
 	return srv
-}
-
-func rollupSample(ts int64, value float64) map[string]any {
-	return map[string]any{
-		"metric": map[string]string{"service_name": "checkout", "env": "prod"},
-		"value":  []any{float64(ts), strconv.FormatFloat(value, 'f', -1, 64)},
-	}
-}
-
-// latencyStat answers one statistic of the latency grid for a steady p95,
-// with a spread narrow enough that a shift between windows clears the quartiles.
-func latencyStat(query string, p95 float64) float64 {
-	switch {
-	case strings.HasPrefix(query, "count_over_time"):
-		return 60
-	case strings.HasPrefix(query, "quantile_over_time(0.25"):
-		return p95 * 0.95
-	case strings.HasPrefix(query, "quantile_over_time(0.75"):
-		return p95 * 1.05
-	case strings.HasPrefix(query, "max_over_time"):
-		return p95 * 1.1
-	}
-	return p95
 }
 
 func TestAnalyzeAPMPartialFailureCannotClearChange(t *testing.T) {
@@ -100,7 +64,7 @@ func TestAnalyzeAPMPartialFailureCannotClearChange(t *testing.T) {
 		t.Run("apdex failed="+strconv.FormatBool(failApdex), func(t *testing.T) {
 			var rejected atomic.Int32
 			f := &fakeLast9{change: change, baseline: flatWindow(), after: flatWindow()}
-			srv := apmRollupServer(t, f, apmRollup{failApdex: failApdex, rejected: &rejected})
+			srv := apmRollupServer(t, f, failApdex, &rejected)
 			report := Analyze(context.Background(), srv.Client(), testConfig(srv.URL), Request{Service: "checkout", Env: "prod", Change: change, Now: change.Add(2 * time.Hour), BaselineMinutes: 60, AfterMinutes: 60})
 			if failApdex && rejected.Load() == 0 {
 				t.Fatal("failure injection not reached")
@@ -139,12 +103,11 @@ func TestAnalyzeAPMPartialFailureKeepsEstablishedRegression(t *testing.T) {
 	after.errors = map[string]float64{"checkout": 120, "web": 3}
 	var rejected atomic.Int32
 	f := &fakeLast9{change: change, baseline: flatWindow(), after: after}
-	srv := apmRollupServer(t, f, apmRollup{failApdex: true, rejected: &rejected})
+	srv := apmRollupServer(t, f, true, &rejected)
 	report := Analyze(context.Background(), srv.Client(), testConfig(srv.URL), Request{Service: "checkout", Env: "prod", Change: change, Now: change.Add(2 * time.Hour), BaselineMinutes: 60, AfterMinutes: 60})
 	if report.Verdict != VerdictRegressionLikely {
 		t.Fatalf("verdict=%q want=%q reason=%q", report.Verdict, VerdictRegressionLikely, report.Reason)
 	}
-	assertRegressionsMatchReason(t, report)
 	if !strings.Contains(report.Reason, "error rate rose") || !strings.Contains(report.Reason, "APM deviations partially unavailable") {
 		t.Fatalf("reason must keep the regression and name the missing APM evidence: %q", report.Reason)
 	}
