@@ -60,7 +60,7 @@ func TestGetAlertHygiene_DecodesNullHistoryAsNil(t *testing.T) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		_, _ = w.Write([]byte(`{"window":"7d","from":1000,"to":2000,"rules":[
 			{"rule_id":"r-null","fire_count":0,"last_fired_at":null,"ack":null,"muted_seconds":null,"history_since":null,"routed":null,"channels":[]},
-			{"rule_id":"r-zero","fire_count":3,"last_fired_at":1500,"ack":{"acked_episodes":0,"ack_rate":0,"median_seconds_to_ack":null},"muted_seconds":0,"history_since":900,"routed":true,
+			{"rule_id":"r-zero","expression":"error_rate","condition":"expr > 5","fire_count":3,"last_fired_at":1500,"ack":{"acked_episodes":0,"ack_rate":0,"median_seconds_to_ack":null},"muted_seconds":0,"history_since":900,"routed":true,
 			 "channels":[{"type":"slack","name":"oncall"}]},
 			{"rule_id":"r-absent","fire_count":0}
 		]}`))
@@ -89,6 +89,9 @@ func TestGetAlertHygiene_DecodesNullHistoryAsNil(t *testing.T) {
 	}
 	if zero.LastFiredAt == nil || *zero.LastFiredAt != 1500 || zero.HistorySince == nil || *zero.HistorySince != 900 {
 		t.Errorf("timestamps = %v %v", zero.LastFiredAt, zero.HistorySince)
+	}
+	if zero.Expression != "error_rate" || zero.Condition != "expr > 5" {
+		t.Errorf("expression, condition = %q, %q", zero.Expression, zero.Condition)
 	}
 	if zero.Routed == nil || !*zero.Routed {
 		t.Errorf("routed = %v, want recorded true", zero.Routed)

@@ -18,23 +18,22 @@ Categories (a rule may have several; disabled rules are never flagged):
 Rates use the observed span: the window, or the part since `history_since`, at least one day. A null field means the data was not recorded,
 never zero or false, and skips only the check that reads it: null `ack` skips noisy-by-ack,
 null `muted_seconds` skips noisy-by-mute, null `routed` skips unrouted, and null
-`history_since` skips never-fired stale while rates use the full window. Other categories
-still apply.
+`history_since` skips never-fired stale while rates use the full window.
 
 Suggested fixes (`suggested_fix`, sometimes `alternative_fix`, each
 `{parameter, current, proposed}`):
 - flapping, and noisy non-static rules: raise `bad_minutes`, the N in
   `alert_condition = count_true(result) >= N`, up to `eval_window`; or lengthen `eval_window`
   (minutes).
-- noisy static threshold: raise (or, for `<` comparisons, lower) the `threshold`, or switch
-  the `expression` to the `adaptive_std_cmp(metric, sensitivity, window)` macro. The macro is
-  an expression, not an `algorithm` value.
+- noisy static threshold: raise (or, for `<` comparisons, lower) the threshold in `condition`
+  (`expr > 100`), or switch the `expression` to the `adaptive_std_cmp(metric, sensitivity, window)`
+  macro. The macro is an expression, not an `algorithm` value.
 - unrouted: attach a notification channel to the alert group.
 - stale: set `is_disabled` to true, or delete the rule, after confirming it is no longer needed.
 
 Output is compact JSON: `{window, from, to, rules_evaluated, flagged_rules, truncated, rules}`.
 Each rule has `findings` (`category`, `reason` with the numbers behind it, `suggested_fix`)
-and `stats`, the raw per-rule data (ids, names, expression, eval_window, alert_condition,
+and `stats`, the raw per-rule data (ids, names, expression, condition, eval_window, alert_condition,
 fire_count, flaps_per_day, ack, muted_seconds, history_since, routed, channels).
 Timestamps in `stats` are unix seconds.
 

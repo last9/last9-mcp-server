@@ -30,6 +30,7 @@ type HygieneRule struct {
 	AlertGroupName string           `json:"alert_group_name"`
 	Algorithm      string           `json:"algorithm"`
 	Expression     string           `json:"expression"`
+	Condition      string           `json:"condition"`
 	EvalWindow     int64            `json:"eval_window"`
 	AlertCondition string           `json:"alert_condition"`
 	Severity       string           `json:"severity"`

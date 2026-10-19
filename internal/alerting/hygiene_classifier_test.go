@@ -28,7 +28,8 @@ func healthyRule(id string) alerts.HygieneRule {
 		AlertGroupID:   "group-1",
 		AlertGroupName: "checkout",
 		Algorithm:      "static_threshold",
-		Expression:     "error_rate > 5",
+		Expression:     "error_rate",
+		Condition:      "expr > 5",
 		EvalWindow:     10,
 		AlertCondition: "count_true(result) >= 3",
 		FireCount:      1,
@@ -203,19 +204,54 @@ func TestClassifyHygieneRule_Fixes(t *testing.T) {
 			name:     "noisy static threshold",
 			mutate:   func(r *alerts.HygieneRule) { r.FireCount = 70; r.Ack = ack(0) },
 			category: "noisy",
-			fix:      hygieneFix{Parameter: "threshold", Current: "5", Proposed: "raise above 5"},
-			alt:      &hygieneFix{Parameter: "expression", Current: "error_rate > 5", Proposed: "adaptive_std_cmp(error_rate, 3, 1h)"},
+			fix:      hygieneFix{Parameter: "condition", Current: "expr > 5", Proposed: "raise the threshold above 5"},
+			alt:      &hygieneFix{Parameter: "expression", Current: "error_rate", Proposed: "adaptive_std_cmp(error_rate, 3, 1h)"},
 		},
 		{
 			name: "noisy static threshold with a lower-bound comparison",
 			mutate: func(r *alerts.HygieneRule) {
 				r.FireCount = 70
 				r.Ack = ack(0)
-				r.Expression = "availability <= 99.5"
+				r.Expression = "availability"
+				r.Condition = "expr <= 99.5"
 			},
 			category: "noisy",
-			fix:      hygieneFix{Parameter: "threshold", Current: "99.5", Proposed: "lower below 99.5"},
-			alt:      &hygieneFix{Parameter: "expression", Current: "availability <= 99.5", Proposed: "adaptive_std_cmp(availability, 3, 1h)"},
+			fix:      hygieneFix{Parameter: "condition", Current: "expr <= 99.5", Proposed: "lower the threshold below 99.5"},
+			alt:      &hygieneFix{Parameter: "expression", Current: "availability", Proposed: "adaptive_std_cmp(availability, 3, 1h)"},
+		},
+		{
+			name: "noisy static rule over an arithmetic expression",
+			mutate: func(r *alerts.HygieneRule) {
+				r.FireCount = 70
+				r.Ack = ack(0)
+				r.Expression = "errors / requests"
+				r.Condition = "expr > 0.05"
+			},
+			category: "noisy",
+			fix:      hygieneFix{Parameter: "condition", Current: "expr > 0.05", Proposed: "raise the threshold above 0.05"},
+			alt:      &hygieneFix{Parameter: "expression", Current: "errors / requests", Proposed: "adaptive_std_cmp(errors / requests, 3, 1h)"},
+		},
+		{
+			name: "noisy static rule with a compound condition",
+			mutate: func(r *alerts.HygieneRule) {
+				r.FireCount = 70
+				r.Ack = ack(0)
+				r.Condition = "expr > 5 && expr < 50"
+			},
+			category: "noisy",
+			fix:      hygieneFix{Parameter: "condition", Current: "expr > 5 && expr < 50", Proposed: "move the threshold so the rule fires less often"},
+			alt:      &hygieneFix{Parameter: "expression", Current: "error_rate", Proposed: "adaptive_std_cmp(error_rate, 3, 1h)"},
+		},
+		{
+			name: "noisy static rule without an expression keeps a metric placeholder",
+			mutate: func(r *alerts.HygieneRule) {
+				r.FireCount = 70
+				r.Ack = ack(0)
+				r.Expression = ""
+			},
+			category: "noisy",
+			fix:      hygieneFix{Parameter: "condition", Current: "expr > 5", Proposed: "raise the threshold above 5"},
+			alt:      &hygieneFix{Parameter: "expression", Proposed: "adaptive_std_cmp(<metric>, 3, 1h)"},
 		},
 		{
 			name: "noisy rule already on the adaptive macro sustains the condition instead",

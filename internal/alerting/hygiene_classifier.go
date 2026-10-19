@@ -33,7 +33,7 @@ const (
 
 var (
 	badMinutesPattern      = regexp.MustCompile(`count_true\(result\)\s*(>=|>)\s*(\d+)`)
-	staticThresholdPattern = regexp.MustCompile(`^\s*(.+?)\s*(>=|>|<=|<)\s*([-+]?[0-9]*\.?[0-9]+)\s*$`)
+	staticConditionPattern = regexp.MustCompile(`^\s*expr\s*(>=|>|<=|<)\s*([-+]?[0-9]*\.?[0-9]+)\s*$`)
 )
 
 type hygieneWindow struct {
@@ -197,21 +197,21 @@ func observedSeconds(rule alerts.HygieneRule, w hygieneWindow) int64 {
 	return max(w.To-start, hygieneMinObservedSeconds)
 }
 
+// A static rule's threshold lives in its condition (`expr > 100`); its expression
+// is only the indicator arithmetic the condition compares.
 func noisyFixes(rule alerts.HygieneRule) (hygieneFix, *hygieneFix) {
 	if !isStaticThreshold(rule) {
 		return sustainFixes(rule)
 	}
-	m := staticThresholdPattern.FindStringSubmatch(rule.Expression)
-	if m == nil {
-		return hygieneFix{Parameter: "threshold", Current: rule.Expression, Proposed: "raise the threshold in the expression"},
-			adaptiveFix(rule, "<metric>")
+	fix := hygieneFix{Parameter: "condition", Current: rule.Condition, Proposed: "move the threshold so the rule fires less often"}
+	if m := staticConditionPattern.FindStringSubmatch(rule.Condition); m != nil {
+		op, threshold := m[1], m[2]
+		fix.Proposed = "raise the threshold above " + threshold
+		if strings.HasPrefix(op, "<") {
+			fix.Proposed = "lower the threshold below " + threshold
+		}
 	}
-	metric, op, threshold := m[1], m[2], m[3]
-	proposed := "raise above " + threshold
-	if strings.HasPrefix(op, "<") {
-		proposed = "lower below " + threshold
-	}
-	return hygieneFix{Parameter: "threshold", Current: threshold, Proposed: proposed}, adaptiveFix(rule, metric)
+	return fix, adaptiveFix(rule)
 }
 
 // adaptive_std_cmp is an expression macro, not an algorithm value; a static rule
@@ -221,7 +221,11 @@ func isStaticThreshold(rule alerts.HygieneRule) bool {
 		!strings.Contains(rule.Expression, "adaptive_std_cmp")
 }
 
-func adaptiveFix(rule alerts.HygieneRule, metric string) *hygieneFix {
+func adaptiveFix(rule alerts.HygieneRule) *hygieneFix {
+	metric := rule.Expression
+	if strings.TrimSpace(metric) == "" {
+		metric = "<metric>"
+	}
 	return &hygieneFix{
 		Parameter: "expression",
 		Current:   rule.Expression,
