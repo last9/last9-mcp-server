@@ -10,6 +10,7 @@ import (
 
 	"last9-mcp/internal/apm"
 	"last9-mcp/internal/prompts"
+	"last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/toolsets"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -133,6 +134,13 @@ func TestDumpTools(t *testing.T) {
 		if out.Tools[i].InputSchema == nil {
 			t.Fatalf("tool %q has no inputSchema", name)
 		}
+	}
+	labelValuesDesc := out.Tools[byName["prometheus_label_values"]].Description
+	if !strings.Contains(labelValuesDesc, "5760") {
+		t.Fatal("prometheus_label_values description must document a wide lookback (5760) for daily/sparse metrics")
+	}
+	if !strings.Contains(strings.ToLower(labelValuesDesc), "sparse") && !strings.Contains(strings.ToLower(labelValuesDesc), "daily") {
+		t.Fatal("prometheus_label_values description must warn that daily/sparse metrics need a widened lookback")
 	}
 	for _, tool := range out.Tools {
 		var schema struct {
@@ -515,6 +523,146 @@ func TestDumpToolsServesReadOnlyAlertCoverage(t *testing.T) {
 	}
 }
 
+func TestDumpToolsLogPatternToolsServedInLogsAndInvestigate(t *testing.T) {
+	patternTools := []string{"get_log_patterns", "get_emerging_log_patterns"}
+	for spec, want := range map[string]bool{"logs": true, "investigate": true, "": true, "metrics": false, "alerts": false} {
+		allowed, err := toolsets.Parse(spec)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", spec, err)
+		}
+		var buf bytes.Buffer
+		if err := dumpTools(&buf, allowed); err != nil {
+			t.Fatalf("dumpTools(%q) failed: %v", spec, err)
+		}
+		for _, tool := range patternTools {
+			if got := strings.Contains(buf.String(), `"name": "`+tool+`"`); got != want {
+				t.Errorf("toolset %q serves %s = %v, want %v", spec, tool, got, want)
+			}
+		}
+	}
+}
+
+func TestDumpToolsEmergingLogPatternsCouplesBaselineTimes(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, nil); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			InputSchema struct {
+				Properties        map[string]any      `json:"properties"`
+				DependentRequired map[string][]string `json:"dependentRequired"`
+			} `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	for _, tool := range out.Tools {
+		if tool.Name != "get_emerging_log_patterns" {
+			continue
+		}
+		want := map[string][]string{
+			"baseline_start_time_iso": {"baseline_end_time_iso"},
+			"baseline_end_time_iso":   {"baseline_start_time_iso"},
+		}
+		if !reflect.DeepEqual(tool.InputSchema.DependentRequired, want) {
+			t.Errorf("dependentRequired = %v, want %v", tool.InputSchema.DependentRequired, want)
+		}
+		for _, name := range []string{"service_name", "sample_size", "baseline_start_time_iso", "min_count", "change_factor"} {
+			if _, ok := tool.InputSchema.Properties[name]; !ok {
+				t.Errorf("served schema lost property %q", name)
+			}
+		}
+		return
+	}
+	t.Fatal("get_emerging_log_patterns missing from dump")
+}
+
+func TestDumpToolsLogPatternToolsServeScopeSchemaHints(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, nil); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			InputSchema struct {
+				Properties map[string]map[string]any `json:"properties"`
+			} `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	properties := map[string]map[string]map[string]any{}
+	for _, tool := range out.Tools {
+		properties[tool.Name] = tool.InputSchema.Properties
+	}
+	for tool, times := range map[string][]string{
+		"get_log_patterns":          {"start_time_iso", "end_time_iso"},
+		"get_emerging_log_patterns": {"start_time_iso", "end_time_iso", "baseline_start_time_iso", "baseline_end_time_iso"},
+	} {
+		for _, name := range times {
+			if got := properties[tool][name]["format"]; got != "date-time" {
+				t.Errorf("%s property %q format = %v, want date-time", tool, name, got)
+			}
+		}
+		// Callers outside the triage prompts must still learn that severity
+		// filters drop body-level severities on none/partial services.
+		if got, _ := properties[tool]["severity_filters"]["description"].(string); !strings.Contains(got, `only when get_service_profile reports severity_set "all"`) {
+			t.Errorf("%s severity_filters description = %q, want the severity_set routing rule", tool, got)
+		}
+		// A capped sample's first_seen is not the window start.
+		if got, _ := properties[tool]["sample_size"]["description"].(string); !strings.Contains(got, "newest first") {
+			t.Errorf("%s sample_size description = %q, want it to say lines are sampled newest first", tool, got)
+		}
+	}
+}
+
+func TestDumpToolsLogPatternToolsServeTheirExplicitSchemas(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, nil); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string          `json:"name"`
+			InputSchema json.RawMessage `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	served := map[string]json.RawMessage{}
+	for _, tool := range out.Tools {
+		served[tool.Name] = tool.InputSchema
+	}
+	for name, schema := range map[string]any{
+		"get_log_patterns":          logs.GetLogPatternsInputSchema(),
+		"get_emerging_log_patterns": logs.GetEmergingLogPatternsInputSchema(),
+	} {
+		wantBytes, err := json.Marshal(schema)
+		if err != nil {
+			t.Fatalf("marshal %s canonical schema: %v", name, err)
+		}
+		var got, want map[string]any
+		if err := json.Unmarshal(served[name], &got); err != nil {
+			t.Fatalf("%s served schema: %v", name, err)
+		}
+		if err := json.Unmarshal(wantBytes, &want); err != nil {
+			t.Fatalf("%s canonical schema: %v", name, err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("served %s schema differs from its explicit schema\nserved: %v\nwant: %v", name, got, want)
+		}
+		if got["additionalProperties"] != false {
+			t.Errorf("%s additionalProperties = %v, want false", name, got["additionalProperties"])
+		}
+	}
+}
+
 func TestDumpToolsDataToolsetsIncludeNameDiscovery(t *testing.T) {
 	for _, spec := range []string{"traces", "metrics"} {
 		allowed, err := toolsets.Parse(spec)
@@ -558,7 +706,7 @@ func TestDumpToolsInvestigate(t *testing.T) {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}
 	}
-	if len(out.Tools) >= 38 {
+	if len(out.Tools) >= 40 {
 		t.Fatalf("investigate should expose fewer than full surface; got %d", len(out.Tools))
 	}
 }
