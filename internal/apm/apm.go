@@ -373,40 +373,18 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 		if label == "" {
 			return nil, nil, fmt.Errorf("label is required")
 		}
-		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
-		if err != nil {
-			return nil, nil, err
-		}
-
 		queryCfg, err := resolveDatasourceCfg(cfg, args.Datasource)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		httpResp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, label, query, startTimeParam, endTimeParam, queryCfg)
-		if err != nil {
-			return nil, nil, err
-		}
-		if httpResp == nil {
-			return nil, nil, fmt.Errorf("received nil response from Prometheus")
-		}
-		defer httpResp.Body.Close()
-		if httpResp.StatusCode != http.StatusOK {
-			return promToolError(httpResp, "Prometheus label values")
-		}
-		// return the response body string as the content without parsing
-		responseBodyBytes, err := io.ReadAll(httpResp.Body)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
-		}
-
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: string(responseBodyBytes),
-				},
+		lookup := labelLookup{
+			op: "Prometheus label values",
+			fetch: func(start, end int64) (*http.Response, error) {
+				return utils.MakePromLabelValuesAPIQuery(ctx, client, label, query, start, end, queryCfg)
 			},
-		}, nil, nil
+		}
+		return lookup.run(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
 	}
 }
 
@@ -416,40 +394,18 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 		if query == "" {
 			return nil, nil, fmt.Errorf("match_query is required")
 		}
-		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
-		if err != nil {
-			return nil, nil, err
-		}
-
 		queryCfg, err := resolveDatasourceCfg(cfg, args.Datasource)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		httpResp, err := utils.MakePromLabelsAPIQuery(ctx, client, query, startTimeParam, endTimeParam, queryCfg)
-		if err != nil {
-			return nil, nil, err
-		}
-		if httpResp == nil {
-			return nil, nil, fmt.Errorf("received nil response from Prometheus")
-		}
-		defer httpResp.Body.Close()
-		if httpResp.StatusCode != http.StatusOK {
-			return promToolError(httpResp, "Prometheus labels")
-		}
-		// return the response body string as the content without parsing
-		responseBodyBytes, err := io.ReadAll(httpResp.Body)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
-		}
-
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: string(responseBodyBytes),
-				},
+		lookup := labelLookup{
+			op: "Prometheus labels",
+			fetch: func(start, end int64) (*http.Response, error) {
+				return utils.MakePromLabelsAPIQuery(ctx, client, query, start, end, queryCfg)
 			},
-		}, nil, nil
+		}
+		return lookup.run(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
 	}
 }
 
