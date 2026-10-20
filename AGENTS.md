@@ -89,6 +89,12 @@ string-only schema enums, a max schema depth, and lowercase verb-first names (`g
 trailing newline. No test enforces this — an editor or formatter that auto-appends one
 silently changes the served description and breaks `dump-tools` snapshot diffs.
 
+**Append to `server_instructions.md`; never reword an existing line without a gate run.**
+Rewording unrelated lines has repeatedly regressed trace and log query evals (tq-017,
+lq-mf-005). `instructions_wording_test.go` pins every line: add lines or append tools to a
+group freely; an intentional rewording updates `pinnedInstructionLines` and cites a
+tq-017/log_query gate run in the PR body.
+
 ### Progressive disclosure
 
 The four highest-token tools — `get_logs`, `get_traces`, `get_service_logs`,
