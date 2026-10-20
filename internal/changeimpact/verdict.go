@@ -37,8 +37,8 @@ const (
 	// requests that stop arriving may be failing before the service sees them.
 	throughputDropPct = 50.0
 	// Any alert for the service or a dependent that starts firing in the after
-	// window is a regression, as is any regression get_apm_service_deviations
-	// classifies for the changed service.
+	// window and is still firing at its end is a regression, as is any
+	// regression get_apm_service_deviations classifies for the changed service.
 )
 
 // reportThresholds publishes every significance constant above, so callers can
@@ -70,60 +70,69 @@ type serviceWindows struct {
 	bandMinutes     int
 }
 
-// serviceFindings lists the regressions service shows between the windows, and
-// the moves past its baseline band that stay within its noise.
-func serviceFindings(service string, w serviceWindows) (regressions, possible []string) {
+// serviceFindings lists the thresholds s crossed between the windows, and the
+// moves past its baseline band that stay within its noise. A regression judged
+// by a band reports the band's median as its baseline.
+func serviceFindings(s scopedService, w serviceWindows) (found []Regression, possible []string) {
 	baseline, after := w.baseline, w.after
 	if baseline.RequestCount < minRequestsPerWindow {
 		return nil, nil
 	}
-	judgeBand := func(s bandSignal, now float64) bool {
-		if !s.band.usable() {
+	judgeBand := func(at scopedService, metric string, sig bandSignal, now float64) bool {
+		if !sig.band.usable() {
 			return false
 		}
-		switch call := s.band.judge(now, s.minMove); call {
+		switch call := sig.band.judge(now, sig.minMove); call {
 		case likelyRegression:
-			regressions = append(regressions, s.finding(service, now, call))
+			found = append(found, at.regression(metric, sig.band.Median, now, sig.finding(s.name, now, call)))
 		case possibleChange:
-			possible = append(possible, s.finding(service, now, call))
+			possible = append(possible, sig.finding(s.name, now, call))
 		}
 		return true
 	}
 
 	if after.RequestCount >= minRequestsPerWindow && after.ErrorRatePct != nil {
-		s := bandSignal{name: "error rate", format: "%.2f%%", band: newBand(errorRateValues(w.band), w.bandMinutes), minMove: errorRateIncreasePP, minMoveText: fmt.Sprintf("+%g pp", errorRateIncreasePP)}
-		if !judgeBand(s, *after.ErrorRatePct) && baseline.ErrorRatePct != nil {
+		sig := bandSignal{name: "error rate", format: "%.2f%%", band: newBand(errorRateValues(w.band), w.bandMinutes), minMove: errorRateIncreasePP, minMoveText: fmt.Sprintf("+%g pp", errorRateIncreasePP)}
+		if !judgeBand(s, MetricErrorRatePct, sig, *after.ErrorRatePct) && baseline.ErrorRatePct != nil {
 			if delta := *after.ErrorRatePct - *baseline.ErrorRatePct; delta >= errorRateIncreasePP-thresholdEpsilon {
-				regressions = append(regressions, fmt.Sprintf("%s error rate rose %.2f pp (%.2f%% → %.2f%%) (threshold %g pp)", service, delta, *baseline.ErrorRatePct, *after.ErrorRatePct, errorRateIncreasePP))
+				found = append(found, s.regression(MetricErrorRatePct, *baseline.ErrorRatePct, *after.ErrorRatePct,
+					fmt.Sprintf("%s error rate rose %.2f pp (%.2f%% → %.2f%%) (threshold %g pp)", s.name, delta, *baseline.ErrorRatePct, *after.ErrorRatePct, errorRateIncreasePP)))
 			}
 		}
 	}
 	env := latencyEnv(baseline, after)
 	before, now := baseline.LatencyByEnv[env].P95Ms, after.LatencyByEnv[env].P95Ms
 	if baseline.RequestsByEnv[env] >= minRequestsPerWindow && after.RequestsByEnv[env] >= minRequestsPerWindow && now != nil {
+		inLatencyEnv := s
+		inLatencyEnv.env = env
 		band := newBand(p95Values(w.band, env), w.bandMinutes)
-		s := bandSignal{name: "p95 latency", format: "%.1f ms", where: " in " + env, band: band, minMoveText: fmt.Sprintf("+%g%%", bandP95MinMovePct)}
+		sig := bandSignal{name: "p95 latency", format: "%.1f ms", where: " in " + env, band: band, minMoveText: fmt.Sprintf("+%g%%", bandP95MinMovePct)}
 		if band != nil {
-			s.minMove = band.Median * bandP95MinMovePct / 100
+			sig.minMove = band.Median * bandP95MinMovePct / 100
 		}
-		if pct := deltaPct(before, now); !judgeBand(s, *now) && pct != nil && *pct >= p95LatencyIncreasePct-thresholdEpsilon {
-			regressions = append(regressions, fmt.Sprintf("%s p95 latency rose %.0f%% (%.1f ms → %.1f ms) in %s (threshold %g%%)", service, *pct, *before, *now, env, p95LatencyIncreasePct))
+		if pct := deltaPct(before, now); !judgeBand(inLatencyEnv, MetricLatencyP95Ms, sig, *now) && pct != nil && *pct >= p95LatencyIncreasePct-thresholdEpsilon {
+			found = append(found, inLatencyEnv.regression(MetricLatencyP95Ms, *before, *now,
+				fmt.Sprintf("%s p95 latency rose %.0f%% (%.1f ms → %.1f ms) in %s (threshold %g%%)", s.name, *pct, *before, *now, env, p95LatencyIncreasePct)))
 		}
 	}
 	// Windows can differ in length, so compare rates, not request counts. A
 	// collapse is what thins the after window, so only an empty one is skipped.
 	if pct := deltaPct(&baseline.ThroughputRPM, &after.ThroughputRPM); after.RequestCount > 0 && pct != nil && -*pct >= throughputDropPct-thresholdEpsilon {
-		regressions = append(regressions, fmt.Sprintf("%s throughput fell %.0f%% (%.1f → %.1f rpm) (threshold %g%%)", service, -*pct, baseline.ThroughputRPM, after.ThroughputRPM, throughputDropPct))
+		found = append(found, s.regression(MetricThroughputRPM, baseline.ThroughputRPM, after.ThroughputRPM,
+			fmt.Sprintf("%s throughput fell %.0f%% (%.1f → %.1f rpm) (threshold %g%%)", s.name, -*pct, baseline.ThroughputRPM, after.ThroughputRPM, throughputDropPct)))
 	}
-	return regressions, possible
+	return found, possible
 }
 
 type verdictInputs struct {
 	afterMinutes int
-	// triggers are the regressions found, most important first.
-	triggers []string
+	// regressions are the triggers found, most important first.
+	regressions []Regression
 	// possible are moves past a baseline band that stay within its noise.
 	possible []string
+	// alertsNotFiring counts alerts that started in the after window but were
+	// no longer firing at its end: context for reason, never a trigger.
+	alertsNotFiring int
 	// unavailable names each required section that failed, with its cause.
 	unavailable     []string
 	haveChanged     bool
@@ -133,12 +142,27 @@ type verdictInputs struct {
 }
 
 func decideVerdict(in verdictInputs) (verdict, reason, note string) {
+	verdict, reason, note = judge(in)
+	if in.afterMinutes >= minAfterMinutes && in.alertsNotFiring > 0 {
+		reason += "; " + alertsNotFiringText(in.alertsNotFiring)
+	}
+	return verdict, reason, note
+}
+
+func alertsNotFiringText(n int) string {
+	if n == 1 {
+		return "1 alert that started after the change was no longer firing at the end of the after window"
+	}
+	return fmt.Sprintf("%d alerts that started after the change were no longer firing at the end of the after window", n)
+}
+
+func judge(in verdictInputs) (verdict, reason, note string) {
 	if in.afterMinutes < minAfterMinutes {
 		return VerdictInsufficientData, fmt.Sprintf("after window is %d min; at least %d min after the change is needed", max(in.afterMinutes, 0), minAfterMinutes), ""
 	}
-	if len(in.triggers) > 0 {
-		reason = in.triggers[0]
-		if extra := len(in.triggers) - 1; extra > 0 {
+	if len(in.regressions) > 0 {
+		reason = in.regressions[0].trigger
+		if extra := len(in.regressions) - 1; extra > 0 {
 			reason += fmt.Sprintf(" (+%d more)", extra)
 		}
 		if len(in.unavailable) > 0 {

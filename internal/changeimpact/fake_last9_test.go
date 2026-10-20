@@ -223,20 +223,29 @@ func runTool(t *testing.T, f *fakeLast9, args AnalyzeChangeImpactArgs) (Report, 
 
 func runToolWith(t *testing.T, f *fakeLast9, args AnalyzeChangeImpactArgs, configure func(*models.Config)) (Report, error) {
 	t.Helper()
+	text, err := runToolText(t, f, args, configure)
+	if err != nil {
+		return Report{}, err
+	}
+	var report Report
+	if err := json.Unmarshal([]byte(text), &report); err != nil {
+		t.Fatalf("decode report: %v\n%s", err, text)
+	}
+	return report, nil
+}
+
+// runToolText returns the report exactly as the tool serves it.
+func runToolText(t *testing.T, f *fakeLast9, args AnalyzeChangeImpactArgs, configure func(*models.Config)) (string, error) {
+	t.Helper()
 	server := f.serve(t)
 	defer server.Close()
 	cfg := testConfig(server.URL)
 	configure(&cfg)
 	result, _, err := NewAnalyzeChangeImpactHandler(server.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, args)
 	if err != nil {
-		return Report{}, err
+		return "", err
 	}
-	text := result.Content[0].(*mcp.TextContent).Text
-	var report Report
-	if err := json.Unmarshal([]byte(text), &report); err != nil {
-		t.Fatalf("decode report: %v\n%s", err, text)
-	}
-	return report, nil
+	return result.Content[0].(*mcp.TextContent).Text, nil
 }
 
 func serviceArgs(change time.Time) AnalyzeChangeImpactArgs {

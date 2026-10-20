@@ -53,9 +53,9 @@ func TestBandJudgesP95AgainstTheServicesOwnNoise(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			w := serviceWindows{baseline: signals(1000, 5, 100), after: signals(1000, 5, tc.after), band: tc.band, bandMinutes: 60}
-			regressions, possible := serviceFindings("checkout", w)
+			regressions, possible := serviceFindings(checkout, w)
 			if got := len(regressions) > 0; got != tc.wantRegress {
-				t.Fatalf("regressions = %q, want regression %v", regressions, tc.wantRegress)
+				t.Fatalf("regressions = %q, want regression %v", triggers(regressions), tc.wantRegress)
 			}
 			if got := len(possible) > 0; got != tc.wantPossible {
 				t.Fatalf("possible = %q, want possible %v", possible, tc.wantPossible)
@@ -83,9 +83,9 @@ func TestBandJudgesErrorRateAgainstTheServicesOwnNoise(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			w := serviceWindows{baseline: signals(1000, 5, 100), after: signals(1000, tc.after*10, 100), band: tc.band, bandMinutes: 60}
-			regressions, possible := serviceFindings("checkout", w)
+			regressions, possible := serviceFindings(checkout, w)
 			if got := len(regressions) > 0; got != tc.wantRegress {
-				t.Fatalf("regressions = %q, want regression %v", regressions, tc.wantRegress)
+				t.Fatalf("regressions = %q, want regression %v", triggers(regressions), tc.wantRegress)
 			}
 			if got := len(possible) > 0; got != tc.wantPossible {
 				t.Fatalf("possible = %q, want possible %v", possible, tc.wantPossible)
@@ -102,8 +102,8 @@ func TestThinBandWindowsFallBackToTheFixedThreshold(t *testing.T) {
 		thin[i] = signals(minRequestsPerWindow-1, 0, 100)
 	}
 	w := serviceWindows{baseline: signals(1000, 5, 100), after: signals(1000, 5, 125), band: thin, bandMinutes: 60}
-	if regressions, possible := serviceFindings("checkout", w); len(regressions)+len(possible) != 0 {
-		t.Fatalf("with %d qualifying windows, +25%% must be judged by the fixed %g%% threshold; got %q %q", bandMinWindows-1, p95LatencyIncreasePct, regressions, possible)
+	if regressions, possible := serviceFindings(checkout, w); len(regressions)+len(possible) != 0 {
+		t.Fatalf("with %d qualifying windows, +25%% must be judged by the fixed %g%% threshold; got %q %q", bandMinWindows-1, p95LatencyIncreasePct, triggers(regressions), possible)
 	}
 	if band := newBand(p95Values(w.band, "prod"), 60); band == nil || band.Windows != bandMinWindows-1 {
 		t.Fatalf("band = %+v, want %d windows", band, bandMinWindows-1)
@@ -113,22 +113,22 @@ func TestThinBandWindowsFallBackToTheFixedThreshold(t *testing.T) {
 	enough[0] = signals(minRequestsPerWindow-1, 0, 100)
 	enough[1] = signals(minRequestsPerWindow-1, 0, 100)
 	w.band = enough
-	if regressions, _ := serviceFindings("checkout", w); len(regressions) != 1 {
-		t.Fatalf("with %d qualifying windows, +25%% on a stable service is a regression; got %q", bandMinWindows, regressions)
+	if regressions, _ := serviceFindings(checkout, w); len(regressions) != 1 {
+		t.Fatalf("with %d qualifying windows, +25%% on a stable service is a regression; got %q", bandMinWindows, triggers(regressions))
 	}
 }
 
 // The agent explains the call from the reason: it quotes the band.
 func TestBandFindingsQuoteTheBand(t *testing.T) {
 	w := serviceWindows{baseline: signals(1000, 5, 100), after: signals(1000, 5, 180), band: bandOf(spikyP95...), bandMinutes: 60}
-	regressions, _ := serviceFindings("checkout", w)
+	regressions, _ := serviceFindings(checkout, w)
 	want := "checkout p95 latency 180.0 ms in prod vs baseline range 75.0 ms–130.0 ms over 5 windows of 60 min (threshold: above the range, median 100.0 ms + 3×MAD 20.0 ms = 160.0 ms, and +15% over the median)"
-	if len(regressions) != 1 || regressions[0] != want {
-		t.Fatalf("regressions = %q, want [%q]", regressions, want)
+	if len(regressions) != 1 || regressions[0].trigger != want {
+		t.Fatalf("regressions = %q, want [%q]", triggers(regressions), want)
 	}
 
 	w.after = signals(1000, 5, 150)
-	_, possible := serviceFindings("checkout", w)
+	_, possible := serviceFindings(checkout, w)
 	want = "checkout p95 latency 150.0 ms in prod vs baseline range 75.0 ms–130.0 ms over 5 windows of 60 min: above the range but within noise (median 100.0 ms + 3×MAD 20.0 ms = 160.0 ms)"
 	if len(possible) != 1 || possible[0] != want {
 		t.Fatalf("possible = %q, want [%q]", possible, want)
@@ -165,7 +165,7 @@ func TestPossibleChangeVerdict(t *testing.T) {
 	}
 
 	withTrigger := base
-	withTrigger.triggers = []string{"new alert"}
+	withTrigger.regressions = []Regression{{trigger: "new alert"}}
 	if verdict, _, _ := decideVerdict(withTrigger); verdict != VerdictRegressionLikely {
 		t.Fatalf("a regression outranks a possible change; got %q", verdict)
 	}
