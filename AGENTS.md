@@ -208,7 +208,9 @@ Service      string `json:"service" jsonschema:"(Required) Service name"`
 ```
 
 The SDK infers `additionalProperties: false` from the struct, so unknown keys are rejected
-before the handler runs. Seven tools instead pass a hand-built `InputSchema:` (`get_logs`,
+before the handler runs. `registerIfAllowed` turns a number-like string (`"42"`) sent for
+an integer property into its number before that validation (`integer_args.go`); every other
+type mismatch is still rejected. Seven tools instead pass a hand-built `InputSchema:` (`get_logs`,
 `get_traces`, `get_trace_waterfall`, `get_service_summary`, `get_apm_service_deviations`,
 `create_dashboard`, `update_dashboard`) — those do **not** get the inferred strictness. Use
 a struct for new tools; reach for `InputSchema:` only when the schema cannot be expressed as

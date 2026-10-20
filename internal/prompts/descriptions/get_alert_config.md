@@ -16,7 +16,7 @@
 	- tags: Array of case-insensitive substring matches; all provided tags must match
 	- only_without_notification_channel: Include rules whose alert group has no per-entity channel
 	  binding (dashboard "Not configured"). OR-combined with notification_channel_types when both
-	  are set. Global org-wide channels do not satisfy per-entity filters; listed when this filter is used.
+	  are set. Global org-wide channels do not satisfy per-entity filters.
 	- notification_channel_types: Include rules whose alert group has a per-entity channel with any
 	  listed type (case-insensitive, e.g. slack, email, pagerduty, generic_webhook). OR-combined with
 	  only_without_notification_channel when both are set.
@@ -47,13 +47,12 @@
 	- tier: The alert group's configured tier, when set
 	- labels: The alert group's configured metadata labels as k=v pairs, when set
 	  For a full inventory of groups (including zero-rule groups) use get_alert_groups.
-	- state: Current state of the alert rule (active, inactive, etc.)
+	- state: disabled, error-stale, muted or active, in that precedence
+	- disabled, muted_until (none, indefinitely or RFC3339 UTC), recurring_mute_schedule (timezone, one "Mon,Tue 22:00-06:00" line per window) and next_transition
 	- severity: Alert severity level
 	- algorithm: Detection algorithm (static_threshold, high_spike, inc_trend, etc.)
-	- created_at: When the alert rule was created
-	- updated_at: When the alert rule was last modified
-	- mute_until and recurring_mute_schedule, when set; properties show only annotations here, so read
-	  description and runbook with get_entity_alert_rules
+	- created_at, updated_at: Rule creation and last-modified times
+	- properties show only annotations here; read description and runbook with get_entity_alert_rules
 
 	## When to use
 	Find alert rules by name, severity, group, tags, team or notification channel.
@@ -68,7 +67,7 @@
 	- `get_notification_channels` (channel names and types)
 
 	## Output shape
-	Text listing matching rules with ids, alert group, severity, state and resolved indicators.
+	Matching rules with ids, group, severity and state.
 
 	## Known traps
 	Channel filters match per-entity bindings only; org-wide global channels do not satisfy them.
