@@ -125,7 +125,9 @@ func optionalRegexMatcher(label, query string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf(`%s=~".*%s.*"`, label, escaped), nil
+	// (?i): Prometheus label regexes are case-sensitive, but filterEntities
+	// (and the tool contract) match case-insensitively.
+	return fmt.Sprintf(`%s=~"(?i).*%s.*"`, label, escaped), nil
 }
 
 func escapePromRegex(value string) (string, error) {

@@ -87,7 +87,7 @@ func TestSearchInfrastructureEntities_FiltersAndEscapesQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotQuery != `count by (cluster,node) (kube_node_info{node=~".*web.*"})` {
+	if gotQuery != `count by (cluster,node) (kube_node_info{node=~"(?i).*web.*"})` {
 		t.Fatalf("promql %q", gotQuery)
 	}
 	page := decodeSearchPage(t, result)
@@ -101,7 +101,7 @@ func TestSearchPromQL_EscapesRegexMetacharacters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `count by (cluster,node) (kube_node_info{node=~".*web\\.01.*"})`
+	want := `count by (cluster,node) (kube_node_info{node=~"(?i).*web\\.01.*"})`
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
