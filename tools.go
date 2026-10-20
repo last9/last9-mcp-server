@@ -19,6 +19,7 @@ import (
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/suggest"
+	"last9-mcp/internal/telemetry/catalog"
 	"last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/telemetry/profiles"
 	"last9-mcp/internal/telemetry/traces"
@@ -205,6 +206,8 @@ func registerAllTools(server *last9mcp.Last9MCPServer, cfg models.Config) (tools
 }
 
 func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *http.Client) (toolsets.Set, error) {
+	cfg.ExactQuantileAuthorizer = catalog.NewExactQuantileAuthorizer(client, cfg)
+
 	gate := newToolGate(cfg.ToolFilter)
 	var regErr error
 	reg := func(err error) {
@@ -619,6 +622,12 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Annotations: readOnlyTool("Suggest Matching Names"),
 		Description: prompts.DidYouMeanDescription,
 	}, suggest.NewDidYouMeanHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_api_source_catalog",
+		Annotations: readOnlyTool("Get API Source Catalog"),
+		Description: prompts.GetAPISourceCatalogDescription,
+	}, catalog.NewHandler(client, cfg)))
 
 	// Register service profile tool
 	reg(registerIfAllowed(server, gate, &mcp.Tool{

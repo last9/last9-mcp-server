@@ -107,6 +107,26 @@ func TestDidYouMeanHandler_EmptyQuery(t *testing.T) {
 	}
 }
 
+func TestDidYouMeanHandler_JSONResponseIsBounded(t *testing.T) {
+	text, _, err := executeDidYouMean(t, []suggestionItem{
+		{Name: "one", Type: "service", Score: .9}, {Name: "two", Type: "service", Score: .8},
+		{Name: "three", Type: "service", Score: .7}, {Name: "four", Type: "service", Score: .6},
+	}, http.StatusOK, DidYouMeanArgs{Query: "on", ResponseFormat: "json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Query       string           `json:"query"`
+		Suggestions []suggestionItem `json:"suggestions"`
+	}
+	if err := json.Unmarshal([]byte(text), &response); err != nil {
+		t.Fatalf("response is not JSON: %v", err)
+	}
+	if response.Query != "on" || len(response.Suggestions) != 3 || response.Suggestions[0].Name != "one" {
+		t.Fatalf("unexpected structured response: %#v", response)
+	}
+}
+
 func TestDidYouMeanHandler_APIError(t *testing.T) {
 	_, _, err := executeDidYouMean(t, nil, http.StatusInternalServerError, DidYouMeanArgs{Query: "prod"})
 	if err == nil {

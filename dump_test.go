@@ -653,8 +653,18 @@ func TestDumpToolsInvestigate(t *testing.T) {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}
 	}
-	if len(out.Tools) >= 40 {
-		t.Fatalf("investigate should expose fewer than full surface; got %d", len(out.Tools))
+	var full bytes.Buffer
+	if err := dumpTools(&full, toolsets.Filter{}); err != nil {
+		t.Fatalf("dumpTools (unfiltered) failed: %v", err)
+	}
+	var all struct {
+		Tools []json.RawMessage `json:"tools"`
+	}
+	if err := json.Unmarshal(full.Bytes(), &all); err != nil {
+		t.Fatalf("unfiltered output is not valid JSON: %v", err)
+	}
+	if len(out.Tools) >= len(all.Tools) {
+		t.Fatalf("investigate should expose fewer than full surface (%d); got %d", len(all.Tools), len(out.Tools))
 	}
 }
 

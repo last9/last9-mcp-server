@@ -261,7 +261,12 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 		}
 
 		checkFunction := func(function map[string]interface{}, functionPath string) error {
-			rawArgs, ok := function["$quantile"].([]interface{})
+			operator := "$quantile"
+			rawArgs, ok := function[operator].([]interface{})
+			if !ok {
+				operator = "$quantile_exact"
+				rawArgs, ok = function[operator].([]interface{})
+			}
 			if !ok || len(rawArgs) != 2 {
 				return nil
 			}
@@ -274,10 +279,10 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 			}
 			return newLogValidationError(
 				LogValidationInvalidField,
-				functionPath+".$quantile[1]",
+				functionPath+"."+operator+"[1]",
 				fmt.Sprintf(
-					"$quantile field %q at %s requires a preceding numeric $regex after the last parse that can produce it; use the canonical anchored numeric $regex shown: {\"$regex\":[%q,\"^[0-9]+(?:\\\\.[0-9]+)?$\"]}",
-					field, functionPath+".$quantile[1]", field,
+					"%s field %q at %s requires a preceding numeric $regex after the last parse that can produce it; use the canonical anchored numeric $regex shown: {\"$regex\":[%q,\"^[0-9]+(?:\\\\.[0-9]+)?$\"]}",
+					operator, field, functionPath+"."+operator+"[1]", field,
 				),
 			)
 		}
@@ -664,6 +669,7 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string) erro
 		)
 	}
 
+	aliases := map[string]struct{}{}
 	for i, rawItem := range aggs {
 		itemPath := fmt.Sprintf("%s.aggregates[%d]", stagePath, i)
 		itemMap, ok := rawItem.(map[string]interface{})
@@ -731,6 +737,10 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string) erro
 				),
 			)
 		}
+		if _, duplicate := aliases[as]; duplicate {
+			return newLogValidationError(LogValidationInvalidField, itemPath+".as", fmt.Sprintf("aggregate alias %q is duplicated", as))
+		}
+		aliases[as] = struct{}{}
 	}
 
 	return validateGroupByForTraceFields(stage, stagePath)

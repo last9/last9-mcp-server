@@ -89,13 +89,7 @@ func NewGetLogAttributesHandler(client *http.Client, cfg models.Config) func(con
 			return nil, nil, fmt.Errorf("failed to parse time range: %w", err)
 		}
 		endTime := endTimeParsed.Unix()
-		// Cap the window magnitude. The labels endpoint returns the full label
-		// set regardless of window size, so a longer range only adds server cost.
 		startTime := startTimeParsed.Unix()
-		maxWindowSeconds := int64(utils.MaxLogAttributeLookbackMinutes * 60)
-		if endTime-startTime > maxWindowSeconds {
-			startTime = endTime - maxWindowSeconds
-		}
 
 		// Get region parameter or use default from config
 		region := cfg.Region

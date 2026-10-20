@@ -117,6 +117,7 @@ var core = []string{
 // discovery tools included in the investigate composite (R9a).
 var investigateExtras = []string{
 	"did_you_mean",
+	"get_api_source_catalog",
 	"get_service_profile",
 	"list_datasources",
 }

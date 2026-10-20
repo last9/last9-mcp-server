@@ -1,6 +1,8 @@
 package models
 
 import (
+	"context"
+
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/toolsets"
 )
@@ -11,6 +13,7 @@ const DefaultMaxGetTracesEntries = 5000
 // DatasourceInfo holds resolved credentials for a named datasource.
 // Populated at startup from the /datasources API response and cached in Config.Datasources.
 type DatasourceInfo struct {
+	ID        string
 	Name      string
 	ReadURL   string
 	Username  string
@@ -36,7 +39,11 @@ type Config struct {
 	// endpoint instead of the client-side chunk sweep. Off by default; the
 	// chunked path is deleted once this is proven in production.
 	UseLogSearchAPI bool
-
+	// ExactQuantileAuthorizer remains injectable for tests. Runtime source
+	// contracts are fetched per request and exact log quantiles fail closed.
+	ExactQuantileAuthorizer interface {
+		AllowsExactLogQuantile(context.Context, string, string, string) (bool, error)
+	}
 	// HTTP server configuration
 	HTTPMode bool   // Enable HTTP server mode instead of STDIO
 	Port     string // HTTP server port

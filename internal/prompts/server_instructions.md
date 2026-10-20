@@ -1,6 +1,6 @@
 {{- $overview := tools "get_workspace_overview" -}}
 {{- $time := tools "get_current_time" -}}
-{{- $services := tools "did_you_mean" "get_service_environments" "get_profile_services" "list_datasources" "grafana_list_datasources" -}}
+{{- $services := tools "did_you_mean" "get_api_source_catalog" "get_service_environments" "get_profile_services" "list_datasources" "grafana_list_datasources" -}}
 {{- $attributes := tools "get_log_attributes" "get_log_attributes_for_pipeline" "get_trace_attributes" "get_trace_attributes_for_pipeline" "get_trace_attribute_values" -}}
 {{- $metricNames := tools "prometheus_labels" "prometheus_label_values" -}}
 {{- $alertRules := tools "get_alert_groups" "get_alert_config" "get_entity_alert_rules" "get_notification_channels" -}}

@@ -308,9 +308,10 @@ func TestDiscoverSectionListsOnlyNameLookups(t *testing.T) {
 // near its size, so growth is a reviewed decision: it precedes every tool
 // description, and growing it moved log_query evals. The parsed-field line
 // was a reviewed increase, validated on the full log_query suite; naming
-// analyze_change_impact on the changes line and the log-pattern tools joining
-// the one-service bullet were others.
-const maxInvestigateInstructionsBytes = 2705
+// analyze_change_impact on the changes line, the log-pattern tools joining
+// the one-service bullet and get_api_source_catalog joining the services
+// bullet (+26 bytes served) were others.
+const maxInvestigateInstructionsBytes = 2731
 
 func TestInvestigateInstructionsBounded(t *testing.T) {
 	instructions, _ := initializeOver(t, "investigate")

@@ -11,7 +11,6 @@ import (
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
-	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -29,9 +28,7 @@ func testAttrConfig(apiBaseURL string) models.Config {
 	}
 }
 
-// TestGetLogAttributesHandler_CapsTimeRangeAt1Hour verifies that when the caller
-// requests a window longer than 1 hour, the handler caps the API request to 1 hour.
-func TestGetLogAttributesHandler_CapsTimeRangeAt1Hour(t *testing.T) {
+func TestGetLogAttributesHandlerPreservesExplicitHistoricalBounds(t *testing.T) {
 	var capturedStart, capturedEnd int64
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +46,7 @@ func TestGetLogAttributesHandler_CapsTimeRangeAt1Hour(t *testing.T) {
 	cfg := testAttrConfig(server.URL)
 	handler := NewGetLogAttributesHandler(server.Client(), cfg)
 
-	// Request a 3-hour lookback — handler should cap to 1 hour internally.
+	// Request a 3-hour lookback — historical discovery must not silently clamp it.
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesArgs{
 		LookbackMinutes: 180,
 	})
@@ -62,9 +59,8 @@ func TestGetLogAttributesHandler_CapsTimeRangeAt1Hour(t *testing.T) {
 	}
 
 	windowSeconds := capturedEnd - capturedStart
-	maxAllowed := int64(utils.MaxLogAttributeLookbackMinutes * 60)
-	if windowSeconds > maxAllowed {
-		t.Errorf("API request window %ds exceeds %ds cap; large windows are not capped", windowSeconds, maxAllowed)
+	if windowSeconds < int64(179*time.Minute/time.Second) {
+		t.Errorf("API request window %ds was silently shortened", windowSeconds)
 	}
 }
 

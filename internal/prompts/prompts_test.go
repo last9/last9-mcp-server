@@ -24,6 +24,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_alert_groups.md":                  prompts.GetAlertGroupsDescription,
 	"get_alert_rule_state.md":              prompts.GetAlertRuleStateDescription,
 	"get_alerts.md":                        prompts.GetAlertsDescription,
+	"get_api_source_catalog.md":            prompts.GetAPISourceCatalogDescription,
 	"get_apm_service_deviations.md":        prompts.GetAPMServiceDeviationsDescription,
 	"get_change_events.md":                 prompts.GetChangeEventsDescription,
 	"get_current_time.md":                  prompts.GetCurrentTimeDescription,

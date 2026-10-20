@@ -249,7 +249,6 @@ func run() int {
 	if err := utils.PopulateAPICfg(&cfg); err != nil {
 		log.Fatalf("failed to populate API config: %v", err)
 	}
-
 	if cfg.DisableTelemetry {
 		otel.SetMeterProvider(metricnoop.NewMeterProvider())
 		otel.SetTracerProvider(tracenoop.NewTracerProvider())
