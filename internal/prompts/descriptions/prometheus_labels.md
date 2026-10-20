@@ -4,7 +4,7 @@
 	It returns an array of labels.
 	Parameters:
 	- match_query: (Required) A valid promql filter query
-	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
+	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60. When no window is given, match_query names one metric and the 60 minutes are empty (daily or sparse metrics), the server retries once over 4 days and adds a text block saying so.
 	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
 	- datasource: (Optional) Name of the datasource to query. If omitted, uses the default configured datasource.

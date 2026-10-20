@@ -90,7 +90,7 @@ type PromqlLabelValuesArgs struct {
 	Label           string  `json:"label" jsonschema:"(Required) Label name to get values for"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). For daily or sparse metrics use a wider window such as 5760 (4 days)."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). When omitted with no ISO bounds, an empty result for a single-metric match_query is retried once over 5760 (4 days)."`
 	Datasource      string  `json:"datasource,omitempty" jsonschema:"Name of the datasource to query. If omitted, uses the default configured datasource."`
 }
 
@@ -379,7 +379,9 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 		}
 
 		lookup := labelLookup{
-			op: "Prometheus label values",
+			op:         "Prometheus label values",
+			noun:       "label values",
+			matchQuery: query,
 			fetch: func(start, end int64) (*http.Response, error) {
 				return utils.MakePromLabelValuesAPIQuery(ctx, client, label, query, start, end, queryCfg)
 			},
@@ -400,7 +402,9 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 		}
 
 		lookup := labelLookup{
-			op: "Prometheus labels",
+			op:         "Prometheus labels",
+			noun:       "labels",
+			matchQuery: query,
 			fetch: func(start, end int64) (*http.Response, error) {
 				return utils.MakePromLabelsAPIQuery(ctx, client, query, start, end, queryCfg)
 			},
