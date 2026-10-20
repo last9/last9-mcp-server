@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -102,6 +104,35 @@ func TestSearchPromQL_EscapesRegexMetacharacters(t *testing.T) {
 	want := `count by (cluster,node) (kube_node_info{node=~".*web\\.01.*"})`
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+// Prometheus matches =~ case-sensitively, so the upstream prefilter must fold
+// case itself or it drops names filterEntities would have kept.
+func TestSearchMatcher_CaseInsensitiveForEveryLabel(t *testing.T) {
+	for _, entityType := range []string{"k8s_cluster", "k8s_node", "k8s_pod"} {
+		for _, query := range []string{"web.01", "WEB.01", "Web.01"} {
+			matcher, err := searchMatcher(entityType, query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, quoted, ok := strings.Cut(matcher, "=~")
+			if !ok {
+				t.Fatalf("%s %q: no regex matcher in %q", entityType, query, matcher)
+			}
+			pattern, err := strconv.Unquote(quoted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Prometheus anchors label regexes.
+			re := regexp.MustCompile("^(?:" + pattern + ")$")
+			if !re.MatchString("prod-web.01") {
+				t.Errorf("%s %q: %s misses prod-web.01", entityType, query, matcher)
+			}
+			if re.MatchString("prod-webx01") {
+				t.Errorf("%s %q: %s treats . as a wildcard", entityType, query, matcher)
+			}
+		}
 	}
 }
 
