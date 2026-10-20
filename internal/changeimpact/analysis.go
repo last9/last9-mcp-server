@@ -43,12 +43,15 @@ type Request struct {
 }
 
 type Report struct {
-	Service       string             `json:"service"`
-	Env           string             `json:"env,omitempty"`
-	ChangeTime    string             `json:"change_time"`
-	Verdict       string             `json:"verdict"`
-	Reason        string             `json:"reason"`
-	Note          string             `json:"note,omitempty"`
+	Service    string `json:"service"`
+	Env        string `json:"env,omitempty"`
+	ChangeTime string `json:"change_time"`
+	Verdict    string `json:"verdict"`
+	Reason     string `json:"reason"`
+	Note       string `json:"note,omitempty"`
+	// Regressions lists each trigger behind a "regression likely" verdict, in
+	// reason's order; it is empty for the other verdicts.
+	Regressions   []Regression       `json:"regressions"`
 	Windows       Windows            `json:"windows"`
 	GoldenSignals GoldenSection      `json:"golden_signals"`
 	Deviations    DeviationsSection  `json:"deviations"`
@@ -140,7 +143,11 @@ type StartedAlert struct {
 	Service    string `json:"service"`
 	EnvMatch   string `json:"env_match,omitempty"`
 
+	// env is the instance's env label, empty when it has none.
+	env         string
 	startedUnix int64
+	// instance identifies the alert instance within its rule.
+	instance string
 }
 
 // EnvMatch values, set only when the request names an env.
@@ -169,6 +176,7 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 	w := resolveWindows(req)
 	report := Report{
 		Notes:         notes,
+		Regressions:   []Regression{},
 		Service:       req.Service,
 		Env:           req.Env,
 		ChangeTime:    req.Change.UTC().Format(time.RFC3339),
@@ -254,47 +262,44 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 	})
 	wg.Wait()
 
-	var triggers []string
+	var regressions []Regression
+	var alertsNotFiring int
 	goldenErr := firstErr(baselineErr, afterErr)
 	if goldenErr != nil {
 		report.GoldenSignals.Error = goldenErr.Error()
 	} else {
 		for i, service := range scope {
-			role := "dependent"
+			role := RoleDependent
 			if i == 0 {
-				role = "changed"
+				role = RoleChanged
 			}
 			report.GoldenSignals.Services = append(report.GoldenSignals.Services, compareSignals(service, role, baseline[service], after[service]))
 		}
-		triggers = append(triggers, serviceRegressions(req.Service, baseline[req.Service], after[req.Service])...)
+		regressions = append(regressions, serviceRegressions(scopedService{name: req.Service, role: RoleChanged, env: req.Env}, baseline[req.Service], after[req.Service])...)
 	}
 
 	if alertsErr != nil {
 		report.Alerts.Error = alertsErr.Error()
 	} else {
-		for _, a := range alertsStarted {
-			trigger := fmt.Sprintf("alert %q started firing for %s at %s", firstNonEmpty(a.RuleName, a.RuleID), a.Service, a.StartedAt)
-			if a.EnvMatch == envMatchUnlabelled {
-				trigger += " (no env label)"
-			}
-			triggers = append(triggers, trigger)
-		}
+		var firing []Regression
+		firing, alertsNotFiring = alertRegressions(alertsStarted, req.Service)
+		regressions = append(regressions, firing...)
 		report.Alerts.Started, report.Alerts.Dropped = truncate(alertsStarted, sectionTopN)
 	}
 
 	if goldenErr == nil {
 		for _, service := range scope[1:] {
-			triggers = append(triggers, serviceRegressions(service, baseline[service], after[service])...)
+			regressions = append(regressions, serviceRegressions(scopedService{name: service, role: RoleDependent, env: req.Env}, baseline[service], after[service])...)
 		}
 	}
 
 	if apmErr != nil {
 		report.Deviations.APM.Error = apmErr.Error()
 	} else {
-		var apmTriggers []string
-		report.Deviations.APM, apmTriggers = summarizeAPMDeviations(apmResult.Entries)
+		var apmRegressions []Regression
+		report.Deviations.APM, apmRegressions = summarizeAPMDeviations(apmResult.Entries, req.Service)
 		report.Deviations.APM.Unavailable = apmResult.FailedQueries
-		triggers = append(triggers, apmTriggers...)
+		regressions = append(regressions, apmRegressions...)
 	}
 
 	switch {
@@ -309,7 +314,7 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 		report.Deviations.TraceAttributes.Warnings = traceResult.Warnings
 	}
 
-	in := verdictInputs{afterMinutes: w.afterMinutes, triggers: triggers, service: req.Service}
+	in := verdictInputs{afterMinutes: w.afterMinutes, regressions: regressions, alertsNotFiring: alertsNotFiring, service: req.Service}
 	// Trace deviations are left out: they explain a verdict and never trigger
 	// one, so losing them cannot hide a regression the verdict would find.
 	for _, s := range []struct {
@@ -333,6 +338,9 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 		_, in.haveChanged = after[req.Service]
 	}
 	report.Verdict, report.Reason, report.Note = decideVerdict(in)
+	if report.Verdict == VerdictRegressionLikely {
+		report.Regressions = regressions
+	}
 	return report
 }
 
@@ -413,18 +421,19 @@ func rounded(v float64) *float64 {
 
 // summarizeAPMDeviations bounds the entries for the report and lists each
 // regression get_apm_service_deviations classifies as a verdict trigger.
-func summarizeAPMDeviations(entries []apm.LeaderboardEntry) (APMDeviations, []string) {
+func summarizeAPMDeviations(entries []apm.LeaderboardEntry, changed string) (APMDeviations, []Regression) {
 	var section APMDeviations
-	var triggers []string
+	var regressions []Regression
 	items := make([]APMDeviation, 0, len(entries))
 	for _, e := range entries {
-		items = append(items, apmDeviation(e))
-		if e.Comparison.Classification == "regression" {
-			triggers = append(triggers, fmt.Sprintf("get_apm_service_deviations classifies %s %s as a regression", e.ServiceName, e.Comparison.Definition.Name))
+		d := apmDeviation(e)
+		items = append(items, d)
+		if d.Classification == "regression" {
+			regressions = append(regressions, apmRegression(d, changed))
 		}
 	}
 	section.Items, section.Dropped = truncate(items, sectionTopN)
-	return section, triggers
+	return section, regressions
 }
 
 func apmDeviation(e apm.LeaderboardEntry) APMDeviation {

@@ -137,7 +137,8 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, gate *toolG
 // registerTool registers one admitted tool, keeping only the description
 // routes to tools served alongside it.
 // The MCP SDK panics on invalid tool schemas; recover and return an error so
-// registerAllTools can fail fast instead of crashing the process.
+// registerAllTools can fail fast instead of crashing the process. Number-like strings
+// sent for the tool's integer arguments are accepted as numbers.
 func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, handler mcp.ToolHandlerFor[In, Out], served func(string) bool) (err error) {
 	// Serve the annotation title as the tool's title too, so clients that read
 	// either field show the same name.
@@ -152,6 +153,9 @@ func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, 
 	}()
 	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, handler); regErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, regErr)
+	}
+	if coerceErr := addIntegerArgsCoercion[In](server.Server, tool); coerceErr != nil {
+		return fmt.Errorf("register %q: %w", tool.Name, coerceErr)
 	}
 	return nil
 }
@@ -279,6 +283,12 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Annotations: readOnlyTool("List Datasources"),
 		Description: prompts.ListDatasourcesDescription,
 	}, apm.NewListDatasourcesHandler(cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_metric_status",
+		Annotations: readOnlyTool("Get Metric Liveness and Cadence"),
+		Description: prompts.GetMetricStatusDescription,
+	}, apm.NewGetMetricStatusHandler(client, cfg)))
 
 	// Register PromQL range query tool (enhanced with metrics instructions)
 	reg(registerIfAllowed(server, gate, &mcp.Tool{

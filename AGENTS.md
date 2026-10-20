@@ -89,6 +89,12 @@ string-only schema enums, a max schema depth, and lowercase verb-first names (`g
 trailing newline. No test enforces this — an editor or formatter that auto-appends one
 silently changes the served description and breaks `dump-tools` snapshot diffs.
 
+**Append to `server_instructions.md`; never reword an existing line without a gate run.**
+Rewording unrelated lines has repeatedly regressed trace and log query evals (tq-017,
+lq-mf-005). `instructions_wording_test.go` pins every line: add lines or append tools to a
+group freely; an intentional rewording updates `pinnedInstructionLines` and cites a
+tq-017/log_query gate run in the PR body.
+
 ### Progressive disclosure
 
 The four highest-token tools — `get_logs`, `get_traces`, `get_service_logs`,
@@ -208,7 +214,9 @@ Service      string `json:"service" jsonschema:"(Required) Service name"`
 ```
 
 The SDK infers `additionalProperties: false` from the struct, so unknown keys are rejected
-before the handler runs. Seven tools instead pass a hand-built `InputSchema:` (`get_logs`,
+before the handler runs. `registerIfAllowed` turns a number-like string (`"42"`) sent for
+an integer property into its number before that validation (`integer_args.go`); every other
+type mismatch is still rejected. Seven tools instead pass a hand-built `InputSchema:` (`get_logs`,
 `get_traces`, `get_trace_waterfall`, `get_service_summary`, `get_apm_service_deviations`,
 `create_dashboard`, `update_dashboard`) — those do **not** get the inferred strictness. Use
 a struct for new tools; reach for `InputSchema:` only when the schema cannot be expressed as
