@@ -33,7 +33,7 @@ func lineStartingWith(t *testing.T, text, prefix string) string {
 
 // assertChecksRecentChange requires get_service_performance_details, then
 // get_change_events, then analyze_change_impact, and both verdict rules: only
-// `no significant change` clears a change; `insufficient data` is missing evidence.
+// `no significant change` clears a change; `possible change` and `insufficient data` keep it a suspect.
 func assertChecksRecentChange(t *testing.T, name, text string) {
 	t.Helper()
 	perf := strings.Index(text, "get_service_performance_details")
@@ -42,7 +42,7 @@ func assertChecksRecentChange(t *testing.T, name, text string) {
 	if perf < 0 || !(perf < events && events < impact) {
 		t.Fatalf("%s: want get_service_performance_details, then get_change_events, then analyze_change_impact:\n%s", name, text)
 	}
-	for _, rule := range []string{"`no significant change` rules the change out", "`insufficient data` does not"} {
+	for _, rule := range []string{"`no significant change` rules the change out", "`possible change` and `insufficient data` do not"} {
 		if !strings.Contains(text, rule) {
 			t.Fatalf("%s: the prompt must say %q:\n%s", name, rule, text)
 		}

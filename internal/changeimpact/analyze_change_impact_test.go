@@ -21,11 +21,15 @@ func TestReportThresholdsMirrorVerdictConstants(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]float64{
-		"min_after_minutes":        minAfterMinutes,
-		"min_requests_per_window":  minRequestsPerWindow,
-		"error_rate_increase_pp":   errorRateIncreasePP,
-		"p95_latency_increase_pct": p95LatencyIncreasePct,
-		"throughput_drop_pct":      throughputDropPct,
+		"min_after_minutes":         minAfterMinutes,
+		"min_requests_per_window":   minRequestsPerWindow,
+		"error_rate_increase_pp":    errorRateIncreasePP,
+		"p95_latency_increase_pct":  p95LatencyIncreasePct,
+		"throughput_drop_pct":       throughputDropPct,
+		"baseline_band_windows":     bandWindows,
+		"baseline_band_min_windows": bandMinWindows,
+		"band_mad_multiplier":       bandMADMultiplier,
+		"band_p95_min_move_pct":     bandP95MinMovePct,
 	}
 	if len(report.Thresholds) != len(want) {
 		t.Fatalf("thresholds = %v, want %v", report.Thresholds, want)

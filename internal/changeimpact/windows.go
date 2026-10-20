@@ -91,6 +91,12 @@ func (w changeWindows) public() Windows {
 	}
 }
 
+// bandQuery covers the bandWindows windows right before the change, each as
+// long as the after window, so every value compares like for like with it.
+func (w changeWindows) bandQuery(services []string, env string) apm.GoldenSignalsWindowsQuery {
+	return apm.GoldenSignalsWindowsQuery{Services: services, Env: env, End: w.change, WindowMinutes: w.afterMinutes, Count: bandWindows}
+}
+
 // comparisonWindows returns equal-length current and baseline windows either
 // side of the change, as the deviation tools require, at most limit long.
 func (w changeWindows) comparisonWindows(limit time.Duration) (current, baseline apm.TimeWindow) {

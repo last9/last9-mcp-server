@@ -20,6 +20,12 @@ func signals(requests, errors, p95 float64) apm.GoldenSignals {
 	return s
 }
 
+// fixedRegressions judges with no baseline band, by the fixed thresholds alone.
+func fixedRegressions(baseline, after apm.GoldenSignals) []string {
+	regressions, _ := serviceFindings("checkout", serviceWindows{baseline: baseline, after: after})
+	return regressions
+}
+
 // withEnv adds an environment's traffic and p95 to s, as a query with no env
 // returns them.
 func withEnv(s apm.GoldenSignals, env string, requests, p95 float64) apm.GoldenSignals {
@@ -49,11 +55,11 @@ func TestLatencyComparesOneEnvironmentAcrossWindows(t *testing.T) {
 	baseline := withEnv(signals(1000, 0, 100), "staging", 10, 1500)
 	after := withEnv(signals(1000, 0, 150), "staging", 0, 90)
 
-	got := strings.Join(serviceRegressions("checkout", baseline, after), "; ")
+	got := strings.Join(fixedRegressions(baseline, after), "; ")
 	if !strings.Contains(got, "p95 latency rose 50% (100.0 ms → 150.0 ms) in prod") {
 		t.Fatalf("regressions = %q, want prod's p95 rise", got)
 	}
-	compared := compareSignals("checkout", "changed", baseline, after)
+	compared := compareSignals("checkout", "changed", serviceWindows{baseline: baseline, after: after})
 	if compared.LatencyEnv != "prod" || *compared.LatencyP95Ms.Baseline != 100 || *compared.LatencyP95Ms.After != 150 {
 		t.Fatalf("compared latency = env %q, p95 %+v; want prod 100 → 150", compared.LatencyEnv, compared.LatencyP95Ms)
 	}
@@ -110,7 +116,7 @@ func TestServiceRegressionThresholds(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := strings.Join(serviceRegressions("checkout", tc.baseline, tc.after), "; ")
+			got := strings.Join(fixedRegressions(tc.baseline, tc.after), "; ")
 			if tc.want == "" && got != "" {
 				t.Fatalf("got %q, want no regression", got)
 			}
@@ -135,7 +141,7 @@ func TestRegressionsNameTheThresholdCrossed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := serviceRegressions("checkout", tc.baseline, tc.after)
+			got := fixedRegressions(tc.baseline, tc.after)
 			if len(got) != 1 || got[0] != tc.want {
 				t.Fatalf("regressions = %q, want [%q]", got, tc.want)
 			}
@@ -177,7 +183,7 @@ func TestDecideVerdictPrecedence(t *testing.T) {
 
 func TestVerdictStringsAreTheEvalContract(t *testing.T) {
 	// last9-mcp-evals matches these strings exactly.
-	if VerdictRegressionLikely != "regression likely" || VerdictNoSignificantChange != "no significant change" || VerdictInsufficientData != "insufficient data" {
+	if VerdictRegressionLikely != "regression likely" || VerdictPossibleChange != "possible change" || VerdictNoSignificantChange != "no significant change" || VerdictInsufficientData != "insufficient data" {
 		t.Fatal("verdict strings changed")
 	}
 }
