@@ -76,6 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_logs` and `get_traces` now explicitly show compact JSON stage-array examples and reject SQL-like query construction in their tool descriptions, so description-only clients can form valid pipelines without fetching a reference manual (#309).
 
 ### Changed
+- Tool empty-result, validation, timeout/rate-limit, and truncation responses now include actionable retry guidance so agents can widen or narrow time windows, verify filters, discover names with `did_you_mean`, and avoid unchanged retries instead of stopping at generic empty/error messages (#320).
 - The `alerts` toolset now also serves `get_change_events`, the input `analyze_change_impact` takes as `change_event` (#352).
 - The `on-call-runbook` prompt's latency and errors branches, `investigate-latency-spike` and `diagnose-error-rate` now look for a change with `get_change_events` right after `get_service_performance_details` and, when one precedes the symptom, judge it with `analyze_change_impact` before deeper triage: `no significant change` rules the change out, `insufficient data` does not (#352).
 - Bumped 'modelcontextprotocol/go-sdk' 1.7.0 → 1.8.0 (#369).
