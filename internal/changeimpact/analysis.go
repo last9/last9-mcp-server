@@ -77,6 +77,8 @@ type SignalChange struct {
 	After    *float64 `json:"after"`
 	DeltaPct *float64 `json:"delta_pct"`
 	DeltaPP  *float64 `json:"delta_pp,omitempty"`
+	// BaselineBand is set on the signals judged against the windows before the change.
+	BaselineBand *BaselineBand `json:"baseline_band,omitempty"`
 }
 
 type ServiceSignals struct {
@@ -222,6 +224,8 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 	var (
 		baseline, after       map[string]apm.GoldenSignals
 		baselineErr, afterErr error
+		band                  []apm.GoldenSignalsWindow
+		bandErr               error
 		apmResult             apm.ServiceDeviations
 		apmErr                error
 		traceResult           traces.AttributeDeviations
@@ -239,6 +243,11 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 	wg.Go(func() {
 		after, afterErr = withTimeout(ctx, func(ctx context.Context) (map[string]apm.GoldenSignals, error) {
 			return apm.QueryGoldenSignals(ctx, client, cfg, apm.GoldenSignalsQuery{Services: scope, Env: req.Env, Window: w.after})
+		})
+	})
+	wg.Go(func() {
+		band, bandErr = withTimeout(ctx, func(ctx context.Context) ([]apm.GoldenSignalsWindow, error) {
+			return apm.QueryGoldenSignalsWindows(ctx, client, cfg, w.bandQuery(scope, req.Env))
 		})
 	})
 	wg.Go(func() {
@@ -262,8 +271,24 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 	})
 	wg.Wait()
 
+	if bandErr != nil {
+		report.Notes = append(report.Notes, fmt.Sprintf("baseline band unavailable (%v): error rate and p95 judged by the fixed thresholds", bandErr))
+	}
+	windowsOf := func(service string) serviceWindows {
+		sw := serviceWindows{baseline: baseline[service], after: after[service], bandMinutes: w.afterMinutes}
+		for _, b := range band {
+			sw.band = append(sw.band, b.Signals[service])
+		}
+		return sw
+	}
 	var regressions []Regression
+	var possible []string
 	var alertsNotFiring int
+	addFindings := func(s scopedService) {
+		found, moved := serviceFindings(s, windowsOf(s.name))
+		regressions = append(regressions, found...)
+		possible = append(possible, moved...)
+	}
 	goldenErr := firstErr(baselineErr, afterErr)
 	if goldenErr != nil {
 		report.GoldenSignals.Error = goldenErr.Error()
@@ -273,9 +298,9 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 			if i == 0 {
 				role = RoleChanged
 			}
-			report.GoldenSignals.Services = append(report.GoldenSignals.Services, compareSignals(service, role, baseline[service], after[service]))
+			report.GoldenSignals.Services = append(report.GoldenSignals.Services, compareSignals(service, role, windowsOf(service)))
 		}
-		regressions = append(regressions, serviceRegressions(scopedService{name: req.Service, role: RoleChanged, env: req.Env}, baseline[req.Service], after[req.Service])...)
+		addFindings(scopedService{name: req.Service, role: RoleChanged, env: req.Env})
 	}
 
 	if alertsErr != nil {
@@ -289,7 +314,7 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 
 	if goldenErr == nil {
 		for _, service := range scope[1:] {
-			regressions = append(regressions, serviceRegressions(scopedService{name: service, role: RoleDependent, env: req.Env}, baseline[service], after[service])...)
+			addFindings(scopedService{name: service, role: RoleDependent, env: req.Env})
 		}
 	}
 
@@ -314,7 +339,7 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 		report.Deviations.TraceAttributes.Warnings = traceResult.Warnings
 	}
 
-	in := verdictInputs{afterMinutes: w.afterMinutes, regressions: regressions, alertsNotFiring: alertsNotFiring, service: req.Service}
+	in := verdictInputs{afterMinutes: w.afterMinutes, regressions: regressions, possible: possible, alertsNotFiring: alertsNotFiring, service: req.Service}
 	// Trace deviations are left out: they explain a verdict and never trigger
 	// one, so losing them cannot hide a regression the verdict would find.
 	for _, s := range []struct {
@@ -380,14 +405,18 @@ func truncate[T any](items []T, limit int) ([]T, int) {
 	return items[:limit], len(items) - limit
 }
 
-func compareSignals(service, role string, baseline, after apm.GoldenSignals) ServiceSignals {
+func compareSignals(service, role string, w serviceWindows) ServiceSignals {
+	baseline, after := w.baseline, w.after
 	baseRPM, afterRPM := baseline.ThroughputRPM, after.ThroughputRPM
 	errorRate := change(baseline.ErrorRatePct, after.ErrorRatePct)
 	if baseline.ErrorRatePct != nil && after.ErrorRatePct != nil {
 		errorRate.DeltaPP = rounded(*after.ErrorRatePct - *baseline.ErrorRatePct)
 	}
+	errorRate.BaselineBand = newBand(errorRateValues(w.band), w.bandMinutes)
 	env := latencyEnv(baseline, after)
 	before, now := baseline.LatencyByEnv[env], after.LatencyByEnv[env]
+	p95 := change(before.P95Ms, now.P95Ms)
+	p95.BaselineBand = newBand(p95Values(w.band, env), w.bandMinutes)
 	return ServiceSignals{
 		Service:       service,
 		Role:          role,
@@ -395,7 +424,7 @@ func compareSignals(service, role string, baseline, after apm.GoldenSignals) Ser
 		ErrorRatePct:  errorRate,
 		LatencyEnv:    env,
 		LatencyP50Ms:  change(before.P50Ms, now.P50Ms),
-		LatencyP95Ms:  change(before.P95Ms, now.P95Ms),
+		LatencyP95Ms:  p95,
 		LatencyP99Ms:  change(before.P99Ms, now.P99Ms),
 	}
 }

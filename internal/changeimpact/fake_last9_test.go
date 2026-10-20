@@ -3,6 +3,7 @@ package changeimpact
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -28,10 +29,12 @@ type windowData struct {
 
 // fakeLast9 serves the calls analyze_change_impact makes. Prom instant queries
 // are told apart by metric name and by their evaluation timestamp: at or before
-// the change is the baseline window, later is the after window.
+// the change is the baseline window, later is the after window. Range queries
+// serve band, oldest first, one point per step from the range start.
 type fakeLast9 struct {
 	change          time.Time
 	baseline, after windowData
+	band            []windowData
 	callers         map[string]float64
 	alerts          []alerting.AlertRuleData
 	traceDeviations []traces.AttributeDeviation
@@ -56,10 +59,12 @@ func (f *fakeLast9) serve(t *testing.T) *httptest.Server {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		switch route {
-		case "prom":
+		case "prom", "prom_range":
 			var req struct {
 				Query     string `json:"query"`
 				Timestamp int64  `json:"timestamp"`
+				Window    int64  `json:"window"`
+				Step      int64  `json:"step"`
 			}
 			if err := json.Unmarshal(body, &req); err != nil {
 				t.Errorf("decode prom body: %v", err)
@@ -69,6 +74,10 @@ func (f *fakeLast9) serve(t *testing.T) *httptest.Server {
 					w.WriteHeader(status)
 					return
 				}
+			}
+			if route == "prom_range" {
+				_ = json.NewEncoder(w).Encode(f.promRangeAnswer(req.Query, req.Timestamp-req.Window, req.Step))
+				return
 			}
 			_ = json.NewEncoder(w).Encode(f.promAnswer(req.Query, req.Timestamp))
 		case "alerts":
@@ -91,6 +100,8 @@ func routeOf(path string) string {
 	switch {
 	case strings.HasSuffix(path, "/prom_query_instant"):
 		return "prom"
+	case strings.HasSuffix(path, "/prom_query"):
+		return "prom_range"
 	case strings.HasSuffix(path, "/alerts/monitor"):
 		return "alerts"
 	case strings.HasSuffix(path, "/attribute-deviations"):
@@ -99,23 +110,58 @@ func routeOf(path string) string {
 	return path
 }
 
+type fakeSample struct {
+	labels map[string]string
+	value  float64
+}
+
 func (f *fakeLast9) promAnswer(query string, ts int64) []map[string]any {
 	w := f.after
 	if ts <= f.change.Unix() {
 		w = f.baseline
 	}
-	sample := func(labels map[string]string, v float64) map[string]any {
-		return map[string]any{"metric": labels, "value": []any{float64(ts), strconv.FormatFloat(v, 'f', -1, 64)}}
+	out := []map[string]any{}
+	for _, s := range f.samples(query, w) {
+		out = append(out, map[string]any{"metric": s.labels, "value": promPoint(ts, s.value)})
+	}
+	return out
+}
+
+func (f *fakeLast9) promRangeAnswer(query string, start, step int64) []map[string]any {
+	series := map[string]map[string]any{}
+	var order []string
+	for i, w := range f.band {
+		ts := start + int64(i)*step
+		for _, s := range f.samples(query, w) {
+			key := fmt.Sprint(s.labels)
+			if series[key] == nil {
+				series[key] = map[string]any{"metric": s.labels, "values": [][]any{}}
+				order = append(order, key)
+			}
+			series[key]["values"] = append(series[key]["values"].([][]any), promPoint(ts, s.value))
+		}
 	}
 	out := []map[string]any{}
+	for _, key := range order {
+		out = append(out, series[key])
+	}
+	return out
+}
+
+func promPoint(ts int64, v float64) []any {
+	return []any{float64(ts), strconv.FormatFloat(v, 'f', -1, 64)}
+}
+
+func (f *fakeLast9) samples(query string, w windowData) []fakeSample {
+	var out []fakeSample
 	switch {
 	case strings.Contains(query, "trace_call_graph_count"):
 		for caller, rpm := range f.callers {
-			out = append(out, sample(map[string]string{"client": caller}, rpm))
+			out = append(out, fakeSample{map[string]string{"client": caller}, rpm})
 		}
 	case strings.Contains(query, "trace_service_response_time") && strings.Contains(query, "p99"):
 		for svc, v := range w.p95 {
-			out = append(out, sample(map[string]string{"service_name": svc, "env": "prod", "quantile": "p95"}, v))
+			out = append(out, fakeSample{map[string]string{"service_name": svc, "env": "prod", "quantile": "p95"}, v})
 		}
 	case strings.HasPrefix(query, "sum by (service_name, env)(sum_over_time(trace_endpoint_count{"):
 		values := w.requests
@@ -126,7 +172,7 @@ func (f *fakeLast9) promAnswer(query string, ts int64) []map[string]any {
 			values = nil
 		}
 		for svc, v := range values {
-			out = append(out, sample(map[string]string{"service_name": svc, "env": "prod"}, v))
+			out = append(out, fakeSample{map[string]string{"service_name": svc, "env": "prod"}, v})
 		}
 	}
 	return out

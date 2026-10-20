@@ -27,7 +27,7 @@ var descriptionBudgetOverrides = map[string]int{
 	"get_service_summary":             4600,
 	"get_alert_config":                4600,
 	"get_trace_attribute_deviations":  4400,
-	"analyze_change_impact":           3600,
+	"analyze_change_impact":           4500,
 	"get_logs":                        3400,
 	"create_dashboard":                3500,
 	"prometheus_range_query":          3000,

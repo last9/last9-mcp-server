@@ -10,9 +10,10 @@ import (
 	"last9-mcp/internal/apm"
 )
 
-// The three verdicts. last9-mcp-evals matches these strings exactly.
+// The four verdicts. last9-mcp-evals matches these strings exactly.
 const (
 	VerdictRegressionLikely    = "regression likely"
+	VerdictPossibleChange      = "possible change"
 	VerdictNoSignificantChange = "no significant change"
 	VerdictInsufficientData    = "insufficient data"
 )
@@ -27,10 +28,10 @@ const (
 	// Below 100, a p95 rests on fewer than 5 requests and one error is >1 pp.
 	minRequestsPerWindow = 100
 	// Error rate rising by at least this many percentage points is a regression.
+	// With a baseline band (band.go), it is the minimum move over the median.
 	errorRateIncreasePP = 1.0
-	// p95 latency rising by at least this percentage is a regression. 25%
-	// flagged ordinary p95 variation; #376 tracks judging it against the
-	// service's own variability instead.
+	// Without a baseline band, p95 latency rising by at least this percentage
+	// is a regression. 25% flagged ordinary p95 variation.
 	p95LatencyIncreasePct = 40.0
 	// Throughput (rpm) falling by at least this percentage is a regression:
 	// requests that stop arriving may be failing before the service sees them.
@@ -44,11 +45,15 @@ const (
 // explain a verdict from the report alone.
 func reportThresholds() map[string]float64 {
 	return map[string]float64{
-		"min_after_minutes":        minAfterMinutes,
-		"min_requests_per_window":  minRequestsPerWindow,
-		"error_rate_increase_pp":   errorRateIncreasePP,
-		"p95_latency_increase_pct": p95LatencyIncreasePct,
-		"throughput_drop_pct":      throughputDropPct,
+		"min_after_minutes":         minAfterMinutes,
+		"min_requests_per_window":   minRequestsPerWindow,
+		"error_rate_increase_pp":    errorRateIncreasePP,
+		"p95_latency_increase_pct":  p95LatencyIncreasePct,
+		"throughput_drop_pct":       throughputDropPct,
+		"baseline_band_windows":     bandWindows,
+		"baseline_band_min_windows": bandMinWindows,
+		"band_mad_multiplier":       bandMADMultiplier,
+		"band_p95_min_move_pct":     bandP95MinMovePct,
 	}
 }
 
@@ -57,26 +62,58 @@ const noChangeNote = "No significant change is a valid answer, not a failure: th
 // thresholdEpsilon absorbs float noise in deltas computed exactly at a threshold.
 const thresholdEpsilon = 1e-9
 
-// serviceRegressions lists the thresholds s crossed between the windows.
-func serviceRegressions(s scopedService, baseline, after apm.GoldenSignals) []Regression {
+// serviceWindows are one service's signals in the compared windows. band is
+// the bandWindows equal windows before the change, bandMinutes long each.
+type serviceWindows struct {
+	baseline, after apm.GoldenSignals
+	band            []apm.GoldenSignals
+	bandMinutes     int
+}
+
+// serviceFindings lists the thresholds s crossed between the windows, and the
+// moves past its baseline band that stay within its noise. A regression judged
+// by a band reports the band's median as its baseline.
+func serviceFindings(s scopedService, w serviceWindows) (found []Regression, possible []string) {
+	baseline, after := w.baseline, w.after
 	if baseline.RequestCount < minRequestsPerWindow {
-		return nil
+		return nil, nil
 	}
-	var found []Regression
-	if after.RequestCount >= minRequestsPerWindow && baseline.ErrorRatePct != nil && after.ErrorRatePct != nil {
-		if delta := *after.ErrorRatePct - *baseline.ErrorRatePct; delta >= errorRateIncreasePP-thresholdEpsilon {
-			found = append(found, s.regression(MetricErrorRatePct, *baseline.ErrorRatePct, *after.ErrorRatePct,
-				fmt.Sprintf("%s error rate rose %.2f pp (%.2f%% → %.2f%%) (threshold %g pp)", s.name, delta, *baseline.ErrorRatePct, *after.ErrorRatePct, errorRateIncreasePP)))
+	judgeBand := func(at scopedService, metric string, sig bandSignal, now float64) bool {
+		if !sig.band.usable() {
+			return false
+		}
+		switch call := sig.band.judge(now, sig.minMove); call {
+		case likelyRegression:
+			found = append(found, at.regression(metric, sig.band.Median, now, sig.finding(s.name, now, call)))
+		case possibleChange:
+			possible = append(possible, sig.finding(s.name, now, call))
+		}
+		return true
+	}
+
+	if after.RequestCount >= minRequestsPerWindow && after.ErrorRatePct != nil {
+		sig := bandSignal{name: "error rate", format: "%.2f%%", band: newBand(errorRateValues(w.band), w.bandMinutes), minMove: errorRateIncreasePP, minMoveText: fmt.Sprintf("+%g pp", errorRateIncreasePP)}
+		if !judgeBand(s, MetricErrorRatePct, sig, *after.ErrorRatePct) && baseline.ErrorRatePct != nil {
+			if delta := *after.ErrorRatePct - *baseline.ErrorRatePct; delta >= errorRateIncreasePP-thresholdEpsilon {
+				found = append(found, s.regression(MetricErrorRatePct, *baseline.ErrorRatePct, *after.ErrorRatePct,
+					fmt.Sprintf("%s error rate rose %.2f pp (%.2f%% → %.2f%%) (threshold %g pp)", s.name, delta, *baseline.ErrorRatePct, *after.ErrorRatePct, errorRateIncreasePP)))
+			}
 		}
 	}
 	env := latencyEnv(baseline, after)
 	before, now := baseline.LatencyByEnv[env].P95Ms, after.LatencyByEnv[env].P95Ms
-	judgeLatency := baseline.RequestsByEnv[env] >= minRequestsPerWindow && after.RequestsByEnv[env] >= minRequestsPerWindow
-	if pct := deltaPct(before, now); judgeLatency && pct != nil && *pct >= p95LatencyIncreasePct-thresholdEpsilon {
+	if baseline.RequestsByEnv[env] >= minRequestsPerWindow && after.RequestsByEnv[env] >= minRequestsPerWindow && now != nil {
 		inLatencyEnv := s
 		inLatencyEnv.env = env
-		found = append(found, inLatencyEnv.regression(MetricLatencyP95Ms, *before, *now,
-			fmt.Sprintf("%s p95 latency rose %.0f%% (%.1f ms → %.1f ms) in %s (threshold %g%%)", s.name, *pct, *before, *now, env, p95LatencyIncreasePct)))
+		band := newBand(p95Values(w.band, env), w.bandMinutes)
+		sig := bandSignal{name: "p95 latency", format: "%.1f ms", where: " in " + env, band: band, minMoveText: fmt.Sprintf("+%g%%", bandP95MinMovePct)}
+		if band != nil {
+			sig.minMove = band.Median * bandP95MinMovePct / 100
+		}
+		if pct := deltaPct(before, now); !judgeBand(inLatencyEnv, MetricLatencyP95Ms, sig, *now) && pct != nil && *pct >= p95LatencyIncreasePct-thresholdEpsilon {
+			found = append(found, inLatencyEnv.regression(MetricLatencyP95Ms, *before, *now,
+				fmt.Sprintf("%s p95 latency rose %.0f%% (%.1f ms → %.1f ms) in %s (threshold %g%%)", s.name, *pct, *before, *now, env, p95LatencyIncreasePct)))
+		}
 	}
 	// Windows can differ in length, so compare rates, not request counts. A
 	// collapse is what thins the after window, so only an empty one is skipped.
@@ -84,13 +121,15 @@ func serviceRegressions(s scopedService, baseline, after apm.GoldenSignals) []Re
 		found = append(found, s.regression(MetricThroughputRPM, baseline.ThroughputRPM, after.ThroughputRPM,
 			fmt.Sprintf("%s throughput fell %.0f%% (%.1f → %.1f rpm) (threshold %g%%)", s.name, -*pct, baseline.ThroughputRPM, after.ThroughputRPM, throughputDropPct)))
 	}
-	return found
+	return found, possible
 }
 
 type verdictInputs struct {
 	afterMinutes int
 	// regressions are the triggers found, most important first.
 	regressions []Regression
+	// possible are moves past a baseline band that stay within its noise.
+	possible []string
 	// alertsNotFiring counts alerts that started in the after window but were
 	// no longer firing at its end: context for reason, never a trigger.
 	alertsNotFiring int
@@ -130,6 +169,9 @@ func judge(in verdictInputs) (verdict, reason, note string) {
 			reason += "; " + strings.Join(in.unavailable, "; ")
 		}
 		return VerdictRegressionLikely, reason, ""
+	}
+	if len(in.possible) > 0 {
+		return VerdictPossibleChange, strings.Join(append(in.possible, in.unavailable...), "; "), ""
 	}
 	// Missing evidence can hide a regression, so it never clears the change.
 	if len(in.unavailable) > 0 {

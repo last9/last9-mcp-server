@@ -68,6 +68,19 @@ func QueryGoldenSignals(ctx context.Context, client *http.Client, cfg models.Con
 	if err != nil {
 		return nil, err
 	}
+	signals := goldenSignalsFromCounts(rows, windowMin)
+
+	latency, err := fetchPromInstantSeries(ctx, client, cfg, "golden signals latency", goldenLatencyQuery(matcher, windowMin), end)
+	if err != nil {
+		return nil, err
+	}
+	if err := addGoldenLatency(signals, latency); err != nil {
+		return nil, err
+	}
+	return signals, nil
+}
+
+func goldenSignalsFromCounts(rows map[string]*ServiceSummaryRow, windowMin int) map[string]GoldenSignals {
 	signals := make(map[string]GoldenSignals)
 	for _, row := range rows {
 		s := signals[row.Service]
@@ -87,11 +100,10 @@ func QueryGoldenSignals(ctx context.Context, client *http.Client, cfg models.Con
 		}
 		signals[service] = s
 	}
+	return signals
+}
 
-	latency, err := fetchPromInstantSeries(ctx, client, cfg, "golden signals latency", goldenLatencyQuery(matcher, windowMin), end)
-	if err != nil {
-		return nil, err
-	}
+func addGoldenLatency(signals map[string]GoldenSignals, latency apiPromInstantResp) error {
 	for _, r := range latency {
 		service := r.Metric["service_name"]
 		if service == "" {
@@ -99,7 +111,7 @@ func QueryGoldenSignals(ctx context.Context, client *http.Client, cfg models.Con
 		}
 		val, err := parsePromInstantValue(r.Value)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if math.IsNaN(val) || math.IsInf(val, 0) {
 			continue
@@ -121,7 +133,7 @@ func QueryGoldenSignals(ctx context.Context, client *http.Client, cfg models.Con
 		s.LatencyByEnv[env] = l
 		signals[service] = s
 	}
-	return signals, nil
+	return nil
 }
 
 // QueryDirectDependents returns the services calling q.Service, busiest first.

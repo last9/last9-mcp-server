@@ -9,6 +9,12 @@ import (
 
 func ptr(v float64) *float64 { return &v }
 
+// fixedFindings judges with no baseline band, by the fixed thresholds alone.
+func fixedFindings(s scopedService, baseline, after apm.GoldenSignals) []Regression {
+	regressions, _ := serviceFindings(s, serviceWindows{baseline: baseline, after: after})
+	return regressions
+}
+
 func apmEntry(service, signal, classification string, baseline, after float64) apm.LeaderboardEntry {
 	return apm.LeaderboardEntry{ServiceName: service, Env: "prod", Comparison: apm.SignalComparison{
 		Definition:     apm.SignalDefinition{Name: signal},
@@ -40,25 +46,25 @@ func TestRegressionsCarryValuesAndReasonText(t *testing.T) {
 	}{
 		{
 			name:        "error rate over every env",
-			got:         only(t, serviceRegressions(changed, signals(1000, 10, 100), signals(1000, 60, 100))),
+			got:         only(t, fixedFindings(changed, signals(1000, 10, 100), signals(1000, 60, 100))),
 			want:        Regression{Service: "checkout", Role: RoleChanged, Metric: MetricErrorRatePct, Baseline: ptr(1), After: ptr(6)},
 			wantTrigger: "checkout error rate rose 5.00 pp (1.00% → 6.00%) (threshold 1 pp)",
 		},
 		{
 			name:        "error rate in the requested env",
-			got:         only(t, serviceRegressions(inProd, signals(1000, 10, 100), signals(1000, 60, 100))),
+			got:         only(t, fixedFindings(inProd, signals(1000, 10, 100), signals(1000, 60, 100))),
 			want:        Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricErrorRatePct, Baseline: ptr(1), After: ptr(6)},
 			wantTrigger: "checkout error rate rose 5.00 pp (1.00% → 6.00%) (threshold 1 pp)",
 		},
 		{
 			name:        "p95 latency of a dependent, in its latency env",
-			got:         only(t, serviceRegressions(web, signals(1000, 0, 100), signals(1000, 0, 180))),
+			got:         only(t, fixedFindings(web, signals(1000, 0, 100), signals(1000, 0, 180))),
 			want:        Regression{Service: "web", Role: RoleDependent, Env: "prod", Metric: MetricLatencyP95Ms, Baseline: ptr(100), After: ptr(180)},
 			wantTrigger: "web p95 latency rose 80% (100.0 ms → 180.0 ms) in prod (threshold 40%)",
 		},
 		{
 			name:        "throughput",
-			got:         only(t, serviceRegressions(changed, signals(1200, 0, 100), signals(300, 0, 100))),
+			got:         only(t, fixedFindings(changed, signals(1200, 0, 100), signals(300, 0, 100))),
 			want:        Regression{Service: "checkout", Role: RoleChanged, Metric: MetricThroughputRPM, Baseline: ptr(20), After: ptr(5)},
 			wantTrigger: "checkout throughput fell 75% (20.0 → 5.0 rpm) (threshold 50%)",
 		},
