@@ -433,6 +433,50 @@ func TestDumpToolsHonorsToolsetsFilter(t *testing.T) {
 	}
 }
 
+func TestDumpToolsIncludesServedInstructions(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		filter toolsets.Filter
+	}{
+		{"all", toolFilter(t, "", false, "")},
+		{"logs", toolFilter(t, "logs", false, "")},
+		{"investigate", toolFilter(t, "investigate", false, "")},
+		{"alerts read-only", toolFilter(t, "alerts", true, "")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := dumpTools(&buf, tc.filter); err != nil {
+				t.Fatalf("dumpTools failed: %v", err)
+			}
+			var out struct {
+				Instructions string `json:"instructions"`
+			}
+			if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+				t.Fatalf("output is not valid JSON: %v", err)
+			}
+			want, _ := initializeWith(t, tc.filter)
+			if want == "" {
+				t.Fatal("initialize returned no instructions")
+			}
+			if out.Instructions != want {
+				t.Fatalf("dump instructions differ from initialize's:\n got: %q\nwant: %q", out.Instructions, want)
+			}
+		})
+	}
+}
+
+// Snapshot consumers read the tools array; instructions must not change it or
+// precede it.
+func TestDumpToolsKeepsToolsFirst(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	if !bytes.HasPrefix(buf.Bytes(), []byte("{\n  \"tools\": [")) {
+		t.Fatalf("dump must open with the tools array, got %q", buf.String()[:min(40, buf.Len())])
+	}
+}
+
 func TestDumpToolsLogsIncludesServiceProfile(t *testing.T) {
 	allowed, err := toolsets.Parse("logs")
 	if err != nil {
