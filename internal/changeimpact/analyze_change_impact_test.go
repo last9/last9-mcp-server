@@ -86,7 +86,7 @@ func TestNewFiringAlertAloneIsRegressionLikely(t *testing.T) {
 		change: change, baseline: flatWindow(), after: flatWindow(),
 		callers: map[string]float64{"web": 10},
 		alerts: []alerting.AlertRuleData{{
-			RuleID: "r2", RuleName: "web latency", Since: change.Add(5 * time.Minute).Unix(),
+			RuleID: "r2", RuleName: "web latency", State: "firing", Since: change.Add(5 * time.Minute).Unix(),
 			Alerts: []alerting.AlertInstance{{GroupLabels: map[string]interface{}{"service_name": "web"}}},
 		}},
 	}
@@ -208,7 +208,7 @@ func TestResultBoundsReportDroppedCounts(t *testing.T) {
 	for i := 12; i >= 1; i-- {
 		deviations = append(deviations, traces.AttributeDeviation{Attribute: "k8s.pod", Value: fmt.Sprintf("pod-%d", i), Rank: i, PercentagePointDelta: float64(i)})
 		alerts = append(alerts, alerting.AlertRuleData{RuleID: fmt.Sprintf("r%02d", i), AlertGroupName: "checkout",
-			Alerts: []alerting.AlertInstance{{Since: change.Add(time.Duration(i) * time.Minute).Unix()}}})
+			Alerts: []alerting.AlertInstance{{State: "firing", Since: change.Add(time.Duration(i) * time.Minute).Unix()}}})
 	}
 	f := &fakeLast9{change: change, baseline: baseline, after: after, callers: callers, traceDeviations: deviations, alerts: alerts}
 
@@ -232,7 +232,7 @@ func TestResultBoundsReportDroppedCounts(t *testing.T) {
 	if len(report.Alerts.Started) != sectionTopN || report.Alerts.Dropped != 2 || report.Alerts.Started[0].RuleID != "r01" {
 		t.Fatalf("alerts = %d, dropped %d, first %+v", len(report.Alerts.Started), report.Alerts.Dropped, report.Alerts.Started[0])
 	}
-	// The alerts section keeps 10, but every started alert is a regression.
+	// The alerts section keeps 10, but every firing alert is a regression.
 	if report.Verdict != VerdictRegressionLikely || len(report.Regressions) != 12 {
 		t.Fatalf("verdict = %q, regressions = %d, want all 12 alerts", report.Verdict, len(report.Regressions))
 	}

@@ -27,6 +27,9 @@ func TestRegressionMetricsAreTheAutoFileContract(t *testing.T) {
 
 type plantedRegression struct {
 	errorRate, p95, throughput, alert, dependentP95, apmP95 bool
+	// resolvedAlert fires after the change but is normal again by the end of
+	// the after window.
+	resolvedAlert bool
 	// everyEnv requests no env, so counts sum over every environment.
 	everyEnv bool
 }
@@ -55,10 +58,12 @@ func analyzePlanted(t *testing.T, p plantedRegression) Report {
 		after.p95["web"] = 200
 	}
 	if p.alert {
-		// Resolved by the end of the after window, as most deploy alerts are:
-		// the item says so, so a filer can skip it.
-		f.alerts = []alerting.AlertRuleData{{RuleID: "r1", RuleName: "checkout errors", AlertGroupName: "checkout",
-			Alerts: []alerting.AlertInstance{{Since: change.Add(10 * time.Minute).Unix(), State: "normal", GroupLabels: map[string]interface{}{"env": "prod"}}}}}
+		f.alerts = append(f.alerts, alerting.AlertRuleData{RuleID: "r1", RuleName: "checkout errors", AlertGroupName: "checkout",
+			Alerts: []alerting.AlertInstance{{Since: change.Add(10 * time.Minute).Unix(), State: "firing", GroupLabels: map[string]interface{}{"env": "prod"}}}})
+	}
+	if p.resolvedAlert {
+		f.alerts = append(f.alerts, alerting.AlertRuleData{RuleID: "r2", RuleName: "checkout latency", AlertGroupName: "checkout",
+			Alerts: []alerting.AlertInstance{{Since: change.Add(5 * time.Minute).Unix(), State: "normal", GroupLabels: map[string]interface{}{"env": "prod"}}}})
 	}
 	rollup := apmRollup{}
 	if p.apmP95 {
@@ -77,7 +82,7 @@ func TestRegressionsListEveryTriggerInReasonOrder(t *testing.T) {
 	errorRate := Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricErrorRatePct, Baseline: ptr(0.5), After: ptr(5)}
 	p95 := Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricLatencyP95Ms, Baseline: ptr(100), After: ptr(180)}
 	throughput := Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricThroughputRPM, Baseline: ptr(20), After: ptr(5)}
-	alert := Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricAlert, RuleID: "r1", State: "normal"}
+	alert := Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricAlert, RuleID: "r1", State: "firing"}
 	dependentP95 := Regression{Service: "web", Role: RoleDependent, Env: "prod", Metric: MetricLatencyP95Ms, Baseline: ptr(80), After: ptr(200)}
 	apmP95 := Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricAPMDeviation, Baseline: ptr(100), After: ptr(200)}
 	everyEnvErrorRate := errorRate
@@ -117,6 +122,50 @@ func TestRegressionsListEveryTriggerInReasonOrder(t *testing.T) {
 			}
 			if !strings.HasPrefix(report.Reason, report.Regressions[0].trigger) {
 				t.Fatalf("reason %q does not lead with the first regression %q", report.Reason, report.Regressions[0].trigger)
+			}
+		})
+	}
+}
+
+// An auto-filer acts on every regression, so an alert that already resolved
+// would file a ticket for something that recovered: only an alert still firing
+// at the end of the after window is one. A resolved one stays in
+// alerts.started, and reason counts it.
+func TestOnlyAlertsStillFiringAreRegressions(t *testing.T) {
+	firing := Regression{Service: "checkout", Role: RoleChanged, Env: "prod", Metric: MetricAlert, RuleID: "r1", State: "firing"}
+	const oneResolved = "1 alert that started after the change was no longer firing at the end of the after window"
+	cases := []struct {
+		name         string
+		planted      plantedRegression
+		verdict      string
+		want         []Regression
+		wantResolved bool
+	}{
+		{"resolved only", plantedRegression{resolvedAlert: true}, VerdictNoSignificantChange, nil, true},
+		{"firing", plantedRegression{alert: true}, VerdictRegressionLikely, []Regression{firing}, false},
+		{"firing and resolved", plantedRegression{alert: true, resolvedAlert: true}, VerdictRegressionLikely, []Regression{firing}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			report := analyzePlanted(t, tc.planted)
+			if report.Verdict != tc.verdict {
+				t.Fatalf("verdict = %q (%s), want %q", report.Verdict, report.Reason, tc.verdict)
+			}
+			if len(report.Regressions) != len(tc.want) {
+				t.Fatalf("regressions = %+v, want %d", report.Regressions, len(tc.want))
+			}
+			for i, want := range tc.want {
+				assertRegression(t, report.Regressions[i], want)
+			}
+			if got := strings.Contains(report.Reason, oneResolved); got != tc.wantResolved {
+				t.Errorf("reason %q: mentions the resolved alert = %v, want %v", report.Reason, got, tc.wantResolved)
+			}
+			started := len(tc.want)
+			if tc.wantResolved {
+				started++
+			}
+			if len(report.Alerts.Started) != started {
+				t.Errorf("alerts.started = %+v, want %d", report.Alerts.Started, started)
 			}
 		})
 	}
