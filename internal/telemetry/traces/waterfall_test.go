@@ -1,279 +1,261 @@
 package traces
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
-	"math"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
-	"time"
+
+	apitraces "last9-mcp/internal/last9api/traces"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-var waterfallTestObservedAt = time.Date(2026, 7, 15, 0, 1, 0, 0, time.UTC)
+const waterfallFixturePath = "../../../contracts/fixtures/evidence-trace-waterfall.json"
 
-// Deterministic input so tests never depend on the wall clock.
-func waterfallTestInput(spans []TraceDetailsSpan, limit int, selectedID string) waterfallBuildInput {
-	start := time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC)
-	end := start.Add(15 * time.Minute)
-	return waterfallBuildInput{
-		traceID:      "t",
-		spans:        spans,
-		fetchedSpans: len(spans),
-		limit:        limit,
-		selectedID:   selectedID,
-		requested:    evidenceWindow(start, end),
-		effective:    evidenceWindow(start, end),
-		observedAt:   waterfallTestObservedAt,
-	}
-}
-
-func hasWarning(warnings []string, substring string) bool {
-	for _, warning := range warnings {
-		if strings.Contains(warning, substring) {
-			return true
-		}
-	}
-	return false
-}
-
-func TestBuildTraceWaterfallOverlappingChildrenUseIntervalUnion(t *testing.T) {
-	spans := []TraceDetailsSpan{
-		{TraceID: "t", SpanID: "root", SpanName: "root", ServiceName: "api", Timestamp: "2026-07-15T00:00:00Z", Duration: 100_000_000},
-		{TraceID: "t", SpanID: "a", ParentSpanID: "root", SpanName: "a", ServiceName: "db", Timestamp: "2026-07-15T00:00:00.010Z", Duration: 50_000_000},
-		{TraceID: "t", SpanID: "b", ParentSpanID: "root", SpanName: "b", ServiceName: "cache", Timestamp: "2026-07-15T00:00:00.040Z", Duration: 50_000_000},
-	}
-	r := buildTraceWaterfall(waterfallTestInput(spans, 500, ""))
-	var root WaterfallSpan
-	for _, s := range r.Data.Spans {
-		if s.SpanID == "root" {
-			root = s
-		}
-	}
-	// Child union is [10,90] ms, not the naive 100 ms sum.
-	if math.Abs(root.SelfTimeMs-20) > 0.001 {
-		t.Fatalf("self_time_ms=%v", root.SelfTimeMs)
-	}
-	if r.Data.Summary.DurationMs != 100 || r.Data.Summary.MaxDepth != 1 {
-		t.Fatalf("summary=%+v", r.Data.Summary)
-	}
-	if r.Interpretation.EvidenceQuality != evidenceQualityHigh {
-		t.Fatalf("evidence_quality=%q", r.Interpretation.EvidenceQuality)
-	}
-	// Trace-scoped: the trace ID is the scope. No service or environment is invented.
-	if r.Request.Scope.TraceID != "t" || r.Request.Scope.Environment != "" {
-		t.Fatalf("scope=%+v", r.Request.Scope)
-	}
-}
-
-func TestBuildTraceWaterfallMissingParentAndSelectedDetails(t *testing.T) {
-	spans := []TraceDetailsSpan{{TraceID: "t", SpanID: "orphan", ParentSpanID: "missing", ServiceName: "api", SpanName: "work", Timestamp: "2026-07-15T00:00:00Z", Duration: 10_000_000, SpanAttributes: map[string]interface{}{"key": "value"}}}
-	r := buildTraceWaterfall(waterfallTestInput(spans, 1, "orphan"))
-	if len(r.Data.Summary.RootSpanIDs) != 1 || r.Data.Summary.RootSpanIDs[0] != "orphan" {
-		t.Fatalf("roots=%v", r.Data.Summary.RootSpanIDs)
-	}
-	if !hasWarning(r.Evidence.Warnings, "missing parent") {
-		t.Fatalf("warnings=%v", r.Evidence.Warnings)
-	}
-	if r.Data.SelectedSpan == nil || r.Data.SelectedSpan.SpanAttributes["key"] != "value" {
-		t.Fatalf("selected=%+v", r.Data.SelectedSpan)
-	}
-	if !r.Evidence.Truncated {
-		t.Fatal("limit-sized result must disclose possible truncation")
-	}
-}
-
-func TestUnionDurationDisjointAndOverlapping(t *testing.T) {
-	got := unionDuration([]spanInterval{{0, 10}, {5, 20}, {30, 40}})
-	if got != 30 {
-		t.Fatalf("union=%d", got)
-	}
-}
-
-func TestBuildTraceWaterfallDetectsCycle(t *testing.T) {
-	spans := []TraceDetailsSpan{
-		{TraceID: "t", SpanID: "a", ParentSpanID: "b", Timestamp: "2026-07-15T00:00:00Z", Duration: 10_000_000},
-		{TraceID: "t", SpanID: "b", ParentSpanID: "a", Timestamp: "2026-07-15T00:00:00Z", Duration: 10_000_000},
-	}
-	r := buildTraceWaterfall(waterfallTestInput(spans, 500, ""))
-	if !hasWarning(r.Evidence.Warnings, "cycle detected") {
-		t.Fatalf("warnings=%v", r.Evidence.Warnings)
-	}
-}
-
-// Judged pre-env-filter, or a filtered result claims completeness while parent
-// self-times absorb the missing children.
-func TestBuildTraceWaterfallTruncationJudgedBeforeEnvironmentFilter(t *testing.T) {
-	spans := []TraceDetailsSpan{
-		{TraceID: "t", SpanID: "root", ServiceName: "api", Timestamp: "2026-07-15T00:00:00Z", Duration: 100_000_000},
-	}
-	in := waterfallTestInput(spans, 2, "")
-	in.fetchedSpans = 2 // API returned exactly the limit; env filtering dropped one.
-	r := buildTraceWaterfall(in)
-	if !r.Evidence.Truncated {
-		t.Fatal("truncation must be judged against the pre-filter fetched count")
-	}
-	if !hasWarning(r.Evidence.Warnings, "self_time_ms may be overstated") {
-		t.Fatalf("truncated result must warn about inflated self time: %v", r.Evidence.Warnings)
-	}
-	if r.Interpretation.EvidenceQuality != evidenceQualityMedium {
-		t.Fatalf("evidence_quality=%q", r.Interpretation.EvidenceQuality)
-	}
-}
-
-// Instant 0 used to yield a bogus start_offset_ms, trace duration and self time.
-func TestBuildTraceWaterfallExcludesUnparseableTimestamps(t *testing.T) {
-	spans := []TraceDetailsSpan{
-		{TraceID: "t", SpanID: "ok", ServiceName: "api", Timestamp: "2026-07-15T00:00:00Z", Duration: 50_000_000},
-		{TraceID: "t", SpanID: "bad", ParentSpanID: "ok", ServiceName: "api", Timestamp: "not-a-timestamp", Duration: 100_000_000},
-	}
-	r := buildTraceWaterfall(waterfallTestInput(spans, 500, ""))
-	if len(r.Data.Spans) != 1 || r.Data.Spans[0].SpanID != "ok" {
-		t.Fatalf("spans=%+v", r.Data.Spans)
-	}
-	if r.Data.Summary.DurationMs != 50 {
-		t.Fatalf("duration_ms=%v, want the parseable span's duration", r.Data.Summary.DurationMs)
-	}
-	if r.Data.Spans[0].StartOffsetMs != 0 || r.Data.Spans[0].SelfTimeMs != 50 {
-		t.Fatalf("span=%+v", r.Data.Spans[0])
-	}
-	if !hasWarning(r.Evidence.Warnings, "unparseable timestamp") {
-		t.Fatalf("warnings=%v", r.Evidence.Warnings)
-	}
-	if !r.Evidence.Partial {
-		t.Fatal("dropping a span makes the waterfall partial")
-	}
-}
-
-// An epoch-zero timestamp is a legal instant and must not be mistaken for "unset".
-func TestBuildTraceWaterfallAcceptsEpochTimestamps(t *testing.T) {
-	spans := []TraceDetailsSpan{
-		{TraceID: "t", SpanID: "epoch", ServiceName: "api", Timestamp: "1970-01-01T00:00:00Z", Duration: 5_000_000},
-	}
-	r := buildTraceWaterfall(waterfallTestInput(spans, 500, ""))
-	if r.Data.Summary.DurationMs != 5 {
-		t.Fatalf("duration_ms=%v", r.Data.Summary.DurationMs)
-	}
-	if r.Data.Summary.Start != "1970-01-01T00:00:00Z" {
-		t.Fatalf("start=%q", r.Data.Summary.Start)
-	}
-}
-
-// Nothing found is not a high-confidence observation.
-func TestBuildTraceWaterfallEmptyResultIsInsufficientEvidence(t *testing.T) {
-	r := buildTraceWaterfall(waterfallTestInput(nil, 500, ""))
-	if r.Interpretation.EvidenceQuality != evidenceQualityInsufficient {
-		t.Fatalf("evidence_quality=%q", r.Interpretation.EvidenceQuality)
-	}
-	if r.Interpretation.ClaimType != traceWaterfallClaimObservation {
-		t.Fatalf("claim_type=%q", r.Interpretation.ClaimType)
-	}
-	if !hasWarning(r.Evidence.Warnings, "no spans found") {
-		t.Fatalf("warnings=%v", r.Evidence.Warnings)
-	}
-	if r.Data.Spans == nil || r.Data.Summary.RootSpanIDs == nil {
-		t.Fatal("empty collections must marshal as [] not null")
-	}
-}
-
-// Identical input must yield identical warnings, or content hashes are meaningless.
-func TestBuildTraceWaterfallWarningOrderIsDeterministic(t *testing.T) {
-	spans := []TraceDetailsSpan{
-		{TraceID: "t", SpanID: "a", ParentSpanID: "gone-1", ServiceName: "api", Timestamp: "2026-07-15T00:00:00Z", Duration: 10_000_000},
-		{TraceID: "t", SpanID: "b", ParentSpanID: "gone-2", ServiceName: "api", Timestamp: "2026-07-15T00:00:00Z", Duration: 10_000_000},
-		{TraceID: "t", SpanID: "c", ParentSpanID: "gone-3", ServiceName: "api", Timestamp: "2026-07-15T00:00:00Z", Duration: 10_000_000},
-		{TraceID: "t", SpanID: "d", ParentSpanID: "gone-4", ServiceName: "api", Timestamp: "2026-07-15T00:00:00Z", Duration: 10_000_000},
-		{TraceID: "t", SpanID: "", ServiceName: "api", Timestamp: "2026-07-15T00:00:00Z", Duration: 10_000_000},
-		{TraceID: "t", SpanID: "e", ServiceName: "api", Timestamp: "bad", Duration: 10_000_000},
-	}
-	want := buildTraceWaterfall(waterfallTestInput(spans, 500, "")).Evidence.Warnings
-	for i := 0; i < 50; i++ {
-		got := buildTraceWaterfall(waterfallTestInput(spans, 500, "")).Evidence.Warnings
-		if len(got) != len(want) {
-			t.Fatalf("warning count changed: %v vs %v", got, want)
-		}
-		for j := range got {
-			if got[j] != want[j] {
-				t.Fatalf("warning order changed on run %d: %v vs %v", i, got, want)
-			}
-		}
-	}
-}
-
-// Without the warning, a typo and a truncated-away span are indistinguishable.
-func TestBuildTraceWaterfallWarnsOnUnmatchedSelectedSpan(t *testing.T) {
-	spans := []TraceDetailsSpan{
-		{TraceID: "t", SpanID: "a", ServiceName: "api", Timestamp: "2026-07-15T00:00:00Z", Duration: 10_000_000},
-	}
-	r := buildTraceWaterfall(waterfallTestInput(spans, 500, "does-not-exist"))
-	if r.Data.SelectedSpan != nil {
-		t.Fatal("selected_span must stay absent when nothing matches")
-	}
-	if !hasWarning(r.Evidence.Warnings, "selected_span_id not found in returned spans: does-not-exist") {
-		t.Fatalf("warnings=%v", r.Evidence.Warnings)
-	}
-	// A request the tool could not fully answer is not high-quality evidence.
-	if r.Interpretation.EvidenceQuality == evidenceQualityHigh {
-		t.Fatalf("evidence_quality=%q", r.Interpretation.EvidenceQuality)
-	}
-
-	matched := buildTraceWaterfall(waterfallTestInput(spans, 500, "a"))
-	if matched.Data.SelectedSpan == nil {
-		t.Fatal("selected_span must be present when the ID matches")
-	}
-	if hasWarning(matched.Evidence.Warnings, "selected_span_id not found") {
-		t.Fatalf("warnings=%v", matched.Evidence.Warnings)
-	}
-}
-
-func TestBuildTraceWaterfallOmitsEmptySummaryBounds(t *testing.T) {
-	b, err := json.Marshal(buildTraceWaterfall(waterfallTestInput(nil, 500, "")))
+// The fixture is the trace service's golden waterfall response.
+func waterfallFixture(t *testing.T) []byte {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Clean(waterfallFixturePath))
 	if err != nil {
 		t.Fatal(err)
 	}
+	return b
+}
+
+// waterfallFixtureWith returns the fixture, compacted, with edit applied to its top level.
+func waterfallFixtureWith(t *testing.T, edit func(map[string]any)) []byte {
+	t.Helper()
 	var payload map[string]any
-	if err := json.Unmarshal(b, &payload); err != nil {
+	if err := json.Unmarshal(waterfallFixture(t), &payload); err != nil {
 		t.Fatal(err)
 	}
-	summary := payload["data"].(map[string]any)["summary"].(map[string]any)
-	for _, key := range []string{"start", "end"} {
-		if _, present := summary[key]; present {
-			t.Fatalf("summary.%s must be omitted when no bounds exist: %s", key, b)
+	edit(payload)
+	b, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+type waterfallCall struct {
+	result  *mcp.CallToolResult
+	err     error
+	request *http.Request
+}
+
+func callWaterfallHandler(t *testing.T, status int, body []byte, args GetTraceWaterfallArgs) waterfallCall {
+	t.Helper()
+	var call waterfallCall
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call.request = r
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+	handler := NewGetTraceWaterfallHandler(server.Client(), verifyTraceCfg(server.URL))
+	call.result, _, call.err = handler(context.Background(), &mcp.CallToolRequest{}, args)
+	return call
+}
+
+func waterfallText(t *testing.T, result *mcp.CallToolResult) string {
+	t.Helper()
+	if result == nil || len(result.Content) != 1 {
+		t.Fatalf("want one content item, got %+v", result)
+	}
+	text, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("unexpected content type %T", result.Content[0])
+	}
+	return text.Text
+}
+
+func TestGetTraceWaterfallRelaysBackendEvidenceVerbatim(t *testing.T) {
+	fixture := waterfallFixture(t)
+	call := callWaterfallHandler(t, http.StatusOK, fixture, GetTraceWaterfallArgs{
+		TraceID:        testValidTraceID,
+		Environment:    "production",
+		SelectedSpanID: testValidSpanID,
+		StartTimeISO:   "2026-07-15T08:30:00Z",
+		EndTimeISO:     "2026-07-15T08:45:00Z",
+		MaxSpans:       250,
+	})
+	if call.err != nil {
+		t.Fatal(call.err)
+	}
+	if got, want := waterfallText(t, call.result), string(bytes.TrimSpace(fixture)); got != want {
+		t.Fatalf("tool output differs from the backend body:\n%s", got)
+	}
+	if link, _ := call.result.Meta["reference_url"].(string); !strings.Contains(link, testValidTraceID) {
+		t.Fatalf("reference_url = %q, want a link to the trace", link)
+	}
+
+	r := call.request
+	if r.Method != http.MethodGet || r.URL.Path != "/cat/api/traces/v2/waterfall/"+testValidTraceID {
+		t.Fatalf("request = %s %s", r.Method, r.URL)
+	}
+	q := r.URL.Query()
+	for key, want := range map[string]string{
+		"start": "1784104200", "end": "1784105100", "max_spans": "250",
+		"selected_span_id": testValidSpanID, "environment": "production", "region": "ap-south-1",
+	} {
+		if q.Get(key) != want {
+			t.Errorf("query %s = %q, want %q", key, q.Get(key), want)
 		}
 	}
 }
 
-// An absent ServiceName is not a service.
-func TestBuildTraceWaterfallIgnoresEmptyServiceInCount(t *testing.T) {
-	spans := []TraceDetailsSpan{
-		{TraceID: "t", SpanID: "a", ServiceName: "api", Timestamp: "2026-07-15T00:00:00Z", Duration: 10_000_000},
-		{TraceID: "t", SpanID: "b", ServiceName: "", Timestamp: "2026-07-15T00:00:00Z", Duration: 10_000_000},
+func TestGetTraceWaterfallDefaultsMaxSpans(t *testing.T) {
+	call := callWaterfallHandler(t, http.StatusOK, waterfallFixture(t), GetTraceWaterfallArgs{TraceID: testValidTraceID})
+	if call.err != nil {
+		t.Fatal(call.err)
 	}
-	r := buildTraceWaterfall(waterfallTestInput(spans, 500, ""))
-	if r.Data.Summary.ServiceCount != 1 {
-		t.Fatalf("service_count=%d, want 1", r.Data.Summary.ServiceCount)
+	if got := call.request.URL.Query().Get("max_spans"); got != "500" {
+		t.Fatalf("max_spans = %q, want the 500 default", got)
 	}
 }
 
-func TestParseTraceTimestampNano(t *testing.T) {
-	cases := []struct {
-		in   string
-		want int64
-		ok   bool
+func TestGetTraceWaterfallRejectsOutOfRangeMaxSpansLocally(t *testing.T) {
+	for _, maxSpans := range []int{-1, 1001} {
+		server, n := countingTraceDetailsServer(t)
+		handler := NewGetTraceWaterfallHandler(server.Client(), verifyTraceCfg(server.URL))
+		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceWaterfallArgs{TraceID: testValidTraceID, MaxSpans: maxSpans})
+		if err == nil || !strings.Contains(err.Error(), "max_spans must be between 1 and 1000") {
+			t.Fatalf("max_spans=%d: got %v", maxSpans, err)
+		}
+		if n.Load() != 0 {
+			t.Fatalf("max_spans=%d made %d upstream requests, want 0", maxSpans, n.Load())
+		}
+	}
+}
+
+func assertWaterfallRefused(t *testing.T, err error, reason waterfallRefusal) {
+	t.Helper()
+	var refused *waterfallRefusedError
+	if !errors.As(err, &refused) || refused.Reason != reason {
+		t.Fatalf("want a %q refusal, got %#v (%v)", reason, err, err)
+	}
+}
+
+func TestGetTraceWaterfallFailsClosedOnSanitizerBlock(t *testing.T) {
+	cases := map[string]struct {
+		edit   func(map[string]any)
+		reason waterfallRefusal
 	}{
-		{"2026-07-15T00:00:00Z", time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC).UnixNano(), true},
-		{"2026-07-15T00:00:00.123456789Z", time.Date(2026, 7, 15, 0, 0, 0, 123456789, time.UTC).UnixNano(), true},
-		{"2026-07-15 00:00:00.123456789", time.Date(2026, 7, 15, 0, 0, 0, 123456789, time.UTC).UnixNano(), true},
-		{"2026-07-15T00:00:00.123456789", time.Date(2026, 7, 15, 0, 0, 0, 123456789, time.UTC).UnixNano(), true},
-		{"", 0, false},
-		{"not-a-timestamp", 0, false},
+		"missing":         {func(p map[string]any) { delete(p, "sanitizer") }, refusalSanitizerMissing},
+		"null":            {func(p map[string]any) { p["sanitizer"] = nil }, refusalSanitizerMissing},
+		"not an object":   {func(p map[string]any) { p["sanitizer"] = "trace-evidence-sanitizer/v1" }, refusalSanitizerMissing},
+		"version absent":  {func(p map[string]any) { delete(p["sanitizer"].(map[string]any), "version") }, refusalSanitizerVersion},
+		"version blank":   {func(p map[string]any) { p["sanitizer"].(map[string]any)["version"] = "" }, refusalSanitizerVersion},
+		"version v2":      {func(p map[string]any) { p["sanitizer"].(map[string]any)["version"] = "trace-evidence-sanitizer/v2" }, refusalSanitizerVersion},
+		"version upper":   {func(p map[string]any) { p["sanitizer"].(map[string]any)["version"] = "TRACE-EVIDENCE-SANITIZER/V1" }, refusalSanitizerVersion},
+		"version padded":  {func(p map[string]any) { p["sanitizer"].(map[string]any)["version"] = " trace-evidence-sanitizer/v1" }, refusalSanitizerVersion},
+		"version numeric": {func(p map[string]any) { p["sanitizer"].(map[string]any)["version"] = 1 }, refusalSanitizerVersion},
 	}
-	for _, c := range cases {
-		got, ok := parseTraceTimestampNano(c.in)
-		if ok != c.ok || got != c.want {
-			t.Fatalf("parseTraceTimestampNano(%q)=(%d,%v), want (%d,%v)", c.in, got, ok, c.want, c.ok)
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			call := callWaterfallHandler(t, http.StatusOK, waterfallFixtureWith(t, tc.edit), GetTraceWaterfallArgs{TraceID: testValidTraceID})
+			if call.result != nil {
+				t.Fatalf("unsanitized evidence reached the model: %s", waterfallText(t, call.result))
+			}
+			assertWaterfallRefused(t, call.err, tc.reason)
+		})
+	}
+}
+
+// Go's decoder matches keys case-insensitively and keeps the last duplicate; the
+// check must read the exact key a client reads.
+func TestGetTraceWaterfallReadsTheExactSanitizerKey(t *testing.T) {
+	body := waterfallFixtureWith(t, func(p map[string]any) {
+		p["Sanitizer"] = p["sanitizer"]
+		delete(p, "sanitizer")
+	})
+	call := callWaterfallHandler(t, http.StatusOK, body, GetTraceWaterfallArgs{TraceID: testValidTraceID})
+	assertWaterfallRefused(t, call.err, refusalSanitizerMissing)
+}
+
+func TestGetTraceWaterfallRejectsNonConformingEvidence(t *testing.T) {
+	cases := map[string][]byte{
+		"empty body":             nil,
+		"not an object":          []byte(`[]`),
+		"wrong contract version": waterfallFixtureWith(t, func(p map[string]any) { p["contract_version"] = "investigation-evidence/v2" }),
+		"wrong analysis version": waterfallFixtureWith(t, func(p map[string]any) { p["analysis_version"] = "trace-attribute-deviations/v1" }),
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			call := callWaterfallHandler(t, http.StatusOK, body, GetTraceWaterfallArgs{TraceID: testValidTraceID})
+			if call.err == nil {
+				t.Fatalf("non-conforming evidence was relayed: %s", waterfallText(t, call.result))
+			}
+			if !strings.Contains(call.err.Error(), "invalid response") {
+				t.Fatalf("got %v", call.err)
+			}
+		})
+	}
+}
+
+// paddedWaterfall returns a valid fixture body of exactly size bytes.
+func paddedWaterfall(t *testing.T, size int) []byte {
+	t.Helper()
+	base := waterfallFixtureWith(t, func(p map[string]any) { p["padding"] = "" })
+	pad := size - len(base)
+	if pad < 0 {
+		t.Fatalf("fixture is already %d bytes", len(base))
+	}
+	return waterfallFixtureWith(t, func(p map[string]any) { p["padding"] = strings.Repeat("a", pad) })
+}
+
+func TestGetTraceWaterfallOutputCap(t *testing.T) {
+	t.Run("at cap", func(t *testing.T) {
+		body := paddedWaterfall(t, apitraces.MaxWaterfallBytes)
+		call := callWaterfallHandler(t, http.StatusOK, body, GetTraceWaterfallArgs{TraceID: testValidTraceID})
+		if call.err != nil {
+			t.Fatal(call.err)
 		}
+		if got := waterfallText(t, call.result); len(got) != apitraces.MaxWaterfallBytes {
+			t.Fatalf("relayed %d bytes, want %d", len(got), apitraces.MaxWaterfallBytes)
+		}
+	})
+	t.Run("cap+1", func(t *testing.T) {
+		body := paddedWaterfall(t, apitraces.MaxWaterfallBytes+1)
+		call := callWaterfallHandler(t, http.StatusOK, body, GetTraceWaterfallArgs{TraceID: testValidTraceID})
+		assertWaterfallRefused(t, call.err, refusalTooLarge)
+		if !strings.Contains(call.err.Error(), "max_spans") {
+			t.Fatalf("an oversized waterfall must say how to shrink it: %v", call.err)
+		}
+	})
+}
+
+// The route is only registered once the trace service enables it, so a 404 is a
+// missing capability, not a missing trace.
+func TestGetTraceWaterfallRouteNotFoundIsNotTraceNotFound(t *testing.T) {
+	call := callWaterfallHandler(t, http.StatusNotFound, []byte(`404 page not found`), GetTraceWaterfallArgs{TraceID: testValidTraceID})
+	if call.err == nil || strings.Contains(call.err.Error(), "No trace found") || !strings.Contains(call.err.Error(), "unavailable or disabled") {
+		t.Fatalf("got %v", call.err)
 	}
-	// Nanosecond precision must survive; the seconds helper delegates to the same parser.
-	if got := parseTimestampToUnix("2026-07-15 00:00:00.123456789"); got != time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC).Unix() {
-		t.Fatalf("parseTimestampToUnix=%d", got)
+}
+
+func TestGetTraceWaterfallTransportErrorHidesTheURL(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	server.Close()
+	handler := NewGetTraceWaterfallHandler(server.Client(), verifyTraceCfg(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceWaterfallArgs{TraceID: testValidTraceID})
+	if err == nil || !strings.Contains(err.Error(), "could not be reached") || strings.Contains(err.Error(), server.URL) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestGetTraceWaterfallRelaysSanitizedValidationErrors(t *testing.T) {
+	body := []byte(`{"code":"evidence_too_large","detail":"lower max_spans; token=s3cr3t"}`)
+	call := callWaterfallHandler(t, http.StatusUnprocessableEntity, body, GetTraceWaterfallArgs{TraceID: testValidTraceID})
+	if call.err == nil || !strings.Contains(call.err.Error(), "evidence_too_large") || strings.Contains(call.err.Error(), "s3cr3t") {
+		t.Fatalf("got %v", call.err)
 	}
 }

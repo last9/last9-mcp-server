@@ -741,9 +741,9 @@ Requires the companion backend capability to be enabled.
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `lookback_minutes` (integer, optional): Default: 4320 (72 hours).
 - `selected_span_id` (string, optional): Returns attributes, events, and links for that span only.
-- `max_spans` (integer, optional): Default: 500. Maximum: 1000.
+- `max_spans` (integer, optional): Default: 500. Maximum: 1000; the org's redaction policy may cap it lower.
 
-Returns an `investigation-evidence/v1` envelope; the waterfall is under `data`.
+Returns the trace service's `investigation-evidence/v1` envelope unchanged; the waterfall is under `data`. The service builds the waterfall and redacts values under a per-org policy (credentials, query literals, URLs, emails, IPs, user identifiers) before it leaves the backend: `sanitizer` names the policy that ran and `evidence.sanitization` counts what it redacted or truncated. If something needed is redacted, ask an org admin to adjust the policy rather than working around it. The tool refuses a response with no `sanitizer` block, a `sanitizer.version` other than `trace-evidence-sanitizer/v1`, or a body over 512 KiB (lower `max_spans`). Requires the companion backend capability to be enabled.
 
 ### get_change_events
 
