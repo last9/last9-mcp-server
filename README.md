@@ -313,6 +313,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_alerts`** — Currently firing alerts within a time window
 - **`get_alert_rule_state`** — Historical firing state (1/0) per alert rule over a time range, grouped by `rule_id`. Filterable by alert group, rule name, label filters, and state.
+- **`get_alert_hygiene`** — Noisy, flapping, stale and unrouted alert rules over 7 or 30 days, ranked, each with the numbers behind the verdict and a suggested fix. Read-only.
 - **`get_notification_channels`** — Configured notification channels (Slack, PagerDuty, email, etc.). `scope=channels` lists the channels themselves (ids for attaching); the default `attached` lists per-alert-group attachments
 - **`recommend_alert_config`** — Read-only design guidance (lifecycle, validation gates, responder context) before creating an alert rule
 - **`validate_alert_expression`** — Dry-run an alert expression against an alert group's KPIs without saving anything
@@ -803,6 +804,17 @@ Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `en
 - `state` (string, optional): Filter by state (e.g. `firing`).
 
 Returns a JSON map of `rule_id -> [{timestamp, is_firing}]`. A timestamp at which a rule is absent from the upstream response is reported as `is_firing=0` — this means "not observed as firing", not a confirmed normal state.
+
+### get_alert_hygiene
+
+Read-only audit of enabled alert rules. It never changes anything: each suggested fix is a proposal, applied only once the user explicitly confirms it, through `update_alert` (tuning), `patch_alert` (`is_disabled`), `delete_alert` or `attach_notification_channel` when those are served.
+
+- `window` (string, optional): `7d` or `30d`. Default: `7d`.
+- `limit` (integer, optional): Maximum flagged rules to return, worst first. Default: 20. Range: 1–100.
+
+Categories (a rule may have several): **noisy** (≥ 5 fires/day with < 20% acked, or muted ≥ 25% of the observed span; with null `ack`, not recorded yet, it is judged on fire rate alone and the reason says so), **flapping** (> 4 flaps/day), **stale** (no firing in the window; a never-fired rule, with null `last_fired_at` and zero `fire_count`, counts only when its history covers the whole window), **unrouted** (alert group has no notification channel). Alert history is kept about 21 days, so `from` is where the covered history starts: `covered_days` is its length and `partial_window` is true when it is shorter than `window` (a `30d` window covers about 21 days). Rates use the span from `from`, or from `history_since` if later, at least one day. A null field means the data was not recorded, never zero or false: null `muted_seconds` skips noisy-by-mute, null `routed` skips unrouted, and null `history_since` skips never-fired stale while rates use the full window; other categories still apply. `null_fields` counts enabled rules per null field (`ack`, `muted_seconds`, `routed`, `history_since`). Fixes: raise `bad_minutes` (the N in `count_true(result) >= N`) or lengthen `eval_window` (at most 60 minutes); for noisy static thresholds, move the threshold in `condition` (`expr > 100`) or switch the expression to `adaptive_std_cmp(metric, sensitivity, window)`; attach a notification channel; disable or delete stale rules.
+
+Returns compact JSON `{window, from, to, covered_days, partial_window, rules_evaluated, flagged_rules, truncated, omitted_for_size, null_fields, rules}`, at most 32 KB: `truncated` is true when flagged rules exceed `limit` or that cap, and `omitted_for_size` counts the rules within `limit` cut for size (the worst rule is always kept); each rule has `findings` (`category`, `reason`, `suggested_fix`, optional `alternative_fix`) and the raw `stats`.
 
 ### get_notification_channels
 

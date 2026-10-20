@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -613,6 +614,64 @@ func TestDumpToolsLogPatternToolsServeTheirExplicitSchemas(t *testing.T) {
 	}
 }
 
+// The alert write tools are where a confirmed fix is applied, so the
+// description names them when served and never under --read-only.
+func TestDumpToolsAlertsServesReadOnlyAlertHygiene(t *testing.T) {
+	allowed, err := toolsets.Parse("alerts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixTools := []string{"`update_alert`", "`patch_alert`", "`delete_alert`", "`attach_notification_channel`"}
+	for _, readOnly := range []bool{false, true} {
+		t.Run("read-only="+strconv.FormatBool(readOnly), func(t *testing.T) {
+			description := servedAlertHygieneDescription(t, toolsets.Filter{Tools: allowed, ReadOnly: readOnly})
+			for _, want := range []string{"never changes anything", "explicitly confirms", "proposal", "`7d` or `30d`", "count_true(result) >= N", "adaptive_std_cmp", "fire rate alone", "`null_fields`", "`partial_window`", "`omitted_for_size`", "`get_alert_rule_state`"} {
+				if !strings.Contains(description, want) {
+					t.Errorf("served get_alert_hygiene description missing %q", want)
+				}
+			}
+			if strings.Contains(description, "alerting UI") {
+				t.Error("get_alert_hygiene description still sends fixes to the UI only")
+			}
+			for _, tool := range fixTools {
+				if got := strings.Contains(description, tool); got == readOnly {
+					t.Errorf("description names %s = %v under read-only=%v", tool, got, readOnly)
+				}
+			}
+		})
+	}
+}
+
+func servedAlertHygieneDescription(t *testing.T, filter toolsets.Filter) string {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := dumpTools(&buf, filter); err != nil {
+		t.Fatalf("dumpTools failed: %v", err)
+	}
+	var out struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			Annotations struct {
+				ReadOnlyHint bool `json:"readOnlyHint"`
+			} `json:"annotations"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	for _, tool := range out.Tools {
+		if tool.Name == "get_alert_hygiene" {
+			if !tool.Annotations.ReadOnlyHint {
+				t.Error("get_alert_hygiene must be served read-only")
+			}
+			return tool.Description
+		}
+	}
+	t.Fatal("alerts dump missing get_alert_hygiene")
+	return ""
+}
+
 func TestDumpToolsDataToolsetsIncludeNameDiscovery(t *testing.T) {
 	for _, spec := range []string{"traces", "metrics"} {
 		allowed, err := toolsets.Parse(spec)
@@ -651,7 +710,7 @@ func TestDumpToolsInvestigate(t *testing.T) {
 			t.Errorf("investigate dump missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard"} {
+	for _, deny := range []string{"get_alerts", "get_alert_groups", "get_alert_hygiene", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard"} {
 		if byName[deny] {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}

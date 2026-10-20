@@ -525,6 +525,28 @@ func TestServerInstructionsChangesLineKeepsItsWording(t *testing.T) {
 	}
 }
 
+// Rewording this line ("..., rule state and noisy, flapping, stale or unrouted
+// rules") dropped trace_query eval tq-017 from 30/30 to 10/30 on absolute time
+// bounds, so get_alert_hygiene only joins main's wording.
+func TestServerInstructionsAlertsLineKeepsItsWording(t *testing.T) {
+	tests := []struct {
+		name  string
+		tools []string
+		want  string
+	}{
+		{name: "firing alerts and rule state", tools: []string{"get_alerts", "get_alert_rule_state"}, want: "- Firing alerts and rule state: `get_alerts`, `get_alert_rule_state`."},
+		{name: "with get_alert_hygiene", tools: []string{"get_alerts", "get_alert_rule_state", "get_alert_hygiene"}, want: "- Firing alerts and rule state: `get_alerts`, `get_alert_rule_state`, `get_alert_hygiene`."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			if got := lineNaming(instructions, "get_alerts"); got != tt.want {
+				t.Errorf("alerts line = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // Rewording this line ("Metric and label names, metric liveness: ...") dropped
 // trace_query eval tq-017 from 30/30 to 21/30 and 14/30, so get_metric_status
 // only joins main's wording.

@@ -76,6 +76,7 @@ var named = map[string][]string{
 		"describe_alert_chart",
 		"create_alert_from_chart",
 		"get_alert_rule_state",
+		"get_alert_hygiene",
 		"get_change_events",
 		"analyze_change_impact",
 		"get_notification_channels",

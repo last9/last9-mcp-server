@@ -510,6 +510,12 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Description: prompts.GetAlertRuleStateDescription,
 	}, alerting.NewAlertRuleStateHandler(client, cfg)))
 
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_alert_hygiene",
+		Annotations: readOnlyTool("Get Alert Hygiene"),
+		Description: prompts.GetAlertHygieneDescription,
+	}, alerting.NewGetAlertHygieneHandler(client, cfg)))
+
 	// Register get traces tool (enhanced with trace query instructions)
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "get_traces",
