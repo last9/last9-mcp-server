@@ -18,12 +18,12 @@ func runGetChannels(s *channelServer, scope string) (string, bool, error) {
 func TestGetNotificationChannelsScopeChannels(t *testing.T) {
 	s := newChannelServer(t, func(*http.Request) (int, string) {
 		return 200, `[{"id":4,"name":"oncall","type":"slack","send_resolved":true,"destination":"` + channelSecret + `"},
-{"id":5,"name":"mail","type":"email","send_resolved":null},
+{"id":5,"name":"mail","type":"email","send_resolved":null,"created_via":"last9-mcp"},
 {"id":6,"name":"attached","type":"slack","service_fqid":"g1","severity":"breach"}]`
 	})
 	text, isErr, err := runGetChannels(s, " Channels ")
 	assertNoSecret(t, text, err)
-	want := "Found 2 notification channel(s):\nid\tname\ttype\tsend_resolved\n4\toncall\tslack\ttrue\n5\tmail\temail\tnull"
+	want := "Found 2 notification channel(s):\nid\tname\ttype\tsend_resolved\tcreated_via\n4\toncall\tslack\ttrue\t-\n5\tmail\temail\tnull\tlast9-mcp"
 	if err != nil || isErr || text != want || len(s.calls) != 1 || s.calls[0].uri != "/notification_settings/" {
 		t.Fatalf("text=%q isErr=%v err=%v calls=%+v", text, isErr, err, s.calls)
 	}
@@ -45,5 +45,20 @@ func TestGetNotificationChannelsInvalidScope(t *testing.T) {
 	text, isErr, err := runGetChannels(s, "all")
 	if err != nil || !isErr || !strings.Contains(text, "scope must be") || len(s.calls) != 0 {
 		t.Fatalf("text=%q isErr=%v err=%v", text, isErr, err)
+	}
+}
+
+func TestGetNotificationChannelsScopeChannelsNeverRelaysUpstreamBody(t *testing.T) {
+	for status, want := range map[int]string{
+		http.StatusBadRequest:          "the API returned HTTP 400",
+		http.StatusForbidden:           "listing channels requires a token that can read notification channels",
+		http.StatusInternalServerError: "the API returned HTTP 500",
+	} {
+		s := newChannelServer(t, func(*http.Request) (int, string) { return status, `{"error":"bad destination ` + channelSecret + `"}` })
+		text, isErr, err := runGetChannels(s, "channels")
+		assertNoSecret(t, text, err)
+		if err != nil || !isErr || text != want {
+			t.Errorf("status %d: text=%q isErr=%v err=%v", status, text, isErr, err)
+		}
 	}
 }

@@ -20,7 +20,16 @@ type RecommendAlertConfigArgs struct {
 	Severity    string `json:"severity,omitempty" jsonschema:"Desired severity: breach or threat (default: breach)"`
 }
 
-func NewRecommendAlertConfigHandler(_ *http.Client, _ models.Config) func(context.Context, *mcp.CallToolRequest, RecommendAlertConfigArgs) (*mcp.CallToolResult, any, error) {
+func NewRecommendAlertConfigHandler(_ *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, RecommendAlertConfigArgs) (*mcp.CallToolResult, any, error) {
+	// The lifecycle names each write tool only when it is served; otherwise it
+	// names the operation, so a read-only server still explains the lifecycle.
+	tool := func(name, operation string) string {
+		if cfg.ToolFilter.ServesWrite(name) {
+			return name
+		}
+		return operation
+	}
+	create, patch, update := tool("create_alert", "the API"), tool("patch_alert", "a PATCH"), tool("update_alert", "a full update")
 	return func(_ context.Context, _ *mcp.CallToolRequest, args RecommendAlertConfigArgs) (*mcp.CallToolResult, any, error) {
 		if strings.TrimSpace(args.Signal) == "" {
 			return utils.ToolErrorResult("signal is required"), nil, nil
@@ -59,10 +68,10 @@ Strategy: %s
 
 Lifecycle:
 1. Discover and verify the alert group, KPI/query, unit, labels, and alert-group notification routing.
-2. Create the rule (create_alert always creates it disabled, is_disabled=true). The backend derives the algorithm from expression; clients must not send algorithm.
+2. Create the rule (%s always creates it disabled, is_disabled=true). The backend derives the algorithm from expression; clients must not send algorithm.
 3. Observe or replay representative traffic, checking no-data behavior, cardinality, grouped notifications, and recovery.
-4. Promote it with patch_alert by setting is_disabled=false; PATCH preserves the rule ID.
-5. Tune evaluation configuration with update_alert, use patch_alert for mute/pause/metadata, and delete only after explicit confirmation.
+4. Promote it with %s by setting is_disabled=false; PATCH preserves the rule ID.
+5. Tune evaluation configuration with %s, use %s for mute/pause/metadata, and delete only after explicit confirmation.
 
 Required responder context under properties:
 - description: symptom, impact, and intended responder action
@@ -72,7 +81,8 @@ Required responder context under properties:
 Notification routing is configured on the alert group, not inside the alert rule.
 
 Quality gates: actionable and user-impacting; resistant to low-volume/no-data noise; bounded cardinality; grouped where appropriate; recovery notifications enabled; linked dashboard/runbook; distinct warning/page severities; threshold or sensitivity justified by evidence.`,
-			ruleType, args.Signal, args.Objective, defaultText(args.Environment, "not supplied — inspect before promotion"), severity, strategy)
+			ruleType, args.Signal, args.Objective, defaultText(args.Environment, "not supplied — inspect before promotion"), severity, strategy,
+			create, patch, update, patch)
 
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil, nil
 	}
