@@ -9,7 +9,7 @@
 {{- $serviceProfile := tools "get_service_profile" -}}
 {{- $health := tools "get_service_summary" "get_service_performance_details" "get_service_operations_summary" "get_service_dependency_graph" -}}
 {{- $alerts := tools "get_alerts" "get_alert_rule_state" -}}
-{{- $changes := tools "get_change_events" -}}
+{{- $changes := tools "get_change_events" "analyze_change_impact" -}}
 {{- $deviations := tools "get_apm_service_deviations" "get_trace_attribute_deviations" -}}
 {{- $scoped := tools "get_service_logs" "get_log_patterns" "get_emerging_log_patterns" "get_service_traces" "get_exceptions" "get_trace_waterfall" -}}
 {{- $databases := tools "get_databases" "get_database_slow_queries" "get_database_queries" "get_database_server_metrics" -}}

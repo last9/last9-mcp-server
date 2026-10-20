@@ -8,4 +8,7 @@ Remapping transforms telemetry at ingestion before storage. Use `rule_type` to s
 
 Returns the API response as JSON.
 
-Call this before `add_remapping_rule` to check existing rule names and avoid duplicates. For map rules, note there is typically one rule per `target_attribute` (the UI shows them grouped, but the API stores them separately).
+For map rules, note there is typically one rule per `target_attribute` (the UI shows them grouped, but the API stores them separately).
+
+## Pairs well with
+- `add_remapping_rule` (call this first to check existing rule names and avoid duplicates)

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"testing"
+
+	"last9-mcp/internal/toolsets"
 )
 
 // writeTools is every tool that changes Last9 state. A new write tool must be
@@ -31,7 +33,7 @@ var writeTools = map[string]struct{ destructive, idempotent bool }{
 
 func TestDumpToolsServesAnnotations(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dumpTools(&buf, nil); err != nil {
+	if err := dumpTools(&buf, toolsets.Filter{}); err != nil {
 		t.Fatalf("dumpTools failed: %v", err)
 	}
 	var out struct {
