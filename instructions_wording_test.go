@@ -42,6 +42,7 @@ var pinnedInstructionLines = []string{
 	"- Profiles: <tools>.",
 	"## Raw queries are the last resort",
 	"Use <tools> only when no dedicated tool answers the question, and build each query from discovered names.",
+	"Put the time window in `start_time_iso`/`end_time_iso` (or `lookback_minutes`), never as `Timestamp` filters in the pipeline.",
 	"## Reference manuals",
 	"Read these resources before writing a non-trivial query. After a parse stage, reference extracted fields as attributes['name'], never as a bare name:",
 	"- `get_logs` pipelines: `last9://reference/logjson`",
