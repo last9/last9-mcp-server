@@ -43,6 +43,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_log_attributes_for_pipeline.md":   prompts.GetLogAttributesForPipelineDescription,
 	"get_log_patterns.md":                  prompts.GetLogPatternsDescription,
 	"get_logs_base.md":                     prompts.GetLogsDescription,
+	"get_metric_status.md":                 prompts.GetMetricStatusDescription,
 	"get_notification_channels.md":         prompts.GetNotificationChannelsDescription,
 	"get_profile_services.md":              prompts.GetProfileServicesDescription,
 	"get_profile_summary.md":               prompts.GetProfileSummaryDescription,

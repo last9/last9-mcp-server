@@ -283,6 +283,12 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Description: prompts.ListDatasourcesDescription,
 	}, apm.NewListDatasourcesHandler(cfg)))
 
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_metric_status",
+		Annotations: readOnlyTool("Get Metric Liveness and Cadence"),
+		Description: prompts.GetMetricStatusDescription,
+	}, apm.NewGetMetricStatusHandler(client, cfg)))
+
 	// Register PromQL range query tool (enhanced with metrics instructions)
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "prometheus_range_query",

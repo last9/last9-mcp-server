@@ -53,6 +53,9 @@ func TestServedQueryToolSchemas(t *testing.T) {
 		"prometheus_instant_query": {valid: map[string]any{"query": "up", "lookback_minutes": 5.5}, invalid: []map[string]any{
 			{"promql": "up"}, {}, {"query": 1},
 		}, requiredFields: []string{"query"}},
+		"get_metric_status": {valid: map[string]any{"metric": "up", "window_minutes": 60}, invalid: []map[string]any{
+			{"metric": "up", "unexpected": true}, {}, {"metric": 1},
+		}, requiredFields: []string{"metric", "window_minutes"}},
 	}
 	for _, tool := range out.Tools {
 		test, ok := tests[tool.Name]
@@ -702,7 +705,7 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	for _, tool := range out.Tools {
 		byName[tool.Name] = true
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "did_you_mean", "get_service_profile", "list_datasources"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "get_metric_status", "did_you_mean", "get_service_profile", "list_datasources"} {
 		if !byName[want] {
 			t.Errorf("investigate dump missing %q", want)
 		}
@@ -712,7 +715,7 @@ func TestDumpToolsInvestigate(t *testing.T) {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}
 	}
-	if len(out.Tools) >= 40 {
+	if len(out.Tools) >= 41 {
 		t.Fatalf("investigate should expose fewer than full surface; got %d", len(out.Tools))
 	}
 }
