@@ -102,15 +102,17 @@ func fetchEntityAlertRules(
 }
 
 // formatEntityAlertRulesResponse formats entity-scoped rules showing expression/indicator
-// fields and the fields patch_alert changes (mutes and properties, whose description and
-// runbook the org-wide list behind get_alert_config omits). Basic metadata (state, severity,
-// timestamps, etc.) is omitted because callers already have it from get_alert_config.
+// fields and the fields patch_alert changes (pause/mute/schedule state and properties, whose
+// description and runbook the org-wide list behind get_alert_config omits). Basic metadata
+// (state, severity, timestamps, etc.) is omitted because callers already have it from get_alert_config.
 func formatEntityAlertRulesResponse(rules AlertConfigResponse) string {
 	out := fmt.Sprintf("Found %d alert rules for entity:\n\n", len(rules))
 	for i, rule := range rules {
 		out += fmt.Sprintf("Rule %d:\n", i+1)
 		out += fmt.Sprintf("  ID: %s\n", rule.ID)
 		out += fmt.Sprintf("  Rule Name: %s\n", rule.RuleName)
+		out += formatRuleLifecycle(rule)
+		out += fmt.Sprintf("  Created Via: %s\n", formatRuleCreatedVia(rule))
 		if rule.Expression != "" {
 			out += fmt.Sprintf("  Expression: %s\n", rule.Expression)
 		}
@@ -151,7 +153,7 @@ func formatEntityAlertRulesResponse(rules AlertConfigResponse) string {
 				}
 			}
 		}
-		out += formatAlertRulePatchableFields(rule)
+		out += formatAlertRuleProperties(rule)
 		out += "\n"
 	}
 	return out

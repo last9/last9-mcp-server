@@ -268,8 +268,8 @@ func TestGetAlertConfigShowsRecentEvaluations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(text, "  State: active\n  Recent Evaluations (1-minute samples, minute ending UTC, newest first): ") {
-		t.Errorf("missing recent evaluations after State:\n%s", text)
+	if !strings.Contains(text, "  Recent Evaluations (1-minute samples, minute ending UTC, newest first): ") {
+		t.Errorf("missing recent evaluations:\n%s", text)
 	}
 	if strings.Count(text, " firing") != evaluationHistorySamples {
 		t.Errorf("want %d firing samples:\n%s", evaluationHistorySamples, text)

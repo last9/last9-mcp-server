@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"last9-mcp/internal/toolsets"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -93,6 +95,38 @@ func TestCreateDashboardHandler_AppendsRefineNudge(t *testing.T) {
 	}
 	if !strings.Contains(second.Text, "Do not call create_dashboard again") {
 		t.Fatalf("nudge missing re-create ban: %q", second.Text)
+	}
+}
+
+// The nudge names update_dashboard only when the server serves it, as under
+// --read-only --allow-write-tools=create_dashboard it does not.
+func TestCreateDashboardHandler_NudgeNamesOnlyServedUpdate(t *testing.T) {
+	srv := createDashboardAPI(t, `{"dashboard":{"id":"new-id","name":"Created"}}`, nil)
+	tests := []struct {
+		name       string
+		allow      toolsets.Set
+		wantUpdate bool
+	}{
+		{name: "update hidden", allow: toolsets.Set{"create_dashboard": {}}},
+		{name: "update allowed", allow: toolsets.Set{"create_dashboard": {}, "update_dashboard": {}}, wantUpdate: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := testDashboardConfig(srv.URL)
+			cfg.ToolFilter = toolsets.Filter{ReadOnly: true, AllowWrite: tt.allow}
+			result, _, err := NewCreateDashboardHandler(srv.Client(), cfg)(
+				context.Background(), &mcp.CallToolRequest{}, validCreateArgs())
+			if err != nil {
+				t.Fatal(err)
+			}
+			nudge := result.Content[len(result.Content)-1].(*mcp.TextContent).Text
+			if got := strings.Contains(nudge, "update_dashboard"); got != tt.wantUpdate {
+				t.Fatalf("nudge names update_dashboard = %v, want %v: %q", got, tt.wantUpdate, nudge)
+			}
+			if !strings.Contains(nudge, "Do not call create_dashboard again") {
+				t.Fatalf("nudge missing re-create ban: %q", nudge)
+			}
+		})
 	}
 }
 

@@ -1,9 +1,5 @@
 package alerting
 
-import (
-	"encoding/json"
-)
-
 // AlertRuleExpressionArg holds indicator binding for an alert rule.
 // PromQL, Unit, and LookupError are resolved at query time and not part of the API response.
 type AlertRuleExpressionArg struct {
@@ -35,9 +31,11 @@ type AlertRule struct {
 	Algorithm                    string                            `json:"algorithm"`
 	RuleName                     string                            `json:"rule_name"`
 	MuteUntil                    int64                             `json:"mute_until"`
+	IsDisabled                   *bool                             `json:"is_disabled"`
+	NextTransitionAt             *int64                            `json:"next_transition_at"`
+	RecurringMuteSchedule        *RecurringMuteSchedule            `json:"recurring_mute_schedule"`
 	Properties                   map[string]interface{}            `json:"properties"`
 	GroupTimeseriesNotifications bool                              `json:"group_timeseries_notifications"`
-	RecurringMuteSchedule        json.RawMessage                   `json:"recurring_mute_schedule,omitempty"`
 	// RecentEvaluations is sampled from the alert monitor by get_alert_config, not part of the API response.
 	RecentEvaluations []evaluationSample `json:"-"`
 }

@@ -477,7 +477,7 @@ func TestGetAlertConfigHandler_NotificationChannelEnrichmentOnRule(t *testing.T)
 func TestGetAlertConfigHandler_ShowsMutes(t *testing.T) {
 	rules := sampleAlertConfigRules()
 	rules[0].MuteUntil = 1792260000
-	rules[0].RecurringMuteSchedule = json.RawMessage(`{"enabled":false,"timezone":"UTC","windows":[]}`)
+	rules[0].RecurringMuteSchedule = &RecurringMuteSchedule{Enabled: false, Timezone: "UTC"}
 	state := alertConfigTestServerState{
 		alertRules:         rules,
 		entityGroups:       sampleAlertGroupEntities(),
@@ -489,8 +489,8 @@ func TestGetAlertConfigHandler_ShowsMutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
-	if !strings.Contains(text, "  Mute Until: 2026-10-17 18:00:00 UTC\n") ||
-		!strings.Contains(text, `  Recurring Mute Schedule: {"enabled":false,"timezone":"UTC","windows":[]}`+"\n") {
+	if !strings.Contains(text, "  Muted until: 2026-10-17T18:00:00Z\n") ||
+		!strings.Contains(text, "  Recurring mute schedule: timezone UTC (enabled: false)\n") {
 		t.Fatalf("expected mute lines, got:\n%s", text)
 	}
 }
