@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -308,9 +309,9 @@ func TestDiscoverSectionListsOnlyNameLookups(t *testing.T) {
 // near its size, so growth is a reviewed decision: it precedes every tool
 // description, and growing it moved log_query evals. The parsed-field line
 // was a reviewed increase, validated on the full log_query suite; naming
-// analyze_change_impact on the changes line and the log-pattern tools joining
+// analyze_change_impact and get_metric_status and the log-pattern tools joining
 // the one-service bullet were others.
-const maxInvestigateInstructionsBytes = 2705
+const maxInvestigateInstructionsBytes = 2725
 
 func TestInvestigateInstructionsBounded(t *testing.T) {
 	instructions, _ := initializeOver(t, "investigate")
@@ -521,6 +522,40 @@ func TestServerInstructionsChangesLineKeepsItsWording(t *testing.T) {
 				t.Errorf("changes line = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// Rewording this line ("Metric and label names, metric liveness: ...") dropped
+// trace_query eval tq-017 from 30/30 to 21/30 and 14/30, so get_metric_status
+// only joins main's wording.
+func TestServerInstructionsMetricNamesLineKeepsItsWording(t *testing.T) {
+	tests := []struct {
+		name  string
+		tools []string
+		want  string
+	}{
+		{name: "label lookups only", tools: []string{"prometheus_labels", "prometheus_label_values"}, want: "- Metric and label names: `prometheus_labels`, `prometheus_label_values`."},
+		{name: "with get_metric_status", tools: []string{"prometheus_labels", "prometheus_label_values", "get_metric_status"}, want: "- Metric and label names: `prometheus_labels`, `prometheus_label_values`, `get_metric_status`."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			if got := lineNaming(instructions, "prometheus_labels"); got != tt.want {
+				t.Errorf("metric-names line = %q, want %q", got, tt.want)
+			}
+			if got := lineNaming(instructions, "get_metric_status"); slices.Contains(tt.tools, "get_metric_status") && got != tt.want {
+				t.Errorf("get_metric_status line = %q, want it only on the metric-names line %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// get_metric_status reads metrics but discovers no names, so serving it alone
+// must not offer raw Prometheus queries in place of the log-index inventory.
+func TestServerInstructionsMetricStatusAloneKeepsLogInventory(t *testing.T) {
+	instructions := renderInstructions(t, "get_metric_status", "prometheus_instant_query", "get_logs")
+	if got := lineNaming(instructions, "prometheus_instant_query"); !strings.Contains(got, "physical_index_service_count") {
+		t.Errorf("prometheus_instant_query line = %q, want the log-index inventory line", got)
 	}
 }
 
