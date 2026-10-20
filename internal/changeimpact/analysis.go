@@ -146,6 +146,8 @@ type StartedAlert struct {
 	// env is the instance's env label, empty when it has none.
 	env         string
 	startedUnix int64
+	// instance identifies the alert instance within its rule.
+	instance string
 }
 
 // EnvMatch values, set only when the request names an env.

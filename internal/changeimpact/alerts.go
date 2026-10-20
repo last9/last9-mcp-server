@@ -2,6 +2,7 @@ package changeimpact
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
@@ -27,7 +28,8 @@ type alertScope struct {
 }
 
 // fetchStartedAlerts returns alerts for scope that started firing inside
-// its window, earliest first.
+// its window, earliest first, one per alert instance. Slices run latest
+// first, so an instance several slices list keeps its newest state.
 func fetchStartedAlerts(ctx context.Context, client *http.Client, cfg models.Config, scope alertScope) ([]StartedAlert, error) {
 	seen := map[string]bool{}
 	var started []StartedAlert
@@ -38,7 +40,7 @@ func fetchStartedAlerts(ctx context.Context, client *http.Client, cfg models.Con
 		}
 		for _, rule := range resp.AlertRules {
 			for _, a := range startedInScope(rule, scope) {
-				key := a.RuleID + "\x00" + a.Service + "\x00" + a.StartedAt
+				key := a.RuleID + "\x00" + a.instance
 				if !seen[key] {
 					seen[key] = true
 					started = append(started, a)
@@ -83,10 +85,22 @@ func startedInScope(rule alerting.AlertRuleData, scope alertScope) []StartedAler
 			RuleID: rule.RuleID, RuleName: rule.RuleName, AlertGroup: rule.AlertGroupName,
 			Severity: rule.Severity, State: firstNonEmpty(inst.State, rule.State),
 			StartedAt: time.Unix(since, 0).UTC().Format(time.RFC3339), Service: service,
-			EnvMatch: envMatch, env: envLabel(inst), startedUnix: since,
+			EnvMatch: envMatch, env: envLabel(inst), startedUnix: since, instance: instanceKey(inst),
 		})
 	}
 	return out
+}
+
+// instanceKey identifies an alert instance within its rule: by label hash, or
+// by its group labels when the hash is missing. Instances of one rule can
+// start in the same second, so a start time cannot tell them apart.
+func instanceKey(inst alerting.AlertInstance) string {
+	if inst.LabelHash != "" {
+		return "hash:" + inst.LabelHash
+	}
+	// json.Marshal sorts map keys, so equal label sets give equal keys.
+	labels, _ := json.Marshal(inst.GroupLabels)
+	return "labels:" + string(labels)
 }
 
 // matchService reads only service keys: any other label (team, component,
