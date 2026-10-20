@@ -36,8 +36,8 @@ const (
 	// requests that stop arriving may be failing before the service sees them.
 	throughputDropPct = 50.0
 	// Any alert for the service or a dependent that starts firing in the after
-	// window is a regression, as is any regression get_apm_service_deviations
-	// classifies for the changed service.
+	// window and is still firing at its end is a regression, as is any
+	// regression get_apm_service_deviations classifies for the changed service.
 )
 
 // reportThresholds publishes every significance constant above, so callers can
@@ -91,6 +91,9 @@ type verdictInputs struct {
 	afterMinutes int
 	// regressions are the triggers found, most important first.
 	regressions []Regression
+	// alertsNotFiring counts alerts that started in the after window but were
+	// no longer firing at its end: context for reason, never a trigger.
+	alertsNotFiring int
 	// unavailable names each required section that failed, with its cause.
 	unavailable     []string
 	haveChanged     bool
@@ -100,6 +103,21 @@ type verdictInputs struct {
 }
 
 func decideVerdict(in verdictInputs) (verdict, reason, note string) {
+	verdict, reason, note = judge(in)
+	if in.afterMinutes >= minAfterMinutes && in.alertsNotFiring > 0 {
+		reason += "; " + alertsNotFiringText(in.alertsNotFiring)
+	}
+	return verdict, reason, note
+}
+
+func alertsNotFiringText(n int) string {
+	if n == 1 {
+		return "1 alert that started after the change was no longer firing at the end of the after window"
+	}
+	return fmt.Sprintf("%d alerts that started after the change were no longer firing at the end of the after window", n)
+}
+
+func judge(in verdictInputs) (verdict, reason, note string) {
 	if in.afterMinutes < minAfterMinutes {
 		return VerdictInsufficientData, fmt.Sprintf("after window is %d min; at least %d min after the change is needed", max(in.afterMinutes, 0), minAfterMinutes), ""
 	}

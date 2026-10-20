@@ -70,8 +70,8 @@ func TestRegressionsCarryValuesAndReasonText(t *testing.T) {
 		},
 		{
 			name:        "unlabelled alert on a dependent, named by rule id",
-			got:         alertRegression(StartedAlert{RuleID: "r2", State: "normal", Service: "web", StartedAt: "2026-10-17T06:15:00Z", EnvMatch: envMatchUnlabelled}, "checkout"),
-			want:        Regression{Service: "web", Role: RoleDependent, Metric: MetricAlert, RuleID: "r2", State: "normal"},
+			got:         alertRegression(StartedAlert{RuleID: "r2", State: "firing", Service: "web", StartedAt: "2026-10-17T06:15:00Z", EnvMatch: envMatchUnlabelled}, "checkout"),
+			want:        Regression{Service: "web", Role: RoleDependent, Metric: MetricAlert, RuleID: "r2", State: "firing"},
 			wantTrigger: `alert "r2" started firing for web at 2026-10-17T06:15:00Z (no env label)`,
 		},
 		{

@@ -189,6 +189,28 @@ func TestDecideVerdictPrecedence(t *testing.T) {
 	}
 }
 
+func TestReasonCountsAlertsNoLongerFiring(t *testing.T) {
+	flat := signals(1000, 5, 100)
+	const two = "2 alerts that started after the change were no longer firing at the end of the after window"
+	cases := []struct {
+		name string
+		in   verdictInputs
+		want string
+	}{
+		{"no significant change", verdictInputs{afterMinutes: 60, haveChanged: true, changedBaseline: flat, changedAfter: flat, alertsNotFiring: 2},
+			"no threshold crossed: error rate, p95 latency, throughput, alerts and APM deviations are within bounds; " + two},
+		{"regression likely", verdictInputs{afterMinutes: 60, alertsNotFiring: 2, regressions: []Regression{{trigger: "first"}}}, "first; " + two},
+		{"none", verdictInputs{afterMinutes: 60, regressions: []Regression{{trigger: "first"}}}, "first"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, reason, _ := decideVerdict(tc.in); reason != tc.want {
+				t.Fatalf("reason = %q, want %q", reason, tc.want)
+			}
+		})
+	}
+}
+
 func TestVerdictStringsAreTheEvalContract(t *testing.T) {
 	// last9-mcp-evals matches these strings exactly.
 	if VerdictRegressionLikely != "regression likely" || VerdictNoSignificantChange != "no significant change" || VerdictInsufficientData != "insufficient data" {

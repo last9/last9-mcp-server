@@ -171,6 +171,17 @@ func TestOnlyAlertsStillFiringAreRegressions(t *testing.T) {
 	}
 }
 
+func TestNonFiringAlertStatesAreNotRegressions(t *testing.T) {
+	var started []StartedAlert
+	for _, state := range []string{"firing", "FIRING", "normal", "pending", ""} {
+		started = append(started, StartedAlert{RuleID: state, State: state, Service: "checkout"})
+	}
+	got, notFiring := alertRegressions(started, "checkout")
+	if len(got) != 2 || got[0].RuleID != "firing" || got[1].RuleID != "FIRING" || notFiring != 3 {
+		t.Fatalf("regressions = %+v, not firing = %d; want the two firing ones and 3 not firing", got, notFiring)
+	}
+}
+
 var moreTriggers = regexp.MustCompile(`\(\+(\d+) more\)`)
 
 // assertRegressionsMatchReason checks that regressions[] lists exactly the

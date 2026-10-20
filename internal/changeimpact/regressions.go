@@ -26,8 +26,8 @@ const (
 // Regression is one verdict trigger. Env is the environment the metric was
 // measured in, empty when it sums every environment. Baseline and After are in
 // the metric's unit (percent, ms, rpm, or the APM signal's own) and null for
-// alerts, which instead name their rule and its state, so two alerts on one
-// service stay apart and a filer can skip one that already resolved.
+// alerts, which instead name their rule and its state (always firing), so two
+// alerts on one service stay apart.
 type Regression struct {
 	Service  string   `json:"service"`
 	Role     string   `json:"role"`
@@ -59,6 +59,24 @@ func roleOf(service, changed string) string {
 		return RoleChanged
 	}
 	return RoleDependent
+}
+
+// alertStateFiring is the only alert state that counts as a regression.
+const alertStateFiring = "firing"
+
+// alertRegressions lists the started alerts still firing at the end of the
+// after window and counts the rest. An auto-filer acts on every regression, so
+// one that already resolved would file a ticket for something that recovered.
+// Any other state (normal, pending, none) is not firing.
+func alertRegressions(started []StartedAlert, changed string) (regressions []Regression, notFiring int) {
+	for _, a := range started {
+		if !strings.EqualFold(a.State, alertStateFiring) {
+			notFiring++
+			continue
+		}
+		regressions = append(regressions, alertRegression(a, changed))
+	}
+	return regressions, notFiring
 }
 
 func alertRegression(a StartedAlert, changed string) Regression {

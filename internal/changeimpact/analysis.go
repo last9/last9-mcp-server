@@ -261,6 +261,7 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 	wg.Wait()
 
 	var regressions []Regression
+	var alertsNotFiring int
 	goldenErr := firstErr(baselineErr, afterErr)
 	if goldenErr != nil {
 		report.GoldenSignals.Error = goldenErr.Error()
@@ -278,9 +279,9 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 	if alertsErr != nil {
 		report.Alerts.Error = alertsErr.Error()
 	} else {
-		for _, a := range alertsStarted {
-			regressions = append(regressions, alertRegression(a, req.Service))
-		}
+		var firing []Regression
+		firing, alertsNotFiring = alertRegressions(alertsStarted, req.Service)
+		regressions = append(regressions, firing...)
 		report.Alerts.Started, report.Alerts.Dropped = truncate(alertsStarted, sectionTopN)
 	}
 
@@ -311,7 +312,7 @@ func Analyze(ctx context.Context, client *http.Client, cfg models.Config, req Re
 		report.Deviations.TraceAttributes.Warnings = traceResult.Warnings
 	}
 
-	in := verdictInputs{afterMinutes: w.afterMinutes, regressions: regressions, service: req.Service}
+	in := verdictInputs{afterMinutes: w.afterMinutes, regressions: regressions, alertsNotFiring: alertsNotFiring, service: req.Service}
 	// Trace deviations are left out: they explain a verdict and never trigger
 	// one, so losing them cannot hide a regression the verdict would find.
 	for _, s := range []struct {
