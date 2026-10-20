@@ -209,6 +209,45 @@ func TestClassifyHygieneRule_Fixes(t *testing.T) {
 			fix:      hygieneFix{Parameter: "eval_window", Current: "10", Proposed: "20"},
 		},
 		{
+			name: "lengthened window stops at the 60-minute maximum",
+			mutate: func(r *alerts.HygieneRule) {
+				r.FlapsPerDay = 9
+				r.EvalWindow = 40
+				r.AlertCondition = "count_true(result) >= 40"
+			},
+			category: "flapping",
+			fix:      hygieneFix{Parameter: "eval_window", Current: "40", Proposed: "60"},
+		},
+		{
+			name:     "window at the maximum offers no window alternative",
+			mutate:   func(r *alerts.HygieneRule) { r.FlapsPerDay = 9; r.EvalWindow = 60 },
+			category: "flapping",
+			fix:      hygieneFix{Parameter: "bad_minutes", Current: "3", Proposed: "6"},
+		},
+		{
+			name: "static rule sustained for the maximum window moves its threshold",
+			mutate: func(r *alerts.HygieneRule) {
+				r.FlapsPerDay = 9
+				r.EvalWindow = 60
+				r.AlertCondition = "count_true(result) >= 60"
+			},
+			category: "flapping",
+			fix:      hygieneFix{Parameter: "condition", Current: "expr > 5", Proposed: "raise the threshold above 5 (eval_window is at its 60-minute maximum)"},
+			alt:      &hygieneFix{Parameter: "expression", Current: "error_rate", Proposed: "adaptive_std_cmp(error_rate, 3, 1h)"},
+		},
+		{
+			name: "adaptive rule sustained for the maximum window moves its threshold",
+			mutate: func(r *alerts.HygieneRule) {
+				r.FlapsPerDay = 9
+				r.Expression = "adaptive_std_cmp(error_rate, 3, 1h)"
+				r.Condition = "expr > 0"
+				r.EvalWindow = 60
+				r.AlertCondition = ""
+			},
+			category: "flapping",
+			fix:      hygieneFix{Parameter: "condition", Current: "expr > 0", Proposed: "raise the threshold above 0 (eval_window is at its 60-minute maximum)"},
+		},
+		{
 			name:     "unparseable condition lengthens the window",
 			mutate:   func(r *alerts.HygieneRule) { r.FlapsPerDay = 9; r.AlertCondition = "" },
 			category: "flapping",

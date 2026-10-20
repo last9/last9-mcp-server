@@ -346,3 +346,37 @@ func TestGetAlertHygiene_ReportsTheCoveredWindow(t *testing.T) {
 		})
 	}
 }
+
+// Every eval_window proposal must pass update_alert's own payload validation.
+func TestGetAlertHygiene_EvalWindowProposalsPassUpdateAlertValidation(t *testing.T) {
+	for _, window := range []int64{10, 30, 40, 60} {
+		t.Run(strconv.FormatInt(window, 10), func(t *testing.T) {
+			rule := healthyRule("synthetic")
+			rule.EvalWindow = window
+			rule.AlertCondition = "count_true(result) >= " + strconv.FormatInt(window, 10)
+			rule.FlapsPerDay = 9
+			result, err := callGetAlertHygiene(t, &hygieneStub{rules: []alerts.HygieneRule{rule}}, GetAlertHygieneArgs{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			out := decodeHygieneResult(t, result)
+			if len(out.Rules) != 1 || len(out.Rules[0].Findings) != 1 {
+				t.Fatalf("unexpected result: %+v", out)
+			}
+			finding := out.Rules[0].Findings[0]
+			for _, fix := range []*hygieneFix{&finding.SuggestedFix, finding.AlternativeFix} {
+				if fix == nil || fix.Parameter != "eval_window" {
+					continue
+				}
+				proposed, err := strconv.Atoi(fix.Proposed)
+				if err != nil || fix.Proposed == fix.Current {
+					t.Fatalf("eval_window proposal is not an applicable change: %+v", fix)
+				}
+				payload := AlertRulePayload{PrimaryIndicator: "synthetic", ExpressionArgs: map[string]AlertExpressionArg{"synthetic": {ID: "synthetic-kpi"}}, EvalWindow: &proposed}
+				if err := validateAlertRulePayload(payload); err != nil {
+					t.Fatalf("eval_window %d proposed for %d is rejected by update_alert: %v", proposed, window, err)
+				}
+			}
+		})
+	}
+}
