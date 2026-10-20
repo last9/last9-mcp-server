@@ -25,7 +25,7 @@ counts enabled rules per null field.
 Suggested fixes (`suggested_fix`, sometimes `alternative_fix`, each `{parameter, current, proposed}`):
 - flapping, and noisy non-static rules: raise `bad_minutes` (N in
   `alert_condition = count_true(result) >= N`) up to `eval_window`, or lengthen `eval_window`
-  (minutes).
+  (minutes, max 60).
 - noisy static threshold: raise (or, for `<`, lower) the threshold in `condition` (`expr > 100`),
   or switch `expression` to the `adaptive_std_cmp(metric, sensitivity, window)` macro (an
   expression, not an `algorithm` value).

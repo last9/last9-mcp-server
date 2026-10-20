@@ -268,6 +268,10 @@ func noisyFixes(rule alerts.HygieneRule) (hygieneFix, *hygieneFix) {
 	if !isStaticThreshold(rule) {
 		return sustainFixes(rule)
 	}
+	return thresholdFix(rule), adaptiveFix(rule)
+}
+
+func thresholdFix(rule alerts.HygieneRule) hygieneFix {
 	fix := hygieneFix{Parameter: "condition", Current: rule.Condition, Proposed: "move the threshold so the rule fires less often"}
 	if m := staticConditionPattern.FindStringSubmatch(rule.Condition); m != nil {
 		op, threshold := m[1], m[2]
@@ -276,7 +280,7 @@ func noisyFixes(rule alerts.HygieneRule) (hygieneFix, *hygieneFix) {
 			fix.Proposed = "lower the threshold below " + threshold
 		}
 	}
-	return fix, adaptiveFix(rule)
+	return fix
 }
 
 // adaptive_std_cmp is an expression macro, not an algorithm value; a static rule
@@ -300,22 +304,42 @@ func adaptiveFix(rule alerts.HygieneRule) *hygieneFix {
 
 // sustainFixes asks the condition to hold longer before firing: raise bad_minutes
 // (the N in alert_condition "count_true(result) >= N") up to eval_window, else
-// lengthen eval_window.
+// lengthen eval_window up to the maximum update_alert accepts, else move the threshold.
 func sustainFixes(rule alerts.HygieneRule) (hygieneFix, *hygieneFix) {
-	window := hygieneFix{Parameter: "eval_window", Proposed: "lengthen"}
-	if rule.EvalWindow > 0 {
-		window.Current = strconv.FormatInt(rule.EvalWindow, 10)
-		window.Proposed = strconv.FormatInt(2*rule.EvalWindow, 10)
-	}
+	window := windowFix(rule)
 	badMinutes, ok := parseBadMinutes(rule.AlertCondition)
-	if !ok || rule.EvalWindow <= 0 || badMinutes >= rule.EvalWindow {
-		return window, nil
+	if ok && rule.EvalWindow > 0 && badMinutes < rule.EvalWindow {
+		return hygieneFix{
+			Parameter: "bad_minutes",
+			Current:   strconv.FormatInt(badMinutes, 10),
+			Proposed:  strconv.FormatInt(min(2*badMinutes, rule.EvalWindow), 10),
+		}, window
 	}
-	return hygieneFix{
-		Parameter: "bad_minutes",
-		Current:   strconv.FormatInt(badMinutes, 10),
-		Proposed:  strconv.FormatInt(min(2*badMinutes, rule.EvalWindow), 10),
-	}, &window
+	if window != nil {
+		return *window, nil
+	}
+	fix := thresholdFix(rule)
+	fix.Proposed += fmt.Sprintf(" (eval_window is at its %d-minute maximum)", maxEvalWindowMinutes)
+	if isStaticThreshold(rule) {
+		return fix, adaptiveFix(rule)
+	}
+	return fix, nil
+}
+
+// windowFix is nil when eval_window is already at the maximum: an unchanged or
+// larger window is not a fix update_alert can apply.
+func windowFix(rule alerts.HygieneRule) *hygieneFix {
+	if rule.EvalWindow <= 0 {
+		return &hygieneFix{Parameter: "eval_window", Proposed: fmt.Sprintf("lengthen, up to %d", maxEvalWindowMinutes)}
+	}
+	if rule.EvalWindow >= maxEvalWindowMinutes {
+		return nil
+	}
+	return &hygieneFix{
+		Parameter: "eval_window",
+		Current:   strconv.FormatInt(rule.EvalWindow, 10),
+		Proposed:  strconv.FormatInt(min(2*rule.EvalWindow, maxEvalWindowMinutes), 10),
+	}
 }
 
 func parseBadMinutes(condition string) (int64, bool) {
