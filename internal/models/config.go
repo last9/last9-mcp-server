@@ -74,8 +74,9 @@ type Config struct {
 
 	// Toolsets is the raw CLI/env spec (comma-separated). Empty means all tools.
 	Toolsets string
-	// AllowedTools is the expanded allow-list from Toolsets. nil means all tools.
-	AllowedTools toolsets.Set
+	// ToolFilter decides which tools are served: Toolsets expanded, plus
+	// read-only mode and its write-tool allow list. The zero value serves all.
+	ToolFilter toolsets.Filter
 }
 
 // ResolveDatasource looks up a datasource by name from the cached list.

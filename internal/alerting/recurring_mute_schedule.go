@@ -1,6 +1,7 @@
 package alerting
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -24,6 +25,26 @@ type RecurringMuteSchedule struct {
 	Enabled  bool                  `json:"enabled" jsonschema:"Set true to suppress notifications during the windows, false to keep the schedule stored but inactive"`
 	Timezone string                `json:"timezone" jsonschema:"(Required) IANA timezone name, for example Asia/Kolkata"`
 	Windows  []RecurringMuteWindow `json:"windows" jsonschema:"(Required) 1-20 weekly mute windows"`
+}
+
+// UnmarshalJSON folds the scalar weekdays/start_time/end_time of schedules stored
+// before multi-window support into a single window, as the API itself reads them.
+func (s *RecurringMuteSchedule) UnmarshalJSON(b []byte) error {
+	type schedule RecurringMuteSchedule
+	var v struct {
+		schedule
+		Weekdays  []string `json:"weekdays"`
+		StartTime string   `json:"start_time"`
+		EndTime   string   `json:"end_time"`
+	}
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	*s = RecurringMuteSchedule(v.schedule)
+	if len(s.Windows) == 0 && (len(v.Weekdays) > 0 || v.StartTime != "" || v.EndTime != "") {
+		s.Windows = []RecurringMuteWindow{{Weekdays: v.Weekdays, StartTime: v.StartTime, EndTime: v.EndTime}}
+	}
+	return nil
 }
 
 func validateRecurringMuteSchedule(s *RecurringMuteSchedule) error {

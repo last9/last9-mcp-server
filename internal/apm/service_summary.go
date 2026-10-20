@@ -131,15 +131,9 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 		// not only the caller-requested bounds.
 		queriedStart := endTimeParam - int64(windowMin)*60
 
-		joined := map[string]*ServiceSummaryRow{}
-		for _, class := range serviceSummaryQueried {
-			series, err := fetchPromInstantSeries(ctx, client, cfg, class.key, class.query(envMatcher, windowMin), endTimeParam)
-			if err != nil {
-				return nil, nil, err
-			}
-			if err := mergeServiceSummarySeries(joined, series, class.set); err != nil {
-				return nil, nil, err
-			}
+		joined, err := summarizeServiceCounts(ctx, client, cfg, serviceCountScope{matcher: envMatcher, windowMin: windowMin, end: endTimeParam})
+		if err != nil {
+			return nil, nil, err
 		}
 
 		rows := make([]ServiceSummaryRow, 0, len(joined))
@@ -203,6 +197,28 @@ func NewServiceSummaryHandler(client *http.Client, cfg models.Config) func(conte
 			},
 		}, nil, nil
 	}
+}
+
+type serviceCountScope struct {
+	matcher   string
+	windowMin int
+	end       int64
+}
+
+// summarizeServiceCounts runs every serviceSummaryQueried class over scope and
+// joins the results per (service, env).
+func summarizeServiceCounts(ctx context.Context, client *http.Client, cfg models.Config, scope serviceCountScope) (map[string]*ServiceSummaryRow, error) {
+	joined := map[string]*ServiceSummaryRow{}
+	for _, class := range serviceSummaryQueried {
+		series, err := fetchPromInstantSeries(ctx, client, cfg, "service summary "+class.key, class.query(scope.matcher, scope.windowMin), scope.end)
+		if err != nil {
+			return nil, err
+		}
+		if err := mergeServiceSummarySeries(joined, series, class.set); err != nil {
+			return nil, err
+		}
+	}
+	return joined, nil
 }
 
 func (c serviceSummaryClass) query(envMatcher string, windowMin int) string {
@@ -284,18 +300,18 @@ func intervalMinutes(startUnix, endUnix int64) int {
 	return minutes
 }
 
-func fetchPromInstantSeries(ctx context.Context, client *http.Client, cfg models.Config, classKey, query string, endTime int64) (apiPromInstantResp, error) {
+func fetchPromInstantSeries(ctx context.Context, client *http.Client, cfg models.Config, op, query string, endTime int64) (apiPromInstantResp, error) {
 	httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, query, endTime, cfg)
 	if err != nil {
 		return nil, err
 	}
 	defer httpResp.Body.Close()
 	if httpResp.StatusCode != http.StatusOK {
-		return nil, promErr(httpResp, "service summary "+classKey)
+		return nil, promErr(httpResp, op)
 	}
 	var parsed apiPromInstantResp
 	if err := json.NewDecoder(httpResp.Body).Decode(&parsed); err != nil {
-		return nil, fmt.Errorf("failed to decode service summary %s: %w", classKey, err)
+		return nil, fmt.Errorf("failed to decode %s: %w", op, err)
 	}
 	return parsed, nil
 }
