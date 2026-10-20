@@ -310,8 +310,9 @@ func TestDiscoverSectionListsOnlyNameLookups(t *testing.T) {
 // description, and growing it moved log_query evals. The parsed-field line
 // was a reviewed increase, validated on the full log_query suite; naming
 // analyze_change_impact and get_metric_status and the log-pattern tools joining
-// the one-service bullet were others.
-const maxInvestigateInstructionsBytes = 2725
+// the one-service bullet were others, and so was the explicit pipeline
+// time-window rule (issue #379).
+const maxInvestigateInstructionsBytes = 2870
 
 func TestInvestigateInstructionsBounded(t *testing.T) {
 	instructions, _ := initializeOver(t, "investigate")
@@ -448,6 +449,33 @@ func TestServerInstructionsRawQueryLineReadsForOneOrManyTools(t *testing.T) {
 			instructions := renderInstructions(t, tt.tools...)
 			if got := lineNaming(instructions, tt.tools[0]); got != tt.want {
 				t.Errorf("raw-query line = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// Without an explicit rule, trace_query eval tq-017 passed or failed on
+// incidental wording elsewhere in the policy: the model put the window into
+// the pipeline as $gte/$lte on Timestamp.
+func TestServerInstructionsPutPipelineTimeWindowInArguments(t *testing.T) {
+	const timeWindowLine = "Put the time window in `start_time_iso`/`end_time_iso` (or `lookback_minutes`), never as `Timestamp` filters in the pipeline."
+	tests := []struct {
+		name  string
+		tools []string
+		want  bool
+	}{
+		{name: "get_traces", tools: []string{"get_traces"}, want: true},
+		{name: "get_logs", tools: []string{"get_logs"}, want: true},
+		{name: "prometheus queries only", tools: []string{"prometheus_labels", "prometheus_range_query"}, want: false},
+		{name: "service-scoped tools only", tools: []string{"get_service_traces", "get_service_logs"}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			_, raw, _ := strings.Cut(instructions, "## Raw queries are the last resort")
+			raw, _, _ = strings.Cut(raw, "\n## ")
+			if got := strings.Contains(raw, "\n"+timeWindowLine); got != tt.want {
+				t.Errorf("raw-query section has the time-window line = %v, want %v:\n%s", got, tt.want, instructions)
 			}
 		})
 	}

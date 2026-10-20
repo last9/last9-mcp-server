@@ -94,6 +94,9 @@ They return computed answers with the right scoping; reach for them before writi
 
 ## Raw queries are the last resort
 Use {{.}} only when no dedicated tool answers the question, and build each query from discovered names.
+{{- if or (has "get_logs") (has "get_traces")}}
+Put the time window in `start_time_iso`/`end_time_iso` (or `lookback_minutes`), never as `Timestamp` filters in the pipeline.
+{{- end}}
 {{- end}}
 {{- if or (has "get_logs") (has "get_traces") (has "get_service_logs") (has "prometheus_range_query") (has "get_service_profile")}}
 
