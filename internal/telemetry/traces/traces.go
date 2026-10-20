@@ -63,6 +63,12 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	if err != nil {
 		return nil, err
 	}
+	addTraceJSONGuidance(result, args, traceGuidanceContext{
+		startMs:        startTime,
+		endMs:          endTime,
+		effectiveLimit: effectiveGetTracesLimit(cfg, args.Limit),
+		maxLimit:       configuredMaxGetTracesEntries(cfg),
+	})
 
 	// Build deep link URL
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
@@ -315,10 +321,7 @@ func extractTraceResultItems(result map[string]interface{}) ([]interface{}, erro
 
 // effectiveGetTracesLimit returns the capped limit to use across all chunks.
 func effectiveGetTracesLimit(cfg models.Config, requestedLimit int) int {
-	maxEntries := cfg.MaxGetTracesEntries
-	if maxEntries <= 0 {
-		maxEntries = models.DefaultMaxGetTracesEntries
-	}
+	maxEntries := configuredMaxGetTracesEntries(cfg)
 	if requestedLimit <= 0 {
 		return maxEntries
 	}
@@ -326,6 +329,13 @@ func effectiveGetTracesLimit(cfg models.Config, requestedLimit int) int {
 		return maxEntries
 	}
 	return requestedLimit
+}
+
+func configuredMaxGetTracesEntries(cfg models.Config) int {
+	if cfg.MaxGetTracesEntries > 0 {
+		return cfg.MaxGetTracesEntries
+	}
+	return models.DefaultMaxGetTracesEntries
 }
 
 // emptyTracesResponse returns a minimal valid empty traces response.

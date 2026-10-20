@@ -28,6 +28,7 @@ type ServiceDependencyGraphDetails struct {
 	Outgoing         map[string]RedMetrics `json:"outgoing"`
 	MessagingSystems map[string]RedMetrics `json:"messaging_systems"`
 	Databases        map[string]RedMetrics `json:"databases"`
+	Hint             string                `json:"hint,omitempty"`
 }
 
 // incomingCallersQuery ranks the services calling escSvc by requests per minute.
@@ -451,6 +452,19 @@ func NewServiceDependencyGraphHandler(client *http.Client, cfg models.Config) fu
 			Outgoing:         outgoing,
 			Databases:        databases,
 			MessagingSystems: messagingSystems,
+		}
+		if len(incoming) == 0 && len(outgoing) == 0 && len(databases) == 0 && len(messagingSystems) == 0 {
+			details.Hint = apmEmptyAdvice(
+				"dependency graph data",
+				apmGuidanceArgs{
+					serviceName: serviceName,
+					env:         literalEnv,
+					startUnix:   startTimeParam,
+					endUnix:     endTimeParam,
+				},
+				"confirm the service emits APM call graph metrics",
+				"try get_service_profile for the service before choosing log or trace tools",
+			)
 		}
 		// Return the response
 		resultJSON, err := json.Marshal(details)

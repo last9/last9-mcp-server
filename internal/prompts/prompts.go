@@ -53,6 +53,9 @@ var GetServiceDependencyGraphDetails string
 //go:embed descriptions/list_datasources.md
 var ListDatasourcesDescription string
 
+//go:embed descriptions/get_metric_status.md
+var GetMetricStatusDescription string
+
 //go:embed descriptions/prometheus_instant_query.md
 var PromqlInstantQueryDetails string
 

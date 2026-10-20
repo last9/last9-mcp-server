@@ -2,6 +2,7 @@ package prom
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"last9-mcp/internal/last9api"
@@ -25,7 +26,14 @@ type InstantSeries struct {
 
 // QueryInstant calls POST /prom_query_instant.
 func QueryInstant(ctx context.Context, c *last9api.Client, in QueryInstantInput) ([]InstantSeries, error) {
-	var series []InstantSeries
-	err := c.Do(ctx, opQueryInstant, last9api.Request{Method: http.MethodPost, Path: pathQueryInstant, Body: in}, &series)
-	return series, err
+	// A pointer, because Do accepts an empty body: a missing payload must fail
+	// rather than read as zero series, which callers report as absence.
+	var series *[]InstantSeries
+	if err := c.Do(ctx, opQueryInstant, last9api.Request{Method: http.MethodPost, Path: pathQueryInstant, Body: in}, &series); err != nil {
+		return nil, err
+	}
+	if series == nil {
+		return nil, errors.New(opQueryInstant + ": empty response")
+	}
+	return *series, nil
 }

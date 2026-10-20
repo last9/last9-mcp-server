@@ -141,6 +141,7 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 			return aggregates[i].Count > aggregates[j].Count
 		})
 
+		matchedCount := len(aggregates)
 		if len(aggregates) > limit {
 			aggregates = aggregates[:limit]
 		}
@@ -159,10 +160,20 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 
 		// Format response
 		responseData := map[string]interface{}{
-			"exceptions": exceptions,
-			"count":      len(exceptions),
-			"start_time": startTime.Format("2006-01-02T15:04:05Z"),
-			"end_time":   endTime.Format("2006-01-02T15:04:05Z"),
+			"exceptions":    exceptions,
+			"count":         len(exceptions),
+			"matched_count": matchedCount,
+			"start_time":    startTime.Format("2006-01-02T15:04:05Z"),
+			"end_time":      endTime.Format("2006-01-02T15:04:05Z"),
+		}
+		if len(exceptions) == 0 {
+			responseData["hint"] = exceptionEmptyAdvice(args, startTime, endTime)
+		} else if matchedCount > len(exceptions) {
+			responseData["hint"] = utils.TruncatedResultAdvice(utils.TruncatedResultOptions{
+				Subject:  "exceptions",
+				Returned: len(exceptions),
+				Total:    matchedCount,
+			})
 		}
 
 		jsonData, err := json.Marshal(responseData)
