@@ -70,8 +70,8 @@ func alertConfigKPIResolutionState(rules AlertConfigResponse) alertConfigTestSer
 
 func TestGetAlertConfigHandler_NotificationChannelTypeAndUnconfiguredOR(t *testing.T) {
 	state := alertConfigTestServerState{
-		alertRules:         sampleAlertConfigRules(),
-		entityGroups:       sampleAlertGroupEntities(),
+		alertRules:   sampleAlertConfigRules(),
+		entityGroups: sampleAlertGroupEntities(),
 		notificationChannels: []NotificationChannel{
 			{ID: 1, Name: "Checkout Slack", Type: "slack", ServiceFQID: "entity-1"},
 		},
@@ -107,10 +107,10 @@ func TestGetAlertConfigHandler_NotificationChannelTypeAndUnconfiguredOR(t *testi
 // path (isUnconfiguredOnlyRequest true with no channel filters).
 func TestGetAlertConfigHandler_NotificationChannelAndUnconfiguredOR_ResolvesKPIs(t *testing.T) {
 	cases := []struct {
-		name       string
+		name        string
 		channelArgs GetAlertConfigArgs
-		orArgs     GetAlertConfigArgs
-		pureOnly   bool
+		orArgs      GetAlertConfigArgs
+		pureOnly    bool
 	}{
 		{
 			name:        "types",

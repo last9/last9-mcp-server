@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `did_you_mean` to the logs, traces, and metrics toolsets so their entity-name discovery guidance can be followed (#312).
 
 ### Fixed
+- Upstream error bodies from the alerting, change-events, dashboards, grafana, log-index, suggest, notification-channel and profiles tools are now passed through the shared sanitizer before reaching tool output: URLs and credential-shaped values are redacted and the body is capped, and bodies of non-400/422 failures are replaced with status-specific advice, matching the trace, logs and `last9api` paths (#NNN).
 - Every tool now accepts a number-like string for an integer argument, so `{"channel_id": "42"}` runs as `42` instead of failing with `type: 42 has type "string", want "integer"`. Before schema validation, a string matching `^-?\d+$` (and fitting int64) under a property whose schema allows integers but not strings, at any depth, is replaced by its number; other strings such as `"4x2"`, `"4.2"` or `""` are still rejected with the same error naming the argument, and unknown arguments are still refused (#373).
 
 - `patch_alert` `properties` now changes only the fields sent: omitted or blank `description`, `runbook`, `annotations` and `query_mode` are carried over from the stored rule. The API overwrites the whole properties object, so sending only `description` cleared the runbook, annotations and query mode. `annotations` still replaces the whole map, and `{}` clears it (#356).

@@ -117,9 +117,9 @@ func TestDidYouMeanHandler_APIError(t *testing.T) {
 	}
 }
 
-func TestDidYouMeanHandler_APIErrorTruncatesBody(t *testing.T) {
+func TestDidYouMeanHandler_APIErrorOmitsBody(t *testing.T) {
 	const hiddenTail = "SHOULD_NOT_APPEAR"
-	body := strings.Repeat("a", maxSuggestErrorBodyBytes) + hiddenTail
+	body := hiddenTail
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !assertSuggestRequest(t, w, r) {
@@ -141,7 +141,7 @@ func TestDidYouMeanHandler_APIErrorTruncatesBody(t *testing.T) {
 		t.Fatal("expected error on API 500, got nil")
 	}
 	if strings.Contains(err.Error(), hiddenTail) {
-		t.Fatalf("expected error body to be truncated, got %q", err)
+		t.Fatalf("expected upstream body to be omitted, got %q", err)
 	}
 }
 

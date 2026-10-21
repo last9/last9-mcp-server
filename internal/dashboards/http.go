@@ -6,14 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 )
-
-const maxAPIErrorBodyBytes = 4096
 
 // maxAPISuccessBodyBytes caps every dashboard/snapshot success body — doJSONRequest
 // is shared by all dashboard tools (list/get/create/update/delete + the snapshot
@@ -56,10 +53,7 @@ func doJSONRequest(ctx context.Context, client *http.Client, cfg models.Config, 
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
-		msg := strings.TrimSpace(string(respBody))
-		if len(msg) > maxAPIErrorBodyBytes {
-			msg = msg[:maxAPIErrorBodyBytes] + "..."
-		}
+		msg := utils.SanitizeUpstreamBody(string(respBody))
 		if msg == "" {
 			msg = http.StatusText(resp.StatusCode)
 		}
