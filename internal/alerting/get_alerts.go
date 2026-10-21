@@ -90,8 +90,7 @@ func FetchAlertsMonitor(ctx context.Context, client *http.Client, cfg models.Con
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return AlertsResponse{}, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return AlertsResponse{}, utils.NewUpstreamHTTPError(resp, "alerts")
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

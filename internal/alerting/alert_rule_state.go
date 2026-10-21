@@ -113,14 +113,16 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 				return nil, nil, fmt.Errorf("API request failed at timestamp %d: %w", t, err)
 			}
 
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				err := utils.NewUpstreamHTTPError(resp, "alert rule state")
+				resp.Body.Close()
+				return nil, nil, fmt.Errorf("at timestamp %d: %w", t, err)
+			}
+
 			body, err := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to read response body at timestamp %d: %w", t, err)
-			}
-
-			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-				return nil, nil, fmt.Errorf("API returned error status %d at timestamp %d: %s", resp.StatusCode, t, string(body))
 			}
 
 			var alertResp AlertsResponse

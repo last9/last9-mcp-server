@@ -338,6 +338,13 @@ NO:  type Doer interface{ Do(*http.Request) (*http.Response, error) }
 **8. Exception: the OAuth access-token call stays in `internal/auth`.** It uses a different
 host, sends no auth header, and mints the token `last9api` depends on.
 
+**9. Never put a raw upstream response body into an error, a log line, or a tool result.** Tool errors land in the model's context and in transcripts, so whatever the API echoes back goes with them. Return `utils.NewUpstreamHTTPError(resp, op)` — `Client.Do` already does. If the body was read for another reason, pass it through `utils.SanitizeUpstreamBody` first. Truncation is not sanitization.
+```go
+OK:  return utils.NewUpstreamHTTPError(resp, "alert config")
+OK:  msg := utils.SanitizeUpstreamBody(string(respBody))
+NO:  fmt.Errorf("API returned %d: %s", resp.StatusCode, string(body))
+```
+
 ### Naming
 
 - Functions are `<Verb><Resource>`, fully spelled even when it repeats the package:

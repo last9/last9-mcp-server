@@ -14,6 +14,7 @@ import (
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 )
 
 // MakeProfilesJSONQueryAPI posts a profiles JSON pipeline to query_range/json.
@@ -97,18 +98,19 @@ func runQueryRange(
 		return nil, fmt.Errorf("failed to read profiles response: %w", err)
 	}
 
+	msg := utils.SanitizeUpstreamBody(string(body))
 	switch resp.StatusCode {
 	case http.StatusOK:
 		// continue
 	case http.StatusBadRequest:
-		return nil, fmt.Errorf("profiles API invalid range/query (400): %s", string(body))
+		return nil, fmt.Errorf("profiles API invalid range/query (400): %s", msg)
 	case http.StatusNotFound:
 		// Tempo only registers /profiles/api/v1 when ProfilesEnabled for the tenant.
 		return nil, fmt.Errorf("profiling is not enabled for your account. Please contact the Last9 team to enable it")
 	case http.StatusRequestTimeout:
-		return nil, fmt.Errorf("profiles API timed out (408): %s", string(body))
+		return nil, fmt.Errorf("profiles API timed out (408): %s", msg)
 	default:
-		return nil, fmt.Errorf("profiles API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("profiles API request failed with status %d: %s", resp.StatusCode, msg)
 	}
 
 	var decoded any
