@@ -3,6 +3,9 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -40,6 +43,32 @@ func TestPackageEnginesFloorEachNodeLineAtPatchedRelease(t *testing.T) {
 
 	if pkg.Engines.Node != want {
 		t.Errorf("package.json engines.node = %q, want %q", pkg.Engines.Node, want)
+	}
+}
+
+// A bare major ('24') resolves to whatever is newest on the runner and may
+// predate the fix, so workflows must pin an exact patched release.
+func TestWorkflowsPinPatchedNodeRelease(t *testing.T) {
+	files, err := filepath.Glob(".github/workflows/*.y*ml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeVersion := regexp.MustCompile(`node-version:\s*['"]?([^'"\s#]+)`)
+	pins := 0
+	for _, f := range files {
+		raw, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range nodeVersion.FindAllStringSubmatch(string(raw), -1) {
+			pins++
+			if !slices.Contains(patchedNodeReleases, m[1]) {
+				t.Errorf("%s pins node-version %q, want one of %v", f, m[1], patchedNodeReleases)
+			}
+		}
+	}
+	if pins == 0 {
+		t.Fatal("no node-version pin found in .github/workflows; the npm publish job must pin one")
 	}
 }
 
