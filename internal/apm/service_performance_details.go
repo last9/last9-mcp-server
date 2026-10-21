@@ -489,6 +489,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		topN := args.TopN
 		if topN <= 0 {
 			topN = perfDetailsDefaultTopN
+			if !args.IncludeSeries {
+				topN = perfSummaryDefaultTopN
+			}
 		}
 		if topN > perfDetailsMaxTopN {
 			topN = perfDetailsMaxTopN
@@ -664,7 +667,11 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			details.TopErrors = mergeTopInt64(topErrorsChunks, topN)
 		}
 
-		resultJSON, err := json.Marshal(details)
+		var payload any = details
+		if !args.IncludeSeries {
+			payload = summarizePerformanceDetails(details)
+		}
+		resultJSON, err := json.Marshal(payload)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
