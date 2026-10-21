@@ -74,14 +74,14 @@ type PromqlRangeQueryArgs struct {
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
-	Datasource      string  `json:"datasource,omitempty" jsonschema:"Name of the datasource to query. If omitted, uses the default configured datasource."`
+	Datasource      string  `json:"datasource,omitempty" jsonschema:"Datasource name; omitted uses the default, a near miss its closest match (named in a second content block)."`
 }
 
 type PromqlInstantQueryArgs struct {
 	Query           string  `json:"query" jsonschema:"(Required) PromQL query to execute"`
 	TimeISO         string  `json:"time_iso,omitempty" jsonschema:"Evaluation time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). If omitted, defaults to now or now-lookback_minutes."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now when time_iso is omitted (default: 0, minimum: 1)."`
-	Datasource      string  `json:"datasource,omitempty" jsonschema:"Name of the datasource to query. If omitted, uses the default configured datasource."`
+	Datasource      string  `json:"datasource,omitempty" jsonschema:"Datasource name; omitted uses the default, a near miss its closest match (named in a second content block)."`
 }
 
 type PromqlLabelValuesArgs struct {
@@ -91,7 +91,7 @@ type PromqlLabelValuesArgs struct {
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). For daily or sparse metrics use a wider window such as 5760 (4 days)."`
-	Datasource      string  `json:"datasource,omitempty" jsonschema:"Name of the datasource to query. If omitted, uses the default configured datasource."`
+	Datasource      string  `json:"datasource,omitempty" jsonschema:"Datasource name; omitted uses the default, a near miss its closest match (named in a second content block)."`
 }
 
 type PromqlLabelsArgs struct {
@@ -100,7 +100,7 @@ type PromqlLabelsArgs struct {
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
-	Datasource      string  `json:"datasource,omitempty" jsonschema:"Name of the datasource to query. If omitted, uses the default configured datasource."`
+	Datasource      string  `json:"datasource,omitempty" jsonschema:"Datasource name; omitted uses the default, a near miss its closest match (named in a second content block)."`
 }
 
 func resolveTimeRange(startTimeISO, endTimeISO string, lookbackMinutes float64) (int64, int64, error) {
@@ -244,10 +244,14 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 			return nil, nil, err
 		}
 
-		queryCfg, err := resolveDatasourceCfg(cfg, args.Datasource)
+		choice, err := chooseDatasource(cfg, args.Datasource)
 		if err != nil {
 			return nil, nil, err
 		}
+		if choice.candidates != nil {
+			return ambiguousDatasourceResult(args.Datasource, choice.candidates), nil, nil
+		}
+		queryCfg := choice.cfg
 
 		httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, query, startTimeParam, endTimeParam, queryCfg, utils.PromResolution{})
 		if err != nil {
@@ -266,13 +270,7 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: string(responseBodyBytes),
-				},
-			},
-		}, nil, nil
+		return promBodyResult(responseBodyBytes, choice.note), nil, nil
 	}
 }
 
@@ -288,10 +286,14 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 			return nil, nil, err
 		}
 
-		queryCfg, err := resolveDatasourceCfg(cfg, args.Datasource)
+		choice, err := chooseDatasource(cfg, args.Datasource)
 		if err != nil {
 			return nil, nil, err
 		}
+		if choice.candidates != nil {
+			return ambiguousDatasourceResult(args.Datasource, choice.candidates), nil, nil
+		}
+		queryCfg := choice.cfg
 
 		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, query, timeParam, queryCfg)
 		if err != nil {
@@ -309,13 +311,7 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: string(responseBodyBytes),
-				},
-			},
-		}, nil, nil
+		return promBodyResult(responseBodyBytes, choice.note), nil, nil
 	}
 }
 
@@ -378,10 +374,14 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 			return nil, nil, err
 		}
 
-		queryCfg, err := resolveDatasourceCfg(cfg, args.Datasource)
+		choice, err := chooseDatasource(cfg, args.Datasource)
 		if err != nil {
 			return nil, nil, err
 		}
+		if choice.candidates != nil {
+			return ambiguousDatasourceResult(args.Datasource, choice.candidates), nil, nil
+		}
+		queryCfg := choice.cfg
 
 		httpResp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, label, query, startTimeParam, endTimeParam, queryCfg)
 		if err != nil {
@@ -400,13 +400,7 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: string(responseBodyBytes),
-				},
-			},
-		}, nil, nil
+		return promBodyResult(responseBodyBytes, choice.note), nil, nil
 	}
 }
 
@@ -421,10 +415,14 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 			return nil, nil, err
 		}
 
-		queryCfg, err := resolveDatasourceCfg(cfg, args.Datasource)
+		choice, err := chooseDatasource(cfg, args.Datasource)
 		if err != nil {
 			return nil, nil, err
 		}
+		if choice.candidates != nil {
+			return ambiguousDatasourceResult(args.Datasource, choice.candidates), nil, nil
+		}
+		queryCfg := choice.cfg
 
 		httpResp, err := utils.MakePromLabelsAPIQuery(ctx, client, query, startTimeParam, endTimeParam, queryCfg)
 		if err != nil {
@@ -443,13 +441,7 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: string(responseBodyBytes),
-				},
-			},
-		}, nil, nil
+		return promBodyResult(responseBodyBytes, choice.note), nil, nil
 	}
 }
 

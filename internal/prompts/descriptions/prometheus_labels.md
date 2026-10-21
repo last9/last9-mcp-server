@@ -7,7 +7,7 @@
 	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
 	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
-	- datasource: (Optional) Name of the datasource to query. If omitted, uses the default configured datasource.
+	- datasource: (Optional) Datasource name; omitted uses the default, a near miss its closest match; an ambiguous name lists candidates, no query. A second block names the one used.
 
 	match_query should be a well formed, valid promql query
 	It is encouraged to not use default
