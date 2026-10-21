@@ -35,6 +35,11 @@ func GetLogsInputSchema() map[string]interface{} {
 				"type":        []string{"string", "null"},
 				"description": "Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Use a user-named index or a non-default physical index discovered by get_service_profile; omit for default or when unknown.",
 			},
+			"response_mode": map[string]interface{}{
+				"type":        "string",
+				"enum":        []string{logResponseModeSummary, logResponseModeRaw},
+				"description": "default: summary (over 20 lines: counts, time spread, top patterns, ≤4000 chars). raw returns lines. Aggregates unaffected.",
+			},
 		},
 		"required":             []string{"logjson_query"},
 		"additionalProperties": false,

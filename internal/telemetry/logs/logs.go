@@ -32,6 +32,7 @@ type GetLogsArgs struct {
 	LookbackMinutes int                      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 5, minimum: 1)"`
 	Limit           int                      `json:"limit,omitempty" jsonschema:"Maximum rows to return (optional; default: 1000 for aggregate/dataframe queries, 5000 for chunked raw queries)"`
 	Index           string                   `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Use a user-named index or a non-default physical index discovered by get_service_profile; omit for default or when unknown."`
+	ResponseMode    string                   `json:"response_mode,omitempty" jsonschema:"summary (default) or raw"`
 }
 
 // NewGetLogsHandler creates a handler for getting logs using logjson_query parameter
@@ -40,6 +41,9 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 		// Check if logjson_query is provided
 		if len(args.LogjsonQuery) == 0 {
 			return nil, nil, fmt.Errorf("logjson_query parameter is required. logjson_query is a JSON array of stages (filter/parse/aggregate/window_aggregate) — see last9://reference/logjson")
+		}
+		if err := validateLogResponseMode(args.ResponseMode); err != nil {
+			return nil, nil, err
 		}
 
 		sanitizedQuery, err := prepareLogJSONQuery(args.LogjsonQuery, "logjson_query")
@@ -74,6 +78,9 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		effectiveLimit: effectiveGetLogsResultLimit(cfg, args.Limit),
 		maxLimit:       effectiveGetLogsResultLimit(cfg, 0),
 	})
+	if args.ResponseMode != logResponseModeRaw {
+		result = summarizeLogResult(result, startTime, endTime)
+	}
 
 	// Build deep link URL
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
