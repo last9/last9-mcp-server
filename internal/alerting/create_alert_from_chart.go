@@ -12,6 +12,7 @@ import (
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/alerts"
+	"last9-mcp/internal/last9api/entities"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -123,7 +124,8 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 		req.GroupID = strings.TrimSpace(args.GroupID)
 		req.Description = args.Description
 
-		body, err := alerts.CreateAlertFromChart(ctx, last9api.NewClient(client, cfg), req)
+		api := last9api.NewClient(client, cfg)
+		body, err := alerts.CreateAlertFromChart(ctx, api, req)
 		if err != nil {
 			var apiErr *utils.UpstreamHTTPError
 			var unknown *utils.WriteOutcomeUnknownError
@@ -140,6 +142,13 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 		if strings.TrimSpace(resp.ID) == "" {
 			return utils.ToolErrorResult("alert intelligence create returned success but no rule id; do not assume the rule was created - verify via get_alert_config before retrying"), nil, nil
 		}
+		groupID := resp.GroupID
+		if groupID == "" {
+			groupID = req.GroupID
+		}
+		if failure := disableChartRule(ctx, api, groupID, resp.ID); failure != nil {
+			return failure, nil, nil
+		}
 		link := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildAlertingGroupsLink()
 		return &mcp.CallToolResult{
 			Meta:    deeplink.ToMeta(link),
@@ -148,9 +157,31 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 	}
 }
 
+// disableChartRule turns the just-created rule into a draft, as create_alert creates one.
+// The chart create takes no is_disabled, so the rule is live until this lands; a failure
+// is reported as such, never as a failed create the agent would retry into a duplicate.
+func disableChartRule(ctx context.Context, api *last9api.Client, groupID, ruleID string) *mcp.CallToolResult {
+	const noRetry = "; do not retry create_alert_from_chart, which would create a duplicate rule."
+	if groupID == "" {
+		return utils.ToolErrorResult(fmt.Sprintf("Created alert rule %s, but the response named no alert group, so it was not disabled and may be live. "+
+			"Find its entity_id with get_alert_config (rule_name), then run patch_alert with that entity_id, id=%s and is_disabled=true, or remove it with delete_alert"+noRetry, ruleID, ruleID))
+	}
+	disabled := true
+	err := entities.PatchAlertRule(ctx, api, entities.AlertRuleInput{
+		EntityID: groupID,
+		RuleID:   ruleID,
+		Body:     alertPatchBody{IsDisabled: &disabled},
+	})
+	if err == nil {
+		return nil
+	}
+	return utils.ToolErrorResult(fmt.Sprintf("Created alert rule %s in group %s, but disabling it failed (%v), so it may be live and can fire. "+
+		"Run patch_alert entity_id=%s id=%s is_disabled=true, or remove it with delete_alert"+noRetry, ruleID, groupID, err, groupID, ruleID))
+}
+
 // createFromChartReport renders the post-create summary: rule/group linkage,
 // the effective condition with each applied backend default called out, and
-// an immediate-fire note so callers know the rule is live.
+// the draft note so callers know the rule will not fire until promoted.
 func createFromChartReport(resp alerts.IntelligenceResponse, args CreateAlertFromChartArgs) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Created alert rule %s", resp.ID)
@@ -198,6 +229,6 @@ func createFromChartReport(resp alerts.IntelligenceResponse, args CreateAlertFro
 
 	b.WriteString("\n\nApplied settings:\n")
 	b.WriteString(strings.Join(settings, "\n"))
-	b.WriteString("\n\nThis rule is active now and can fire immediately — delete_alert removes it.")
+	b.WriteString("\n\n" + draftCreatedNote)
 	return b.String()
 }

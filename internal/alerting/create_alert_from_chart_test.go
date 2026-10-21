@@ -27,7 +27,9 @@ func createAlertFromChartTestConfig(baseURL string) models.Config {
 func TestCreateAlertFromChartAllDefaultsOmitted(t *testing.T) { // AE1
 	var gotBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotBody, _ = io.ReadAll(r.Body)
+		if r.Method == http.MethodPost {
+			gotBody, _ = io.ReadAll(r.Body)
+		}
 		_, _ = w.Write([]byte(`{"id":"rule-9","group_id":"grp-2","kpi_id":"kpi-3"}`))
 	}))
 	defer server.Close()
@@ -65,7 +67,7 @@ func TestCreateAlertFromChartAllDefaultsOmitted(t *testing.T) { // AE1
 		"eval_window: 5 minutes (backend default)",
 		"bad_minutes: 3 (backend default)",
 		"severity: breach (backend default for static chart rules)",
-		"delete_alert",
+		draftSentence,
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("result missing %q:\n%s", want, text)
@@ -81,7 +83,9 @@ func TestCreateAlertFromChartAllDefaultsOmitted(t *testing.T) { // AE1
 func TestCreateAlertFromChartExplicitScoreUnitThreshold(t *testing.T) { // AE4
 	var gotBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotBody, _ = io.ReadAll(r.Body)
+		if r.Method == http.MethodPost {
+			gotBody, _ = io.ReadAll(r.Body)
+		}
 		_, _ = w.Write([]byte(`{"id":"rule-apdex","group_id":"grp-apdex"}`))
 	}))
 	defer server.Close()
