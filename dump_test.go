@@ -709,6 +709,44 @@ func TestDumpToolsAnalyzeChangeImpactToolsets(t *testing.T) {
 	}
 }
 
+func TestDumpToolsPatchDashboardToolsets(t *testing.T) {
+	for spec, want := range map[string]bool{
+		"all": true, "dashboards": true,
+		"investigate": false, "metrics": false, "alerts": false, "logs": false, "traces": false, "grafana": false,
+	} {
+		allowed, err := toolsets.Parse(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var buf bytes.Buffer
+		if err := dumpTools(&buf, toolsets.Filter{Tools: allowed}); err != nil {
+			t.Fatalf("dumpTools(%s) failed: %v", spec, err)
+		}
+		var out struct {
+			Tools []struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+			} `json:"tools"`
+		}
+		if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		served := false
+		for _, tool := range out.Tools {
+			if tool.Name != "patch_dashboard" {
+				continue
+			}
+			served = true
+			if tool.Description != prompts.PatchDashboardDescription {
+				t.Errorf("%s: patch_dashboard must serve its embedded description", spec)
+			}
+		}
+		if served != want {
+			t.Errorf("%s toolset serves patch_dashboard = %v, want %v", spec, served, want)
+		}
+	}
+}
+
 func TestDumpToolsServesCoreToolsUnderEveryToolset(t *testing.T) {
 	for _, spec := range append(toolsets.ValidNames(), "") {
 		t.Run("toolsets="+spec, func(t *testing.T) {
