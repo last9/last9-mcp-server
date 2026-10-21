@@ -41,6 +41,8 @@ func TestLogFieldFilterField(t *testing.T) {
 		{"service", "ServiceName"},
 		{"severity", "SeverityText"},
 		{"body", "Body"},
+		{"trace_id", "TraceId"},
+		{"span_id", "SpanId"},
 		{"status_code", "attributes['status_code']"},
 		{"http.status_code", "attributes['http.status_code']"},
 		{"log_level", "attributes['log_level']"}, // must NOT become attributes['level']
