@@ -591,6 +591,8 @@ func extractSampleBodyLines(result map[string]interface{}) []string {
 //   - service    -> ServiceName
 //   - severity   -> SeverityText
 //   - body       -> Body
+//   - trace_id   -> TraceId
+//   - span_id    -> SpanId
 //   - resource_x -> resources['x']
 //   - default    -> attributes['<name>']
 //
@@ -605,6 +607,10 @@ func logFieldFilterField(name string) string {
 		return "SeverityText"
 	case "body":
 		return "Body"
+	case "trace_id":
+		return "TraceId"
+	case "span_id":
+		return "SpanId"
 	}
 	if rest, ok := strings.CutPrefix(name, "resource_"); ok {
 		return fmt.Sprintf("resources['%s']", rest)
