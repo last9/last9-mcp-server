@@ -10,11 +10,9 @@ import (
 	"testing"
 )
 
-// patchedNodeReleases is the first release of each supported Node line that
-// rejects TLS chains through the compromised eMudhra intermediates
-// (nodejs/node#66871; CHANGELOG_V22/V24/V26 entries 4342503fd8, 01acf0ee74,
-// a2caddd20e). The npm postinstall downloads the release binary with Node's
-// https module, so every Node surface must be at or above one of these.
+// patchedNodeReleases are the first releases per line that reject the compromised
+// eMudhra intermediates (nodejs/node#66871); postinstall downloads the binary over
+// Node's https, so every Node surface must be at or above one of these.
 var patchedNodeReleases = []string{"22.23.4", "24.22.1", "26.12.1"}
 
 func TestPackageEnginesFloorEachNodeLineAtPatchedRelease(t *testing.T) {
