@@ -18,7 +18,6 @@ import (
 
 func ts(sec int64) TimestampArg { return TimestampArg(strconv.FormatInt(sec, 10)) }
 
-// sampledTimestamps serves an empty monitor reply and records each requested timestamp.
 func sampledTimestamps(t *testing.T) (*httptest.Server, func() []string) {
 	t.Helper()
 	var mu sync.Mutex

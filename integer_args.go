@@ -48,7 +48,7 @@ func inputSchemaFor[In any](tool *mcp.Tool) (*jsonschema.Schema, error) {
 	}
 }
 
-// integerArgsMiddleware coerces tool's integer arguments as coerceIntegerArguments does.
+// integerArgsMiddleware rewrites tool's arguments with coerceIntegerArguments.
 func integerArgsMiddleware(tool string, schema *jsonschema.Schema) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {

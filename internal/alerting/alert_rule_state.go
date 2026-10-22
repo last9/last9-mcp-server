@@ -133,7 +133,7 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 			return utils.ToolErrorResult("step must be greater than 0"), nil, nil
 		}
 
-		// Cannot overflow: parseTimestampArg bounds both ends to [2000-01-01, ~2262].
+		// Cannot overflow: parseTimestampArg rejects times before 2000, so both ends are positive.
 		span := endTime - startTime
 
 		// Inclusive sample count: t iterates start, start+step, ..., end.
