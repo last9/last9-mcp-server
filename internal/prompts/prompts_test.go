@@ -257,7 +257,7 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"high→add filter, recount", "must repeat counts after narrowing broad filters"},
 		{"community_member_id", "must document bare single-token field mistake"},
 		{"attributes['key']", "must require attributes/resources wrapping"},
-		{"Parse Body-derived fields before filtering, grouping, or aggregation", "must parse Body fields before grouping or aggregation"},
+		{"Parse Body-derived fields before filtering, grouping, or aggregation, then reference labels as `attributes['key']`", "must parse Body fields first and say how to reference parsed labels"},
 		{"`$quantile` is the general/default percentile operator", "must default to approximate percentile aggregation"},
 		{"\"function\":{\"$quantile\":[0.99,\"attributes['latency_ms']\"]},\"as\":\"p99\",\"window\":[\"24\",\"hours\"]", "must show a complete day-wise percentile window"},
 		{"\"type\":\"window_aggregate\",\"function\":{\"$quantile\":[0.99,\"attributes['latency_ms']\"]}", "must include the required stage type in the windowed percentile example"},
@@ -273,7 +273,7 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"ALL→`$and`; ANY→`$or`", "must document all/any-word Body searches"},
 		{"never `$icontainsWords`", "must avoid the slower case-insensitive word operator"},
 		{"no service→search `Body` with `$contains` (even service-like)", "must distinguish standalone identifiers from service names"},
-		{"Stages: `filter`|`parse`|`aggregate`|`window_aggregate` only (no `transform`/`select`)", "must list valid stage types up front"},
+		{"Stages: `filter`|`parse`|`aggregate`|`window_aggregate` (no `transform`/`select`)", "must list valid stage types up front"},
 		{"`$regex` (RE2: no lookaround)", "must state the accepted regexp flavor"},
 		{"`community_member_id`→`attributes['key']`, `resource_attributes['key']`→`resources['key']`", "must show wrong→right field references"},
 	}
