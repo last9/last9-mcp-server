@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"time"
 
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
@@ -69,40 +68,6 @@ type ServiceDependencyGraphArgs struct {
 	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Service name to focus on in the dependency graph (e.g. api-service)"`
 }
 
-type PromqlRangeQueryArgs struct {
-	Query           string  `json:"query" jsonschema:"(Required) PromQL query to execute"`
-	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
-	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
-	Datasource      string  `json:"datasource,omitempty" jsonschema:"Datasource name; omitted uses the default, a near miss its closest match (named in a second content block)."`
-}
-
-type PromqlInstantQueryArgs struct {
-	Query           string  `json:"query" jsonschema:"(Required) PromQL query to execute"`
-	TimeISO         string  `json:"time_iso,omitempty" jsonschema:"Evaluation time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). If omitted, defaults to now or now-lookback_minutes."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now when time_iso is omitted (default: 0, minimum: 1)."`
-	Datasource      string  `json:"datasource,omitempty" jsonschema:"Datasource name; omitted uses the default, a near miss its closest match (named in a second content block)."`
-}
-
-type PromqlLabelValuesArgs struct {
-	MatchQuery      string  `json:"match_query,omitempty" jsonschema:"PromQL query to match series (e.g. up{job=\"prometheus\"})"`
-	Match           string  `json:"match,omitempty" jsonschema:"Alias of match_query (matches the Prometheus API's match parameter); ignored when match_query is set."`
-	Label           string  `json:"label" jsonschema:"(Required) Label name to get values for"`
-	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
-	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). For daily or sparse metrics use a wider window such as 5760 (4 days)."`
-	Datasource      string  `json:"datasource,omitempty" jsonschema:"Datasource name; omitted uses the default, a near miss its closest match (named in a second content block)."`
-}
-
-type PromqlLabelsArgs struct {
-	MatchQuery      string  `json:"match_query,omitempty" jsonschema:"PromQL query to match series (e.g. up{job=\"prometheus\"})"`
-	Match           string  `json:"match,omitempty" jsonschema:"Alias of match_query (matches the Prometheus API's match parameter); ignored when match_query is set."`
-	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
-	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
-	Datasource      string  `json:"datasource,omitempty" jsonschema:"Datasource name; omitted uses the default, a near miss its closest match (named in a second content block)."`
-}
-
 func resolveTimeRange(startTimeISO, endTimeISO string, lookbackMinutes float64) (int64, int64, error) {
 	params := map[string]interface{}{}
 	if startTimeISO != "" {
@@ -121,30 +86,6 @@ func resolveTimeRange(startTimeISO, endTimeISO string, lookbackMinutes float64) 
 	}
 
 	return startTime.Unix(), endTime.Unix(), nil
-}
-
-func resolveInstantQueryTime(timeISO string, lookbackMinutes float64) (int64, error) {
-	if timeISO != "" {
-		_, endTime, err := utils.GetTimeRange(map[string]interface{}{
-			"end_time_iso": timeISO,
-		}, utils.DefaultLookbackMinutes)
-		if err != nil {
-			return 0, fmt.Errorf("invalid time_iso format: %w", err)
-		}
-		return endTime.Unix(), nil
-	}
-
-	if lookbackMinutes != 0 {
-		startTime, _, err := utils.GetTimeRange(map[string]interface{}{
-			"lookback_minutes": lookbackMinutes,
-		}, utils.DefaultLookbackMinutes)
-		if err != nil {
-			return 0, err
-		}
-		return startTime.Unix(), nil
-	}
-
-	return time.Now().UTC().Unix(), nil
 }
 
 type TimeSeriesPoint struct {
@@ -232,89 +173,6 @@ func promErr(resp *http.Response, op string) error {
 	return utils.NewUpstreamHTTPError(resp, op)
 }
 
-func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlRangeQueryArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, args PromqlRangeQueryArgs) (*mcp.CallToolResult, any, error) {
-		query := args.Query
-		if query == "" {
-			return nil, nil, fmt.Errorf("query is required")
-		}
-
-		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		choice, err := chooseDatasource(cfg, args.Datasource)
-		if err != nil {
-			return nil, nil, err
-		}
-		if choice.candidates != nil {
-			return ambiguousDatasourceResult(args.Datasource, choice.candidates), nil, nil
-		}
-		queryCfg := choice.cfg
-
-		httpResp, err := utils.MakePromRangeAPIQuery(ctx, client, query, startTimeParam, endTimeParam, queryCfg, utils.PromResolution{})
-		if err != nil {
-			return nil, nil, err
-		}
-		if httpResp == nil {
-			return nil, nil, fmt.Errorf("received nil response from Prometheus")
-		}
-		defer httpResp.Body.Close()
-		if httpResp.StatusCode != http.StatusOK {
-			return promToolError(httpResp, "Prometheus range query")
-		}
-		// return the response body string as the content without parsing
-		responseBodyBytes, err := io.ReadAll(httpResp.Body)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
-		}
-
-		return promBodyResult(responseBodyBytes, choice.note), nil, nil
-	}
-}
-
-func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlInstantQueryArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, args PromqlInstantQueryArgs) (*mcp.CallToolResult, any, error) {
-		query := args.Query
-		if query == "" {
-			return nil, nil, fmt.Errorf("query is required")
-		}
-
-		timeParam, err := resolveInstantQueryTime(args.TimeISO, args.LookbackMinutes)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		choice, err := chooseDatasource(cfg, args.Datasource)
-		if err != nil {
-			return nil, nil, err
-		}
-		if choice.candidates != nil {
-			return ambiguousDatasourceResult(args.Datasource, choice.candidates), nil, nil
-		}
-		queryCfg := choice.cfg
-
-		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, query, timeParam, queryCfg)
-		if err != nil {
-			return nil, nil, err
-		}
-		if httpResp == nil {
-			return nil, nil, fmt.Errorf("received nil response from Prometheus")
-		}
-		defer httpResp.Body.Close()
-		if httpResp.StatusCode != http.StatusOK {
-			return promToolError(httpResp, "Prometheus instant query")
-		}
-		responseBodyBytes, err := io.ReadAll(httpResp.Body)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
-		}
-
-		return promBodyResult(responseBodyBytes, choice.note), nil, nil
-	}
-}
-
 // tool handler to make the query
 // sum by (env)(last_over_time(domain_attributes_count))
 // iterate over the values of `env` label and return the unique values
@@ -356,92 +214,6 @@ func NewServiceEnvironmentsHandler(client *http.Client, cfg models.Config) func(
 				},
 			},
 		}, nil, nil
-	}
-}
-
-func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlLabelValuesArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, args PromqlLabelValuesArgs) (*mcp.CallToolResult, any, error) {
-		query := firstNonEmpty(args.MatchQuery, args.Match)
-		if query == "" {
-			return nil, nil, fmt.Errorf("match_query is required")
-		}
-		label := args.Label
-		if label == "" {
-			return nil, nil, fmt.Errorf("label is required")
-		}
-		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		choice, err := chooseDatasource(cfg, args.Datasource)
-		if err != nil {
-			return nil, nil, err
-		}
-		if choice.candidates != nil {
-			return ambiguousDatasourceResult(args.Datasource, choice.candidates), nil, nil
-		}
-		queryCfg := choice.cfg
-
-		httpResp, err := utils.MakePromLabelValuesAPIQuery(ctx, client, label, query, startTimeParam, endTimeParam, queryCfg)
-		if err != nil {
-			return nil, nil, err
-		}
-		if httpResp == nil {
-			return nil, nil, fmt.Errorf("received nil response from Prometheus")
-		}
-		defer httpResp.Body.Close()
-		if httpResp.StatusCode != http.StatusOK {
-			return promToolError(httpResp, "Prometheus label values")
-		}
-		// return the response body string as the content without parsing
-		responseBodyBytes, err := io.ReadAll(httpResp.Body)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
-		}
-
-		return promBodyResult(responseBodyBytes, choice.note), nil, nil
-	}
-}
-
-func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlLabelsArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, args PromqlLabelsArgs) (*mcp.CallToolResult, any, error) {
-		query := firstNonEmpty(args.MatchQuery, args.Match)
-		if query == "" {
-			return nil, nil, fmt.Errorf("match_query is required")
-		}
-		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		choice, err := chooseDatasource(cfg, args.Datasource)
-		if err != nil {
-			return nil, nil, err
-		}
-		if choice.candidates != nil {
-			return ambiguousDatasourceResult(args.Datasource, choice.candidates), nil, nil
-		}
-		queryCfg := choice.cfg
-
-		httpResp, err := utils.MakePromLabelsAPIQuery(ctx, client, query, startTimeParam, endTimeParam, queryCfg)
-		if err != nil {
-			return nil, nil, err
-		}
-		if httpResp == nil {
-			return nil, nil, fmt.Errorf("received nil response from Prometheus")
-		}
-		defer httpResp.Body.Close()
-		if httpResp.StatusCode != http.StatusOK {
-			return promToolError(httpResp, "Prometheus labels")
-		}
-		// return the response body string as the content without parsing
-		responseBodyBytes, err := io.ReadAll(httpResp.Body)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
-		}
-
-		return promBodyResult(responseBodyBytes, choice.note), nil, nil
 	}
 }
 
