@@ -374,3 +374,20 @@ func TestPatchDashboard_NotFound(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestPatchDashboard_ForbiddenWriteIsReadonly(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		_, _ = io.WriteString(w, patchFixture)
+	}))
+	defer srv.Close()
+	_, _, err := NewPatchDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))(context.Background(), &mcp.CallToolRequest{}, PatchDashboardArgs{
+		ID: "dash-1", Ops: []PatchDashboardOp{{Op: "set_title", Title: "x"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "dashboard is readonly") {
+		t.Fatalf("err = %v", err)
+	}
+}

@@ -7,13 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"reflect"
 	"strings"
 	"unicode/utf8"
 
-	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
+	"last9-mcp/internal/last9api"
+	lastdashboards "last9-mcp/internal/last9api/dashboards"
 	"last9-mcp/internal/models"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -78,21 +78,16 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 		if err := validatePatchOps(args.Ops); err != nil {
 			return nil, nil, err
 		}
-		region, err := resolveRegion(cfg, "")
-		if err != nil {
+		if _, err := resolveRegion(cfg, ""); err != nil {
 			return nil, nil, err
 		}
 
-		u := cfg.APIBaseURL + fmt.Sprintf(constants.EndpointDashboardByID, url.PathEscape(args.ID))
-		body, _, err := doJSONRequest(ctx, client, cfg, http.MethodGet, u+"?"+url.Values{"region": {region}}.Encode(), nil)
+		api := last9api.NewClient(client, cfg)
+		current, err := lastdashboards.GetDashboard(ctx, api, args.ID)
 		if err != nil {
 			return nil, nil, mapDashboardAPIError(err)
 		}
-		var current struct {
-			Dashboard map[string]any  `json:"dashboard"`
-			Metadata  json.RawMessage `json:"metadata,omitempty"`
-		}
-		if err := json.Unmarshal(body, &current); err != nil || current.Dashboard == nil {
+		if current.Dashboard == nil {
 			return nil, nil, errors.New("get dashboard returned no dashboard object; nothing was written")
 		}
 
@@ -109,7 +104,7 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 		if err != nil {
 			return nil, nil, err
 		}
-		if _, _, err := doJSONRequest(ctx, client, cfg, http.MethodPut, u, payload); err != nil {
+		if err := lastdashboards.UpdateDashboard(ctx, api, args.ID, payload); err != nil {
 			return nil, nil, mapDashboardAPIError(err)
 		}
 
