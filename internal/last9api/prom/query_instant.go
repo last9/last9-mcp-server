@@ -2,6 +2,7 @@ package prom
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -36,4 +37,11 @@ func QueryInstant(ctx context.Context, c *last9api.Client, in QueryInstantInput)
 		return nil, errors.New(opQueryInstant + ": empty response")
 	}
 	return *series, nil
+}
+
+// QueryInstantRaw calls POST /prom_query_instant.
+func QueryInstantRaw(ctx context.Context, c *last9api.Client, in QueryInstantInput) (json.RawMessage, error) {
+	var raw json.RawMessage
+	err := c.Do(ctx, opQueryInstant, last9api.Request{Method: http.MethodPost, Path: pathQueryInstant, Body: in}, &raw)
+	return raw, err
 }

@@ -1,12 +1,16 @@
 package apm
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
+	"last9-mcp/internal/last9api/prom"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/namematch"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -66,6 +70,23 @@ func ambiguousDatasourceResult(requested string, candidates []string) *mcp.CallT
 	text := fmt.Sprintf("datasource %q matches several datasources: %s. No query was run; retry with one of them as datasource.",
 		strings.TrimSpace(requested), strings.Join(candidates, ", "))
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}
+}
+
+func promDatasource(cfg models.Config) prom.Datasource {
+	return prom.Datasource{ReadURL: cfg.PrometheusReadURL, Username: cfg.PrometheusUsername, Password: cfg.PrometheusPassword}
+}
+
+// An upstream HTTP status is a tool error the agent can act on; anything else
+// (transport, config) stays a Go error, as before the move to last9api.
+func promToolResult(raw json.RawMessage, err error, note string) (*mcp.CallToolResult, any, error) {
+	var upstream *utils.UpstreamHTTPError
+	if errors.As(err, &upstream) {
+		return utils.ToolErrorResult(err.Error()), nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	return promBodyResult(raw, note), nil, nil
 }
 
 // promBodyResult serves an upstream body as is, with the datasource note as a

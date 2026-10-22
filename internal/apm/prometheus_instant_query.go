@@ -3,10 +3,11 @@ package apm
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
+	"last9-mcp/internal/last9api"
+	"last9-mcp/internal/last9api/prom"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -63,24 +64,11 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 		if choice.candidates != nil {
 			return ambiguousDatasourceResult(args.Datasource, choice.candidates), nil, nil
 		}
-		queryCfg := choice.cfg
-
-		httpResp, err := utils.MakePromInstantAPIQuery(ctx, client, query, timeParam, queryCfg)
-		if err != nil {
-			return nil, nil, err
-		}
-		if httpResp == nil {
-			return nil, nil, fmt.Errorf("received nil response from Prometheus")
-		}
-		defer httpResp.Body.Close()
-		if httpResp.StatusCode != http.StatusOK {
-			return promToolError(httpResp, "Prometheus instant query")
-		}
-		responseBodyBytes, err := io.ReadAll(httpResp.Body)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
-		}
-
-		return promBodyResult(responseBodyBytes, choice.note), nil, nil
+		raw, err := prom.QueryInstantRaw(ctx, last9api.NewClient(client, choice.cfg), prom.QueryInstantInput{
+			Datasource: promDatasource(choice.cfg),
+			Query:      query,
+			Timestamp:  timeParam,
+		})
+		return promToolResult(raw, err, choice.note)
 	}
 }

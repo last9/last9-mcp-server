@@ -3,11 +3,11 @@ package apm
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 
+	"last9-mcp/internal/last9api"
+	"last9-mcp/internal/last9api/prom"
 	"last9-mcp/internal/models"
-	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -39,25 +39,12 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 		if choice.candidates != nil {
 			return ambiguousDatasourceResult(args.Datasource, choice.candidates), nil, nil
 		}
-		queryCfg := choice.cfg
-
-		httpResp, err := utils.MakePromLabelsAPIQuery(ctx, client, query, startTimeParam, endTimeParam, queryCfg)
-		if err != nil {
-			return nil, nil, err
-		}
-		if httpResp == nil {
-			return nil, nil, fmt.Errorf("received nil response from Prometheus")
-		}
-		defer httpResp.Body.Close()
-		if httpResp.StatusCode != http.StatusOK {
-			return promToolError(httpResp, "Prometheus labels")
-		}
-		// return the response body string as the content without parsing
-		responseBodyBytes, err := io.ReadAll(httpResp.Body)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read response body: %w", err)
-		}
-
-		return promBodyResult(responseBodyBytes, choice.note), nil, nil
+		raw, err := prom.GetAPMLabels(ctx, last9api.NewClient(client, choice.cfg), prom.GetAPMLabelsInput{
+			Datasource: promDatasource(choice.cfg),
+			Metric:     query,
+			Timestamp:  endTimeParam,
+			Window:     endTimeParam - startTimeParam,
+		})
+		return promToolResult(raw, err, choice.note)
 	}
 }

@@ -3,6 +3,7 @@ package prom
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	"last9-mcp/internal/last9api"
@@ -35,4 +36,11 @@ func GetLabelValues(ctx context.Context, c *last9api.Client, in GetLabelValuesIn
 	var values []string
 	err := c.Do(ctx, opLabelValues, last9api.Request{Method: http.MethodPost, Path: pathLabelValues, Body: in}, &values)
 	return values, err
+}
+
+// GetLabelValuesRaw calls POST /prom_label_values.
+func GetLabelValuesRaw(ctx context.Context, c *last9api.Client, in GetLabelValuesInput) (json.RawMessage, error) {
+	var raw json.RawMessage
+	err := c.Do(ctx, opLabelValues, last9api.Request{Method: http.MethodPost, Path: pathLabelValues, Body: in}, &raw)
+	return raw, err
 }
