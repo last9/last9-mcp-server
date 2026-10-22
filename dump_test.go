@@ -159,6 +159,9 @@ func TestDumpTools(t *testing.T) {
 		if err := json.Unmarshal(schemaBytes, &schema); err != nil {
 			t.Fatalf("unmarshal %s inputSchema: %v", tool.Name, err)
 		}
+		if lookback := schema.Properties["lookback_minutes"].Description; (tool.Name == "prometheus_labels" || tool.Name == "prometheus_label_values") && !strings.Contains(lookback, "5760 (4 days)") {
+			t.Fatalf("%s lookback_minutes must document the 4-day retry: %q", tool.Name, lookback)
+		}
 		for name, property := range schema.Properties {
 			if strings.TrimSpace(property.Description) == "" {
 				t.Fatalf("%s schema property %q is missing a description", tool.Name, name)
