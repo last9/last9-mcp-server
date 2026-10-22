@@ -154,7 +154,7 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 		sampler := ruleStateSampler{client: client, cfg: cfg, args: args,
 			// One monitor call answers for at most MaxAlertsMonitorWindowSeconds.
 			window: min(args.Step, MaxAlertsMonitorWindowSeconds)}
-		samples := make([][]AlertRuleData, points)
+		samples := make([][]ruleState, points)
 		var fetched atomic.Int64
 
 		sampleCtx, cancel := context.WithTimeout(ctx, alertRuleStateTimeout)
@@ -189,13 +189,13 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 		for i, rules := range samples {
 			t := startTime + int64(i)*args.Step
 			for _, rule := range rules {
-				if _, exists := results[rule.RuleID]; !exists {
-					results[rule.RuleID] = make(map[int64]int)
+				if _, exists := results[rule.ruleID]; !exists {
+					results[rule.ruleID] = make(map[int64]int)
 				}
-				if rule.State == "firing" {
-					results[rule.RuleID][t] = 1
+				if rule.firing {
+					results[rule.ruleID][t] = 1
 				} else {
-					results[rule.RuleID][t] = 0
+					results[rule.ruleID][t] = 0
 				}
 			}
 		}
@@ -236,8 +236,14 @@ type ruleStateSampler struct {
 	window int64
 }
 
-// fetch returns the alert rules /alerts/monitor reports at timestamp t.
-func (s ruleStateSampler) fetch(ctx context.Context, t int64) ([]AlertRuleData, error) {
+// ruleState is all a sample keeps of a rule, so completed samples do not hold
+// annotations and labels on the heap while the rest are fetched.
+type ruleState struct {
+	ruleID string
+	firing bool
+}
+
+func (s ruleStateSampler) fetch(ctx context.Context, t int64) ([]ruleState, error) {
 	args, cfg := s.args, s.cfg
 	queryParams := url.Values{}
 	queryParams.Set("timestamp", fmt.Sprintf("%d", t))
@@ -293,5 +299,9 @@ func (s ruleStateSampler) fetch(ctx context.Context, t int64) ([]AlertRuleData, 
 	if err := json.Unmarshal(body, &alertResp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal alerts response at timestamp %d: %w", t, err)
 	}
-	return alertResp.AlertRules, nil
+	states := make([]ruleState, len(alertResp.AlertRules))
+	for i, rule := range alertResp.AlertRules {
+		states[i] = ruleState{ruleID: rule.RuleID, firing: rule.State == "firing"}
+	}
+	return states, nil
 }

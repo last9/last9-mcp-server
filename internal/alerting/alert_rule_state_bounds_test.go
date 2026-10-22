@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -148,6 +150,38 @@ func TestAlertRuleStateHandler_CapsWindowAtMonitorMaximum(t *testing.T) {
 		if len(windows) != 1 || !windows[tc.want] {
 			t.Errorf("step %d: windows sent = %v, want only %s", tc.step, windows, tc.want)
 		}
+	}
+}
+
+// Completed samples must keep only rule id and state: annotations and labels never
+// reach the output, and 100 samples of them would otherwise stay on the heap.
+func TestAlertRuleStateHandler_DropsUnusedMetadataFromCompletedSamples(t *testing.T) {
+	payload := `{"alert_rules":[{"rule_id":"r","state":"firing","alerts":[{"annotations":{"details":"` + strings.Repeat("x", 1<<20) + `"}}]}]}`
+	runtime.GC()
+	var before runtime.MemStats
+	runtime.ReadMemStats(&before)
+	var hits atomic.Int64
+	var retained atomic.Uint64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hits.Add(1) == alertRuleStateMaxPoints {
+			runtime.GC()
+			var current runtime.MemStats
+			runtime.ReadMemStats(&current)
+			if current.HeapAlloc > before.HeapAlloc {
+				retained.Store(current.HeapAlloc - before.HeapAlloc)
+			}
+		}
+		w.Write([]byte(payload))
+	}))
+	defer upstream.Close()
+
+	handler := NewAlertRuleStateHandler(upstream.Client(), newAlertRuleStateTestConfig(upstream.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AlertRuleStateRequest{StartTime: ts(1718000000), EndTime: ts(1718000099), Step: 1})
+	if err != nil || result.IsError {
+		t.Fatalf("err=%v result=%+v", err, result)
+	}
+	if got := retained.Load(); got > 20<<20 {
+		t.Errorf("heap grew %.1f MiB by the last sample; completed samples retain unused metadata", float64(got)/(1<<20))
 	}
 }
 
