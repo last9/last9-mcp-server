@@ -16,6 +16,7 @@ import (
 
 	"last9-mcp/internal/constants"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -267,5 +268,21 @@ func TestServicePerformanceDetails_SummaryExcludesAvailabilityNoData(t *testing.
 				t.Errorf("include_series availability = %+v, want all %d raw points", full.Availability, len(tc.values))
 			}
 		})
+	}
+}
+
+func TestServicePerformanceDetailsArgs_TopNDescriptionStatesBothDefaults(t *testing.T) {
+	schema, err := jsonschema.For[ServicePerformanceDetailsArgs](nil)
+	if err != nil {
+		t.Fatalf("schema: %v", err)
+	}
+	got := schema.Properties["top_n"].Description
+	for _, want := range []string{
+		fmt.Sprintf("default: %d", perfSummaryDefaultTopN),
+		fmt.Sprintf("%d with include_series=true", perfDetailsDefaultTopN),
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("top_n description %q missing %q", got, want)
+		}
 	}
 }
