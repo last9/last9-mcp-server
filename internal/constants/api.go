@@ -63,6 +63,11 @@ const (
 	// ToolCallTimeout is the overall deadline of one tool call, across every
 	// upstream request it makes (chunks, probes, follow-ups).
 	ToolCallTimeout = DefaultHTTPTimeout
+
+	// LogSearchTimeout bounds one server-side log search. Well under
+	// DefaultHTTPTimeout so a slow body search fails fast with narrowing advice
+	// instead of holding the agent for the full client timeout.
+	LogSearchTimeout = 90 * time.Second
 )
 
 // HTTP Headers
