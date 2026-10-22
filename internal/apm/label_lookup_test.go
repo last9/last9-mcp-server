@@ -326,3 +326,31 @@ func TestResultLen(t *testing.T) {
 		}
 	}
 }
+
+func TestPromqlLabelLookups_BadTimeReportedBeforeBadDatasource(t *testing.T) {
+	cfg, client, got := labelLookupServer(t, `[]`)
+	handlers := map[string]func() error{
+		"prometheus_label_values": func() error {
+			_, _, err := NewPromqlLabelValuesHandler(client, cfg)(context.Background(), &mcp.CallToolRequest{}, PromqlLabelValuesArgs{
+				MatchQuery: "up", Label: "env", StartTimeISO: "yesterday", Datasource: "missing",
+			})
+			return err
+		},
+		"prometheus_labels": func() error {
+			_, _, err := NewPromqlLabelsHandler(client, cfg)(context.Background(), &mcp.CallToolRequest{}, PromqlLabelsArgs{
+				MatchQuery: "up", StartTimeISO: "yesterday", Datasource: "missing",
+			})
+			return err
+		},
+	}
+	for name, call := range handlers {
+		t.Run(name, func(t *testing.T) {
+			if err := call(); err == nil || !strings.Contains(err.Error(), `start_time_iso "yesterday"`) {
+				t.Fatalf("err = %v, want the start_time_iso error first", err)
+			}
+		})
+	}
+	if len(*got) != 0 {
+		t.Fatalf("requests = %d, want 0", len(*got))
+	}
+}
