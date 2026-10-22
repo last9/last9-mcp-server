@@ -29,8 +29,6 @@ type evaluationSample struct {
 	State  string
 }
 
-// attachRecentEvaluations sets RecentEvaluations on every enabled rule and returns a note for
-// the response when history was skipped or some minutes could not be read.
 func attachRecentEvaluations(ctx context.Context, api *last9api.Client, rules AlertConfigResponse, now time.Time) string {
 	enabled := make([]int, 0, len(rules))
 	for i, rule := range rules {
@@ -92,8 +90,6 @@ func evaluationMinutes(now time.Time) []time.Time {
 	return minutes
 }
 
-// fetchMonitorStates reads every minute concurrently; states[i] maps rule ID to its normalized
-// state in minutes[i], and errs[i] is that minute's lookup error.
 func fetchMonitorStates(ctx context.Context, api *last9api.Client, minutes []time.Time) (states []map[string]string, errs []error) {
 	states = make([]map[string]string, len(minutes))
 	errs = make([]error, len(minutes))

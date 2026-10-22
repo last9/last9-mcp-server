@@ -88,7 +88,6 @@ func (f *fakeMonitor) requestCount() int {
 	return len(f.requests)
 }
 
-// minute returns the Unix seconds of the i-th sample, newest first.
 func minute(i int) int64 {
 	return time.Date(2023, 11, 14, 22, 12, 0, 0, time.UTC).Add(-time.Duration(i) * time.Minute).Unix()
 }
