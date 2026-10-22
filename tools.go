@@ -130,7 +130,7 @@ func (g *toolGate) registerAdmitted() error {
 
 // registerIfAllowed is the single registration gate: it queues a tool for
 // registerAdmitted only when the gate's filter admits it (toolset, and
-// read-only mode). Every call it serves ends at the gate's call deadline.
+// read-only mode).
 func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, gate *toolGate, tool *mcp.Tool, handler mcp.ToolHandlerFor[In, Out]) error {
 	if !gate.admit(tool) {
 		return nil
