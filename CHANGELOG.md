@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `get_log_attributes_for_pipeline` maps discovered `trace_id` and `span_id` fields to the `TraceId` and `SpanId` columns; they were listed as `attributes['trace_id']` / `attributes['span_id']`, which match nothing, so a filter built from them returned no logs (#396).
+- `get_traces` now steers a percentile over the whole lookback ("p95 latency over the last hour") to one `aggregate` stage with `{"$quantile":[0.95,"Duration"]}` (plus `groupby` to split by a dimension), and reserves `window_aggregate` for percentiles per time bucket or over time (#377).
 - Every tool now accepts a number-like string for an integer argument, so `{"channel_id": "42"}` runs as `42` instead of failing with `type: 42 has type "string", want "integer"`. Before schema validation, a string matching `^-?\d+$` (and fitting int64) under a property whose schema allows integers but not strings, at any depth, is replaced by its number; other strings such as `"4x2"`, `"4.2"` or `""` are still rejected with the same error naming the argument, and unknown arguments are still refused (#373).
 
 - `patch_alert` `properties` now changes only the fields sent: omitted or blank `description`, `runbook`, `annotations` and `query_mode` are carried over from the stored rule. The API overwrites the whole properties object, so sending only `description` cleared the runbook, annotations and query mode. `annotations` still replaces the whole map, and `{}` clears it (#356).
@@ -79,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_logs` and `get_traces` now explicitly show compact JSON stage-array examples and reject SQL-like query construction in their tool descriptions, so description-only clients can form valid pipelines without fetching a reference manual (#309).
 
 ### Changed
+- **Breaking:** the npm package `@last9/mcp-server` now requires Node.js `^22.23.4 || ^24.22.1 || >=26.12.1` (was `>=14`), the first release of each supported line that rejects TLS chains through the compromised eMudhra intermediates (nodejs/node#66871). Its `postinstall` downloads the server binary over Node's `https`, so older runtimes could accept a forged GitHub certificate; npm now warns on them, and refuses with `engine-strict`. The npm publish job pins Node 24.22.1 (#402).
 - When `get_logs` or `get_traces` is served, the server instructions' raw-query section now states that the time window goes in `start_time_iso`/`end_time_iso` (or `lookback_minutes`), never as `Timestamp` filters in the pipeline, instead of relying on the tool descriptions alone (#379).
 - Tool empty-result, validation, timeout/rate-limit, and truncation responses now include actionable retry guidance so agents can widen or narrow time windows, verify filters, discover names with `did_you_mean`, and avoid unchanged retries instead of stopping at generic empty/error messages (#320).
 - The `alerts` toolset now also serves `get_change_events`, the input `analyze_change_impact` takes as `change_event` (#352).
