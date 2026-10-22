@@ -60,6 +60,22 @@ func TestGetLogs_DefaultsToSummary(t *testing.T) {
 	}
 }
 
+func TestGetLogs_SummaryMarksLimitTruncation(t *testing.T) {
+	for _, tc := range []struct {
+		limit         int
+		wantTruncated bool
+	}{{limit: 0}, {limit: 30, wantTruncated: true}} {
+		t.Run(fmt.Sprintf("limit=%d", tc.limit), func(t *testing.T) {
+			srv, _ := streamSearchServer(t, timeoutLines(30))
+			out := callGetLogs(t, srv, GetLogsArgs{Limit: tc.limit})
+			summary, _ := out["summary"].(map[string]any)
+			if got := summary["truncated"] == true; got != tc.wantTruncated || (out["l9_guidance"] != nil) != tc.wantTruncated {
+				t.Errorf("summary.truncated = %v, l9_guidance = %v; want truncated %v in both", summary["truncated"], out["l9_guidance"], tc.wantTruncated)
+			}
+		})
+	}
+}
+
 func TestGetLogs_RawModeReturnsLines(t *testing.T) {
 	srv, _ := streamSearchServer(t, timeoutLines(30))
 	out := callGetLogs(t, srv, GetLogsArgs{ResponseMode: "raw"})

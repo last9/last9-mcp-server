@@ -67,7 +67,7 @@ func decodeSummary(t *testing.T, result map[string]interface{}) logSummary {
 func TestSummarizeLogResult_KeepsResultsAtOrUnderThreshold(t *testing.T) {
 	for _, n := range []int{0, 1, maxRawLinesInSummaryMode} {
 		result := streamsResult(repeatedLines(n, "ERROR", func(i int) string { return fmt.Sprintf("timeout after %d ms", i) }))
-		got := summarizeLogResult(result, summaryTestStartMs, summaryTestEndMs)
+		got := summarizeLogResult(result, summaryTestStartMs, summaryTestEndMs, false)
 		if _, ok := got["data"]; !ok {
 			t.Errorf("%d lines: data dropped, want the raw result unchanged", n)
 		}
@@ -81,7 +81,7 @@ func TestSummarizeLogResult_KeepsAggregateResults(t *testing.T) {
 	result := map[string]interface{}{
 		"data": map[string]interface{}{"resultType": "matrix", "result": make([]interface{}, 100)},
 	}
-	got := summarizeLogResult(result, summaryTestStartMs, summaryTestEndMs)
+	got := summarizeLogResult(result, summaryTestStartMs, summaryTestEndMs, false)
 	if _, ok := got["summary"]; ok {
 		t.Fatal("aggregate result summarized, want it unchanged")
 	}
@@ -96,7 +96,7 @@ func TestSummarizeLogResult_SummarizesPastThreshold(t *testing.T) {
 	result := streamsResult(lines)
 	result["total_matching_lines"] = 900
 	result["l9_guidance"] = map[string]any{"message": "truncated"}
-	got := summarizeLogResult(result, summaryTestStartMs, summaryTestEndMs)
+	got := summarizeLogResult(result, summaryTestStartMs, summaryTestEndMs, false)
 
 	if _, ok := got["data"]; ok {
 		t.Error("raw data kept in summary mode")
@@ -139,6 +139,35 @@ func TestSummarizeLogResult_SummarizesPastThreshold(t *testing.T) {
 	}
 }
 
+// A limit-truncated result holds only the newest lines, so a histogram over
+// the whole window would read as a spike at its end.
+func TestSummarizeLogResult_TruncatedBucketsOverReturnedLines(t *testing.T) {
+	lines := repeatedLines(25, "ERROR", func(i int) string { return fmt.Sprintf("timeout after %d ms", i) })
+	for i := range lines {
+		lines[i].offset = 9*time.Minute + time.Duration(i*2)*time.Second
+	}
+
+	summary := decodeSummary(t, summarizeLogResult(streamsResult(lines), summaryTestStartMs, summaryTestEndMs, true))
+	if !summary.Truncated {
+		t.Error("truncated = false, want true")
+	}
+	if summary.Histogram.Start != summary.FirstTimestamp || summary.Histogram.BucketSeconds != 5 {
+		t.Errorf("histogram = %+v, want 5s buckets from the first line (%s)", summary.Histogram, summary.FirstTimestamp)
+	}
+	wantCounts := []int{3, 2, 3, 2, 3, 2, 3, 2, 3, 2}
+	if fmt.Sprint(summary.Histogram.Counts) != fmt.Sprint(wantCounts) {
+		t.Errorf("histogram counts = %v, want %v", summary.Histogram.Counts, wantCounts)
+	}
+	if !strings.Contains(summary.Hint, "newest") {
+		t.Errorf("hint %q does not say the summary covers only the newest lines", summary.Hint)
+	}
+
+	complete := decodeSummary(t, summarizeLogResult(streamsResult(lines), summaryTestStartMs, summaryTestEndMs, false))
+	if complete.Truncated || complete.Histogram.BucketSeconds != 60 || strings.Contains(complete.Hint, "newest") {
+		t.Errorf("untruncated summary = %+v, want 60s buckets over the window and no truncation note", complete)
+	}
+}
+
 func TestSummarizeLogResult_FitsCharBudgetOnWideData(t *testing.T) {
 	var lines []summaryTestLine
 	for p := range 40 {
@@ -148,7 +177,7 @@ func TestSummarizeLogResult_FitsCharBudgetOnWideData(t *testing.T) {
 		})...)
 	}
 
-	got := summarizeLogResult(streamsResult(lines), summaryTestStartMs, summaryTestEndMs)
+	got := summarizeLogResult(streamsResult(lines), summaryTestStartMs, summaryTestEndMs, false)
 	if size := len(formatJSON(got)); size > maxSummaryChars {
 		t.Fatalf("summary is %d chars, want <= %d", size, maxSummaryChars)
 	}
@@ -180,7 +209,7 @@ func TestSummarizeLogResult_BoundsSeverityCounts(t *testing.T) {
 		lines = append(lines, repeatedLines(10-s, severity, func(i int) string { return fmt.Sprintf("job %d done", i) })...)
 	}
 
-	summary := decodeSummary(t, summarizeLogResult(streamsResult(lines), summaryTestStartMs, summaryTestEndMs))
+	summary := decodeSummary(t, summarizeLogResult(streamsResult(lines), summaryTestStartMs, summaryTestEndMs, false))
 	if len(summary.SeverityCounts) != maxSummarySeverities {
 		t.Fatalf("severity_counts has %d labels, want %d", len(summary.SeverityCounts), maxSummarySeverities)
 	}
@@ -205,7 +234,7 @@ func TestSummarizeLogResult_DropsMetadataThatAloneExceedsBudget(t *testing.T) {
 	result["total_matching_lines"] = 900
 	result["stats"] = strings.Repeat("x", maxSummaryChars)
 
-	got := summarizeLogResult(result, summaryTestStartMs, summaryTestEndMs)
+	got := summarizeLogResult(result, summaryTestStartMs, summaryTestEndMs, false)
 	if size := len(formatJSON(got)); size > maxSummaryChars {
 		t.Fatalf("summary is %d chars, want <= %d", size, maxSummaryChars)
 	}

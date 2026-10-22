@@ -28,6 +28,7 @@ const (
 
 type logSummary struct {
 	LinesSummarized int                      `json:"lines_summarized"`
+	Truncated       bool                     `json:"truncated,omitempty"`
 	SeverityCounts  map[string]int           `json:"severity_counts"`
 	OtherSeverities *logSummarySeverityOther `json:"other_severities,omitempty"`
 	FirstTimestamp  string                   `json:"first_timestamp,omitempty"`
@@ -61,7 +62,10 @@ type logSummaryOther struct {
 	Lines    int `json:"lines"`
 }
 
-const logSummaryHint = `Summary of the returned lines. Pass response_mode "raw" for the lines themselves; narrow the filter to drill into one pattern.`
+const (
+	logSummaryHint          = `Summary of the returned lines. Pass response_mode "raw" for the lines themselves; narrow the filter to drill into one pattern.`
+	logSummaryTruncatedHint = `Summary of the newest returned lines only, not the whole window; the histogram spans first to last line. Narrow the filter or window for full counts; pass response_mode "raw" for the lines.`
+)
 
 func validateLogResponseMode(mode string) error {
 	switch mode {
@@ -72,7 +76,7 @@ func validateLogResponseMode(mode string) error {
 	}
 }
 
-func summarizeLogResult(result map[string]interface{}, startMs, endMs int64) map[string]interface{} {
+func summarizeLogResult(result map[string]interface{}, startMs, endMs int64, truncated bool) map[string]interface{} {
 	kind, items, err := extractResultItems(result)
 	if err != nil || kind != "streams" || countLogEntriesInResultItems(items) <= maxRawLinesInSummaryMode {
 		return result
@@ -92,7 +96,7 @@ func summarizeLogResult(result map[string]interface{}, startMs, endMs int64) map
 			summarized[key] = value
 		}
 	}
-	base := newLogSummary(entries, startMs, endMs)
+	base := newLogSummary(entries, startMs, endMs, truncated)
 	for topN, samples := maxSummaryPatterns, maxSummaryPatternSamples; ; {
 		summary := base.withPatterns(patterns, topN, samples)
 		summarized["summary"] = summary
@@ -127,14 +131,15 @@ func dropLargestMetadata(summarized map[string]interface{}, summary logSummary) 
 	return summarized
 }
 
-func newLogSummary(entries []LogEntry, startMs, endMs int64) logSummary {
-	summary := logSummary{
-		LinesSummarized: len(entries),
-		Histogram:       newLogSummaryHistogram(startMs, endMs),
-		Hint:            logSummaryHint,
+// newLogSummary buckets a truncated result over its own lines: they are only
+// the newest of the window, so window-wide buckets would show a false spike.
+func newLogSummary(entries []LogEntry, startMs, endMs int64, truncated bool) logSummary {
+	summary := logSummary{LinesSummarized: len(entries), Truncated: truncated, Hint: logSummaryHint}
+	if truncated {
+		summary.Hint = logSummaryTruncatedHint
 	}
 	severityCounts := map[string]int{}
-	var first, last time.Time
+	var timestamps []time.Time
 	for _, entry := range entries {
 		severity := strings.TrimSpace(entry.Severity)
 		if severity == "" {
@@ -142,23 +147,24 @@ func newLogSummary(entries []LogEntry, startMs, endMs int64) logSummary {
 		}
 		severityCounts[truncateRunes(severity, maxSummarySeverityRunes)]++
 
-		ts, err := time.Parse(time.RFC3339Nano, entry.Timestamp)
-		if err != nil {
-			continue
+		if ts, err := time.Parse(time.RFC3339Nano, entry.Timestamp); err == nil {
+			timestamps = append(timestamps, ts)
 		}
-		if first.IsZero() || ts.Before(first) {
-			first = ts
-		}
-		if ts.After(last) {
-			last = ts
-		}
-		summary.Histogram.record(ts, startMs)
-	}
-	if !first.IsZero() {
-		summary.FirstTimestamp = first.UTC().Format(time.RFC3339)
-		summary.LastTimestamp = last.UTC().Format(time.RFC3339)
 	}
 	summary.SeverityCounts, summary.OtherSeverities = boundSeverityCounts(severityCounts)
+
+	if len(timestamps) > 0 {
+		first, last := slices.MinFunc(timestamps, time.Time.Compare), slices.MaxFunc(timestamps, time.Time.Compare)
+		summary.FirstTimestamp = first.UTC().Format(time.RFC3339)
+		summary.LastTimestamp = last.UTC().Format(time.RFC3339)
+		if truncated {
+			startMs, endMs = first.Truncate(time.Second).UnixMilli(), last.UnixMilli()
+		}
+	}
+	summary.Histogram = newLogSummaryHistogram(startMs, endMs)
+	for _, ts := range timestamps {
+		summary.Histogram.record(ts, startMs)
+	}
 	return summary
 }
 
@@ -177,7 +183,9 @@ func boundSeverityCounts(counts map[string]int) (map[string]int, *logSummarySeve
 }
 
 func newLogSummaryHistogram(startMs, endMs int64) logSummaryHistogram {
-	bucketSeconds := max((endMs-startMs)/1000/summaryHistogramBuckets, 1)
+	// Round up so the buckets cover the span; rounding down overfills the last.
+	spanSeconds := (endMs - startMs + 999) / 1000
+	bucketSeconds := max((spanSeconds+summaryHistogramBuckets-1)/summaryHistogramBuckets, 1)
 	return logSummaryHistogram{
 		Start:         time.UnixMilli(startMs).UTC().Format(time.RFC3339),
 		BucketSeconds: bucketSeconds,

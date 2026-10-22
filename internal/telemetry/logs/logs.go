@@ -72,14 +72,14 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	if err != nil {
 		return nil, err
 	}
-	addGetLogsGuidance(result, args, getLogsGuidanceContext{
+	truncated := addGetLogsGuidance(result, args, getLogsGuidanceContext{
 		startMs:        startTime,
 		endMs:          endTime,
 		effectiveLimit: effectiveGetLogsResultLimit(cfg, args.Limit),
 		maxLimit:       effectiveGetLogsResultLimit(cfg, 0),
 	})
 	if args.ResponseMode != logResponseModeRaw {
-		result = summarizeLogResult(result, startTime, endTime)
+		result = summarizeLogResult(result, startTime, endTime, truncated)
 	}
 
 	// Build deep link URL
