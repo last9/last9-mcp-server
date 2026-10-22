@@ -101,6 +101,9 @@ func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 			}
 		}
 	}
+	if e := telemetry.CheckNumericGate(stages, "tracejson_query"); e != nil {
+		return &tracePipelineError{category: traceCategoryInvalidField, path: e.Path, msg: e.Message}
+	}
 	return nil
 }
 
