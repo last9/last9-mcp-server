@@ -430,6 +430,9 @@ func TestCreateAlertFromChartDisablesInPassedGroupWhenResponseOmitsIt(t *testing
 	if len(*reqs) != 2 || (*reqs)[1].path != "/entities/grp-7/alert-rules/rule-9" {
 		t.Fatalf("requests = %+v, want the disable in grp-7", *reqs)
 	}
+	if text := resultText(result); !strings.Contains(text, "Created alert rule rule-9 in group grp-7 ") {
+		t.Errorf("result does not name the group the rule was disabled in:\n%s", text)
+	}
 }
 
 // Once the create has landed, a failed disable must say the rule exists and may be live,
