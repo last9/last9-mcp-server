@@ -170,3 +170,36 @@ func CheckNumericComparison(operator, field string, value interface{}, path stri
 	}
 	return &PipelineArgError{path, msg}
 }
+
+// CollectStageAliases returns the names a stage at index upto may reference
+// bare: the "as" names and groupby aliases of the closest earlier aggregate or
+// window_aggregate stage. Each aggregating stage replaces the set, matching the
+// columns the engine exposes. Nil when no earlier stage aggregates.
+// ponytail: backward scan is O(stages^2); pipelines are < 10 stages.
+func CollectStageAliases(stages []map[string]interface{}, upto int) map[string]struct{} {
+	for i := upto - 1; i >= 0; i-- {
+		stage := stages[i]
+		if t, _ := stage["type"].(string); t != "aggregate" && t != "window_aggregate" {
+			continue
+		}
+		names := map[string]struct{}{}
+		add := func(v interface{}) {
+			if s, ok := v.(string); ok && aggregateAliasPattern.MatchString(s) {
+				names[s] = struct{}{}
+			}
+		}
+		add(stage["as"])
+		aggs, _ := stage["aggregates"].([]interface{})
+		for _, a := range aggs {
+			if m, ok := a.(map[string]interface{}); ok {
+				add(m["as"])
+			}
+		}
+		groupBy, _ := stage["groupby"].(map[string]interface{})
+		for _, alias := range groupBy {
+			add(alias)
+		}
+		return names
+	}
+	return nil
+}

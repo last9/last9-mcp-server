@@ -63,6 +63,7 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 	for stageIndex, stage := range stages {
 		sanitizedStage := make(map[string]interface{}, len(stage))
 		stagePath := fmt.Sprintf("%s[%d]", pathPrefix, stageIndex)
+		aliases := telemetry.CollectStageAliases(stages, stageIndex)
 
 		for key, value := range stage {
 			var (
@@ -72,13 +73,13 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 
 			switch key {
 			case "query":
-				sanitizedValue, err = sanitizeLogCondition(value, stagePath+".query")
+				sanitizedValue, err = sanitizeLogCondition(value, stagePath+".query", aliases)
 			case "aggregates":
-				sanitizedValue, err = sanitizeLogAggregates(value, stagePath+".aggregates")
+				sanitizedValue, err = sanitizeLogAggregates(value, stagePath+".aggregates", aliases)
 			case "function":
-				sanitizedValue, err = sanitizeLogFunction(value, stagePath+".function")
+				sanitizedValue, err = sanitizeLogFunction(value, stagePath+".function", aliases)
 			case "groupby":
-				sanitizedValue, err = sanitizeLogGroupBy(value, stagePath+".groupby")
+				sanitizedValue, err = sanitizeLogGroupBy(value, stagePath+".groupby", aliases)
 			default:
 				sanitizedValue = value
 			}
@@ -103,12 +104,12 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 	return sanitized, nil
 }
 
-func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
+func sanitizeLogCondition(value interface{}, path string, aliases map[string]struct{}) (interface{}, error) {
 	switch typed := value.(type) {
 	case []interface{}:
 		sanitized := make([]interface{}, len(typed))
 		for index, item := range typed {
-			next, err := sanitizeLogCondition(item, fmt.Sprintf("%s[%d]", path, index))
+			next, err := sanitizeLogCondition(item, fmt.Sprintf("%s[%d]", path, index), aliases)
 			if err != nil {
 				return nil, err
 			}
@@ -120,7 +121,7 @@ func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 		for key, item := range typed {
 			fieldArgIndex, isFieldOperator := logFilterFieldOperators[key]
 			if isFieldOperator {
-				next, err := sanitizeLogFieldOperatorArgs(item, key, fieldArgIndex, path+"."+key)
+				next, err := sanitizeLogFieldOperatorArgs(item, key, fieldArgIndex, path+"."+key, aliases)
 				if err != nil {
 					return nil, err
 				}
@@ -151,7 +152,7 @@ func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 					item = []interface{}{item}
 				}
 			}
-			next, err := sanitizeLogCondition(item, path+"."+key)
+			next, err := sanitizeLogCondition(item, path+"."+key, aliases)
 			if err != nil {
 				return nil, err
 			}
@@ -163,7 +164,7 @@ func sanitizeLogCondition(value interface{}, path string) (interface{}, error) {
 	}
 }
 
-func sanitizeLogFieldOperatorArgs(value interface{}, operator string, fieldArgIndex int, path string) (interface{}, error) {
+func sanitizeLogFieldOperatorArgs(value interface{}, operator string, fieldArgIndex int, path string, aliases map[string]struct{}) (interface{}, error) {
 	args, ok := value.([]interface{})
 	if !ok {
 		return nil, newLogValidationError(
@@ -187,7 +188,7 @@ func sanitizeLogFieldOperatorArgs(value interface{}, operator string, fieldArgIn
 		return sanitized, nil
 	}
 
-	next, err := sanitizeLogFieldRef(fieldRef, fmt.Sprintf("%s[%d]", path, fieldArgIndex))
+	next, err := sanitizeStageFieldRef(fieldRef, fmt.Sprintf("%s[%d]", path, fieldArgIndex), aliases)
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +308,7 @@ func coerceLogFilterValueToString(value interface{}, path string) (string, error
 	}
 }
 
-func sanitizeLogAggregates(value interface{}, path string) (interface{}, error) {
+func sanitizeLogAggregates(value interface{}, path string, aliases map[string]struct{}) (interface{}, error) {
 	aggregates, ok := value.([]interface{})
 	if !ok {
 		return value, nil
@@ -324,7 +325,7 @@ func sanitizeLogAggregates(value interface{}, path string) (interface{}, error) 
 		sanitizedAggregate := make(map[string]interface{}, len(aggregateMap))
 		for key, item := range aggregateMap {
 			if key == "function" {
-				next, err := sanitizeLogFunction(item, fmt.Sprintf("%s[%d].function", path, index))
+				next, err := sanitizeLogFunction(item, fmt.Sprintf("%s[%d].function", path, index), aliases)
 				if err != nil {
 					return nil, err
 				}
@@ -339,7 +340,7 @@ func sanitizeLogAggregates(value interface{}, path string) (interface{}, error) 
 	return sanitized, nil
 }
 
-func sanitizeLogFunction(value interface{}, path string) (interface{}, error) {
+func sanitizeLogFunction(value interface{}, path string, aliases map[string]struct{}) (interface{}, error) {
 	functionMap, ok := value.(map[string]interface{})
 	if !ok {
 		return value, nil
@@ -355,7 +356,7 @@ func sanitizeLogFunction(value interface{}, path string) (interface{}, error) {
 
 		sanitizedArgs := append([]interface{}(nil), args...)
 		if field, i, ok := telemetry.AggregateFieldArg(operator, sanitizedArgs); ok {
-			next, err := sanitizeLogFieldRef(field, fmt.Sprintf("%s.%s[%d]", path, operator, i))
+			next, err := sanitizeStageFieldRef(field, fmt.Sprintf("%s.%s[%d]", path, operator, i), aliases)
 			if err != nil {
 				return nil, err
 			}
@@ -368,7 +369,7 @@ func sanitizeLogFunction(value interface{}, path string) (interface{}, error) {
 	return sanitized, nil
 }
 
-func sanitizeLogGroupBy(value interface{}, path string) (interface{}, error) {
+func sanitizeLogGroupBy(value interface{}, path string, aliases map[string]struct{}) (interface{}, error) {
 	groupBy, ok := value.(map[string]interface{})
 	if !ok {
 		return value, nil
@@ -377,7 +378,7 @@ func sanitizeLogGroupBy(value interface{}, path string) (interface{}, error) {
 	sanitized := make(map[string]interface{}, len(groupBy))
 	originalBySanitized := make(map[string]string, len(groupBy))
 	for fieldRef, alias := range groupBy {
-		next, err := sanitizeLogFieldRef(fieldRef, path+"."+fieldRef)
+		next, err := sanitizeStageFieldRef(fieldRef, path+"."+fieldRef, aliases)
 		if err != nil {
 			return nil, err
 		}
@@ -484,4 +485,14 @@ func isCanonicalLogFieldRef(fieldRef string) bool {
 func isTraceOnlyLogField(fieldRef string) bool {
 	_, ok := traceOnlyLogFields[fieldRef]
 	return ok
+}
+
+// sanitizeStageFieldRef accepts a bare output name of the closest earlier
+// aggregate/window_aggregate stage, then falls back to sanitizeLogFieldRef.
+// ponytail: an alias named like a trace-only field (Duration, SpanKind, StatusCode, SpanName) is still rejected earlier by walkFilterForTraceFields.
+func sanitizeStageFieldRef(fieldRef, path string, aliases map[string]struct{}) (string, error) {
+	if _, ok := aliases[fieldRef]; ok {
+		return fieldRef, nil
+	}
+	return sanitizeLogFieldRef(fieldRef, path)
 }
