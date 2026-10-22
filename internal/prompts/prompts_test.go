@@ -42,6 +42,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_log_attributes_for_pipeline.md":   prompts.GetLogAttributesForPipelineDescription,
 	"get_log_patterns.md":                  prompts.GetLogPatternsDescription,
 	"get_logs_base.md":                     prompts.GetLogsDescription,
+	"get_metric_status.md":                 prompts.GetMetricStatusDescription,
 	"get_notification_channels.md":         prompts.GetNotificationChannelsDescription,
 	"get_profile_services.md":              prompts.GetProfileServicesDescription,
 	"get_profile_summary.md":               prompts.GetProfileSummaryDescription,
@@ -256,7 +257,7 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"high→add filter, recount", "must repeat counts after narrowing broad filters"},
 		{"community_member_id", "must document bare single-token field mistake"},
 		{"attributes['key']", "must require attributes/resources wrapping"},
-		{"Parse Body-derived fields before filtering, grouping, or aggregation", "must parse Body fields before grouping or aggregation"},
+		{"Parse Body-derived fields before filtering, grouping, or aggregation, then reference labels as `attributes['key']`", "must parse Body fields first and say how to reference parsed labels"},
 		{"`$quantile` is the general/default percentile operator", "must default to approximate percentile aggregation"},
 		{"\"function\":{\"$quantile\":[0.99,\"attributes['latency_ms']\"]},\"as\":\"p99\",\"window\":[\"24\",\"hours\"]", "must show a complete day-wise percentile window"},
 		{"\"type\":\"window_aggregate\",\"function\":{\"$quantile\":[0.99,\"attributes['latency_ms']\"]}", "must include the required stage type in the windowed percentile example"},
@@ -272,6 +273,9 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"ALL→`$and`; ANY→`$or`", "must document all/any-word Body searches"},
 		{"never `$icontainsWords`", "must avoid the slower case-insensitive word operator"},
 		{"no service→search `Body` with `$contains` (even service-like)", "must distinguish standalone identifiers from service names"},
+		{"Stages: `filter`|`parse`|`aggregate`|`window_aggregate` (no `transform`/`select`)", "must list valid stage types up front"},
+		{"`$regex` (RE2: no lookaround)", "must state the accepted regexp flavor"},
+		{"`community_member_id`→`attributes['key']`, `resource_attributes['key']`→`resources['key']`", "must show wrong→right field references"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
@@ -283,6 +287,36 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 	}
 	if !strings.Contains(desc, `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`) {
 		t.Error("GetLogsDescription must include its canonical JSON stage-array example")
+	}
+}
+
+// Each step of the pipeline order must be a real stage type: a bare "scope"
+// step led models to invent {"type":"scope"} stages (lq-mf-005).
+func TestGetLogsDescriptionOrderNamesOnlyStageTypes(t *testing.T) {
+	stageTypes := map[string]bool{"filter": true, "parse": true, "aggregate": true, "window_aggregate": true}
+	var order string
+	for _, line := range strings.Split(prompts.GetLogsDescription, "\n") {
+		if rest, ok := strings.CutPrefix(line, "**Order:**"); ok {
+			// Cut at the sentence end, not any dot: a step may hold a dotted key like resources['k8s.ns'].
+			order, _, _ = strings.Cut(rest, ". ")
+		}
+	}
+	if order == "" {
+		t.Fatal("GetLogsDescription has no **Order:** line")
+	}
+	for _, step := range strings.Split(order, "→") {
+		// The stage is the leading word, so a trailing note or a sentence glued on without a space doesn't count.
+		stage := strings.TrimSpace(step)
+		if end := strings.IndexFunc(stage, func(r rune) bool { return r != '_' && (r < 'a' || r > 'z') }); end >= 0 {
+			stage = stage[:end]
+		}
+		if !stageTypes[stage] {
+			t.Errorf("**Order:** step %q is not a stage type (filter, parse, aggregate, window_aggregate)", strings.TrimSpace(step))
+		}
+	}
+	// The post-parse filter→aggregate steps must say how parsed labels are referenced; without it models grouped by bare labels (lq-101).
+	if want := `Stage types: only filter/parse/aggregate/window_aggregate; parsed labels: attributes['key'].`; !strings.Contains(prompts.GetLogsDescription, want) {
+		t.Errorf("GetLogsDescription missing %q", want)
 	}
 }
 
@@ -310,11 +344,21 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 		{"`Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first", "must gate attribute values without gating Duration"},
 		{"For calendar buckets, use explicit ISO bounds and time zone", "must make calendar boundaries explicit"},
 		{"P99 `Duration` output remains nanoseconds", "must preserve Duration units"},
+		{"`filter`|`parse`|`transform`|`aggregate`|`window_aggregate`", "must list valid stage types up front"},
+		{"\"as\":[\"endpoint\"]", "must show transform as an array"},
+		{"read it as `attributes['endpoint']`", "must say how to reference transform output"},
+		{"`$regex` (RE2: no lookaround)", "must state the accepted regexp flavor"},
+		{"Percentile over the whole lookback (p95 latency, last hour) → ONE `aggregate` stage", "must steer lookback percentiles to a single aggregate"},
+		{`{"type":"aggregate","aggregates":[{"function":{"$quantile":[0.95,"Duration"]},"as":"p95"}]}`, "must show a complete lookback percentile stage"},
+		{"`window_aggregate` only when asked per time bucket / over time", "must reserve window_aggregate for bucketed series"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
 			t.Errorf("GetTracesDescription missing %q: %s", c.phrase, c.reason)
 		}
+	}
+	if strings.Contains(desc, "analysis → aggregate/window_aggregate") {
+		t.Error("GetTracesDescription must not offer aggregate and window_aggregate as interchangeable for analysis")
 	}
 	if !strings.Contains(desc, `[{"type":"filter","query":{"$and":[{"$eq":["StatusCode","STATUS_CODE_ERROR"]}]}}]`) {
 		t.Error("GetTracesDescription must include its canonical JSON stage-array example")

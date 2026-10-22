@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -308,9 +309,10 @@ func TestDiscoverSectionListsOnlyNameLookups(t *testing.T) {
 // near its size, so growth is a reviewed decision: it precedes every tool
 // description, and growing it moved log_query evals. The parsed-field line
 // was a reviewed increase, validated on the full log_query suite; naming
-// analyze_change_impact on the changes line and the log-pattern tools joining
-// the one-service bullet were others.
-const maxInvestigateInstructionsBytes = 2705
+// analyze_change_impact and get_metric_status and the log-pattern tools joining
+// the one-service bullet were others, and so was the explicit pipeline
+// time-window rule (issue #379).
+const maxInvestigateInstructionsBytes = 2870
 
 func TestInvestigateInstructionsBounded(t *testing.T) {
 	instructions, _ := initializeOver(t, "investigate")
@@ -452,6 +454,33 @@ func TestServerInstructionsRawQueryLineReadsForOneOrManyTools(t *testing.T) {
 	}
 }
 
+// Without an explicit rule, trace_query eval tq-017 passed or failed on
+// incidental wording elsewhere in the policy: the model put the window into
+// the pipeline as $gte/$lte on Timestamp.
+func TestServerInstructionsPutPipelineTimeWindowInArguments(t *testing.T) {
+	const timeWindowLine = "Put the time window in `start_time_iso`/`end_time_iso` (or `lookback_minutes`), never as `Timestamp` filters in the pipeline."
+	tests := []struct {
+		name  string
+		tools []string
+		want  bool
+	}{
+		{name: "get_traces", tools: []string{"get_traces"}, want: true},
+		{name: "get_logs", tools: []string{"get_logs"}, want: true},
+		{name: "prometheus queries only", tools: []string{"prometheus_labels", "prometheus_range_query"}, want: false},
+		{name: "service-scoped tools only", tools: []string{"get_service_traces", "get_service_logs"}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			_, raw, _ := strings.Cut(instructions, "## Raw queries are the last resort")
+			raw, _, _ = strings.Cut(raw, "\n## ")
+			if got := strings.Contains(raw, "\n"+timeWindowLine); got != tt.want {
+				t.Errorf("raw-query section has the time-window line = %v, want %v:\n%s", got, tt.want, instructions)
+			}
+		})
+	}
+}
+
 func TestServerInstructionsSayCreateAlertRulesStartDisabled(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -521,6 +550,40 @@ func TestServerInstructionsChangesLineKeepsItsWording(t *testing.T) {
 				t.Errorf("changes line = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// Rewording this line ("Metric and label names, metric liveness: ...") dropped
+// trace_query eval tq-017 from 30/30 to 21/30 and 14/30, so get_metric_status
+// only joins main's wording.
+func TestServerInstructionsMetricNamesLineKeepsItsWording(t *testing.T) {
+	tests := []struct {
+		name  string
+		tools []string
+		want  string
+	}{
+		{name: "label lookups only", tools: []string{"prometheus_labels", "prometheus_label_values"}, want: "- Metric and label names: `prometheus_labels`, `prometheus_label_values`."},
+		{name: "with get_metric_status", tools: []string{"prometheus_labels", "prometheus_label_values", "get_metric_status"}, want: "- Metric and label names: `prometheus_labels`, `prometheus_label_values`, `get_metric_status`."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			if got := lineNaming(instructions, "prometheus_labels"); got != tt.want {
+				t.Errorf("metric-names line = %q, want %q", got, tt.want)
+			}
+			if got := lineNaming(instructions, "get_metric_status"); slices.Contains(tt.tools, "get_metric_status") && got != tt.want {
+				t.Errorf("get_metric_status line = %q, want it only on the metric-names line %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// get_metric_status reads metrics but discovers no names, so serving it alone
+// must not offer raw Prometheus queries in place of the log-index inventory.
+func TestServerInstructionsMetricStatusAloneKeepsLogInventory(t *testing.T) {
+	instructions := renderInstructions(t, "get_metric_status", "prometheus_instant_query", "get_logs")
+	if got := lineNaming(instructions, "prometheus_instant_query"); !strings.Contains(got, "physical_index_service_count") {
+		t.Errorf("prometheus_instant_query line = %q, want the log-index inventory line", got)
 	}
 }
 

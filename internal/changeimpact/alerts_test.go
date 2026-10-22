@@ -3,6 +3,7 @@ package changeimpact
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -118,6 +119,7 @@ func TestAlertsStayInsideTheRequestedEnv(t *testing.T) {
 			if len(report.Alerts.Started) != 1 || report.Verdict != VerdictRegressionLikely {
 				t.Fatalf("verdict=%q (%s) alerts=%+v, want the alert kept", report.Verdict, report.Reason, report.Alerts.Started)
 			}
+			assertRegressionsMatchReason(t, report)
 			if got := report.Alerts.Started[0].EnvMatch; got != tc.wantEnvMatch {
 				t.Fatalf("env_match = %q, want %q", got, tc.wantEnvMatch)
 			}
@@ -125,6 +127,46 @@ func TestAlertsStayInsideTheRequestedEnv(t *testing.T) {
 				t.Fatalf("reason %q must not imply the alert is in %s", report.Reason, tc.reqEnv)
 			}
 		})
+	}
+}
+
+// Two instances of one rule can start in the same second; one resolving must
+// not hide the other, whichever the monitor lists first.
+func TestFiringInstanceSurvivesResolvedSiblingStartedTogether(t *testing.T) {
+	cases := []struct {
+		name             string
+		resolved, firing alerting.AlertInstance
+	}{
+		{"by label hash",
+			alerting.AlertInstance{State: "normal", LabelHash: "a", GroupLabels: map[string]interface{}{"service": "checkout"}},
+			alerting.AlertInstance{State: "firing", LabelHash: "b", GroupLabels: map[string]interface{}{"service": "checkout"}}},
+		{"by group labels",
+			alerting.AlertInstance{State: "normal", GroupLabels: map[string]interface{}{"service": "checkout", "pod": "pod-a"}},
+			alerting.AlertInstance{State: "firing", GroupLabels: map[string]interface{}{"service": "checkout", "pod": "pod-b"}}},
+	}
+	for _, tc := range cases {
+		for _, resolvedFirst := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/resolved first %v", tc.name, resolvedFirst), func(t *testing.T) {
+				change := recentChange()
+				tc.resolved.Since = change.Add(time.Minute).Unix()
+				tc.firing.Since = tc.resolved.Since
+				instances := []alerting.AlertInstance{tc.resolved, tc.firing}
+				if !resolvedFirst {
+					instances = []alerting.AlertInstance{tc.firing, tc.resolved}
+				}
+				f := &fakeLast9{change: change, baseline: flatWindow(), after: flatWindow(), alerts: []alerting.AlertRuleData{{
+					RuleID: "latency", AlertGroupName: "checkout", Alerts: instances,
+				}}}
+				report, err := runTool(t, f, serviceArgs(change))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if report.Verdict != VerdictRegressionLikely || len(report.Regressions) != 1 || len(report.Alerts.Started) != 2 {
+					t.Fatalf("firing instance lost: verdict=%q (%s) regressions=%+v alerts=%+v", report.Verdict, report.Reason, report.Regressions, report.Alerts.Started)
+				}
+				assertRegressionsMatchReason(t, report)
+			})
+		}
 	}
 }
 
