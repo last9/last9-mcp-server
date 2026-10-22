@@ -279,6 +279,43 @@ func TestGetAlertConfigShowsRecentEvaluations(t *testing.T) {
 	}
 }
 
+func TestGetAlertConfigHistoryFollowsIsDisabled(t *testing.T) {
+	for name, tt := range map[string]struct {
+		rule      string
+		disabled  bool
+		wantCalls int32
+	}{
+		"is_disabled false wins over state disabled": {`{"id":"rule-1","entity_id":"entity-1","state":"disabled","is_disabled":false}`, false, evaluationHistorySamples},
+		"is_disabled true wins over state muted":     {`{"id":"rule-1","entity_id":"entity-1","state":"muted","is_disabled":true}`, true, 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var rule AlertRule
+			if err := json.Unmarshal([]byte(tt.rule), &rule); err != nil {
+				t.Fatal(err)
+			}
+			state := alertConfigTestServerState{
+				alertRules:   AlertConfigResponse{rule},
+				monitorRules: []AlertRuleData{{RuleID: "rule-1", State: "firing"}},
+			}
+
+			text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{RuleID: "rule-1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if want := fmt.Sprintf("  Disabled: %t\n", tt.disabled); !strings.Contains(text, want) {
+				t.Errorf("missing %q:\n%s", want, text)
+			}
+			if got := strings.Contains(text, "the rule is disabled"); got != tt.disabled {
+				t.Errorf("reports history suppressed = %t, want %t:\n%s", got, tt.disabled, text)
+			}
+			if got := state.monitorCalls.Load(); got != tt.wantCalls {
+				t.Errorf("monitor calls = %d, want %d", got, tt.wantCalls)
+			}
+		})
+	}
+}
+
 func TestGetAlertConfigPrependsEvaluationNote(t *testing.T) {
 	state := alertConfigTestServerState{
 		alertRules:    enabledRules(evaluationHistoryMaxRules + 1),
