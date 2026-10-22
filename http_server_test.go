@@ -9,9 +9,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"last9-mcp/internal/auth"
+	"last9-mcp/internal/last9api"
+	"last9-mcp/internal/models"
 	"last9-mcp/internal/toolsets"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
@@ -77,6 +82,201 @@ func TestStatelessStreamableHandler(t *testing.T) {
 	})
 }
 
+func TestStatelessHTTPUserToken(t *testing.T) {
+	// forged has valid claims but the API refuses it, as it would a bad signature.
+	forged := testUserJWT(t, map[string]any{"exp": time.Now().Add(time.Hour).Unix(), "aud": []string{"http://127.0.0.1"}, "forged": true})
+	var mu sync.Mutex
+	seen := map[string]string{}
+	verified := map[string]int{}
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		token := r.Header.Get("X-LAST9-API-TOKEN")
+		if r.URL.Path == "/datasources" {
+			verified[token]++
+			if token == "Bearer "+forged {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+		} else {
+			seen[r.URL.Query().Get("id")] = token
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer api.Close()
+
+	cfg := models.Config{HTTPMode: true, APIBaseURL: api.URL, UserTokenFallback: false, TokenManager: &auth.TokenManager{}}
+	srv, err := last9mcp.NewServerWithOptions("test", "0", last9mcp.WithSkipProviderInit())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
+	srv.Server.AddReceivingMiddleware(userTokenMiddleware(cfg, newUserTokenVerifier(apiUserTokenCheck(cfg))))
+	mcp.AddTool(srv.Server, &mcp.Tool{Name: "probe"}, func(ctx context.Context, _ *mcp.CallToolRequest, in struct {
+		ID string `json:"id"`
+	}) (*mcp.CallToolResult, any, error) {
+		err := last9api.NewClient(api.Client(), cfg).Do(ctx, "probe", last9api.Request{Method: http.MethodGet, Path: "/probe?id=" + in.ID}, nil)
+		return &mcp.CallToolResult{}, nil, err
+	})
+	ts := httptest.NewServer(srv.NewStreamableHTTPHandler(&mcp.StreamableHTTPOptions{Stateless: true}))
+	defer ts.Close()
+
+	post := func(body string, bearer ...string) map[string]any {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodPost, ts.URL, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		if len(bearer) > 0 {
+			req.Header.Set("Authorization", "Bearer "+bearer[0])
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.HasPrefix(string(data), "event:") {
+			for _, line := range strings.Split(string(data), "\n") {
+				if strings.HasPrefix(line, "data: ") {
+					data = []byte(strings.TrimPrefix(line, "data: "))
+					break
+				}
+			}
+		}
+		var result map[string]any
+		if err := json.Unmarshal(data, &result); err != nil {
+			t.Fatalf("response %q: %v", data, err)
+		}
+		return result
+	}
+	for _, body := range []string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
+	} {
+		if result := post(body); result["error"] != nil {
+			t.Fatalf("tokenless request failed: %v", result["error"])
+		}
+	}
+	if result := post(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"probe","arguments":{"id":"missing"}}}`); !isToolError(result, "user token required") {
+		t.Fatalf("tokenless call was not a tool error: %v", result)
+	}
+
+	tokens := []string{
+		testUserJWT(t, map[string]any{"exp": time.Now().Add(time.Hour).Unix(), "aud": []string{api.URL}}),
+		testUserJWT(t, map[string]any{"exp": time.Now().Add(2 * time.Hour).Unix(), "aud": []string{api.URL}}),
+	}
+	var wg sync.WaitGroup
+	for i, token := range tokens {
+		wg.Add(1)
+		go func(i int, token string) {
+			defer wg.Done()
+			body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": i + 4, "method": "tools/call", "params": map[string]any{"name": "probe", "arguments": map[string]any{"id": string(rune('a' + i))}, "_meta": map[string]any{"last9_user_token": token}}})
+			if result := post(string(body)); result["error"] != nil {
+				t.Errorf("call %d: %v", i, result["error"])
+			}
+		}(i, token)
+	}
+	wg.Wait()
+	if result := post(`{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"probe","arguments":{"id":"header"}}}`, tokens[0]); result["error"] != nil {
+		t.Fatalf("header call: %v", result["error"])
+	}
+	if result := post(`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"probe","arguments":{"id":"forged"}}}`, forged); !isToolError(result, "user token rejected: unauthorized") {
+		t.Fatalf("forged token call was not rejected: %v", result)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if seen["a"] != "Bearer "+tokens[0] || seen["b"] != "Bearer "+tokens[1] || seen["header"] != "Bearer "+tokens[0] {
+		t.Fatalf("downstream tokens did not match their calls: %v", seen)
+	}
+	if _, ran := seen["forged"]; ran {
+		t.Fatal("tool ran with a token the API refused")
+	}
+	// One verification per token: the header call reused tokens[0]'s.
+	if verified["Bearer "+tokens[0]] != 1 || verified["Bearer "+tokens[1]] != 1 || verified["Bearer "+forged] != 1 {
+		t.Fatalf("verification calls per token = %v, want 1 each", verified)
+	}
+}
+
+// isToolError reports whether a decoded JSON-RPC response is a tools/call
+// result with isError set and text containing want.
+func isToolError(response map[string]any, want string) bool {
+	result, _ := response["result"].(map[string]any)
+	if result == nil || result["isError"] != true {
+		return false
+	}
+	raw, _ := json.Marshal(result["content"])
+	return strings.Contains(string(raw), want)
+}
+
+// TestNarrowedToolsetServersEnforceUserToken pins that every server main
+// builds under --http, startup and per-request narrowed ones alike, runs the
+// user token middleware: a narrowed request must not bypass strict mode.
+func TestNarrowedToolsetServersEnforceUserToken(t *testing.T) {
+	cfg := testToolRegistrationConfig()
+	cfg.HTTPMode = true
+	cfg.UserTokenFallback = false
+	cfg.Datasources = []models.DatasourceInfo{{Name: "startup-cached-datasource", IsDefault: true}}
+	ts, builds := newToolsetHTTPServerFor(t, cfg, "all")
+	call := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_datasources","arguments":{}}}`
+	for _, header := range []string{"", "investigate"} {
+		_, body := postRPC(t, ts, header, "", call, nil)
+		if !strings.Contains(body, "user token required") || strings.Contains(body, "startup-cached-datasource") {
+			t.Errorf("toolsets %q: tokenless call was not rejected: %s", header, body)
+		}
+	}
+	if got := builds.Load(); got != 2 {
+		t.Fatalf("builds = %d, want startup plus one narrowed server", got)
+	}
+}
+
+// TestStrictModeGuardsStartupCachedDatasources pins that list_datasources,
+// which answers from data cached at startup under the server's credentials,
+// is released only to a token the API accepts: valid claims are not enough.
+func TestStrictModeGuardsStartupCachedDatasources(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer api.Close()
+	forged := testUserJWT(t, map[string]any{"exp": time.Now().Add(time.Hour).Unix(), "aud": api.URL})
+	expired := testUserJWT(t, map[string]any{"exp": int64(1), "aud": api.URL})
+	for _, shadow := range []bool{false, true} {
+		cfg := testToolRegistrationConfig()
+		cfg.APIBaseURL = api.URL
+		cfg.HTTPMode = true
+		cfg.UserTokenFallback = shadow
+		cfg.Datasources = []models.DatasourceInfo{{Name: "startup-cached-datasource", IsDefault: true}}
+		ts, _ := newToolsetHTTPServerFor(t, cfg, "all")
+		for _, tc := range []struct{ name, token, want string }{
+			{"missing", "", "user token required"},
+			{"expired", expired, "user token rejected: expired"},
+			{"forged", forged, "user token rejected: unauthorized"},
+		} {
+			params := map[string]any{"name": "list_datasources", "arguments": map[string]any{}}
+			if tc.token != "" {
+				params["_meta"] = map[string]any{"last9_user_token": tc.token}
+			}
+			call, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params})
+			for _, header := range []string{"", "investigate"} {
+				_, body := postRPC(t, ts, header, "", string(call), nil)
+				exposed := strings.Contains(body, "startup-cached-datasource")
+				if shadow && !exposed {
+					t.Errorf("shadow %s toolsets %q: cached datasource not served: %s", tc.name, header, body)
+				}
+				if !shadow && (exposed || !strings.Contains(body, tc.want)) {
+					t.Errorf("strict %s toolsets %q: want rejection %q without cached data: %s", tc.name, header, tc.want, body)
+				}
+			}
+		}
+	}
+}
+
 // TestHandleHealthReportsBuildVersion pins that /health reports the ldflag
 // Version var, not a hardcoded literal (this regressed once before).
 func TestHandleHealthReportsBuildVersion(t *testing.T) {
@@ -128,11 +328,15 @@ func TestHandleHealthReportsBuildVersion(t *testing.T) {
 // main's per-request builder and counts how many MCP servers it builds.
 func newToolsetHTTPServer(t *testing.T, spec string) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
+	return newToolsetHTTPServerFor(t, testToolRegistrationConfig(), spec)
+}
+
+func newToolsetHTTPServerFor(t *testing.T, cfg models.Config, spec string) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
 	allowed, err := toolsets.Parse(spec)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := testToolRegistrationConfig()
 	cfg.ToolFilter.Tools = allowed
 	builds := &atomic.Int32{}
 	buildFor := toolsetServerBuilder(cfg)
