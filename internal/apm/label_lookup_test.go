@@ -103,8 +103,9 @@ func TestPromqlLabelValues_ScopedEmptyRetriesWiderWithNote(t *testing.T) {
 	}
 }
 
+// The labels API wraps its list as {"labels":[...]}; these tests stub that live shape.
 func TestPromqlLabels_ScopedEmptyRetriesWiderWithNote(t *testing.T) {
-	cfg, client, got := labelLookupServer(t, `null`, `["__name__","BucketName","StorageType"]`)
+	cfg, client, got := labelLookupServer(t, `{"labels":[]}`, `{"labels":["__name__","BucketName","StorageType"]}`)
 
 	result, _, err := NewPromqlLabelsHandler(client, cfg)(context.Background(), &mcp.CallToolRequest{}, PromqlLabelsArgs{
 		MatchQuery: `{__name__="aws_s3_bucketsizebytes"}`,
@@ -117,8 +118,29 @@ func TestPromqlLabels_ScopedEmptyRetriesWiderWithNote(t *testing.T) {
 		t.Fatalf("windows = %v, want a retry over %d", w, sparseWindowSeconds)
 	}
 	texts := resultTexts(t, result)
-	if len(texts) != 2 || !strings.HasPrefix(texts[1], "No labels in the last 60 minutes; found 3 over the last 4 days") {
+	if len(texts) != 2 || texts[0] != `{"labels":["__name__","BucketName","StorageType"]}` ||
+		!strings.HasPrefix(texts[1], "No labels in the last 60 minutes; found 3 over the last 4 days") {
 		t.Fatalf("texts = %q, want wider labels plus note", texts)
+	}
+}
+
+func TestPromqlLabels_ScopedEmptyBothWindowsSaysSo(t *testing.T) {
+	cfg, client, got := labelLookupServer(t, `{"labels":null}`)
+
+	result, _, err := NewPromqlLabelsHandler(client, cfg)(context.Background(), &mcp.CallToolRequest{}, PromqlLabelsArgs{
+		MatchQuery: "daily_metric",
+	})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+
+	if len(*got) != 2 {
+		t.Fatalf("requests = %d, want 2", len(*got))
+	}
+	texts := resultTexts(t, result)
+	want := "No labels in the last 60 minutes or the last 4 days."
+	if len(texts) != 2 || texts[0] != `{"labels":null}` || texts[1] != want {
+		t.Fatalf("texts = %q, want [`{\"labels\":null}` %q]", texts, want)
 	}
 }
 
@@ -190,7 +212,7 @@ func TestPromqlLabelValues_ExplicitWindowNeverRetries(t *testing.T) {
 func TestPromqlLabels_UnscopedEmptyNeverRetries(t *testing.T) {
 	for _, query := range []string{`{job="api"}`, `{__name__=~"aws_.*"}`, `sum(rate(http_requests_total[5m]))`, `aws_s3_bucketsizebytes{} or up{}`} {
 		t.Run(query, func(t *testing.T) {
-			cfg, client, got := labelLookupServer(t, `[]`)
+			cfg, client, got := labelLookupServer(t, `{"labels":[]}`)
 
 			result, _, err := NewPromqlLabelsHandler(client, cfg)(context.Background(), &mcp.CallToolRequest{}, PromqlLabelsArgs{MatchQuery: query})
 			if err != nil {
@@ -199,8 +221,8 @@ func TestPromqlLabels_UnscopedEmptyNeverRetries(t *testing.T) {
 			if len(*got) != 1 {
 				t.Fatalf("requests = %d, want 1 (unscoped lookups are not widened)", len(*got))
 			}
-			if texts := resultTexts(t, result); len(texts) != 1 || texts[0] != `[]` {
-				t.Fatalf("texts = %q, want the raw empty array only", texts)
+			if texts := resultTexts(t, result); len(texts) != 1 || texts[0] != `{"labels":[]}` {
+				t.Fatalf("texts = %q, want the raw empty result only", texts)
 			}
 		})
 	}
