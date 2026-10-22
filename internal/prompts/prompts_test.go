@@ -313,11 +313,17 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 		{"`Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first", "must gate attribute values without gating Duration"},
 		{"For calendar buckets, use explicit ISO bounds and time zone", "must make calendar boundaries explicit"},
 		{"P99 `Duration` output remains nanoseconds", "must preserve Duration units"},
+		{"Percentile over the whole lookback (p95 latency, last hour) → ONE `aggregate` stage", "must steer lookback percentiles to a single aggregate"},
+		{`{"type":"aggregate","aggregates":[{"function":{"$quantile":[0.95,"Duration"]},"as":"p95"}]}`, "must show a complete lookback percentile stage"},
+		{"`window_aggregate` only when asked per time bucket / over time", "must reserve window_aggregate for bucketed series"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
 			t.Errorf("GetTracesDescription missing %q: %s", c.phrase, c.reason)
 		}
+	}
+	if strings.Contains(desc, "analysis → aggregate/window_aggregate") {
+		t.Error("GetTracesDescription must not offer aggregate and window_aggregate as interchangeable for analysis")
 	}
 	if !strings.Contains(desc, `[{"type":"filter","query":{"$and":[{"$eq":["StatusCode","STATUS_CODE_ERROR"]}]}}]`) {
 		t.Error("GetTracesDescription must include its canonical JSON stage-array example")
