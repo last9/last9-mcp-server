@@ -3,6 +3,7 @@ package logs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"last9-mcp/internal/utils"
 )
 
 func serviceLogsPipeline() []map[string]interface{} {
@@ -156,6 +159,27 @@ func TestFetchServiceLogs_APIMode_SurfacesUpstreamMessage(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "limit must be positive") {
 		t.Errorf("error = %q, want the upstream message preserved", err)
+	}
+}
+
+func TestFetchServiceLogs_APIMode_SlowSearchReturnsAdviceWithinBudget(t *testing.T) {
+	srv := stalledSearchServer(t)
+	cfg := apiModeCfg(srv.URL)
+	cfg.LogSearchTimeout = 50 * time.Millisecond
+
+	start, end := serviceLogsWindow()
+	started := time.Now()
+	_, err := fetchServiceLogs(
+		context.Background(), srv.Client(), cfg, "checkout",
+		start, end, 20, serviceLogsPipeline(), "")
+	if !errors.Is(err, utils.ErrLogSearchTimeout) {
+		t.Fatalf("err = %v, want utils.ErrLogSearchTimeout", err)
+	}
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Errorf("returned after %s, want within the 50ms budget", elapsed)
+	}
+	if !strings.Contains(err.Error(), "service logs query timed out") {
+		t.Errorf("error %q does not name the service logs query", err)
 	}
 }
 
