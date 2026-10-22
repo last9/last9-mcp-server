@@ -58,18 +58,19 @@ type perfTopOperations struct {
 // and second half of the points, and delta_pct is the second half's mean
 // versus baseline_mean.
 type PerfSeriesSummary struct {
-	Metric       map[string]string `json:"metric,omitempty"`
-	Points       int               `json:"points"`
-	Min          float64           `json:"min"`
-	P50          float64           `json:"p50"`
-	P90          float64           `json:"p90"`
-	P99          float64           `json:"p99"`
-	Max          float64           `json:"max"`
-	Mean         float64           `json:"mean"`
-	Last         float64           `json:"last"`
-	BaselineMean float64           `json:"baseline_mean"`
-	DeltaPct     *float64          `json:"delta_pct,omitempty"`
-	ChangePoints []PerfChangePoint `json:"change_points,omitempty"`
+	Metric        map[string]string `json:"metric,omitempty"`
+	Points        int               `json:"points"`
+	MissingPoints int               `json:"missing_points,omitempty"`
+	Min           float64           `json:"min"`
+	P50           float64           `json:"p50"`
+	P90           float64           `json:"p90"`
+	P99           float64           `json:"p99"`
+	Max           float64           `json:"max"`
+	Mean          float64           `json:"mean"`
+	Last          float64           `json:"last"`
+	BaselineMean  float64           `json:"baseline_mean"`
+	DeltaPct      *float64          `json:"delta_pct,omitempty"`
+	ChangePoints  []PerfChangePoint `json:"change_points,omitempty"`
 }
 
 // PerfChangePoint is a level shift: the mean of the points from Timestamp up
@@ -94,16 +95,17 @@ func summarizePerformanceDetails(d ServicePerformanceDetails) ServicePerformance
 		name   string
 		series []TimeSeries
 		out    *[]PerfSeriesSummary
+		noData func(float64) bool
 	}{
-		{"throughput", d.Throughput, &s.Throughput},
-		{"error_rate", d.ErrorRate, &s.ErrorRate},
-		{"error_percentage", d.ErrorPercent, &s.ErrorPercent},
-		{"response_times", d.ResponseTimes, &s.ResponseTimes},
-		{"apdex_score", d.ApdexScore, &s.ApdexScore},
-		{"availability", d.Availability, &s.Availability},
+		{"throughput", d.Throughput, &s.Throughput, nil},
+		{"error_rate", d.ErrorRate, &s.ErrorRate, nil},
+		{"error_percentage", d.ErrorPercent, &s.ErrorPercent, nil},
+		{"response_times", d.ResponseTimes, &s.ResponseTimes, nil},
+		{"apdex_score", d.ApdexScore, &s.ApdexScore, nil},
+		{"availability", d.Availability, &s.Availability, func(v float64) bool { return v == perfAvailabilityNoData }},
 	}
 	for _, f := range fields {
-		summaries, omitted := summarizeSeriesList(f.series)
+		summaries, omitted := summarizeSeriesList(f.series, f.noData)
 		*f.out = summaries
 		if omitted > 0 {
 			if s.SeriesOmitted == nil {
@@ -117,10 +119,10 @@ func summarizePerformanceDetails(d ServicePerformanceDetails) ServicePerformance
 
 // summarizeSeriesList keeps the perfSummaryMaxSeries series with the highest
 // mean (the largest contributors) and returns how many it dropped.
-func summarizeSeriesList(series []TimeSeries) ([]PerfSeriesSummary, int) {
+func summarizeSeriesList(series []TimeSeries, noData func(float64) bool) ([]PerfSeriesSummary, int) {
 	out := make([]PerfSeriesSummary, 0, len(series))
 	for _, ts := range series {
-		out = append(out, summarizeSeries(ts))
+		out = append(out, summarizeSeries(ts, noData))
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Mean > out[j].Mean })
 	if len(out) <= perfSummaryMaxSeries {
@@ -129,17 +131,22 @@ func summarizeSeriesList(series []TimeSeries) ([]PerfSeriesSummary, int) {
 	return out[:perfSummaryMaxSeries], len(out) - perfSummaryMaxSeries
 }
 
-func summarizeSeries(ts TimeSeries) PerfSeriesSummary {
+func summarizeSeries(ts TimeSeries, noData func(float64) bool) PerfSeriesSummary {
 	var stamps []uint64
 	var values []float64
+	missing := 0
 	for _, p := range ts.Values {
 		if math.IsNaN(p.Value) || math.IsInf(p.Value, 0) {
+			continue
+		}
+		if noData != nil && noData(p.Value) {
+			missing++
 			continue
 		}
 		stamps = append(stamps, p.Timestamp)
 		values = append(values, p.Value)
 	}
-	s := PerfSeriesSummary{Metric: ts.Metric, Points: len(values)}
+	s := PerfSeriesSummary{Metric: ts.Metric, Points: len(values), MissingPoints: missing}
 	if len(values) == 0 {
 		return s
 	}

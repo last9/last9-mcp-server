@@ -49,6 +49,9 @@ const (
 	// the three top-k fields (top_operations_by_response_time,
 	// top_operations_by_error_rate, top_errors) when top_n is unset/zero.
 	perfDetailsDefaultTopN = 10
+	// perfAvailabilityNoData is the availability query's value for buckets
+	// with no server spans; the summary counts it as missing, not as 0%.
+	perfAvailabilityNoData = -999
 	// perfDetailsMaxTopN caps top_n so a huge requested value can't blow up
 	// the backend topk()/over-fetch cost (e.g. topk(2000000, ...) for
 	// top_n: 1000000). Clamps down rather than erroring, matching the
@@ -528,8 +531,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Availability over time range as a vector
 		details.Availability, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				`(1 - (sum(rate(trace_endpoint_count{service_name="%s", env=~"%s", span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) or 0) / (sum(rate(trace_endpoint_count{service_name="%s", env=~"%s", span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) + 0.0000001)) * 100 default -999`,
-				escSvc, escEnv, escSvc, escEnv,
+				`(1 - (sum(rate(trace_endpoint_count{service_name="%s", env=~"%s", span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) or 0) / (sum(rate(trace_endpoint_count{service_name="%s", env=~"%s", span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) + 0.0000001)) * 100 default %d`,
+				escSvc, escEnv, escSvc, escEnv, perfAvailabilityNoData,
 			)
 		}, "service performance details availability", "availability response", &details.PartialErrors)
 		if err != nil {

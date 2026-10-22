@@ -19,7 +19,7 @@ func TestSummarizeSeries_NearestRankPercentiles(t *testing.T) {
 	for i := range values {
 		values[i] = float64(100 - i) // descending, so the summary must sort
 	}
-	s := summarizeSeries(TimeSeries{Metric: map[string]string{"quantile": "p95"}, Values: pointsFrom(values...)})
+	s := summarizeSeries(TimeSeries{Metric: map[string]string{"quantile": "p95"}, Values: pointsFrom(values...)}, nil)
 
 	if s.Points != 100 || s.Min != 1 || s.P50 != 50 || s.P90 != 90 || s.P99 != 99 || s.Max != 100 {
 		t.Fatalf("points/min/p50/p90/p99/max = %d/%v/%v/%v/%v/%v, want 100/1/50/90/99/100", s.Points, s.Min, s.P50, s.P90, s.P99, s.Max)
@@ -33,7 +33,7 @@ func TestSummarizeSeries_NearestRankPercentiles(t *testing.T) {
 }
 
 func TestSummarizeSeries_SinglePoint(t *testing.T) {
-	s := summarizeSeries(TimeSeries{Values: pointsFrom(7)})
+	s := summarizeSeries(TimeSeries{Values: pointsFrom(7)}, nil)
 	if s.Points != 1 || s.P50 != 7 || s.P99 != 7 || s.Last != 7 {
 		t.Fatalf("unexpected single-point summary: %+v", s)
 	}
@@ -43,17 +43,17 @@ func TestSummarizeSeries_SinglePoint(t *testing.T) {
 }
 
 func TestSummarizeSeries_SkipsNonFiniteAndEmpty(t *testing.T) {
-	s := summarizeSeries(TimeSeries{Values: pointsFrom(math.NaN(), math.Inf(1), 4, math.Inf(-1))})
+	s := summarizeSeries(TimeSeries{Values: pointsFrom(math.NaN(), math.Inf(1), 4, math.Inf(-1))}, nil)
 	if s.Points != 1 || s.Max != 4 {
 		t.Fatalf("non-finite points must be skipped: %+v", s)
 	}
-	if empty := summarizeSeries(TimeSeries{}); empty.Points != 0 || empty.DeltaPct != nil {
+	if empty := summarizeSeries(TimeSeries{}, nil); empty.Points != 0 || empty.DeltaPct != nil {
 		t.Fatalf("empty series: %+v", empty)
 	}
 }
 
 func TestSummarizeSeries_ZeroBaselineHasNoDelta(t *testing.T) {
-	s := summarizeSeries(TimeSeries{Values: pointsFrom(0, 0, 5, 5)})
+	s := summarizeSeries(TimeSeries{Values: pointsFrom(0, 0, 5, 5)}, nil)
 	if s.DeltaPct != nil {
 		t.Fatalf("delta_pct against a zero baseline must be omitted, got %v", *s.DeltaPct)
 	}
@@ -100,7 +100,7 @@ func TestDetectChangePoints(t *testing.T) {
 
 func TestSummarizeSeries_ChangePointMeans(t *testing.T) {
 	values := []float64{10, 10, 10, 10, 50, 50, 50, 50, 50, 50}
-	s := summarizeSeries(TimeSeries{Values: pointsFrom(values...)})
+	s := summarizeSeries(TimeSeries{Values: pointsFrom(values...)}, nil)
 	want := []PerfChangePoint{{Timestamp: 1000 + 60*4, BeforeMean: 10, AfterMean: 50}}
 	if !reflect.DeepEqual(s.ChangePoints, want) {
 		t.Fatalf("change points = %+v, want %+v", s.ChangePoints, want)
@@ -112,7 +112,7 @@ func TestSummarizeSeriesList_KeepsLargestAndCountsOmitted(t *testing.T) {
 	for i := 1; i <= perfSummaryMaxSeries+2; i++ {
 		series = append(series, TimeSeries{Metric: map[string]string{"code": string(rune('a' + i))}, Values: pointsFrom(float64(i))})
 	}
-	got, omitted := summarizeSeriesList(series)
+	got, omitted := summarizeSeriesList(series, nil)
 	if omitted != 2 || len(got) != perfSummaryMaxSeries {
 		t.Fatalf("kept %d, omitted %d; want %d, 2", len(got), omitted, perfSummaryMaxSeries)
 	}
@@ -120,7 +120,7 @@ func TestSummarizeSeriesList_KeepsLargestAndCountsOmitted(t *testing.T) {
 		t.Fatalf("expected the highest-mean series first and the two smallest dropped: %+v", got)
 	}
 
-	got, omitted = summarizeSeriesList(series[:perfSummaryMaxSeries])
+	got, omitted = summarizeSeriesList(series[:perfSummaryMaxSeries], nil)
 	if omitted != 0 || len(got) != perfSummaryMaxSeries {
 		t.Fatalf("at the cap: kept %d, omitted %d", len(got), omitted)
 	}

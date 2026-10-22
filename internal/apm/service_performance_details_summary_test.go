@@ -215,3 +215,57 @@ func TestServicePerformanceDetails_IncludeSeriesKeepsPreviousPayload(t *testing.
 		t.Error("full-series payload must not carry the summary marker")
 	}
 }
+
+func TestServicePerformanceDetails_SummaryExcludesAvailabilityNoData(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		values      []string
+		wantPoints  int
+		wantMissing int
+	}{
+		{"all_valid", []string{"100", "100", "100", "100", "100", "100"}, 6, 0},
+		{"no_data_then_valid", []string{"-999", "-999", "-999", "100", "100", "100"}, 3, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				var payload struct {
+					Query string `json:"query"`
+				}
+				_ = json.Unmarshal(body, &payload)
+				if !strings.Contains(payload.Query, "default -999") {
+					_, _ = w.Write([]byte("[]"))
+					return
+				}
+				values := make([][]any, len(tc.values))
+				for i, v := range tc.values {
+					values[i] = []any{int64(1792540800 + i*60), v}
+				}
+				_ = json.NewEncoder(w).Encode([]any{map[string]any{"metric": map[string]string{}, "values": values}})
+			}))
+			defer srv.Close()
+			args := ServicePerformanceDetailsArgs{ServiceName: "checkout", StartTimeISO: "2026-10-21T00:00:00Z", EndTimeISO: "2026-10-21T01:00:00Z"}
+
+			var summary ServicePerformanceSummary
+			if err := json.Unmarshal([]byte(callPerfDetails(t, srv, args)), &summary); err != nil {
+				t.Fatalf("decode summary: %v", err)
+			}
+			if len(summary.Availability) != 1 {
+				t.Fatalf("availability = %+v, want one series", summary.Availability)
+			}
+			got := summary.Availability[0]
+			if got.Points != tc.wantPoints || got.MissingPoints != tc.wantMissing || got.Mean != 100 || got.Min != 100 || len(got.ChangePoints) != 0 {
+				t.Errorf("availability = %+v, want points=%d missing_points=%d, mean=min=100, no change points", got, tc.wantPoints, tc.wantMissing)
+			}
+
+			args.IncludeSeries = true
+			var full ServicePerformanceDetails
+			if err := json.Unmarshal([]byte(callPerfDetails(t, srv, args)), &full); err != nil {
+				t.Fatalf("decode full series: %v", err)
+			}
+			if len(full.Availability) != 1 || len(full.Availability[0].Values) != len(tc.values) {
+				t.Errorf("include_series availability = %+v, want all %d raw points", full.Availability, len(tc.values))
+			}
+		})
+	}
+}
