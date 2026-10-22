@@ -294,7 +294,8 @@ func TestGetLogsDescriptionOrderNamesOnlyStageTypes(t *testing.T) {
 	var order string
 	for _, line := range strings.Split(prompts.GetLogsDescription, "\n") {
 		if rest, ok := strings.CutPrefix(line, "**Order:**"); ok {
-			order, _, _ = strings.Cut(rest, ".")
+			// Cut at the sentence end, not any dot: a step may hold a dotted key like resources['k8s.ns'].
+			order, _, _ = strings.Cut(rest, ". ")
 		}
 	}
 	if order == "" {
