@@ -390,6 +390,15 @@ func chartDraftServer(t *testing.T, createReply string, patch http.HandlerFunc) 
 
 func patchOK(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{}`)) }
 
+// dropConnection closes the connection without answering, as a proxy dropping the request would.
+func dropConnection(w http.ResponseWriter, _ *http.Request) {
+	conn, _, err := w.(http.Hijacker).Hijack()
+	if err != nil {
+		panic(err)
+	}
+	_ = conn.Close()
+}
+
 var checkoutChartArgs = CreateAlertFromChartArgs{
 	Surface: "discover-service", ChartKey: "error_rate", ServiceName: "checkout", SignalKey: "error_ratio", Name: "checkout-error-rate",
 }
@@ -447,10 +456,12 @@ func TestCreateAlertFromChartReportsFailedDisable(t *testing.T) {
 	}{
 		{"disable rejected", `{"id":"rule-9","group_id":"grp-2"}`,
 			func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "boom", http.StatusInternalServerError) }, 1,
-			[]string{"rule-9", "may be live", "patch_alert entity_id=grp-2 id=rule-9 is_disabled=true", "delete_alert", "do not retry create_alert_from_chart"}},
+			[]string{"rule-9", "HTTP 500", "is live", "patch_alert entity_id=grp-2 id=rule-9 is_disabled=true", "delete_alert", "do not retry create_alert_from_chart"}},
 		{"disable outcome unknown", `{"id":"rule-9","group_id":"grp-2"}`,
 			func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadGateway) }, 1,
-			[]string{"rule-9", "may be live", "patch_alert entity_id=grp-2 id=rule-9 is_disabled=true", "do not retry create_alert_from_chart"}},
+			[]string{"rule-9", "unknown", "HTTP 502", "may be live", "patch_alert entity_id=grp-2 id=rule-9 is_disabled=true", "do not retry create_alert_from_chart"}},
+		{"disable connection dropped", `{"id":"rule-9","group_id":"grp-2"}`, dropConnection, 1,
+			[]string{"rule-9", "unknown", "connection closed", "may be live", "patch_alert entity_id=grp-2 id=rule-9 is_disabled=true", "do not retry create_alert_from_chart"}},
 		{"no alert group to disable in", `{"id":"rule-9"}`, patchOK, 0,
 			[]string{"rule-9", "may be live", "get_alert_config", "is_disabled=true", "do not retry create_alert_from_chart"}},
 	} {
@@ -480,6 +491,13 @@ func TestCreateAlertFromChartReportsFailedDisable(t *testing.T) {
 			}
 			if strings.Contains(text, draftSentence) {
 				t.Errorf("failed disable must not claim a draft:\n%s", text)
+			}
+			// Generic client advice and raw transport errors (with the request URL) must not
+			// reach the agent: only a sanitized cause and the patch_alert step.
+			for _, leak := range []string{"retry later", srv.URL, "/alert-rules/"} {
+				if strings.Contains(text, leak) {
+					t.Errorf("result leaks %q:\n%s", leak, text)
+				}
 			}
 		})
 	}
