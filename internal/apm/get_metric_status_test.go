@@ -388,6 +388,10 @@ func TestGetMetricStatus_AbsentMetricSaysNoSeriesMatched(t *testing.T) {
 	if fields["live"] != false || fields["series_count"] != float64(0) {
 		t.Fatalf("got %v; want live=false series_count=0", fields)
 	}
+	// The model reads the raw text, so placeholders must not arrive as <…>.
+	if raw := result.Content[0].(*mcp.TextContent).Text; !strings.Contains(raw, "<fragment>") {
+		t.Fatalf("raw text %s, want <fragment> unescaped", raw)
+	}
 }
 
 func TestGetMetricStatus_UnknownCadenceIsNull(t *testing.T) {

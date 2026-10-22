@@ -1,6 +1,7 @@
 package apm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -41,12 +42,15 @@ func NewGetMetricStatusHandler(client *http.Client, cfg models.Config) func(cont
 		if err != nil {
 			return nil, nil, err
 		}
-		payload, err := json.Marshal(status)
-		if err != nil {
+		// HTML escaping would show the note's <fragment> placeholder as <fragment>.
+		var payload bytes.Buffer
+		enc := json.NewEncoder(&payload)
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(status); err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal get_metric_status response: %w", err)
 		}
 		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: string(payload)}},
+			Content: []mcp.Content{&mcp.TextContent{Text: strings.TrimSuffix(payload.String(), "\n")}},
 		}, nil, nil
 	}
 }
