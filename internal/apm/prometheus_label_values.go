@@ -2,6 +2,7 @@ package apm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -18,7 +19,7 @@ type PromqlLabelValuesArgs struct {
 	Label           string  `json:"label" jsonschema:"(Required) Label name to get values for"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). For daily or sparse metrics use a wider window such as 5760 (4 days)."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). When omitted with no ISO bounds, an empty result for a single-metric match_query is retried once over 5760 (4 days)."`
 	Datasource      string  `json:"datasource,omitempty" jsonschema:"Datasource name; omitted uses the default, a near miss its closest match (named in a second content block)."`
 }
 
@@ -32,7 +33,7 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 		if label == "" {
 			return nil, nil, fmt.Errorf("label is required")
 		}
-		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
+		window, err := resolveLabelWindow(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -44,13 +45,20 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 		if choice.candidates != nil {
 			return ambiguousDatasourceResult(args.Datasource, choice.candidates), nil, nil
 		}
-		raw, err := prom.GetLabelValuesRaw(ctx, last9api.NewClient(client, choice.cfg), prom.GetLabelValuesInput{
-			Datasource: promDatasource(choice.cfg),
-			Label:      label,
-			Matches:    []string{query},
-			Timestamp:  endTimeParam,
-			Window:     endTimeParam - startTimeParam,
-		})
-		return promToolResult(raw, err, choice.note)
+		api := last9api.NewClient(client, choice.cfg)
+		lookup := labelLookup{
+			noun:       "label values",
+			matchQuery: query,
+			fetch: func(start, end int64) (json.RawMessage, error) {
+				return prom.GetLabelValuesRaw(ctx, api, prom.GetLabelValuesInput{
+					Datasource: promDatasource(choice.cfg),
+					Label:      label,
+					Matches:    []string{query},
+					Timestamp:  end,
+					Window:     end - start,
+				})
+			},
+		}
+		return lookup.run(window, choice.note)
 	}
 }
