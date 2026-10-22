@@ -42,7 +42,7 @@ func TestLogFieldFilterField(t *testing.T) {
 		{"severity", "SeverityText"},
 		{"body", "Body"},
 		{"trace_id", "TraceId"},
-		{"span_id", "SpanId"},
+		{"span_id", "attributes['span_id']"}, // logs API rejects SpanId: HTTP 400 "invalid JSON pipeline"
 		{"status_code", "attributes['status_code']"},
 		{"http.status_code", "attributes['http.status_code']"},
 		{"log_level", "attributes['log_level']"}, // must NOT become attributes['level']
