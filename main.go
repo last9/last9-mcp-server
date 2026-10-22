@@ -142,30 +142,34 @@ func parseDumpToolFilter(args []string) (toolsets.Filter, error) {
 	return flags.filter()
 }
 
-// toolsetServerBuilder returns what --http calls to build the server for a
-// request's narrowed toolsets: cfg with only the toolsets replaced.
+// toolsetServerBuilder returns what main calls to build the startup server and,
+// under --http, the server for a request's narrowed toolsets: cfg with only
+// the toolsets replaced. In --http mode every built server shares one user
+// token middleware, so a narrowed server never skips token enforcement.
 func toolsetServerBuilder(cfg models.Config) func(toolsets.Set) (*last9mcp.Last9MCPServer, error) {
+	var middleware []mcp.Middleware
+	if cfg.HTTPMode {
+		middleware = append(middleware, userTokenMiddleware(cfg, newUserTokenVerifier(apiUserTokenCheck(cfg))))
+	}
 	return func(allowed toolsets.Set) (*last9mcp.Last9MCPServer, error) {
 		c := cfg
 		c.ToolFilter.Tools = allowed
-		return buildServer(c)
+		return buildServer(c, middleware...)
 	}
 }
 
 // buildServer creates the served MCP server for cfg.ToolFilter: resources,
-// prompts, tools and the instructions that name them.
-func buildServer(cfg models.Config) (*last9mcp.Last9MCPServer, error) {
+// prompts, tools and the instructions that name them, behind middleware.
+func buildServer(cfg models.Config, middleware ...mcp.Middleware) (*last9mcp.Last9MCPServer, error) {
 	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create MCP server: %w", err)
 	}
+	server.Server.AddReceivingMiddleware(middleware...)
 	registerReferenceResources(server)
 	workflows.Register(server)
 	if err := registerToolsAndInstructions(server, cfg); err != nil {
 		return nil, fmt.Errorf("failed to build the served surface: %w", err)
-	}
-	if cfg.HTTPMode {
-		server.Server.AddReceivingMiddleware(userTokenMiddleware(cfg))
 	}
 	return server, nil
 }
@@ -279,7 +283,8 @@ func run() int {
 	)
 
 	// From here on, return instead of log.Fatal: os.Exit would skip the deferred telemetry flush.
-	server, err := buildServer(cfg)
+	build := toolsetServerBuilder(cfg)
+	server, err := build(cfg.ToolFilter.Tools)
 	if err != nil {
 		slog.Error("failed to build server", "error", err)
 		return 1
@@ -309,7 +314,7 @@ func run() int {
 	}
 
 	if cfg.HTTPMode {
-		httpServer := NewHTTPServer(server, cfg, toolsetServerBuilder(cfg))
+		httpServer := NewHTTPServer(server, cfg, build)
 		if err := httpServer.Start(); err != nil {
 			slog.Error("HTTP server error", "error", err)
 			return 1
