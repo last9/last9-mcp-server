@@ -97,6 +97,8 @@ brew install last9/tap/last9-mcp
 
 **NPM:**
 
+Requires Node.js 22.23.4+, 24.22.1+ or 26.12.1+: earlier releases accept TLS certificates from the compromised eMudhra intermediates when the installer downloads the binary.
+
 ```bash
 npm install -g @last9/mcp-server@latest
 # or directly:
@@ -222,7 +224,7 @@ The NPM route is easier on Windows — no path management.
 | `LAST9_MCP_READ_ONLY`        | `false`              | Set `true` to serve only read-only tools; see [Read-only mode](#read-only-mode). A value that is not a boolean is a startup error. Alias: `LAST9_READ_ONLY` |
 | `LAST9_MCP_ALLOW_WRITE_TOOLS`| —                    | Comma-separated write tools still served in read-only mode. Alias: `LAST9_ALLOW_WRITE_TOOLS` |
 | `LAST9_MAX_GET_LOGS_ENTRIES` | `5000`               | Max entries for chunked `get_logs` requests |
-| `LAST9_USE_LOG_SEARCH_API`   | `false`              | Set `true` to answer `get_logs` and `get_service_logs` with one server-side search call instead of client-side chunking |
+| `LAST9_USE_LOG_SEARCH_API`   | `false`              | Set `true` to answer `get_logs` and `get_service_logs` with one server-side search call instead of client-side chunking. Each call gets 90 seconds, then returns advice to narrow the window; a 502 or 503 is retried once within it |
 | `LAST9_DEBUG_CHUNKING`       | `false`              | Set `true` to log chunk-planning details for `get_logs`, `get_service_logs`, `get_traces` |
 | `LAST9_DISABLE_TELEMETRY`    | `true`               | Set `false` to enable internal OTel tracing |
 | `OTEL_SDK_DISABLED`          | —                    | Standard OTel env var. Overrides `LAST9_DISABLE_TELEMETRY` |
@@ -242,7 +244,7 @@ last9-mcp --read-only --allow-write-tools=acknowledge_alert,mute_alert_group
 - The server refuses to start if an allowed name is not a write tool (a typo, or a read tool's name); the error lists the valid write tools.
 - `--allow-write-tools` without `--read-only` is a startup error, because every write tool is already served.
 - Read-only combines with `--toolsets`: a tool is served only when it passes both. `--toolsets=alerts --read-only --allow-write-tools=mute_alert_group` serves the alerts read tools plus `mute_alert_group`; an allowed write tool outside the chosen toolsets stays hidden.
-- `--http` mode and `dump-tools` honor the same flags and env vars: `go run . dump-tools --read-only` prints the read-only surface.
+- `--http` mode and `dump-tools` honor the same flags and env vars: `go run . dump-tools --read-only` prints the read-only surface, with the server instructions it serves in `instructions`.
 - Read tools' descriptions, schemas and results, and the server instructions, never name a hidden write tool. An allowed write tool can still name its hidden siblings (`create_alert` creates a disabled rule that `patch_alert` enables), so allow such pairs together.
 
 ---
@@ -591,12 +593,18 @@ Returns `now` (and `start`/`end` with `range`) as `{iso, epoch_seconds, local}`;
 
 - `match_query` (string, optional): PromQL filter.
 - `label` (string, required): Label name.
+- `lookback_minutes` (float, optional): Default: 60.
 - `start_time_iso` / `end_time_iso` (string, optional)
+
+When no window is given and `match_query` names one metric (`metric{...}` or `{__name__="metric"}`), an empty 60-minute result is retried once over 4 days; a second text block says which window the result covers.
 
 ### prometheus_labels
 
 - `match_query` (string, optional): PromQL filter.
+- `lookback_minutes` (float, optional): Default: 60.
 - `start_time_iso` / `end_time_iso` (string, optional)
+
+Retries an empty single-metric lookup over 4 days, like `prometheus_label_values`.
 
 ### get_logs
 
@@ -787,7 +795,9 @@ Pass exactly one of `change_event` or `service` + `timestamp`.
 - `baseline_minutes` (integer, optional): Default: 60. Clamped to 30..120.
 - `after_minutes` (integer, optional): Default: `baseline_minutes`. Clamped to 30..120 and capped at now.
 
-`regression likely` when any holds: error rate up at least 1 percentage point, p95 up at least 40%, or throughput (rpm) down at least 50% for the service or one of its top 10 callers, ranked by throughput over both windows together (only with at least 100 requests before the change and, but for throughput, after it; p95 counts only `latency_env`'s requests); an alert for them starts firing after the change (matched case-insensitively by alert group name or a `service`, `service_name` or `service.name` label, else annotation (never free text such as a summary); with `env`, alerts labelled with another environment, ignoring case, are dropped and unlabelled ones are marked `env_match: unlabelled`); a regression from `get_apm_service_deviations`. `insufficient data` when the after window is under 5 minutes (including a change in the future), the service has too few requests, or golden signals, the direct-caller lookup, alerts or `get_apm_service_deviations` failed, wholly or in any query listed in `deviations.apm.unavailable`: missing evidence never yields `no significant change`, and a regression found anyway names what failed. `no significant change` is a valid answer, not a failure. Trace-attribute deviations run only when `env` is set, over at most 15 minutes each side; they explain a verdict but never set one, so skipping them or failing to fetch them leaves it unchanged. Each list keeps 10 items and reports how many it dropped; a failed upstream call leaves an `error` on its section only. Golden-signal latency comes from one environment in both windows, named in `latency_env`: with no `env`, the busiest. Golden-signal error rate counts 5xx and gRPC errors; `deviations.apm` also counts error-status spans and 429s. A caller's signals are its own server spans, so client-only callers show 0 rpm.
+`regression likely` when any holds: error rate up at least 1 percentage point, p95 up at least 40%, or throughput (rpm) down at least 50% for the service or one of its top 10 callers, ranked by throughput over both windows together (only with at least 100 requests before the change and, but for throughput, after it; p95 counts only `latency_env`'s requests); an alert for them starts firing after the change and is still firing at the end of the after window (matched case-insensitively by alert group name or a `service`, `service_name` or `service.name` label, else annotation (never free text such as a summary); with `env`, alerts labelled with another environment, ignoring case, are dropped and unlabelled ones are marked `env_match: unlabelled`); a regression from `get_apm_service_deviations`. `insufficient data` when the after window is under 5 minutes (including a change in the future), the service has too few requests, or golden signals, the direct-caller lookup, alerts or `get_apm_service_deviations` failed, wholly or in any query listed in `deviations.apm.unavailable`: missing evidence never yields `no significant change`, and a regression found anyway names what failed. `no significant change` is a valid answer, not a failure. Trace-attribute deviations run only when `env` is set, over at most 15 minutes each side; they explain a verdict but never set one, so skipping them or failing to fetch them leaves it unchanged. Each list keeps 10 items and reports how many it dropped; a failed upstream call leaves an `error` on its section only. Golden-signal latency comes from one environment in both windows, named in `latency_env`: with no `env`, the busiest. Golden-signal error rate counts 5xx and gRPC errors; `deviations.apm` also counts error-status spans and 429s. A caller's signals are its own server spans, so client-only callers show 0 rpm.
+
+`regressions` lists one entry per trigger behind `regression likely`, in `reason`'s order, and is `[]` for the other verdicts. Each has `service`, `role` (`changed` or `dependent`), `env`, `metric` (exactly one of `error_rate_pct`, `latency_p95_ms`, `throughput_rpm`, `alert`, `apm_deviation`) and `baseline`/`after` in the metric's unit (%, ms, rpm, or the APM signal's own value; null for `alert`). An `alert` item adds `rule_id` and `state`, the instance's state in the newest alerts-monitor slice of the after window that lists it, always `firing`: an alert that started after the change but resolved by the end of the after window is not a regression, so it files no ticket; it stays in `alerts.started` with its `state`, and `reason` counts it. `env` is the environment the metric was measured in: the requested `env`, else error rate and throughput sum every environment (`env: ""`) while p95 uses the busiest, `latency_env`; an alert uses its own env label and an APM deviation its own env. Every regression is service-wide, so none names an endpoint.
 
 ### get_alert_groups
 
