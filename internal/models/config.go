@@ -1,6 +1,8 @@
 package models
 
 import (
+	"time"
+
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/toolsets"
 )
@@ -36,6 +38,9 @@ type Config struct {
 	// endpoint instead of the client-side chunk sweep. Off by default; the
 	// chunked path is deleted once this is proven in production.
 	UseLogSearchAPI bool
+	// LogSearchTimeout bounds one log search call; zero means
+	// constants.LogSearchTimeout.
+	LogSearchTimeout time.Duration
 
 	// HTTP server configuration
 	HTTPMode bool   // Enable HTTP server mode instead of STDIO
