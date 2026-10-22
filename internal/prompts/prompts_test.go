@@ -302,7 +302,11 @@ func TestGetLogsDescriptionOrderNamesOnlyStageTypes(t *testing.T) {
 		t.Fatal("GetLogsDescription has no **Order:** line")
 	}
 	for _, step := range strings.Split(order, "→") {
-		stage, _, _ := strings.Cut(strings.TrimSpace(step), " ")
+		// The stage is the leading word, so a trailing note or a sentence glued on without a space doesn't count.
+		stage := strings.TrimSpace(step)
+		if end := strings.IndexFunc(stage, func(r rune) bool { return r != '_' && (r < 'a' || r > 'z') }); end >= 0 {
+			stage = stage[:end]
+		}
 		if !stageTypes[stage] {
 			t.Errorf("**Order:** step %q is not a stage type (filter, parse, aggregate, window_aggregate)", strings.TrimSpace(step))
 		}
