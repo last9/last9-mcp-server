@@ -373,6 +373,10 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 		if label == "" {
 			return nil, nil, fmt.Errorf("label is required")
 		}
+		window, err := resolveLabelWindow(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
+		if err != nil {
+			return nil, nil, err
+		}
 		queryCfg, err := resolveDatasourceCfg(cfg, args.Datasource)
 		if err != nil {
 			return nil, nil, err
@@ -386,7 +390,7 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 				return utils.MakePromLabelValuesAPIQuery(ctx, client, label, query, start, end, queryCfg)
 			},
 		}
-		return lookup.run(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
+		return lookup.run(window)
 	}
 }
 
@@ -395,6 +399,10 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 		query := firstNonEmpty(args.MatchQuery, args.Match)
 		if query == "" {
 			return nil, nil, fmt.Errorf("match_query is required")
+		}
+		window, err := resolveLabelWindow(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
+		if err != nil {
+			return nil, nil, err
 		}
 		queryCfg, err := resolveDatasourceCfg(cfg, args.Datasource)
 		if err != nil {
@@ -410,7 +418,7 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 				return utils.MakePromLabelsAPIQuery(ctx, client, query, start, end, queryCfg)
 			},
 		}
-		return lookup.run(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
+		return lookup.run(window)
 	}
 }
 

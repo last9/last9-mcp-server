@@ -40,15 +40,26 @@ type labelLookup struct {
 	fetch      func(start, end int64) (*http.Response, error)
 }
 
+// labelWindow is the caller's resolved time range; isDefault marks one the caller left unset.
+type labelWindow struct {
+	start, end int64
+	isDefault  bool
+}
+
+func resolveLabelWindow(startTimeISO, endTimeISO string, lookbackMinutes float64) (labelWindow, error) {
+	start, end, err := resolveTimeRange(startTimeISO, endTimeISO, lookbackMinutes)
+	if err != nil {
+		return labelWindow{}, err
+	}
+	isDefault := startTimeISO == "" && endTimeISO == "" && lookbackMinutes == 0
+	return labelWindow{start: start, end: end, isDefault: isDefault}, nil
+}
+
 // run queries the caller's window. A metric-scoped lookup that comes back empty over
 // the default window is retried once over sparseLookbackMinutes, with a note saying so;
 // an explicit window is never widened.
-func (l labelLookup) run(startTimeISO, endTimeISO string, lookbackMinutes float64) (*mcp.CallToolResult, any, error) {
-	start, end, err := resolveTimeRange(startTimeISO, endTimeISO, lookbackMinutes)
-	if err != nil {
-		return nil, nil, err
-	}
-	body, err := l.read(start, end)
+func (l labelLookup) run(w labelWindow) (*mcp.CallToolResult, any, error) {
+	body, err := l.read(w.start, w.end)
 	var upstreamErr *utils.UpstreamHTTPError
 	if errors.As(err, &upstreamErr) {
 		return utils.ToolErrorResult(err.Error()), nil, nil
@@ -57,12 +68,11 @@ func (l labelLookup) run(startTimeISO, endTimeISO string, lookbackMinutes float6
 		return nil, nil, err
 	}
 
-	defaultWindow := startTimeISO == "" && endTimeISO == "" && lookbackMinutes == 0
-	if !defaultWindow || !isMetricScopedSelector(l.matchQuery) || resultLen(body, l.field) != 0 {
+	if !w.isDefault || !isMetricScopedSelector(l.matchQuery) || resultLen(body, l.field) != 0 {
 		return textResult(body), nil, nil
 	}
 
-	wide, err := l.read(end-sparseLookbackMinutes*60, end)
+	wide, err := l.read(w.end-sparseLookbackMinutes*60, w.end)
 	if err != nil {
 		return textResult(body, l.emptyNote("retrying over the last 4 days failed: "+err.Error())), nil, nil
 	}
