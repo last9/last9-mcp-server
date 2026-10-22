@@ -3,6 +3,7 @@ package logs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 )
 
 func apiModeCfg(apiBaseURL string) models.Config {
@@ -261,5 +263,40 @@ func TestFetchLogJSONQuery_APIMode_AggregateUnderCapKeepsSanity(t *testing.T) {
 	}
 	if *baselineCalls == 0 {
 		t.Error("baseline was never fetched, so the sanity path did not run")
+	}
+}
+
+// stalledSearchServer never answers, standing in for a body search over a
+// multi-day window that outlives any reasonable budget.
+func stalledSearchServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		<-release
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) })
+	return srv
+}
+
+func TestFetchLogJSONQuery_APIMode_SlowSearchReturnsAdviceWithinBudget(t *testing.T) {
+	srv := stalledSearchServer(t)
+	cfg := apiModeCfg(srv.URL)
+	cfg.LogSearchTimeout = 50 * time.Millisecond
+
+	started := time.Now()
+	_, err := fetchLogJSONQuery(
+		utils.DeadlineContext(t, 5*time.Second), srv.Client(), cfg, []map[string]interface{}{{"type": "filter"}},
+		1_700_000_000_000, 1_700_000_600_000, GetLogsArgs{Limit: 100})
+	if !errors.Is(err, utils.ErrLogSearchTimeout) {
+		t.Fatalf("err = %v, want utils.ErrLogSearchTimeout", err)
+	}
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Errorf("returned after %s, want within the 50ms budget", elapsed)
+	}
+	if !strings.Contains(err.Error(), "logs query timed out") ||
+		!strings.Contains(err.Error(), "Try narrowing the time range") {
+		t.Errorf("error %q lacks the narrowing advice", err)
 	}
 }

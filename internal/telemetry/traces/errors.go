@@ -12,7 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const tracePipelineSchemaHint = `Pipeline stage schema: every stage needs "type" (filter | where | aggregate | window_aggregate). filter conditions use $and/$or/$not with field operators like $eq, $neq, $contains. Field names are exact: ServiceName, TraceId, SpanName; use attributes['name'] / resources['name'] for others. To discover attribute keys present for your scope, call get_trace_attributes_for_pipeline with your filter stages.`
+const tracePipelineSchemaHint = `Pipeline stage schema: every stage needs "type" (filter | where | parse | transform | aggregate | window_aggregate). filter conditions use $and/$or/$not with field operators like $eq, $neq, $contains; $regex patterns are RE2 (no lookaround or backreferences). transform "as" is an array: ` + transformShapeExample + `. Field names are exact: ServiceName, TraceId, SpanName; use attributes['name'] / resources['name'] for others. To discover attribute keys present for your scope, call get_trace_attributes_for_pipeline with your filter stages.`
 
 var traceRequestIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
 
