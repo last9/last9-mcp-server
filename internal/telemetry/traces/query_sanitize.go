@@ -8,6 +8,7 @@ import (
 
 	"last9-mcp/internal/otelids"
 	"last9-mcp/internal/telemetry"
+	"last9-mcp/internal/utils"
 )
 
 var traceFilterFieldOperators = map[string]struct{}{
@@ -80,6 +81,20 @@ func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 		if stageType == "aggregate" {
 			if err := validateAggregateStage(stage, path); err != nil {
 				return err
+			}
+		}
+
+		if stageType == "transform" {
+			if err := normalizeTransformStage(stage, path); err != nil {
+				return err
+			}
+		}
+
+		if parser, _ := stage["parser"].(string); stageType == "parse" && parser == "regexp" {
+			if pattern, ok := stage["pattern"].(string); ok {
+				if err := utils.CheckPipelineRegex(pattern, path+".pattern"); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -304,6 +319,11 @@ func validateFilterFields(value interface{}, path string) error {
 			}
 			// Field operators: args are [field, value] — check first element
 			if args, ok := item.([]interface{}); ok && len(args) > 0 {
+				if pattern, ok := regexPatternArg(key, args); ok {
+					if err := utils.CheckPipelineRegex(pattern, fmt.Sprintf("%s.%s[1]", path, key)); err != nil {
+						return err
+					}
+				}
 				if fieldStr, ok := args[0].(string); ok {
 					if err := validateFieldSyntax(fieldStr, fmt.Sprintf("%s.%s[0]", path, key)); err != nil {
 						return err
@@ -318,6 +338,14 @@ func validateFilterFields(value interface{}, path string) error {
 		}
 	}
 	return nil
+}
+
+func regexPatternArg(operator string, args []interface{}) (string, bool) {
+	if len(args) != 2 || !utils.IsRegexFilterOperator(operator) {
+		return "", false
+	}
+	pattern, ok := args[1].(string)
+	return pattern, ok
 }
 
 // Exact-match operators only: substring/regex operators legitimately match
