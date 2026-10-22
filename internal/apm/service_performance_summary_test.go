@@ -64,7 +64,7 @@ func TestDetectChangePoints(t *testing.T) {
 		var out []float64
 		for _, l := range levels {
 			for i := 0; i < 20; i++ {
-				out = append(out, l+float64(i%3)*0.1) // small wobble within a level
+				out = append(out, l+float64(i%3)*0.1)
 			}
 		}
 		return out

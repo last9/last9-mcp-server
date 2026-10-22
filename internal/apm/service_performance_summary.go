@@ -9,14 +9,11 @@ import (
 const (
 	// perfSummaryMaxSeries caps the series summarized per metric so a service
 	// with many status codes can't grow the default response without bound.
-	perfSummaryMaxSeries = 5
-	// perfSummaryMaxChangePoints caps change points reported per series.
+	perfSummaryMaxSeries       = 5
 	perfSummaryMaxChangePoints = 3
 	// perfSummaryMinSegment is the fewest points each side of a change point
 	// must have, so a single outlier is not reported as a level shift.
-	perfSummaryMinSegment = 3
-	// perfSummaryMinShiftScore is the minimum Welch-style t score of the mean
-	// shift across a split for it to count as a change point.
+	perfSummaryMinSegment    = 3
 	perfSummaryMinShiftScore = 5.0
 	// perfSummaryMinRelativeShift ignores statistically sharp but negligible
 	// shifts (a flat series with a tiny wobble scores a huge t).
@@ -29,8 +26,6 @@ const (
 	perfSummaryFullSeriesNote = "omitted; call again with include_series=true for every point of every series"
 )
 
-// ServicePerformanceSummary is the default get_service_performance_details
-// payload: per-series statistics instead of every point.
 type ServicePerformanceSummary struct {
 	ServiceName   string              `json:"service_name"`
 	Env           string              `json:"env"`
@@ -53,10 +48,6 @@ type perfTopOperations struct {
 	ByErrorRate    []map[string]int64   `json:"by_error_rate"`
 }
 
-// PerfSeriesSummary condenses one time series. Percentiles are nearest-rank
-// over the finite points; baseline_mean is the mean of the first
-// and second half of the points, and delta_pct is the second half's mean
-// versus baseline_mean.
 type PerfSeriesSummary struct {
 	Metric        map[string]string `json:"metric,omitempty"`
 	Points        int               `json:"points"`
@@ -73,8 +64,6 @@ type PerfSeriesSummary struct {
 	ChangePoints  []PerfChangePoint `json:"change_points,omitempty"`
 }
 
-// PerfChangePoint is a level shift: the mean of the points from Timestamp up
-// to the next change point differs from the mean of the points before it.
 type PerfChangePoint struct {
 	Timestamp  uint64  `json:"timestamp"`
 	BeforeMean float64 `json:"before_mean"`
@@ -117,8 +106,6 @@ func summarizePerformanceDetails(d ServicePerformanceDetails) ServicePerformance
 	return s
 }
 
-// summarizeSeriesList keeps the perfSummaryMaxSeries series with the highest
-// mean (the largest contributors) and returns how many it dropped.
 func summarizeSeriesList(series []TimeSeries, noData func(float64) bool) ([]PerfSeriesSummary, int) {
 	out := make([]PerfSeriesSummary, 0, len(series))
 	for _, ts := range series {
@@ -181,8 +168,6 @@ func summarizeSeries(ts TimeSeries, noData func(float64) bool) PerfSeriesSummary
 	return s
 }
 
-// nearestRank returns the p-th percentile of sorted by the nearest-rank
-// method: the smallest value with at least p% of the points at or below it.
 func nearestRank(sorted []float64, p float64) float64 {
 	rank := int(math.Ceil(p / 100 * float64(len(sorted))))
 	if rank < 1 {
@@ -191,10 +176,6 @@ func nearestRank(sorted []float64, p float64) float64 {
 	return sorted[rank-1]
 }
 
-// detectChangePoints finds level shifts by binary segmentation: split at the
-// index with the largest mean-shift score, recurse into both halves, and keep
-// the perfSummaryMaxChangePoints strongest splits. Returns ascending indexes,
-// each the first point after a shift.
 func detectChangePoints(values []float64) []int {
 	type split struct {
 		idx   int
@@ -225,9 +206,6 @@ func detectChangePoints(values []float64) []int {
 	return idxs
 }
 
-// bestSplit returns the split index maximizing |mean(right)-mean(left)| over
-// its standard error, or -1 when the segment is too short to split. A shift
-// between two perfectly flat sides scores +Inf.
 func bestSplit(values []float64) (int, float64) {
 	bestIdx, bestScore := -1, 0.0
 	for k := perfSummaryMinSegment; k <= len(values)-perfSummaryMinSegment; k++ {

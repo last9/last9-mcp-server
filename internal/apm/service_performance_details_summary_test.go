@@ -20,8 +20,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// perfFixtureLabels returns the label sets the fake returns for a sub-query,
-// sized like a busy service: many status codes, every response-time quantile.
+// perfFixtureLabels sizes each sub-query's series like a busy service.
 func perfFixtureLabels(query string) []map[string]string {
 	codes := func(n int, prefix string) []map[string]string {
 		out := make([]map[string]string, n)
@@ -46,8 +45,7 @@ func perfFixtureLabels(query string) []map[string]string {
 	}
 }
 
-// perfFixtureValue is deterministic, varies point to point, and steps up by 4x
-// at shiftAt so every series has one level shift.
+// perfFixtureValue steps up 4x at shiftAt so every series has one level shift.
 func perfFixtureValue(series int, ts, shiftAt int64) float64 {
 	v := float64(series+1) * (1 + float64(ts%7)/100)
 	if ts >= shiftAt {
