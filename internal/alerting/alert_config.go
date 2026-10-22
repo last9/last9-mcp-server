@@ -19,8 +19,9 @@ const (
 	alertGroupEntityClassGrafanaAlerts = "grafana-alerts"
 	alertGroupEntityClassAlertManager  = "alert-manager"
 
-	alertConfigRuleTypeStatic  = "static"
-	alertConfigRuleTypeAnomaly = "anomaly"
+	alertConfigRuleTypeStatic   = "static"
+	alertConfigRuleTypeAnomaly  = "anomaly"
+	alertConfigRuleTypeAdaptive = "adaptive"
 
 	entityFilterContains    = "contains"
 	entityFilterEqual       = "equal"
@@ -110,8 +111,8 @@ func validateGetAlertConfigArgs(args GetAlertConfigArgs) error {
 		return nil
 	}
 
-	if ruleType != alertConfigRuleTypeStatic && ruleType != alertConfigRuleTypeAnomaly {
-		return fmt.Errorf("rule_type must be one of %q or %q", alertConfigRuleTypeStatic, alertConfigRuleTypeAnomaly)
+	if ruleType != alertConfigRuleTypeStatic && ruleType != alertConfigRuleTypeAnomaly && ruleType != alertConfigRuleTypeAdaptive {
+		return fmt.Errorf("rule_type must be one of %q, %q, or %q", alertConfigRuleTypeStatic, alertConfigRuleTypeAnomaly, alertConfigRuleTypeAdaptive)
 	}
 
 	return nil
@@ -560,7 +561,11 @@ func matchesAlertConfigSearchTerm(
 }
 
 func alertConfigRuleType(rule AlertRule) string {
-	if strings.Contains(strings.ToLower(rule.Algorithm), alertConfigRuleTypeStatic) {
+	algorithm := strings.ToLower(rule.Algorithm)
+	if strings.Contains(algorithm, alertConfigRuleTypeAdaptive) {
+		return alertConfigRuleTypeAdaptive
+	}
+	if strings.Contains(algorithm, alertConfigRuleTypeStatic) {
 		return alertConfigRuleTypeStatic
 	}
 
@@ -603,6 +608,50 @@ func formatAlertGroupLabels(labels map[string]string) string {
 		parts = append(parts, fmt.Sprintf("%s=%s", key, labels[key]))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// formatAlertRuleProperties renders the properties patch_alert sets, so a patch can be read
+// back; it is empty when no property has a value.
+func formatAlertRuleProperties(rule AlertRule) string {
+	propKeys := make([]string, 0, len(rule.Properties))
+	for k := range rule.Properties {
+		propKeys = append(propKeys, k)
+	}
+	sort.Strings(propKeys)
+	var props string
+	for _, k := range propKeys {
+		if value, ok := formatAlertRuleProperty(rule.Properties[k]); ok {
+			props += fmt.Sprintf("    %s: %s\n", k, value)
+		}
+	}
+	if props == "" {
+		return ""
+	}
+	return "  Properties:\n" + props
+}
+
+// formatAlertRuleProperty renders a property value, nested ones as JSON. ok is false for the
+// null and empty values the API returns for unset properties.
+func formatAlertRuleProperty(v any) (value string, ok bool) {
+	switch v := v.(type) {
+	case nil:
+		return "", false
+	case string:
+		return v, strings.TrimSpace(v) != ""
+	case map[string]any:
+		if len(v) == 0 {
+			return "", false
+		}
+	case []any:
+		if len(v) == 0 {
+			return "", false
+		}
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprintf("%v", v), true
+	}
+	return string(b), true
 }
 
 func formatAlertConfigResponse(
@@ -666,6 +715,7 @@ func formatAlertConfigResponse(
 			}
 		}
 		formattedResponse += fmt.Sprintf("  State: %s\n", rule.State)
+		formattedResponse += formatRuleLifecycle(rule)
 		formattedResponse += fmt.Sprintf("  Severity: %s\n", rule.Severity)
 		formattedResponse += fmt.Sprintf("  Algorithm: %s\n", rule.Algorithm)
 		formattedResponse += fmt.Sprintf("  Entity ID: %s\n", rule.EntityID)
@@ -708,17 +758,7 @@ func formatAlertConfigResponse(
 			formattedResponse += fmt.Sprintf("  Error Since: %s\n", errorTime)
 		}
 
-		if len(rule.Properties) > 0 {
-			formattedResponse += "  Properties:\n"
-			propKeys := make([]string, 0, len(rule.Properties))
-			for k := range rule.Properties {
-				propKeys = append(propKeys, k)
-			}
-			sort.Strings(propKeys)
-			for _, k := range propKeys {
-				formattedResponse += fmt.Sprintf("    %s: %v\n", k, rule.Properties[k])
-			}
-		}
+		formattedResponse += formatAlertRuleProperties(rule)
 
 		createdTime := time.Unix(rule.CreatedAt, 0).UTC().Format("2006-01-02 15:04:05 UTC")
 		updatedTime := time.Unix(rule.UpdatedAt, 0).UTC().Format("2006-01-02 15:04:05 UTC")

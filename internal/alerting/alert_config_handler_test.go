@@ -468,6 +468,29 @@ func TestGetAlertConfigHandler_NotificationChannelEnrichmentOnRule(t *testing.T)
 	}
 }
 
+// The org-wide rule list returns mute_until and recurring_mute_schedule (not description or
+// runbook), so a patched mute can be read back here.
+func TestGetAlertConfigHandler_ShowsMutes(t *testing.T) {
+	rules := sampleAlertConfigRules()
+	rules[0].MuteUntil = 1792260000
+	rules[0].RecurringMuteSchedule = &RecurringMuteSchedule{Enabled: false, Timezone: "UTC"}
+	state := alertConfigTestServerState{
+		alertRules:         rules,
+		entityGroups:       sampleAlertGroupEntities(),
+		alertRulesStatus:   http.StatusOK,
+		entityLookupStatus: http.StatusOK,
+	}
+
+	text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{RuleID: rules[0].ID})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if !strings.Contains(text, "  Muted until: 2026-10-17T18:00:00Z\n") ||
+		!strings.Contains(text, "  Recurring mute schedule: timezone UTC (enabled: false)\n") {
+		t.Fatalf("expected mute lines, got:\n%s", text)
+	}
+}
+
 func TestGetAlertConfigHandler_NotificationChannelTypeFilter(t *testing.T) {
 	state := alertConfigTestServerState{
 		alertRules:         sampleAlertConfigRules(),
@@ -1023,5 +1046,14 @@ func assertAlertConfigResultIDs(t *testing.T, text string, expectedIDs []string)
 		if !expected && containsID {
 			t.Fatalf("expected response to exclude %s:\n%s", id, text)
 		}
+	}
+}
+
+func TestAdaptiveAlertRuleType(t *testing.T) {
+	if err := validateGetAlertConfigArgs(GetAlertConfigArgs{RuleType: "adaptive"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := alertConfigRuleType(AlertRule{Algorithm: "adaptive-threshold-v1"}); got != "adaptive" {
+		t.Fatalf("rule type = %q", got)
 	}
 }

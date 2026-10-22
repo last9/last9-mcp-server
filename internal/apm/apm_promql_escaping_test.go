@@ -82,9 +82,10 @@ func (c *apmCaptureServer) allQueries() []string {
 // escapingHandler describes one handler under the escaping contract.
 type escapingHandler struct {
 	name string
-	// run drives the handler over a short fixed window with the given
-	// service_name / env and returns every captured query string.
-	run func(t *testing.T, serviceName, env string) []string
+	// try drives the handler over a short fixed window with the given
+	// service_name / env and returns every captured query string plus the
+	// handler's error. Use run when an error is a test failure.
+	try func(t *testing.T, serviceName, env string) ([]string, error)
 	// svcMatchers returns the double-quoted, escaped matcher substrings for
 	// the service value; a query must contain at least one of them.
 	svcMatchers func(serviceName string) []string
@@ -98,6 +99,16 @@ type escapingHandler struct {
 	injectionPayload string
 }
 
+// run is try with a handler error treated as a fatal test failure.
+func (h escapingHandler) run(t *testing.T, serviceName, env string) []string {
+	t.Helper()
+	queries, err := h.try(t, serviceName, env)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	return queries
+}
+
 // runHandlerWithCapture is the shared driver: it builds the handler via
 // construct, runs it over a fixed window ending 2026-01-01T12:00:00Z, and
 // returns all captured queries.
@@ -107,21 +118,34 @@ func runHandlerWithCapture(
 	call func(cfgURL string, client *http.Client, startISO, endISO string) error,
 ) []string {
 	t.Helper()
+	queries, err := tryHandlerWithCapture(t, window, call)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	return queries
+}
+
+// tryHandlerWithCapture is runHandlerWithCapture without the fatal on a
+// handler error, for tests that assert the handler rejects an argument.
+func tryHandlerWithCapture(
+	t *testing.T,
+	window time.Duration,
+	call func(cfgURL string, client *http.Client, startISO, endISO string) error,
+) ([]string, error) {
+	t.Helper()
 	srv := newApmCaptureServer(t)
 	end := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	start := end.Add(-window)
-	if err := call(srv.URL, srv.Client(), start.Format(time.RFC3339), end.Format(time.RFC3339)); err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	return srv.allQueries()
+	err := call(srv.URL, srv.Client(), start.Format(time.RFC3339), end.Format(time.RFC3339))
+	return srv.allQueries(), err
 }
 
 var escapingHandlers = []escapingHandler{
 	{
 		name: "performance_details",
-		run: func(t *testing.T, serviceName, env string) []string {
+		try: func(t *testing.T, serviceName, env string) ([]string, error) {
 			// 10m keeps the window single-chunk.
-			return runHandlerWithCapture(t, 10*time.Minute, func(url string, client *http.Client, startISO, endISO string) error {
+			return tryHandlerWithCapture(t, 10*time.Minute, func(url string, client *http.Client, startISO, endISO string) error {
 				handler := NewServicePerformanceDetailsHandler(client, apmTestConfig(url))
 				_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServicePerformanceDetailsArgs{
 					ServiceName: serviceName, Env: env, StartTimeISO: startISO, EndTimeISO: endISO,
@@ -135,8 +159,8 @@ var escapingHandlers = []escapingHandler{
 	},
 	{
 		name: "operations_summary",
-		run: func(t *testing.T, serviceName, env string) []string {
-			return runHandlerWithCapture(t, 2*time.Minute, func(url string, client *http.Client, startISO, endISO string) error {
+		try: func(t *testing.T, serviceName, env string) ([]string, error) {
+			return tryHandlerWithCapture(t, 2*time.Minute, func(url string, client *http.Client, startISO, endISO string) error {
 				handler := NewServiceOperationsSummaryHandler(client, apmTestConfig(url))
 				_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServiceOperationsSummaryArgs{
 					ServiceName: serviceName, Env: env, StartTimeISO: startISO, EndTimeISO: endISO,
@@ -150,8 +174,8 @@ var escapingHandlers = []escapingHandler{
 	},
 	{
 		name: "dependency_graph",
-		run: func(t *testing.T, serviceName, env string) []string {
-			return runHandlerWithCapture(t, 2*time.Minute, func(url string, client *http.Client, startISO, endISO string) error {
+		try: func(t *testing.T, serviceName, env string) ([]string, error) {
+			return tryHandlerWithCapture(t, 2*time.Minute, func(url string, client *http.Client, startISO, endISO string) error {
 				handler := NewServiceDependencyGraphHandler(client, apmTestConfig(url))
 				_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServiceDependencyGraphArgs{
 					ServiceName: serviceName, Env: env, StartTimeISO: startISO, EndTimeISO: endISO,
@@ -180,13 +204,16 @@ func escapeEnvExactMatcher(env string) string {
 	return `env="` + utils.EscapePromQLLabel(env) + `"`
 }
 
-// effectiveEnv mirrors the handlers' "" -> ".*" default so assertions compare
-// against the value actually rendered into the PromQL.
-func effectiveEnv(env string) string {
-	if env == "" {
-		return ".*"
+// effectiveEnv mirrors the handlers' env quoting via the shared helper, so
+// assertions compare against the value rendered into PromQL. Inputs must be
+// accepted by literalEnvPattern.
+func effectiveEnv(t *testing.T, env string) string {
+	t.Helper()
+	pat, _, _, err := literalEnvPattern(env)
+	if err != nil {
+		t.Fatalf("effectiveEnv(%q): %v", env, err)
 	}
-	return env
+	return pat
 }
 
 // containsAny reports whether q contains at least one of the wants.
@@ -216,6 +243,11 @@ var safeEscapeInputs = []string{
 	`a\b"c`,     // mix of all three escapables
 }
 
+// safeEnvInputs are the safeEscapeInputs that literalEnvPattern accepts as a
+// single environment name (alternation and ".*"/".+" are rejected, see
+// TestAPMHandlers_EnvRegexSyntax). Dotted/bracketed names exercise QuoteMeta.
+var safeEnvInputs = []string{"", ".*", "prod", "^prod$", "prod.eu", "prod[blue]", `acme'test`, `foo"bar`, `foo\bar`, "foo\nbar", `a\b"c`}
+
 // TestAPMHandlers_EscapeServiceNameAndEnv asserts, for each handler and each
 // (service_name, env) input pair, that every rendered query carries the
 // escaped double-quoted matchers and never a single-quote user matcher.
@@ -226,13 +258,13 @@ func TestAPMHandlers_EscapeServiceNameAndEnv(t *testing.T) {
 				if svc == "" {
 					continue // service_name is required (rejected before any query renders)
 				}
-				for _, env := range safeEscapeInputs {
+				for _, env := range safeEnvInputs {
 					t.Run("svc="+svc+"/env="+env, func(t *testing.T) {
 						queries := h.run(t, svc, env)
 						if len(queries) == 0 {
 							t.Fatalf("no queries captured")
 						}
-						eff := effectiveEnv(env)
+						eff := effectiveEnv(t, env)
 						wantEnv := []string{escapeEnvRegexMatcher(eff), escapeEnvExactMatcher(eff)}
 						for i, q := range queries {
 							if !containsAny(q, h.svcMatchers(svc)) {
@@ -313,6 +345,40 @@ func TestAPMHandlers_HappyPathDoubleQuotedMatchers(t *testing.T) {
 			for wi, ok := range seen {
 				if !ok {
 					t.Errorf("no query filtered by %q", wants[wi])
+				}
+			}
+		})
+	}
+}
+
+// TestAPMHandlers_EnvRegexSyntax pins the env contract for the three handlers
+// here: an anchored exact-match regex (what get_service_summary documents) is
+// normalised to the literal name, and anything else regex-shaped is rejected
+// rather than silently matching nothing.
+func TestAPMHandlers_EnvRegexSyntax(t *testing.T) {
+	for _, h := range escapingHandlers {
+		t.Run(h.name, func(t *testing.T) {
+			for _, env := range []string{"^production$", "^(?:production)$", "^(production)$"} {
+				queries := h.run(t, "checkout", env)
+				if len(queries) == 0 {
+					t.Fatalf("env %q: no queries captured", env)
+				}
+				for i, q := range queries {
+					if !strings.Contains(q, `env=~"production"`) {
+						t.Errorf("env %q: query %d missing env=~\"production\":\n%s", env, i, q)
+					}
+				}
+			}
+			for _, env := range []string{"prod|staging", "prod.*"} {
+				queries, err := h.try(t, "checkout", env)
+				if err == nil {
+					t.Fatalf("env %q: expected error, got none", env)
+				}
+				if !strings.Contains(err.Error(), "looks like a regular expression") {
+					t.Errorf("env %q: unexpected error: %v", env, err)
+				}
+				if len(queries) != 0 {
+					t.Errorf("env %q: queries must not be issued on a rejected env: %v", env, queries)
 				}
 			}
 		})

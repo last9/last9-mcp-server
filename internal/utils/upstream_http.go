@@ -48,6 +48,17 @@ func SanitizeUpstreamBody(raw string) string {
 	return cleaned
 }
 
+// UpstreamHTTPError is the typed form of a non-OK upstream response; use errors.As to
+// branch on StatusCode. Body is the sanitized 4xx body (relayed in Error() only for 400/422)
+// and empty for 5xx.
+type UpstreamHTTPError struct {
+	StatusCode int
+	Body       string
+	message    string
+}
+
+func (e *UpstreamHTTPError) Error() string { return e.message }
+
 // NewUpstreamHTTPError maps a non-OK HTTP response to a tool-facing error.
 // 400/422 bodies are sanitized and included. 5xx bodies are drained and omitted.
 // Optional hint is appended after 400/422 bodies (e.g. pipeline schema reminder).
@@ -59,21 +70,26 @@ func NewUpstreamHTTPError(resp *http.Response, op string, hint ...string) error 
 	if status == http.StatusBadRequest || status == http.StatusUnprocessableEntity {
 		body := ReadLimitedResponseBody(resp.Body, 4<<10)
 		if status == http.StatusUnprocessableEntity && strings.Contains(strings.ToLower(body), "too many samples") {
-			return fmt.Errorf(
+			return &UpstreamHTTPError{StatusCode: status, Body: body, message: fmt.Sprintf(
 				"%s failed with HTTP %d (%s). The generated metrics query would scan too many samples. Agent action required: do not ask the user to edit PromQL. Retry with narrower filters already known from the request (for example, service, environment, operation, or label). If the full time range is still required, split it into smaller subranges only when the results can be combined correctly; preserve the requested coverage and disclose any limitations. Never average percentile values across subranges. Ask the user to narrow the scope only when the requested result cannot be computed correctly. Do not retry the same query unchanged.",
 				op,
 				status,
 				MetricsTooManySamplesErrorCode,
-			)
+			)}
 		}
 		msg := fmt.Sprintf("%s failed with HTTP %d. Review the tool arguments and retry. Upstream response: %s", op, status, body)
 		if len(hint) > 0 && strings.TrimSpace(hint[0]) != "" {
 			msg += "\n\n" + hint[0]
 		}
-		return fmt.Errorf("%s", msg)
+		return &UpstreamHTTPError{StatusCode: status, Body: body, message: msg}
 	}
-	DrainResponseBody(resp.Body)
-	return fmt.Errorf("%s failed with HTTP %d. %s", op, status, upstreamStatusAdvice(status))
+	var body string
+	if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
+		body = ReadLimitedResponseBody(resp.Body, 4<<10)
+	} else {
+		DrainResponseBody(resp.Body)
+	}
+	return &UpstreamHTTPError{StatusCode: status, Body: body, message: fmt.Sprintf("%s failed with HTTP %d. %s", op, status, upstreamStatusAdvice(status))}
 }
 
 func upstreamStatusAdvice(statusCode int) string {
@@ -83,9 +99,9 @@ func upstreamStatusAdvice(statusCode int) string {
 	case http.StatusNotFound:
 		return "The capability may be unavailable or disabled."
 	case http.StatusRequestTimeout:
-		return "Retry after a short delay or request a smaller time window."
+		return "Request timed out. Try narrowing the time range, such as a smaller time window, or adding a service filter. Do not retry the same request unchanged."
 	case http.StatusTooManyRequests:
-		return "Rate limited; retry after a short delay."
+		return "Rate limited; wait for a short delay before retrying, then use a narrower time range or more selective filters. Do not retry immediately unchanged."
 	default:
 		if statusCode >= http.StatusInternalServerError {
 			return "The upstream service is temporarily unavailable; retry later."

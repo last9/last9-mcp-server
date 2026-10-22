@@ -20,7 +20,7 @@ import (
 
 // GetTracesArgs represents the input arguments for the traces query tool
 type GetTracesArgs struct {
-	TracejsonQuery  []map[string]interface{} `json:"tracejson_query,omitempty" jsonschema:"JSON pipeline query for traces (required)"`
+	TracejsonQuery  []map[string]interface{} `json:"tracejson_query,omitempty" jsonschema:"(Required) JSON pipeline query for traces"`
 	StartTimeISO    string                   `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
 	EndTimeISO      string                   `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
 	LookbackMinutes int                      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time (default: 60, minimum: 1)"`
@@ -63,6 +63,12 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	if err != nil {
 		return nil, err
 	}
+	addTraceJSONGuidance(result, args, traceGuidanceContext{
+		startMs:        startTime,
+		endMs:          endTime,
+		effectiveLimit: effectiveGetTracesLimit(cfg, args.Limit),
+		maxLimit:       configuredMaxGetTracesEntries(cfg),
+	})
 
 	// Build deep link URL
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
@@ -315,10 +321,7 @@ func extractTraceResultItems(result map[string]interface{}) ([]interface{}, erro
 
 // effectiveGetTracesLimit returns the capped limit to use across all chunks.
 func effectiveGetTracesLimit(cfg models.Config, requestedLimit int) int {
-	maxEntries := cfg.MaxGetTracesEntries
-	if maxEntries <= 0 {
-		maxEntries = models.DefaultMaxGetTracesEntries
-	}
+	maxEntries := configuredMaxGetTracesEntries(cfg)
 	if requestedLimit <= 0 {
 		return maxEntries
 	}
@@ -326,6 +329,13 @@ func effectiveGetTracesLimit(cfg models.Config, requestedLimit int) int {
 		return maxEntries
 	}
 	return requestedLimit
+}
+
+func configuredMaxGetTracesEntries(cfg models.Config) int {
+	if cfg.MaxGetTracesEntries > 0 {
+		return cfg.MaxGetTracesEntries
+	}
+	return models.DefaultMaxGetTracesEntries
 }
 
 // emptyTracesResponse returns a minimal valid empty traces response.

@@ -26,3 +26,20 @@
 	- time_iso: (Optional) The point in time to query in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- lookback_minutes: (Optional) Number of minutes to look back from now when time_iso is omitted.
 	- datasource: (Optional) Name of the datasource to query. If omitted, uses the default configured datasource.
+
+	## When to use
+	One value per series at one time, usually a rollup over a window.
+
+	## When not to use
+	- A trend over time: `prometheus_range_query`
+	- Fleet service ranking: `get_service_summary`
+
+	## Pairs well with
+	- `prometheus_labels` and `prometheus_label_values` (discover names first)
+	- `list_datasources` (pick a datasource)
+
+	## Output shape
+	Series `[{metric, value}]`; value is `[timestamp, "string"]`.
+
+	## Known traps
+	Without a range rollup the query reads only the latest sample.

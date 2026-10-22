@@ -136,7 +136,18 @@ func NewGetDatabaseSlowQueriesHandler(client *http.Client, cfg models.Config) fu
 		if len(slowQueries) == 0 {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{
-					&mcp.TextContent{Text: "No slow database queries found for the given parameters."},
+					&mcp.TextContent{Text: apmEmptyAdvice(
+						"slow database queries",
+						apmGuidanceArgs{
+							serviceName: args.ServiceName,
+							env:         args.Env,
+							dbSystem:    args.DBSystem,
+							startUnix:   startTime,
+							endUnix:     endTime,
+						},
+						"verify database client spans or slow-query logs are instrumented",
+						"lower min_duration_ms if it was supplied",
+					)},
 				},
 			}, nil, nil
 		}
@@ -179,9 +190,9 @@ func NewGetDatabaseSlowQueriesHandler(client *http.Client, cfg models.Config) fu
 // --- get_database_queries tool ---
 
 type GetDatabaseQueriesArgs struct {
-	DBSystem        string  `json:"db_system" jsonschema:"Database system (required, e.g. postgresql, mysql, mongodb, redis)"`
+	DBSystem        string  `json:"db_system" jsonschema:"(Required) Database system (e.g. postgresql, mysql, mongodb, redis)"`
 	Host            string  `json:"host,omitempty" jsonschema:"Database host filter (net_peer_name)"`
-	Env             string  `json:"env,omitempty" jsonschema:"Deployment environment filter"`
+	Env             string  `json:"env,omitempty" jsonschema:"(Optional) Exact deployment environment name, e.g. production. Default all environments (empty or .*). Anchored forms like ^production$ are accepted and matched exactly. Alternation (a|b) and wildcards (prod.*) are rejected; list names with get_service_environments."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339 format"`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339 format"`
@@ -212,7 +223,10 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 			durationMin = 1
 		}
 
-		baseFilter := buildDBBaseFilter(args.DBSystem, args.Host, args.Env)
+		baseFilter, envDisplay, err := buildDBBaseFilter(args.DBSystem, args.Host, args.Env)
+		if err != nil {
+			return nil, nil, err
+		}
 
 		// 1. Throughput first (to check if any patterns exist)
 		patterns := make(map[string]*QueryPattern)
@@ -229,7 +243,12 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 		if len(patterns) == 0 {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{
-					&mcp.TextContent{Text: fmt.Sprintf("No query patterns found for db_system=%s. Ensure services are instrumented with OpenTelemetry database client spans.", args.DBSystem)},
+					&mcp.TextContent{Text: apmEmptyAdvice(
+						"query patterns",
+						apmGuidanceArgs{env: envLiteral(envDisplay), dbSystem: args.DBSystem, startUnix: startTime, endUnix: endTime},
+						"ensure services are instrumented with OpenTelemetry database client spans",
+						"verify host if one was supplied",
+					)},
 				},
 			}, nil, nil
 		}
@@ -334,6 +353,10 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 			"sort_by":   sortBy,
 			"queries":   result,
 		}
+		response["env"] = envDisplay
+		if requested := envRequested(args.Env, envDisplay); requested != "" {
+			response["env_requested"] = requested
+		}
 
 		jsonBytes, err := json.Marshal(response)
 		if err != nil {
@@ -348,8 +371,9 @@ func NewGetDatabaseQueriesHandler(client *http.Client, cfg models.Config) func(c
 	}
 }
 
-func buildDBBaseFilter(dbSystem, host, env string) string {
-	filter := fmt.Sprintf(
+func buildDBBaseFilter(dbSystem, host, env string) (filter, envDisplay string, err error) {
+	envDisplay = ".*"
+	filter = fmt.Sprintf(
 		`span_kind=~"SPAN_KIND_CLIENT|SPAN_KIND_INTERNAL", db_system="%s"`,
 		utils.EscapePromQLLabel(dbSystem),
 	)
@@ -357,9 +381,14 @@ func buildDBBaseFilter(dbSystem, host, env string) string {
 		filter += fmt.Sprintf(`, net_peer_name="%s"`, utils.EscapePromQLLabel(host))
 	}
 	if env != "" {
-		filter += fmt.Sprintf(`, env=~"%s"`, utils.EscapePromQLLabel(env))
+		var envPattern string
+		envPattern, _, envDisplay, err = literalEnvPattern(env)
+		if err != nil {
+			return "", "", err
+		}
+		filter += fmt.Sprintf(`, env=~"%s"`, utils.EscapePromQLLabel(envPattern))
 	}
-	return filter
+	return filter, envDisplay, nil
 }
 
 func fetchPromBySpanName(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64, patterns map[string]*QueryPattern, setter func(*QueryPattern, float64)) error {
@@ -647,7 +676,12 @@ func NewGetDatabaseServerMetricsHandler(client *http.Client, cfg models.Config) 
 		if len(results) == 0 {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{
-					&mcp.TextContent{Text: "No database server-side metrics found. Ensure database exporters (postgres_exporter, mysqld_exporter, etc.) are running and scraping to your Prometheus/Levitate instance."},
+					&mcp.TextContent{Text: apmEmptyAdvice(
+						"database server-side metrics",
+						apmGuidanceArgs{dbSystem: args.DBSystem, startUnix: startTime, endUnix: endTime},
+						"ensure database exporters (postgres_exporter, mysqld_exporter, etc.) are running",
+						"verify metrics are scraping to the configured Prometheus datasource",
+					)},
 				},
 			}, nil, nil
 		}
@@ -655,6 +689,21 @@ func NewGetDatabaseServerMetricsHandler(client *http.Client, cfg models.Config) 
 		response := map[string]any{
 			"count":     len(results),
 			"databases": results,
+		}
+		allUnavailable := len(results) > 0
+		for _, result := range results {
+			if result.Available {
+				allUnavailable = false
+				break
+			}
+		}
+		if allUnavailable {
+			response["hint"] = apmEmptyAdvice(
+				"database server-side metrics",
+				apmGuidanceArgs{dbSystem: args.DBSystem, startUnix: startTime, endUnix: endTime},
+				"ensure database exporters (postgres_exporter, mysqld_exporter, etc.) are running",
+				"verify metrics are scraping to the configured Prometheus datasource",
+			)
 		}
 		jsonBytes, err := json.Marshal(response)
 		if err != nil {

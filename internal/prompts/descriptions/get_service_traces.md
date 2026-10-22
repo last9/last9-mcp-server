@@ -18,3 +18,21 @@ Rules:
 - Empty `trace_id` result: retry with explicit `start_time_iso`/`end_time_iso` or larger `lookback_minutes`.
 
 If unsure of `service_name` or `env` spelling, call `did_you_mean` first.
+
+## When to use
+One exact trace by `trace_id`, or recent traces for one service.
+
+## When not to use
+- Pipeline filters or aggregates over spans: `get_traces`
+- A span tree with timing for one trace: `get_trace_waterfall`
+
+## Pairs well with
+- `get_exceptions` (find the hot service)
+- `get_service_environments` (env values)
+- `did_you_mean` (service spelling)
+
+## Output shape
+Spans with trace_id, span_id, span_name, span_kind, service_name, duration, timestamp and status_code.
+
+## Known traps
+Passing `service_name` alongside a known `trace_id` narrows the lookup; pass the ID alone.

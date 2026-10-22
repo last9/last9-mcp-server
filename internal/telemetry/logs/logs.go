@@ -26,12 +26,12 @@ const (
 
 // GetLogsArgs represents the input arguments for the get_logs tool
 type GetLogsArgs struct {
-	LogjsonQuery    []map[string]interface{} `json:"logjson_query,omitempty" jsonschema:"JSON pipeline query for logs (required)"`
+	LogjsonQuery    []map[string]interface{} `json:"logjson_query,omitempty" jsonschema:"(Required) JSON pipeline query for logs"`
 	StartTimeISO    string                   `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
 	EndTimeISO      string                   `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
 	LookbackMinutes int                      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 5, minimum: 1)"`
 	Limit           int                      `json:"limit,omitempty" jsonschema:"Maximum rows to return (optional; default: 1000 for aggregate/dataframe queries, 5000 for chunked raw queries)"`
-	Index           string                   `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Omit this when the user did not specify an index."`
+	Index           string                   `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Use a user-named index or a non-default physical index discovered by get_service_profile; omit for default or when unknown."`
 }
 
 // NewGetLogsHandler creates a handler for getting logs using logjson_query parameter
@@ -68,6 +68,12 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	if err != nil {
 		return nil, err
 	}
+	addGetLogsGuidance(result, args, getLogsGuidanceContext{
+		startMs:        startTime,
+		endMs:          endTime,
+		effectiveLimit: effectiveGetLogsResultLimit(cfg, args.Limit),
+		maxLimit:       effectiveGetLogsResultLimit(cfg, 0),
+	})
 
 	// Build deep link URL
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
@@ -126,6 +132,13 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		partial := false
 		if aggregateLimit > 0 {
 			partial = applyGetLogsAggregateRowLimit(result, aggregateLimit)
+			if partial {
+				addGetLogsAggregateGuidance(result, utils.TruncatedResultOptions{
+					Subject:  "log rows",
+					Returned: aggregateLimit,
+					MaxLimit: configuredMaxGetLogsEntries(cfg),
+				})
+			}
 		}
 		if stages, ok := logjsonQuery.([]map[string]interface{}); ok && !partial {
 			result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
@@ -362,6 +375,13 @@ func fetchViaLogSearchAPI(
 	partial := false
 	if aggregateLimit > 0 {
 		partial = applyGetLogsAggregateRowLimit(result, aggregateLimit)
+		if partial {
+			addGetLogsAggregateGuidance(result, utils.TruncatedResultOptions{
+				Subject:  "log rows",
+				Returned: aggregateLimit,
+				MaxLimit: configuredMaxGetLogsEntries(cfg),
+			})
+		}
 	}
 	if hasStages && !partial {
 		result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
@@ -370,10 +390,7 @@ func fetchViaLogSearchAPI(
 }
 
 func effectiveGetLogsAggregateLimit(cfg models.Config, requestedLimit int) int {
-	maxEntries := cfg.MaxGetLogsEntries
-	if maxEntries <= 0 {
-		maxEntries = models.DefaultMaxGetLogsEntries
-	}
+	maxEntries := configuredMaxGetLogsEntries(cfg)
 	if requestedLimit <= 0 {
 		requestedLimit = defaultGetLogsAggregateLimit
 	}
@@ -407,10 +424,7 @@ func applyGetLogsAggregateRowLimit(result map[string]interface{}, rowLimit int) 
 }
 
 func effectiveGetLogsChunkLimit(cfg models.Config, requestedLimit int) int {
-	maxEntries := cfg.MaxGetLogsEntries
-	if maxEntries <= 0 {
-		maxEntries = models.DefaultMaxGetLogsEntries
-	}
+	maxEntries := configuredMaxGetLogsEntries(cfg)
 	if requestedLimit <= 0 {
 		return maxEntries
 	}
@@ -418,6 +432,21 @@ func effectiveGetLogsChunkLimit(cfg models.Config, requestedLimit int) int {
 		return maxEntries
 	}
 	return requestedLimit
+}
+
+func effectiveGetLogsResultLimit(cfg models.Config, requestedLimit int) int {
+	limit := effectiveGetLogsChunkLimit(cfg, requestedLimit)
+	if cfg.UseLogSearchAPI && limit > utils.LogSearchMaxSampleSize {
+		return utils.LogSearchMaxSampleSize
+	}
+	return limit
+}
+
+func configuredMaxGetLogsEntries(cfg models.Config) int {
+	if cfg.MaxGetLogsEntries > 0 {
+		return cfg.MaxGetLogsEntries
+	}
+	return models.DefaultMaxGetLogsEntries
 }
 
 // shouldChunkGetLogsQuery returns false for pipelines containing an
@@ -465,10 +494,7 @@ func extractResultItems(result map[string]interface{}) (string, []interface{}, e
 
 	rawItems, exists := data["result"]
 	if !exists || rawItems == nil {
-		if resultType == "streams" {
-			return resultType, []interface{}{}, nil
-		}
-		return resultType, nil, fmt.Errorf("logs API response missing result array")
+		return resultType, []interface{}{}, nil
 	}
 
 	items, ok := rawItems.([]interface{})

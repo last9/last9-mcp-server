@@ -19,8 +19,8 @@ import (
 
 type entityAlertRulesTestServerState struct {
 	rulesByEntityID map[string]AlertConfigResponse // entityID → rules
-	kpiResponses    map[string]kpiResponse          // kpiID → response (absent = 404)
-	entityStatus    int                             // default 200
+	kpiResponses    map[string]kpiResponse         // kpiID → response (absent = 404)
+	entityStatus    int                            // default 200
 }
 
 func newEntityAlertRulesTestServer(t *testing.T, state *entityAlertRulesTestServerState) *httptest.Server {
@@ -154,6 +154,88 @@ func TestGetEntityAlertRulesHandler_ReturnsRules(t *testing.T) {
 	// Basic metadata fields are intentionally omitted — covered by get_alert_config.
 	if strings.Contains(text, "State:") || strings.Contains(text, "Severity:") || strings.Contains(text, "Algorithm:") {
 		t.Fatalf("expected basic metadata fields absent from focused output, got:\n%s", text)
+	}
+}
+
+func TestGetEntityAlertRulesHandler_ShowsCreatedVia(t *testing.T) {
+	entityID := "entity-abc"
+	rules := AlertConfigResponse{
+		{ID: "rule-mcp", EntityID: entityID, RuleName: "mcp", Properties: map[string]interface{}{
+			"annotations": map[string]interface{}{"_l9_created_via_": "last9-mcp", "_l9_created_via_client_": "claude-code/2.1.0"},
+		}},
+		{ID: "rule-forged-newline", EntityID: entityID, RuleName: "nl", Properties: map[string]interface{}{
+			"annotations": map[string]interface{}{"_l9_created_via_": "x\nRule 9:"},
+		}},
+		{ID: "rule-plain", EntityID: entityID, RuleName: "plain", Properties: map[string]interface{}{
+			"annotations": map[string]interface{}{"team": "core"},
+		}},
+	}
+	state := &entityAlertRulesTestServerState{rulesByEntityID: map[string]AlertConfigResponse{entityID: rules}}
+	text, _, err := executeGetEntityAlertRules(t, state, GetEntityAlertRulesArgs{EntityID: entityID})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	blocks := strings.Split(text, "\n\n")
+	if len(blocks) < 4 {
+		t.Fatalf("unexpected output:\n%s", text)
+	}
+	for i, want := range []string{"  Created Via: last9-mcp (client claude-code/2.1.0)\n", "  Created Via: x\\nRule 9:\n", "  Created Via: -\n"} {
+		if !strings.Contains(blocks[i+1]+"\n", want) {
+			t.Fatalf("rule %d block lacks %q:\n%s", i+1, want, blocks[i+1])
+		}
+	}
+}
+
+// patch_alert changes mute_until, recurring_mute_schedule and properties; the entity endpoint
+// returns all three, so this tool is where an agent reads a patch back.
+func TestGetEntityAlertRulesHandler_ShowsPatchedFields(t *testing.T) {
+	entityID := "entity-abc"
+	rules := AlertConfigResponse{
+		{
+			ID:                    "rule-1",
+			RuleName:              "Patched",
+			MuteUntil:             1792260000,
+			RecurringMuteSchedule: &RecurringMuteSchedule{Enabled: true, Timezone: "Asia/Kolkata", Windows: []RecurringMuteWindow{{Weekdays: []string{"sat"}, StartTime: "00:00", EndTime: "23:59"}}},
+			Properties: map[string]interface{}{
+				"description": "Checkout errors",
+				"runbook":     map[string]interface{}{"link": "https://runbook.example/checkout"},
+				"annotations": nil,
+			},
+		},
+		// The API returns unset properties as null; they are noise, not values.
+		{ID: "rule-2", RuleName: "Untouched", Properties: map[string]interface{}{"annotations": nil, "description": ""}},
+	}
+	state := &entityAlertRulesTestServerState{rulesByEntityID: map[string]AlertConfigResponse{entityID: rules}}
+
+	text, _, err := executeGetEntityAlertRules(t, state, GetEntityAlertRulesArgs{EntityID: entityID})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	patched, untouched, _ := strings.Cut(text, "Rule 2:")
+	for _, want := range []string{
+		"  Muted until: 2026-10-17T18:00:00Z\n",
+		"  Recurring mute schedule: timezone Asia/Kolkata\n    Sat 00:00-23:59\n",
+		"    description: Checkout errors\n",
+		`    runbook: {"link":"https://runbook.example/checkout"}` + "\n",
+	} {
+		if !strings.Contains(patched, want) {
+			t.Errorf("missing %q in:\n%s", want, patched)
+		}
+	}
+	if strings.Contains(patched, "annotations") {
+		t.Errorf("null annotations should not be shown:\n%s", patched)
+	}
+	if !strings.Contains(untouched, "  Muted until: none\n  Recurring mute schedule: none\n") || strings.Contains(untouched, "Properties") {
+		t.Errorf("unpatched rule should show no mute and no properties lines:\n%s", untouched)
+	}
+}
+
+func TestGetEntityAlertRulesHandler_ShowsIndefiniteMute(t *testing.T) {
+	entityID := "entity-abc"
+	state := &entityAlertRulesTestServerState{rulesByEntityID: map[string]AlertConfigResponse{entityID: {{ID: "rule-1", MuteUntil: -1}}}}
+	text, _, err := executeGetEntityAlertRules(t, state, GetEntityAlertRulesArgs{EntityID: entityID})
+	if err != nil || !strings.Contains(text, "  Muted until: indefinitely\n") {
+		t.Fatalf("err=%v text:\n%s", err, text)
 	}
 }
 

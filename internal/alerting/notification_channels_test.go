@@ -49,6 +49,7 @@ func TestGetNotificationChannelsHandler_TSVFormat(t *testing.T) {
 			SendResolved: &boolTrue,
 			Severity:     "critical",
 			Priority:     1,
+			CreatedVia:   "last9-mcp",
 		},
 	}
 
@@ -68,7 +69,7 @@ func TestGetNotificationChannelsHandler_TSVFormat(t *testing.T) {
 	}
 
 	// Header
-	wantHeader := "id\tname\ttype\tglobal\tin_use\tsend_resolved\tsnoozed_until\tseverity\tpriority\tservices\tservice_fqid"
+	wantHeader := "id\tname\ttype\tglobal\tin_use\tsend_resolved\tsnoozed_until\tseverity\tpriority\tservices\tservice_fqid\tcreated_via"
 	if lines[1] != wantHeader {
 		t.Fatalf("header mismatch\ngot:  %s\nwant: %s", lines[1], wantHeader)
 	}
@@ -86,6 +87,26 @@ func TestGetNotificationChannelsHandler_TSVFormat(t *testing.T) {
 	}
 	if cols[9] != "-" {
 		t.Fatalf("services: got %q, want %q (global, no services)", cols[9], "-")
+	}
+	if cols[11] != "last9-mcp" {
+		t.Fatalf("created_via: got %q, want last9-mcp", cols[11])
+	}
+}
+
+// The API sets global from the legacy service/namespace binding alone, so it reports
+// true on every alert-group attachment row.
+func TestGetNotificationChannelsAttachmentRowsAreNotGlobal(t *testing.T) {
+	channels := []NotificationChannel{
+		{ID: 1, Name: "org", Type: "slack", Global: true},
+		{ID: 2, Name: "oncall", Type: "slack", Global: true, ServiceFQID: "g1", Severity: "breach"},
+	}
+	text, _, err := executeGetNotificationChannels(t, channels, http.StatusOK)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rows := assertStableNotificationChannelsTSV(t, text, len(channels))
+	if rows[0][3] != "true" || rows[1][3] != "false" {
+		t.Fatalf("global: master=%q attachment=%q, want true and false", rows[0][3], rows[1][3])
 	}
 }
 
@@ -425,8 +446,8 @@ func assertStableNotificationChannelsTSV(t *testing.T, text string, wantDataRows
 	rows := make([][]string, 0, wantDataRows)
 	for i, line := range lines[2:] {
 		cols := strings.Split(line, "\t")
-		if len(cols) != 11 {
-			t.Fatalf("row %d: expected 11 TSV columns, got %d: %v", i+1, len(cols), cols)
+		if len(cols) != 12 {
+			t.Fatalf("row %d: expected 12 TSV columns, got %d: %v", i+1, len(cols), cols)
 		}
 		for _, col := range cols {
 			if strings.ContainsAny(col, "\n\r") {

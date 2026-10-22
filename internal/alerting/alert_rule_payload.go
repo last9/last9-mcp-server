@@ -1,0 +1,81 @@
+package alerting
+
+import (
+	"fmt"
+	"strings"
+)
+
+const (
+	severityBreach = "breach"
+	severityThreat = "threat"
+)
+
+type AlertExpressionArg struct {
+	ID                string            `json:"id" jsonschema:"(Required) KPI UUID owned by the alert group"`
+	Variables         map[string]string `json:"variables,omitempty" jsonschema:"Grafana template variable values"`
+	VariableOperators map[string]string `json:"variable_operators,omitempty" jsonschema:"Optional matcher override per variable: =, !=, =~, or !~"`
+}
+
+type AlertRunbook struct {
+	Link string `json:"link" jsonschema:"Runbook URL; annotation templates are supported"`
+}
+
+type AlertProperties struct {
+	Description string            `json:"description,omitempty" jsonschema:"Responder-facing symptom, impact, and intended action"`
+	Runbook     *AlertRunbook     `json:"runbook,omitempty" jsonschema:"Runbook link for responders"`
+	Annotations map[string]string `json:"annotations,omitempty" jsonschema:"Responder context and links; values may use Last9 annotation templates"`
+	QueryMode   string            `json:"query_mode,omitempty" jsonschema:"Query authoring mode: builder or code"`
+}
+
+type AlertRulePayload struct {
+	PrimaryIndicator             string                        `json:"primary_indicator" jsonschema:"(Required) Primary KPI name; must be a key in expression_args"`
+	ExpressionArgs               map[string]AlertExpressionArg `json:"expression_args" jsonschema:"(Required) KPI name to KPI binding; each key must be the bound KPI's exact name (not a placeholder such as x), and all KPIs must belong to entity_id"`
+	Expression                   *string                       `json:"expression,omitempty" jsonschema:"Rule expression. Plain arithmetic over indicators (static) or adaptive_std_cmp(<primary_indicator>, sensitivity, window) (adaptive); clients cannot set algorithm directly."`
+	Condition                    *string                       `json:"condition,omitempty" jsonschema:"Required for static rules; boolean expression over expr, for example expr > 100"`
+	AlertCondition               *string                       `json:"alert_condition,omitempty" jsonschema:"Required for static rules; firing window expression, for example count_true(result) >= 3"`
+	EvalWindow                   *int                          `json:"eval_window,omitempty" jsonschema:"Required for static rules; evaluation window in minutes, range 0-60"`
+	IsDisabled                   *bool                         `json:"is_disabled,omitempty" jsonschema:"Ignored by create_alert, which always creates the rule disabled; promote with patch_alert"`
+	ExternalRef                  *string                       `json:"external_ref,omitempty" jsonschema:"Optional alphanumeric-and-hyphen external reference"`
+	Severity                     *string                       `json:"severity,omitempty" jsonschema:"Severity: breach or threat; backend chooses an algorithm default when omitted"`
+	RuleName                     *string                       `json:"rule_name,omitempty" jsonschema:"Alert rule name; backend generates one when omitted"`
+	MuteUntil                    *int64                        `json:"mute_until,omitempty" jsonschema:"Unix epoch mute deadline; use patch_alert for lifecycle-only changes"`
+	Properties                   *AlertProperties              `json:"properties,omitempty" jsonschema:"Description, runbook, annotations, and query mode"`
+	GroupTimeseriesNotifications *bool                         `json:"group_timeseries_notifications,omitempty" jsonschema:"Group notifications across matching time series"`
+}
+
+type AlertRuleMutation struct {
+	AlertRule AlertRulePayload `json:"alert_rule" jsonschema:"(Required) Complete alert-rule configuration"`
+}
+
+func validateAlertRuleID(id string) error {
+	if strings.TrimSpace(id) == "" {
+		return fmt.Errorf("id is required")
+	}
+	return nil
+}
+
+func validateAlertRulePayload(rule AlertRulePayload) error {
+	if strings.TrimSpace(rule.PrimaryIndicator) == "" {
+		return fmt.Errorf("alert_rule.primary_indicator is required")
+	}
+	if len(rule.ExpressionArgs) == 0 {
+		return fmt.Errorf("alert_rule.expression_args is required")
+	}
+	arg, ok := rule.ExpressionArgs[rule.PrimaryIndicator]
+	if !ok {
+		return fmt.Errorf("alert_rule.primary_indicator must be present in expression_args")
+	}
+	if strings.TrimSpace(arg.ID) == "" {
+		return fmt.Errorf("alert_rule.expression_args[%q].id is required", rule.PrimaryIndicator)
+	}
+	if rule.EvalWindow != nil && (*rule.EvalWindow < 0 || *rule.EvalWindow > 60) {
+		return fmt.Errorf("alert_rule.eval_window must be between 0 and 60 minutes")
+	}
+	if rule.Severity != nil && *rule.Severity != severityBreach && *rule.Severity != severityThreat {
+		return fmt.Errorf("alert_rule.severity must be breach or threat")
+	}
+	if rule.Properties != nil && rule.Properties.QueryMode != "" && rule.Properties.QueryMode != "builder" && rule.Properties.QueryMode != "code" {
+		return fmt.Errorf("alert_rule.properties.query_mode must be builder or code")
+	}
+	return nil
+}

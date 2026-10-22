@@ -11,4 +11,4 @@ Default window: last 15 minutes.
 
 Time: prefer `lookback_minutes`; `start_time_iso`/`end_time_iso` (RFC3339) for absolute. Legacy `YYYY-MM-DD HH:MM:SS` accepted.
 
-Index: only when user names one — `physical_index:<name>` or `rehydration_index:<block_name>`. Omit otherwise. Inventory via `physical_index_service_count` label `name`; `name="default"` → omit index. If backend rejects index filter, retry without index.
+Index: use a user-named index — `physical_index:<name>` or `rehydration_index:<block_name>` — or a non-default physical index reported by `get_service_profile`. Match the requested environment using `log_index_envs`; query matching indexes separately. Omit for `default` or when unknown; never infer index environments from `deployment.envs`. Inventory via `physical_index_service_count` label `name`; `name="default"` → omit index. If backend rejects index filter, retry without index.

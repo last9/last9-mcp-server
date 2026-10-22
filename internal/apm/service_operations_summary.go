@@ -15,9 +15,11 @@ import (
 )
 
 type ServiceOperationsSummaryResponse struct {
-	ServiceName string                    `json:"service_name"`
-	Env         string                    `json:"env"`
-	Operations  []ServiceOperationSummary `json:"operations"`
+	ServiceName  string                    `json:"service_name"`
+	Env          string                    `json:"env"`
+	EnvRequested string                    `json:"env_requested,omitempty"`
+	Operations   []ServiceOperationSummary `json:"operations"`
+	Hint         string                    `json:"hint,omitempty"`
 }
 
 type ServiceOperationSummary struct {
@@ -42,8 +44,9 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 
 		env := args.Env
-		if env == "" {
-			env = ".*" // default environment
+		envForQuery, literalEnv, envDisplay, err := literalEnvPattern(env)
+		if err != nil {
+			return nil, nil, err
 		}
 		serviceName := args.ServiceName
 		if serviceName == "" {
@@ -51,7 +54,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Escape once per handler: every PromQL label matcher below must use
 		// escSvc/escEnv, never the raw values, to prevent label-matcher injection.
-		escSvc, escEnv := utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(env)
+		escSvc, escEnv := utils.EscapePromQLLabel(serviceName), utils.EscapePromQLLabel(envForQuery)
 		timeRange := fmt.Sprintf("%dm", int((endTimeParam-startTimeParam)/60))
 		// Prepare the Prometheus query for throughput of endpoint operations
 		throughputQuery := fmt.Sprintf(
@@ -321,7 +324,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			operation := ServiceOperationSummary{
 				Name:        r.Metric["span_name"],
 				ServiceName: serviceName,
-				Env:         env,
+				Env:         envDisplay,
 				Throughput:  0, // default to 0, will be updated later
 				ErrorRate:   0, // default to 0, will be updated later
 				ResponseTime: map[string]float64{
@@ -376,7 +379,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			operation := ServiceOperationSummary{
 				Name:        r.Metric["span_name"],
 				ServiceName: serviceName,
-				Env:         env,
+				Env:         envDisplay,
 				DBSystem:    r.Metric["db_system"],
 				NetPeerName: r.Metric["net_peer_name"],
 				Throughput:  0, // default to 0, will be updated later
@@ -436,7 +439,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			operation := ServiceOperationSummary{
 				Name:        r.Metric["span_name"],
 				ServiceName: serviceName,
-				Env:         env,
+				Env:         envDisplay,
 				NetPeerName: r.Metric["net_peer_name"],
 				RPCSystem:   r.Metric["rpc_system"],
 				Throughput:  0, // default to 0, will be updated later
@@ -496,7 +499,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 			operation := ServiceOperationSummary{
 				Name:            r.Metric["span_name"],
 				ServiceName:     serviceName,
-				Env:             env,
+				Env:             envDisplay,
 				MessagingSystem: r.Metric["messaging_system"],
 				NetPeerName:     r.Metric["net_peer_name"],
 				RPCSystem:       r.Metric["rpc_system"],
@@ -555,9 +558,23 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 		}
 		// Prepare the final response structure
 		details := ServiceOperationsSummaryResponse{
-			ServiceName: serviceName,
-			Env:         env,
-			Operations:  operationsSummary,
+			ServiceName:  serviceName,
+			Env:          envDisplay,
+			EnvRequested: envRequested(env, envDisplay),
+			Operations:   operationsSummary,
+		}
+		if len(operationsSummary) == 0 {
+			details.Hint = apmEmptyAdvice(
+				"operations",
+				apmGuidanceArgs{
+					serviceName: serviceName,
+					env:         literalEnv,
+					startUnix:   startTimeParam,
+					endUnix:     endTimeParam,
+				},
+				"confirm the service emits APM server spans",
+				"try get_service_profile for the service before choosing log or trace tools",
+			)
 		}
 		// Return the response
 		resultJSON, err := json.Marshal(details)
@@ -567,7 +584,7 @@ func NewServiceOperationsSummaryHandler(client *http.Client, cfg models.Config) 
 
 		// Build deep link URL
 		dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
-		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, deeplink.APMCatalogEnvExact(env), "operations")
+		dashboardURL := dlBuilder.BuildAPMServiceLink(startTimeParam*1000, endTimeParam*1000, serviceName, deeplink.APMCatalogEnvExact(literalEnv), "operations")
 
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dashboardURL),
