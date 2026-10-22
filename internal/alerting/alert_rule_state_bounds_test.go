@@ -2,6 +2,7 @@ package alerting
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -146,6 +147,39 @@ func TestAlertRuleStateHandler_CapsWindowAtMonitorMaximum(t *testing.T) {
 		}
 		if len(windows) != 1 || !windows[tc.want] {
 			t.Errorf("step %d: windows sent = %v, want only %s", tc.step, windows, tc.want)
+		}
+	}
+}
+
+func TestAlertRuleStateHandler_RecommendsSmallestAcceptedStep(t *testing.T) {
+	srv, _ := sampledTimestamps(t)
+	handler := NewAlertRuleStateHandler(srv.Client(), newAlertRuleStateTestConfig(srv.URL))
+	call := func(span, step int64) *mcp.CallToolResult {
+		t.Helper()
+		result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AlertRuleStateRequest{StartTime: ts(1718000000), EndTime: ts(1718000000 + span), Step: step})
+		if err != nil {
+			t.Fatalf("span %d step %d: %v", span, step, err)
+		}
+		return result
+	}
+	cases := []struct{ span, rejectedStep, want int64 }{
+		{12000, 120, 121},
+		{6000, 60, 61},
+		{100, 1, 2},
+		{9999, 1, 100},
+		{123457, 1, 1235},
+	}
+	for _, tc := range cases {
+		result := call(tc.span, tc.rejectedStep)
+		text := result.Content[0].(*mcp.TextContent).Text
+		if !result.IsError || !strings.Contains(text, fmt.Sprintf("set step to at least %d seconds", tc.want)) {
+			t.Errorf("span %d step %d: got %q, want a recommendation of %d", tc.span, tc.rejectedStep, text, tc.want)
+		}
+		if call(tc.span, tc.want).IsError {
+			t.Errorf("span %d: recommended step %d is rejected", tc.span, tc.want)
+		}
+		if !call(tc.span, tc.want-1).IsError {
+			t.Errorf("span %d: step %d is accepted, so %d is not the smallest", tc.span, tc.want-1, tc.want)
 		}
 	}
 }

@@ -141,7 +141,7 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 		// Compare before the +1 so the count can never wrap: with span >= 0 and
 		// step >= 1, span/step itself cannot overflow.
 		if span/args.Step >= alertRuleStateMaxPoints {
-			minStep := (span + alertRuleStateMaxPoints - 2) / (alertRuleStateMaxPoints - 1)
+			minStep := span/alertRuleStateMaxPoints + 1
 			return utils.ToolErrorResult(fmt.Sprintf("time range and step result in too many points. Maximum is %d samples; set step to at least %d seconds or narrow the range", alertRuleStateMaxPoints, minStep)), nil, nil
 		}
 		points := span/args.Step + 1

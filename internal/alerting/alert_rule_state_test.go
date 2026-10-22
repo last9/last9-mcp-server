@@ -268,7 +268,7 @@ func TestAlertRuleStateHandler_ValidationErrors(t *testing.T) {
 		{
 			name: "too many points",
 			args: AlertRuleStateRequest{StartTime: ts(1718000000), EndTime: ts(1718000000 + 60*200), Step: 60},
-			want: "too many points. Maximum is 100 samples; set step to at least 122 seconds",
+			want: "too many points. Maximum is 100 samples; set step to at least 121 seconds",
 		},
 		{
 			name: "cap boundary - 101 samples is rejected",
