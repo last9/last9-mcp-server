@@ -378,7 +378,7 @@ func TestGetMetricStatus_AbsentMetricSaysNoSeriesMatched(t *testing.T) {
 		t.Fatal(err)
 	}
 	fields := decodeMetricStatusFields(t, result)
-	want := "No series matched `{__name__=\"metric_that_does_not_exist\"}` in the last 1h; check the metric name with `prometheus_label_values` (label `__name__`, `match_query` such as `{__name__=~\".*<fragment>.*\"}`), or widen `window_minutes` for a slow emitter."
+	want := "No series matched `{__name__=\"metric_that_does_not_exist\"}` in the last 1h: either it emits less often than that (widen `window_minutes`) or the name is wrong (check it with `prometheus_label_values`, label `__name__`, `match_query` such as `{__name__=~\".*<fragment>.*\"}`)."
 	if fields["note"] != want {
 		t.Fatalf("note=%q\nwant %q", fields["note"], want)
 	}

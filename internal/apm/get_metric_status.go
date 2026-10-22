@@ -82,7 +82,7 @@ func computeGetMetricStatus(ctx context.Context, client *http.Client, cfg models
 		return GetMetricStatusResult{
 			Live:        false,
 			SeriesCount: 0,
-			Note:        fmt.Sprintf("No series matched `%s` in the last %s; check the metric name with `prometheus_label_values` (label `__name__`, `match_query` such as `{__name__=~\".*<fragment>.*\"}`), or widen `window_minutes` for a slow emitter.", sel, dur),
+			Note:        fmt.Sprintf("No series matched `%s` in the last %s: either it emits less often than that (widen `window_minutes`) or the name is wrong (check it with `prometheus_label_values`, label `__name__`, `match_query` such as `{__name__=~\".*<fragment>.*\"}`).", sel, dur),
 		}, nil
 	}
 
