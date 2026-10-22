@@ -31,9 +31,11 @@ func isMetricScopedSelector(query string) bool {
 }
 
 // labelLookup is one prometheus_labels or prometheus_label_values call; fetch runs it over [start, end].
+// field names the key the API wraps its list in (e.g. {"labels":[...]}); empty means a bare array.
 type labelLookup struct {
 	op         string
 	noun       string
+	field      string
 	matchQuery string
 	fetch      func(start, end int64) (*http.Response, error)
 }
@@ -56,7 +58,7 @@ func (l labelLookup) run(startTimeISO, endTimeISO string, lookbackMinutes float6
 	}
 
 	defaultWindow := startTimeISO == "" && endTimeISO == "" && lookbackMinutes == 0
-	if !defaultWindow || !isMetricScopedSelector(l.matchQuery) || jsonArrayLen(body) != 0 {
+	if !defaultWindow || !isMetricScopedSelector(l.matchQuery) || resultLen(body, l.field) != 0 {
 		return textResult(body), nil, nil
 	}
 
@@ -64,7 +66,7 @@ func (l labelLookup) run(startTimeISO, endTimeISO string, lookbackMinutes float6
 	if err != nil {
 		return textResult(body, l.emptyNote("retrying over the last 4 days failed: "+err.Error())), nil, nil
 	}
-	n := jsonArrayLen(wide)
+	n := resultLen(wide, l.field)
 	if n == 0 {
 		return textResult(body, fmt.Sprintf("No %s in the last %d minutes or the last 4 days.", l.noun, utils.DefaultLookbackMinutes)), nil, nil
 	}
@@ -98,8 +100,20 @@ func (l labelLookup) read(start, end int64) ([]byte, error) {
 	return data, nil
 }
 
-// jsonArrayLen returns the length of a JSON array body, 0 for null, and -1 for
-// anything else, so an unexpected shape is never mistaken for an empty result.
+// resultLen returns the length of the list in body, a JSON array or an object holding
+// it under field, 0 for null, and -1 for anything else, so an unexpected shape is
+// never mistaken for an empty result.
+func resultLen(body []byte, field string) int {
+	if n := jsonArrayLen(body); n >= 0 || field == "" {
+		return n
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return -1
+	}
+	return jsonArrayLen(envelope[field]) // a missing field is nil, which fails to decode: -1
+}
+
 func jsonArrayLen(body []byte) int {
 	var items []json.RawMessage
 	if err := json.Unmarshal(body, &items); err != nil {

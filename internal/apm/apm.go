@@ -404,6 +404,7 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 		lookup := labelLookup{
 			op:         "Prometheus labels",
 			noun:       "labels",
+			field:      "labels",
 			matchQuery: query,
 			fetch: func(start, end int64) (*http.Response, error) {
 				return utils.MakePromLabelsAPIQuery(ctx, client, query, start, end, queryCfg)

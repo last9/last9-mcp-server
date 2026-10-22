@@ -297,3 +297,32 @@ func TestIsMetricScopedSelector(t *testing.T) {
 		}
 	}
 }
+
+func TestResultLen(t *testing.T) {
+	cases := []struct {
+		field string
+		body  string
+		want  int
+	}{
+		{"", `[]`, 0},
+		{"", `null`, 0},
+		{"", `["a","b"]`, 2},
+		{"", `{"values":["a"]}`, -1},
+		{"", ``, -1},
+		{"labels", `{"labels":[]}`, 0},
+		{"labels", `{"labels":null}`, 0},
+		{"labels", `{"labels":["a","b"]}`, 2},
+		{"labels", `["a"]`, 1},
+		{"labels", `null`, 0},
+		{"labels", `{}`, -1},
+		{"labels", `{"Labels":[]}`, -1},
+		{"labels", `{"labels":"a"}`, -1},
+		{"labels", `{"labels":{}}`, -1},
+		{"labels", ``, -1},
+	}
+	for _, c := range cases {
+		if got := resultLen([]byte(c.body), c.field); got != c.want {
+			t.Errorf("resultLen(%q, %q) = %d, want %d", c.body, c.field, got, c.want)
+		}
+	}
+}
