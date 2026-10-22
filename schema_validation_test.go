@@ -69,6 +69,30 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 			arguments: map[string]any{"query": 123},
 			wantText:  "query",
 		},
+		{
+			name:      "get_logs response_mode unknown value",
+			tool:      "get_logs",
+			arguments: map[string]any{"logjson_query": []any{map[string]any{"type": "filter", "query": map[string]any{"$eq": []any{"ServiceName", "api"}}}}, "response_mode": "bogus"},
+			wantText:  "response_mode",
+		},
+		{
+			name:      "get_logs response_mode empty",
+			tool:      "get_logs",
+			arguments: map[string]any{"logjson_query": []any{map[string]any{"type": "filter", "query": map[string]any{"$eq": []any{"ServiceName", "api"}}}}, "response_mode": ""},
+			wantText:  "response_mode",
+		},
+		{
+			name:      "get_logs response_mode wrong case",
+			tool:      "get_logs",
+			arguments: map[string]any{"logjson_query": []any{map[string]any{"type": "filter", "query": map[string]any{"$eq": []any{"ServiceName", "api"}}}}, "response_mode": "RAW"},
+			wantText:  "response_mode",
+		},
+		{
+			name:      "get_logs response_mode wrong type",
+			tool:      "get_logs",
+			arguments: map[string]any{"logjson_query": []any{map[string]any{"type": "filter", "query": map[string]any{"$eq": []any{"ServiceName", "api"}}}}, "response_mode": 123},
+			wantText:  "response_mode",
+		},
 	}
 
 	for _, tc := range cases {
