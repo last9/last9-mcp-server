@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -66,3 +67,10 @@ type timeoutErr struct{}
 func (timeoutErr) Error() string   { return "Client.Timeout exceeded while awaiting headers" }
 func (timeoutErr) Timeout() bool   { return true }
 func (timeoutErr) Temporary() bool { return true }
+
+func TestIsSystemErrorLogSearchBudgetTimeout(t *testing.T) {
+	err := fmt.Errorf("wrapped: %w", &logSearchTimeoutError{op: "logs query", budget: time.Second})
+	if !IsSystemError(err) {
+		t.Fatal("log search budget timeout must be a system error")
+	}
+}
