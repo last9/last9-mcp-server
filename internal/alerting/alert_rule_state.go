@@ -5,16 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
-	"last9-mcp/internal/constants"
+	"last9-mcp/internal/last9api"
+	"last9-mcp/internal/last9api/alerts"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -151,9 +150,16 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 			IsFiring  int   `json:"is_firing"`
 		}
 
-		sampler := ruleStateSampler{client: client, cfg: cfg, args: args,
+		api := last9api.NewClient(client, cfg)
+		query := alerts.GetMonitorInput{
 			// One monitor call answers for at most MaxAlertsMonitorWindowSeconds.
-			window: min(args.Step, MaxAlertsMonitorWindowSeconds)}
+			Window:         min(args.Step, MaxAlertsMonitorWindowSeconds),
+			AlertGroupID:   args.AlertGroupID,
+			RuleName:       args.RuleName,
+			AlertGroupName: args.AlertGroupName,
+			LabelFilters:   args.LabelFilters,
+			State:          args.State,
+		}
 		samples := make([][]ruleState, points)
 		var fetched atomic.Int64
 
@@ -166,7 +172,7 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 		// when the span arithmetic overflows.
 		for i := int64(0); i < points; i++ {
 			g.Go(func() error {
-				rules, err := sampler.fetch(gctx, startTime+i*args.Step)
+				rules, err := fetchRuleStates(gctx, api, query, startTime+i*args.Step)
 				if err != nil {
 					return err
 				}
@@ -229,13 +235,6 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 	}
 }
 
-type ruleStateSampler struct {
-	client *http.Client
-	cfg    models.Config
-	args   AlertRuleStateRequest
-	window int64
-}
-
 // ruleState is all a sample keeps of a rule, so completed samples do not hold
 // annotations and labels on the heap while the rest are fetched.
 type ruleState struct {
@@ -243,64 +242,14 @@ type ruleState struct {
 	firing bool
 }
 
-func (s ruleStateSampler) fetch(ctx context.Context, t int64) ([]ruleState, error) {
-	args, cfg := s.args, s.cfg
-	queryParams := url.Values{}
-	queryParams.Set("timestamp", fmt.Sprintf("%d", t))
-	queryParams.Set("window", fmt.Sprintf("%d", s.window))
-
-	if args.AlertGroupID != "" {
-		queryParams.Set("alert_group_id", args.AlertGroupID)
-	}
-	if args.RuleName != "" {
-		queryParams.Set("rule_name", args.RuleName)
-	}
-	if args.AlertGroupName != "" {
-		queryParams.Set("alert_group_name", args.AlertGroupName)
-	}
-	if args.LabelFilters != "" {
-		queryParams.Set("label_filters", args.LabelFilters)
-	}
-	if args.State != "" {
-		queryParams.Set("state", args.State)
-	}
-
-	finalURL := fmt.Sprintf("%s%s?%s", cfg.APIBaseURL, constants.EndpointAlertsMonitor, queryParams.Encode())
-
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", finalURL, nil)
+func fetchRuleStates(ctx context.Context, api *last9api.Client, in alerts.GetMonitorInput, t int64) ([]ruleState, error) {
+	in.Timestamp = t
+	resp, err := alerts.GetMonitor(ctx, api, in)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request for timestamp %d: %w", t, err)
+		return nil, fmt.Errorf("sample at timestamp %d: %w", t, err)
 	}
-
-	httpReq.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
-	if cfg.TokenManager != nil {
-		// Fetch per-sample so token-manager refresh logic stays in effect for long ranges.
-		if token := cfg.TokenManager.GetAccessToken(ctx); token != "" {
-			httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+token)
-		}
-	}
-
-	resp, err := s.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("API request failed at timestamp %d: %w", t, err)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body at timestamp %d: %w", t, err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("API returned error status %d at timestamp %d: %s", resp.StatusCode, t, string(body))
-	}
-
-	var alertResp AlertsResponse
-	if err := json.Unmarshal(body, &alertResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal alerts response at timestamp %d: %w", t, err)
-	}
-	states := make([]ruleState, len(alertResp.AlertRules))
-	for i, rule := range alertResp.AlertRules {
+	states := make([]ruleState, len(resp.AlertRules))
+	for i, rule := range resp.AlertRules {
 		states[i] = ruleState{ruleID: rule.RuleID, firing: rule.State == "firing"}
 	}
 	return states, nil

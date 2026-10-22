@@ -17,6 +17,8 @@ const opMonitor = "alerts monitor"
 type GetMonitorInput struct {
 	// Evaluation time, Unix seconds; Window is the lookback in seconds.
 	Timestamp, Window int64
+	// Optional filters, sent only when non-empty.
+	AlertGroupID, RuleName, AlertGroupName, LabelFilters, State string
 }
 
 type MonitorAlert struct {
@@ -38,6 +40,17 @@ func GetMonitor(ctx context.Context, c *last9api.Client, in GetMonitorInput) (Ge
 	q := url.Values{}
 	q.Set("timestamp", strconv.FormatInt(in.Timestamp, 10))
 	q.Set("window", strconv.FormatInt(in.Window, 10))
+	for key, value := range map[string]string{
+		"alert_group_id":   in.AlertGroupID,
+		"rule_name":        in.RuleName,
+		"alert_group_name": in.AlertGroupName,
+		"label_filters":    in.LabelFilters,
+		"state":            in.State,
+	} {
+		if value != "" {
+			q.Set(key, value)
+		}
+	}
 	var resp GetMonitorResponse
 	err := c.Do(ctx, opMonitor, last9api.Request{Method: http.MethodGet, Path: pathMonitor}, &resp, last9api.WithQuery(q))
 	return resp, err
