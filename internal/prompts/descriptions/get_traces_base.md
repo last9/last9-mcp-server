@@ -15,11 +15,13 @@
 
 **Aggregate:** use `aggregates`+`groupby`. Average/mean→`{"function":{"$avg":["Duration"]}}`, not `$quantile`. By span: `{"type":"aggregate","aggregates":[{"function":{"$avg":["Duration"]},"as":"avg"}],"groupby":{"SpanName":"span"}}`. `$quantile` is the general/default percentile operator. Compute from raw spans; never average percentile samples. `Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first.
 
-**window_aggregate:** `{"type":"window_aggregate","function":{"$quantile":[0.99,"Duration"]},"as":"p99","window":["24","hours"],"groupby":{"SpanName":"endpoint"}}`.
+**Percentile over the whole lookback (p95 latency, last hour) → ONE `aggregate` stage:** `{"type":"aggregate","aggregates":[{"function":{"$quantile":[0.95,"Duration"]},"as":"p95"}]}` (+`groupby` per dimension).
+
+`window_aggregate` only when asked per time bucket / over time: `{"type":"window_aggregate","function":{"$quantile":[0.99,"Duration"]},"as":"p99","window":["24","hours"],"groupby":{"SpanName":"endpoint"}}`.
 
 For calendar buckets, use explicit ISO bounds and time zone. P99 `Duration` output remains nanoseconds.
 
-**Order:** filter first (match-all TraceId/SpanId before aggregate). Show/find → filter only; analysis → aggregate/window_aggregate.
+**Order:** filter first (match-all TraceId/SpanId before aggregate). Show/find → filter only; analysis → aggregate.
 
 **Aggregate example:** `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`.
 
