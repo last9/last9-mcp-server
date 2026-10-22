@@ -136,23 +136,27 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, gate *toolG
 		return nil
 	}
 	gate.pending = append(gate.pending, func() error {
-		return registerTool(server, tool, withCallDeadline(gate.callTimeout, handler), gate.served.Allows)
+		return registerTool(server, tool, withCallDeadline(gate.callTimeout, gate.readOnly[tool.Name], handler), gate.served.Allows)
 	})
 	return nil
 }
 
-// withCallDeadline bounds one tool call as a whole. Per-request and per-chunk
-// timeouts alone let a chunk loop run for hours, keeping the call and its span open.
-func withCallDeadline[In, Out any](timeout time.Duration, handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
+// withCallDeadline bounds one tool call as a whole: per-request and per-chunk timeouts
+// alone let a chunk loop run for hours. Read handlers can fold canceled requests into a
+// result, so every read result at the deadline is replaced; a write's may name its verify call.
+func withCallDeadline[In, Out any](timeout time.Duration, readOnly bool, handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		result, out, err := handler(ctx, req, in)
-		if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return utils.ToolErrorResult(fmt.Sprintf("Stopped at the %s tool-call deadline (%v). Narrow the time range or add filters before retrying.",
-				timeout, err)), out, nil
+		if !errors.Is(ctx.Err(), context.DeadlineExceeded) || (err == nil && !readOnly) {
+			return result, out, err
 		}
-		return result, out, err
+		msg := fmt.Sprintf("Stopped at the %s tool-call deadline", timeout)
+		if err != nil {
+			msg += fmt.Sprintf(" (%v)", err)
+		}
+		return utils.ToolErrorResult(msg + ". Narrow the time range or add filters before retrying."), out, nil
 	}
 }
 
