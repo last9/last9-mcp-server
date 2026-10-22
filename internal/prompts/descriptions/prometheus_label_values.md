@@ -11,7 +11,7 @@
 	- datasource: (Optional) Name of the datasource to query. If omitted, uses the default configured datasource.
 
 	match_query should be a well formed, valid promql query
-	Prefer an explicit lookback_minutes (or start_time_iso/end_time_iso) sized to the metric's emission cadence.
+	Leave the window unset unless you know the metric's cadence, so a sparse metric gets the automatic 4-day retry.
 
 	## When to use
 	The valid values of one label (env, service) for a metric selector, before filtering on it.
