@@ -74,14 +74,14 @@ func assertLogSearchTimeoutAdvice(t *testing.T, err error, elapsed time.Duration
 
 func TestSearchLogs_StalledBeforeHeadersReturnsAdviceWithinBudget(t *testing.T) {
 	srv, _ := stalledLogSearchServer(t, false)
-	elapsed, err := searchLogsWithBudget(t, context.Background(), srv, 50*time.Millisecond)
+	elapsed, err := searchLogsWithBudget(t, DeadlineContext(t, 5*time.Second), srv, 50*time.Millisecond)
 	assertLogSearchTimeoutAdvice(t, err, elapsed)
 }
 
 // The budget covers reading the body too, not only waiting for headers.
 func TestSearchLogs_StalledBodyReturnsAdviceWithinBudget(t *testing.T) {
 	srv, _ := stalledLogSearchServer(t, true)
-	elapsed, err := searchLogsWithBudget(t, context.Background(), srv, 50*time.Millisecond)
+	elapsed, err := searchLogsWithBudget(t, DeadlineContext(t, 5*time.Second), srv, 50*time.Millisecond)
 	assertLogSearchTimeoutAdvice(t, err, elapsed)
 }
 

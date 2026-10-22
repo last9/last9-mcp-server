@@ -240,3 +240,12 @@ func RecordedSpanContext(t *testing.T) (context.Context, func() map[attribute.Ke
 		return attrs
 	}
 }
+
+// DeadlineContext bounds a test's call so a missing timeout fails the test
+// quickly instead of hanging until go test -timeout.
+func DeadlineContext(t *testing.T, d time.Duration) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), d)
+	t.Cleanup(cancel)
+	return ctx
+}

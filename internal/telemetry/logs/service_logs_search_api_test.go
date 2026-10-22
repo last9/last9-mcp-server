@@ -170,7 +170,7 @@ func TestFetchServiceLogs_APIMode_SlowSearchReturnsAdviceWithinBudget(t *testing
 	start, end := serviceLogsWindow()
 	started := time.Now()
 	_, err := fetchServiceLogs(
-		context.Background(), srv.Client(), cfg, "checkout",
+		utils.DeadlineContext(t, 5*time.Second), srv.Client(), cfg, "checkout",
 		start, end, 20, serviceLogsPipeline(), "")
 	if !errors.Is(err, utils.ErrLogSearchTimeout) {
 		t.Fatalf("err = %v, want utils.ErrLogSearchTimeout", err)
