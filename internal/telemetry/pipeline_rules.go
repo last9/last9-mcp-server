@@ -53,7 +53,7 @@ var aggregateFunctionNames = func() string {
 }()
 
 var (
-	aggregateAliasPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	aggregateAliasPattern = regexp.MustCompile(`^[A-Za-z0-9_]*[A-Za-z_][A-Za-z0-9_]*$`)
 	percentileName        = regexp.MustCompile(`^\$p[0-9]+$`)
 	numericLiteral        = regexp.MustCompile(`^[-+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?$`)
 	comparisonOperators   = map[string]struct{}{"$gt": {}, "$gte": {}, "$lt": {}, "$lte": {}}
@@ -148,7 +148,7 @@ func ValidateAggregateAlias(as interface{}, path string) *PipelineArgError {
 	if s, ok := as.(string); ok && aggregateAliasPattern.MatchString(s) {
 		return nil
 	}
-	return &PipelineArgError{path, fmt.Sprintf(`"as" at %s must be a plain name (letters, digits, underscore; not starting with a digit), e.g. "p99_latency"; got %q`, path, fmt.Sprint(as))}
+	return &PipelineArgError{path, fmt.Sprintf(`"as" at %s must be one plain name (letters, digits, underscore; at least one letter or underscore), e.g. "p99_latency"; got %q`, path, fmt.Sprint(as))}
 }
 
 // CheckNumericComparison requires $gt/$gte/$lt/$lte values to be numbers.

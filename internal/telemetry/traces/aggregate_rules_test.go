@@ -67,7 +67,7 @@ func TestSanitizeTraceJSONQuery_AcceptsEveryAggregateFunction(t *testing.T) {
 		fn1("$apdex_score", 0.5, trF), fn1("$avg_over_time", trF),
 	}
 	for _, fn := range fns {
-		for _, as := range []string{"v", "p99_latency", "_x1"} {
+		for _, as := range []string{"v", "p99_latency", "_x1", "39b_1", "1x"} {
 			if err := SanitizeTraceJSONQuery([]map[string]interface{}{aggStage(fn, as)}); err != nil {
 				t.Errorf("aggregate %v as=%q: %v", fn, as, err)
 			}
@@ -126,7 +126,7 @@ func TestSanitizeTraceJSONQuery_RejectsInvalidAggregateFunctions(t *testing.T) {
 }
 
 func TestSanitizeTraceJSONQuery_RejectsInvalidAggregateAlias(t *testing.T) {
-	for _, as := range []string{"p99 latency", "1x", "a;b", "p99-latency"} {
+	for _, as := range []string{"p99 latency", "123", "a;b", "p99-latency"} {
 		err := SanitizeTraceJSONQuery([]map[string]interface{}{aggStage(fn1("$count"), as)})
 		requireTraceInvalidField(t, err, "tracejson_query[0].aggregates[0].as", "p99_latency")
 		err = SanitizeTraceJSONQuery([]map[string]interface{}{winStage(fn1("$count"), as)})

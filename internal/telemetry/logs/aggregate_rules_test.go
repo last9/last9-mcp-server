@@ -69,7 +69,7 @@ func TestPrepareLogJSONQueryAcceptsEveryAggregateFunction(t *testing.T) {
 		fn1("$apdex_score", 0.5, aggF), fn1("$avg_over_time", aggF),
 	}
 	for _, fn := range fns {
-		for _, as := range []string{"v", "p99_latency", "_x1"} {
+		for _, as := range []string{"v", "p99_latency", "_x1", "39b_1", "1x"} {
 			for kind, mk := range map[string]func(map[string]interface{}, string) map[string]interface{}{"aggregate": aggregateStage, "window": windowStage} {
 				stages := []map[string]interface{}{testCanonicalNumericFilter(aggF), mk(fn, as)}
 				if _, err := prepareLogJSONQuery(stages, "logjson_query"); err != nil {
@@ -117,7 +117,7 @@ func TestPrepareLogJSONQueryRejectsInvalidAggregateFunctions(t *testing.T) {
 }
 
 func TestPrepareLogJSONQueryRejectsInvalidAggregateAlias(t *testing.T) {
-	for _, as := range []string{"p99 latency", "1x", "a;b", "p99-latency"} {
+	for _, as := range []string{"p99 latency", "123", "a;b", "p99-latency"} {
 		_, err := prepareLogJSONQuery([]map[string]interface{}{aggregateStage(fn1("$count"), as)}, "logjson_query")
 		requireInvalidField(t, err, "logjson_query[0].aggregates[0].as", "p99_latency")
 		_, err = prepareLogJSONQuery([]map[string]interface{}{windowStage(fn1("$count"), as)}, "logjson_query")
