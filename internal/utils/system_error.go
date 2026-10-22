@@ -17,13 +17,10 @@ const (
 	SystemErrorType  = "system_error"
 )
 
-// systemErrorer lets a package's own upstream error type classify itself.
 type systemErrorer interface {
 	SystemError() bool
 }
 
-// IsSystemError reports whether err is a server or upstream failure (HTTP 5xx or 408,
-// timeout, unreachable service) rather than a caller mistake.
 func IsSystemError(err error) bool {
 	if err == nil {
 		return false
@@ -43,13 +40,10 @@ func IsSystemError(err error) bool {
 		errors.As(err, &urlErr)
 }
 
-// IsSystemStatus reports whether an upstream HTTP status is the upstream's failure.
 func IsSystemStatus(status int) bool {
 	return status == http.StatusRequestTimeout || status >= http.StatusInternalServerError
 }
 
-// ErrorResult builds a tool error result from err, tagged as a system error when
-// IsSystemError says so.
 func ErrorResult(err error) *mcp.CallToolResult {
 	result := ToolErrorResult(err.Error())
 	if IsSystemError(err) {
