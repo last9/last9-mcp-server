@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -132,9 +133,12 @@ func TestAlertRuleStateHandler_GroupsRulesAcrossTimestamps(t *testing.T) {
 }
 
 func TestAlertRuleStateHandler_ForwardsFilters(t *testing.T) {
+	var mu sync.Mutex
 	var captured url.Values
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		captured = r.URL.Query()
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"timestamp": 1718000000, "window": 60, "alert_rules": []}`))
 	}))
@@ -172,9 +176,12 @@ func TestAlertRuleStateHandler_ForwardsFilters(t *testing.T) {
 }
 
 func TestAlertRuleStateHandler_OmitsAbsentFilters(t *testing.T) {
+	var mu sync.Mutex
 	var captured url.Values
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		captured = r.URL.Query()
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"timestamp": 1, "window": 60, "alert_rules": []}`))
 	}))
@@ -203,8 +210,11 @@ func TestAlertRuleStateHandler_OmitsAbsentFilters(t *testing.T) {
 }
 
 func TestAlertRuleStateHandler_SetsAuthHeader(t *testing.T) {
+	var mu sync.Mutex
 	var sawXLast9, sawAuthorization bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
 		if r.Header.Get("X-LAST9-API-TOKEN") != "" {
 			sawXLast9 = true
 		}

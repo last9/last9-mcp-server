@@ -15,7 +15,8 @@ Optional filters forwarded to the upstream API (no client-side filtering is appl
 
 Output is a JSON map of rule_id -> [{timestamp, is_firing}]. A timestamp at which a rule is absent from the upstream
 response is reported as is_firing=0; this reflects "not observed as firing" and not necessarily a confirmed normal state.
-The number of samples ((end_time - start_time) / step + 1) is capped at 100.
+The number of samples ((end_time - start_time) / step + 1) is capped at 100. Each sample is one upstream call covering
+the min(step, 3600) seconds ending at its timestamp. The call gives up after 60s and says how to retry with fewer samples.
 
 ## When to use
 Whether alert rules were firing at each step of a past range.
@@ -32,4 +33,4 @@ Whether alert rules were firing at each step of a past range.
 JSON map of rule_id to `[{timestamp, is_firing}]`.
 
 ## Known traps
-`start_time` and `end_time` are absolute times, never durations or offsets like `now-1h`; values before 2000 are rejected. At most 100 samples per call.
+`start_time` and `end_time` are absolute times, never durations or offsets like `now-1h`; values before 2000 are rejected. At most 100 samples per call; fewer samples answer faster.

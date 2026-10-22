@@ -3,6 +3,7 @@ package alerting
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"last9-mcp/internal/constants"
@@ -18,6 +20,7 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/sync/errgroup"
 )
 
 type AlertRuleStateRequest struct {
@@ -62,7 +65,14 @@ func AlertRuleStateInputSchema() *jsonschema.Schema {
 	return schema
 }
 
-const alertRuleStateMaxPoints = 100
+const (
+	alertRuleStateMaxPoints   = 100
+	alertRuleStateConcurrency = 5
+)
+
+// alertRuleStateTimeout bounds the whole sampling run well below the clients'
+// 3-minute tool-call timeout, so a slow upstream gets guidance instead of silence.
+var alertRuleStateTimeout = 60 * time.Second
 
 // earliestAlertTime (2000-01-01) rejects small numbers, which are durations or
 // relative offsets rather than timestamps.
@@ -141,72 +151,44 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 			IsFiring  int   `json:"is_firing"`
 		}
 
-		// results is a map of rule_id -> timestamp -> is_firing
-		results := make(map[string]map[int64]int)
+		sampler := ruleStateSampler{client: client, cfg: cfg, args: args,
+			// One monitor call answers for at most MaxAlertsMonitorWindowSeconds.
+			window: min(args.Step, MaxAlertsMonitorWindowSeconds)}
+		samples := make([][]AlertRuleData, points)
+		var fetched atomic.Int64
 
-		tokenMgr := cfg.TokenManager
-
+		sampleCtx, cancel := context.WithTimeout(ctx, alertRuleStateTimeout)
+		defer cancel()
+		g, gctx := errgroup.WithContext(sampleCtx)
+		g.SetLimit(alertRuleStateConcurrency)
 		// Index-bounded by the validated `points` so the loop terminates by
 		// construction; a value-bounded `t <= end_time` loop can run unbounded
 		// when the span arithmetic overflows.
 		for i := int64(0); i < points; i++ {
-			t := startTime + i*args.Step
-			queryParams := url.Values{}
-			queryParams.Set("timestamp", fmt.Sprintf("%d", t))
-			queryParams.Set("window", fmt.Sprintf("%d", args.Step))
-
-			if args.AlertGroupID != "" {
-				queryParams.Set("alert_group_id", args.AlertGroupID)
-			}
-			if args.RuleName != "" {
-				queryParams.Set("rule_name", args.RuleName)
-			}
-			if args.AlertGroupName != "" {
-				queryParams.Set("alert_group_name", args.AlertGroupName)
-			}
-			if args.LabelFilters != "" {
-				queryParams.Set("label_filters", args.LabelFilters)
-			}
-			if args.State != "" {
-				queryParams.Set("state", args.State)
-			}
-
-			finalURL := fmt.Sprintf("%s%s?%s", cfg.APIBaseURL, constants.EndpointAlertsMonitor, queryParams.Encode())
-
-			httpReq, err := http.NewRequestWithContext(ctx, "GET", finalURL, nil)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to create request for timestamp %d: %w", t, err)
-			}
-
-			httpReq.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
-			if tokenMgr != nil {
-				// Fetch per-iteration so token-manager refresh logic stays in effect for long ranges.
-				if token := tokenMgr.GetAccessToken(ctx); token != "" {
-					httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+token)
+			g.Go(func() error {
+				rules, err := sampler.fetch(gctx, startTime+i*args.Step)
+				if err != nil {
+					return err
 				}
+				samples[i] = rules
+				fetched.Add(1)
+				return nil
+			})
+		}
+		if err := g.Wait(); err != nil {
+			if ctx.Err() == nil && errors.Is(sampleCtx.Err(), context.DeadlineExceeded) {
+				return utils.ToolErrorResult(fmt.Sprintf(
+					"get_alert_rule_state timed out after %s with %d of %d samples fetched; each sample is one upstream call. Retry with fewer samples: increase step or narrow start_time/end_time, and filter by alert_group_id or rule_name.",
+					alertRuleStateTimeout, fetched.Load(), points)), nil, nil
 			}
+			return nil, nil, err
+		}
 
-			resp, err := client.Do(httpReq)
-			if err != nil {
-				return nil, nil, fmt.Errorf("API request failed at timestamp %d: %w", t, err)
-			}
-
-			body, err := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to read response body at timestamp %d: %w", t, err)
-			}
-
-			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-				return nil, nil, fmt.Errorf("API returned error status %d at timestamp %d: %s", resp.StatusCode, t, string(body))
-			}
-
-			var alertResp AlertsResponse
-			if err := json.Unmarshal(body, &alertResp); err != nil {
-				return nil, nil, fmt.Errorf("failed to unmarshal alerts response at timestamp %d: %w", t, err)
-			}
-
-			for _, rule := range alertResp.AlertRules {
+		// results is a map of rule_id -> timestamp -> is_firing
+		results := make(map[string]map[int64]int)
+		for i, rules := range samples {
+			t := startTime + int64(i)*args.Step
+			for _, rule := range rules {
 				if _, exists := results[rule.RuleID]; !exists {
 					results[rule.RuleID] = make(map[int64]int)
 				}
@@ -245,4 +227,71 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 			},
 		}, nil, nil
 	}
+}
+
+type ruleStateSampler struct {
+	client *http.Client
+	cfg    models.Config
+	args   AlertRuleStateRequest
+	window int64
+}
+
+// fetch returns the alert rules /alerts/monitor reports at timestamp t.
+func (s ruleStateSampler) fetch(ctx context.Context, t int64) ([]AlertRuleData, error) {
+	args, cfg := s.args, s.cfg
+	queryParams := url.Values{}
+	queryParams.Set("timestamp", fmt.Sprintf("%d", t))
+	queryParams.Set("window", fmt.Sprintf("%d", s.window))
+
+	if args.AlertGroupID != "" {
+		queryParams.Set("alert_group_id", args.AlertGroupID)
+	}
+	if args.RuleName != "" {
+		queryParams.Set("rule_name", args.RuleName)
+	}
+	if args.AlertGroupName != "" {
+		queryParams.Set("alert_group_name", args.AlertGroupName)
+	}
+	if args.LabelFilters != "" {
+		queryParams.Set("label_filters", args.LabelFilters)
+	}
+	if args.State != "" {
+		queryParams.Set("state", args.State)
+	}
+
+	finalURL := fmt.Sprintf("%s%s?%s", cfg.APIBaseURL, constants.EndpointAlertsMonitor, queryParams.Encode())
+
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", finalURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request for timestamp %d: %w", t, err)
+	}
+
+	httpReq.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
+	if cfg.TokenManager != nil {
+		// Fetch per-sample so token-manager refresh logic stays in effect for long ranges.
+		if token := cfg.TokenManager.GetAccessToken(ctx); token != "" {
+			httpReq.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+token)
+		}
+	}
+
+	resp, err := s.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("API request failed at timestamp %d: %w", t, err)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body at timestamp %d: %w", t, err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("API returned error status %d at timestamp %d: %s", resp.StatusCode, t, string(body))
+	}
+
+	var alertResp AlertsResponse
+	if err := json.Unmarshal(body, &alertResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal alerts response at timestamp %d: %w", t, err)
+	}
+	return alertResp.AlertRules, nil
 }
