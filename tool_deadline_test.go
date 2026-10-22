@@ -11,10 +11,12 @@ import (
 	"testing"
 	"time"
 
+	"last9-mcp/internal/apm"
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/telemetry/logs"
+	"last9-mcp/internal/telemetry/traces"
 	"last9-mcp/internal/toolsets"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
@@ -109,6 +111,84 @@ func TestWriteToolAtDeadlineNamesVerifyCall(t *testing.T) {
 	text := toolResultText(res)
 	if !res.IsError || !strings.Contains(text, "may or may not have been applied") || !strings.Contains(text, "get_foos, by name") {
 		t.Fatalf("want the unknown-outcome result naming the verify call, got %q", text)
+	}
+}
+
+// Handlers that turn a canceled request into a result (a partial_errors entry,
+// an "invalid response" text) return no Go error, yet the call still ran out
+// of time and must say so.
+func TestReadToolResultAtDeadlineIsDeadlineError(t *testing.T) {
+	tests := []struct {
+		name     string
+		tool     string
+		upstream http.HandlerFunc
+		args     map[string]any
+	}{
+		{
+			name: "trace body stalls after headers",
+			tool: "get_traces",
+			upstream: func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = io.WriteString(w, `{"data":`)
+				w.(http.Flusher).Flush()
+				<-r.Context().Done()
+			},
+			args: map[string]any{
+				"tracejson_query":  []map[string]any{{"type": "filter", "query": map[string]any{"$eq": []any{"ServiceName", "checkout"}}}},
+				"lookback_minutes": 60,
+			},
+		},
+		{
+			name: "APM chunks return partial errors",
+			tool: "get_service_performance_details",
+			upstream: func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				select {
+				case <-r.Context().Done():
+				case <-time.After(100 * time.Millisecond):
+					_, _ = io.WriteString(w, `[]`)
+				}
+			},
+			args: map[string]any{"service_name": "checkout", "lookback_minutes": 60 * 24 * 60},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upstream := httptest.NewServer(tt.upstream)
+			t.Cleanup(upstream.Close)
+			cfg := writeToolTestConfig(upstream.URL)
+
+			server := newRegisterTestServer(t)
+			gate := newToolGate(toolsets.Filter{})
+			gate.callTimeout = 300 * time.Millisecond
+			tool := &mcp.Tool{Name: tt.tool, Annotations: readOnlyTool(tt.tool)}
+			var err error
+			switch tt.tool {
+			case "get_traces":
+				err = registerIfAllowed(server, gate, tool, traces.NewGetTracesHandler(upstream.Client(), cfg))
+			default:
+				err = registerIfAllowed(server, gate, tool, apm.NewServicePerformanceDetailsHandler(upstream.Client(), cfg))
+			}
+			if err != nil {
+				t.Fatalf("register: %v", err)
+			}
+			if err := gate.registerAdmitted(); err != nil {
+				t.Fatalf("register admitted: %v", err)
+			}
+			session := connectRegisteredServer(t, server)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tt.tool, Arguments: tt.args})
+			if err != nil {
+				t.Fatalf("call: %v", err)
+			}
+			if text := toolResultText(res); !res.IsError || !strings.Contains(text, "tool-call deadline") || !strings.Contains(text, "Narrow the time range") {
+				t.Fatalf("want an isError result naming the deadline, got isError=%v %q", res.IsError, text)
+			}
+		})
 	}
 }
 
