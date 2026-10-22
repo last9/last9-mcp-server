@@ -72,10 +72,6 @@ func validateLogResponseMode(mode string) error {
 	}
 }
 
-// summarizeLogResult replaces the raw streams of a result holding more than
-// maxRawLinesInSummaryMode lines with a summary. Every other top-level key
-// (guidance, truncation and sanity metadata) is kept as is. Aggregate results
-// and small results come back unchanged.
 func summarizeLogResult(result map[string]interface{}, startMs, endMs int64) map[string]interface{} {
 	kind, items, err := extractResultItems(result)
 	if err != nil || kind != "streams" || countLogEntriesInResultItems(items) <= maxRawLinesInSummaryMode {
