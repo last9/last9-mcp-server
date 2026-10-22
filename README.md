@@ -795,8 +795,8 @@ Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `en
 
 ### get_alert_rule_state
 
-- `start_time` (integer, required): Unix epoch start of the range (inclusive).
-- `end_time` (integer, required): Unix epoch end of the range (inclusive).
+- `start_time` (integer or string, required): Start of the range (inclusive): Unix epoch seconds (`1718000000`) or RFC3339 (`2024-06-10T06:13:20Z`). Epoch milliseconds, microseconds and nanoseconds are converted to seconds; values before 2000-01-01 are rejected.
+- `end_time` (integer or string, required): End of the range (inclusive), in the same formats.
 - `step` (integer, required): Resolution in seconds between samples. The number of samples `((end_time - start_time) / step + 1)` is capped at 100.
 - `alert_group_id` (string, optional): Filter by alert group ID.
 - `rule_name` (string, optional): Regex filter on rule name.

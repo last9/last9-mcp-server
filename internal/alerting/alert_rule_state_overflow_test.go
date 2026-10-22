@@ -39,8 +39,8 @@ func TestAlertRuleStateHandler_LoopBoundedByCap(t *testing.T) {
 
 	// span=99, step=1 -> points = 99/1 + 1 = 100 (exactly the cap).
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AlertRuleStateRequest{
-		StartTime: 0,
-		EndTime:   99,
+		StartTime: ts(1718000000),
+		EndTime:   ts(1718000099),
 		Step:      1,
 	})
 	if err != nil {

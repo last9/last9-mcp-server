@@ -95,8 +95,8 @@ func TestAlertRuleStateHandler_GroupsRulesAcrossTimestamps(t *testing.T) {
 	handler := NewAlertRuleStateHandler(server.Client(), newAlertRuleStateTestConfig(server.URL))
 
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AlertRuleStateRequest{
-		StartTime: startTime,
-		EndTime:   endTime,
+		StartTime: ts(startTime),
+		EndTime:   ts(endTime),
 		Step:      step,
 	})
 	if err != nil {
@@ -148,8 +148,8 @@ func TestAlertRuleStateHandler_ForwardsFilters(t *testing.T) {
 		AlertGroupName: ".*api.*",
 		LabelFilters:   "env=prod,team=core",
 		State:          "firing",
-		StartTime:      1718000000,
-		EndTime:        1718000000 + 60,
+		StartTime:      ts(1718000000),
+		EndTime:        ts(1718000000 + 60),
 		Step:           60,
 	}
 
@@ -184,7 +184,7 @@ func TestAlertRuleStateHandler_OmitsAbsentFilters(t *testing.T) {
 
 	// No filters set — only the always-present timestamp/window should be in the query.
 	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AlertRuleStateRequest{
-		StartTime: 1, EndTime: 61, Step: 60,
+		StartTime: ts(1718000000), EndTime: ts(1718000060), Step: 60,
 	}); err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestAlertRuleStateHandler_SetsAuthHeader(t *testing.T) {
 	handler := NewAlertRuleStateHandler(server.Client(), newAlertRuleStateTestConfig(server.URL))
 
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AlertRuleStateRequest{
-		StartTime: 1, EndTime: 61, Step: 60,
+		StartTime: ts(1718000000), EndTime: ts(1718000060), Step: 60,
 	})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -242,38 +242,42 @@ func TestAlertRuleStateHandler_ValidationErrors(t *testing.T) {
 	}{
 		{
 			name: "start equals end",
-			args: AlertRuleStateRequest{StartTime: 100, EndTime: 100, Step: 60},
+			args: AlertRuleStateRequest{StartTime: ts(1718000000), EndTime: ts(1718000000), Step: 60},
+			want: "start_time must be less than end_time",
+		},
+		{
+			name: "start equals end in different formats",
+			args: AlertRuleStateRequest{StartTime: "2024-06-10T06:13:20Z", EndTime: ts(1718000000), Step: 60},
 			want: "start_time must be less than end_time",
 		},
 		{
 			name: "non-positive step",
-			args: AlertRuleStateRequest{StartTime: 100, EndTime: 200, Step: 0},
+			args: AlertRuleStateRequest{StartTime: ts(1718000000), EndTime: ts(1718000100), Step: 0},
 			want: "step must be greater than 0",
 		},
 		{
 			name: "too many points",
-			args: AlertRuleStateRequest{StartTime: 0, EndTime: 60 * 200, Step: 60},
-			want: "too many points",
+			args: AlertRuleStateRequest{StartTime: ts(1718000000), EndTime: ts(1718000000 + 60*200), Step: 60},
+			want: "too many points. Maximum is 100 samples; set step to at least 122 seconds",
 		},
 		{
 			name: "cap boundary - 101 samples is rejected",
-			args: AlertRuleStateRequest{StartTime: 0, EndTime: 60 * 100, Step: 60},
-			want: "too many points",
+			args: AlertRuleStateRequest{StartTime: ts(1718000000), EndTime: ts(1718000000 + 60*100), Step: 60},
+			want: "set step to at least 61 seconds",
 		},
 		{
 			// Regression: endpoints near ±2^63 (float64-representable,
-			// so they survive the SDK decode round-trip) make end-start wrap
-			// negative, which previously bypassed the sample cap and let the
-			// sampling loop run ~10^10 iterations.
+			// so they survive the SDK decode round-trip) made end-start wrap
+			// negative, which bypassed the sample cap.
 			name: "subtraction overflow near int64 bounds",
-			args: AlertRuleStateRequest{StartTime: -9223372036854774000, EndTime: 9223372036854774000, Step: 1000000000},
-			want: "overflows",
+			args: AlertRuleStateRequest{StartTime: "-9223372036854774000", EndTime: "9223372036854774000", Step: 1000000000},
+			want: "before 2000-01-01",
 		},
 		{
 			// Regression: span = MaxInt64 with step = 1 would wrap
 			// span/step + 1 past MaxInt64 if the cap were checked after the +1.
 			name: "sample count overflow at MaxInt64 span",
-			args: AlertRuleStateRequest{StartTime: 0, EndTime: math.MaxInt64, Step: 1},
+			args: AlertRuleStateRequest{StartTime: ts(earliestAlertTime), EndTime: ts(math.MaxInt64), Step: 1},
 			want: "too many points",
 		},
 	}
@@ -307,7 +311,7 @@ func TestAlertRuleStateHandler_APIError(t *testing.T) {
 	handler := NewAlertRuleStateHandler(&http.Client{Timeout: 2 * time.Second}, newAlertRuleStateTestConfig("http://"+addr))
 
 	_, _, err = handler(context.Background(), &mcp.CallToolRequest{}, AlertRuleStateRequest{
-		StartTime: 1, EndTime: 61, Step: 60,
+		StartTime: ts(1718000000), EndTime: ts(1718000060), Step: 60,
 	})
 	if err == nil {
 		t.Fatalf("Expected API error for closed port")

@@ -237,8 +237,8 @@ func TestAlertRuleStateHandler_Integration(t *testing.T) {
 	end := time.Now().Unix()
 	start := end - 5*60
 	args := AlertRuleStateRequest{
-		StartTime: start,
-		EndTime:   end,
+		StartTime: ts(start),
+		EndTime:   ts(end),
 		Step:      60,
 	}
 

@@ -7,54 +7,132 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"reflect"
+	"strconv"
+	"strings"
+	"time"
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type AlertRuleStateRequest struct {
-	AlertGroupID   string `json:"alert_group_id,omitempty" jsonschema:"Optional filter by alert group ID"`
-	RuleName       string `json:"rule_name,omitempty" jsonschema:"Optional regex filter by rule name"`
-	AlertGroupName string `json:"alert_group_name,omitempty" jsonschema:"Optional regex filter by alert group name"`
-	LabelFilters   string `json:"label_filters,omitempty" jsonschema:"Optional comma separated key-value label filters"`
-	State          string `json:"state,omitempty" jsonschema:"Optional state filter (e.g. firing)"`
-	StartTime      int64  `json:"start_time" jsonschema:"(Required) Start time in Unix epoch seconds"`
-	EndTime        int64  `json:"end_time" jsonschema:"(Required) End time in Unix epoch seconds"`
-	Step           int64  `json:"step" jsonschema:"(Required) Resolution step in seconds"`
+	AlertGroupID   string       `json:"alert_group_id,omitempty" jsonschema:"Optional filter by alert group ID"`
+	RuleName       string       `json:"rule_name,omitempty" jsonschema:"Optional regex filter by rule name"`
+	AlertGroupName string       `json:"alert_group_name,omitempty" jsonschema:"Optional regex filter by alert group name"`
+	LabelFilters   string       `json:"label_filters,omitempty" jsonschema:"Optional comma separated key-value label filters"`
+	State          string       `json:"state,omitempty" jsonschema:"Optional state filter (e.g. firing)"`
+	StartTime      TimestampArg `json:"start_time" jsonschema:"(Required) Start of the range (inclusive): Unix epoch seconds like 1718000000, or RFC3339 like 2024-06-10T06:13:20Z. Epoch milliseconds, microseconds and nanoseconds are converted to seconds."`
+	EndTime        TimestampArg `json:"end_time" jsonschema:"(Required) End of the range (inclusive), in the same formats as start_time"`
+	Step           int64        `json:"step" jsonschema:"(Required) Resolution step in seconds"`
+}
+
+// TimestampArg is a time argument as the caller sent it: a JSON integer or string.
+// The handler parses it, so a bad value gets an error naming the argument.
+type TimestampArg string
+
+func (a *TimestampArg) UnmarshalJSON(data []byte) error {
+	if len(data) > 0 && data[0] == '"' {
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return err
+		}
+		*a = TimestampArg(s)
+		return nil
+	}
+	*a = TimestampArg(data)
+	return nil
+}
+
+// AlertRuleStateInputSchema is the inferred schema with start_time and end_time
+// widened to integer or string, which inference cannot express.
+func AlertRuleStateInputSchema() *jsonschema.Schema {
+	schema, err := jsonschema.For[AlertRuleStateRequest](&jsonschema.ForOptions{
+		TypeSchemas: map[reflect.Type]*jsonschema.Schema{
+			reflect.TypeFor[TimestampArg](): {Types: []string{"integer", "string"}},
+		},
+	})
+	if err != nil {
+		panic(fmt.Sprintf("get_alert_rule_state input schema: %v", err))
+	}
+	return schema
 }
 
 const alertRuleStateMaxPoints = 100
+
+// earliestAlertTime (2000-01-01) rejects small numbers, which are durations or
+// relative offsets rather than timestamps.
+var earliestAlertTime = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
+
+const timestampFormatHint = "Use Unix epoch seconds like 1718000000 or RFC3339 like 2024-06-10T06:13:20Z; get_current_time returns the current time in both"
+
+// parseTimestampArg returns arg as Unix seconds. Integers of 13, 16 or 19 digits
+// are read as epoch milliseconds, microseconds or nanoseconds.
+func parseTimestampArg(name string, arg TimestampArg) (int64, error) {
+	raw := strings.TrimSpace(string(arg))
+	if raw == "" {
+		return 0, fmt.Errorf("%s is required. %s", name, timestampFormatHint)
+	}
+	var sec int64
+	if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		sec = epochSeconds(n)
+	} else if t, err := utils.ParseToolTimestamp(raw); err == nil {
+		sec = t.Unix()
+	} else {
+		return 0, fmt.Errorf("%s %q is not a timestamp. %s", name, raw, timestampFormatHint)
+	}
+	if sec < earliestAlertTime {
+		return 0, fmt.Errorf("%s %q is before 2000-01-01: pass an absolute time, not a duration or offset. %s", name, raw, timestampFormatHint)
+	}
+	return sec, nil
+}
+
+func epochSeconds(n int64) int64 {
+	switch {
+	case n >= 1e17:
+		return n / 1e9
+	case n >= 1e14:
+		return n / 1e6
+	case n >= 1e11:
+		return n / 1e3
+	default:
+		return n
+	}
+}
 
 func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, AlertRuleStateRequest) (*mcp.CallToolResult, any, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
 	return func(ctx context.Context, req *mcp.CallToolRequest, args AlertRuleStateRequest) (*mcp.CallToolResult, any, error) {
-		if args.StartTime >= args.EndTime {
+		startTime, err := parseTimestampArg("start_time", args.StartTime)
+		if err != nil {
+			return utils.ToolErrorResult(err.Error()), nil, nil
+		}
+		endTime, err := parseTimestampArg("end_time", args.EndTime)
+		if err != nil {
+			return utils.ToolErrorResult(err.Error()), nil, nil
+		}
+		if startTime >= endTime {
 			return utils.ToolErrorResult("start_time must be less than end_time"), nil, nil
 		}
 		if args.Step <= 0 {
 			return utils.ToolErrorResult("step must be greater than 0"), nil, nil
 		}
 
-		// Guard against int64 overflow in (end_time - start_time). For a valid,
-		// in-range window the span is always non-negative; a negative span here
-		// means the subtraction wrapped (e.g. endpoints near ±2^63), which would
-		// otherwise let the sample cap below be bypassed and the sampling loop
-		// run far beyond the documented 100-sample limit.
-		span := args.EndTime - args.StartTime
-		if span < 0 {
-			return utils.ToolErrorResult("time range is too large (end_time - start_time overflows int64)"), nil, nil
-		}
+		// Cannot overflow: parseTimestampArg bounds both ends to [2000-01-01, ~2262].
+		span := endTime - startTime
 
 		// Inclusive sample count: t iterates start, start+step, ..., end.
 		// Compare before the +1 so the count can never wrap: with span >= 0 and
 		// step >= 1, span/step itself cannot overflow.
 		if span/args.Step >= alertRuleStateMaxPoints {
-			return utils.ToolErrorResult(fmt.Sprintf("time range and step result in too many points. Maximum is %d", alertRuleStateMaxPoints)), nil, nil
+			minStep := (span + alertRuleStateMaxPoints - 2) / (alertRuleStateMaxPoints - 1)
+			return utils.ToolErrorResult(fmt.Sprintf("time range and step result in too many points. Maximum is %d samples; set step to at least %d seconds or narrow the range", alertRuleStateMaxPoints, minStep)), nil, nil
 		}
 		points := span/args.Step + 1
 
@@ -72,7 +150,7 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 		// construction; a value-bounded `t <= end_time` loop can run unbounded
 		// when the span arithmetic overflows.
 		for i := int64(0); i < points; i++ {
-			t := args.StartTime + i*args.Step
+			t := startTime + i*args.Step
 			queryParams := url.Values{}
 			queryParams.Set("timestamp", fmt.Sprintf("%d", t))
 			queryParams.Set("window", fmt.Sprintf("%d", args.Step))
@@ -145,7 +223,7 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 		for ruleID, tsMap := range results {
 			var dps []Datapoint
 			for i := int64(0); i < points; i++ {
-				t := args.StartTime + i*args.Step
+				t := startTime + i*args.Step
 				dps = append(dps, Datapoint{
 					Timestamp: t,
 					IsFiring:  tsMap[t],

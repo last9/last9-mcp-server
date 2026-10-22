@@ -508,6 +508,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Name:        "get_alert_rule_state",
 		Annotations: readOnlyTool("Get Alert Rule State"),
 		Description: prompts.GetAlertRuleStateDescription,
+		InputSchema: alerting.AlertRuleStateInputSchema(),
 	}, alerting.NewAlertRuleStateHandler(client, cfg)))
 
 	// Register get traces tool (enhanced with trace query instructions)
