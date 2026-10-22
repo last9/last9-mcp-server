@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -180,5 +182,48 @@ func TestServedToolsAcceptQuotedIntegerIDs(t *testing.T) {
 	defer mu.Unlock()
 	if len(writes) != 1 || writes[0] != "POST /notification_settings/7/attach" {
 		t.Fatalf("writes = %v, want one POST /notification_settings/7/attach", writes)
+	}
+}
+
+// The SDK validates arguments as float64, which rounds 19-digit epoch nanoseconds; a
+// value one nanosecond below a whole second must still sample that second.
+func TestIntegerOrStringArgsKeepNanosecondTimestampsExact(t *testing.T) {
+	var mu sync.Mutex
+	var sampled []string
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		sampled = append(sampled, r.URL.Query().Get("timestamp"))
+		mu.Unlock()
+		_, _ = io.WriteString(w, `{"alert_rules":[]}`)
+	}))
+	defer api.Close()
+	cfg := testToolRegistrationConfig()
+	cfg.APIBaseURL = api.URL
+	server := newTestServer(t)
+	if _, err := registerTools(server, cfg, api.Client()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cs, _ := serveInMemory(t, ctx, server)
+	defer cs.Close()
+
+	for _, args := range []string{
+		`{"start_time":1718000000999999999,"end_time":1718000060999999999,"step":60}`,
+		`{"start_time":"1718000000999999999","end_time":"1718000060999999999","step":60}`,
+	} {
+		mu.Lock()
+		sampled = nil
+		mu.Unlock()
+		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "get_alert_rule_state", Arguments: json.RawMessage(args)})
+		if err != nil || res.IsError {
+			t.Fatalf("%s: err=%v result=%+v", args, err, res)
+		}
+		mu.Lock()
+		got := slices.Sorted(slices.Values(sampled))
+		mu.Unlock()
+		if !slices.Equal(got, []string{"1718000000", "1718000060"}) {
+			t.Errorf("%s sampled %v, want [1718000000 1718000060]", args, got)
+		}
 	}
 }
