@@ -97,6 +97,8 @@ brew install last9/tap/last9-mcp
 
 **NPM:**
 
+Requires Node.js 22.23.4+, 24.22.1+ or 26.12.1+: earlier releases accept TLS certificates from the compromised eMudhra intermediates when the installer downloads the binary.
+
 ```bash
 npm install -g @last9/mcp-server@latest
 # or directly:
@@ -222,7 +224,7 @@ The NPM route is easier on Windows — no path management.
 | `LAST9_MCP_READ_ONLY`        | `false`              | Set `true` to serve only read-only tools; see [Read-only mode](#read-only-mode). A value that is not a boolean is a startup error. Alias: `LAST9_READ_ONLY` |
 | `LAST9_MCP_ALLOW_WRITE_TOOLS`| —                    | Comma-separated write tools still served in read-only mode. Alias: `LAST9_ALLOW_WRITE_TOOLS` |
 | `LAST9_MAX_GET_LOGS_ENTRIES` | `5000`               | Max entries for chunked `get_logs` requests |
-| `LAST9_USE_LOG_SEARCH_API`   | `false`              | Set `true` to answer `get_logs` and `get_service_logs` with one server-side search call instead of client-side chunking |
+| `LAST9_USE_LOG_SEARCH_API`   | `false`              | Set `true` to answer `get_logs` and `get_service_logs` with one server-side search call instead of client-side chunking. Each call gets 90 seconds, then returns advice to narrow the window; a 502 or 503 is retried once within it |
 | `LAST9_DEBUG_CHUNKING`       | `false`              | Set `true` to log chunk-planning details for `get_logs`, `get_service_logs`, `get_traces` |
 | `LAST9_DISABLE_TELEMETRY`    | `true`               | Set `false` to enable internal OTel tracing |
 | `OTEL_SDK_DISABLED`          | —                    | Standard OTel env var. Overrides `LAST9_DISABLE_TELEMETRY` |
@@ -589,12 +591,18 @@ Returns `now` (and `start`/`end` with `range`) as `{iso, epoch_seconds, local}`;
 
 - `match_query` (string, optional): PromQL filter.
 - `label` (string, required): Label name.
+- `lookback_minutes` (float, optional): Default: 60.
 - `start_time_iso` / `end_time_iso` (string, optional)
+
+When no window is given and `match_query` names one metric (`metric{...}` or `{__name__="metric"}`), an empty 60-minute result is retried once over 4 days; a second text block says which window the result covers.
 
 ### prometheus_labels
 
 - `match_query` (string, optional): PromQL filter.
+- `lookback_minutes` (float, optional): Default: 60.
 - `start_time_iso` / `end_time_iso` (string, optional)
+
+Retries an empty single-metric lookup over 4 days, like `prometheus_label_values`.
 
 ### get_logs
 

@@ -143,6 +143,8 @@ The JSON pipeline format supports filtering, parsing, aggregation on log data.
 3. **aggregate** - Perform aggregations (sum, avg, count, etc.)
 4. **window_aggregate** - Time-windowed aggregations
 
+No other stage type exists: `transform` and `select` are rejected.
+
 ### Filter Operations:
 ```json
 {
@@ -194,6 +196,7 @@ The JSON pipeline format supports filtering, parsing, aggregation on log data.
 
 ### Parse Operations:
 Note that regex parsing operators also work as regex filters
+Regexps (`$regex` family and the `regexp` parser) use RE2 syntax: no lookahead/lookbehind, backreferences or possessive quantifiers; negate with `$notregex`.
 ```json
 {
   "type": "parse",
