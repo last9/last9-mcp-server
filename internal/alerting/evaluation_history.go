@@ -34,7 +34,7 @@ type evaluationSample struct {
 func attachRecentEvaluations(ctx context.Context, api *last9api.Client, rules AlertConfigResponse, now time.Time) string {
 	enabled := make([]int, 0, len(rules))
 	for i, rule := range rules {
-		if !isDisabledRule(rule) {
+		if !ruleIsDisabled(rule) {
 			enabled = append(enabled, i)
 		}
 	}
@@ -143,12 +143,8 @@ func normalizeMonitorState(state string) string {
 	}
 }
 
-func isDisabledRule(rule AlertRule) bool {
-	return strings.EqualFold(strings.TrimSpace(rule.State), "disabled")
-}
-
 func formatRecentEvaluations(rule AlertRule) string {
-	if isDisabledRule(rule) {
+	if ruleIsDisabled(rule) {
 		return "  Recent Evaluations: none, the rule is disabled\n"
 	}
 	if len(rule.RecentEvaluations) == 0 {
