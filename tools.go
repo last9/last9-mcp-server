@@ -14,6 +14,7 @@ import (
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/change_events"
 	"last9-mcp/internal/changeimpact"
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/grafana"
 	"last9-mcp/internal/models"
@@ -61,10 +62,17 @@ type toolGate struct {
 	readOnly map[string]bool // every offered tool name → its readOnlyHint
 	served   toolsets.Set    // every admitted tool name
 	pending  []func() error  // registrations of admitted tools, in offer order
+
+	callTimeout time.Duration // overall deadline of one tool call
 }
 
 func newToolGate(filter toolsets.Filter) *toolGate {
-	return &toolGate{filter: filter, readOnly: make(map[string]bool), served: make(toolsets.Set)}
+	return &toolGate{
+		filter:      filter,
+		readOnly:    make(map[string]bool),
+		served:      make(toolsets.Set),
+		callTimeout: constants.ToolCallTimeout,
+	}
 }
 
 func (g *toolGate) admit(tool *mcp.Tool) bool {
