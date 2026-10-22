@@ -84,8 +84,9 @@ The JSON pipeline format supports filtering, parsing, aggregation on trace data.
 
 1. **filter** - Filter traces based on conditions (**USE THIS FOR MOST QUERIES**)
 2. **parse** - Parse trace content (json, regexp, logfmt)
-3. **aggregate** - Perform aggregations (sum, avg, count, etc.)
-4. **window_aggregate** - Time-windowed aggregations
+3. **transform** - Compute fields; `as` is an array: `{"type":"transform","transforms":[{"function":{"$split":["SpanName","/",1]},"as":["endpoint"]}]}`
+4. **aggregate** - Perform aggregations (sum, avg, count, etc.)
+5. **window_aggregate** - Time-windowed aggregations
 
 ### Filter Operations:
 ```json
@@ -111,6 +112,7 @@ The JSON pipeline format supports filtering, parsing, aggregation on trace data.
 
 ### Parse Operations:
 Note that regexp parsing operators also work as regexp filters
+Regexps (`$regex` family and the `regexp` parser) use RE2 syntax: no lookahead/lookbehind, backreferences or possessive quantifiers; negate with `$notregex`.
 ```json
 {
   "type": "parse",

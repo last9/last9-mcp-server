@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `did_you_mean` to the logs, traces, and metrics toolsets so their entity-name discovery guidance can be followed (#312).
 
 ### Fixed
+- `get_traces` (and every tool taking a tracejson pipeline) no longer 400s on a `transform` entry whose `as` is a string: the string is sent as the one-element array the API requires, and any other `as` shape is rejected locally with the correct example. The tool schema no longer advertises a string `as` (#408).
+- `get_logs`, `get_traces` and the other logjson/tracejson pipeline tools compile every `$regex`/`$notregex`/`$iregex`/`$inotregex` pattern and `regexp` parse pattern as RE2 before calling the API. A PCRE-only pattern (lookahead, lookbehind, backreference, possessive quantifier) now fails with the compile error and its path instead of an upstream "invalid regexp expression" 400 (#408).
 - Every tool now accepts a number-like string for an integer argument, so `{"channel_id": "42"}` runs as `42` instead of failing with `type: 42 has type "string", want "integer"`. Before schema validation, a string matching `^-?\d+$` (and fitting int64) under a property whose schema allows integers but not strings, at any depth, is replaced by its number; other strings such as `"4x2"`, `"4.2"` or `""` are still rejected with the same error naming the argument, and unknown arguments are still refused (#373).
 
 - `patch_alert` `properties` now changes only the fields sent: omitted or blank `description`, `runbook`, `annotations` and `query_mode` are carried over from the stored rule. The API overwrites the whole properties object, so sending only `description` cleared the runbook, annotations and query mode. `annotations` still replaces the whole map, and `{}` clears it (#356).
@@ -77,6 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_logs` and `get_traces` now explicitly show compact JSON stage-array examples and reject SQL-like query construction in their tool descriptions, so description-only clients can form valid pipelines without fetching a reference manual (#309).
 
 ### Changed
+- `get_logs` and `get_traces` descriptions list the valid stage types in their first line (`get_logs`: no `transform`/`select`), state that regexps are RE2, and show wrong→right field references (`get_logs`) and the `transform` stage with an array `as` (`get_traces`); the pipeline-rejection hints and the logjson/tracejson manuals say the same. Description budgets: `get_logs` 3400 → 3430, `get_traces` 2700 → 2820 bytes (#408).
 - When `get_logs` or `get_traces` is served, the server instructions' raw-query section now states that the time window goes in `start_time_iso`/`end_time_iso` (or `lookback_minutes`), never as `Timestamp` filters in the pipeline, instead of relying on the tool descriptions alone (#379).
 - Tool empty-result, validation, timeout/rate-limit, and truncation responses now include actionable retry guidance so agents can widen or narrow time windows, verify filters, discover names with `did_you_mean`, and avoid unchanged retries instead of stopping at generic empty/error messages (#320).
 - The `alerts` toolset now also serves `get_change_events`, the input `analyze_change_impact` takes as `change_event` (#352).

@@ -273,6 +273,9 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"ALL→`$and`; ANY→`$or`", "must document all/any-word Body searches"},
 		{"never `$icontainsWords`", "must avoid the slower case-insensitive word operator"},
 		{"no service→search `Body` with `$contains` (even service-like)", "must distinguish standalone identifiers from service names"},
+		{"Stages: `filter`|`parse`|`aggregate`|`window_aggregate` only (no `transform`/`select`)", "must list valid stage types up front"},
+		{"`$regex` (RE2: no lookaround)", "must state the accepted regexp flavor"},
+		{"`community_member_id`→`attributes['key']`, `resource_attributes['key']`→`resources['key']`", "must show wrong→right field references"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
@@ -311,6 +314,9 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 		{"`Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first", "must gate attribute values without gating Duration"},
 		{"For calendar buckets, use explicit ISO bounds and time zone", "must make calendar boundaries explicit"},
 		{"P99 `Duration` output remains nanoseconds", "must preserve Duration units"},
+		{"`filter`|`parse`|`transform`|`aggregate`|`window_aggregate`", "must list valid stage types up front"},
+		{"\"as\":[\"endpoint\"]", "must show transform as an array"},
+		{"`$regex` (RE2: no lookaround)", "must state the accepted regexp flavor"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
