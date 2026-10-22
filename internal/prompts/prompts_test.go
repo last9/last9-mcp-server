@@ -316,6 +316,7 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 		{"P99 `Duration` output remains nanoseconds", "must preserve Duration units"},
 		{"`filter`|`parse`|`transform`|`aggregate`|`window_aggregate`", "must list valid stage types up front"},
 		{"\"as\":[\"endpoint\"]", "must show transform as an array"},
+		{"read it as `attributes['endpoint']`", "must say how to reference transform output"},
 		{"`$regex` (RE2: no lookaround)", "must state the accepted regexp flavor"},
 		{"Percentile over the whole lookback (p95 latency, last hour) → ONE `aggregate` stage", "must steer lookback percentiles to a single aggregate"},
 		{`{"type":"aggregate","aggregates":[{"function":{"$quantile":[0.95,"Duration"]},"as":"p95"}]}`, "must show a complete lookback percentile stage"},
