@@ -16,24 +16,17 @@ const (
 	Ambiguous
 )
 
-// MaxCandidates caps the names an Ambiguous match lists.
 const MaxCandidates = 5
 
 // minFuzzyRunes keeps short inputs ("st", "db") from matching unrelated names.
 const minFuzzyRunes = 3
 
-// Match is the outcome of Resolve. Name is set for Exact and Closest,
-// Candidates (sorted, at most MaxCandidates) for Ambiguous.
 type Match struct {
 	Kind       Kind
 	Name       string
 	Candidates []string
 }
 
-// Resolve tries, in order: an exact name; a name equal after folding case
-// and separators; the names within a small edit distance; the names
-// containing the input. The first rule with any hit decides: one hit is
-// Closest, several are Ambiguous.
 func Resolve(input string, names []string) Match {
 	for _, name := range names {
 		if name == input {
@@ -88,8 +81,7 @@ func filter(names []string, keep func(string) bool) []string {
 	return out
 }
 
-// nearest returns the names at the smallest edit distance from key, allowing
-// one edit per four runes so a typo resolves but a different word does not.
+// One edit per four runes lets a typo resolve but not a different word.
 func nearest(key string, names []string) []string {
 	limit := len([]rune(key)) / 4
 	if limit == 0 {
@@ -110,8 +102,7 @@ func nearest(key string, names []string) []string {
 	return hits
 }
 
-// distance is the optimal string alignment distance: Levenshtein plus
-// adjacent transpositions, so "stagign" is one edit from "staging".
+// Optimal string alignment, not plain Levenshtein: "stagign" is one edit from "staging".
 func distance(a, b string) int {
 	ra, rb := []rune(a), []rune(b)
 	d := make([][]int, len(ra)+1)

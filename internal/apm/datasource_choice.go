@@ -11,17 +11,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// datasourceChoice is the datasource a Prometheus tool queries. note tells the
-// agent which one was used when it did not name it exactly; candidates is set
-// instead of cfg when the requested name fits several datasources.
 type datasourceChoice struct {
 	cfg        models.Config
 	note       string
 	candidates []string
 }
 
-// chooseDatasource resolves the datasource argument: omitted uses the default,
-// a near miss uses its closest match, an ambiguous name returns candidates.
 func chooseDatasource(cfg models.Config, requested string) (datasourceChoice, error) {
 	requested = strings.TrimSpace(requested)
 	if requested == "" {

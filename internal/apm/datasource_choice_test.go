@@ -18,8 +18,6 @@ import (
 
 type promToolCall func(ctx context.Context, datasource string) (*mcp.CallToolResult, error)
 
-// promToolsUnderTest builds every Prometheus tool that takes a datasource,
-// pointed at a fake that records the read_url each request carried.
 func promToolsUnderTest(t *testing.T) (map[string]promToolCall, *[]string) {
 	t.Helper()
 	var readURLs []string
