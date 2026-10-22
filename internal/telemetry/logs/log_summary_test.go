@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -169,6 +170,50 @@ func TestSummarizeLogResult_FitsCharBudgetOnWideData(t *testing.T) {
 	}
 	if summary.Patterns[0].Count != 44 {
 		t.Errorf("top pattern count = %d, want the busiest (44)", summary.Patterns[0].Count)
+	}
+}
+
+func TestSummarizeLogResult_BoundsSeverityCounts(t *testing.T) {
+	var lines []summaryTestLine
+	for s := range 10 {
+		severity := fmt.Sprintf("LEVEL_%d_%s", s, strings.Repeat("x", 100))
+		lines = append(lines, repeatedLines(10-s, severity, func(i int) string { return fmt.Sprintf("job %d done", i) })...)
+	}
+
+	summary := decodeSummary(t, summarizeLogResult(streamsResult(lines), summaryTestStartMs, summaryTestEndMs))
+	if len(summary.SeverityCounts) != maxSummarySeverities {
+		t.Fatalf("severity_counts has %d labels, want %d", len(summary.SeverityCounts), maxSummarySeverities)
+	}
+	total := 0
+	for label, count := range summary.SeverityCounts {
+		if n := utf8.RuneCountInString(label); n > maxSummarySeverityRunes {
+			t.Errorf("label %q is %d runes, want <= %d", label, n, maxSummarySeverityRunes)
+		}
+		total += count
+	}
+	if top := truncateRunes("LEVEL_0_"+strings.Repeat("x", 100), maxSummarySeverityRunes); summary.SeverityCounts[top] != 10 {
+		t.Errorf("severity_counts = %v, want the busiest label %q kept with 10", summary.SeverityCounts, top)
+	}
+	other := summary.OtherSeverities
+	if other == nil || other.Labels != 10-maxSummarySeverities || total+other.Lines != len(lines) {
+		t.Errorf("kept %d lines, other_severities = %+v; want the rest of %d lines in %d labels", total, other, len(lines), 10-maxSummarySeverities)
+	}
+}
+
+func TestSummarizeLogResult_DropsMetadataThatAloneExceedsBudget(t *testing.T) {
+	result := streamsResult(repeatedLines(30, "ERROR", func(i int) string { return fmt.Sprintf("timeout after %d ms", i) }))
+	result["total_matching_lines"] = 900
+	result["stats"] = strings.Repeat("x", maxSummaryChars)
+
+	got := summarizeLogResult(result, summaryTestStartMs, summaryTestEndMs)
+	if size := len(formatJSON(got)); size > maxSummaryChars {
+		t.Fatalf("summary is %d chars, want <= %d", size, maxSummaryChars)
+	}
+	if _, ok := got["stats"]; ok || got["total_matching_lines"] != 900 {
+		t.Errorf("got keys %v, want stats dropped and total_matching_lines kept", got)
+	}
+	if summary := decodeSummary(t, got); fmt.Sprint(summary.DroppedFields) != "[stats]" || summary.LinesSummarized != 30 {
+		t.Errorf("summary = %+v, want dropped_fields [stats] and 30 lines", summary)
 	}
 }
 
