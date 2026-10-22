@@ -162,9 +162,10 @@ func TestPromqlLabelValues_ScopedEmptyBothWindowsSaysSo(t *testing.T) {
 
 func TestPromqlLabelValues_ExplicitWindowNeverRetries(t *testing.T) {
 	cases := map[string]PromqlLabelValuesArgs{
-		"lookback_minutes": {LookbackMinutes: 30},
-		"start_time_iso":   {StartTimeISO: time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)},
-		"end_time_iso":     {EndTimeISO: time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)},
+		"lookback_minutes":            {LookbackMinutes: 30},
+		"lookback_minutes at default": {LookbackMinutes: 60},
+		"start_time_iso":              {StartTimeISO: time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)},
+		"end_time_iso":                {EndTimeISO: time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)},
 	}
 	for name, args := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -187,7 +188,7 @@ func TestPromqlLabelValues_ExplicitWindowNeverRetries(t *testing.T) {
 }
 
 func TestPromqlLabels_UnscopedEmptyNeverRetries(t *testing.T) {
-	for _, query := range []string{`{job="api"}`, `{__name__=~"aws_.*"}`, `sum(rate(http_requests_total[5m]))`} {
+	for _, query := range []string{`{job="api"}`, `{__name__=~"aws_.*"}`, `sum(rate(http_requests_total[5m]))`, `aws_s3_bucketsizebytes{} or up{}`} {
 		t.Run(query, func(t *testing.T) {
 			cfg, client, got := labelLookupServer(t, `[]`)
 
@@ -262,6 +263,10 @@ func TestIsMetricScopedSelector(t *testing.T) {
 		`{__name__!="up"}`:                            false,
 		"sum(up)":                                     false,
 		"up or down":                                  false,
+		`up{} or down{}`:                              false,
+		`up{job="a"} / down`:                          false,
+		`{__name__="up"} or {__name__="down"}`:        false,
+		`sum({__name__="up"})`:                        false,
 		"":                                            false,
 	}
 	for query, want := range cases {
