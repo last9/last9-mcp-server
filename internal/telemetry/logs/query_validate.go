@@ -262,25 +262,28 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 		}
 
 		checkFunction := func(function map[string]interface{}, functionPath string) error {
-			rawArgs, ok := function["$quantile"].([]interface{})
-			if !ok || len(rawArgs) != 2 {
-				return nil
+			for _, name := range []string{"$quantile", "$quantile_exact"} {
+				rawArgs, ok := function[name].([]interface{})
+				if !ok || len(rawArgs) != 2 {
+					continue
+				}
+				field, _ := rawArgs[1].(string)
+				if !isStringBackedLogField(field) {
+					continue
+				}
+				if _, ok := numericSafeFields[field]; ok {
+					continue
+				}
+				return newLogValidationError(
+					LogValidationInvalidField,
+					functionPath+"."+name+"[1]",
+					fmt.Sprintf(
+						"%s field %q at %s requires a preceding numeric $regex after the last parse that can produce it; use the canonical anchored numeric $regex shown: {\"$regex\":[%q,\"^[0-9]+(?:\\\\.[0-9]+)?$\"]}",
+						name, field, functionPath+"."+name+"[1]", field,
+					),
+				)
 			}
-			field, _ := rawArgs[1].(string)
-			if !isStringBackedLogField(field) {
-				return nil
-			}
-			if _, ok := numericSafeFields[field]; ok {
-				return nil
-			}
-			return newLogValidationError(
-				LogValidationInvalidField,
-				functionPath+".$quantile[1]",
-				fmt.Sprintf(
-					"$quantile field %q at %s requires a preceding numeric $regex after the last parse that can produce it; use the canonical anchored numeric $regex shown: {\"$regex\":[%q,\"^[0-9]+(?:\\\\.[0-9]+)?$\"]}",
-					field, functionPath+".$quantile[1]", field,
-				),
-			)
+			return nil
 		}
 
 		switch stageType {
@@ -519,7 +522,7 @@ func validateWindowAggregateStage(stage map[string]interface{}, stagePath string
 			fmt.Sprintf("window_aggregate at %s: \"function\" must be an object like {\"$count\":[]}, not a string — got %T", stagePath, fn),
 		)
 	}
-	if err := validateQuantileFunction(fnMap, stagePath+".function"); err != nil {
+	if err := validateAggregateFunction(fnMap, stagePath+".function"); err != nil {
 		return err
 	}
 
@@ -530,6 +533,9 @@ func validateWindowAggregateStage(stage map[string]interface{}, stagePath string
 			stagePath+".as",
 			fmt.Sprintf("window_aggregate at %s missing required \"as\" key (output field name) — example: \"as\":\"errors\"", stagePath),
 		)
+	}
+	if e := telemetry.ValidateAggregateAlias(as, stagePath+".as"); e != nil {
+		return newLogValidationError(LogValidationInvalidField, e.Path, e.Message)
 	}
 
 	rawWindow := stage["window"]
@@ -719,7 +725,7 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string) erro
 				),
 			)
 		}
-		if err := validateQuantileFunction(fnMap, itemPath+".function"); err != nil {
+		if err := validateAggregateFunction(fnMap, itemPath+".function"); err != nil {
 			return err
 		}
 
@@ -735,21 +741,19 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string) erro
 				),
 			)
 		}
+		if e := telemetry.ValidateAggregateAlias(as, itemPath+".as"); e != nil {
+			return newLogValidationError(LogValidationInvalidField, e.Path, e.Message)
+		}
 	}
 
 	return validateGroupByForTraceFields(stage, stagePath)
 }
 
-func validateQuantileFunction(function map[string]interface{}, path string) error {
-	err := telemetry.ValidateQuantileFunction(function, path)
-	if err == nil {
-		return nil
+func validateAggregateFunction(function map[string]interface{}, path string) error {
+	if e := telemetry.ValidateAggregateFunction(function, path); e != nil {
+		return newLogValidationError(LogValidationInvalidField, e.Path, e.Message)
 	}
-	return newLogValidationError(
-		LogValidationInvalidField,
-		err.Path,
-		err.Error(),
-	)
+	return nil
 }
 
 func stageKeyList(allowed map[string]struct{}) string {
