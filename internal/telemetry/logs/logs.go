@@ -360,7 +360,7 @@ func fetchViaLogSearchAPI(
 	// sweep inside this single call.
 	resp, err := utils.MakeLogSearchAPI(ctx, client, cfg, req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call log search API: %v", err)
+		return nil, fmt.Errorf("failed to call log search API: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -465,7 +465,7 @@ func shouldChunkGetLogsQuery(logjsonQuery interface{}) bool {
 func executeLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, startTime, endTime int64, limit int, index string) (map[string]interface{}, error) {
 	resp, err := utils.MakeLogsJSONQueryAPI(ctx, client, cfg, logjsonQuery, startTime, endTime, limit, index)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call log JSON query API: %v", err)
+		return nil, fmt.Errorf("failed to call log JSON query API: %w", err)
 	}
 	defer resp.Body.Close()
 
