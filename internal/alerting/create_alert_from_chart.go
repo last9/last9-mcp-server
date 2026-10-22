@@ -174,8 +174,24 @@ func disableChartRule(ctx context.Context, api *last9api.Client, groupID, ruleID
 	if err == nil {
 		return nil
 	}
-	return utils.ToolErrorResult(fmt.Sprintf("Created alert rule %s in group %s, but disabling it failed (%v), so it may be live and can fire. "+
-		"Run patch_alert entity_id=%s id=%s is_disabled=true, or remove it with delete_alert"+noRetry, ruleID, groupID, err, groupID, ruleID))
+	return utils.ToolErrorResult(fmt.Sprintf("Created alert rule %s in group %s, but %s. "+
+		"Run patch_alert entity_id=%s id=%s is_disabled=true (safe to repeat), or remove it with delete_alert"+noRetry,
+		ruleID, groupID, disableFailure(err), groupID, ruleID))
+}
+
+// disableFailure states what is known about the failed disable from the error's type alone:
+// the raw error carries the request URL and the client's generic retry advice.
+func disableFailure(err error) string {
+	var unknown *utils.WriteOutcomeUnknownError
+	var apiErr *utils.UpstreamHTTPError
+	switch {
+	case errors.As(err, &unknown):
+		return fmt.Sprintf("whether the disable landed is unknown (%s), so it may be live and can fire", unknown.Cause)
+	case errors.As(err, &apiErr):
+		return fmt.Sprintf("the disable was refused (HTTP %d), so it is live and can fire", apiErr.StatusCode)
+	default:
+		return "the disable request failed without an answer from the API, so it may be live and can fire"
+	}
 }
 
 // createFromChartReport renders the post-create summary: rule/group linkage,
