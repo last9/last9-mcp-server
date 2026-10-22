@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
@@ -25,6 +27,8 @@ const LogSearchMaxSampleSize = 5000
 // already has. Deliberately free of GetLogsArgs, deeplinks and tool-specific
 // limits so a second caller adopts it by swapping one function call.
 type LogSearchRequest struct {
+	// Op names the call in error messages, e.g. "logs query".
+	Op       string
 	Pipeline any
 	// StartMs and EndMs are milliseconds; the wire format is seconds.
 	StartMs int64
@@ -104,6 +108,69 @@ func MakeLogSearchAPI(
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 	return resp, nil
+}
+
+// ErrLogSearchTimeout matches a search that outlived its time budget.
+var ErrLogSearchTimeout = errors.New("log search timed out")
+
+type logSearchTimeoutError struct {
+	op     string
+	budget time.Duration
+}
+
+func (e *logSearchTimeoutError) Error() string {
+	return fmt.Sprintf("%s timed out after %s; body text searches over wide windows are the usual cause. %s",
+		e.op, e.budget, timeoutNarrowingAdvice)
+}
+
+func (e *logSearchTimeoutError) Is(target error) bool { return target == ErrLogSearchTimeout }
+
+func logSearchBudget(cfg models.Config) time.Duration {
+	if cfg.LogSearchTimeout > 0 {
+		return cfg.LogSearchTimeout
+	}
+	return constants.LogSearchTimeout
+}
+
+// SearchLogs runs one search within the log search time budget and decodes it.
+// The endpoint takes no budget of its own, so the deadline is applied here and
+// covers reading the body as well as waiting for headers.
+func SearchLogs(
+	ctx context.Context, client *http.Client, cfg models.Config, req LogSearchRequest,
+) (map[string]any, error) {
+	budget := logSearchBudget(cfg)
+	searchCtx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+
+	result, err := searchLogs(searchCtx, client, cfg, req)
+	// A caller that cancelled or ran out its own deadline did not hit this budget.
+	if err != nil && ctx.Err() == nil && isTimeout(searchCtx, err) {
+		return nil, &logSearchTimeoutError{op: req.Op, budget: budget}
+	}
+	return result, err
+}
+
+func searchLogs(
+	ctx context.Context, client *http.Client, cfg models.Config, req LogSearchRequest,
+) (map[string]any, error) {
+	resp, err := MakeLogSearchAPI(ctx, client, cfg, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call log search API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, NewUpstreamHTTPError(resp, req.Op, LogsPipelineSchemaHint)
+	}
+	return DecodeLogSearchResponse(resp)
+}
+
+func isTimeout(ctx context.Context, err error) bool {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 // densestBucketCount is how many buckets the summary keeps. Fixed so a wide

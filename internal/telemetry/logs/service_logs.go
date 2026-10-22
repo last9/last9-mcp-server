@@ -480,25 +480,14 @@ func fetchServiceLogsViaSearchAPI(
 	ctx context.Context, client *http.Client, cfg models.Config, service string,
 	startTime, endTime time.Time, limit int, logjsonQuery []map[string]interface{}, index string,
 ) (*ServiceLogsResponse, error) {
-	// The shared client's timeout applies. Deliberately NOT PerChunkHTTPTimeout:
-	// that bounds one chunk, and the server runs the whole sweep in this call.
-	resp, err := utils.MakeLogSearchAPI(ctx, client, cfg, utils.LogSearchRequest{
+	result, err := utils.SearchLogs(ctx, client, cfg, utils.LogSearchRequest{
+		Op:       "service logs query",
 		Pipeline: logjsonQuery,
 		StartMs:  startTime.UnixMilli(),
 		EndMs:    endTime.UnixMilli(),
 		Limit:    limit,
 		Index:    index,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to call log search API: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, utils.NewUpstreamHTTPError(resp, "service logs query", utils.LogsPipelineSchemaHint)
-	}
-
-	result, err := utils.DecodeLogSearchResponse(resp)
 	if err != nil {
 		return nil, err
 	}

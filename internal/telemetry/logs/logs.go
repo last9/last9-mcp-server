@@ -338,6 +338,7 @@ func fetchViaLogSearchAPI(
 	logjsonQuery interface{}, startTime, endTime int64, args GetLogsArgs,
 ) (map[string]interface{}, error) {
 	req := utils.LogSearchRequest{
+		Op:       "logs query",
 		Pipeline: logjsonQuery,
 		StartMs:  startTime,
 		EndMs:    endTime,
@@ -355,20 +356,7 @@ func fetchViaLogSearchAPI(
 		req.Limit = effectiveGetLogsChunkLimit(cfg, args.Limit)
 	}
 
-	// The shared client's 3-minute timeout applies. Deliberately NOT wrapped in
-	// PerChunkHTTPTimeout: that bounds one chunk, and the server runs the whole
-	// sweep inside this single call.
-	resp, err := utils.MakeLogSearchAPI(ctx, client, cfg, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to call log search API: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, utils.NewUpstreamHTTPError(resp, "logs query", utils.LogsPipelineSchemaHint)
-	}
-
-	result, err := utils.DecodeLogSearchResponse(resp)
+	result, err := utils.SearchLogs(ctx, client, cfg, req)
 	if err != nil {
 		return nil, err
 	}
