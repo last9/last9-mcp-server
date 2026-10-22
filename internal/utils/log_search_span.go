@@ -18,6 +18,9 @@ const (
 	attrLogSearchPath     = attribute.Key("last9.logs.search_path")
 	attrLogSearchStrategy = attribute.Key("last9.logs.search_strategy")
 	attrLogUpstreamStatus = attribute.Key("last9.logs.upstream_status")
+
+	attrLogSearchAttempts      = attribute.Key("last9.logs.search_attempts")
+	attrLogSearchRetriedStatus = attribute.Key("last9.logs.search_retried_status")
 )
 
 // TagLogSearchPath records which search path served the call.
