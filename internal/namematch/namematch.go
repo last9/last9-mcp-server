@@ -100,6 +100,7 @@ func nearest(key string, names []string) []string {
 	for _, n := range names {
 		d := distance(key, normalize(n))
 		switch {
+		case d > limit:
 		case d < best:
 			best, hits = d, []string{n}
 		case d == best:

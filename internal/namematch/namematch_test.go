@@ -25,6 +25,8 @@ func TestResolve(t *testing.T) {
 		{"equal distance is ambiguous", "prod-uu", names, Match{Kind: Ambiguous, Candidates: []string{"prod-eu", "prod-us"}}},
 		{"short input never fuzzy matches", "st", names, Match{Kind: None}},
 		{"too far", "billing", names, Match{Kind: None}},
+		{"one edit over budget", "stapinx", names, Match{Kind: None}},
+		{"short word one edit over budget", "east", []string{"west", "staging"}, Match{Kind: None}},
 		{"blank input", "  ", names, Match{Kind: None}},
 		{"no names", "staging", nil, Match{Kind: None}},
 		{"case variants of one name are ambiguous", "api", []string{"API", "Api"}, Match{Kind: Ambiguous, Candidates: []string{"API", "Api"}}},
