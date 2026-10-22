@@ -3,10 +3,12 @@ package logs
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -82,6 +84,29 @@ func TestGetLogs_RejectsUnknownResponseModeBeforeCalling(t *testing.T) {
 	}
 	if *requests != 0 {
 		t.Errorf("%d upstream requests, want none", *requests)
+	}
+}
+
+func TestGetLogs_SummaryFitsBudgetWithCustomSeverities(t *testing.T) {
+	for _, wide := range []bool{false, true} {
+		t.Run(fmt.Sprintf("wide=%v", wide), func(t *testing.T) {
+			lines := timeoutLines(30)
+			for i := range lines {
+				lines[i].severity = fmt.Sprintf("CUSTOM_%02d", i)
+				if wide {
+					lines[i].severity += strings.Repeat("x", 160)
+				}
+			}
+			srv, _ := streamSearchServer(t, lines)
+			out := callGetLogs(t, srv, GetLogsArgs{})
+			summary, _ := out["summary"].(map[string]any)
+			if summary["lines_summarized"] != float64(len(lines)) {
+				t.Fatalf("summary = %v, want %d lines summarized", summary, len(lines))
+			}
+			if n := utf8.RuneCountInString(formatJSON(out)); n > maxSummaryChars {
+				t.Fatalf("response is %d characters, want <= %d", n, maxSummaryChars)
+			}
+		})
 	}
 }
 
