@@ -287,6 +287,36 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 	}
 }
 
+// Each step of the pipeline order must be a real stage type: a bare "scope"
+// step led models to invent {"type":"scope"} stages (lq-mf-005).
+func TestGetLogsDescriptionOrderNamesOnlyStageTypes(t *testing.T) {
+	stageTypes := map[string]bool{"filter": true, "parse": true, "aggregate": true, "window_aggregate": true}
+	var order string
+	for _, line := range strings.Split(prompts.GetLogsDescription, "\n") {
+		if rest, ok := strings.CutPrefix(line, "**Order:**"); ok {
+			// Cut at the sentence end, not any dot: a step may hold a dotted key like resources['k8s.ns'].
+			order, _, _ = strings.Cut(rest, ". ")
+		}
+	}
+	if order == "" {
+		t.Fatal("GetLogsDescription has no **Order:** line")
+	}
+	for _, step := range strings.Split(order, "→") {
+		// The stage is the leading word, so a trailing note or a sentence glued on without a space doesn't count.
+		stage := strings.TrimSpace(step)
+		if end := strings.IndexFunc(stage, func(r rune) bool { return r != '_' && (r < 'a' || r > 'z') }); end >= 0 {
+			stage = stage[:end]
+		}
+		if !stageTypes[stage] {
+			t.Errorf("**Order:** step %q is not a stage type (filter, parse, aggregate, window_aggregate)", strings.TrimSpace(step))
+		}
+	}
+	// The post-parse filter→aggregate steps must say how parsed labels are referenced; without it models grouped by bare labels (lq-101).
+	if want := `Stage types: only filter/parse/aggregate/window_aggregate; parsed labels: attributes['key'].`; !strings.Contains(prompts.GetLogsDescription, want) {
+		t.Errorf("GetLogsDescription missing %q", want)
+	}
+}
+
 func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 	desc := prompts.GetTracesDescription
 	if desc == "" {
