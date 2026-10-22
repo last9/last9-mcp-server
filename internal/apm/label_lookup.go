@@ -18,14 +18,16 @@ import (
 const sparseLookbackMinutes = 4 * 24 * 60
 
 var (
-	leadingMetricName = regexp.MustCompile(`^\s*[a-zA-Z_:][a-zA-Z0-9_:]*\s*(\{|$)`)
+	namedSelector     = regexp.MustCompile(`^\s*[a-zA-Z_:][a-zA-Z0-9_:]*\s*(\{[^{}]*\})?\s*$`)
+	bareSelector      = regexp.MustCompile(`^\s*\{[^{}]*\}\s*$`)
 	nameEqualsMatcher = regexp.MustCompile("__name__\\s*=\\s*[\"'`]")
 )
 
-// isMetricScopedSelector reports whether query names one metric, as a leading metric
-// name or an equality __name__ matcher. Only then is an empty result worth widening.
+// isMetricScopedSelector reports whether query is a single series selector naming one
+// metric, by name or an equality __name__ matcher. Only then is an empty result worth widening.
 func isMetricScopedSelector(query string) bool {
-	return leadingMetricName.MatchString(query) || nameEqualsMatcher.MatchString(query)
+	return namedSelector.MatchString(query) ||
+		(bareSelector.MatchString(query) && nameEqualsMatcher.MatchString(query))
 }
 
 // labelLookup is one prometheus_labels or prometheus_label_values call; fetch runs it over [start, end].
