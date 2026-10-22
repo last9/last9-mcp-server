@@ -71,7 +71,6 @@ func (ps *patchServer) patch(t *testing.T, ops string) (*mcp.CallToolResult, err
 	return result, err
 }
 
-// sentDashboard returns the dashboard object of the single PUT.
 func (ps *patchServer) sentDashboard(t *testing.T) map[string]any {
 	t.Helper()
 	if len(ps.puts) != 1 {
