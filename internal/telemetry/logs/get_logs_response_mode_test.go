@@ -131,10 +131,13 @@ func TestGetLogsInputSchema_DocumentsResponseMode(t *testing.T) {
 	if prop == nil {
 		t.Fatal("response_mode missing from the get_logs schema")
 	}
-	if enum, _ := prop["enum"].([]string); strings.Join(enum, ",") != "summary,raw" {
-		t.Errorf("enum = %v, want summary,raw", prop["enum"])
+	if types, _ := prop["type"].([]string); strings.Join(types, ",") != "string,null" {
+		t.Errorf("type = %v, want string,null", prop["type"])
 	}
-	if desc, _ := prop["description"].(string); !strings.Contains(desc, "default: summary") {
-		t.Errorf("description %q does not state the default", desc)
+	desc, _ := prop["description"].(string)
+	for _, want := range []string{`"summary" (default`, `"raw"`} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("description %q does not state %s", desc, want)
+		}
 	}
 }
