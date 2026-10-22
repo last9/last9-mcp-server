@@ -367,9 +367,14 @@ Read-only tools against the org's Grafana instance (via Last9's Grafana proxy). 
 - **`grafana_list_folder_dashboards`** — Dashboards in one folder (paginated)
 - **`grafana_list_datasources`** — Datasource inventory without credentials
 
+### Infrastructure Correlation
+
+- **`search_infrastructure_entities`** — Lists hosts, Kubernetes clusters, nodes or pods from live Prometheus inventory as typed ids, with attributes and dashboard links. Paginated.
+- **`get_infrastructure_context`** — Resolves one host, node or pod to its depth-one neighbors (the node a host backs, the cluster a node belongs to, the node a pod runs on), with match status and evidence labels.
+
 ### Fuzzy Name Resolution
 
-- **`did_you_mean`** — When the agent isn't sure about an entity name, this returns the closest matches from your catalog (services, environments, hosts, databases, K8s deployments/namespaces, jobs). Up to 3 suggestions with similarity scores. The server calls this automatically before most tools when a name lookup returns empty.
+- **`did_you_mean`** — When the agent isn't sure about an entity name, this returns the closest matches from your catalog (services, environments, hosts, databases, K8s deployments/namespaces/nodes, jobs). Up to 3 suggestions with similarity scores. The server calls this automatically before most tools when a name lookup returns empty.
 
 ### Service Profile
 
@@ -959,9 +964,30 @@ Permanently deletes a channel that has no attachments; detach its attachments fi
 ### did_you_mean
 
 - `query` (string, required): The name to search for — partial, misspelled, or abbreviated.
-- `type` (string, optional): Restrict to entity type: `service`, `environment`, `host`, `database`, `k8s_deployment`, `k8s_namespace`, `job`.
+- `type` (string, optional): Restrict to entity type: `service`, `environment`, `host`, `database`, `k8s_deployment`, `k8s_namespace`, `k8s_node`, `job`.
 
 Returns up to 3 closest matches with similarity scores. Use this before any tool call where the entity name is uncertain. If a previous call returned empty results, try this before retrying.
+
+### search_infrastructure_entities
+
+- `entity_type` (string, required): `host`, `k8s_cluster`, `k8s_node` or `k8s_pod`.
+- `query` (string, optional): Case-insensitive substring filter on the entity name. Regex metacharacters are literal.
+- `limit` (integer, optional): Page size. Default 25, max 100.
+- `cursor` (string, optional): `next_cursor` from the previous page.
+- `timestamp` (integer, optional): Unix seconds. Defaults to now.
+- `cluster_id` (string, optional): Datasource UUID used in returned ids. Defaults to the configured datasource.
+
+Returns typed ids (`host:…`, `k8s-cluster:…`, `k8s-node:…`, `k8s-pod:…`), key attributes, dashboard hrefs, and `next_cursor` when more pages exist. At most 500 matching entities are paged; `truncated` is true when more matched.
+
+### get_infrastructure_context
+
+- `entity_type` (string, required): `host`, `k8s_node` or `k8s_pod`. `k8s_cluster` is not valid input.
+- `selectors` (object, required): `host` takes `instance`, `host_id` or `host_name` (optional `job`); `k8s_node` takes `cluster` and `node`; `k8s_pod` takes `cluster` plus `uid`, or `cluster` plus `namespace` and `pod`.
+- `timestamp` (integer, optional): Unix seconds. Defaults to now.
+- `cluster_id` (string, optional): Datasource UUID. Defaults to the configured datasource.
+- `region` (string, optional): Defaults to the configured datasource region.
+
+Returns the anchor entity, match status (`matched`, `not_found`, `stale`, `ambiguous`), observed edges (`scheduled_on`, `member_of`, `same_machine`) with evidence labels, and a dashboard href. Present ambiguous candidates instead of picking one.
 
 ### get_service_profile
 

@@ -16,6 +16,7 @@ import (
 	"last9-mcp/internal/changeimpact"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/grafana"
+	"last9-mcp/internal/infrastructure"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/suggest"
@@ -618,6 +619,18 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Annotations: readOnlyTool("Get Database Server Metrics"),
 		Description: prompts.GetDatabaseServerMetricsDescription,
 	}, apm.NewGetDatabaseServerMetricsHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_infrastructure_context",
+		Annotations: readOnlyTool("Get Infrastructure Context"),
+		Description: prompts.GetInfrastructureContextDescription,
+	}, infrastructure.NewGetInfrastructureContextHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "search_infrastructure_entities",
+		Annotations: readOnlyTool("Search Infrastructure Entities"),
+		Description: prompts.SearchInfrastructureEntitiesDescription,
+	}, infrastructure.NewSearchInfrastructureEntitiesHandler(client, cfg)))
 
 	// Register did_you_mean tool
 	reg(registerIfAllowed(server, gate, &mcp.Tool{

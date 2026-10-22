@@ -13,6 +13,7 @@
 {{- $changes := tools "get_change_events" "analyze_change_impact" -}}
 {{- $deviations := tools "get_apm_service_deviations" "get_trace_attribute_deviations" -}}
 {{- $scoped := tools "get_service_logs" "get_log_patterns" "get_emerging_log_patterns" "get_service_traces" "get_exceptions" "get_trace_waterfall" -}}
+{{- $infrastructure := tools "search_infrastructure_entities" "get_infrastructure_context" -}}
 {{- $databases := tools "get_databases" "get_database_slow_queries" "get_database_queries" "get_database_server_metrics" -}}
 {{- $profiles := tools "get_profile_summary" "get_top_functions" "get_flamegraph" -}}
 {{- $raw := tools "get_logs" "get_traces" -}}
@@ -61,7 +62,7 @@ Never guess service, environment, attribute, metric or label names, or dashboard
 - Dashboards, snapshots and Grafana folders: {{.}}{{with $dashboardReads}}; open one by id with {{.}}{{end}}.
 {{- end}}
 {{- end}}
-{{- if or $serviceProfile $health $alerts $changes $deviations $scoped $databases $profiles}}
+{{- if or $serviceProfile $health $alerts $changes $deviations $scoped $databases $infrastructure $profiles}}
 
 ## Prefer dedicated tools
 They return computed answers with the right scoping; reach for them before writing a query.
@@ -85,6 +86,9 @@ They return computed answers with the right scoping; reach for them before writi
 {{- end}}
 {{- with $databases}}
 - Databases: {{.}}.
+{{- end}}
+{{- with $infrastructure}}
+- Hosts, clusters, nodes, pods: {{.}}.
 {{- end}}
 {{- with $profiles}}
 - Profiles: {{.}}.

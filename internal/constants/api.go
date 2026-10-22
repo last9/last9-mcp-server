@@ -69,6 +69,7 @@ const (
 	HeaderUserAgent       = "User-Agent"
 	HeaderContentTypeJSON = "application/json"
 	HeaderAcceptJSON      = "application/json"
+	HeaderRegion          = "region"
 )
 
 // Bearer token prefix
