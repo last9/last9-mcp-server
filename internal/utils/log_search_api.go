@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/otel/trace"
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
@@ -110,6 +113,8 @@ func MakeLogSearchAPI(
 	return resp, nil
 }
 
+var logSearchRetryDelay = time.Second
+
 // ErrLogSearchTimeout matches a search that outlived its time budget.
 var ErrLogSearchTimeout = errors.New("log search timed out")
 
@@ -138,6 +143,7 @@ func logSearchBudget(cfg models.Config) time.Duration {
 func SearchLogs(
 	ctx context.Context, client *http.Client, cfg models.Config, req LogSearchRequest,
 ) (map[string]any, error) {
+	TagLogSearchPath(ctx, LogSearchPathAPI)
 	budget := logSearchBudget(cfg)
 	searchCtx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
@@ -153,16 +159,53 @@ func SearchLogs(
 func searchLogs(
 	ctx context.Context, client *http.Client, cfg models.Config, req LogSearchRequest,
 ) (map[string]any, error) {
-	resp, err := MakeLogSearchAPI(ctx, client, cfg, req)
+	resp, err := postLogSearchWithRetry(ctx, client, cfg, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call log search API: %w", err)
 	}
 	defer resp.Body.Close()
 
+	TagLogUpstreamStatus(ctx, resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
 		return nil, NewUpstreamHTTPError(resp, req.Op, LogsPipelineSchemaHint)
 	}
-	return DecodeLogSearchResponse(resp)
+	result, err := DecodeLogSearchResponse(resp)
+	if err != nil {
+		return nil, err
+	}
+	tagLogSearchStrategy(ctx, result)
+	return result, nil
+}
+
+// postLogSearchWithRetry retries a 502 or 503 once: the search is read-only and
+// those name a gateway or backend that was briefly unavailable. Other statuses
+// are returned as is, since an unchanged rerun would fail the same way.
+func postLogSearchWithRetry(
+	ctx context.Context, client *http.Client, cfg models.Config, req LogSearchRequest,
+) (*http.Response, error) {
+	span := trace.SpanFromContext(ctx)
+	resp, err := MakeLogSearchAPI(ctx, client, cfg, req)
+	if err != nil || !retryableLogSearchStatus(resp.StatusCode) {
+		span.SetAttributes(attrLogSearchAttempts.Int(1))
+		return resp, err
+	}
+
+	span.SetAttributes(attrLogSearchAttempts.Int(2), attrLogSearchRetriedStatus.Int(resp.StatusCode))
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, UpstreamBodyLimit))
+	resp.Body.Close()
+
+	timer := time.NewTimer(logSearchRetryDelay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+	}
+	return MakeLogSearchAPI(ctx, client, cfg, req)
+}
+
+func retryableLogSearchStatus(status int) bool {
+	return status == http.StatusBadGateway || status == http.StatusServiceUnavailable
 }
 
 func isTimeout(ctx context.Context, err error) bool {

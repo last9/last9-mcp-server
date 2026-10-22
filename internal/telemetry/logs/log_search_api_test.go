@@ -287,7 +287,7 @@ func TestFetchLogJSONQuery_APIMode_SlowSearchReturnsAdviceWithinBudget(t *testin
 
 	started := time.Now()
 	_, err := fetchLogJSONQuery(
-		context.Background(), srv.Client(), cfg, []map[string]interface{}{{"type": "filter"}},
+		utils.DeadlineContext(t, 5*time.Second), srv.Client(), cfg, []map[string]interface{}{{"type": "filter"}},
 		1_700_000_000_000, 1_700_000_600_000, GetLogsArgs{Limit: 100})
 	if !errors.Is(err, utils.ErrLogSearchTimeout) {
 		t.Fatalf("err = %v, want utils.ErrLogSearchTimeout", err)
