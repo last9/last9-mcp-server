@@ -465,7 +465,7 @@ func executeLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	return result, nil

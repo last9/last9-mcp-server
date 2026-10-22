@@ -35,6 +35,15 @@ func TestToolErrorsTagUpstreamFailuresAsSystemErrors(t *testing.T) {
 		}
 	}))
 	t.Cleanup(hanging.Close)
+	stalledBody := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	t.Cleanup(stalledBody.Close)
 	t.Cleanup(func() { close(release) })
 	unreachable := httptest.NewServer(http.NotFoundHandler())
 	unreachable.Close()
@@ -49,7 +58,9 @@ func TestToolErrorsTagUpstreamFailuresAsSystemErrors(t *testing.T) {
 	}{
 		{"log search HTTP 503", statusServer(http.StatusServiceUnavailable).URL, true, http.DefaultClient, "get_logs", getLogsTestArgs, true},
 		{"log search timeout", hanging.URL, true, &http.Client{Timeout: 50 * time.Millisecond}, "get_logs", getLogsTestArgs, true},
+		{"log search body timeout", stalledBody.URL, true, &http.Client{Timeout: 50 * time.Millisecond}, "get_logs", getLogsTestArgs, true},
 		{"chunked logs timeout", hanging.URL, false, &http.Client{Timeout: 50 * time.Millisecond}, "get_logs", getLogsTestArgs, true},
+		{"chunked logs body timeout", stalledBody.URL, false, &http.Client{Timeout: 50 * time.Millisecond}, "get_logs", getLogsTestArgs, true},
 		{"trace service unreachable", unreachable.URL, false, http.DefaultClient, "get_exceptions", `{}`, true},
 		{"log search HTTP 400 bad pipeline", statusServer(http.StatusBadRequest).URL, true, http.DefaultClient, "get_logs", getLogsTestArgs, false},
 	}
