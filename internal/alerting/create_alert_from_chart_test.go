@@ -371,8 +371,6 @@ const draftSentence = "Created as a disabled draft; it will not fire. Promote it
 
 type chartRequest struct{ method, path, body string }
 
-// chartDraftServer answers the chart create with createReply and the follow-up disable
-// with patch, recording every request in order; the returned func snapshots them.
 func chartDraftServer(t *testing.T, createReply string, patch http.HandlerFunc) (*httptest.Server, func() []chartRequest) {
 	t.Helper()
 	// A dropped connection gives the race detector no happens-before edge between the
@@ -400,7 +398,6 @@ func chartDraftServer(t *testing.T, createReply string, patch http.HandlerFunc) 
 
 func patchOK(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{}`)) }
 
-// dropConnection closes the connection without answering, as a proxy dropping the request would.
 func dropConnection(w http.ResponseWriter, _ *http.Request) {
 	conn, _, err := w.(http.Hijacker).Hijack()
 	if err != nil {
