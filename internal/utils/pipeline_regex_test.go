@@ -12,6 +12,8 @@ func TestCheckPipelineRegex(t *testing.T) {
 		`(?P<status>\d{3})`,
 		`(?i)timeout|refused`,
 		`checkout.*`,
+		`\C+`,           // engine accepts \C (any byte); Go's regexp does not
+		`^\e\[[0-9;]*m`, // engine accepts \e (ESC); Go's regexp does not
 	}
 	for _, pattern := range valid {
 		if err := CheckPipelineRegex(pattern, "q.$regex[1]"); err != nil {
@@ -25,6 +27,7 @@ func TestCheckPipelineRegex(t *testing.T) {
 		`(\w+)\s+\1`,    // backreference
 		`[0-9]++`,       // possessive quantifier
 		`(unclosed`,
+		`\\C(`, // escaped backslash, then an unclosed group
 	}
 	for _, pattern := range invalid {
 		err := CheckPipelineRegex(pattern, "q.$regex[1]")
