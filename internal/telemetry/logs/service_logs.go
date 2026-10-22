@@ -335,6 +335,7 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 	if cfg.UseLogSearchAPI {
 		return fetchServiceLogsViaSearchAPI(ctx, client, cfg, service, startTime, endTime, limit, logjsonQuery, index)
 	}
+	utils.TagLogSearchPath(ctx, utils.LogSearchPathChunked)
 
 	startMs := startTime.UnixMilli()
 	endMs := endTime.UnixMilli()

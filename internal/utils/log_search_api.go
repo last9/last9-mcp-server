@@ -138,6 +138,7 @@ func logSearchBudget(cfg models.Config) time.Duration {
 func SearchLogs(
 	ctx context.Context, client *http.Client, cfg models.Config, req LogSearchRequest,
 ) (map[string]any, error) {
+	TagLogSearchPath(ctx, LogSearchPathAPI)
 	budget := logSearchBudget(cfg)
 	searchCtx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
@@ -159,10 +160,16 @@ func searchLogs(
 	}
 	defer resp.Body.Close()
 
+	TagLogUpstreamStatus(ctx, resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
 		return nil, NewUpstreamHTTPError(resp, req.Op, LogsPipelineSchemaHint)
 	}
-	return DecodeLogSearchResponse(resp)
+	result, err := DecodeLogSearchResponse(resp)
+	if err != nil {
+		return nil, err
+	}
+	tagLogSearchStrategy(ctx, result)
+	return result, nil
 }
 
 func isTimeout(ctx context.Context, err error) bool {

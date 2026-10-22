@@ -106,6 +106,7 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 	if cfg.UseLogSearchAPI {
 		return fetchViaLogSearchAPI(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
 	}
+	utils.TagLogSearchPath(ctx, utils.LogSearchPathChunked)
 
 	chunkingDebug := chunkingDebugEnabled()
 
@@ -457,6 +458,7 @@ func executeLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 	}
 	defer resp.Body.Close()
 
+	utils.TagLogUpstreamStatus(ctx, resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
 		return nil, utils.NewUpstreamHTTPError(resp, "logs query", utils.LogsPipelineSchemaHint)
 	}

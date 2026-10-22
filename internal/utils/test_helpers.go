@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"errors"
 	"math/rand/v2"
 	"net/http"
@@ -12,6 +13,9 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
@@ -217,3 +221,22 @@ func GetTextContent(t *testing.T, result *mcp.CallToolResult) string {
 	return textContent.Text
 }
 
+// RecordedSpanContext stands in for the tool span the MCP SDK puts on a
+// handler's context. The returned func ends the span and returns its attributes.
+func RecordedSpanContext(t *testing.T) (context.Context, func() map[attribute.Key]attribute.Value) {
+	t.Helper()
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
+	ctx, span := provider.Tracer("test").Start(context.Background(), "tools/call")
+	return ctx, func() map[attribute.Key]attribute.Value {
+		span.End()
+		attrs := map[attribute.Key]attribute.Value{}
+		for _, ended := range recorder.Ended() {
+			for _, kv := range ended.Attributes() {
+				attrs[kv.Key] = kv.Value
+			}
+		}
+		return attrs
+	}
+}
