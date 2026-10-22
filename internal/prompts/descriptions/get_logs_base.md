@@ -2,7 +2,7 @@ Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`cond
 
 **Profile:** service→`get_service_profile`; `signal_shape`/`telemetry`. Stale→discovery; 400→`get_log_attributes_for_pipeline`, retry.
 
-**Order:** filter (scope: service/env/tenant)→parse→filter→aggregate. Stage types: only filter/parse/aggregate/window_aggregate; no "scope" stage.
+**Order:** filter (scope: service/env/tenant)→parse→filter→aggregate. Stage types: only filter/parse/aggregate/window_aggregate; parsed labels: attributes['key'].
 
 **Filter:** `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`. Predicates: one standalone, many in `$and`. Ops: `$and`/`$or`/`$not`, `$eq`/`$neq` (is not X; never `$not`+`$eq`)/`$gt`/`$gte`/`$lt`/`$lte`, `$regex`. Body words: `$containsWords` args `[field,word]` (e.g. `["Body","timeout"]`); ALL→`$and`; ANY→`$or`; never `$icontainsWords`.
 

@@ -311,7 +311,8 @@ func TestGetLogsDescriptionOrderNamesOnlyStageTypes(t *testing.T) {
 			t.Errorf("**Order:** step %q is not a stage type (filter, parse, aggregate, window_aggregate)", strings.TrimSpace(step))
 		}
 	}
-	if want := `Stage types: only filter/parse/aggregate/window_aggregate; no "scope" stage.`; !strings.Contains(prompts.GetLogsDescription, want) {
+	// The post-parse filter→aggregate steps must say how parsed labels are referenced; without it models grouped by bare labels (lq-101).
+	if want := `Stage types: only filter/parse/aggregate/window_aggregate; parsed labels: attributes['key'].`; !strings.Contains(prompts.GetLogsDescription, want) {
 		t.Errorf("GetLogsDescription missing %q", want)
 	}
 }
