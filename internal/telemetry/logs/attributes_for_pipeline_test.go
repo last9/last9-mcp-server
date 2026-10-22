@@ -42,6 +42,8 @@ func TestLogFieldFilterField(t *testing.T) {
 		{"severity", "SeverityText"},
 		{"body", "Body"},
 		{"trace_id", "TraceId"},
+		{"Trace_Id", "attributes['Trace_Id']"}, // attribute names are case-sensitive: only exact trace_id is the column
+		{"foo_id", "attributes['foo_id']"},
 		{"span_id", "attributes['span_id']"}, // logs API rejects SpanId: HTTP 400 "invalid JSON pipeline"
 		{"status_code", "attributes['status_code']"},
 		{"http.status_code", "attributes['http.status_code']"},
