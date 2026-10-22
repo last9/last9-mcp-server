@@ -315,6 +315,25 @@ func TestGetAlertConfigHistoryFollowsIsDisabled(t *testing.T) {
 	}
 }
 
+func TestGetAlertConfigUnsupportedMonitorStateIsUnknown(t *testing.T) {
+	state := alertConfigTestServerState{
+		alertRules:   AlertConfigResponse{{ID: "rule-1", State: "active", EntityID: "entity-1"}},
+		monitorRules: []AlertRuleData{{RuleID: "rule-1", State: "silenced"}},
+	}
+
+	text, _, err := executeGetAlertConfig(t, &state, GetAlertConfigArgs{RuleID: "rule-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Count(text, " unknown") != evaluationHistorySamples {
+		t.Errorf("want %d unknown samples:\n%s", evaluationHistorySamples, text)
+	}
+	if strings.Contains(text, "lookup failed") {
+		t.Errorf("a returned row was reported as a failed lookup:\n%s", text)
+	}
+}
+
 func TestGetAlertConfigPrependsEvaluationNote(t *testing.T) {
 	state := alertConfigTestServerState{
 		alertRules:    enabledRules(evaluationHistoryMaxRules + 1),
@@ -335,7 +354,8 @@ func TestGetAlertConfigDescriptionStatesEvaluationLimits(t *testing.T) {
 	for _, phrase := range []string{
 		fmt.Sprintf("%d one-minute samples, newest first", evaluationHistorySamples),
 		"the newest ends 1-2 minutes before the call",
-		"unknown = no monitor row for it",
+		"unknown = no monitor row\n",
+		"or another state (no_data, silenced)",
 		"Disabled rules show none",
 		fmt.Sprintf("more than %d enabled rules match", evaluationHistoryMaxRules),
 	} {

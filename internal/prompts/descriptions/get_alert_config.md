@@ -50,9 +50,9 @@
 	- state: disabled, error-stale, muted or active, in that precedence
 	- disabled, muted_until (none, indefinitely or RFC3339 UTC), recurring_mute_schedule (timezone, one "Mon,Tue 22:00-06:00" line per window) and next_transition
 	- Recent Evaluations: 5 one-minute samples, newest first, labelled by the UTC minute they end
-	  (the newest ends 1-2 minutes before the call): firing, ok, or unknown = no monitor row for it
-	  (not yet evaluated, or lookup failed, noted at top).
-	  Disabled rules show none. Omitted for all rules when more than 25 enabled rules match.
+	  (the newest ends 1-2 minutes before the call): firing, ok, or unknown = no monitor row
+	  (not yet evaluated, or lookup failed, noted at top) or another state (no_data, silenced).
+	  Disabled rules show none. Omitted for all when more than 25 enabled rules match.
 	- severity: Alert severity level
 	- algorithm: Detection algorithm (static_threshold, high_spike, inc_trend, etc.)
 	- created_at, updated_at: Rule creation and last-modified times
