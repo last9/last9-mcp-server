@@ -142,11 +142,10 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 		if strings.TrimSpace(resp.ID) == "" {
 			return utils.ToolErrorResult("alert intelligence create returned success but no rule id; do not assume the rule was created - verify via get_alert_config before retrying"), nil, nil
 		}
-		groupID := resp.GroupID
-		if groupID == "" {
-			groupID = req.GroupID
+		if resp.GroupID == "" {
+			resp.GroupID = req.GroupID
 		}
-		if failure := disableChartRule(ctx, api, groupID, resp.ID); failure != nil {
+		if failure := disableChartRule(ctx, api, resp.GroupID, resp.ID); failure != nil {
 			return failure, nil, nil
 		}
 		link := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildAlertingGroupsLink()
