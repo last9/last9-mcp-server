@@ -39,6 +39,7 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 		if err := SanitizeTraceJSONQuery(args.TracejsonQuery); err != nil {
 			return nil, nil, err
 		}
+		boundFinalSelectLimit(args.TracejsonQuery, effectiveGetTracesLimit(cfg, args.Limit))
 
 		// Handle tracejson_query directly
 		result, err := handleTraceJSONQuery(ctx, client, cfg, args.TracejsonQuery, args)
@@ -111,11 +112,12 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 	// Aggregate pipelines (group-by, avg/median/quantile/stddev, etc.) must
 	// never be chunked: concatenating per-chunk aggregate results produces
 	// duplicate group-by keys and mathematically wrong aggregates. Run the
-	// full window as a single request instead.
-	if utils.PipelineHasAggregateStage(args.TracejsonQuery) {
+	// full window as a single request instead. A select's order/limit is a
+	// top-N over the whole window, so it is never chunked either.
+	if utils.PipelineHasAggregateStage(args.TracejsonQuery) || utils.PipelineHasSelectStage(args.TracejsonQuery) {
 		if chunkingDebug {
 			log.Printf(
-				"[chunking] get_traces aggregate stage detected, using single request start_ms=%d end_ms=%d effective_limit=%d",
+				"[chunking] get_traces aggregate or select stage detected, using single request start_ms=%d end_ms=%d effective_limit=%d",
 				startMs,
 				endMs,
 				effectiveLimit,
