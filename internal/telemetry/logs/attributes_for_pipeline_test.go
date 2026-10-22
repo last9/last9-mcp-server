@@ -417,6 +417,53 @@ func TestGetLogAttributesForPipeline_SeverityFamilyDedup(t *testing.T) {
 	}
 }
 
+// TestGetLogAttributesForPipeline_TraceContextIndexedOnce mirrors a service
+// whose indexed series and logfmt Body both carry trace_id/span_id: each name
+// is listed once, as the indexed entry with a filter the logs API accepts
+// (TraceId and attributes['span_id'] both return rows live; SpanId is a 400).
+func TestGetLogAttributesForPipeline_TraceContextIndexedOnce(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"gw","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7"}]}`
+	samples := []string{
+		`level=info trace_id=4bf92f3577b34da6a3ce929d0e0e4736 span_id=00f067aa0ba902b7 msg="served"`,
+		`level=info trace_id=5bf92f3577b34da6a3ce929d0e0e4736 span_id=10f067aa0ba902b7 msg="served"`,
+	}
+	server := bodySamplingServer(t, series, samples, nil)
+	defer server.Close()
+
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), testAttrConfig(server.URL))
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	attrs := decodeLogAttributes(t, res)
+
+	wantHints := map[string]string{
+		"trace_id": `{"$eq": ["TraceId", "<value>"]}`,
+		"span_id":  `{"$eq": ["attributes['span_id']", "<value>"]}`,
+	}
+	for name, wantHint := range wantHints {
+		var got []LogAttribute
+		for _, a := range attrs {
+			if a.Name == name {
+				got = append(got, a)
+			}
+		}
+		if len(got) != 1 {
+			t.Errorf("%s: want exactly 1 entry, got %d: %+v", name, len(got), got)
+			continue
+		}
+		if got[0].Source == "body" || got[0].Hint != wantHint {
+			t.Errorf("%s: want indexed entry with hint %s, got %+v", name, wantHint, got[0])
+		}
+	}
+	// Body keys with no indexed counterpart still surface.
+	if msg := attrByName(attrs, "msg"); msg == nil || msg.Source != "body" {
+		t.Errorf("expected body-derived 'msg', got: %v", attrs)
+	}
+}
+
 // TestGetLogAttributesForPipeline_BodyNotJSON verifies a plain-text Body that
 // is neither JSON, logfmt, nor carries a severity token falls through to the
 // plaintext fallback: exactly one "body" entry with a redacted sample_body

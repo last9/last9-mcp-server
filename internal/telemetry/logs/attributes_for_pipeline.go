@@ -699,10 +699,12 @@ func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 	}
 
 	out := make([]LogAttribute, 0, len(names))
+	indexedNames := make(map[string]struct{}, len(names))
 	indexedFilterFields := make(map[string]struct{}, len(names))
 	indexedHasSeverity := hasIndexedSeverityFamily(names)
 	for _, name := range names {
 		filterField := logFieldFilterField(name)
+		indexedNames[name] = struct{}{}
 		indexedFilterFields[filterField] = struct{}{}
 		out = append(out, LogAttribute{
 			Name:        name,
@@ -712,7 +714,8 @@ func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 	}
 
 	// Merge: drop a body-derived entry when (a) an indexed entry already
-	// exposes the SAME filter_field (true duplicate), or (b) it is a
+	// exposes the SAME filter_field or the same name (trace_id maps to TraceId
+	// when indexed but attributes['trace_id'] when parsed), or (b) it is a
 	// severity-family name (level/severity/SeverityText) and any indexed
 	// severity-family field is already present. Indexed severity is the
 	// directly-filterable signal the product UI renders; a parallel
@@ -745,6 +748,9 @@ func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 					}
 				}
 			}
+			continue
+		}
+		if _, dup := indexedNames[attr.Name]; dup {
 			continue
 		}
 		if indexedHasSeverity && isSeverityFamilyName(attr.Name) {
