@@ -84,6 +84,12 @@ func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 			}
 		}
 
+		if stageType == "transform" {
+			if err := normalizeTransformStage(stage, path); err != nil {
+				return err
+			}
+		}
+
 		if parser, _ := stage["parser"].(string); stageType == "parse" && parser == "regexp" {
 			if pattern, ok := stage["pattern"].(string); ok {
 				if err := utils.CheckPipelineRegex(pattern, path+".pattern"); err != nil {
