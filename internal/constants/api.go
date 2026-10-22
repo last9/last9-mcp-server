@@ -59,6 +59,11 @@ const (
 	// PerChunkHTTPTimeout bounds a single chunked upstream call so one slow
 	// chunk can't stall the whole tool invocation.
 	PerChunkHTTPTimeout = 30 * time.Second
+
+	// LogSearchTimeout bounds one server-side log search. Well under
+	// DefaultHTTPTimeout so a slow body search fails fast with narrowing advice
+	// instead of holding the agent for the full client timeout.
+	LogSearchTimeout = 90 * time.Second
 )
 
 // HTTP Headers
