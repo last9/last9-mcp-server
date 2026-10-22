@@ -44,16 +44,6 @@ type ServiceEnvironmentsArgs struct {
 	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Optional service name to filter environments for (e.g. my-api). When omitted, returns environments across all services."`
 }
 
-type ServicePerformanceDetailsArgs struct {
-	ServiceName     string  `json:"service_name" jsonschema:"(Required) Name of the service to get performance details for"`
-	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
-	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
-	Env             string  `json:"env,omitempty" jsonschema:"(Optional) Exact environment name, e.g. production. Default all environments (empty or .*). Anchored forms like ^production$ are accepted and matched exactly. Alternation (a|b) and wildcards (prod.*) are rejected; list names with get_service_environments, or use get_service_summary for regex matching."`
-	TopN            int     `json:"top_n,omitempty" jsonschema:"Max entries to return for top_operations_by_response_time, top_operations_by_error_rate, and top_errors (default: 10). Values above 100 clamp to 100."`
-	IncludeSeries   bool    `json:"include_series,omitempty" jsonschema:"(Optional) true returns every point of every time series (can be hundreds of KB). Default false: per-series percentiles, baseline delta and change points."`
-}
-
 type ServiceOperationsSummaryArgs struct {
 	ServiceName     string  `json:"service_name" jsonschema:"(Required) Name of the service to get operations summary for"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
