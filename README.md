@@ -97,6 +97,8 @@ brew install last9/tap/last9-mcp
 
 **NPM:**
 
+Requires Node.js 22.23.4+, 24.22.1+ or 26.12.1+: earlier releases accept TLS certificates from the compromised eMudhra intermediates when the installer downloads the binary.
+
 ```bash
 npm install -g @last9/mcp-server@latest
 # or directly:
