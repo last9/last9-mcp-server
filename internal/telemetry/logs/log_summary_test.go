@@ -139,6 +139,17 @@ func TestSummarizeLogResult_SummarizesPastThreshold(t *testing.T) {
 	}
 }
 
+func TestSummarizeLogResult_ClampsWindowEndIntoLastBucket(t *testing.T) {
+	lines := repeatedLines(maxRawLinesInSummaryMode, "ERROR", func(i int) string { return "timeout" })
+	lines = append(lines, summaryTestLine{severity: "ERROR", offset: 10 * time.Minute, message: "timeout"})
+
+	summary := decodeSummary(t, summarizeLogResult(streamsResult(lines), summaryTestStartMs, summaryTestEndMs, false))
+	wantCounts := []int{20, 0, 0, 0, 0, 0, 0, 0, 0, 1}
+	if fmt.Sprint(summary.Histogram.Counts) != fmt.Sprint(wantCounts) {
+		t.Errorf("histogram counts = %v, want %v with the window-end line in the last bucket", summary.Histogram.Counts, wantCounts)
+	}
+}
+
 // A limit-truncated result holds only the newest lines, so a histogram over
 // the whole window would read as a spike at its end.
 func TestSummarizeLogResult_TruncatedBucketsOverReturnedLines(t *testing.T) {
