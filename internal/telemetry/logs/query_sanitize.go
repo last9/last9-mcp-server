@@ -40,6 +40,7 @@ var logFilterFieldOperators = map[string]int{
 	"$neq":               0,
 	"$notcontains":       0,
 	"$notcontainsWords":  0,
+	"$notnull":           0,
 	"$notregex":          0,
 	"$regex":             0,
 }
@@ -134,7 +135,7 @@ func sanitizeLogCondition(value interface{}, path string, aliases map[string]str
 					LogValidationInvalidField,
 					path,
 					fmt.Sprintf(
-						"invalid filter condition key %q at %s: keys must be operators ($eq, $neq, $ieq, $ineq, $gt, $gte, $lt, $lte, $contains, $notcontains, $icontains, $inotcontains, $containsWords, $notcontainsWords, $icontainsWords, $inotcontainsWords, $regex, $notregex, $iregex, $inotregex) or logical operators ($and, $or, $not); use the form {\"$eq\": [field, value]} — for example {\"$eq\": [\"ServiceName\", \"checkout\"]} — and call get_log_attributes if you need the exact field name",
+						"invalid filter condition key %q at %s: keys must be operators ($eq, $neq, $ieq, $ineq, $gt, $gte, $lt, $lte, $contains, $notcontains, $icontains, $inotcontains, $containsWords, $notcontainsWords, $icontainsWords, $inotcontainsWords, $regex, $notregex, $iregex, $inotregex, $notnull) or logical operators ($and, $or, $not); use the form {\"$eq\": [field, value]} — for example {\"$eq\": [\"ServiceName\", \"checkout\"]} — and call get_log_attributes if you need the exact field name",
 						key,
 						path,
 					),
