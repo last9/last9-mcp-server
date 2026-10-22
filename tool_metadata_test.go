@@ -28,13 +28,13 @@ var descriptionBudgetOverrides = map[string]int{
 	"get_alert_config":                4600,
 	"get_trace_attribute_deviations":  4400,
 	"analyze_change_impact":           3600,
-	"get_logs":                        3475,
+	"get_logs":                        3575,
 	"create_dashboard":                3500,
 	"prometheus_range_query":          3000,
 	"create_alert_from_chart":         3000,
 	"get_log_attributes_for_pipeline": 2800,
 	"get_trace_waterfall":             2700,
-	"get_traces":                      2700,
+	"get_traces":                      2900,
 	"get_service_logs":                2700,
 	"create_alert":                    2800,
 	"get_service_performance_details": 2800,
@@ -45,7 +45,7 @@ var descriptionBudgetOverrides = map[string]int{
 // servedSizeBudgets cap description plus compact input schema JSON for tools
 // whose hand-built schema weighs as much as their description.
 var servedSizeBudgets = map[string]int{
-	"get_logs": 7520,
+	"get_logs": 7620,
 }
 
 // maxSchemaDepth bounds input schema nesting (root = 1). The dashboard write
@@ -272,8 +272,8 @@ func TestToolMetadataViolationsCatchBadFixtures(t *testing.T) {
 		{name: "legacy name", tool: &mcp.Tool{Name: "prometheus_labels", Description: "ok", InputSchema: okSchema}},
 		{name: "namespaced verb", tool: &mcp.Tool{Name: "grafana_list_fixtures", Description: "ok", InputSchema: okSchema}},
 		{name: "over default budget", tool: &mcp.Tool{Name: "get_fixture", Description: strings.Repeat("x", defaultDescriptionBudget+1), InputSchema: okSchema}, want: "budget 2500"},
-		{name: "over override budget", tool: &mcp.Tool{Name: "get_logs", Description: strings.Repeat("x", descriptionBudgetOverrides["get_logs"]+1), InputSchema: okSchema}, want: "budget 3475"},
-		{name: "over served-size budget", tool: &mcp.Tool{Name: "get_logs", Description: "ok", InputSchema: map[string]any{"description": strings.Repeat("x", servedSizeBudgets["get_logs"])}}, want: "served-size budget 7520"},
+		{name: "over override budget", tool: &mcp.Tool{Name: "get_logs", Description: strings.Repeat("x", descriptionBudgetOverrides["get_logs"]+1), InputSchema: okSchema}, want: "budget 3575"},
+		{name: "over served-size budget", tool: &mcp.Tool{Name: "get_logs", Description: "ok", InputSchema: map[string]any{"description": strings.Repeat("x", servedSizeBudgets["get_logs"])}}, want: "served-size budget 7620"},
 		{name: "unregistered resource", tool: &mcp.Tool{Name: "get_fixture", Description: "See last9://reference/nope.", InputSchema: okSchema}, want: "unregistered resource last9://reference/nope"},
 		{name: "integer enum", tool: &mcp.Tool{Name: "get_fixture", Description: "ok", InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 			"version": map[string]any{"type": "integer", "enum": []any{float64(1)}},
