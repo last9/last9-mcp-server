@@ -77,6 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_logs` and `get_traces` now explicitly show compact JSON stage-array examples and reject SQL-like query construction in their tool descriptions, so description-only clients can form valid pipelines without fetching a reference manual (#309).
 
 ### Changed
+- **Breaking:** the npm package `@last9/mcp-server` now requires Node.js `^22.23.4 || ^24.22.1 || >=26.12.1` (was `>=14`), the first release of each supported line that rejects TLS chains through the compromised eMudhra intermediates (nodejs/node#66871). Its `postinstall` downloads the server binary over Node's `https`, so older runtimes could accept a forged GitHub certificate; npm now warns on them, and refuses with `engine-strict`. The npm publish job pins Node 24.22.1 (#402).
 - When `get_logs` or `get_traces` is served, the server instructions' raw-query section now states that the time window goes in `start_time_iso`/`end_time_iso` (or `lookback_minutes`), never as `Timestamp` filters in the pipeline, instead of relying on the tool descriptions alone (#379).
 - Tool empty-result, validation, timeout/rate-limit, and truncation responses now include actionable retry guidance so agents can widen or narrow time windows, verify filters, discover names with `did_you_mean`, and avoid unchanged retries instead of stopping at generic empty/error messages (#320).
 - The `alerts` toolset now also serves `get_change_events`, the input `analyze_change_impact` takes as `change_event` (#352).
