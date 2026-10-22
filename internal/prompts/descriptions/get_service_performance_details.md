@@ -4,7 +4,7 @@ Service performance metrics over a time range.
 
 Returns: service name, env, throughput (rpm), error rate (rpm, 4xx/5xx), error percentage, response times in seconds (p50, p90, p95, avg, max), apdex score, availability (%), top operations by response time and error rate, top errors/exceptions by count (see `top_n`).
 
-By default each metric is summarized per series: `points`, `missing_points` (no-traffic availability buckets, excluded), `min`, `p50`, `p90`, `p99` (nearest-rank), `max`, `mean`, `last`, `baseline_mean` (first half), `delta_pct` (second half vs baseline; absent if baseline is 0) and up to 3 `change_points` (`timestamp`, `before_mean`, `after_mean`). Up to 5 series per metric by highest mean; `series_omitted` counts the rest.
+By default each metric is summarized per series: `points`, `missing_points` (no-traffic availability buckets, excluded), `min`, `p50`, `p90`, `p99` (nearest-rank), `max`, `mean`, `last`, `baseline_mean` (first half of valid points), `delta_pct` (second half vs baseline; absent if 0) and up to 3 `change_points` (`timestamp`, `before_mean`, `after_mean`). Top 5 series per metric by mean; `series_omitted` counts the rest.
 
 Use `get_service_operations_summary` for per-operation drill-down. Use for performance summaries, bottlenecks, and error overview.
 

@@ -512,7 +512,7 @@ Returns `now` (and `start`/`end` with `range`) as `{iso, epoch_seconds, local}`;
 
 ### get_service_performance_details
 
-Returns a per-series summary by default: `points`, `missing_points` (availability buckets with no traffic, excluded from the stats), `min`, `p50`, `p90`, `p99` (nearest-rank), `max`, `mean`, `last`, `baseline_mean` (first half of the window), `delta_pct` (second half vs baseline; absent if baseline is 0) and up to 3 `change_points` (`timestamp`, `before_mean`, `after_mean`), for up to 5 series per metric (highest mean first; `series_omitted` counts the rest). `full_series` marks that raw points are available via `include_series`.
+Returns a per-series summary by default: `points`, `missing_points` (availability buckets with no traffic, excluded from the stats), `min`, `p50`, `p90`, `p99` (nearest-rank), `max`, `mean`, `last`, `baseline_mean` (mean of the first half of the valid points, not of the window), `delta_pct` (second half of the valid points vs baseline; absent if baseline is 0) and up to 3 `change_points` (`timestamp`, `before_mean`, `after_mean`), for up to 5 series per metric (highest mean first; `series_omitted` counts the rest). `full_series` marks that raw points are available via `include_series`.
 
 - `service_name` (string, required)
 - `lookback_minutes` (integer, optional): Default: 60.

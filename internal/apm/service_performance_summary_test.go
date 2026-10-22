@@ -52,6 +52,19 @@ func TestSummarizeSeries_SkipsNonFiniteAndEmpty(t *testing.T) {
 	}
 }
 
+// The baseline is the first half of the valid points, not of the window: six
+// points clustered at the end of an hour still split three and three.
+func TestSummarizeSeries_BaselineSplitsValidPointsNotWindow(t *testing.T) {
+	var pts []TimeSeriesPoint
+	for i, v := range []float64{10, 10, 10, 20, 20, 20} {
+		pts = append(pts, TimeSeriesPoint{Timestamp: uint64(3000 + 60*i), Value: v})
+	}
+	s := summarizeSeries(TimeSeries{Values: pts}, nil)
+	if s.BaselineMean != 10 || s.DeltaPct == nil || *s.DeltaPct != 100 {
+		t.Fatalf("baseline/delta = %v/%v, want 10/100", s.BaselineMean, s.DeltaPct)
+	}
+}
+
 func TestSummarizeSeries_ZeroBaselineHasNoDelta(t *testing.T) {
 	s := summarizeSeries(TimeSeries{Values: pointsFrom(0, 0, 5, 5)}, nil)
 	if s.DeltaPct != nil {
