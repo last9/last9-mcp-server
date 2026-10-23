@@ -10,12 +10,13 @@ import (
 	"strings"
 
 	"last9-mcp/internal/otelids"
+	"last9-mcp/internal/telemetry"
 	"last9-mcp/internal/utils"
 )
 
 var (
-	logAttributeFieldRefPattern = regexp.MustCompile(`^attributes\['[^'\[\]]+'\]$`)
-	logResourceFieldRefPattern  = regexp.MustCompile(`^resources\['[^'\[\]]+'\]$`)
+	logAttributeFieldRefPattern = regexp.MustCompile(`^attributes\['[^'\[\]\\]+'\]$`)
+	logResourceFieldRefPattern  = regexp.MustCompile(`^resources\['[^'\[\]\\]+'\]$`)
 	logKubernetesAliasPattern   = regexp.MustCompile(`^k8s(?:\.[A-Za-z0-9_/-]+)+$`)
 	logSimpleFieldRefPattern    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
@@ -47,14 +48,6 @@ var logFilterLogicalOperators = map[string]struct{}{
 	"$and": {},
 	"$or":  {},
 	"$not": {},
-}
-
-var logAggregateFieldArgIndexes = map[string][]int{
-	"$avg":      {0},
-	"$max":      {0},
-	"$min":      {0},
-	"$quantile": {1},
-	"$sum":      {0},
 }
 
 func sanitizeLogJSONQuery(stages []map[string]interface{}) ([]map[string]interface{}, error) {
@@ -216,6 +209,9 @@ func sanitizeLogFieldOperatorArgs(value interface{}, operator string, fieldArgIn
 		if err := checkLogRegexArg(operator, normalized, fmt.Sprintf("%s[%d]", path, valueIndex)); err != nil {
 			return nil, err
 		}
+		if e := telemetry.CheckNumericComparison(operator, next, normalized, fmt.Sprintf("%s[%d]", path, valueIndex)); e != nil {
+			return nil, newLogValidationError(LogValidationInvalidField, e.Path, e.Message)
+		}
 		sanitized[valueIndex] = normalized
 	}
 	return sanitized, nil
@@ -358,21 +354,12 @@ func sanitizeLogFunction(value interface{}, path string) (interface{}, error) {
 		}
 
 		sanitizedArgs := append([]interface{}(nil), args...)
-		for _, fieldArgIndex := range logAggregateFieldArgIndexes[operator] {
-			if fieldArgIndex >= len(sanitizedArgs) {
-				continue
-			}
-
-			fieldRef, ok := sanitizedArgs[fieldArgIndex].(string)
-			if !ok {
-				continue
-			}
-
-			next, err := sanitizeLogFieldRef(fieldRef, fmt.Sprintf("%s.%s[%d]", path, operator, fieldArgIndex))
+		if field, i, ok := telemetry.AggregateFieldArg(operator, sanitizedArgs); ok {
+			next, err := sanitizeLogFieldRef(field, fmt.Sprintf("%s.%s[%d]", path, operator, i))
 			if err != nil {
 				return nil, err
 			}
-			sanitizedArgs[fieldArgIndex] = next
+			sanitizedArgs[i] = next
 		}
 
 		sanitized[operator] = sanitizedArgs
