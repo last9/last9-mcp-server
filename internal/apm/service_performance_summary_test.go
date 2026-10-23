@@ -78,7 +78,7 @@ func TestSummarizeSeries_UndefinedStatsAreOmitted(t *testing.T) {
 		{"empty", TimeSeries{}, `{"points":0}`},
 		{"only no-data", TimeSeries{Values: pointsFrom(-999, -999)}, `{"points":0,"missing_points":2}`},
 		{"single point", TimeSeries{Values: pointsFrom(7)}, `{"points":1,"min":7,"p50":7,"p90":7,"p99":7,"max":7,"mean":7,"last":7}`},
-		{"zero value kept", TimeSeries{Values: pointsFrom(0, 0)}, `{"points":2,"min":0,"p50":0,"p90":0,"p99":0,"max":0,"mean":0,"last":0,"baseline_mean":0}`},
+		{"zero value kept", TimeSeries{Values: pointsFrom(0, 0, 0, 0, 0, 0)}, `{"points":6,"min":0,"p50":0,"p90":0,"p99":0,"max":0,"mean":0,"last":0,"baseline_mean":0}`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -93,10 +93,23 @@ func TestSummarizeSeries_UndefinedStatsAreOmitted(t *testing.T) {
 	}
 }
 
+// A delta of one point against one point reads like a trend but is noise:
+// each half needs perfSummaryMinSegment points, the same floor as a change point.
+func TestSummarizeSeries_BaselineNeedsMinSegmentPerHalf(t *testing.T) {
+	below := summarizeSeries(TimeSeries{Values: pointsFrom(10, 10, 20, 20, 20)}, nil)
+	if below.BaselineMean != nil || below.DeltaPct != nil {
+		t.Fatalf("5 points: baseline/delta = %v/%v, want omitted", below.BaselineMean, below.DeltaPct)
+	}
+	at := summarizeSeries(TimeSeries{Values: pointsFrom(10, 10, 10, 20, 20, 20)}, nil)
+	if at.BaselineMean == nil || at.DeltaPct == nil {
+		t.Fatalf("6 points must carry baseline and delta: %+v", at.PerfSeriesStats)
+	}
+}
+
 // A baseline so close to zero that the ratio overflows must drop delta_pct,
 // not fail the whole response with json: unsupported value: +Inf.
 func TestSummarizeSeries_OverflowingDeltaIsOmitted(t *testing.T) {
-	s := summarizeSeries(TimeSeries{Values: pointsFrom(1e-310, 1e-310, 1, 1)}, nil)
+	s := summarizeSeries(TimeSeries{Values: pointsFrom(1e-310, 1e-310, 1e-310, 1, 1, 1)}, nil)
 	if s.DeltaPct != nil {
 		t.Fatalf("delta_pct = %v, want omitted", *s.DeltaPct)
 	}
@@ -106,7 +119,7 @@ func TestSummarizeSeries_OverflowingDeltaIsOmitted(t *testing.T) {
 }
 
 func TestSummarizeSeries_ZeroBaselineHasNoDelta(t *testing.T) {
-	s := summarizeSeries(TimeSeries{Values: pointsFrom(0, 0, 5, 5)}, nil)
+	s := summarizeSeries(TimeSeries{Values: pointsFrom(0, 0, 0, 5, 5, 5)}, nil)
 	if s.DeltaPct != nil {
 		t.Fatalf("delta_pct against a zero baseline must be omitted, got %v", *s.DeltaPct)
 	}
