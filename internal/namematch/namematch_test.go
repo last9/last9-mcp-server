@@ -61,7 +61,7 @@ func TestResolveCapsCandidates(t *testing.T) {
 		t.Fatalf("Kind = %v, want Ambiguous", got.Kind)
 	}
 	want := []string{"web-1", "web-2", "web-3", "web-4", "web-5"}
-	if !reflect.DeepEqual(got.Candidates, want) {
-		t.Errorf("Candidates = %v, want %v", got.Candidates, want)
+	if !reflect.DeepEqual(got.Candidates, want) || got.Omitted != 2 {
+		t.Errorf("Candidates = %v, Omitted = %d; want %v, 2", got.Candidates, got.Omitted, want)
 	}
 }

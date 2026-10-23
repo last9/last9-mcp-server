@@ -160,6 +160,43 @@ func TestPromToolsUnknownDatasourceListsAvailable(t *testing.T) {
 	}
 }
 
+func TestAmbiguousDatasourceCountsOmittedCandidates(t *testing.T) {
+	cfg := models.Config{}
+	for _, n := range []string{"web-1", "web-2", "web-3", "web-4", "web-5", "web-6", "web-7"} {
+		cfg.Datasources = append(cfg.Datasources, models.DatasourceInfo{Name: n, ReadURL: "https://" + n})
+	}
+	choice, err := chooseDatasource(cfg, "web")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	res := ambiguousDatasourceResult("web", choice)
+	want := `datasource "web" matches several datasources: web-1, web-2, web-3, web-4, web-5 and 2 more. No query was run; retry with one of them as datasource.`
+	if texts := resultTexts(res); len(texts) != 1 || texts[0] != want {
+		t.Errorf("text = %q, want %q", texts, want)
+	}
+}
+
+func TestUnknownDatasourceErrorShortensLongInput(t *testing.T) {
+	cfg := models.Config{Datasources: []models.DatasourceInfo{{Name: "prod-us", ReadURL: "https://prod-us"}}}
+	_, err := chooseDatasource(cfg, strings.Repeat("z", 10_000))
+	if err == nil {
+		t.Fatal("expected an error for an unknown datasource")
+	}
+	want := `datasource "` + strings.Repeat("z", 100) + `…" not found; available: prod-us`
+	if err.Error() != want {
+		t.Errorf("error = %q (%d bytes), want %q", err.Error()[:120], len(err.Error()), want)
+	}
+}
+
+func TestClosestDatasourceWithoutPrometheusConfigSaysItWasSubstituted(t *testing.T) {
+	cfg := models.Config{Datasources: []models.DatasourceInfo{{Name: "staging"}}}
+	_, err := chooseDatasource(cfg, "stagign")
+	want := `datasource "staging" is missing required Prometheus configuration (closest match to "stagign")`
+	if err == nil || err.Error() != want {
+		t.Errorf("error = %v, want %q", err, want)
+	}
+}
+
 func TestChooseDatasourceWithoutCachedList(t *testing.T) {
 	cfg := models.Config{PrometheusReadURL: "https://configured.example.com/prom", DatasourceName: "configured"}
 	choice, err := chooseDatasource(cfg, "")

@@ -37,7 +37,7 @@ func NewPromqlRangeQueryHandler(client *http.Client, cfg models.Config) func(con
 			return nil, nil, err
 		}
 		if choice.candidates != nil {
-			return ambiguousDatasourceResult(args.Datasource, choice.candidates), nil, nil
+			return ambiguousDatasourceResult(args.Datasource, choice), nil, nil
 		}
 		raw, err := prom.Query(ctx, last9api.NewClient(client, choice.cfg), prom.QueryInput{
 			Datasource: promDatasource(choice.cfg),

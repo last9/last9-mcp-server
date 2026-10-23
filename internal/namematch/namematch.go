@@ -27,6 +27,8 @@ type Match struct {
 	Kind       Kind
 	Name       string
 	Candidates []string
+	// Omitted counts ambiguous candidates cut by MaxCandidates.
+	Omitted int
 }
 
 func Resolve(input string, names []string) Match {
@@ -65,10 +67,11 @@ func decide(hits []string) Match {
 		return Match{Kind: Closest, Name: hits[0]}
 	}
 	sort.Strings(hits)
+	m := Match{Kind: Ambiguous, Candidates: hits}
 	if len(hits) > MaxCandidates {
-		hits = hits[:MaxCandidates]
+		m.Candidates, m.Omitted = hits[:MaxCandidates], len(hits)-MaxCandidates
 	}
-	return Match{Kind: Ambiguous, Candidates: hits}
+	return m
 }
 
 func normalize(s string) string {
