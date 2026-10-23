@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -47,6 +48,7 @@ type logPattern struct {
 	wildcards int
 	sample    string
 	sampled   bool
+	samples   []string
 	windows   []patternWindow
 }
 
@@ -170,6 +172,9 @@ func (p *logPattern) fits(tokens []string) bool {
 func (p *logPattern) record(window int, entry LogEntry) {
 	if !p.sampled {
 		p.sample, p.sampled = truncatePatternText(entry.Message), true
+	}
+	if len(p.samples) < maxSummaryPatternSamples && !slices.Contains(p.samples, entry.Message) {
+		p.samples = append(p.samples, entry.Message)
 	}
 	p.windows[window].record(entry)
 }
