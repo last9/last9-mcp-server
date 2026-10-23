@@ -796,6 +796,8 @@ Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `en
 - `alert_group_name` / `alert_group_type` / `data_source_name` (string, optional)
 - `tags` (array, optional): All must match (AND logic).
 
+Each rule lists `Recent Evaluations`: 5 one-minute samples, newest first, each labelled by the UTC minute it ends; the newest ends 1–2 minutes before the call, since the monitor fills the latest minute late. `firing`; `ok` = the monitor reported the rule not firing (normal, resolved or pending, as `is_firing=0` in `get_alert_rule_state`); `unknown` = no monitor row for the rule (not evaluated yet, or that minute's lookup failed, noted at the top of the response), or a row whose state is none of firing, normal, resolved or pending (e.g. `no_data`, `silenced`). Disabled rules show none. When more than 25 enabled rules match, history is omitted for all of them and the response says so.
+
 ### get_alerts
 
 - `time_iso` (string, optional): Evaluation time in RFC3339.

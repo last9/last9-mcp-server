@@ -25,7 +25,7 @@ var descriptionBudgetOverrides = map[string]int{
 	"get_apm_service_deviations":      6300,
 	"get_exceptions":                  4900,
 	"get_service_summary":             4600,
-	"get_alert_config":                4600,
+	"get_alert_config":                5000,
 	"get_trace_attribute_deviations":  4400,
 	"analyze_change_impact":           3600,
 	"get_logs":                        3725,
