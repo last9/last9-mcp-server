@@ -18,7 +18,7 @@ import (
 
 type promToolCall func(ctx context.Context, datasource string) (*mcp.CallToolResult, error)
 
-func promToolsUnderTest(t *testing.T) (map[string]promToolCall, *[]string) {
+func promToolsUnderTest(t *testing.T, extra ...models.DatasourceInfo) (map[string]promToolCall, *[]string) {
 	t.Helper()
 	var readURLs []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -46,6 +46,7 @@ func promToolsUnderTest(t *testing.T) (map[string]promToolCall, *[]string) {
 		},
 		TokenManager: &auth.TokenManager{AccessToken: "mock-token", ExpiresAt: time.Now().Add(time.Hour)},
 	}
+	cfg.Datasources = append(cfg.Datasources, extra...)
 	client := server.Client()
 	req := &mcp.CallToolRequest{}
 	tools := map[string]promToolCall{
@@ -157,6 +158,20 @@ func TestPromToolsDistantDatasourceIsOnlyOffered(t *testing.T) {
 	}
 	if len(*readURLs) != 0 {
 		t.Errorf("offered datasource reached the API %d time(s), want 0", len(*readURLs))
+	}
+}
+
+func TestPromToolsNeverSwapRegionCode(t *testing.T) {
+	tools, readURLs := promToolsUnderTest(t, models.DatasourceInfo{Name: "canarysa", ReadURL: "https://canarysa.example.com/prom", Username: "u", Password: "p", Region: "sa-east-1"})
+	for tool, call := range tools {
+		_, err := call(context.Background(), "canaryca")
+		want := `datasource "canaryca" not found; available: canarysa, prod-eu, prod-us, staging`
+		if err == nil || err.Error() != want {
+			t.Errorf("%s: error = %v, want %q", tool, err, want)
+		}
+	}
+	if len(*readURLs) != 0 {
+		t.Errorf("region-swapped datasource reached the API %d time(s), want 0", len(*readURLs))
 	}
 }
 
