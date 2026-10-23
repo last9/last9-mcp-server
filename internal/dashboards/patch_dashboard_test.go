@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"last9-mcp/internal/utils"
 
@@ -36,6 +37,11 @@ type patchServer struct {
 
 func newPatchServer(t *testing.T) *patchServer {
 	t.Helper()
+	return newPatchServerServing(t, patchFixture)
+}
+
+func newPatchServerServing(t *testing.T, fixture string) *patchServer {
+	t.Helper()
 	ps := &patchServer{}
 	ps.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/dashboards/dash-1" {
@@ -45,7 +51,7 @@ func newPatchServer(t *testing.T) *patchServer {
 		switch r.Method {
 		case http.MethodGet:
 			ps.gets = append(ps.gets, r.URL.RawQuery)
-			_, _ = io.WriteString(w, patchFixture)
+			_, _ = io.WriteString(w, fixture)
 		case http.MethodPut:
 			var req DashboardRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -311,6 +317,23 @@ func TestPatchDashboard_SinglePanelDiffIsCompact(t *testing.T) {
 	}
 	if maxPatchDiffChars > 2000 {
 		t.Fatalf("maxPatchDiffChars = %d, issue caps a single-panel diff at 2000", maxPatchDiffChars)
+	}
+}
+
+func TestPatchDashboard_RemovePanelDiffBoundsLongName(t *testing.T) {
+	ps := newPatchServer(t)
+	ops := `[{"op":"update_panel","panel_id":"p1","fields":{"name":"` + strings.Repeat("é", 1250) +
+		`"}},{"op":"remove_panel","panel_id":"p1"}]`
+	result, err := ps.patch(t, ops)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := utils.GetTextContent(t, result)
+	if len(text) > maxPatchDiffChars {
+		t.Fatalf("diff is %d chars, want <= %d: %s", len(text), maxPatchDiffChars, text)
+	}
+	if !utf8.ValidString(text) || !strings.Contains(text, `"name":"éé`) || !strings.Contains(text, `é…"`) {
+		t.Fatalf("removed panel name not truncated on a rune boundary: %s", text)
 	}
 }
 

@@ -217,7 +217,8 @@ func applyPatchOp(doc map[string]any, op PatchDashboardOp) (patchChange, error) 
 		case "update_panel":
 			change.Fields = updatePanelFields(panel, op.Fields)
 		case "remove_panel":
-			change.Name, _ = panel["name"].(string)
+			name, _ := panel["name"].(string)
+			change.Name = truncateDiffText(name)
 			doc["panels"] = append(panels[:at:at], panels[at+1:]...)
 		case "move_panel":
 			to := *op.Index
@@ -288,11 +289,18 @@ func diffValue(v any) json.RawMessage {
 	if len(raw) <= maxDiffValueChars {
 		return raw
 	}
+	return marshalNoEscape(truncateDiffText(string(raw)))
+}
+
+func truncateDiffText(s string) string {
+	if len(s) <= maxDiffValueChars {
+		return s
+	}
 	cut := maxDiffValueChars
-	for cut > 0 && !utf8.RuneStart(raw[cut]) {
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
 		cut--
 	}
-	return marshalNoEscape(string(raw[:cut]) + "…")
+	return s[:cut] + "…"
 }
 
 func renderPatchDiff(diff patchDiff) string {
