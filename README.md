@@ -296,6 +296,8 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_log_attributes_for_pipeline`** — Log fields actually present for an in-progress pipeline (scoped discovery), each with its exact `filter_field`
 - **`get_drop_rules`** — Log drop rules from [Last9 Control Plane](https://last9.io/control-plane)
 - **`add_drop_rule`** — Create a new drop rule to cut log volume at the source
+- **`get_remapping_rules`** — Remapping rules (`logs_extract`, `logs_map`, `traces_map`) from [Last9 Control Plane](https://last9.io/control-plane)
+- **`add_remapping_rule`** — Create a remapping rule that extracts or maps log and trace attributes at ingestion
 
 ### Traces
 
@@ -682,6 +684,27 @@ No parameters. Lists drop rules via `GET /otel_settings/drop?region=...`.
 - `filters` (array, required): Each filter: `key`, `value`, `operator` (`equals`/`not_equals`), `conjunction` (`and`).
 - Filter keys must use `attributes["key_name"]` or `resource.attributes["key_name"]` (required by the Last9 API).
 - Creates the rule via `POST /otel_settings/drop?region=...&cluster_id=...`.
+
+### get_remapping_rules
+
+- `rule_type` (string, required): `logs_extract`, `logs_map` or `traces_map`.
+- `region` (string, optional): Default: the configured datasource region.
+- Lists rules via `GET /otel_settings/remapping/{rule_type}?region=...`.
+
+### add_remapping_rule
+
+Creates one rule per call; map rules need one call per `target_attribute`.
+
+- `rule_type` (string, required): `logs_extract`, `logs_map` or `traces_map`.
+- `name` (string, required)
+- `remap_keys` (array, required): Source fields. `logs_extract` with `json`: body field names; with `pattern`: exactly one regex with a named capture group. Map rules: attribute paths, first non-empty wins.
+- `target_attribute` (string, required): `logs_extract`: `log_attributes` or `resource_attributes`. `logs_map`: `service`, `severity` or `resource_deployment.environment`. `traces_map`: `service`.
+- `extract_type` (string, `logs_extract` only, required there): `json` or `pattern`.
+- `action` (string, `logs_extract` only): `upsert` (default) or `insert`.
+- `prefix` (string, `logs_extract` only)
+- `preconditions` (array, `logs_extract` only): At most one `{key, value, operator}`; `operator` is `equals` (default), `not_equals` or `like` (regex).
+- `region` (string, optional): Default: the configured datasource region.
+- Creates the rule via `POST /otel_settings/remapping/{rule_type}?region=...`. Never retried; after a timeout, check with `get_remapping_rules`.
 
 ### get_traces
 
