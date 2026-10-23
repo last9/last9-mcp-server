@@ -81,10 +81,11 @@ func runPerfDetailsCapture(t *testing.T) *perfDetailsCapture {
 	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
-		ServiceName:  "svc",
-		StartTimeISO: now.Add(-10 * 24 * time.Hour).Format(time.RFC3339),
-		EndTimeISO:   now.Format(time.RFC3339),
-		Env:          "prod",
+		IncludeSeries: true,
+		ServiceName:   "svc",
+		StartTimeISO:  now.Add(-10 * 24 * time.Hour).Format(time.RFC3339),
+		EndTimeISO:    now.Format(time.RFC3339),
+		Env:           "prod",
 	}
 
 	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args); err != nil {
@@ -221,10 +222,11 @@ func TestPerfDetails_InstantQueriesSendNoPointBudget(t *testing.T) {
 	handler := NewServicePerformanceDetailsHandler(server.Client(), apmTestConfig(server.URL))
 	now := time.Now().UTC()
 	args := ServicePerformanceDetailsArgs{
-		ServiceName:  "svc",
-		StartTimeISO: now.Add(-10 * 24 * time.Hour).Format(time.RFC3339),
-		EndTimeISO:   now.Format(time.RFC3339),
-		Env:          "prod",
+		IncludeSeries: true,
+		ServiceName:   "svc",
+		StartTimeISO:  now.Add(-10 * 24 * time.Hour).Format(time.RFC3339),
+		EndTimeISO:    now.Format(time.RFC3339),
+		Env:           "prod",
 	}
 	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args); err != nil {
 		t.Fatalf("handler returned error: %v", err)

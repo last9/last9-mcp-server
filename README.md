@@ -260,7 +260,7 @@ last9-mcp --read-only --allow-write-tools=acknowledge_alert,mute_alert_group
 
 - **`get_service_summary`** — Ranked fleet `(service, env)` rows: interval request_count, throughput_rpm, HTTP 4xx/5xx counts, and gRPC error counts
 - **`get_service_environments`** — Available environments for your services. Run this first — other APM tools need `env` from here
-- **`get_service_performance_details`** — Full breakdown: throughput, error rate, p50/p90/p95/avg/max, apdex, availability
+- **`get_service_performance_details`** — Full breakdown: throughput, error rate, p50/p90/p95/avg/max, apdex, availability (summarized by default; full series with `include_series`)
 - **`get_service_operations_summary`** — Operations grouped by HTTP endpoints, DB calls, messaging, HTTP clients
 - **`get_service_dependency_graph`** — Dependency map with throughput, latency, and error rates for upstream/downstream/infra
 - **`get_apm_service_deviations`** — Compare a current window against an equal-duration baseline: regressions/improvements, Apdex reconciliation, and a terminal outcome (fleet or single service)
@@ -343,6 +343,7 @@ Rules, channels and attachments these tools create are marked `created_via: last
 - **`validate_dashboard`** — Read-only lint + execute + classify for a saved dashboard id or an inline `dashboard_definition` over a ≤24h window. Never creates or updates dashboards
 - **`create_dashboard`** — Create a net-new custom dashboard once (panels, queries, metadata). After the id is returned, refine with `update_dashboard`.
 - **`update_dashboard`** — Refine an existing dashboard by ID (full replacement; readonly system dashboards return an error)
+- **`patch_dashboard`** — Targeted edits to an existing dashboard by ID (add/update/remove/move panel, set title, set variable); returns a compact diff, not the full dashboard
 - **`delete_dashboard`** — Delete a custom dashboard by ID
 - **`list_dashboard_snapshots`** — Frozen point-in-time snapshots for a dashboard (metadata only)
 - **`get_dashboard_snapshot`** — Full frozen snapshot including panel data for RCA / shareable views
@@ -512,10 +513,14 @@ Returns `now` (and `start`/`end` with `range`) as `{iso, epoch_seconds, local}`;
 
 ### get_service_performance_details
 
+Returns a per-series summary by default: `points`, `missing_points` (availability buckets with no traffic, excluded from the stats), `min`, `p50`, `p90`, `p99` (nearest-rank), `max`, `mean`, `last`, `baseline_mean` (mean of the first half of the valid points, not of the window), `delta_pct` (second half of the valid points vs baseline; absent if baseline is 0) and up to 3 `change_points` (`timestamp`, `before_mean`, `after_mean`), for up to 4 series per metric and every response-time quantile (highest mean first; `series_omitted` counts the rest). A series with `points: 0` carries no statistics, and `baseline_mean`/`delta_pct` need at least 6 points (3 per half). `full_series` marks that raw points are available via `include_series`.
+
 - `service_name` (string, required)
 - `lookback_minutes` (integer, optional): Default: 60.
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `env` (string, optional): Defaults to `prod`.
+- `top_n` (integer, optional): Max entries per top-operations/top-errors list. Default: 5, or 10 with `include_series=true`. Max 100.
+- `include_series` (boolean, optional): Return every point of every series instead of the summary. Default: false.
 
 ### get_service_operations_summary
 
@@ -1013,6 +1018,19 @@ Prefer this after create. Full replacement by id (same body as create).
 - `id` (string, required): Dashboard UUID to update.
 - `dashboard` (object, required): Full replacement dashboard body (same shape as create).
 - `metadata` (object, optional): Replacement metadata. Readonly system dashboards return a 403 error.
+
+### patch_dashboard
+
+Prefer this over `update_dashboard` for small refinements: unchanged panels are never re-sent. Reads the dashboard, applies `ops` in order and writes it back, so an edit made elsewhere between the read and the write is overwritten. Returns `{dashboard_id, changes[]}`; ops the dashboard already satisfies are left out, and if none changes anything nothing is written. The diff is checked against a re-read after the write: panel `fields` show stored values, `not_stored` lists keys the API dropped and `not_removed` keys it kept despite a `null`. Diff values over 200 characters are shortened in place, keeping their JSON type.
+
+- `id` (string, required): Dashboard UUID to patch.
+- `ops` (array, required): Ops applied in order; if any is invalid nothing is written and the error names it as `ops[i]`.
+  - `add_panel`: `panel` (full panel object; `version` defaults to 1), optional `index` (0-based insert position, default append).
+  - `update_panel`: `panel_id`, `fields` (top-level panel keys to replace; `null` removes a key; `id` cannot change).
+  - `remove_panel`: `panel_id`.
+  - `move_panel`: `panel_id`, `index` (0-based position after the move).
+  - `set_title`: `title` (the dashboard name).
+  - `set_variable`: `variable`; replaces the variable with the same `target`, otherwise appends it.
 
 ### delete_dashboard
 
