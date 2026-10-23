@@ -1,6 +1,7 @@
 package apm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -26,11 +27,13 @@ type GetMetricStatusArgs struct {
 }
 
 type GetMetricStatusResult struct {
-	Live                    bool    `json:"live"`
-	SeriesCount             int     `json:"series_count"`
-	LastSampleAgeSeconds    float64 `json:"last_sample_age_seconds"`
-	InferredIntervalSeconds float64 `json:"inferred_interval_seconds"`
-	SuggestedWindow         string  `json:"suggested_window"`
+	Live                 bool    `json:"live"`
+	SeriesCount          int     `json:"series_count"`
+	LastSampleAgeSeconds float64 `json:"last_sample_age_seconds"`
+	// Null, never 0, when the window holds too few samples to infer a cadence.
+	InferredIntervalSeconds *float64 `json:"inferred_interval_seconds"`
+	SuggestedWindow         string   `json:"suggested_window"`
+	Note                    string   `json:"note,omitempty"`
 }
 
 func NewGetMetricStatusHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetMetricStatusArgs) (*mcp.CallToolResult, any, error) {
@@ -39,12 +42,15 @@ func NewGetMetricStatusHandler(client *http.Client, cfg models.Config) func(cont
 		if err != nil {
 			return nil, nil, err
 		}
-		payload, err := json.Marshal(status)
-		if err != nil {
+		// HTML escaping would show the note's <fragment> placeholder as <fragment>.
+		var payload bytes.Buffer
+		enc := json.NewEncoder(&payload)
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(status); err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal get_metric_status response: %w", err)
 		}
 		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: string(payload)}},
+			Content: []mcp.Content{&mcp.TextContent{Text: strings.TrimSuffix(payload.String(), "\n")}},
 		}, nil, nil
 	}
 }
@@ -76,6 +82,7 @@ func computeGetMetricStatus(ctx context.Context, client *http.Client, cfg models
 		return GetMetricStatusResult{
 			Live:        false,
 			SeriesCount: 0,
+			Note:        fmt.Sprintf("No series matched `%s` in the last %s: either it emits less often than that (widen `window_minutes`) or the name is wrong (check it with `prometheus_label_values`, label `__name__`, `match_query` such as `{__name__=~\".*<fragment>.*\"}`).", sel, dur),
 		}, nil
 	}
 
@@ -91,13 +98,19 @@ func computeGetMetricStatus(ctx context.Context, client *http.Client, cfg models
 		return GetMetricStatusResult{}, err
 	}
 
-	return GetMetricStatusResult{
+	status := GetMetricStatusResult{
 		Live:                    true,
 		SeriesCount:             int(math.Round(seriesCount)),
 		LastSampleAgeSeconds:    lastAge,
 		InferredIntervalSeconds: interval,
-		SuggestedWindow:         suggestWindow(lastAge, interval),
-	}, nil
+	}
+	if interval == nil {
+		status.SuggestedWindow = suggestWindow(lastAge, 0)
+		status.Note = fmt.Sprintf("Too few samples in the last %s to infer cadence, so inferred_interval_seconds is null; widen `window_minutes` to cover several emissions.", dur)
+	} else {
+		status.SuggestedWindow = suggestWindow(lastAge, *interval)
+	}
+	return status, nil
 }
 
 func metricSelector(metric string) string {
@@ -162,12 +175,16 @@ func queryInstantValues(ctx context.Context, client *http.Client, cfg models.Con
 	return out, nil
 }
 
-func inferIntervalSeconds(ctx context.Context, client *http.Client, cfg models.Config, sel, dur string, endTime int64) (float64, error) {
+func inferIntervalSeconds(ctx context.Context, client *http.Client, cfg models.Config, sel, dur string, endTime int64) (*float64, error) {
 	vals, err := queryInstantValues(ctx, client, cfg, fmt.Sprintf("scrape_interval(%s[%s])", sel, dur), endTime)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return medianFloat(vals), nil
+	median := medianFloat(vals)
+	if median <= 0 {
+		return nil, nil
+	}
+	return &median, nil
 }
 
 func medianFloat(vals []float64) float64 {
