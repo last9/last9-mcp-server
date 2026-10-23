@@ -183,3 +183,19 @@ func TestSummarizeSeriesList_KeepsLargestAndCountsOmitted(t *testing.T) {
 		t.Fatalf("a series without data must rank after every series with data: %+v", got)
 	}
 }
+
+// Response times are one series per quantile, a fixed set: capping them by
+// mean always dropped p50, the lowest and most-asked latency.
+func TestSummarizePerformanceDetails_KeepsEveryResponseTimeQuantile(t *testing.T) {
+	var d ServicePerformanceDetails
+	for i, q := range []string{"max", "p99", "p95", "p90", "avg", "p50"} {
+		d.ResponseTimes = append(d.ResponseTimes, TimeSeries{Metric: map[string]string{"quantile": q}, Values: pointsFrom(float64(100 - 10*i))})
+	}
+	s := summarizePerformanceDetails(d)
+	if len(s.ResponseTimes) != len(d.ResponseTimes) || s.SeriesOmitted["response_times"] != 0 {
+		t.Fatalf("kept %d of %d quantiles, series_omitted = %v", len(s.ResponseTimes), len(d.ResponseTimes), s.SeriesOmitted)
+	}
+	if last := s.ResponseTimes[len(s.ResponseTimes)-1].Metric["quantile"]; last != "p50" {
+		t.Fatalf("lowest-mean quantile = %q, want p50", last)
+	}
+}

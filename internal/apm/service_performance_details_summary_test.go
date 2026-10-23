@@ -32,7 +32,7 @@ func perfFixtureLabels(query string) []map[string]string {
 	switch {
 	case strings.Contains(query, "by (quantile)"):
 		var out []map[string]string
-		for _, q := range []string{"p50", "p90", "p95", "avg", "max"} {
+		for _, q := range []string{"p50", "p90", "p95", "p99", "avg", "max"} {
 			out = append(out, map[string]string{"quantile": q})
 		}
 		return out
