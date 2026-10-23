@@ -112,9 +112,8 @@ func filter(names []string, keep func(string) bool) []string {
 }
 
 // nearest returns every name within the edit budget and the fewest edits
-// among them. Names compare token by token so an edit can fix a typo inside
-// a word but never swap a word ("east" for "west") or a number ("-2" for
-// "-1"): those name a sibling, not a misspelling.
+// among them. An edit never swaps a word ("east" for "west") or a number
+// ("-2" for "-1"): those name a sibling, not a misspelling.
 func nearest(key string, names []string) ([]string, int) {
 	keyTokens := tokens(key)
 	best := -1
