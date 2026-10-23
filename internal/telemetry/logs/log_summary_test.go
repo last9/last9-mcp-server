@@ -231,7 +231,7 @@ func TestSummarizeLogResult_BoundsSeverityCounts(t *testing.T) {
 		}
 		total += count
 	}
-	if top := truncateRunes("LEVEL_0_"+strings.Repeat("x", 100), maxSummarySeverityRunes); summary.SeverityCounts[top] != 10 {
+	if top := truncateMiddleRunes("LEVEL_0_"+strings.Repeat("x", 100), maxSummarySeverityRunes); summary.SeverityCounts[top] != 10 {
 		t.Errorf("severity_counts = %v, want the busiest label %q kept with 10", summary.SeverityCounts, top)
 	}
 	other := summary.OtherSeverities

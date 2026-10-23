@@ -145,7 +145,7 @@ func newLogSummary(entries []LogEntry, startMs, endMs int64, truncated bool) log
 		if severity == "" {
 			severity = unknownPatternSeverity
 		}
-		severityCounts[truncateRunes(severity, maxSummarySeverityRunes)]++
+		severityCounts[severity]++
 
 		if ts, err := time.Parse(time.RFC3339Nano, entry.Timestamp); err == nil {
 			timestamps = append(timestamps, ts)
@@ -168,18 +168,27 @@ func newLogSummary(entries []LogEntry, startMs, endMs int64, truncated bool) log
 	return summary
 }
 
+// boundSeverityCounts keeps the busiest severities under shortened names. A
+// severity whose shortened name a busier one already holds goes to the
+// remainder, so no kept count merges distinct severities.
 func boundSeverityCounts(counts map[string]int) (map[string]int, *logSummarySeverityOther) {
-	if len(counts) <= maxSummarySeverities {
-		return counts, nil
-	}
 	labels := slices.Collect(maps.Keys(counts))
 	slices.SortFunc(labels, func(a, b string) int { return cmp.Or(cmp.Compare(counts[b], counts[a]), strings.Compare(a, b)) })
-	other := &logSummarySeverityOther{Labels: len(labels) - maxSummarySeverities}
-	for _, label := range labels[maxSummarySeverities:] {
+	kept := make(map[string]int, min(len(labels), maxSummarySeverities))
+	var other *logSummarySeverityOther
+	for _, label := range labels {
+		name := truncateMiddleRunes(label, maxSummarySeverityRunes)
+		if _, taken := kept[name]; !taken && len(kept) < maxSummarySeverities {
+			kept[name] = counts[label]
+			continue
+		}
+		if other == nil {
+			other = &logSummarySeverityOther{}
+		}
+		other.Labels++
 		other.Lines += counts[label]
-		delete(counts, label)
 	}
-	return counts, other
+	return kept, other
 }
 
 func newLogSummaryHistogram(startMs, endMs int64) logSummaryHistogram {
@@ -235,4 +244,15 @@ func truncateRunes(text string, limit int) string {
 		return text
 	}
 	return string([]rune(text)[:limit-1]) + "…"
+}
+
+// truncateMiddleRunes keeps both ends: custom severities often share a
+// namespace prefix and differ only in their trailing level.
+func truncateMiddleRunes(text string, limit int) string {
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	head := (limit - 1) / 2
+	return string(runes[:head]) + "…" + string(runes[len(runes)-(limit-1-head):])
 }
