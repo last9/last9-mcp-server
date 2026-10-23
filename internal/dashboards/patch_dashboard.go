@@ -300,9 +300,6 @@ func updatePanelFields(panel map[string]any, fields map[string]any) map[string]f
 	return changed
 }
 
-// reconcileStored rewrites panel changes to what the API stored: keys whose presence
-// differs between sent and stored move to NotStored, and changed values show the stored
-// value. It reports whether any key was not stored.
 func reconcileStored(changes []patchChange, sent, stored map[string]any) bool {
 	anyNotStored := false
 	for i := range changes {
@@ -367,8 +364,6 @@ func diffValue(v any) json.RawMessage {
 	return marshalNoEscape(shrinkValue(v, maxDiffValueChars))
 }
 
-// shrinkValue truncates strings and drops trailing array elements or object keys once
-// about budget characters are used, marking what was dropped with "…".
 func shrinkValue(v any, budget int) any {
 	child := budget / 4
 	switch v := v.(type) {
