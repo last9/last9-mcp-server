@@ -181,7 +181,6 @@ func summarizeSeries(ts TimeSeries, noData func(float64) bool) PerfSeriesSummary
 	return s
 }
 
-// rankMean orders series without data after every series with data.
 func (s PerfSeriesSummary) rankMean() float64 {
 	if s.PerfSeriesStats == nil {
 		return math.Inf(-1)
@@ -217,8 +216,6 @@ func strongestSplits(found []perfSplit) []perfSplit {
 	return found
 }
 
-// segmentSplits is binary segmentation: split where the shift scores
-// highest, then recurse into both sides.
 func segmentSplits(values []float64, inflation float64) []perfSplit {
 	minSegment := max(perfSummaryMinSegment, len(values)/perfSummaryMinSegmentDivisor)
 	var found []perfSplit
@@ -298,10 +295,9 @@ func bestSplit(values []float64, inflation float64, minSegment int) (int, float6
 	return bestIdx, bestScore
 }
 
-// varianceInflation is (1+ρ)/(1-ρ) for the lag-1 autocorrelation ρ of
-// residuals around each segment's mean: neighbouring points are correlated
-// (rates are smoothed over several steps), so a series holds fewer
-// independent samples than points.
+// Rates are smoothed over several steps, so neighbouring points correlate and
+// a series holds fewer independent samples than points; (1+ρ)/(1-ρ) widens
+// the standard error by that factor.
 func varianceInflation(values []float64, splits []int) float64 {
 	bounds := append(append([]int{0}, splits...), len(values))
 	var num, den float64
