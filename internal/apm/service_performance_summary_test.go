@@ -164,7 +164,7 @@ func TestSummarizeSeriesList_KeepsLargestAndCountsOmitted(t *testing.T) {
 	for i := 1; i <= perfSummaryMaxSeries+2; i++ {
 		series = append(series, TimeSeries{Metric: map[string]string{"code": string(rune('a' + i))}, Values: pointsFrom(float64(i))})
 	}
-	got, omitted := summarizeSeriesList(series, nil)
+	got, omitted := summarizeSeriesList(series, nil, perfSummaryMaxSeries)
 	if omitted != 2 || len(got) != perfSummaryMaxSeries {
 		t.Fatalf("kept %d, omitted %d; want %d, 2", len(got), omitted, perfSummaryMaxSeries)
 	}
@@ -172,13 +172,13 @@ func TestSummarizeSeriesList_KeepsLargestAndCountsOmitted(t *testing.T) {
 		t.Fatalf("expected the highest-mean series first and the two smallest dropped: %+v", got)
 	}
 
-	got, omitted = summarizeSeriesList(series[:perfSummaryMaxSeries], nil)
+	got, omitted = summarizeSeriesList(series[:perfSummaryMaxSeries], nil, perfSummaryMaxSeries)
 	if omitted != 0 || len(got) != perfSummaryMaxSeries {
 		t.Fatalf("at the cap: kept %d, omitted %d", len(got), omitted)
 	}
 
 	withEmpty := append([]TimeSeries{{Metric: map[string]string{"code": "empty"}}}, series[:2]...)
-	got, _ = summarizeSeriesList(withEmpty, nil)
+	got, _ = summarizeSeriesList(withEmpty, nil, perfSummaryMaxSeries)
 	if got[len(got)-1].Metric["code"] != "empty" || got[0].Mean != 2 {
 		t.Fatalf("a series without data must rank after every series with data: %+v", got)
 	}

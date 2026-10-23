@@ -9,7 +9,8 @@ import (
 const (
 	// perfSummaryMaxSeries caps the series summarized per metric so a service
 	// with many status codes can't grow the default response without bound.
-	perfSummaryMaxSeries       = 5
+	// Response times are exempt: one series per quantile, a fixed set.
+	perfSummaryMaxSeries       = 4
 	perfSummaryMaxChangePoints = 3
 	// perfSummaryMinSegment is the fewest points each side of a change point
 	// must have, so a single outlier is not reported as a level shift.
@@ -86,20 +87,21 @@ func summarizePerformanceDetails(d ServicePerformanceDetails) ServicePerformance
 		PartialErrors: d.PartialErrors,
 	}
 	fields := []struct {
-		name   string
-		series []TimeSeries
-		out    *[]PerfSeriesSummary
-		noData func(float64) bool
+		name      string
+		series    []TimeSeries
+		out       *[]PerfSeriesSummary
+		noData    func(float64) bool
+		maxSeries int
 	}{
-		{"throughput", d.Throughput, &s.Throughput, nil},
-		{"error_rate", d.ErrorRate, &s.ErrorRate, nil},
-		{"error_percentage", d.ErrorPercent, &s.ErrorPercent, nil},
-		{"response_times", d.ResponseTimes, &s.ResponseTimes, nil},
-		{"apdex_score", d.ApdexScore, &s.ApdexScore, nil},
-		{"availability", d.Availability, &s.Availability, func(v float64) bool { return v == perfAvailabilityNoData }},
+		{"throughput", d.Throughput, &s.Throughput, nil, perfSummaryMaxSeries},
+		{"error_rate", d.ErrorRate, &s.ErrorRate, nil, perfSummaryMaxSeries},
+		{"error_percentage", d.ErrorPercent, &s.ErrorPercent, nil, perfSummaryMaxSeries},
+		{"response_times", d.ResponseTimes, &s.ResponseTimes, nil, len(d.ResponseTimes)},
+		{"apdex_score", d.ApdexScore, &s.ApdexScore, nil, perfSummaryMaxSeries},
+		{"availability", d.Availability, &s.Availability, func(v float64) bool { return v == perfAvailabilityNoData }, perfSummaryMaxSeries},
 	}
 	for _, f := range fields {
-		summaries, omitted := summarizeSeriesList(f.series, f.noData)
+		summaries, omitted := summarizeSeriesList(f.series, f.noData, f.maxSeries)
 		*f.out = summaries
 		if omitted > 0 {
 			if s.SeriesOmitted == nil {
@@ -111,16 +113,16 @@ func summarizePerformanceDetails(d ServicePerformanceDetails) ServicePerformance
 	return s
 }
 
-func summarizeSeriesList(series []TimeSeries, noData func(float64) bool) ([]PerfSeriesSummary, int) {
+func summarizeSeriesList(series []TimeSeries, noData func(float64) bool, maxSeries int) ([]PerfSeriesSummary, int) {
 	out := make([]PerfSeriesSummary, 0, len(series))
 	for _, ts := range series {
 		out = append(out, summarizeSeries(ts, noData))
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].rankMean() > out[j].rankMean() })
-	if len(out) <= perfSummaryMaxSeries {
+	if len(out) <= maxSeries {
 		return out, 0
 	}
-	return out[:perfSummaryMaxSeries], len(out) - perfSummaryMaxSeries
+	return out[:maxSeries], len(out) - maxSeries
 }
 
 func summarizeSeries(ts TimeSeries, noData func(float64) bool) PerfSeriesSummary {
