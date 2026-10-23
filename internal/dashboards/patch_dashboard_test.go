@@ -188,6 +188,21 @@ func TestPatchDashboard_UpdatePanelNullRemovesField(t *testing.T) {
 	}
 }
 
+func TestPatchDashboard_UpdatePanelNullRemovesNullField(t *testing.T) {
+	ps := newPatchServerServing(t, `{"dashboard":{"name":"N","panels":[{"id":"p1","version":1,"queries":null}]}}`)
+	result, err := ps.patch(t, `[{"op":"update_panel","panel_id":"p1","fields":{"queries":null}}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p1 := ps.sentDashboard(t)["panels"].([]any)[0].(map[string]any)
+	if _, ok := p1["queries"]; ok {
+		t.Fatalf("queries not removed: %v", p1)
+	}
+	if text := utils.GetTextContent(t, result); !strings.Contains(text, `"fields":{"queries":{"before":null}}`) {
+		t.Fatalf("diff omits the deletion: %s", text)
+	}
+}
+
 func TestPatchDashboard_RemovePanel(t *testing.T) {
 	ps := newPatchServer(t)
 	result, err := ps.patch(t, `[{"op":"remove_panel","panel_id":"p1"}]`)

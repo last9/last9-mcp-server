@@ -251,7 +251,7 @@ func updatePanelFields(panel map[string]any, fields map[string]any) map[string]f
 	changed := map[string]fieldChange{}
 	for key, value := range fields {
 		before, had := panel[key]
-		if had && reflect.DeepEqual(before, value) {
+		if had && value != nil && reflect.DeepEqual(before, value) {
 			continue
 		}
 		fc := fieldChange{}
