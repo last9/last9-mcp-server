@@ -1,6 +1,6 @@
 module last9-mcp
 
-go 1.25.0
+go 1.27.3
 
 require (
 	github.com/google/jsonschema-go v0.4.3
