@@ -474,6 +474,12 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Description: prompts.GetAlertGroupsDescription,
 	}, alerting.NewGetAlertGroupsHandler(client, cfg)))
 
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_alert_operations_summary",
+		Annotations: readOnlyTool("Get Alert Operations Summary"),
+		Description: prompts.GetAlertOperationsSummaryDescription,
+	}, alerting.NewGetAlertOperationsSummaryHandler(client, cfg)))
+
 	// Register entity alert rules tool (entity-scoped, includes expression_args and resolved PromQL)
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "get_entity_alert_rules",

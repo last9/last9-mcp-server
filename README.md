@@ -312,6 +312,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_change_events`** — Deployments, config changes, rollbacks. Correlate incidents with what changed
 - **`analyze_change_impact`** — Did a change break anything? Compares a service and its direct callers before and after a change: golden signals, APM and trace-attribute deviations, new firing alerts, and a verdict (`regression likely` / `no significant change` / `insufficient data`)
 - **`get_alert_groups`** — Configured Compass alert groups with metadata labels, team, tier, and rule counts — including groups with zero rules and groups that are not firing
+- **`get_alert_operations_summary`** — On-call health over a window: alerts raised vs acknowledged, backlog, deliveries and, with `include_rules`, the noisiest, flapping and unrouted rules. Every count carries its `status` (`available` / `partial` / `unavailable`)
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_alerts`** — Currently firing alerts within a time window
 - **`get_alert_rule_state`** — Historical firing state (1/0) per alert rule over a time range, grouped by `rule_id`. Filterable by alert group, rule name, label filters, and state.
@@ -791,6 +792,15 @@ Configured Compass alert-group inventory for changeboard / label-coverage audits
 - `label_key` + `label_value` (string, optional): Must be set together. Exact case-insensitive match on one `metadata.labels` pair — both key and value.
 
 Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `entity_class`, `team`, `tier`, `metadata.labels`, and rule counts. Empty `team` / `labels` means unset.
+
+### get_alert_operations_summary
+
+- `start_time_iso` / `end_time_iso` (string, required): RFC3339 window, at most 31 days.
+- `timezone` (string, optional): IANA name for day boundaries. Default: `UTC`.
+- `severities` / `services` (array, optional): Narrow the summary.
+- `include_rules` (boolean, optional): Also return per-rule hygiene (top 20 by `fire_count`, flapping and unrouted rules). Default: `false`.
+
+Returns JSON with `alerts_raised`, `acknowledged`, `unacknowledged`, `current_backlog`, `delivered`, `notification_outcomes`, `top_rules`, `needs_attention` and `coverage`. Each metric is `{status, count?, reason?}`; a `partial` count covers only part of the window and is not a lower bound.
 
 ### get_alert_config
 
