@@ -12,8 +12,9 @@ const (
 	// Response times are exempt: one series per quantile, a fixed set.
 	perfSummaryMaxSeries       = 4
 	perfSummaryMaxChangePoints = 3
-	// perfSummaryMinSegment is the fewest points each side of a change point
-	// must have, so a single outlier is not reported as a level shift.
+	// perfSummaryMinSegment is the fewest points each side of a change point,
+	// and each half of a baseline delta, must have, so a single outlier is not
+	// reported as a level shift.
 	perfSummaryMinSegment = 3
 	// perfSummaryMinSegmentDivisor raises the minimum segment to a tenth of
 	// the series: a few correlated points at an edge are noise, not a level.
@@ -159,7 +160,7 @@ func summarizeSeries(ts TimeSeries, noData func(float64) bool) PerfSeriesSummary
 	s.Max = roundSig(sorted[len(sorted)-1])
 	s.Mean = roundSig(mean(values))
 	s.Last = roundSig(values[len(values)-1])
-	if half > 0 {
+	if half >= perfSummaryMinSegment {
 		baseline, recent := mean(values[:half]), mean(values[half:])
 		baselineMean := roundSig(baseline)
 		s.BaselineMean = &baselineMean

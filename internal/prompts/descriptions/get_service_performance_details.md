@@ -4,7 +4,7 @@ Service performance metrics over a time range.
 
 Returns: service name, env, throughput (rpm), error rate (rpm, 4xx/5xx), error percentage, response times in seconds (p50, p90, p95, p99, avg, max), apdex score, availability (%), top operations by response time and error rate, top errors/exceptions by count (see `top_n`).
 
-By default each metric is summarized per series: `points`, `missing_points` (no-traffic availability buckets, excluded), `min`, `p50`, `p90`, `p99` (nearest-rank), `max`, `mean`, `last`, `baseline_mean` (first half of valid points), `delta_pct` (second half vs baseline; absent if 0) and up to 3 `change_points` (`timestamp`, `before_mean`, `after_mean`). Top 4 series per metric by mean (all response-time quantiles); `series_omitted` counts the rest.
+By default each metric is summarized per series: `points`, `missing_points` (no-traffic availability buckets, excluded), `min`, `p50`, `p90`, `p99` (nearest-rank), `max`, `mean`, `last`, `baseline_mean` (first half of valid points; needs 6+), `delta_pct` (second half vs baseline; absent if baseline is 0) and up to 3 `change_points` (`timestamp`, `before_mean`, `after_mean`). Top 4 series per metric by mean (all response-time quantiles); `series_omitted` counts the rest.
 
 Use `get_service_operations_summary` for per-operation drill-down. Use for performance summaries, bottlenecks, and error overview.
 
@@ -20,6 +20,6 @@ Parameters:
 - `lookback_minutes`: (Optional) Minutes to look back. Default 60.
 - `start_time_iso` / `end_time_iso`: (Optional) RFC3339/ISO8601 bounds (e.g. `2026-02-09T15:04:05Z`). Override lookback when set; end defaults to now.
 - `top_n`: (Optional) Max entries per `top_operations` list and in `top_errors`. Default 5, or 10 with `include_series=true`. Values above 100 clamp to 100.
-- `include_series`: (Optional) Return every point of every series instead of the summary. Default false (hundreds of KB).
+- `include_series`: (Optional) Return all raw points instead of the summary. Default false (hundreds of KB).
 
 If unsure of `service_name` or `env` spelling, call `did_you_mean` first.
