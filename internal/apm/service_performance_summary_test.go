@@ -1,6 +1,7 @@
 package apm
 
 import (
+	"encoding/json"
 	"math"
 	"reflect"
 	"testing"
@@ -62,6 +63,44 @@ func TestSummarizeSeries_BaselineSplitsValidPointsNotWindow(t *testing.T) {
 	s := summarizeSeries(TimeSeries{Values: pts}, nil)
 	if s.BaselineMean != 10 || s.DeltaPct == nil || *s.DeltaPct != 100 {
 		t.Fatalf("baseline/delta = %v/%v, want 10/100", s.BaselineMean, s.DeltaPct)
+	}
+}
+
+// A series with no valid points must not report zeros an agent reads as
+// "throughput 0"; one point has no first half, so no baseline either.
+func TestSummarizeSeries_UndefinedStatsAreOmitted(t *testing.T) {
+	cases := []struct {
+		name   string
+		series TimeSeries
+		want   string
+	}{
+		{"empty", TimeSeries{}, `{"points":0}`},
+		{"only no-data", TimeSeries{Values: pointsFrom(-999, -999)}, `{"points":0,"missing_points":2}`},
+		{"single point", TimeSeries{Values: pointsFrom(7)}, `{"points":1,"min":7,"p50":7,"p90":7,"p99":7,"max":7,"mean":7,"last":7}`},
+		{"zero value kept", TimeSeries{Values: pointsFrom(0, 0)}, `{"points":2,"min":0,"p50":0,"p90":0,"p99":0,"max":0,"mean":0,"last":0,"baseline_mean":0}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := json.Marshal(summarizeSeries(c.series, func(v float64) bool { return v == perfAvailabilityNoData }))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != c.want {
+				t.Fatalf("got %s, want %s", got, c.want)
+			}
+		})
+	}
+}
+
+// A baseline so close to zero that the ratio overflows must drop delta_pct,
+// not fail the whole response with json: unsupported value: +Inf.
+func TestSummarizeSeries_OverflowingDeltaIsOmitted(t *testing.T) {
+	s := summarizeSeries(TimeSeries{Values: pointsFrom(1e-310, 1e-310, 1, 1)}, nil)
+	if s.DeltaPct != nil {
+		t.Fatalf("delta_pct = %v, want omitted", *s.DeltaPct)
+	}
+	if _, err := json.Marshal(s); err != nil {
+		t.Fatalf("summary must marshal: %v", err)
 	}
 }
 
