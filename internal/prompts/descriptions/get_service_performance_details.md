@@ -19,7 +19,7 @@ Parameters:
 - `env`: (Optional) Exact environment name, e.g. production. Use `get_service_environments` to list values. Default all environments (empty or .*). Anchored ^production$ is accepted and matched exactly; alternation (a|b) and wildcards (prod.*) are rejected. For regex matching use get_service_summary. The response echoes the matched `env`, plus `env_requested` when it differed.
 - `lookback_minutes`: (Optional) Minutes to look back. Default 60.
 - `start_time_iso` / `end_time_iso`: (Optional) RFC3339/ISO8601 bounds (e.g. `2026-02-09T15:04:05Z`). Override lookback when set; end defaults to now.
-- `top_n`: (Optional) Max entries per `top_operations` list and in `top_errors`. Default 5, or 10 with `include_series=true`. Values above 100 clamp to 100.
-- `include_series`: (Optional) Return all raw points instead of the summary. Default false (hundreds of KB).
+- `top_n`: (Optional) Max entries per `top_operations` list and `top_errors`. Default (also for 0 or less) 5, or 10 with `include_series=true`. Clamped to 100.
+- `include_series`: (Optional) Every raw point (hundreds of KB to MBs) instead of the summary. Default false.
 
 If unsure of `service_name` or `env` spelling, call `did_you_mean` first.

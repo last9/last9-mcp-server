@@ -456,8 +456,8 @@ type ServicePerformanceDetailsArgs struct {
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
 	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
 	Env             string  `json:"env,omitempty" jsonschema:"(Optional) Exact environment name, e.g. production. Default all environments (empty or .*). Anchored forms like ^production$ are accepted and matched exactly. Alternation (a|b) and wildcards (prod.*) are rejected; list names with get_service_environments, or use get_service_summary for regex matching."`
-	TopN            int     `json:"top_n,omitempty" jsonschema:"Max entries per top_operations list (by_response_time, by_error_rate) and in top_errors (default: 5, or 10 with include_series=true). Values above 100 clamp to 100."`
-	IncludeSeries   bool    `json:"include_series,omitempty" jsonschema:"(Optional) true returns every point of every time series (can be hundreds of KB). Default false: per-series percentiles, baseline delta and change points."`
+	TopN            int     `json:"top_n,omitempty" jsonschema:"Max entries per top_operations list (by_response_time, by_error_rate) and in top_errors (default: 5, or 10 with include_series=true; 0 or less uses the default). Values above 100 clamp to 100."`
+	IncludeSeries   bool    `json:"include_series,omitempty" jsonschema:"(Optional) true returns every point of every time series (hundreds of KB to MBs). Default false: per-series percentiles, baseline delta and change points."`
 }
 
 func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServicePerformanceDetailsArgs) (*mcp.CallToolResult, any, error) {

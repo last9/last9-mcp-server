@@ -191,6 +191,28 @@ func TestServicePerformanceDetails_SummaryByDefaultMatchesFullSeries(t *testing.
 	}
 }
 
+func TestServicePerformanceDetails_NonPositiveTopNUsesDefault(t *testing.T) {
+	end := time.Now().UTC().Truncate(time.Minute)
+	srv := newPerfFixtureServer(t, end.Add(-30*time.Minute).Unix(), perfDetailsDefaultTopN)
+	defer srv.Close()
+
+	for _, topN := range []int{0, -1} {
+		text := callPerfDetails(t, srv, ServicePerformanceDetailsArgs{
+			ServiceName:  "checkout",
+			StartTimeISO: end.Add(-time.Hour).Format(time.RFC3339),
+			EndTimeISO:   end.Format(time.RFC3339),
+			TopN:         topN,
+		})
+		var summary ServicePerformanceSummary
+		if err := json.Unmarshal([]byte(text), &summary); err != nil {
+			t.Fatalf("top_n=%d: decode: %v", topN, err)
+		}
+		if len(summary.TopErrors) != perfSummaryDefaultTopN {
+			t.Errorf("top_n=%d: got %d top_errors, want default %d", topN, len(summary.TopErrors), perfSummaryDefaultTopN)
+		}
+	}
+}
+
 func TestServicePerformanceDetails_IncludeSeriesKeepsPreviousPayload(t *testing.T) {
 	end := time.Now().UTC().Truncate(time.Minute)
 	srv := newPerfFixtureServer(t, end.Add(-30*time.Minute).Unix(), 3)
@@ -275,9 +297,13 @@ func TestServicePerformanceDetailsArgs_TopNDescriptionStatesBothDefaults(t *test
 		t.Fatalf("schema: %v", err)
 	}
 	got := schema.Properties["top_n"].Description
+	if want := "hundreds of KB to MBs"; !strings.Contains(schema.Properties["include_series"].Description, want) {
+		t.Errorf("include_series description must size the full payload as %q", want)
+	}
 	for _, want := range []string{
 		fmt.Sprintf("default: %d", perfSummaryDefaultTopN),
 		fmt.Sprintf("%d with include_series=true", perfDetailsDefaultTopN),
+		"0 or less uses the default",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("top_n description %q missing %q", got, want)
