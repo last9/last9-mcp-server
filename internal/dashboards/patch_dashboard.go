@@ -13,7 +13,7 @@ import (
 
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
-	lastdashboards "last9-mcp/internal/last9api/dashboards"
+	apidashboards "last9-mcp/internal/last9api/dashboards"
 	"last9-mcp/internal/models"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -83,7 +83,7 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 		}
 
 		api := last9api.NewClient(client, cfg)
-		current, err := lastdashboards.GetDashboard(ctx, api, args.ID)
+		current, err := apidashboards.GetDashboard(ctx, api, args.ID)
 		if err != nil {
 			return nil, nil, mapDashboardAPIError(err)
 		}
@@ -104,7 +104,7 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 		if err != nil {
 			return nil, nil, err
 		}
-		if err := lastdashboards.UpdateDashboard(ctx, api, args.ID, payload); err != nil {
+		if err := apidashboards.UpdateDashboard(ctx, api, args.ID, payload); err != nil {
 			return nil, nil, mapDashboardAPIError(err)
 		}
 
