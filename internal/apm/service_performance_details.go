@@ -49,6 +49,9 @@ const (
 	// the three top-k fields (top_operations_by_response_time,
 	// top_operations_by_error_rate, top_errors) when top_n is unset/zero.
 	perfDetailsDefaultTopN = 10
+	// perfAvailabilityNoData is the availability query's value for buckets
+	// with no server spans; the summary counts it as missing, not as 0%.
+	perfAvailabilityNoData = -999
 	// perfDetailsMaxTopN caps top_n so a huge requested value can't blow up
 	// the backend topk()/over-fetch cost (e.g. topk(2000000, ...) for
 	// top_n: 1000000). Clamps down rather than erroring, matching the
@@ -447,6 +450,16 @@ func mergeTopInt64(chunkResults [][]map[string]int64, limit int) []map[string]in
 	return result
 }
 
+type ServicePerformanceDetailsArgs struct {
+	ServiceName     string  `json:"service_name" jsonschema:"(Required) Name of the service to get performance details for"`
+	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
+	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
+	Env             string  `json:"env,omitempty" jsonschema:"(Optional) Exact environment name, e.g. production. Default all environments (empty or .*). Anchored forms like ^production$ are accepted and matched exactly. Alternation (a|b) and wildcards (prod.*) are rejected; list names with get_service_environments, or use get_service_summary for regex matching."`
+	TopN            int     `json:"top_n,omitempty" jsonschema:"Max entries per top_operations list (by_response_time, by_error_rate) and in top_errors (default: 5, or 10 with include_series=true; 0 or less uses the default). Values above 100 clamp to 100."`
+	IncludeSeries   bool    `json:"include_series,omitempty" jsonschema:"(Optional) true returns every point of every time series (hundreds of KB to MBs). Default false: per-series percentiles, baseline delta and change points."`
+}
+
 func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ServicePerformanceDetailsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args ServicePerformanceDetailsArgs) (*mcp.CallToolResult, any, error) {
 		startTimeParam, endTimeParam, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
@@ -489,6 +502,9 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		topN := args.TopN
 		if topN <= 0 {
 			topN = perfDetailsDefaultTopN
+			if !args.IncludeSeries {
+				topN = perfSummaryDefaultTopN
+			}
 		}
 		if topN > perfDetailsMaxTopN {
 			topN = perfDetailsMaxTopN
@@ -525,8 +541,8 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 		// Get Availability over time range as a vector
 		details.Availability, err = fetchChunkedRangeSeries(ctx, client, cfg, chunks, func(c perfDetailsChunk) string {
 			return fmt.Sprintf(
-				`(1 - (sum(rate(trace_endpoint_count{service_name="%s", env=~"%s", span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) or 0) / (sum(rate(trace_endpoint_count{service_name="%s", env=~"%s", span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) + 0.0000001)) * 100 default -999`,
-				escSvc, escEnv, escSvc, escEnv,
+				`(1 - (sum(rate(trace_endpoint_count{service_name="%s", env=~"%s", span_kind='SPAN_KIND_SERVER', http_status_code=~'4.*|5.*'}[$__rate_interval])) or 0) / (sum(rate(trace_endpoint_count{service_name="%s", env=~"%s", span_kind='SPAN_KIND_SERVER'}[$__rate_interval])) + 0.0000001)) * 100 default %d`,
+				escSvc, escEnv, escSvc, escEnv, perfAvailabilityNoData,
 			)
 		}, "service performance details availability", "availability response", &details.PartialErrors)
 		if err != nil {
@@ -664,7 +680,11 @@ func NewServicePerformanceDetailsHandler(client *http.Client, cfg models.Config)
 			details.TopErrors = mergeTopInt64(topErrorsChunks, topN)
 		}
 
-		resultJSON, err := json.Marshal(details)
+		var payload any = details
+		if !args.IncludeSeries {
+			payload = summarizePerformanceDetails(details)
+		}
+		resultJSON, err := json.Marshal(payload)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
