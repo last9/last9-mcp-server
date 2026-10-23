@@ -130,8 +130,8 @@ func nearest(key string, names []string) ([]string, int) {
 }
 
 // tokenDistance sums per-token edits, allowing one edit per four runes of a
-// token, maxEdits in all, and none in a token holding a digit or more
-// occurrences of a sibling word than the other.
+// token, maxEdits in all, and none in a token holding a digit or swapping a
+// sibling word.
 func tokenDistance(a, b []string) (int, bool) {
 	if len(a) != len(b) {
 		return 0, false
@@ -141,7 +141,7 @@ func tokenDistance(a, b []string) (int, bool) {
 		if a[i] == b[i] {
 			continue
 		}
-		if hasDigit(a[i]) || hasDigit(b[i]) || addsSiblingWord(a[i], b[i]) {
+		if hasDigit(a[i]) || hasDigit(b[i]) {
 			return 0, false
 		}
 		runes := utf8.RuneCountInString(a[i])
@@ -152,7 +152,7 @@ func tokenDistance(a, b []string) (int, bool) {
 			return 0, false
 		}
 		d := distance(a[i], b[i])
-		if d > limit {
+		if d > limit || swapsSiblingWord(a[i], b[i]) {
 			return 0, false
 		}
 		total += d
@@ -160,12 +160,34 @@ func tokenDistance(a, b []string) (int, bool) {
 	return total, true
 }
 
-// Counting, not presence: "canaryca" holds "ca" twice, so the "ca" in canary
-// does not let it stand for "canarysa".
-func addsSiblingWord(typed, name string) bool {
-	return slices.ContainsFunc(siblingWords, func(w string) bool {
-		return strings.Count(typed, w) > strings.Count(name, w)
-	})
+// swapsSiblingWord reports whether the span where a and b differ touches a
+// sibling word on both sides ("canaryca" for "canarysa"), unlike a typo that
+// merely spells one ("dmeo" for "demo").
+func swapsSiblingWord(a, b string) bool {
+	ra, rb := []rune(a), []rune(b)
+	pre := 0
+	for pre < min(len(ra), len(rb)) && ra[pre] == rb[pre] {
+		pre++
+	}
+	suf := 0
+	for suf < min(len(ra), len(rb))-pre && ra[len(ra)-1-suf] == rb[len(rb)-1-suf] {
+		suf++
+	}
+	return touchesSiblingWord(ra, pre, len(ra)-suf) && touchesSiblingWord(rb, pre, len(rb)-suf)
+}
+
+// touchesSiblingWord reports whether a sibling word in s overlaps s[from:to],
+// or straddles from when the span is empty.
+func touchesSiblingWord(s []rune, from, to int) bool {
+	for _, w := range siblingWords {
+		n := len(w)
+		for i := 0; i+n <= len(s); i++ {
+			if i < to && i+n > from && string(s[i:i+n]) == w {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // containsWhole reports whether key occurs in name without cutting a number
