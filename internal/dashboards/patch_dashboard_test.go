@@ -33,6 +33,9 @@ type patchServer struct {
 	srv  *httptest.Server
 	puts []DashboardRequest
 	gets []string
+	// onStore, when set, mimics backend rewrites of the dashboard on PUT.
+	onStore     func(doc map[string]any)
+	failRereads bool
 }
 
 func newPatchServer(t *testing.T) *patchServer {
@@ -51,6 +54,10 @@ func newPatchServerServing(t *testing.T, fixture string) *patchServer {
 		switch r.Method {
 		case http.MethodGet:
 			ps.gets = append(ps.gets, r.URL.RawQuery)
+			if ps.failRereads && len(ps.puts) > 0 {
+				w.WriteHeader(http.StatusBadGateway)
+				return
+			}
 			_, _ = io.WriteString(w, fixture)
 		case http.MethodPut:
 			var req DashboardRequest
@@ -58,6 +65,7 @@ func newPatchServerServing(t *testing.T, fixture string) *patchServer {
 				t.Error(err)
 			}
 			ps.puts = append(ps.puts, req)
+			fixture = ps.store(t, req)
 			_, _ = io.WriteString(w, `{"dashboard":{"id":"dash-1"}}`)
 		default:
 			t.Errorf("unexpected method %s", r.Method)
@@ -65,6 +73,22 @@ func newPatchServerServing(t *testing.T, fixture string) *patchServer {
 	}))
 	t.Cleanup(ps.srv.Close)
 	return ps
+}
+
+func (ps *patchServer) store(t *testing.T, req DashboardRequest) string {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(req.Dashboard, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if ps.onStore != nil {
+		ps.onStore(doc)
+	}
+	stored, err := json.Marshal(map[string]any{"dashboard": doc, "metadata": req.Metadata})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(stored)
 }
 
 func (ps *patchServer) patch(t *testing.T, ops string) (*mcp.CallToolResult, error) {
@@ -298,7 +322,7 @@ func TestPatchDashboard_PreservesMetadataAndSendsRegion(t *testing.T) {
 	if got := string(ps.puts[0].Metadata); got != `{"_category":"custom","_type":"metrics"}` {
 		t.Fatalf("metadata %s", got)
 	}
-	if len(ps.gets) != 1 || ps.gets[0] != "region=us-east-1" {
+	if len(ps.gets) != 2 || ps.gets[0] != "region=us-east-1" || ps.gets[1] != "region=us-east-1" {
 		t.Fatalf("GET queries %v", ps.gets)
 	}
 	if ref, _ := result.Meta["reference_url"].(string); ref != "/v2/organizations/test-org/dashboards/dash-1" {
@@ -372,6 +396,87 @@ func TestPatchDashboard_OmitsNoOpOpsFromChanges(t *testing.T) {
 	}
 	ps.sentDashboard(t)
 	want := `{"dashboard_id":"dash-1","changes":[{"op":"update_panel","panel_id":"p1","fields":{"description":{"after":"d"}}}]}`
+	if text := utils.GetTextContent(t, result); text != want {
+		t.Fatalf("diff %s\nwant %s", text, want)
+	}
+}
+
+// dropUnknownPanelKeys mimics the backend keeping only the panel keys it knows.
+func dropUnknownPanelKeys(doc map[string]any) {
+	known := map[string]bool{"id": true, "name": true, "version": true, "visualization": true, "queries": true, "description": true}
+	for _, p := range doc["panels"].([]any) {
+		for key := range p.(map[string]any) {
+			if !known[key] {
+				delete(p.(map[string]any), key)
+			}
+		}
+	}
+}
+
+func TestPatchDashboard_DiffsAgainstStoredDashboard(t *testing.T) {
+	tests := []struct {
+		name string
+		ops  string
+		want string
+	}{
+		{
+			name: "update_panel key the backend drops",
+			ops:  `[{"op":"update_panel","panel_id":"p1","fields":{"conc_9":"v9","description":"d"}}]`,
+			want: `{"op":"update_panel","panel_id":"p1","fields":{"description":{"after":"d"}},"not_stored":["conc_9"]}`,
+		},
+		{
+			name: "every update_panel key dropped",
+			ops:  `[{"op":"update_panel","panel_id":"p1","fields":{"conc_9":"v9"}}]`,
+			want: `{"op":"update_panel","panel_id":"p1","not_stored":["conc_9"]}`,
+		},
+		{
+			name: "add_panel key the backend drops",
+			ops:  `[{"op":"add_panel","panel":{"id":"p3","name":"S","conc_9":1}}]`,
+			want: `{"op":"add_panel","panel_id":"p3","index":3,"not_stored":["conc_9"]}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := newPatchServer(t)
+			ps.onStore = dropUnknownPanelKeys
+			result, err := ps.patch(t, tt.ops)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(ps.gets) != 2 {
+				t.Fatalf("GET count = %d, want a re-read after the PUT", len(ps.gets))
+			}
+			want := `{"dashboard_id":"dash-1","changes":[` + tt.want + `],"note":"not_stored lists keys the dashboard API did not keep; get_dashboard shows the stored panel"}`
+			if text := utils.GetTextContent(t, result); text != want {
+				t.Fatalf("diff %s\nwant %s", text, want)
+			}
+		})
+	}
+}
+
+func TestPatchDashboard_DiffShowsStoredValue(t *testing.T) {
+	ps := newPatchServer(t)
+	ps.onStore = func(doc map[string]any) {
+		doc["panels"].([]any)[0].(map[string]any)["name"] = "trimmed"
+	}
+	result, err := ps.patch(t, `[{"op":"update_panel","panel_id":"p1","fields":{"name":"  trimmed  "}}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"dashboard_id":"dash-1","changes":[{"op":"update_panel","panel_id":"p1","fields":{"name":{"before":"Latency","after":"trimmed"}}}]}`
+	if text := utils.GetTextContent(t, result); text != want {
+		t.Fatalf("diff %s\nwant %s", text, want)
+	}
+}
+
+func TestPatchDashboard_FailedRereadReportsSentChanges(t *testing.T) {
+	ps := newPatchServer(t)
+	ps.failRereads = true
+	result, err := ps.patch(t, `[{"op":"set_title","title":"x"}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"dashboard_id":"dash-1","changes":[{"op":"set_title","before":"Gateway","after":"x"}],"note":"written, but re-reading the dashboard failed, so changes show what was sent; get_dashboard shows what was stored"}`
 	if text := utils.GetTextContent(t, result); text != want {
 		t.Fatalf("diff %s\nwant %s", text, want)
 	}

@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -56,6 +58,8 @@ type patchChange struct {
 	Before  json.RawMessage        `json:"before,omitempty"`
 	After   json.RawMessage        `json:"after,omitempty"`
 	Fields  map[string]fieldChange `json:"fields,omitempty"`
+	// NotStored lists panel keys that were sent but are absent from the stored panel.
+	NotStored []string `json:"not_stored,omitempty"`
 }
 
 type fieldChange struct {
@@ -112,7 +116,17 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, mapDashboardAPIError(err)
 		}
 
-		return patchResult(dlBuilder, patchDiff{DashboardID: args.ID, Changes: changes}), nil, nil
+		diff := patchDiff{DashboardID: args.ID, Changes: changes}
+		// The API silently drops panel keys it does not know, so the diff is checked
+		// against a re-read rather than trusted as sent.
+		stored, err := apidashboards.GetDashboard(ctx, api, args.ID)
+		switch {
+		case err != nil || stored.Dashboard == nil:
+			diff.Note = "written, but re-reading the dashboard failed, so changes show what was sent; get_dashboard shows what was stored"
+		case reconcileStored(changes, current.Dashboard, stored.Dashboard):
+			diff.Note = "not_stored lists keys the dashboard API did not keep; get_dashboard shows the stored panel"
+		}
+		return patchResult(dlBuilder, diff), nil, nil
 	}
 }
 
@@ -284,6 +298,47 @@ func updatePanelFields(panel map[string]any, fields map[string]any) map[string]f
 		changed[key] = fc
 	}
 	return changed
+}
+
+// reconcileStored rewrites panel changes to what the API stored: keys whose presence
+// differs between sent and stored move to NotStored, and changed values show the stored
+// value. It reports whether any key was not stored.
+func reconcileStored(changes []patchChange, sent, stored map[string]any) bool {
+	anyNotStored := false
+	for i := range changes {
+		c := &changes[i]
+		sentPanel := panelByID(sent, c.PanelID)
+		if c.PanelID == "" || sentPanel == nil || (c.Op != "update_panel" && c.Op != "add_panel") {
+			continue
+		}
+		storedPanel := panelByID(stored, c.PanelID)
+		keys := slices.Sorted(maps.Keys(c.Fields))
+		if c.Op == "add_panel" {
+			keys = slices.Sorted(maps.Keys(sentPanel))
+		}
+		for _, key := range keys {
+			sentValue, sentHas := sentPanel[key]
+			storedValue, storedHas := storedPanel[key]
+			if sentHas != storedHas {
+				c.NotStored = append(c.NotStored, key)
+				delete(c.Fields, key)
+			} else if fc, ok := c.Fields[key]; ok && storedHas && !reflect.DeepEqual(sentValue, storedValue) {
+				fc.After = diffValue(storedValue)
+				c.Fields[key] = fc
+			}
+		}
+		anyNotStored = anyNotStored || len(c.NotStored) > 0
+	}
+	return anyNotStored
+}
+
+func panelByID(doc map[string]any, id string) map[string]any {
+	panels, _ := doc["panels"].([]any)
+	if at := findPanel(panels, id); at >= 0 {
+		panel, _ := panels[at].(map[string]any)
+		return panel
+	}
+	return nil
 }
 
 func setVariable(doc map[string]any, variable map[string]any) (target, action string) {
