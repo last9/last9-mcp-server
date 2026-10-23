@@ -5,6 +5,7 @@ package namematch
 import (
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -40,12 +41,15 @@ func Resolve(input string, names []string) Match {
 	}
 	rules := []func(string) []string{
 		func(key string) []string { return filter(names, func(n string) bool { return normalize(n) == key }) },
+		func(key string) []string {
+			return filter(names, func(n string) bool { return compact(normalize(n)) == compact(key) })
+		},
 		func(key string) []string { return nearest(key, names) },
 		func(key string) []string {
 			if len([]rune(key)) < minFuzzyRunes {
 				return nil
 			}
-			return filter(names, func(n string) bool { return strings.Contains(normalize(n), key) })
+			return filter(names, func(n string) bool { return containsWhole(normalize(n), key) })
 		},
 	}
 	for _, rule := range rules {
@@ -82,32 +86,91 @@ func filter(names []string, keep func(string) bool) []string {
 	return out
 }
 
-// One edit per four runes lets a typo resolve but not a different word.
+// Names compare token by token so an edit can fix a typo inside a word but
+// never swap a word ("east" for "west") or a number ("-2" for "-1"): those
+// name a sibling, not a misspelling.
 func nearest(key string, names []string) []string {
-	keyRunes := utf8.RuneCountInString(key)
-	limit := keyRunes / 4
-	if limit == 0 {
-		return nil
-	}
-	best := limit + 1
+	keyTokens := tokens(key)
+	best := -1
 	var hits []string
 	for _, n := range names {
-		norm := normalize(n)
-		// The length gap bounds the distance from below; skipping on it keeps
-		// a huge input from allocating a len(key)×len(name) matrix per name.
-		if abs(keyRunes-utf8.RuneCountInString(norm)) > limit {
-			continue
-		}
-		d := distance(key, norm)
+		d, ok := tokenDistance(keyTokens, tokens(normalize(n)))
 		switch {
-		case d > limit:
-		case d < best:
+		case !ok:
+		case best == -1 || d < best:
 			best, hits = d, []string{n}
 		case d == best:
 			hits = append(hits, n)
 		}
 	}
 	return hits
+}
+
+// tokenDistance sums per-token edits, allowing one edit per four runes of a
+// token and none in a token holding a digit.
+func tokenDistance(a, b []string) (int, bool) {
+	if len(a) != len(b) {
+		return 0, false
+	}
+	total := 0
+	for i := range a {
+		if a[i] == b[i] {
+			continue
+		}
+		if hasDigit(a[i]) || hasDigit(b[i]) {
+			return 0, false
+		}
+		runes := utf8.RuneCountInString(a[i])
+		limit := runes / 4
+		// The length gap bounds the distance from below; skipping on it keeps
+		// a huge input from allocating a len(key)×len(name) matrix per name.
+		if limit == 0 || abs(runes-utf8.RuneCountInString(b[i])) > limit {
+			return 0, false
+		}
+		d := distance(a[i], b[i])
+		if d > limit {
+			return 0, false
+		}
+		total += d
+	}
+	return total, true
+}
+
+// containsWhole reports whether key occurs in name without cutting a number
+// in two, so "web-1" does not match "web-12".
+func containsWhole(name, key string) bool {
+	first, _ := utf8.DecodeRuneInString(key)
+	last, _ := utf8.DecodeLastRuneInString(key)
+	for from := 0; ; {
+		i := strings.Index(name[from:], key)
+		if i < 0 {
+			return false
+		}
+		start, end := from+i, from+i+len(key)
+		before, _ := utf8.DecodeLastRuneInString(name[:start])
+		after, _ := utf8.DecodeRuneInString(name[end:])
+		if !(splitsNumber(before, first) || splitsNumber(last, after)) {
+			return true
+		}
+		_, size := utf8.DecodeRuneInString(name[start:])
+		from = start + size
+	}
+}
+
+func splitsNumber(a, b rune) bool {
+	return unicode.IsDigit(a) && unicode.IsDigit(b)
+}
+
+func tokens(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool { return r == '-' })
+}
+
+func compact(s string) string {
+	return strings.Join(tokens(s), "")
+}
+
+func hasDigit(s string) bool {
+	return strings.IndexFunc(s, unicode.IsDigit) >= 0
 }
 
 // Optimal string alignment, not plain Levenshtein: "stagign" is one edit from "staging".
