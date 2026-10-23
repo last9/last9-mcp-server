@@ -3,6 +3,7 @@ package alerts
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -51,7 +52,18 @@ func GetMonitor(ctx context.Context, c *last9api.Client, in GetMonitorInput) (Ge
 			q.Set(key, value)
 		}
 	}
-	var resp GetMonitorResponse
-	err := c.Do(ctx, opMonitor, last9api.Request{Method: http.MethodGet, Path: pathMonitor}, &resp, last9api.WithQuery(q))
-	return resp, err
+	// Callers read an absent rule as not firing, so a reply without alert_rules
+	// must fail rather than look like a quiet window.
+	var wire struct {
+		AlertRules *[]MonitorRule `json:"alert_rules"`
+	}
+	err := c.Do(ctx, opMonitor, last9api.Request{Method: http.MethodGet, Path: pathMonitor}, &wire,
+		last9api.WithQuery(q), last9api.WithRequiredBody())
+	if err != nil {
+		return GetMonitorResponse{}, err
+	}
+	if wire.AlertRules == nil {
+		return GetMonitorResponse{}, fmt.Errorf("%s: response has no alert_rules", opMonitor)
+	}
+	return GetMonitorResponse{AlertRules: *wire.AlertRules}, nil
 }

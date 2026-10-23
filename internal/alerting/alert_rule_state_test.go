@@ -328,6 +328,50 @@ func TestAlertRuleStateHandler_APIError(t *testing.T) {
 	}
 }
 
+// A sample whose body is missing or malformed must fail the call, not read as
+// "no rule firing" and fake a resolved transition.
+func TestAlertRuleStateHandler_RejectsMissingOrMalformedSample(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		status  int
+		body    string
+		wantErr bool
+	}{
+		{"valid_empty_list", http.StatusOK, `{"alert_rules":[]}`, false},
+		{"empty_200", http.StatusOK, "", true},
+		{"empty_204", http.StatusNoContent, "", true},
+		{"empty_object", http.StatusOK, `{}`, true},
+		{"null_rules", http.StatusOK, `{"alert_rules":null}`, true},
+		{"trailing_garbage", http.StatusOK, `{"alert_rules":[]}broken`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Query().Get("timestamp") == "1718000000" {
+					_, _ = w.Write([]byte(`{"alert_rules":[{"rule_id":"r","state":"firing"}]}`))
+					return
+				}
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+
+			handler := NewAlertRuleStateHandler(server.Client(), newAlertRuleStateTestConfig(server.URL))
+			result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, AlertRuleStateRequest{
+				StartTime: ts(1718000000), EndTime: ts(1718000060), Step: 60,
+			})
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "sample at timestamp 1718000060") {
+					t.Fatalf("want error naming the failed sample, got err=%v result=%+v", err, result)
+				}
+				return
+			}
+			if err != nil || result.IsError {
+				t.Fatalf("want success, got err=%v result=%+v", err, result)
+			}
+		})
+	}
+}
+
 func mapKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,5 +72,42 @@ func TestGetMonitorForwardsFilters(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("query = %v, want %v", got, want)
+	}
+}
+
+func TestGetMonitorRejectsMissingRules(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		status     int
+		wantErr    string
+	}{
+		{"empty_list", `{"alert_rules":[]}`, http.StatusOK, ""},
+		{"empty_200", "", http.StatusOK, "empty response body"},
+		{"empty_204", "", http.StatusNoContent, "empty response body"},
+		{"empty_object", `{}`, http.StatusOK, "no alert_rules"},
+		{"null_rules", `{"alert_rules":null}`, http.StatusOK, "no alert_rules"},
+		{"trailing_garbage", `{"alert_rules":[]}broken`, http.StatusOK, "decode response"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			t.Cleanup(srv.Close)
+			cfg := models.Config{
+				APIBaseURL:   srv.URL,
+				TokenManager: &auth.TokenManager{AccessToken: "t", ExpiresAt: time.Now().Add(time.Hour)},
+			}
+			resp, err := GetMonitor(context.Background(), last9api.NewClient(srv.Client(), cfg), GetMonitorInput{Timestamp: 1700000000, Window: 60})
+			if tc.wantErr == "" {
+				if err != nil || resp.AlertRules == nil {
+					t.Fatalf("want empty non-nil rules, got %+v, %v", resp, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("want error containing %q, got %v", tc.wantErr, err)
+			}
+		})
 	}
 }
