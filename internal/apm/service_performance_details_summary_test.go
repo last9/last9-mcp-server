@@ -283,4 +283,8 @@ func TestServicePerformanceDetailsArgs_TopNDescriptionStatesBothDefaults(t *test
 			t.Errorf("top_n description %q missing %q", got, want)
 		}
 	}
+	// The response nests the lists as top_operations.by_response_time/.by_error_rate.
+	if strings.Contains(got, "top_operations_by_") {
+		t.Errorf("top_n description %q names keys the response doesn't have", got)
+	}
 }
