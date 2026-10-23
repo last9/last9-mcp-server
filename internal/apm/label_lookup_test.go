@@ -103,6 +103,25 @@ func TestPromqlLabelValues_ScopedEmptyRetriesWiderWithNote(t *testing.T) {
 	}
 }
 
+// The datasource note follows the retry note, so descriptions call it an additional block.
+func TestPromqlLabelValues_RetryAndDatasourceNotesFollowValues(t *testing.T) {
+	cfg, client, _ := labelLookupServer(t, `[]`, `["bucket-a"]`)
+	cfg.Datasources = []models.DatasourceInfo{{Name: "staging", ReadURL: "https://staging.example.com/prom", Username: "u", Password: "p", Region: "ap-south-1"}}
+
+	result, _, err := NewPromqlLabelValuesHandler(client, cfg)(context.Background(), &mcp.CallToolRequest{}, PromqlLabelValuesArgs{
+		MatchQuery: "up", Label: "job", Datasource: "stagign",
+	})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	texts := lookupTexts(t, result)
+	if len(texts) != 3 || texts[0] != `["bucket-a"]` ||
+		!strings.HasPrefix(texts[1], "No label values in the last 60 minutes") ||
+		texts[2] != `Using datasource "staging" (closest match to "stagign").` {
+		t.Fatalf("texts = %q, want values, retry note, datasource note", texts)
+	}
+}
+
 // The labels API wraps its list as {"labels":[...]}; these tests stub that live shape.
 func TestPromqlLabels_ScopedEmptyRetriesWiderWithNote(t *testing.T) {
 	cfg, client, got := labelLookupServer(t, `{"labels":[]}`, `{"labels":["__name__","BucketName","StorageType"]}`)
