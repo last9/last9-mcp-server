@@ -5,6 +5,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"last9-mcp/internal/models"
 )
 
 func TestDatasourceRejectsBeyondBudget(t *testing.T) {
@@ -25,6 +27,21 @@ func TestDatasourceRejectsBeyondBudget(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestDatasourceKeepsNumbersApartAcrossSeparators(t *testing.T) {
+	cfg := models.Config{Datasources: []models.DatasourceInfo{
+		{Name: "db123", ReadURL: "https://db123", Username: "u", Password: "p", Region: "r"},
+		{Name: "metrics-v12.3", ReadURL: "https://metrics", Username: "u", Password: "p", Region: "r"},
+	}}
+	for _, input := range []string{"db-1-2-3", "metrics-v1.23"} {
+		if choice, err := chooseDatasource(cfg, input); err == nil {
+			t.Errorf("chooseDatasource(%q) picked %q, want a not-found error", input, choice.cfg.PrometheusReadURL)
+		}
+	}
+	if _, err := chooseDatasource(cfg, "db123"); err != nil {
+		t.Errorf("exact control: %v", err)
 	}
 }
 

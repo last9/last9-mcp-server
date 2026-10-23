@@ -3,6 +3,7 @@
 package namematch
 
 import (
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -44,7 +45,7 @@ func Resolve(input string, names []string) Match {
 	rules := []func(string) []string{
 		func(key string) []string { return filter(names, func(n string) bool { return normalize(n) == key }) },
 		func(key string) []string {
-			return filter(names, func(n string) bool { return compact(normalize(n)) == compact(key) })
+			return filter(names, func(n string) bool { return sameCompact(normalize(n), key) })
 		},
 		func(key string) []string { return nearest(key, names) },
 		func(key string) []string {
@@ -168,8 +169,18 @@ func tokens(s string) []string {
 	return strings.FieldsFunc(s, func(r rune) bool { return r == '-' })
 }
 
+// sameCompact ignores separators but not where they split numbers, so
+// "db-1-2-3" stays apart from "db123" while "web1" matches "web-1".
+func sameCompact(a, b string) bool {
+	return compact(a) == compact(b) && slices.Equal(numbers(a), numbers(b))
+}
+
 func compact(s string) string {
 	return strings.Join(tokens(s), "")
+}
+
+func numbers(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsDigit(r) })
 }
 
 func hasDigit(s string) bool {
