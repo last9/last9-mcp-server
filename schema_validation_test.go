@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -69,6 +70,47 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 			arguments: map[string]any{"query": 123},
 			wantText:  "query",
 		},
+		{
+			name:      "get_logs response_mode unknown value",
+			tool:      "get_logs",
+			arguments: map[string]any{"logjson_query": []any{map[string]any{"type": "filter", "query": map[string]any{"$eq": []any{"ServiceName", "api"}}}}, "response_mode": "bogus"},
+			wantText:  "response_mode",
+		},
+		{
+			name:      "get_logs response_mode wrong case",
+			tool:      "get_logs",
+			arguments: map[string]any{"logjson_query": []any{map[string]any{"type": "filter", "query": map[string]any{"$eq": []any{"ServiceName", "api"}}}}, "response_mode": "RAW"},
+			wantText:  "response_mode",
+		},
+		{
+			name:      "get_logs response_mode wrong type",
+			tool:      "get_logs",
+			arguments: map[string]any{"logjson_query": []any{map[string]any{"type": "filter", "query": map[string]any{"$eq": []any{"ServiceName", "api"}}}}, "response_mode": 123},
+			wantText:  "response_mode",
+		},
+	}
+
+	// An empty logjson_query fails in the handler, so reaching that error
+	// proves response_mode was accepted, without any upstream call.
+	for _, mode := range []any{nil, ""} {
+		t.Run(fmt.Sprintf("get_logs response_mode %#v means default", mode), func(t *testing.T) {
+			res, err := session.CallTool(ctx, &mcp.CallToolParams{
+				Name:      "get_logs",
+				Arguments: map[string]any{"logjson_query": []any{}, "response_mode": mode},
+			})
+			if err != nil {
+				t.Fatalf("CallTool: %v", err)
+			}
+			var sb strings.Builder
+			for _, c := range res.Content {
+				if tc, ok := c.(*mcp.TextContent); ok {
+					sb.WriteString(tc.Text)
+				}
+			}
+			if got := sb.String(); !strings.Contains(got, "logjson_query parameter is required") {
+				t.Fatalf("want the handler's logjson_query error, got a response_mode rejection: %s", got)
+			}
+		})
 	}
 
 	for _, tc := range cases {
