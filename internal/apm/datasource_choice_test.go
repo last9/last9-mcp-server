@@ -133,13 +133,30 @@ func TestPromToolsAmbiguousDatasourceReturnsCandidates(t *testing.T) {
 		if res.IsError {
 			t.Errorf("%s: IsError set, want a recoverable result", tool)
 		}
-		want := `datasource "prod" matches several datasources: prod-eu, prod-us. No query was run; retry with one of them as datasource.`
+		want := `datasource "prod" is not an exact name. No query was run; retry with one of these as datasource: prod-eu, prod-us.`
 		if texts := resultTexts(res); len(texts) != 1 || texts[0] != want {
 			t.Errorf("%s: text = %q, want %q", tool, texts, want)
 		}
 	}
 	if len(*readURLs) != 0 {
 		t.Errorf("ambiguous datasource reached the API %d time(s), want 0", len(*readURLs))
+	}
+}
+
+func TestPromToolsDistantDatasourceIsOnlyOffered(t *testing.T) {
+	tools, readURLs := promToolsUnderTest(t)
+	for tool, call := range tools {
+		res, err := call(context.Background(), "stagingxx")
+		if err != nil {
+			t.Fatalf("%s: unexpected error: %v", tool, err)
+		}
+		want := `datasource "stagingxx" is not an exact name. No query was run; retry with one of these as datasource: staging.`
+		if texts := resultTexts(res); res.IsError || len(texts) != 1 || texts[0] != want {
+			t.Errorf("%s: isError=%v text = %q, want %q", tool, res.IsError, texts, want)
+		}
+	}
+	if len(*readURLs) != 0 {
+		t.Errorf("offered datasource reached the API %d time(s), want 0", len(*readURLs))
 	}
 }
 
@@ -170,7 +187,7 @@ func TestAmbiguousDatasourceCountsOmittedCandidates(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	res := ambiguousDatasourceResult("web", choice)
-	want := `datasource "web" matches several datasources: web-1, web-2, web-3, web-4, web-5 and 2 more. No query was run; retry with one of them as datasource.`
+	want := `datasource "web" is not an exact name. No query was run; retry with one of these as datasource: web-1, web-2, web-3, web-4, web-5 and 2 more.`
 	if texts := resultTexts(res); len(texts) != 1 || texts[0] != want {
 		t.Errorf("text = %q, want %q", texts, want)
 	}

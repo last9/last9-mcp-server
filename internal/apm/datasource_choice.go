@@ -79,7 +79,7 @@ func ambiguousDatasourceResult(requested string, choice datasourceChoice) *mcp.C
 	if choice.omitted > 0 {
 		list += fmt.Sprintf(" and %d more", choice.omitted)
 	}
-	text := fmt.Sprintf("datasource %q matches several datasources: %s. No query was run; retry with one of them as datasource.",
+	text := fmt.Sprintf("datasource %q is not an exact name. No query was run; retry with one of these as datasource: %s.",
 		strings.TrimSpace(requested), list)
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}
 }

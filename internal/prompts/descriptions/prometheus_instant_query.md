@@ -25,7 +25,7 @@
 	- query: (Required) The Prometheus query to execute.
 	- time_iso: (Optional) The point in time to query in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- lookback_minutes: (Optional) Number of minutes to look back from now when time_iso is omitted.
-	- datasource: (Optional) Datasource name; omitted uses the default, a near miss its closest match; an ambiguous name lists candidates, no query. An additional block names it unless the name was exact.
+	- datasource: (Optional) Datasource name; omitted uses the default, a typo its closest match; looser or ambiguous names list candidates, no query. An additional block names it unless the name was exact.
 
 	## When to use
 	One value per series at one time, usually a rollup over a window.

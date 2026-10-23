@@ -16,6 +16,8 @@ const (
 	None Kind = iota
 	Exact
 	Closest
+	// Ambiguous means no name is safe to pick; Candidates lists the ones that
+	// come close, possibly just one.
 	Ambiguous
 )
 
@@ -23,6 +25,21 @@ const MaxCandidates = 5
 
 // minFuzzyRunes keeps short inputs ("st", "db") from matching unrelated names.
 const minFuzzyRunes = 3
+
+// A typo is picked only at pickEdits; up to maxEdits it is only offered as a
+// candidate, however long the name.
+const (
+	pickEdits = 1
+	maxEdits  = 2
+)
+
+// siblingWords name an environment or region; a name holding one is never
+// a typo of a name that lacks it ("qa" for "uat", "af" for "ap").
+var siblingWords = []string{
+	"prod", "production", "preprod", "staging", "stage", "stg", "dev", "qa", "uat", "test", "sandbox", "canary",
+	"east", "west", "north", "south", "central",
+	"us", "eu", "ap", "af", "sa", "ca", "me", "il", "mx", "cn", "in", "jp", "au",
+}
 
 type Match struct {
 	Kind       Kind
@@ -42,22 +59,22 @@ func Resolve(input string, names []string) Match {
 	if len([]rune(key)) == 0 {
 		return Match{}
 	}
-	rules := []func(string) []string{
-		func(key string) []string { return filter(names, func(n string) bool { return normalize(n) == key }) },
-		func(key string) []string {
-			return filter(names, func(n string) bool { return sameCompact(normalize(n), key) })
-		},
-		func(key string) []string { return nearest(key, names) },
-		func(key string) []string {
-			if len([]rune(key)) < minFuzzyRunes {
-				return nil
-			}
-			return filter(names, func(n string) bool { return containsWhole(normalize(n), key) })
-		},
+	if hits := filter(names, func(n string) bool { return normalize(n) == key }); len(hits) > 0 {
+		return decide(hits)
 	}
-	for _, rule := range rules {
-		if hits := rule(key); len(hits) > 0 {
-			return decide(hits)
+	if hits := filter(names, func(n string) bool { return sameCompact(normalize(n), key) }); len(hits) > 0 {
+		return decide(hits)
+	}
+	if hits, best := nearest(key, names); len(hits) == 1 && best <= pickEdits {
+		return decide(hits)
+	} else if len(hits) > 0 {
+		return candidates(hits)
+	}
+	// A unique substring may still name a sibling ("ingest-eu" for
+	// "ingest-eu-2"), so it is offered, never picked.
+	if len([]rune(key)) >= minFuzzyRunes {
+		if hits := filter(names, func(n string) bool { return containsWhole(normalize(n), key) }); len(hits) > 0 {
+			return candidates(hits)
 		}
 	}
 	return Match{}
@@ -67,6 +84,10 @@ func decide(hits []string) Match {
 	if len(hits) == 1 {
 		return Match{Kind: Closest, Name: hits[0]}
 	}
+	return candidates(hits)
+}
+
+func candidates(hits []string) Match {
 	sort.Strings(hits)
 	m := Match{Kind: Ambiguous, Candidates: hits}
 	if len(hits) > MaxCandidates {
@@ -90,28 +111,28 @@ func filter(names []string, keep func(string) bool) []string {
 	return out
 }
 
-// Names compare token by token so an edit can fix a typo inside a word but
-// never swap a word ("east" for "west") or a number ("-2" for "-1"): those
-// name a sibling, not a misspelling.
-func nearest(key string, names []string) []string {
+// nearest returns every name within the edit budget and the fewest edits
+// among them. Names compare token by token so an edit can fix a typo inside
+// a word but never swap a word ("east" for "west") or a number ("-2" for
+// "-1"): those name a sibling, not a misspelling.
+func nearest(key string, names []string) ([]string, int) {
 	keyTokens := tokens(key)
 	best := -1
 	var hits []string
 	for _, n := range names {
-		d, ok := tokenDistance(keyTokens, tokens(normalize(n)))
-		switch {
-		case !ok:
-		case best == -1 || d < best:
-			best, hits = d, []string{n}
-		case d == best:
+		if d, ok := tokenDistance(keyTokens, tokens(normalize(n))); ok {
 			hits = append(hits, n)
+			if best == -1 || d < best {
+				best = d
+			}
 		}
 	}
-	return hits
+	return hits, best
 }
 
 // tokenDistance sums per-token edits, allowing one edit per four runes of a
-// token and none in a token holding a digit.
+// token, maxEdits in all, and none in a token holding a digit or a sibling
+// word the other lacks.
 func tokenDistance(a, b []string) (int, bool) {
 	if len(a) != len(b) {
 		return 0, false
@@ -121,11 +142,11 @@ func tokenDistance(a, b []string) (int, bool) {
 		if a[i] == b[i] {
 			continue
 		}
-		if hasDigit(a[i]) || hasDigit(b[i]) {
+		if hasDigit(a[i]) || hasDigit(b[i]) || addsSiblingWord(a[i], b[i]) {
 			return 0, false
 		}
 		runes := utf8.RuneCountInString(a[i])
-		limit := runes / 4
+		limit := min(runes/4, maxEdits-total)
 		// The length gap bounds the distance from below; skipping on it keeps
 		// a huge input from allocating a len(key)×len(name) matrix per name.
 		if limit == 0 || abs(runes-utf8.RuneCountInString(b[i])) > limit {
@@ -138,6 +159,12 @@ func tokenDistance(a, b []string) (int, bool) {
 		total += d
 	}
 	return total, true
+}
+
+func addsSiblingWord(typed, name string) bool {
+	return slices.ContainsFunc(siblingWords, func(w string) bool {
+		return strings.Contains(typed, w) && !strings.Contains(name, w)
+	})
 }
 
 // containsWhole reports whether key occurs in name without cutting a number
