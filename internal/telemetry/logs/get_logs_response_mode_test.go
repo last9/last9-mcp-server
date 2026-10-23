@@ -126,6 +126,29 @@ func TestGetLogs_SummaryFitsBudgetWithCustomSeverities(t *testing.T) {
 	}
 }
 
+func TestGetLogs_SummaryKeepsSeveritiesSharingAPrefix(t *testing.T) {
+	var lines []summaryTestLine
+	for i := range 7 {
+		severity := strings.Repeat("x", 31) + fmt.Sprintf("_LEVEL_%d", i)
+		lines = append(lines, repeatedLines(7-i, severity, func(int) string { return "request completed" })...)
+	}
+	srv, _ := streamSearchServer(t, lines)
+
+	summary := decodeSummary(t, callGetLogs(t, srv, GetLogsArgs{}))
+	labels := len(summary.SeverityCounts)
+	if summary.OtherSeverities != nil {
+		labels += summary.OtherSeverities.Labels
+	}
+	if labels != 7 {
+		t.Errorf("summary represents %d severity labels, want 7: counts=%v other=%+v", labels, summary.SeverityCounts, summary.OtherSeverities)
+	}
+	for label, n := range summary.SeverityCounts {
+		if n > 7 {
+			t.Errorf("label %q has count %d; no input severity occurs more than 7 times", label, n)
+		}
+	}
+}
+
 func TestGetLogsInputSchema_DocumentsResponseMode(t *testing.T) {
 	prop, _ := GetLogsInputSchema()["properties"].(map[string]interface{})["response_mode"].(map[string]interface{})
 	if prop == nil {

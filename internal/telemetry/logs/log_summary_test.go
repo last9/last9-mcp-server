@@ -240,6 +240,38 @@ func TestSummarizeLogResult_BoundsSeverityCounts(t *testing.T) {
 	}
 }
 
+func TestSummarizeLogResult_KeepsLongSeveritiesDistinct(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		severity func(i int) string
+	}{
+		{"shared prefix", func(i int) string { return strings.Repeat("x", 31) + fmt.Sprintf("_LEVEL_%d", i) }},
+		{"shared prefix and suffix", func(i int) string { return strings.Repeat("x", 31) + fmt.Sprint(i) + strings.Repeat("y", 31) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var lines []summaryTestLine
+			for i := range 7 {
+				lines = append(lines, repeatedLines(7-i, tc.severity(i), func(int) string { return "request completed" })...)
+			}
+
+			summary := decodeSummary(t, summarizeLogResult(streamsResult(lines), summaryTestStartMs, summaryTestEndMs, false))
+			labels, total := len(summary.SeverityCounts), 0
+			for label, count := range summary.SeverityCounts {
+				if n := utf8.RuneCountInString(label); n > maxSummarySeverityRunes || count > 7 {
+					t.Errorf("label %q is %d runes with %d lines; want <= %d runes, <= 7 lines (no input label has more)", label, n, count, maxSummarySeverityRunes)
+				}
+				total += count
+			}
+			if other := summary.OtherSeverities; other != nil {
+				labels, total = labels+other.Labels, total+other.Lines
+			}
+			if labels != 7 || total != len(lines) {
+				t.Errorf("severity_counts = %v, other = %+v; want 7 labels covering %d lines", summary.SeverityCounts, summary.OtherSeverities, len(lines))
+			}
+		})
+	}
+}
+
 func TestSummarizeLogResult_DropsMetadataThatAloneExceedsBudget(t *testing.T) {
 	result := streamsResult(repeatedLines(30, "ERROR", func(i int) string { return fmt.Sprintf("timeout after %d ms", i) }))
 	result["total_matching_lines"] = 900
