@@ -131,8 +131,8 @@ func nearest(key string, names []string) ([]string, int) {
 }
 
 // tokenDistance sums per-token edits, allowing one edit per four runes of a
-// token, maxEdits in all, and none in a token holding a digit or a sibling
-// word the other lacks.
+// token, maxEdits in all, and none in a token holding a digit or more
+// occurrences of a sibling word than the other.
 func tokenDistance(a, b []string) (int, bool) {
 	if len(a) != len(b) {
 		return 0, false
@@ -161,9 +161,11 @@ func tokenDistance(a, b []string) (int, bool) {
 	return total, true
 }
 
+// Counting, not presence: "canaryca" holds "ca" twice, so the "ca" in canary
+// does not let it stand for "canarysa".
 func addsSiblingWord(typed, name string) bool {
 	return slices.ContainsFunc(siblingWords, func(w string) bool {
-		return strings.Contains(typed, w) && !strings.Contains(name, w)
+		return strings.Count(typed, w) > strings.Count(name, w)
 	})
 }
 
