@@ -36,10 +36,11 @@ type Request struct {
 }
 
 type options struct {
-	query        url.Values
-	regionHeader bool
-	regionQuery  bool
-	requiredBody bool
+	query            url.Values
+	regionHeader     bool
+	regionQuery      bool
+	requiredBody     bool
+	maxResponseBytes int64
 }
 
 type Option func(*options)
@@ -53,6 +54,19 @@ func WithRegionQuery() Option { return func(o *options) { o.regionQuery = true }
 // WithRequiredBody is for reads whose answer is the body: an empty 2xx or data
 // after the JSON value means the answer did not arrive intact.
 func WithRequiredBody() Option { return func(o *options) { o.requiredBody = true } }
+
+// Do buffers the whole body before decoding; this bounds that buffer. Oversized bodies are
+// refused, not truncated, because a JSON prefix never decodes.
+func WithMaxResponseBytes(n int64) Option { return func(o *options) { o.maxResponseBytes = n } }
+
+type ResponseTooLargeError struct {
+	Op       string
+	MaxBytes int64
+}
+
+func (e *ResponseTooLargeError) Error() string {
+	return fmt.Sprintf("%s: response exceeds %d bytes; narrow the request", e.Op, e.MaxBytes)
+}
 
 func (c *Client) Do(ctx context.Context, op string, r Request, out any, opts ...Option) error {
 	o := applyOptions(opts)
@@ -76,7 +90,7 @@ func (c *Client) Do(ctx context.Context, op string, r Request, out any, opts ...
 	if !isSuccess(resp.StatusCode) {
 		return utils.MarkUnknownWriteOutcome(req, resp, utils.NewUpstreamHTTPError(resp, op))
 	}
-	return utils.MarkUnknownWriteOutcome(req, resp, decodeResponse(resp, op, out, o.requiredBody))
+	return utils.MarkUnknownWriteOutcome(req, resp, decodeResponse(resp, op, out, o.requiredBody, o.maxResponseBytes))
 }
 
 func applyOptions(opts []Option) options {
@@ -178,7 +192,7 @@ func isSuccess(status int) bool {
 	return status >= http.StatusOK && status < http.StatusMultipleChoices
 }
 
-func decodeResponse(resp *http.Response, op string, out any, required bool) error {
+func decodeResponse(resp *http.Response, op string, out any, required bool, maxBytes int64) error {
 	if out == nil {
 		// A body cut off mid-read means the answer never fully arrived, even after a 2xx.
 		if _, err := io.CopyN(io.Discard, resp.Body, 4<<10); err != nil && err != io.EOF {
@@ -186,9 +200,16 @@ func decodeResponse(resp *http.Response, op string, out any, required bool) erro
 		}
 		return nil
 	}
-	raw, err := io.ReadAll(resp.Body)
+	var src io.Reader = resp.Body
+	if maxBytes > 0 {
+		src = io.LimitReader(resp.Body, maxBytes+1)
+	}
+	raw, err := io.ReadAll(src)
 	if err != nil {
 		return fmt.Errorf("%s: read response: %w", op, err)
+	}
+	if maxBytes > 0 && int64(len(raw)) > maxBytes {
+		return &ResponseTooLargeError{Op: op, MaxBytes: maxBytes}
 	}
 	if required {
 		if len(bytes.TrimSpace(raw)) == 0 {
