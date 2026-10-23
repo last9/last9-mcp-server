@@ -3,6 +3,7 @@ package apm
 import (
 	"encoding/json"
 	"math"
+	"math/rand"
 	"reflect"
 	"testing"
 )
@@ -147,6 +148,58 @@ func TestDetectChangePoints(t *testing.T) {
 				t.Fatalf("got %v, want %v", got, c.want)
 			}
 		})
+	}
+}
+
+// ar1Noise is a level with autocorrelated noise, like per-minute rates
+// smoothed over a multi-minute rate window: no level shift anywhere.
+func ar1Noise(seed int64, n int, level, sd, rho float64) []float64 {
+	r := rand.New(rand.NewSource(seed))
+	out := make([]float64, n)
+	e := 0.0
+	for i := range out {
+		e = rho*e + math.Sqrt(1-rho*rho)*r.NormFloat64()*sd
+		out[i] = level + e
+	}
+	return out
+}
+
+// An hour of strongly correlated noise (effective sample ~7) sometimes wanders
+// like a real shift; the detector must stay quiet on at least 90% of them.
+func TestDetectChangePoints_IgnoresAutocorrelatedNoise(t *testing.T) {
+	const runs, maxFalseAlarms = 50, 5
+	var alarms []int64
+	for seed := int64(1); seed <= runs; seed++ {
+		if got := detectChangePoints(ar1Noise(seed, 61, 36, 3, 0.8)); len(got) != 0 {
+			alarms = append(alarms, seed)
+		}
+	}
+	if len(alarms) > maxFalseAlarms {
+		t.Errorf("%d of %d no-change series reported change points (seeds %v), want <= %d", len(alarms), runs, alarms, maxFalseAlarms)
+	}
+	shifted := append(ar1Noise(1, 30, 36, 3, 0.8), ar1Noise(2, 31, 72, 3, 0.8)...)
+	if got := detectChangePoints(shifted); len(got) != 1 || got[0] < 27 || got[0] > 33 {
+		t.Errorf("a doubling under the same noise must still be one change point near 30, got %v", got)
+	}
+}
+
+// The relative-shift gate must hold for the means a change point reports,
+// which span to its neighbouring change points, not only for the split tested.
+func TestSummarizeSeries_ReportedChangePointsPassTheShiftGate(t *testing.T) {
+	for seed := int64(1); seed <= 50; seed++ {
+		values := ar1Noise(seed, 200, 36, 4, 0.3)
+		for i := 100; i < len(values); i++ {
+			values[i] *= 1.15
+		}
+		s := summarizeSeries(TimeSeries{Values: pointsFrom(values...)}, nil)
+		if s.PerfSeriesStats == nil {
+			t.Fatal("expected stats")
+		}
+		for _, cp := range s.ChangePoints {
+			if math.Abs(cp.AfterMean-cp.BeforeMean) < perfSummaryMinRelativeShift*math.Max(math.Abs(cp.BeforeMean), math.Abs(cp.AfterMean)) {
+				t.Errorf("seed %d: change point %+v shifts less than %v", seed, cp, perfSummaryMinRelativeShift)
+			}
+		}
 	}
 }
 
