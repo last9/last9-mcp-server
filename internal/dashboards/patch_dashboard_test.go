@@ -470,6 +470,25 @@ func TestPatchDashboard_DiffShowsStoredValue(t *testing.T) {
 	}
 }
 
+func TestPatchDashboard_RemovedKeyTheAPIRestoresIsNotRemoved(t *testing.T) {
+	ps := newPatchServerServing(t, `{"dashboard":{"name":"N","panels":[{"id":"p1","version":1,"datasource_id":"ds-1"}]}}`)
+	ps.onStore = func(doc map[string]any) {
+		for _, p := range doc["panels"].([]any) {
+			if panel := p.(map[string]any); panel["datasource_id"] == nil {
+				panel["datasource_id"] = ""
+			}
+		}
+	}
+	result, err := ps.patch(t, `[{"op":"update_panel","panel_id":"p1","fields":{"datasource_id":null}}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"dashboard_id":"dash-1","changes":[{"op":"update_panel","panel_id":"p1","not_removed":["datasource_id"]}],"note":"not_removed lists keys the dashboard API kept or restored to a default; get_dashboard shows the stored panel"}`
+	if text := utils.GetTextContent(t, result); text != want {
+		t.Fatalf("diff %s\nwant %s", text, want)
+	}
+}
+
 func TestPatchDashboard_FailedRereadReportsSentChanges(t *testing.T) {
 	ps := newPatchServer(t)
 	ps.failRereads = true

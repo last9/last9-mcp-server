@@ -58,8 +58,10 @@ type patchChange struct {
 	Before  json.RawMessage        `json:"before,omitempty"`
 	After   json.RawMessage        `json:"after,omitempty"`
 	Fields  map[string]fieldChange `json:"fields,omitempty"`
-	// NotStored lists panel keys that were sent but are absent from the stored panel.
-	NotStored []string `json:"not_stored,omitempty"`
+	// NotStored lists panel keys that were sent but are absent from the stored panel;
+	// NotRemoved lists keys removed with null that the stored panel still has.
+	NotStored  []string `json:"not_stored,omitempty"`
+	NotRemoved []string `json:"not_removed,omitempty"`
 }
 
 type fieldChange struct {
@@ -120,11 +122,10 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 		// The API silently drops panel keys it does not know, so the diff is checked
 		// against a re-read rather than trusted as sent.
 		stored, err := apidashboards.GetDashboard(ctx, api, args.ID)
-		switch {
-		case err != nil || stored.Dashboard == nil:
+		if err != nil || stored.Dashboard == nil {
 			diff.Note = "written, but re-reading the dashboard failed, so changes show what was sent; get_dashboard shows what was stored"
-		case reconcileStored(changes, current.Dashboard, stored.Dashboard):
-			diff.Note = "not_stored lists keys the dashboard API did not keep; get_dashboard shows the stored panel"
+		} else {
+			diff.Note = reconcileStored(changes, current.Dashboard, stored.Dashboard)
 		}
 		return patchResult(dlBuilder, diff), nil, nil
 	}
@@ -300,8 +301,8 @@ func updatePanelFields(panel map[string]any, fields map[string]any) map[string]f
 	return changed
 }
 
-func reconcileStored(changes []patchChange, sent, stored map[string]any) bool {
-	anyNotStored := false
+func reconcileStored(changes []patchChange, sent, stored map[string]any) (note string) {
+	var notStored, notRemoved bool
 	for i := range changes {
 		c := &changes[i]
 		sentPanel := panelByID(sent, c.PanelID)
@@ -316,17 +317,29 @@ func reconcileStored(changes []patchChange, sent, stored map[string]any) bool {
 		for _, key := range keys {
 			sentValue, sentHas := sentPanel[key]
 			storedValue, storedHas := storedPanel[key]
-			if sentHas != storedHas {
+			if sentHas && !storedHas {
 				c.NotStored = append(c.NotStored, key)
+				delete(c.Fields, key)
+			} else if !sentHas && storedHas {
+				c.NotRemoved = append(c.NotRemoved, key)
 				delete(c.Fields, key)
 			} else if fc, ok := c.Fields[key]; ok && storedHas && !reflect.DeepEqual(sentValue, storedValue) {
 				fc.After = diffValue(storedValue)
 				c.Fields[key] = fc
 			}
 		}
-		anyNotStored = anyNotStored || len(c.NotStored) > 0
+		notStored = notStored || len(c.NotStored) > 0
+		notRemoved = notRemoved || len(c.NotRemoved) > 0
 	}
-	return anyNotStored
+	switch {
+	case notStored && notRemoved:
+		return "not_stored lists keys the dashboard API did not keep, not_removed keys it kept or restored to a default; get_dashboard shows the stored panel"
+	case notStored:
+		return "not_stored lists keys the dashboard API did not keep; get_dashboard shows the stored panel"
+	case notRemoved:
+		return "not_removed lists keys the dashboard API kept or restored to a default; get_dashboard shows the stored panel"
+	}
+	return ""
 }
 
 func panelByID(doc map[string]any, id string) map[string]any {
