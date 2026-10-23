@@ -466,6 +466,31 @@ func TestGetLogAttributesForPipeline_TraceContextIndexedOnce(t *testing.T) {
 	}
 }
 
+func TestGetLogAttributesForPipeline_SameNameDifferentFieldKept(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"gw","resource_http_status_code":"200"}]}`
+	server := bodySamplingServer(t, series, []string{`{"resource_http_status_code":500}`}, nil)
+	defer server.Close()
+
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), testAttrConfig(server.URL))
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	fields := map[string]bool{}
+	for _, a := range decodeLogAttributes(t, res) {
+		if a.Name == "resource_http_status_code" {
+			fields[a.FilterField] = true
+		}
+	}
+	for _, want := range []string{"resources['http_status_code']", "attributes['resource_http_status_code']"} {
+		if !fields[want] {
+			t.Errorf("missing resource_http_status_code entry with filter_field %s; got %v", want, fields)
+		}
+	}
+}
+
 // TestGetLogAttributesForPipeline_BodyNotJSON verifies a plain-text Body that
 // is neither JSON, logfmt, nor carries a severity token falls through to the
 // plaintext fallback: exactly one "body" entry with a redacted sample_body
