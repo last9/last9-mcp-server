@@ -8,4 +8,4 @@ Apply targeted edits to an existing custom dashboard by ID and get back a compac
 - `set_title`: `title` (the dashboard name).
 - `set_variable`: `variable` object; replaces the variable with the same `target`, otherwise appends it.
 
-The tool reads the dashboard, applies the ops and writes it back, so an edit made elsewhere between those two calls is overwritten. Diff values longer than 200 characters are truncated. Readonly system dashboards return an error.
+The tool reads the dashboard, applies the ops and writes it back, so an edit made elsewhere between those two calls is overwritten. Ops the dashboard already satisfies are left out of `changes`; if no op changes anything, nothing is written. Diff values longer than 200 characters are truncated. Readonly system dashboards return an error.

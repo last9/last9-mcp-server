@@ -335,6 +335,48 @@ func TestPatchDashboard_SinglePanelDiffIsCompact(t *testing.T) {
 	}
 }
 
+func TestPatchDashboard_NoOpOpsWriteNothing(t *testing.T) {
+	tests := []struct {
+		name string
+		ops  string
+	}{
+		{name: "remove absent field", ops: `[{"op":"update_panel","panel_id":"p1","fields":{"never_existed":null}}]`},
+		{name: "set field to current value", ops: `[{"op":"update_panel","panel_id":"p1","fields":{"name":"Latency"}}]`},
+		{name: "same title", ops: `[{"op":"set_title","title":"Gateway"}]`},
+		{name: "move to current index", ops: `[{"op":"move_panel","panel_id":"p2","index":1}]`},
+		{name: "same variable", ops: `[{"op":"set_variable","variable":{"target":"env","type":"label","source":"env"}}]`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := newPatchServer(t)
+			result, err := ps.patch(t, tt.ops)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(ps.puts) != 0 {
+				t.Fatalf("PUT sent for a no-op patch")
+			}
+			want := `{"dashboard_id":"dash-1","changes":[],"note":"the dashboard already matches every op; nothing was written"}`
+			if text := utils.GetTextContent(t, result); text != want {
+				t.Fatalf("diff %s\nwant %s", text, want)
+			}
+		})
+	}
+}
+
+func TestPatchDashboard_OmitsNoOpOpsFromChanges(t *testing.T) {
+	ps := newPatchServer(t)
+	result, err := ps.patch(t, `[{"op":"set_title","title":"Gateway"},{"op":"update_panel","panel_id":"p1","fields":{"name":"Latency","never_existed":null,"description":"d"}}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps.sentDashboard(t)
+	want := `{"dashboard_id":"dash-1","changes":[{"op":"update_panel","panel_id":"p1","fields":{"description":{"after":"d"}}}]}`
+	if text := utils.GetTextContent(t, result); text != want {
+		t.Fatalf("diff %s\nwant %s", text, want)
+	}
+}
+
 func TestPatchDashboard_RemovePanelDiffBoundsLongName(t *testing.T) {
 	ps := newPatchServer(t)
 	ops := `[{"op":"update_panel","panel_id":"p1","fields":{"name":"` + strings.Repeat("é", 1250) +

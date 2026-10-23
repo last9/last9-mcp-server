@@ -95,6 +95,10 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 		if err != nil {
 			return nil, nil, err
 		}
+		if len(changes) == 0 {
+			return patchResult(dlBuilder, patchDiff{DashboardID: args.ID, Changes: changes,
+				Note: "the dashboard already matches every op; nothing was written"}), nil, nil
+		}
 
 		dashboard, err := json.Marshal(current.Dashboard)
 		if err != nil {
@@ -108,10 +112,14 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, mapDashboardAPIError(err)
 		}
 
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: renderPatchDiff(patchDiff{DashboardID: args.ID, Changes: changes})}},
-			Meta:    deeplink.ToMeta(dlBuilder.BuildDashboardLink(args.ID)),
-		}, nil, nil
+		return patchResult(dlBuilder, patchDiff{DashboardID: args.ID, Changes: changes}), nil, nil
+	}
+}
+
+func patchResult(dlBuilder *deeplink.Builder, diff patchDiff) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: renderPatchDiff(diff)}},
+		Meta:    deeplink.ToMeta(dlBuilder.BuildDashboardLink(diff.DashboardID)),
 	}
 }
 
@@ -180,42 +188,47 @@ func opError(i int, op PatchDashboardOp, err error) error {
 func applyPatchOps(doc map[string]any, ops []PatchDashboardOp) ([]patchChange, error) {
 	changes := make([]patchChange, 0, len(ops))
 	for i, op := range ops {
-		change, err := applyPatchOp(doc, op)
+		change, changed, err := applyPatchOp(doc, op)
 		if err != nil {
 			return nil, opError(i, op, err)
 		}
-		changes = append(changes, change)
+		if changed {
+			changes = append(changes, change)
+		}
 	}
 	return changes, nil
 }
 
-func applyPatchOp(doc map[string]any, op PatchDashboardOp) (patchChange, error) {
+// applyPatchOp reports changed=false for an op the dashboard already satisfies, so it
+// neither shows up in the diff nor causes a write.
+func applyPatchOp(doc map[string]any, op PatchDashboardOp) (change patchChange, changed bool, err error) {
 	panels, _ := doc["panels"].([]any)
-	change := patchChange{Op: op.Op, PanelID: op.PanelID}
+	change = patchChange{Op: op.Op, PanelID: op.PanelID}
 	switch op.Op {
 	case "add_panel":
 		id, _ := op.Panel["id"].(string)
 		if id != "" && findPanel(panels, id) >= 0 {
-			return change, fmt.Errorf("a panel with id %q already exists; use update_panel", id)
+			return change, false, fmt.Errorf("a panel with id %q already exists; use update_panel", id)
 		}
 		at := len(panels)
 		if op.Index != nil {
 			at = *op.Index
 		}
 		if at < 0 || at > len(panels) {
-			return change, fmt.Errorf("index %d out of range 0..%d", at, len(panels))
+			return change, false, fmt.Errorf("index %d out of range 0..%d", at, len(panels))
 		}
 		doc["panels"] = append(panels[:at], append([]any{op.Panel}, panels[at:]...)...)
 		change.PanelID, change.Index = id, &at
 	case "update_panel", "remove_panel", "move_panel":
 		at := findPanel(panels, op.PanelID)
 		if at < 0 {
-			return change, fmt.Errorf("no panel with id %q; get_dashboard lists panel ids", op.PanelID)
+			return change, false, fmt.Errorf("no panel with id %q; get_dashboard lists panel ids", op.PanelID)
 		}
 		panel, _ := panels[at].(map[string]any)
 		switch op.Op {
 		case "update_panel":
 			change.Fields = updatePanelFields(panel, op.Fields)
+			return change, len(change.Fields) > 0, nil
 		case "remove_panel":
 			name, _ := panel["name"].(string)
 			change.Name = truncateDiffText(name)
@@ -223,19 +236,23 @@ func applyPatchOp(doc map[string]any, op PatchDashboardOp) (patchChange, error) 
 		case "move_panel":
 			to := *op.Index
 			if to < 0 || to >= len(panels) {
-				return change, fmt.Errorf("index %d out of range 0..%d", to, len(panels)-1)
+				return change, false, fmt.Errorf("index %d out of range 0..%d", to, len(panels)-1)
 			}
 			rest := append(panels[:at:at], panels[at+1:]...)
 			doc["panels"] = append(rest[:to:to], append([]any{panel}, rest[to:]...)...)
 			change.From, change.To = &at, &to
+			return change, at != to, nil
 		}
 	case "set_title":
-		change.Before, change.After = diffValue(doc["name"]), diffValue(op.Title)
+		before := doc["name"]
+		change.Before, change.After = diffValue(before), diffValue(op.Title)
 		doc["name"] = op.Title
+		return change, before != op.Title, nil
 	case "set_variable":
 		change.Target, change.Action = setVariable(doc, op.Variable)
+		return change, change.Action != "unchanged", nil
 	}
-	return change, nil
+	return change, true, nil
 }
 
 func findPanel(panels []any, id string) int {
@@ -251,7 +268,7 @@ func updatePanelFields(panel map[string]any, fields map[string]any) map[string]f
 	changed := map[string]fieldChange{}
 	for key, value := range fields {
 		before, had := panel[key]
-		if had && value != nil && reflect.DeepEqual(before, value) {
+		if !had && value == nil || had && value != nil && reflect.DeepEqual(before, value) {
 			continue
 		}
 		fc := fieldChange{}
@@ -274,6 +291,9 @@ func setVariable(doc map[string]any, variable map[string]any) (target, action st
 	variables, _ := doc["variables"].([]any)
 	for i, raw := range variables {
 		if existing, ok := raw.(map[string]any); ok && existing["target"] == target {
+			if reflect.DeepEqual(existing, variable) {
+				return target, "unchanged"
+			}
 			variables[i] = variable
 			return target, "updated"
 		}
