@@ -53,7 +53,7 @@ Learning which log/trace field names exist for an org. Done via dedicated discov
 _Avoid_: `{{labels}}` full-catalog injection into served tool descriptions; attribute-name allowlists in descriptions
 
 **Canonical tool snapshot**:
-The `dump-tools` output with unset toolsets (`all` surface). Eval harness and CI contract diffs use this. `dump-tools` also honors toolset selection.
+The `dump-tools` output with unset toolsets (`all` surface): the served `tools` array plus the `instructions` that `initialize` returns for the same toolsets. Eval harness and CI contract diffs use this. `dump-tools` also honors toolset selection.
 _Avoid_: a separate hand-maintained tools.json that drifts from the server
 
 **Net-new**:

@@ -37,7 +37,7 @@ prompts, and resources.
 ```bash
 go build .
 go test -race ./...          # integration tests skip without TEST_REFRESH_TOKEN
-go run . dump-tools          # served tools/list, name-sorted, no credentials
+go run . dump-tools          # served tools/list, name-sorted, plus instructions; no credentials
 go run . dump-prompts        # served prompts/list
 ./scripts/start-local.sh     # run against a local .env
 ./scripts/eval-r10.sh        # eval suites against a fresh build of this checkout
@@ -199,9 +199,11 @@ as bare text. Every new tool goes into one of its groups (discovery, dedicated, 
 that is not served or omits one that is. It matches backticked text against registered tool
 names, so backticking a parameter such as `service_name` in the policy is fine.
 
-`registerToolsAndInstructions` registers both and has one call site, `buildServer` in
-`main.go` (startup and each per-request `--http` toolset server). `dump.go` skips it on purpose: `tools/list` and
-`prompts/list` carry no instructions, and `instructions_test.go` covers the handshake.
+`registerToolsAndInstructions` registers both and has two call sites: `buildServer` in
+`main.go` (startup and each per-request `--http` toolset server) and `dumpTools`, which emits
+the instructions `initialize` returns next to the tools so eval snapshots carry them
+(`dump_test.go` compares the two per toolset). `dump-prompts` skips it: prompts are not
+toolset-gated.
 
 ### Argument structs
 
