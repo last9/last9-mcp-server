@@ -50,10 +50,10 @@ func WithRegionHeader() Option { return func(o *options) { o.regionHeader = true
 
 func WithRegionQuery() Option { return func(o *options) { o.regionQuery = true } }
 
-// WithMaxResponseBytes fails a success response larger than n bytes instead of decoding it.
+// Do buffers the whole body before decoding; this bounds that buffer. Oversized bodies are
+// refused, not truncated, because a JSON prefix never decodes.
 func WithMaxResponseBytes(n int64) Option { return func(o *options) { o.maxResponseBytes = n } }
 
-// ResponseTooLargeError is a success body refused for exceeding WithMaxResponseBytes.
 type ResponseTooLargeError struct {
 	Op       string
 	MaxBytes int64
