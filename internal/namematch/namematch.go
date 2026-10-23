@@ -5,6 +5,7 @@ package namematch
 import (
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 type Kind int
@@ -83,14 +84,21 @@ func filter(names []string, keep func(string) bool) []string {
 
 // One edit per four runes lets a typo resolve but not a different word.
 func nearest(key string, names []string) []string {
-	limit := len([]rune(key)) / 4
+	keyRunes := utf8.RuneCountInString(key)
+	limit := keyRunes / 4
 	if limit == 0 {
 		return nil
 	}
 	best := limit + 1
 	var hits []string
 	for _, n := range names {
-		d := distance(key, normalize(n))
+		norm := normalize(n)
+		// The length gap bounds the distance from below; skipping on it keeps
+		// a huge input from allocating a len(key)×len(name) matrix per name.
+		if abs(keyRunes-utf8.RuneCountInString(norm)) > limit {
+			continue
+		}
+		d := distance(key, norm)
 		switch {
 		case d > limit:
 		case d < best:
@@ -126,4 +134,11 @@ func distance(a, b string) int {
 		}
 	}
 	return d[len(ra)][len(rb)]
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
