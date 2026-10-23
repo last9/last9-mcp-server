@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -57,8 +58,8 @@ func TestAlertRuleStateHandler_LoopBoundedByCap(t *testing.T) {
 // TestAlertRuleStateHandler_TransportBypassBlocked reproduces the original
 // overflow bypass end-to-end through the real MCP transport (server + in-memory
 // transport + client session, exercising the full applySchema -> remarshal ->
-// typed-unmarshal decode pipeline) and asserts the overflow input is now
-// blocked at the handler and never exceeds the documented 100-sample cap.
+// typed-unmarshal decode pipeline, with the served input schema) and asserts
+// the handler's timestamp guard rejects the overflow input before any upstream call.
 // A hard timeout prevents the suite from hanging if the fix regresses.
 func TestAlertRuleStateHandler_TransportBypassBlocked(t *testing.T) {
 	var hits int64
@@ -66,7 +67,7 @@ func TestAlertRuleStateHandler_TransportBypassBlocked(t *testing.T) {
 	defer upstream.Close()
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "s", Version: "v"}, nil)
-	mcp.AddTool(server, &mcp.Tool{Name: "get_alert_rule_state", Description: "x"},
+	mcp.AddTool(server, &mcp.Tool{Name: "get_alert_rule_state", Description: "x", InputSchema: AlertRuleStateInputSchema()},
 		NewAlertRuleStateHandler(upstream.Client(), newAlertRuleStateTestConfig(upstream.URL)))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -89,10 +90,14 @@ func TestAlertRuleStateHandler_TransportBypassBlocked(t *testing.T) {
 		Arguments: json.RawMessage(`{"start_time":-9223372036854773760,"end_time":9223372036854773760,"step":1000000000}`),
 	})
 
-	if got := atomic.LoadInt64(&hits); got > alertRuleStateMaxPoints {
-		t.Fatalf("cap bypassed through transport: handler made %d upstream calls (max %d)", got, alertRuleStateMaxPoints)
+	if got := atomic.LoadInt64(&hits); got != 0 {
+		t.Fatalf("overflow input reached upstream: %d calls, want 0", got)
 	}
 	if res == nil || !res.IsError {
 		t.Fatalf("expected IsError result for overflow input, got %+v", res)
+	}
+	// The handler's guard, not schema validation, must be what rejects it.
+	if text := res.Content[0].(*mcp.TextContent).Text; !strings.Contains(text, "before 2000-01-01") {
+		t.Fatalf("want the handler's pre-2000 rejection, got %q", text)
 	}
 }
