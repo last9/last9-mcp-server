@@ -6,8 +6,9 @@ Returns JSON:
 - live: true when at least one series has a sample in the window
 - series_count: number of series with a sample in the window (0 when absent)
 - last_sample_age_seconds: seconds since the newest sample across series (0 when absent)
-- inferred_interval_seconds: raw-sample interval from a scrape_interval rollup over the window, median across series (0 when fewer than 2 samples); independent of the window width
-- suggested_window: "$__interval" for high-cadence metrics; otherwise a duration string such as "3d" sized to roughly 3× last_sample_age so last_over_time does not blank between slow emissions
+- inferred_interval_seconds: raw-sample interval in seconds from a scrape_interval rollup over the window, median across series; independent of the window width. null (never 0) when the cadence is unknown: the metric is absent, or no series has 2+ samples in the window
+- suggested_window: "$__interval" for high-cadence metrics; otherwise a duration string such as "3d" sized to roughly 3× last_sample_age so last_over_time does not blank between slow emissions ("" when absent)
+- note: present only when a field needs reading. Absent metric: "No series matched `<selector>` in the last <window>: either it emits less often than that (widen `window_minutes`) or the name is wrong (check it with `prometheus_label_values`, …)" — live=false here means no match, not a metric that stopped. Unknown cadence: "Too few samples in the last <window> to infer cadence …; widen `window_minutes` …"
 
 Parameters:
 - metric: (Required) Metric name (e.g. amazonaws_com_AWS_S3_BucketSizeBytes) or a PromQL series selector (e.g. up{job="api"}).

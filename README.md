@@ -612,6 +612,7 @@ Retries an empty single-metric lookup over 4 days, like `prometheus_label_values
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `limit` (integer, optional): Server default: 5000.
 - `index` (string, optional): `physical_index:<name>` or `rehydration_index:<block_name>`.
+- `response_mode` (string, optional): `summary` (default; also for `null`) or `raw`. A raw-line result over 20 lines comes back as `summary`: `lines_summarized`, `severity_counts` (top six labels, the rest in `other_severities`), `first_timestamp`/`last_timestamp`, a 10-bucket `histogram` over the query window (over the returned lines, with `truncated: true`, when the limit cut the result), and the top `patterns` (`template`, `count`, up to two `samples`) with the rest totalled in `other`, at most 4000 characters; top-level metadata that still does not fit is dropped and named in `dropped_fields`. `raw` returns the lines. Aggregate results are never summarized.
 
 For log-based service inventory, query `physical_index_service_count` first:
 
@@ -975,7 +976,7 @@ Returns up to 3 closest matches with similarity scores. Use this before any tool
 - `service_name` (string, required): Service to derive a telemetry profile for.
 - `datasource` (string, optional): Datasource name. Omit for the default.
 
-Returns a short investigation brief followed by the full profile as raw JSON: signal presence (`logs`/`traces`/`metrics` as `present`, `absent`, or `unknown`), language and runtime, deployment environments, log `signal_shape` (`log_format`, `severity_set`, `level_field`), and a recommended ingest fix where one applies. Derived upstream and cached with a ~15 minute TTL.
+Returns a short investigation brief followed by the full profile as raw JSON: signal presence (`logs`/`traces`/`metrics` as `present`, `absent`, or `unknown`), language and runtime, deployment environments, log `signal_shape` (`log_format`, `severity_set`, `level_field`, `trace_context_in_logs`), and a recommended ingest fix where one applies. When the backend reports `freshness`, the brief adds a `last seen` line with `freshness.logs.last_seen` and `freshness.traces.last_seen` (RFC3339, or `none` when null), and a `traces stale` warning when `freshness.traces_stale` is `true`: spans stopped while logs continued, so investigate a regression around `freshness.traces.last_seen`, not missing setup. Derived upstream and cached with a ~15 minute TTL.
 
 Call it before any service-scoped investigation so tool selection matches the service's actual telemetry — skip trace tools when `traces` is `absent`, and when `severity_set` is `none` or `partial` parse severity from `level_field` in the log body rather than using `severity_filters`. `metrics` is always `unknown` and `dependencies` is unpopulated in v1. When `logs` and `traces` are both `absent`, confirm the name with `did_you_mean` before concluding the service is unmonitored.
 
