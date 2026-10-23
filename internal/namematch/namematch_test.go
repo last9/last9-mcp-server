@@ -31,6 +31,8 @@ func TestResolve(t *testing.T) {
 		{"region code also in an unchanged prefix", "canaryca", []string{"canarysa"}, Match{Kind: None}},
 		{"region code also inside another word", "customermesouth", []string{"customermxsouth"}, Match{Kind: None}},
 		{"typo beside a repeated region code", "canrayca", []string{"canaryca"}, Match{Kind: Closest, Name: "canaryca"}},
+		{"transposition that spells a region code", "dmeo-api", []string{"demo-api"}, Match{Kind: Closest, Name: "demo-api"}},
+		{"transposition that spells a region code mid-word", "seucrity", []string{"security"}, Match{Kind: Closest, Name: "security"}},
 		{"env word swapped inside a word", "checkoutqalogs", []string{"checkoutuatlogs"}, Match{Kind: None}},
 		{"dropped separators keep numbers apart", "db-1-2-3", []string{"db123"}, Match{Kind: None}},
 		{"dropped separators keep versions apart", "metrics-v1.23", []string{"metrics-v12.3"}, Match{Kind: None}},
