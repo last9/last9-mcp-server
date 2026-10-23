@@ -570,7 +570,7 @@ func validateStageKeys(stage map[string]interface{}, stageType, path string) err
 			return err
 		}
 	}
-	return nil
+	return validateTraceStageKeyAllowlist(stage, stageType, path)
 }
 
 func validateWindowAggregateStage(stage map[string]interface{}, path string) error {
