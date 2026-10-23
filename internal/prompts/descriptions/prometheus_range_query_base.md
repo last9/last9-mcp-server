@@ -28,7 +28,7 @@
 	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
 	- start_time_iso: (Optional) Start time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
 	- end_time_iso: (Optional) End time of the time range in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Defaults to current time.
-	- datasource: (Optional) Datasource name; omitted uses the default, a near miss its closest match; an ambiguous name lists candidates, no query. A second block names the one used.
+	- datasource: (Optional) Datasource name; omitted uses the default, a near miss its closest match; an ambiguous name lists candidates, no query. An additional block names it unless the name was exact.
 
 	**Time:** Prefer `lookback_minutes` for relative windows; `start_time_iso`+`end_time_iso` (RFC3339) override lookback. On lookback validation errors, retry with explicit ISO bounds instead of `lookback_minutes`.
 

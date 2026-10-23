@@ -9,7 +9,7 @@ func PromqlRangeQueryInputSchema() map[string]interface{} {
 			"start_time_iso":   map[string]interface{}{"type": []string{"string", "null"}, "description": "Start time in RFC3339/ISO8601. Optional when lookback_minutes is provided."},
 			"end_time_iso":     map[string]interface{}{"type": []string{"string", "null"}, "description": "End time in RFC3339/ISO8601; defaults to now."},
 			"lookback_minutes": map[string]interface{}{"type": []string{"number", "null"}, "description": "Minutes to look back from now (default: 60, minimum: 1). Use for relative windows."},
-			"datasource":       map[string]interface{}{"type": []string{"string", "null"}, "description": "Datasource name; omitted uses the default, a near miss its closest match (named in a second content block)."},
+			"datasource":       map[string]interface{}{"type": []string{"string", "null"}, "description": "Datasource name; omitted uses the default, a near miss its closest match (named in an additional content block)."},
 		},
 	}
 }
