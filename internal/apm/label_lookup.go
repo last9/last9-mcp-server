@@ -34,7 +34,7 @@ type labelLookup struct {
 	noun       string
 	field      string
 	matchQuery string
-	fetch      func(start, end int64) (json.RawMessage, error)
+	fetch      func(start, end int64) ([]byte, error)
 }
 
 // labelWindow is the caller's resolved time range; isDefault marks one the caller left unset.

@@ -2,7 +2,6 @@ package prom
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	"last9-mcp/internal/last9api"
@@ -10,7 +9,7 @@ import (
 
 const pathAPMLabels = "/apm/labels"
 
-const opAPMLabels = "prometheus labels"
+const opAPMLabels = "Prometheus labels"
 
 type GetAPMLabelsInput struct {
 	Datasource
@@ -20,8 +19,8 @@ type GetAPMLabelsInput struct {
 }
 
 // GetAPMLabels calls POST /apm/labels.
-func GetAPMLabels(ctx context.Context, c *last9api.Client, in GetAPMLabelsInput) (json.RawMessage, error) {
-	var raw json.RawMessage
+func GetAPMLabels(ctx context.Context, c *last9api.Client, in GetAPMLabelsInput) ([]byte, error) {
+	var raw []byte
 	err := c.Do(ctx, opAPMLabels, last9api.Request{Method: http.MethodPost, Path: pathAPMLabels, Body: in}, &raw)
 	return raw, err
 }

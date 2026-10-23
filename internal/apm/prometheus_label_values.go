@@ -2,7 +2,6 @@ package apm
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -49,7 +48,7 @@ func NewPromqlLabelValuesHandler(client *http.Client, cfg models.Config) func(co
 		lookup := labelLookup{
 			noun:       "label values",
 			matchQuery: query,
-			fetch: func(start, end int64) (json.RawMessage, error) {
+			fetch: func(start, end int64) ([]byte, error) {
 				return prom.GetLabelValuesRaw(ctx, api, prom.GetLabelValuesInput{
 					Datasource: promDatasource(choice.cfg),
 					Label:      label,

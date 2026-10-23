@@ -2,7 +2,6 @@ package prom
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	"last9-mcp/internal/last9api"
@@ -10,7 +9,8 @@ import (
 
 const pathQuery = "/prom_query"
 
-const opQuery = "prometheus range query"
+// Raw ops keep the prometheus_* tools' error text as it was before last9api.
+const opQuery = "Prometheus range query"
 
 type QueryInput struct {
 	Datasource
@@ -21,8 +21,8 @@ type QueryInput struct {
 }
 
 // Query calls POST /prom_query.
-func Query(ctx context.Context, c *last9api.Client, in QueryInput) (json.RawMessage, error) {
-	var raw json.RawMessage
+func Query(ctx context.Context, c *last9api.Client, in QueryInput) ([]byte, error) {
+	var raw []byte
 	err := c.Do(ctx, opQuery, last9api.Request{Method: http.MethodPost, Path: pathQuery, Body: in}, &raw)
 	return raw, err
 }

@@ -1,7 +1,6 @@
 package apm
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -97,7 +96,7 @@ func promDatasource(cfg models.Config) prom.Datasource {
 
 // An upstream HTTP status is a tool error the agent can act on; anything else
 // (transport, config) stays a Go error, as before the move to last9api.
-func promToolResult(raw json.RawMessage, err error, note string) (*mcp.CallToolResult, any, error) {
+func promToolResult(raw []byte, err error, note string) (*mcp.CallToolResult, any, error) {
 	var upstream *utils.UpstreamHTTPError
 	if errors.As(err, &upstream) {
 		return utils.ToolErrorResult(err.Error()), nil, nil

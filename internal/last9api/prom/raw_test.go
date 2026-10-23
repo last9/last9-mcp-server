@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,10 +18,11 @@ import (
 
 var testDatasource = Datasource{ReadURL: "https://prom.example", Username: "u", Password: "p"}
 
-type rawCall func(context.Context, *last9api.Client) (json.RawMessage, error)
+type rawCall func(context.Context, *last9api.Client) ([]byte, error)
 
 func rawEndpoints() []struct {
 	path     string
+	op       string
 	call     rawCall
 	wantBody map[string]any
 } {
@@ -33,19 +35,20 @@ func rawEndpoints() []struct {
 	}
 	return []struct {
 		path     string
+		op       string
 		call     rawCall
 		wantBody map[string]any
 	}{
-		{"/prom_query", func(ctx context.Context, c *last9api.Client) (json.RawMessage, error) {
+		{"/prom_query", "Prometheus range query", func(ctx context.Context, c *last9api.Client) ([]byte, error) {
 			return Query(ctx, c, QueryInput{Datasource: testDatasource, Query: "up", Timestamp: 1700000000, Window: 300})
 		}, with(map[string]any{"query": "up", "timestamp": float64(1700000000), "window": float64(300)})},
-		{"/prom_query_instant", func(ctx context.Context, c *last9api.Client) (json.RawMessage, error) {
+		{"/prom_query_instant", "Prometheus instant query", func(ctx context.Context, c *last9api.Client) ([]byte, error) {
 			return QueryInstantRaw(ctx, c, QueryInstantInput{Datasource: testDatasource, Query: "up", Timestamp: 1700000000})
 		}, with(map[string]any{"query": "up", "timestamp": float64(1700000000)})},
-		{"/prom_label_values", func(ctx context.Context, c *last9api.Client) (json.RawMessage, error) {
+		{"/prom_label_values", "Prometheus label values", func(ctx context.Context, c *last9api.Client) ([]byte, error) {
 			return GetLabelValuesRaw(ctx, c, GetLabelValuesInput{Datasource: testDatasource, Label: "job", Matches: []string{"up"}, Timestamp: 1700000000, Window: 300})
 		}, with(map[string]any{"label": "job", "matches": []any{"up"}, "timestamp": float64(1700000000), "window": float64(300)})},
-		{"/apm/labels", func(ctx context.Context, c *last9api.Client) (json.RawMessage, error) {
+		{"/apm/labels", "Prometheus labels", func(ctx context.Context, c *last9api.Client) ([]byte, error) {
 			return GetAPMLabels(ctx, c, GetAPMLabelsInput{Datasource: testDatasource, Metric: "up", Timestamp: 1700000000, Window: 300})
 		}, with(map[string]any{"metric": "up", "timestamp": float64(1700000000), "window": float64(300)})},
 	}
@@ -60,7 +63,7 @@ func testClient(t *testing.T, handler http.HandlerFunc) *last9api.Client {
 }
 
 func TestRawEndpointsSendBodyAndPassResponseThrough(t *testing.T) {
-	const upstream = `{"status":"success","data":{"z":1,"a":[2]}}`
+	const upstream = "{\"status\":\"success\",\"data\":{\"z\":1,\"a\":[2]}}\n"
 	for _, ep := range rawEndpoints() {
 		t.Run(ep.path, func(t *testing.T) {
 			var method, path string
@@ -105,6 +108,9 @@ func TestRawEndpointsReturnUpstreamHTTPError(t *testing.T) {
 			var upstream *utils.UpstreamHTTPError
 			if !errors.As(err, &upstream) || upstream.StatusCode != http.StatusBadRequest {
 				t.Fatalf("err = %v, want *UpstreamHTTPError with HTTP 400", err)
+			}
+			if want := ep.op + " failed with HTTP 400."; !strings.HasPrefix(err.Error(), want) {
+				t.Errorf("err = %q, want it to start with %q as before last9api", err, want)
 			}
 		})
 	}

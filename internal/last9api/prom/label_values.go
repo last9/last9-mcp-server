@@ -3,7 +3,6 @@ package prom
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	"last9-mcp/internal/last9api"
@@ -11,7 +10,10 @@ import (
 
 const pathLabelValues = "/prom_label_values"
 
-const opLabelValues = "prometheus label values"
+const (
+	opLabelValues    = "prometheus label values"
+	opLabelValuesRaw = "Prometheus label values"
+)
 
 // Datasource is the Prometheus read endpoint the API proxies to.
 type Datasource struct {
@@ -39,8 +41,8 @@ func GetLabelValues(ctx context.Context, c *last9api.Client, in GetLabelValuesIn
 }
 
 // GetLabelValuesRaw calls POST /prom_label_values.
-func GetLabelValuesRaw(ctx context.Context, c *last9api.Client, in GetLabelValuesInput) (json.RawMessage, error) {
-	var raw json.RawMessage
-	err := c.Do(ctx, opLabelValues, last9api.Request{Method: http.MethodPost, Path: pathLabelValues, Body: in}, &raw)
+func GetLabelValuesRaw(ctx context.Context, c *last9api.Client, in GetLabelValuesInput) ([]byte, error) {
+	var raw []byte
+	err := c.Do(ctx, opLabelValuesRaw, last9api.Request{Method: http.MethodPost, Path: pathLabelValues, Body: in}, &raw)
 	return raw, err
 }
