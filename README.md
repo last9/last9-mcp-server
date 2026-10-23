@@ -260,7 +260,7 @@ last9-mcp --read-only --allow-write-tools=acknowledge_alert,mute_alert_group
 
 - **`get_service_summary`** — Ranked fleet `(service, env)` rows: interval request_count, throughput_rpm, HTTP 4xx/5xx counts, and gRPC error counts
 - **`get_service_environments`** — Available environments for your services. Run this first — other APM tools need `env` from here
-- **`get_service_performance_details`** — Full breakdown: throughput, error rate, p50/p90/p95/avg/max, apdex, availability
+- **`get_service_performance_details`** — Full breakdown: throughput, error rate, p50/p90/p95/avg/max, apdex, availability (summarized by default; full series with `include_series`)
 - **`get_service_operations_summary`** — Operations grouped by HTTP endpoints, DB calls, messaging, HTTP clients
 - **`get_service_dependency_graph`** — Dependency map with throughput, latency, and error rates for upstream/downstream/infra
 - **`get_apm_service_deviations`** — Compare a current window against an equal-duration baseline: regressions/improvements, Apdex reconciliation, and a terminal outcome (fleet or single service)
@@ -513,10 +513,14 @@ Returns `now` (and `start`/`end` with `range`) as `{iso, epoch_seconds, local}`;
 
 ### get_service_performance_details
 
+Returns a per-series summary by default: `points`, `missing_points` (availability buckets with no traffic, excluded from the stats), `min`, `p50`, `p90`, `p99` (nearest-rank), `max`, `mean`, `last`, `baseline_mean` (mean of the first half of the valid points, not of the window), `delta_pct` (second half of the valid points vs baseline; absent if baseline is 0) and up to 3 `change_points` (`timestamp`, `before_mean`, `after_mean`), for up to 4 series per metric and every response-time quantile (highest mean first; `series_omitted` counts the rest). A series with `points: 0` carries no statistics, and `baseline_mean`/`delta_pct` need at least 6 points (3 per half). `full_series` marks that raw points are available via `include_series`.
+
 - `service_name` (string, required)
 - `lookback_minutes` (integer, optional): Default: 60.
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `env` (string, optional): Defaults to `prod`.
+- `top_n` (integer, optional): Max entries per top-operations/top-errors list. Default: 5, or 10 with `include_series=true`. Max 100.
+- `include_series` (boolean, optional): Return every point of every series instead of the summary. Default: false.
 
 ### get_service_operations_summary
 
