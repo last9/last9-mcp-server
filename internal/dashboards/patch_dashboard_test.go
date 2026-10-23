@@ -522,6 +522,54 @@ func TestPatchDashboard_TruncatedDiffValuesKeepJSONType(t *testing.T) {
 	}
 }
 
+func TestDiffValue_TruncatesPastLimit(t *testing.T) {
+	str := func(n int) any { return strings.Repeat("x", n) }
+	// A one-string array renders as `["…"]`: n+4 JSON chars.
+	arr := func(n int) any { return []any{strings.Repeat("x", n-4)} }
+	tests := []struct {
+		name      string
+		value     any
+		truncated bool
+	}{
+		{name: "string at limit", value: str(maxDiffValueChars)},
+		{name: "string over limit", value: str(maxDiffValueChars + 1), truncated: true},
+		{name: "array JSON at limit", value: arr(maxDiffValueChars)},
+		{name: "array JSON over limit", value: arr(maxDiffValueChars + 1), truncated: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := diffValue(tt.value)
+			if truncated := !reflect.DeepEqual(got, marshalNoEscape(tt.value)); truncated != tt.truncated {
+				t.Fatalf("truncated = %v, want %v: %s", truncated, tt.truncated, got)
+			}
+			if tt.truncated && !strings.Contains(string(got), "…") {
+				t.Fatalf("truncated value lacks the … marker: %s", got)
+			}
+		})
+	}
+}
+
+func TestRenderPatchDiff_OmitsValuesPastLimit(t *testing.T) {
+	// diffOfLen builds a diff whose JSON is exactly n chars.
+	diffOfLen := func(n int) patchDiff {
+		d := patchDiff{DashboardID: "dash-1", Changes: []patchChange{{Op: "set_title", Before: marshalNoEscape("a"), After: marshalNoEscape("")}}}
+		pad := n - len(marshalNoEscape(d))
+		d.Changes[0].After = marshalNoEscape(strings.Repeat("x", pad))
+		return d
+	}
+	for _, n := range []int{maxPatchDiffChars, maxPatchDiffChars + 1} {
+		diff := diffOfLen(n)
+		if got := len(marshalNoEscape(diff)); got != n {
+			t.Fatalf("fixture diff is %d chars, want %d", got, n)
+		}
+		text := renderPatchDiff(diff)
+		omitted := !strings.Contains(text, `"before":"a"`)
+		if wantOmitted := n > maxPatchDiffChars; omitted != wantOmitted || strings.Contains(text, "values omitted") != wantOmitted {
+			t.Fatalf("%d-char diff: values omitted = %v, want %v: %.200s", n, omitted, wantOmitted, text)
+		}
+	}
+}
+
 func TestPatchDashboard_RemovePanelDiffBoundsLongName(t *testing.T) {
 	ps := newPatchServer(t)
 	ops := `[{"op":"update_panel","panel_id":"p1","fields":{"name":"` + strings.Repeat("é", 1250) +
