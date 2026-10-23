@@ -52,16 +52,21 @@ type PerfSeriesSummary struct {
 	Metric        map[string]string `json:"metric,omitempty"`
 	Points        int               `json:"points"`
 	MissingPoints int               `json:"missing_points,omitempty"`
-	Min           float64           `json:"min"`
-	P50           float64           `json:"p50"`
-	P90           float64           `json:"p90"`
-	P99           float64           `json:"p99"`
-	Max           float64           `json:"max"`
-	Mean          float64           `json:"mean"`
-	Last          float64           `json:"last"`
-	BaselineMean  float64           `json:"baseline_mean"`
-	DeltaPct      *float64          `json:"delta_pct,omitempty"`
-	ChangePoints  []PerfChangePoint `json:"change_points,omitempty"`
+	// Nil when Points is 0, so a series without data shows no zeros.
+	*PerfSeriesStats
+}
+
+type PerfSeriesStats struct {
+	Min          float64           `json:"min"`
+	P50          float64           `json:"p50"`
+	P90          float64           `json:"p90"`
+	P99          float64           `json:"p99"`
+	Max          float64           `json:"max"`
+	Mean         float64           `json:"mean"`
+	Last         float64           `json:"last"`
+	BaselineMean *float64          `json:"baseline_mean,omitempty"`
+	DeltaPct     *float64          `json:"delta_pct,omitempty"`
+	ChangePoints []PerfChangePoint `json:"change_points,omitempty"`
 }
 
 type PerfChangePoint struct {
@@ -111,7 +116,7 @@ func summarizeSeriesList(series []TimeSeries, noData func(float64) bool) ([]Perf
 	for _, ts := range series {
 		out = append(out, summarizeSeries(ts, noData))
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Mean > out[j].Mean })
+	sort.SliceStable(out, func(i, j int) bool { return out[i].rankMean() > out[j].rankMean() })
 	if len(out) <= perfSummaryMaxSeries {
 		return out, 0
 	}
@@ -137,6 +142,7 @@ func summarizeSeries(ts TimeSeries, noData func(float64) bool) PerfSeriesSummary
 	if len(values) == 0 {
 		return s
 	}
+	s.PerfSeriesStats = &PerfSeriesStats{}
 
 	sorted := append([]float64(nil), values...)
 	sort.Float64s(sorted)
@@ -150,9 +156,10 @@ func summarizeSeries(ts TimeSeries, noData func(float64) bool) PerfSeriesSummary
 	s.Last = roundSig(values[len(values)-1])
 	if half > 0 {
 		baseline, recent := mean(values[:half]), mean(values[half:])
-		s.BaselineMean = roundSig(baseline)
-		if baseline != 0 {
-			delta := roundSig((recent - baseline) / math.Abs(baseline) * 100)
+		baselineMean := roundSig(baseline)
+		s.BaselineMean = &baselineMean
+		if delta := (recent - baseline) / math.Abs(baseline) * 100; baseline != 0 && !math.IsInf(delta, 0) {
+			delta = roundSig(delta)
 			s.DeltaPct = &delta
 		}
 	}
@@ -166,6 +173,14 @@ func summarizeSeries(ts TimeSeries, noData func(float64) bool) PerfSeriesSummary
 		})
 	}
 	return s
+}
+
+// rankMean orders series without data after every series with data.
+func (s PerfSeriesSummary) rankMean() float64 {
+	if s.PerfSeriesStats == nil {
+		return math.Inf(-1)
+	}
+	return s.Mean
 }
 
 func nearestRank(sorted []float64, p float64) float64 {

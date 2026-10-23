@@ -28,7 +28,7 @@ func TestSummarizeSeries_NearestRankPercentiles(t *testing.T) {
 	if s.Mean != 50.5 || s.Last != 1 {
 		t.Fatalf("mean/last = %v/%v, want 50.5/1", s.Mean, s.Last)
 	}
-	if s.BaselineMean != 75.5 || s.DeltaPct == nil || *s.DeltaPct != -66.23 {
+	if s.BaselineMean == nil || *s.BaselineMean != 75.5 || s.DeltaPct == nil || *s.DeltaPct != -66.23 {
 		t.Fatalf("baseline/delta = %v/%v, want 75.5/-66.23", s.BaselineMean, s.DeltaPct)
 	}
 }
@@ -48,7 +48,7 @@ func TestSummarizeSeries_SkipsNonFiniteAndEmpty(t *testing.T) {
 	if s.Points != 1 || s.Max != 4 {
 		t.Fatalf("non-finite points must be skipped: %+v", s)
 	}
-	if empty := summarizeSeries(TimeSeries{}, nil); empty.Points != 0 || empty.DeltaPct != nil {
+	if empty := summarizeSeries(TimeSeries{}, nil); empty.Points != 0 || empty.PerfSeriesStats != nil {
 		t.Fatalf("empty series: %+v", empty)
 	}
 }
@@ -61,7 +61,7 @@ func TestSummarizeSeries_BaselineSplitsValidPointsNotWindow(t *testing.T) {
 		pts = append(pts, TimeSeriesPoint{Timestamp: uint64(3000 + 60*i), Value: v})
 	}
 	s := summarizeSeries(TimeSeries{Values: pts}, nil)
-	if s.BaselineMean != 10 || s.DeltaPct == nil || *s.DeltaPct != 100 {
+	if s.BaselineMean == nil || *s.BaselineMean != 10 || s.DeltaPct == nil || *s.DeltaPct != 100 {
 		t.Fatalf("baseline/delta = %v/%v, want 10/100", s.BaselineMean, s.DeltaPct)
 	}
 }
@@ -175,5 +175,11 @@ func TestSummarizeSeriesList_KeepsLargestAndCountsOmitted(t *testing.T) {
 	got, omitted = summarizeSeriesList(series[:perfSummaryMaxSeries], nil)
 	if omitted != 0 || len(got) != perfSummaryMaxSeries {
 		t.Fatalf("at the cap: kept %d, omitted %d", len(got), omitted)
+	}
+
+	withEmpty := append([]TimeSeries{{Metric: map[string]string{"code": "empty"}}}, series[:2]...)
+	got, _ = summarizeSeriesList(withEmpty, nil)
+	if got[len(got)-1].Metric["code"] != "empty" || got[0].Mean != 2 {
+		t.Fatalf("a series without data must rank after every series with data: %+v", got)
 	}
 }
