@@ -419,10 +419,8 @@ func TestGetLogAttributesForPipeline_SeverityFamilyDedup(t *testing.T) {
 	}
 }
 
-// TestGetLogAttributesForPipeline_TraceContextIndexedOnce mirrors a service
-// whose indexed series and logfmt Body both carry trace_id/span_id: each name
-// is listed once, as the indexed entry with a filter the logs API accepts
-// (TraceId and attributes['span_id'] both return rows live; SpanId is a 400).
+// Indexed and logfmt trace_id/span_id are listed once each, with filters the
+// logs API accepts: TraceId and attributes['span_id'] return rows; SpanId is a 400.
 func TestGetLogAttributesForPipeline_TraceContextIndexedOnce(t *testing.T) {
 	series := `{"status":"success","data":[{"service":"gw","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7"}]}`
 	samples := []string{
@@ -460,7 +458,6 @@ func TestGetLogAttributesForPipeline_TraceContextIndexedOnce(t *testing.T) {
 			t.Errorf("%s: want indexed entry with hint %s, got %+v", name, wantHint, got[0])
 		}
 	}
-	// Body keys with no indexed counterpart still surface.
 	if msg := attrByName(attrs, "msg"); msg == nil || msg.Source != "body" {
 		t.Errorf("expected body-derived 'msg', got: %v", attrs)
 	}
