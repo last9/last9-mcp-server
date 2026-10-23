@@ -428,7 +428,12 @@ func renderPatchDiff(diff patchDiff) string {
 			diff.Changes[i].Fields[key] = fieldChange{}
 		}
 	}
-	diff.Note = "before/after values omitted to keep the diff short; get_dashboard shows the result"
+	const omitted = "before/after values omitted to keep the diff short; get_dashboard shows the result"
+	if diff.Note == "" {
+		diff.Note = omitted
+	} else {
+		diff.Note += "; " + omitted
+	}
 	return string(marshalNoEscape(diff))
 }
 

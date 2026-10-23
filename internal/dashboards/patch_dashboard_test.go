@@ -3,6 +3,7 @@ package dashboards
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -479,6 +480,38 @@ func TestPatchDashboard_FailedRereadReportsSentChanges(t *testing.T) {
 	want := `{"dashboard_id":"dash-1","changes":[{"op":"set_title","before":"Gateway","after":"x"}],"note":"written, but re-reading the dashboard failed, so changes show what was sent; get_dashboard shows what was stored"}`
 	if text := utils.GetTextContent(t, result); text != want {
 		t.Fatalf("diff %s\nwant %s", text, want)
+	}
+}
+
+func TestPatchDashboard_CompactedDiffKeepsStorageNote(t *testing.T) {
+	// Each rename diffs ~400 chars, so the batch passes maxPatchDiffChars.
+	batch := []map[string]any{{"op": "update_panel", "panel_id": "p1", "fields": map[string]any{"conc_9": "dropped"}}}
+	for i := range 12 {
+		name := fmt.Sprintf("%02d", i) + strings.Repeat("x", 200)
+		batch = append(batch, map[string]any{"op": "update_panel", "panel_id": "p1", "fields": map[string]any{"name": name}})
+	}
+	ops, _ := json.Marshal(batch)
+	tests := []struct {
+		name  string
+		setup func(ps *patchServer)
+		note  string
+	}{
+		{name: "failed re-read", setup: func(ps *patchServer) { ps.failRereads = true }, note: "re-reading the dashboard failed"},
+		{name: "keys not stored", setup: func(ps *patchServer) { ps.onStore = dropUnknownPanelKeys }, note: "not_stored lists keys"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := newPatchServer(t)
+			tt.setup(ps)
+			result, err := ps.patch(t, string(ops))
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := utils.GetTextContent(t, result)
+			if !strings.Contains(text, "values omitted") || !strings.Contains(text, tt.note) {
+				t.Fatalf("compacted diff lost a note, want %q and the compaction note: %s", tt.note, text)
+			}
+		})
 	}
 }
 
