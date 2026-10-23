@@ -14,8 +14,11 @@ const (
 	perfSummaryMaxChangePoints = 3
 	// perfSummaryMinSegment is the fewest points each side of a change point
 	// must have, so a single outlier is not reported as a level shift.
-	perfSummaryMinSegment    = 3
-	perfSummaryMinShiftScore = 5.0
+	perfSummaryMinSegment = 3
+	// perfSummaryMinSegmentDivisor raises the minimum segment to a tenth of
+	// the series: a few correlated points at an edge are noise, not a level.
+	perfSummaryMinSegmentDivisor = 10
+	perfSummaryMinShiftScore     = 5.0
 	// perfSummaryMinRelativeShift ignores statistically sharp but negligible
 	// shifts (a flat series with a tiny wobble scores a huge t).
 	perfSummaryMinRelativeShift = 0.1
@@ -193,55 +196,133 @@ func nearestRank(sorted []float64, p float64) float64 {
 	return sorted[rank-1]
 }
 
-func detectChangePoints(values []float64) []int {
-	type split struct {
-		idx   int
-		score float64
-	}
-	var found []split
-	var segment func(lo, hi int)
-	segment = func(lo, hi int) {
-		idx, score := bestSplit(values[lo:hi])
-		if idx < 0 || score < perfSummaryMinShiftScore {
-			return
-		}
-		found = append(found, split{lo + idx, score})
-		segment(lo, lo+idx)
-		segment(lo+idx, hi)
-	}
-	segment(0, len(values))
+type perfSplit struct {
+	idx   int
+	score float64
+}
 
+func detectChangePoints(values []float64) []int {
+	// Segmenting once as if points were independent removes real level
+	// shifts, so the residual correlation left is the noise's own.
+	inflation := varianceInflation(values, splitIndexes(segmentSplits(values, 1)))
+	return dropNegligibleShifts(values, splitIndexes(strongestSplits(segmentSplits(values, inflation))))
+}
+
+func strongestSplits(found []perfSplit) []perfSplit {
 	sort.SliceStable(found, func(i, j int) bool { return found[i].score > found[j].score })
 	if len(found) > perfSummaryMaxChangePoints {
 		found = found[:perfSummaryMaxChangePoints]
 	}
-	idxs := make([]int, len(found))
-	for i, f := range found {
-		idxs[i] = f.idx
+	return found
+}
+
+// segmentSplits is binary segmentation: split where the shift scores
+// highest, then recurse into both sides.
+func segmentSplits(values []float64, inflation float64) []perfSplit {
+	minSegment := max(perfSummaryMinSegment, len(values)/perfSummaryMinSegmentDivisor)
+	var found []perfSplit
+	var segment func(lo, hi int)
+	segment = func(lo, hi int) {
+		idx, score := bestSplit(values[lo:hi], inflation, minSegment)
+		if idx < 0 || score < perfSummaryMinShiftScore {
+			return
+		}
+		found = append(found, perfSplit{lo + idx, score})
+		segment(lo, lo+idx)
+		segment(lo+idx, hi)
+	}
+	segment(0, len(values))
+	return found
+}
+
+func splitIndexes(splits []perfSplit) []int {
+	idxs := make([]int, len(splits))
+	for i, s := range splits {
+		idxs[i] = s.idx
 	}
 	sort.Ints(idxs)
 	return idxs
 }
 
-func bestSplit(values []float64) (int, float64) {
+// dropNegligibleShifts re-applies the relative-shift gate to the means each
+// change point reports, which span to its neighbours rather than the split
+// the gate tested, removing the smallest failing shift until all pass.
+func dropNegligibleShifts(values []float64, idxs []int) []int {
+	for {
+		weakest, weakestShift := -1, perfSummaryMinRelativeShift
+		for i, idx := range idxs {
+			lo, hi := 0, len(values)
+			if i > 0 {
+				lo = idxs[i-1]
+			}
+			if i+1 < len(idxs) {
+				hi = idxs[i+1]
+			}
+			if shift := relativeShift(mean(values[lo:idx]), mean(values[idx:hi])); shift < weakestShift {
+				weakest, weakestShift = i, shift
+			}
+		}
+		if weakest < 0 {
+			return idxs
+		}
+		idxs = append(idxs[:weakest], idxs[weakest+1:]...)
+	}
+}
+
+func relativeShift(before, after float64) float64 {
+	shift := math.Abs(after - before)
+	if shift == 0 {
+		return 0
+	}
+	return shift / math.Max(math.Abs(before), math.Abs(after))
+}
+
+func bestSplit(values []float64, inflation float64, minSegment int) (int, float64) {
 	bestIdx, bestScore := -1, 0.0
-	for k := perfSummaryMinSegment; k <= len(values)-perfSummaryMinSegment; k++ {
+	for k := minSegment; k <= len(values)-minSegment; k++ {
 		left, right := values[:k], values[k:]
 		ml, mr := mean(left), mean(right)
-		shift := math.Abs(mr - ml)
-		if shift == 0 || shift < perfSummaryMinRelativeShift*math.Max(math.Abs(ml), math.Abs(mr)) {
+		if relativeShift(ml, mr) < perfSummaryMinRelativeShift {
 			continue
 		}
-		se := math.Sqrt(variance(left, ml)/float64(len(left)) + variance(right, mr)/float64(len(right)))
+		se := math.Sqrt(inflation * (variance(left, ml)/float64(len(left)) + variance(right, mr)/float64(len(right))))
 		score := math.Inf(1)
 		if se > 0 {
-			score = shift / se
+			score = math.Abs(mr-ml) / se
 		}
 		if score > bestScore {
 			bestIdx, bestScore = k, score
 		}
 	}
 	return bestIdx, bestScore
+}
+
+// varianceInflation is (1+ρ)/(1-ρ) for the lag-1 autocorrelation ρ of
+// residuals around each segment's mean: neighbouring points are correlated
+// (rates are smoothed over several steps), so a series holds fewer
+// independent samples than points.
+func varianceInflation(values []float64, splits []int) float64 {
+	bounds := append(append([]int{0}, splits...), len(values))
+	var num, den float64
+	for i := 0; i+1 < len(bounds); i++ {
+		seg := values[bounds[i]:bounds[i+1]]
+		m := mean(seg)
+		for j, v := range seg {
+			den += (v - m) * (v - m)
+			if j > 0 {
+				num += (v - m) * (seg[j-1] - m)
+			}
+		}
+	}
+	if den == 0 {
+		return 1
+	}
+	// Residuals around a short segment's own mean understate ρ by about
+	// (1+3ρ)/length (Marriott and Pope, 1954).
+	rho := num / den
+	rho += (1 + 3*rho) / (float64(len(values)) / float64(len(bounds)-1))
+	rho = math.Min(math.Max(rho, 0), 0.99)
+	return (1 + rho) / (1 - rho)
 }
 
 func mean(values []float64) float64 {
