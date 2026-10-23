@@ -611,6 +611,7 @@ Retries an empty single-metric lookup over 4 days, like `prometheus_label_values
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `limit` (integer, optional): Server default: 5000.
 - `index` (string, optional): `physical_index:<name>` or `rehydration_index:<block_name>`.
+- `response_mode` (string, optional): `summary` (default; also for `null`) or `raw`. A raw-line result over 20 lines comes back as `summary`: `lines_summarized`, `severity_counts` (top six labels, the rest in `other_severities`), `first_timestamp`/`last_timestamp`, a 10-bucket `histogram` over the query window (over the returned lines, with `truncated: true`, when the limit cut the result), and the top `patterns` (`template`, `count`, up to two `samples`) with the rest totalled in `other`, at most 4000 characters; top-level metadata that still does not fit is dropped and named in `dropped_fields`. `raw` returns the lines. Aggregate results are never summarized.
 
 For log-based service inventory, query `physical_index_service_count` first:
 
