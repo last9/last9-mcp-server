@@ -209,6 +209,32 @@ func TestWriteToolsNeverRetryAndExplainUnknownOutcomes(t *testing.T) {
 	}
 }
 
+// A lost chart create response leaves no rule id to disable, so a rule the check finds is live.
+func TestCreateAlertFromChartLostResponseSaysFoundRuleIsLive(t *testing.T) {
+	client := *auth.GetHTTPClient()
+	client.Timeout = 300 * time.Millisecond
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writefault.Serve(w, r, writefault.Truncated)
+	}))
+	defer srv.Close()
+
+	session := connectTestSession(t, writeToolTestConfig(srv.URL), &client)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "create_alert_from_chart",
+		Arguments: json.RawMessage(writeToolFixtures["create_alert_from_chart"].args),
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	text := toolResultText(result)
+	want := "if it finds the rule, it was not disabled and can fire: run patch_alert with its Entity ID, id and is_disabled=true"
+	if !result.IsError || !strings.Contains(text, want) {
+		t.Fatalf("result does not contain %q:\n%s", want, text)
+	}
+}
+
 func toolResultText(result *mcp.CallToolResult) string {
 	var parts []string
 	for _, c := range result.Content {
