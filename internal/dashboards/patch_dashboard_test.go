@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -465,6 +466,42 @@ func TestPatchDashboard_DiffShowsStoredValue(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := `{"dashboard_id":"dash-1","changes":[{"op":"update_panel","panel_id":"p1","fields":{"name":{"before":"Latency","after":"trimmed"}}}]}`
+	if text := utils.GetTextContent(t, result); text != want {
+		t.Fatalf("diff %s\nwant %s", text, want)
+	}
+}
+
+func TestPatchDashboard_AddPanelWithoutIDReportsAssignedID(t *testing.T) {
+	ps := newPatchServer(t)
+	ps.onStore = func(doc map[string]any) {
+		for i, p := range doc["panels"].([]any) {
+			if panel := p.(map[string]any); panel["id"] == nil {
+				panel["id"] = fmt.Sprintf("gen-%d", i)
+			}
+		}
+	}
+	result, err := ps.patch(t, `[{"op":"add_panel","panel":{"name":"A"}},{"op":"add_panel","panel":{"name":"B"},"index":0}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"dashboard_id":"dash-1","changes":[{"op":"add_panel","panel_id":"gen-4","index":3},{"op":"add_panel","panel_id":"gen-0","index":0}]}`
+	if text := utils.GetTextContent(t, result); text != want {
+		t.Fatalf("diff %s\nwant %s", text, want)
+	}
+}
+
+func TestPatchDashboard_AddPanelWithoutIDOmitsIDWhenStoredOrderDiffers(t *testing.T) {
+	ps := newPatchServer(t)
+	ps.onStore = func(doc map[string]any) {
+		panels := doc["panels"].([]any)
+		panels[len(panels)-1].(map[string]any)["id"] = "gen"
+		slices.Reverse(panels)
+	}
+	result, err := ps.patch(t, `[{"op":"add_panel","panel":{"name":"A"}}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"dashboard_id":"dash-1","changes":[{"op":"add_panel","index":3}]}`
 	if text := utils.GetTextContent(t, result); text != want {
 		t.Fatalf("diff %s\nwant %s", text, want)
 	}

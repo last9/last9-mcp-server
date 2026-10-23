@@ -62,6 +62,8 @@ type patchChange struct {
 	// NotRemoved lists keys removed with null that the stored panel still has.
 	NotStored  []string `json:"not_stored,omitempty"`
 	NotRemoved []string `json:"not_removed,omitempty"`
+
+	added map[string]any
 }
 
 type fieldChange struct {
@@ -233,7 +235,7 @@ func applyPatchOp(doc map[string]any, op PatchDashboardOp) (change patchChange, 
 			return change, false, fmt.Errorf("index %d out of range 0..%d", at, len(panels))
 		}
 		doc["panels"] = append(panels[:at], append([]any{op.Panel}, panels[at:]...)...)
-		change.PanelID, change.Index = id, &at
+		change.PanelID, change.Index, change.added = id, &at, op.Panel
 	case "update_panel", "remove_panel", "move_panel":
 		at := findPanel(panels, op.PanelID)
 		if at < 0 {
@@ -306,6 +308,12 @@ func reconcileStored(changes []patchChange, sent, stored map[string]any) (note s
 	for i := range changes {
 		c := &changes[i]
 		sentPanel := panelByID(sent, c.PanelID)
+		if c.Op == "add_panel" {
+			sentPanel = c.added
+			if c.PanelID == "" {
+				c.PanelID = assignedPanelID(sent, stored, c.added)
+			}
+		}
 		if c.PanelID == "" || sentPanel == nil || (c.Op != "update_panel" && c.Op != "add_panel") {
 			continue
 		}
@@ -338,6 +346,27 @@ func reconcileStored(changes []patchChange, sent, stored map[string]any) (note s
 		return "not_stored lists keys the dashboard API did not keep; get_dashboard shows the stored panel"
 	case notRemoved:
 		return "not_removed lists keys the dashboard API kept or restored to a default; get_dashboard shows the stored panel"
+	}
+	return ""
+}
+
+// assignedPanelID returns the id the API gave a panel sent without one. Panels are matched
+// by position, so it gives up unless the stored panel at that position is a new one.
+func assignedPanelID(sent, stored, panel map[string]any) string {
+	sentPanels, _ := sent["panels"].([]any)
+	storedPanels, _ := stored["panels"].([]any)
+	if len(sentPanels) != len(storedPanels) {
+		return ""
+	}
+	for i, p := range sentPanels {
+		if m, ok := p.(map[string]any); !ok || reflect.ValueOf(m).UnsafePointer() != reflect.ValueOf(panel).UnsafePointer() {
+			continue
+		}
+		storedPanel, _ := storedPanels[i].(map[string]any)
+		if id, _ := storedPanel["id"].(string); id != "" && panelByID(sent, id) == nil {
+			return id
+		}
+		return ""
 	}
 	return ""
 }
