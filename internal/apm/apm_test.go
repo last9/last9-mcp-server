@@ -26,10 +26,11 @@ func TestGetServicePerformanceDetails(t *testing.T) {
 	handler := NewServicePerformanceDetailsHandler(http.DefaultClient, *cfg)
 
 	args := ServicePerformanceDetailsArgs{
-		ServiceName:  "svc",
-		StartTimeISO: time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
-		EndTimeISO:   time.Now().UTC().Format(time.RFC3339),
-		Env:          "prod",
+		IncludeSeries: true,
+		ServiceName:   "svc",
+		StartTimeISO:  time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339),
+		EndTimeISO:    time.Now().UTC().Format(time.RFC3339),
+		Env:           "prod",
 	}
 
 	ctx := context.Background()
@@ -833,6 +834,7 @@ func TestServicePerformanceDetailsPromFailureSoftOnSingleChunkWindow(t *testing.
 	}
 	handler := NewServicePerformanceDetailsHandler(server.Client(), cfg)
 	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServicePerformanceDetailsArgs{
+		IncludeSeries:   true,
 		ServiceName:     "checkout",
 		Env:             "prod",
 		LookbackMinutes: 15,
@@ -899,6 +901,7 @@ func TestServicePerformanceDetailsReadParseFailureHardAbortsSingleChunkWindow(t 
 	}
 	handler := NewServicePerformanceDetailsHandler(server.Client(), cfg)
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ServicePerformanceDetailsArgs{
+		IncludeSeries:   true,
 		ServiceName:     "checkout",
 		Env:             "prod",
 		LookbackMinutes: 15,
