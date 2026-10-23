@@ -140,7 +140,7 @@ Read these resources before writing a non-trivial query{{if has "get_logs"}}. Af
 {{- with $create}}
 - Create once with {{.}} and keep the returned id; never create a second copy to change the first.
 {{- end}}
-{{- with tools "create_alert"}}
+{{- with tools "create_alert" "create_alert_from_chart"}}
 - Alert rules from {{.}} are created disabled{{with tools "patch_alert"}}; enable them with {{.}} after validating{{end}}.
 {{- end}}
 {{- with $refine}}
