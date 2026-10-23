@@ -93,7 +93,7 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 		api := last9api.NewClient(client, cfg)
 		current, err := apidashboards.GetDashboard(ctx, api, args.ID)
 		if err != nil {
-			return nil, nil, mapDashboardAPIError(err)
+			return nil, nil, fmt.Errorf("%w; nothing was written", mapDashboardAPIError(err))
 		}
 		if current.Dashboard == nil {
 			return nil, nil, errors.New("get dashboard returned no dashboard object; nothing was written")

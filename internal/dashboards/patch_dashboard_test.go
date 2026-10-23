@@ -714,6 +714,31 @@ func TestPatchDashboard_InvalidOpNamesIndexAndSkipsWrite(t *testing.T) {
 	}
 }
 
+func TestPatchDashboard_FailedReadSaysNothingWritten(t *testing.T) {
+	tests := []struct {
+		name string
+		id   string
+		down bool
+	}{
+		{name: "unknown dashboard", id: "nope"},
+		{name: "connection refused", id: "dash-1", down: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := newPatchServer(t)
+			if tt.down {
+				ps.srv.Close()
+			}
+			_, _, err := NewPatchDashboardHandler(ps.srv.Client(), testDashboardConfig(ps.srv.URL))(context.Background(), &mcp.CallToolRequest{}, PatchDashboardArgs{
+				ID: tt.id, Ops: []PatchDashboardOp{{Op: "set_title", Title: "x"}},
+			})
+			if err == nil || !strings.HasSuffix(err.Error(), "; nothing was written") {
+				t.Fatalf("err = %v, want it to end with \"; nothing was written\"", err)
+			}
+		})
+	}
+}
+
 func TestPatchDashboard_RequiresID(t *testing.T) {
 	ps := newPatchServer(t)
 	_, _, err := NewPatchDashboardHandler(ps.srv.Client(), testDashboardConfig(ps.srv.URL))(context.Background(), &mcp.CallToolRequest{}, PatchDashboardArgs{
