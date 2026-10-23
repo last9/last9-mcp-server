@@ -343,6 +343,7 @@ Rules, channels and attachments these tools create are marked `created_via: last
 - **`validate_dashboard`** — Read-only lint + execute + classify for a saved dashboard id or an inline `dashboard_definition` over a ≤24h window. Never creates or updates dashboards
 - **`create_dashboard`** — Create a net-new custom dashboard once (panels, queries, metadata). After the id is returned, refine with `update_dashboard`.
 - **`update_dashboard`** — Refine an existing dashboard by ID (full replacement; readonly system dashboards return an error)
+- **`patch_dashboard`** — Targeted edits to an existing dashboard by ID (add/update/remove/move panel, set title, set variable); returns a compact diff, not the full dashboard
 - **`delete_dashboard`** — Delete a custom dashboard by ID
 - **`list_dashboard_snapshots`** — Frozen point-in-time snapshots for a dashboard (metadata only)
 - **`get_dashboard_snapshot`** — Full frozen snapshot including panel data for RCA / shareable views
@@ -1017,6 +1018,19 @@ Prefer this after create. Full replacement by id (same body as create).
 - `id` (string, required): Dashboard UUID to update.
 - `dashboard` (object, required): Full replacement dashboard body (same shape as create).
 - `metadata` (object, optional): Replacement metadata. Readonly system dashboards return a 403 error.
+
+### patch_dashboard
+
+Prefer this over `update_dashboard` for small refinements: unchanged panels are never re-sent. Reads the dashboard, applies `ops` in order and writes it back, so an edit made elsewhere between the read and the write is overwritten. Returns `{dashboard_id, changes[]}`; ops the dashboard already satisfies are left out, and if none changes anything nothing is written. The diff is checked against a re-read after the write: panel `fields` show stored values, `not_stored` lists keys the API dropped and `not_removed` keys it kept despite a `null`. Diff values over 200 characters are shortened in place, keeping their JSON type.
+
+- `id` (string, required): Dashboard UUID to patch.
+- `ops` (array, required): Ops applied in order; if any is invalid nothing is written and the error names it as `ops[i]`.
+  - `add_panel`: `panel` (full panel object; `version` defaults to 1), optional `index` (0-based insert position, default append).
+  - `update_panel`: `panel_id`, `fields` (top-level panel keys to replace; `null` removes a key; `id` cannot change).
+  - `remove_panel`: `panel_id`.
+  - `move_panel`: `panel_id`, `index` (0-based position after the move).
+  - `set_title`: `title` (the dashboard name).
+  - `set_variable`: `variable`; replaces the variable with the same `target`, otherwise appends it.
 
 ### delete_dashboard
 

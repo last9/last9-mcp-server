@@ -695,6 +695,13 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		dashboards.NewUpdateDashboardHandler(client, cfg)))
 
 	reg(registerWriteTool(server, gate, &mcp.Tool{
+		Name:        "patch_dashboard",
+		Annotations: writeTool("Patch Dashboard", true, false),
+		Description: prompts.PatchDashboardDescription,
+	}, "get_dashboard for id, checking the panels your ops targeted",
+		dashboards.NewPatchDashboardHandler(client, cfg)))
+
+	reg(registerWriteTool(server, gate, &mcp.Tool{
 		Name:        "delete_dashboard",
 		Annotations: writeTool("Delete Dashboard", true, true),
 		Description: prompts.DeleteDashboardDescription,
