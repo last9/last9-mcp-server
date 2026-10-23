@@ -357,21 +357,60 @@ func setVariable(doc map[string]any, variable map[string]any) (target, action st
 	return target, "added"
 }
 
-// diffValue renders v as compact JSON, or as a truncated JSON string when it is long,
-// so one changed query cannot blow the diff past maxPatchDiffChars.
+// diffValue renders v as compact JSON, shortened in place when it is long so one changed
+// query cannot blow the diff past maxPatchDiffChars while the value keeps its JSON type.
 func diffValue(v any) json.RawMessage {
 	raw := marshalNoEscape(v)
 	if len(raw) <= maxDiffValueChars {
 		return raw
 	}
-	return marshalNoEscape(truncateDiffText(string(raw)))
+	return marshalNoEscape(shrinkValue(v, maxDiffValueChars))
+}
+
+// shrinkValue truncates strings and drops trailing array elements or object keys once
+// about budget characters are used, marking what was dropped with "…".
+func shrinkValue(v any, budget int) any {
+	child := budget / 4
+	switch v := v.(type) {
+	case string:
+		return truncateText(v, budget)
+	case []any:
+		out := []any{}
+		for i, elem := range v {
+			if budget <= 0 {
+				return append(out, fmt.Sprintf("… %d more", len(v)-i))
+			}
+			short := shrinkValue(elem, min(budget, child))
+			out = append(out, short)
+			budget -= len(marshalNoEscape(short)) + 1
+		}
+		return out
+	case map[string]any:
+		out := map[string]any{}
+		keys := slices.Sorted(maps.Keys(v))
+		for i, key := range keys {
+			if budget <= 0 {
+				out["…"] = fmt.Sprintf("%d more keys", len(keys)-i)
+				break
+			}
+			short := shrinkValue(v[key], min(budget, child))
+			out[key] = short
+			budget -= len(key) + len(marshalNoEscape(short)) + 4
+		}
+		return out
+	}
+	return v
 }
 
 func truncateDiffText(s string) string {
-	if len(s) <= maxDiffValueChars {
+	return truncateText(s, maxDiffValueChars)
+}
+
+func truncateText(s string, limit int) string {
+	if len(s) <= limit {
 		return s
 	}
-	cut := maxDiffValueChars
+	cut := max(limit, 0)
 	for cut > 0 && !utf8.RuneStart(s[cut]) {
 		cut--
 	}

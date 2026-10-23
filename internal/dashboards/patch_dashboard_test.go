@@ -482,6 +482,46 @@ func TestPatchDashboard_FailedRereadReportsSentChanges(t *testing.T) {
 	}
 }
 
+func TestPatchDashboard_TruncatedDiffValuesKeepJSONType(t *testing.T) {
+	ps := newPatchServer(t)
+	longExpr := strings.Repeat("x", 3000)
+	ops, _ := json.Marshal([]map[string]any{{
+		"op": "update_panel", "panel_id": "p1",
+		"fields": map[string]any{
+			"name":    longExpr,
+			"queries": []any{map[string]any{"name": "A", "expr": longExpr}, map[string]any{"name": "B", "expr": longExpr}},
+		},
+	}})
+	result, err := ps.patch(t, string(ops))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var diff struct {
+		Changes []struct {
+			Fields map[string]struct {
+				After json.RawMessage `json:"after"`
+			} `json:"fields"`
+		} `json:"changes"`
+	}
+	if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &diff); err != nil {
+		t.Fatal(err)
+	}
+	fields := diff.Changes[0].Fields
+	var name string
+	if err := json.Unmarshal(fields["name"].After, &name); err != nil || !strings.HasPrefix(name, "xxx") || !strings.HasSuffix(name, "…") {
+		t.Fatalf("name after = %s, want a truncated string (err %v)", fields["name"].After, err)
+	}
+	var queries []map[string]any
+	if err := json.Unmarshal(fields["queries"].After, &queries); err != nil || len(queries) == 0 || queries[0]["name"] != "A" {
+		t.Fatalf("queries after = %s, want a truncated array (err %v)", fields["queries"].After, err)
+	}
+	for _, v := range []json.RawMessage{fields["name"].After, fields["queries"].After} {
+		if len(v) > maxDiffValueChars+40 {
+			t.Fatalf("truncated value is %d chars: %s", len(v), v)
+		}
+	}
+}
+
 func TestPatchDashboard_RemovePanelDiffBoundsLongName(t *testing.T) {
 	ps := newPatchServer(t)
 	ops := `[{"op":"update_panel","panel_id":"p1","fields":{"name":"` + strings.Repeat("é", 1250) +

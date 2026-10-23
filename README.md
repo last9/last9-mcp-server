@@ -1017,7 +1017,7 @@ Prefer this after create. Full replacement by id (same body as create).
 
 ### patch_dashboard
 
-Prefer this over `update_dashboard` for small refinements: unchanged panels are never re-sent. Reads the dashboard, applies `ops` in order and writes it back, so an edit made elsewhere between the read and the write is overwritten. Returns `{dashboard_id, changes[]}`; ops the dashboard already satisfies are left out, and if none changes anything nothing is written. The diff is checked against a re-read after the write: panel `fields` show stored values, and `not_stored` lists keys the API dropped. Diff values over 200 characters are truncated.
+Prefer this over `update_dashboard` for small refinements: unchanged panels are never re-sent. Reads the dashboard, applies `ops` in order and writes it back, so an edit made elsewhere between the read and the write is overwritten. Returns `{dashboard_id, changes[]}`; ops the dashboard already satisfies are left out, and if none changes anything nothing is written. The diff is checked against a re-read after the write: panel `fields` show stored values, and `not_stored` lists keys the API dropped. Diff values over 200 characters are shortened in place, keeping their JSON type.
 
 - `id` (string, required): Dashboard UUID to patch.
 - `ops` (array, required): Ops applied in order; if any is invalid nothing is written and the error names it as `ops[i]`.
