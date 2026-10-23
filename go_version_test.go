@@ -57,7 +57,10 @@ func TestReadmeStatesPatchedGoRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "Requires Go " + patchedGoRelease; !strings.Contains(string(raw), want) {
+	// Go 1.26.10 carries the same fix, so the README must not call every release
+	// before the project minimum vulnerable.
+	want := "Requires Go " + patchedGoRelease + " or later, which includes the eMudhra intermediate-certificate distrust fix."
+	if !strings.Contains(string(raw), want) {
 		t.Errorf("README.md does not state the Go requirement %q", want)
 	}
 }

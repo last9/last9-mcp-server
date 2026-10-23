@@ -451,7 +451,7 @@ Each distinct effective set is served by its own server, built on its first requ
 
 ### Build from Source
 
-Requires Go 1.27.3 or later: earlier releases accept TLS certificates from the compromised eMudhra intermediates.
+Requires Go 1.27.3 or later, which includes the eMudhra intermediate-certificate distrust fix.
 
 ```bash
 git clone https://github.com/last9/last9-mcp-server.git
