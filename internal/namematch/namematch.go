@@ -41,6 +41,17 @@ var siblingWords = []string{
 	"us", "uk", "eu", "ap", "af", "sa", "ca", "me", "il", "mx", "cn", "in", "jp", "au",
 }
 
+// countryCodes are ISO 3166-1 alpha-2; a transposition turning one into
+// another ("es" for "se") may name another region, wherever it sits.
+var countryCodes = strings.Fields(`
+	ad ae af ag ai al am ao aq ar as at au aw ax az ba bb bd be bf bg bh bi bj bl bm bn bo bq br bs bt bv bw by bz
+	ca cc cd cf cg ch ci ck cl cm cn co cr cu cv cw cx cy cz de dj dk dm do dz ec ee eg eh er es et
+	fi fj fk fm fo fr ga gb gd ge gf gg gh gi gl gm gn gp gq gr gs gt gu gw gy hk hm hn hr ht hu
+	id ie il im in io iq ir is it je jm jo jp ke kg kh ki km kn kp kr kw ky kz la lb lc li lk lr ls lt lu lv ly
+	ma mc md me mf mg mh mk ml mm mn mo mp mq mr ms mt mu mv mw mx my mz na nc ne nf ng ni nl no np nr nu nz om
+	pa pe pf pg ph pk pl pm pn pr ps pt pw py qa re ro rs ru rw sa sb sc sd se sg sh si sj sk sl sm sn so sr ss st sv sx sy sz
+	tc td tf tg th tj tk tl tm tn to tr tt tv tw tz ua ug um us uy uz va vc ve vg vi vn vu wf ws ye yt za zm zw`)
+
 type Match struct {
 	Kind       Kind
 	Name       string
@@ -136,7 +147,7 @@ const (
 	typo editRisk = iota
 	// doubtful edits may swap a region code not in siblingWords, so they are
 	// offered, never picked; only insertions, deletions and transpositions
-	// outside sibling words are picked.
+	// that cannot turn one region code into another are picked.
 	doubtful
 	refused
 )
@@ -177,8 +188,8 @@ func tokenDistance(a, b []string) (int, editRisk) {
 }
 
 // siblingRisk refuses an edit touching a sibling word in both names ("canaryca"
-// for "canarysa"); bar safe transpositions ("dmeo"), it doubts one touching it
-// in one name or substituting letters, which may swap an unlisted "fr" for "tr".
+// for "canarysa"); bar transpositions that keep a region ("dmeo"), it doubts one
+// touching it in one name or substituting letters, which may swap "fr" for "tr".
 func siblingRisk(a, b string) editRisk {
 	ra, rb := []rune(a), []rune(b)
 	pre := 0
@@ -194,7 +205,7 @@ func siblingRisk(a, b string) editRisk {
 	switch {
 	case inA && inB:
 		return refused
-	case transposes(spanA, spanB) && (pre > 0 && suf > 0 || insideLongerSiblingWord(ra, pre) || insideLongerSiblingWord(rb, pre)):
+	case transposes(spanA, spanB) && (!isRegionCode(spanA) || !isRegionCode(spanB) || insideLongerSiblingWord(ra, pre) || insideLongerSiblingWord(rb, pre)):
 		return typo
 	case inA || inB || len(spanA) == len(spanB):
 		return doubtful
@@ -206,9 +217,13 @@ func transposes(a, b []rune) bool {
 	return len(a) == 2 && len(b) == 2 && a[0] == b[1] && a[1] == b[0]
 }
 
+func isRegionCode(pair []rune) bool {
+	code := string(pair)
+	return slices.Contains(countryCodes, code) || slices.Contains(siblingWords, code)
+}
+
 // insideLongerSiblingWord reports whether s[from:from+2] lies within a sibling
-// word longer than it ("ng" in "staging"); a pair at a word's edge with no
-// such word around it may be an unlisted region code ("es" for "se").
+// word longer than it ("ng" in "staging"), so it cannot be a region code.
 func insideLongerSiblingWord(s []rune, from int) bool {
 	for _, w := range siblingWords {
 		n := len(w)
