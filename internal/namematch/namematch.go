@@ -177,8 +177,8 @@ func tokenDistance(a, b []string) (int, editRisk) {
 }
 
 // siblingRisk refuses an edit touching a sibling word in both names ("canaryca"
-// for "canarysa"); bar two-letter transpositions ("dmeo"), it doubts one touching
-// it in one name or substituting letters, which may swap an unlisted "fr" for "tr".
+// for "canarysa"); bar safe transpositions ("dmeo"), it doubts one touching it
+// in one name or substituting letters, which may swap an unlisted "fr" for "tr".
 func siblingRisk(a, b string) editRisk {
 	ra, rb := []rune(a), []rune(b)
 	pre := 0
@@ -194,7 +194,7 @@ func siblingRisk(a, b string) editRisk {
 	switch {
 	case inA && inB:
 		return refused
-	case transposes(spanA, spanB):
+	case transposes(spanA, spanB) && (pre > 0 && suf > 0 || insideLongerSiblingWord(ra, pre) || insideLongerSiblingWord(rb, pre)):
 		return typo
 	case inA || inB || len(spanA) == len(spanB):
 		return doubtful
@@ -204,6 +204,21 @@ func siblingRisk(a, b string) editRisk {
 
 func transposes(a, b []rune) bool {
 	return len(a) == 2 && len(b) == 2 && a[0] == b[1] && a[1] == b[0]
+}
+
+// insideLongerSiblingWord reports whether s[from:from+2] lies within a sibling
+// word longer than it ("ng" in "staging"); a pair at a word's edge with no
+// such word around it may be an unlisted region code ("es" for "se").
+func insideLongerSiblingWord(s []rune, from int) bool {
+	for _, w := range siblingWords {
+		n := len(w)
+		for i := max(0, from+2-n); i <= from && i+n <= len(s); i++ {
+			if n > 2 && string(s[i:i+n]) == w {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // touchesSiblingWord reports whether a sibling word in s overlaps s[from:to],
