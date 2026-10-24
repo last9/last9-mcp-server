@@ -311,8 +311,9 @@ func TestDiscoverSectionListsOnlyNameLookups(t *testing.T) {
 // was a reviewed increase, validated on the full log_query suite; naming
 // analyze_change_impact and get_metric_status and the log-pattern tools joining
 // the one-service bullet were others, and so was the explicit pipeline
-// time-window rule (issue #379).
-const maxInvestigateInstructionsBytes = 2870
+// time-window rule (issue #379), and get_alert_operations_summary joining
+// investigate (issue #428).
+const maxInvestigateInstructionsBytes = 2980
 
 func TestInvestigateInstructionsBounded(t *testing.T) {
 	instructions, _ := initializeOver(t, "investigate")
