@@ -38,7 +38,7 @@ const (
 var siblingWords = []string{
 	"prod", "production", "preprod", "staging", "stage", "stg", "dev", "qa", "uat", "test", "sandbox", "canary",
 	"east", "west", "north", "south", "central",
-	"us", "eu", "ap", "af", "sa", "ca", "me", "il", "mx", "cn", "in", "jp", "au",
+	"us", "uk", "eu", "ap", "af", "sa", "ca", "me", "il", "mx", "cn", "in", "jp", "au",
 }
 
 type Match struct {
@@ -65,7 +65,7 @@ func Resolve(input string, names []string) Match {
 	if hits := filter(names, func(n string) bool { return sameCompact(normalize(n), key) }); len(hits) > 0 {
 		return decide(hits)
 	}
-	if hits, best := nearest(key, names); len(hits) == 1 && best <= pickEdits {
+	if hits, best, sure := nearest(key, names); len(hits) == 1 && best <= pickEdits && sure {
 		return decide(hits)
 	} else if len(hits) > 0 {
 		return candidates(hits)
@@ -111,59 +111,74 @@ func filter(names []string, keep func(string) bool) []string {
 	return out
 }
 
-// nearest returns every name within the edit budget and the fewest edits
-// among them. An edit never swaps a word ("east" for "west") or a number
-// ("-2" for "-1"): those name a sibling, not a misspelling.
-func nearest(key string, names []string) ([]string, int) {
+// nearest returns every name within the edit budget, the fewest edits among
+// them, and whether every hit is safe to pick. An edit never swaps a word
+// ("east" for "west") or a number ("-2" for "-1"): those name a sibling.
+func nearest(key string, names []string) ([]string, int, bool) {
 	keyTokens := tokens(key)
-	best := -1
+	best, sure := -1, true
 	var hits []string
 	for _, n := range names {
-		if d, ok := tokenDistance(keyTokens, tokens(normalize(n))); ok {
+		if d, risk := tokenDistance(keyTokens, tokens(normalize(n))); risk != refused {
 			hits = append(hits, n)
+			sure = sure && risk == typo
 			if best == -1 || d < best {
 				best = d
 			}
 		}
 	}
-	return hits, best
+	return hits, best, sure
 }
+
+type editRisk int
+
+const (
+	typo editRisk = iota
+	// doubtful edits may swap a region code not in siblingWords, so they are
+	// offered, never picked.
+	doubtful
+	refused
+)
 
 // tokenDistance sums per-token edits, allowing one edit per four runes of a
 // token, maxEdits in all, and none in a token holding a digit or swapping a
 // sibling word.
-func tokenDistance(a, b []string) (int, bool) {
+func tokenDistance(a, b []string) (int, editRisk) {
 	if len(a) != len(b) {
-		return 0, false
+		return 0, refused
 	}
-	total := 0
+	total, risk := 0, typo
 	for i := range a {
 		if a[i] == b[i] {
 			continue
 		}
 		if hasDigit(a[i]) || hasDigit(b[i]) {
-			return 0, false
+			return 0, refused
 		}
 		runes := utf8.RuneCountInString(a[i])
 		limit := min(runes/4, maxEdits-total)
 		// The length gap bounds the distance from below; skipping on it keeps
 		// a huge input from allocating a len(key)×len(name) matrix per name.
 		if limit == 0 || abs(runes-utf8.RuneCountInString(b[i])) > limit {
-			return 0, false
+			return 0, refused
 		}
 		d := distance(a[i], b[i])
-		if d > limit || swapsSiblingWord(a[i], b[i]) {
-			return 0, false
+		if d > limit {
+			return 0, refused
+		}
+		risk = max(risk, siblingRisk(a[i], b[i]))
+		if risk == refused {
+			return 0, refused
 		}
 		total += d
 	}
-	return total, true
+	return total, risk
 }
 
-// swapsSiblingWord reports whether the span where a and b differ touches a
-// sibling word on both sides ("canaryca" for "canarysa"), unlike a typo that
-// merely spells one ("dmeo" for "demo").
-func swapsSiblingWord(a, b string) bool {
+// siblingRisk refuses an edit whose differing span touches a sibling word in
+// both names ("canaryca" for "canarysa") and doubts one touching it in one,
+// unless it only transposes two letters ("dmeo" for "demo").
+func siblingRisk(a, b string) editRisk {
 	ra, rb := []rune(a), []rune(b)
 	pre := 0
 	for pre < min(len(ra), len(rb)) && ra[pre] == rb[pre] {
@@ -173,7 +188,18 @@ func swapsSiblingWord(a, b string) bool {
 	for suf < min(len(ra), len(rb))-pre && ra[len(ra)-1-suf] == rb[len(rb)-1-suf] {
 		suf++
 	}
-	return touchesSiblingWord(ra, pre, len(ra)-suf) && touchesSiblingWord(rb, pre, len(rb)-suf)
+	inA, inB := touchesSiblingWord(ra, pre, len(ra)-suf), touchesSiblingWord(rb, pre, len(rb)-suf)
+	switch {
+	case inA && inB:
+		return refused
+	case (inA || inB) && !transposes(ra[pre:len(ra)-suf], rb[pre:len(rb)-suf]):
+		return doubtful
+	}
+	return typo
+}
+
+func transposes(a, b []rune) bool {
+	return len(a) == 2 && len(b) == 2 && a[0] == b[1] && a[1] == b[0]
 }
 
 // touchesSiblingWord reports whether a sibling word in s overlaps s[from:to],
