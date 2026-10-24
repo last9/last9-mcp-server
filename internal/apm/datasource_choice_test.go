@@ -190,6 +190,8 @@ func TestPromToolsOfferUnlistedRegionCode(t *testing.T) {
 		{"telemetryua", "telemetryus"},
 		{"telemetrytr", "telemetryfr"},
 		{"telemetryfr", "telemetrytr"},
+		{"telemetryse", "telemetryes"},
+		{"telemetryes", "telemetryse"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.requested, func(t *testing.T) {
