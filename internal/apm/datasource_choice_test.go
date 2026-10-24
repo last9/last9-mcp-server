@@ -186,19 +186,28 @@ func TestPromToolsNeverSwapRegionCode(t *testing.T) {
 }
 
 func TestPromToolsOfferUnlistedRegionCode(t *testing.T) {
-	tools, readURLs := promToolsUnderTest(t, models.DatasourceInfo{Name: "telemetryua", ReadURL: "https://telemetryua.example.com/prom", Username: "u", Password: "p", Region: "us-east-1"})
-	for tool, call := range tools {
-		res, err := call(context.Background(), "telemetryus")
-		if err != nil {
-			t.Fatalf("%s: unexpected error: %v", tool, err)
-		}
-		want := `datasource "telemetryus" is not an exact name. No query was run; retry with one of these as datasource: telemetryua.`
-		if texts := resultTexts(res); res.IsError || len(texts) != 1 || texts[0] != want {
-			t.Errorf("%s: isError=%v text = %q, want %q", tool, res.IsError, texts, want)
-		}
+	tests := []struct{ configured, requested string }{
+		{"telemetryua", "telemetryus"},
+		{"telemetrytr", "telemetryfr"},
+		{"telemetryfr", "telemetrytr"},
 	}
-	if len(*readURLs) != 0 {
-		t.Errorf("offered datasource reached the API %d time(s), want 0", len(*readURLs))
+	for _, tt := range tests {
+		t.Run(tt.requested, func(t *testing.T) {
+			tools, readURLs := promToolsUnderTest(t, models.DatasourceInfo{Name: tt.configured, ReadURL: "https://" + tt.configured + ".example.com/prom", Username: "u", Password: "p", Region: "us-east-1"})
+			for tool, call := range tools {
+				res, err := call(context.Background(), tt.requested)
+				if err != nil {
+					t.Fatalf("%s: unexpected error: %v", tool, err)
+				}
+				want := fmt.Sprintf(`datasource %q is not an exact name. No query was run; retry with one of these as datasource: %s.`, tt.requested, tt.configured)
+				if texts := resultTexts(res); res.IsError || len(texts) != 1 || texts[0] != want {
+					t.Errorf("%s: isError=%v text = %q, want %q", tool, res.IsError, texts, want)
+				}
+			}
+			if len(*readURLs) != 0 {
+				t.Errorf("offered datasource reached the API %d time(s), want 0", len(*readURLs))
+			}
+		})
 	}
 }
 
