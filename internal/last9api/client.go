@@ -206,6 +206,11 @@ func decodeResponse(resp *http.Response, op string, out any, maxBytes int64) err
 	if maxBytes > 0 && int64(len(raw)) > maxBytes {
 		return &ResponseTooLargeError{Op: op, MaxBytes: maxBytes}
 	}
+	// A *[]byte target takes the body as sent, for tools that relay it unparsed.
+	if b, ok := out.(*[]byte); ok {
+		*b = raw
+		return nil
+	}
 	if len(raw) == 0 {
 		return nil
 	}
