@@ -40,6 +40,8 @@ func TestResolve(t *testing.T) {
 		{"unlisted codes transposed at a word end are only offered", "telemetryes", []string{"telemetryse"}, Match{Kind: Ambiguous, Candidates: []string{"telemetryse"}}},
 		{"unlisted codes transposed back are only offered", "telemetryse", []string{"telemetryes"}, Match{Kind: Ambiguous, Candidates: []string{"telemetryes"}}},
 		{"unlisted codes transposed at a word start are only offered", "estelemetry", []string{"setelemetry"}, Match{Kind: Ambiguous, Candidates: []string{"setelemetry"}}},
+		{"unlisted codes transposed inside a word are only offered", "telemetryesmetrics", []string{"telemetrysemetrics"}, Match{Kind: Ambiguous, Candidates: []string{"telemetrysemetrics"}}},
+		{"unlisted codes transposed back inside a word are only offered", "telemetrysemetrics", []string{"telemetryesmetrics"}, Match{Kind: Ambiguous, Candidates: []string{"telemetryesmetrics"}}},
 		{"listed code transposed at a word end is only offered", "telemetryau", []string{"telemetryua"}, Match{Kind: Ambiguous, Candidates: []string{"telemetryua"}}},
 		{"typo beside a repeated region code", "canrayca", []string{"canaryca"}, Match{Kind: Closest, Name: "canaryca"}},
 		{"transposition that spells a region code", "dmeo-api", []string{"demo-api"}, Match{Kind: Closest, Name: "demo-api"}},
