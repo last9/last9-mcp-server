@@ -135,7 +135,8 @@ type editRisk int
 const (
 	typo editRisk = iota
 	// doubtful edits may swap a region code not in siblingWords, so they are
-	// offered, never picked.
+	// offered, never picked; only insertions, deletions and transpositions
+	// outside sibling words are picked.
 	doubtful
 	refused
 )
@@ -175,9 +176,9 @@ func tokenDistance(a, b []string) (int, editRisk) {
 	return total, risk
 }
 
-// siblingRisk refuses an edit whose differing span touches a sibling word in
-// both names ("canaryca" for "canarysa") and doubts one touching it in one,
-// unless it only transposes two letters ("dmeo" for "demo").
+// siblingRisk refuses an edit touching a sibling word in both names ("canaryca"
+// for "canarysa"); bar two-letter transpositions ("dmeo"), it doubts one touching
+// it in one name or substituting letters, which may swap an unlisted "fr" for "tr".
 func siblingRisk(a, b string) editRisk {
 	ra, rb := []rune(a), []rune(b)
 	pre := 0
@@ -188,11 +189,14 @@ func siblingRisk(a, b string) editRisk {
 	for suf < min(len(ra), len(rb))-pre && ra[len(ra)-1-suf] == rb[len(rb)-1-suf] {
 		suf++
 	}
+	spanA, spanB := ra[pre:len(ra)-suf], rb[pre:len(rb)-suf]
 	inA, inB := touchesSiblingWord(ra, pre, len(ra)-suf), touchesSiblingWord(rb, pre, len(rb)-suf)
 	switch {
 	case inA && inB:
 		return refused
-	case (inA || inB) && !transposes(ra[pre:len(ra)-suf], rb[pre:len(rb)-suf]):
+	case transposes(spanA, spanB):
+		return typo
+	case inA || inB || len(spanA) == len(spanB):
 		return doubtful
 	}
 	return typo
