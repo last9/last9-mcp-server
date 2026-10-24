@@ -3,6 +3,7 @@ package apm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -162,16 +163,42 @@ func TestPromToolsDistantDatasourceIsOnlyOffered(t *testing.T) {
 }
 
 func TestPromToolsNeverSwapRegionCode(t *testing.T) {
-	tools, readURLs := promToolsUnderTest(t, models.DatasourceInfo{Name: "canarysa", ReadURL: "https://canarysa.example.com/prom", Username: "u", Password: "p", Region: "sa-east-1"})
+	tests := []struct{ configured, requested, available string }{
+		{"canarysa", "canaryca", "canarysa, prod-eu, prod-us, staging"},
+		{"telemetryuk", "telemetryus", "prod-eu, prod-us, staging, telemetryuk"},
+		{"telemetryus", "telemetryuk", "prod-eu, prod-us, staging, telemetryus"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.requested, func(t *testing.T) {
+			tools, readURLs := promToolsUnderTest(t, models.DatasourceInfo{Name: tt.configured, ReadURL: "https://" + tt.configured + ".example.com/prom", Username: "u", Password: "p", Region: "us-east-1"})
+			for tool, call := range tools {
+				_, err := call(context.Background(), tt.requested)
+				want := fmt.Sprintf(`datasource %q not found; available: %s`, tt.requested, tt.available)
+				if err == nil || err.Error() != want {
+					t.Errorf("%s: error = %v, want %q", tool, err, want)
+				}
+			}
+			if len(*readURLs) != 0 {
+				t.Errorf("region-swapped datasource reached the API %d time(s), want 0", len(*readURLs))
+			}
+		})
+	}
+}
+
+func TestPromToolsOfferUnlistedRegionCode(t *testing.T) {
+	tools, readURLs := promToolsUnderTest(t, models.DatasourceInfo{Name: "telemetryua", ReadURL: "https://telemetryua.example.com/prom", Username: "u", Password: "p", Region: "us-east-1"})
 	for tool, call := range tools {
-		_, err := call(context.Background(), "canaryca")
-		want := `datasource "canaryca" not found; available: canarysa, prod-eu, prod-us, staging`
-		if err == nil || err.Error() != want {
-			t.Errorf("%s: error = %v, want %q", tool, err, want)
+		res, err := call(context.Background(), "telemetryus")
+		if err != nil {
+			t.Fatalf("%s: unexpected error: %v", tool, err)
+		}
+		want := `datasource "telemetryus" is not an exact name. No query was run; retry with one of these as datasource: telemetryua.`
+		if texts := resultTexts(res); res.IsError || len(texts) != 1 || texts[0] != want {
+			t.Errorf("%s: isError=%v text = %q, want %q", tool, res.IsError, texts, want)
 		}
 	}
 	if len(*readURLs) != 0 {
-		t.Errorf("region-swapped datasource reached the API %d time(s), want 0", len(*readURLs))
+		t.Errorf("offered datasource reached the API %d time(s), want 0", len(*readURLs))
 	}
 }
 
