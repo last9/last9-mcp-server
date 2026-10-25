@@ -284,7 +284,7 @@ Supports PostgreSQL, MySQL, MongoDB, Redis, Aerospike, and anything else OTel tr
 - **`prometheus_label_values`** — Label values for a given series
 - **`prometheus_labels`** — All labels available for a series
 
-Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`.
+Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`, or per call with `datasource`. An omitted `datasource` uses the default; a near miss (case, separators, one missing, extra or transposed letter) uses its closest match, but a different word, number, environment or region never does; a looser match (two typos, a substring, one changed letter, two swapped letters that could each be a country code, like `es` for `se`) or an ambiguous name returns the candidates and runs no query (not an error). An additional content block names the datasource used whenever you did not name it exactly.
 
 ### Logs
 
@@ -321,7 +321,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`validate_alert_expression`** — Dry-run an alert expression against an alert group's KPIs without saving anything
 - **`describe_alert_chart`** — Read-only: the alertable signals (key, unit) on a Discover chart (`discover-service`, `discover-exceptions`)
 - **`create_alert`** — Create an alert rule (static, or adaptive via `adaptive_std_cmp`) in an existing alert group; always created disabled as a draft. Create once; refine with `update_alert` / `patch_alert`
-- **`create_alert_from_chart`** — Create a static-threshold alert rule from a Discover chart in one call. Unlike `create_alert`, the rule is enabled immediately
+- **`create_alert_from_chart`** — Create a static-threshold alert rule from a Discover chart in one call. Like `create_alert`, the rule is created disabled as a draft
 - **`update_alert`** — Full replacement of a rule's evaluation config (may return a replacement rule ID)
 - **`patch_alert`** — Partial change to a rule: enable/pause, `mute_until`, responder `properties`, weekly `recurring_mute_schedule` (or `clear_recurring_mute_schedule`)
 - **`delete_alert`** — Permanently delete an alert rule
@@ -879,7 +879,7 @@ Notification routing is configured on the alert group, not the rule.
 
 ### create_alert_from_chart
 
-Creates a static-threshold rule from a chart described by `describe_alert_chart`. The rule is created enabled and fires as soon as its condition is met.
+Creates a static-threshold rule from a chart described by `describe_alert_chart`. Like `create_alert`, the rule is created disabled as a draft and does not fire; promote it with `patch_alert` `is_disabled=false` only after the user confirms. The chart API creates rules enabled, so the tool disables the rule right after creating it; if that fails, the result is an error naming the rule id, which may be live.
 
 - `surface` / `chart_key` / `service_name` / `signal_key` / `name` (string, required)
 - `env` (string, optional)

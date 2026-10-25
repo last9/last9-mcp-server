@@ -490,7 +490,9 @@ func TestServerInstructionsSayCreateAlertRulesStartDisabled(t *testing.T) {
 	}{
 		{name: "with patch_alert", tools: []string{"create_alert", "patch_alert"}, want: "- Alert rules from `create_alert` are created disabled; enable them with `patch_alert` after validating."},
 		{name: "without patch_alert", tools: []string{"create_alert"}, want: "- Alert rules from `create_alert` are created disabled."},
-		{name: "without create_alert", tools: []string{"patch_alert", "create_alert_from_chart"}},
+		{name: "chart only", tools: []string{"patch_alert", "create_alert_from_chart"}, want: "- Alert rules from `create_alert_from_chart` are created disabled; enable them with `patch_alert` after validating."},
+		{name: "both creates", tools: []string{"create_alert", "create_alert_from_chart", "patch_alert"}, want: "- Alert rules from `create_alert`, `create_alert_from_chart` are created disabled; enable them with `patch_alert` after validating."},
+		{name: "without alert creates", tools: []string{"patch_alert"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

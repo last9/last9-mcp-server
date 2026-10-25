@@ -10,7 +10,10 @@ import (
 
 const pathQueryInstant = "/prom_query_instant"
 
-const opQueryInstant = "prometheus instant query"
+const (
+	opQueryInstant    = "prometheus instant query"
+	opQueryInstantRaw = "Prometheus instant query"
+)
 
 type QueryInstantInput struct {
 	Datasource
@@ -36,4 +39,11 @@ func QueryInstant(ctx context.Context, c *last9api.Client, in QueryInstantInput)
 		return nil, errors.New(opQueryInstant + ": empty response")
 	}
 	return *series, nil
+}
+
+// QueryInstantRaw calls POST /prom_query_instant.
+func QueryInstantRaw(ctx context.Context, c *last9api.Client, in QueryInstantInput) ([]byte, error) {
+	var raw []byte
+	err := c.Do(ctx, opQueryInstantRaw, last9api.Request{Method: http.MethodPost, Path: pathQueryInstant, Body: in}, &raw)
+	return raw, err
 }
