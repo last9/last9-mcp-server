@@ -78,6 +78,7 @@ var promptDescriptionFiles = map[string]string{
 	"detach_notification_channel.md":       prompts.DetachNotificationChannelDescription,
 	"delete_notification_channel.md":       prompts.DeleteNotificationChannelDescription,
 	"patch_alert.md":                       prompts.PatchAlertDescription,
+	"patch_dashboard.md":                   prompts.PatchDashboardDescription,
 	"prometheus_instant_query.md":          prompts.PromqlInstantQueryDetails,
 	"prometheus_label_values.md":           prompts.PromqlLabelValuesQueryDetails,
 	"prometheus_labels.md":                 prompts.PromqlLabelsQueryDetails,
@@ -93,6 +94,7 @@ var simplePromptDescriptionFiles = map[string]bool{
 	"create_alert.md":              true,
 	"delete_alert.md":              true,
 	"patch_alert.md":               true,
+	"patch_dashboard.md":           true,
 	"recommend_alert_config.md":    true,
 	"update_alert.md":              true,
 	"add_drop_rule.md":             true,
@@ -571,6 +573,17 @@ func TestGetNotificationChannelsDescriptionPointsSendResolvedAtChannel(t *testin
 func TestCreateAlertFromChartDescriptionStatesThresholdFloor(t *testing.T) {
 	if !strings.Contains(prompts.CreateAlertFromChartDescription, "must be 0 or more") {
 		t.Error("create_alert_from_chart does not say threshold must be 0 or more")
+	}
+}
+
+// create_alert_from_chart creates disabled drafts, so describe_alert_chart must not promise live rules.
+func TestDescribeAlertChartDescriptionSaysChartRulesAreDrafts(t *testing.T) {
+	desc := prompts.DescribeAlertChartDescription
+	if strings.Contains(desc, "fire immediately") {
+		t.Error("describe_alert_chart still says chart-derived rules fire immediately")
+	}
+	if !strings.Contains(desc, "are created disabled as drafts, like a rule bound to an alert-group KPI") {
+		t.Error("describe_alert_chart does not say chart-derived rules are created disabled")
 	}
 }
 
