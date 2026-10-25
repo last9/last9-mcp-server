@@ -59,6 +59,7 @@ type GetServiceLogsArgs struct {
 	AttributeFilters []ServiceLogAttributeFilter `json:"attribute_filters,omitempty" jsonschema:"Equality filters on named log attributes. Each entry is field plus value. field uses logjson syntax such as attributes['user_id']. Unknown org fields are allowed; invalid syntax is rejected."`
 	Env              string                      `json:"env,omitempty" jsonschema:"Environment to filter by. Empty string if environment is unknown (e.g. production)"`
 	Index            string                      `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Use a user-named index or a non-default physical index discovered by get_service_profile; omit for default or when unknown."`
+	ResponseMode     string                      `json:"response_mode,omitempty" jsonschema:"summary (default) or raw"`
 }
 
 // ServiceLogAttributeFilter is a structured equality filter compiled into logjson.
@@ -73,6 +74,9 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		// Validate required parameters
 		if args.ServiceName == "" {
 			return nil, nil, fmt.Errorf("service_name is required")
+		}
+		if err := validateLogResponseMode(args.ResponseMode); err != nil {
+			return nil, nil, err
 		}
 
 		// Set default values
@@ -129,13 +133,20 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		logs.HTTPStatusField = statusField
 		addServiceLogsGuidance(logs, args, limit)
 
+		bounds := serviceLogsScope{startTime, endTime, normalizedIndex}
+		var response any = logs
+		if args.ResponseMode != logResponseModeRaw {
+			if summarized, ok := summarizeServiceLogs(logs, bounds, limit); ok {
+				response = summarized
+			}
+		}
+
 		// Format response as JSON for better readability
-		responseJSON, err := json.MarshalIndent(logs, "", "  ")
+		responseJSON, err := json.MarshalIndent(response, "", "  ")
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to format response: %w", err)
 		}
 
-		bounds := serviceLogsScope{startTime, endTime, normalizedIndex}
 		meta := serviceLogsDeepLink(ctx, client, cfg, serviceLogsSearch{logjsonQuery, bounds})
 		if coverage := serviceLogsCoverage(logs, logjsonQuery, bounds); coverage != nil {
 			if meta == nil {
@@ -158,6 +169,20 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 type serviceLogsScope struct {
 	start, end time.Time
 	index      string
+}
+
+func summarizeServiceLogs(logs *ServiceLogsResponse, bounds serviceLogsScope, limit int) (map[string]any, bool) {
+	encoded, err := json.Marshal(logs)
+	if err != nil {
+		return nil, false
+	}
+	var retained map[string]any
+	if err := json.Unmarshal(encoded, &retained); err != nil {
+		return nil, false
+	}
+	delete(retained, "logs")
+	scope := logSummaryScope{bounds.start.UnixMilli(), bounds.end.UnixMilli(), logs.mayMissLines(limit)}
+	return summarizeLogEntries(retained, logs.Logs, scope)
 }
 
 type serviceLogsSearch struct {

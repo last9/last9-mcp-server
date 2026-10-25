@@ -1,4 +1,4 @@
-Use this tool to fetch raw log entries for a single service using structured filters. Do not write a `logjson_query`.
+Use this tool to fetch log entries for a single service using structured filters. Do not write a `logjson_query`.
 
 ## When to use this tool vs `get_logs`
 
@@ -42,6 +42,7 @@ Do not invent org-specific attribute names. Discover fields with `get_log_attrib
 - `body_filters` (optional): Array of substrings that should appear in the log body. Last resort only.
 - `env` (optional): Deployment environment string.
 - `index` (optional): Explicit log index in the form `physical_index:<name>` or `rehydration_index:<block_name>`.
+- `response_mode` (optional): `summary` (default) or `raw`. Over 20 lines, `summary` replaces `logs` with a `summary` object: `lines_summarized`, `severity_counts`, `first_timestamp`/`last_timestamp`, a 10-bucket `histogram`, and the top `patterns` (`template`, `count`, up to two `samples`), at most 4000 characters; `truncated: true` when the limit cut the result. `raw` returns the entries. 20 lines or fewer always come back as entries.
 
 ## Log service inventory and index selection
 
