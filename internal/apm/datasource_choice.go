@@ -110,9 +110,14 @@ func promToolResult(raw []byte, err error, note string) (*mcp.CallToolResult, an
 // promBodyResult serves an upstream body as is, with the datasource note as a
 // second block so the body stays parseable.
 func promBodyResult(body []byte, note string) *mcp.CallToolResult {
-	content := []mcp.Content{&mcp.TextContent{Text: string(body)}}
+	return withDatasourceNote(&mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}, note)
+}
+
+// withDatasourceNote adds the note as its own block so the payload block
+// stays parseable.
+func withDatasourceNote(res *mcp.CallToolResult, note string) *mcp.CallToolResult {
 	if note != "" {
-		content = append(content, &mcp.TextContent{Text: note})
+		res.Content = append(res.Content, &mcp.TextContent{Text: note})
 	}
-	return &mcp.CallToolResult{Content: content}
+	return res
 }

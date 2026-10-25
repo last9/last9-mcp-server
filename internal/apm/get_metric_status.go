@@ -23,7 +23,7 @@ import (
 type GetMetricStatusArgs struct {
 	Metric        string  `json:"metric" jsonschema:"(Required) Metric name (e.g. up) or PromQL series selector (e.g. up{job=\"api\"})"`
 	WindowMinutes float64 `json:"window_minutes" jsonschema:"(Required) Lookback window in minutes for liveness and cadence probes (minimum: 1). Prefer a window that can cover at least a few emission intervals for slow metrics (e.g. 5760 for daily CloudWatch metrics)."`
-	Datasource    string  `json:"datasource,omitempty" jsonschema:"Name of the datasource to query. If omitted, uses the default configured datasource."`
+	Datasource    string  `json:"datasource,omitempty" jsonschema:"Datasource name; omitted uses the default, a near miss its closest match (named in an additional content block)."`
 }
 
 type GetMetricStatusResult struct {
@@ -38,7 +38,17 @@ type GetMetricStatusResult struct {
 
 func NewGetMetricStatusHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetMetricStatusArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetMetricStatusArgs) (*mcp.CallToolResult, any, error) {
-		status, err := computeGetMetricStatus(ctx, client, cfg, args)
+		if err := validateGetMetricStatusArgs(args); err != nil {
+			return nil, nil, err
+		}
+		choice, err := chooseDatasource(cfg, args.Datasource)
+		if err != nil {
+			return nil, nil, err
+		}
+		if choice.candidates != nil {
+			return ambiguousDatasourceResult(args.Datasource, choice), nil, nil
+		}
+		status, err := computeGetMetricStatus(ctx, client, choice.cfg, args)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -49,26 +59,24 @@ func NewGetMetricStatusHandler(client *http.Client, cfg models.Config) func(cont
 		if err := enc.Encode(status); err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal get_metric_status response: %w", err)
 		}
-		return &mcp.CallToolResult{
+		return withDatasourceNote(&mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: strings.TrimSuffix(payload.String(), "\n")}},
-		}, nil, nil
+		}, choice.note), nil, nil
 	}
 }
 
-func computeGetMetricStatus(ctx context.Context, client *http.Client, cfg models.Config, args GetMetricStatusArgs) (GetMetricStatusResult, error) {
-	metric := strings.TrimSpace(args.Metric)
-	if metric == "" {
-		return GetMetricStatusResult{}, fmt.Errorf("metric is required")
+func validateGetMetricStatusArgs(args GetMetricStatusArgs) error {
+	if strings.TrimSpace(args.Metric) == "" {
+		return fmt.Errorf("metric is required")
 	}
 	if args.WindowMinutes < 1 {
-		return GetMetricStatusResult{}, fmt.Errorf("window_minutes must be at least 1")
+		return fmt.Errorf("window_minutes must be at least 1")
 	}
+	return nil
+}
 
-	queryCfg, err := resolveDatasourceCfg(cfg, args.Datasource)
-	if err != nil {
-		return GetMetricStatusResult{}, err
-	}
-
+func computeGetMetricStatus(ctx context.Context, client *http.Client, queryCfg models.Config, args GetMetricStatusArgs) (GetMetricStatusResult, error) {
+	metric := strings.TrimSpace(args.Metric)
 	endTime := time.Now().UTC().Unix()
 	dur := promDurationFromMinutes(args.WindowMinutes)
 	sel := metricSelector(metric)
