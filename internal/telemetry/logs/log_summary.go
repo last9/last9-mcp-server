@@ -99,9 +99,6 @@ type logSummaryScope struct {
 	truncated      bool
 }
 
-// summarizeLogEntries adds a summary of entries to retained, the result's
-// other top-level keys. It reports false when the lines are cheaper to read
-// raw or cannot be mined into patterns.
 func summarizeLogEntries(retained map[string]interface{}, entries []LogEntry, scope logSummaryScope) (map[string]interface{}, bool) {
 	if len(entries) <= maxRawLinesInSummaryMode {
 		return nil, false
