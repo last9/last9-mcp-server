@@ -82,29 +82,45 @@ func summarizeLogResult(result map[string]interface{}, startMs, endMs int64, tru
 		return result
 	}
 	entries := parseServiceLogEntries(map[string]any{"data": result["data"]}, "")
+	retained := make(map[string]interface{}, len(result))
+	for key, value := range result {
+		if key != "data" {
+			retained[key] = value
+		}
+	}
+	if summarized, ok := summarizeLogEntries(retained, entries, logSummaryScope{startMs, endMs, truncated}); ok {
+		return summarized
+	}
+	return result
+}
+
+type logSummaryScope struct {
+	startMs, endMs int64
+	truncated      bool
+}
+
+// summarizeLogEntries adds a summary of entries to retained, the result's
+// other top-level keys. It reports false when the lines are cheaper to read
+// raw or cannot be mined into patterns.
+func summarizeLogEntries(retained map[string]interface{}, entries []LogEntry, scope logSummaryScope) (map[string]interface{}, bool) {
 	if len(entries) <= maxRawLinesInSummaryMode {
-		return result
+		return nil, false
 	}
 	patterns, err := mineLogPatterns(entries)
 	if err != nil {
-		return result
+		return nil, false
 	}
 
-	summarized := make(map[string]interface{}, len(result))
-	for key, value := range result {
-		if key != "data" {
-			summarized[key] = value
-		}
-	}
-	base := newLogSummary(entries, startMs, endMs, truncated)
+	summarized := retained
+	base := newLogSummary(entries, scope)
 	for topN, samples := maxSummaryPatterns, maxSummaryPatternSamples; ; {
 		summary := base.withPatterns(patterns, topN, samples)
 		summarized["summary"] = summary
 		if len(formatJSON(summarized)) <= maxSummaryChars {
-			return summarized
+			return summarized, true
 		}
 		if topN == 1 && samples == 0 {
-			return dropLargestMetadata(summarized, summary)
+			return dropLargestMetadata(summarized, summary), true
 		}
 		if samples > 1 || topN == 1 {
 			samples--
@@ -133,9 +149,10 @@ func dropLargestMetadata(summarized map[string]interface{}, summary logSummary) 
 
 // newLogSummary buckets a truncated result over its own lines: they are only
 // the newest of the window, so window-wide buckets would show a false spike.
-func newLogSummary(entries []LogEntry, startMs, endMs int64, truncated bool) logSummary {
-	summary := logSummary{LinesSummarized: len(entries), Truncated: truncated, Hint: logSummaryHint}
-	if truncated {
+func newLogSummary(entries []LogEntry, scope logSummaryScope) logSummary {
+	startMs, endMs := scope.startMs, scope.endMs
+	summary := logSummary{LinesSummarized: len(entries), Truncated: scope.truncated, Hint: logSummaryHint}
+	if scope.truncated {
 		summary.Hint = logSummaryTruncatedHint
 	}
 	severityCounts := map[string]int{}
@@ -157,7 +174,7 @@ func newLogSummary(entries []LogEntry, startMs, endMs int64, truncated bool) log
 		first, last := slices.MinFunc(timestamps, time.Time.Compare), slices.MaxFunc(timestamps, time.Time.Compare)
 		summary.FirstTimestamp = first.UTC().Format(time.RFC3339)
 		summary.LastTimestamp = last.UTC().Format(time.RFC3339)
-		if truncated {
+		if scope.truncated {
 			startMs, endMs = first.Truncate(time.Second).UnixMilli(), last.UnixMilli()
 		}
 	}
