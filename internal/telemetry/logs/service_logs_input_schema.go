@@ -9,7 +9,7 @@ func GetServiceLogsInputSchema() map[string]interface{} {
 			"start_time_iso":    map[string]interface{}{"type": []string{"string", "null"}, "description": "Start time in RFC3339/ISO8601. If omitted, use lookback_minutes."},
 			"end_time_iso":      map[string]interface{}{"type": []string{"string", "null"}, "description": "End time in RFC3339/ISO8601; defaults to now."},
 			"lookback_minutes":  map[string]interface{}{"type": []string{"integer", "null"}, "description": "Minutes to look back when start_time_iso is omitted (default: 60, minimum: 1)."},
-			"limit":             map[string]interface{}{"type": []string{"integer", "null"}, "description": "Maximum log entries to return (default: 20)."},
+			"limit":             map[string]interface{}{"type": []string{"integer", "null"}, "description": "Maximum log entries to return (default: 100; 20 in raw mode)."},
 			"severity_filters":  map[string]interface{}{"type": []string{"array", "null"}, "items": map[string]interface{}{"type": "string"}, "description": "Severity patterns to match with OR logic."},
 			"body_filters":      map[string]interface{}{"type": []string{"array", "null"}, "items": map[string]interface{}{"type": "string"}, "description": "Message content patterns to match with OR logic."},
 			"http_status_class": map[string]interface{}{"type": []string{"string", "null"}, "description": "HTTP status class: 2xx, 3xx, 4xx, or 5xx. Discovers the status field unless http_status_field is set."},

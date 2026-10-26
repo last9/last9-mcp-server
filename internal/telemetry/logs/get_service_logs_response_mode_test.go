@@ -85,6 +85,25 @@ func TestGetServiceLogs_SummarizesOneOverThreshold(t *testing.T) {
 	}
 }
 
+func TestGetServiceLogs_DefaultLimitDependsOnResponseMode(t *testing.T) {
+	lines := timeoutLines(defaultServiceLogsSummaryLimit + 1)
+	for _, mode := range []string{"", "summary"} {
+		t.Run("mode="+mode, func(t *testing.T) {
+			out := callGetServiceLogs(t, lines, GetServiceLogsArgs{ResponseMode: mode})
+			summary := decodeSummary(t, out)
+			if summary.LinesSummarized != defaultServiceLogsSummaryLimit || !summary.Truncated {
+				t.Errorf("summary = %+v, want %d lines summarized and truncated", summary, defaultServiceLogsSummaryLimit)
+			}
+		})
+	}
+	t.Run("mode=raw", func(t *testing.T) {
+		out := callGetServiceLogs(t, lines, GetServiceLogsArgs{ResponseMode: "raw"})
+		if logs, _ := out["logs"].([]any); len(logs) != defaultServiceLogsRawLimit {
+			t.Errorf("got %d log entries, want %d", len(logs), defaultServiceLogsRawLimit)
+		}
+	})
+}
+
 func TestGetServiceLogs_RejectsUnknownResponseModeBeforeCalling(t *testing.T) {
 	srv, requests := streamSearchServer(t, timeoutLines(30))
 	_, _, err := NewGetServiceLogsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, GetServiceLogsArgs{

@@ -630,7 +630,7 @@ Use `service_name` as `ServiceName`, `env` as the environment when present, and 
 
 - `service_name` (string, required)
 - `lookback_minutes` (integer, optional): Default: 60.
-- `limit` (integer, optional): Default: 20.
+- `limit` (integer, optional): Default: 100, or 20 with `response_mode: "raw"`.
 - `env` (string, optional)
 - `severity_filters` (array, optional): e.g. `["error", "warn"]`. OR logic.
 - `body_filters` (array, optional): e.g. `["timeout", "failed"]`. OR logic.
