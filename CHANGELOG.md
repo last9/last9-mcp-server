@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `get_traces` over a chunked window no longer fetches every chunk at the full `limit` and holds them all in memory, which could OOM the server under concurrent wide calls. Chunks are fetched newest-first with at most the parallel-chunk count fetched or held at once; each asks only for the traces still missing, and none is fetched once `limit` is filled. Results are unchanged (#435).
+
 ## [0.20.0] - 2026-10-26
 
 ### Added
