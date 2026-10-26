@@ -190,7 +190,9 @@ func summarizeServiceLogs(logs *ServiceLogsResponse, bounds serviceLogsScope, li
 	if err := json.Unmarshal(encoded, &retained); err != nil {
 		return nil, false
 	}
+	// The top-level hint counts returned lines; summary.hint says what a summary covers.
 	delete(retained, "logs")
+	delete(retained, "hint")
 	scope := logSummaryScope{bounds.start.UnixMilli(), bounds.end.UnixMilli(), logs.mayMissLines(limit)}
 	return summarizeLogEntries(retained, logs.Logs, scope)
 }

@@ -52,6 +52,10 @@ func TestGetServiceLogs_SummarizesOverThreshold(t *testing.T) {
 			if summary.Truncated != tc.wantTruncated {
 				t.Errorf("summary.truncated = %v, want %v", summary.Truncated, tc.wantTruncated)
 			}
+			// summary.hint covers truncation; the raw-mode hint counts returned lines that a summary does not return.
+			if hint, ok := out["hint"]; ok {
+				t.Errorf("summary response carries top-level hint %q, want only summary.hint", hint)
+			}
 		})
 	}
 }
