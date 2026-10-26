@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +15,7 @@ import (
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -456,6 +458,88 @@ func TestGetTracesHandlerReturnsErrorAfterLaterChunkError(t *testing.T) {
 	}
 	if strings.Contains(text, "backend error") {
 		t.Fatalf("error leaked upstream body: %q", text)
+	}
+}
+
+func TestGetTracesHandlerStopsFetchingOnceLimitIsFilled(t *testing.T) {
+	rec := newTracesRequestRecorder()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.add(r.URL.Query())
+		_, _ = w.Write([]byte(traceAPIResponse(3)))
+	}))
+	defer server.Close()
+
+	// 24h → 24 one-hour chunks, 6 in flight. The first wave fills the limit,
+	// so none of the 18 older chunks should be fetched.
+	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+		TracejsonQuery: []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}}},
+		},
+		StartTimeISO: "1970-01-01T00:00:00Z",
+		EndTimeISO:   "1970-01-02T00:00:00Z",
+		Limit:        3,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if got := rec.count(); got > utils.ParallelCallsLimit {
+		t.Fatalf("expected at most %d chunk requests once the newest chunk filled the limit, got %d", utils.ParallelCallsLimit, got)
+	}
+	if count := countTracesInPayload(t, parseTracesToolResult(t, result)); count != 3 {
+		t.Fatalf("expected 3 traces, got %d", count)
+	}
+}
+
+func TestGetTracesHandlerLaterChunksAskOnlyForRemainingBudget(t *testing.T) {
+	const chunkSeconds = 3600
+	rec := newTracesRequestRecorder()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		rec.add(q)
+		limit, _ := strconv.Atoi(q.Get("limit"))
+		// One trace per chunk, never more than asked for.
+		_, _ = w.Write([]byte(traceAPIResponse(min(1, limit))))
+	}))
+	defer server.Close()
+
+	// 3 days → 72 one-hour chunks, 2 in flight (> 2 days rule).
+	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+		TracejsonQuery: []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}}},
+		},
+		StartTimeISO: "1970-01-01T00:00:00Z",
+		EndTimeISO:   "1970-01-04T00:00:00Z",
+		Limit:        5,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if count := countTracesInPayload(t, parseTracesToolResult(t, result)); count != 5 {
+		t.Fatalf("expected 5 traces, got %d", count)
+	}
+
+	const endSeconds = 3 * 24 * 3600
+	limits := map[int]string{}
+	for _, q := range rec.all() {
+		end, _ := strconv.Atoi(q.Get("end"))
+		limits[(endSeconds-end)/chunkSeconds] = q.Get("limit")
+	}
+	// Chunks 0 and 1 start together with the full budget; each later chunk
+	// starts after one more is merged, so it asks for what is still unfilled.
+	// Chunk 5 is cancelled once chunk 4 fills the limit, so it may not arrive.
+	want := map[int]string{0: "5", 1: "5", 2: "4", 3: "3", 4: "2"}
+	for idx, limit := range want {
+		if limits[idx] != limit {
+			t.Errorf("chunk %d: expected limit=%s, got %q (all: %v)", idx, limit, limits[idx], limits)
+		}
+	}
+	if got, ok := limits[5]; ok && got != "1" {
+		t.Errorf("chunk 5: expected limit=1, got %q", got)
+	}
+	if len(limits) > 6 {
+		t.Errorf("expected no chunk older than 5 to be fetched, got %d chunks: %v", len(limits), limits)
 	}
 }
 
