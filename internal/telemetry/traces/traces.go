@@ -372,7 +372,7 @@ func configuredMaxGetTracesEntries(cfg models.Config) int {
 func emptyTracesResponse() map[string]interface{} {
 	return map[string]interface{}{
 		"data": map[string]interface{}{
-			"result": []interface{}{},
+			"result": []json.RawMessage{},
 		},
 	}
 }
