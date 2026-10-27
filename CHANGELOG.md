@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- Clarified `response_mode` guidance for `get_logs` and `get_service_logs`: raw returns log entries (message text, timestamp, severity), so IDs or status codes can be read when present in the message text; summary returns counts and patterns. For `get_logs`, use raw with a small limit (20-50) because busy windows can return megabytes.
+- `get_logs` and `get_service_logs` cap raw MCP tool results at 32000 bytes, retaining whole entries and marking truncation; a single oversized entry returns an error. Summary and aggregate results are unchanged (#447).
 
 ### Fixed
 - `get_traces` keeps each returned trace as the API sent it instead of decoding it into generic maps, so a chunk of traces holds about its wire size in memory rather than several times it. Integers past 2^53, such as nanosecond timestamps, are no longer rounded (`1761550000123456789` was returned as `1761550000123456800`), and fields within a trace keep the API's order instead of being sorted (#440).
