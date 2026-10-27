@@ -36,12 +36,24 @@ func NewCreateDashboardHandler(client *http.Client, cfg models.Config) func(cont
 		// No fallback id: the helper re-extracts from the same body.
 		result := textResultWithDashboardLink(dlBuilder, body, "")
 		if id != "" {
-			nudge := "Do not call create_dashboard again for this dashboard."
-			if cfg.ToolFilter.ServesWrite("update_dashboard") {
-				nudge = "To refine this dashboard, call update_dashboard with id=" + id + " and the full dashboard body (update replaces the whole dashboard). " + nudge
-			}
-			result.Content = append(result.Content, &mcp.TextContent{Text: nudge})
+			result.Content = append(result.Content, &mcp.TextContent{Text: refineNudge(cfg, id)})
 		}
 		return result, nil, nil
+	}
+}
+
+func refineNudge(cfg models.Config, id string) string {
+	const noRecreate = "Do not call create_dashboard again for this dashboard."
+	patch := cfg.ToolFilter.ServesWrite("patch_dashboard")
+	update := cfg.ToolFilter.ServesWrite("update_dashboard")
+	switch {
+	case patch && update:
+		return "To add, edit, remove or move panels, call patch_dashboard with id=" + id + "; call update_dashboard only to restructure most of the dashboard (it replaces the whole body). " + noRecreate
+	case patch:
+		return "To add, edit, remove or move panels, call patch_dashboard with id=" + id + ". " + noRecreate
+	case update:
+		return "To refine this dashboard, call update_dashboard with id=" + id + " and the full dashboard body (update replaces the whole dashboard). " + noRecreate
+	default:
+		return noRecreate
 	}
 }
