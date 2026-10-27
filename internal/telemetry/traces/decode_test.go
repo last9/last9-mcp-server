@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -111,6 +112,46 @@ func TestExtractTraceResultItemsFromDecodedShapes(t *testing.T) {
 			}
 			if err != nil || len(items) != tc.items {
 				t.Fatalf("items = %d, err = %v; want %d items", len(items), err, tc.items)
+			}
+		})
+	}
+}
+
+func TestGetTracesHandlerEmptyWindowKeepsGuidance(t *testing.T) {
+	cases := []struct {
+		end      string
+		requests int32
+	}{
+		{end: "2026-01-01T00:00:00Z", requests: 0},
+		{end: "2026-01-01T00:00:00.000001Z", requests: 0},
+		{end: "2026-01-01T00:00:01Z", requests: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.end, func(t *testing.T) {
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				_, _ = w.Write([]byte(`{"data":{"result":[]}}`))
+			}))
+			defer server.Close()
+
+			handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
+			result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+				TracejsonQuery: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "api"}}}},
+				StartTimeISO:   "2026-01-01T00:00:00Z",
+				EndTimeISO:     tc.end,
+			})
+			if err != nil {
+				t.Fatalf("handler error: %v", err)
+			}
+			if got := requests.Load(); got != tc.requests {
+				t.Errorf("requests = %d, want %d", got, tc.requests)
+			}
+			text := result.Content[0].(*mcp.TextContent).Text
+			for _, want := range []string{`"result": []`, `"l9_guidance"`} {
+				if !strings.Contains(text, want) {
+					t.Errorf("result lacks %s:\n%s", want, text)
+				}
 			}
 		})
 	}
