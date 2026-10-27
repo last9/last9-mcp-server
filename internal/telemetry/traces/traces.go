@@ -24,6 +24,8 @@ import (
 // otherwise multiplies peak heap.
 const maxConcurrentGetTraces = 3
 
+var getTracesSlots = make(chan struct{}, maxConcurrentGetTraces)
+
 // GetTracesArgs represents the input arguments for the traces query tool
 type GetTracesArgs struct {
 	TracejsonQuery  []map[string]interface{} `json:"tracejson_query,omitempty" jsonschema:"(Required) JSON pipeline query for traces"`
@@ -44,6 +46,16 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 		// Validate the pipeline before forwarding to the API
 		if err := SanitizeTraceJSONQuery(args.TracejsonQuery); err != nil {
 			return nil, nil, err
+		}
+
+		select {
+		case getTracesSlots <- struct{}{}:
+			defer func() { <-getTracesSlots }()
+		case <-ctx.Done():
+			return utils.ToolErrorResult(fmt.Sprintf(
+				"get_traces is busy: %d concurrent get_traces calls were already running on this server and none finished before this call's deadline. Retry shortly; a narrower time window or lower limit makes calls finish sooner.",
+				maxConcurrentGetTraces,
+			)), nil, nil
 		}
 
 		// Handle tracejson_query directly
