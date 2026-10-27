@@ -284,7 +284,7 @@ Supports PostgreSQL, MySQL, MongoDB, Redis, Aerospike, and anything else OTel tr
 - **`prometheus_label_values`** — Label values for a given series
 - **`prometheus_labels`** — All labels available for a series
 
-Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`, or per call with `datasource`. An omitted `datasource` uses the default; a near miss (case, separators, one missing, extra or transposed letter) uses its closest match, but a different word, number, environment or region never does; a looser match (two typos, a substring, one changed letter, two swapped letters that could each be a country code, like `es` for `se`) or an ambiguous name returns the candidates and runs no query (not an error). An additional content block names the datasource used whenever you did not name it exactly. `get_metric_status`, `get_service_profile`, and `get_apm_service_deviations` resolve `datasource` the same way.
+Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`, or per call with `datasource`. An omitted `datasource` uses the default; a unique near miss that the matcher considers safe (such as a case variant) uses its closest match. A missing, extra or transposed letter is not guaranteed to resolve automatically: even one candidate can require confirmation when the edit could affect a region or environment code. Looser or ambiguous matches return candidates and run no query (not an error); unknown names return an error. An additional content block names the datasource used whenever you did not name it exactly. `get_metric_status`, `get_service_profile`, and `get_apm_service_deviations` resolve `datasource` the same way.
 
 ### Logs
 
