@@ -459,6 +459,7 @@ func validateTarget(
 	// would otherwise be reported as unresolved dashboard variables.
 	if err := checkQueryType(query); err != nil {
 		target["status"] = "invalid_query"
+		target["query_type"] = "unknown"
 		target["lint"] = []any{lintFinding("unknown_query_type", severityError, err.Error())}
 		return target
 	}
