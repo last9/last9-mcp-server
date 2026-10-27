@@ -67,9 +67,13 @@ func TestAuthorAlertMissingGoal(t *testing.T) {
 func TestAuthorAlertFlowAndGates(t *testing.T) {
 	got := renderAuthorAlert(t, map[string]string{"goal": "checkout p99 latency"})
 	assertInOrder(t, got,
-		"get_alert_groups", "get_entity_kpis", "prometheus_range_query", "recommend_alert_config",
-		"validate_alert_expression", "create_alert", "get_entity_alert_rules", promoteCall)
+		"1. Find the alert group", "call get_alert_groups", "2.", "Call get_entity_kpis",
+		"3. Ground the threshold", "call prometheus_range_query", "4. Call recommend_alert_config",
+		"5. Call validate_alert_expression", "6. Call create_alert", "7. Read it back: call get_entity_alert_rules",
+		"8. Show the user the draft", promoteCall)
 	for _, gate := range []string{
+		"confirm this session exposes the tools needed",
+		"If a required tool is unavailable",
 		"last9://reference/alerting",
 		"Never invent a KPI id",
 		"call create_kpi once",
@@ -78,13 +82,13 @@ func TestAuthorAlertFlowAndGates(t *testing.T) {
 		"Call patch_alert(entity_id, id, is_disabled=false) only after the user explicitly confirms",
 		"Do not call mute_alert_group",
 		"key each indicator by its KPI's exact name",
-		"data source client not in context",
+		"If a multi-indicator expression returns \"data source client not in context\"",
 	} {
 		if !strings.Contains(got, gate) {
 			t.Errorf("render missing gate %q:\n%s", gate, got)
 		}
 	}
-	if strings.Contains(got, "get_dashboard") {
+	if strings.Contains(got, "call get_dashboard(") {
 		t.Errorf("without dashboard_id the render must not route through get_dashboard:\n%s", got)
 	}
 	if !strings.Contains(got, "if more than one fits, ask the user") {
@@ -102,8 +106,10 @@ func TestAuthorAlertRendersAlertGroupBranch(t *testing.T) {
 func TestAuthorAlertRendersDashboardPanelBranch(t *testing.T) {
 	got := renderAuthorAlert(t, map[string]string{"goal": "panel latency", "dashboard_id": "dash-1", "panel": "p99"})
 	assertInOrder(t, got,
-		"get_alert_groups", `get_dashboard(id="dash-1")`, `panel "p99"`, "get_entity_kpis", "create_kpi",
-		"prometheus_range_query", "validate_alert_expression", "create_alert", "get_entity_alert_rules", promoteCall)
+		"1. Find the alert group", "call get_alert_groups", "2. Alert from a dashboard panel:",
+		`call get_dashboard(id="dash-1")`, `panel "p99"`, "Then call get_entity_kpis", "call create_kpi once",
+		"3. Ground the threshold", "call prometheus_range_query", "5. Call validate_alert_expression",
+		"6. Call create_alert", "7. Read it back: call get_entity_alert_rules", promoteCall)
 	if !strings.Contains(got, "resolve any dashboard variables") {
 		t.Errorf("panel branch must resolve dashboard variables before create_kpi:\n%s", got)
 	}

@@ -77,7 +77,7 @@ It does **not** check `condition`, `alert_condition`, `eval_window`, the adaptiv
 
 `{"valid":false,"reason":...}` is a normal result, not a tool error. Never call `create_alert` or `update_alert` after a `valid:false` without fixing the cause and validating again.
 
-Known issue: an expression with two or more indicators currently fails with `data source client not in context`, whatever the expression. That is a server-side fault, not yours: do not retry or rewrite the expression. Instead check step 4 yourself: run the expression with each indicator replaced by its KPI's query through `prometheus_range_query` over the last hour, and continue once it returns at least one series. Any other failure still blocks.
+If validation of an expression with two or more indicators returns `data source client not in context`, do not retry or rewrite the expression. Check the expression by running each indicator's KPI query through `prometheus_range_query` over the last hour, and continue only when each query returns data. Any other validation failure still blocks.
 
 ## Templates
 

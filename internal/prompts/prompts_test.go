@@ -820,7 +820,7 @@ func TestAlertingReferenceCoversAuthoringContract(t *testing.T) {
 		"`invalid indicator details for <name>`",
 		"`missing indicator details for <name>`",
 		"`expression yields 0 timeseries`",
-		"`data source client not in context`",
+		"If validation of an expression with two or more indicators returns `data source client not in context`",
 		"It does **not** check `condition`, `alert_condition`, `eval_window`",
 		"### Latency", "### Error rate", "### Saturation",
 		"## Alert from a dashboard panel",
@@ -830,6 +830,9 @@ func TestAlertingReferenceCoversAuthoringContract(t *testing.T) {
 		if !strings.Contains(prompts.AlertingReference, phrase) {
 			t.Errorf("alerting reference missing %q", phrase)
 		}
+	}
+	if strings.Contains(prompts.AlertingReference, "currently fails with `data source client not in context`") {
+		t.Error("alerting reference must not describe an unverified validator failure as current behavior")
 	}
 	if strings.Contains(prompts.AlertingReference, "need not equal the KPI's own name") {
 		t.Error("alerting reference says indicator names need not match KPI names; create_alert rejects that")
