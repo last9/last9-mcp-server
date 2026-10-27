@@ -90,8 +90,11 @@ func TestCreateDashboardHandler_AppendsRefineNudge(t *testing.T) {
 	if !ok {
 		t.Fatalf("Content[1] type %T", result.Content[1])
 	}
-	if !strings.Contains(second.Text, "update_dashboard") || !strings.Contains(second.Text, "id=new-id") {
-		t.Fatalf("nudge %q", second.Text)
+	if !strings.Contains(second.Text, "call patch_dashboard with id=new-id") {
+		t.Fatalf("nudge does not route panel edits to patch_dashboard: %q", second.Text)
+	}
+	if !strings.Contains(second.Text, "update_dashboard only to restructure") {
+		t.Fatalf("nudge does not limit update_dashboard to restructuring: %q", second.Text)
 	}
 	if !strings.Contains(second.Text, "Do not call create_dashboard again") {
 		t.Fatalf("nudge missing re-create ban: %q", second.Text)
@@ -100,15 +103,18 @@ func TestCreateDashboardHandler_AppendsRefineNudge(t *testing.T) {
 
 // The nudge names update_dashboard only when the server serves it, as under
 // --read-only --allow-write-tools=create_dashboard it does not.
-func TestCreateDashboardHandler_NudgeNamesOnlyServedUpdate(t *testing.T) {
+func TestCreateDashboardHandler_NudgeNamesOnlyServedRefineTools(t *testing.T) {
 	srv := createDashboardAPI(t, `{"dashboard":{"id":"new-id","name":"Created"}}`, nil)
 	tests := []struct {
 		name       string
 		allow      toolsets.Set
+		wantPatch  bool
 		wantUpdate bool
 	}{
-		{name: "update hidden", allow: toolsets.Set{"create_dashboard": {}}},
+		{name: "refine hidden", allow: toolsets.Set{"create_dashboard": {}}},
 		{name: "update allowed", allow: toolsets.Set{"create_dashboard": {}, "update_dashboard": {}}, wantUpdate: true},
+		{name: "patch allowed", allow: toolsets.Set{"create_dashboard": {}, "patch_dashboard": {}}, wantPatch: true},
+		{name: "both allowed", allow: toolsets.Set{"create_dashboard": {}, "patch_dashboard": {}, "update_dashboard": {}}, wantPatch: true, wantUpdate: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -120,6 +126,9 @@ func TestCreateDashboardHandler_NudgeNamesOnlyServedUpdate(t *testing.T) {
 				t.Fatal(err)
 			}
 			nudge := result.Content[len(result.Content)-1].(*mcp.TextContent).Text
+			if got := strings.Contains(nudge, "patch_dashboard with id=new-id"); got != tt.wantPatch {
+				t.Fatalf("nudge names patch_dashboard = %v, want %v: %q", got, tt.wantPatch, nudge)
+			}
 			if got := strings.Contains(nudge, "update_dashboard"); got != tt.wantUpdate {
 				t.Fatalf("nudge names update_dashboard = %v, want %v: %q", got, tt.wantUpdate, nudge)
 			}
@@ -197,5 +206,22 @@ func TestCreateDashboardHandler_Validation(t *testing.T) {
 		context.Background(), &mcp.CallToolRequest{}, CreateDashboardArgs{})
 	if err == nil {
 		t.Fatal("expected validation error")
+	}
+}
+
+func TestCreateDashboardHandler_RejectsQueryTypeForOtherTelemetry(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("server should not be called")
+	}))
+	t.Cleanup(srv.Close)
+
+	args := CreateDashboardArgs{DashboardRequest: DashboardRequest{Dashboard: json.RawMessage(
+		`{"name":"x","panels":[{"name":"ok","queries":[{"query_type":"promql","telemetry":"metrics","expr":"up"}]},` +
+			`{"name":"bad","queries":[{"query_type":"log_json","telemetry":"metrics","expr":"up"}]}]}`)}}
+	_, _, err := NewCreateDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))(
+		context.Background(), &mcp.CallToolRequest{}, args)
+	want := "panels[1].queries[0]: query_type 'log_json' is not valid for telemetry metrics; use promql"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
 	}
 }

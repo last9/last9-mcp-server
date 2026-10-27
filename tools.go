@@ -493,7 +493,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Name:        "create_alert_from_chart",
 		Annotations: writeTool("Create Alert From Chart", false, false),
 		Description: prompts.CreateAlertFromChartDescription,
-	}, "get_alert_config with rule_name set to the name you passed",
+	}, "get_alert_config with rule_name set to the name you passed; if it finds the rule, it was not disabled and can fire: run patch_alert with its Entity ID, id and is_disabled=true",
 		alerting.NewCreateAlertFromChartHandler(client, cfg)))
 
 	// Register alerts tool
@@ -693,6 +693,13 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		InputSchema: dashboards.GetUpdateDashboardInputSchema(),
 	}, "get_dashboard for id, comparing it to the dashboard you sent",
 		dashboards.NewUpdateDashboardHandler(client, cfg)))
+
+	reg(registerWriteTool(server, gate, &mcp.Tool{
+		Name:        "patch_dashboard",
+		Annotations: writeTool("Patch Dashboard", true, false),
+		Description: prompts.PatchDashboardDescription,
+	}, "get_dashboard for id, checking the panels your ops targeted",
+		dashboards.NewPatchDashboardHandler(client, cfg)))
 
 	reg(registerWriteTool(server, gate, &mcp.Tool{
 		Name:        "delete_dashboard",
