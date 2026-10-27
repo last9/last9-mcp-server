@@ -23,7 +23,7 @@
 {{- $alertValidate := tools "validate_alert_expression" -}}
 {{- $alertDesign := tools "recommend_alert_config" "describe_alert_chart" -}}
 {{- $dropRules := tools "get_drop_rules" -}}
-{{- $refine := tools "update_dashboard" "patch_dashboard" "update_alert" "patch_alert" "attach_notification_channel" -}}
+{{- $refine := tools "patch_dashboard" "update_dashboard" "update_alert" "patch_alert" "attach_notification_channel" -}}
 {{- $claim := tools "acknowledge_alert" "reassign_alert" -}}
 {{- $addDropRule := tools "add_drop_rule" -}}
 {{- $destructive := tools "update_dashboard" "patch_dashboard" "delete_dashboard" "delete_dashboard_snapshot" "update_alert" "patch_alert" "delete_alert" "mute_alert_group" "detach_notification_channel" "delete_notification_channel" -}}
@@ -145,6 +145,9 @@ Read these resources before writing a non-trivial query{{if has "get_logs"}}. Af
 {{- end}}
 {{- with $refine}}
 - Refine an existing object with {{.}}.
+{{- end}}
+{{- with tools "patch_dashboard"}}
+- Add, edit, remove or move individual dashboard panels with {{.}}{{with tools "update_dashboard"}}; use {{.}} only to restructure most of a dashboard{{end}}.
 {{- end}}
 {{- with $claim}}
 - Claim, release or hand off an alert with {{.}}; these change ownership, not data.
