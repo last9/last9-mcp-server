@@ -140,6 +140,16 @@ func TestPrepareLogJSONQueryQuantileExactNeedsNumericGuard(t *testing.T) {
 	}
 }
 
+func TestPrepareLogJSONQueryMedianNeedsNumericGuard(t *testing.T) {
+	fn := fn1("$median", aggF)
+	_, err := prepareLogJSONQuery([]map[string]interface{}{aggregateStage(fn, "v")}, "logjson_query")
+	requireInvalidField(t, err, "logjson_query[0].aggregates[0].function.$median[0]", "canonical anchored numeric $regex")
+	_, err = prepareLogJSONQuery([]map[string]interface{}{testCanonicalNumericFilter(aggF), aggregateStage(fn, "v")}, "logjson_query")
+	if err != nil {
+		t.Fatalf("unexpected error with guard: %v", err)
+	}
+}
+
 func cmpFilter(op string, args ...interface{}) map[string]interface{} {
 	return map[string]interface{}{"type": "filter", "query": map[string]interface{}{op: args}}
 }
