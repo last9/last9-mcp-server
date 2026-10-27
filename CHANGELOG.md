@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- `patch_dashboard` (`add_panel`, `update_panel`), `create_dashboard` and `update_dashboard` reject a query whose `query_type` does not fit its `telemetry` before any API call, naming `ops[i]` or `panels[i]` and the query, e.g. `query_type 'logjson' is not valid for telemetry logs; use log_json, log_ql or log_raw`; nothing is written. Previously `patch_dashboard` sent any value and only the dashboard API rejected it, and the create/update schema enum allowed a valid type for the wrong telemetry. A query with an unrecognised or missing `telemetry` is checked against every query type (#437).
 - `get_traces` over a chunked window no longer fetches every chunk at the full `limit` and holds them all in memory, which could OOM the server under concurrent wide calls. Chunks are fetched newest-first with at most the parallel-chunk count fetched or held at once; each asks only for the traces still missing, and none is fetched once `limit` is filled. Returned traces are unchanged; a failing chunk older than the one that filled `limit` no longer fails the call, since its traces would have been dropped anyway (#435).
 
 ### Changed
