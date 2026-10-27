@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -347,6 +348,51 @@ func TestValidateDashboard_LintBlocksExecution(t *testing.T) {
 	status := report["panels"].([]any)[0].(map[string]any)["targets"].([]any)[0].(map[string]any)["status"]
 	if status != "invalid_query" {
 		t.Fatalf("status=%v", status)
+	}
+}
+
+func TestValidateDashboard_UnknownQueryTypeReportedBeforeVariables(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("an unknown query_type should not execute")
+	}))
+	defer srv.Close()
+
+	pipeline := `[{"type":"filter","query":{"$and":[{"$eq":["ServiceName","api"]},{"$contains":["Body","error"]}]}},` +
+		`{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"]}]`
+	handler := NewValidateDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ValidateDashboardArgs{
+		DashboardDefinition: map[string]any{
+			"panels": []any{
+				map[string]any{
+					"visualization": map[string]any{"type": "timeseries"},
+					"queries": []any{
+						map[string]any{"query_type": "logjson", "telemetry": "logs", "expr": pipeline},
+					},
+				},
+			},
+		},
+		StartTimeISO: "2026-09-10T08:00:00Z",
+		EndTimeISO:   "2026-09-10T09:00:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report map[string]any
+	_ = json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &report)
+	if report["success"] != true {
+		t.Fatalf("report failed self-validation: %v", report)
+	}
+	target := report["panels"].([]any)[0].(map[string]any)["targets"].([]any)[0].(map[string]any)
+	if target["status"] != "invalid_query" || target["unresolved_variables"] != nil {
+		t.Fatalf("target = %v, want invalid_query without unresolved_variables", target)
+	}
+	want := []any{map[string]any{
+		"rule":     "unknown_query_type",
+		"severity": "error",
+		"message":  "query_type 'logjson' is not valid for telemetry logs; use log_json, log_ql or log_raw",
+	}}
+	if !reflect.DeepEqual(target["lint"], want) {
+		t.Fatalf("lint = %v, want %v", target["lint"], want)
 	}
 }
 
