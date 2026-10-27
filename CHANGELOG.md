@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `get_apm_service_deviations` resolves approximate datasource names through the shared chooser: near misses return data with a closest-match note, omitted or blank names use the default and name it, and ambiguous names return candidates with no query and `isError` unset. Response datasource fields and follow-ups use the canonical name; composite callers retain exact lookup (#PR_NUMBER).
 - `get_metric_status` and `get_service_profile` resolve an approximate `datasource` the way the `prometheus_*` tools do: a near miss queries its closest match, an omitted one the default, and an additional text block names the one used (`Using datasource "X" (closest match to "Y").` or `Using datasource "X" (default).`); a looser or ambiguous name returns candidates with no query and `isError` unset, and an unknown name is a tool error listing the available datasources. `get_metric_status` now treats a blank `datasource` as omitted instead of failing (#432).
 
 ### Fixed

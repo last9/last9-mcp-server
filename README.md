@@ -284,7 +284,7 @@ Supports PostgreSQL, MySQL, MongoDB, Redis, Aerospike, and anything else OTel tr
 - **`prometheus_label_values`** — Label values for a given series
 - **`prometheus_labels`** — All labels available for a series
 
-Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`, or per call with `datasource`. An omitted `datasource` uses the default; a near miss (case, separators, one missing, extra or transposed letter) uses its closest match, but a different word, number, environment or region never does; a looser match (two typos, a substring, one changed letter, two swapped letters that could each be a country code, like `es` for `se`) or an ambiguous name returns the candidates and runs no query (not an error). An additional content block names the datasource used whenever you did not name it exactly. `get_metric_status` and `get_service_profile` resolve `datasource` the same way.
+Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`, or per call with `datasource`. An omitted `datasource` uses the default; a near miss (case, separators, one missing, extra or transposed letter) uses its closest match, but a different word, number, environment or region never does; a looser match (two typos, a substring, one changed letter, two swapped letters that could each be a country code, like `es` for `se`) or an ambiguous name returns the candidates and runs no query (not an error). An additional content block names the datasource used whenever you did not name it exactly. `get_metric_status`, `get_service_profile`, and `get_apm_service_deviations` resolve `datasource` the same way.
 
 ### Logs
 
@@ -542,7 +542,7 @@ Returns a per-series summary by default: `points`, `missing_points` (availabilit
 - `lookback_minutes` (integer, optional): Current window. Default: 60.
 - `start_time_iso` / `end_time_iso` (string, optional): Explicit current window.
 - `baseline_start_time_iso` / `baseline_end_time_iso` (string, optional): Explicit baseline. Defaults to the immediately preceding equal-duration window.
-- `datasource` (string, optional): Restrict the comparison to one datasource.
+- `datasource` (string, optional): Omit for the default; approximate names resolve as for the Prometheus tools. The response names the default or closest match used; ambiguous names return candidates without querying.
 - `env` (string, optional): Defaults to `prod`.
 - `max_services` / `max_operations` (integer, optional): Default 10, max 10 each.
 
