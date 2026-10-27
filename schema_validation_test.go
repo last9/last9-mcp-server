@@ -88,29 +88,50 @@ func TestSchemaValidationSurfacesAsToolError(t *testing.T) {
 			arguments: map[string]any{"logjson_query": []any{map[string]any{"type": "filter", "query": map[string]any{"$eq": []any{"ServiceName", "api"}}}}, "response_mode": 123},
 			wantText:  "response_mode",
 		},
+		{
+			name:      "get_service_logs response_mode unknown value",
+			tool:      "get_service_logs",
+			arguments: map[string]any{"service_name": "api", "response_mode": "bogus"},
+			wantText:  "response_mode",
+		},
+		{
+			name:      "get_service_logs response_mode wrong type",
+			tool:      "get_service_logs",
+			arguments: map[string]any{"service_name": "api", "response_mode": 123},
+			wantText:  "response_mode",
+		},
 	}
 
-	// An empty logjson_query fails in the handler, so reaching that error
-	// proves response_mode was accepted, without any upstream call.
-	for _, mode := range []any{nil, ""} {
-		t.Run(fmt.Sprintf("get_logs response_mode %#v means default", mode), func(t *testing.T) {
-			res, err := session.CallTool(ctx, &mcp.CallToolParams{
-				Name:      "get_logs",
-				Arguments: map[string]any{"logjson_query": []any{}, "response_mode": mode},
-			})
-			if err != nil {
-				t.Fatalf("CallTool: %v", err)
-			}
-			var sb strings.Builder
-			for _, c := range res.Content {
-				if tc, ok := c.(*mcp.TextContent); ok {
-					sb.WriteString(tc.Text)
+	// Each call fails a required-argument check in the handler, so reaching
+	// that error proves response_mode was accepted, without any upstream call.
+	for _, accepted := range []struct {
+		tool, arg string
+		empty     any
+		wantText  string
+	}{
+		{"get_logs", "logjson_query", []any{}, "logjson_query parameter is required"},
+		{"get_service_logs", "service_name", "", "service_name is required"},
+	} {
+		for _, mode := range []any{nil, ""} {
+			t.Run(fmt.Sprintf("%s response_mode %#v means default", accepted.tool, mode), func(t *testing.T) {
+				res, err := session.CallTool(ctx, &mcp.CallToolParams{
+					Name:      accepted.tool,
+					Arguments: map[string]any{accepted.arg: accepted.empty, "response_mode": mode},
+				})
+				if err != nil {
+					t.Fatalf("CallTool: %v", err)
 				}
-			}
-			if got := sb.String(); !strings.Contains(got, "logjson_query parameter is required") {
-				t.Fatalf("want the handler's logjson_query error, got a response_mode rejection: %s", got)
-			}
-		})
+				var sb strings.Builder
+				for _, c := range res.Content {
+					if tc, ok := c.(*mcp.TextContent); ok {
+						sb.WriteString(tc.Text)
+					}
+				}
+				if got := sb.String(); !strings.Contains(got, accepted.wantText) {
+					t.Fatalf("want the handler's %s error, got a response_mode rejection: %s", accepted.arg, got)
+				}
+			})
+		}
 	}
 
 	for _, tc := range cases {
