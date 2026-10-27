@@ -7,13 +7,13 @@ import (
 	"net/http"
 	"net/url"
 
+	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// ErrorTypeMetaKey is the tool-result _meta key the instrumentation SDK reads to label
-// an isError result's mcp.error.type; untagged results stay user_error.
+// ErrorTypeMetaKey is the _meta key the instrumentation SDK reads to label an isError result.
 const (
-	ErrorTypeMetaKey = "error_type"
+	ErrorTypeMetaKey = last9mcp.MetaKeyErrorType
 	SystemErrorType  = "system_error"
 )
 
