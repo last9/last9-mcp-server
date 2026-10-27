@@ -99,14 +99,29 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	}
 
 	// Return the result in MCP format with deep link
-	return &mcp.CallToolResult{
+	full := &mcp.CallToolResult{
 		Meta: meta,
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: formatJSON(result),
 			},
 		},
-	}, nil
+	}
+	kind, items, err := extractResultItems(result)
+	if err != nil || kind != "streams" {
+		return full, nil
+	}
+	count := countLogEntriesInResultItems(items)
+	return boundRawResult(full, count, cfg.MCPServerInfo, func(n int) (*mcp.CallToolResult, error) {
+		limited := mapsClone(result)
+		data := mapsClone(result["data"].(map[string]interface{}))
+		data["result"] = truncateResultItemsByEntryLimit(items, n)
+		limited["data"] = data
+		limited["logs_truncated"] = true
+		limited["l9_raw_limit"] = map[string]any{"returned_entries": n, "fetched_entries": count, "max_bytes": maxRawResultBytes}
+		limited["l9_guidance"] = map[string]any{"message": rawLimitHint(n, count)}
+		return &mcp.CallToolResult{Meta: meta, Content: []mcp.Content{&mcp.TextContent{Text: formatJSON(limited)}}}, nil
+	})
 }
 
 func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, startTime, endTime int64, args GetLogsArgs) (map[string]interface{}, error) {

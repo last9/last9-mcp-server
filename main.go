@@ -154,7 +154,9 @@ func toolsetServerBuilder(cfg models.Config) func(toolsets.Set) (*last9mcp.Last9
 // buildServer creates the served MCP server for cfg.ToolFilter: resources,
 // prompts, tools and the instructions that name them.
 func buildServer(cfg models.Config) (*last9mcp.Last9MCPServer, error) {
-	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
+	info := &mcp.Implementation{Name: "last9-mcp", Version: Version}
+	cfg.MCPServerInfo = info
+	server, err := last9mcp.NewServerWithOptions(info.Name, info.Version, last9mcp.WithSkipProviderInit())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create MCP server: %w", err)
 	}

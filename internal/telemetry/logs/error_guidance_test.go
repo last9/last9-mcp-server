@@ -54,6 +54,37 @@ func TestGetLogsHandler_EmptyResultIncludesRetryGuidance(t *testing.T) {
 	}
 }
 
+func TestGetLogsHandler_EmptyGuidanceMatchesResultType(t *testing.T) {
+	for _, tc := range []struct {
+		name, resultType, result string
+		aggregate, wantEmpty     bool
+	}{
+		{"aggregate rows", "matrix", `[{"metric":{"level":"error","count":4},"values":[]}]`, true, false},
+		{"dataframe rows", "dataframe", `[{"metric":{"level":"error","count":4},"values":[]}]`, true, false},
+		{"empty aggregate", "matrix", `[]`, true, true},
+		{"empty stream values", "streams", `[{"stream":{},"values":[]}]`, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &http.Client{Transport: logsRoundTripperFunc(func(*http.Request) (*http.Response, error) {
+				return jsonResponse(http.StatusOK, `{"status":"success","data":{"resultType":"`+tc.resultType+`","result":`+tc.result+`}}`), nil
+			})}
+			query := []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{"$eq": []interface{}{"ServiceName", "api"}}}}
+			if tc.aggregate {
+				query = append(query, map[string]interface{}{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{"function": map[string]interface{}{"$count": []interface{}{}}, "as": "count"}}})
+			}
+			result, _, err := NewGetLogsHandler(client, testLogsConfig("https://last9.example"))(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{LogjsonQuery: query})
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := parseToolJSONResult(t, result)
+			guidance, _ := payload["l9_guidance"].(map[string]interface{})
+			if got := strings.Contains(guidanceText(guidance), "No logs found"); got != tc.wantEmpty {
+				t.Errorf("empty guidance = %v, want %v", got, tc.wantEmpty)
+			}
+		})
+	}
+}
+
 func TestGetServiceLogsHandler_EmptyResultIncludesRetryGuidance(t *testing.T) {
 	client := &http.Client{Transport: logsRoundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != constants.EndpointLogsQueryRange {

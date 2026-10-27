@@ -165,14 +165,37 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			meta["last9/coverage"] = coverage
 		}
 
-		return &mcp.CallToolResult{
+		full := &mcp.CallToolResult{
 			Meta: meta,
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseJSON),
 				},
 			},
-		}, nil, nil
+		}
+		if response != logs {
+			return full, nil, nil
+		}
+		count := len(logs.Logs)
+		bounded, err := boundRawResult(full, count, cfg.MCPServerInfo, func(n int) (*mcp.CallToolResult, error) {
+			limited := *logs
+			limited.Logs = logs.Logs[:n]
+			limited.Count = n
+			truncated := true
+			limited.LogsTruncated = &truncated
+			limited.Hint = rawLimitHint(n, count)
+			limited.coverageStatus = "partial"
+			encoded, err := json.MarshalIndent(&limited, "", "  ")
+			if err != nil {
+				return nil, err
+			}
+			limitedMeta := mapsClone(meta)
+			if coverage := serviceLogsCoverage(&limited, logjsonQuery, bounds); coverage != nil {
+				limitedMeta["last9/coverage"] = coverage
+			}
+			return &mcp.CallToolResult{Meta: limitedMeta, Content: []mcp.Content{&mcp.TextContent{Text: string(encoded)}}}, nil
+		})
+		return bounded, nil, err
 	}
 }
 
