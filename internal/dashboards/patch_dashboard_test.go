@@ -696,6 +696,36 @@ func TestPatchDashboard_InvalidOpNamesIndexAndSkipsWrite(t *testing.T) {
 		{name: "duplicate panel id", ops: `[{"op":"add_panel","panel":{"id":"p1"}}]`, wantErr: `ops[0] (add_panel): a panel with id "p1" already exists`, wantGet: true},
 		{name: "index out of range", ops: `[{"op":"move_panel","panel_id":"p1","index":3}]`, wantErr: "ops[0] (move_panel): index 3 out of range 0..2", wantGet: true},
 		{name: "negative index", ops: `[{"op":"add_panel","panel":{"id":"p3"},"index":-1}]`, wantErr: "ops[0] (add_panel): index -1 out of range 0..3", wantGet: true},
+		{
+			name:    "add_panel unknown query_type",
+			ops:     `[{"op":"add_panel","panel":{"id":"p3","queries":[{"query_type":"logjson","telemetry":"logs","expr":"[]"}]}}]`,
+			wantErr: "ops[0] (add_panel): queries[0]: query_type 'logjson' is not valid for telemetry logs; use log_json, log_ql or log_raw; nothing was written",
+		},
+		{
+			name:    "update_panel unknown query_type",
+			ops:     `[{"op":"update_panel","panel_id":"p1","fields":{"queries":[{"query_type":"promql","telemetry":"metrics","expr":"up"},{"query_type":"logjson","telemetry":"logs","expr":"[]"}]}}]`,
+			wantErr: "ops[0] (update_panel): queries[1]: query_type 'logjson' is not valid for telemetry logs; use log_json, log_ql or log_raw",
+		},
+		{
+			name:    "query_type for another telemetry",
+			ops:     `[{"op":"add_panel","panel":{"queries":[{"query_type":"promql","telemetry":"logs","expr":"up"}]}}]`,
+			wantErr: "ops[0] (add_panel): queries[0]: query_type 'promql' is not valid for telemetry logs; use log_json, log_ql or log_raw",
+		},
+		{
+			name:    "unknown query_type without telemetry",
+			ops:     `[{"op":"add_panel","panel":{"queries":[{"query_type":"logjson","expr":"[]"}]}}]`,
+			wantErr: "ops[0] (add_panel): queries[0]: query_type 'logjson' is not valid; use promql, log_json, log_ql, log_raw, trace_json or trace_ql",
+		},
+		{
+			name:    "non-string query_type",
+			ops:     `[{"op":"add_panel","panel":{"queries":[{"query_type":1,"telemetry":"logs","expr":"[]"}]}}]`,
+			wantErr: "ops[0] (add_panel): queries[0]: query_type must be a string; use log_json, log_ql or log_raw",
+		},
+		{
+			name:    "non-object query",
+			ops:     `[{"op":"update_panel","panel_id":"p1","fields":{"queries":["up"]}}]`,
+			wantErr: "ops[0] (update_panel): queries[0] must be an object",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -711,6 +741,37 @@ func TestPatchDashboard_InvalidOpNamesIndexAndSkipsWrite(t *testing.T) {
 				t.Fatalf("GET sent = %v, want %v", got, tt.wantGet)
 			}
 		})
+	}
+}
+
+func TestPatchDashboard_AcceptsValidQueryTypes(t *testing.T) {
+	tests := []struct{ telemetry, queryType string }{
+		{"metrics", "promql"},
+		{"logs", "log_json"}, {"logs", "log_ql"}, {"logs", "log_raw"},
+		{"traces", "trace_json"}, {"traces", "trace_ql"},
+		{"", "promql"}, {"events", "log_json"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.telemetry+"/"+tt.queryType, func(t *testing.T) {
+			ps := newPatchServer(t)
+			query := fmt.Sprintf(`{"query_type":%q,"telemetry":%q,"expr":"x"}`, tt.queryType, tt.telemetry)
+			if _, err := ps.patch(t, `[{"op":"add_panel","panel":{"id":"p3","queries":[`+query+`]}}]`); err != nil {
+				t.Fatal(err)
+			}
+			if len(ps.puts) != 1 {
+				t.Fatalf("PUT count = %d, want 1", len(ps.puts))
+			}
+		})
+	}
+}
+
+func TestPatchDashboard_UpdatePanelRemovesQueriesWithNull(t *testing.T) {
+	ps := newPatchServer(t)
+	if _, err := ps.patch(t, `[{"op":"update_panel","panel_id":"p1","fields":{"queries":null}}]`); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := ps.sentDashboard(t)["panels"].([]any)[0].(map[string]any)["queries"]; ok {
+		t.Fatal("queries still sent")
 	}
 }
 
