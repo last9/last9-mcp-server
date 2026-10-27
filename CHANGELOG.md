@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Dashboard tool copy now routes individual panel edits to `patch_dashboard`. `update_dashboard`'s description said to prefer it for panel, layout or query changes and `create_dashboard` sent every panel change there, so agents re-sent a whole dashboard (18KB for 33 panels) to add one panel and could time out. `update_dashboard` now says it is only for restructuring most of a dashboard, `create_dashboard` routes panel edits to `patch_dashboard`, and the server instructions name `patch_dashboard` first among refine tools with a line sending panel adds, edits, removals and moves to it (#438).
 - `get_traces` over a chunked window no longer fetches every chunk at the full `limit` and holds them all in memory, which could OOM the server under concurrent wide calls. Chunks are fetched newest-first with at most the parallel-chunk count fetched or held at once; each asks only for the traces still missing, and none is fetched once `limit` is filled. Returned traces are unchanged; a failing chunk older than the one that filled `limit` no longer fails the call, since its traces would have been dropped anyway (#435).
 
 ### Changed
