@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-10-27
+
 ### Fixed
 - Dashboard tool copy now routes individual panel edits to `patch_dashboard`. `update_dashboard`'s description said to prefer it for panel, layout or query changes and `create_dashboard` sent every panel change there, so agents re-sent a whole dashboard (18KB for 33 panels) to add one panel and could time out. `update_dashboard` now says it is only for restructuring most of a dashboard, both descriptions route panel edits to `patch_dashboard` in route bullets that drop when it is not served, and the server instructions name `patch_dashboard` first among refine tools with a line sending panel adds, edits, removals and moves to it. The note a successful `create_dashboard` appends now names `patch_dashboard` with the new id for panel edits when it is served, and `update_dashboard` only for restructuring (#439).
 - `patch_dashboard` (`add_panel`, `update_panel`), `create_dashboard` and `update_dashboard` reject a query whose `query_type` does not fit its `telemetry` before any API call, naming `ops[i]` or `panels[i]` and the query, e.g. `query_type 'logjson' is not valid for telemetry logs; use log_json, log_ql or log_raw`; nothing is written. Previously `patch_dashboard` sent any value and only the dashboard API rejected it, and the create/update schema enum allowed a valid type for the wrong telemetry. A query with an unrecognised or missing `telemetry` is checked against every query type (#438).
