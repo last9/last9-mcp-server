@@ -404,6 +404,13 @@ struct, unless a struct genuinely makes it less readable.
 `contracts/` holds JSON schemas and fixtures pinned by sha256 in `contracts_test.go`.
 Editing one without updating its pin fails a test whose message will not explain itself.
 
+## Pull requests
+
+**After every merge from main, recheck the PR against its base.** Review
+`git diff origin/main...HEAD` and `git log origin/main..HEAD`; update the PR title,
+description, and any stated commit count to match the remaining changes. Close the PR
+if the diff is empty.
+
 ## CHANGELOG
 
 `CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Add your
