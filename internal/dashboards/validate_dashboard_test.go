@@ -396,6 +396,41 @@ func TestValidateDashboard_UnknownQueryTypeReportedBeforeVariables(t *testing.T)
 	}
 }
 
+func TestValidateDashboard_RejectedQueryTypeEchoedAsUnknown(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("a rejected query_type should not execute")
+	}))
+	defer srv.Close()
+	handler := NewValidateDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
+
+	for _, query := range []map[string]any{
+		{"query_type": "logjson", "telemetry": "logs", "expr": "[]"},
+		{"query_type": "", "telemetry": "metrics", "expr": "up"},
+		{"query_type": "promql", "telemetry": "logs", "expr": "up"},
+	} {
+		result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ValidateDashboardArgs{
+			DashboardDefinition: map[string]any{
+				"panels": []any{map[string]any{
+					"visualization": map[string]any{"type": "timeseries"},
+					"queries":       []any{query},
+				}},
+			},
+			StartTimeISO: "2026-09-10T08:00:00Z",
+			EndTimeISO:   "2026-09-10T09:00:00Z",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var report map[string]any
+		_ = json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &report)
+		target := report["panels"].([]any)[0].(map[string]any)["targets"].([]any)[0].(map[string]any)
+		if target["status"] != "invalid_query" || target["query_type"] != "unknown" {
+			t.Errorf("query %v: status %v, query_type %v; want invalid_query, unknown",
+				query, target["status"], target["query_type"])
+		}
+	}
+}
+
 func TestValidateDashboard_SavedDashboardUnwrap(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/dashboards/") {
