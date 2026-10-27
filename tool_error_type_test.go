@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,9 @@ import (
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 const getLogsTestArgs = `{"logjson_query":[{"type":"filter","query":{"$and":[{"$eq":["ServiceName","api"]}]}}],"lookback_minutes":5}`
@@ -142,4 +146,62 @@ func TestRegisteredDeadlineErrorType(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestToolErrorsExportSDKErrorType(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		want   string
+	}{
+		{http.StatusServiceUnavailable, "system_error"},
+		{http.StatusBadRequest, "user_error"},
+	} {
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			exporter := tracetest.NewInMemoryExporter()
+			provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+			previous := otel.GetTracerProvider()
+			otel.SetTracerProvider(provider)
+			t.Cleanup(func() {
+				otel.SetTracerProvider(previous)
+				if err := provider.Shutdown(context.Background()); err != nil {
+					t.Error(err)
+				}
+			})
+			cfg := writeToolTestConfig("http://upstream.invalid")
+			cfg.UseLogSearchAPI = true
+			client := &http.Client{Transport: errorTypeStatusTransport(tc.status)}
+			result := callToolForErrorType(t, cfg, client, "get_logs", getLogsTestArgs)
+			if !result.IsError {
+				t.Fatalf("want tool error, got %+v", result)
+			}
+			toolSpans := 0
+			for _, span := range exporter.GetSpans() {
+				attrs := make(map[string]string)
+				for _, attr := range span.Attributes {
+					attrs[string(attr.Key)] = attr.Value.AsString()
+				}
+				if attrs["mcp.tool.name"] != "get_logs" {
+					continue
+				}
+				toolSpans++
+				if got := attrs["mcp.error.type"]; got != tc.want {
+					t.Errorf("exported mcp.error.type = %q, want %q", got, tc.want)
+				}
+			}
+			if toolSpans != 1 {
+				t.Fatalf("exported %d get_logs spans, want 1", toolSpans)
+			}
+		})
+	}
+}
+
+type errorTypeStatusTransport int
+
+func (status errorTypeStatusTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: int(status),
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(`{"error":"invalid pipeline"}`)),
+		Request:    req,
+	}, nil
 }
