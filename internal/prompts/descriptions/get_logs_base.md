@@ -24,7 +24,7 @@ Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`cond
 
 **Time:** `lookback_minutes` default **5**; absolute→`start_time_iso`+`end_time_iso` (not Timestamp).
 
-**Lines:** `raw`=read/quote; `summary`=counts/patterns (default,>20 lines).
+**Lines:** `raw`: message/timestamp/severity; IDs/status codes only in message text. Use limit 20-50 (busy windows=MB).
 
 **l9_sanity:** high→add filter, recount; zero→inspect samples.
 

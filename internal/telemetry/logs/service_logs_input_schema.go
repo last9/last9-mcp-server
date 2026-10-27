@@ -26,7 +26,7 @@ func GetServiceLogsInputSchema() map[string]interface{} {
 			"index": map[string]interface{}{"type": []string{"string", "null"}, "description": "Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Use a user-named index or a non-default physical index discovered by get_service_profile; omit for default or when unknown."},
 			// No schema enum: a nullable enum fails as an opaque anyOf, so
 			// validateLogResponseMode rejects unknown values, quoting them.
-			"response_mode": map[string]interface{}{"type": []string{"string", "null"}, "description": `"raw"=actual log entries: read/quote/inspect specific lines/trace ids/status codes; "summary" (default, over 20 lines, ≤4000 chars)=counts/patterns (how many/what kinds).`},
+			"response_mode": map[string]interface{}{"type": []string{"string", "null"}, "description": `"raw"=log entries (message text, timestamp, severity); read IDs/status codes if present in message text. "summary" (default, over 20 lines, ≤4000 chars)=counts/patterns.`},
 		},
 	}
 }

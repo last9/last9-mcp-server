@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Clarified `response_mode` guidance for `get_logs` and `get_service_logs`: raw returns log entries (message text, timestamp, severity), so IDs or status codes can be read when present in the message text; summary returns counts and patterns. For `get_logs`, use raw with a small limit (20-50) because busy windows can return megabytes.
+
 ## [0.20.1] - 2026-10-27
 
 ### Fixed
