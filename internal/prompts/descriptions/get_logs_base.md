@@ -24,6 +24,8 @@ Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`cond
 
 **Time:** `lookback_minutes` default **5**; absolute→`start_time_iso`+`end_time_iso` (not Timestamp).
 
+**Lines:** omit `response_mode`; >20 lines→summary (counts, severities, histogram, top patterns+samples); `raw` only for exact text.
+
 **l9_sanity:** high→add filter, recount; zero→inspect samples.
 
 Manual: `last9://reference/logjson`
@@ -37,4 +39,4 @@ Counts, aggregates, percentiles or ad-hoc filters over logs, across services or 
 - APM fleet error ranking: `get_service_summary`
 
 ## Output shape
-Log rows or aggregate rows, with `l9_result` / `l9_sanity` metadata on partial or suspicious counts.
+Line summary, log rows (`raw`) or aggregate rows, with `l9_result` / `l9_sanity` metadata on partial or suspicious counts.

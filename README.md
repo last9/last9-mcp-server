@@ -244,7 +244,7 @@ last9-mcp --read-only --allow-write-tools=acknowledge_alert,mute_alert_group
 - The server refuses to start if an allowed name is not a write tool (a typo, or a read tool's name); the error lists the valid write tools.
 - `--allow-write-tools` without `--read-only` is a startup error, because every write tool is already served.
 - Read-only combines with `--toolsets`: a tool is served only when it passes both. `--toolsets=alerts --read-only --allow-write-tools=mute_alert_group` serves the alerts read tools plus `mute_alert_group`; an allowed write tool outside the chosen toolsets stays hidden.
-- `--http` mode and `dump-tools` honor the same flags and env vars: `go run . dump-tools --read-only` prints the read-only surface.
+- `--http` mode and `dump-tools` honor the same flags and env vars: `go run . dump-tools --read-only` prints the read-only surface, with the server instructions it serves in `instructions`.
 - Read tools' descriptions, schemas and results, and the server instructions, never name a hidden write tool. An allowed write tool can still name its hidden siblings (`create_alert` creates a disabled rule that `patch_alert` enables), so allow such pairs together.
 
 ---
@@ -260,7 +260,7 @@ last9-mcp --read-only --allow-write-tools=acknowledge_alert,mute_alert_group
 
 - **`get_service_summary`** — Ranked fleet `(service, env)` rows: interval request_count, throughput_rpm, HTTP 4xx/5xx counts, and gRPC error counts
 - **`get_service_environments`** — Available environments for your services. Run this first — other APM tools need `env` from here
-- **`get_service_performance_details`** — Full breakdown: throughput, error rate, p50/p90/p95/avg/max, apdex, availability
+- **`get_service_performance_details`** — Full breakdown: throughput, error rate, p50/p90/p95/avg/max, apdex, availability (summarized by default; full series with `include_series`)
 - **`get_service_operations_summary`** — Operations grouped by HTTP endpoints, DB calls, messaging, HTTP clients
 - **`get_service_dependency_graph`** — Dependency map with throughput, latency, and error rates for upstream/downstream/infra
 - **`get_apm_service_deviations`** — Compare a current window against an equal-duration baseline: regressions/improvements, Apdex reconciliation, and a terminal outcome (fleet or single service)
@@ -284,12 +284,12 @@ Supports PostgreSQL, MySQL, MongoDB, Redis, Aerospike, and anything else OTel tr
 - **`prometheus_label_values`** — Label values for a given series
 - **`prometheus_labels`** — All labels available for a series
 
-Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`.
+Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`, or per call with `datasource`. An omitted `datasource` uses the default; a near miss (case, separators, one missing, extra or transposed letter) uses its closest match, but a different word, number, environment or region never does; a looser match (two typos, a substring, one changed letter, two swapped letters that could each be a country code, like `es` for `se`) or an ambiguous name returns the candidates and runs no query (not an error). An additional content block names the datasource used whenever you did not name it exactly.
 
 ### Logs
 
 - **`get_logs`** — Full JSON pipeline log queries (aggregations, filters, field extraction)
-- **`get_service_logs`** — Raw log lines for a service, filterable by severity and body content
+- **`get_service_logs`** — Log lines for a service, filterable by severity and body content; summarized over 20 lines unless `response_mode` is `raw`
 - **`get_log_patterns`** — A service's log lines in a window clustered into message templates, with count, first/last seen, severity mix and a sample
 - **`get_emerging_log_patterns`** — Log templates that are new, increased, decreased or disappeared against a baseline window, with counts from both
 - **`get_log_attributes`** — Global catalog of attributes in the log schema for a time window
@@ -320,7 +320,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`validate_alert_expression`** — Dry-run an alert expression against an alert group's KPIs without saving anything
 - **`describe_alert_chart`** — Read-only: the alertable signals (key, unit) on a Discover chart (`discover-service`, `discover-exceptions`)
 - **`create_alert`** — Create an alert rule (static, or adaptive via `adaptive_std_cmp`) in an existing alert group; always created disabled as a draft. Create once; refine with `update_alert` / `patch_alert`
-- **`create_alert_from_chart`** — Create a static-threshold alert rule from a Discover chart in one call. Unlike `create_alert`, the rule is enabled immediately
+- **`create_alert_from_chart`** — Create a static-threshold alert rule from a Discover chart in one call. Like `create_alert`, the rule is created disabled as a draft
 - **`update_alert`** — Full replacement of a rule's evaluation config (may return a replacement rule ID)
 - **`patch_alert`** — Partial change to a rule: enable/pause, `mute_until`, responder `properties`, weekly `recurring_mute_schedule` (or `clear_recurring_mute_schedule`)
 - **`delete_alert`** — Permanently delete an alert rule
@@ -341,8 +341,9 @@ Rules, channels and attachments these tools create are marked `created_via: last
 - **`list_dashboards`** — All custom dashboards in your org: IDs, names, and metadata
 - **`get_dashboard`** — Full dashboard definition by ID, including panels and queries
 - **`validate_dashboard`** — Read-only lint + execute + classify for a saved dashboard id or an inline `dashboard_definition` over a ≤24h window. Never creates or updates dashboards
-- **`create_dashboard`** — Create a net-new custom dashboard once (panels, queries, metadata). After the id is returned, refine with `update_dashboard`.
-- **`update_dashboard`** — Refine an existing dashboard by ID (full replacement; readonly system dashboards return an error)
+- **`create_dashboard`** — Create a net-new custom dashboard once (panels, queries, metadata). After the id is returned, edit panels with `patch_dashboard`.
+- **`update_dashboard`** — Restructure most of an existing dashboard by ID (full replacement; readonly system dashboards return an error). For individual panel edits use `patch_dashboard`
+- **`patch_dashboard`** — Targeted edits to an existing dashboard by ID (add/update/remove/move panel, set title, set variable); returns a compact diff, not the full dashboard
 - **`delete_dashboard`** — Delete a custom dashboard by ID
 - **`list_dashboard_snapshots`** — Frozen point-in-time snapshots for a dashboard (metadata only)
 - **`get_dashboard_snapshot`** — Full frozen snapshot including panel data for RCA / shareable views
@@ -512,10 +513,14 @@ Returns `now` (and `start`/`end` with `range`) as `{iso, epoch_seconds, local}`;
 
 ### get_service_performance_details
 
+Returns a per-series summary by default: `points`, `missing_points` (availability buckets with no traffic, excluded from the stats), `min`, `p50`, `p90`, `p99` (nearest-rank), `max`, `mean`, `last`, `baseline_mean` (mean of the first half of the valid points, not of the window), `delta_pct` (second half of the valid points vs baseline; absent if baseline is 0) and up to 3 `change_points` (`timestamp`, `before_mean`, `after_mean`), for up to 4 series per metric and every response-time quantile (highest mean first; `series_omitted` counts the rest). A series with `points: 0` carries no statistics, and `baseline_mean`/`delta_pct` need at least 6 points (3 per half). `full_series` marks that raw points are available via `include_series`.
+
 - `service_name` (string, required)
 - `lookback_minutes` (integer, optional): Default: 60.
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `env` (string, optional): Defaults to `prod`.
+- `top_n` (integer, optional): Max entries per top-operations/top-errors list. Default: 5, or 10 with `include_series=true`. Max 100.
+- `include_series` (boolean, optional): Return every point of every series instead of the summary. Default: false.
 
 ### get_service_operations_summary
 
@@ -611,6 +616,7 @@ Retries an empty single-metric lookup over 4 days, like `prometheus_label_values
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `limit` (integer, optional): Server default: 5000.
 - `index` (string, optional): `physical_index:<name>` or `rehydration_index:<block_name>`.
+- `response_mode` (string, optional): `summary` (default; also for `null`) or `raw`. A raw-line result over 20 lines comes back as `summary`: `lines_summarized`, `severity_counts` (top six labels, the rest in `other_severities`), `first_timestamp`/`last_timestamp`, a 10-bucket `histogram` over the query window (over the returned lines, with `truncated: true`, when the limit cut the result), and the top `patterns` (`template`, `count`, up to two `samples`) with the rest totalled in `other`, at most 4000 characters; top-level metadata that still does not fit is dropped and named in `dropped_fields`. `raw` returns the lines. Aggregate results are never summarized.
 
 For log-based service inventory, query `physical_index_service_count` first:
 
@@ -624,12 +630,13 @@ Use `service_name` as `ServiceName`, `env` as the environment when present, and 
 
 - `service_name` (string, required)
 - `lookback_minutes` (integer, optional): Default: 60.
-- `limit` (integer, optional): Default: 20.
+- `limit` (integer, optional): Default: 100, or 20 with `response_mode: "raw"`.
 - `env` (string, optional)
 - `severity_filters` (array, optional): e.g. `["error", "warn"]`. OR logic.
 - `body_filters` (array, optional): e.g. `["timeout", "failed"]`. OR logic.
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `index` (string, optional)
+- `response_mode` (string, optional): `summary` (default; also for `null`) or `raw`. Over 20 lines, `logs` is replaced by the same `summary` as `get_logs`, with the other fields kept; `raw` returns the entries.
 
 Multiple filter types combine with AND. Each array uses OR internally.
 Use `get_logs` for broad aggregate counts first; use `get_service_logs` only after narrowing to a service/env/index and a small sample set.
@@ -863,7 +870,7 @@ Notification routing is configured on the alert group, not the rule.
 
 ### create_alert_from_chart
 
-Creates a static-threshold rule from a chart described by `describe_alert_chart`. The rule is created enabled and fires as soon as its condition is met.
+Creates a static-threshold rule from a chart described by `describe_alert_chart`. Like `create_alert`, the rule is created disabled as a draft and does not fire; promote it with `patch_alert` `is_disabled=false` only after the user confirms. The chart API creates rules enabled, so the tool disables the rule right after creating it; if that fails, the result is an error naming the rule id, which may be live.
 
 - `surface` / `chart_key` / `service_name` / `signal_key` / `name` (string, required)
 - `env` (string, optional)
@@ -974,7 +981,7 @@ Returns up to 3 closest matches with similarity scores. Use this before any tool
 - `service_name` (string, required): Service to derive a telemetry profile for.
 - `datasource` (string, optional): Datasource name. Omit for the default.
 
-Returns a short investigation brief followed by the full profile as raw JSON: signal presence (`logs`/`traces`/`metrics` as `present`, `absent`, or `unknown`), language and runtime, deployment environments, log `signal_shape` (`log_format`, `severity_set`, `level_field`), and a recommended ingest fix where one applies. Derived upstream and cached with a ~15 minute TTL.
+Returns a short investigation brief followed by the full profile as raw JSON: signal presence (`logs`/`traces`/`metrics` as `present`, `absent`, or `unknown`), language and runtime, deployment environments, log `signal_shape` (`log_format`, `severity_set`, `level_field`, `trace_context_in_logs`), and a recommended ingest fix where one applies. When the backend reports `freshness`, the brief adds a `last seen` line with `freshness.logs.last_seen` and `freshness.traces.last_seen` (RFC3339, or `none` when null), and a `traces stale` warning when `freshness.traces_stale` is `true`: spans stopped while logs continued, so investigate a regression around `freshness.traces.last_seen`, not missing setup. Derived upstream and cached with a ~15 minute TTL.
 
 Call it before any service-scoped investigation so tool selection matches the service's actual telemetry — skip trace tools when `traces` is `absent`, and when `severity_set` is `none` or `partial` parse severity from `level_field` in the log body rather than using `severity_filters`. `metrics` is always `unknown` and `dependencies` is unpopulated in v1. When `logs` and `traces` are both `absent`, confirm the name with `did_you_mean` before concluding the service is unmonitored.
 
@@ -1000,18 +1007,31 @@ Returns `dashboard_validation/v1`: per-panel lint + execute classification (`dat
 
 ### create_dashboard
 
-Net-new only. After this call returns `dashboard.id`, refine with `update_dashboard` — do not create again to add, trim, or fix panels.
+Net-new only. After this call returns `dashboard.id`, edit panels with `patch_dashboard` (or restructure with `update_dashboard`) — do not create again to add, trim, or fix panels.
 
 - `dashboard` (object, required): Dashboard definition with `name` and `panels[]`. Each panel requires `name`, `version`, `layout` (`x`, `y`, `w`, `h`), `visualization.type`, and `queries[]`.
 - `metadata` (object, optional): Dashboard metadata — `_category` and `_type` fields (e.g. `{"_category":"custom","_type":"metrics"}`).
 
 ### update_dashboard
 
-Prefer this after create. Full replacement by id (same body as create).
+Use only to restructure most of a dashboard; for adding, editing, removing or moving individual panels use `patch_dashboard`. Full replacement by id (same body as create): every panel must be re-sent exactly.
 
 - `id` (string, required): Dashboard UUID to update.
 - `dashboard` (object, required): Full replacement dashboard body (same shape as create).
 - `metadata` (object, optional): Replacement metadata. Readonly system dashboards return a 403 error.
+
+### patch_dashboard
+
+Prefer this over `update_dashboard` for small refinements: unchanged panels are never re-sent. Reads the dashboard, applies `ops` in order and writes it back, so an edit made elsewhere between the read and the write is overwritten. Returns `{dashboard_id, changes[]}`; ops the dashboard already satisfies are left out, and if none changes anything nothing is written. The diff is checked against a re-read after the write: panel `fields` show stored values, `not_stored` lists keys the API dropped and `not_removed` keys it kept despite a `null`. Diff values over 200 characters are shortened in place, keeping their JSON type.
+
+- `id` (string, required): Dashboard UUID to patch.
+- `ops` (array, required): Ops applied in order; if any is invalid nothing is written and the error names it as `ops[i]`.
+  - `add_panel`: `panel` (full panel object; `version` defaults to 1), optional `index` (0-based insert position, default append).
+  - `update_panel`: `panel_id`, `fields` (top-level panel keys to replace; `null` removes a key; `id` cannot change).
+  - `remove_panel`: `panel_id`.
+  - `move_panel`: `panel_id`, `index` (0-based position after the move).
+  - `set_title`: `title` (the dashboard name).
+  - `set_variable`: `variable`; replaces the variable with the same `target`, otherwise appends it.
 
 ### delete_dashboard
 
