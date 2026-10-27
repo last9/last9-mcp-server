@@ -767,7 +767,7 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 		reason string
 	}{
 		{"only to restructure most of a dashboard", "full replacement is for restructuring, not single-panel edits"},
-		{"use patch_dashboard", "must route individual panel edits to patch_dashboard"},
+		{"- Add, edit, remove or move individual panels: `patch_dashboard`", "must route individual panel edits to patch_dashboard"},
 		{"existing dashboard id", "must pass the known id"},
 		{"do not call create_dashboard", "must not create-for-refine"},
 		{"full replacement", "must state PUT is a full replacement"},
