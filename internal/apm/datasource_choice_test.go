@@ -17,9 +17,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-type promToolCall func(ctx context.Context, datasource string) (*mcp.CallToolResult, error)
+type datasourceToolCall func(ctx context.Context, datasource string) (*mcp.CallToolResult, error)
 
-func promToolsUnderTest(t *testing.T, extra ...models.DatasourceInfo) (map[string]promToolCall, *[]string) {
+func datasourceToolsUnderTest(t *testing.T, extra ...models.DatasourceInfo) (map[string]datasourceToolCall, *[]string) {
 	t.Helper()
 	var readURLs []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +50,7 @@ func promToolsUnderTest(t *testing.T, extra ...models.DatasourceInfo) (map[strin
 	cfg.Datasources = append(cfg.Datasources, extra...)
 	client := server.Client()
 	req := &mcp.CallToolRequest{}
-	tools := map[string]promToolCall{
+	tools := map[string]datasourceToolCall{
 		"prometheus_range_query": func(ctx context.Context, ds string) (*mcp.CallToolResult, error) {
 			res, _, err := NewPromqlRangeQueryHandler(client, cfg)(ctx, req, PromqlRangeQueryArgs{Query: "up", LookbackMinutes: 5, Datasource: ds})
 			return res, err
@@ -67,6 +67,14 @@ func promToolsUnderTest(t *testing.T, extra ...models.DatasourceInfo) (map[strin
 			res, _, err := NewPromqlLabelsHandler(client, cfg)(ctx, req, PromqlLabelsArgs{MatchQuery: "up", LookbackMinutes: 5, Datasource: ds})
 			return res, err
 		},
+		"get_metric_status": func(ctx context.Context, ds string) (*mcp.CallToolResult, error) {
+			res, _, err := NewGetMetricStatusHandler(client, cfg)(ctx, req, GetMetricStatusArgs{Metric: "up", WindowMinutes: 5, Datasource: ds})
+			return res, err
+		},
+		"get_service_profile": func(ctx context.Context, ds string) (*mcp.CallToolResult, error) {
+			res, _, err := NewGetServiceProfileHandler(client, cfg)(ctx, req, GetServiceProfileArgs{ServiceName: "api", Datasource: ds})
+			return res, err
+		},
 	}
 	return tools, &readURLs
 }
@@ -81,7 +89,7 @@ func resultTexts(res *mcp.CallToolResult) []string {
 	return out
 }
 
-func TestPromToolsResolveDatasource(t *testing.T) {
+func TestDatasourceToolsResolveDatasource(t *testing.T) {
 	tests := []struct {
 		name        string
 		datasource  string
@@ -96,7 +104,7 @@ func TestPromToolsResolveDatasource(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tools, readURLs := promToolsUnderTest(t)
+			tools, readURLs := datasourceToolsUnderTest(t)
 			for tool, call := range tools {
 				*readURLs = nil
 				res, err := call(context.Background(), tt.datasource)
@@ -110,7 +118,7 @@ func TestPromToolsResolveDatasource(t *testing.T) {
 					t.Errorf("%s: read_urls = %v, want [%s]", tool, *readURLs, tt.wantReadURL)
 				}
 				texts := resultTexts(res)
-				if texts[0] != "[]" {
+				if strings.HasPrefix(tool, "prometheus_") && texts[0] != "[]" {
 					t.Errorf("%s: first block = %q, want the upstream body", tool, texts[0])
 				}
 				var note string
@@ -125,8 +133,8 @@ func TestPromToolsResolveDatasource(t *testing.T) {
 	}
 }
 
-func TestPromToolsAmbiguousDatasourceReturnsCandidates(t *testing.T) {
-	tools, readURLs := promToolsUnderTest(t)
+func TestDatasourceToolsAmbiguousDatasourceReturnsCandidates(t *testing.T) {
+	tools, readURLs := datasourceToolsUnderTest(t)
 	for tool, call := range tools {
 		res, err := call(context.Background(), "prod")
 		if err != nil {
@@ -145,8 +153,8 @@ func TestPromToolsAmbiguousDatasourceReturnsCandidates(t *testing.T) {
 	}
 }
 
-func TestPromToolsDistantDatasourceIsOnlyOffered(t *testing.T) {
-	tools, readURLs := promToolsUnderTest(t)
+func TestDatasourceToolsDistantDatasourceIsOnlyOffered(t *testing.T) {
+	tools, readURLs := datasourceToolsUnderTest(t)
 	for tool, call := range tools {
 		res, err := call(context.Background(), "stagingxx")
 		if err != nil {
@@ -162,7 +170,7 @@ func TestPromToolsDistantDatasourceIsOnlyOffered(t *testing.T) {
 	}
 }
 
-func TestPromToolsNeverSwapRegionCode(t *testing.T) {
+func TestDatasourceToolsNeverSwapRegionCode(t *testing.T) {
 	tests := []struct{ configured, requested, available string }{
 		{"canarysa", "canaryca", "canarysa, prod-eu, prod-us, staging"},
 		{"telemetryuk", "telemetryus", "prod-eu, prod-us, staging, telemetryuk"},
@@ -170,7 +178,7 @@ func TestPromToolsNeverSwapRegionCode(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.requested, func(t *testing.T) {
-			tools, readURLs := promToolsUnderTest(t, models.DatasourceInfo{Name: tt.configured, ReadURL: "https://" + tt.configured + ".example.com/prom", Username: "u", Password: "p", Region: "us-east-1"})
+			tools, readURLs := datasourceToolsUnderTest(t, models.DatasourceInfo{Name: tt.configured, ReadURL: "https://" + tt.configured + ".example.com/prom", Username: "u", Password: "p", Region: "us-east-1"})
 			for tool, call := range tools {
 				_, err := call(context.Background(), tt.requested)
 				want := fmt.Sprintf(`datasource %q not found; available: %s`, tt.requested, tt.available)
@@ -185,7 +193,7 @@ func TestPromToolsNeverSwapRegionCode(t *testing.T) {
 	}
 }
 
-func TestPromToolsOfferUnlistedRegionCode(t *testing.T) {
+func TestDatasourceToolsOfferUnlistedRegionCode(t *testing.T) {
 	tests := []struct{ configured, requested string }{
 		{"telemetryua", "telemetryus"},
 		{"telemetrytr", "telemetryfr"},
@@ -197,7 +205,7 @@ func TestPromToolsOfferUnlistedRegionCode(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.requested, func(t *testing.T) {
-			tools, readURLs := promToolsUnderTest(t, models.DatasourceInfo{Name: tt.configured, ReadURL: "https://" + tt.configured + ".example.com/prom", Username: "u", Password: "p", Region: "us-east-1"})
+			tools, readURLs := datasourceToolsUnderTest(t, models.DatasourceInfo{Name: tt.configured, ReadURL: "https://" + tt.configured + ".example.com/prom", Username: "u", Password: "p", Region: "us-east-1"})
 			for tool, call := range tools {
 				res, err := call(context.Background(), tt.requested)
 				if err != nil {
@@ -215,8 +223,8 @@ func TestPromToolsOfferUnlistedRegionCode(t *testing.T) {
 	}
 }
 
-func TestPromToolsUnknownDatasourceListsAvailable(t *testing.T) {
-	tools, readURLs := promToolsUnderTest(t)
+func TestDatasourceToolsUnknownDatasourceListsAvailable(t *testing.T) {
+	tools, readURLs := datasourceToolsUnderTest(t)
 	for tool, call := range tools {
 		_, err := call(context.Background(), "billing")
 		if err == nil {
