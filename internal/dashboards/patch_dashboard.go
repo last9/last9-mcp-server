@@ -159,6 +159,7 @@ func validatePatchOp(op PatchDashboardOp) error {
 		if op.Panel == nil {
 			return errors.New("panel is required")
 		}
+		return checkQueriesQueryTypes(op.Panel["queries"])
 	case "update_panel":
 		if op.PanelID == "" {
 			return errors.New("panel_id is required")
@@ -169,6 +170,7 @@ func validatePatchOp(op PatchDashboardOp) error {
 		if _, ok := op.Fields["id"]; ok {
 			return errors.New("fields must not change id; remove_panel then add_panel instead")
 		}
+		return checkQueriesQueryTypes(op.Fields["queries"])
 	case "remove_panel":
 		if op.PanelID == "" {
 			return errors.New("panel_id is required")
