@@ -12,7 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const tracePipelineSchemaHint = `Pipeline stage schema: every stage needs "type" (filter | where | aggregate | window_aggregate). filter conditions use $and/$or/$not with field operators like $eq, $neq, $contains. Field names are exact: ServiceName, TraceId, SpanName; use attributes['name'] / resources['name'] for others. To discover attribute keys present for your scope, call get_trace_attributes_for_pipeline with your filter stages.`
+const tracePipelineSchemaHint = `Pipeline stage schema: every stage needs "type" (filter | where | parse | transform | aggregate | window_aggregate). filter conditions use $and/$or/$not with field operators like $eq, $neq, $contains; $regex patterns are RE2 (no lookaround or backreferences). transform "as" is an array: ` + transformShapeExample + `. Field names are exact: ServiceName, TraceId, SpanName; use attributes['name'] / resources['name'] for others. To discover attribute keys present for your scope, call get_trace_attributes_for_pipeline with your filter stages.`
 
 var traceRequestIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
 
@@ -54,9 +54,9 @@ func traceUpstreamStatusMessage(statusCode int) string {
 	case http.StatusNotFound:
 		return "The trace capability may be unavailable or disabled."
 	case http.StatusRequestTimeout:
-		return "Retry after a short delay or request a smaller time window."
+		return "Request timed out. Try narrowing the time range, such as a smaller time window, or adding a service filter. Do not retry the same request unchanged."
 	case http.StatusTooManyRequests:
-		return "Rate limited; retry after a short delay."
+		return "Rate limited; wait for a short delay before retrying, then use a narrower time range or more selective filters. Do not retry immediately unchanged."
 	case http.StatusNotImplemented:
 		return "The trace service does not support this operation; retrying will not help."
 	default:
@@ -118,7 +118,7 @@ func isTraceUpstreamError(err error) bool {
 func newTraceTransportError(cause error) error {
 	return &traceUpstreamError{
 		cause:   cause,
-		message: "The trace service could not be reached; retry later.",
+		message: "The trace service could not be reached. If the request timed out, try narrowing the time range or adding a service filter; otherwise retry later.",
 	}
 }
 

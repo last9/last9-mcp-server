@@ -53,7 +53,7 @@ Learning which log/trace field names exist for an org. Done via dedicated discov
 _Avoid_: `{{labels}}` full-catalog injection into served tool descriptions; attribute-name allowlists in descriptions
 
 **Canonical tool snapshot**:
-The `dump-tools` output with unset toolsets (`all` surface). Eval harness and CI contract diffs use this. `dump-tools` also honors toolset selection.
+The `dump-tools` output with unset toolsets (`all` surface): the served `tools` array plus the `instructions` that `initialize` returns for the same toolsets. Eval harness and CI contract diffs use this. `dump-tools` also honors toolset selection.
 _Avoid_: a separate hand-maintained tools.json that drifts from the server
 
 **Net-new**:
@@ -61,7 +61,7 @@ A write against a resource that has no identity yet. The only legal tool is the 
 _Avoid_: treating “create” as the way to add a panel; requiring `list_dashboards` before the first create
 
 **Refine**:
-A write against a resource whose id is already known (returned this turn, or known earlier). The only legal tool is the pair's update tool (e.g. `update_dashboard` with that id). Panel/layout/query edits in the same turn are refine, not net-new.
+A write against a resource whose id is already known (returned this turn, or known earlier). The only legal tools are the pair's update tools (e.g. `patch_dashboard` with that id for panel edits, `update_dashboard` to restructure most of it). Panel/layout/query edits in the same turn are refine, not net-new.
 _Avoid_: a second `create_dashboard` to “fix” or trim panels; upsert as a single tool (HITL must distinguish new vs mutate)
 
 **Write pair**:

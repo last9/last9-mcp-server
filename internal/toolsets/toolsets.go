@@ -37,6 +37,7 @@ var named = map[string][]string{
 	"metrics": {
 		"did_you_mean",
 		"get_service_profile",
+		"get_metric_status",
 		"prometheus_range_query",
 		"prometheus_instant_query",
 		"prometheus_label_values",
@@ -91,6 +92,7 @@ var named = map[string][]string{
 		"validate_dashboard",
 		"create_dashboard",
 		"update_dashboard",
+		"patch_dashboard",
 		"delete_dashboard",
 		"list_dashboard_snapshots",
 		"get_dashboard_snapshot",

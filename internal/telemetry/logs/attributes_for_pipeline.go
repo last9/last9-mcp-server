@@ -591,12 +591,14 @@ func extractSampleBodyLines(result map[string]interface{}) []string {
 //   - service    -> ServiceName
 //   - severity   -> SeverityText
 //   - body       -> Body
+//   - trace_id   -> TraceId
 //   - resource_x -> resources['x']
 //   - default    -> attributes['<name>']
 //
 // The series endpoint returns log attributes bare (only resource attributes are
 // prefixed, with resource_), so a field name keeps its full name: e.g. a real
 // attribute named log_level maps to attributes['log_level'], not attributes['level'].
+// span_id stays attributes['span_id']: the logs API rejects a SpanId filter.
 func logFieldFilterField(name string) string {
 	switch name {
 	case "service":
@@ -605,6 +607,8 @@ func logFieldFilterField(name string) string {
 		return "SeverityText"
 	case "body":
 		return "Body"
+	case "trace_id":
+		return "TraceId"
 	}
 	if rest, ok := strings.CutPrefix(name, "resource_"); ok {
 		return fmt.Sprintf("resources['%s']", rest)
@@ -708,7 +712,8 @@ func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 	}
 
 	// Merge: drop a body-derived entry when (a) an indexed entry already
-	// exposes the SAME filter_field (true duplicate), or (b) it is a
+	// exposes the SAME filter_field or it is trace_id with TraceId indexed
+	// (parsed trace_id maps to attributes['trace_id']), or (b) it is a
 	// severity-family name (level/severity/SeverityText) and any indexed
 	// severity-family field is already present. Indexed severity is the
 	// directly-filterable signal the product UI renders; a parallel
@@ -741,6 +746,9 @@ func discoverLogAttributes(ctx context.Context, client *http.Client, cfg models.
 					}
 				}
 			}
+			continue
+		}
+		if _, dup := indexedFilterFields["TraceId"]; dup && attr.Name == "trace_id" {
 			continue
 		}
 		if indexedHasSeverity && isSeverityFamilyName(attr.Name) {

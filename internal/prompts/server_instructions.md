@@ -3,6 +3,7 @@
 {{- $services := tools "did_you_mean" "get_service_environments" "get_profile_services" "list_datasources" "grafana_list_datasources" -}}
 {{- $attributes := tools "get_log_attributes" "get_log_attributes_for_pipeline" "get_trace_attributes" "get_trace_attributes_for_pipeline" "get_trace_attribute_values" -}}
 {{- $metricNames := tools "prometheus_labels" "prometheus_label_values" -}}
+{{- $metricLookups := tools "prometheus_labels" "prometheus_label_values" "get_metric_status" -}}
 {{- $alertRules := tools "get_alert_groups" "get_alert_config" "get_entity_alert_rules" "get_entity_kpis" "get_notification_channels" -}}
 {{- $dashboards := tools "list_dashboards" "list_dashboard_snapshots" "grafana_search_dashboards" "grafana_list_folders" "grafana_list_folder_dashboards" -}}
 {{- $dashboardReads := tools "get_dashboard" "get_dashboard_snapshot" "grafana_get_dashboard" -}}
@@ -22,10 +23,10 @@
 {{- $alertValidate := tools "validate_alert_expression" -}}
 {{- $alertDesign := tools "recommend_alert_config" "describe_alert_chart" -}}
 {{- $dropRules := tools "get_drop_rules" -}}
-{{- $refine := tools "update_dashboard" "update_alert" "patch_alert" "attach_notification_channel" -}}
+{{- $refine := tools "patch_dashboard" "update_dashboard" "update_alert" "patch_alert" "attach_notification_channel" -}}
 {{- $claim := tools "acknowledge_alert" "reassign_alert" -}}
 {{- $addDropRule := tools "add_drop_rule" -}}
-{{- $destructive := tools "update_dashboard" "delete_dashboard" "delete_dashboard_snapshot" "update_alert" "patch_alert" "delete_alert" "mute_alert_group" "detach_notification_channel" "delete_notification_channel" -}}
+{{- $destructive := tools "update_dashboard" "patch_dashboard" "delete_dashboard" "delete_dashboard_snapshot" "update_alert" "patch_alert" "delete_alert" "mute_alert_group" "detach_notification_channel" "delete_notification_channel" -}}
 Last9 observability for the caller's organization. Discover names first, answer with the most specific tool, and treat writes with care.
 {{- if or $overview $time}}
 
@@ -37,7 +38,7 @@ When a request names no service or tool, call {{.}} first: it returns environmen
 For today's date or a relative window ("since 9am IST"), call {{.}}.
 {{- end}}
 {{- end}}
-{{- if or $services $attributes $metricNames $logInventory $alertRules $dashboards $dashboardReads}}
+{{- if or $services $attributes $metricNames $metricLookups $logInventory $alertRules $dashboards $dashboardReads}}
 
 ## Discover before you query
 Never guess service, environment, attribute, metric or label names, or dashboard ids; look them up and reuse the exact values.
@@ -47,7 +48,7 @@ Never guess service, environment, attribute, metric or label names, or dashboard
 {{- with $attributes}}
 - Log and trace attributes: {{.}}.
 {{- end}}
-{{- with $metricNames}}
+{{- with $metricLookups}}
 - Metric and label names: {{.}}.
 {{- end}}
 {{- with $logInventory}}
@@ -95,6 +96,9 @@ They return computed answers with the right scoping; reach for them before writi
 
 ## Raw queries are the last resort
 Use {{.}} only when no dedicated tool answers the question, and build each query from discovered names.
+{{- if or (has "get_logs") (has "get_traces")}}
+Put the time window in `start_time_iso`/`end_time_iso` (or `lookback_minutes`), never as `Timestamp` filters in the pipeline.
+{{- end}}
 {{- end}}
 {{- if or (has "get_logs") (has "get_traces") (has "get_service_logs") (has "prometheus_range_query") (has "get_service_profile")}}
 
@@ -138,11 +142,14 @@ Read these resources before writing a non-trivial query{{if has "get_logs"}}. Af
 {{- with $create}}
 - Create once with {{.}} and keep the returned id; never create a second copy to change the first.
 {{- end}}
-{{- with tools "create_alert"}}
+{{- with tools "create_alert" "create_alert_from_chart"}}
 - Alert rules from {{.}} are created disabled{{with tools "patch_alert"}}; enable them with {{.}} after validating{{end}}.
 {{- end}}
 {{- with $refine}}
 - Refine an existing object with {{.}}.
+{{- end}}
+{{- with tools "patch_dashboard"}}
+- Add, edit, remove or move individual dashboard panels with {{.}}{{with tools "update_dashboard"}}; use {{.}} only to restructure most of a dashboard{{end}}.
 {{- end}}
 {{- with $claim}}
 - Claim, release or hand off an alert with {{.}}; these change ownership, not data.

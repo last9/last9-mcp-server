@@ -1,9 +1,9 @@
-`tracejson_query`: JSON stage array, **NOT SQL**. Stages use `"type"`: `filter`|`parse`|`aggregate`|`window_aggregate`; no `"stage"`/`"conditions"`.
+`tracejson_query`: JSON stage array, **NOT SQL**. Stages use `"type"`: `filter`|`parse`|`transform`|`aggregate`|`window_aggregate`; no `"stage"`/`"conditions"`.
 
 **Filter:** `[{"type":"filter","query":{"$and":[{"$eq":["StatusCode","STATUS_CODE_ERROR"]}]}}]`
 `query`: `$and`/`$or` of `$eq`/`$neq`/`$contains`/`$regex`/`$gt` `[field,value]`; string values, `$and`-wrap. No filter_tags/tags.
 
-**Pattern:** wildcards like `checkout.*` → `$regex`. Trace ID substring → `$contains` on `TraceId`; exact ID → `get_service_traces`.
+**Pattern:** wildcards like `checkout.*` → `$regex` (RE2: no lookaround). Trace ID substring → `$contains` on `TraceId`; exact ID → `get_service_traces`.
 
 **Existence:** `{"$neq":["attributes['key']",""]}`; never `$exists`/`$notnull`.
 
@@ -15,11 +15,15 @@
 
 **Aggregate:** use `aggregates`+`groupby`. Average/mean→`{"function":{"$avg":["Duration"]}}`, not `$quantile`. By span: `{"type":"aggregate","aggregates":[{"function":{"$avg":["Duration"]},"as":"avg"}],"groupby":{"SpanName":"span"}}`. `$quantile` is the general/default percentile operator. Compute from raw spans; never average percentile samples. `Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first.
 
-**window_aggregate:** `{"type":"window_aggregate","function":{"$quantile":[0.99,"Duration"]},"as":"p99","window":["24","hours"],"groupby":{"SpanName":"endpoint"}}`.
+**Transform:** `as` is an array: `{"type":"transform","transforms":[{"function":{"$split":["SpanName","/",1]},"as":["endpoint"]}]}` (read it as `attributes['endpoint']`).
+
+**Percentile over the whole lookback (p95 latency, last hour) → ONE `aggregate` stage:** `{"type":"aggregate","aggregates":[{"function":{"$quantile":[0.95,"Duration"]},"as":"p95"}]}` (+`groupby` per dimension).
+
+`window_aggregate` only when asked per time bucket / over time: `{"type":"window_aggregate","function":{"$quantile":[0.99,"Duration"]},"as":"p99","window":["24","hours"],"groupby":{"SpanName":"endpoint"}}`.
 
 For calendar buckets, use explicit ISO bounds and time zone. P99 `Duration` output remains nanoseconds.
 
-**Order:** filter first (match-all TraceId/SpanId before aggregate). Show/find → filter only; analysis → aggregate/window_aggregate.
+**Order:** filter first (match-all TraceId/SpanId before aggregate). Show/find → filter only; analysis → aggregate.
 
 **Aggregate example:** `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`.
 
