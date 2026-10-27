@@ -491,6 +491,38 @@ func TestGetTracesHandlerStopsFetchingOnceLimitIsFilled(t *testing.T) {
 	}
 }
 
+func TestGetTracesHandlerIgnoresChunkErrorPastFilledLimit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("start") == "0" {
+			http.Error(w, "backend error", http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte(traceAPIResponse(3)))
+	}))
+	defer server.Close()
+
+	// 90 min → 6 chunks of 15 min, all in flight at once. The newest fills
+	// the limit, so the failing oldest chunk is not needed for the result.
+	handler := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+		TracejsonQuery: []map[string]interface{}{
+			{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}}},
+		},
+		StartTimeISO: "1970-01-01T00:00:00Z",
+		EndTimeISO:   "1970-01-01T01:30:00Z",
+		Limit:        3,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success once the limit is filled before the failing chunk, got %#v", result.Content)
+	}
+	if count := countTracesInPayload(t, parseTracesToolResult(t, result)); count != 3 {
+		t.Fatalf("expected 3 traces, got %d", count)
+	}
+}
+
 func TestGetTracesHandlerLaterChunksAskOnlyForRemainingBudget(t *testing.T) {
 	const chunkSeconds = 3600
 	rec := newTracesRequestRecorder()
