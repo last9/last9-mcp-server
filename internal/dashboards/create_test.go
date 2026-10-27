@@ -101,8 +101,8 @@ func TestCreateDashboardHandler_AppendsRefineNudge(t *testing.T) {
 	}
 }
 
-// The nudge names a refine tool only when the server serves it, as under
-// --read-only --allow-write-tools=create_dashboard neither is.
+// The nudge names update_dashboard only when the server serves it, as under
+// --read-only --allow-write-tools=create_dashboard it does not.
 func TestCreateDashboardHandler_NudgeNamesOnlyServedRefineTools(t *testing.T) {
 	srv := createDashboardAPI(t, `{"dashboard":{"id":"new-id","name":"Created"}}`, nil)
 	tests := []struct {
