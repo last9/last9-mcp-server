@@ -27,7 +27,7 @@ func addGetLogsGuidance(result map[string]interface{}, args GetLogsArgs, guidanc
 	if err != nil {
 		return false
 	}
-	if len(items) == 0 || countLogEntriesInResultItems(items) == 0 {
+	if len(items) == 0 || (kind == "streams" && countLogEntriesInResultItems(items) == 0) {
 		result["l9_guidance"] = utils.EmptyResultGuidanceMap("logs", logsGuidanceOptions(args, guidance.startMs, guidance.endMs))
 		return false
 	}
