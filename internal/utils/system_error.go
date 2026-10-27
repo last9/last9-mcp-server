@@ -22,7 +22,7 @@ type systemErrorer interface {
 }
 
 func IsSystemError(err error) bool {
-	if err == nil {
+	if err == nil || errors.Is(err, context.Canceled) {
 		return false
 	}
 	var classified systemErrorer
