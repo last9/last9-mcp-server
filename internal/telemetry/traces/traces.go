@@ -19,6 +19,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// maxConcurrentGetTraces caps get_traces calls running at once across the
+// process: each can hold several 5000-trace chunk bodies, so a burst of calls
+// otherwise multiplies peak heap.
+const maxConcurrentGetTraces = 3
+
 // GetTracesArgs represents the input arguments for the traces query tool
 type GetTracesArgs struct {
 	TracejsonQuery  []map[string]interface{} `json:"tracejson_query,omitempty" jsonschema:"(Required) JSON pipeline query for traces"`
