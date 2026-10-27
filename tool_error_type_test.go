@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/toolsets"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -89,4 +91,55 @@ func callToolForErrorType(t *testing.T, cfg models.Config, client *http.Client, 
 		t.Fatalf("call %s: %v", tool, err)
 	}
 	return result
+}
+
+func TestRegisteredDeadlineErrorType(t *testing.T) {
+	for _, outcome := range []string{"error", "partial result", "tool error", "unknown write outcome"} {
+		t.Run(outcome, func(t *testing.T) {
+			server := newRegisterTestServer(t)
+			gate := newToolGate(toolsets.Filter{})
+			gate.callTimeout = -time.Second
+			handler := func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+				switch outcome {
+				case "error":
+					return nil, nil, ctx.Err()
+				case "partial result":
+					return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "partial results"}}}, nil, nil
+				case "unknown write outcome":
+					return nil, nil, &utils.WriteOutcomeUnknownError{Err: ctx.Err()}
+				default:
+					return utils.ToolErrorResult("invalid response"), nil, nil
+				}
+			}
+			tool := &mcp.Tool{Name: "get_foo", Annotations: readOnlyTool("Get Foo")}
+			var err error
+			if outcome == "unknown write outcome" {
+				tool = &mcp.Tool{Name: "create_foo", Annotations: writeTool("Create Foo", false, false)}
+				err = registerWriteTool(server, gate, tool, "get_foos, by name", handler)
+			} else {
+				err = registerIfAllowed(server, gate, tool, handler)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := gate.registerAdmitted(); err != nil {
+				t.Fatal(err)
+			}
+			result, err := connectRegisteredServer(t, server).CallTool(context.Background(), &mcp.CallToolParams{Name: tool.Name, Arguments: struct{}{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantSystem := outcome != "unknown write outcome"
+			if !result.IsError || (result.Meta[utils.ErrorTypeMetaKey] == utils.SystemErrorType) != wantSystem {
+				t.Fatalf("want isError and system_error=%v, got %+v", wantSystem, result)
+			}
+			wantText := "tool-call deadline"
+			if !wantSystem {
+				wantText = "get_foos, by name"
+			}
+			if !strings.Contains(toolResultText(result), wantText) {
+				t.Fatalf("missing %q: %s", wantText, toolResultText(result))
+			}
+		})
+	}
 }

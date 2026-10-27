@@ -156,7 +156,7 @@ func withCallDeadline[In, Out any](timeout time.Duration, readOnly bool, handler
 		if err != nil {
 			msg += fmt.Sprintf(" (%v)", err)
 		}
-		return utils.ToolErrorResult(msg + ". Narrow the time range or add filters before retrying."), out, nil
+		return last9mcp.SystemErrorResult(msg + ". Narrow the time range or add filters before retrying."), out, nil
 	}
 }
 
