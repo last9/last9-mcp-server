@@ -289,7 +289,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 ### Logs
 
 - **`get_logs`** — Full JSON pipeline log queries (aggregations, filters, field extraction)
-- **`get_service_logs`** — Raw log lines for a service, filterable by severity and body content
+- **`get_service_logs`** — Log lines for a service, filterable by severity and body content; summarized over 20 lines unless `response_mode` is `raw`
 - **`get_log_patterns`** — A service's log lines in a window clustered into message templates, with count, first/last seen, severity mix and a sample
 - **`get_emerging_log_patterns`** — Log templates that are new, increased, decreased or disappeared against a baseline window, with counts from both
 - **`get_log_attributes`** — Global catalog of attributes in the log schema for a time window
@@ -630,12 +630,13 @@ Use `service_name` as `ServiceName`, `env` as the environment when present, and 
 
 - `service_name` (string, required)
 - `lookback_minutes` (integer, optional): Default: 60.
-- `limit` (integer, optional): Default: 20.
+- `limit` (integer, optional): Default: 100, or 20 with `response_mode: "raw"`.
 - `env` (string, optional)
 - `severity_filters` (array, optional): e.g. `["error", "warn"]`. OR logic.
 - `body_filters` (array, optional): e.g. `["timeout", "failed"]`. OR logic.
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `index` (string, optional)
+- `response_mode` (string, optional): `summary` (default; also for `null`) or `raw`. Over 20 lines, `logs` is replaced by the same `summary` as `get_logs`, with the other fields kept; `raw` returns the entries.
 
 Multiple filter types combine with AND. Each array uses OR internally.
 Use `get_logs` for broad aggregate counts first; use `get_service_logs` only after narrowing to a service/env/index and a small sample set.

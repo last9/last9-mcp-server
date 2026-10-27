@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `get_service_logs` now returns a line summary by default, like `get_logs`: a result over 20 lines comes back with `logs` replaced by `summary` (severity counts, first/last timestamp, 10-bucket histogram, top patterns with samples; at most 4000 characters, `truncated: true` when the limit or a truncated search cut the lines), keeping `service`, `count` and the other fields (any that do not fit are named in `dropped_fields`); the top-level `hint` is replaced by `summary.hint`, while raw and empty responses keep their existing hints. The default `limit` rises from 20 to 100 so a call without one can be summarized; pass `response_mode: "raw"` for the entries (default `limit` stays 20); 20 lines or fewer are returned as entries in either mode, and an unknown mode is rejected before any query. Agents whose log reads went through `get_service_logs` previously always received every raw line (#431).
+
 ### Fixed
 - `get_traces` over a chunked window no longer fetches every chunk at the full `limit` and holds them all in memory, which could OOM the server under concurrent wide calls. Chunks are fetched newest-first with at most the parallel-chunk count fetched or held at once; each asks only for the traces still missing, and none is fetched once `limit` is filled. Results are unchanged (#435).
 
