@@ -199,3 +199,20 @@ func TestCreateDashboardHandler_Validation(t *testing.T) {
 		t.Fatal("expected validation error")
 	}
 }
+
+func TestCreateDashboardHandler_RejectsQueryTypeForOtherTelemetry(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("server should not be called")
+	}))
+	t.Cleanup(srv.Close)
+
+	args := CreateDashboardArgs{DashboardRequest: DashboardRequest{Dashboard: json.RawMessage(
+		`{"name":"x","panels":[{"name":"ok","queries":[{"query_type":"promql","telemetry":"metrics","expr":"up"}]},` +
+			`{"name":"bad","queries":[{"query_type":"log_json","telemetry":"metrics","expr":"up"}]}]}`)}}
+	_, _, err := NewCreateDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))(
+		context.Background(), &mcp.CallToolRequest{}, args)
+	want := "panels[1].queries[0]: query_type 'log_json' is not valid for telemetry metrics; use promql"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+}
