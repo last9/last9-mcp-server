@@ -69,6 +69,7 @@ func TestExecuteTraceJSONQueryRetainsAboutTheBodySize(t *testing.T) {
 	retained := int64(liveHeapBytes()) - int64(before)
 	runtime.KeepAlive(value)
 
+	t.Logf("retained %d bytes for a %d-byte body", retained, len(body))
 	if limit := int64(2 * len(body)); retained > limit {
 		t.Errorf("decoded chunk retains %d bytes for a %d-byte body, want <= %d", retained, len(body), limit)
 	}
@@ -79,4 +80,44 @@ func liveHeapBytes() uint64 {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	return m.HeapAlloc
+}
+
+func TestExtractTraceResultItemsFromDecodedShapes(t *testing.T) {
+	cases := []struct {
+		body    string
+		items   int
+		wantErr string
+	}{
+		{body: `{"data":{"result":[{"a":1},{"b":2}]}}`, items: 2},
+		{body: `{"data":{"result":null}}`, items: 0},
+		{body: `{"data":{}}`, items: 0},
+		{body: `{"data":{"result":{"a":1}}}`, wantErr: "result is not an array"},
+		{body: `{"data":null}`, wantErr: "missing data object"},
+		{body: `{"data":[1]}`, wantErr: "missing data object"},
+		{body: `{"status":"success"}`, wantErr: "missing data object"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.body, func(t *testing.T) {
+			decoded, err := decodeTraceQueryResponse(strings.NewReader(tc.body))
+			if err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			items, err := extractTraceResultItems(decoded)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("err = %v, want %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil || len(items) != tc.items {
+				t.Fatalf("items = %d, err = %v; want %d items", len(items), err, tc.items)
+			}
+		})
+	}
+}
+
+func TestDecodeTraceQueryResponseRejectsNonObjectBody(t *testing.T) {
+	if _, err := decodeTraceQueryResponse(strings.NewReader(`[1,2]`)); err == nil {
+		t.Fatal("expected an error for a non-object body")
+	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net/http"
@@ -164,7 +165,7 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 
 	var (
 		baseResponse map[string]interface{}
-		mergedItems  = make([]interface{}, 0)
+		mergedItems  = make([]json.RawMessage, 0)
 		remaining    = effectiveLimit
 		// partialErr carries chunk context (e.g. "chunk 3/6 failed: ...") and
 		// is used both for the all-chunks-failed hard error and for the
@@ -294,30 +295,58 @@ func executeTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.
 		return nil, newTracePipelineHTTPError(resp)
 	}
 
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	result, err := decodeTraceQueryResponse(resp.Body)
+	if err != nil {
 		return nil, newTraceInvalidResponseError(err)
 	}
 	return result, nil
 }
 
+// decodeTraceQueryResponse leaves every field, and each trace in data.result,
+// as raw JSON: generic maps retain several times the wire size per trace and
+// round integers past 2^53, such as nanosecond timestamps.
+func decodeTraceQueryResponse(body io.Reader) (map[string]interface{}, error) {
+	var fields map[string]json.RawMessage
+	if err := json.NewDecoder(body).Decode(&fields); err != nil {
+		return nil, err
+	}
+	result := make(map[string]interface{}, len(fields))
+	for key, value := range fields {
+		result[key] = value
+	}
+
+	var dataFields map[string]json.RawMessage
+	if json.Unmarshal(fields["data"], &dataFields) != nil || dataFields == nil {
+		return result, nil
+	}
+	data := make(map[string]interface{}, len(dataFields))
+	for key, value := range dataFields {
+		data[key] = value
+	}
+	result["data"] = data
+
+	var items []json.RawMessage
+	if json.Unmarshal(dataFields["result"], &items) == nil {
+		data["result"] = items
+	}
+	return result, nil
+}
+
 // extractTraceResultItems pulls the result array from a traces API response.
-func extractTraceResultItems(result map[string]interface{}) ([]interface{}, error) {
+func extractTraceResultItems(result map[string]interface{}) ([]json.RawMessage, error) {
 	data, ok := result["data"].(map[string]interface{})
 	if !ok {
 		return nil, fmt.Errorf("traces API response missing data object")
 	}
 
-	rawItems, exists := data["result"]
-	if !exists || rawItems == nil {
-		return []interface{}{}, nil
-	}
-
-	items, ok := rawItems.([]interface{})
-	if !ok {
+	switch items := data["result"].(type) {
+	case nil:
+		return []json.RawMessage{}, nil
+	case []json.RawMessage:
+		return items, nil
+	default:
 		return nil, fmt.Errorf("traces API response result is not an array")
 	}
-	return items, nil
 }
 
 // effectiveGetTracesLimit returns the capped limit to use across all chunks.
