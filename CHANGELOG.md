@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `get_traces` keeps each returned trace as the API sent it instead of decoding it into generic maps, so a chunk of traces holds about its wire size in memory rather than several times it. Integers past 2^53, such as nanosecond timestamps, are no longer rounded (`1761550000123456789` was returned as `1761550000123456800`), and fields within a trace keep the API's order instead of being sorted (#440).
 
+### Changed
+- `get_logs` and `get_service_logs` descriptions now say to omit `response_mode` and use `raw` only to quote exact text: models were sending `response_mode: "raw"` whenever a question asked for lines, which returned raw lines instead of the default summary and lost its token saving (#448).
+
 ## [0.20.1] - 2026-10-27
 
 ### Fixed

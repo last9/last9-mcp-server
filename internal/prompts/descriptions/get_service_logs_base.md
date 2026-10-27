@@ -12,7 +12,7 @@ Fetch log lines for one service (`service_name`, optional `severity_filters`, `b
 
 **Prefer `get_logs` when:** you need parse/aggregate/`window_aggregate`, multiple HTTP statuses in one `$or`, numeric/range comparisons, or an ad-hoc pipeline.
 
-**Lines:** `response_mode` default `summary` (>20 lines→counts, severities, histogram, top patterns+samples); `raw` returns lines.
+**Lines:** omit `response_mode`; >20 lines→summary (counts, severities, histogram, top patterns+samples); `raw` only for exact text.
 
 **Time/index:** Prefer `lookback_minutes` for relative windows; `start_time_iso`+`end_time_iso` (RFC3339) for absolute. Use a user-named `index` (`physical_index:<name>` / `rehydration_index:<block>`) or one from `get_service_profile`. Match env via `log_index_envs`; query matching indexes separately. Omit `index` for `default` or unknown.
 
