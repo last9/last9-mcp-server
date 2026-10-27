@@ -78,6 +78,7 @@ var promptDescriptionFiles = map[string]string{
 	"detach_notification_channel.md":       prompts.DetachNotificationChannelDescription,
 	"delete_notification_channel.md":       prompts.DeleteNotificationChannelDescription,
 	"patch_alert.md":                       prompts.PatchAlertDescription,
+	"patch_dashboard.md":                   prompts.PatchDashboardDescription,
 	"prometheus_instant_query.md":          prompts.PromqlInstantQueryDetails,
 	"prometheus_label_values.md":           prompts.PromqlLabelValuesQueryDetails,
 	"prometheus_labels.md":                 prompts.PromqlLabelsQueryDetails,
@@ -93,6 +94,7 @@ var simplePromptDescriptionFiles = map[string]bool{
 	"create_alert.md":              true,
 	"delete_alert.md":              true,
 	"patch_alert.md":               true,
+	"patch_dashboard.md":           true,
 	"recommend_alert_config.md":    true,
 	"update_alert.md":              true,
 	"add_drop_rule.md":             true,
@@ -257,7 +259,7 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"high→add filter, recount", "must repeat counts after narrowing broad filters"},
 		{"community_member_id", "must document bare single-token field mistake"},
 		{"attributes['key']", "must require attributes/resources wrapping"},
-		{"Parse Body-derived fields before filtering, grouping, or aggregation", "must parse Body fields before grouping or aggregation"},
+		{"Parse Body-derived fields before filtering, grouping, or aggregation, then reference labels as `attributes['key']`", "must parse Body fields first and say how to reference parsed labels"},
 		{"`$quantile` is the general/default percentile operator", "must default to approximate percentile aggregation"},
 		{"\"function\":{\"$quantile\":[0.99,\"attributes['latency_ms']\"]},\"as\":\"p99\",\"window\":[\"24\",\"hours\"]", "must show a complete day-wise percentile window"},
 		{"\"type\":\"window_aggregate\",\"function\":{\"$quantile\":[0.99,\"attributes['latency_ms']\"]}", "must include the required stage type in the windowed percentile example"},
@@ -273,6 +275,9 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 		{"ALL→`$and`; ANY→`$or`", "must document all/any-word Body searches"},
 		{"never `$icontainsWords`", "must avoid the slower case-insensitive word operator"},
 		{"no service→search `Body` with `$contains` (even service-like)", "must distinguish standalone identifiers from service names"},
+		{"Stages: `filter`|`parse`|`aggregate`|`window_aggregate` (no `transform`/`select`)", "must list valid stage types up front"},
+		{"`$regex` (RE2: no lookaround)", "must state the accepted regexp flavor"},
+		{"`community_member_id`→`attributes['key']`, `resource_attributes['key']`→`resources['key']`", "must show wrong→right field references"},
 	}
 	for _, c := range checks {
 		if !strings.Contains(desc, c.phrase) {
@@ -284,6 +289,36 @@ func TestGetLogsDescriptionCriticalRules(t *testing.T) {
 	}
 	if !strings.Contains(desc, `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`) {
 		t.Error("GetLogsDescription must include its canonical JSON stage-array example")
+	}
+}
+
+// Each step of the pipeline order must be a real stage type: a bare "scope"
+// step led models to invent {"type":"scope"} stages (lq-mf-005).
+func TestGetLogsDescriptionOrderNamesOnlyStageTypes(t *testing.T) {
+	stageTypes := map[string]bool{"filter": true, "parse": true, "aggregate": true, "window_aggregate": true}
+	var order string
+	for _, line := range strings.Split(prompts.GetLogsDescription, "\n") {
+		if rest, ok := strings.CutPrefix(line, "**Order:**"); ok {
+			// Cut at the sentence end, not any dot: a step may hold a dotted key like resources['k8s.ns'].
+			order, _, _ = strings.Cut(rest, ". ")
+		}
+	}
+	if order == "" {
+		t.Fatal("GetLogsDescription has no **Order:** line")
+	}
+	for _, step := range strings.Split(order, "→") {
+		// The stage is the leading word, so a trailing note or a sentence glued on without a space doesn't count.
+		stage := strings.TrimSpace(step)
+		if end := strings.IndexFunc(stage, func(r rune) bool { return r != '_' && (r < 'a' || r > 'z') }); end >= 0 {
+			stage = stage[:end]
+		}
+		if !stageTypes[stage] {
+			t.Errorf("**Order:** step %q is not a stage type (filter, parse, aggregate, window_aggregate)", strings.TrimSpace(step))
+		}
+	}
+	// The post-parse filter→aggregate steps must say how parsed labels are referenced; without it models grouped by bare labels (lq-101).
+	if want := `Stage types: only filter/parse/aggregate/window_aggregate; parsed labels: attributes['key'].`; !strings.Contains(prompts.GetLogsDescription, want) {
+		t.Errorf("GetLogsDescription missing %q", want)
 	}
 }
 
@@ -311,6 +346,10 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 		{"`Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first", "must gate attribute values without gating Duration"},
 		{"For calendar buckets, use explicit ISO bounds and time zone", "must make calendar boundaries explicit"},
 		{"P99 `Duration` output remains nanoseconds", "must preserve Duration units"},
+		{"`filter`|`parse`|`transform`|`aggregate`|`window_aggregate`", "must list valid stage types up front"},
+		{"\"as\":[\"endpoint\"]", "must show transform as an array"},
+		{"read it as `attributes['endpoint']`", "must say how to reference transform output"},
+		{"`$regex` (RE2: no lookaround)", "must state the accepted regexp flavor"},
 		{"Percentile over the whole lookback (p95 latency, last hour) → ONE `aggregate` stage", "must steer lookback percentiles to a single aggregate"},
 		{`{"type":"aggregate","aggregates":[{"function":{"$quantile":[0.95,"Duration"]},"as":"p95"}]}`, "must show a complete lookback percentile stage"},
 		{"`window_aggregate` only when asked per time bucket / over time", "must reserve window_aggregate for bucketed series"},
@@ -537,6 +576,17 @@ func TestCreateAlertFromChartDescriptionStatesThresholdFloor(t *testing.T) {
 	}
 }
 
+// create_alert_from_chart creates disabled drafts, so describe_alert_chart must not promise live rules.
+func TestDescribeAlertChartDescriptionSaysChartRulesAreDrafts(t *testing.T) {
+	desc := prompts.DescribeAlertChartDescription
+	if strings.Contains(desc, "fire immediately") {
+		t.Error("describe_alert_chart still says chart-derived rules fire immediately")
+	}
+	if !strings.Contains(desc, "are created disabled as drafts, like a rule bound to an alert-group KPI") {
+		t.Error("describe_alert_chart does not say chart-derived rules are created disabled")
+	}
+}
+
 // Write tools return their UI link in _meta, which many clients do not show the model.
 func TestDescriptionsSayWhereTheLinkIs(t *testing.T) {
 	for file, desc := range promptDescriptionFiles {
@@ -716,8 +766,8 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 		phrase string
 		reason string
 	}{
-		{"Prefer this tool", "refine is the default after create"},
-		{"after create", "must sequence after create"},
+		{"only to restructure most of a dashboard", "full replacement is for restructuring, not single-panel edits"},
+		{"- Add, edit, remove or move individual panels: `patch_dashboard`", "must route individual panel edits to patch_dashboard"},
 		{"existing dashboard id", "must pass the known id"},
 		{"do not call create_dashboard", "must not create-for-refine"},
 		{"full replacement", "must state PUT is a full replacement"},
@@ -725,6 +775,22 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 	} {
 		if !strings.Contains(update, c.phrase) {
 			t.Errorf("UpdateDashboardDescription missing %q: %s", c.phrase, c.reason)
+		}
+	}
+	// A model reading either description first must not be sent to full replacement for a
+	// one-panel change.
+	if strings.Contains(update, "Prefer this tool") {
+		t.Error("UpdateDashboardDescription must not prefer full replacement for panel changes")
+	}
+	if strings.Contains(create, "call update_dashboard for any panel") {
+		t.Error("CreateDashboardDescription must not send every panel change to update_dashboard")
+	}
+	for _, phrase := range []string{
+		"- Edit panels of an existing dashboard: `patch_dashboard`",
+		"- `patch_dashboard` (edit panels by the returned id)",
+	} {
+		if !strings.Contains(create, phrase) {
+			t.Errorf("CreateDashboardDescription missing route %q", phrase)
 		}
 	}
 	// Any mention outside the timeout-recovery sentence, not three exact phrasings a reword

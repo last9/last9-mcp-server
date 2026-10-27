@@ -46,6 +46,24 @@ func TestUpdateDashboardHandler_InvalidMetadata(t *testing.T) {
 	}
 }
 
+func TestUpdateDashboardHandler_RejectsUnknownQueryType(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("server should not be called")
+	}))
+	defer srv.Close()
+
+	dash := json.RawMessage(`{"name":"x","panels":[{"name":"Errors","queries":[{"query_type":"logjson","telemetry":"logs","expr":"[]"}]}]}`)
+	handler := NewUpdateDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, UpdateDashboardArgs{
+		ID:               "uuid-1",
+		DashboardRequest: DashboardRequest{Dashboard: dash},
+	})
+	want := "panels[0].queries[0]: query_type 'logjson' is not valid for telemetry logs; use log_json, log_ql or log_raw"
+	if err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+}
+
 func TestUpdateDashboardHandler_PUTsToID(t *testing.T) {
 	var capturedMethod, capturedPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

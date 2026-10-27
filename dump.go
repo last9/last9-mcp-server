@@ -17,13 +17,14 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// dumpTools registers every tool exactly as the serving path does and writes
-// the tools/list result ({"tools": [...]}, sorted by name) to w, by
-// round-tripping a real tools/list over in-memory transports. Tool objects
-// are emitted with the SDK's own wire marshaling, so the output matches what
-// clients receive — including inputSchema, and annotations/outputSchema when
-// present. The shape is compatible with .mcpc.json contract-snapshot tooling
-// (e.g. mcpdiff).
+// dumpTools registers every tool and the server instructions exactly as the
+// serving path does and writes the tools/list result (sorted by name) plus the
+// instructions initialize returns ({"tools": [...], "instructions": "..."}) to
+// w, by round-tripping a real initialize and tools/list over in-memory
+// transports. Tool objects are emitted with the SDK's own wire marshaling, so
+// the output matches what clients receive — including inputSchema, and
+// annotations/outputSchema when present. The shape is compatible with
+// .mcpc.json contract-snapshot tooling (e.g. mcpdiff).
 //
 // No credentials or network access required: registration never calls the
 // API. Descriptions do not embed org attribute catalogs. External consumers
@@ -45,8 +46,8 @@ func dumpTools(w io.Writer, filter toolsets.Filter) error {
 	registerReferenceResources(server)
 	workflows.Register(server)
 
-	if _, err := registerAllTools(server, cfg); err != nil {
-		return fmt.Errorf("failed to register tools: %w", err)
+	if err := registerToolsAndInstructions(server, cfg); err != nil {
+		return err
 	}
 	// The round-trip is over in-memory transports and won't hang in practice,
 	// but a timeout makes a wedged tools/list fail loudly in CI rather than
@@ -75,9 +76,14 @@ func dumpTools(w io.Writer, filter toolsets.Filter) error {
 	}
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name < tools[j].Name })
 
+	// A struct, not a map, keeps "tools" first so existing snapshot diffs only
+	// gain trailing lines.
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	return enc.Encode(map[string]any{"tools": tools})
+	return enc.Encode(struct {
+		Tools        []*mcp.Tool `json:"tools"`
+		Instructions string      `json:"instructions"`
+	}{tools, session.InitializeResult().Instructions})
 }
 
 // dumpPrompts writes the prompts/list result ({"prompts": [...]}, sorted by

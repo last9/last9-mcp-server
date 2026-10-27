@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net/http"
@@ -87,9 +88,8 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 
 // fetchTraceJSONQuery executes the trace query by resolving an
 // AdaptiveLoadingConfig (parallelism + chunk size) for the requested window,
-// splitting via utils.GetAdaptiveChunks, and fanning the chunks out through
-// utils.RunChunksParallel. Results are walked in newest-first index order
-// and truncated to the effective limit. An exact trace_id lookup short-
+// splitting via utils.GetAdaptiveChunks, and fetching the chunks newest-first
+// until the effective limit is filled. An exact trace_id lookup short-
 // circuits chunking entirely (see extractExactTraceIDLookup).
 func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, tracejsonQuery interface{}, startMs, endMs int64, args GetTracesArgs) (map[string]interface{}, error) {
 	chunkingDebug := chunkingDebugEnabled()
@@ -163,24 +163,9 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 		}
 	}
 
-	// Known over-fetch: each chunk asks the upstream for effectiveLimit
-	// traces, not a decrementing remaining budget. With parallel execution
-	// we can't know "remaining" until every chunk is back, so the pre-PR
-	// serial trick of passing remaining doesn't translate. The merge loop
-	// below truncates to effectiveLimit post-merge. Trade-off: backend may
-	// scan extra rows in later chunks already covered by earlier ones, in
-	// exchange for honest coverage of the full time range and consistent
-	// wall-clock regardless of where the data sits in the window.
-	results := utils.RunChunksParallel(ctx, chunks, adaptiveCfg.MaxParallelChunks,
-		func(ctx context.Context, _ int, chunk utils.TimeChunk) (map[string]interface{}, error) {
-			chunkCtx, cancel := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
-			defer cancel()
-			return executeTraceJSONQuery(chunkCtx, client, cfg, tracejsonQuery, chunk.StartMs, chunk.EndMs, effectiveLimit)
-		})
-
 	var (
 		baseResponse map[string]interface{}
-		mergedItems  = make([]interface{}, 0)
+		mergedItems  = make([]json.RawMessage, 0)
 		remaining    = effectiveLimit
 		// partialErr carries chunk context (e.g. "chunk 3/6 failed: ...") and
 		// is used both for the all-chunks-failed hard error and for the
@@ -189,7 +174,35 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 		partialErr error
 	)
 
-	for _, r := range results {
+	// Chunks are merged newest-first as they arrive, with at most
+	// MaxParallelChunks fetched or held at once. Each chunk asks only for the
+	// budget still unfilled when it starts, and none starts once it is filled.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	inFlight := make([]chan utils.ChunkResult[map[string]interface{}], 0, adaptiveCfg.MaxParallelChunks)
+	next := 0
+	startNextChunk := func() {
+		idx, chunk, limit := next, chunks[next], remaining
+		done := make(chan utils.ChunkResult[map[string]interface{}], 1)
+		go func() {
+			chunkCtx, cancelChunk := context.WithTimeout(ctx, constants.PerChunkHTTPTimeout)
+			defer cancelChunk()
+			value, err := executeTraceJSONQuery(chunkCtx, client, cfg, tracejsonQuery, chunk.StartMs, chunk.EndMs, limit)
+			done <- utils.ChunkResult[map[string]interface{}]{Index: idx, Chunk: chunk, Value: value, Err: err}
+		}()
+		inFlight = append(inFlight, done)
+		next++
+	}
+
+	for remaining > 0 {
+		for next < len(chunks) && len(inFlight) < adaptiveCfg.MaxParallelChunks {
+			startNextChunk()
+		}
+		if len(inFlight) == 0 {
+			break
+		}
+		r := <-inFlight[0]
+		inFlight = inFlight[1:]
 		chunkNum := r.Index + 1
 
 		if r.Err != nil {
@@ -225,28 +238,17 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 			baseResponse = r.Value
 		}
 
-		// Track whether this chunk's results were fully truncated away so the
-		// debug log records every successful chunk, not just the ones that
-		// fit inside the limit.
-		truncatedAtLimit := remaining <= 0
-		var kept int
-		if !truncatedAtLimit && len(items) > 0 {
-			if len(items) > remaining {
-				items = items[:remaining]
-			}
-			kept = len(items)
-			remaining -= kept
-			mergedItems = append(mergedItems, items...)
-		}
+		kept := min(len(items), remaining)
+		mergedItems = append(mergedItems, items[:kept]...)
+		remaining -= kept
 
 		if chunkingDebug {
 			log.Printf(
-				"[chunking] get_traces chunk result chunk=%d/%d kept_traces=%d remaining_limit=%d truncated_at_limit=%t",
+				"[chunking] get_traces chunk result chunk=%d/%d kept_traces=%d remaining_limit=%d",
 				chunkNum,
 				len(chunks),
 				kept,
 				remaining,
-				truncatedAtLimit,
 			)
 		}
 	}
@@ -293,30 +295,58 @@ func executeTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.
 		return nil, newTracePipelineHTTPError(resp)
 	}
 
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	result, err := decodeTraceQueryResponse(resp.Body)
+	if err != nil {
 		return nil, newTraceInvalidResponseError(err)
 	}
 	return result, nil
 }
 
+// decodeTraceQueryResponse leaves every field, and each trace in data.result,
+// as raw JSON: generic maps retain several times the wire size per trace and
+// round integers past 2^53, such as nanosecond timestamps.
+func decodeTraceQueryResponse(body io.Reader) (map[string]interface{}, error) {
+	var fields map[string]json.RawMessage
+	if err := json.NewDecoder(body).Decode(&fields); err != nil {
+		return nil, err
+	}
+	result := make(map[string]interface{}, len(fields))
+	for key, value := range fields {
+		result[key] = value
+	}
+
+	var dataFields map[string]json.RawMessage
+	if json.Unmarshal(fields["data"], &dataFields) != nil || dataFields == nil {
+		return result, nil
+	}
+	data := make(map[string]interface{}, len(dataFields))
+	for key, value := range dataFields {
+		data[key] = value
+	}
+	result["data"] = data
+
+	var items []json.RawMessage
+	if json.Unmarshal(dataFields["result"], &items) == nil {
+		data["result"] = items
+	}
+	return result, nil
+}
+
 // extractTraceResultItems pulls the result array from a traces API response.
-func extractTraceResultItems(result map[string]interface{}) ([]interface{}, error) {
+func extractTraceResultItems(result map[string]interface{}) ([]json.RawMessage, error) {
 	data, ok := result["data"].(map[string]interface{})
 	if !ok {
 		return nil, fmt.Errorf("traces API response missing data object")
 	}
 
-	rawItems, exists := data["result"]
-	if !exists || rawItems == nil {
-		return []interface{}{}, nil
-	}
-
-	items, ok := rawItems.([]interface{})
-	if !ok {
+	switch items := data["result"].(type) {
+	case nil:
+		return []json.RawMessage{}, nil
+	case []json.RawMessage:
+		return items, nil
+	default:
 		return nil, fmt.Errorf("traces API response result is not an array")
 	}
-	return items, nil
 }
 
 // effectiveGetTracesLimit returns the capped limit to use across all chunks.
@@ -342,7 +372,7 @@ func configuredMaxGetTracesEntries(cfg models.Config) int {
 func emptyTracesResponse() map[string]interface{} {
 	return map[string]interface{}{
 		"data": map[string]interface{}{
-			"result": []interface{}{},
+			"result": []json.RawMessage{},
 		},
 	}
 }
