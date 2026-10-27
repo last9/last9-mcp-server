@@ -126,3 +126,4 @@ sdd/
 .cursor/
 .worktrees/
 .aider*
+__pycache__/
