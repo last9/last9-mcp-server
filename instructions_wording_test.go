@@ -59,6 +59,7 @@ var pinnedInstructionLines = []string{
 	"- Create once with <tools> and keep the returned id; never create a second copy to change the first.",
 	"- Alert rules from <tools> are created disabled; enable them with <tools> after validating.",
 	"- Refine an existing object with <tools>.",
+	"- Add, edit, remove or move individual dashboard panels with <tools>; use <tools> only to restructure most of a dashboard.",
 	"- Claim, release or hand off an alert with <tools>; these change ownership, not data.",
 	"- Confirm with the user before overwriting or removing data with <tools>.",
 	"- <tools> drops matching future logs: confirm with the user first.",

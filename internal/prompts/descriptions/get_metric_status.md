@@ -13,4 +13,4 @@ Returns JSON:
 Parameters:
 - metric: (Required) Metric name (e.g. amazonaws_com_AWS_S3_BucketSizeBytes) or a PromQL series selector (e.g. up{job="api"}).
 - window_minutes: (Required) Lookback window in minutes (minimum: 1). Prefer a window wide enough to cover several emission intervals for the metric under test.
-- datasource: (Optional) Datasource name from list_datasources. Default: the configured default datasource.
+- datasource: (Optional) Datasource name; omitted uses the default, a typo its closest match; looser or ambiguous names list candidates, no query. An additional block names it unless the name was exact.

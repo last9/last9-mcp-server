@@ -213,6 +213,9 @@ func GetTokenExpiry(accessToken string) (time.Time, error) {
 }
 
 func (tm *TokenManager) GetAccessToken(ctx context.Context) string {
+	if token, ok := RequestTokenFromContext(ctx); ok {
+		return token
+	}
 	// Fast path: token is still within its refresh buffer. Read it under the
 	// read lock and return without touching the cond.
 	tm.mu.RLock()

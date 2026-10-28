@@ -576,6 +576,17 @@ func TestCreateAlertFromChartDescriptionStatesThresholdFloor(t *testing.T) {
 	}
 }
 
+// create_alert_from_chart creates disabled drafts, so describe_alert_chart must not promise live rules.
+func TestDescribeAlertChartDescriptionSaysChartRulesAreDrafts(t *testing.T) {
+	desc := prompts.DescribeAlertChartDescription
+	if strings.Contains(desc, "fire immediately") {
+		t.Error("describe_alert_chart still says chart-derived rules fire immediately")
+	}
+	if !strings.Contains(desc, "are created disabled as drafts, like a rule bound to an alert-group KPI") {
+		t.Error("describe_alert_chart does not say chart-derived rules are created disabled")
+	}
+}
+
 // Write tools return their UI link in _meta, which many clients do not show the model.
 func TestDescriptionsSayWhereTheLinkIs(t *testing.T) {
 	for file, desc := range promptDescriptionFiles {
@@ -755,8 +766,8 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 		phrase string
 		reason string
 	}{
-		{"Prefer this tool", "refine is the default after create"},
-		{"after create", "must sequence after create"},
+		{"only to restructure most of a dashboard", "full replacement is for restructuring, not single-panel edits"},
+		{"- Add, edit, remove or move individual panels: `patch_dashboard`", "must route individual panel edits to patch_dashboard"},
 		{"existing dashboard id", "must pass the known id"},
 		{"do not call create_dashboard", "must not create-for-refine"},
 		{"full replacement", "must state PUT is a full replacement"},
@@ -764,6 +775,22 @@ func TestWriteToolDescriptionSteerability(t *testing.T) {
 	} {
 		if !strings.Contains(update, c.phrase) {
 			t.Errorf("UpdateDashboardDescription missing %q: %s", c.phrase, c.reason)
+		}
+	}
+	// A model reading either description first must not be sent to full replacement for a
+	// one-panel change.
+	if strings.Contains(update, "Prefer this tool") {
+		t.Error("UpdateDashboardDescription must not prefer full replacement for panel changes")
+	}
+	if strings.Contains(create, "call update_dashboard for any panel") {
+		t.Error("CreateDashboardDescription must not send every panel change to update_dashboard")
+	}
+	for _, phrase := range []string{
+		"- Edit panels of an existing dashboard: `patch_dashboard`",
+		"- `patch_dashboard` (edit panels by the returned id)",
+	} {
+		if !strings.Contains(create, phrase) {
+			t.Errorf("CreateDashboardDescription missing route %q", phrase)
 		}
 	}
 	// Any mention outside the timeout-recovery sentence, not three exact phrasings a reword

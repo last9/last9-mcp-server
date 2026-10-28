@@ -39,7 +39,7 @@ func GetLogsInputSchema() map[string]interface{} {
 			// validateLogResponseMode rejects unknown values, quoting them.
 			"response_mode": map[string]interface{}{
 				"type":        []string{"string", "null"},
-				"description": `"summary" (default; over 20 lines: counts, time spread, top patterns, ≤4000 chars) or "raw" (lines). Aggregates unaffected.`,
+				"description": `"summary" (default; over 20 lines: counts, time spread, top patterns, ≤4000 chars) or "raw" (exact text only). Aggregates unaffected.`,
 			},
 		},
 		"required":             []string{"logjson_query"},

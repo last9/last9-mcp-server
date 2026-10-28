@@ -23,6 +23,11 @@ type traceUpstreamError struct {
 	requestID  string
 	message    string
 	cause      error
+	system     bool
+}
+
+func (e *traceUpstreamError) SystemError() bool {
+	return e.system || utils.IsSystemStatus(e.statusCode)
 }
 
 func (e *traceUpstreamError) Error() string {
@@ -119,6 +124,7 @@ func newTraceTransportError(cause error) error {
 	return &traceUpstreamError{
 		cause:   cause,
 		message: "The trace service could not be reached. If the request timed out, try narrowing the time range or adding a service filter; otherwise retry later.",
+		system:  true,
 	}
 }
 
@@ -126,6 +132,7 @@ func newTraceInvalidResponseError(cause error) error {
 	return &traceUpstreamError{
 		cause:   cause,
 		message: "The trace service returned an invalid response; retry later.",
+		system:  true,
 	}
 }
 
@@ -141,7 +148,7 @@ func traceRequestID(header http.Header) string {
 }
 
 func traceToolErrorResult(err error) *mcp.CallToolResult {
-	return utils.ToolErrorResult(err.Error())
+	return utils.ErrorResult(err)
 }
 
 func traceLogCause(err error) error {

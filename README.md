@@ -284,12 +284,12 @@ Supports PostgreSQL, MySQL, MongoDB, Redis, Aerospike, and anything else OTel tr
 - **`prometheus_label_values`** — Label values for a given series
 - **`prometheus_labels`** — All labels available for a series
 
-Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`.
+Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`, or per call with `datasource`. An omitted `datasource` uses the default; a unique near miss that the matcher considers safe (such as a case variant) uses its closest match. A missing, extra or transposed letter is not guaranteed to resolve automatically: even one candidate can require confirmation when the edit could affect a region or environment code. Looser or ambiguous matches return candidates and run no query (not an error); unknown names return an error. An additional content block names the datasource used whenever you did not name it exactly. `get_metric_status`, `get_service_profile`, and `get_apm_service_deviations` resolve `datasource` the same way.
 
 ### Logs
 
 - **`get_logs`** — Full JSON pipeline log queries (aggregations, filters, field extraction)
-- **`get_service_logs`** — Raw log lines for a service, filterable by severity and body content
+- **`get_service_logs`** — Log lines for a service, filterable by severity and body content; summarized over 20 lines unless `response_mode` is `raw`
 - **`get_log_patterns`** — A service's log lines in a window clustered into message templates, with count, first/last seen, severity mix and a sample
 - **`get_emerging_log_patterns`** — Log templates that are new, increased, decreased or disappeared against a baseline window, with counts from both
 - **`get_log_attributes`** — Global catalog of attributes in the log schema for a time window
@@ -320,7 +320,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`validate_alert_expression`** — Dry-run an alert expression against an alert group's KPIs without saving anything
 - **`describe_alert_chart`** — Read-only: the alertable signals (key, unit) on a Discover chart (`discover-service`, `discover-exceptions`)
 - **`create_alert`** — Create an alert rule (static, or adaptive via `adaptive_std_cmp`) in an existing alert group; always created disabled as a draft. Create once; refine with `update_alert` / `patch_alert`
-- **`create_alert_from_chart`** — Create a static-threshold alert rule from a Discover chart in one call. Unlike `create_alert`, the rule is enabled immediately
+- **`create_alert_from_chart`** — Create a static-threshold alert rule from a Discover chart in one call. Like `create_alert`, the rule is created disabled as a draft
 - **`update_alert`** — Full replacement of a rule's evaluation config (may return a replacement rule ID)
 - **`patch_alert`** — Partial change to a rule: enable/pause, `mute_until`, responder `properties`, weekly `recurring_mute_schedule` (or `clear_recurring_mute_schedule`)
 - **`delete_alert`** — Permanently delete an alert rule
@@ -341,8 +341,8 @@ Rules, channels and attachments these tools create are marked `created_via: last
 - **`list_dashboards`** — All custom dashboards in your org: IDs, names, and metadata
 - **`get_dashboard`** — Full dashboard definition by ID, including panels and queries
 - **`validate_dashboard`** — Read-only lint + execute + classify for a saved dashboard id or an inline `dashboard_definition` over a ≤24h window. Never creates or updates dashboards
-- **`create_dashboard`** — Create a net-new custom dashboard once (panels, queries, metadata). After the id is returned, refine with `update_dashboard`.
-- **`update_dashboard`** — Refine an existing dashboard by ID (full replacement; readonly system dashboards return an error)
+- **`create_dashboard`** — Create a net-new custom dashboard once (panels, queries, metadata). After the id is returned, edit panels with `patch_dashboard`.
+- **`update_dashboard`** — Restructure most of an existing dashboard by ID (full replacement; readonly system dashboards return an error). For individual panel edits use `patch_dashboard`
 - **`patch_dashboard`** — Targeted edits to an existing dashboard by ID (add/update/remove/move panel, set title, set variable); returns a compact diff, not the full dashboard
 - **`delete_dashboard`** — Delete a custom dashboard by ID
 - **`list_dashboard_snapshots`** — Frozen point-in-time snapshots for a dashboard (metadata only)
@@ -542,7 +542,7 @@ Returns a per-series summary by default: `points`, `missing_points` (availabilit
 - `lookback_minutes` (integer, optional): Current window. Default: 60.
 - `start_time_iso` / `end_time_iso` (string, optional): Explicit current window.
 - `baseline_start_time_iso` / `baseline_end_time_iso` (string, optional): Explicit baseline. Defaults to the immediately preceding equal-duration window.
-- `datasource` (string, optional): Restrict the comparison to one datasource.
+- `datasource` (string, optional): Omit for the default; approximate names resolve as for the Prometheus tools. The response names the default or closest match used; ambiguous names return candidates without querying.
 - `env` (string, optional): Defaults to `prod`.
 - `max_services` / `max_operations` (integer, optional): Default 10, max 10 each.
 
@@ -630,12 +630,13 @@ Use `service_name` as `ServiceName`, `env` as the environment when present, and 
 
 - `service_name` (string, required)
 - `lookback_minutes` (integer, optional): Default: 60.
-- `limit` (integer, optional): Default: 20.
+- `limit` (integer, optional): Default: 100, or 20 with `response_mode: "raw"`.
 - `env` (string, optional)
 - `severity_filters` (array, optional): e.g. `["error", "warn"]`. OR logic.
 - `body_filters` (array, optional): e.g. `["timeout", "failed"]`. OR logic.
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `index` (string, optional)
+- `response_mode` (string, optional): `summary` (default; also for `null`) or `raw`. Over 20 lines, `logs` is replaced by the same `summary` as `get_logs`, with the other fields kept; `raw` returns the entries.
 
 Multiple filter types combine with AND. Each array uses OR internally.
 Use `get_logs` for broad aggregate counts first; use `get_service_logs` only after narrowing to a service/env/index and a small sample set.
@@ -869,7 +870,7 @@ Notification routing is configured on the alert group, not the rule.
 
 ### create_alert_from_chart
 
-Creates a static-threshold rule from a chart described by `describe_alert_chart`. The rule is created enabled and fires as soon as its condition is met.
+Creates a static-threshold rule from a chart described by `describe_alert_chart`. Like `create_alert`, the rule is created disabled as a draft and does not fire; promote it with `patch_alert` `is_disabled=false` only after the user confirms. The chart API creates rules enabled, so the tool disables the rule right after creating it; if that fails, the result is an error naming the rule id, which may be live.
 
 - `surface` / `chart_key` / `service_name` / `signal_key` / `name` (string, required)
 - `env` (string, optional)
@@ -978,7 +979,7 @@ Returns up to 3 closest matches with similarity scores. Use this before any tool
 ### get_service_profile
 
 - `service_name` (string, required): Service to derive a telemetry profile for.
-- `datasource` (string, optional): Datasource name. Omit for the default.
+- `datasource` (string, optional): Datasource name. Omit for the default; an approximate name resolves as for the Prometheus tools.
 
 Returns a short investigation brief followed by the full profile as raw JSON: signal presence (`logs`/`traces`/`metrics` as `present`, `absent`, or `unknown`), language and runtime, deployment environments, log `signal_shape` (`log_format`, `severity_set`, `level_field`, `trace_context_in_logs`), and a recommended ingest fix where one applies. When the backend reports `freshness`, the brief adds a `last seen` line with `freshness.logs.last_seen` and `freshness.traces.last_seen` (RFC3339, or `none` when null), and a `traces stale` warning when `freshness.traces_stale` is `true`: spans stopped while logs continued, so investigate a regression around `freshness.traces.last_seen`, not missing setup. Derived upstream and cached with a ~15 minute TTL.
 
@@ -1006,14 +1007,14 @@ Returns `dashboard_validation/v1`: per-panel lint + execute classification (`dat
 
 ### create_dashboard
 
-Net-new only. After this call returns `dashboard.id`, refine with `update_dashboard` — do not create again to add, trim, or fix panels.
+Net-new only. After this call returns `dashboard.id`, edit panels with `patch_dashboard` (or restructure with `update_dashboard`) — do not create again to add, trim, or fix panels.
 
 - `dashboard` (object, required): Dashboard definition with `name` and `panels[]`. Each panel requires `name`, `version`, `layout` (`x`, `y`, `w`, `h`), `visualization.type`, and `queries[]`.
 - `metadata` (object, optional): Dashboard metadata — `_category` and `_type` fields (e.g. `{"_category":"custom","_type":"metrics"}`).
 
 ### update_dashboard
 
-Prefer this after create. Full replacement by id (same body as create).
+Use only to restructure most of a dashboard; for adding, editing, removing or moving individual panels use `patch_dashboard`. Full replacement by id (same body as create): every panel must be re-sent exactly.
 
 - `id` (string, required): Dashboard UUID to update.
 - `dashboard` (object, required): Full replacement dashboard body (same shape as create).

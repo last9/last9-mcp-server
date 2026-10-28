@@ -220,6 +220,11 @@ func decodeResponse(resp *http.Response, op string, out any, required bool, maxB
 		}
 		return nil
 	}
+	// A *[]byte target takes the body as sent, for tools that relay it unparsed.
+	if b, ok := out.(*[]byte); ok {
+		*b = raw
+		return nil
+	}
 	if len(raw) == 0 {
 		return nil
 	}

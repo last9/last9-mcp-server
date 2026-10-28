@@ -18,7 +18,14 @@ func validateID(id string) error {
 }
 
 func validateDashboardRequest(dashboard json.RawMessage) error {
-	return validateJSONObject("dashboard", dashboard, true)
+	if err := validateJSONObject("dashboard", dashboard, true); err != nil {
+		return err
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(dashboard, &doc); err != nil {
+		return fmt.Errorf("dashboard must be valid JSON: %w", err)
+	}
+	return checkDashboardQueryTypes(doc)
 }
 
 func validateMetadata(metadata json.RawMessage) error {
