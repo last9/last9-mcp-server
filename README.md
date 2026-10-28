@@ -1111,7 +1111,31 @@ No parameters. Returns a safe projection of datasources (no credential fields).
 
 ## Testing
 
-See [TESTING.md](TESTING.md) for integration test setup and instructions.
+Run the test goroutine analyzer without executing the application tests:
+
+```bash
+make lint-test
+```
+
+This runs Go's `testinggoroutine` analyzer over all packages, including their
+`*_test.go` files, and checks it against unsafe and safe fixtures. The same lint
+check runs in the normal `go test ./...` suite, including CI.
+
+`Fatal`, `Fatalf`, and `FailNow` on `testing.T` or `testing.B` must run in the
+parent test goroutine. Workers should send errors back for the parent to assert:
+
+```go
+errs := make(chan error, 1)
+go func() { errs <- doWork() }()
+if err := <-errs; err != nil {
+    t.Fatal(err)
+}
+```
+
+The analyzer catches direct calls in `go func` closures; it is not a general
+interprocedural check for assertions hidden behind arbitrary helper calls.
+Run `go test ./...` for the full suite; integration tests skip unless
+`TEST_REFRESH_TOKEN` is set.
 
 ---
 
