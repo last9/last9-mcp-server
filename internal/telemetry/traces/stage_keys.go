@@ -14,7 +14,6 @@ func keySet(keys ...string) map[string]struct{} {
 	return m
 }
 
-// traceAllowedStageKeys lists the keys each get_traces stage type accepts.
 var traceAllowedStageKeys = map[string]map[string]struct{}{
 	"filter":           keySet("type", "query"),
 	"where":            keySet("type", "query"),
@@ -37,7 +36,6 @@ func traceStageKeyTip(key, stageType string) string {
 	return ""
 }
 
-// validateTraceStageKeyAllowlist rejects keys not allowed for the stage type.
 func validateTraceStageKeyAllowlist(stage map[string]interface{}, stageType, path string) error {
 	allowed, ok := traceAllowedStageKeys[stageType]
 	if !ok {

@@ -36,15 +36,25 @@ func TestTraceStageKeyAllowlist_Rejects(t *testing.T) {
 }
 
 func TestTraceStageKeyAllowlist_AllowsDeclaredKeys(t *testing.T) {
-	for stageType, allowed := range traceAllowedStageKeys {
-		stage := map[string]interface{}{}
-		for k := range allowed {
-			stage[k] = nil
-		}
-		stage["type"] = stageType
-		if err := validateTraceStageKeyAllowlist(stage, stageType, "p"); err != nil {
-			t.Errorf("%s: declared keys rejected: %v", stageType, err)
-		}
+	q := map[string]interface{}{"$eq": []interface{}{"ServiceName", "x"}}
+	tests := []struct {
+		name  string
+		stage map[string]interface{}
+	}{
+		{"filter query", map[string]interface{}{"type": "filter", "query": q}},
+		{"where query", map[string]interface{}{"type": "where", "query": q}},
+		{"parse field", map[string]interface{}{"type": "parse", "parser": "json", "field": "Body", "pattern": "(?P<id>.*)", "labels": map[string]interface{}{"user_id": "uid"}}},
+		{"transform transforms", map[string]interface{}{"type": "transform", "transforms": []interface{}{map[string]interface{}{"function": map[string]interface{}{"$split": []interface{}{"SpanName", "/", 1}}, "as": "endpoint"}}}},
+		{"select order limit offset", map[string]interface{}{"type": "select", "labels": map[string]interface{}{"ServiceName": "service"}, "order": "Duration", "limit": 10, "offset": 1}},
+		{"aggregate fields", map[string]interface{}{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{"function": map[string]interface{}{"$count": []interface{}{}}, "as": "count"}}, "groupby": map[string]interface{}{"ServiceName": "service"}}},
+		{"window aggregate", map[string]interface{}{"type": "window_aggregate", "function": map[string]interface{}{"$count": []interface{}{}}, "as": "count", "window": []interface{}{5, "m"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := SanitizeTraceJSONQuery([]map[string]interface{}{tt.stage}); err != nil {
+				t.Fatalf("valid stage rejected: %v", err)
+			}
+		})
 	}
 }
 
