@@ -86,17 +86,14 @@ func TestGetTracesWaitsForAFreeSlotBeyondTheConcurrencyCap(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	result, _, err := handler(ctx, &mcp.CallToolRequest{}, oneChunkTracesArgs())
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
+	_, _, err := handler(ctx, &mcp.CallToolRequest{}, oneChunkTracesArgs())
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected admission deadline error, got %v", err)
 	}
 	if got := arrived.Load(); got != maxConcurrentGetTraces {
 		t.Fatalf("upstream saw %d calls, want %d: the call over the cap must not fetch", got, maxConcurrentGetTraces)
 	}
-	if !result.IsError {
-		t.Fatalf("expected an error result for the call over the cap, got %+v", result)
-	}
-	if text := resultText(result); !strings.Contains(text, "concurrent get_traces calls") {
+	if text := err.Error(); !strings.Contains(text, "concurrent get_traces calls") {
 		t.Fatalf("busy error should name the concurrency cap, got %q", text)
 	}
 

@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- At most 3 `get_traces` calls now run at once per server process; a further call waits for one to finish, so a burst of overlapping wide calls no longer multiplies peak memory and OOM-kills the server. A call still waiting at its deadline returns an error saying the server was busy, without querying traces. Invalid queries are rejected before waiting (#445).
+- At most 3 `get_traces` calls now run at once per server process; a further call waits for one to finish, so a burst of overlapping wide calls no longer multiplies peak memory and OOM-kills the server. A call still waiting at its deadline returns an error saying the server was busy, preserved through the tool-call deadline wrapper, without querying traces. Invalid queries are rejected before waiting (#445).
 
 ## [0.21.0] - 2026-10-28
 

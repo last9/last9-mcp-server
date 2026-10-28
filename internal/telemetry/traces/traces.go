@@ -55,10 +55,10 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 		case getTracesSlots <- struct{}{}:
 			defer func() { <-getTracesSlots }()
 		case <-ctx.Done():
-			return utils.ToolErrorResult(fmt.Sprintf(
-				"get_traces is busy: %d concurrent get_traces calls were already running on this server and none finished before this call's deadline. Retry shortly; a narrower time window or lower limit makes calls finish sooner.",
-				maxConcurrentGetTraces,
-			)), nil, nil
+			return nil, nil, fmt.Errorf(
+				"get_traces is busy: %d concurrent get_traces calls were already running on this server and none finished before this call's deadline. Retry shortly; a narrower time window or lower limit makes calls finish sooner: %w",
+				maxConcurrentGetTraces, ctx.Err(),
+			)
 		}
 
 		// Handle tracejson_query directly
