@@ -43,9 +43,10 @@ type Config struct {
 	LogSearchTimeout time.Duration
 
 	// HTTP server configuration
-	HTTPMode bool   // Enable HTTP server mode instead of STDIO
-	Port     string // HTTP server port
-	Host     string // HTTP server host
+	HTTPMode          bool   // Enable HTTP server mode instead of STDIO
+	UserTokenFallback bool   // Validate user tokens without using them for tool calls
+	Port              string // HTTP server port
+	Host              string // HTTP server host
 
 	OrgSlug    string // Organization slug for multi-tenant support
 	ActionURL  string

@@ -15,6 +15,7 @@ import (
 )
 
 type datasourceChoice struct {
+	name       string
 	cfg        models.Config
 	note       string
 	candidates []string
@@ -29,10 +30,11 @@ func chooseDatasource(cfg models.Config, requested string) (datasourceChoice, er
 	requested = strings.TrimSpace(requested)
 	if requested == "" {
 		var note string
-		if name := defaultDatasourceName(cfg); name != "" {
+		name := defaultDatasourceName(cfg)
+		if name != "" {
 			note = fmt.Sprintf("Using datasource %q (default).", name)
 		}
-		return datasourceChoice{cfg: cfg, note: note}, nil
+		return datasourceChoice{cfg: cfg, name: name, note: note}, nil
 	}
 
 	names := make([]string, 0, len(cfg.Datasources))
@@ -49,7 +51,7 @@ func chooseDatasource(cfg models.Config, requested string) (datasourceChoice, er
 		if err != nil {
 			return datasourceChoice{}, err
 		}
-		choice := datasourceChoice{cfg: resolved}
+		choice := datasourceChoice{cfg: resolved, name: match.Name}
 		if match.Kind == namematch.Closest {
 			choice.note = fmt.Sprintf("Using datasource %q (closest match to %q).", match.Name, requested)
 		}

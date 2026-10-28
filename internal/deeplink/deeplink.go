@@ -21,7 +21,7 @@ const (
 	RouteNotificationChannels = "settings/notification-channels"
 	RouteDropRules            = "control-plane/%s/drop" // requires clusterId
 	RouteRemapping            = "control-plane/%s/remapping"
-	RouteDashboards = "dashboards"
+	RouteDashboards           = "dashboards"
 )
 
 // Builder helps construct deep links

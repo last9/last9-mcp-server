@@ -18,6 +18,7 @@ import (
 	"last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/telemetry/traces"
 	"last9-mcp/internal/toolsets"
+	"last9-mcp/internal/utils"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -76,6 +77,9 @@ func TestToolCallEndsAtDeadlineWhenUpstreamStalls(t *testing.T) {
 	if text := toolResultText(res); !strings.Contains(text, "tool-call deadline") || !strings.Contains(text, "Narrow the time range") {
 		t.Fatalf("want the deadline named with next steps, got %q", text)
 	}
+	if res.Meta[utils.ErrorTypeMetaKey] != utils.SystemErrorType {
+		t.Fatalf("deadline error missing system_error tag: %v", res.Meta)
+	}
 	if requests.Load() == 0 {
 		t.Fatal("upstream was never called; the test did not exercise a stalled request")
 	}
@@ -107,6 +111,9 @@ func TestWriteToolAtDeadlineNamesVerifyCall(t *testing.T) {
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "create_foo", Arguments: json.RawMessage(`{}`)})
 	if err != nil {
 		t.Fatalf("call: %v", err)
+	}
+	if _, tagged := res.Meta[utils.ErrorTypeMetaKey]; tagged {
+		t.Fatalf("unknown write outcome should remain untagged: %v", res.Meta)
 	}
 	text := toolResultText(res)
 	if !res.IsError || !strings.Contains(text, "may or may not have been applied") || !strings.Contains(text, "get_foos, by name") {
@@ -184,6 +191,9 @@ func TestReadToolResultAtDeadlineIsDeadlineError(t *testing.T) {
 			res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tt.tool, Arguments: tt.args})
 			if err != nil {
 				t.Fatalf("call: %v", err)
+			}
+			if res.Meta[utils.ErrorTypeMetaKey] != utils.SystemErrorType {
+				t.Fatalf("deadline error missing system_error tag: %v", res.Meta)
 			}
 			if text := toolResultText(res); !res.IsError || !strings.Contains(text, "tool-call deadline") || !strings.Contains(text, "Narrow the time range") {
 				t.Fatalf("want an isError result naming the deadline, got isError=%v %q", res.IsError, text)
