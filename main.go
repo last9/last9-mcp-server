@@ -142,10 +142,9 @@ func parseDumpToolFilter(args []string) (toolsets.Filter, error) {
 	return flags.filter()
 }
 
-// toolsetServerBuilder returns what main calls to build the startup server and,
-// under --http, the server for a request's narrowed toolsets: cfg with only
-// the toolsets replaced. In --http mode every built server shares one user
-// token middleware, so a narrowed server never skips token enforcement.
+// Startup and narrowed HTTP servers share one user token middleware so
+// narrowing toolsets cannot bypass token enforcement. The builder changes
+// only the configured toolsets.
 func toolsetServerBuilder(cfg models.Config) func(toolsets.Set) (*last9mcp.Last9MCPServer, error) {
 	var middleware []mcp.Middleware
 	if cfg.HTTPMode {

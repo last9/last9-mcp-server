@@ -28,11 +28,9 @@ const (
 	maxVerifiedUserTokens = 10_000
 )
 
-// userTokenVerifier proves a delegated token is accepted by the Last9 API
-// before it is bound to a call: its claims are unsigned input, so a token
-// with valid claims and a forged signature would otherwise reach tools that
-// answer from startup-cached data without any API call. Successes are cached
-// by token hash, never by the token itself.
+// Unsigned claims cannot authenticate a token: verify it with the API before
+// serving startup-cached data that makes no API call. Cache successes by hash
+// rather than retaining the token.
 type userTokenVerifier struct {
 	check func(ctx context.Context, token string) error
 	now   func() time.Time
