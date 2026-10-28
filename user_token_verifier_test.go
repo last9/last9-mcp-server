@@ -88,6 +88,7 @@ func TestUserTokenVerifierClassifiesFailures(t *testing.T) {
 		err  error
 		want string
 	}{
+		{"400 bad signature", &utils.UpstreamHTTPError{StatusCode: http.StatusBadRequest}, "unauthorized"},
 		{"401", &utils.UpstreamHTTPError{StatusCode: http.StatusUnauthorized}, "unauthorized"},
 		{"403 wrapped", fmt.Errorf("verify: %w", &utils.UpstreamHTTPError{StatusCode: http.StatusForbidden}), "unauthorized"},
 		{"500", &utils.UpstreamHTTPError{StatusCode: http.StatusInternalServerError}, "verify_failed"},

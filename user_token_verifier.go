@@ -74,7 +74,7 @@ func userTokenKey(token string) [sha256.Size]byte {
 }
 
 // verify returns "ok" when the API accepts token, "unauthorized" when it
-// refuses it (401/403), and "verify_failed" when it could not tell. A success
+// refuses it (400/401/403), and "verify_failed" when it could not tell. A success
 // is cached until min(exp, now+userTokenVerifyTTL); failures are not cached.
 func (v *userTokenVerifier) verify(ctx context.Context, token string, exp time.Time) string {
 	key := userTokenKey(token)
@@ -153,7 +153,11 @@ func classifyUserTokenCheck(err error) string {
 	switch {
 	case err == nil:
 		return "ok"
-	case errors.As(err, &upstream) && (upstream.StatusCode == http.StatusUnauthorized || upstream.StatusCode == http.StatusForbidden):
+	case errors.As(err, &upstream) && (upstream.StatusCode == http.StatusBadRequest ||
+		upstream.StatusCode == http.StatusUnauthorized || upstream.StatusCode == http.StatusForbidden):
+		// The API answers 400 to an access token it cannot validate (bad
+		// signature, wrong issuer, revoked); the verify read sends no input of
+		// its own, so a 400 here can only be about the token.
 		return "unauthorized"
 	default:
 		return "verify_failed"
