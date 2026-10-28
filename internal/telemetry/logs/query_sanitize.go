@@ -10,12 +10,13 @@ import (
 	"strings"
 
 	"last9-mcp/internal/otelids"
+	"last9-mcp/internal/telemetry"
 	"last9-mcp/internal/utils"
 )
 
 var (
-	logAttributeFieldRefPattern = regexp.MustCompile(`^attributes\['[^'\[\]]+'\]$`)
-	logResourceFieldRefPattern  = regexp.MustCompile(`^resources\['[^'\[\]]+'\]$`)
+	logAttributeFieldRefPattern = regexp.MustCompile(`^attributes\['[^'\[\]\\]+'\]$`)
+	logResourceFieldRefPattern  = regexp.MustCompile(`^resources\['[^'\[\]\\]+'\]$`)
 	logKubernetesAliasPattern   = regexp.MustCompile(`^k8s(?:\.[A-Za-z0-9_/-]+)+$`)
 	logSimpleFieldRefPattern    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
@@ -49,14 +50,6 @@ var logFilterLogicalOperators = map[string]struct{}{
 	"$not": {},
 }
 
-var logAggregateFieldArgIndexes = map[string][]int{
-	"$avg":      {0},
-	"$max":      {0},
-	"$min":      {0},
-	"$quantile": {1},
-	"$sum":      {0},
-}
-
 func sanitizeLogJSONQuery(stages []map[string]interface{}) ([]map[string]interface{}, error) {
 	return sanitizeLogJSONQueryPrefixed(stages, "logjson_query")
 }
@@ -66,6 +59,12 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 		pathPrefix = "logjson_query"
 	}
 	sanitized := make([]map[string]interface{}, 0, len(stages))
+	aggregateAliases := make(map[string]struct{})
+	rememberAlias := func(value interface{}) {
+		if alias, ok := value.(string); ok && telemetry.ValidateAggregateAlias(alias, "") == nil {
+			aggregateAliases[alias] = struct{}{}
+		}
+	}
 
 	for stageIndex, stage := range stages {
 		sanitizedStage := make(map[string]interface{}, len(stage))
@@ -81,9 +80,9 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 			case "query":
 				sanitizedValue, err = sanitizeLogCondition(value, stagePath+".query")
 			case "aggregates":
-				sanitizedValue, err = sanitizeLogAggregates(value, stagePath+".aggregates")
+				sanitizedValue, err = sanitizeLogAggregates(value, stagePath+".aggregates", aggregateAliases)
 			case "function":
-				sanitizedValue, err = sanitizeLogFunction(value, stagePath+".function")
+				sanitizedValue, err = sanitizeLogFunction(value, stagePath+".function", aggregateAliases)
 			case "groupby":
 				sanitizedValue, err = sanitizeLogGroupBy(value, stagePath+".groupby")
 			default:
@@ -101,6 +100,20 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 		if stageType, _ := sanitizedStage["type"].(string); stageType == "parse" {
 			if field, _ := sanitizedStage["field"].(string); strings.TrimSpace(field) == "" {
 				sanitizedStage["field"] = "Body"
+			}
+		}
+
+		switch sanitizedStage["type"] {
+		case "aggregate", "window_aggregate":
+			rememberAlias(sanitizedStage["as"])
+			aggregates, _ := sanitizedStage["aggregates"].([]interface{})
+			for _, rawAggregate := range aggregates {
+				aggregate, _ := rawAggregate.(map[string]interface{})
+				rememberAlias(aggregate["as"])
+			}
+			groupBy, _ := sanitizedStage["groupby"].(map[string]interface{})
+			for _, alias := range groupBy {
+				rememberAlias(alias)
 			}
 		}
 
@@ -216,6 +229,9 @@ func sanitizeLogFieldOperatorArgs(value interface{}, operator string, fieldArgIn
 		if err := checkLogRegexArg(operator, normalized, fmt.Sprintf("%s[%d]", path, valueIndex)); err != nil {
 			return nil, err
 		}
+		if e := telemetry.CheckNumericComparison(operator, next, normalized, fmt.Sprintf("%s[%d]", path, valueIndex)); e != nil {
+			return nil, newLogValidationError(LogValidationInvalidField, e.Path, e.Message)
+		}
 		sanitized[valueIndex] = normalized
 	}
 	return sanitized, nil
@@ -311,7 +327,7 @@ func coerceLogFilterValueToString(value interface{}, path string) (string, error
 	}
 }
 
-func sanitizeLogAggregates(value interface{}, path string) (interface{}, error) {
+func sanitizeLogAggregates(value interface{}, path string, aggregateAliases map[string]struct{}) (interface{}, error) {
 	aggregates, ok := value.([]interface{})
 	if !ok {
 		return value, nil
@@ -328,7 +344,7 @@ func sanitizeLogAggregates(value interface{}, path string) (interface{}, error) 
 		sanitizedAggregate := make(map[string]interface{}, len(aggregateMap))
 		for key, item := range aggregateMap {
 			if key == "function" {
-				next, err := sanitizeLogFunction(item, fmt.Sprintf("%s[%d].function", path, index))
+				next, err := sanitizeLogFunction(item, fmt.Sprintf("%s[%d].function", path, index), aggregateAliases)
 				if err != nil {
 					return nil, err
 				}
@@ -343,7 +359,7 @@ func sanitizeLogAggregates(value interface{}, path string) (interface{}, error) 
 	return sanitized, nil
 }
 
-func sanitizeLogFunction(value interface{}, path string) (interface{}, error) {
+func sanitizeLogFunction(value interface{}, path string, aggregateAliases map[string]struct{}) (interface{}, error) {
 	functionMap, ok := value.(map[string]interface{})
 	if !ok {
 		return value, nil
@@ -358,21 +374,20 @@ func sanitizeLogFunction(value interface{}, path string) (interface{}, error) {
 		}
 
 		sanitizedArgs := append([]interface{}(nil), args...)
-		for _, fieldArgIndex := range logAggregateFieldArgIndexes[operator] {
-			if fieldArgIndex >= len(sanitizedArgs) {
-				continue
+		if strings.TrimSuffix(operator, "_over_time") == "$quantile_exact" {
+			_, hasResult := aggregateAliases["__result__"]
+			sanitizedArgs = telemetry.DefaultQuantileExactField(sanitizedArgs, hasResult)
+		}
+		if field, i, ok := telemetry.AggregateFieldArg(operator, sanitizedArgs); ok {
+			field = strings.TrimSpace(field)
+			if _, known := aggregateAliases[field]; !known {
+				next, err := sanitizeLogFieldRef(field, fmt.Sprintf("%s.%s[%d]", path, operator, i))
+				if err != nil {
+					return nil, err
+				}
+				field = next
 			}
-
-			fieldRef, ok := sanitizedArgs[fieldArgIndex].(string)
-			if !ok {
-				continue
-			}
-
-			next, err := sanitizeLogFieldRef(fieldRef, fmt.Sprintf("%s.%s[%d]", path, operator, fieldArgIndex))
-			if err != nil {
-				return nil, err
-			}
-			sanitizedArgs[fieldArgIndex] = next
+			sanitizedArgs[i] = field
 		}
 
 		sanitized[operator] = sanitizedArgs
