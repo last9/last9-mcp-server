@@ -61,6 +61,28 @@ func TestGetTracesWaitsForAFreeSlotBeyondTheConcurrencyCap(t *testing.T) {
 			t.Fatalf("only %d of %d held calls reached upstream", arrived.Load(), maxConcurrentGetTraces)
 		}
 	}
+	for _, tt := range []struct {
+		name string
+		args GetTracesArgs
+	}{
+		{name: "start_time_iso", args: invalidTraceTimeArgs("start")},
+		{name: "end_time_iso", args: invalidTraceTimeArgs("end")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+			defer cancel()
+			_, _, err := handler(ctx, &mcp.CallToolRequest{}, tt.args)
+			if err == nil || !strings.Contains(err.Error(), "failed to parse time range") {
+				t.Fatalf("expected immediate time validation error, got %v", err)
+			}
+			if ctx.Err() != nil {
+				t.Fatalf("invalid bounds waited for a slot: %v", ctx.Err())
+			}
+			if got := arrived.Load(); got != maxConcurrentGetTraces {
+				t.Fatalf("invalid bounds reached upstream: got %d requests, want %d", got, maxConcurrentGetTraces)
+			}
+		})
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -90,6 +112,16 @@ func TestGetTracesWaitsForAFreeSlotBeyondTheConcurrencyCap(t *testing.T) {
 	if result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, oneChunkTracesArgs()); err != nil || result.IsError {
 		t.Fatalf("a call after the held calls finished must get a slot, got err=%v result=%+v", err, result)
 	}
+}
+
+func invalidTraceTimeArgs(bound string) GetTracesArgs {
+	args := oneChunkTracesArgs()
+	if bound == "start" {
+		args.StartTimeISO = "not-a-time"
+	} else {
+		args.EndTimeISO = "not-a-time"
+	}
+	return args
 }
 
 func resultText(result *mcp.CallToolResult) string {

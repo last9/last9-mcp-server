@@ -47,6 +47,9 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 		if err := SanitizeTraceJSONQuery(args.TracejsonQuery); err != nil {
 			return nil, nil, err
 		}
+		if _, _, err := parseTimeRangeFromArgs(args); err != nil {
+			return nil, nil, fmt.Errorf("failed to parse time range: %v", err)
+		}
 
 		select {
 		case getTracesSlots <- struct{}{}:
