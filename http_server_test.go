@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -124,35 +125,9 @@ func TestStatelessHTTPUserToken(t *testing.T) {
 
 	post := func(body string, bearer ...string) map[string]any {
 		t.Helper()
-		req, err := http.NewRequest(http.MethodPost, ts.URL, strings.NewReader(body))
+		result, err := postMCPTestRequest(ts.Client(), ts.URL, body, bearer...)
 		if err != nil {
 			t.Fatal(err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "application/json, text/event-stream")
-		if len(bearer) > 0 {
-			req.Header.Set("Authorization", "Bearer "+bearer[0])
-		}
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer resp.Body.Close()
-		data, err := io.ReadAll(resp.Body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.HasPrefix(string(data), "event:") {
-			for _, line := range strings.Split(string(data), "\n") {
-				if strings.HasPrefix(line, "data: ") {
-					data = []byte(strings.TrimPrefix(line, "data: "))
-					break
-				}
-			}
-		}
-		var result map[string]any
-		if err := json.Unmarshal(data, &result); err != nil {
-			t.Fatalf("response %q: %v", data, err)
 		}
 		return result
 	}
@@ -172,18 +147,28 @@ func TestStatelessHTTPUserToken(t *testing.T) {
 		testUserJWT(t, map[string]any{"exp": time.Now().Add(time.Hour).Unix(), "aud": []string{api.URL}}),
 		testUserJWT(t, map[string]any{"exp": time.Now().Add(2 * time.Hour).Unix(), "aud": []string{api.URL}}),
 	}
+	results := make([]map[string]any, len(tokens))
+	errs := make([]error, len(tokens))
 	var wg sync.WaitGroup
 	for i, token := range tokens {
-		wg.Add(1)
-		go func(i int, token string) {
-			defer wg.Done()
-			body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": i + 4, "method": "tools/call", "params": map[string]any{"name": "probe", "arguments": map[string]any{"id": string(rune('a' + i))}, "_meta": map[string]any{"last9_user_token": token}}})
-			if result := post(string(body)); result["error"] != nil {
-				t.Errorf("call %d: %v", i, result["error"])
+		wg.Go(func() {
+			body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": i + 4, "method": "tools/call", "params": map[string]any{"name": "probe", "arguments": map[string]any{"id": string(rune('a' + i))}, "_meta": map[string]any{"last9_user_token": token}}})
+			if err != nil {
+				errs[i] = err
+				return
 			}
-		}(i, token)
+			results[i], errs[i] = postMCPTestRequest(ts.Client(), ts.URL, string(body))
+		})
 	}
 	wg.Wait()
+	for i, result := range results {
+		if errs[i] != nil {
+			t.Fatalf("call %d: %v", i, errs[i])
+		}
+		if result["error"] != nil {
+			t.Fatalf("call %d: %v", i, result["error"])
+		}
+	}
 	if result := post(`{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"probe","arguments":{"id":"header"}}}`, tokens[0]); result["error"] != nil {
 		t.Fatalf("header call: %v", result["error"])
 	}
@@ -634,5 +619,77 @@ func TestHTTPToolsetsRestatingStartupReusesIt(t *testing.T) {
 	}
 	if n := builds.Load(); n != 1 {
 		t.Fatalf("built %d servers, want only the startup one", n)
+	}
+}
+
+func postMCPTestRequest(client *http.Client, endpoint, body string, bearer ...string) (map[string]any, error) {
+	req, err := http.NewRequest(http.MethodPost, endpoint, strings.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	if len(bearer) > 0 {
+		req.Header.Set("Authorization", "Bearer "+bearer[0])
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if strings.HasPrefix(string(data), "event:") {
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(line, "data: ") {
+				data = []byte(strings.TrimPrefix(line, "data: "))
+				break
+			}
+		}
+	}
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("response %q: %w", data, err)
+	}
+	return result, nil
+}
+
+type mcpTestTransport func(*http.Request) (*http.Response, error)
+
+func (f mcpTestTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func TestPostMCPTestRequestConcurrentFailure(t *testing.T) {
+	client := &http.Client{Transport: mcpTestTransport(func(r *http.Request) (*http.Response, error) {
+		body := `{"result":{}}`
+		if r.URL.Path == "/broken" {
+			body = "invalid response"
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}
+	errs := make([]error, 2)
+	returned := make([]bool, 2)
+	var wg sync.WaitGroup
+	for i, path := range []string{"/ok", "/broken"} {
+		wg.Go(func() {
+			_, errs[i] = postMCPTestRequest(client, "http://mcp.test"+path, "{}")
+			returned[i] = true
+		})
+	}
+	wg.Wait()
+	for i, ok := range returned {
+		if !ok {
+			t.Fatalf("worker %d exited without returning its error to the parent", i)
+		}
+	}
+	if errs[0] != nil {
+		t.Fatalf("successful call: %v", errs[0])
+	}
+	var syntax *json.SyntaxError
+	if !errors.As(errs[1], &syntax) {
+		t.Fatalf("broken call = %v, want JSON syntax error", errs[1])
 	}
 }
