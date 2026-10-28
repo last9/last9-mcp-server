@@ -15,6 +15,7 @@ import (
 )
 
 type datasourceChoice struct {
+	name       string
 	cfg        models.Config
 	note       string
 	candidates []string
@@ -29,10 +30,11 @@ func chooseDatasource(cfg models.Config, requested string) (datasourceChoice, er
 	requested = strings.TrimSpace(requested)
 	if requested == "" {
 		var note string
-		if name := defaultDatasourceName(cfg); name != "" {
+		name := defaultDatasourceName(cfg)
+		if name != "" {
 			note = fmt.Sprintf("Using datasource %q (default).", name)
 		}
-		return datasourceChoice{cfg: cfg, note: note}, nil
+		return datasourceChoice{cfg: cfg, name: name, note: note}, nil
 	}
 
 	names := make([]string, 0, len(cfg.Datasources))
@@ -49,7 +51,7 @@ func chooseDatasource(cfg models.Config, requested string) (datasourceChoice, er
 		if err != nil {
 			return datasourceChoice{}, err
 		}
-		choice := datasourceChoice{cfg: resolved}
+		choice := datasourceChoice{cfg: resolved, name: match.Name}
 		if match.Kind == namematch.Closest {
 			choice.note = fmt.Sprintf("Using datasource %q (closest match to %q).", match.Name, requested)
 		}
@@ -110,9 +112,14 @@ func promToolResult(raw []byte, err error, note string) (*mcp.CallToolResult, an
 // promBodyResult serves an upstream body as is, with the datasource note as a
 // second block so the body stays parseable.
 func promBodyResult(body []byte, note string) *mcp.CallToolResult {
-	content := []mcp.Content{&mcp.TextContent{Text: string(body)}}
+	return withDatasourceNote(&mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}, note)
+}
+
+// withDatasourceNote adds the note as its own block so the payload block
+// stays parseable.
+func withDatasourceNote(res *mcp.CallToolResult, note string) *mcp.CallToolResult {
 	if note != "" {
-		content = append(content, &mcp.TextContent{Text: note})
+		res.Content = append(res.Content, &mcp.TextContent{Text: note})
 	}
-	return &mcp.CallToolResult{Content: content}
+	return res
 }

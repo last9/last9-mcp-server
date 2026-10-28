@@ -284,7 +284,7 @@ Supports PostgreSQL, MySQL, MongoDB, Redis, Aerospike, and anything else OTel tr
 - **`prometheus_label_values`** — Label values for a given series
 - **`prometheus_labels`** — All labels available for a series
 
-Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`, or per call with `datasource`. An omitted `datasource` uses the default; a near miss (case, separators, one missing, extra or transposed letter) uses its closest match, but a different word, number, environment or region never does; a looser match (two typos, a substring, one changed letter, two swapped letters that could each be a country code, like `es` for `se`) or an ambiguous name returns the candidates and runs no query (not an error). An additional content block names the datasource used whenever you did not name it exactly.
+Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`, or per call with `datasource`. An omitted `datasource` uses the default; a unique near miss that the matcher considers safe (such as a case variant) uses its closest match. A missing, extra or transposed letter is not guaranteed to resolve automatically: even one candidate can require confirmation when the edit could affect a region or environment code. Looser or ambiguous matches return candidates and run no query (not an error); unknown names return an error. An additional content block names the datasource used whenever you did not name it exactly. `get_metric_status`, `get_service_profile`, and `get_apm_service_deviations` resolve `datasource` the same way.
 
 ### Logs
 
@@ -542,7 +542,7 @@ Returns a per-series summary by default: `points`, `missing_points` (availabilit
 - `lookback_minutes` (integer, optional): Current window. Default: 60.
 - `start_time_iso` / `end_time_iso` (string, optional): Explicit current window.
 - `baseline_start_time_iso` / `baseline_end_time_iso` (string, optional): Explicit baseline. Defaults to the immediately preceding equal-duration window.
-- `datasource` (string, optional): Restrict the comparison to one datasource.
+- `datasource` (string, optional): Omit for the default; approximate names resolve as for the Prometheus tools. The response names the default or closest match used; ambiguous names return candidates without querying.
 - `env` (string, optional): Defaults to `prod`.
 - `max_services` / `max_operations` (integer, optional): Default 10, max 10 each.
 
@@ -979,7 +979,7 @@ Returns up to 3 closest matches with similarity scores. Use this before any tool
 ### get_service_profile
 
 - `service_name` (string, required): Service to derive a telemetry profile for.
-- `datasource` (string, optional): Datasource name. Omit for the default.
+- `datasource` (string, optional): Datasource name. Omit for the default; an approximate name resolves as for the Prometheus tools.
 
 Returns a short investigation brief followed by the full profile as raw JSON: signal presence (`logs`/`traces`/`metrics` as `present`, `absent`, or `unknown`), language and runtime, deployment environments, log `signal_shape` (`log_format`, `severity_set`, `level_field`, `trace_context_in_logs`), and a recommended ingest fix where one applies. When the backend reports `freshness`, the brief adds a `last seen` line with `freshness.logs.last_seen` and `freshness.traces.last_seen` (RFC3339, or `none` when null), and a `traces stale` warning when `freshness.traces_stale` is `true`: spans stopped while logs continued, so investigate a regression around `freshness.traces.last_seen`, not missing setup. Derived upstream and cached with a ~15 minute TTL.
 
