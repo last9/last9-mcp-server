@@ -151,17 +151,24 @@ func TestRegisterAllTools_ExposesDashboardObjectSchemas(t *testing.T) {
 	assertRegisteredDashboardSchema(t, toolByName(t, list.Tools, "create_dashboard"), []string{"dashboard"})
 	assertRegisteredDashboardSchema(t, toolByName(t, list.Tools, "update_dashboard"), []string{"id", "dashboard"})
 
-	if got, want := schemaAsMap(t, toolByName(t, list.Tools, "create_dashboard").InputSchema), schemaAsMap(t, dashboards.GetCreateDashboardInputSchema()); !reflect.DeepEqual(got, want) {
+	if got, want := schemaAsMap(t, toolByName(t, list.Tools, "create_dashboard").InputSchema), normalizedSchemaMap(t, dashboards.GetCreateDashboardInputSchema()); !reflect.DeepEqual(got, want) {
 		t.Fatalf("create_dashboard InputSchema mismatch:\ngot  %v\nwant %v", got, want)
 	}
-	if got, want := schemaAsMap(t, toolByName(t, list.Tools, "update_dashboard").InputSchema), schemaAsMap(t, dashboards.GetUpdateDashboardInputSchema()); !reflect.DeepEqual(got, want) {
+	if got, want := schemaAsMap(t, toolByName(t, list.Tools, "update_dashboard").InputSchema), normalizedSchemaMap(t, dashboards.GetUpdateDashboardInputSchema()); !reflect.DeepEqual(got, want) {
 		t.Fatalf("update_dashboard InputSchema mismatch:\ngot  %v\nwant %v", got, want)
 	}
 
 	for _, name := range []string{"list_dashboard_snapshots", "get_dashboard_snapshot", "delete_dashboard_snapshot", "validate_dashboard"} {
 		_ = toolByName(t, list.Tools, name)
 	}
-	if got, want := schemaAsMap(t, toolByName(t, list.Tools, "validate_dashboard").InputSchema), schemaAsMap(t, dashboards.GetValidateDashboardInputSchema()); !reflect.DeepEqual(got, want) {
+	if got, want := schemaAsMap(t, toolByName(t, list.Tools, "validate_dashboard").InputSchema), normalizedSchemaMap(t, dashboards.GetValidateDashboardInputSchema()); !reflect.DeepEqual(got, want) {
 		t.Fatalf("validate_dashboard InputSchema mismatch:\ngot  %v\nwant %v", got, want)
 	}
+}
+
+func normalizedSchemaMap(t *testing.T, schema any) map[string]any {
+	t.Helper()
+	m := schemaAsMap(t, schema)
+	normalizeSchema(m, false)
+	return m
 }

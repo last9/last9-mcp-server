@@ -177,6 +177,9 @@ func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, 
 			err = fmt.Errorf("register %q: %v", tool.Name, r)
 		}
 	}()
+	if normErr := normalizeToolInputSchema[In](tool); normErr != nil {
+		return fmt.Errorf("register %q: %w", tool.Name, normErr)
+	}
 	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, tagSystemErrors(handler)); regErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, regErr)
 	}
