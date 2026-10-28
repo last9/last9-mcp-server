@@ -206,6 +206,10 @@ func NewAlertRuleStateHandler(client *http.Client, cfg models.Config) func(conte
 			}
 		}
 
+		if len(results) == 0 && (args.AlertGroupID != "" || args.RuleName != "" || args.AlertGroupName != "") {
+			return utils.ToolErrorResult("No alert rules matched the supplied filters in the sampled time range. Check alert_group_id, rule_name and alert_group_name with get_alert_config; broaden the time range or remove other filters. An empty history does not establish whether the group or rule exists."), nil, nil
+		}
+
 		// Construct final continuous timeseries for all seen rules. Gaps are zero-filled; see tool description for caveats.
 		finalResults := make(map[string][]Datapoint)
 		for ruleID, tsMap := range results {

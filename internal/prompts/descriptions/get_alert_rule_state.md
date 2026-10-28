@@ -31,6 +31,7 @@ Whether alert rules were firing at each step of a past range.
 
 ## Output shape
 JSON map of rule_id to `[{timestamp, is_firing}]`.
+If an alert_group_id, rule_name or alert_group_name filter matches no rules across all samples, returns a tool error with recovery guidance. This does not prove the group or rule is nonexistent. Without these filters, no matches returns `{}`.
 
 ## Known traps
 `start_time` and `end_time` are absolute times, never durations or offsets like `now-1h`; values before 2000 are rejected. At most 100 samples per call; fewer samples answer faster.
