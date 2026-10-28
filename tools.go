@@ -520,6 +520,19 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Description: prompts.GetEntityAlertRulesDescription,
 	}, alerting.NewGetEntityAlertRulesHandler(client, cfg)))
 
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_entity_kpis",
+		Annotations: readOnlyTool("Get Entity KPIs"),
+		Description: prompts.GetEntityKPIsDescription,
+	}, alerting.NewGetEntityKPIsHandler(client, cfg)))
+
+	reg(registerWriteTool(server, gate, &mcp.Tool{
+		Name:        "create_kpi",
+		Annotations: writeTool("Create KPI", false, false),
+		Description: prompts.CreateKPIDescription,
+	}, "get_entity_kpis for entity_id, looking for a KPI with the name you passed",
+		alerting.NewCreateKPIHandler(client, cfg)))
+
 	// Register describe alert chart tool (read-only enumerate of alertable signals on a covered Discover chart)
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "describe_alert_chart",

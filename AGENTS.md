@@ -102,6 +102,8 @@ The four highest-token tools — `get_logs`, `get_traces`, `get_service_logs`,
 rules + a `last9://reference/...` pointer). Their full manuals live in
 `internal/prompts/references/` (`logjson.md`, `tracejson.md`, `service_logs.md`,
 `metrics.md`, `investigation.md`) and are registered as MCP resources in `resources.go`.
+`alerting.md` is the shared manual for the alert tools; their descriptions keep the critical
+rules and a one-line pointer to it.
 
 - The `*_base.md` suffix means progressive disclosure and nothing else. A description with
   no manual of its own must not carry it.

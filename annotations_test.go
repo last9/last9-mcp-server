@@ -29,6 +29,7 @@ var writeTools = map[string]struct{ destructive, idempotent bool }{
 	"detach_notification_channel": {destructive: true, idempotent: true},
 	"delete_notification_channel": {destructive: true, idempotent: false},
 	"create_alert_from_chart":     {destructive: false, idempotent: false},
+	"create_kpi":                  {destructive: false, idempotent: false},
 }
 
 func TestDumpToolsServesAnnotations(t *testing.T) {
