@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Tool registration now fills missing object `properties` and infers missing field/item types from their shape, preserving existing keys. This removes missing-properties gaps in no-argument tools, free-form maps and pipeline array items; full provider-specific strict-mode requirements remain out of scope (#419).
+
 ## [0.21.0] - 2026-10-28
 
 ### Added
