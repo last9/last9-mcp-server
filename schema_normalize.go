@@ -62,8 +62,6 @@ func hasKey(s map[string]any, keys []string) bool {
 	return false
 }
 
-// normalizeToolInputSchema replaces tool's input schema, hand-built or inferred
-// from In, with its normalized form before the SDK registers it.
 func normalizeToolInputSchema[In any](tool *mcp.Tool) error {
 	schema, err := inputSchemaFor[In](tool)
 	if err != nil {

@@ -75,8 +75,6 @@ func TestServedToolSchemasAreStrictProviderSafe(t *testing.T) {
 	}
 }
 
-// subsumes reports whether norm contains everything in orig: same values for
-// every original key, with norm free to add keys and array entries untouched.
 func subsumes(orig, norm any) bool {
 	switch o := orig.(type) {
 	case map[string]any:
