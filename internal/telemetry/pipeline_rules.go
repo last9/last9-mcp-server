@@ -160,7 +160,7 @@ func CheckNumericComparison(operator, field string, value interface{}, path stri
 			return nil
 		}
 	}
-	msg := fmt.Sprintf(`%[1]s at %[2]s compares numbers, so the value must be a number, e.g. {"%[1]s":["attributes['http.status_code']","500"]}; got %[3]q`, operator, path, fmt.Sprint(value))
+	msg := fmt.Sprintf(`%[1]s at %[2]s compares numbers, so the value must be a number, e.g. {"%[1]s":["attributes['http.status_code']",500]}; got %[3]q`, operator, path, fmt.Sprint(value))
 	if field == "Timestamp" {
 		msg += "; to limit time, use start_time_iso/end_time_iso instead of a Timestamp filter"
 	}
