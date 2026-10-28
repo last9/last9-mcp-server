@@ -197,3 +197,37 @@ func (status errorTypeStatusTransport) RoundTrip(req *http.Request) (*http.Respo
 		Request:    req,
 	}, nil
 }
+
+func TestRegisteredWrappedErrorsBeforeDeadline(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusRequestTimeout, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			cause := utils.NewUpstreamHTTPError(&http.Response{
+				StatusCode: status,
+				Body:       io.NopCloser(strings.NewReader(`{"error":"invalid pipeline"}`)),
+			}, "query")
+			handler := func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+				return nil, nil, fmt.Errorf("read failed: %w", cause)
+			}
+			fixture := registeredToolFixture{
+				tool:    &mcp.Tool{Name: "get_foo", Annotations: readOnlyTool("Get Foo")},
+				timeout: time.Second,
+			}
+			want := toolErrorExpectation{
+				contains: []string{fmt.Sprintf("read failed: query failed with HTTP %d", status)},
+				absent:   []string{"tool-call deadline"},
+				system:   status != http.StatusBadRequest,
+			}
+			switch status {
+			case http.StatusBadRequest:
+				want.contains = append(want.contains, "invalid pipeline", "Review the tool arguments and retry")
+			case http.StatusRequestTimeout:
+				want.contains = append(want.contains, "Do not retry the same request unchanged")
+			case http.StatusServiceUnavailable:
+				want.contains = append(want.contains, "temporarily unavailable; retry later")
+			}
+			session := connectToolFixture(t, fixture, handler)
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: fixture.tool.Name, Arguments: struct{}{}})
+			assertToolError(t, result, want)
+		})
+	}
+}
