@@ -20,14 +20,16 @@ type logTruncationState struct {
 	effectiveLimit int
 }
 
-func addGetLogsGuidance(result map[string]interface{}, args GetLogsArgs, guidance getLogsGuidanceContext) {
+// addGetLogsGuidance reports whether the line result was truncated, so the
+// summary can say so even when its guidance is dropped for size.
+func addGetLogsGuidance(result map[string]interface{}, args GetLogsArgs, guidance getLogsGuidanceContext) (truncated bool) {
 	kind, items, err := extractResultItems(result)
 	if err != nil {
-		return
+		return false
 	}
 	if len(items) == 0 || countLogEntriesInResultItems(items) == 0 {
 		result["l9_guidance"] = utils.EmptyResultGuidanceMap("logs", logsGuidanceOptions(args, guidance.startMs, guidance.endMs))
-		return
+		return false
 	}
 	returned := countLogEntriesInResultItems(items)
 	totalMatching := logTotalMatching(result)
@@ -45,7 +47,9 @@ func addGetLogsGuidance(result map[string]interface{}, args GetLogsArgs, guidanc
 		result["l9_guidance"] = map[string]any{
 			"message": utils.TruncatedResultAdvice(opts),
 		}
+		return true
 	}
+	return false
 }
 
 func addGetLogsAggregateGuidance(result map[string]interface{}, guidance utils.TruncatedResultOptions) {

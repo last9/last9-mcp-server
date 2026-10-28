@@ -1,4 +1,4 @@
-Use this tool to fetch raw log entries for a single service using structured filters. Do not write a `logjson_query`.
+Use this tool to fetch log entries for a single service using structured filters. Do not write a `logjson_query`.
 
 ## When to use this tool vs `get_logs`
 
@@ -33,7 +33,7 @@ Do not invent org-specific attribute names. Discover fields with `get_log_attrib
 - `service_name` (required): Service name to query.
 - `start_time_iso` / `end_time_iso` (optional): Absolute time range in RFC3339 / ISO8601 format. Use these when the user gives explicit timestamps or dates.
 - `lookback_minutes` (optional): Relative time range only when the user did not give explicit timestamps.
-- `limit` (optional): Maximum number of log entries to return.
+- `limit` (optional): Maximum number of log entries to return. Default: 100 in `summary` mode, 20 in `raw` mode.
 - `severity_filters` (optional): Array of severity strings such as `["error", "fatal", "critical"]`.
 - `http_status_class` (optional): `2xx`, `3xx`, `4xx`, or `5xx`.
 - `http_status_code` (optional): Exact 3-digit HTTP status such as `500` or `401`.
@@ -42,6 +42,7 @@ Do not invent org-specific attribute names. Discover fields with `get_log_attrib
 - `body_filters` (optional): Array of substrings that should appear in the log body. Last resort only.
 - `env` (optional): Deployment environment string.
 - `index` (optional): Explicit log index in the form `physical_index:<name>` or `rehydration_index:<block_name>`.
+- `response_mode` (optional): `summary` (default) or `raw`. Over 20 lines, `summary` replaces `logs` with a `summary` object: `lines_summarized`, `severity_counts`, `first_timestamp`/`last_timestamp`, a 10-bucket `histogram`, and the top `patterns` (`template`, `count`, up to two `samples`), at most 4000 characters; `truncated: true` when the limit cut the result. `raw` returns the entries. 20 lines or fewer always come back as entries.
 
 ## Log service inventory and index selection
 
