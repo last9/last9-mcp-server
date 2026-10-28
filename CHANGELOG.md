@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- Served tool schemas now always give objects a `properties` key (the no-argument tools such as `get_drop_rules`, free-form maps like `metadata` and `annotations`) and give untyped fields and array items (`pipeline[]`, `filters[]`) a type, leaving every existing key unchanged. Schema validators that require these, such as strict function-calling modes and Gemini-style validators, now accept the tool list; Claude and OpenAI non-strict behavior is unchanged (#419).
+- Tool registration now fills missing object `properties` and infers missing field/item types from their shape, preserving existing keys. This removes missing-properties gaps in no-argument tools, free-form maps and pipeline array items; full provider-specific strict-mode requirements remain out of scope (#419).
 
 ## [0.21.0] - 2026-10-28
 
