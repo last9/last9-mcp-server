@@ -80,6 +80,37 @@ func TestPrepareLogJSONQueryAcceptsEveryAggregateFunction(t *testing.T) {
 	}
 }
 
+func TestPrepareLogJSONQueryChainedAggregateAliases(t *testing.T) {
+	for kind, mk := range map[string]func(map[string]interface{}, string) map[string]interface{}{
+		"aggregate": aggregateStage,
+		"window":    windowStage,
+	} {
+		for _, field := range []string{"requests", "service", "unknown", "requests) OR (1=1"} {
+			t.Run(kind+"/"+field, func(t *testing.T) {
+				firstStage := mk(fn1("$count"), "requests")
+				firstStage["groupby"] = map[string]interface{}{"ServiceName": "service"}
+				stages := []map[string]interface{}{
+					firstStage,
+					aggregateStage(fn1("$uniq", field), "distinct_requests"),
+				}
+				result, err := prepareLogJSONQuery(stages, "logjson_query")
+				if field != "requests" && field != "service" {
+					requireInvalidField(t, err, "logjson_query[1].aggregates[0].function.$uniq[0]", "invalid log field reference")
+					return
+				}
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				aggregate := result[1]["aggregates"].([]interface{})[0].(map[string]interface{})
+				got := aggregate["function"].(map[string]interface{})["$uniq"].([]interface{})[0]
+				if got != field {
+					t.Fatalf("aggregate operand = %v, want %q", got, field)
+				}
+			})
+		}
+	}
+}
+
 func TestPrepareLogJSONQueryRejectsInvalidAggregateFunctions(t *testing.T) {
 	const p = "logjson_query[0].aggregates[0].function"
 	cases := []aggregateRuleCase{

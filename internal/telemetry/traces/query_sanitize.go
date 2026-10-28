@@ -12,7 +12,7 @@ import (
 	"last9-mcp/internal/utils"
 )
 
-var traceAggregateFieldRef = regexp.MustCompile(`^(?:[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*|(?:attributes|resources)\['[^'\\\[\]]+'\])$`)
+var traceAggregateFieldRef = regexp.MustCompile(`^(?:[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*|[0-9]+[A-Za-z_][A-Za-z0-9_]*|(?:attributes|resources)\['[^'\\\[\]]+'\])$`)
 
 var traceFilterFieldOperators = map[string]struct{}{
 	"$contains":          {},

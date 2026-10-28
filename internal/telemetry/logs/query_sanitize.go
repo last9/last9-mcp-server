@@ -59,6 +59,12 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 		pathPrefix = "logjson_query"
 	}
 	sanitized := make([]map[string]interface{}, 0, len(stages))
+	aggregateAliases := make(map[string]struct{})
+	rememberAlias := func(value interface{}) {
+		if alias, ok := value.(string); ok && telemetry.ValidateAggregateAlias(alias, "") == nil {
+			aggregateAliases[alias] = struct{}{}
+		}
+	}
 
 	for stageIndex, stage := range stages {
 		sanitizedStage := make(map[string]interface{}, len(stage))
@@ -74,9 +80,9 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 			case "query":
 				sanitizedValue, err = sanitizeLogCondition(value, stagePath+".query")
 			case "aggregates":
-				sanitizedValue, err = sanitizeLogAggregates(value, stagePath+".aggregates")
+				sanitizedValue, err = sanitizeLogAggregates(value, stagePath+".aggregates", aggregateAliases)
 			case "function":
-				sanitizedValue, err = sanitizeLogFunction(value, stagePath+".function")
+				sanitizedValue, err = sanitizeLogFunction(value, stagePath+".function", aggregateAliases)
 			case "groupby":
 				sanitizedValue, err = sanitizeLogGroupBy(value, stagePath+".groupby")
 			default:
@@ -94,6 +100,20 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 		if stageType, _ := sanitizedStage["type"].(string); stageType == "parse" {
 			if field, _ := sanitizedStage["field"].(string); strings.TrimSpace(field) == "" {
 				sanitizedStage["field"] = "Body"
+			}
+		}
+
+		switch sanitizedStage["type"] {
+		case "aggregate", "window_aggregate":
+			rememberAlias(sanitizedStage["as"])
+			aggregates, _ := sanitizedStage["aggregates"].([]interface{})
+			for _, rawAggregate := range aggregates {
+				aggregate, _ := rawAggregate.(map[string]interface{})
+				rememberAlias(aggregate["as"])
+			}
+			groupBy, _ := sanitizedStage["groupby"].(map[string]interface{})
+			for _, alias := range groupBy {
+				rememberAlias(alias)
 			}
 		}
 
@@ -307,7 +327,7 @@ func coerceLogFilterValueToString(value interface{}, path string) (string, error
 	}
 }
 
-func sanitizeLogAggregates(value interface{}, path string) (interface{}, error) {
+func sanitizeLogAggregates(value interface{}, path string, aggregateAliases map[string]struct{}) (interface{}, error) {
 	aggregates, ok := value.([]interface{})
 	if !ok {
 		return value, nil
@@ -324,7 +344,7 @@ func sanitizeLogAggregates(value interface{}, path string) (interface{}, error) 
 		sanitizedAggregate := make(map[string]interface{}, len(aggregateMap))
 		for key, item := range aggregateMap {
 			if key == "function" {
-				next, err := sanitizeLogFunction(item, fmt.Sprintf("%s[%d].function", path, index))
+				next, err := sanitizeLogFunction(item, fmt.Sprintf("%s[%d].function", path, index), aggregateAliases)
 				if err != nil {
 					return nil, err
 				}
@@ -339,7 +359,7 @@ func sanitizeLogAggregates(value interface{}, path string) (interface{}, error) 
 	return sanitized, nil
 }
 
-func sanitizeLogFunction(value interface{}, path string) (interface{}, error) {
+func sanitizeLogFunction(value interface{}, path string, aggregateAliases map[string]struct{}) (interface{}, error) {
 	functionMap, ok := value.(map[string]interface{})
 	if !ok {
 		return value, nil
@@ -355,11 +375,15 @@ func sanitizeLogFunction(value interface{}, path string) (interface{}, error) {
 
 		sanitizedArgs := append([]interface{}(nil), args...)
 		if field, i, ok := telemetry.AggregateFieldArg(operator, sanitizedArgs); ok {
-			next, err := sanitizeLogFieldRef(field, fmt.Sprintf("%s.%s[%d]", path, operator, i))
-			if err != nil {
-				return nil, err
+			field = strings.TrimSpace(field)
+			if _, known := aggregateAliases[field]; !known {
+				next, err := sanitizeLogFieldRef(field, fmt.Sprintf("%s.%s[%d]", path, operator, i))
+				if err != nil {
+					return nil, err
+				}
+				field = next
 			}
-			sanitizedArgs[i] = next
+			sanitizedArgs[i] = field
 		}
 
 		sanitized[operator] = sanitizedArgs

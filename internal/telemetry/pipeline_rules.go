@@ -74,8 +74,6 @@ func unknownFunctionHint(name string) string {
 	return "valid functions: " + aggregateFunctionNames
 }
 
-// ValidateAggregateFunction checks an aggregate/window_aggregate function
-// object against the engine's allowlist and argument shapes.
 func ValidateAggregateFunction(function map[string]interface{}, functionPath string) *PipelineArgError {
 	if len(function) != 1 {
 		return &PipelineArgError{functionPath, fmt.Sprintf(`aggregate function at %s must have exactly one key, e.g. {"$count":[]}; got %d`, functionPath, len(function))}
@@ -139,8 +137,7 @@ func AggregateFieldArg(name string, args []interface{}) (field string, index int
 	return field, spec.fieldArg, true
 }
 
-// ValidateAggregateAlias checks an "as" output name. Empty/missing is left to
-// callers, which own whether "as" is required.
+// Empty or missing aliases are left to callers, which decide whether "as" is required.
 func ValidateAggregateAlias(as interface{}, path string) *PipelineArgError {
 	if as == nil || as == "" {
 		return nil
@@ -151,7 +148,6 @@ func ValidateAggregateAlias(as interface{}, path string) *PipelineArgError {
 	return &PipelineArgError{path, fmt.Sprintf(`"as" at %s must be one plain name (letters, digits, underscore; at least one letter or underscore), e.g. "p99_latency"; got %q`, path, fmt.Sprint(as))}
 }
 
-// CheckNumericComparison requires $gt/$gte/$lt/$lte values to be numbers.
 func CheckNumericComparison(operator, field string, value interface{}, path string) *PipelineArgError {
 	if _, ok := comparisonOperators[operator]; !ok {
 		return nil

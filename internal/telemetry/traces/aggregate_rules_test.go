@@ -113,6 +113,7 @@ func TestSanitizeTraceJSONQuery_RejectsInvalidAggregateFunctions(t *testing.T) {
 		fnCase("apdex string", ".$apdex_score[0]", "[threshold, field]", fn1("$apdex_score", "0.5", trF)),
 
 		fnCase("avg ref", ".$avg[0]", "invalid aggregate field", fn1("$avg", "Duration) OR (1=1")),
+		fnCase("numeric ref", ".$sum[0]", "invalid aggregate field", fn1("$sum", "123")),
 		fnCase("quantile ref", ".$quantile[1]", "invalid aggregate field", fn1("$quantile", 0.95, "Duration) OR (1=1")),
 		fnCase("uniq ref", ".$uniq[0]", "invalid aggregate field", fn1("$uniq", "attributes['a') OR ('1'='1']")),
 		fnCase("double quotes", ".$sum[0]", "single quotes", fn1("$sum", `attributes["http.status_code"]`)),
@@ -122,6 +123,20 @@ func TestSanitizeTraceJSONQuery_RejectsInvalidAggregateFunctions(t *testing.T) {
 			err := SanitizeTraceJSONQuery([]map[string]interface{}{aggStage(c.fn, "v")})
 			requireTraceInvalidField(t, err, p+c.suffix, c.substr)
 		})
+	}
+}
+
+func TestSanitizeTraceJSONQuery_AggregatesEarlierDigitLeadingAlias(t *testing.T) {
+	for _, as := range []string{"39b_1", "1x", "9_"} {
+		for _, first := range []map[string]interface{}{
+			aggStage(fn1("$count"), as),
+			winStage(fn1("$count"), as),
+		} {
+			stages := []map[string]interface{}{first, aggStage(fn1("$sum", as), "total")}
+			if err := SanitizeTraceJSONQuery(stages); err != nil {
+				t.Errorf("%s alias %q: %v", first["type"], as, err)
+			}
+		}
 	}
 }
 
