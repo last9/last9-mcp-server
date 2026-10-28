@@ -16,6 +16,8 @@ import (
 
 // Models sometimes quote integer ids ({"channel_id": "42"}) and the SDK validates
 // arguments strictly before a handler runs, so such strings become numbers first.
+// The SDK also round-trips arguments through float64, so an integer under a property
+// that accepts strings too is passed as a string, keeping 19-digit values exact.
 var integerString = regexp.MustCompile(`^-?\d+$`)
 
 // inputSchemaFor returns the schema the SDK validates a tool's arguments against: the
@@ -46,7 +48,7 @@ func inputSchemaFor[In any](tool *mcp.Tool) (*jsonschema.Schema, error) {
 	}
 }
 
-// integerArgsMiddleware coerces number-like strings in tool's integer arguments.
+// integerArgsMiddleware rewrites tool's arguments with coerceIntegerArguments.
 func integerArgsMiddleware(tool string, schema *jsonschema.Schema) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
@@ -59,7 +61,8 @@ func integerArgsMiddleware(tool string, schema *jsonschema.Schema) mcp.Middlewar
 }
 
 // coerceIntegerArguments returns args with every number-like string under an integer
-// schema replaced by its number. Anything it cannot read passes through unchanged for
+// schema replaced by its number, and every integer under an integer-or-string schema
+// replaced by its digits. Anything it cannot read passes through unchanged for
 // the SDK to reject.
 func coerceIntegerArguments(schema *jsonschema.Schema, args json.RawMessage) json.RawMessage {
 	dec := json.NewDecoder(bytes.NewReader(args))
@@ -93,6 +96,11 @@ func coerceIntegerStrings(schema *jsonschema.Schema, value any) (any, bool) {
 			return value, false
 		}
 		return n, true
+	case json.Number:
+		if !acceptsIntegerAndString(schema) || !integerString.MatchString(string(v)) {
+			return value, false
+		}
+		return string(v), true
 	case map[string]any:
 		changed := false
 		for key, item := range v {
@@ -123,11 +131,15 @@ func acceptsOnlyInteger(schema *jsonschema.Schema) bool {
 	return slices.Contains(types, "integer") && !slices.Contains(types, "string")
 }
 
+func acceptsIntegerAndString(schema *jsonschema.Schema) bool {
+	return slices.Contains(schema.Types, "integer") && slices.Contains(schema.Types, "string")
+}
+
 func hasIntegerProperty(schema *jsonschema.Schema) bool {
 	if schema == nil {
 		return false
 	}
-	if acceptsOnlyInteger(schema) || hasIntegerProperty(schema.Items) {
+	if acceptsOnlyInteger(schema) || acceptsIntegerAndString(schema) || hasIntegerProperty(schema.Items) {
 		return true
 	}
 	for _, prop := range schema.Properties {

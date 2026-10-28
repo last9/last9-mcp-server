@@ -39,6 +39,7 @@ type options struct {
 	query            url.Values
 	regionHeader     bool
 	regionQuery      bool
+	requiredBody     bool
 	maxResponseBytes int64
 }
 
@@ -49,6 +50,10 @@ func WithQuery(q url.Values) Option { return func(o *options) { o.query = q } }
 func WithRegionHeader() Option { return func(o *options) { o.regionHeader = true } }
 
 func WithRegionQuery() Option { return func(o *options) { o.regionQuery = true } }
+
+// WithRequiredBody is for reads whose answer is the body: an empty 2xx or data
+// after the JSON value means the answer did not arrive intact.
+func WithRequiredBody() Option { return func(o *options) { o.requiredBody = true } }
 
 // Do buffers the whole body before decoding; this bounds that buffer. Oversized bodies are
 // refused, not truncated, because a JSON prefix never decodes.
@@ -85,7 +90,7 @@ func (c *Client) Do(ctx context.Context, op string, r Request, out any, opts ...
 	if !isSuccess(resp.StatusCode) {
 		return utils.MarkUnknownWriteOutcome(req, resp, utils.NewUpstreamHTTPError(resp, op))
 	}
-	return utils.MarkUnknownWriteOutcome(req, resp, decodeResponse(resp, op, out, o.maxResponseBytes))
+	return utils.MarkUnknownWriteOutcome(req, resp, decodeResponse(resp, op, out, o.requiredBody, o.maxResponseBytes))
 }
 
 func applyOptions(opts []Option) options {
@@ -187,7 +192,7 @@ func isSuccess(status int) bool {
 	return status >= http.StatusOK && status < http.StatusMultipleChoices
 }
 
-func decodeResponse(resp *http.Response, op string, out any, maxBytes int64) error {
+func decodeResponse(resp *http.Response, op string, out any, required bool, maxBytes int64) error {
 	if out == nil {
 		// A body cut off mid-read means the answer never fully arrived, even after a 2xx.
 		if _, err := io.CopyN(io.Discard, resp.Body, 4<<10); err != nil && err != io.EOF {
@@ -205,6 +210,15 @@ func decodeResponse(resp *http.Response, op string, out any, maxBytes int64) err
 	}
 	if maxBytes > 0 && int64(len(raw)) > maxBytes {
 		return &ResponseTooLargeError{Op: op, MaxBytes: maxBytes}
+	}
+	if required {
+		if len(bytes.TrimSpace(raw)) == 0 {
+			return fmt.Errorf("%s: empty response body", op)
+		}
+		if err := json.Unmarshal(raw, out); err != nil {
+			return fmt.Errorf("%s: decode response: %w", op, err)
+		}
+		return nil
 	}
 	// A *[]byte target takes the body as sent, for tools that relay it unparsed.
 	if b, ok := out.(*[]byte); ok {

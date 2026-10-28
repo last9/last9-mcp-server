@@ -5,6 +5,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,5 +40,74 @@ func TestGetMonitorRequestAndResponse(t *testing.T) {
 	q := got.URL.Query()
 	if got.Method != http.MethodGet || got.URL.Path != "/alerts/monitor" || q.Get("timestamp") != "1700000000" || q.Get("window") != "900" {
 		t.Errorf("request = %s %s", got.Method, got.URL)
+	}
+	if len(q) != 2 {
+		t.Errorf("query = %v, want only timestamp and window when no filter is set", q)
+	}
+}
+
+func TestGetMonitorForwardsFilters(t *testing.T) {
+	var got url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.Query()
+		_, _ = io.WriteString(w, `{"alert_rules":[]}`)
+	}))
+	t.Cleanup(srv.Close)
+	cfg := models.Config{
+		APIBaseURL:   srv.URL,
+		TokenManager: &auth.TokenManager{AccessToken: "t", ExpiresAt: time.Now().Add(time.Hour)},
+	}
+
+	_, err := GetMonitor(context.Background(), last9api.NewClient(srv.Client(), cfg), GetMonitorInput{
+		Timestamp: 1700000000, Window: 60,
+		AlertGroupID: "g1", RuleName: "cpu.*", AlertGroupName: "infra", LabelFilters: "env=prod,team=core", State: "firing",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := url.Values{
+		"timestamp": {"1700000000"}, "window": {"60"},
+		"alert_group_id": {"g1"}, "rule_name": {"cpu.*"}, "alert_group_name": {"infra"},
+		"label_filters": {"env=prod,team=core"}, "state": {"firing"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("query = %v, want %v", got, want)
+	}
+}
+
+func TestGetMonitorRejectsMissingRules(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		status     int
+		wantErr    string
+	}{
+		{"empty_list", `{"alert_rules":[]}`, http.StatusOK, ""},
+		{"empty_200", "", http.StatusOK, "empty response body"},
+		{"empty_204", "", http.StatusNoContent, "empty response body"},
+		{"empty_object", `{}`, http.StatusOK, "no alert_rules"},
+		{"null_rules", `{"alert_rules":null}`, http.StatusOK, "no alert_rules"},
+		{"trailing_garbage", `{"alert_rules":[]}broken`, http.StatusOK, "decode response"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			t.Cleanup(srv.Close)
+			cfg := models.Config{
+				APIBaseURL:   srv.URL,
+				TokenManager: &auth.TokenManager{AccessToken: "t", ExpiresAt: time.Now().Add(time.Hour)},
+			}
+			resp, err := GetMonitor(context.Background(), last9api.NewClient(srv.Client(), cfg), GetMonitorInput{Timestamp: 1700000000, Window: 60})
+			if tc.wantErr == "" {
+				if err != nil || resp.AlertRules == nil {
+					t.Fatalf("want empty non-nil rules, got %+v, %v", resp, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("want error containing %q, got %v", tc.wantErr, err)
+			}
+		})
 	}
 }
