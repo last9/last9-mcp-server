@@ -73,3 +73,67 @@ func lintTestGoroutines(ctx context.Context, dir string) ([]byte, error) {
 	cmd.Dir = dir
 	return cmd.CombinedOutput()
 }
+
+func TestLintTestGoroutinesCI(t *testing.T) {
+	for _, workflow := range []string{"test.yaml", "release.yaml"} {
+		t.Run(workflow, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join(".github", "workflows", workflow))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(raw), "\n        run: go vet -testinggoroutine ./...\n") {
+				t.Fatal("workflow must run go vet -testinggoroutine ./... independently of the test cache")
+			}
+		})
+	}
+}
+
+func TestLintTestGoroutinesAfterCachedPass(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "internal", "probe"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	lintTests, err := os.ReadFile("test_lint_test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module fixture\n\ngo 1.25\n")
+	write("test_lint_test.go", string(lintTests))
+	probe := filepath.Join("internal", "probe", "worker_test.go")
+	safe := "package probe\nimport \"testing\"\nfunc check(t *testing.T) { go func() { t.Error(\"probe\") }() }\n"
+	write(probe, safe)
+	runTests := func() string {
+		t.Helper()
+		cmd := exec.CommandContext(t.Context(), "go", "test", ".", "./internal/probe", "-run", "^TestLintTestGoroutines$")
+		cmd.Dir = dir
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("fixture tests failed: %v\n%s", err, output)
+		}
+		return string(output)
+	}
+	runTests()
+	if output := runTests(); !strings.Contains(output, "(cached)") {
+		t.Fatalf("fixture did not warm the test cache:\n%s", output)
+	}
+	write(probe, strings.Replace(safe, "t.Error", "t.Fatal", 1))
+	// Subprocess source reads do not invalidate the root package's test cache.
+	if output := runTests(); !strings.Contains(output, "(cached)") {
+		t.Fatalf("expected cached root success after editing an internal test:\n%s", output)
+	}
+	output, err := lintTestGoroutines(t.Context(), dir)
+	if err == nil || !strings.Contains(string(output), "worker_test.go:") ||
+		!strings.Contains(string(output), "call to (*testing.T).Fatal from a non-test goroutine") {
+		t.Fatalf("explicit lint must reject the edited worker despite cached tests: %v\n%s", err, output)
+	}
+	write(probe, safe)
+	if output, err := lintTestGoroutines(t.Context(), dir); err != nil {
+		t.Fatalf("repaired worker rejected: %v\n%s", err, output)
+	}
+}
