@@ -141,7 +141,14 @@ func TestNormalizeSchemaIsAdditive(t *testing.T) {
 	if props["untypedItems"].(map[string]any)["items"].(map[string]any)["type"] != "object" {
 		t.Errorf("items with properties should become object")
 	}
-	again := reflect.ValueOf(norm).Interface().(map[string]any)
+	snapshot, err := json.Marshal(norm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var again map[string]any
+	if err := json.Unmarshal(snapshot, &again); err != nil {
+		t.Fatal(err)
+	}
 	normalizeSchema(again, false)
 	if !reflect.DeepEqual(norm, again) {
 		t.Error("normalizeSchema is not idempotent")
