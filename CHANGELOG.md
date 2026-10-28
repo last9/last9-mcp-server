@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_metric_status` and `get_service_profile` resolve an approximate `datasource` the way the `prometheus_*` tools do: a near miss queries its closest match, an omitted one the default, and an additional text block names the one used (`Using datasource "X" (closest match to "Y").` or `Using datasource "X" (default).`); a looser or ambiguous name returns candidates with no query and `isError` unset, and an unknown name is a tool error listing the available datasources. `get_metric_status` now treats a blank `datasource` as omitted instead of failing (#432).
 
 ### Fixed
+- `get_traces` now rejects unknown pipeline stage keys locally with the allowed keys for that stage, instead of sending malformed stages upstream (#418).
 - `get_traces` keeps each returned trace as the API sent it instead of decoding it into generic maps, so a chunk of traces holds about its wire size in memory rather than several times it. Integers past 2^53, such as nanosecond timestamps, are no longer rounded (`1761550000123456789` was returned as `1761550000123456800`), and fields within a trace keep the API's order instead of being sorted (#440).
 
 ### Changed
