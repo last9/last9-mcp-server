@@ -7,10 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `get_apm_service_deviations` resolves approximate datasource names through the shared chooser: near misses return data with a closest-match note, omitted or blank names use the default and name it, and ambiguous names return candidates with no query and `isError` unset. Response datasource fields and follow-ups use the canonical name; composite callers retain exact lookup (#453).
+- `get_metric_status` and `get_service_profile` resolve an approximate `datasource` the way the `prometheus_*` tools do: a near miss queries its closest match, an omitted one the default, and an additional text block names the one used (`Using datasource "X" (closest match to "Y").` or `Using datasource "X" (default).`); a looser or ambiguous name returns candidates with no query and `isError` unset, and an unknown name is a tool error listing the available datasources. `get_metric_status` now treats a blank `datasource` as omitted instead of failing (#432).
+
 ### Fixed
+- Log-query errors (search API and chunked `get_logs`), trace errors, and other tool errors that preserve a typed cause now carry `_meta["last9/error-type"]: "system_error"` for HTTP 5xx/408, client timeouts and context deadlines; overall tool-call deadlines are tagged too. Trace unreachable/invalid-response errors are also tagged. The SDK records the tag as `mcp.error.type=system_error`; validation, HTTP 400/422 errors and wrapped request cancellations stay untagged. Legacy paths that discard the typed cause, and non-trace truncated bodies without a timeout, remain untagged (#415).
 - `get_traces` keeps each returned trace as the API sent it instead of decoding it into generic maps, so a chunk of traces holds about its wire size in memory rather than several times it. Integers past 2^53, such as nanosecond timestamps, are no longer rounded (`1761550000123456789` was returned as `1761550000123456800`), and fields within a trace keep the API's order instead of being sorted (#440).
 
 ### Changed
+- Bumped `github.com/last9/mcp-go-sdk` 0.1.5 → 0.1.6 (#415).
 - `get_logs` and `get_service_logs` descriptions now say to omit `response_mode` and use `raw` only to quote exact text: models were sending `response_mode: "raw"` whenever a question asked for lines, which returned raw lines instead of the default summary and lost its token saving (#448).
 
 ## [0.20.1] - 2026-10-27
@@ -56,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `did_you_mean` to the logs, traces, and metrics toolsets so their entity-name discovery guidance can be followed (#312).
 
 ### Fixed
+- Every tool call now ends within 3 minutes across all of its upstream requests. Before, only each request (3 minutes) and each log, trace or APM chunk (30 seconds) was bounded, so a wide `get_logs` window against a slow backend could keep a call open for hours. A call that hits the deadline returns an `isError` result naming it and asking for a narrower time range or more filters; a write tool still reports an unknown outcome with its verify call (#412).
 - With `LAST9_USE_LOG_SEARCH_API=true`, a slow `get_logs`, `get_service_logs`, `get_log_patterns` or `get_emerging_log_patterns` search no longer hangs for the 3-minute HTTP client timeout and fails with `failed to call log search API: HTTP request failed: ... (Client.Timeout exceeded while awaiting headers)`. Each search call now has a 90-second budget covering headers and body; past it the tool returns `<op> timed out after 1m30s` with advice to narrow the time window or add a service filter. A call cancelled by the client is still reported as cancelled (#406).
 - `get_traces` (and every tool taking a tracejson pipeline) no longer 400s on a `transform` entry whose `as` is a string: the string is sent as the one-element array the API requires, and any other `as` shape is rejected locally with the correct example. The tool schema no longer advertises a string `as` (#414).
 - `get_logs`, `get_traces` and the other logjson/tracejson pipeline tools compile every `$regex`/`$notregex`/`$iregex`/`$inotregex` pattern and `regexp` parse pattern as RE2 before calling the API. A PCRE-only pattern (lookahead, lookbehind, backreference, possessive quantifier) now fails with the compile error and its path instead of an upstream "invalid regexp expression" 400; `\C` and `\e`, which the API accepts but Go's regexp does not, still pass (#414).

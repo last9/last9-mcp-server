@@ -14,6 +14,7 @@ import (
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/change_events"
 	"last9-mcp/internal/changeimpact"
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/grafana"
 	"last9-mcp/internal/models"
@@ -61,10 +62,17 @@ type toolGate struct {
 	readOnly map[string]bool // every offered tool name → its readOnlyHint
 	served   toolsets.Set    // every admitted tool name
 	pending  []func() error  // registrations of admitted tools, in offer order
+
+	callTimeout time.Duration // overall deadline of one tool call
 }
 
 func newToolGate(filter toolsets.Filter) *toolGate {
-	return &toolGate{filter: filter, readOnly: make(map[string]bool), served: make(toolsets.Set)}
+	return &toolGate{
+		filter:      filter,
+		readOnly:    make(map[string]bool),
+		served:      make(toolsets.Set),
+		callTimeout: constants.ToolCallTimeout,
+	}
 }
 
 func (g *toolGate) admit(tool *mcp.Tool) bool {
@@ -128,9 +136,28 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, gate *toolG
 		return nil
 	}
 	gate.pending = append(gate.pending, func() error {
-		return registerTool(server, tool, handler, gate.served.Allows)
+		return registerTool(server, tool, withCallDeadline(gate.callTimeout, gate.readOnly[tool.Name], handler), gate.served.Allows)
 	})
 	return nil
+}
+
+// withCallDeadline bounds one tool call as a whole: per-request and per-chunk timeouts
+// alone let a chunk loop run for hours. Read handlers can fold canceled requests into a
+// result, so every read result at the deadline is replaced; a write's may name its verify call.
+func withCallDeadline[In, Out any](timeout time.Duration, readOnly bool, handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		result, out, err := handler(ctx, req, in)
+		if !errors.Is(ctx.Err(), context.DeadlineExceeded) || (err == nil && !readOnly) {
+			return result, out, err
+		}
+		msg := fmt.Sprintf("Stopped at the %s tool-call deadline", timeout)
+		if err != nil {
+			msg += fmt.Sprintf(" (%v)", err)
+		}
+		return last9mcp.SystemErrorResult(msg + ". Narrow the time range or add filters before retrying."), out, nil
+	}
 }
 
 // registerTool registers one admitted tool, keeping only the description
@@ -150,13 +177,25 @@ func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, 
 			err = fmt.Errorf("register %q: %v", tool.Name, r)
 		}
 	}()
-	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, handler); regErr != nil {
+	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, tagSystemErrors(handler)); regErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, regErr)
 	}
 	if coerceErr := addIntegerArgsCoercion[In](server.Server, tool); coerceErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, coerceErr)
 	}
 	return nil
+}
+
+// tagSystemErrors returns an upstream failure as a system_error-tagged result itself:
+// the SDK would wrap the error in an untagged result that telemetry counts as user_error.
+func tagSystemErrors[In, Out any](handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+		result, out, err := handler(ctx, req, in)
+		if utils.IsSystemError(err) {
+			return utils.ErrorResult(err), out, nil
+		}
+		return result, out, err
+	}
 }
 
 // registerWriteTool registers a tool that changes Last9 state. verify is the read call
