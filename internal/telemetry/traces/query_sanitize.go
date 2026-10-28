@@ -50,9 +50,11 @@ var traceFilterLogicalOperators = map[string]struct{}{
 // the model can self-correct without waiting for a 400 from the upstream API.
 // Normalizations are applied in place — callers forward the slice they passed in.
 func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
+	hasResult := false
 	for i, stage := range stages {
 		stageType, _ := stage["type"].(string)
 		path := fmt.Sprintf("tracejson_query[%d]", i)
+		applyImplicitQuantileExactDefault(stage, hasResult)
 
 		if err := validateStageKeys(stage, stageType, path); err != nil {
 			return err
@@ -100,8 +102,58 @@ func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 				}
 			}
 		}
+
+		hasResult = hasResult || traceStageEmitsResult(stage, stageType)
 	}
 	return nil
+}
+
+func applyImplicitQuantileExactDefault(stage map[string]interface{}, hasResult bool) {
+	if !hasResult {
+		return
+	}
+	apply := func(function map[string]interface{}) {
+		args, ok := function["$quantile_exact"].([]interface{})
+		if ok {
+			function["$quantile_exact"] = telemetry.DefaultQuantileExactField(args, true)
+		}
+	}
+	switch stage["type"] {
+	case "window_aggregate":
+		if function, ok := stage["function"].(map[string]interface{}); ok {
+			apply(function)
+		}
+	case "aggregate":
+		aggregates, _ := stage["aggregates"].([]interface{})
+		for _, raw := range aggregates {
+			entry, _ := raw.(map[string]interface{})
+			function, _ := entry["function"].(map[string]interface{})
+			apply(function)
+		}
+	}
+}
+
+func traceStageEmitsResult(stage map[string]interface{}, stageType string) bool {
+	if stageType == "window_aggregate" {
+		return stage["as"] == "__result__"
+	}
+	if stageType != "aggregate" {
+		return false
+	}
+	aggregates, _ := stage["aggregates"].([]interface{})
+	for _, raw := range aggregates {
+		entry, _ := raw.(map[string]interface{})
+		if entry["as"] == "__result__" {
+			return true
+		}
+	}
+	groupBy, _ := stage["groupby"].(map[string]interface{})
+	for _, alias := range groupBy {
+		if alias == "__result__" {
+			return true
+		}
+	}
+	return false
 }
 
 // SanitizeTraceFilterConditions is SanitizeTraceJSONQuery without the top-level

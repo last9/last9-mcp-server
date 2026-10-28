@@ -374,6 +374,10 @@ func sanitizeLogFunction(value interface{}, path string, aggregateAliases map[st
 		}
 
 		sanitizedArgs := append([]interface{}(nil), args...)
+		if operator == "$quantile_exact" {
+			_, hasResult := aggregateAliases["__result__"]
+			sanitizedArgs = telemetry.DefaultQuantileExactField(sanitizedArgs, hasResult)
+		}
 		if field, i, ok := telemetry.AggregateFieldArg(operator, sanitizedArgs); ok {
 			field = strings.TrimSpace(field)
 			if _, known := aggregateAliases[field]; !known {

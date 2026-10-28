@@ -137,6 +137,14 @@ func AggregateFieldArg(name string, args []interface{}) (field string, index int
 	return field, spec.fieldArg, true
 }
 
+// DefaultQuantileExactField mirrors the engine's implicit operand when an earlier stage emits __result__.
+func DefaultQuantileExactField(args []interface{}, hasResult bool) []interface{} {
+	if !hasResult || len(args) != 1 {
+		return args
+	}
+	return append(append([]interface{}(nil), args...), "__result__")
+}
+
 // Empty or missing aliases are left to callers, which decide whether "as" is required.
 func ValidateAggregateAlias(as interface{}, path string) *PipelineArgError {
 	if as == nil || as == "" {

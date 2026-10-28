@@ -168,6 +168,7 @@ func wrapTopLevelLogFilterQuery(query interface{}) interface{} {
 // Stage ordering (filter → parse → aggregate/window_aggregate) is documented in
 // the whale description and logjson reference but is not enforced here (MVP).
 func validateLogJSONQuery(stages []map[string]interface{}, pathPrefix string) error {
+	hasResult := false
 	for i, stage := range stages {
 		stagePath := fmt.Sprintf("%s[%d]", pathPrefix, i)
 
@@ -218,14 +219,14 @@ func validateLogJSONQuery(stages []map[string]interface{}, pathPrefix string) er
 				return err
 			}
 		case "window_aggregate":
-			if err := validateWindowAggregateStage(stage, stagePath); err != nil {
+			if err := validateWindowAggregateStage(stage, stagePath, hasResult); err != nil {
 				return err
 			}
 			if err := validateGroupByForTraceFields(stage, stagePath); err != nil {
 				return err
 			}
 		case "aggregate":
-			if err := validateAggregateStage(stage, stagePath); err != nil {
+			if err := validateAggregateStage(stage, stagePath, hasResult); err != nil {
 				return err
 			}
 		case "filter":
@@ -233,8 +234,32 @@ func validateLogJSONQuery(stages []map[string]interface{}, pathPrefix string) er
 				return err
 			}
 		}
+		hasResult = hasResult || logStageEmitsResult(stage, stageType)
 	}
 	return nil
+}
+
+func logStageEmitsResult(stage map[string]interface{}, stageType string) bool {
+	if stageType == "window_aggregate" {
+		return stage["as"] == "__result__"
+	}
+	if stageType != "aggregate" {
+		return false
+	}
+	aggregates, _ := stage["aggregates"].([]interface{})
+	for _, raw := range aggregates {
+		entry, _ := raw.(map[string]interface{})
+		if entry["as"] == "__result__" {
+			return true
+		}
+	}
+	groupBy, _ := stage["groupby"].(map[string]interface{})
+	for _, alias := range groupBy {
+		if alias == "__result__" {
+			return true
+		}
+	}
+	return false
 }
 
 // validateQuantileNumericDataflow makes one ordered pass over the sanitized
@@ -505,7 +530,7 @@ func validateGroupByForTraceFields(stage map[string]interface{}, stagePath strin
 	return nil
 }
 
-func validateWindowAggregateStage(stage map[string]interface{}, stagePath string) error {
+func validateWindowAggregateStage(stage map[string]interface{}, stagePath string, hasResult bool) error {
 	fn := stage["function"]
 	if fn == nil {
 		return newLogValidationError(
@@ -522,7 +547,7 @@ func validateWindowAggregateStage(stage map[string]interface{}, stagePath string
 			fmt.Sprintf("window_aggregate at %s: \"function\" must be an object like {\"$count\":[]}, not a string — got %T", stagePath, fn),
 		)
 	}
-	if err := validateAggregateFunction(fnMap, stagePath+".function"); err != nil {
+	if err := validateAggregateFunction(fnMap, stagePath+".function", hasResult); err != nil {
 		return err
 	}
 
@@ -650,7 +675,7 @@ var allowedAggregateItemKeys = map[string]struct{}{
 
 // validateAggregateStage checks that "aggregates" is a non-empty array of valid
 // items (each with "function" and "as"), then delegates groupby checks.
-func validateAggregateStage(stage map[string]interface{}, stagePath string) error {
+func validateAggregateStage(stage map[string]interface{}, stagePath string, hasResult bool) error {
 	rawAggs := stage["aggregates"]
 	if rawAggs == nil {
 		return newLogValidationError(
@@ -725,7 +750,7 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string) erro
 				),
 			)
 		}
-		if err := validateAggregateFunction(fnMap, itemPath+".function"); err != nil {
+		if err := validateAggregateFunction(fnMap, itemPath+".function", hasResult); err != nil {
 			return err
 		}
 
@@ -749,8 +774,18 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string) erro
 	return validateGroupByForTraceFields(stage, stagePath)
 }
 
-func validateAggregateFunction(function map[string]interface{}, path string) error {
-	if e := telemetry.ValidateAggregateFunction(function, path); e != nil {
+func validateAggregateFunction(function map[string]interface{}, path string, hasResult bool) error {
+	validationFunction := function
+	if hasResult {
+		if args, ok := function["$quantile_exact"].([]interface{}); ok {
+			validationFunction = make(map[string]interface{}, len(function))
+			for name, value := range function {
+				validationFunction[name] = value
+			}
+			validationFunction["$quantile_exact"] = telemetry.DefaultQuantileExactField(args, true)
+		}
+	}
+	if e := telemetry.ValidateAggregateFunction(validationFunction, path); e != nil {
 		return newLogValidationError(LogValidationInvalidField, e.Path, e.Message)
 	}
 	return nil
