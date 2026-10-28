@@ -116,6 +116,7 @@ func TestSanitizeTraceJSONQuery_RejectsInvalidAggregateFunctions(t *testing.T) {
 		fnCase("numeric ref", ".$sum[0]", "invalid aggregate field", fn1("$sum", "123")),
 		fnCase("quantile ref", ".$quantile[1]", "invalid aggregate field", fn1("$quantile", 0.95, "Duration) OR (1=1")),
 		fnCase("uniq ref", ".$uniq[0]", "invalid aggregate field", fn1("$uniq", "attributes['a') OR ('1'='1']")),
+		fnCase("uniq backslash", ".$uniq[0]", "invalid aggregate field", fn1("$uniq", `attributes['a\\b']`)),
 		fnCase("double quotes", ".$sum[0]", "single quotes", fn1("$sum", `attributes["http.status_code"]`)),
 	}
 	for _, c := range cases {
@@ -123,6 +124,19 @@ func TestSanitizeTraceJSONQuery_RejectsInvalidAggregateFunctions(t *testing.T) {
 			err := SanitizeTraceJSONQuery([]map[string]interface{}{aggStage(c.fn, "v")})
 			requireTraceInvalidField(t, err, p+c.suffix, c.substr)
 		})
+	}
+}
+
+func TestSanitizeTraceJSONQuery_AcceptsSupportedAggregateFieldSyntax(t *testing.T) {
+	for _, field := range []string{`attributes['label[0]']`, `resources['deployment[zone]']`, "Events.Name[1]"} {
+		for _, stage := range []map[string]interface{}{
+			aggStage(fn1("$uniq", field), "n"),
+			winStage(fn1("$uniq", field), "n"),
+		} {
+			if err := SanitizeTraceJSONQuery([]map[string]interface{}{stage}); err != nil {
+				t.Errorf("%s field %q: %v", stage["type"], field, err)
+			}
+		}
 	}
 }
 
