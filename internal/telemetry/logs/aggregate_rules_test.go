@@ -112,34 +112,38 @@ func TestPrepareLogJSONQueryChainedAggregateAliases(t *testing.T) {
 }
 
 func TestPrepareLogJSONQueryDefaultsQuantileExactToPreviousResult(t *testing.T) {
-	for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{
-		"aggregate": func(fn map[string]interface{}, as string) map[string]interface{} { return aggregateStage(fn, as) },
-		"window":    windowStage,
-	} {
-		stages := []map[string]interface{}{
-			windowStage(fn1("$count"), "__result__"),
-			consumer(fn1("$quantile_exact", 0.99), "p99"),
-		}
-		result, err := prepareLogJSONQuery(stages, "logjson_query")
-		if err != nil {
-			t.Fatalf("%s consumer: %v", kind, err)
-		}
-		var args []interface{}
-		if kind == "aggregate" {
-			entry := result[1]["aggregates"].([]interface{})[0].(map[string]interface{})
-			args = entry["function"].(map[string]interface{})["$quantile_exact"].([]interface{})
-		} else {
-			args = result[1]["function"].(map[string]interface{})["$quantile_exact"].([]interface{})
-		}
-		if len(args) != 2 || args[1] != "__result__" {
-			t.Errorf("%s args = %#v, want an implicit __result__ field", kind, args)
-		}
+	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
+		t.Run(operator, func(t *testing.T) {
+			for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{
+				"aggregate": func(fn map[string]interface{}, as string) map[string]interface{} { return aggregateStage(fn, as) },
+				"window":    windowStage,
+			} {
+				stages := []map[string]interface{}{
+					windowStage(fn1("$count"), "__result__"),
+					consumer(fn1(operator, 0.99), "p99"),
+				}
+				result, err := prepareLogJSONQuery(stages, "logjson_query")
+				if err != nil {
+					t.Fatalf("%s consumer: %v", kind, err)
+				}
+				var args []interface{}
+				if kind == "aggregate" {
+					entry := result[1]["aggregates"].([]interface{})[0].(map[string]interface{})
+					args = entry["function"].(map[string]interface{})[operator].([]interface{})
+				} else {
+					args = result[1]["function"].(map[string]interface{})[operator].([]interface{})
+				}
+				if len(args) != 2 || args[1] != "__result__" {
+					t.Errorf("%s args = %#v, want an implicit __result__ field", kind, args)
+				}
 
-		invalid := []map[string]interface{}{windowStage(fn1("$count"), "__result__"), consumer(fn1("$quantile_exact", 1.5), "p99")}
-		_, err = prepareLogJSONQuery(invalid, "logjson_query")
-		if err == nil || !strings.Contains(err.Error(), "numeric level in [0,1]") {
-			t.Errorf("%s out-of-range level error = %v", kind, err)
-		}
+				invalid := []map[string]interface{}{windowStage(fn1("$count"), "__result__"), consumer(fn1(operator, 1.5), "p99")}
+				_, err = prepareLogJSONQuery(invalid, "logjson_query")
+				if err == nil || !strings.Contains(err.Error(), "numeric level in [0,1]") {
+					t.Errorf("%s out-of-range level error = %v", kind, err)
+				}
+			}
+		})
 	}
 }
 

@@ -113,9 +113,14 @@ func applyImplicitQuantileExactDefault(stage map[string]interface{}, hasResult b
 		return
 	}
 	apply := func(function map[string]interface{}) {
-		args, ok := function["$quantile_exact"].([]interface{})
-		if ok {
-			function["$quantile_exact"] = telemetry.DefaultQuantileExactField(args, true)
+		for name, rawArgs := range function {
+			if strings.TrimSuffix(name, "_over_time") != "$quantile_exact" {
+				continue
+			}
+			if args, ok := rawArgs.([]interface{}); ok {
+				function[name] = telemetry.DefaultQuantileExactField(args, true)
+			}
+			break
 		}
 	}
 	switch stage["type"] {

@@ -777,12 +777,18 @@ func validateAggregateStage(stage map[string]interface{}, stagePath string, hasR
 func validateAggregateFunction(function map[string]interface{}, path string, hasResult bool) error {
 	validationFunction := function
 	if hasResult {
-		if args, ok := function["$quantile_exact"].([]interface{}); ok {
-			validationFunction = make(map[string]interface{}, len(function))
-			for name, value := range function {
-				validationFunction[name] = value
+		for name, rawArgs := range function {
+			if strings.TrimSuffix(name, "_over_time") != "$quantile_exact" {
+				continue
 			}
-			validationFunction["$quantile_exact"] = telemetry.DefaultQuantileExactField(args, true)
+			if args, ok := rawArgs.([]interface{}); ok {
+				validationFunction = make(map[string]interface{}, len(function))
+				for key, value := range function {
+					validationFunction[key] = value
+				}
+				validationFunction[name] = telemetry.DefaultQuantileExactField(args, true)
+			}
+			break
 		}
 	}
 	if e := telemetry.ValidateAggregateFunction(validationFunction, path); e != nil {
