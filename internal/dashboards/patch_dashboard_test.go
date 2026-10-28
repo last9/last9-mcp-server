@@ -1,0 +1,841 @@
+package dashboards
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"slices"
+	"strings"
+	"testing"
+	"unicode/utf8"
+
+	"last9-mcp/internal/utils"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+const patchFixture = `{
+	"dashboard":{
+		"id":"dash-1","name":"Gateway",
+		"variables":[{"target":"env","type":"label","source":"env"}],
+		"panels":[
+			{"id":"p1","name":"Latency","version":1,"visualization":{"type":"timeseries"},"queries":[{"name":"A","expr":"rate(x[1m])"}]},
+			{"id":"p2","name":"Errors","version":1,"visualization":{"type":"timeseries"},"queries":[{"name":"A","expr":"rate(y[1m])"}]},
+			{"id":"s1","name":"Details","visualization":{"type":"section"}}
+		]
+	},
+	"metadata":{"_category":"custom","_type":"metrics"}
+}`
+
+type patchServer struct {
+	srv  *httptest.Server
+	puts []DashboardRequest
+	gets []string
+	// onStore, when set, mimics backend rewrites of the dashboard on PUT.
+	onStore     func(doc map[string]any)
+	failRereads bool
+}
+
+func newPatchServer(t *testing.T) *patchServer {
+	t.Helper()
+	return newPatchServerServing(t, patchFixture)
+}
+
+func newPatchServerServing(t *testing.T, fixture string) *patchServer {
+	t.Helper()
+	ps := &patchServer{}
+	ps.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/dashboards/dash-1" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			ps.gets = append(ps.gets, r.URL.RawQuery)
+			if ps.failRereads && len(ps.puts) > 0 {
+				w.WriteHeader(http.StatusBadGateway)
+				return
+			}
+			_, _ = io.WriteString(w, fixture)
+		case http.MethodPut:
+			var req DashboardRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Error(err)
+			}
+			ps.puts = append(ps.puts, req)
+			fixture = ps.store(t, req)
+			_, _ = io.WriteString(w, `{"dashboard":{"id":"dash-1"}}`)
+		default:
+			t.Errorf("unexpected method %s", r.Method)
+		}
+	}))
+	t.Cleanup(ps.srv.Close)
+	return ps
+}
+
+func (ps *patchServer) store(t *testing.T, req DashboardRequest) string {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(req.Dashboard, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if ps.onStore != nil {
+		ps.onStore(doc)
+	}
+	stored, err := json.Marshal(map[string]any{"dashboard": doc, "metadata": req.Metadata})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(stored)
+}
+
+func (ps *patchServer) patch(t *testing.T, ops string) (*mcp.CallToolResult, error) {
+	t.Helper()
+	var args PatchDashboardArgs
+	if err := json.Unmarshal([]byte(`{"id":"dash-1","ops":`+ops+`}`), &args); err != nil {
+		t.Fatal(err)
+	}
+	result, _, err := NewPatchDashboardHandler(ps.srv.Client(), testDashboardConfig(ps.srv.URL))(context.Background(), &mcp.CallToolRequest{}, args)
+	return result, err
+}
+
+func (ps *patchServer) sentDashboard(t *testing.T) map[string]any {
+	t.Helper()
+	if len(ps.puts) != 1 {
+		t.Fatalf("PUT count = %d, want 1", len(ps.puts))
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(ps.puts[0].Dashboard, &doc); err != nil {
+		t.Fatal(err)
+	}
+	return doc
+}
+
+func fixtureDashboard(t *testing.T) map[string]any {
+	t.Helper()
+	var env struct {
+		Dashboard map[string]any `json:"dashboard"`
+	}
+	if err := json.Unmarshal([]byte(patchFixture), &env); err != nil {
+		t.Fatal(err)
+	}
+	return env.Dashboard
+}
+
+func panelIDs(doc map[string]any) []string {
+	var ids []string
+	for _, p := range doc["panels"].([]any) {
+		ids = append(ids, p.(map[string]any)["id"].(string))
+	}
+	return ids
+}
+
+func assertUntouchedExcept(t *testing.T, got map[string]any, keys ...string) {
+	t.Helper()
+	want := fixtureDashboard(t)
+	for _, k := range keys {
+		delete(want, k)
+		delete(got, k)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("untargeted fields changed:\ngot  %v\nwant %v", got, want)
+	}
+}
+
+func TestPatchDashboard_AddPanel(t *testing.T) {
+	ps := newPatchServer(t)
+	result, err := ps.patch(t, `[{"op":"add_panel","panel":{"id":"p3","name":"Saturation","visualization":{"type":"timeseries"}},"index":1}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := ps.sentDashboard(t)
+	if got, want := panelIDs(doc), []string{"p1", "p3", "p2", "s1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("panels %v want %v", got, want)
+	}
+	added := doc["panels"].([]any)[1].(map[string]any)
+	if added["version"] != float64(1) {
+		t.Fatalf("added panel version %v, want defaulted to 1", added["version"])
+	}
+	if text := utils.GetTextContent(t, result); !strings.Contains(text, `"op":"add_panel","panel_id":"p3","index":1`) {
+		t.Fatalf("diff %s", text)
+	}
+}
+
+func TestPatchDashboard_AddPanelAppendsByDefault(t *testing.T) {
+	ps := newPatchServer(t)
+	if _, err := ps.patch(t, `[{"op":"add_panel","panel":{"id":"p3","name":"Saturation"}}]`); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := panelIDs(ps.sentDashboard(t)), []string{"p1", "p2", "s1", "p3"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("panels %v want %v", got, want)
+	}
+}
+
+func TestPatchDashboard_UpdatePanel(t *testing.T) {
+	ps := newPatchServer(t)
+	result, err := ps.patch(t, `[{"op":"update_panel","panel_id":"p2","fields":{"name":"5xx errors","queries":[{"name":"A","expr":"rate(z[5m])"}]}}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := ps.sentDashboard(t)
+	panels := doc["panels"].([]any)
+	p2 := panels[1].(map[string]any)
+	if p2["name"] != "5xx errors" || p2["visualization"].(map[string]any)["type"] != "timeseries" {
+		t.Fatalf("p2 = %v", p2)
+	}
+	want := fixtureDashboard(t)
+	if !reflect.DeepEqual(panels[0], want["panels"].([]any)[0]) || !reflect.DeepEqual(panels[2], want["panels"].([]any)[2]) {
+		t.Fatalf("untargeted panels changed: %v", panels)
+	}
+	assertUntouchedExcept(t, doc, "panels")
+	text := utils.GetTextContent(t, result)
+	for _, s := range []string{`"op":"update_panel"`, `"panel_id":"p2"`, `"before":"Errors"`, `"after":"5xx errors"`, `rate(z[5m])`} {
+		if !strings.Contains(text, s) {
+			t.Fatalf("diff missing %s: %s", s, text)
+		}
+	}
+	if strings.Contains(text, "Latency") {
+		t.Fatalf("diff mentions an untouched panel: %s", text)
+	}
+}
+
+func TestPatchDashboard_UpdatePanelNullRemovesField(t *testing.T) {
+	ps := newPatchServer(t)
+	if _, err := ps.patch(t, `[{"op":"update_panel","panel_id":"p1","fields":{"queries":null}}]`); err != nil {
+		t.Fatal(err)
+	}
+	p1 := ps.sentDashboard(t)["panels"].([]any)[0].(map[string]any)
+	if _, ok := p1["queries"]; ok {
+		t.Fatalf("queries not removed: %v", p1)
+	}
+}
+
+func TestPatchDashboard_UpdatePanelNullRemovesNullField(t *testing.T) {
+	ps := newPatchServerServing(t, `{"dashboard":{"name":"N","panels":[{"id":"p1","version":1,"queries":null}]}}`)
+	result, err := ps.patch(t, `[{"op":"update_panel","panel_id":"p1","fields":{"queries":null}}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p1 := ps.sentDashboard(t)["panels"].([]any)[0].(map[string]any)
+	if _, ok := p1["queries"]; ok {
+		t.Fatalf("queries not removed: %v", p1)
+	}
+	if text := utils.GetTextContent(t, result); !strings.Contains(text, `"fields":{"queries":{"before":null}}`) {
+		t.Fatalf("diff omits the deletion: %s", text)
+	}
+}
+
+func TestPatchDashboard_RemovePanel(t *testing.T) {
+	ps := newPatchServer(t)
+	result, err := ps.patch(t, `[{"op":"remove_panel","panel_id":"p1"}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := panelIDs(ps.sentDashboard(t)), []string{"p2", "s1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("panels %v want %v", got, want)
+	}
+	if text := utils.GetTextContent(t, result); !strings.Contains(text, `"op":"remove_panel","panel_id":"p1","name":"Latency"`) {
+		t.Fatalf("diff %s", text)
+	}
+}
+
+func TestPatchDashboard_MovePanel(t *testing.T) {
+	ps := newPatchServer(t)
+	result, err := ps.patch(t, `[{"op":"move_panel","panel_id":"s1","index":0}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := panelIDs(ps.sentDashboard(t)), []string{"s1", "p1", "p2"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("panels %v want %v", got, want)
+	}
+	if text := utils.GetTextContent(t, result); !strings.Contains(text, `"op":"move_panel","panel_id":"s1","from":2,"to":0`) {
+		t.Fatalf("diff %s", text)
+	}
+}
+
+func TestPatchDashboard_SetTitle(t *testing.T) {
+	ps := newPatchServer(t)
+	result, err := ps.patch(t, `[{"op":"set_title","title":"Gateway v2"}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := ps.sentDashboard(t)
+	if doc["name"] != "Gateway v2" {
+		t.Fatalf("name %v", doc["name"])
+	}
+	assertUntouchedExcept(t, doc, "name")
+	if text := utils.GetTextContent(t, result); !strings.Contains(text, `"op":"set_title","before":"Gateway","after":"Gateway v2"`) {
+		t.Fatalf("diff %s", text)
+	}
+}
+
+func TestPatchDashboard_SetVariable(t *testing.T) {
+	tests := []struct {
+		name    string
+		ops     string
+		want    []any
+		wantRaw string
+	}{
+		{
+			name:    "replaces by target",
+			ops:     `[{"op":"set_variable","variable":{"target":"env","type":"label","source":"deployment_environment"}}]`,
+			want:    []any{map[string]any{"target": "env", "type": "label", "source": "deployment_environment"}},
+			wantRaw: `"op":"set_variable","target":"env","action":"updated"`,
+		},
+		{
+			name: "appends new target",
+			ops:  `[{"op":"set_variable","variable":{"target":"service","type":"label","source":"service"}}]`,
+			want: []any{
+				map[string]any{"target": "env", "type": "label", "source": "env"},
+				map[string]any{"target": "service", "type": "label", "source": "service"},
+			},
+			wantRaw: `"op":"set_variable","target":"service","action":"added"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := newPatchServer(t)
+			result, err := ps.patch(t, tt.ops)
+			if err != nil {
+				t.Fatal(err)
+			}
+			doc := ps.sentDashboard(t)
+			if !reflect.DeepEqual(doc["variables"], tt.want) {
+				t.Fatalf("variables %v want %v", doc["variables"], tt.want)
+			}
+			assertUntouchedExcept(t, doc, "variables")
+			if text := utils.GetTextContent(t, result); !strings.Contains(text, tt.wantRaw) {
+				t.Fatalf("diff %s", text)
+			}
+		})
+	}
+}
+
+func TestPatchDashboard_PreservesMetadataAndSendsRegion(t *testing.T) {
+	ps := newPatchServer(t)
+	result, err := ps.patch(t, `[{"op":"set_title","title":"x"}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(ps.puts[0].Metadata); got != `{"_category":"custom","_type":"metrics"}` {
+		t.Fatalf("metadata %s", got)
+	}
+	if len(ps.gets) != 2 || ps.gets[0] != "region=us-east-1" || ps.gets[1] != "region=us-east-1" {
+		t.Fatalf("GET queries %v", ps.gets)
+	}
+	if ref, _ := result.Meta["reference_url"].(string); ref != "/v2/organizations/test-org/dashboards/dash-1" {
+		t.Fatalf("reference_url %q", ref)
+	}
+}
+
+func TestPatchDashboard_AppliesOpsInOrder(t *testing.T) {
+	ps := newPatchServer(t)
+	if _, err := ps.patch(t, `[{"op":"add_panel","panel":{"id":"p3"}},{"op":"move_panel","panel_id":"p3","index":0},{"op":"remove_panel","panel_id":"p1"}]`); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := panelIDs(ps.sentDashboard(t)), []string{"p3", "p2", "s1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("panels %v want %v", got, want)
+	}
+}
+
+func TestPatchDashboard_SinglePanelDiffIsCompact(t *testing.T) {
+	ps := newPatchServer(t)
+	longExpr := strings.Repeat("sum by (service) (rate(http_requests_total[5m])) + ", 60)
+	ops, _ := json.Marshal([]map[string]any{{
+		"op": "update_panel", "panel_id": "p1",
+		"fields": map[string]any{"queries": []any{map[string]any{"name": "A", "expr": longExpr}}},
+	}})
+	result, err := ps.patch(t, string(ops))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := utils.GetTextContent(t, result); len(text) > maxPatchDiffChars {
+		t.Fatalf("diff is %d chars, want <= %d: %s", len(text), maxPatchDiffChars, text)
+	}
+	if maxPatchDiffChars > 2000 {
+		t.Fatalf("maxPatchDiffChars = %d, issue caps a single-panel diff at 2000", maxPatchDiffChars)
+	}
+}
+
+func TestPatchDashboard_NoOpOpsWriteNothing(t *testing.T) {
+	tests := []struct {
+		name string
+		ops  string
+	}{
+		{name: "remove absent field", ops: `[{"op":"update_panel","panel_id":"p1","fields":{"never_existed":null}}]`},
+		{name: "set field to current value", ops: `[{"op":"update_panel","panel_id":"p1","fields":{"name":"Latency"}}]`},
+		{name: "same title", ops: `[{"op":"set_title","title":"Gateway"}]`},
+		{name: "move to current index", ops: `[{"op":"move_panel","panel_id":"p2","index":1}]`},
+		{name: "same variable", ops: `[{"op":"set_variable","variable":{"target":"env","type":"label","source":"env"}}]`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := newPatchServer(t)
+			result, err := ps.patch(t, tt.ops)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(ps.puts) != 0 {
+				t.Fatalf("PUT sent for a no-op patch")
+			}
+			want := `{"dashboard_id":"dash-1","changes":[],"note":"the dashboard already matches every op; nothing was written"}`
+			if text := utils.GetTextContent(t, result); text != want {
+				t.Fatalf("diff %s\nwant %s", text, want)
+			}
+		})
+	}
+}
+
+func TestPatchDashboard_OmitsNoOpOpsFromChanges(t *testing.T) {
+	ps := newPatchServer(t)
+	result, err := ps.patch(t, `[{"op":"set_title","title":"Gateway"},{"op":"update_panel","panel_id":"p1","fields":{"name":"Latency","never_existed":null,"description":"d"}}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps.sentDashboard(t)
+	want := `{"dashboard_id":"dash-1","changes":[{"op":"update_panel","panel_id":"p1","fields":{"description":{"after":"d"}}}]}`
+	if text := utils.GetTextContent(t, result); text != want {
+		t.Fatalf("diff %s\nwant %s", text, want)
+	}
+}
+
+// dropUnknownPanelKeys mimics the backend keeping only the panel keys it knows.
+func dropUnknownPanelKeys(doc map[string]any) {
+	known := map[string]bool{"id": true, "name": true, "version": true, "visualization": true, "queries": true, "description": true}
+	for _, p := range doc["panels"].([]any) {
+		for key := range p.(map[string]any) {
+			if !known[key] {
+				delete(p.(map[string]any), key)
+			}
+		}
+	}
+}
+
+func TestPatchDashboard_DiffsAgainstStoredDashboard(t *testing.T) {
+	tests := []struct {
+		name string
+		ops  string
+		want string
+	}{
+		{
+			name: "update_panel key the backend drops",
+			ops:  `[{"op":"update_panel","panel_id":"p1","fields":{"conc_9":"v9","description":"d"}}]`,
+			want: `{"op":"update_panel","panel_id":"p1","fields":{"description":{"after":"d"}},"not_stored":["conc_9"]}`,
+		},
+		{
+			name: "every update_panel key dropped",
+			ops:  `[{"op":"update_panel","panel_id":"p1","fields":{"conc_9":"v9"}}]`,
+			want: `{"op":"update_panel","panel_id":"p1","not_stored":["conc_9"]}`,
+		},
+		{
+			name: "add_panel key the backend drops",
+			ops:  `[{"op":"add_panel","panel":{"id":"p3","name":"S","conc_9":1}}]`,
+			want: `{"op":"add_panel","panel_id":"p3","index":3,"not_stored":["conc_9"]}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := newPatchServer(t)
+			ps.onStore = dropUnknownPanelKeys
+			result, err := ps.patch(t, tt.ops)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(ps.gets) != 2 {
+				t.Fatalf("GET count = %d, want a re-read after the PUT", len(ps.gets))
+			}
+			want := `{"dashboard_id":"dash-1","changes":[` + tt.want + `],"note":"not_stored lists keys the dashboard API did not keep; get_dashboard shows the stored panel"}`
+			if text := utils.GetTextContent(t, result); text != want {
+				t.Fatalf("diff %s\nwant %s", text, want)
+			}
+		})
+	}
+}
+
+func TestPatchDashboard_DiffShowsStoredValue(t *testing.T) {
+	ps := newPatchServer(t)
+	ps.onStore = func(doc map[string]any) {
+		doc["panels"].([]any)[0].(map[string]any)["name"] = "trimmed"
+	}
+	result, err := ps.patch(t, `[{"op":"update_panel","panel_id":"p1","fields":{"name":"  trimmed  "}}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"dashboard_id":"dash-1","changes":[{"op":"update_panel","panel_id":"p1","fields":{"name":{"before":"Latency","after":"trimmed"}}}]}`
+	if text := utils.GetTextContent(t, result); text != want {
+		t.Fatalf("diff %s\nwant %s", text, want)
+	}
+}
+
+func TestPatchDashboard_AddPanelWithoutIDReportsAssignedID(t *testing.T) {
+	ps := newPatchServer(t)
+	ps.onStore = func(doc map[string]any) {
+		for i, p := range doc["panels"].([]any) {
+			if panel := p.(map[string]any); panel["id"] == nil {
+				panel["id"] = fmt.Sprintf("gen-%d", i)
+			}
+		}
+	}
+	result, err := ps.patch(t, `[{"op":"add_panel","panel":{"name":"A"}},{"op":"add_panel","panel":{"name":"B"},"index":0}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"dashboard_id":"dash-1","changes":[{"op":"add_panel","panel_id":"gen-4","index":3},{"op":"add_panel","panel_id":"gen-0","index":0}]}`
+	if text := utils.GetTextContent(t, result); text != want {
+		t.Fatalf("diff %s\nwant %s", text, want)
+	}
+}
+
+func TestPatchDashboard_AddPanelWithoutIDOmitsIDWhenStoredOrderDiffers(t *testing.T) {
+	ps := newPatchServer(t)
+	ps.onStore = func(doc map[string]any) {
+		panels := doc["panels"].([]any)
+		panels[len(panels)-1].(map[string]any)["id"] = "gen"
+		slices.Reverse(panels)
+	}
+	result, err := ps.patch(t, `[{"op":"add_panel","panel":{"name":"A"}}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"dashboard_id":"dash-1","changes":[{"op":"add_panel","index":3}]}`
+	if text := utils.GetTextContent(t, result); text != want {
+		t.Fatalf("diff %s\nwant %s", text, want)
+	}
+}
+
+func TestPatchDashboard_RemovedKeyTheAPIRestoresIsNotRemoved(t *testing.T) {
+	ps := newPatchServerServing(t, `{"dashboard":{"name":"N","panels":[{"id":"p1","version":1,"datasource_id":"ds-1"}]}}`)
+	ps.onStore = func(doc map[string]any) {
+		for _, p := range doc["panels"].([]any) {
+			if panel := p.(map[string]any); panel["datasource_id"] == nil {
+				panel["datasource_id"] = ""
+			}
+		}
+	}
+	result, err := ps.patch(t, `[{"op":"update_panel","panel_id":"p1","fields":{"datasource_id":null}}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"dashboard_id":"dash-1","changes":[{"op":"update_panel","panel_id":"p1","not_removed":["datasource_id"]}],"note":"not_removed lists keys the dashboard API kept or restored to a default; get_dashboard shows the stored panel"}`
+	if text := utils.GetTextContent(t, result); text != want {
+		t.Fatalf("diff %s\nwant %s", text, want)
+	}
+}
+
+func TestPatchDashboard_FailedRereadReportsSentChanges(t *testing.T) {
+	ps := newPatchServer(t)
+	ps.failRereads = true
+	result, err := ps.patch(t, `[{"op":"set_title","title":"x"}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"dashboard_id":"dash-1","changes":[{"op":"set_title","before":"Gateway","after":"x"}],"note":"written, but re-reading the dashboard failed, so changes show what was sent; get_dashboard shows what was stored"}`
+	if text := utils.GetTextContent(t, result); text != want {
+		t.Fatalf("diff %s\nwant %s", text, want)
+	}
+}
+
+func TestPatchDashboard_CompactedDiffKeepsStorageNote(t *testing.T) {
+	// Each rename diffs ~400 chars, so the batch passes maxPatchDiffChars.
+	batch := []map[string]any{{"op": "update_panel", "panel_id": "p1", "fields": map[string]any{"conc_9": "dropped"}}}
+	for i := range 12 {
+		name := fmt.Sprintf("%02d", i) + strings.Repeat("x", 200)
+		batch = append(batch, map[string]any{"op": "update_panel", "panel_id": "p1", "fields": map[string]any{"name": name}})
+	}
+	ops, _ := json.Marshal(batch)
+	tests := []struct {
+		name  string
+		setup func(ps *patchServer)
+		note  string
+	}{
+		{name: "failed re-read", setup: func(ps *patchServer) { ps.failRereads = true }, note: "re-reading the dashboard failed"},
+		{name: "keys not stored", setup: func(ps *patchServer) { ps.onStore = dropUnknownPanelKeys }, note: "not_stored lists keys"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := newPatchServer(t)
+			tt.setup(ps)
+			result, err := ps.patch(t, string(ops))
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := utils.GetTextContent(t, result)
+			if !strings.Contains(text, "values omitted") || !strings.Contains(text, tt.note) {
+				t.Fatalf("compacted diff lost a note, want %q and the compaction note: %s", tt.note, text)
+			}
+		})
+	}
+}
+
+func TestPatchDashboard_TruncatedDiffValuesKeepJSONType(t *testing.T) {
+	ps := newPatchServer(t)
+	longExpr := strings.Repeat("x", 3000)
+	ops, _ := json.Marshal([]map[string]any{{
+		"op": "update_panel", "panel_id": "p1",
+		"fields": map[string]any{
+			"name":    longExpr,
+			"queries": []any{map[string]any{"name": "A", "expr": longExpr}, map[string]any{"name": "B", "expr": longExpr}},
+		},
+	}})
+	result, err := ps.patch(t, string(ops))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var diff struct {
+		Changes []struct {
+			Fields map[string]struct {
+				After json.RawMessage `json:"after"`
+			} `json:"fields"`
+		} `json:"changes"`
+	}
+	if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &diff); err != nil {
+		t.Fatal(err)
+	}
+	fields := diff.Changes[0].Fields
+	var name string
+	if err := json.Unmarshal(fields["name"].After, &name); err != nil || !strings.HasPrefix(name, "xxx") || !strings.HasSuffix(name, "…") {
+		t.Fatalf("name after = %s, want a truncated string (err %v)", fields["name"].After, err)
+	}
+	var queries []map[string]any
+	if err := json.Unmarshal(fields["queries"].After, &queries); err != nil || len(queries) == 0 || queries[0]["name"] != "A" {
+		t.Fatalf("queries after = %s, want a truncated array (err %v)", fields["queries"].After, err)
+	}
+	for _, v := range []json.RawMessage{fields["name"].After, fields["queries"].After} {
+		if len(v) > maxDiffValueChars+40 {
+			t.Fatalf("truncated value is %d chars: %s", len(v), v)
+		}
+	}
+}
+
+func TestDiffValue_TruncatesPastLimit(t *testing.T) {
+	str := func(n int) any { return strings.Repeat("x", n) }
+	// A one-string array renders as `["…"]`: n+4 JSON chars.
+	arr := func(n int) any { return []any{strings.Repeat("x", n-4)} }
+	tests := []struct {
+		name      string
+		value     any
+		truncated bool
+	}{
+		{name: "string at limit", value: str(maxDiffValueChars)},
+		{name: "string over limit", value: str(maxDiffValueChars + 1), truncated: true},
+		{name: "array JSON at limit", value: arr(maxDiffValueChars)},
+		{name: "array JSON over limit", value: arr(maxDiffValueChars + 1), truncated: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := diffValue(tt.value)
+			if truncated := !reflect.DeepEqual(got, marshalNoEscape(tt.value)); truncated != tt.truncated {
+				t.Fatalf("truncated = %v, want %v: %s", truncated, tt.truncated, got)
+			}
+			if tt.truncated && !strings.Contains(string(got), "…") {
+				t.Fatalf("truncated value lacks the … marker: %s", got)
+			}
+		})
+	}
+}
+
+func TestRenderPatchDiff_OmitsValuesPastLimit(t *testing.T) {
+	// diffOfLen builds a diff whose JSON is exactly n chars.
+	diffOfLen := func(n int) patchDiff {
+		d := patchDiff{DashboardID: "dash-1", Changes: []patchChange{{Op: "set_title", Before: marshalNoEscape("a"), After: marshalNoEscape("")}}}
+		pad := n - len(marshalNoEscape(d))
+		d.Changes[0].After = marshalNoEscape(strings.Repeat("x", pad))
+		return d
+	}
+	for _, n := range []int{maxPatchDiffChars, maxPatchDiffChars + 1} {
+		diff := diffOfLen(n)
+		if got := len(marshalNoEscape(diff)); got != n {
+			t.Fatalf("fixture diff is %d chars, want %d", got, n)
+		}
+		text := renderPatchDiff(diff)
+		omitted := !strings.Contains(text, `"before":"a"`)
+		if wantOmitted := n > maxPatchDiffChars; omitted != wantOmitted || strings.Contains(text, "values omitted") != wantOmitted {
+			t.Fatalf("%d-char diff: values omitted = %v, want %v: %.200s", n, omitted, wantOmitted, text)
+		}
+	}
+}
+
+func TestPatchDashboard_RemovePanelDiffBoundsLongName(t *testing.T) {
+	ps := newPatchServer(t)
+	ops := `[{"op":"update_panel","panel_id":"p1","fields":{"name":"` + strings.Repeat("é", 1250) +
+		`"}},{"op":"remove_panel","panel_id":"p1"}]`
+	result, err := ps.patch(t, ops)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := utils.GetTextContent(t, result)
+	if len(text) > maxPatchDiffChars {
+		t.Fatalf("diff is %d chars, want <= %d: %s", len(text), maxPatchDiffChars, text)
+	}
+	if !utf8.ValidString(text) || !strings.Contains(text, `"name":"éé`) || !strings.Contains(text, `é…"`) {
+		t.Fatalf("removed panel name not truncated on a rune boundary: %s", text)
+	}
+}
+
+func TestPatchDashboard_InvalidOpNamesIndexAndSkipsWrite(t *testing.T) {
+	tests := []struct {
+		name    string
+		ops     string
+		wantErr string
+		wantGet bool
+	}{
+		{name: "no ops", ops: `[]`, wantErr: "ops must contain at least one op"},
+		{name: "unknown op", ops: `[{"op":"set_title","title":"x"},{"op":"rename"}]`, wantErr: `ops[1]: unknown op "rename"`},
+		{name: "add_panel without panel", ops: `[{"op":"add_panel"}]`, wantErr: "ops[0] (add_panel): panel is required"},
+		{name: "update_panel without fields", ops: `[{"op":"update_panel","panel_id":"p1"}]`, wantErr: "ops[0] (update_panel): fields is required"},
+		{name: "update_panel changes id", ops: `[{"op":"update_panel","panel_id":"p1","fields":{"id":"p9"}}]`, wantErr: "ops[0] (update_panel): fields must not change id"},
+		{name: "remove_panel without panel_id", ops: `[{"op":"remove_panel"}]`, wantErr: "ops[0] (remove_panel): panel_id is required"},
+		{name: "move_panel without index", ops: `[{"op":"move_panel","panel_id":"p1"}]`, wantErr: "ops[0] (move_panel): index is required"},
+		{name: "set_title empty", ops: `[{"op":"set_title","title":" "}]`, wantErr: "ops[0] (set_title): title is required"},
+		{name: "set_variable without target", ops: `[{"op":"set_variable","variable":{"type":"label"}}]`, wantErr: "ops[0] (set_variable): variable.target is required"},
+		{name: "missing panel", ops: `[{"op":"set_title","title":"x"},{"op":"remove_panel","panel_id":"nope"}]`, wantErr: `ops[1] (remove_panel): no panel with id "nope"; get_dashboard lists panel ids`, wantGet: true},
+		{name: "duplicate panel id", ops: `[{"op":"add_panel","panel":{"id":"p1"}}]`, wantErr: `ops[0] (add_panel): a panel with id "p1" already exists`, wantGet: true},
+		{name: "index out of range", ops: `[{"op":"move_panel","panel_id":"p1","index":3}]`, wantErr: "ops[0] (move_panel): index 3 out of range 0..2", wantGet: true},
+		{name: "negative index", ops: `[{"op":"add_panel","panel":{"id":"p3"},"index":-1}]`, wantErr: "ops[0] (add_panel): index -1 out of range 0..3", wantGet: true},
+		{
+			name:    "add_panel unknown query_type",
+			ops:     `[{"op":"add_panel","panel":{"id":"p3","queries":[{"query_type":"logjson","telemetry":"logs","expr":"[]"}]}}]`,
+			wantErr: "ops[0] (add_panel): queries[0]: query_type 'logjson' is not valid for telemetry logs; use log_json, log_ql or log_raw; nothing was written",
+		},
+		{
+			name:    "update_panel unknown query_type",
+			ops:     `[{"op":"update_panel","panel_id":"p1","fields":{"queries":[{"query_type":"promql","telemetry":"metrics","expr":"up"},{"query_type":"logjson","telemetry":"logs","expr":"[]"}]}}]`,
+			wantErr: "ops[0] (update_panel): queries[1]: query_type 'logjson' is not valid for telemetry logs; use log_json, log_ql or log_raw",
+		},
+		{
+			name:    "query_type for another telemetry",
+			ops:     `[{"op":"add_panel","panel":{"queries":[{"query_type":"promql","telemetry":"logs","expr":"up"}]}}]`,
+			wantErr: "ops[0] (add_panel): queries[0]: query_type 'promql' is not valid for telemetry logs; use log_json, log_ql or log_raw",
+		},
+		{
+			name:    "unknown query_type without telemetry",
+			ops:     `[{"op":"add_panel","panel":{"queries":[{"query_type":"logjson","expr":"[]"}]}}]`,
+			wantErr: "ops[0] (add_panel): queries[0]: query_type 'logjson' is not valid; use promql, log_json, log_ql, log_raw, trace_json or trace_ql",
+		},
+		{
+			name:    "non-string query_type",
+			ops:     `[{"op":"add_panel","panel":{"queries":[{"query_type":1,"telemetry":"logs","expr":"[]"}]}}]`,
+			wantErr: "ops[0] (add_panel): queries[0]: query_type must be a string; use log_json, log_ql or log_raw",
+		},
+		{
+			name:    "non-object query",
+			ops:     `[{"op":"update_panel","panel_id":"p1","fields":{"queries":["up"]}}]`,
+			wantErr: "ops[0] (update_panel): queries[0] must be an object",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := newPatchServer(t)
+			_, err := ps.patch(t, tt.ops)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("err = %v, want containing %q", err, tt.wantErr)
+			}
+			if len(ps.puts) != 0 {
+				t.Fatalf("PUT sent despite invalid op")
+			}
+			if got := len(ps.gets) > 0; got != tt.wantGet {
+				t.Fatalf("GET sent = %v, want %v", got, tt.wantGet)
+			}
+		})
+	}
+}
+
+func TestPatchDashboard_AcceptsValidQueryTypes(t *testing.T) {
+	tests := []struct{ telemetry, queryType string }{
+		{"metrics", "promql"},
+		{"logs", "log_json"}, {"logs", "log_ql"}, {"logs", "log_raw"},
+		{"traces", "trace_json"}, {"traces", "trace_ql"},
+		{"", "promql"}, {"events", "log_json"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.telemetry+"/"+tt.queryType, func(t *testing.T) {
+			ps := newPatchServer(t)
+			query := fmt.Sprintf(`{"query_type":%q,"telemetry":%q,"expr":"x"}`, tt.queryType, tt.telemetry)
+			if _, err := ps.patch(t, `[{"op":"add_panel","panel":{"id":"p3","queries":[`+query+`]}}]`); err != nil {
+				t.Fatal(err)
+			}
+			if len(ps.puts) != 1 {
+				t.Fatalf("PUT count = %d, want 1", len(ps.puts))
+			}
+		})
+	}
+}
+
+func TestPatchDashboard_UpdatePanelRemovesQueriesWithNull(t *testing.T) {
+	ps := newPatchServer(t)
+	if _, err := ps.patch(t, `[{"op":"update_panel","panel_id":"p1","fields":{"queries":null}}]`); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := ps.sentDashboard(t)["panels"].([]any)[0].(map[string]any)["queries"]; ok {
+		t.Fatal("queries still sent")
+	}
+}
+
+func TestPatchDashboard_FailedReadSaysNothingWritten(t *testing.T) {
+	tests := []struct {
+		name string
+		id   string
+		down bool
+	}{
+		{name: "unknown dashboard", id: "nope"},
+		{name: "connection refused", id: "dash-1", down: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := newPatchServer(t)
+			if tt.down {
+				ps.srv.Close()
+			}
+			_, _, err := NewPatchDashboardHandler(ps.srv.Client(), testDashboardConfig(ps.srv.URL))(context.Background(), &mcp.CallToolRequest{}, PatchDashboardArgs{
+				ID: tt.id, Ops: []PatchDashboardOp{{Op: "set_title", Title: "x"}},
+			})
+			if err == nil || !strings.HasSuffix(err.Error(), "; nothing was written") {
+				t.Fatalf("err = %v, want it to end with \"; nothing was written\"", err)
+			}
+		})
+	}
+}
+
+func TestPatchDashboard_RequiresID(t *testing.T) {
+	ps := newPatchServer(t)
+	_, _, err := NewPatchDashboardHandler(ps.srv.Client(), testDashboardConfig(ps.srv.URL))(context.Background(), &mcp.CallToolRequest{}, PatchDashboardArgs{
+		Ops: []PatchDashboardOp{{Op: "set_title", Title: "x"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "id is required") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(ps.gets)+len(ps.puts) != 0 {
+		t.Fatal("API called for missing id")
+	}
+}
+
+func TestPatchDashboard_NotFound(t *testing.T) {
+	ps := newPatchServer(t)
+	_, _, err := NewPatchDashboardHandler(ps.srv.Client(), testDashboardConfig(ps.srv.URL))(context.Background(), &mcp.CallToolRequest{}, PatchDashboardArgs{
+		ID: "other", Ops: []PatchDashboardOp{{Op: "set_title", Title: "x"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "dashboard not found") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestPatchDashboard_ForbiddenWriteIsReadonly(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		_, _ = io.WriteString(w, patchFixture)
+	}))
+	defer srv.Close()
+	_, _, err := NewPatchDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))(context.Background(), &mcp.CallToolRequest{}, PatchDashboardArgs{
+		ID: "dash-1", Ops: []PatchDashboardOp{{Op: "set_title", Title: "x"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "dashboard is readonly") {
+		t.Fatalf("err = %v", err)
+	}
+}
