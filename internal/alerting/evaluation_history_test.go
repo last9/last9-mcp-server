@@ -354,8 +354,9 @@ func TestGetAlertConfigDescriptionStatesEvaluationLimits(t *testing.T) {
 	for _, phrase := range []string{
 		fmt.Sprintf("%d one-minute samples, newest first", evaluationHistorySamples),
 		"the newest ends 1-2 minutes before the call",
-		"unknown = no monitor row\n",
-		"or another state (no_data, silenced)",
+		"firing; ok (normal, resolved, pending or empty state);",
+		"unknown (missing row, failed lookup or unrecognized state, e.g. no_data, silenced).",
+		"Failures noted at top.",
 		"Disabled rules show none",
 		fmt.Sprintf("more than %d enabled rules match", evaluationHistoryMaxRules),
 	} {

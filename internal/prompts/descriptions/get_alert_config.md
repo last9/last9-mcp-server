@@ -49,10 +49,10 @@
 	  For a full inventory of groups (including zero-rule groups) use get_alert_groups.
 	- state: disabled, error-stale, muted or active, in that precedence
 	- disabled, muted_until (none, indefinitely or RFC3339 UTC), recurring_mute_schedule (timezone, one "Mon,Tue 22:00-06:00" line per window) and next_transition
-	- Recent Evaluations: 5 one-minute samples, newest first, labelled by the UTC minute they end
-	  (the newest ends 1-2 minutes before the call): firing, ok, or unknown = no monitor row
-	  (not yet evaluated, or lookup failed, noted at top) or another state (no_data, silenced).
-	  Disabled rules show none. Omitted for all when more than 25 enabled rules match.
+	- Recent Evaluations: 5 one-minute samples, newest first, UTC minute endings
+	  (the newest ends 1-2 minutes before the call). firing; ok (normal, resolved, pending or empty state);
+	  unknown (missing row, failed lookup or unrecognized state, e.g. no_data, silenced). Failures noted at top.
+	  Disabled rules show none. Omitted when more than 25 enabled rules match.
 	- severity: Alert severity level
 	- algorithm: Detection algorithm (static_threshold, high_spike, inc_trend, etc.)
 	- created_at, updated_at: Rule creation and last-modified times
