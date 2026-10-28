@@ -2,7 +2,7 @@ Create a custom dashboard. Pass the API envelope `{dashboard, metadata}`. `dashb
 
 Each query needs `name`, `type`, `query_type`, `telemetry`, `expr`, and `legend: {type, value}`. Legend `type` is `auto` or `custom`; use `auto` unless an explicit label is needed. Use `promql` for metrics, `log_ql` or `log_json` for log charts, `log_ql` or `log_raw` for raw log panels, and `trace_ql` or `trace_json` for traces; `logs` is a telemetry value, not a query type. For `query_type: "log_raw"`, use `telemetry: "logs"` and a non-aggregate JSON pipeline in `expr`. Every `log_json` expression must be a JSON pipeline with an aggregate stage. Example: `[{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"],"groupby":{"ServiceName":"service"}}]`. Use a discovered valid expression; do not invent metric names. For panels, use discovery only to find their expressions; do not query live logs or traces as previews, and stop after finding one valid expression per panel. Example shape: `{"dashboard":{"name":"Example","panels":[{"name":"Request rate","version":1,"layout":{"x":0,"y":0,"w":12,"h":8},"visualization":{"type":"timeseries"},"queries":[{"name":"A","type":"range","query_type":"promql","telemetry":"metrics","expr":"up","legend":{"type":"auto","value":""}}]}]},"metadata":{"_category":"custom","_type":"metrics"}}`.
 
-Use this tool only for a net-new dashboard (no id yet). Create once. After this tool returns, keep dashboard.id and call update_dashboard for any panel, layout, or query change — including later in the same turn. If an id was returned this turn or is already known, do not call create_dashboard again.
+Use this tool only for a net-new dashboard (no id yet). Create once. After this tool returns, keep dashboard.id and refine that dashboard — including later in the same turn. If an id was returned this turn or is already known, do not call create_dashboard again.
 
 For `log_json` line, timeseries, or bar panels, use exactly one `window_aggregate` stage with a `window`; a plain `aggregate` stage does not satisfy the API's timeslice requirement, and grouping by service or environment does not replace the window. When the user supplies a service, use it without calling `get_service_profile`, `get_service_environments`, or `did_you_mean`; discover only the metric expressions required by the panels.
 
@@ -10,11 +10,12 @@ For `log_json` line, timeseries, or bar panels, use exactly one `window_aggregat
 Build a net-new dashboard that has no id yet.
 
 ## When not to use
-- Change an existing dashboard: `update_dashboard`
+- Edit panels of an existing dashboard: `patch_dashboard`
+- Restructure an existing dashboard: `update_dashboard`
 
 ## Pairs well with
 - `validate_dashboard` (dry-run the payload)
-- `update_dashboard` (refine with the returned id)
+- `patch_dashboard` (edit panels by the returned id)
 
 ## Output shape
 The created dashboard, including its `id`.
