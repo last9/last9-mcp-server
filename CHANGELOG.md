@@ -12,9 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_metric_status` and `get_service_profile` resolve an approximate `datasource` the way the `prometheus_*` tools do: a near miss queries its closest match, an omitted one the default, and an additional text block names the one used (`Using datasource "X" (closest match to "Y").` or `Using datasource "X" (default).`); a looser or ambiguous name returns candidates with no query and `isError` unset, and an unknown name is a tool error listing the available datasources. `get_metric_status` now treats a blank `datasource` as omitted instead of failing (#432).
 
 ### Fixed
+- Log-query errors (search API and chunked `get_logs`), trace errors, and other tool errors that preserve a typed cause now carry `_meta["last9/error-type"]: "system_error"` for HTTP 5xx/408, client timeouts and context deadlines; overall tool-call deadlines are tagged too. Trace unreachable/invalid-response errors are also tagged. The SDK records the tag as `mcp.error.type=system_error`; validation, HTTP 400/422 errors and wrapped request cancellations stay untagged. Legacy paths that discard the typed cause, and non-trace truncated bodies without a timeout, remain untagged (#415).
 - `get_traces` keeps each returned trace as the API sent it instead of decoding it into generic maps, so a chunk of traces holds about its wire size in memory rather than several times it. Integers past 2^53, such as nanosecond timestamps, are no longer rounded (`1761550000123456789` was returned as `1761550000123456800`), and fields within a trace keep the API's order instead of being sorted (#440).
 
 ### Changed
+- Bumped `github.com/last9/mcp-go-sdk` 0.1.5 → 0.1.6 (#415).
 - `get_logs` and `get_service_logs` descriptions now say to omit `response_mode` and use `raw` only to quote exact text: models were sending `response_mode: "raw"` whenever a question asked for lines, which returned raw lines instead of the default summary and lost its token saving (#448).
 
 ## [0.20.1] - 2026-10-27

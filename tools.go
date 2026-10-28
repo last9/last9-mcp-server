@@ -156,7 +156,7 @@ func withCallDeadline[In, Out any](timeout time.Duration, readOnly bool, handler
 		if err != nil {
 			msg += fmt.Sprintf(" (%v)", err)
 		}
-		return utils.ToolErrorResult(msg + ". Narrow the time range or add filters before retrying."), out, nil
+		return last9mcp.SystemErrorResult(msg + ". Narrow the time range or add filters before retrying."), out, nil
 	}
 }
 
@@ -177,13 +177,25 @@ func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, 
 			err = fmt.Errorf("register %q: %v", tool.Name, r)
 		}
 	}()
-	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, handler); regErr != nil {
+	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, tagSystemErrors(handler)); regErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, regErr)
 	}
 	if coerceErr := addIntegerArgsCoercion[In](server.Server, tool); coerceErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, coerceErr)
 	}
 	return nil
+}
+
+// tagSystemErrors returns an upstream failure as a system_error-tagged result itself:
+// the SDK would wrap the error in an untagged result that telemetry counts as user_error.
+func tagSystemErrors[In, Out any](handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+		result, out, err := handler(ctx, req, in)
+		if utils.IsSystemError(err) {
+			return utils.ErrorResult(err), out, nil
+		}
+		return result, out, err
+	}
 }
 
 // registerWriteTool registers a tool that changes Last9 state. verify is the read call
