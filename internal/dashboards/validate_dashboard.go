@@ -455,6 +455,15 @@ func validateTarget(
 		"diagnosis":    nil,
 	}
 
+	// Checked before interpolation: an unknown type's pipeline operators ($and, $eq)
+	// would otherwise be reported as unresolved dashboard variables.
+	if err := checkQueryType(query); err != nil {
+		target["status"] = "invalid_query"
+		target["query_type"] = "unknown"
+		target["lint"] = []any{lintFinding("unknown_query_type", severityError, err.Error())}
+		return target
+	}
+
 	var resolved any
 	var used map[string]map[string]any
 	var unresolved []string

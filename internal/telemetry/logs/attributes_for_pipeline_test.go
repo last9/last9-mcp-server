@@ -41,6 +41,10 @@ func TestLogFieldFilterField(t *testing.T) {
 		{"service", "ServiceName"},
 		{"severity", "SeverityText"},
 		{"body", "Body"},
+		{"trace_id", "TraceId"},
+		{"Trace_Id", "attributes['Trace_Id']"}, // attribute names are case-sensitive: only exact trace_id is the column
+		{"foo_id", "attributes['foo_id']"},
+		{"span_id", "attributes['span_id']"}, // logs API rejects SpanId: HTTP 400 "invalid JSON pipeline"
 		{"status_code", "attributes['status_code']"},
 		{"http.status_code", "attributes['http.status_code']"},
 		{"log_level", "attributes['log_level']"}, // must NOT become attributes['level']
@@ -412,6 +416,75 @@ func TestGetLogAttributesForPipeline_SeverityFamilyDedup(t *testing.T) {
 	}
 	if statusCount != 1 {
 		t.Errorf("expected exactly 1 status_code entry (true duplicate), got %d", statusCount)
+	}
+}
+
+// Indexed and logfmt trace_id/span_id are listed once each, with filters the
+// logs API accepts: TraceId and attributes['span_id'] return rows; SpanId is a 400.
+func TestGetLogAttributesForPipeline_TraceContextIndexedOnce(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"gw","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7"}]}`
+	samples := []string{
+		`level=info trace_id=4bf92f3577b34da6a3ce929d0e0e4736 span_id=00f067aa0ba902b7 msg="served"`,
+		`level=info trace_id=5bf92f3577b34da6a3ce929d0e0e4736 span_id=10f067aa0ba902b7 msg="served"`,
+	}
+	server := bodySamplingServer(t, series, samples, nil)
+	defer server.Close()
+
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), testAttrConfig(server.URL))
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	attrs := decodeLogAttributes(t, res)
+
+	wantHints := map[string]string{
+		"trace_id": `{"$eq": ["TraceId", "<value>"]}`,
+		"span_id":  `{"$eq": ["attributes['span_id']", "<value>"]}`,
+	}
+	for name, wantHint := range wantHints {
+		var got []LogAttribute
+		for _, a := range attrs {
+			if a.Name == name {
+				got = append(got, a)
+			}
+		}
+		if len(got) != 1 {
+			t.Errorf("%s: want exactly 1 entry, got %d: %+v", name, len(got), got)
+			continue
+		}
+		if got[0].Source == "body" || got[0].Hint != wantHint {
+			t.Errorf("%s: want indexed entry with hint %s, got %+v", name, wantHint, got[0])
+		}
+	}
+	if msg := attrByName(attrs, "msg"); msg == nil || msg.Source != "body" {
+		t.Errorf("expected body-derived 'msg', got: %v", attrs)
+	}
+}
+
+func TestGetLogAttributesForPipeline_SameNameDifferentFieldKept(t *testing.T) {
+	series := `{"status":"success","data":[{"service":"gw","resource_http_status_code":"200"}]}`
+	server := bodySamplingServer(t, series, []string{`{"resource_http_status_code":500}`}, nil)
+	defer server.Close()
+
+	handler := NewGetLogAttributesForPipelineHandler(server.Client(), testAttrConfig(server.URL))
+	res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetLogAttributesForPipelineArgs{
+		Pipeline: []map[string]interface{}{{"type": "filter", "query": map[string]interface{}{}}},
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	fields := map[string]bool{}
+	for _, a := range decodeLogAttributes(t, res) {
+		if a.Name == "resource_http_status_code" {
+			fields[a.FilterField] = true
+		}
+	}
+	for _, want := range []string{"resources['http_status_code']", "attributes['resource_http_status_code']"} {
+		if !fields[want] {
+			t.Errorf("missing resource_http_status_code entry with filter_field %s; got %v", want, fields)
+		}
 	}
 }
 

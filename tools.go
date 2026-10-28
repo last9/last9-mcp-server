@@ -14,6 +14,7 @@ import (
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/change_events"
 	"last9-mcp/internal/changeimpact"
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/grafana"
 	"last9-mcp/internal/models"
@@ -62,10 +63,17 @@ type toolGate struct {
 	readOnly map[string]bool // every offered tool name → its readOnlyHint
 	served   toolsets.Set    // every admitted tool name
 	pending  []func() error  // registrations of admitted tools, in offer order
+
+	callTimeout time.Duration // overall deadline of one tool call
 }
 
 func newToolGate(filter toolsets.Filter) *toolGate {
-	return &toolGate{filter: filter, readOnly: make(map[string]bool), served: make(toolsets.Set)}
+	return &toolGate{
+		filter:      filter,
+		readOnly:    make(map[string]bool),
+		served:      make(toolsets.Set),
+		callTimeout: constants.ToolCallTimeout,
+	}
 }
 
 func (g *toolGate) admit(tool *mcp.Tool) bool {
@@ -129,9 +137,28 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, gate *toolG
 		return nil
 	}
 	gate.pending = append(gate.pending, func() error {
-		return registerTool(server, tool, handler, gate.served.Allows)
+		return registerTool(server, tool, withCallDeadline(gate.callTimeout, gate.readOnly[tool.Name], handler), gate.served.Allows)
 	})
 	return nil
+}
+
+// withCallDeadline bounds one tool call as a whole: per-request and per-chunk timeouts
+// alone let a chunk loop run for hours. Read handlers can fold canceled requests into a
+// result, so every read result at the deadline is replaced; a write's may name its verify call.
+func withCallDeadline[In, Out any](timeout time.Duration, readOnly bool, handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		result, out, err := handler(ctx, req, in)
+		if !errors.Is(ctx.Err(), context.DeadlineExceeded) || (err == nil && !readOnly) {
+			return result, out, err
+		}
+		msg := fmt.Sprintf("Stopped at the %s tool-call deadline", timeout)
+		if err != nil {
+			msg += fmt.Sprintf(" (%v)", err)
+		}
+		return utils.ToolErrorResult(msg + ". Narrow the time range or add filters before retrying."), out, nil
+	}
 }
 
 // registerTool registers one admitted tool, keeping only the description
@@ -508,7 +535,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Name:        "create_alert_from_chart",
 		Annotations: writeTool("Create Alert From Chart", false, false),
 		Description: prompts.CreateAlertFromChartDescription,
-	}, "get_alert_config with rule_name set to the name you passed",
+	}, "get_alert_config with rule_name set to the name you passed; if it finds the rule, it was not disabled and can fire: run patch_alert with its Entity ID, id and is_disabled=true",
 		alerting.NewCreateAlertFromChartHandler(client, cfg)))
 
 	// Register alerts tool
@@ -708,6 +735,13 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		InputSchema: dashboards.GetUpdateDashboardInputSchema(),
 	}, "get_dashboard for id, comparing it to the dashboard you sent",
 		dashboards.NewUpdateDashboardHandler(client, cfg)))
+
+	reg(registerWriteTool(server, gate, &mcp.Tool{
+		Name:        "patch_dashboard",
+		Annotations: writeTool("Patch Dashboard", true, false),
+		Description: prompts.PatchDashboardDescription,
+	}, "get_dashboard for id, checking the panels your ops targeted",
+		dashboards.NewPatchDashboardHandler(client, cfg)))
 
 	reg(registerWriteTool(server, gate, &mcp.Tool{
 		Name:        "delete_dashboard",

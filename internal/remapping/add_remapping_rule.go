@@ -18,7 +18,7 @@ import (
 type RemappingPrecondition struct {
 	Key      string `json:"key" jsonschema:"(Required) Attribute key to match (e.g. attributes[\"severity\"])"`
 	Value    string `json:"value" jsonschema:"(Required) Value to compare against"`
-	Operator string `json:"operator" jsonschema:"Comparison operator: equals, not_equals, or like (default: equals)"`
+	Operator string `json:"operator,omitempty" jsonschema:"Comparison operator: equals, not_equals, or like (default: equals)"`
 }
 
 // AddRemappingRuleArgs creates a remapping rule.
@@ -70,7 +70,7 @@ func validateAddRemappingRuleArgs(args AddRemappingRuleArgs) error {
 	if err := validateRuleType(args.RuleType); err != nil {
 		return err
 	}
-	if args.Name == "" {
+	if strings.TrimSpace(args.Name) == "" {
 		return errors.New("name is required")
 	}
 	if len(args.RemapKeys) == 0 {

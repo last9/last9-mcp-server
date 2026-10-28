@@ -15,6 +15,7 @@ var writeTools = map[string]struct{ destructive, idempotent bool }{
 	"add_remapping_rule":          {destructive: false, idempotent: false},
 	"create_dashboard":            {destructive: false, idempotent: false},
 	"update_dashboard":            {destructive: true, idempotent: true},
+	"patch_dashboard":             {destructive: true, idempotent: false},
 	"delete_dashboard":            {destructive: true, idempotent: true},
 	"delete_dashboard_snapshot":   {destructive: true, idempotent: true},
 	"create_alert":                {destructive: false, idempotent: false},

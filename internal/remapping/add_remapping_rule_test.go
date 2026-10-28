@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -149,6 +150,52 @@ func TestAddRemappingRuleHandlerSendsLogsMapPayload(t *testing.T) {
 	}
 }
 
+func TestAddRemappingRuleDefaultsOmittedPreconditionOperator(t *testing.T) {
+	var capturedOperator string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Properties struct {
+				Preconditions []RemappingPrecondition `json:"preconditions"`
+			} `json:"properties"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+			http.Error(w, "bad body", http.StatusBadRequest)
+			return
+		}
+		if len(body.Properties.Preconditions) == 1 {
+			capturedOperator = body.Properties.Preconditions[0].Operator
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer upstream.Close()
+
+	server := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+	mcp.AddTool(server, &mcp.Tool{Name: "add_remapping_rule"}, NewAddRemappingRuleHandler(upstream.Client(), testRemappingConfig(upstream.URL)))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	if _, err := server.Connect(ctx, serverTransport, nil); err != nil {
+		t.Fatal(err)
+	}
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil).Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "add_remapping_rule",
+		Arguments: json.RawMessage(`{"rule_type":"logs_extract","name":"extract-level","remap_keys":["level"],"target_attribute":"log_attributes","extract_type":"json","preconditions":[{"key":"severity","value":"INFO"}]}`),
+	})
+	if err != nil || result == nil || result.IsError {
+		t.Fatalf("omitted operator call failed: result=%+v, err=%v", result, err)
+	}
+	if capturedOperator != "equals" {
+		t.Fatalf("operator = %q, want equals", capturedOperator)
+	}
+}
+
 func TestAddRemappingRuleHandlerSendsTracesMapPayload(t *testing.T) {
 	var capturedBody map[string]interface{}
 
@@ -221,6 +268,10 @@ func TestAddRemappingRuleHandlerValidation(t *testing.T) {
 		{
 			name: "invalid rule type",
 			args: AddRemappingRuleArgs{RuleType: "invalid", Name: "rule", RemapKeys: []string{"k"}, TargetAttribute: "service"},
+		},
+		{
+			name: "whitespace-only name",
+			args: AddRemappingRuleArgs{RuleType: ruleTypeLogsMap, Name: " \t\n", RemapKeys: []string{"k"}, TargetAttribute: "service"},
 		},
 		{
 			name: "logs_extract missing extract_type",
