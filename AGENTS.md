@@ -433,6 +433,7 @@ results is the same defect class as a wrong number. Dependency bumps get a singl
   your branch, put your entry above the one you merged in.
 - End every bullet with the **PR** number, not the issue it closes: `… (#274).` A reader
   needs the diff, and the issue is one click from the PR.
+- For new entries, use the number of the PR adding the entry, not another PR's number.
 - State the observable behavior and the mechanism behind it. These entries are read by
   people debugging a version difference, so "fixed a bug in get_foo" is useless — say what
   was wrong, what they saw, and what they see now.
