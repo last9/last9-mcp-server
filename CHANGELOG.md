@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `get_alert_config` shows each rule's `Recent Evaluations`: 5 one-minute samples (`firing`, `ok`, or `unknown` when the alert monitor has no row for the rule or reports a state other than firing, normal, resolved or pending), newest first and ending 1–2 minutes before the call, read with 5 concurrent monitor calls. Disabled rules show none; when more than 25 enabled rules match, history is omitted and the response says so, as it does when a minute's lookup fails. Previously checking whether a rule fired recently took a separate `get_alert_rule_state` call (#371).
+- `get_alert_config` shows each rule's `Recent Evaluations`: 5 one-minute samples (`firing`, `ok`, or `unknown` when the alert monitor has no row for the rule or reports a state other than firing, normal, resolved, pending or empty), newest first and ending 1–2 minutes before the call, read with 5 concurrent monitor calls. Disabled rules show none; when more than 25 enabled rules match, history is omitted and the response says so, as it does when a minute's lookup fails. Previously checking whether a rule fired recently took a separate `get_alert_rule_state` call (#371).
 
 ### Fixed
 - `get_alert_rule_state` returns a tool error with recovery guidance instead of successful `{}` when an `alert_group_id`, `rule_name` or `alert_group_name` filter matches no rules across the sampled range. Empty samples alone do not establish whether the group or rule exists; unfiltered empty results and gaps within a matched rule's history retain their existing behavior (#411).
