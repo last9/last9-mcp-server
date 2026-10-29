@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added `get_alert_operations_summary` (`alerts` and `investigate` toolsets): alerts raised vs acknowledged, unacknowledged, current backlog and notification deliveries over an RFC3339 window of at most 31 days, optionally by severity or service. Every count is returned with its `status` (`available`, `partial`, `unavailable`) and `reason`, plus `coverage`; a status the server does not recognise is served as `unavailable` without its count. `include_rules=true` adds per-rule hygiene: the top 20 rules by fire count and the flapping (≥ 1 flap per day) and unrouted ones, with totals; if that call fails the summary is still returned with an `errors` entry (#429).
+
 ### Fixed
 - `get_alert_rule_state` returns a tool error with recovery guidance instead of successful `{}` when an `alert_group_id`, `rule_name` or `alert_group_name` filter matches no rules across the sampled range. Empty samples alone do not establish whether the group or rule exists; unfiltered empty results and gaps within a matched rule's history retain their existing behavior (#411).
 - `get_alert_rule_state` no longer runs into the 3-minute client timeout: its samples are fetched 5 at a time instead of one after another, and a run still unfinished after 60s returns a tool error with the number of samples fetched and how to retry (larger `step`, narrower range, `alert_group_id`/`rule_name` filters). Each sample's monitor `window` is now `min(step, 3600)` seconds, the widest the monitor API accepts; it was `step`. A sample whose reply is empty, malformed or has no `alert_rules` fails the call rather than reading as no rule firing; `get_workspace_overview` leaves `firing_alert_count` null with an `errors[]` entry for one (#411).

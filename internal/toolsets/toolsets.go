@@ -72,6 +72,7 @@ var named = map[string][]string{
 		"delete_notification_channel",
 		"recommend_alert_config",
 		"get_alert_groups",
+		"get_alert_operations_summary",
 		"get_entity_alert_rules",
 		"describe_alert_chart",
 		"create_alert_from_chart",
@@ -121,6 +122,7 @@ var investigateExtras = []string{
 	"did_you_mean",
 	"get_service_profile",
 	"list_datasources",
+	"get_alert_operations_summary",
 }
 
 // ValidNames returns sorted valid toolset tokens for error messages.
