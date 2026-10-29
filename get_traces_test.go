@@ -5,15 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"last9-mcp/internal/telemetry/traces"
-	"last9-mcp/internal/toolsets"
-	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -40,11 +37,17 @@ func TestGetTracesRegisteredWaiterReportsBusy(t *testing.T) {
 			Limit:          1,
 		}
 	}
+	fixture := registeredToolFixture{
+		tool:    &mcp.Tool{Name: "get_traces", Annotations: readOnlyTool("Get Traces"), InputSchema: traces.GetTracesInputSchema()},
+		timeout: 10 * time.Second,
+	}
+	heldSession := connectToolFixture(t, fixture, traces.NewGetTracesHandler(upstream.Client(), cfg))
+	heldCtx, cancelHeld := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelHeld()
 	done := make(chan error, 3)
 	for range 3 {
-		handler := traces.NewGetTracesHandler(upstream.Client(), cfg)
 		go func() {
-			res, _, err := handler(context.Background(), &mcp.CallToolRequest{}, args())
+			res, err := heldSession.CallTool(heldCtx, &mcp.CallToolParams{Name: "get_traces", Arguments: args()})
 			if err == nil && res.IsError {
 				err = fmt.Errorf("held call: %v", res)
 			}
@@ -66,30 +69,51 @@ func TestGetTracesRegisteredWaiterReportsBusy(t *testing.T) {
 			t.Fatal("held calls did not arrive")
 		}
 	}
-	server := newRegisterTestServer(t)
-	gate := newToolGate(toolsets.Filter{})
-	gate.callTimeout = 100 * time.Millisecond
-	tool := &mcp.Tool{Name: "get_traces", Annotations: readOnlyTool("Get Traces"), InputSchema: traces.GetTracesInputSchema()}
-	if err := registerIfAllowed(server, gate, tool, traces.NewGetTracesHandler(upstream.Client(), cfg)); err != nil {
-		t.Fatal(err)
+	for _, scenario := range []string{"deadline", "cancellation", "invalid start", "invalid end"} {
+		t.Run(scenario, func(t *testing.T) {
+			fixture.timeout = 100 * time.Millisecond
+			fixture.middleware = nil
+			in := args()
+			want := toolErrorExpectation{
+				contains: []string{"get_traces is busy", "3 concurrent get_traces calls", "Retry shortly", "context deadline exceeded", "tool-call deadline", "Narrow the time range"},
+				system:   true,
+			}
+			switch scenario {
+			case "cancellation":
+				fixture.middleware = cancelToolCall
+				want = toolErrorExpectation{
+					contains: []string{"get_traces is busy", "Retry shortly", "context canceled"},
+					absent:   []string{"tool-call deadline", "Narrow the time range"},
+				}
+			case "invalid start", "invalid end":
+				if scenario == "invalid start" {
+					in.StartTimeISO = "not-a-time"
+				} else {
+					in.EndTimeISO = "not-a-time"
+				}
+				want = toolErrorExpectation{
+					contains: []string{"failed to parse time range", "not-a-time"},
+					absent:   []string{"get_traces is busy", "tool-call deadline", "Retry shortly"},
+				}
+			}
+			session := connectToolFixture(t, fixture, traces.NewGetTracesHandler(upstream.Client(), cfg))
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: "get_traces", Arguments: in})
+			assertToolError(t, result, want)
+			if got := arrived.Load(); got != 3 {
+				t.Fatalf("upstream requests=%d, want only the 3 held calls", got)
+			}
+		})
 	}
-	if err := gate.registerAdmitted(); err != nil {
-		t.Fatal(err)
-	}
-	session := connectRegisteredServer(t, server)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "get_traces", Arguments: args()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := arrived.Load(); got != 3 {
-		t.Fatalf("upstream requests=%d, want 3", got)
-	}
-	if text := toolResultText(result); !result.IsError || !strings.Contains(text, "get_traces is busy") || !strings.Contains(text, "Retry shortly") {
-		t.Fatalf("want busy isError from registered waiter, got isError=%v text=%q", result.IsError, text)
-	}
-	if result.Meta[utils.ErrorTypeMetaKey] != utils.SystemErrorType {
-		t.Fatalf("deadline error missing system_error tag: %v", result.Meta)
+}
+
+// Cancel inside receiving middleware: the SDK detaches handlers from the serve context.
+func cancelToolCall(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		if method == "tools/call" {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithCancel(ctx)
+			cancel()
+		}
+		return next(ctx, method, req)
 	}
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +12,6 @@ import (
 	"time"
 
 	"last9-mcp/internal/models"
-	"last9-mcp/internal/toolsets"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -100,50 +100,42 @@ func callToolForErrorType(t *testing.T, cfg models.Config, client *http.Client, 
 func TestRegisteredDeadlineErrorType(t *testing.T) {
 	for _, outcome := range []string{"error", "partial result", "tool error", "unknown write outcome"} {
 		t.Run(outcome, func(t *testing.T) {
-			server := newRegisterTestServer(t)
-			gate := newToolGate(toolsets.Filter{})
-			gate.callTimeout = -time.Second
 			handler := func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+				<-ctx.Done()
 				switch outcome {
 				case "error":
-					return nil, nil, ctx.Err()
+					return nil, nil, fmt.Errorf("query failed: %w", ctx.Err())
 				case "partial result":
 					return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "partial results"}}}, nil, nil
 				case "unknown write outcome":
-					return nil, nil, &utils.WriteOutcomeUnknownError{Err: ctx.Err()}
+					return nil, nil, fmt.Errorf("create failed: %w", &utils.WriteOutcomeUnknownError{Cause: "the request timed out", Err: ctx.Err()})
 				default:
 					return utils.ToolErrorResult("invalid response"), nil, nil
 				}
 			}
-			tool := &mcp.Tool{Name: "get_foo", Annotations: readOnlyTool("Get Foo")}
-			var err error
+			fixture := registeredToolFixture{
+				tool:    &mcp.Tool{Name: "get_foo", Annotations: readOnlyTool("Get Foo")},
+				timeout: 20 * time.Millisecond,
+			}
+			want := toolErrorExpectation{
+				contains: []string{"tool-call deadline", "Narrow the time range or add filters before retrying"},
+				absent:   []string{"partial results", "invalid response"},
+				system:   true,
+			}
+			if outcome == "error" {
+				want.contains = append(want.contains, "query failed: context deadline exceeded")
+			}
 			if outcome == "unknown write outcome" {
-				tool = &mcp.Tool{Name: "create_foo", Annotations: writeTool("Create Foo", false, false)}
-				err = registerWriteTool(server, gate, tool, "get_foos, by name", handler)
-			} else {
-				err = registerIfAllowed(server, gate, tool, handler)
+				fixture.tool = &mcp.Tool{Name: "create_foo", Annotations: writeTool("Create Foo", false, false)}
+				fixture.verify = "get_foos, by name"
+				want = toolErrorExpectation{
+					contains: []string{"may or may not have been applied", "the request timed out", "Do not retry until you have checked: get_foos, by name"},
+					absent:   []string{"tool-call deadline", "Narrow the time range"},
+				}
 			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := gate.registerAdmitted(); err != nil {
-				t.Fatal(err)
-			}
-			result, err := connectRegisteredServer(t, server).CallTool(context.Background(), &mcp.CallToolParams{Name: tool.Name, Arguments: struct{}{}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			wantSystem := outcome != "unknown write outcome"
-			if !result.IsError || (result.Meta[utils.ErrorTypeMetaKey] == utils.SystemErrorType) != wantSystem {
-				t.Fatalf("want isError and system_error=%v, got %+v", wantSystem, result)
-			}
-			wantText := "tool-call deadline"
-			if !wantSystem {
-				wantText = "get_foos, by name"
-			}
-			if !strings.Contains(toolResultText(result), wantText) {
-				t.Fatalf("missing %q: %s", wantText, toolResultText(result))
-			}
+			session := connectToolFixture(t, fixture, handler)
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: fixture.tool.Name, Arguments: struct{}{}})
+			assertToolError(t, result, want)
 		})
 	}
 }
@@ -204,4 +196,38 @@ func (status errorTypeStatusTransport) RoundTrip(req *http.Request) (*http.Respo
 		Body:       io.NopCloser(strings.NewReader(`{"error":"invalid pipeline"}`)),
 		Request:    req,
 	}, nil
+}
+
+func TestRegisteredWrappedErrorsBeforeDeadline(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusRequestTimeout, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			cause := utils.NewUpstreamHTTPError(&http.Response{
+				StatusCode: status,
+				Body:       io.NopCloser(strings.NewReader(`{"error":"invalid pipeline"}`)),
+			}, "query")
+			handler := func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+				return nil, nil, fmt.Errorf("read failed: %w", cause)
+			}
+			fixture := registeredToolFixture{
+				tool:    &mcp.Tool{Name: "get_foo", Annotations: readOnlyTool("Get Foo")},
+				timeout: time.Second,
+			}
+			want := toolErrorExpectation{
+				contains: []string{fmt.Sprintf("read failed: query failed with HTTP %d", status)},
+				absent:   []string{"tool-call deadline"},
+				system:   status != http.StatusBadRequest,
+			}
+			switch status {
+			case http.StatusBadRequest:
+				want.contains = append(want.contains, "invalid pipeline", "Review the tool arguments and retry")
+			case http.StatusRequestTimeout:
+				want.contains = append(want.contains, "Do not retry the same request unchanged")
+			case http.StatusServiceUnavailable:
+				want.contains = append(want.contains, "temporarily unavailable; retry later")
+			}
+			session := connectToolFixture(t, fixture, handler)
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: fixture.tool.Name, Arguments: struct{}{}})
+			assertToolError(t, result, want)
+		})
+	}
 }
