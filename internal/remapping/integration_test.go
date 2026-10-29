@@ -28,8 +28,8 @@ func TestGetRemappingRules_Integration_AllTypes(t *testing.T) {
 			result, _, err := handler(ctx, &mcp.CallToolRequest{}, GetRemappingRulesArgs{
 				RuleType: ruleType,
 			})
-			if utils.CheckAPIError(t, err) {
-				return
+			if err != nil {
+				t.Fatalf("list %s remapping rules: %v", ruleType, err)
 			}
 			if result == nil {
 				t.Fatal("expected result, got nil")
@@ -62,8 +62,8 @@ func TestAddRemappingRule_Integration_IdempotentJSONExtract(t *testing.T) {
 	existing, _, err := getHandler(ctx, &mcp.CallToolRequest{}, GetRemappingRulesArgs{
 		RuleType: ruleTypeLogsExtract,
 	})
-	if utils.CheckAPIError(t, err) {
-		return
+	if err != nil {
+		t.Fatalf("list remapping rules before create: %v", err)
 	}
 	if strings.Contains(utils.GetTextContent(t, existing), integrationTestRuleName) {
 		t.Skipf("rule %q already exists; skipping create", integrationTestRuleName)
@@ -77,8 +77,8 @@ func TestAddRemappingRule_Integration_IdempotentJSONExtract(t *testing.T) {
 		TargetAttribute: "log_attributes",
 		Action:          "upsert",
 	})
-	if utils.CheckAPIError(t, err) {
-		return
+	if err != nil {
+		t.Fatalf("create remapping rule: %v", err)
 	}
 
 	var created struct {
@@ -98,8 +98,8 @@ func TestAddRemappingRule_Integration_IdempotentJSONExtract(t *testing.T) {
 	after, _, err := getHandler(ctx, &mcp.CallToolRequest{}, GetRemappingRulesArgs{
 		RuleType: ruleTypeLogsExtract,
 	})
-	if utils.CheckAPIError(t, err) {
-		return
+	if err != nil {
+		t.Fatalf("list remapping rules after create: %v", err)
 	}
 	if !strings.Contains(utils.GetTextContent(t, after), integrationTestRuleName) {
 		t.Fatalf("created rule %q not found in subsequent list", integrationTestRuleName)
