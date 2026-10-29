@@ -812,9 +812,9 @@ Each rule lists `Recent Evaluations`: 5 one-minute samples, newest first, each l
 
 ### get_alert_rule_state
 
-- `start_time` (integer, required): Unix epoch start of the range (inclusive).
-- `end_time` (integer, required): Unix epoch end of the range (inclusive).
-- `step` (integer, required): Resolution in seconds between samples. The number of samples `((end_time - start_time) / step + 1)` is capped at 100.
+- `start_time` (integer or string, required): Start of the range (inclusive): Unix epoch seconds (`1718000000`) or RFC3339 (`2024-06-10T06:13:20Z`). Epoch milliseconds, microseconds and nanoseconds are converted to seconds; values before 2000-01-01 are rejected.
+- `end_time` (integer or string, required): End of the range (inclusive), in the same formats.
+- `step` (integer, required): Resolution in seconds between samples. The number of samples `((end_time - start_time) / step + 1)` is capped at 100. Each sample is one upstream call covering the `min(step, 3600)` seconds ending at its timestamp; samples are fetched 5 at a time, and the tool returns an error with retry guidance if they take longer than 60s.
 - `alert_group_id` (string, optional): Filter by alert group ID.
 - `rule_name` (string, optional): Regex filter on rule name.
 - `alert_group_name` (string, optional): Regex filter on alert group name.
@@ -1113,7 +1113,36 @@ No parameters. Returns a safe projection of datasources (no credential fields).
 
 ## Testing
 
-See [TESTING.md](TESTING.md) for integration test setup and instructions.
+Run the test goroutine analyzer without executing the application tests:
+
+```bash
+make lint-test
+```
+
+This runs Go's `testinggoroutine` analyzer over all packages, including their
+`*_test.go` files, and checks it against unsafe and safe fixtures. Both CI test
+workflows run `go vet -testinggoroutine ./...` as a separate step, so cached
+package test results cannot bypass lint enforcement.
+
+The root package also runs the analyzer as a test. Use `go test -count=1 ./...`
+for the full suite with that check uncached: Go's test cache does not track
+internal package source files read by the analyzer subprocess. A plain
+`go test ./...` can reuse the root test's passing result after those files change.
+
+`Fatal`, `Fatalf`, and `FailNow` on `testing.T` or `testing.B` must run in the
+parent test goroutine. Workers should send errors back for the parent to assert:
+
+```go
+errs := make(chan error, 1)
+go func() { errs <- doWork() }()
+if err := <-errs; err != nil {
+    t.Fatal(err)
+}
+```
+
+The analyzer catches direct calls in `go func` closures; it is not a general
+interprocedural check for assertions hidden behind arbitrary helper calls.
+Integration tests skip unless `TEST_REFRESH_TOKEN` is set.
 
 ---
 

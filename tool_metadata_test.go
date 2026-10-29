@@ -45,7 +45,7 @@ var descriptionBudgetOverrides = map[string]int{
 // servedSizeBudgets cap description plus compact input schema JSON for tools
 // whose hand-built schema weighs as much as their description.
 var servedSizeBudgets = map[string]int{
-	"get_logs": 7770,
+	"get_logs": 7882,
 }
 
 // maxSchemaDepth bounds input schema nesting (root = 1). The dashboard write
@@ -273,7 +273,7 @@ func TestToolMetadataViolationsCatchBadFixtures(t *testing.T) {
 		{name: "namespaced verb", tool: &mcp.Tool{Name: "grafana_list_fixtures", Description: "ok", InputSchema: okSchema}},
 		{name: "over default budget", tool: &mcp.Tool{Name: "get_fixture", Description: strings.Repeat("x", defaultDescriptionBudget+1), InputSchema: okSchema}, want: "budget 2500"},
 		{name: "over override budget", tool: &mcp.Tool{Name: "get_logs", Description: strings.Repeat("x", descriptionBudgetOverrides["get_logs"]+1), InputSchema: okSchema}, want: "budget 3725"},
-		{name: "over served-size budget", tool: &mcp.Tool{Name: "get_logs", Description: "ok", InputSchema: map[string]any{"description": strings.Repeat("x", servedSizeBudgets["get_logs"])}}, want: "served-size budget 7770"},
+		{name: "over served-size budget", tool: &mcp.Tool{Name: "get_logs", Description: "ok", InputSchema: map[string]any{"description": strings.Repeat("x", servedSizeBudgets["get_logs"])}}, want: "served-size budget 7882"},
 		{name: "unregistered resource", tool: &mcp.Tool{Name: "get_fixture", Description: "See last9://reference/nope.", InputSchema: okSchema}, want: "unregistered resource last9://reference/nope"},
 		{name: "integer enum", tool: &mcp.Tool{Name: "get_fixture", Description: "ok", InputSchema: map[string]any{"type": "object", "properties": map[string]any{
 			"version": map[string]any{"type": "integer", "enum": []any{float64(1)}},

@@ -47,7 +47,7 @@ func (f *fakeMonitor) serve(t *testing.T) *last9api.Client {
 		f.mu.Lock()
 		f.requests = append(f.requests, r)
 		status := f.statuses[ts]
-		rules := f.rules[ts]
+		rules := append([]AlertRuleData{}, f.rules[ts]...)
 		f.mu.Unlock()
 		if f.barrier > 0 && !f.waitForBarrier() {
 			status = http.StatusGatewayTimeout
