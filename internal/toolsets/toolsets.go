@@ -116,6 +116,12 @@ var core = []string{
 	"get_workspace_overview",
 }
 
+// feedback tools join every named toolset so any agent can report a problem. The
+// investigate composite leaves them out: its surface and instructions are eval-budgeted.
+var feedback = []string{
+	"send_feedback",
+}
+
 // discovery tools included in the investigate composite (R9a).
 var investigateExtras = []string{
 	"did_you_mean",
@@ -208,6 +214,9 @@ func Parse(spec string) (Set, error) {
 				return nil, fmt.Errorf("unknown toolset %q; valid names: %s", t, strings.Join(ValidNames(), ", "))
 			}
 			for _, tool := range tools {
+				out[tool] = struct{}{}
+			}
+			for _, tool := range feedback {
 				out[tool] = struct{}{}
 			}
 		}

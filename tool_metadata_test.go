@@ -56,7 +56,7 @@ var toolNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 var toolNameVerbs = []string{
 	"get", "list", "create", "update", "patch", "delete", "add", "validate", "search",
-	"describe", "recommend", "acknowledge", "reassign", "mute", "attach", "detach", "analyze",
+	"describe", "recommend", "acknowledge", "reassign", "mute", "attach", "detach", "analyze", "send",
 }
 
 // toolNamespaces prefix a verb-first name with the product it reads.

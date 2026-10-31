@@ -236,6 +236,7 @@ func run() int {
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
+	cfg.ServerVersion = Version
 	// OTEL_SDK_DISABLED is the standard OTel env var. Honour it explicitly so
 	// that users can override the default (disable_telemetry=true) without
 	// needing the LAST9_DISABLE_TELEMETRY env var.

@@ -16,6 +16,7 @@ import (
 	"last9-mcp/internal/changeimpact"
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/dashboards"
+	"last9-mcp/internal/feedback"
 	"last9-mcp/internal/grafana"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/prompts"
@@ -266,6 +267,14 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Annotations: readOnlyTool("Get Workspace Overview"),
 		Description: prompts.GetWorkspaceOverviewDescription,
 	}, workspace.NewGetWorkspaceOverviewHandler(client, cfg)))
+
+	// Read-only: feedback changes nothing in the caller's organization, and an agent on
+	// a --read-only server needs a way to report problems too.
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "send_feedback",
+		Annotations: readOnlyTool("Send Feedback"),
+		Description: prompts.SendFeedbackDescription,
+	}, feedback.NewSendFeedbackHandler(client, cfg)))
 
 	// Register exceptions tool
 	reg(registerIfAllowed(server, gate, &mcp.Tool{

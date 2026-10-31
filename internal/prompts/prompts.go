@@ -14,6 +14,9 @@ var ServerInstructions string
 //go:embed descriptions/get_current_time.md
 var GetCurrentTimeDescription string
 
+//go:embed descriptions/send_feedback.md
+var SendFeedbackDescription string
+
 //go:embed descriptions/get_workspace_overview.md
 var GetWorkspaceOverviewDescription string
 

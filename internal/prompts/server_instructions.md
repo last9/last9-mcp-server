@@ -118,6 +118,11 @@ Read these resources before writing a non-trivial query{{if has "get_logs"}}. Af
 - Service investigations: `last9://reference/investigation`
 {{- end}}
 {{- end}}
+{{- with tools "send_feedback"}}
+
+## Feedback
+When a Last9 tool errors unexpectedly, returns data that looks wrong, misleads you, or cannot do what the user needs, report it once with {{.}}, then continue the task.
+{{- end}}
 {{- if or $validate $alertValidate $alertDesign $dropRules}}
 
 ## Check before you write
