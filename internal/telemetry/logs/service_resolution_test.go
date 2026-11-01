@@ -20,6 +20,7 @@ func testServiceLogsNameResolution(t *testing.T, memory bool) {
 		name, requested, listing, want string
 		failure                        bool
 	}{
+		{"exact without samples", "checkuot", `[{"metric":{"service_name":"checkuot"}},{"metric":{"service_name":"checkout"}}]`, "empty", false},
 		{"exact", "checkout", `[]`, "checkout", false},
 		{"typo", "checkuot", `[{"metric":{"service_name":"checkout"}}]`, "checkout", false},
 		{"ambiguous", "checkuot", `[{"metric":{"service_name":"checkout"}},{"metric":{"service_name":"checkouts"}}]`, "ambiguous", false},
@@ -89,6 +90,10 @@ func testServiceLogsNameResolution(t *testing.T, memory bool) {
 				if tt.name == "typo" && (len(result.Content) < 2 || !strings.Contains(result.Content[1].(*mcp.TextContent).Text, `closest match to "checkuot"`)) {
 					t.Fatalf("missing disclosure: %v", result.Content)
 				}
+			} else if tt.want == "empty" {
+				if got["service"] != tt.requested || got["count"] != float64(0) || len(result.Content) != 1 {
+					t.Fatalf("exact empty changed: %v", got)
+				}
 			} else if got["status"] != tt.want || got["logs"] != nil {
 				t.Fatalf("refusal=%v", got)
 			}
@@ -104,5 +109,38 @@ func testServiceLogsNameResolution(t *testing.T, memory bool) {
 				t.Fatalf("refusal executed %d searches", searches)
 			}
 		})
+	}
+}
+
+func TestServiceLogsNameResolutionKeepsAttributeEnvironment(t *testing.T) {
+	base, client := apitest.Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		if r.URL.Path == "/prom_query_instant" {
+			var body struct {
+				Query string `json:"query"`
+			}
+			if err := json.Unmarshal(raw, &body); err != nil {
+				t.Error(err)
+			}
+			if !strings.Contains(body.Query, `env="prod"`) {
+				t.Errorf("lost attribute environment: %s", body.Query)
+			}
+			_, _ = io.WriteString(w, `[{"metric":{"service_name":"checkout"}}]`)
+			return
+		}
+		entries := `[]`
+		if strings.Contains(string(raw), `"checkout"`) {
+			entries = `[{"stream":{},"values":[["1700000000000000000","found"]]}]`
+		}
+		_, _ = io.WriteString(w, `{"query_result":{"status":"success","data":{"resultType":"streams","result":`+entries+`}},"total_matching_lines":0}`)
+	}), false)
+	cfg := apiModeCfg(base)
+	cfg.PrometheusReadURL = "https://selected.example"
+	result, _, err := NewGetServiceLogsHandler(client, cfg)(context.Background(), nil, GetServiceLogsArgs{ServiceName: "checkuot", AttributeFilters: []ServiceLogAttributeFilter{{Field: "resources['deployment.environment']", Value: "prod"}}, StartTimeISO: "2023-11-14T22:13:20Z", EndTimeISO: "2023-11-14T22:23:20Z"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Content) != 2 {
+		t.Fatalf("missing resolution: %v", result.Content)
 	}
 }

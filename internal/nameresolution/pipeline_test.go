@@ -11,6 +11,8 @@ func TestServicePipeline(t *testing.T) {
 		name, raw string
 		want      bool
 	}{
+		{"body alternatives", `[{"type":"filter","query":{"$and":[{"$eq":["ServiceName","checkuot"]},{"$or":[{"$eq":["Body","timeout"]},{"$eq":["Body","failure"]}]}]}}]`, true},
+		{"later environment", `[{"type":"filter","query":{"$eq":["ServiceName","checkuot"]}},{"type":"parse","parser":"json","field":"Body","labels":{"env":"env"}},{"type":"filter","query":{"$eq":["resources['deployment.environment']","prod"]}}]`, false},
 		{"direct", `[{"type":"filter","query":{"$eq":["ServiceName","checkuot"]}}]`, true},
 		{"scoped conjunction", `[{"type":"filter","query":{"$and":[{"$eq":["ServiceName","checkuot"]},{"$ieq":["resources['deployment.environment']","prod"]},{"$eq":["Body","checkuot"]}]}}]`, true},
 		{"where alias", `[{"type":"where","query":{"$eq":["ServiceName","checkuot"]}}]`, true},

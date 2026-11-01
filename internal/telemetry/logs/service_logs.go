@@ -16,7 +16,6 @@ import (
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/nameresolution"
 	"last9-mcp/internal/utils"
-	"regexp"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -145,13 +144,16 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		}
 
 		note := ""
-		if cfg.PrometheusReadURL != "" && logs.Count == 0 && logs.emptyVerified && !strings.HasPrefix(normalizedIndex, "rehydration_index:") {
+		prepared, eligible := nameresolution.PrepareServicePipeline(logjsonQuery)
+		var matchers []string
+		if eligible {
+			matchers, eligible = prepared.EnvironmentMatchers()
+		}
+		if eligible && cfg.PrometheusReadURL != "" && logs.Count == 0 && logs.emptyVerified && !strings.HasPrefix(normalizedIndex, "rehydration_index:") {
 			failed, coverageErr := logs.chunksFailed()
 			if coverageErr == nil && failed == 0 && !logs.mayMissLines(limit) {
-				lookup := nameresolution.ServiceLookup{Requested: args.ServiceName, Telemetry: "logs", Start: startTime.Unix(), End: endTime.Unix(), Index: normalizedIndex}
-				if env := strings.TrimSpace(args.Env); env != "" {
-					lookup.Matchers = []string{`env=~"` + utils.EscapePromQLLabel("(?i)"+regexp.QuoteMeta(env)) + `"`}
-				}
+				lookup := nameresolution.ServiceLookup{Requested: args.ServiceName, Telemetry: "logs", Start: startTime.Unix(), End: endTime.Unix(), Index: normalizedIndex, Matchers: matchers}
+
 				resolution, resolveErr := nameresolution.ResolveService(ctx, client, cfg, lookup)
 				if resolveErr != nil {
 					return nil, nil, resolveErr
@@ -582,7 +584,7 @@ func fetchServiceLogsViaSearchAPI(
 	}
 
 	response := &ServiceLogsResponse{
-		emptyVerified: serviceLogsResultVerified(result, logs),
+		emptyVerified: nameresolution.VerifiedEmpty(result),
 		Service:       service,
 		StartTime:     startTime.Format(time.RFC3339),
 		EndTime:       endTime.Format(time.RFC3339),
@@ -608,7 +610,7 @@ func fetchServiceLogsChunk(ctx context.Context, client *http.Client, cfg models.
 	}
 
 	logs := parseServiceLogEntries(apiResponse, service)
-	return serviceLogsChunkResult{logs: logs, verified: serviceLogsResultVerified(apiResponse, logs)}, nil
+	return serviceLogsChunkResult{logs: logs, verified: serviceLogsResultVerified(apiResponse, logs) && (len(logs) > 0 || nameresolution.VerifiedEmpty(apiResponse))}, nil
 }
 
 func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEntry {

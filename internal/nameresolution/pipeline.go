@@ -10,8 +10,13 @@ type ServicePipeline struct {
 func PrepareServicePipeline(pipeline []map[string]any) (ServicePipeline, bool) {
 	p := ServicePipeline{pipeline: clonePipeline(pipeline)}
 	var conditions []any
-	for _, stage := range p.pipeline {
+	for i, stage := range p.pipeline {
 		if stage["type"] != "filter" && stage["type"] != "where" {
+			for _, later := range p.pipeline[i:] {
+				if hasScopePredicate(later) {
+					return ServicePipeline{}, false
+				}
+			}
 			break
 		}
 		if !p.collect(stage["query"], &conditions) {
@@ -48,6 +53,9 @@ func (p *ServicePipeline) collect(value any, scope *[]any) bool {
 		args, ok := value.([]any)
 		if !ok {
 			return false
+		}
+		if op == "$or" || op == "$not" {
+			return !hasScopePredicate(condition)
 		}
 		if op == "$and" {
 			for _, child := range args {
@@ -115,4 +123,32 @@ func cloneValue(value any) any {
 	default:
 		return value
 	}
+}
+
+func hasScopePredicate(value any) bool {
+	switch value := value.(type) {
+	case map[string]any:
+		for op, child := range value {
+			if len(op) > 0 && op[0] == '$' {
+				if args, ok := child.([]any); ok && len(args) > 0 {
+					if field, ok := args[0].(string); ok {
+						switch field {
+						case "ServiceName", "resources['deployment.environment']", "resources['deployment.environment.name']":
+							return true
+						}
+					}
+				}
+			}
+			if hasScopePredicate(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range value {
+			if hasScopePredicate(child) {
+				return true
+			}
+		}
+	}
+	return false
 }
