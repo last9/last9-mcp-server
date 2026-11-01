@@ -24,6 +24,15 @@ func TestRecommendAlertConfig(t *testing.T) {
 			t.Errorf("recommendation missing %q", want)
 		}
 	}
+	lifecycle := strings.SplitN(text, "Lifecycle:", 2)[1]
+	last := -1
+	for _, step := range []string{"get_entity_kpis", "create_kpi", "prometheus_range_query", `{"valid":true}`, "create_alert", "Read the rule back", "only after the user confirms"} {
+		i := strings.Index(lifecycle, step)
+		if i < 0 || i < last {
+			t.Fatalf("lifecycle must name %q in order:\n%s", step, lifecycle)
+		}
+		last = i
+	}
 }
 
 // The lifecycle names a write tool only when the server serves it, so a
