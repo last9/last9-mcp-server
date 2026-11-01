@@ -494,10 +494,10 @@ Returns `now` (and `start`/`end` with `range`) as `{iso, epoch_seconds, local}`;
 
 - `category` (string, required): `bug`, `wrong_result`, `missing_capability`, `confusing_description`, `slow`, `praise` or `other`.
 - `summary` (string, required): One sentence, at most 300 characters.
-- `details` (string, optional): At most 4000 characters. Never include secrets or customer data.
-- `tool_name` (string, optional): The Last9 tool the feedback is about.
+- `details` (string, optional, omitted by default): At most 4000 characters. Never include secrets or customer data.
+- `tool_name` (string, optional, omitted by default): The Last9 tool the feedback is about, at most 100 characters.
 
-Returns `feedback_id`. Limited to 20 reports per user per hour.
+Returns `feedback_id` only after a complete acknowledgement. A failed call may still have delivered the report; do not send the same feedback again. Limited to 20 reports per user per hour.
 
 ### get_exceptions
 
