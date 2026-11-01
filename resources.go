@@ -27,6 +27,7 @@ func registerReferenceResources(server *last9mcp.Last9MCPServer) {
 		description string
 		body        string
 	}{
+		{"last9://reference/create_dashboard_guide", "create_dashboard_guide", "Dashboard authoring and targeted editing workflow", prompts.CreateDashboardGuideWorkflow},
 		{resourceURILogjson, "logjson", "Full logjson pipeline reference for get_logs", prompts.LogjsonReference},
 		{resourceURITracejson, "tracejson", "Full tracejson pipeline reference for get_traces", prompts.TracejsonReference},
 		{resourceURIServiceLogs, "service_logs", "Extended guidance for get_service_logs", prompts.ServiceLogsReference},

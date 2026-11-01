@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestDumpPromptsListsSixPrompts(t *testing.T) {
+func TestDumpPromptsListsWorkflows(t *testing.T) {
 	var buf bytes.Buffer
 	if err := dumpPrompts(&buf); err != nil {
 		t.Fatalf("dumpPrompts error: %v", err)
@@ -29,6 +29,7 @@ func TestDumpPromptsListsSixPrompts(t *testing.T) {
 	}
 	for _, want := range []string{
 		"scoped-log-attribute-discovery", "exception-root-cause-investigation",
+		"create_dashboard_guide",
 		"investigate-latency-spike", "diagnose-error-rate", "analyze-slow-queries", "on-call-runbook",
 	} {
 		if !names[want] {

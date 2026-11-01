@@ -279,3 +279,6 @@ var OnCallRunbookWorkflow string
 //
 //go:embed workflows/partials.md
 var WorkflowPartials string
+
+//go:embed workflows/create_dashboard_guide.md
+var CreateDashboardGuideWorkflow string
