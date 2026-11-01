@@ -370,7 +370,7 @@ Read-only tools against the org's Grafana instance (via Last9's Grafana proxy). 
 
 ### Fuzzy Name Resolution
 
-- **`did_you_mean`** — When the agent isn't sure about an entity name, this returns the closest matches from your catalog (services, environments, hosts, databases, K8s deployments/namespaces, jobs). Up to 3 suggestions with similarity scores. The server calls this automatically before most tools when a name lookup returns empty.
+- **`did_you_mean`** — When the agent isn't sure about an entity name, this returns the closest matches from your catalog (services, environments, hosts, databases, K8s deployments/namespaces, jobs). Up to 3 suggestions with similarity scores. Use it for explicit spelling suggestions; supported data queries perform their own scoped name resolution.
 
 ### Service Profile
 
@@ -385,6 +385,9 @@ Read-only tools against the org's Grafana instance (via Last9's Grafana proxy). 
 **Toolsets.** By default the server exposes every tool. Automation hosts that only need investigation (logs/traces/metrics/profiles) can set `LAST9_TOOLSETS=investigate` (or pass `--toolsets=investigate`) so `tools/list` stays small without client-side mass-disable. Named packs: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`. Unknown names fail fast. `get_current_time` and `get_workspace_overview` are served under every toolset. In HTTP mode a request can narrow this further with the `X-Last9-Toolsets` header (see [Per-request toolsets](#per-request-toolsets)). The `metrics` pack alone does **not** include `list_datasources` or `did_you_mean` — use `investigate` (or combine toolsets) when you need those discovery helpers.
 
 **Tool reference resources.** Long logjson/tracejson/service-logs/metrics manuals are MCP resources (`last9://reference/logjson`, `last9://reference/tracejson`, `last9://reference/service_logs`, `last9://reference/metrics`, `last9://reference/investigation`), not always-on tool description text. Critical query rules stay on the tool description so agents that never call `resources/read` still get correct construction guidance. Discover org-specific fields with `get_log_attributes` / `get_log_attributes_for_pipeline` (and the trace equivalents)—they are not injected into descriptions.
+
+**Name resolution in data tools.** After an empty exact query, `get_service_logs`, `get_logs`, `get_traces`, the Prometheus tools and `get_metric_status` can resolve eligible service or metric names within the configured telemetry scope. `prometheus_label_values` can also resolve its `label` argument. Safe matches add a separate closest match note; ambiguous or missing names return no measurements, and discovery failures remain errors. Service equalities and single metric selectors are supported; compound PromQL/MetricsQL expressions, regex/negative service filters, derived fields and label matcher keys/values are unchanged. See the [resolution contract](internal/prompts/references/investigation.md#automatic-name-resolution) for window, index and discovery limits.
+
 
 **Chunked large results.** `get_logs` and `get_traces` handle large result sets through chunking rather than truncating. The default limit is 5000 entries for logs; configurable via `LAST9_MAX_GET_LOGS_ENTRIES`.
 
@@ -974,7 +977,7 @@ Permanently deletes a channel that has no attachments; detach its attachments fi
 - `query` (string, required): The name to search for — partial, misspelled, or abbreviated.
 - `type` (string, optional): Restrict to entity type: `service`, `environment`, `host`, `database`, `k8s_deployment`, `k8s_namespace`, `job`.
 
-Returns up to 3 closest matches with similarity scores. Use this before any tool call where the entity name is uncertain. If a previous call returned empty results, try this before retrying.
+Returns up to 3 closest matches with similarity scores. Use this for explicit spelling suggestions when an entity name is uncertain. Supported data tools resolve safe near misses themselves; when they return candidates, retry with an exact candidate.
 
 ### get_service_profile
 
