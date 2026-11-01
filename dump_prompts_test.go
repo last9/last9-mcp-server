@@ -29,7 +29,7 @@ func TestDumpPromptsListsWorkflows(t *testing.T) {
 	}
 	for _, want := range []string{
 		"scoped-log-attribute-discovery", "exception-root-cause-investigation",
-		"create_dashboard_guide",
+		"create_dashboard_guide", "dashboard_examples", "query_guide",
 		"investigate-latency-spike", "diagnose-error-rate", "analyze-slow-queries", "on-call-runbook",
 	} {
 		if !names[want] {

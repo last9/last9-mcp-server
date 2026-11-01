@@ -28,6 +28,8 @@ func registerReferenceResources(server *last9mcp.Last9MCPServer) {
 		body        string
 	}{
 		{"last9://reference/create_dashboard_guide", "create_dashboard_guide", "Dashboard authoring and targeted editing workflow", prompts.CreateDashboardGuideWorkflow},
+		{"last9://reference/dashboard_examples", "dashboard_examples", "Worked dashboard patterns for RED, endpoints, status classes, infrastructure, logs and traces.", prompts.DashboardExamplesWorkflow},
+		{"last9://reference/query_guide", "query_guide", "Metric semantics, time windows, percentages and JSON pipeline rules for dashboard queries.", prompts.QueryGuideWorkflow},
 		{resourceURILogjson, "logjson", "Full logjson pipeline reference for get_logs", prompts.LogjsonReference},
 		{resourceURITracejson, "tracejson", "Full tracejson pipeline reference for get_traces", prompts.TracejsonReference},
 		{resourceURIServiceLogs, "service_logs", "Extended guidance for get_service_logs", prompts.ServiceLogsReference},

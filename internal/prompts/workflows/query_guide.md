@@ -1,0 +1,38 @@
+# Dashboard query guide
+
+This prompt takes no arguments. Use it with `create_dashboard_guide` and `dashboard_examples`; it is also available at `last9://reference/query_guide`. Examples are patterns, not a catalog of metrics available in a tenant. Discover the datasource, metrics, labels, values, units and metric semantics before substituting them. If tools are not available in this session, report the missing validation rather than inventing a result.
+
+## PromQL and metric types
+
+- A counter is cumulative and may reset. Use `rate(counter[5m])` for per-second throughput, or `increase(counter[$__range])` for a window total; rate each series before summing so resets remain visible. Multiply a per-second rate by 60 only when the panel is labelled per minute. Confirm type from instrumentation documentation; `_total` and `_count` are hints, not proof.
+- A gauge is a current value. Plot it directly or use `avg_over_time`, `max_over_time` or `min_over_time` for the question's window. Do not apply rate to CPU utilization, memory bytes or an already computed rate. Preserve units; a seconds value is not milliseconds until multiplied by 1000.
+- For a classic histogram, `histogram_quantile(0.95, sum by (le, service) (rate(request_duration_seconds_bucket[5m])))` yields seconds. Keep `le` and the desired population labels, and use compatible bucket boundaries. Add endpoint to the grouping for endpoint latency. Do not treat a metric with a quantile label as histogram buckets.
+- Precomputed percentiles are not composable: never sum or average percentile series to produce a combined percentile. Keep each source population and recorded window distinct. Use actual histogram buckets or `get_traces` / `get_logs` over raw values to calculate a percentile for a wider population or window.
+
+## Last9 derived trace_* metrics
+
+Derived `trace_*` metrics are not interchangeable with ordinary scraped counters. Discover the exact series and labels first. For interval-count series such as `trace_endpoint_count` and `trace_client_count`, a window total uses `sum by (...) (sum_over_time(metric{...}[$__range]))`; divide the count by the window's seconds for requests/second, or minutes for requests/minute. Do not assume `increase` or generic counter-reset logic applies to these interval counts. Only use a rate expression when that specific derived metric's documented semantics support it.
+
+Keep server and client span populations separate; use the discovered span_kind label to select server requests when measuring inbound traffic. Error numerator and request denominator must use the same scope and window. Response-time series such as `trace_service_response_time` carry precomputed quantiles: select an observed quantile value, retain service/environment identity, and confirm milliseconds before labelling the panel. Do not invent p99, histogram buckets or quantile labels. Do not apply `histogram_quantile` to these series or average them into an overall percentile.
+
+## instant versus range, rate window versus step
+
+`queries[].type` chooses instant or range; `query_type` chooses the language. They are different fields. A stat or ranked table often needs an instant query at the requested end time, with an explicit rollup for a whole-window statistic. A trend needs a range query, evaluating an expression repeatedly from start to end. Selecting instant does not itself aggregate the requested window, and selecting range does not turn a gauge into a rate.
+
+The rate window is the lookback inside `rate(...)`, while step is the distance between evaluations. A shorter step does not shorten the rate window. Use enough samples (typically at least four scrape intervals) and coverage between evaluations; when the renderer supports it, `$__rate_interval` accounts for scrape cadence and step. `$__interval` is a display bucket interval; `$__range` is the full selected duration, `$__range_s` seconds, and `$__range_ms` milliseconds. Resolve these explicitly for manual test queries rather than sending unresolved dashboard variables.
+
+`prometheus_range_query` accepts query, datasource and explicit start_time_iso/end_time_iso or lookback_minutes (default 60, minimum 1); it has no step parameter. `prometheus_instant_query` accepts query, datasource and time_iso for the evaluation time (otherwise lookback_minutes, otherwise now). Omitted datasource uses the default. Select the intended datasource and use explicit bounds for reproducible panel checks. The current raw-tool check does not prove the dashboard renderer uses the same sampling step.
+
+## Percentages and ratios
+
+Define the numerator as a subset of the denominator with identical grouping, filters, units and time window. Multiply a fraction by 100 exactly once and label it percent with a 0–100 display range. Check actual results are bounded 0–100; values outside that range indicate mismatched populations or units, not a reason to silently clamp bad data. Guard a zero denominator (for example, filter with `and on (service) (denominator > 0)`) and show no data/undefined rather than a fabricated 0% or 100%. An absent numerator series is not automatically evidence of zero errors; establish telemetry coverage before filling it.
+
+## logjson and tracejson
+
+Read `last9://reference/logjson` and `last9://reference/tracejson` for the pipeline grammar. Dashboard `expr` is a JSON-encoded string containing a stage array, not SQL. `get_logs` receives that pipeline as logjson_query; `get_traces` receives it as tracejson_query. Pass time as top-level start_time_iso/end_time_iso in RFC3339, never a Timestamp pipeline filter. Explicit times override defaults (logs: 5 minutes; traces: 60 minutes). Pass the discovered log index when non-default; do not invent one.
+
+Scope with a filter first, wrapping conditions in `$and` or `$or`. Discover field paths using `get_log_attributes_for_pipeline` or `get_trace_attributes_for_pipeline`; copy filter_field verbatim. Body-derived log fields require the discovery hint's parse stage before filtering/grouping. Filter values are strings; regex is RE2. ServiceName is top-level. Use real status fields for HTTP errors, not log severity as a proxy.
+
+A whole-window statistic uses `aggregate` with aggregates and optional groupby. A trend uses `window_aggregate` with function, as, window and optional groupby. Every log_json line/timeseries/bar query needs exactly one window_aggregate with a window; grouping by service alone is not a time bucket. Raw logs need a logs visualization with logs_config, version 1 and exactly one log_raw (non-aggregate JSON) or log_ql query, not log_json. Trace Duration is numeric nanoseconds: divide by 1,000,000 to display milliseconds, or keep nanoseconds labelled explicitly. Compute percentiles from raw Duration with `$quantile`; never average precomputed percentile samples. For numeric attributes stored as strings, follow the reference's numeric filtering and conversion rules.
+
+Use scalar variable selections for validation; verify every selected value and dependent match. Do not assume multi-value or All interpolation equals literal string substitution, especially across regex and JSON escaping boundaries. `validate_dashboard` may return unsupported_execution for trace or raw query types: that is lint-only, not execution success. Run each panel's query through the current metric/log/trace tools, inspect errors and partial/no-data outcomes, then follow the approval and readback workflow. Future query_panel (#475) will replace this manual panel-check step.

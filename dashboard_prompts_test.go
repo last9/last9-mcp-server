@@ -58,7 +58,7 @@ func TestDashboardAuthoringPrompts(t *testing.T) {
 		}
 		tools[tool.Name] = true
 	}
-	for _, name := range []string{"create_dashboard_guide"} {
+	for _, name := range []string{"create_dashboard_guide", "dashboard_examples", "query_guide"} {
 		t.Run(name, func(t *testing.T) {
 			if !listed[name] {
 				t.Fatalf("prompts/list missing %s", name)
@@ -89,6 +89,20 @@ func TestDashboardAuthoringPrompts(t *testing.T) {
 			}
 			if len(resource.Contents) != 1 || resource.Contents[0].Text != body.Text {
 				t.Fatal("resource and prompt must share their source")
+			}
+			if name == "query_guide" {
+				for _, phrase := range []string{"instant", "range", "rate window", "step", "0–100", "trace_*", "nanoseconds", "window_aggregate", "unsupported_execution"} {
+					if !strings.Contains(body.Text, phrase) {
+						t.Errorf("missing query rule %q", phrase)
+					}
+				}
+			}
+			if name == "dashboard_examples" {
+				for _, phrase := range []string{"RED per service", "Latency by endpoint", "Errors by status class", "Host/infra health", "Log-count and trace panels", "matches"} {
+					if !strings.Contains(body.Text, phrase) {
+						t.Errorf("missing example %q", phrase)
+					}
+				}
 			}
 			if name == "create_dashboard_guide" {
 				previous := -1
