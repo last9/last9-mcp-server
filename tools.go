@@ -259,7 +259,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Name:        "get_current_time",
 		Annotations: readOnlyTool("Get Current Time"),
 		Description: prompts.GetCurrentTimeDescription,
-	}, workspace.NewGetCurrentTimeHandler(time.Now)))
+	}, workspace.NewGetCurrentTimeHandler(utils.Now)))
 
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "get_workspace_overview",

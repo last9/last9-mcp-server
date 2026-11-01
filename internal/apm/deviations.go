@@ -105,7 +105,7 @@ type aggregateWindowSummary struct {
 
 func defaultDeviationHandlerDeps() deviationHandlerDeps {
 	return deviationHandlerDeps{
-		now:                func() time.Time { return time.Now().UTC() },
+		now:                func() time.Time { return utils.Now().UTC() },
 		queryStep:          deviationQueryStep,
 		resolveDatasource:  resolveDatasourceCfg,
 		runnerFactory:      newHTTPDeviationQueryRunner,
