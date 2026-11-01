@@ -14,6 +14,7 @@ import (
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/nameresolution"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -64,6 +65,32 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	if err != nil {
 		return nil, err
 	}
+
+	note := ""
+	if cfg.PrometheusReadURL != "" && nameresolution.VerifiedEmpty(result) {
+		prepared, eligible := nameresolution.PrepareServicePipeline(args.TracejsonQuery)
+		if eligible {
+			matchers, scoped := prepared.EnvironmentMatchers()
+			if scoped {
+				resolution, resolveErr := nameresolution.ResolveService(ctx, client, cfg, nameresolution.ServiceLookup{Requested: prepared.Requested, Telemetry: "traces", Start: startTime / 1000, End: endTime / 1000, Matchers: matchers})
+				if resolveErr != nil {
+					return nil, resolveErr
+				}
+				if refusal := resolution.Result(); refusal != nil {
+					return refusal, nil
+				}
+				if resolution.Status == "closest" {
+					args.TracejsonQuery = prepared.WithName(resolution.Canonical)
+					tracejsonQuery = args.TracejsonQuery
+					result, err = fetchTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startTime, endTime, args)
+					if err != nil {
+						return nil, err
+					}
+					note = resolution.Note()
+				}
+			}
+		}
+	}
 	addTraceJSONGuidance(result, args, traceGuidanceContext{
 		startMs:        startTime,
 		endMs:          endTime,
@@ -76,14 +103,18 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	dashboardURL := dlBuilder.BuildTracesLink(startTime, endTime, tracejsonQuery, "", "")
 
 	// Return the result in MCP format with deep link
-	return &mcp.CallToolResult{
+	response := &mcp.CallToolResult{
 		Meta: deeplink.ToMeta(dashboardURL),
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: formatJSON(result),
 			},
 		},
-	}, nil
+	}
+	if note != "" {
+		response.Content = append(response.Content, &mcp.TextContent{Text: note})
+	}
+	return response, nil
 }
 
 // fetchTraceJSONQuery executes the trace query by resolving an
