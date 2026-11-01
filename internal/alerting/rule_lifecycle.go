@@ -24,7 +24,7 @@ func ruleIsDisabled(rule AlertRule) bool {
 	if rule.IsDisabled != nil {
 		return *rule.IsDisabled
 	}
-	return rule.State == "disabled"
+	return strings.EqualFold(strings.TrimSpace(rule.State), "disabled")
 }
 
 func formatMuteUntil(muteUntil int64) string {
