@@ -3,10 +3,8 @@ package prom
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"last9-mcp/internal/last9api"
@@ -62,19 +60,8 @@ func DiscoverLabelValues(ctx context.Context, c *last9api.Client, in GetLabelVal
 	if err := c.Do(ctx, "name discovery", last9api.Request{Method: http.MethodPost, Path: pathLabelValues, Body: in}, &raw, last9api.WithMaxResponseBytes(1<<20)); err != nil {
 		return nil, err
 	}
-	var names []*string
-	if err := json.Unmarshal(raw, &names); err != nil {
-		return nil, fmt.Errorf("name discovery: invalid catalog: %w", err)
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("name discovery: %w", err)
 	}
-	if names == nil || len(names) > 10000 {
-		return nil, fmt.Errorf("name discovery: missing or oversized catalog")
-	}
-	out := make([]string, len(names))
-	for i, name := range names {
-		if name == nil || strings.TrimSpace(*name) == "" {
-			return nil, fmt.Errorf("name discovery: invalid catalog entry")
-		}
-		out[i] = *name
-	}
-	return out, nil
+	return decodeDiscoveryNames(raw)
 }
