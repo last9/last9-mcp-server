@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Empty service queries and single metric selectors can resolve conservative near misses against scoped inventories in `get_service_logs`, `get_logs`, `get_traces`, Prometheus tools and `get_metric_status`; `prometheus_label_values` also resolves its label argument. Canonical retries preserve filters, datasource and time bounds and add a separate closest match note; ambiguity returns bounded candidates without measurements, missing names are distinct from discovery errors, and unsupported expressions remain unchanged (PR pending).
+- Empty service queries and single metric selectors can resolve conservative near misses against scoped inventories in `get_service_logs`, `get_logs`, `get_traces`, Prometheus tools and `get_metric_status`; `prometheus_label_values` also resolves its label argument. Canonical retries preserve filters, datasource and time bounds and add a separate closest match note; ambiguity returns bounded candidates without measurements, missing names are distinct from discovery errors, and unsupported expressions remain unchanged (#471).
 
 ### Fixed
 - `get_alert_rule_state` returns a tool error with recovery guidance instead of successful `{}` when an `alert_group_id`, `rule_name` or `alert_group_name` filter matches no rules across the sampled range. Empty samples alone do not establish whether the group or rule exists; unfiltered empty results and gaps within a matched rule's history retain their existing behavior (#411).
