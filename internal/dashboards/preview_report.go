@@ -3,6 +3,7 @@ package dashboards
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -27,14 +28,16 @@ func previewPanels(ctx context.Context, exec *validateExecutor, parsed *validate
 	for index, raw := range panels {
 		panel := raw.(map[string]any)
 		panel["status"] = previewPanelStatus(panel)
-		if err := validatePreviewSchema(asAnySlice(parsed.definition["panels"])[index], panelObjectSchema()); err != nil {
+		definition := asAnySlice(parsed.definition["panels"])[index]
+		panelDefinition, _ := definition.(map[string]any)
+		if err := errors.Join(validatePreviewSchema(definition, panelObjectSchema()), checkQueriesQueryTypes(panelDefinition["queries"])); err != nil {
 			panel["status"] = "error"
 			panel["definition_error"] = err.Error()
 		}
 	}
 	validation := report["summary"].(map[string]any)
 	validation["definition_error"] = nil
-	if err := validatePreviewSchema(parsed.definition, dashboardObjectSchema("")); err != nil {
+	if err := errors.Join(validatePreviewSchema(parsed.definition, dashboardObjectSchema("")), checkDashboardQueryTypes(parsed.definition)); err != nil {
 		validation["overall"] = "fail"
 		validation["definition_error"] = err.Error()
 	}

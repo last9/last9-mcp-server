@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"last9-mcp/internal/last9api"
@@ -62,5 +63,71 @@ func TestPreviewDashboardValidatesCreateDefinition(t *testing.T) {
 				t.Fatalf("missing schema diagnostic: %v", validation)
 			}
 		})
+	}
+}
+
+func TestPreviewDashboardValidatesNonQueryPanelQueries(t *testing.T) {
+	for _, mode := range []string{"create", "patch"} {
+		for _, kind := range []string{"markdown", "section", "csv"} {
+			for _, telemetry := range []string{"logs", "metrics", "no_queries"} {
+				t.Run(mode+"/"+kind+"/"+telemetry, func(t *testing.T) {
+					panel := map[string]any{
+						"id": "p1", "name": "Notes",
+						"layout":        map[string]any{"x": 0, "y": 0, "w": 12, "h": 4},
+						"visualization": map[string]any{"type": kind},
+					}
+					if kind == "csv" {
+						panel["visualization"] = map[string]any{"type": "table"}
+						panel["csv"] = map[string]any{"columns": map[string]any{}}
+					}
+					if telemetry != "no_queries" {
+						panel["queries"] = []any{map[string]any{
+							"name": "A", "type": "range", "query_type": "promql", "telemetry": telemetry,
+							"expr": "up", "legend": map[string]any{"type": "auto", "value": ""},
+						}}
+					}
+					dashboard := map[string]any{"name": "Example", "panels": []any{panel}}
+					srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						if mode == "patch" && r.Method == http.MethodGet && r.URL.Path == "/dashboards/dash-1" {
+							_ = json.NewEncoder(w).Encode(map[string]any{"dashboard": dashboard})
+							return
+						}
+						t.Errorf("non-query preview made unexpected request: %s %s", r.Method, r.URL.Path)
+						http.Error(w, "unexpected request", http.StatusBadRequest)
+					}))
+					defer srv.Close()
+					args := previewTestArgs()
+					if mode == "patch" {
+						args.ID = "dash-1"
+						args.Ops = []PatchDashboardOp{{Op: "set_title", Title: "Preview"}}
+					} else {
+						args.Dashboard = dashboard
+					}
+					result, _, err := NewPreviewDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))(context.Background(), nil, args)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var report map[string]any
+					if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &report); err != nil {
+						t.Fatal(err)
+					}
+					validation := report["validation"].(map[string]any)
+					gotPanel := asAnySlice(report["panels"])[0].(map[string]any)
+					wantStatus, wantOverall := "ok", "pass"
+					if telemetry == "logs" {
+						wantStatus, wantOverall = "error", "fail"
+						if diagnostic, _ := gotPanel["definition_error"].(string); !strings.Contains(diagnostic, "not valid for telemetry logs") {
+							t.Errorf("missing compatibility diagnostic: %v", gotPanel)
+						}
+					}
+					if gotPanel["status"] != wantStatus || validation["overall"] != wantOverall {
+						t.Errorf("panel status=%v overall=%v; want %s/%s", gotPanel["status"], validation["overall"], wantStatus, wantOverall)
+					}
+					if len(asAnySlice(gotPanel["targets"])) != 0 {
+						t.Errorf("non-query panel executed targets: %v", gotPanel)
+					}
+				})
+			}
+		}
 	}
 }
