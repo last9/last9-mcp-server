@@ -48,9 +48,28 @@ func NewGetMetricStatusHandler(client *http.Client, cfg models.Config) func(cont
 		if choice.candidates != nil {
 			return ambiguousDatasourceResult(args.Datasource, choice), nil, nil
 		}
-		status, err := computeGetMetricStatus(ctx, client, choice.cfg, args)
+		probe := metricStatusInput{GetMetricStatusArgs: args, endTime: time.Now().UTC().Unix()}
+		status, err := computeGetMetricStatus(ctx, client, choice.cfg, probe)
 		if err != nil {
 			return nil, nil, err
+		}
+		note := ""
+		if !status.Live {
+			resolved, resolveErr := resolveEmptyMetric(ctx, client, choice.cfg, metricNameScope{query: args.Metric, start: probe.endTime - int64(args.WindowMinutes*60), end: probe.endTime})
+			if resolveErr != nil {
+				return nil, nil, resolveErr
+			}
+			if resolved.refusal != nil {
+				return withDatasourceNote(resolved.refusal, choice.note), nil, nil
+			}
+			if resolved.query != args.Metric {
+				probe.Metric = resolved.query
+				status, err = computeGetMetricStatus(ctx, client, choice.cfg, probe)
+				if err != nil {
+					return nil, nil, err
+				}
+				note = resolved.note
+			}
 		}
 		// HTML escaping would show the note's <fragment> placeholder as <fragment>.
 		var payload bytes.Buffer
@@ -59,9 +78,9 @@ func NewGetMetricStatusHandler(client *http.Client, cfg models.Config) func(cont
 		if err := enc.Encode(status); err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal get_metric_status response: %w", err)
 		}
-		return withDatasourceNote(&mcp.CallToolResult{
+		return withDatasourceNote(withDatasourceNote(&mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: strings.TrimSuffix(payload.String(), "\n")}},
-		}, choice.note), nil, nil
+		}, choice.note), note), nil, nil
 	}
 }
 
@@ -75,9 +94,14 @@ func validateGetMetricStatusArgs(args GetMetricStatusArgs) error {
 	return nil
 }
 
-func computeGetMetricStatus(ctx context.Context, client *http.Client, queryCfg models.Config, args GetMetricStatusArgs) (GetMetricStatusResult, error) {
+type metricStatusInput struct {
+	GetMetricStatusArgs
+	endTime int64
+}
+
+func computeGetMetricStatus(ctx context.Context, client *http.Client, queryCfg models.Config, args metricStatusInput) (GetMetricStatusResult, error) {
 	metric := strings.TrimSpace(args.Metric)
-	endTime := time.Now().UTC().Unix()
+	endTime := args.endTime
 	dur := promDurationFromMinutes(args.WindowMinutes)
 	sel := metricSelector(metric)
 

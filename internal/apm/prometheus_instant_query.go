@@ -64,11 +64,32 @@ func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(c
 		if choice.candidates != nil {
 			return ambiguousDatasourceResult(args.Datasource, choice), nil, nil
 		}
-		raw, err := prom.QueryInstantRaw(ctx, last9api.NewClient(client, choice.cfg), prom.QueryInstantInput{
+		input := prom.QueryInstantInput{
 			Datasource: promDatasource(choice.cfg),
 			Query:      query,
 			Timestamp:  timeParam,
-		})
-		return promToolResult(raw, err, choice.note)
+		}
+		api := last9api.NewClient(client, choice.cfg)
+		raw, err := prom.QueryInstantRaw(ctx, api, input)
+		note := ""
+		if err == nil && emptyPromResult(raw) {
+			resolved, resolveErr := resolveEmptyMetric(ctx, client, choice.cfg, metricNameScope{query: query, start: timeParam - 300, end: timeParam})
+			if resolveErr != nil {
+				return nil, nil, resolveErr
+			}
+			if resolved.refusal != nil {
+				return withDatasourceNote(resolved.refusal, choice.note), nil, nil
+			}
+			if resolved.query != query {
+				input.Query = resolved.query
+				raw, err = prom.QueryInstantRaw(ctx, api, input)
+				note = resolved.note
+			}
+		}
+		result, _, err := promToolResult(raw, err, choice.note)
+		if result != nil {
+			result = withDatasourceNote(result, note)
+		}
+		return result, nil, err
 	}
 }
