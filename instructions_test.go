@@ -227,7 +227,7 @@ func TestServerInstructionsAdaptToToolsets(t *testing.T) {
 		},
 		{
 			spec:     "alerts",
-			mentions: []string{"`get_alert_groups`", "`get_alerts`", "`get_notification_channels`", "`get_drop_rules`", "`add_drop_rule`"},
+			mentions: []string{"`get_alert_groups`", "`get_alerts`", "`get_notification_channels`", "`get_drop_rules`", "`add_drop_rule`", "- Open a dashboard by id with `get_dashboard`.", "last9://reference/metrics"},
 		},
 		{
 			spec:      "grafana",
@@ -309,10 +309,10 @@ func TestDiscoverSectionListsOnlyNameLookups(t *testing.T) {
 // near its size, so growth is a reviewed decision: it precedes every tool
 // description, and growing it moved log_query evals. The parsed-field line
 // was a reviewed increase, validated on the full log_query suite; naming
-// analyze_change_impact and get_metric_status and the log-pattern tools joining
-// the one-service bullet were others, and so was the explicit pipeline
-// time-window rule (issue #379).
-const maxInvestigateInstructionsBytes = 2870
+// analyze_change_impact and get_metric_status, the log-pattern tools joining
+// the one-service bullet, the explicit pipeline time-window rule (issue #379),
+// and get_entity_kpis, which investigate serves, were reviewed additions.
+const maxInvestigateInstructionsBytes = 3000
 
 func TestInvestigateInstructionsBounded(t *testing.T) {
 	instructions, _ := initializeOver(t, "investigate")
@@ -599,6 +599,18 @@ func TestServerInstructionsChangesLineKeepsItsWording(t *testing.T) {
 				t.Errorf("changes line = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// "; alerts are created as drafts" on this line repeated the created-disabled
+// write rule and was most of the instruction text #336 added when log_query
+// eval lq-mf-005 fell from 30/30 to 21/30 in snapshot mode, so the line keeps
+// main's wording.
+func TestServerInstructionsAlertDesignLineKeepsItsWording(t *testing.T) {
+	instructions := renderInstructions(t, "recommend_alert_config", "describe_alert_chart", "create_alert")
+	const want = "- Design an alert rule with `recommend_alert_config`, `describe_alert_chart` before creating it."
+	if got := lineNaming(instructions, "recommend_alert_config"); got != want {
+		t.Errorf("alert design line = %q, want %q", got, want)
 	}
 }
 
