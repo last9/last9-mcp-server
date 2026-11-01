@@ -14,6 +14,7 @@ import (
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/nameresolution"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -72,6 +73,33 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	if err != nil {
 		return nil, err
 	}
+
+	note := ""
+	if cfg.PrometheusReadURL != "" && nameresolution.VerifiedEmpty(result) {
+		prepared, eligible := nameresolution.PrepareServicePipeline(args.LogjsonQuery)
+		if eligible {
+			matchers, scoped := prepared.EnvironmentMatchers()
+			index, indexErr := utils.NormalizeLogIndex(args.Index)
+			if scoped && indexErr == nil && !strings.HasPrefix(index, "rehydration_index:") {
+				resolution, resolveErr := nameresolution.ResolveService(ctx, client, cfg, nameresolution.ServiceLookup{Requested: prepared.Requested, Telemetry: "logs", Start: startTime / 1000, End: endTime / 1000, Matchers: matchers, Index: index})
+				if resolveErr != nil {
+					return nil, resolveErr
+				}
+				if refusal := resolution.Result(); refusal != nil {
+					return refusal, nil
+				}
+				if resolution.Status == "closest" {
+					args.LogjsonQuery = prepared.WithName(resolution.Canonical)
+					logjsonQuery = args.LogjsonQuery
+					result, err = fetchLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
+					if err != nil {
+						return nil, err
+					}
+					note = resolution.Note()
+				}
+			}
+		}
+	}
 	truncated := addGetLogsGuidance(result, args, getLogsGuidanceContext{
 		startMs:        startTime,
 		endMs:          endTime,
@@ -99,14 +127,18 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	}
 
 	// Return the result in MCP format with deep link
-	return &mcp.CallToolResult{
+	response := &mcp.CallToolResult{
 		Meta: meta,
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: formatJSON(result),
 			},
 		},
-	}, nil
+	}
+	if note != "" {
+		response.Content = append(response.Content, &mcp.TextContent{Text: note})
+	}
+	return response, nil
 }
 
 func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, startTime, endTime int64, args GetLogsArgs) (map[string]interface{}, error) {
