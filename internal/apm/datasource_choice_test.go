@@ -30,7 +30,11 @@ func datasourceToolsUnderTest(t *testing.T, extra ...models.DatasourceInfo) (map
 		_ = json.Unmarshal(raw, &body)
 		readURLs = append(readURLs, body.ReadURL)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[]`))
+		if r.URL.Path == "/prom_metadata" {
+			_, _ = w.Write([]byte(`{"status":"success","data":{}}`))
+		} else {
+			_, _ = w.Write([]byte(`[]`))
+		}
 	}))
 	t.Cleanup(server.Close)
 
@@ -51,6 +55,10 @@ func datasourceToolsUnderTest(t *testing.T, extra ...models.DatasourceInfo) (map
 	client := server.Client()
 	req := &mcp.CallToolRequest{}
 	tools := map[string]datasourceToolCall{
+		"describe_metric": func(ctx context.Context, ds string) (*mcp.CallToolResult, error) {
+			res, _, err := NewDescribeMetricHandler(client, cfg)(ctx, req, DescribeMetricArgs{MetricNames: []string{"up"}, Datasource: ds})
+			return res, err
+		},
 		"prometheus_range_query": func(ctx context.Context, ds string) (*mcp.CallToolResult, error) {
 			res, _, err := NewPromqlRangeQueryHandler(client, cfg)(ctx, req, PromqlRangeQueryArgs{Query: "up", LookbackMinutes: 5, Datasource: ds})
 			return res, err
@@ -114,8 +122,17 @@ func TestDatasourceToolsResolveDatasource(t *testing.T) {
 				if res.IsError {
 					t.Fatalf("%s: IsError set: %v", tool, resultTexts(res))
 				}
-				if len(*readURLs) != 1 || (*readURLs)[0] != tt.wantReadURL {
-					t.Errorf("%s: read_urls = %v, want [%s]", tool, *readURLs, tt.wantReadURL)
+				wantReads := 1
+				if tool == "describe_metric" {
+					wantReads = 3
+				}
+				if len(*readURLs) != wantReads {
+					t.Errorf("%s: got %d reads, want %d", tool, len(*readURLs), wantReads)
+				}
+				for _, readURL := range *readURLs {
+					if readURL != tt.wantReadURL {
+						t.Errorf("%s: read_url = %s, want %s", tool, readURL, tt.wantReadURL)
+					}
 				}
 				texts := resultTexts(res)
 				if strings.HasPrefix(tool, "prometheus_") && texts[0] != "[]" {

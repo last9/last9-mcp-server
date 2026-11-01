@@ -19,8 +19,8 @@ type GetAPMLabelsInput struct {
 }
 
 // GetAPMLabels calls POST /apm/labels.
-func GetAPMLabels(ctx context.Context, c *last9api.Client, in GetAPMLabelsInput) ([]byte, error) {
+func GetAPMLabels(ctx context.Context, c *last9api.Client, in GetAPMLabelsInput, opts ...last9api.Option) ([]byte, error) {
 	var raw []byte
-	err := c.Do(ctx, opAPMLabels, last9api.Request{Method: http.MethodPost, Path: pathAPMLabels, Body: in}, &raw)
+	err := c.Do(ctx, opAPMLabels, last9api.Request{Method: http.MethodPost, Path: pathAPMLabels, Body: in}, &raw, opts...)
 	return raw, err
 }

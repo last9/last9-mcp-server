@@ -42,8 +42,8 @@ func QueryInstant(ctx context.Context, c *last9api.Client, in QueryInstantInput)
 }
 
 // QueryInstantRaw calls POST /prom_query_instant.
-func QueryInstantRaw(ctx context.Context, c *last9api.Client, in QueryInstantInput) ([]byte, error) {
+func QueryInstantRaw(ctx context.Context, c *last9api.Client, in QueryInstantInput, opts ...last9api.Option) ([]byte, error) {
 	var raw []byte
-	err := c.Do(ctx, opQueryInstantRaw, last9api.Request{Method: http.MethodPost, Path: pathQueryInstant, Body: in}, &raw)
+	err := c.Do(ctx, opQueryInstantRaw, last9api.Request{Method: http.MethodPost, Path: pathQueryInstant, Body: in}, &raw, opts...)
 	return raw, err
 }
