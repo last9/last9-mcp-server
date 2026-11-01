@@ -3,6 +3,7 @@ package feedback
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"last9-mcp/internal/auth"
 	apifeedback "last9-mcp/internal/last9api/feedback"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -124,5 +126,44 @@ func TestSendFeedbackReturnsAPIFailure(t *testing.T) {
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, SendFeedbackArgs{Category: "bug", Summary: "x"})
 	if err == nil {
 		t.Fatal("err = nil, want the API's 429")
+	}
+}
+
+func TestSendFeedbackDoesNotConfirmUncertainDelivery(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"empty", http.StatusCreated, ""},
+		{"no content", http.StatusNoContent, ""},
+		{"null", http.StatusCreated, "null"},
+		{"missing id", http.StatusCreated, "{}"},
+		{"null id", http.StatusCreated, `{"feedback_id":null}`},
+		{"blank id", http.StatusCreated, `{"feedback_id":"  "}`},
+		{"truncated", http.StatusCreated, `{"feedback_id":`},
+		{"trailing JSON", http.StatusCreated, `{"feedback_id":"fb-1"} {}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				calls.Add(1)
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+			handler := NewSendFeedbackHandler(srv.Client(), testConfig(srv.URL))
+			result, _, err := handler(context.Background(), nil, SendFeedbackArgs{Category: "bug", Summary: "x"})
+			if err == nil {
+				t.Fatalf("result = %+v, want an unconfirmed-delivery error", result)
+			}
+			var unknown *utils.WriteOutcomeUnknownError
+			if !errors.As(err, &unknown) {
+				t.Errorf("error = %v, want unknown write outcome", err)
+			}
+			if n := calls.Load(); n != 1 {
+				t.Errorf("API calls = %d, want 1", n)
+			}
+		})
 	}
 }
