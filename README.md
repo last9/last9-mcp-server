@@ -283,8 +283,19 @@ Supports PostgreSQL, MySQL, MongoDB, Redis, Aerospike, and anything else OTel tr
 - **`prometheus_instant_query`** — Instant queries; use rollup functions like `avg_over_time`, `sum_over_time`
 - **`prometheus_label_values`** — Label values for a given series
 - **`prometheus_labels`** — All labels available for a series
+- **`describe_metric`** — Metadata, observed label keys and safe query recommendations for 1–10 exact metric names
 
-Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`, or per call with `datasource`. An omitted `datasource` uses the default; a unique near miss that the matcher considers safe (such as a case variant) uses its closest match. A missing, extra or transposed letter is not guaranteed to resolve automatically: even one candidate can require confirmation when the edit could affect a region or environment code. Looser or ambiguous matches return candidates and run no query (not an error); unknown names return an error. An additional content block names the datasource used whenever you did not name it exactly. `get_metric_status`, `get_service_profile`, and `get_apm_service_deviations` resolve `datasource` the same way.
+Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`, or per call with `datasource`. An omitted `datasource` uses the default; a unique near miss that the matcher considers safe (such as a case variant) uses its closest match. A missing, extra or transposed letter is not guaranteed to resolve automatically: even one candidate can require confirmation when the edit could affect a region or environment code. Looser or ambiguous matches return candidates and run no query (not an error); unknown names return an error. An additional content block names the datasource used whenever you did not name it exactly. `describe_metric`, `get_metric_status`, `get_service_profile`, and `get_apm_service_deviations` resolve `datasource` the same way.
+
+#### describe_metric
+
+Call with `{"metric_names":["http_requests_total","queue_depth"],"datasource":"production"}`; omit `datasource` to use the default. Names must be exact Prometheus identifiers (at most 256 bytes each), not selectors or expressions. Discover names with `prometheus_label_values` and label `__name__` first when needed. This read-only tool is available in `metrics`, `investigate` and the full surface.
+
+Each entry in `metrics` includes `name`, `type`, `inferred`, optional `unit`/`help`, `label_keys`, `recommended_query` and `notes`. Metadata overrides suffix heuristics; conflicting definitions stay unknown. Missing/unsupported metadata permits explicitly inferred naming fallbacks, while `_sum` and `_count` remain ambiguous without family evidence. Authorization, cancellation and operational metadata failures fail the call. Empty metadata does not prove absence.
+
+Verified counters get a rate example; gauges get their last value. **Never apply `rate()`/`increase()` to gauges, including pre-windowed gauges.** Classic histograms require observed bucket labels; when buckets are not observed, a current-time native histogram count checks whether a native query is appropriate. No bucket series is fabricated. Summary quantiles are selected directly; known trace latency families use `quantile="p95"`. Never average these quantiles into a wider-window percentile. An empty recommendation means more evidence is needed. Example rate windows are 5 minutes; adjust for cadence and the requested range.
+
+Label keys are observed, not exhaustive: each metric is scoped to a 60-minute lookback, widened once to 4 days only when empty. Label/probe failures are disclosed, while authorization and cancellation still fail. Results contain at most 20 label keys per metric (keys over 128 bytes are omitted), 1024 bytes of help and 128 bytes of unit text. Notes disclose truncation; the total response is capped at 256 KiB. The metadata proxy must be deployed before releasing this tool.
 
 ### Logs
 
