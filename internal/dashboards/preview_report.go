@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
 const (
@@ -22,12 +24,22 @@ func previewPanels(ctx context.Context, exec *validateExecutor, parsed *validate
 		return nil, fmt.Errorf("dashboard validation failed: %v", report["detail"])
 	}
 	panels := asAnySlice(report["panels"])
-	for _, raw := range panels {
+	for index, raw := range panels {
 		panel := raw.(map[string]any)
 		panel["status"] = previewPanelStatus(panel)
+		if err := validatePreviewSchema(asAnySlice(parsed.definition["panels"])[index], panelObjectSchema()); err != nil {
+			panel["status"] = "error"
+			panel["definition_error"] = err.Error()
+		}
+	}
+	validation := report["summary"].(map[string]any)
+	validation["definition_error"] = nil
+	if err := validatePreviewSchema(parsed.definition, dashboardObjectSchema("")); err != nil {
+		validation["overall"] = "fail"
+		validation["definition_error"] = err.Error()
 	}
 	return map[string]any{
-		"validation": report["summary"], "panels": panels, "window": report["window"],
+		"validation": validation, "panels": panels, "window": report["window"],
 		"saved": false,
 		"note":  "Client-side preview only. No dashboard is saved. Unsupported query types are panel errors. Backend validation, assigned IDs, defaults and concurrent edits may change the saved result.",
 	}, nil
@@ -95,4 +107,20 @@ func previewResult(report map[string]any) ([]byte, error) {
 		return nil, fmt.Errorf("preview exceeds %d bytes; use a smaller dashboard or shorter queries and variable values", previewResultBytes)
 	}
 	return raw, nil
+}
+
+func validatePreviewSchema(value any, definition map[string]any) error {
+	raw, err := json.Marshal(definition)
+	if err != nil {
+		return err
+	}
+	var schema jsonschema.Schema
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		return err
+	}
+	resolved, err := schema.Resolve(nil)
+	if err != nil {
+		return err
+	}
+	return resolved.Validate(value)
 }

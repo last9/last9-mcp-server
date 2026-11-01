@@ -43,7 +43,7 @@ func TestPreviewPanelsStatusesAndResolvedQueries(t *testing.T) {
 	defer srv.Close()
 	definition := map[string]any{"name": "Preview", "variables": []any{map[string]any{"target": "env", "values": []any{"dev"}}}, "panels": []any{
 		previewTestPanel("data", `up{env="$env"}`), previewTestPanel("empty", "empty"), previewTestPanel("error", "broken"),
-		map[string]any{"id": "section", "visualization": map[string]any{"type": "section"}},
+		map[string]any{"id": "section", "name": "Section", "layout": map[string]any{"x": 0, "y": 0, "w": 12, "h": 1}, "visualization": map[string]any{"type": "section"}},
 	}}
 	parsed, errs := validateDashboardInput(ValidateDashboardArgs{DashboardDefinition: definition, StartTimeISO: "2026-09-10T08:00:00Z", EndTimeISO: "2026-09-10T09:00:00Z", Variables: map[string]any{"env": "prod"}})
 	if len(errs) > 0 {
@@ -74,7 +74,7 @@ func TestPreviewPanelsStatusesAndResolvedQueries(t *testing.T) {
 }
 
 func previewTestPanel(id, expr string) map[string]any {
-	return map[string]any{"id": id, "name": id, "visualization": map[string]any{"type": "stat"}, "queries": []any{map[string]any{"query_type": "promql", "telemetry": "metrics", "expr": expr}}}
+	return map[string]any{"id": id, "name": id, "layout": map[string]any{"x": 0, "y": 0, "w": 12, "h": 4}, "visualization": map[string]any{"type": "stat"}, "queries": []any{map[string]any{"name": "A", "type": "range", "legend": map[string]any{"type": "auto", "value": ""}, "query_type": "promql", "telemetry": "metrics", "expr": expr}}}
 }
 
 func TestPreviewSampleBytesAreBounded(t *testing.T) {
