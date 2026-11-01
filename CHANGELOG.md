@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Dashboard authoring prompts `create_dashboard_guide`, `dashboard_examples` and `query_guide`, also served as reference resources, guide discovery, layout, query semantics, per-panel checks before approval and targeted edits; create and patch tool descriptions link to them (PR pending).
+- Dashboard authoring prompts `create_dashboard_guide`, `dashboard_examples` and `query_guide`, also served as reference resources, guide discovery, layout, query semantics, per-panel checks before approval and targeted edits; create and patch tool descriptions link to them (#477).
 
 ### Fixed
 - `get_alert_rule_state` returns a tool error with recovery guidance instead of successful `{}` when an `alert_group_id`, `rule_name` or `alert_group_name` filter matches no rules across the sampled range. Empty samples alone do not establish whether the group or rule exists; unfiltered empty results and gaps within a matched rule's history retain their existing behavior (#411).
