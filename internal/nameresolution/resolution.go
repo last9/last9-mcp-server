@@ -9,9 +9,11 @@ import (
 	"last9-mcp/internal/namematch"
 )
 
+// Catalog is usable after a scoped listing succeeds without known partial coverage.
+// It is not proof that the telemetry inventory is exhaustive.
 type Catalog struct {
-	Names    []string
-	Complete bool
+	Names  []string
+	Usable bool
 }
 
 type Resolution struct {
@@ -27,16 +29,22 @@ func Resolve(entity, requested string, catalog Catalog) Resolution {
 	names := slices.Clone(catalog.Names)
 	slices.Sort(names)
 	names = slices.Compact(names)
+	if !catalog.Usable {
+		r := Resolution{Entity: entity, Requested: requested, Status: "incomplete"}
+		if slices.Contains(names, requested) {
+			r.Status = "exact"
+			r.Canonical = requested
+			return r
+		}
+		r.Candidates = names[:min(len(names), namematch.MaxCandidates)]
+		r.Omitted = max(0, len(names)-namematch.MaxCandidates)
+		return r
+	}
 	match := namematch.Resolve(requested, names)
 	r := Resolution{Entity: entity, Requested: requested, Candidates: match.Candidates, Omitted: match.Omitted}
 	switch {
 	case match.Kind == namematch.Exact:
 		r.Status, r.Canonical = "exact", match.Name
-	case !catalog.Complete:
-		r.Status = "incomplete"
-		if match.Kind == namematch.Closest {
-			r.Candidates = []string{match.Name}
-		}
 	case match.Kind == namematch.Closest:
 		r.Status, r.Canonical = "closest", match.Name
 	case match.Kind == namematch.Ambiguous:

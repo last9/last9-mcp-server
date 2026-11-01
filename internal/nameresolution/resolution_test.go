@@ -23,6 +23,7 @@ func TestResolveCatalog(t *testing.T) {
 		{"missing", "billing", Catalog{[]string{"checkout"}, true}, "missing", "", nil},
 		{"empty complete", "billing", Catalog{[]string{}, true}, "missing", "", nil},
 		{"incomplete refuses typo", "checkuot", Catalog{[]string{"checkout"}, false}, "incomplete", "", []string{"checkout"}},
+		{"incomplete candidates are unranked", "billing", Catalog{[]string{"checkout"}, false}, "incomplete", "", []string{"checkout"}},
 		{"incomplete is not missing", "billing", Catalog{nil, false}, "incomplete", "", nil},
 		{"exact in incomplete", "checkout", Catalog{[]string{"checkout"}, false}, "exact", "checkout", nil},
 		{"duplicate records", "checkuot", Catalog{[]string{"checkout", "checkout"}, true}, "closest", "checkout", nil},
