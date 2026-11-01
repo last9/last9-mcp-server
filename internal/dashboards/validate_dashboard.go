@@ -491,6 +491,10 @@ func validateTarget(
 		return target
 	}
 
+	if exec.includeResolved {
+		target["resolved_query"] = resolved
+	}
+
 	findings := lintTarget(queryType, resolved, vizType)
 	lintAny := make([]any, len(findings))
 	for i, f := range findings {
