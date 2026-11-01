@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `send_feedback` lets an agent report a bug, wrong result, missing capability, misleading description or slowness in a Last9 tool to the Last9 team, with `category`, a one-line `summary`, optional `details` and `tool_name`; the MCP client's name and version and the server version are attached from the session, not from arguments. It sends the report to the Last9 API (20 reports per user per hour) and returns a `feedback_id`. It is read-only, so `--read-only` servers keep it, and joins every named toolset but not `investigate`; the server instructions gain a `## Feedback` section naming it (#465).
+- `get_alert_config` shows each rule's `Recent Evaluations`: 5 one-minute samples (`firing`, `ok`, or `unknown` when the alert monitor has no row for the rule or reports a state other than firing, normal, resolved, pending or empty), newest first and ending 1–2 minutes before the call, read with 5 concurrent monitor calls. Disabled rules show none; when more than 25 enabled rules match, history is omitted and the response says so, as it does when a minute's lookup fails. Previously checking whether a rule fired recently took a separate `get_alert_rule_state` call (#371).
 
 ### Fixed
 - Read-only POST queries such as `get_databases` retain recovery advice and `system_error` classification after gateway failures or deadlines; unknown-write recovery is limited to state-changing calls, including feedback delivery (#465).
