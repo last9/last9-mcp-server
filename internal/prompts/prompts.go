@@ -279,3 +279,6 @@ var OnCallRunbookWorkflow string
 //
 //go:embed workflows/partials.md
 var WorkflowPartials string
+
+//go:embed descriptions/describe_metric.md
+var DescribeMetricDescription string

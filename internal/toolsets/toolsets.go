@@ -38,6 +38,7 @@ var named = map[string][]string{
 		"did_you_mean",
 		"get_service_profile",
 		"get_metric_status",
+		"describe_metric",
 		"prometheus_range_query",
 		"prometheus_instant_query",
 		"prometheus_label_values",
