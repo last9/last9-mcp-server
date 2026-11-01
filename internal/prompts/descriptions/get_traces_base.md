@@ -13,7 +13,7 @@
 
 **Fields:** OTel enums: `SPAN_KIND_SERVER`, `STATUS_CODE_ERROR`; Duration is ns. Use `attributes['key']`/`resources['key']`, not `SpanAttributes.foo`.
 
-**Aggregate:** use `aggregates`+`groupby`. Average/mean→`{"function":{"$avg":["Duration"]}}`, not `$quantile`. By span: `{"type":"aggregate","aggregates":[{"function":{"$avg":["Duration"]},"as":"avg"}],"groupby":{"SpanName":"span"}}`. `$quantile` is the general/default percentile operator. Compute from raw spans; never average percentile samples. `Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first.
+**Aggregate:** use `aggregates`+`groupby`. Average/mean→`{"function":{"$avg":["Duration"]}}`, not `$quantile`. Count: `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`. `$quantile` is the general/default percentile operator. Compute from raw spans; never average percentile samples. `Duration` is numeric already; for `attributes[...]` percentiles, `$regex`-gate numeric values first.
 
 **Transform:** `as` is an array: `{"type":"transform","transforms":[{"function":{"$split":["SpanName","/",1]},"as":["endpoint"]}]}` (read it as `attributes['endpoint']`).
 
@@ -25,12 +25,12 @@ For calendar buckets, use explicit ISO bounds and time zone. P99 `Duration` outp
 
 **Order:** filter first (match-all TraceId/SpanId before aggregate). Show/find → filter only; analysis → aggregate.
 
-**Aggregate example:** `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`.
+**Names:** Empty service equality queries may use a closest match, disclosed separately; ambiguity returns candidates, no measurements.
 
 Manual: `last9://reference/tracejson`
 
 ## When to use
-Span filters, counts, averages or percentiles across services with a tracejson pipeline.
+Span filters, counts, averages or percentiles.
 
 ## When not to use
 - Exact trace ID: `get_service_traces`

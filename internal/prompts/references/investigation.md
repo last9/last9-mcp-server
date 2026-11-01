@@ -81,3 +81,14 @@ When `error_detection.recommended_ingest_fix` is present, **include it in the in
 | `dependencies` | Ignore in v1 (always null) |
 
 **Never compensate for a failed probe with a broad/unscoped query** — high-volume datasources time out on wide pulls. Use narrow time windows and small limits when sampling is required.
+
+
+## Automatic name resolution
+
+Data tools query the supplied name first. A nonempty response needs no name lookup. After a verified empty response, eligible service equalities and single metric selectors can be matched against a successful listing in the same telemetry, datasource and environment/index scope. A listing is scoped evidence, not an exhaustive inventory. Exact listed names keep the original empty result; absence means only that the name was not found in this listing.
+
+A safe match adds a separate content block, for example `Using service "checkout" (closest match to "checkuot").` The data block stays parseable. Retried queries, service scope and links use the canonical name. Ambiguous or unsafe matches return JSON with `entity`, `requested`, `status`, up to five sorted `candidates` and an `omitted` count when needed, without measurements and with `isError` unset. Retry with an exact candidate. Missing names return `status: "missing"`; failed, timed-out, malformed or explicitly partial discovery returns an error instead. Each listing has a 10-second cap within the remaining tool deadline.
+
+Service matching uses log inventory for logs and windowed trace inventory for traces, never suggestions. It needs a configured Prometheus datasource. Raw pipelines qualify only for one positive `ServiceName` equality in leading filters with understood environment equalities. Regexes, negative service filters, disjunctions and derived service fields are unchanged. Rehydration indexes are not resolved. Partial or unverified empty results are unchanged. HTTP status-field discovery in `get_service_logs` still needs a valid service or an explicit `http_status_field`.
+
+Metric matching recognizes a single bare metric or selector, including an equality `__name__` matcher; other PromQL/MetricsQL expressions pass through unchanged. Metric names shorter than three bytes are left unchanged. Label matcher names/values and regexes are not rewritten. `prometheus_label_values` can resolve its `label` argument using the selected metric's label listing. Name discovery uses the requested window (five minutes before evaluation for an instant selector); label tools retain their existing automatic four-day retry when the caller omitted the window. Explicit windows are never widened for matching. Without a configured datasource, the original result is retained.
