@@ -10,6 +10,8 @@ Returns JSON:
 - suggested_window: "$__interval" for high-cadence metrics; otherwise a duration string such as "3d" sized to roughly 3× last_sample_age so last_over_time does not blank between slow emissions ("" when absent)
 - note: present only when a field needs reading. Absent metric: "No series matched `<selector>` in the last <window>: either it emits less often than that (widen `window_minutes`) or the name is wrong (check it with `prometheus_label_values`, …)" — live=false here means no match, not a metric that stopped. Unknown cadence: "Too few samples in the last <window> to infer cadence …; widen `window_minutes` …"
 
+**Names:** After an empty result, a single metric selector may use a closest match with a separate note; ambiguity returns candidates, no measurements. Expressions are unchanged.
+
 Parameters:
 - metric: (Required) Metric name (e.g. amazonaws_com_AWS_S3_BucketSizeBytes) or a PromQL series selector (e.g. up{job="api"}).
 - window_minutes: (Required) Lookback window in minutes (minimum: 1). Prefer a window wide enough to cover several emission intervals for the metric under test.

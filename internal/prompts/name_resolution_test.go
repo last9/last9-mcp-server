@@ -16,3 +16,13 @@ func TestServiceDescriptionsExplainNameResolution(t *testing.T) {
 		}
 	}
 }
+
+func TestMetricDescriptionsExplainNameResolution(t *testing.T) {
+	for name, description := range map[string]string{"instant": prompts.PromqlInstantQueryDetails, "range": prompts.PromqlRangeQueryDetails, "status": prompts.GetMetricStatusDescription} {
+		for _, phrase := range []string{"single metric selector", "closest match", "candidates", "Expressions are unchanged"} {
+			if !strings.Contains(description, phrase) {
+				t.Errorf("%s omits %q", name, phrase)
+			}
+		}
+	}
+}

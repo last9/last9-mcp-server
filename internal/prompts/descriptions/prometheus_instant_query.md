@@ -1,9 +1,8 @@
 
-	Perform a Prometheus instant query to get metrics data.
+	Query Prometheus at one instant.
 	Typically, the query should have rollup functions like sum_over_time, avg_over_time, quantile_over_time, etc
 	over a time window. For example: avg_over_time(trace_endpoint_count{env="prod"}[1h])
 	Percentiles are not composable: never average precomputed percentile series. With suitable Prometheus histogram buckets, use histogram_quantile(..., rate(...)) or histogram_quantile(..., increase(...)). Otherwise use get_logs/get_traces to aggregate raw values. Use a precomputed percentile metric only when its recorded window exactly matches the requested window.
-	This tool can be used to query Prometheus for metrics data at a specific point in time.
 	It is recommended to initially check the the available labels on the promql metric using the prometheus_labels tool
 	for filtering by a specific environment. Labels like "env", "environment" or "development_environment"
 	are common. To get possible values of a label, the prometheus_label_values tool can be used.
@@ -20,7 +19,8 @@
 		},
 		"value": [1700000000, "0.123"]
 	}]
-	The response will contain the metrics data for the specified query.
+	**Names:** After an empty result, a single metric selector may use a closest match with a separate note; ambiguity returns candidates, no measurements. Expressions are unchanged.
+
 	Parameters:
 	- query: (Required) The Prometheus query to execute.
 	- time_iso: (Optional) The point in time to query in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Overrides lookback when provided.
