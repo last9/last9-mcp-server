@@ -30,11 +30,6 @@ type apiPromInstantResp []struct {
 	Value  []any             `json:"value"`
 }
 
-type apiPromRangeResp []struct {
-	Metric map[string]string `json:"metric"`
-	Values [][]any           `json:"values"`
-}
-
 // Input structs for MCP SDK handlers
 type ServiceEnvironmentsArgs struct {
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`

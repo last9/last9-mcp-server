@@ -2,7 +2,6 @@ package apm
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -15,8 +14,6 @@ import (
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const (
@@ -106,11 +103,6 @@ type aggregateWindowSummary struct {
 	ValidSignals           map[string]bool
 }
 
-// NewAPMServiceDeviationsHandler compares bounded APM RED aggregates across equal windows.
-func NewAPMServiceDeviationsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, DeviationArgs) (*mcp.CallToolResult, any, error) {
-	return newAPMServiceDeviationsHandler(client, cfg, defaultDeviationHandlerDeps())
-}
-
 func defaultDeviationHandlerDeps() deviationHandlerDeps {
 	return deviationHandlerDeps{
 		now:                func() time.Time { return time.Now().UTC() },
@@ -153,24 +145,6 @@ func queryServiceDeviations(ctx context.Context, client *http.Client, cfg models
 	}
 	out.FailedQueries = uniqueSorted(out.FailedQueries)
 	return out, nil
-}
-
-func newAPMServiceDeviationsHandler(client *http.Client, baseCfg models.Config, deps deviationHandlerDeps) func(context.Context, *mcp.CallToolRequest, DeviationArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, args DeviationArgs) (*mcp.CallToolResult, any, error) {
-		result, err := runAPMServiceDeviations(ctx, client, baseCfg, deps, args)
-		if err != nil {
-			return nil, nil, err
-		}
-		payload, err := json.Marshal(result)
-		if err != nil {
-			return nil, nil, fmt.Errorf("marshal APM deviation response: %w", err)
-		}
-		return &mcp.CallToolResult{
-			Meta:              deeplink.ToMeta(result.DashboardURL),
-			Content:           []mcp.Content{&mcp.TextContent{Text: string(payload)}},
-			StructuredContent: result,
-		}, nil, nil
-	}
 }
 
 func runAPMServiceDeviations(ctx context.Context, client *http.Client, baseCfg models.Config, deps deviationHandlerDeps, args DeviationArgs) (apmDeviationResult, error) {

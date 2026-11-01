@@ -21,6 +21,10 @@ func TestFormatRuleLifecycle(t *testing.T) {
 			`{"state":"disabled"}`,
 			"  Disabled: true\n" + quiet,
 		},
+		"is_disabled absent, legacy state in other case and padded": {
+			`{"state":" Disabled "}`,
+			"  Disabled: true\n" + quiet,
+		},
 		"is_disabled true wins over state muted": {
 			`{"state":"muted","is_disabled":true}`,
 			"  Disabled: true\n" + quiet,
