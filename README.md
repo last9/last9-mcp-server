@@ -349,6 +349,16 @@ Rules, channels and attachments these tools create are marked `created_via: last
 - **`get_dashboard_snapshot`** — Full frozen snapshot including panel data for RCA / shareable views
 - **`delete_dashboard_snapshot`** — Delete a frozen snapshot by ID
 
+Dashboard authoring is available through MCP `prompts/list` and `prompts/get`, without installing a skill. All three prompts take no arguments:
+
+- **`create_dashboard_guide`** — Discovery, layout and panel selection; validate the complete candidate and run each panel's query before approval, create once, patch targeted edits, then read back.
+- **`dashboard_examples`** — A complete example covering service RED, endpoint latency, status classes, host health, log counts and trace panels, with dependent variables.
+- **`query_guide`** — Counter/gauge/histogram and derived trace metric semantics, instant versus range, rate windows, percentage bounds, and logjson/tracejson rules.
+
+The same content is readable at `last9://reference/create_dashboard_guide`, `last9://reference/dashboard_examples`, and `last9://reference/query_guide`. Prompts and resources remain discoverable under every toolset; executing the workflow needs the relevant tools (for mixed-signal authoring, use `--toolsets=dashboards,metrics,logs,traces`). Read-only sessions can prepare and validate but cannot save. Check tool availability before following a step.
+
+Panel checks currently use `prometheus_range_query`, `prometheus_instant_query`, `get_logs` and `get_traces` alongside `validate_dashboard`. The validator's unsupported query types and simplified defaults do not establish rendering parity. The separate query-check step will switch to `query_panel` after #475 lands.
+
 ### Continuous Profiling
 
 Requires continuous profiling enabled for the org. Discover services first with `get_profile_services`, then pull a flamegraph or ranked functions.

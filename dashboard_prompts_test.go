@@ -9,6 +9,7 @@ import (
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/prompts"
 	"last9-mcp/internal/workflows"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
@@ -120,5 +121,23 @@ func TestDashboardAuthoringPrompts(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDashboardToolDescriptionsRouteToGuides(t *testing.T) {
+	for name, body := range map[string]string{"create_dashboard": prompts.CreateDashboardDescription, "patch_dashboard": prompts.PatchDashboardDescription} {
+		for _, prompt := range []string{"create_dashboard_guide", "dashboard_examples", "query_guide"} {
+			if !strings.Contains(body, "`"+prompt+"`") {
+				t.Errorf("%s must reference prompt %s", name, prompt)
+			}
+		}
+		for _, phrase := range []string{"before approval", "validate_dashboard", "each panel's query"} {
+			if !strings.Contains(body, phrase) {
+				t.Errorf("%s lacks %q", name, phrase)
+			}
+		}
+		if strings.Contains(body, "do not query live logs or traces as previews") {
+			t.Errorf("%s contradicts pre-approval query checks", name)
+		}
 	}
 }
