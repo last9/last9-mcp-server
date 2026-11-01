@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `send_feedback` lets an agent report a bug, wrong result, missing capability, misleading description or slowness in a Last9 tool to the Last9 team, with `category`, a one-line `summary`, optional `details` and `tool_name`; the MCP client's name and version and the server version are attached from the session, not from arguments. It sends the report to the Last9 API (20 reports per user per hour) and returns a `feedback_id`. It is read-only, so `--read-only` servers keep it, and joins every named toolset but not `investigate`; the server instructions gain a `## Feedback` section naming it.
+- `send_feedback` lets an agent report a bug, wrong result, missing capability, misleading description or slowness in a Last9 tool to the Last9 team, with `category`, a one-line `summary`, optional `details` and `tool_name`; the MCP client's name and version and the server version are attached from the session, not from arguments. It sends the report to the Last9 API (20 reports per user per hour) and returns a `feedback_id`. It is read-only, so `--read-only` servers keep it, and joins every named toolset but not `investigate`; the server instructions gain a `## Feedback` section naming it (#465).
 
 ### Fixed
 - `get_alert_rule_state` returns a tool error with recovery guidance instead of successful `{}` when an `alert_group_id`, `rule_name` or `alert_group_name` filter matches no rules across the sampled range. Empty samples alone do not establish whether the group or rule exists; unfiltered empty results and gaps within a matched rule's history retain their existing behavior (#411).
