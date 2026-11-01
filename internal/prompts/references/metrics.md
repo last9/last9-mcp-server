@@ -63,3 +63,10 @@ Choose metrics that align with the user's question:
 - Look for correlations between different metrics
 - Use appropriate granularity for time ranges
 - Compare against historical baselines when possible
+
+
+## Name resolution
+
+After an empty exact query, the Prometheus tools and `get_metric_status` can resolve a single metric selector against metric names on the selected datasource, retaining its label filters and time bounds. Compound expressions, rollups and regex/negative metric-name matchers pass through unchanged. Label matcher keys and values are not rewritten. `prometheus_label_values` also resolves its `label` argument against that metric's label names.
+
+Safe matches add a separate `Using metric "X" (closest match to "Y").` or label note. Ambiguous matches return bounded candidates without measurements; missing names report absence from this listing, not from the entire datasource. Failed discovery is an error. The existing default-window four-day label retry runs before matching; explicit windows stay fixed. See `last9://reference/investigation` for the full contract and limits.

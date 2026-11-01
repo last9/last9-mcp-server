@@ -26,3 +26,13 @@ func TestMetricDescriptionsExplainNameResolution(t *testing.T) {
 		}
 	}
 }
+
+func TestLabelDescriptionsExplainNameResolution(t *testing.T) {
+	for name, description := range map[string]string{"labels": prompts.PromqlLabelsQueryDetails, "values": prompts.PromqlLabelValuesQueryDetails} {
+		for _, phrase := range []string{"Empty lookups", "closest match", "no measurements"} {
+			if !strings.Contains(description, phrase) {
+				t.Errorf("%s omits %q", name, phrase)
+			}
+		}
+	}
+}
