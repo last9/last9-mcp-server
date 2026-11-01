@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
 func TestPreviewPanelsStatusesAndResolvedQueries(t *testing.T) {
 	var queries []string
+	var mu sync.Mutex
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/prom_query_instant" {
 			t.Errorf("preview attempted %s", r.Method)
@@ -26,7 +28,9 @@ func TestPreviewPanelsStatusesAndResolvedQueries(t *testing.T) {
 			return
 		}
 		query := body.Query
+		mu.Lock()
 		queries = append(queries, query)
+		mu.Unlock()
 		switch query {
 		case `up{env="prod"}`:
 			_, _ = io.WriteString(w, `{"status":"success","data":{"result":[{"metric":{"env":"prod"},"value":[1,"2"]}]}}`)
@@ -59,6 +63,8 @@ func TestPreviewPanelsStatusesAndResolvedQueries(t *testing.T) {
 	if first["resolved_query"] != `up{env="prod"}` {
 		t.Fatalf("resolved query: %v", first)
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	if len(queries) != 3 || queries[0] != first["resolved_query"] {
 		t.Fatalf("executed queries=%v", queries)
 	}
@@ -95,5 +101,45 @@ func TestPreviewPanelStatusFailsClosed(t *testing.T) {
 				t.Fatalf("status=%s", got)
 			}
 		})
+	}
+}
+
+func TestPreviewResultSizeBoundary(t *testing.T) {
+	report := map[string]any{"value": ""}
+	empty, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, extra := range []int{-1, 0, 1} {
+		report["value"] = strings.Repeat("x", previewResultBytes-len(empty)+extra)
+		raw, err := previewResult(report)
+		if extra > 0 {
+			if err == nil {
+				t.Fatal("oversized result accepted")
+			}
+		} else if err != nil || len(raw) != previewResultBytes+extra {
+			t.Fatalf("boundary %d: bytes=%d err=%v", extra, len(raw), err)
+		}
+	}
+}
+
+func TestPreviewSampleByteBoundary(t *testing.T) {
+	for _, extra := range []int{-1, 0, 1} {
+		evidence := map[string]any{"samples": []any{strings.Repeat("x", previewSampleBytes-4+extra)}, "sample_count": 1, "total_count": 1, "truncated": false}
+		boundPreviewEvidence(map[string]any{"evidence": evidence})
+		raw, err := json.Marshal(evidence["samples"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(raw) > previewSampleBytes {
+			t.Errorf("boundary %d retained %d bytes", extra, len(raw))
+		}
+		want := 1
+		if extra > 0 {
+			want = 0
+		}
+		if evidence["sample_count"] != want {
+			t.Errorf("boundary %d sample_count=%v want %d", extra, evidence["sample_count"], want)
+		}
 	}
 }

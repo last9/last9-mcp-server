@@ -13,7 +13,7 @@ const (
 
 func previewPanels(ctx context.Context, exec *validateExecutor, parsed *validatedDashboardArgs) (map[string]any, error) {
 	executor := *exec
-	executor.includeResolved = true
+	executor.preview = true
 	report := runValidateDashboard(ctx, &executor, parsed)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -25,9 +25,6 @@ func previewPanels(ctx context.Context, exec *validateExecutor, parsed *validate
 	for _, raw := range panels {
 		panel := raw.(map[string]any)
 		panel["status"] = previewPanelStatus(panel)
-		for _, rawTarget := range asAnySlice(panel["targets"]) {
-			boundPreviewEvidence(rawTarget.(map[string]any))
-		}
 	}
 	return map[string]any{
 		"validation": report["summary"], "panels": panels, "window": report["window"],
@@ -68,14 +65,18 @@ func boundPreviewEvidence(target map[string]any) {
 	}
 	samples := asAnySlice(evidence["samples"])
 	kept := make([]any, 0, len(samples))
-	remaining := previewSampleBytes
+	remaining := previewSampleBytes - 2
 	for _, sample := range samples {
 		raw, err := json.Marshal(sample)
-		if err != nil || len(raw)+1 > remaining {
+		size := len(raw)
+		if len(kept) > 0 {
+			size++
+		}
+		if err != nil || size > remaining {
 			break
 		}
 		kept = append(kept, sample)
-		remaining -= len(raw) + 1
+		remaining -= size
 	}
 	if len(kept) < len(samples) {
 		evidence["samples"] = kept

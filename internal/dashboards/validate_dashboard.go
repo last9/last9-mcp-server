@@ -491,7 +491,13 @@ func validateTarget(
 		return target
 	}
 
-	if exec.includeResolved {
+	if exec.preview {
+		encoded, err := json.Marshal(resolved)
+		if err != nil || len(encoded) > previewInputBytes {
+			target["status"] = "invalid_query"
+			target["note"] = "resolved query exceeds 65536 bytes; shorten the query or variable values"
+			return target
+		}
 		target["resolved_query"] = resolved
 	}
 
@@ -531,6 +537,9 @@ func validateTarget(
 	}
 
 	target["evidence"] = boundedEvidence(outcome.payload)
+	if exec.preview {
+		boundPreviewEvidence(target)
+	}
 	if hasData(outcome.payload) {
 		target["status"] = "valid_with_data"
 	} else {

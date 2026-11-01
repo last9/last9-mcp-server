@@ -47,9 +47,9 @@ type executionOutcome struct {
 }
 
 type validateExecutor struct {
-	includeResolved bool
-	client          *http.Client
-	cfg             models.Config
+	preview bool
+	client  *http.Client
+	cfg     models.Config
 }
 
 func (e *validateExecutor) fetchDashboard(ctx context.Context, dashboardID string) (map[string]any, string) {
