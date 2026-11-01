@@ -244,9 +244,15 @@ func (r metricDescriber) labels(ctx context.Context, name string) ([]string, []s
 		slices.Sort(labels)
 		labels = slices.Compact(labels)
 		keys := make([]string, 0, 20)
+		// Type inference and query guidance require these keys even when display labels are capped.
+		for _, key := range []string{"le", "quantile"} {
+			if slices.Contains(labels, key) {
+				keys = append(keys, key)
+			}
+		}
 		truncated := false
 		for _, key := range labels {
-			if key == "__name__" {
+			if key == "__name__" || key == "le" || key == "quantile" {
 				continue
 			}
 			if len(key) > 128 || len(keys) == 20 {
@@ -255,6 +261,7 @@ func (r metricDescriber) labels(ctx context.Context, name string) ([]string, []s
 			}
 			keys = append(keys, key)
 		}
+		slices.Sort(keys)
 		if truncated {
 			notes = append(notes, "Label keys truncated: at most 20 keys, with keys over 128 bytes omitted.")
 		}

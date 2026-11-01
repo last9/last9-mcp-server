@@ -372,3 +372,33 @@ func TestDescribeMetricBoundsInvalidNameError(t *testing.T) {
 		t.Fatal("invalid name must fail before I/O with a bounded diagnostic")
 	}
 }
+
+func TestDescribeMetricSemanticLabelsSurviveOutputCap(t *testing.T) {
+	for _, tc := range []struct{ name, discovered, key, kind, query string }{
+		{"custom_latency", "custom_latency", "quantile", "summary", `custom_latency{quantile!=""}`},
+		{"custom_duration_bucket", "custom_duration_bucket", "le", "histogram", "histogram_quantile(0.95, sum by (le) (rate(custom_duration_bucket[5m])))"},
+		{"custom_duration_sum", "custom_duration_bucket", "le", "histogram", "histogram_quantile(0.95, sum by (le) (rate(custom_duration_bucket[5m])))"},
+		{"custom_duration_count", "custom_duration_bucket", "le", "histogram", "histogram_quantile(0.95, sum by (le) (rate(custom_duration_bucket[5m])))"},
+	} {
+		for _, extra := range []int{18, 19, 20, 21} {
+			t.Run(fmt.Sprintf("%s/extra=%d", tc.name, extra), func(t *testing.T) {
+				labels := []string{tc.key}
+				for i := 0; i < extra; i++ {
+					labels = append(labels, fmt.Sprintf("a_label_%02d", i))
+				}
+				raw, err := json.Marshal(labels)
+				if err != nil {
+					t.Fatal(err)
+				}
+				f := &metricDescriptionFixture{status: 404, labels: map[string]string{tc.discovered: string(raw)}, probe: probeFixture(`"10","12","11","13"`)}
+				got := describeOne(t, f, tc.name)
+				if len(got.LabelKeys) > 20 {
+					t.Errorf("output exceeds label cap: %d", len(got.LabelKeys))
+				}
+				if got.Type != tc.kind || got.RecommendedQuery != tc.query {
+					t.Fatalf("observed %s must determine semantics despite display cap: type=%s query=%q notes=%v", tc.key, got.Type, got.RecommendedQuery, got.Notes)
+				}
+			})
+		}
+	}
+}
