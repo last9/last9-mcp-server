@@ -78,3 +78,54 @@ func TestTracePipelineNameResolution(t *testing.T) {
 		})
 	}
 }
+
+func TestTracePipelineNameResolutionRequiresEveryChunkEmpty(t *testing.T) {
+	for _, mode := range []string{"complete", "oldest partial", "null"} {
+		t.Run(mode, func(t *testing.T) {
+			var mu sync.Mutex
+			discoveries, canonical, original := 0, 0, 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				defer mu.Unlock()
+				raw, _ := io.ReadAll(r.Body)
+				if r.URL.Path == "/prom_query_instant" {
+					discoveries++
+					_, _ = io.WriteString(w, `[{"metric":{"service_name":"checkout"}}]`)
+					return
+				}
+				if strings.Contains(string(raw), `"checkout"`) {
+					canonical++
+				} else {
+					original++
+				}
+				rows, metadata := `[]`, ``
+				if mode == "oldest partial" && r.URL.Query().Get("start") == "0" {
+					metadata = `,"partial":true`
+				}
+				if mode == "null" {
+					rows = `null`
+				}
+				_, _ = io.WriteString(w, `{"status":"success"`+metadata+`,"data":{"result":`+rows+`}}`)
+			}))
+			defer srv.Close()
+			cfg := testChunkTracesConfig(srv.URL)
+			cfg.PrometheusReadURL = "https://selected.example"
+			_, _, err := NewGetTracesHandler(srv.Client(), cfg)(context.Background(), nil, GetTracesArgs{
+				TracejsonQuery: []map[string]any{{"type": "filter", "query": map[string]any{"$eq": []any{"ServiceName", "checkuot"}}}},
+				StartTimeISO:   "1970-01-01T00:00:00Z", EndTimeISO: "1970-01-01T01:30:00Z",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			wantDiscovery, wantCanonical := 0, 0
+			if mode == "complete" {
+				wantDiscovery, wantCanonical = 1, 6
+			}
+			if original != 6 || discoveries != wantDiscovery || canonical != wantCanonical {
+				t.Fatalf("original=%d discoveries=%d canonical=%d", original, discoveries, canonical)
+			}
+		})
+	}
+}
