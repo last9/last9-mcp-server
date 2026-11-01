@@ -112,7 +112,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		}
 
 		// Get time range using existing utility
-		startTime, endTime, err := utils.GetTimeRange(params, lookbackMinutes)
+		startTime, endTime, err := utils.GetTimeRangeAt(params, lookbackMinutes, time.Now().UTC().Truncate(time.Second))
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid time range: %w", err)
 		}

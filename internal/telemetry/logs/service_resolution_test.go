@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -142,5 +143,61 @@ func TestServiceLogsNameResolutionKeepsAttributeEnvironment(t *testing.T) {
 	}
 	if len(result.Content) != 2 {
 		t.Fatalf("missing resolution: %v", result.Content)
+	}
+}
+
+func TestServiceLogsNameResolutionLookback(t *testing.T) {
+	var mu sync.Mutex
+	discoveries := 0
+	var windows [][2]string
+	base, client := apitest.Server(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		raw, _ := io.ReadAll(r.Body)
+		if r.URL.Path == "/prom_query_instant" {
+			discoveries++
+			var body struct {
+				Query     string `json:"query"`
+				Timestamp int64  `json:"timestamp"`
+			}
+			if err := json.Unmarshal(raw, &body); err != nil {
+				t.Error(err)
+			}
+			if !strings.Contains(body.Query, "physical_index_service_count") || len(windows) != 1 || strconv.FormatInt(body.Timestamp, 10) != windows[0][1] {
+				t.Errorf("discovery scope=%s windows=%v", raw, windows)
+			}
+			_, _ = io.WriteString(w, `[{"metric":{"service_name":"checkout"}}]`)
+			return
+		}
+		windows = append(windows, [2]string{r.URL.Query().Get("start"), r.URL.Query().Get("end")})
+		entries := `[]`
+		if strings.Contains(string(raw), `"checkout"`) {
+			entries = `[{"stream":{},"values":[["1700000000000000000","found"]]}]`
+		}
+		_, _ = io.WriteString(w, `{"status":"success","data":{"resultType":"streams","result":`+entries+`}}`)
+	}), false)
+	cfg := apiModeCfg(base)
+	cfg.UseLogSearchAPI = false
+	cfg.PrometheusReadURL = "https://selected.example"
+	result, _, err := NewGetServiceLogsHandler(client, cfg)(context.Background(), nil, GetServiceLogsArgs{ServiceName: "checkuot", LookbackMinutes: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if discoveries != 1 || len(windows) != 2 || windows[0] != windows[1] || len(result.Content) != 2 {
+		t.Fatalf("discoveries=%d windows=%v result=%v", discoveries, windows, result)
+	}
+	start, startErr := strconv.ParseInt(windows[0][0], 10, 64)
+	end, endErr := strconv.ParseInt(windows[0][1], 10, 64)
+	if startErr != nil || endErr != nil || end-start != 600 {
+		t.Fatalf("lookback window=%v", windows[0])
+	}
+	var payload ServiceLogsResponse
+	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Service != "checkout" || payload.Count != 1 {
+		t.Fatalf("payload=%+v", payload)
 	}
 }
