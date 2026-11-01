@@ -29,7 +29,7 @@ func TestGetMetadata(t *testing.T) {
 		{"null", "null", 200, true, false},
 		{"missing data", `{"status":"success"}`, 200, true, false},
 		{"wrong status", `{"status":"error","data":{}}`, 200, true, false},
-		{"empty definitions", `{"status":"success","data":{"requests_total":[]}}`, 200, true, false},
+		{"empty definitions", `{"status":"success","data":{"requests_total":[]}}`, 200, false, false},
 		{"incomplete", `{"status":"success","data":{"requests_total":[{"type":"counter"}]}}`, 200, true, false},
 		{"other metric", strings.ReplaceAll(success, "requests_total", "other"), 200, true, false},
 		{"trailing", success + ` {}`, 200, true, false},

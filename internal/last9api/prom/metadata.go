@@ -56,7 +56,7 @@ func GetMetadata(ctx context.Context, c *last9api.Client, in GetMetadataInput) (
 		return out, errors.New("metric metadata: invalid success envelope")
 	}
 	for name, definitions := range out.Data {
-		if name != in.Metric || len(definitions) == 0 {
+		if name != in.Metric || definitions == nil {
 			return out, errors.New("metric metadata: invalid metric definitions")
 		}
 		for _, d := range definitions {
