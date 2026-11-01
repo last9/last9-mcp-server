@@ -137,7 +137,9 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, gate *toolG
 		return nil
 	}
 	gate.pending = append(gate.pending, func() error {
-		return registerTool(server, tool, withCallDeadline(gate.callTimeout, gate.readOnly[tool.Name], handler), gate.served.Allows)
+		// Feedback is available in read-only mode, but delivery cannot safely be retried.
+		readOnly := gate.readOnly[tool.Name] && tool.Name != "send_feedback"
+		return registerTool(server, tool, withCallDeadline(gate.callTimeout, readOnly, handler), gate.served.Allows)
 	})
 	return nil
 }
@@ -151,7 +153,7 @@ func withCallDeadline[In, Out any](timeout time.Duration, readOnly bool, handler
 		defer cancel()
 		result, out, err := handler(ctx, req, in)
 		var unknown *utils.WriteOutcomeUnknownError
-		if errors.As(err, &unknown) {
+		if !readOnly && errors.As(err, &unknown) {
 			return utils.ToolErrorResult(fmt.Sprintf("The request may or may not have been applied (%s). Do not retry or resend this request.", unknown.Cause)), out, nil
 		}
 		if !errors.Is(ctx.Err(), context.DeadlineExceeded) || (err == nil && !readOnly) {
