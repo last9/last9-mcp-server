@@ -721,6 +721,12 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		InputSchema: dashboards.GetValidateDashboardInputSchema(),
 	}, dashboards.NewValidateDashboardHandler(client, cfg)))
 
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "preview_dashboard",
+		Annotations: readOnlyTool("Preview Dashboard"),
+		Description: prompts.PreviewDashboardDescription,
+	}, dashboards.NewPreviewDashboardHandler(client, cfg)))
+
 	reg(registerWriteTool(server, gate, &mcp.Tool{
 		Name:        "create_dashboard",
 		Annotations: writeTool("Create Dashboard", false, false),

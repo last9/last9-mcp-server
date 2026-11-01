@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
@@ -877,5 +878,35 @@ func TestOnCallRunbookRoutesHTTPStatusToServiceLogs(t *testing.T) {
 	}
 	if strings.Contains(runbook, "write logjson") && !strings.Contains(runbook, "do not write logjson") {
 		t.Fatal("on_call_runbook must not tell the agent to write logjson for service 5xx")
+	}
+}
+
+func TestDumpToolsPreviewDashboardReadOnly(t *testing.T) {
+	for _, spec := range toolsets.ValidNames() {
+		for _, readOnly := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/read_only=%t", spec, readOnly), func(t *testing.T) {
+				allowed, err := toolsets.Parse(spec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				found := false
+				for _, tool := range dumpServedTools(t, toolsets.Filter{Tools: allowed, ReadOnly: readOnly}) {
+					if tool.Name != "preview_dashboard" {
+						continue
+					}
+					found = true
+					if tool.Description != prompts.PreviewDashboardDescription {
+						t.Error("preview description differs from embedded Markdown")
+					}
+					if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
+						t.Fatal("preview must be annotated read-only")
+					}
+				}
+				want := spec == "all" || spec == "dashboards"
+				if found != want {
+					t.Fatalf("preview served=%t want %t", found, want)
+				}
+			})
+		}
 	}
 }

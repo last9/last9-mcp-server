@@ -26,9 +26,9 @@ const (
 )
 
 type PreviewDashboardArgs struct {
-	Dashboard    map[string]any     `json:"dashboard,omitempty" jsonschema:"Unsaved dashboard object as in create_dashboard; mutually exclusive with id"`
+	Dashboard    map[string]any     `json:"dashboard,omitempty" jsonschema:"Unsaved dashboard object (name, panels, variables, time); mutually exclusive with id"`
 	ID           string             `json:"id,omitempty" jsonschema:"Saved dashboard ID for patch preview; requires ops and excludes dashboard"`
-	Ops          []PatchDashboardOp `json:"ops,omitempty" jsonschema:"Ordered patch_dashboard operations; required with id, at most 100"`
+	Ops          []PatchDashboardOp `json:"ops,omitempty" jsonschema:"Ordered patch operations; required with id, at most 100"`
 	StartTimeISO string             `json:"start_time_iso" jsonschema:"(Required) Window start in RFC3339, maximum window 24 hours"`
 	EndTimeISO   string             `json:"end_time_iso" jsonschema:"(Required) Window end in RFC3339, after start"`
 	Variables    map[string]any     `json:"variables,omitempty" jsonschema:"Scalar variable overrides; defaults to dashboard values then built-in values"`

@@ -19,7 +19,7 @@
 {{- $logInventory := "" -}}
 {{- with $metricNames}}{{$raw = tools "prometheus_range_query" "prometheus_instant_query" "get_logs" "get_traces"}}{{else}}{{$logInventory = tools "prometheus_instant_query"}}{{end -}}
 {{- $create := tools "create_dashboard" "create_alert" "create_notification_channel" "create_alert_from_chart" -}}
-{{- $validate := tools "validate_dashboard" -}}
+{{- $validate := tools "validate_dashboard" "preview_dashboard" -}}
 {{- $alertValidate := tools "validate_alert_expression" -}}
 {{- $alertDesign := tools "recommend_alert_config" "describe_alert_chart" -}}
 {{- $dropRules := tools "get_drop_rules" -}}

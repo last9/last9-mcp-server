@@ -79,6 +79,7 @@ var promptDescriptionFiles = map[string]string{
 	"delete_notification_channel.md":       prompts.DeleteNotificationChannelDescription,
 	"patch_alert.md":                       prompts.PatchAlertDescription,
 	"patch_dashboard.md":                   prompts.PatchDashboardDescription,
+	"preview_dashboard.md":                 prompts.PreviewDashboardDescription,
 	"prometheus_instant_query.md":          prompts.PromqlInstantQueryDetails,
 	"prometheus_label_values.md":           prompts.PromqlLabelValuesQueryDetails,
 	"prometheus_labels.md":                 prompts.PromqlLabelsQueryDetails,

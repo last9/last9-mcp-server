@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `preview_dashboard` previews an unsaved dashboard or ordered patch without saving: it reuses the create schema, query validation and local patch operations, returns resolved queries, bounded per-panel results and a net panel diff, and remains available in read-only dashboard toolsets. Backend acceptance and normalization are not guaranteed by this client-side preview (PR pending).
+
 ### Fixed
 - `get_alert_rule_state` returns a tool error with recovery guidance instead of successful `{}` when an `alert_group_id`, `rule_name` or `alert_group_name` filter matches no rules across the sampled range. Empty samples alone do not establish whether the group or rule exists; unfiltered empty results and gaps within a matched rule's history retain their existing behavior (#411).
 - `get_alert_rule_state` no longer runs into the 3-minute client timeout: its samples are fetched 5 at a time instead of one after another, and a run still unfinished after 60s returns a tool error with the number of samples fetched and how to retry (larger `step`, narrower range, `alert_group_id`/`rule_name` filters). Each sample's monitor `window` is now `min(step, 3600)` seconds, the widest the monitor API accepts; it was `step`. A sample whose reply is empty, malformed or has no `alert_rules` fails the call rather than reading as no rule firing; `get_workspace_overview` leaves `firing_alert_count` null with an `errors[]` entry for one (#411).
