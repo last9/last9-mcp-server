@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `describe_metric` (read-only, metrics and investigate toolsets) returns metadata types, units, help, bounded observed label keys and conservative query recommendations for 1–10 names. Metadata overrides suffix guesses, conflicts remain unknown, classic buckets and native samples are checked before histogram recommendations, and trace/summary quantiles stay direct; unavailable metadata and incomplete discovery are disclosed (#PR_PENDING).
+- `describe_metric` (read-only, metrics and investigate) describes 1–10 metrics using exact Last9 rollups, pinned OTel receiver definitions, naming and bounded sample probes before optional metadata. It reports provenance/confidence and observed labels, keeps gauge and trace quantile queries safe, and works without the metadata API (#479).
 
 ### Fixed
 - `get_alert_rule_state` returns a tool error with recovery guidance instead of successful `{}` when an `alert_group_id`, `rule_name` or `alert_group_name` filter matches no rules across the sampled range. Empty samples alone do not establish whether the group or rule exists; unfiltered empty results and gaps within a matched rule's history retain their existing behavior (#411).
