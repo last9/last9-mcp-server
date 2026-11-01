@@ -30,6 +30,10 @@ func datasourceToolsUnderTest(t *testing.T, extra ...models.DatasourceInfo) (map
 		_ = json.Unmarshal(raw, &body)
 		readURLs = append(readURLs, body.ReadURL)
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/prom_label_values" {
+			_, _ = w.Write([]byte(`["api"]`))
+			return
+		}
 		_, _ = w.Write([]byte(`[]`))
 	}))
 	t.Cleanup(server.Close)
@@ -118,7 +122,11 @@ func TestDatasourceToolsResolveDatasource(t *testing.T) {
 					t.Errorf("%s: read_urls = %v, want [%s]", tool, *readURLs, tt.wantReadURL)
 				}
 				texts := resultTexts(res)
-				if strings.HasPrefix(tool, "prometheus_") && texts[0] != "[]" {
+				expectedBody := "[]"
+				if tool == "prometheus_label_values" {
+					expectedBody = `["api"]`
+				}
+				if strings.HasPrefix(tool, "prometheus_") && texts[0] != expectedBody {
 					t.Errorf("%s: first block = %q, want the upstream body", tool, texts[0])
 				}
 				var note string

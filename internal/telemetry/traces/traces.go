@@ -14,6 +14,7 @@ import (
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/nameresolution"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -80,9 +81,35 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 		return nil, fmt.Errorf("failed to parse time range: %v", err)
 	}
 
-	result, err := fetchTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startTime, endTime, args)
+	result, emptyVerified, err := fetchTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startTime, endTime, args)
 	if err != nil {
 		return nil, err
+	}
+
+	note := ""
+	if cfg.PrometheusReadURL != "" && emptyVerified {
+		prepared, eligible := nameresolution.PrepareServicePipeline(args.TracejsonQuery)
+		if eligible {
+			matchers, scoped := prepared.EnvironmentMatchers()
+			if scoped {
+				resolution, resolveErr := nameresolution.ResolveService(ctx, client, cfg, nameresolution.ServiceLookup{Requested: prepared.Requested, Telemetry: "traces", Start: startTime / 1000, End: endTime / 1000, Matchers: matchers})
+				if resolveErr != nil {
+					return nil, resolveErr
+				}
+				if refusal := resolution.Result(); refusal != nil {
+					return refusal, nil
+				}
+				if resolution.Status == "closest" {
+					args.TracejsonQuery = prepared.WithName(resolution.Canonical)
+					tracejsonQuery = args.TracejsonQuery
+					result, _, err = fetchTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startTime, endTime, args)
+					if err != nil {
+						return nil, err
+					}
+					note = resolution.Note()
+				}
+			}
+		}
 	}
 	addTraceJSONGuidance(result, args, traceGuidanceContext{
 		startMs:        startTime,
@@ -96,14 +123,18 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	dashboardURL := dlBuilder.BuildTracesLink(startTime, endTime, tracejsonQuery, "", "")
 
 	// Return the result in MCP format with deep link
-	return &mcp.CallToolResult{
+	response := &mcp.CallToolResult{
 		Meta: deeplink.ToMeta(dashboardURL),
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: formatJSON(result),
 			},
 		},
-	}, nil
+	}
+	if note != "" {
+		response.Content = append(response.Content, &mcp.TextContent{Text: note})
+	}
+	return response, nil
 }
 
 // fetchTraceJSONQuery executes the trace query by resolving an
@@ -111,7 +142,7 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 // splitting via utils.GetAdaptiveChunks, and fetching the chunks newest-first
 // until the effective limit is filled. An exact trace_id lookup short-
 // circuits chunking entirely (see extractExactTraceIDLookup).
-func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, tracejsonQuery interface{}, startMs, endMs int64, args GetTracesArgs) (map[string]interface{}, error) {
+func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, tracejsonQuery interface{}, startMs, endMs int64, args GetTracesArgs) (map[string]interface{}, bool, error) {
 	chunkingDebug := chunkingDebugEnabled()
 	effectiveLimit := effectiveGetTracesLimit(cfg, args.Limit)
 
@@ -125,7 +156,8 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 				effectiveLimit,
 			)
 		}
-		return executeTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startMs, endMs, effectiveLimit)
+		result, err := executeTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startMs, endMs, effectiveLimit)
+		return result, err == nil && nameresolution.VerifiedEmpty(result), err
 	}
 
 	// Aggregate pipelines (group-by, avg/median/quantile/stddev, etc.) must
@@ -141,7 +173,8 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 				effectiveLimit,
 			)
 		}
-		return executeTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startMs, endMs, effectiveLimit)
+		result, err := executeTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startMs, endMs, effectiveLimit)
+		return result, err == nil && nameresolution.VerifiedEmpty(result), err
 	}
 
 	// Trace pipelines never reference the Body field, so HasExpensiveBodyParsing
@@ -164,7 +197,7 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 		if chunkingDebug {
 			log.Printf("[chunking] get_traces produced no chunks start_ms=%d end_ms=%d limit=%d", startMs, endMs, args.Limit)
 		}
-		return emptyTracesResponse(), nil
+		return emptyTracesResponse(), false, nil
 	}
 
 	if chunkingDebug {
@@ -184,9 +217,10 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 	}
 
 	var (
-		baseResponse map[string]interface{}
-		mergedItems  = make([]json.RawMessage, 0)
-		remaining    = effectiveLimit
+		baseResponse  map[string]interface{}
+		mergedItems   = make([]json.RawMessage, 0)
+		remaining     = effectiveLimit
+		emptyVerified = true
 		// partialErr carries chunk context (e.g. "chunk 3/6 failed: ...") and
 		// is used both for the all-chunks-failed hard error and for the
 		// partial-result annotation when some chunks succeeded. Wrapping the
@@ -240,6 +274,7 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 			continue
 		}
 
+		emptyVerified = emptyVerified && nameresolution.VerifiedEmpty(r.Value)
 		items, err := extractTraceResultItems(r.Value)
 		if err != nil {
 			slog.Error("chunked trace query parse failed",
@@ -275,19 +310,19 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 
 	if baseResponse == nil {
 		if partialErr != nil {
-			return nil, partialErr
+			return nil, false, partialErr
 		}
-		return emptyTracesResponse(), nil
+		return emptyTracesResponse(), false, nil
 	}
 
 	data, ok := baseResponse["data"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("traces API response missing data object")
+		return nil, false, fmt.Errorf("traces API response missing data object")
 	}
 	data["result"] = mergedItems
 
 	if partialErr != nil {
-		return nil, fmt.Errorf("%w (window start_ms=%d end_ms=%d)", partialErr, startMs, endMs)
+		return nil, false, fmt.Errorf("%w (window start_ms=%d end_ms=%d)", partialErr, startMs, endMs)
 	}
 	if chunkingDebug {
 		log.Printf(
@@ -296,7 +331,7 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 		)
 	}
 
-	return baseResponse, nil
+	return baseResponse, emptyVerified && len(mergedItems) == 0, nil
 }
 
 // executeTraceJSONQuery performs a single API call for a given time window.

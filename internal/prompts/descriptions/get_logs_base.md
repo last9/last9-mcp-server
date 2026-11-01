@@ -14,7 +14,7 @@ Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`cond
 
 **Percentiles:** Day-wise: exactly ONE get_logs call over the full half-open start_time_iso/end_time_iso range with one window_aggregate; NEVER one call per day; honor requested timezone. Parse, then use the canonical anchored numeric `$regex` shown: `^[0-9]+(?:\\.[0-9]+)?$`. It excludes non-matching values from percentile calculations; disclose that exclusion in the answer. Only report returned P99 values; empty result→say unavailable and stop (no count/sample substitute). Never template/merge/recombine aggregated percentile rows. Use a discovered normalized route. Raw URI: aggregate exact values; never normalize/merge later. If `l9_result.partial=true`, preserve rows and disclose partial coverage. Units: report source; never convert.
 
-**Attrs:** exists→neq(field,"") (not `$exists`). `community_member_id`→`attributes['key']`, `resource_attributes['key']`→`resources['key']`; bare: ServiceName/Body/SeverityText/Timestamp.
+**Attrs:** exists→neq(field,"") (not `$exists`). `community_member_id`→`attributes['key']`, `resource_attributes['key']`→`resources['key']`.
 
 **Scope:** no `service_name` arg; filter ServiceName in query. tenant/env→`resources['last9.tenant']`/`resources['deployment.environment']`; k8s.*→`resources['k8s.…']`; service.name→`ServiceName`.
 
@@ -28,10 +28,12 @@ Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`cond
 
 **l9_sanity:** high→add filter, recount; zero→inspect samples.
 
+**Names:** Empty service equality queries may use a closest match, disclosed separately; ambiguity returns candidates, no measurements.
+
 Manual: `last9://reference/logjson`
 
 ## When to use
-Counts, aggregates, percentiles or ad-hoc filters over logs, across services or with no known service.
+Log counts, aggregates, percentiles and ad-hoc filters.
 
 ## When not to use
 - Raw lines for one known service: `get_service_logs`
@@ -39,4 +41,4 @@ Counts, aggregates, percentiles or ad-hoc filters over logs, across services or 
 - APM fleet error ranking: `get_service_summary`
 
 ## Output shape
-Line summary, log rows (`raw`) or aggregate rows, with `l9_result` / `l9_sanity` metadata on partial or suspicious counts.
+Rows or summaries; `l9_result` / `l9_sanity` flag partial or suspicious counts.

@@ -53,6 +53,22 @@ func NewPromqlLabelsHandler(client *http.Client, cfg models.Config) func(context
 				})
 			},
 		}
-		return lookup.run(window, choice.note)
+		result, _, err := lookup.run(window, choice.note)
+		if err != nil || choice.cfg.PrometheusReadURL == "" || !emptyLabelResult(result, lookup.field) {
+			return result, nil, err
+		}
+		resolved, resolveErr := resolveEmptyLabelLookup(ctx, client, choice.cfg, labelNameScope{query: query, label: "", window: window})
+		if resolveErr != nil {
+			return nil, nil, resolveErr
+		}
+		if resolved.refusal != nil {
+			return resolved.annotate(withDatasourceNote(resolved.refusal, choice.note)), nil, nil
+		}
+		if resolved.query != query {
+			query = resolved.query
+			lookup.matchQuery = query
+			result, _, err = lookup.run(window, choice.note)
+		}
+		return resolved.annotate(result), nil, err
 	}
 }

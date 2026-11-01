@@ -1,6 +1,5 @@
 
 	Perform a Prometheus range query to get metrics data.
-	This tool can be used to query Prometheus for metrics data over a specified time range.
 	Percentiles are not composable: never average precomputed percentile series. With suitable Prometheus histogram buckets, use histogram_quantile(..., rate(...)) or histogram_quantile(..., increase(...)). Otherwise use get_logs/get_traces to aggregate raw values. Use a precomputed percentile metric only when its recorded window exactly matches the requested window.
 	It is recommended to initially check the the available labels on the promql metric using the prometheus_labels tool
 	for filtering by a specific environment. Labels like "env", "environment" or "development_environment"
@@ -22,7 +21,8 @@
 			...
 		]
 	}]
-	The response will contain the metrics data for the specified query.
+	**Names:** After an empty result, a single metric selector may use a closest match with a separate note; ambiguity returns candidates, no measurements. Expressions are unchanged.
+
 	Parameters:
 	- query: (Required) The Prometheus query to execute.
 	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60.
@@ -51,4 +51,4 @@
 	Series `[{metric, value}]`; each value is `[timestamp, "string"]`.
 
 	## Known traps
-	Values are strings; parse before comparing. A guessed metric name returns an empty result, not an error.
+	Values are strings; parse before comparing. Name-discovery failures are errors; missing names return no measurements.

@@ -14,6 +14,7 @@ import (
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/nameresolution"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -34,6 +35,7 @@ type ServiceLogsResponse struct {
 	SearchStats        map[string]any `json:"search_stats,omitempty"`
 	Hint               string         `json:"hint,omitempty"`
 	coverageStatus     string
+	emptyVerified      bool
 }
 
 // LogEntry represents a single log entry
@@ -110,7 +112,7 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		}
 
 		// Get time range using existing utility
-		startTime, endTime, err := utils.GetTimeRange(params, lookbackMinutes)
+		startTime, endTime, err := utils.GetTimeRangeAt(params, lookbackMinutes, time.Now().UTC().Truncate(time.Second))
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid time range: %w", err)
 		}
@@ -140,6 +142,43 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
 		}
+
+		note := ""
+		prepared, eligible := nameresolution.PrepareServicePipeline(logjsonQuery)
+		var matchers []string
+		if eligible {
+			matchers, eligible = prepared.EnvironmentMatchers()
+		}
+		if eligible && cfg.PrometheusReadURL != "" && logs.Count == 0 && logs.emptyVerified && !strings.HasPrefix(normalizedIndex, "rehydration_index:") {
+			failed, coverageErr := logs.chunksFailed()
+			if coverageErr == nil && failed == 0 && !logs.mayMissLines(limit) {
+				lookup := nameresolution.ServiceLookup{Requested: args.ServiceName, Telemetry: "logs", Start: startTime.Unix(), End: endTime.Unix(), Index: normalizedIndex, Matchers: matchers}
+
+				resolution, resolveErr := nameresolution.ResolveService(ctx, client, cfg, lookup)
+				if resolveErr != nil {
+					return nil, nil, resolveErr
+				}
+				if refusal := resolution.Result(); refusal != nil {
+					return refusal, nil, nil
+				}
+				if resolution.Status == "closest" {
+					args.ServiceName = resolution.Canonical
+					logjsonQuery = buildServiceLogsQuery(args.ServiceName, args.SeverityFilters, args.BodyFilters)
+					if args.Env != "" {
+						logjsonQuery = addServiceLogsEnvFilter(logjsonQuery, args.Env)
+					}
+					logjsonQuery, err = applyServiceLogsStructuredFilters(logjsonQuery, extraConditions, parseStages)
+					if err != nil {
+						return nil, nil, err
+					}
+					logs, err = fetchServiceLogs(ctx, client, cfg, args.ServiceName, startTime, endTime, limit, logjsonQuery, normalizedIndex)
+					if err != nil {
+						return nil, nil, fmt.Errorf("failed to fetch service logs: %w", err)
+					}
+					note = resolution.Note()
+				}
+			}
+		}
 		logs.HTTPStatusField = statusField
 		addServiceLogsGuidance(logs, args, limit)
 
@@ -165,14 +204,18 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			meta["last9/coverage"] = coverage
 		}
 
-		return &mcp.CallToolResult{
+		result := &mcp.CallToolResult{
 			Meta: meta,
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: string(responseJSON),
 				},
 			},
-		}, nil, nil
+		}
+		if note != "" {
+			result.Content = append(result.Content, &mcp.TextContent{Text: note})
+		}
+		return result, nil, nil
 	}
 }
 
@@ -508,6 +551,7 @@ func fetchServiceLogs(ctx context.Context, client *http.Client, cfg models.Confi
 		Count:          len(logs),
 		Logs:           logs,
 		coverageStatus: coverageStatus,
+		emptyVerified:  verified && len(logs) == 0,
 	}, nil
 }
 
@@ -540,11 +584,12 @@ func fetchServiceLogsViaSearchAPI(
 	}
 
 	response := &ServiceLogsResponse{
-		Service:   service,
-		StartTime: startTime.Format(time.RFC3339),
-		EndTime:   endTime.Format(time.RFC3339),
-		Count:     len(logs),
-		Logs:      logs,
+		emptyVerified: nameresolution.VerifiedEmpty(result),
+		Service:       service,
+		StartTime:     startTime.Format(time.RFC3339),
+		EndTime:       endTime.Format(time.RFC3339),
+		Count:         len(logs),
+		Logs:          logs,
 	}
 	if total, ok := result["total_matching_lines"].(int); ok {
 		response.TotalMatchingLines = &total
@@ -565,7 +610,7 @@ func fetchServiceLogsChunk(ctx context.Context, client *http.Client, cfg models.
 	}
 
 	logs := parseServiceLogEntries(apiResponse, service)
-	return serviceLogsChunkResult{logs: logs, verified: serviceLogsResultVerified(apiResponse, logs)}, nil
+	return serviceLogsChunkResult{logs: logs, verified: serviceLogsResultVerified(apiResponse, logs) && (len(logs) > 0 || nameresolution.VerifiedEmpty(apiResponse))}, nil
 }
 
 func parseServiceLogEntries(apiResponse map[string]any, service string) []LogEntry {

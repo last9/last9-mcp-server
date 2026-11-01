@@ -3,7 +3,9 @@ package prom
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"time"
 
 	"last9-mcp/internal/last9api"
 )
@@ -45,4 +47,21 @@ func GetLabelValuesRaw(ctx context.Context, c *last9api.Client, in GetLabelValue
 	var raw []byte
 	err := c.Do(ctx, opLabelValuesRaw, last9api.Request{Method: http.MethodPost, Path: pathLabelValues, Body: in}, &raw)
 	return raw, err
+}
+
+// DiscoverLabelValues calls POST /prom_label_values without a result limit.
+func DiscoverLabelValues(ctx context.Context, c *last9api.Client, in GetLabelValuesInput) ([]string, error) {
+	if in.Limit != 0 {
+		return nil, fmt.Errorf("name discovery requires an unlimited catalog")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	var raw []byte
+	if err := c.Do(ctx, "name discovery", last9api.Request{Method: http.MethodPost, Path: pathLabelValues, Body: in}, &raw, last9api.WithMaxResponseBytes(1<<20)); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("name discovery: %w", err)
+	}
+	return decodeDiscoveryNames(raw)
 }

@@ -48,9 +48,28 @@ func NewGetMetricStatusHandler(client *http.Client, cfg models.Config) func(cont
 		if choice.candidates != nil {
 			return ambiguousDatasourceResult(args.Datasource, choice), nil, nil
 		}
-		status, err := computeGetMetricStatus(ctx, client, choice.cfg, args)
+		probe := metricStatusInput{GetMetricStatusArgs: args, endTime: time.Now().UTC().Unix()}
+		status, err := computeGetMetricStatus(ctx, client, choice.cfg, probe)
 		if err != nil {
 			return nil, nil, err
+		}
+		note := ""
+		if !status.Live {
+			resolved, resolveErr := resolveEmptyMetric(ctx, client, choice.cfg, metricNameScope{query: args.Metric, start: probe.endTime - int64(args.WindowMinutes*60), end: probe.endTime})
+			if resolveErr != nil {
+				return nil, nil, resolveErr
+			}
+			if resolved.refusal != nil {
+				return withDatasourceNote(resolved.refusal, choice.note), nil, nil
+			}
+			if resolved.query != args.Metric {
+				probe.Metric = resolved.query
+				status, err = computeGetMetricStatus(ctx, client, choice.cfg, probe)
+				if err != nil {
+					return nil, nil, err
+				}
+				note = resolved.note
+			}
 		}
 		// HTML escaping would show the note's <fragment> placeholder as <fragment>.
 		var payload bytes.Buffer
@@ -59,9 +78,9 @@ func NewGetMetricStatusHandler(client *http.Client, cfg models.Config) func(cont
 		if err := enc.Encode(status); err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal get_metric_status response: %w", err)
 		}
-		return withDatasourceNote(&mcp.CallToolResult{
+		return withDatasourceNote(withDatasourceNote(&mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: strings.TrimSuffix(payload.String(), "\n")}},
-		}, choice.note), nil, nil
+		}, choice.note), note), nil, nil
 	}
 }
 
@@ -75,9 +94,14 @@ func validateGetMetricStatusArgs(args GetMetricStatusArgs) error {
 	return nil
 }
 
-func computeGetMetricStatus(ctx context.Context, client *http.Client, queryCfg models.Config, args GetMetricStatusArgs) (GetMetricStatusResult, error) {
+type metricStatusInput struct {
+	GetMetricStatusArgs
+	endTime int64
+}
+
+func computeGetMetricStatus(ctx context.Context, client *http.Client, queryCfg models.Config, args metricStatusInput) (GetMetricStatusResult, error) {
 	metric := strings.TrimSpace(args.Metric)
-	endTime := time.Now().UTC().Unix()
+	endTime := args.endTime
 	dur := promDurationFromMinutes(args.WindowMinutes)
 	sel := metricSelector(metric)
 
@@ -95,7 +119,7 @@ func computeGetMetricStatus(ctx context.Context, client *http.Client, queryCfg m
 	}
 
 	ageQuery := fmt.Sprintf("time() - timestamp(%s[%s])", sel, dur)
-	ages, err := queryInstantValues(ctx, client, queryCfg, ageQuery, endTime)
+	ages, _, err := queryInstantValues(ctx, client, queryCfg, ageQuery, endTime)
 	if err != nil {
 		return GetMetricStatusResult{}, err
 	}
@@ -146,45 +170,45 @@ func promDurationFromMinutes(minutes float64) string {
 }
 
 func queryInstantScalar(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64) (float64, error) {
-	vals, err := queryInstantValues(ctx, client, cfg, query, endTime)
+	vals, complete, err := queryInstantValues(ctx, client, cfg, query, endTime)
 	if err != nil {
 		return 0, err
-	}
-	if len(vals) == 0 {
-		return 0, nil
 	}
 	sum := 0.0
 	for _, v := range vals {
 		sum += v
 	}
+	// Discarded samples cannot establish absence, even alongside a valid zero.
+	if sum <= 0 && !complete {
+		return 0, fmt.Errorf("metric count response contains invalid samples; cannot establish absence")
+	}
 	return sum, nil
 }
 
-func queryInstantValues(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64) ([]float64, error) {
+func queryInstantValues(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64) ([]float64, bool, error) {
 	series, err := prom.QueryInstant(ctx, last9api.NewClient(client, cfg), prom.QueryInstantInput{
 		Datasource: prom.Datasource{ReadURL: cfg.PrometheusReadURL, Username: cfg.PrometheusUsername, Password: cfg.PrometheusPassword},
 		Query:      query,
 		Timestamp:  endTime,
 	})
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
+	complete := true
 	out := make([]float64, 0, len(series))
 	for _, s := range series {
 		v, err := parsePromInstantValue(s.Value)
-		if err != nil {
-			continue
-		}
-		if math.IsNaN(v) || math.IsInf(v, 0) {
+		if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
+			complete = false
 			continue
 		}
 		out = append(out, v)
 	}
-	return out, nil
+	return out, complete, nil
 }
 
 func inferIntervalSeconds(ctx context.Context, client *http.Client, cfg models.Config, sel, dur string, endTime int64) (*float64, error) {
-	vals, err := queryInstantValues(ctx, client, cfg, fmt.Sprintf("scrape_interval(%s[%s])", sel, dur), endTime)
+	vals, _, err := queryInstantValues(ctx, client, cfg, fmt.Sprintf("scrape_interval(%s[%s])", sel, dur), endTime)
 	if err != nil {
 		return nil, err
 	}

@@ -468,3 +468,8 @@ When a user asks about traces:
 7. **Always analyze the results** and provide insights
 
 **CRITICAL: Always execute queries with tools - never show raw JSON to users**
+
+
+## Name resolution
+
+After an empty exact query, eligible service names may resolve against a successful listing for this telemetry and scope. A safe match adds a separate closest match note; ambiguous names return bounded candidates without measurements, and discovery failures remain errors. Query time bounds and filters stay fixed. Regexes, negative filters and derived service fields are not rewritten. See `last9://reference/investigation` for eligibility and limitations.

@@ -2,6 +2,8 @@
 	Return the label values for a particular label and promql filter query.
 	This works similar to the prometheus /label_values call
 	It returns an array of values for the label.
+	**Names:** Empty lookups may resolve metric names in single selectors and the `label` argument with a separate closest match note; ambiguous or missing names return no measurements. Failures are errors. See `last9://reference/metrics`.
+
 	Parameters:
 	- match_query: (Required) A valid promql filter query
 	- label: (Required) Name of the label to return values for

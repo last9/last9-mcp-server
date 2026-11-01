@@ -2,6 +2,8 @@
 	Return the labels for a given  promql match query.
 	This works similar to the prometheus /labels call
 	It returns a JSON object whose `labels` field is an array of label names.
+	**Names:** Empty lookups may resolve metric names in single selectors with a separate closest match note; ambiguous or missing names return no measurements. Failures are errors. See `last9://reference/metrics`.
+
 	Parameters:
 	- match_query: (Required) A valid promql filter query
 	- lookback_minutes: (Optional) Number of minutes to look back from now. Defaults to 60. When no window is given, match_query names one metric and the 60 minutes are empty (daily or sparse metrics), the server retries once over 4 days and adds a text block saying so.
