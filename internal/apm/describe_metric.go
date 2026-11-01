@@ -13,6 +13,7 @@ import (
 
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/prom"
+	"last9-mcp/internal/metriccatalog"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -27,6 +28,9 @@ type DescribeMetricArgs struct {
 type MetricDescription struct {
 	Name             string   `json:"name"`
 	Type             string   `json:"type"`
+	TypeSource       string   `json:"type_source"`
+	Confidence       string   `json:"confidence"`
+	MetadataStatus   string   `json:"metadata_status,omitempty"`
 	Inferred         bool     `json:"inferred"`
 	Unit             string   `json:"unit,omitempty"`
 	Help             string   `json:"help,omitempty"`
@@ -83,34 +87,26 @@ func NewDescribeMetricHandler(client *http.Client, cfg models.Config) func(conte
 }
 
 func (r metricDescriber) describe(ctx context.Context, name string) (MetricDescription, error) {
-	result := MetricDescription{Name: name, Type: "unknown", LabelKeys: []string{}, Notes: []string{}}
-	definitions, family, err := r.metadata(ctx, name)
-	if err != nil && !errors.Is(err, prom.ErrMetadataUnsupported) {
-		return result, err
-	}
-	if errors.Is(err, prom.ErrMetadataUnsupported) {
-		result.Notes = append(result.Notes, "Metadata is unsupported by this datasource.")
-	}
-	if len(definitions) == 0 {
-		result.Notes = append(result.Notes, "Metadata is unavailable; this does not establish that the metric is absent.")
-		inferMetricType(&result)
-	} else {
-		applyMetricDefinitions(&result, definitions)
-	}
+	result := MetricDescription{Name: name, Type: "unknown", TypeSource: "unknown", Confidence: "unknown", LabelKeys: []string{}, Notes: []string{}}
 	labels, notes, err := r.labels(ctx, name)
 	if err != nil {
 		return result, err
 	}
-	if traceQuantileMetric(name) && (result.Type == "counter" || result.Type == "histogram") {
-		result.Type = "unknown"
-		result.Notes = append(result.Notes, "Metadata conflicts with the documented pre-windowed trace latency family; no query is recommended.")
+	result.LabelKeys, result.Notes = labels, notes
+	family, err := r.resolveType(ctx, &result)
+	if err != nil {
+		return result, err
 	}
-	result.LabelKeys = labels
-	result.Notes = append(result.Notes, notes...)
+	if result.Type == "unknown" {
+		result.Notes = append(result.Notes, "Do not use rate()/increase() until verified; metric semantics are unknown.")
+	}
 	switch result.Type {
 	case "counter":
 		if !result.Inferred {
 			result.RecommendedQuery = "rate(" + name + "[5m])"
+		} else {
+			result.RecommendedQuery = name
+			result.Notes = append(result.Notes, "Counter-like evidence is inferred, not proof of a cumulative counter; do not use rate()/increase() until verified.")
 		}
 	case "gauge":
 		result.RecommendedQuery = name
@@ -129,7 +125,7 @@ func (r metricDescriber) describe(ctx context.Context, name string) (MetricDescr
 		}
 		result.Notes = append(result.Notes, "Select existing summary quantiles directly. Never average quantiles into a wider-window percentile.")
 	case "histogram":
-		if !result.Inferred {
+		if result.TypeSource != "probe" {
 			bucket := family + "_bucket"
 			if strings.HasSuffix(name, "_bucket") && slices.Contains(labels, "le") {
 				bucket = name
@@ -204,9 +200,11 @@ func applyMetricDefinitions(result *MetricDescription, definitions []prom.Metada
 	case "counter", "gauge", "histogram", "summary":
 		result.Type = first.Type
 	default:
-		result.Notes = append(result.Notes, "Metadata has an unrecognized type; no naming fallback or query recommendation is applied.")
+		result.Notes = append(result.Notes, "Metadata has an unrecognized type; no query recommendation is applied.")
 	}
-	result.Unit = boundedMetricText(*first.Unit, 128, "unit", result)
+	if result.Unit == "" {
+		result.Unit = boundedMetricText(*first.Unit, 128, "unit", result)
+	}
 	result.Help = boundedMetricText(*first.Help, 1024, "help", result)
 }
 
@@ -218,30 +216,9 @@ func boundedMetricText(value string, limit int, field string, result *MetricDesc
 	return strings.ToValidUTF8(value[:limit], "")
 }
 
-func inferMetricType(result *MetricDescription) {
-	switch {
-	case traceQuantileMetric(result.Name):
-		result.Type = "gauge"
-	case strings.HasSuffix(result.Name, "_total"):
-		result.Type = "counter"
-	case strings.HasSuffix(result.Name, "_bucket"):
-		result.Type = "histogram"
-	case strings.HasSuffix(result.Name, "_sum"), strings.HasSuffix(result.Name, "_count"):
-		result.Notes = append(result.Notes, "The _sum/_count suffix is ambiguous without histogram or summary family metadata.")
-	}
-	if result.Type != "unknown" {
-		result.Inferred = true
-		result.Notes = append(result.Notes, "Type is inferred from naming, not verified metadata. Verify the type before rate()/increase() or histogram queries.")
-	}
-}
-
 func traceQuantileMetric(name string) bool {
-	switch name {
-	case "trace_service_response_time", "trace_endpoint_duration", "trace_client_duration", "trace_call_graph_duration", "trace_internal_call_graph_duration":
-		return true
-	default:
-		return false
-	}
+	d, ok := metriccatalog.Last9(name)
+	return ok && d.Quantile
 }
 
 func (r metricDescriber) labels(ctx context.Context, name string) ([]string, []string, error) {
@@ -348,4 +325,196 @@ func (r metricDescriber) nativeHistogram(ctx context.Context, name string) (bool
 func metricDiscoveryMustFail(err error) bool {
 	var upstream *utils.UpstreamHTTPError
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &upstream) && (upstream.StatusCode == 401 || upstream.StatusCode == 403 || upstream.StatusCode == 499))
+}
+
+func (r metricDescriber) resolveType(ctx context.Context, result *MetricDescription) (string, error) {
+	name := result.Name
+	if d, ok := metriccatalog.Last9(name); ok {
+		result.Type, result.Unit, result.Help = d.Type, d.Unit, d.Help
+		result.TypeSource, result.Confidence = "catalog", "high"
+		return name, nil
+	}
+	family := metricFamily(name)
+	if family != name {
+		if _, ok := metriccatalog.Last9(family); ok {
+			result.Notes = append(result.Notes, "The catalog family is a gauge, not a histogram; suffixed components cannot establish histogram semantics.")
+			return name, nil
+		}
+	}
+	if d, ok := metriccatalog.Receiver(name); ok {
+		applyReceiverDefinition(result, d)
+		return name, nil
+	}
+	if family != name {
+		if d, ok := metriccatalog.Receiver(family); ok && d.Type == "histogram" {
+			applyReceiverDefinition(result, d)
+			return family, nil
+		}
+	}
+	result.Unit = metricSuffixUnit(name)
+	switch {
+	case slices.Contains(result.LabelKeys, "quantile"):
+		result.Type = "summary"
+	case strings.HasSuffix(name, "_total"), strings.HasSuffix(name, "_created"):
+		result.Type = "counter"
+	case strings.HasSuffix(name, "_bucket") && slices.Contains(result.LabelKeys, "le"):
+		result.Type = "histogram"
+	case strings.HasSuffix(name, "_sum"), strings.HasSuffix(name, "_count"):
+		labels, notes, err := r.labels(ctx, family+"_bucket")
+		if err != nil {
+			return name, err
+		}
+		for _, note := range notes {
+			result.Notes = append(result.Notes, "Family discovery: "+note)
+		}
+		if slices.Contains(labels, "le") {
+			result.Type = "histogram"
+		} else {
+			result.Notes = append(result.Notes, "The _sum/_count suffix is ambiguous without histogram or summary family evidence.")
+		}
+	}
+	if result.Type != "unknown" {
+		result.TypeSource, result.Confidence, result.Inferred = "naming", "medium", true
+		result.Notes = append(result.Notes, "Type is inferred from naming and observed labels.")
+		if result.Type == "histogram" {
+			return family, nil
+		}
+		return name, nil
+	}
+	if family == name {
+		kind, err := r.probeType(ctx, name)
+		if err != nil {
+			return name, err
+		}
+		if kind != "unknown" {
+			result.Type, result.TypeSource, result.Confidence, result.Inferred = kind, "probe", "low", true
+			result.Notes = append(result.Notes, "Type is inferred from one series over 5 minutes at a 30-second step; a sample's shape does not establish instrument semantics.")
+			return name, nil
+		}
+		result.Notes = append(result.Notes, "Probe inconclusive or unavailable; no type inferred from missing samples.")
+	}
+	metadataCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	definitions, metadataFamily, err := r.metadata(metadataCtx, name)
+	if ctx.Err() != nil {
+		return name, ctx.Err()
+	}
+	if err != nil {
+		if metricDiscoveryMustFail(err) && !errors.Is(err, context.DeadlineExceeded) {
+			return name, err
+		}
+		result.MetadataStatus = "metadata_error"
+		var upstream *utils.UpstreamHTTPError
+		if errors.Is(err, prom.ErrMetadataUnsupported) || (errors.As(err, &upstream) && upstream.StatusCode == 404) {
+			result.MetadataStatus = "metadata_unavailable"
+		}
+		result.Notes = append(result.Notes, result.MetadataStatus+": optional metadata could not be read; it is not required for this tool.")
+		return name, nil
+	}
+	if len(definitions) == 0 {
+		result.MetadataStatus = "metadata_unavailable"
+		result.Notes = append(result.Notes, "metadata_unavailable: empty metadata does not establish that the metric is absent.")
+		return name, nil
+	}
+	result.MetadataStatus = "available"
+	applyMetricDefinitions(result, definitions)
+	if result.Type != "unknown" {
+		result.TypeSource, result.Confidence = "metadata", "high"
+	}
+	return metadataFamily, nil
+}
+
+func applyReceiverDefinition(result *MetricDescription, d metriccatalog.Definition) {
+	result.Type, result.Unit, result.Help = d.Type, d.Unit, boundedMetricText(d.Help, 1024, "help", result)
+	result.TypeSource, result.Confidence = "receiver", "high"
+	result.Notes = append(result.Notes, "Receiver definition: "+d.Source+"; exporter renames or different versions can change semantics.")
+}
+
+func metricFamily(name string) string {
+	for _, suffix := range []string{"_bucket", "_sum", "_count"} {
+		if family, ok := strings.CutSuffix(name, suffix); ok && prom.ValidMetricName(family) {
+			return family
+		}
+	}
+	return name
+}
+
+func metricSuffixUnit(name string) string {
+	name = metricFamily(strings.TrimSuffix(strings.TrimSuffix(name, "_total"), "_created"))
+	for _, unit := range []string{"seconds", "milliseconds", "bytes", "ratio", "percent"} {
+		if strings.HasSuffix(name, "_"+unit) {
+			return unit
+		}
+	}
+	return ""
+}
+
+func (r metricDescriber) probeType(ctx context.Context, name string) (string, error) {
+	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	// Freeze the selected label set, not its values: topk at each step could mix different series.
+	query := fmt.Sprintf("(%s and topk(1, %s @ %d))[5m:30s]", name, name, r.timestamp)
+	raw, err := prom.QueryInstantRaw(probeCtx, r.api, prom.QueryInstantInput{Datasource: r.datasource, Query: query, Timestamp: r.timestamp}, last9api.WithMaxResponseBytes(32<<10))
+	if ctx.Err() != nil {
+		return "unknown", ctx.Err()
+	}
+	if err != nil {
+		if metricDiscoveryMustFail(err) && !errors.Is(err, context.DeadlineExceeded) {
+			return "unknown", err
+		}
+		return "unknown", nil
+	}
+	return classifyMetricSamples(raw, r.timestamp), nil
+}
+
+func classifyMetricSamples(raw []byte, timestamp int64) string {
+	var series []struct {
+		Values [][]any `json:"values"`
+	}
+	if json.Unmarshal(raw, &series) != nil || len(series) != 1 {
+		return "unknown"
+	}
+	samples := series[0].Values
+	if len(samples) < 4 || len(samples) > 11 {
+		return "unknown"
+	}
+	rises, resets := 0, 0
+	gaugeLike := false
+	var previous, previousTime float64
+	for i, sample := range samples {
+		if len(sample) != 2 {
+			return "unknown"
+		}
+		ts, ok := sample[0].(float64)
+		if !ok || ts < float64(timestamp-300) || ts > float64(timestamp) || (i > 0 && ts-previousTime < 30) {
+			return "unknown"
+		}
+		if _, ok := sample[1].(string); !ok {
+			return "unknown"
+		}
+		value, err := parsePromInstantValue(sample)
+		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+			return "unknown"
+		}
+		if value < 0 {
+			gaugeLike = true
+		}
+		if i > 0 {
+			switch {
+			case value > previous:
+				rises++
+			case value < previous:
+				if value >= 0 && value <= previous*0.1 && previous > 0 {
+					resets++
+				} else {
+					gaugeLike = true
+				}
+			}
+		}
+		previous, previousTime = value, ts
+	}
+	if !gaugeLike && rises >= 2 && resets <= 1 {
+		return "counter"
+	}
+	return "gauge"
 }

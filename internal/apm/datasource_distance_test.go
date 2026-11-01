@@ -20,7 +20,7 @@ func TestDatasourceRejectsBeyondBudget(t *testing.T) {
 					if input == "staging" {
 						wantReads := 1
 						if tool == "describe_metric" {
-							wantReads = 3
+							wantReads = 4
 						}
 						if err != nil || result == nil || result.IsError || len(*readURLs) != wantReads {
 							t.Fatalf("exact positive control: result=%v err=%v calls=%v", result, err, *readURLs)

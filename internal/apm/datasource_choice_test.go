@@ -124,7 +124,7 @@ func TestDatasourceToolsResolveDatasource(t *testing.T) {
 				}
 				wantReads := 1
 				if tool == "describe_metric" {
-					wantReads = 3
+					wantReads = 4
 				}
 				if len(*readURLs) != wantReads {
 					t.Errorf("%s: got %d reads, want %d", tool, len(*readURLs), wantReads)

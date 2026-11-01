@@ -69,7 +69,7 @@ func TestDescribeMetricRegisteredCalls(t *testing.T) {
 				switch r.URL.Path {
 				case "/prom_metadata":
 					w.WriteHeader(status)
-					fmt.Fprint(w, `{"status":"success","data":{"queue_total":[{"type":"gauge","unit":"","help":"Queue size"}]}}`)
+					fmt.Fprint(w, `{"status":"success","data":{"queue_depth":[{"type":"gauge","unit":"","help":"Queue size"}]}}`)
 				case "/apm/labels":
 					fmt.Fprint(w, `["job"]`)
 				default:
@@ -83,24 +83,27 @@ func TestDescribeMetricRegisteredCalls(t *testing.T) {
 				t.Fatal(err)
 			}
 			session := connectRegisteredServer(t, server)
-			res := callRegisteredTool(t, session, &mcp.CallToolParams{Name: "describe_metric", Arguments: map[string]any{"metric_names": []string{"queue_total"}}})
-			if status == 200 || status == 501 {
+			res := callRegisteredTool(t, session, &mcp.CallToolParams{Name: "describe_metric", Arguments: map[string]any{"metric_names": []string{"queue_depth"}}})
+			if status == 200 || status == 501 || status == 503 {
 				if res.IsError {
 					t.Fatalf("%+v", res)
 				}
 				text := toolResultText(res)
 				want := `"type":"gauge"`
 				if status == 501 {
-					want = `"inferred":true`
+					want = `"metadata_status":"metadata_unavailable"`
+				}
+				if status == 503 {
+					want = `"metadata_status":"metadata_error"`
 				}
 				if !strings.Contains(text, want) {
 					t.Fatalf("%s", text)
 				}
 			} else {
-				assertToolError(t, res, toolErrorExpectation{contains: []string{fmt.Sprintf("HTTP %d", status)}, system: status == 503})
+				assertToolError(t, res, toolErrorExpectation{contains: []string{fmt.Sprintf("HTTP %d", status)}})
 			}
 			calls = 0
-			res = callRegisteredTool(t, session, &mcp.CallToolParams{Name: "describe_metric", Arguments: map[string]any{"metric_names": []string{"queue_total", "bad{}"}}})
+			res = callRegisteredTool(t, session, &mcp.CallToolParams{Name: "describe_metric", Arguments: map[string]any{"metric_names": []string{"queue_depth", "bad{}"}}})
 			if !res.IsError || calls != 0 {
 				t.Fatal("invalid batch reached upstream")
 			}

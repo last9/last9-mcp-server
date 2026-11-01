@@ -19,6 +19,7 @@ import (
 )
 
 type metricDescriptionFixture struct {
+	probe        string
 	nativeCount  string
 	nativeStatus int
 	metadata     map[string]string
@@ -48,6 +49,14 @@ func (f *metricDescriptionFixture) handler(t *testing.T) func(context.Context, *
 				fmt.Fprint(w, `{"status":"success","data":{}}`)
 			}
 		case "/prom_query_instant":
+			if strings.Contains(fmt.Sprint(body["query"]), "[5m:30s]") {
+				if f.probe == "" {
+					fmt.Fprint(w, `[]`)
+				} else {
+					fmt.Fprint(w, f.probe)
+				}
+				return
+			}
 			if f.nativeStatus != 0 {
 				w.WriteHeader(f.nativeStatus)
 				return
@@ -101,22 +110,22 @@ func TestDescribeMetricRecommendations(t *testing.T) {
 		name, metric, kind, family, labels, wantType, query, note string
 		inferred                                                  bool
 	}{
-		{name: "counter", metric: "requests_total", kind: "counter", wantType: "counter", query: "rate(requests_total[5m])"},
-		{name: "gauge suffix wins", metric: "requests_total", kind: "gauge", wantType: "gauge", query: "requests_total", note: "Never apply rate"},
+		{name: "metadata counter", metric: "requests", kind: "counter", wantType: "counter", query: "rate(requests[5m])"},
+		{name: "metadata gauge", metric: "requests", kind: "gauge", wantType: "gauge", query: "requests", note: "Never apply rate"},
 		{name: "classic family", metric: "latency", kind: "histogram", labels: `["le","job"]`, wantType: "histogram", query: "histogram_quantile(0.95, sum by (le) (rate(latency_bucket[5m])))"},
-		{name: "bucket component", metric: "latency_bucket", family: "latency", kind: "histogram", labels: `["le"]`, wantType: "histogram", query: "histogram_quantile(0.95, sum by (le) (rate(latency_bucket[5m])))"},
-		{name: "count component", metric: "latency_count", family: "latency", kind: "histogram", labels: `["le"]`, wantType: "histogram", query: "histogram_quantile(0.95, sum by (le) (rate(latency_bucket[5m])))"},
+		{name: "bucket component", metric: "latency_bucket", family: "latency", labels: `["le"]`, wantType: "histogram", inferred: true, query: "histogram_quantile(0.95, sum by (le) (rate(latency_bucket[5m])))"},
+		{name: "count component", metric: "latency_count", family: "latency", labels: `["le"]`, wantType: "histogram", inferred: true, query: "histogram_quantile(0.95, sum by (le) (rate(latency_bucket[5m])))"},
 		{name: "sum component", metric: "latency_sum", family: "latency", kind: "summary", wantType: "summary", note: "component"},
 		{name: "histogram without buckets", metric: "latency", kind: "histogram", wantType: "histogram", note: "native"},
 		{name: "summary", metric: "size", kind: "summary", wantType: "summary", query: `size{quantile!=""}`, note: "Never average"},
-		{name: "inferred counter", metric: "requests_total", wantType: "counter", inferred: true, note: "inferred"},
-		{name: "inferred bucket", metric: "size_bucket", wantType: "histogram", inferred: true, note: "inferred"},
+		{name: "inferred counter", metric: "requests_total", wantType: "counter", inferred: true, query: "requests_total", note: "inferred"},
+		{name: "bucket without le", metric: "size_bucket", wantType: "unknown", note: "until verified"},
 		{name: "ambiguous count", metric: "size_count", wantType: "unknown", note: "ambiguous"},
 		{name: "ambiguous sum", metric: "size_sum", wantType: "unknown", note: "ambiguous"},
 		{name: "unknown", metric: "size", wantType: "unknown", note: "unavailable"},
-		{name: "trace latency", metric: "trace_service_response_time", wantType: "gauge", inferred: true, query: `trace_service_response_time{quantile="p95"}`, note: "pre-windowed"},
+		{name: "trace latency", metric: "trace_service_response_time", wantType: "gauge", query: `trace_service_response_time{quantile="p95"}`, note: "pre-windowed"},
 		{name: "trace requests", metric: "trace_requests", wantType: "unknown"},
-		{name: "unrecognized metadata", metric: "size_total", kind: "untyped", wantType: "unknown", note: "unrecognized"},
+		{name: "unrecognized metadata", metric: "size", kind: "untyped", wantType: "unknown", note: "unrecognized"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			f := &metricDescriptionFixture{metadata: map[string]string{}, labels: map[string]string{}}
@@ -151,7 +160,7 @@ func TestDescribeMetricConflicts(t *testing.T) {
 		`[{"type":"counter","unit":"bytes","help":"A"},{"type":"counter","unit":"seconds","help":"A"}]`,
 		`[{"type":"counter","unit":"","help":"A"},{"type":"counter","unit":"","help":"B"}]`,
 	} {
-		got := describeOne(t, &metricDescriptionFixture{metadata: map[string]string{"requests_total": definitions}}, "requests_total")
+		got := describeOne(t, &metricDescriptionFixture{metadata: map[string]string{"requests": definitions}}, "requests")
 		if got.Type != "unknown" || got.Inferred || got.RecommendedQuery != "" || !strings.Contains(strings.Join(got.Notes, " "), "conflicting") {
 			t.Fatalf("lost conflict: %+v", got)
 		}
@@ -169,18 +178,18 @@ func TestDescribeMetricValidatesBatchBeforeIO(t *testing.T) {
 }
 
 func TestDescribeMetricFailures(t *testing.T) {
-	for _, status := range []int{401, 403, 404, 429, 499, 500, 502, 503, 504} {
+	for _, status := range []int{401, 403, 499} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			f := &metricDescriptionFixture{status: status}
-			_, _, err := f.handler(t)(context.Background(), nil, DescribeMetricArgs{MetricNames: []string{"requests_total"}})
+			_, _, err := f.handler(t)(context.Background(), nil, DescribeMetricArgs{MetricNames: []string{"unrecognized"}})
 			var upstream *utils.UpstreamHTTPError
 			if !errors.As(err, &upstream) || upstream.StatusCode != status {
 				t.Fatalf("lost operational error: %v", err)
 			}
 		})
 	}
-	got := describeOne(t, &metricDescriptionFixture{status: 501}, "requests_total")
-	if !got.Inferred || !strings.Contains(strings.Join(got.Notes, " "), "unsupported") {
+	got := describeOne(t, &metricDescriptionFixture{status: 501}, "unrecognized")
+	if got.TypeSource != "unknown" || got.MetadataStatus != "metadata_unavailable" {
 		t.Fatalf("%+v", got)
 	}
 	for _, status := range []int{401, 403} {
@@ -307,7 +316,7 @@ func TestDescribeMetricNativeHistogram(t *testing.T) {
 		}
 		found := false
 		for _, request := range f.requests {
-			if request["path"] == "/prom_query_instant" {
+			if request["path"] == "/prom_query_instant" && !strings.Contains(fmt.Sprint(request["query"]), "[5m:30s]") {
 				found = true
 				if request["query"] != "count(histogram_count(latency))" {
 					t.Fatalf("query=%v", request)
