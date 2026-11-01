@@ -35,3 +35,12 @@ Upstream data and name translation are derived from the Apache-2.0 licensed
 [OpenTelemetry Collector contrib](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/v0.120.0/receiver)
 and its [Prometheus translator](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/v0.120.0/pkg/translator/prometheus/normalize_name.go).
 Copyright The OpenTelemetry Authors; see `LICENSE.otel`.
+
+`last9.go` is the single exact-name table for Last9-generated metrics. Its trace
+families follow the service performance/dependency tools and the percentile
+rules in `internal/prompts/references/metrics.md`. Change events follow the
+[`get_change_events` description](../prompts/descriptions/get_change_events.md)
+and [public change-event guide](https://last9.io/docs/change-events/).
+[Scheduled searches](https://last9.io/docs/scheduled-search/) produce windowed
+log aggregates: the default metric is covered, but custom metric names and
+aggregate-specific units cannot be inferred from this table.
