@@ -256,9 +256,10 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		})
 
 	var (
-		baseResponse map[string]interface{}
-		mergedItems  []interface{}
-		remaining    = effectiveLimit
+		baseResponse  map[string]interface{}
+		mergedItems   []interface{}
+		remaining     = effectiveLimit
+		emptyVerified = true
 		// partialErr carries chunk context (e.g. "chunk 3/6 failed: ...") and
 		// is used both for the all-chunks-failed hard error and for the
 		// partial-result annotation when some chunks succeeded. Wrapping the
@@ -284,6 +285,7 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 			continue
 		}
 
+		emptyVerified = emptyVerified && nameresolution.VerifiedEmpty(r.Value)
 		resultType, items, err := extractResultItems(r.Value)
 		if err != nil {
 			slog.Error("chunked log query parse failed",
@@ -351,6 +353,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		return nil, fmt.Errorf("logs API response missing data object")
 	}
 
+	if mergedItems == nil && emptyVerified {
+		mergedItems = make([]interface{}, 0)
+	}
 	data["result"] = mergedItems
 	data["resultType"] = "streams"
 	if partialErr != nil {

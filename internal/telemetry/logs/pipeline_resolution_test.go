@@ -14,6 +14,14 @@ import (
 )
 
 func TestLogsPipelineNameResolution(t *testing.T) {
+	testLogsPipelineNameResolution(t, true)
+}
+
+func TestLogsPipelineNameResolutionChunked(t *testing.T) {
+	testLogsPipelineNameResolution(t, false)
+}
+
+func testLogsPipelineNameResolution(t *testing.T, searchAPI bool) {
 	for _, tt := range []struct {
 		name, query string
 		resolve     bool
@@ -44,10 +52,15 @@ func TestLogsPipelineNameResolution(t *testing.T) {
 				if strings.Contains(string(raw), `"checkout"`) {
 					entries = `[{"stream":{},"values":[["1700000000000000000","found"]]}]`
 				}
-				_, _ = io.WriteString(w, `{"query_result":{"status":"success","data":{"resultType":"streams","result":`+entries+`}},"total_matching_lines":0}`)
+				response := `{"status":"success","data":{"resultType":"streams","result":` + entries + `}}`
+				if searchAPI {
+					response = `{"query_result":` + response + `,"total_matching_lines":0}`
+				}
+				_, _ = io.WriteString(w, response)
 			}))
 			defer srv.Close()
 			cfg := apiModeCfg(srv.URL)
+			cfg.UseLogSearchAPI = searchAPI
 			cfg.PrometheusReadURL = "https://selected.example"
 			var pipeline []map[string]any
 			if err := json.Unmarshal([]byte(tt.query), &pipeline); err != nil {
@@ -68,6 +81,58 @@ func TestLogsPipelineNameResolution(t *testing.T) {
 				}
 			} else if discoveries != 0 || len(queries) != 1 {
 				t.Fatalf("unsafe resolution: discovery=%d queries=%d", discoveries, len(queries))
+			}
+		})
+	}
+}
+
+func TestLogsPipelineNameResolutionRequiresEveryChunkEmpty(t *testing.T) {
+	for _, mode := range []string{"complete", "oldest partial", "null"} {
+		t.Run(mode, func(t *testing.T) {
+			var mu sync.Mutex
+			discoveries, canonical, original := 0, 0, 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				defer mu.Unlock()
+				raw, _ := io.ReadAll(r.Body)
+				if r.URL.Path == "/prom_query_instant" {
+					discoveries++
+					_, _ = io.WriteString(w, `[{"metric":{"service_name":"checkout"}}]`)
+					return
+				}
+				if strings.Contains(string(raw), `"checkout"`) {
+					canonical++
+				} else {
+					original++
+				}
+				rows, metadata := `[]`, ``
+				if mode == "oldest partial" && r.URL.Query().Get("start") == "0" {
+					metadata = `,"partial":true`
+				}
+				if mode == "null" {
+					rows = `null`
+				}
+				_, _ = io.WriteString(w, `{"status":"success"`+metadata+`,"data":{"resultType":"streams","result":`+rows+`}}`)
+			}))
+			defer srv.Close()
+			cfg := apiModeCfg(srv.URL)
+			cfg.UseLogSearchAPI = false
+			cfg.PrometheusReadURL = "https://selected.example"
+			_, _, err := NewGetLogsHandler(srv.Client(), cfg)(context.Background(), nil, GetLogsArgs{
+				LogjsonQuery: []map[string]any{{"type": "filter", "query": map[string]any{"$eq": []any{"ServiceName", "checkuot"}}}},
+				StartTimeISO: "1970-01-01T00:00:00Z", EndTimeISO: "1970-01-01T01:30:00Z",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			wantDiscovery, wantCanonical := 0, 0
+			if mode == "complete" {
+				wantDiscovery, wantCanonical = 1, 6
+			}
+			if original != 6 || discoveries != wantDiscovery || canonical != wantCanonical {
+				t.Fatalf("original=%d discoveries=%d canonical=%d", original, discoveries, canonical)
 			}
 		})
 	}
