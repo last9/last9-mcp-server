@@ -161,6 +161,12 @@ func preparePreviewDashboard(ctx context.Context, api *last9api.Client, args Pre
 	if err != nil {
 		return nil, nil, err
 	}
+	if args.ID == "" {
+		if err := validatePreviewSchema(dashboard, dashboardObjectSchema("")); err != nil {
+			// Keep invalid input intact so the report diagnoses what create would reject.
+			return dashboard, nil, nil
+		}
+	}
 	if args.ID == "" || len(changes) > 0 {
 		raw, err = defaultPanelVersions(raw)
 		if err != nil {

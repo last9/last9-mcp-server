@@ -238,7 +238,7 @@ func TestPreviewCandidateSizeIncludesPanelDefaults(t *testing.T) {
 	args := previewTestArgs()
 	panels := make([]any, previewMaxPanels)
 	for i := range panels {
-		panels[i] = map[string]any{"name": "Notes", "visualization": map[string]any{"type": "markdown"}}
+		panels[i] = map[string]any{"name": "Notes", "layout": map[string]any{"x": 0, "y": 0, "w": 12, "h": 4}, "visualization": map[string]any{"type": "markdown"}}
 	}
 	args.Dashboard = map[string]any{"name": "", "panels": panels}
 	raw, err := json.Marshal(args)
