@@ -119,7 +119,7 @@ func computeGetMetricStatus(ctx context.Context, client *http.Client, queryCfg m
 	}
 
 	ageQuery := fmt.Sprintf("time() - timestamp(%s[%s])", sel, dur)
-	ages, err := queryInstantValues(ctx, client, queryCfg, ageQuery, endTime)
+	ages, _, err := queryInstantValues(ctx, client, queryCfg, ageQuery, endTime)
 	if err != nil {
 		return GetMetricStatusResult{}, err
 	}
@@ -170,45 +170,45 @@ func promDurationFromMinutes(minutes float64) string {
 }
 
 func queryInstantScalar(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64) (float64, error) {
-	vals, err := queryInstantValues(ctx, client, cfg, query, endTime)
+	vals, complete, err := queryInstantValues(ctx, client, cfg, query, endTime)
 	if err != nil {
 		return 0, err
-	}
-	if len(vals) == 0 {
-		return 0, nil
 	}
 	sum := 0.0
 	for _, v := range vals {
 		sum += v
 	}
+	// Discarded samples cannot establish absence, even alongside a valid zero.
+	if sum <= 0 && !complete {
+		return 0, fmt.Errorf("metric count response contains invalid samples; cannot establish absence")
+	}
 	return sum, nil
 }
 
-func queryInstantValues(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64) ([]float64, error) {
+func queryInstantValues(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64) ([]float64, bool, error) {
 	series, err := prom.QueryInstant(ctx, last9api.NewClient(client, cfg), prom.QueryInstantInput{
 		Datasource: prom.Datasource{ReadURL: cfg.PrometheusReadURL, Username: cfg.PrometheusUsername, Password: cfg.PrometheusPassword},
 		Query:      query,
 		Timestamp:  endTime,
 	})
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
+	complete := true
 	out := make([]float64, 0, len(series))
 	for _, s := range series {
 		v, err := parsePromInstantValue(s.Value)
-		if err != nil {
-			continue
-		}
-		if math.IsNaN(v) || math.IsInf(v, 0) {
+		if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
+			complete = false
 			continue
 		}
 		out = append(out, v)
 	}
-	return out, nil
+	return out, complete, nil
 }
 
 func inferIntervalSeconds(ctx context.Context, client *http.Client, cfg models.Config, sel, dur string, endTime int64) (*float64, error) {
-	vals, err := queryInstantValues(ctx, client, cfg, fmt.Sprintf("scrape_interval(%s[%s])", sel, dur), endTime)
+	vals, _, err := queryInstantValues(ctx, client, cfg, fmt.Sprintf("scrape_interval(%s[%s])", sel, dur), endTime)
 	if err != nil {
 		return nil, err
 	}

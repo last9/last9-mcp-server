@@ -117,3 +117,72 @@ func TestMetricQueryNameResolution(t *testing.T) {
 		}
 	}
 }
+
+func TestGetMetricStatusNameResolutionRequiresValidCount(t *testing.T) {
+	for _, tt := range []struct {
+		name, body string
+		resolves   bool
+	}{
+		{"missing value", `[{"metric":{}}]`, false},
+		{"null value", `[{"metric":{},"value":null}]`, false},
+		{"short value", `[{"metric":{},"value":[1700000600]}]`, false},
+		{"invalid number", `[{"metric":{},"value":[1700000600,"invalid"]}]`, false},
+		{"NaN", `[{"metric":{},"value":[1700000600,"NaN"]}]`, false},
+		{"positive infinity", `[{"metric":{},"value":[1700000600,"+Inf"]}]`, false},
+		{"negative infinity", `[{"metric":{},"value":[1700000600,"-Inf"]}]`, false},
+		{"zero with missing value", `[{"metric":{},"value":[1700000600,"0"]},{"metric":{}}]`, false},
+		{"empty array", `[]`, true},
+		{"zero count", `[{"metric":{},"value":[1700000600,"0"]}]`, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var mu sync.Mutex
+			var queries []string
+			discoveries := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				defer mu.Unlock()
+				var body struct {
+					Query string `json:"query"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+				}
+				if r.URL.Path == "/prom_label_values" {
+					discoveries++
+					_, _ = io.WriteString(w, `["checkout_requests"]`)
+					return
+				}
+				queries = append(queries, body.Query)
+				if strings.Contains(body.Query, "checkuot_requests") {
+					_, _ = io.WriteString(w, tt.body)
+				} else {
+					_, _ = io.WriteString(w, `[{"metric":{},"value":[1700000600,"1"]}]`)
+				}
+			}))
+			defer srv.Close()
+			cfg := models.Config{APIBaseURL: srv.URL, PrometheusReadURL: "https://metrics.example", TokenManager: &auth.TokenManager{AccessToken: "test", ExpiresAt: time.Now().Add(time.Hour)}}
+			result, _, err := NewGetMetricStatusHandler(srv.Client(), cfg)(context.Background(), nil, GetMetricStatusArgs{Metric: "checkuot_requests", WindowMinutes: 10})
+			mu.Lock()
+			defer mu.Unlock()
+			if !tt.resolves {
+				if discoveries != 0 || len(queries) != 1 {
+					t.Errorf("invalid count triggered fallback: discoveries=%d queries=%v", discoveries, queries)
+				}
+				if err == nil || !strings.Contains(err.Error(), "count") {
+					t.Fatalf("err=%v, want count-response error", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if discoveries != 1 || len(queries) != 4 {
+				t.Fatalf("discoveries=%d queries=%v, want discovery and three canonical queries", discoveries, queries)
+			}
+			fields := decodeMetricStatusFields(t, result)
+			if fields["live"] != true || fields["series_count"] != float64(1) || !strings.Contains(strings.Join(resultTexts(result), "\n"), `closest match to "checkuot_requests"`) {
+				t.Fatalf("unexpected canonical result: %v", resultTexts(result))
+			}
+		})
+	}
+}
