@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -62,6 +63,23 @@ func TestDashboardArgumentCheckLeavesOtherShapesAndToolsToTheSchema(t *testing.T
 			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args)})
 			assertToolError(t, result, toolErrorExpectation{absent: []string{"does not match the dashboard schema"}})
 		})
+	}
+}
+
+// A strict --http server refuses a tokenless call before reading its arguments.
+func TestStrictModeRefusesTokenlessDashboardWritesBeforeArgumentChecks(t *testing.T) {
+	cfg := testToolRegistrationConfig()
+	cfg.HTTPMode = true
+	cfg.UserTokenFallback = false
+	ts, _ := newToolsetHTTPServerFor(t, cfg, "all")
+	for tool, args := range map[string]string{
+		"create_dashboard": `{"dashboard":{"name":"x","panels":[` + grafanaPanel + `]}}`,
+		"update_dashboard": `{"id":"dash-1","dashboard":{"name":"x","panels":[` + grafanaPanel + `]}}`,
+	} {
+		call := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` + tool + `","arguments":` + args + `}}`
+		if _, body := postRPC(t, ts, "", "", call, nil); !strings.Contains(body, "user token required") || strings.Contains(body, "gridPos") {
+			t.Errorf("%s: tokenless call was not refused for its token: %s", tool, body)
+		}
 	}
 }
 
