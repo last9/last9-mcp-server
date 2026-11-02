@@ -265,6 +265,9 @@ func TestFeedbackDeadlineDoesNotSuggestRetry(t *testing.T) {
 	if strings.Contains(text, "before retrying") || !strings.Contains(strings.ToLower(text), "do not") {
 		t.Fatalf("accepted report must not invite resending: %s", text)
 	}
+	if result.Meta[utils.ErrorTypeMetaKey] != utils.SystemErrorType {
+		t.Errorf("deadline missing system_error tag: %v", result.Meta)
+	}
 }
 
 func TestFeedbackUnknownDeliveryDoesNotSuggestRetry(t *testing.T) {
@@ -303,6 +306,9 @@ func TestFeedbackUnknownDeliveryDoesNotSuggestRetry(t *testing.T) {
 			text := toolResultText(result)
 			if !result.IsError || !strings.Contains(strings.ToLower(text), "do not") || strings.Contains(text, "retry later") {
 				t.Fatalf("want an error forbidding resending, got %s", text)
+			}
+			if result.Meta[utils.ErrorTypeMetaKey] != utils.SystemErrorType {
+				t.Errorf("unknown delivery missing system_error tag: %v", result.Meta)
 			}
 		})
 	}

@@ -154,7 +154,7 @@ func withCallDeadline[In, Out any](timeout time.Duration, readOnly bool, handler
 		result, out, err := handler(ctx, req, in)
 		var unknown *utils.WriteOutcomeUnknownError
 		if !readOnly && errors.As(err, &unknown) {
-			return utils.ToolErrorResult(fmt.Sprintf("The request may or may not have been applied (%s). Do not retry or resend this request.", unknown.Cause)), out, nil
+			return last9mcp.SystemErrorResult(fmt.Sprintf("The request may or may not have been applied (%s). Do not retry or resend this request.", unknown.Cause)), out, nil
 		}
 		if !errors.Is(ctx.Err(), context.DeadlineExceeded) || (err == nil && !readOnly) {
 			return result, out, err
