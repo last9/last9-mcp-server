@@ -32,6 +32,9 @@ func NewCreateAlertHandler(client *http.Client, cfg models.Config) func(context.
 			return utils.ToolErrorResult(err.Error()), nil, nil
 		}
 		api := last9api.NewClient(client, cfg)
+		if refusal, err := refuseChartDerivedKPI(ctx, api, requestSession(req), args); refusal != nil || err != nil {
+			return refusal, nil, err
+		}
 		if refusal, err := refuseDuplicateRuleName(ctx, api, args.EntityID, args.AlertRule.RuleName); refusal != nil || err != nil {
 			return refusal, nil, err
 		}
@@ -74,6 +77,29 @@ func refuseDuplicateRuleName(ctx context.Context, api *last9api.Client, entityID
 	for _, rule := range rules {
 		if strings.EqualFold(strings.TrimSpace(rule.RuleName), name) {
 			return utils.ToolErrorResult(fmt.Sprintf("alert group %s already has a rule named %q (id %s); nothing was created. Refine it with update_alert or patch_alert, or choose another rule_name", entityID, rule.RuleName, rule.ID)), nil
+		}
+	}
+	return nil, nil
+}
+
+// refuseChartDerivedKPI returns a tool error when the rule binds a KPI whose query reads a
+// Discover chart described in this session. Sessions that described no chart skip the lookup.
+func refuseChartDerivedKPI(ctx context.Context, api *last9api.Client, session *mcp.ServerSession, args CreateAlertArgs) (*mcp.CallToolResult, error) {
+	if !hasDescribedChart(session) {
+		return nil, nil
+	}
+	kpis, err := entities.ListEntityKPIs(ctx, api, args.EntityID)
+	if err != nil {
+		return nil, withUpstreamBody(err)
+	}
+	for name, arg := range args.AlertRule.ExpressionArgs {
+		for _, kpi := range kpis {
+			if !strings.EqualFold(kpi.ID, arg.ID) {
+				continue
+			}
+			if refusal := chartQueryRefusal(session, fmt.Sprintf("KPI %q (id %s) bound as %s", kpi.Name, kpi.ID, name), kpi.Definition.Query); refusal != "" {
+				return utils.ToolErrorResult(refusal), nil
+			}
 		}
 	}
 	return nil, nil

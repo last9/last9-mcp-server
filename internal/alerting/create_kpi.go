@@ -26,7 +26,7 @@ type CreateKPIArgs struct {
 }
 
 func NewCreateKPIHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, CreateKPIArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, args CreateKPIArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args CreateKPIArgs) (*mcp.CallToolResult, any, error) {
 		in := entities.CreateEntityKPIInput{
 			EntityID:     strings.TrimSpace(args.EntityID),
 			Name:         strings.TrimSpace(args.Name),
@@ -39,6 +39,9 @@ func NewCreateKPIHandler(client *http.Client, cfg models.Config) func(context.Co
 			if value == "" {
 				return utils.ToolErrorResult(field + " is required"), nil, nil
 			}
+		}
+		if refusal := chartQueryRefusal(requestSession(req), "query", in.Query); refusal != "" {
+			return utils.ToolErrorResult(refusal), nil, nil
 		}
 		kpi, err := entities.CreateEntityKPI(ctx, last9api.NewClient(client, cfg), in)
 		var apiErr *utils.UpstreamHTTPError
