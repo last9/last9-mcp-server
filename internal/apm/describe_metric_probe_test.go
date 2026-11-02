@@ -15,13 +15,13 @@ func TestMetricProbeBounds(t *testing.T) {
 			samples[i] = []any{end - int64(n-1-i)*30, fmt.Sprint(i)}
 		}
 		raw, _ := json.Marshal([]map[string]any{{"values": samples}})
-		got := classifyMetricSamples(raw, end)
-		want := "counter"
+		got, readable := classifyMetricSamples(raw, end)
+		want, wantReadable := "counter", true
 		if n < 4 || n > 11 {
-			want = "unknown"
+			want, wantReadable = "unknown", false
 		}
-		if got != want {
-			t.Errorf("n=%d: %s", n, got)
+		if got != want || readable != wantReadable {
+			t.Errorf("n=%d: %s readable=%v", n, got, readable)
 		}
 	}
 	valid := `[{"values":[[1700000210,"1"],[1700000240,"2"],[1700000270,"3"],[1700000300,"4"]]}]`
@@ -38,8 +38,8 @@ func TestMetricProbeBounds(t *testing.T) {
 		strings.Replace(valid, `1700000240`, `1700000200`, 1),
 		valid[:len(valid)-1] + `,` + valid[1:],
 	} {
-		if got := classifyMetricSamples([]byte(raw), end); got != "unknown" {
-			t.Errorf("%s: %s", raw, got)
+		if got, readable := classifyMetricSamples([]byte(raw), end); got != "unknown" || readable {
+			t.Errorf("%s: %s readable=%v", raw, got, readable)
 		}
 	}
 }

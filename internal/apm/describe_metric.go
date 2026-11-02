@@ -456,7 +456,6 @@ func metricSuffixUnit(name string) string {
 
 // probeType returns the sampled shape, or "unknown" with a note naming why.
 func (r metricDescriber) probeType(ctx context.Context, name string) (string, string, error) {
-	const inconclusive = "Probe inconclusive or unavailable; no type inferred from missing samples."
 	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	// Freeze the selected label set, not its values: topk at each step could mix different series.
@@ -474,42 +473,48 @@ func (r metricDescriber) probeType(ctx context.Context, name string) (string, st
 	case err != nil && metricDiscoveryMustFail(err):
 		return "unknown", "", err
 	case err != nil:
-		return "unknown", inconclusive, nil
+		return "unknown", "Probe request failed; no type inferred.", nil
 	}
-	if kind := classifyMetricSamples(raw, r.timestamp); kind != "unknown" {
-		return kind, "", nil
+	kind, readable := classifyMetricSamples(raw, r.timestamp)
+	switch {
+	case !readable:
+		return "unknown", "Probe returned too few or malformed samples; no type inferred.", nil
+	case kind == "unknown":
+		return "unknown", "Probe samples neither rose nor fell enough to show a type; no type inferred.", nil
 	}
-	return "unknown", inconclusive, nil
+	return kind, "", nil
 }
 
-func classifyMetricSamples(raw []byte, timestamp int64) string {
+// classifyMetricSamples reports whether the probe series was readable and, if so,
+// the type its shape shows: "unknown" when neither a fall nor repeated rises occurred.
+func classifyMetricSamples(raw []byte, timestamp int64) (string, bool) {
 	var series []struct {
 		Values [][]any `json:"values"`
 	}
 	if json.Unmarshal(raw, &series) != nil || len(series) != 1 {
-		return "unknown"
+		return "unknown", false
 	}
 	samples := series[0].Values
 	if len(samples) < 4 || len(samples) > 11 {
-		return "unknown"
+		return "unknown", false
 	}
 	rises, resets := 0, 0
 	gaugeLike := false
 	var previous, previousTime float64
 	for i, sample := range samples {
 		if len(sample) != 2 {
-			return "unknown"
+			return "unknown", false
 		}
 		ts, ok := sample[0].(float64)
 		if !ok || ts < float64(timestamp-300) || ts > float64(timestamp) || (i > 0 && ts-previousTime < 30) {
-			return "unknown"
+			return "unknown", false
 		}
 		if _, ok := sample[1].(string); !ok {
-			return "unknown"
+			return "unknown", false
 		}
 		value, err := parsePromInstantValue(sample)
 		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
-			return "unknown"
+			return "unknown", false
 		}
 		if value < 0 {
 			gaugeLike = true
@@ -528,8 +533,11 @@ func classifyMetricSamples(raw []byte, timestamp int64) string {
 		}
 		previous, previousTime = value, ts
 	}
-	if !gaugeLike && rises >= 2 && resets <= 1 {
-		return "counter"
+	switch {
+	case gaugeLike || resets > 1:
+		return "gauge", true
+	case rises >= 2:
+		return "counter", true
 	}
-	return "gauge"
+	return "unknown", true
 }
