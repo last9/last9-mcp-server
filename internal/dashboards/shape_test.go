@@ -190,3 +190,28 @@ func TestCheckPanelShape_FlagsAliasesAndTypesButNotMissingFields(t *testing.T) {
 		t.Fatalf("minimal panel: %v", got)
 	}
 }
+
+func TestShapeCheck_FlagsAliasesOnlyWhereTheirFieldIsNeeded(t *testing.T) {
+	layout := `"layout":{"x":0,"y":0,"w":6,"h":6}`
+	sectionPanel := `{"name":"s",` + layout + `,"visualization":{"type":"section"},"targets":[]}`
+	csvPanel := `{"name":"c",` + layout + `,"visualization":{"type":"table"},"csv":{"columns":{}},"targets":[]}`
+	if err := CheckDashboardArguments(json.RawMessage(`{"dashboard":{"name":"x","panels":[` + sectionPanel + "," + csvPanel + `]}}`)); err != nil {
+		t.Errorf("targets beside a satisfied alternative: unexpected %v", err)
+	}
+	var section map[string]any
+	_ = json.Unmarshal([]byte(`{"visualization":{"type":"section"},"targets":[]}`), &section)
+	if got := checkPanelShape(section, "panel"); len(got) != 0 {
+		t.Errorf("patch section panel with targets: unexpected %v", got)
+	}
+
+	statPanel := `{"name":"t",` + layout + `,"visualization":{"type":"stat"},"targets":[]}`
+	err := CheckDashboardArguments(json.RawMessage(`{"dashboard":{"name":"x","panels":[` + statPanel + `]}}`))
+	if want := "dashboard.panels[0].targets: unknown panel field; use queries"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("targets standing in for queries: want %q, got %v", want, err)
+	}
+	var stat map[string]any
+	_ = json.Unmarshal([]byte(`{"visualization":{"type":"stat"},"targets":[]}`), &stat)
+	if got := strings.Join(checkPanelShape(stat, "panel"), "\n"); got != "panel.targets: unknown panel field; use queries" {
+		t.Errorf("patch stat panel with targets: got %q", got)
+	}
+}
