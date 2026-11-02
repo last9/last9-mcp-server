@@ -85,7 +85,7 @@ func ParseToolTimestamp(value string) (time.Time, error) {
 // If start_time_iso and end_time_iso are provided, they take precedence.
 // Otherwise, returns now and now - lookbackMinutes.
 func GetTimeRange(params map[string]interface{}, defaultLookbackMinutes int) (startTime, endTime time.Time, err error) {
-	return GetTimeRangeAt(params, defaultLookbackMinutes, time.Now().UTC())
+	return GetTimeRangeAt(params, defaultLookbackMinutes, Now().UTC())
 }
 
 // GetTimeRangeAt returns start and end times based on lookback minutes using the provided current time.
@@ -279,7 +279,7 @@ func ConvertTimestamp(timestamp any) string {
 		return time.Unix(0, ts).UTC().Format(time.RFC3339)
 	default:
 		// Fallback to current time if we can't parse
-		return time.Now().UTC().Format(time.RFC3339)
+		return Now().UTC().Format(time.RFC3339)
 	}
 }
 

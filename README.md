@@ -219,6 +219,7 @@ The NPM route is easier on Windows — no path management.
 | ---------------------------- | -------------------- | ----------- |
 | `LAST9_REFRESH_TOKEN`        | *(required)*         | Refresh token from [API Access](https://app.last9.io/settings/api-access) |
 | `LAST9_DATASOURCE`           | org default          | Datasource/cluster name — useful when you have multiple Levitate clusters |
+| `LAST9_FAKE_NOW_ISO`         | *(unset)*            | **For evals/replays only; never set in production.** RFC3339 instant (e.g. `2026-01-02T15:04:05Z`) that replaces the current time when resolving relative windows such as `lookback_minutes`, so runs are reproducible. An invalid value is a startup error. Timeouts, caches and token expiry keep using real time |
 | `LAST9_API_HOST`             | `app.last9.io`       | Override the API host |
 | `LAST9_TOOLSETS`             | all tools            | Comma-separated toolsets to expose (`logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`). Alias: `LAST9_MCP_TOOLSETS` |
 | `LAST9_MCP_READ_ONLY`        | `false`              | Set `true` to serve only read-only tools; see [Read-only mode](#read-only-mode). A value that is not a boolean is a startup error. Alias: `LAST9_READ_ONLY` |
