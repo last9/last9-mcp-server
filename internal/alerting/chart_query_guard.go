@@ -109,7 +109,6 @@ func chartQueryRefusal(session *mcp.ServerSession, what, query string) string {
 	return ""
 }
 
-// nameSelector is one alternative of a series selector: the __name__ filters it ANDs together.
 type nameSelector []func(metric string) bool
 
 func (s nameSelector) selects(metric string) bool {
@@ -121,9 +120,8 @@ func (s nameSelector) selects(metric string) bool {
 	return true
 }
 
-// Chart eval_queries are MetricsQL, so its parser reads comments, strings, keywords and a selector's
-// `or` alternatives (each its own nameSelector) the way the backend does. Alternatives without a
-// __name__ filter are label-only selectors and are skipped.
+// Chart eval_queries are MetricsQL: parse them as the backend does so comments, strings and `or`
+// alternatives can't hide a metric name.
 func parseNameSelectors(query string) ([]nameSelector, error) {
 	var selectors []nameSelector
 	err := visitLabelFilters(query, func(filters []metricsql.LabelFilter) {
@@ -140,7 +138,6 @@ func parseNameSelectors(query string) ([]nameSelector, error) {
 	return selectors, err
 }
 
-// metricNames lists the names a query selects by exact match; an unparseable query names none.
 func metricNames(query string) []string {
 	var names []string
 	_ = visitLabelFilters(query, func(filters []metricsql.LabelFilter) {
@@ -153,7 +150,6 @@ func metricNames(query string) []string {
 	return names
 }
 
-// visitLabelFilters calls visit once per `or` alternative of every series selector in query.
 func visitLabelFilters(query string, visit func([]metricsql.LabelFilter)) error {
 	expr, err := metricsql.Parse(query)
 	if err != nil {
