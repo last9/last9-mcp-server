@@ -22,6 +22,7 @@ import (
 
 type metricDescriptionFixture struct {
 	probe        string
+	probeDelay   time.Duration
 	nativeCount  string
 	nativeStatus int
 	metadata     map[string]string
@@ -67,6 +68,11 @@ func (f *metricDescriptionFixture) handler(t *testing.T) func(context.Context, *
 				return
 			}
 			if strings.Contains(query, "[5m:30s]") {
+				select {
+				case <-time.After(f.probeDelay):
+				case <-r.Context().Done():
+					return
+				}
 				if f.probe == "" {
 					fmt.Fprint(w, `[]`)
 				} else {

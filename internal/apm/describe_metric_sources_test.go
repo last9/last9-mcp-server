@@ -65,6 +65,28 @@ func TestDescribeMetricProbeSources(t *testing.T) {
 	}
 }
 
+func TestDescribeMetricProbeNotesNameTheBound(t *testing.T) {
+	oversized := `[{"metric":{"pad":"` + strings.Repeat("x", 32<<10) + `"},"values":[]}]`
+	for _, tt := range []struct {
+		name  string
+		f     *metricDescriptionFixture
+		note  string
+		other string
+	}{
+		{"size", &metricDescriptionFixture{status: 404, probe: oversized}, "32 KiB", "2-second"},
+		{"time", &metricDescriptionFixture{status: 404, probe: probeFixture(`"1","2","3","4"`), probeDelay: 2500 * time.Millisecond}, "2-second", "32 KiB"},
+		{"shape", &metricDescriptionFixture{status: 404, probe: probeFixture(`"1","2","3"`)}, "Probe inconclusive", "limit"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := describeOne(t, tt.f, "load_value")
+			notes := strings.Join(got.Notes, " ")
+			if got.Type != "unknown" || !strings.Contains(notes, tt.note) || strings.Contains(notes, "Probe stopped at its "+tt.other) {
+				t.Fatalf("probe note must name the bound that fired: %+v", got)
+			}
+		})
+	}
+}
+
 func probeFixture(values string) string {
 	parts := strings.Split(values, ",")
 	samples := make([]string, len(parts))
