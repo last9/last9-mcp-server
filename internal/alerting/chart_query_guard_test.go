@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"last9-mcp/internal/last9api/alerts"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -19,10 +21,37 @@ func TestPromQLMetricNames(t *testing.T) {
 		`sum by (service_name) (rate(http_errors_total[5m])) / sum without (pod) (up)`:        {"http_errors_total", "up"},
 		`histogram_quantile(0.99, sum by (le) (rate(x_bucket{job="a"}[5m]))) > 1e3 offset 5m`: {"x_bucket"},
 		`a / on (job) group_left (env) b unless bool c`:                                       {"a", "b", "c"},
-		`{__name__="raw"}`: nil,
+		`{__name__="raw", job="a"} + {"quoted"} + {"__name__"='single'}`:                      {"raw", "quoted", "single"},
+		`label_replace(up{job="}"}, "dst", "m1", "src", "(.*)") + x{job=` + "`m2`" + `}`:     {"up", "x"},
 	} {
 		if got := promQLMetricNames(query); !reflect.DeepEqual(got, want) {
 			t.Errorf("promQLMetricNames(%q) = %v, want %v", query, got, want)
+		}
+	}
+}
+
+// Every way PromQL can select a guarded metric must refuse, including __name__ matchers and
+// quoted names inside braces; metric names that only appear as label values or grouping labels
+// must not.
+func TestChartQueryRefusalSelectorShapes(t *testing.T) {
+	t.Cleanup(resetDescribedChartMetrics)
+	recordDescribedChart(nil, "discover-service/chart-a", []alerts.Signal{{EvalQuery: "sum(rate(m1[5m]))", CanonicalQuery: "job:m2:rate5m"}})
+	for _, query := range []string{
+		`rate(m1[5m])`, `sum by (job) (m1)`, `m1 offset 5m`, `m1 @ 123`, `job:m2:rate5m`, `other / on() m1`,
+		`{__name__="m1"}`, `rate({__name__='m1', job="a"}[5m])`, `{"__name__"="m1"}`, `{"m1"}`, `{"m1", job="a"}`,
+		`{job="}", __name__="m1"}`, `{__name__=~"m1|x"}`, `{__name__=~"m.*"}`, `{__name__=~"job:.*"}`,
+		`{__name__!="x"}`, `{__name__!~"x.*"}`, `{__name__=~"("}`,
+	} {
+		if refusal := chartQueryRefusal(nil, "query", query); !strings.Contains(refusal, "nothing was created") {
+			t.Errorf("%s was not refused", query)
+		}
+	}
+	for _, query := range []string{
+		`{job="m1"}`, `sum by (m1) (other)`, `other and bool m3 or m4 unless m5`, `{__name__="m10"}`,
+		`{__name__=~"m1x|y"}`, `{__name__!~"m.*|job:.*"}`, `label_replace(other, "dst", "m1", "src", "(.*)")`,
+	} {
+		if refusal := chartQueryRefusal(nil, "query", query); refusal != "" {
+			t.Errorf("%s refused: %s", query, refusal)
 		}
 	}
 }
