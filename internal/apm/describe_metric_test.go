@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -370,6 +371,48 @@ func TestDescribeMetricBoundsInvalidNameError(t *testing.T) {
 	_, _, err := f.handler(t)(context.Background(), nil, DescribeMetricArgs{MetricNames: []string{strings.Repeat("x", 256<<10)}})
 	if err == nil || len(err.Error()) > 1024 || len(f.requests) != 0 {
 		t.Fatal("invalid name must fail before I/O with a bounded diagnostic")
+	}
+}
+
+func TestDescribeMetricLabelKeysComeFromSeries(t *testing.T) {
+	for _, tc := range []struct {
+		name, series string
+		want         []string
+		wantType     string
+	}{
+		{"system_cpu_time_seconds_total", `[{"metric":{"cpu":"0","state":"idle"},"value":[1700000000,"1"]},{"metric":{"cpu":"1","mode":"x"},"value":[1700000000,"1"]}]`, []string{"cpu", "mode", "state"}, "counter"},
+		{"go_gc_duration_seconds", `[{"metric":{"quantile":"0.5"},"value":[1700000000,"1"]}]`, []string{"quantile"}, "summary"},
+		{"absent_metric", `[]`, []string{}, "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				_ = json.NewDecoder(r.Body).Decode(&body)
+				switch query := fmt.Sprint(body["query"]); {
+				case r.URL.Path == "/apm/labels":
+					// The label endpoint can answer with keys unrelated to the metric.
+					fmt.Fprint(w, `["span_kind","status_code"]`)
+				case r.URL.Path == "/prom_query_instant" && strings.Contains(query, "last_over_time("+tc.name+"["):
+					fmt.Fprint(w, tc.series)
+				default:
+					fmt.Fprint(w, `[]`)
+				}
+			}))
+			t.Cleanup(srv.Close)
+			cfg := models.Config{APIBaseURL: srv.URL, TokenManager: &auth.TokenManager{AccessToken: "test", ExpiresAt: time.Now().Add(time.Hour)}}
+			res, _, err := NewDescribeMetricHandler(srv.Client(), cfg)(context.Background(), nil, DescribeMetricArgs{MetricNames: []string{tc.name}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var report DescribeMetricResult
+			if err := json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &report); err != nil {
+				t.Fatal(err)
+			}
+			got := report.Metrics[0]
+			if !slices.Equal(got.LabelKeys, tc.want) || got.Type != tc.wantType {
+				t.Fatalf("label keys must come from the metric's series: %+v", got)
+			}
+		})
 	}
 }
 
