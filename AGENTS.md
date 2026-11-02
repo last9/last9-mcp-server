@@ -389,6 +389,10 @@ NO:  // loop over the rows and build the summary
 
 Leave existing comments alone.
 
+`comment_lint_test.go` fails on any comment block over 3 lines (`//go:` directives excluded)
+that is not in `testdata/long_comment_baseline.txt`. The baseline only shrinks: when you
+shorten or delete a listed block, delete its line; never add one.
+
 Exception: a function in an `internal/last9api/<area>` endpoint file that issues a call
 starts its doc comment with the method and path.
 
