@@ -365,23 +365,16 @@ func (r metricDescriber) resolveType(ctx context.Context, result *MetricDescript
 	case strings.HasSuffix(name, "_bucket") && slices.Contains(result.LabelKeys, "le"):
 		result.Type = "histogram"
 	case strings.HasSuffix(name, "_sum"), strings.HasSuffix(name, "_count"):
-		labels, notes, err := r.labels(ctx, family+"_bucket")
+		kind, err := r.componentFamilyType(ctx, family, result)
 		if err != nil {
 			return name, err
 		}
-		for _, note := range notes {
-			result.Notes = append(result.Notes, "Family discovery: "+note)
-		}
-		if slices.Contains(labels, "le") {
-			result.Type = "histogram"
-		} else {
-			result.Notes = append(result.Notes, "The _sum/_count suffix is ambiguous without histogram or summary family evidence.")
-		}
+		result.Type = kind
 	}
 	if result.Type != "unknown" {
 		result.TypeSource, result.Confidence, result.Inferred = "naming", "medium", true
 		result.Notes = append(result.Notes, "Type is inferred from naming and observed labels.")
-		if result.Type == "histogram" {
+		if result.Type == "histogram" || result.Type == "summary" && !slices.Contains(result.LabelKeys, "quantile") {
 			return family, nil
 		}
 		return name, nil
@@ -442,6 +435,26 @@ func metricFamily(name string) string {
 		}
 	}
 	return name
+}
+
+// componentFamilyType resolves a _sum/_count component from its family's own series.
+func (r metricDescriber) componentFamilyType(ctx context.Context, family string, result *MetricDescription) (string, error) {
+	for _, evidence := range []struct{ metric, key, kind string }{{family + "_bucket", "le", "histogram"}, {family, "quantile", "summary"}} {
+		labels, notes, err := r.labels(ctx, evidence.metric)
+		if err != nil {
+			return "unknown", err
+		}
+		for _, note := range notes {
+			if note = "Family discovery: " + note; !slices.Contains(result.Notes, note) {
+				result.Notes = append(result.Notes, note)
+			}
+		}
+		if slices.Contains(labels, evidence.key) {
+			return evidence.kind, nil
+		}
+	}
+	result.Notes = append(result.Notes, "The _sum/_count suffix is ambiguous without histogram or summary family evidence.")
+	return "unknown", nil
 }
 
 func metricSuffixUnit(name string) string {
