@@ -22,10 +22,10 @@ func TestPromQLMetricNames(t *testing.T) {
 		`histogram_quantile(0.99, sum by (le) (rate(x_bucket{job="a"}[5m]))) > 1e3 offset 5m`: {"x_bucket"},
 		`a / on (job) group_left (env) b unless bool c`:                                       {"a", "b", "c"},
 		`{__name__="raw", job="a"} + {"quoted"} + {"__name__"='single'}`:                      {"raw", "quoted", "single"},
-		`label_replace(up{job="}"}, "dst", "m1", "src", "(.*)") + x{job=` + "`m2`" + `}`:     {"up", "x"},
+		`label_replace(up{job="}"}, "dst", "m1", "src", "(.*)") + x{job=` + "`m2`" + `}`:      {"up", "x"},
 	} {
-		if got := promQLMetricNames(query); !reflect.DeepEqual(got, want) {
-			t.Errorf("promQLMetricNames(%q) = %v, want %v", query, got, want)
+		if got := parsePromQL(query).names; !reflect.DeepEqual(got, want) {
+			t.Errorf("parsePromQL(%q).names = %v, want %v", query, got, want)
 		}
 	}
 }

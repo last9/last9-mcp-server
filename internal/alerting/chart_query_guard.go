@@ -2,8 +2,10 @@ package alerting
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -61,7 +63,7 @@ func recordDescribedChart(session *mcp.ServerSession, chart string, signals []al
 		chartMetrics.order = append(chartMetrics.order, session)
 	}
 	for _, signal := range signals {
-		for _, metric := range promQLMetricNames(signal.EvalQuery + " " + signal.CanonicalQuery) {
+		for _, metric := range parsePromQL(signal.EvalQuery + " " + signal.CanonicalQuery).names {
 			if _, seen := metrics[metric]; !seen && len(metrics) < maxGuardedChartMetrics {
 				metrics[metric] = chart
 			}
@@ -81,16 +83,27 @@ func chartQueryRefusal(session *mcp.ServerSession, what, query string) string {
 	chartMetrics.mu.Lock()
 	defer chartMetrics.mu.Unlock()
 	metrics := chartMetrics.sessions[session]
-	for _, metric := range promQLMetricNames(query) {
+	selection := parsePromQL(query)
+	for _, metric := range selection.names {
 		if chart, ok := metrics[metric]; ok {
 			return fmt.Sprintf(chartQueryRefusalFormat, what, metric, chart)
+		}
+	}
+	for _, metric := range slices.Sorted(maps.Keys(metrics)) {
+		for _, matches := range selection.nameMatchers {
+			if matches(metric) {
+				return fmt.Sprintf(chartQueryRefusalFormat, what, metric, metrics[metric])
+			}
 		}
 	}
 	return ""
 }
 
+const promQLString = `"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|` + "`[^`]*`"
+
 var (
-	promQLNoise    = regexp.MustCompile(`"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\{[^}]*\}|\[[^\]]*\]`)
+	promQLNoise    = regexp.MustCompile(promQLString + `|\{(?:` + promQLString + "|[^}\"'`])*\\}|\\[[^\\]]*\\]")
+	promQLMatcher  = regexp.MustCompile(`(` + promQLString + `|[a-zA-Z_][a-zA-Z0-9_]*)\s*(=~|!~|!=|=)\s*(` + promQLString + `)|(` + promQLString + `)`)
 	promQLLabelSet = regexp.MustCompile(`\b(?:by|without|on|ignoring|group_left|group_right)\s*\([^)]*\)`)
 	promQLIdent    = regexp.MustCompile(`\b[a-zA-Z_:][a-zA-Z0-9_:]*\b\s*\(?`)
 )
@@ -100,19 +113,80 @@ var promQLKeywords = map[string]bool{
 	"bool": true, "and": true, "or": true, "unless": true, "offset": true, "inf": true, "nan": true,
 }
 
-// promQLMetricNames returns the metric names a PromQL query selects, in order of appearance:
-// identifiers outside strings, label matchers, ranges and grouping clauses, minus function calls.
-func promQLMetricNames(query string) []string {
-	query = promQLLabelSet.ReplaceAllString(promQLNoise.ReplaceAllString(query, " "), " ")
-	var names []string
-	for _, match := range promQLIdent.FindAllString(query, -1) {
-		if strings.HasSuffix(match, "(") {
-			continue
-		}
-		name := strings.TrimSpace(match)
-		if !promQLKeywords[strings.ToLower(name)] && !slices.Contains(names, name) {
-			names = append(names, name)
+// promQLSelection is what a PromQL query selects: metric names, plus __name__ matchers that
+// select by pattern or by exclusion (=~, !=, !~).
+type promQLSelection struct {
+	names        []string
+	nameMatchers []func(metric string) bool
+}
+
+// parsePromQL reads the metrics a query selects: names given in braces (__name__="m" or a bare
+// quoted "m"), then identifiers outside strings, braces, ranges and grouping clauses, minus
+// function calls.
+func parsePromQL(query string) promQLSelection {
+	var selection promQLSelection
+	addName := func(name string) {
+		if name != "" && !slices.Contains(selection.names, name) {
+			selection.names = append(selection.names, name)
 		}
 	}
-	return names
+	query = promQLNoise.ReplaceAllStringFunc(query, func(token string) string {
+		if !strings.HasPrefix(token, "{") {
+			return " "
+		}
+		for _, m := range promQLMatcher.FindAllStringSubmatch(token, -1) {
+			label, op, value, bareName := unquotePromQL(m[1]), m[2], unquotePromQL(m[3]), unquotePromQL(m[4])
+			switch {
+			case bareName != "":
+				addName(bareName)
+			case label == "__name__" && op == "=":
+				addName(value)
+			case label == "__name__":
+				selection.nameMatchers = append(selection.nameMatchers, promQLNameMatcher(op, value))
+			}
+		}
+		return " "
+	})
+	for _, match := range promQLIdent.FindAllString(promQLLabelSet.ReplaceAllString(query, " "), -1) {
+		if name := strings.TrimSpace(match); !strings.HasSuffix(match, "(") && !promQLKeywords[strings.ToLower(name)] {
+			addName(name)
+		}
+	}
+	return selection
+}
+
+func promQLNameMatcher(op, value string) func(string) bool {
+	if op == "!=" {
+		return func(metric string) bool { return metric != value }
+	}
+	pattern, err := regexp.Compile("^(?:" + value + ")$")
+	if err != nil {
+		// Fail closed: a pattern this can't read might select the chart's metric.
+		return func(string) bool { return true }
+	}
+	if op == "!~" {
+		return func(metric string) bool { return !pattern.MatchString(metric) }
+	}
+	return pattern.MatchString
+}
+
+// unquotePromQL returns a PromQL string literal's value; anything else is returned as is.
+func unquotePromQL(token string) string {
+	if len(token) < 2 {
+		return token
+	}
+	inner := token[1 : len(token)-1]
+	switch token[0] {
+	case '`':
+		return inner
+	case '\'':
+		token = `"` + strings.ReplaceAll(inner, `\'`, `'`) + `"`
+	case '"':
+	default:
+		return token
+	}
+	if value, err := strconv.Unquote(token); err == nil {
+		return value
+	}
+	return inner
 }
