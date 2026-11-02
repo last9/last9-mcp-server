@@ -387,7 +387,7 @@ func (r metricDescriber) resolveType(ctx context.Context, result *MetricDescript
 		return name, nil
 	}
 	if family == name {
-		kind, err := r.probeType(ctx, name)
+		kind, note, err := r.probeType(ctx, name)
 		if err != nil {
 			return name, err
 		}
@@ -396,7 +396,7 @@ func (r metricDescriber) resolveType(ctx context.Context, result *MetricDescript
 			result.Notes = append(result.Notes, "Type is inferred from one series over 5 minutes at a 30-second step; a sample's shape does not establish instrument semantics.")
 			return name, nil
 		}
-		result.Notes = append(result.Notes, "Probe inconclusive or unavailable; no type inferred from missing samples.")
+		result.Notes = append(result.Notes, note)
 	}
 	metadataCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
@@ -454,22 +454,32 @@ func metricSuffixUnit(name string) string {
 	return ""
 }
 
-func (r metricDescriber) probeType(ctx context.Context, name string) (string, error) {
+// probeType returns the sampled shape, or "unknown" with a note naming why.
+func (r metricDescriber) probeType(ctx context.Context, name string) (string, string, error) {
+	const inconclusive = "Probe inconclusive or unavailable; no type inferred from missing samples."
 	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	// Freeze the selected label set, not its values: topk at each step could mix different series.
 	query := fmt.Sprintf("(%s and topk(1, %s @ %d))[5m:30s]", name, name, r.timestamp)
 	raw, err := prom.QueryInstantRaw(probeCtx, r.api, prom.QueryInstantInput{Datasource: r.datasource, Query: query, Timestamp: r.timestamp}, last9api.WithMaxResponseBytes(32<<10))
 	if ctx.Err() != nil {
-		return "unknown", ctx.Err()
+		return "unknown", "", ctx.Err()
 	}
-	if err != nil {
-		if metricDiscoveryMustFail(err) && !errors.Is(err, context.DeadlineExceeded) {
-			return "unknown", err
-		}
-		return "unknown", nil
+	var tooLarge *last9api.ResponseTooLargeError
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "unknown", "Probe stopped at its 2-second limit; no type inferred.", nil
+	case errors.As(err, &tooLarge):
+		return "unknown", "Probe stopped at its 32 KiB response limit; no type inferred.", nil
+	case err != nil && metricDiscoveryMustFail(err):
+		return "unknown", "", err
+	case err != nil:
+		return "unknown", inconclusive, nil
 	}
-	return classifyMetricSamples(raw, r.timestamp), nil
+	if kind := classifyMetricSamples(raw, r.timestamp); kind != "unknown" {
+		return kind, "", nil
+	}
+	return "unknown", inconclusive, nil
 }
 
 func classifyMetricSamples(raw []byte, timestamp int64) string {
