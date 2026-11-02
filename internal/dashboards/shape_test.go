@@ -32,7 +32,7 @@ func TestCheckDashboardArguments_NamesEveryWrongField(t *testing.T) {
 			t.Errorf("error repeats aliased field as missing %q:\n%v", alias, err)
 		}
 	}
-	if !strings.HasPrefix(err.Error(), "dashboard does not match the create_dashboard schema; nothing was written:\n") {
+	if !strings.HasPrefix(err.Error(), "dashboard does not match the dashboard schema; nothing was written:\n") {
 		t.Errorf("error prefix: %v", err)
 	}
 }

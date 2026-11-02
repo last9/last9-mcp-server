@@ -22,7 +22,7 @@ func TestDashboardWritesNameEveryWrongFieldBeforeSchemaValidation(t *testing.T) 
 					"dashboard.panels[0].gridPos: unknown panel field; use layout {x, y, w, h}",
 					"dashboard.panels[0].title: unknown panel field; use name",
 					"dashboard.panels[0].queries[0].legend: got string, want object {type, value}",
-					"nothing was written",
+					"dashboard does not match the dashboard schema; nothing was written",
 				},
 				absent: []string{"validating /properties"},
 			})

@@ -55,7 +55,7 @@ func (s *shapeChecker) err() error {
 	if len(lines) > maxShapeProblems {
 		lines = append(lines[:maxShapeProblems:maxShapeProblems], fmt.Sprintf("and %d more", len(s.problems)-maxShapeProblems))
 	}
-	return errors.New("dashboard does not match the create_dashboard schema; nothing was written:\n- " + strings.Join(lines, "\n- "))
+	return errors.New("dashboard does not match the dashboard schema; nothing was written:\n- " + strings.Join(lines, "\n- "))
 }
 
 func (s *shapeChecker) check(schema map[string]any, value any, path, kind string) {
