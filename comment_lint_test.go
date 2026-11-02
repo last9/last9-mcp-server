@@ -1,13 +1,59 @@
 package main
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
+
+const longCommentBaseline = "testdata/long_comment_baseline.txt"
+
+func TestNoNewLongCommentBlocks(t *testing.T) {
+	found, err := repoLongComments(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(longCommentBaseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline := map[string]int{}
+	for _, entry := range strings.Split(string(raw), "\n") {
+		if entry != "" {
+			baseline[entry]++
+		}
+	}
+	var added []string
+	for _, c := range found {
+		if baseline[c.baselineEntry()] > 0 {
+			baseline[c.baselineEntry()]--
+			continue
+		}
+		added = append(added, fmt.Sprintf("%s:%d: %d-line comment block", c.path, c.line, c.lines))
+	}
+	if len(added) > 0 {
+		t.Errorf("comment blocks over %d lines (AGENTS.md, Comments): keep the why to 3 lines, or fix the code instead\n%s",
+			maxCommentLines, strings.Join(added, "\n"))
+	}
+	var stale []string
+	for entry, n := range baseline {
+		for range n {
+			stale = append(stale, entry)
+		}
+	}
+	if len(stale) > 0 {
+		sort.Strings(stale)
+		t.Errorf("%s lists blocks that are gone or changed; delete these lines:\n%s", longCommentBaseline, strings.Join(stale, "\n"))
+	}
+}
 
 func TestLongCommentBlocksFixtures(t *testing.T) {
 	cases := []struct {
@@ -43,6 +89,36 @@ type longComment struct {
 	line      int
 	lines     int
 	firstLine string
+}
+
+func (c longComment) baselineEntry() string {
+	return fmt.Sprintf("%s\t%d\t%s", c.path, c.lines, c.firstLine)
+}
+
+func repoLongComments(root string) ([]longComment, error) {
+	var long []longComment
+	fset := token.NewFileSet()
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if path != root && (strings.HasPrefix(d.Name(), ".") || d.Name() == "testdata" || d.Name() == "node_modules") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+		if err != nil {
+			return err
+		}
+		long = append(long, longCommentBlocks(fset, filepath.ToSlash(path), file)...)
+		return nil
+	})
+	return long, err
 }
 
 func longCommentBlocks(fset *token.FileSet, path string, file *ast.File) []longComment {
