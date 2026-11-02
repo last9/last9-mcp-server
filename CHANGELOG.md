@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- `validate_dashboard` no longer reports `overall: pass` with `panels_total: 0` when nothing was validated. A `{dashboard, metadata}` create envelope passed as `dashboard_definition` is unwrapped and its inner dashboard validated; a dashboard with no panels returns `success: false`, `error: "no_panels"`; panel fields from other formats (Grafana `gridPos`, `title`, `type`, `targets`) and mistyped fields such as a string `queries[].legend` are listed per panel in `shape_problems` and make `overall` `fail` (#498).
 - `create_dashboard` and `update_dashboard` name every field that misses or mistypes the dashboard schema in one tool error (for example `dashboard.panels[0].gridPos: unknown panel field; use layout {x, y, w, h}` or `queries[0].legend: got string, want object {type, value}`) instead of only the first schema violation, including fields only some panels require (`visualization.logs_config` for logs panels; `queries` unless the panel is a section, markdown or csv panel), and Grafana keys (`gridPos`, `title`, panel `type`, `targets`, query `query`, `legendFormat`, `refId`, `datasource`) are mapped to their native fields. `patch_dashboard` `add_panel` refuses those Grafana keys and mistyped fields before writing; partial panels stay accepted. Backend error bodies, including any field path, are still relayed as before (#491).
 
 ### Changed
