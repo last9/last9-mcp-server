@@ -126,9 +126,11 @@ func TestDeviationDescriptionWarningStringsAreDocumented(t *testing.T) {
 
 func TestDeviationNonConformingResponseIsRejected(t *testing.T) {
 	cases := map[string]string{
-		"wrong contract version": `{"contract_version":"investigation-evidence/v2","analysis_version":"trace-attribute-deviations/v1"}`,
-		"missing contract":       `{"data":{"deviations":[]}}`,
-		"wrong analysis version": `{"contract_version":"investigation-evidence/v1","analysis_version":"trace-waterfall/v1"}`,
+		"wrong contract version":       `{"contract_version":"investigation-evidence/v2","analysis_version":"trace-attribute-deviations/v1"}`,
+		"missing contract":             `{"data":{"deviations":[]}}`,
+		"wrong analysis version":       `{"contract_version":"investigation-evidence/v1","analysis_version":"trace-waterfall/v1"}`,
+		"contract key in another case": `{"CONTRACT_VERSION":"investigation-evidence/v1","analysis_version":"trace-attribute-deviations/v1"}`,
+		"analysis key in another case": `{"contract_version":"investigation-evidence/v1","Analysis_Version":"trace-attribute-deviations/v1"}`,
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {

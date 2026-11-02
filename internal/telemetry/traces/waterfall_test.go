@@ -182,11 +182,13 @@ func TestGetTraceWaterfallReadsTheExactSanitizerKey(t *testing.T) {
 
 func TestGetTraceWaterfallRejectsNonConformingEvidence(t *testing.T) {
 	cases := map[string][]byte{
-		"empty body":             nil,
-		"not an object":          []byte(`[]`),
-		"data after the object":  append(waterfallFixture(t), `{}`...),
-		"wrong contract version": waterfallFixtureWith(t, func(p map[string]any) { p["contract_version"] = "investigation-evidence/v2" }),
-		"wrong analysis version": waterfallFixtureWith(t, func(p map[string]any) { p["analysis_version"] = "trace-attribute-deviations/v1" }),
+		"empty body":                           nil,
+		"not an object":                        []byte(`[]`),
+		"data after the object":                append(waterfallFixture(t), `{}`...),
+		"wrong contract version":               waterfallFixtureWith(t, func(p map[string]any) { p["contract_version"] = "investigation-evidence/v2" }),
+		"wrong analysis version":               waterfallFixtureWith(t, func(p map[string]any) { p["analysis_version"] = "trace-attribute-deviations/v1" }),
+		"contract_version key in another case": renameWaterfallKey(t, "contract_version", "CONTRACT_VERSION"),
+		"analysis_version key in another case": renameWaterfallKey(t, "analysis_version", "Analysis_Version"),
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -199,6 +201,15 @@ func TestGetTraceWaterfallRejectsNonConformingEvidence(t *testing.T) {
 			}
 		})
 	}
+}
+
+// renameWaterfallKey returns the fixture with its top-level key from renamed to to.
+func renameWaterfallKey(t *testing.T, from, to string) []byte {
+	t.Helper()
+	return waterfallFixtureWith(t, func(p map[string]any) {
+		p[to] = p[from]
+		delete(p, from)
+	})
 }
 
 // paddedWaterfall returns a valid fixture body of exactly size bytes.
