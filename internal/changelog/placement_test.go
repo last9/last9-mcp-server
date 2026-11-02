@@ -75,6 +75,11 @@ func TestCheckPlacement(t *testing.T) {
 			nil,
 		},
 		{
+			"released entry gains an external reference",
+			strings.Replace(placementBase, "- Shipped entry (#10).", "- Shipped entry, as in nodejs/node#66871 (#10).", 1),
+			nil,
+		},
+		{
 			"released entry gains a number the release did not ship",
 			strings.Replace(placementBase, "- Shipped entry (#10).", "- Shipped entry (#10, #20).", 1),
 			[]string{`"Shipped entry (#10, #20)." is under [0.2.0], which did not ship #20; move it to [Unreleased]`},
