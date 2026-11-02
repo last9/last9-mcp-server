@@ -69,6 +69,23 @@ func TestCheckDashboardArguments_NamesWrongContainerTypes(t *testing.T) {
 	}
 }
 
+func TestShapeCheck_IntegerFieldsRejectOnlyFractionalNumbers(t *testing.T) {
+	panel := func(rowLimit string) map[string]any {
+		var p map[string]any
+		_ = json.Unmarshal([]byte(`{"visualization":{"type":"logs","logs_config":{"columns":["body"],"row_limit":`+rowLimit+`}}}`), &p)
+		return p
+	}
+	want := "panel.visualization.logs_config.row_limit: got number, want integer"
+	if got := checkPanelShape(panel("1.5"), "panel"); strings.Join(got, "\n") != want {
+		t.Errorf("fractional row_limit: got %q, want %q", got, want)
+	}
+	for _, whole := range []string{"100", "100.0", "1e2"} {
+		if got := checkPanelShape(panel(whole), "panel"); len(got) != 0 {
+			t.Errorf("row_limit %s: unexpected %v", whole, got)
+		}
+	}
+}
+
 func TestCheckDashboardArguments_NamesConditionallyRequiredFields(t *testing.T) {
 	logsPanel := `{"name":"a","layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"logs"},"queries":[]}`
 	noQueriesPanel := `{"name":"b","layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"stat"}}`

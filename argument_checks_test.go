@@ -52,6 +52,27 @@ func TestDashboardWritesNameEveryConditionallyRequiredField(t *testing.T) {
 	}
 }
 
+func TestDashboardWritesNameEveryFractionalIntegerField(t *testing.T) {
+	session := newInMemoryClientSession(t)
+	logsPanel := `{"name":"a","layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"logs","logs_config":{"columns":["body"],"row_limit":1.5}},"queries":[]}`
+	panels := `"panels":[` + logsPanel + "," + logsPanel + `]`
+	for tool, args := range map[string]string{
+		"create_dashboard": `{"dashboard":{"name":"x",` + panels + `}}`,
+		"update_dashboard": `{"id":"dash-1","dashboard":{"name":"x",` + panels + `}}`,
+	} {
+		t.Run(tool, func(t *testing.T) {
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args)})
+			assertToolError(t, result, toolErrorExpectation{
+				contains: []string{
+					"dashboard.panels[0].visualization.logs_config.row_limit: got number, want integer",
+					"dashboard.panels[1].visualization.logs_config.row_limit: got number, want integer",
+				},
+				absent: []string{"validating /properties"},
+			})
+		})
+	}
+}
+
 func TestDashboardArgumentCheckLeavesOtherShapesAndToolsToTheSchema(t *testing.T) {
 	session := newInMemoryClientSession(t)
 	badDashboard := `{"name":"x","panels":[` + grafanaPanel + `]}`
