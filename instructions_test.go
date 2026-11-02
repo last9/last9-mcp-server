@@ -590,16 +590,16 @@ func TestServerInstructionsSayCreateAlertRulesStartDisabled(t *testing.T) {
 	}
 }
 
-// get_alert_coverage adds no bullet where an alerts bullet exists, and otherwise
-// trails the section, so every line main's policy had keeps its place: a new
-// mid-section bullet regressed unrelated log-query evals.
+// get_alert_coverage gets its own bullet at the end of the section, so every
+// pinned line keeps its wording and place: rewording or inserting mid-section
+// regressed unrelated log-query evals.
 func TestServerInstructionsNameAlertCoverageWithoutShiftingLines(t *testing.T) {
 	tests := []struct {
 		spec string
 		want string
 	}{
-		{spec: "", want: "- Firing alerts and rule state: `get_alerts`, `get_alert_rule_state`; coverage gaps: `get_alert_coverage`."},
-		{spec: "alerts", want: "- Firing alerts and rule state: `get_alerts`, `get_alert_rule_state`; coverage gaps: `get_alert_coverage`."},
+		{spec: "", want: "- Alert coverage gaps: `get_alert_coverage`."},
+		{spec: "alerts", want: "- Alert coverage gaps: `get_alert_coverage`."},
 		{spec: "investigate", want: "- Alert coverage gaps: `get_alert_coverage`."},
 	}
 	for _, tt := range tests {
@@ -608,8 +608,9 @@ func TestServerInstructionsNameAlertCoverageWithoutShiftingLines(t *testing.T) {
 			if got := lineNaming(instructions, "get_alert_coverage"); got != tt.want {
 				t.Errorf("get_alert_coverage line = %q, want %q", got, tt.want)
 			}
-			dedicated, _, _ := strings.Cut(instructions, "\n\n## Raw queries")
-			if last := dedicated[strings.LastIndex(dedicated, "\n")+1:]; tt.spec == "investigate" && last != tt.want {
+			_, dedicated, _ := strings.Cut(instructions, "## Prefer dedicated tools\n")
+			dedicated, _, _ = strings.Cut(dedicated, "\n\n")
+			if last := dedicated[strings.LastIndex(dedicated, "\n")+1:]; last != tt.want {
 				t.Errorf("last dedicated-tools bullet = %q, want %q:\n%s", last, tt.want, instructions)
 			}
 		})
