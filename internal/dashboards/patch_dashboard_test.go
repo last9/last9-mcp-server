@@ -818,7 +818,7 @@ func TestPatchDashboard_NotFound(t *testing.T) {
 	_, _, err := NewPatchDashboardHandler(ps.srv.Client(), testDashboardConfig(ps.srv.URL))(context.Background(), &mcp.CallToolRequest{}, PatchDashboardArgs{
 		ID: "other", Ops: []PatchDashboardOp{{Op: "set_title", Title: "x"}},
 	})
-	if err == nil || !strings.Contains(err.Error(), "dashboard not found") {
+	if err == nil || !strings.Contains(err.Error(), `dashboard "other" not found`) || strings.Contains(err.Error(), "capability") {
 		t.Fatalf("err = %v", err)
 	}
 }
