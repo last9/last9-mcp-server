@@ -50,7 +50,6 @@ func TestDescribeMetricProbeSources(t *testing.T) {
 		{"short reset", `"10","11","0","1"`, "counter"},
 		{"gauge", `"10","12","11","13","12","11"`, "gauge"},
 		{"falling", `"10","9","8","7","6","5"`, "gauge"},
-		{"flat", `"3","3","3","3","3","3"`, "gauge"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			f := &metricDescriptionFixture{status: 404, probe: probeFixture(tt.values)}
@@ -75,7 +74,11 @@ func TestDescribeMetricProbeNotesNameTheBound(t *testing.T) {
 	}{
 		{"size", &metricDescriptionFixture{status: 404, probe: oversized}, "32 KiB", "2-second"},
 		{"time", &metricDescriptionFixture{status: 404, probe: probeFixture(`"1","2","3","4"`), probeDelay: 2500 * time.Millisecond}, "2-second", "32 KiB"},
-		{"shape", &metricDescriptionFixture{status: 404, probe: probeFixture(`"1","2","3"`)}, "Probe inconclusive", "limit"},
+		{"few samples", &metricDescriptionFixture{status: 404, probe: probeFixture(`"1","2","3"`)}, "too few or malformed", "limit"},
+		// Without a fall or two rises the samples are no evidence; a flat counter must not become a never-rate gauge.
+		{"flat", &metricDescriptionFixture{status: 404, probe: probeFixture(`"3","3","3","3","3","3"`)}, "neither rose nor fell", "limit"},
+		{"one rise", &metricDescriptionFixture{status: 404, probe: probeFixture(`"3","3","3","4","4","4"`)}, "neither rose nor fell", "limit"},
+		{"request failed", &metricDescriptionFixture{status: 404, probeStatus: 500}, "Probe request failed", "limit"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got := describeOne(t, tt.f, "load_value")
