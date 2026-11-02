@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -277,16 +278,23 @@ func TestCreateAlertAllowsKPIsWithSelectorsExcludingTheChartMetric(t *testing.T)
 	}
 }
 
-// The KPI lookup runs before the rule-name check, so its failures must read like that check's.
+// The KPI lookup runs before the rule-name check, so its failures must read like that check's
+// and must block the write.
 func TestCreateAlertKPILookupFailureSaysNothingWasCreated(t *testing.T) {
 	for status, want := range map[int]string{
-		http.StatusBadRequest:         `entity_id "missing" is not an alert group; nothing was created`,
-		http.StatusNotFound:           `entity_id "missing" is not an alert group; nothing was created`,
-		http.StatusServiceUnavailable: "retry later. Nothing was created.",
+		http.StatusBadRequest:          `entity_id "missing" is not an alert group; nothing was created`,
+		http.StatusNotFound:            `entity_id "missing" is not an alert group; nothing was created`,
+		http.StatusInternalServerError: "Nothing was created.",
+		http.StatusServiceUnavailable:  "retry later. Nothing was created.",
+		http.StatusGatewayTimeout:      "Nothing was created.",
 	} {
 		t.Run(strconv.Itoa(status), func(t *testing.T) {
 			t.Cleanup(resetDescribedChartMetrics)
+			var writes atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet && strings.HasPrefix(r.URL.Path, "/entities/") {
+					writes.Add(1)
+				}
 				if r.Method == http.MethodGet && r.URL.Path == "/entities/missing/kpis" {
 					w.WriteHeader(status)
 					return
@@ -296,8 +304,8 @@ func TestCreateAlertKPILookupFailureSaysNothingWasCreated(t *testing.T) {
 			t.Cleanup(server.Close)
 			describeApdexChart(t, server)
 
-			name := "orders-backlog"
-			rule := AlertRulePayload{PrimaryIndicator: "queue_depth", ExpressionArgs: map[string]AlertExpressionArg{"queue_depth": {ID: "kpi-2"}}, RuleName: &name}
+			// No rule_name, so the KPI lookup is the only read gating the write.
+			rule := AlertRulePayload{PrimaryIndicator: "queue_depth", ExpressionArgs: map[string]AlertExpressionArg{"queue_depth": {ID: "kpi-2"}}}
 			result, _, err := NewCreateAlertHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil,
 				CreateAlertArgs{EntityID: "missing", AlertRuleMutation: AlertRuleMutation{AlertRule: rule}})
 			text := fmt.Sprint(err)
@@ -305,7 +313,10 @@ func TestCreateAlertKPILookupFailureSaysNothingWasCreated(t *testing.T) {
 				text = resultText(result)
 			}
 			if !strings.Contains(text, want) {
-				t.Fatalf("want %q, got result=%+v err=%v", want, result, err)
+				t.Errorf("want %q, got result=%+v err=%v", want, result, err)
+			}
+			if n := writes.Load(); n != 0 {
+				t.Fatalf("want no writes after a failed KPI lookup, got %d", n)
 			}
 		})
 	}
