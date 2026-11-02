@@ -306,13 +306,8 @@ func TestDiscoverSectionListsOnlyNameLookups(t *testing.T) {
 }
 
 // maxInvestigateInstructionsBytes caps the policy automation sessions receive,
-// near its size, so growth is a reviewed decision: it precedes every tool
-// description, and growing it moved log_query evals. The parsed-field line
-// was a reviewed increase, validated on the full log_query suite; naming
-// analyze_change_impact and get_metric_status, the log-pattern tools joining
-// the one-service bullet, the explicit pipeline time-window rule (issue #379),
-// get_entity_kpis, which investigate serves, and get_alert_operations_summary
-// joining investigate (issue #428) were reviewed additions.
+// near its size: it precedes every tool description and growing it moved
+// log_query evals, so each increase is a reviewed decision.
 const maxInvestigateInstructionsBytes = 3040
 
 func TestInvestigateInstructionsBounded(t *testing.T) {
