@@ -186,6 +186,10 @@ func TestDo_MaxResponseBytes(t *testing.T) {
 				if err == nil || !strings.Contains(err.Error(), "exceeds") || !strings.Contains(err.Error(), "test op") {
 					t.Fatalf("want an oversized-response error naming the op, got %v", err)
 				}
+				var tooLarge *ResponseTooLargeError
+				if !errors.As(err, &tooLarge) || tooLarge.MaxBytes != tc.limit {
+					t.Fatalf("want a *ResponseTooLargeError with MaxBytes %d, got %#v", tc.limit, err)
+				}
 				return
 			}
 			if err != nil {
@@ -248,6 +252,41 @@ func TestDo_GarbageSuccessBodyIsDecodeError(t *testing.T) {
 	err := c.Do(context.Background(), "op", Request{Method: http.MethodGet, Path: "/x"}, &out)
 	if err == nil || !strings.Contains(err.Error(), "decode response") {
 		t.Fatalf("want decode error, got %v", err)
+	}
+}
+
+func TestDo_RequiredBodyRejectsEmptyAndTrailingData(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		status  int
+		body    string
+		wantErr string
+	}{
+		{"valid", http.StatusOK, `{"a":"x"}` + "\n", ""},
+		{"empty_200", http.StatusOK, "", "empty response body"},
+		{"empty_204", http.StatusNoContent, "", "empty response body"},
+		{"trailing_garbage", http.StatusOK, `{"a":"x"}broken`, "decode response"},
+		{"second_value", http.StatusOK, `{"a":"x"}{"a":"y"}`, "decode response"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+			c := NewClient(srv.Client(), testCfg(srv.URL))
+			var out struct{ A string }
+			err := c.Do(context.Background(), "op", Request{Method: http.MethodGet, Path: "/x"}, &out, WithRequiredBody())
+			if tc.wantErr == "" {
+				if err != nil || out.A != "x" {
+					t.Fatalf("want decoded body, got out=%+v err=%v", out, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("want error containing %q, got %v", tc.wantErr, err)
+			}
+		})
 	}
 }
 

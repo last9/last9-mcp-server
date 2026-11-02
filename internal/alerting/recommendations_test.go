@@ -24,6 +24,20 @@ func TestRecommendAlertConfig(t *testing.T) {
 			t.Errorf("recommendation missing %q", want)
 		}
 	}
+	chartRoute, lifecycle, _ := strings.Cut(strings.SplitN(text, "Lifecycle:", 2)[1], "\n1. ")
+	for _, want := range []string{"Discover chart", "create_alert_from_chart", "signal_key", "Never rebuild"} {
+		if !strings.Contains(chartRoute, want) {
+			t.Errorf("lifecycle must open with the Discover chart route naming %q:\n%s", want, chartRoute)
+		}
+	}
+	last := -1
+	for _, step := range []string{"get_entity_kpis", "create_kpi", "prometheus_range_query", `{"valid":true}`, "create_alert", "Read the rule back", "only after the user confirms"} {
+		i := strings.Index(lifecycle, step)
+		if i < 0 || i < last {
+			t.Fatalf("lifecycle must name %q in order:\n%s", step, lifecycle)
+		}
+		last = i
+	}
 }
 
 // The lifecycle names a write tool only when the server serves it, so a
@@ -35,7 +49,7 @@ func TestRecommendAlertConfigNamesOnlyServedWriteTools(t *testing.T) {
 		named  []string
 		hidden []string
 	}{
-		{name: "read-only", filter: toolsets.Filter{ReadOnly: true}, hidden: []string{"create_alert", "patch_alert", "update_alert"}},
+		{name: "read-only", filter: toolsets.Filter{ReadOnly: true}, hidden: []string{"create_alert", "patch_alert", "update_alert", "Discover chart"}},
 		{name: "create_alert allowed", filter: toolsets.Filter{ReadOnly: true, AllowWrite: toolsets.Set{"create_alert": {}}}, named: []string{"create_alert"}, hidden: []string{"patch_alert", "update_alert"}},
 	}
 	for _, tt := range tests {

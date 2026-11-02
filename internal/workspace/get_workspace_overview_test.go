@@ -316,6 +316,18 @@ func TestWorkspaceOverviewOneSubCallFails(t *testing.T) {
 	}
 }
 
+func TestWorkspaceOverviewEmptyServiceReplyIsAnError(t *testing.T) {
+	responses := healthyResponses()
+	responses[routeServices] = ""
+	out := runOverview(t, &overviewAPI{responses: responses}, time.Second)
+	if fields := errorFields(t, out); len(fields) != 1 || fields[0] != "service_count" {
+		t.Fatalf("errors = %v, want only service_count", fields)
+	}
+	if out["service_count"] != nil {
+		t.Fatalf("service_count = %v, want null", out["service_count"])
+	}
+}
+
 // The stub hangs until the client drops the request, so each case also pins
 // that its sub-call's HTTP path cancels in flight when its context times out.
 func TestWorkspaceOverviewSubCallTimesOut(t *testing.T) {

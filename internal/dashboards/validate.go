@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
+
+	"last9-mcp/internal/utils"
 )
 
 func validateID(id string) error {
@@ -15,7 +18,14 @@ func validateID(id string) error {
 }
 
 func validateDashboardRequest(dashboard json.RawMessage) error {
-	return validateJSONObject("dashboard", dashboard, true)
+	if err := validateJSONObject("dashboard", dashboard, true); err != nil {
+		return err
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(dashboard, &doc); err != nil {
+		return fmt.Errorf("dashboard must be valid JSON: %w", err)
+	}
+	return checkDashboardQueryTypes(doc)
 }
 
 func validateMetadata(metadata json.RawMessage) error {
@@ -81,10 +91,15 @@ func mapStatusAPIError(err error, forbiddenMsg, notFoundMsg string) error {
 		return nil
 	}
 	msg := err.Error()
+	var upstream *utils.UpstreamHTTPError
+	status := 0
+	if errors.As(err, &upstream) {
+		status = upstream.StatusCode
+	}
 	switch {
-	case strings.Contains(msg, "status 403"):
+	case status == http.StatusForbidden || strings.Contains(msg, "status 403"):
 		return fmt.Errorf("%s: %w", forbiddenMsg, err)
-	case strings.Contains(msg, "status 404"):
+	case status == http.StatusNotFound || strings.Contains(msg, "status 404"):
 		return fmt.Errorf("%s: %w", notFoundMsg, err)
 	default:
 		return err
@@ -93,6 +108,17 @@ func mapStatusAPIError(err error, forbiddenMsg, notFoundMsg string) error {
 
 func mapDashboardAPIError(err error) error {
 	return mapStatusAPIError(err, "dashboard is readonly and cannot be modified", "dashboard not found")
+}
+
+// mapDashboardFetchError names the id on 404 because the shared upstream
+// advice ("capability may be unavailable") misleads for a bad dashboard id.
+func mapDashboardFetchError(id string, err error) error {
+	notFound := fmt.Sprintf("dashboard %q not found; list_dashboards lists dashboard ids", id)
+	var upstream *utils.UpstreamHTTPError
+	if errors.As(err, &upstream) && upstream.StatusCode == http.StatusNotFound {
+		return errors.New(notFound)
+	}
+	return mapStatusAPIError(err, "dashboard is readonly and cannot be modified", notFound)
 }
 
 func mapSnapshotAPIError(err error) error {

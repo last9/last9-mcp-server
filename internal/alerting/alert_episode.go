@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/last9api"
@@ -29,7 +28,7 @@ const ackLookbackSeconds = 3600
 func requireRecentAlert(ctx context.Context, api *last9api.Client, episode alertEpisode) (*mcp.CallToolResult, error) {
 	var monitor AlertsResponse
 	query := url.Values{}
-	query.Set("timestamp", strconv.FormatInt(time.Now().Unix(), 10))
+	query.Set("timestamp", strconv.FormatInt(utils.Now().Unix(), 10))
 	query.Set("window", strconv.Itoa(ackLookbackSeconds))
 	err := api.Do(ctx, "list recent alerts", last9api.Request{Method: http.MethodGet, Path: constants.EndpointAlertsMonitor}, &monitor, last9api.WithQuery(query))
 	if err != nil {
