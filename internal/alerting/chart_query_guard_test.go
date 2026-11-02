@@ -19,27 +19,27 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestPromQLMetricNames(t *testing.T) {
+func TestMetricNames(t *testing.T) {
 	for query, want := range map[string][]string{
 		`sum(rate(trace_service_apdex_score{service_name="checkout"}[5m]))`:                   {"trace_service_apdex_score"},
 		`sum by (service_name) (rate(http_errors_total[5m])) / sum without (pod) (up)`:        {"http_errors_total", "up"},
 		`histogram_quantile(0.99, sum by (le) (rate(x_bucket{job="a"}[5m]))) > 1e3 offset 5m`: {"x_bucket"},
-		`a / on (job) group_left (env) b unless bool c`:                                       {"a", "b", "c"},
+		`a / on (job) group_left (env) b unless c`:                                            {"a", "b", "c"},
 		`{__name__="raw", job="a"} + {"quoted"} + {"__name__"='single'}`:                      {"raw", "quoted", "single"},
 		`label_replace(up{job="}"}, "dst", "m1", "src", "(.*)") + x{job=` + "`m2`" + `}`:      {"up", "x"},
 		`sum(rate(m[5m])) default 0`:                                                          {"m"},
 		`rate(a[5m]) keep_metric_names if b ifnot c atan2 d`:                                  {"a", "b", "c", "d"},
 		`sum(a) by (job) limit 5 + on (job) group_left (env) prefix "p_" b`:                   {"a", "b"},
 	} {
-		if got := promQLNames(query); !reflect.DeepEqual(got, want) {
-			t.Errorf("promQLNames(%q) = %v, want %v", query, got, want)
+		if got := metricNames(query); !reflect.DeepEqual(got, want) {
+			t.Errorf("metricNames(%q) = %v, want %v", query, got, want)
 		}
 	}
 }
 
 // Every way PromQL can select a guarded metric must refuse, including __name__ matchers and
-// quoted names inside braces; metric names that only appear as label values or grouping labels
-// must not.
+// quoted names inside braces, `or` alternatives and queries the parser rejects; metric names that
+// only appear as label values or grouping labels must not.
 func TestChartQueryRefusalSelectorShapes(t *testing.T) {
 	t.Cleanup(resetDescribedChartMetrics)
 	recordDescribedChart(nil, "discover-service/chart-a", []alerts.Signal{{EvalQuery: "sum(rate(m1[5m])) default 0", CanonicalQuery: "job:m2:rate5m"}})
@@ -54,16 +54,16 @@ func TestChartQueryRefusalSelectorShapes(t *testing.T) {
 		`m1{__name__!="x"}`, `{__name__=~"m1|x", __name__!="x"}`, `{__name__!="m1"} + {__name__=~"m1"}`,
 		"# custom\n{__name__=\"m1\"}", "x # custom\n+ {__name__=~\"m.*\"}", "{job=\"a\" # x\n, __name__=\"m1\"}", `m1{job="#"}`,
 		`{__name__="x" or __name__="m1"}`, `{__name__="x" or __name__=~"m.*"}`, `{job="a" or __name__="m1", job="b"}`,
-		`sum(`, `m1{`,
+		`sum(`, `m1{`, `x{__name__="m1"}`,
 	} {
 		if refusal := chartQueryRefusal(nil, "query", query); !strings.Contains(refusal, "nothing was created") {
 			t.Errorf("%s was not refused", query)
 		}
 	}
 	for _, query := range []string{
-		`{job="m1"}`, `sum by (m1) (other)`, `other and bool m3 or m4 unless m5`, `{__name__="m10"}`,
+		`{job="m1"}`, `sum by (m1) (other)`, `other and m3 or m4 unless m5`, `{__name__="m10"}`,
 		`{__name__=~"m1x|y"}`, `{__name__!~"m.*|job:.*"}`, `label_replace(other, "dst", "m1", "src", "(.*)")`,
-		`other{__name__!="m1"}`, `{__name__=~"m1|x", __name__!="m1"}`, `x{__name__="m1"}`, `{__name__=~"m.*", __name__!~"m1|job:.*"}`,
+		`other{__name__!="m1"}`, `{__name__=~"m1|x", __name__!="m1"}`, `{__name__=~"m.*", __name__!~"m1|job:.*"}`,
 		"# m1\nother", "other # {__name__=\"m1\"}", `x{job="# m1"}`, "{__name__=\"x\" # \"m1\"\n}",
 		`sum(other) default 0`, `other if m3 ifnot m4 keep_metric_names`,
 		`{__name__="x" or __name__="y"}`, `{__name__=~"m.*", __name__!="m1" or __name__="x", __name__!="m1"}`,
