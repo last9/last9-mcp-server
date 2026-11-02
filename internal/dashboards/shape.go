@@ -86,7 +86,7 @@ func (s *shapeChecker) check(schema map[string]any, value any, path, kind string
 			continue
 		}
 		if native, ok := aliases[key]; ok {
-			if _, set := obj[native]; !set {
+			if _, set := obj[native]; !set && needsField(schema, obj, native) {
 				aliased[native] = true
 				s.problems = append(s.problems, fmt.Sprintf("%s.%s: unknown %s field; use %s", path, key, kind, describeField(props, native)))
 			}
@@ -159,6 +159,25 @@ func (s *shapeChecker) requireFrom(schema, cond, obj map[string]any, path string
 			s.requireFrom(propSchema, sub, child, path+"."+key)
 		}
 	}
+}
+
+// needsField reports whether obj needs field: it is required, or an anyOf branch requires
+// it and no branch is satisfied. An alias for a field obj does not need is dropped harmlessly.
+func needsField(schema, obj map[string]any, field string) bool {
+	if required, _ := schema["required"].([]string); slices.Contains(required, field) {
+		return true
+	}
+	anyOf, _ := schema["anyOf"].([]any)
+	inBranch := false
+	for _, b := range anyOf {
+		branch, _ := b.(map[string]any)
+		if matches(branch, obj) {
+			return false
+		}
+		required, _ := branch["required"].([]string)
+		inBranch = inBranch || slices.Contains(required, field)
+	}
+	return inBranch
 }
 
 func matches(schema map[string]any, value any) bool {
