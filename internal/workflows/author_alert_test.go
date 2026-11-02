@@ -116,7 +116,7 @@ func TestAuthorAlertRendersDashboardPanelBranch(t *testing.T) {
 }
 
 // A Discover chart alert may use only the chart's catalog signal, so the workflow routes it away
-// before step 1 instead of rebuilding the chart's query as a KPI.
+// before step 1 instead of rebuilding the chart's query as a KPI, and stops if the route isn't served.
 func TestAuthorAlertRoutesDiscoverChartsToCatalogSignals(t *testing.T) {
 	for name, args := range map[string]map[string]string{
 		"goal only": {"goal": "apdex below 0.4 on checkout"},
@@ -124,7 +124,7 @@ func TestAuthorAlertRoutesDiscoverChartsToCatalogSignals(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			text := renderAuthorAlert(t, args)
-			assertInOrder(t, text, "Discover", "describe_alert_chart", "create_alert_from_chart", "signal_key", "Never rebuild", "Steps:")
+			assertInOrder(t, text, "Discover", "describe_alert_chart", "create_alert_from_chart", "signal_key", "does not expose them, tell the user and stop", "Never rebuild", "Steps:")
 		})
 	}
 }
