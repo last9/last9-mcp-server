@@ -58,8 +58,6 @@ func (s *shapeChecker) err() error {
 	return errors.New("dashboard does not match the create_dashboard schema; nothing was written:\n- " + strings.Join(lines, "\n- "))
 }
 
-// check walks value against the type, required, properties and items keywords of
-// schema; kind names the object for fieldAliases.
 func (s *shapeChecker) check(schema map[string]any, value any, path, kind string) {
 	if !hasSchemaType(schema, value) {
 		s.problems = append(s.problems, fmt.Sprintf("%s: got %s, want %s", path, jsonKind(value), describeSchema(schema)))
@@ -133,7 +131,6 @@ func (s *shapeChecker) checkConditions(schema, obj map[string]any, path string) 
 	}
 }
 
-// requireFrom reports the fields cond requires of obj, described by obj's own schema.
 func (s *shapeChecker) requireFrom(schema, cond, obj map[string]any, path string) {
 	props, _ := schema["properties"].(map[string]any)
 	required, _ := cond["required"].([]string)
@@ -153,7 +150,7 @@ func (s *shapeChecker) requireFrom(schema, cond, obj map[string]any, path string
 	}
 }
 
-// matches evaluates the required, properties, const and enum keywords of schema.
+// matches supports only the keywords the input schema's conditions use.
 func matches(schema map[string]any, value any) bool {
 	if c, ok := schema["const"]; ok && value != c {
 		return false
