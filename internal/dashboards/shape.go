@@ -1,0 +1,184 @@
+package dashboards
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+)
+
+const maxShapeProblems = 20
+
+// fieldAliases maps keys from other dashboard formats (mostly Grafana) to the native
+// field they stand for. The API drops unknown keys, so an alias leaves its field unset.
+var fieldAliases = map[string]map[string]string{
+	"panel": {"gridPos": "layout", "title": "name", "type": "visualization", "targets": "queries"},
+	"query": {"query": "expr", "legendFormat": "legend", "refId": "name", "datasource": "telemetry"},
+}
+
+// CheckDashboardArguments lists every field of create_dashboard/update_dashboard
+// arguments that misses or mistypes the dashboard schema, so one call reports them all.
+// Arguments it cannot read as an object pass through for the input schema to reject.
+func CheckDashboardArguments(args json.RawMessage) error {
+	var doc map[string]any
+	if err := json.Unmarshal(args, &doc); err != nil {
+		return nil
+	}
+	dashboard, ok := doc["dashboard"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	s := shapeChecker{requireFields: true}
+	s.check(dashboardObjectSchema(""), dashboard, "dashboard", "")
+	return s.err()
+}
+
+// checkPanelShape flags aliased and mistyped fields of a patch panel. Missing fields
+// are not flagged: patch_dashboard has always accepted partial panels.
+func checkPanelShape(panel map[string]any, path string) []string {
+	s := shapeChecker{}
+	s.check(panelObjectSchema(), panel, path, "panel")
+	return s.problems
+}
+
+type shapeChecker struct {
+	requireFields bool
+	problems      []string
+}
+
+func (s *shapeChecker) err() error {
+	if len(s.problems) == 0 {
+		return nil
+	}
+	lines := s.problems
+	if len(lines) > maxShapeProblems {
+		lines = append(lines[:maxShapeProblems:maxShapeProblems], fmt.Sprintf("and %d more", len(s.problems)-maxShapeProblems))
+	}
+	return errors.New("dashboard does not match the create_dashboard schema; nothing was written:\n- " + strings.Join(lines, "\n- "))
+}
+
+// check walks value against the type, required, properties and items keywords of
+// schema; kind names the object for fieldAliases.
+func (s *shapeChecker) check(schema map[string]any, value any, path, kind string) {
+	if !hasSchemaType(schema, value) {
+		s.problems = append(s.problems, fmt.Sprintf("%s: got %s, want %s", path, jsonKind(value), describeSchema(schema)))
+		return
+	}
+	if items, ok := schema["items"].(map[string]any); ok {
+		for i, item := range value.([]any) {
+			s.check(items, item, fmt.Sprintf("%s[%d]", path, i), kind)
+		}
+		return
+	}
+	obj, ok := value.(map[string]any)
+	if !ok {
+		return
+	}
+	props, _ := schema["properties"].(map[string]any)
+	required, _ := schema["required"].([]string)
+	aliases := fieldAliases[kind]
+	aliased := map[string]bool{}
+	for _, key := range sortedKeys(obj) {
+		if propSchema, ok := props[key].(map[string]any); ok {
+			s.check(propSchema, obj[key], path+"."+key, childKind(key))
+			continue
+		}
+		if native, ok := aliases[key]; ok {
+			if _, set := obj[native]; !set {
+				aliased[native] = true
+				s.problems = append(s.problems, fmt.Sprintf("%s.%s: unknown %s field; use %s", path, key, kind, describeField(props, native)))
+			}
+		}
+	}
+	if !s.requireFields {
+		return
+	}
+	for _, key := range required {
+		if _, set := obj[key]; !set && !aliased[key] {
+			propSchema, _ := props[key].(map[string]any)
+			s.problems = append(s.problems, fmt.Sprintf("%s.%s: missing; want %s", path, key, describeSchema(propSchema)))
+		}
+	}
+}
+
+func childKind(key string) string {
+	switch key {
+	case "panels":
+		return "panel"
+	case "queries":
+		return "query"
+	}
+	return ""
+}
+
+func hasSchemaType(schema map[string]any, value any) bool {
+	switch schema["type"] {
+	case "object":
+		_, ok := value.(map[string]any)
+		return ok
+	case "array":
+		_, ok := value.([]any)
+		return ok
+	case "string":
+		_, ok := value.(string)
+		return ok
+	case "number", "integer":
+		_, ok := value.(float64)
+		return ok
+	case "boolean":
+		_, ok := value.(bool)
+		return ok
+	}
+	return true
+}
+
+func jsonKind(value any) string {
+	switch value.(type) {
+	case nil:
+		return "null"
+	case map[string]any:
+		return "object"
+	case []any:
+		return "array"
+	case string:
+		return "string"
+	case float64:
+		return "number"
+	case bool:
+		return "boolean"
+	}
+	return fmt.Sprintf("%T", value)
+}
+
+func describeField(props map[string]any, name string) string {
+	schema, _ := props[name].(map[string]any)
+	if schema["type"] == "object" {
+		return name + " " + strings.TrimPrefix(describeSchema(schema), "object ")
+	}
+	return name
+}
+
+func describeSchema(schema map[string]any) string {
+	if enum, ok := schema["enum"].([]string); ok {
+		return "one of " + strings.Join(enum, ", ")
+	}
+	t, _ := schema["type"].(string)
+	required, _ := schema["required"].([]string)
+	if t == "object" && len(required) > 0 {
+		return "object {" + strings.Join(required, ", ") + "}"
+	}
+	if t == "" {
+		return "a value"
+	}
+	return t
+}
+
+func sortedKeys(obj map[string]any) []string {
+	keys := make([]string, 0, len(obj))
+	for k := range obj {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
+}
