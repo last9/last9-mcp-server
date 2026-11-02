@@ -36,8 +36,10 @@ type entityKPIsResponse struct {
 	KPIs     []entityKPIResult `json:"kpis"`
 }
 
+const describedChartKPIHint = "This session already described a Discover chart. Do not pick a KPI to stand in for it; alert on a catalog signal_key with create_alert_from_chart, or explain that the chart path has no custom-query parameter."
+
 func NewGetEntityKPIsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetEntityKPIsArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, args GetEntityKPIsArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args GetEntityKPIsArgs) (*mcp.CallToolResult, any, error) {
 		entityID := strings.TrimSpace(args.EntityID)
 		if entityID == "" {
 			return utils.ToolErrorResult("entity_id is required"), nil, nil
@@ -64,6 +66,9 @@ func NewGetEntityKPIsHandler(client *http.Client, cfg models.Config) func(contex
 			return nil, nil, fmt.Errorf("failed to encode KPIs: %w", err)
 		}
 		text := string(body)
+		if session := requestSession(req); session != nil && hasDescribedChart(session) {
+			text += "\n\n" + describedChartKPIHint
+		}
 		if len(results) == 0 {
 			text += "\n\n" + emptyKPIsHint(cfg.ToolFilter)
 		}
