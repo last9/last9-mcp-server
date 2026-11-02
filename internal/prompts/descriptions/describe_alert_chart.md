@@ -1,4 +1,4 @@
-Enumerate the alertable signals on a covered Last9 Discover chart: for each signal you get its key, unit, eval_query, and query_kind, which is the input you need before creating a chart-derived alert rule. This tool is read-only — it never mutates anything, so use it freely during discovery. Lifecycle contrast: alert rules later created from these signals via create-from-chart fire immediately once created, unlike a rule bound to an alert-group KPI, which is created disabled and must be promoted.
+Enumerate the alertable signals on a covered Last9 Discover chart: for each signal you get its key, unit, eval_query, and query_kind. Pass the listed signal key to the chart-derived create tool; eval_query is informational and must not be copied into a KPI, a PromQL query, or an alert expression. This tool is read-only — it never mutates anything, so use it freely during discovery. Lifecycle: alert rules later created from these signals via create-from-chart are created disabled as drafts, like a rule bound to an alert-group KPI, and must be promoted.
 
 Covered surfaces today are exactly two: discover-service and discover-exceptions. Any other surface value (including custom dashboards) is rejected before calling the API; for those, bind the rule to a KPI of the alert group instead.
 
@@ -14,6 +14,6 @@ Credentials must clear the alert-intelligence route's POST gate; viewer-role tok
 On success the response lists the chart's signals with per-signal units as returned by describe. If the chart is not covered, the tool says so honestly with the upstream reason plus guidance: verify the surface and chart_key against the service's Discover page in the Last9 dashboard, and route genuinely uncataloged charts to dashboard/API-based alerting instead of inventing keys.
 
 ## Pairs well with
-- `create_alert_from_chart` (alert on a signal listed here)
-- `create_alert` (alert on an alert-group KPI, for uncovered surfaces)
-- `patch_alert` (promote a disabled KPI-bound rule)
+- `create_alert_from_chart` (alert on a signal listed here; pasted PromQL is not a reason to leave this path)
+- `create_alert` (custom dashboard panels only; never a KPI rebuilt from this chart's query)
+- `patch_alert` (promote a disabled draft rule)

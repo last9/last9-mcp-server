@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"last9-mcp/internal/deeplink"
@@ -27,7 +28,9 @@ func createAlertFromChartTestConfig(baseURL string) models.Config {
 func TestCreateAlertFromChartAllDefaultsOmitted(t *testing.T) { // AE1
 	var gotBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotBody, _ = io.ReadAll(r.Body)
+		if r.Method == http.MethodPost {
+			gotBody, _ = io.ReadAll(r.Body)
+		}
 		_, _ = w.Write([]byte(`{"id":"rule-9","group_id":"grp-2","kpi_id":"kpi-3"}`))
 	}))
 	defer server.Close()
@@ -65,7 +68,7 @@ func TestCreateAlertFromChartAllDefaultsOmitted(t *testing.T) { // AE1
 		"eval_window: 5 minutes (backend default)",
 		"bad_minutes: 3 (backend default)",
 		"severity: breach (backend default for static chart rules)",
-		"delete_alert",
+		draftSentence,
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("result missing %q:\n%s", want, text)
@@ -81,7 +84,9 @@ func TestCreateAlertFromChartAllDefaultsOmitted(t *testing.T) { // AE1
 func TestCreateAlertFromChartExplicitScoreUnitThreshold(t *testing.T) { // AE4
 	var gotBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotBody, _ = io.ReadAll(r.Body)
+		if r.Method == http.MethodPost {
+			gotBody, _ = io.ReadAll(r.Body)
+		}
 		_, _ = w.Write([]byte(`{"id":"rule-apdex","group_id":"grp-apdex"}`))
 	}))
 	defer server.Close()
@@ -359,5 +364,149 @@ func TestCreateAlertFromChartPassesGroupIDAndDescription(t *testing.T) {
 	}
 	if _, ok := got["algorithm"]; ok {
 		t.Errorf("algorithm must not be sent: %v", got)
+	}
+}
+
+const draftSentence = "Created as a disabled draft; it will not fire. Promote it with patch_alert is_disabled=false only after the user confirms."
+
+type chartRequest struct{ method, path, body string }
+
+func chartDraftServer(t *testing.T, createReply string, patch http.HandlerFunc) (*httptest.Server, func() []chartRequest) {
+	t.Helper()
+	// A dropped connection gives the race detector no happens-before edge between the
+	// handler's append and the test's read, so the recorder needs its own lock.
+	var mu sync.Mutex
+	var reqs []chartRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		reqs = append(reqs, chartRequest{r.Method, r.URL.Path, string(raw)})
+		mu.Unlock()
+		if r.Method == http.MethodPatch {
+			patch(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(createReply))
+	}))
+	t.Cleanup(srv.Close)
+	return srv, func() []chartRequest {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]chartRequest(nil), reqs...)
+	}
+}
+
+func patchOK(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{}`)) }
+
+func dropConnection(w http.ResponseWriter, _ *http.Request) {
+	conn, _, err := w.(http.Hijacker).Hijack()
+	if err != nil {
+		panic(err)
+	}
+	_ = conn.Close()
+}
+
+var checkoutChartArgs = CreateAlertFromChartArgs{
+	Surface: "discover-service", ChartKey: "error_rate", ServiceName: "checkout", SignalKey: "error_ratio", Name: "checkout-error-rate",
+}
+
+func TestCreateAlertFromChartLeavesRuleDisabled(t *testing.T) {
+	srv, requests := chartDraftServer(t, `{"id":"rule-9","group_id":"grp-2"}`, patchOK)
+	result, _, err := NewCreateAlertFromChartHandler(srv.Client(), createAlertFromChartTestConfig(srv.URL))(context.Background(), nil, checkoutChartArgs)
+	if err != nil || result.IsError {
+		t.Fatalf("result=%s err=%v", resultText(result), err)
+	}
+	reqs := requests()
+	if len(reqs) != 2 {
+		t.Fatalf("requests = %+v, want create then disable", reqs)
+	}
+	if got := reqs[0]; got.method != http.MethodPost || got.path != "/alert_intelligence" {
+		t.Errorf("first request = %s %s, want the chart create", got.method, got.path)
+	}
+	want := chartRequest{http.MethodPatch, "/entities/grp-2/alert-rules/rule-9", `{"is_disabled":true}`}
+	if got := reqs[1]; got != want {
+		t.Errorf("second request = %+v, want %+v", got, want)
+	}
+	text := resultText(result)
+	if !strings.Contains(text, draftSentence) {
+		t.Errorf("result lacks the create_alert draft sentence:\n%s", text)
+	}
+	if strings.Contains(text, "active now") || strings.Contains(text, "fire immediately") {
+		t.Errorf("result still says the rule is live:\n%s", text)
+	}
+}
+
+func TestCreateAlertFromChartDisablesInPassedGroupWhenResponseOmitsIt(t *testing.T) {
+	srv, requests := chartDraftServer(t, `{"id":"rule-9"}`, patchOK)
+	args := checkoutChartArgs
+	args.GroupID = " grp-7 "
+	result, _, err := NewCreateAlertFromChartHandler(srv.Client(), createAlertFromChartTestConfig(srv.URL))(context.Background(), nil, args)
+	if err != nil || result.IsError {
+		t.Fatalf("result=%s err=%v", resultText(result), err)
+	}
+	if reqs := requests(); len(reqs) != 2 || reqs[1].path != "/entities/grp-7/alert-rules/rule-9" {
+		t.Fatalf("requests = %+v, want the disable in grp-7", reqs)
+	}
+	if text := resultText(result); !strings.Contains(text, "Created alert rule rule-9 in group grp-7 ") {
+		t.Errorf("result does not name the group the rule was disabled in:\n%s", text)
+	}
+}
+
+// Once the create has landed, a failed disable must say the rule exists and may be live,
+// never read as a failed create the agent would retry into a duplicate.
+func TestCreateAlertFromChartReportsFailedDisable(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		createReply string
+		patch       http.HandlerFunc
+		patches     int
+		want        []string
+	}{
+		{"disable rejected", `{"id":"rule-9","group_id":"grp-2"}`,
+			func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "boom", http.StatusInternalServerError) }, 1,
+			[]string{"rule-9", "HTTP 500", "is live", "patch_alert entity_id=grp-2 id=rule-9 is_disabled=true", "delete_alert", "do not retry create_alert_from_chart"}},
+		{"disable outcome unknown", `{"id":"rule-9","group_id":"grp-2"}`,
+			func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadGateway) }, 1,
+			[]string{"rule-9", "unknown", "HTTP 502", "may be live", "patch_alert entity_id=grp-2 id=rule-9 is_disabled=true", "do not retry create_alert_from_chart"}},
+		{"disable connection dropped", `{"id":"rule-9","group_id":"grp-2"}`, dropConnection, 1,
+			[]string{"rule-9", "unknown", "connection closed", "may be live", "patch_alert entity_id=grp-2 id=rule-9 is_disabled=true", "do not retry create_alert_from_chart"}},
+		{"no alert group to disable in", `{"id":"rule-9"}`, patchOK, 0,
+			[]string{"rule-9", "may be live", "get_alert_config", "is_disabled=true", "do not retry create_alert_from_chart"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, requests := chartDraftServer(t, tt.createReply, tt.patch)
+			result, _, err := NewCreateAlertFromChartHandler(srv.Client(), createAlertFromChartTestConfig(srv.URL))(context.Background(), nil, checkoutChartArgs)
+			if err != nil {
+				t.Fatalf("a landed create must be a tool result, got Go error %v", err)
+			}
+			if !result.IsError {
+				t.Fatalf("want isError, got: %s", resultText(result))
+			}
+			reqs, patches := requests(), 0
+			for _, r := range reqs {
+				if r.method == http.MethodPatch {
+					patches++
+				}
+			}
+			if patches != tt.patches {
+				t.Errorf("disable attempts = %d, want %d (never retried): %+v", patches, tt.patches, reqs)
+			}
+			text := resultText(result)
+			for _, want := range tt.want {
+				if !strings.Contains(text, want) {
+					t.Errorf("result missing %q:\n%s", want, text)
+				}
+			}
+			if strings.Contains(text, draftSentence) {
+				t.Errorf("failed disable must not claim a draft:\n%s", text)
+			}
+			// Generic client advice and raw transport errors (with the request URL) must not
+			// reach the agent: only a sanitized cause and the patch_alert step.
+			for _, leak := range []string{"retry later", srv.URL, "/alert-rules/"} {
+				if strings.Contains(text, leak) {
+					t.Errorf("result leaks %q:\n%s", leak, text)
+				}
+			}
+		})
 	}
 }

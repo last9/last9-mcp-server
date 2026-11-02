@@ -147,7 +147,7 @@ func QueryTraceAttributeDeviations(ctx context.Context, client *http.Client, cfg
 }
 
 func fetchAttributeDeviations(ctx context.Context, client *http.Client, cfg models.Config, args GetTraceAttributeDeviationsArgs) ([]byte, error) {
-	request, err := buildDeviationAPIRequest(args, time.Now())
+	request, err := buildDeviationAPIRequest(args, utils.Now())
 	if err != nil {
 		return nil, err
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -90,6 +91,13 @@ func parseValidateISO(value string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("invalid timestamp")
 }
 
+func timestampArgError(name, value string) string {
+	if strings.TrimSpace(value) == "" {
+		return name + " is required (RFC3339)"
+	}
+	return name + " must be an RFC3339 timestamp"
+}
+
 func validateDashboardInput(args ValidateDashboardArgs) (*validatedDashboardArgs, []string) {
 	var errors []string
 	hasID := args.DashboardID != nil && strings.TrimSpace(*args.DashboardID) != ""
@@ -100,11 +108,11 @@ func validateDashboardInput(args ValidateDashboardArgs) (*validatedDashboardArgs
 
 	start, startErr := parseValidateISO(args.StartTimeISO)
 	if startErr != nil {
-		errors = append(errors, "start_time_iso is required (RFC3339)")
+		errors = append(errors, timestampArgError("start_time_iso", args.StartTimeISO))
 	}
 	end, endErr := parseValidateISO(args.EndTimeISO)
 	if endErr != nil {
-		errors = append(errors, "end_time_iso is required (RFC3339)")
+		errors = append(errors, timestampArgError("end_time_iso", args.EndTimeISO))
 	}
 	if startErr == nil && endErr == nil {
 		if !end.After(start) {
@@ -268,7 +276,7 @@ func runValidateDashboard(ctx context.Context, exec *validateExecutor, parsed *v
 		},
 		"summary":   summary,
 		"panels":    panelRecords,
-		"timestamp": time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+		"timestamp": utils.Now().UTC().Format("2006-01-02T15:04:05Z"),
 	}
 
 	// Round-trip through JSON so validateReport sees []any shapes consistently.
@@ -455,6 +463,15 @@ func validateTarget(
 		"diagnosis":    nil,
 	}
 
+	// Checked before interpolation: an unknown type's pipeline operators ($and, $eq)
+	// would otherwise be reported as unresolved dashboard variables.
+	if err := checkQueryType(query); err != nil {
+		target["status"] = "invalid_query"
+		target["query_type"] = "unknown"
+		target["lint"] = []any{lintFinding("unknown_query_type", severityError, err.Error())}
+		return target
+	}
+
 	var resolved any
 	var used map[string]map[string]any
 	var unresolved []string
@@ -480,6 +497,16 @@ func validateTarget(
 		target["status"] = "unresolved_variable"
 		target["unresolved_variables"] = unresolved
 		return target
+	}
+
+	if exec.preview {
+		encoded, err := json.Marshal(resolved)
+		if err != nil || len(encoded) > previewInputBytes {
+			target["status"] = "invalid_query"
+			target["note"] = "resolved query exceeds 65536 bytes; shorten the query or variable values"
+			return target
+		}
+		target["resolved_query"] = resolved
 	}
 
 	findings := lintTarget(queryType, resolved, vizType)
@@ -518,6 +545,9 @@ func validateTarget(
 	}
 
 	target["evidence"] = boundedEvidence(outcome.payload)
+	if exec.preview {
+		boundPreviewEvidence(target)
+	}
 	if hasData(outcome.payload) {
 		target["status"] = "valid_with_data"
 	} else {
