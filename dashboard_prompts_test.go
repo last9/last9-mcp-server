@@ -46,11 +46,20 @@ func dashboardPromptSession(t *testing.T) (*mcp.ClientSession, context.Context) 
 func TestDashboardAuthoringPrompts(t *testing.T) {
 	session, ctx := dashboardPromptSession(t)
 	listed := map[string]bool{}
+	listedDescriptions := map[string]string{}
 	for p, err := range session.Prompts(ctx, nil) {
 		if err != nil {
 			t.Fatal(err)
 		}
 		listed[p.Name] = true
+		listedDescriptions[p.Name] = p.Description
+	}
+	resourceDescriptions := map[string]string{}
+	for r, err := range session.Resources(ctx, nil) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		resourceDescriptions[r.Name] = r.Description
 	}
 	tools := map[string]bool{}
 	for tool, err := range session.Tools(ctx, nil) {
@@ -70,6 +79,9 @@ func TestDashboardAuthoringPrompts(t *testing.T) {
 			}
 			if len(result.Messages) != 1 || result.Messages[0].Role != "user" {
 				t.Fatalf("unexpected prompt messages: %#v", result.Messages)
+			}
+			if result.Description != listedDescriptions[name] || resourceDescriptions[name] != listedDescriptions[name] {
+				t.Errorf("descriptions diverge: prompts/list %q, prompts/get %q, resources/list %q", listedDescriptions[name], result.Description, resourceDescriptions[name])
 			}
 			body, ok := result.Messages[0].Content.(*mcp.TextContent)
 			if !ok || body.Text == "" {
