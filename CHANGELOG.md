@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-11-02
+
 ### Added
 - Opt-in fake clock for reproducible evals and replays: set `LAST9_FAKE_NOW_ISO` to an RFC3339 instant and relative query windows (logs, trace deviations and waterfall, metric status, instant queries, alert episodes, change impact, workspace overview, current time, dashboard validation timestamp) resolve against it instead of the current time. It is off by default, an invalid value is a fatal startup error, and token refresh/expiry and elapsed-time measurement stay on the real clock. For evals and replays only, not production (#478).
 - `recommend_alert_config` lifecycle now names the authoring gates in order: KPI ids from `get_entity_kpis` (or one `create_kpi`), a `prometheus_range_query` check of the query and unit, `validate_alert_expression` until `{"valid":true}`, one `create_alert`, a read-back with `get_entity_alert_rules`, and promotion only after the user confirms (#336).
