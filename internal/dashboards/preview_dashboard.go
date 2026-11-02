@@ -130,7 +130,7 @@ func preparePreviewDashboard(ctx context.Context, api *last9api.Client, args Pre
 	if args.ID != "" {
 		current, err := apidashboards.GetDashboard(ctx, api, args.ID)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, mapDashboardFetchError(args.ID, err)
 		}
 		if current.Dashboard == nil {
 			return nil, nil, errors.New("get dashboard returned no dashboard object")

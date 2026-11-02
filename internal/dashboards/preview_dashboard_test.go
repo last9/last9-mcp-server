@@ -190,6 +190,20 @@ func TestPreviewPatchMissingDashboardFails(t *testing.T) {
 	}
 }
 
+func TestPreviewPatchUnknownIDNamesDashboard(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer srv.Close()
+	args := previewTestArgs()
+	args.ID = "nope-474"
+	args.Ops = []PatchDashboardOp{{Op: "set_title", Title: "Example"}}
+	_, _, err := NewPreviewDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))(context.Background(), nil, args)
+	if err == nil || !strings.Contains(err.Error(), `dashboard "nope-474" not found`) || strings.Contains(err.Error(), "capability") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestPreviewRejectsOversizedResolvedQueryBeforeExecution(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("oversized resolved query reached upstream")
