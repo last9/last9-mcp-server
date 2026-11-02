@@ -122,7 +122,7 @@ func TestDescribeMetricProbeRequestBounds(t *testing.T) {
 	}
 	probes := 0
 	for _, req := range f.requests {
-		if req["path"] != "/prom_query_instant" {
+		if !strings.HasSuffix(fmt.Sprint(req["query"]), "[5m:30s]") {
 			continue
 		}
 		probes++

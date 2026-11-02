@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"last9-mcp/internal/auth"
+	"last9-mcp/internal/last9api/prom"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 
@@ -24,7 +25,8 @@ type metricDescriptionFixture struct {
 	nativeCount  string
 	nativeStatus int
 	metadata     map[string]string
-	labels       map[string]string
+	labels       map[string]string // metric -> JSON list of label keys, served as one series
+	labelBodies  map[string]string // metric -> raw label-lookup response, overriding labels
 	status       int
 	labelStatus  int
 	requests     []map[string]any
@@ -50,7 +52,21 @@ func (f *metricDescriptionFixture) handler(t *testing.T) func(context.Context, *
 				fmt.Fprint(w, `{"status":"success","data":{}}`)
 			}
 		case "/prom_query_instant":
-			if strings.Contains(fmt.Sprint(body["query"]), "[5m:30s]") {
+			query := fmt.Sprint(body["query"])
+			if _, rest, ok := strings.Cut(query, "last_over_time("); ok {
+				if f.labelStatus != 0 {
+					w.WriteHeader(f.labelStatus)
+					return
+				}
+				metric, _, _ := strings.Cut(rest, "[")
+				if raw, ok := f.labelBodies[metric]; ok {
+					fmt.Fprint(w, raw)
+					return
+				}
+				fmt.Fprint(w, seriesWithLabels(t, f.labels[metric]))
+				return
+			}
+			if strings.Contains(query, "[5m:30s]") {
 				if f.probe == "" {
 					fmt.Fprint(w, `[]`)
 				} else {
@@ -67,16 +83,6 @@ func (f *metricDescriptionFixture) handler(t *testing.T) func(context.Context, *
 				value = "0"
 			}
 			fmt.Fprintf(w, `[{"metric":{},"value":[1700000000,%q]}]`, value)
-		case "/apm/labels":
-			if f.labelStatus != 0 {
-				w.WriteHeader(f.labelStatus)
-				return
-			}
-			if labels, ok := f.labels[metric]; ok {
-				fmt.Fprint(w, labels)
-			} else {
-				fmt.Fprint(w, `{"labels":[]}`)
-			}
 		default:
 			w.WriteHeader(404)
 		}
@@ -84,6 +90,25 @@ func (f *metricDescriptionFixture) handler(t *testing.T) func(context.Context, *
 	t.Cleanup(srv.Close)
 	cfg := models.Config{APIBaseURL: srv.URL, PrometheusReadURL: "https://prom.example", TokenManager: &auth.TokenManager{AccessToken: "test", ExpiresAt: time.Now().Add(time.Hour)}}
 	return NewDescribeMetricHandler(srv.Client(), cfg)
+}
+
+// seriesWithLabels answers a label lookup with one series carrying every key; no keys means no series.
+func seriesWithLabels(t *testing.T, keysJSON string) string {
+	var keys []string
+	if keysJSON != "" {
+		if err := json.Unmarshal([]byte(keysJSON), &keys); err != nil {
+			t.Errorf("label fixture %q: %v", keysJSON, err)
+		}
+	}
+	if len(keys) == 0 {
+		return `[]`
+	}
+	metric := map[string]string{}
+	for _, key := range keys {
+		metric[key] = "v"
+	}
+	raw, _ := json.Marshal([]prom.InstantSeries{{Metric: metric, Value: []any{1700000000, "1"}}})
+	return string(raw)
 }
 
 func metricDefinition(kind string) string {
@@ -222,17 +247,20 @@ func TestDescribeMetricLabelsAndBounds(t *testing.T) {
 	if got.LabelKeys == nil || !strings.Contains(strings.Join(got.Notes, " "), "not exhaustive") {
 		t.Fatalf("%+v", got)
 	}
-	var windows []float64
+	var queries []any
 	for _, r := range f.requests {
-		if r["path"] == "/apm/labels" {
-			windows = append(windows, r["window"].(float64))
-			if r["metric"] != "up" {
-				t.Fatalf("unscoped: %v", r)
-			}
+		if strings.Contains(fmt.Sprint(r["query"]), "last_over_time(") {
+			queries = append(queries, r["query"])
 		}
 	}
-	if len(windows) != 2 || windows[0] != 3600 || windows[1] != 4*24*3600 {
-		t.Fatalf("windows=%v", windows)
+	if len(queries) != 2 || queries[0] != "topk(50, last_over_time(up[3600s]))" || queries[1] != "topk(50, last_over_time(up[345600s]))" {
+		t.Fatalf("queries=%v", queries)
+	}
+	// A series without labels still proves the metric exists, so the wider lookback is not needed.
+	f = &metricDescriptionFixture{labelBodies: map[string]string{"up": `[{"metric":{},"value":[1700000000,"1"]}]`}}
+	got = describeOne(t, f, "up")
+	if len(got.LabelKeys) != 0 || strings.Contains(strings.Join(got.Notes, " "), "existence remains unverified") || len(f.requests) == 0 || strings.Contains(fmt.Sprint(f.requests), "345600s") {
+		t.Fatalf("%+v", got)
 	}
 }
 
@@ -249,8 +277,8 @@ func TestDescribeMetricTraceMetadata(t *testing.T) {
 }
 
 func TestDescribeMetricLabelFailuresAndCancellation(t *testing.T) {
-	for _, raw := range []string{"", "null", `{}`, `{"labels":null}`, `["job"] {}`, `{"labels":["job",null]}`, strings.Repeat(" ", 256<<10) + `[]`} {
-		got := describeOne(t, &metricDescriptionFixture{labels: map[string]string{"up": raw}}, "up")
+	for _, raw := range []string{"", "null", `{}`, `["job"]`, `[{"metric":{"job":"a"}}] {}`, `[{"metric":{" ":"a"}}]`, strings.Repeat(" ", 256<<10) + `[]`} {
+		got := describeOne(t, &metricDescriptionFixture{labelBodies: map[string]string{"up": raw}}, "up")
 		if !strings.Contains(strings.Join(got.Notes, " "), "label discovery failed") {
 			t.Fatalf("%q: %+v", raw[:min(len(raw), 50)], got)
 		}
@@ -317,7 +345,7 @@ func TestDescribeMetricNativeHistogram(t *testing.T) {
 		}
 		found := false
 		for _, request := range f.requests {
-			if request["path"] == "/prom_query_instant" && !strings.Contains(fmt.Sprint(request["query"]), "[5m:30s]") {
+			if strings.HasPrefix(fmt.Sprint(request["query"]), "count(") {
 				found = true
 				if request["query"] != "count(histogram_count(latency))" {
 					t.Fatalf("query=%v", request)

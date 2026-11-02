@@ -221,10 +221,15 @@ func traceQuantileMetric(name string) bool {
 	return ok && d.Quantile
 }
 
+// labelSeriesLimit bounds the series read per label lookup; keys are their union.
+const labelSeriesLimit = 50
+
 func (r metricDescriber) labels(ctx context.Context, name string) ([]string, []string, error) {
-	notes := []string{"Label keys are observed, not exhaustive; lookback is 60 minutes, widened to 4 days only when empty."}
+	notes := []string{fmt.Sprintf("Label keys are observed on at most %d series, not exhaustive; lookback is 60 minutes, widened to 4 days only when no series is found.", labelSeriesLimit)}
 	for _, window := range []int64{int64(utils.DefaultLookbackMinutes) * 60, sparseLookbackMinutes * 60} {
-		raw, err := prom.GetAPMLabels(ctx, r.api, prom.GetAPMLabelsInput{Datasource: r.datasource, Metric: name, Timestamp: r.timestamp, Window: window}, last9api.WithMaxResponseBytes(256<<10))
+		// The label endpoint can answer with keys from other metrics; only the metric's own series are evidence.
+		query := fmt.Sprintf("topk(%d, last_over_time(%s[%ds]))", labelSeriesLimit, name, window)
+		raw, err := prom.QueryInstantRaw(ctx, r.api, prom.QueryInstantInput{Datasource: r.datasource, Query: query, Timestamp: r.timestamp}, last9api.WithMaxResponseBytes(256<<10))
 		if ctx.Err() != nil {
 			return nil, nil, ctx.Err()
 		}
@@ -234,11 +239,11 @@ func (r metricDescriber) labels(ctx context.Context, name string) ([]string, []s
 			}
 			return []string{}, append(notes, "Incomplete label discovery: label discovery failed; retry with prometheus_labels."), nil
 		}
-		labels, err := decodeMetricLabels(raw)
+		labels, seriesCount, err := decodeSeriesLabels(raw)
 		if err != nil {
 			return []string{}, append(notes, "Incomplete label discovery: label discovery failed because the response was invalid or missing."), nil
 		}
-		if len(labels) == 0 {
+		if seriesCount == 0 {
 			continue
 		}
 		slices.Sort(labels)
@@ -270,33 +275,26 @@ func (r metricDescriber) labels(ctx context.Context, name string) ([]string, []s
 		}
 		return keys, notes, nil
 	}
-	return []string{}, append(notes, "No label keys observed in either lookback; metric existence remains unverified."), nil
+	return []string{}, append(notes, "No series observed in either lookback; metric existence remains unverified."), nil
 }
 
-func decodeMetricLabels(raw []byte) ([]string, error) {
-	var labels []string
-	if json.Unmarshal(raw, &labels) == nil && labels != nil {
-		return validateMetricLabels(labels)
+func decodeSeriesLabels(raw []byte) (labels []string, seriesCount int, err error) {
+	var series *[]prom.InstantSeries
+	if err := json.Unmarshal(raw, &series); err != nil {
+		return nil, 0, err
 	}
-	var envelope struct {
-		Labels *[]string `json:"labels"`
+	if series == nil {
+		return nil, 0, errors.New("missing series")
 	}
-	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return nil, err
-	}
-	if envelope.Labels == nil {
-		return nil, errors.New("missing labels")
-	}
-	return validateMetricLabels(*envelope.Labels)
-}
-
-func validateMetricLabels(labels []string) ([]string, error) {
-	for _, label := range labels {
-		if strings.TrimSpace(label) == "" {
-			return nil, errors.New("empty label key")
+	for _, s := range *series {
+		for key := range s.Metric {
+			if strings.TrimSpace(key) == "" {
+				return nil, 0, errors.New("empty label key")
+			}
+			labels = append(labels, key)
 		}
 	}
-	return labels, nil
+	return labels, len(*series), nil
 }
 
 func (r metricDescriber) nativeHistogram(ctx context.Context, name string) (bool, string, error) {
