@@ -91,6 +91,13 @@ func parseValidateISO(value string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("invalid timestamp")
 }
 
+func timestampArgError(name, value string) string {
+	if strings.TrimSpace(value) == "" {
+		return name + " is required (RFC3339)"
+	}
+	return name + " must be an RFC3339 timestamp"
+}
+
 func validateDashboardInput(args ValidateDashboardArgs) (*validatedDashboardArgs, []string) {
 	var errors []string
 	hasID := args.DashboardID != nil && strings.TrimSpace(*args.DashboardID) != ""
@@ -101,11 +108,11 @@ func validateDashboardInput(args ValidateDashboardArgs) (*validatedDashboardArgs
 
 	start, startErr := parseValidateISO(args.StartTimeISO)
 	if startErr != nil {
-		errors = append(errors, "start_time_iso is required (RFC3339)")
+		errors = append(errors, timestampArgError("start_time_iso", args.StartTimeISO))
 	}
 	end, endErr := parseValidateISO(args.EndTimeISO)
 	if endErr != nil {
-		errors = append(errors, "end_time_iso is required (RFC3339)")
+		errors = append(errors, timestampArgError("end_time_iso", args.EndTimeISO))
 	}
 	if startErr == nil && endErr == nil {
 		if !end.After(start) {

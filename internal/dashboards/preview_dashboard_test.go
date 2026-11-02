@@ -136,6 +136,8 @@ func TestPreviewDashboardInvalidInputDoesNotQuery(t *testing.T) {
 		{"ops with create", func(a *PreviewDashboardArgs) { a.Ops = []PatchDashboardOp{{Op: "set_title", Title: "x"}} }, "ops require id"},
 		{"id without ops", func(a *PreviewDashboardArgs) { a.Dashboard = nil; a.ID = "dash-1" }, "at least one"},
 		{"bad window", func(a *PreviewDashboardArgs) { a.EndTimeISO = a.StartTimeISO }, "after start"},
+		{"unparseable start", func(a *PreviewDashboardArgs) { a.StartTimeISO = "yesterday" }, "start_time_iso must be an RFC3339 timestamp"},
+		{"missing end", func(a *PreviewDashboardArgs) { a.EndTimeISO = "" }, "end_time_iso is required (RFC3339)"},
 		{"bad op", func(a *PreviewDashboardArgs) {
 			a.Dashboard = nil
 			a.ID = "dash-1"
