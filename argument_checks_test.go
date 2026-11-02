@@ -98,8 +98,10 @@ func TestStrictModeRefusesTokenlessDashboardWritesBeforeArgumentChecks(t *testin
 		"update_dashboard": `{"id":"dash-1","dashboard":{"name":"x","panels":[` + grafanaPanel + `]}}`,
 	} {
 		call := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` + tool + `","arguments":` + args + `}}`
-		if _, body := postRPC(t, ts, "", "", call, nil); !strings.Contains(body, "user token required") || strings.Contains(body, "gridPos") {
-			t.Errorf("%s: tokenless call was not refused for its token: %s", tool, body)
+		for _, header := range []string{"", "dashboards"} {
+			if _, body := postRPC(t, ts, header, "", call, nil); !strings.Contains(body, "user token required") || strings.Contains(body, "gridPos") {
+				t.Errorf("%s (toolsets header %q): tokenless call was not refused for its token: %s", tool, header, body)
+			}
 		}
 	}
 }
