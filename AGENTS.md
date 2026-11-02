@@ -439,7 +439,10 @@ results is the same defect class as a wrong number. Dependency bumps get a singl
   local override of Keep a Changelog's ordering — don't "fix" it. One contiguous run of
   bullets per section, no blank lines between them.
 - Newest first: a new bullet goes at the **top** of its section. After merging main into
-  your branch, put your entry above the one you merged in.
+  your branch, put your entry above the one you merged in. A clean merge of a release cut can
+  land your entry under the new version: `TestRepoChangelogEntriesStayUnreleased` in
+  `internal/changelog` fails a released version holding a PR it did not ship, or a new entry
+  that appears twice. CI's shallow checkout skips it, so run it after merging main.
 - End every bullet with the **PR** number, not the issue it closes: `… (#274).` A reader
   needs the diff, and the issue is one click from the PR. `internal/changelog` tests fail an
   `[Unreleased]` bullet without one, and on pull requests CI checks each number is a PR.
