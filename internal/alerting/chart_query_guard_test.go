@@ -26,6 +26,9 @@ func TestPromQLMetricNames(t *testing.T) {
 		`a / on (job) group_left (env) b unless bool c`:                                       {"a", "b", "c"},
 		`{__name__="raw", job="a"} + {"quoted"} + {"__name__"='single'}`:                      {"raw", "quoted", "single"},
 		`label_replace(up{job="}"}, "dst", "m1", "src", "(.*)") + x{job=` + "`m2`" + `}`:      {"up", "x"},
+		`sum(rate(m[5m])) default 0`:                                                          {"m"},
+		`rate(a[5m]) keep_metric_names if b ifnot c atan2 d`:                                  {"a", "b", "c", "d"},
+		`sum(a) by (job) limit 5 + on (job) group_left (env) prefix "p_" b`:                   {"a", "b"},
 	} {
 		if got := promQLNames(query); !reflect.DeepEqual(got, want) {
 			t.Errorf("promQLNames(%q) = %v, want %v", query, got, want)
@@ -38,7 +41,10 @@ func TestPromQLMetricNames(t *testing.T) {
 // must not.
 func TestChartQueryRefusalSelectorShapes(t *testing.T) {
 	t.Cleanup(resetDescribedChartMetrics)
-	recordDescribedChart(nil, "discover-service/chart-a", []alerts.Signal{{EvalQuery: "sum(rate(m1[5m]))", CanonicalQuery: "job:m2:rate5m"}})
+	recordDescribedChart(nil, "discover-service/chart-a", []alerts.Signal{{EvalQuery: "sum(rate(m1[5m])) default 0", CanonicalQuery: "job:m2:rate5m"}})
+	if refusal := chartQueryRefusal(nil, "query", `{__name__!="x"}`); !strings.Contains(refusal, "reads metric job:m2:rate5m ") {
+		t.Errorf("pattern refusal names a keyword, not the chart metric: %s", refusal)
+	}
 	for _, query := range []string{
 		`rate(m1[5m])`, `sum by (job) (m1)`, `m1 offset 5m`, `m1 @ 123`, `job:m2:rate5m`, `other / on() m1`,
 		`{__name__="m1"}`, `rate({__name__='m1', job="a"}[5m])`, `{"__name__"="m1"}`, `{"m1"}`, `{"m1", job="a"}`,
@@ -56,6 +62,7 @@ func TestChartQueryRefusalSelectorShapes(t *testing.T) {
 		`{__name__=~"m1x|y"}`, `{__name__!~"m.*|job:.*"}`, `label_replace(other, "dst", "m1", "src", "(.*)")`,
 		`other{__name__!="m1"}`, `{__name__=~"m1|x", __name__!="m1"}`, `x{__name__="m1"}`, `{__name__=~"m.*", __name__!~"m1|job:.*"}`,
 		"# m1\nother", "other # {__name__=\"m1\"}", `x{job="# m1"}`, "{__name__=\"x\" # \"m1\"\n}",
+		`sum(other) default 0`, `other if m3 ifnot m4 keep_metric_names`,
 	} {
 		if refusal := chartQueryRefusal(nil, "query", query); refusal != "" {
 			t.Errorf("%s refused: %s", query, refusal)
