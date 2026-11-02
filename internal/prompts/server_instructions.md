@@ -150,6 +150,9 @@ When a Last9 tool errors unexpectedly, returns data that looks wrong, misleads y
 {{- with tools "create_alert" "create_alert_from_chart"}}
 - Alert rules from {{.}} are created disabled{{with tools "patch_alert"}}; enable them with {{.}} after validating{{end}}.
 {{- end}}
+{{- with tools "create_alert_from_chart"}}
+- An alert on a Discover chart uses {{.}} with a catalog signal_key{{with tools "create_alert" "create_kpi"}}; never {{.}} even if the user pastes PromQL{{end}}.
+{{- end}}
 {{- with $refine}}
 - Refine an existing object with {{.}}.
 {{- end}}

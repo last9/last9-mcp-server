@@ -608,6 +608,38 @@ func TestCreateAlertDescriptionStatesDuplicateNameRefusal(t *testing.T) {
 	}
 }
 
+// A Discover-chart request that pastes PromQL must stay on create_alert_from_chart
+// (no query parameter) instead of rebuilding the chart via create_alert/create_kpi.
+func TestDiscoverChartAlertsStayOnCatalogPath(t *testing.T) {
+	if i := strings.Index(prompts.CreateAlertDescription, "Not for Discover charts"); i < 0 || i > 200 {
+		t.Error("create_alert must refuse Discover charts near the start, not only at the end")
+	}
+	if !strings.Contains(prompts.CreateAlertFromChartDescription, "There is no query, PromQL or expression parameter") {
+		t.Error("create_alert_from_chart must say it has no custom-query parameter")
+	}
+	if !strings.Contains(prompts.CreateAlertFromChartDescription, "never call create_alert, create_kpi, get_entity_kpis") {
+		t.Error("create_alert_from_chart must say not to fall through to create_alert/create_kpi")
+	}
+	if !strings.Contains(prompts.CreateKPIDescription, "Never use a Discover chart's eval_query") {
+		t.Error("create_kpi must refuse Discover-chart queries")
+	}
+	if !strings.Contains(prompts.GetEntityKPIsDescription, "If the user asked to alert on a Discover chart") {
+		t.Error("get_entity_kpis must not send Discover-chart alerts down the KPI path")
+	}
+	if !strings.Contains(prompts.DescribeAlertChartDescription, "eval_query is informational") {
+		t.Error("describe_alert_chart must not treat eval_query as create input")
+	}
+	if !strings.Contains(prompts.DescribeAlertChartDescription, "pasted PromQL is not a reason to leave this path") {
+		t.Error("describe_alert_chart must keep pasted PromQL on create_alert_from_chart")
+	}
+	if !strings.Contains(prompts.ValidateAlertExpressionDescription, "Not for Discover charts") {
+		t.Error("validate_alert_expression must refuse Discover-chart PromQL")
+	}
+	if !strings.Contains(prompts.RecommendAlertConfigDescription, "For a Discover chart, skip this tool") {
+		t.Error("recommend_alert_config must skip Discover-chart authoring")
+	}
+}
+
 // Cleanup and bulk removals must stay on resources an MCP agent created unless the user
 // names one; each tool must also say where the marker is listed.
 func TestRemovalDescriptionsScopeCleanupToMarkedResources(t *testing.T) {
