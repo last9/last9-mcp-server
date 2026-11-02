@@ -61,14 +61,12 @@ func TestChartQueryRefusalSelectorShapes(t *testing.T) {
 	}
 }
 
-// chartGuardServer fakes describe_alert_chart (one apdex signal), the group's KPIs and both
-// create routes, recording every write so a refusal can be shown to have sent nothing.
+// Writes are recorded so a refusal can be shown to have sent nothing.
 func chartGuardServer(t *testing.T) (*httptest.Server, func() []string) {
 	t.Helper()
 	return chartGuardServerWithKPIQuery(t, `max(queue_depth{queue="orders"})`)
 }
 
-// chartGuardServerWithKPIQuery is chartGuardServer with kpi-2 (queue_depth) on the given query.
 func chartGuardServerWithKPIQuery(t *testing.T, queueDepthQuery string) (*httptest.Server, func() []string) {
 	t.Helper()
 	t.Cleanup(resetDescribedChartMetrics)
@@ -223,7 +221,6 @@ func TestCreateAlertAllowsKPIsWithSelectorsExcludingTheChartMetric(t *testing.T)
 	}
 }
 
-// chartGuardMCP serves describe_alert_chart and create_kpi over in-memory MCP sessions.
 func chartGuardMCP(t *testing.T, upstream *httptest.Server) (connect func() *mcp.ClientSession, call func(*mcp.ClientSession, string, map[string]any) *mcp.CallToolResult) {
 	t.Helper()
 	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "0"}, nil)
@@ -296,7 +293,6 @@ func TestChartQueryGuardIsDroppedWhenSessionCloses(t *testing.T) {
 	}
 }
 
-// openServerSessions returns n live, distinct server sessions; they close at test cleanup.
 func openServerSessions(t *testing.T, n int) []*mcp.ServerSession {
 	t.Helper()
 	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "0"}, nil)

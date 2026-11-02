@@ -82,8 +82,7 @@ func refuseDuplicateRuleName(ctx context.Context, api *last9api.Client, entityID
 	return nil, nil
 }
 
-// refuseChartDerivedKPI returns a tool error when the rule binds a KPI whose query reads a
-// Discover chart described in this session. Sessions that described no chart skip the lookup.
+// Sessions that described no chart skip the KPI lookup, so they pay no extra request.
 func refuseChartDerivedKPI(ctx context.Context, api *last9api.Client, session *mcp.ServerSession, args CreateAlertArgs) (*mcp.CallToolResult, error) {
 	if !hasDescribedChart(session) {
 		return nil, nil

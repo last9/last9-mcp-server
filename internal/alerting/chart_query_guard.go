@@ -14,10 +14,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// An alert on a Discover chart may use only the chart's catalog signal, so create_alert_from_chart
-// takes no query. describe_alert_chart records the metrics its signals query, per MCP session,
-// and create_kpi / create_alert refuse a query on them instead of rebuilding the chart by hand.
-// Stateless --http gives every request its own session, so there only the tool copy routes agents.
+// A Discover chart alert may use only the chart's catalog signal, so create_kpi / create_alert must
+// not rebuild a described chart's query. Stateless --http gives every request its own session, so
+// there only the tool copy routes agents.
 const (
 	maxGuardedSessions      = 256
 	maxGuardedChartMetrics  = 64
@@ -48,8 +47,6 @@ func requestSession(req *mcp.CallToolRequest) *mcp.ServerSession {
 	return req.Session
 }
 
-// recordDescribedChart remembers the metrics the chart's signals query until the session closes.
-// Past maxGuardedSessions open sessions the oldest is evicted, so memory stays bounded.
 func recordDescribedChart(session *mcp.ServerSession, chart string, signals []alerts.Signal) {
 	chartMetrics.mu.Lock()
 	defer chartMetrics.mu.Unlock()
@@ -214,7 +211,6 @@ func promQLNameMatcher(op, value string) func(string) bool {
 	return pattern.MatchString
 }
 
-// unquotePromQL returns a PromQL string literal's value; anything else is returned as is.
 func unquotePromQL(token string) string {
 	if len(token) < 2 {
 		return token
