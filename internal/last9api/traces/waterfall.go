@@ -2,7 +2,6 @@ package traces
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -29,8 +28,8 @@ type GetWaterfallInput struct {
 }
 
 // GetWaterfall calls GET /cat/api/traces/v2/waterfall/{traceId}. The body is
-// returned undecoded: it is sanitized evidence meant to be relayed verbatim.
-func GetWaterfall(ctx context.Context, c *last9api.Client, in GetWaterfallInput) (json.RawMessage, error) {
+// returned unparsed: it is sanitized evidence meant to be relayed verbatim.
+func GetWaterfall(ctx context.Context, c *last9api.Client, in GetWaterfallInput) ([]byte, error) {
 	q := url.Values{}
 	q.Set("start", strconv.FormatInt(in.Start, 10))
 	q.Set("end", strconv.FormatInt(in.End, 10))
@@ -41,7 +40,7 @@ func GetWaterfall(ctx context.Context, c *last9api.Client, in GetWaterfallInput)
 	if in.Environment != "" {
 		q.Set("environment", in.Environment)
 	}
-	var body json.RawMessage
+	var body []byte
 	req := last9api.Request{Method: http.MethodGet, Path: pathWaterfall + url.PathEscape(in.TraceID)}
 	err := c.Do(ctx, opWaterfall, req, &body,
 		last9api.WithQuery(q), last9api.WithRegionQuery(), last9api.WithMaxResponseBytes(MaxWaterfallBytes))

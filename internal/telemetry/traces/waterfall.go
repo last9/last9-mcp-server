@@ -109,13 +109,17 @@ func waterfallAPIError(err error) error {
 	if errors.As(err, &transport) {
 		return newTraceTransportError(err)
 	}
+	var readErr *last9api.ResponseReadError
+	if errors.As(err, &readErr) {
+		return newTraceInvalidResponseError(err)
+	}
 	return err
 }
 
 // checkWaterfallEvidence fails closed unless the body is waterfall evidence that
 // names the sanitizer it went through. Keys are read exactly: encoding/json would
 // otherwise accept "Sanitizer", which a client reading "sanitizer" never sees.
-func checkWaterfallEvidence(body json.RawMessage) error {
+func checkWaterfallEvidence(body []byte) error {
 	if err := checkEvidenceContract(body, traceWaterfallAnalysisVersion); err != nil {
 		return err
 	}
@@ -144,6 +148,10 @@ const (
 
 // waterfallRefusedError is evidence get_trace_waterfall will not relay.
 type waterfallRefusedError struct{ Reason waterfallRefusal }
+
+// SystemError marks sanitizer refusals as trace-service faults; the caller can
+// shrink an oversized waterfall.
+func (e *waterfallRefusedError) SystemError() bool { return e.Reason != refusalTooLarge }
 
 func (e *waterfallRefusedError) Error() string {
 	switch e.Reason {

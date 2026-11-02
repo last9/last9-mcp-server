@@ -1,7 +1,6 @@
 package traces
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -90,7 +89,7 @@ func TestGetTraceWaterfallRelaysBackendEvidenceVerbatim(t *testing.T) {
 	if call.err != nil {
 		t.Fatal(call.err)
 	}
-	if got, want := waterfallText(t, call.result), string(bytes.TrimSpace(fixture)); got != want {
+	if got, want := waterfallText(t, call.result), string(fixture); got != want {
 		t.Fatalf("tool output differs from the backend body:\n%s", got)
 	}
 	if link, _ := call.result.Meta["reference_url"].(string); !strings.Contains(link, testValidTraceID) {
@@ -185,6 +184,7 @@ func TestGetTraceWaterfallRejectsNonConformingEvidence(t *testing.T) {
 	cases := map[string][]byte{
 		"empty body":             nil,
 		"not an object":          []byte(`[]`),
+		"data after the object":  append(waterfallFixture(t), `{}`...),
 		"wrong contract version": waterfallFixtureWith(t, func(p map[string]any) { p["contract_version"] = "investigation-evidence/v2" }),
 		"wrong analysis version": waterfallFixtureWith(t, func(p map[string]any) { p["analysis_version"] = "trace-attribute-deviations/v1" }),
 	}
