@@ -4,7 +4,7 @@ Before starting, confirm this session exposes the tools needed for this workflow
 
 Read last9://reference/alerting first for the expression grammar, the static vs adaptive fields, units and rule templates. Each gate below is mandatory; do not skip one to save a call.
 
-Scope: this workflow authors rules on alert-group KPIs, including custom dashboard panels. An alert on a Discover chart (service or exceptions page) is not authored here: use describe_alert_chart, then create_alert_from_chart with one of its signal_key values. Never rebuild a Discover chart's query with create_kpi or create_alert, even when the user supplies a custom query; those tools refuse it. If no signal fits, tell the user the chart alert supports only its catalog signals.
+Scope: this workflow authors rules on alert-group KPIs, including custom dashboard panels. An alert on a Discover chart (service or exceptions page) is not authored here: use describe_alert_chart, then create_alert_from_chart with one of its signal_key values; if this session does not expose them, tell the user and stop. Never rebuild a Discover chart's query with create_kpi or create_alert, even when the user supplies a custom query; those tools refuse it. If no signal fits, tell the user the chart alert supports only its catalog signals.
 
 Steps:
 1. Find the alert group: {{if .alert_group}}call get_alert_groups(alert_group_name="{{.alert_group}}") and take the matching group's id as entity_id{{else}}call get_alert_groups and pick the group that owns this signal as entity_id; if more than one fits, ask the user{{end}}.
