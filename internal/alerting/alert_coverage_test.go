@@ -15,21 +15,35 @@ import (
 	"time"
 
 	"last9-mcp/internal/auth"
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// entities is the alert group lookup body; blank serves coverageGroupEntities.
 type coverageStub struct {
-	status int
-	body   string
+	status         int
+	body           string
+	entities       string
+	entitiesStatus int
 
-	mu      sync.Mutex
-	queries []url.Values
+	mu            sync.Mutex
+	queries       []url.Values
+	entityLookups int
 }
+
+// Scoped tests match service "checkout" in env "prod" as entity ent-1.
+const coverageGroupEntities = `[{"entities":[
+	{"id":"ENT-1","name":"Checkout","metadata":{"labels":{"service_name":"checkout","env":"prod"}}},
+	{"id":"ent-2","name":"Cart","metadata":{"labels":{"service_name":"cart","env":"staging"}}}]}]`
 
 func (s *coverageStub) serve(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(io.Discard, r.Body)
+	if r.URL.Path == constants.EndpointEntitiesList {
+		s.serveEntities(w)
+		return
+	}
 	s.mu.Lock()
 	s.queries = append(s.queries, r.URL.Query())
 	s.mu.Unlock()
@@ -41,6 +55,22 @@ func (s *coverageStub) serve(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(s.status)
 	}
 	_, _ = w.Write([]byte(s.body))
+}
+
+func (s *coverageStub) serveEntities(w http.ResponseWriter) {
+	s.mu.Lock()
+	s.entityLookups++
+	s.mu.Unlock()
+	if s.entitiesStatus != 0 {
+		w.WriteHeader(s.entitiesStatus)
+		_, _ = w.Write([]byte(`{"error":"lookup failed https://internal.example"}`))
+		return
+	}
+	body := s.entities
+	if body == "" {
+		body = coverageGroupEntities
+	}
+	_, _ = w.Write([]byte(body))
 }
 
 func callAlertCoverage(t *testing.T, stub *coverageStub, args GetAlertCoverageArgs) (*mcp.CallToolResult, error) {
@@ -345,6 +375,75 @@ func TestGetAlertCoverage_EndpointMissingSaysCoverageUnchecked(t *testing.T) {
 	for _, want := range []string{"not available on this Last9 deployment", "coverage was not checked", "404"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error = %q, missing %q", err, want)
+		}
+	}
+}
+
+// The API returns an all-zero report for a scope matching no alert group, so a typo
+// must not read as full coverage.
+func TestGetAlertCoverage_UnmatchedScopeIsNotComplete(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		entities string
+		args     GetAlertCoverageArgs
+		scope    string
+	}{
+		{"unknown service", "", GetAlertCoverageArgs{Service: "mcp-qa-nonexistent-svc"}, `service "mcp-qa-nonexistent-svc"`},
+		{"service case variant", "", GetAlertCoverageArgs{Service: "Checkout"}, `service "Checkout"`},
+		{"service prefix", "", GetAlertCoverageArgs{Service: "check"}, `service "check"`},
+		{"unknown environment", "", GetAlertCoverageArgs{Environment: "production"}, `environment "production"`},
+		{"service in another environment", "", GetAlertCoverageArgs{Service: "checkout", Environment: "staging"},
+			`service "checkout", environment "staging"`},
+		{"unknown entity", "", GetAlertCoverageArgs{EntityID: "00000000-0000-0000-0000-000000000000"},
+			`entity_id "00000000-0000-0000-0000-000000000000"`},
+		{"entity outside service", "", GetAlertCoverageArgs{Service: "cart", EntityID: "ent-1"}, `service "cart", entity_id "ent-1"`},
+		{"organization without alert groups", `[{"entities":[]}]`, GetAlertCoverageArgs{}, "the whole organization"},
+		{"null lookup", `null`, GetAlertCoverageArgs{}, "the whole organization"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := callAlertCoverage(t, &coverageStub{body: emptyCoverageBody, entities: tc.entities}, tc.args)
+			if err != nil {
+				t.Fatalf("handler: %v", err)
+			}
+			out := decodeAlertCoverage(t, result)
+			if out.Complete {
+				t.Fatalf("complete = true for a scope matching no alert group; summary %q", out.Summary)
+			}
+			for _, want := range []string{"No alert group", tc.scope, "not confirmed", "get_alert_groups"} {
+				if !strings.Contains(out.Summary, want) {
+					t.Errorf("summary = %q, missing %q", out.Summary, want)
+				}
+			}
+		})
+	}
+}
+
+func TestGetAlertCoverage_ScopeLookupFailureIsNotComplete(t *testing.T) {
+	stub := &coverageStub{body: emptyCoverageBody, entitiesStatus: http.StatusInternalServerError}
+	result, err := callAlertCoverage(t, stub, GetAlertCoverageArgs{Service: "checkout"})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	out := decodeAlertCoverage(t, result)
+	if out.Complete {
+		t.Fatal("complete = true although the alert group lookup failed")
+	}
+	if !strings.Contains(out.Summary, "not confirmed") || strings.Contains(out.Summary, "internal.example") {
+		t.Errorf("summary = %q, want an unconfirmed statement without the upstream body", out.Summary)
+	}
+}
+
+func TestGetAlertCoverage_GapsSkipScopeLookup(t *testing.T) {
+	for _, body := range []string{
+		`{"generated_at":1,"muted_days":7,"gaps":[{"kind":"all_rules_disabled","entity_id":"e-1"}],"counts":{"all_rules_disabled":1}}`,
+		`{"generated_at":1,"muted_days":7,"gaps":[],"counts":{"uncovered_signal":3}}`,
+	} {
+		stub := &coverageStub{body: body}
+		if _, err := callAlertCoverage(t, stub, GetAlertCoverageArgs{Service: "nope"}); err != nil {
+			t.Fatalf("handler: %v", err)
+		}
+		if stub.entityLookups != 0 {
+			t.Errorf("body %s: entity lookups = %d, want 0 when the report already lists or counts gaps", body, stub.entityLookups)
 		}
 	}
 }
