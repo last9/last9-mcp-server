@@ -12,8 +12,6 @@ import (
 
 var citation = regexp.MustCompile(`\((#\d+(?:, #\d+)*)\)\.?$`)
 
-// UnreleasedBullets returns the bullets under "## [Unreleased]", up to the next
-// "## " heading, with indented continuation lines joined onto their bullet.
 func UnreleasedBullets(changelog string) []string {
 	var bullets []string
 	inUnreleased, inBullet := false, false
@@ -38,8 +36,6 @@ func UnreleasedBullets(changelog string) []string {
 	return bullets
 }
 
-// CitedNumbers returns the numbers in a bullet's trailing "(#N)" or "(#N, #M)"
-// citation, or nil when the bullet does not end with one.
 func CitedNumbers(bullet string) []int {
 	m := citation.FindStringSubmatch(strings.TrimSpace(bullet))
 	if m == nil {
@@ -56,11 +52,8 @@ func CitedNumbers(bullet string) []int {
 	return numbers
 }
 
-// IsPullRequest reports whether a number names a pull request rather than an issue.
 type IsPullRequest func(ctx context.Context, number int) (bool, error)
 
-// Check lists the [Unreleased] bullets that cite no number and, when isPR is
-// non-nil, the cited numbers that are not pull requests.
 func Check(ctx context.Context, changelog string, isPR IsPullRequest) ([]string, error) {
 	var problems []string
 	var cited []int

@@ -77,8 +77,6 @@ func TestCheckReportsBulletsWithoutCitation(t *testing.T) {
 	}
 }
 
-// TestRepoChangelogCitesNumbers keeps CHANGELOG.md's own [Unreleased] bullets
-// ending with a (#N) citation.
 func TestRepoChangelogCitesNumbers(t *testing.T) {
 	text, err := os.ReadFile("../../CHANGELOG.md")
 	if err != nil {
