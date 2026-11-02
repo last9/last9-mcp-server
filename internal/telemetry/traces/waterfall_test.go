@@ -207,7 +207,6 @@ func TestGetTraceWaterfallRejectsNonConformingEvidence(t *testing.T) {
 	}
 }
 
-// renameWaterfallKey returns the fixture with its top-level key from renamed to to.
 func renameWaterfallKey(t *testing.T, from, to string) []byte {
 	t.Helper()
 	return waterfallFixtureWith(t, func(p map[string]any) {
@@ -223,7 +222,6 @@ func prefixWaterfallKey(t *testing.T, member string) []byte {
 	return append([]byte("{"+member+","), waterfallFixtureWith(t, func(map[string]any) {})[1:]...)
 }
 
-// paddedWaterfall returns a valid fixture body of exactly size bytes.
 func paddedWaterfall(t *testing.T, size int) []byte {
 	t.Helper()
 	base := waterfallFixtureWith(t, func(p map[string]any) { p["padding"] = "" })

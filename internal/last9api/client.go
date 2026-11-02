@@ -68,7 +68,6 @@ func (e *ResponseTooLargeError) Error() string {
 	return fmt.Sprintf("%s: response exceeds %d bytes; narrow the request", e.Op, e.MaxBytes)
 }
 
-// ResponseReadError is a 2xx whose body could not be read in full.
 type ResponseReadError struct {
 	Op  string
 	Err error

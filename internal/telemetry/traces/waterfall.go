@@ -142,7 +142,6 @@ const (
 	refusalTooLarge         waterfallRefusal = "evidence_too_large"
 )
 
-// waterfallRefusedError is evidence get_trace_waterfall will not relay.
 type waterfallRefusedError struct{ Reason waterfallRefusal }
 
 // SystemError marks sanitizer refusals as trace-service faults; the caller can
