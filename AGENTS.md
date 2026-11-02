@@ -441,7 +441,8 @@ results is the same defect class as a wrong number. Dependency bumps get a singl
 - Newest first: a new bullet goes at the **top** of its section. After merging main into
   your branch, put your entry above the one you merged in.
 - End every bullet with the **PR** number, not the issue it closes: `… (#274).` A reader
-  needs the diff, and the issue is one click from the PR.
+  needs the diff, and the issue is one click from the PR. `internal/changelog` tests fail an
+  `[Unreleased]` bullet without one, and on pull requests CI checks each number is a PR.
 - State the observable behavior and the mechanism behind it. These entries are read by
   people debugging a version difference, so "fixed a bug in get_foo" is useless — say what
   was wrong, what they saw, and what they see now.
