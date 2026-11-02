@@ -182,7 +182,7 @@ func opsSummaryErrorResult(err error) (*mcp.CallToolResult, any, error) {
 	if apiErr.StatusCode == http.StatusNotFound {
 		return utils.ToolErrorResult("the alert health summary is not available in this environment (HTTP 404); tell the user alert raise and acknowledgement history is unavailable here, and do not retry"), nil, nil
 	}
-	return utils.ToolErrorResult(apiErr.Error()), nil, nil
+	return utils.ErrorResult(err), nil, nil
 }
 
 func shapeOpsSummary(window opsSummaryWindow, s alerts.GetHealthSummaryResponse) alertOperationsSummaryResult {
