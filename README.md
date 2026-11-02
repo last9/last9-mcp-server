@@ -219,6 +219,7 @@ The NPM route is easier on Windows — no path management.
 | ---------------------------- | -------------------- | ----------- |
 | `LAST9_REFRESH_TOKEN`        | *(required)*         | Refresh token from [API Access](https://app.last9.io/settings/api-access) |
 | `LAST9_DATASOURCE`           | org default          | Datasource/cluster name — useful when you have multiple Levitate clusters |
+| `LAST9_FAKE_NOW_ISO`         | *(unset)*            | **For evals/replays only; never set in production.** RFC3339 instant (e.g. `2026-01-02T15:04:05Z`) that replaces the current time when resolving relative windows such as `lookback_minutes`, so runs are reproducible. An invalid value is a startup error. Timeouts, caches and token expiry keep using real time |
 | `LAST9_API_HOST`             | `app.last9.io`       | Override the API host |
 | `LAST9_TOOLSETS`             | all tools            | Comma-separated toolsets to expose (`logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`). Alias: `LAST9_MCP_TOOLSETS` |
 | `LAST9_MCP_READ_ONLY`        | `false`              | Set `true` to serve only read-only tools; see [Read-only mode](#read-only-mode). A value that is not a boolean is a startup error. Alias: `LAST9_READ_ONLY` |
@@ -284,7 +285,7 @@ Supports PostgreSQL, MySQL, MongoDB, Redis, Aerospike, and anything else OTel tr
 - **`prometheus_label_values`** — Label values for a given series
 - **`prometheus_labels`** — All labels available for a series
 
-Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`, or per call with `datasource`. An omitted `datasource` uses the default; a near miss (case, separators, one missing, extra or transposed letter) uses its closest match, but a different word, number, environment or region never does; a looser match (two typos, a substring, one changed letter, two swapped letters that could each be a country code, like `es` for `se`) or an ambiguous name returns the candidates and runs no query (not an error). An additional content block names the datasource used whenever you did not name it exactly.
+Point these at a different datasource/cluster than the default by setting `LAST9_DATASOURCE`, or per call with `datasource`. An omitted `datasource` uses the default; a unique near miss that the matcher considers safe (such as a case variant) uses its closest match. A missing, extra or transposed letter is not guaranteed to resolve automatically: even one candidate can require confirmation when the edit could affect a region or environment code. Looser or ambiguous matches return candidates and run no query (not an error); unknown names return an error. An additional content block names the datasource used whenever you did not name it exactly. `get_metric_status`, `get_service_profile`, and `get_apm_service_deviations` resolve `datasource` the same way.
 
 ### Logs
 
@@ -314,6 +315,8 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_alert_groups`** — Configured Compass alert groups with metadata labels, team, tier, and rule counts — including groups with zero rules and groups that are not firing
 - **`get_alert_operations_summary`** — On-call health over a window: alerts raised vs acknowledged, backlog, deliveries and, with `include_rules`, the noisiest, flapping and unrouted rules. Every count carries its `status` (`available` / `partial` / `unavailable`)
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
+- **`get_entity_kpis`** — Every KPI (id, name, PromQL, unit) on one alert group, including KPIs no rule uses yet — the ids `create_alert` and `validate_alert_expression` need
+- **`create_kpi`** — Create a KPI (PromQL + unit) on an alert group when no existing KPI fits. Create once and keep the returned id
 - **`get_alerts`** — Currently firing alerts within a time window
 - **`get_alert_rule_state`** — Historical firing state (1/0) per alert rule over a time range, grouped by `rule_id`. Filterable by alert group, rule name, label filters, and state.
 - **`get_notification_channels`** — Configured notification channels (Slack, PagerDuty, email, etc.). `scope=channels` lists the channels themselves (ids for attaching); the default `attached` lists per-alert-group attachments
@@ -333,7 +336,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`detach_notification_channel`** — Remove one channel-to-alert-group attachment
 - **`delete_notification_channel`** — Permanently delete a channel that has no attachments
 
-The alert write tools (`create_alert`, `update_alert`, `patch_alert`, `delete_alert`, `create_alert_from_chart`, `mute_alert_group`, `acknowledge_alert`, `reassign_alert`, `create_notification_channel`, `attach_notification_channel`, `detach_notification_channel`, `delete_notification_channel`) need a token with write scope; `delete_alert`, `detach_notification_channel` and `delete_notification_channel` need delete scope instead. They are exposed only in the `alerts` toolset.
+The alert write tools (`create_kpi`, `create_alert`, `update_alert`, `patch_alert`, `delete_alert`, `create_alert_from_chart`, `mute_alert_group`, `acknowledge_alert`, `reassign_alert`, `create_notification_channel`, `attach_notification_channel`, `detach_notification_channel`, `delete_notification_channel`) need a token with write scope; `delete_alert`, `detach_notification_channel` and `delete_notification_channel` need delete scope instead. They are exposed only in the `alerts` toolset.
 
 Rules, channels and attachments these tools create are marked `created_via: last9-mcp` together with the MCP client's name and version (on rules, the `_l9_created_via_` and `_l9_created_via_client_` annotations, which `patch_alert` and `update_alert` keep and callers cannot set). `get_entity_alert_rules` and `get_notification_channels` show the marker, and `delete_alert`, `detach_notification_channel` and `delete_notification_channel` tell agents to clean up only marked resources unless the user names one.
 
@@ -341,6 +344,7 @@ Rules, channels and attachments these tools create are marked `created_via: last
 
 - **`list_dashboards`** — All custom dashboards in your org: IDs, names, and metadata
 - **`get_dashboard`** — Full dashboard definition by ID, including panels and queries
+- **`preview_dashboard`** — Read-only preview of an unsaved dashboard or patch: resolved queries, bounded per-panel results and a net panel diff; never saves
 - **`validate_dashboard`** — Read-only lint + execute + classify for a saved dashboard id or an inline `dashboard_definition` over a ≤24h window. Never creates or updates dashboards
 - **`create_dashboard`** — Create a net-new custom dashboard once (panels, queries, metadata). After the id is returned, edit panels with `patch_dashboard`.
 - **`update_dashboard`** — Restructure most of an existing dashboard by ID (full replacement; readonly system dashboards return an error). For individual panel edits use `patch_dashboard`
@@ -383,9 +387,9 @@ Read-only tools against the org's Grafana instance (via Last9's Grafana proxy). 
 
 **Deep links on every response.** Every tool returns a `deep_link` field — a direct URL into the Last9 dashboard for that exact query and time range. The agent can hand you the link; you click it; you're there.
 
-**Toolsets.** By default the server exposes every tool. Automation hosts that only need investigation (logs/traces/metrics/profiles) can set `LAST9_TOOLSETS=investigate` (or pass `--toolsets=investigate`) so `tools/list` stays small without client-side mass-disable. Named packs: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`. Unknown names fail fast. `get_current_time` and `get_workspace_overview` are served under every toolset. In HTTP mode a request can narrow this further with the `X-Last9-Toolsets` header (see [Per-request toolsets](#per-request-toolsets)). The `metrics` pack alone does **not** include `list_datasources` or `did_you_mean` — use `investigate` (or combine toolsets) when you need those discovery helpers.
+**Toolsets.** By default the server exposes every tool. Automation hosts that only need investigation (logs/traces/metrics/profiles) can set `LAST9_TOOLSETS=investigate` (or pass `--toolsets=investigate`) so `tools/list` stays small without client-side mass-disable. Named packs: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`. Unknown names fail fast. `get_current_time` and `get_workspace_overview` are served under every toolset. In HTTP mode a request can narrow this further with the `X-Last9-Toolsets` header (see [Per-request toolsets](#per-request-toolsets)). The `alerts` pack also serves the read-only `prometheus_range_query` and `get_dashboard`, which the `author-alert` prompt calls. The `metrics` pack alone does **not** include `list_datasources` or `did_you_mean` — use `investigate` (or combine toolsets) when you need those discovery helpers.
 
-**Tool reference resources.** Long logjson/tracejson/service-logs/metrics manuals are MCP resources (`last9://reference/logjson`, `last9://reference/tracejson`, `last9://reference/service_logs`, `last9://reference/metrics`, `last9://reference/investigation`), not always-on tool description text. Critical query rules stay on the tool description so agents that never call `resources/read` still get correct construction guidance. Discover org-specific fields with `get_log_attributes` / `get_log_attributes_for_pipeline` (and the trace equivalents)—they are not injected into descriptions.
+**Tool reference resources.** Long logjson/tracejson/service-logs/metrics manuals are MCP resources (`last9://reference/logjson`, `last9://reference/tracejson`, `last9://reference/service_logs`, `last9://reference/metrics`, `last9://reference/investigation`, `last9://reference/alerting`), not always-on tool description text. The alerting manual covers the alert expression grammar, static vs adaptive fields, units, what `validate_alert_expression` checks, and latency / error-rate / saturation rule templates. Critical query rules stay on the tool description so agents that never call `resources/read` still get correct construction guidance. Discover org-specific fields with `get_log_attributes` / `get_log_attributes_for_pipeline` (and the trace equivalents)—they are not injected into descriptions.
 
 **Chunked large results.** `get_logs` and `get_traces` handle large result sets through chunking rather than truncating. The default limit is 5000 entries for logs; configurable via `LAST9_MAX_GET_LOGS_ENTRIES`.
 
@@ -543,7 +547,7 @@ Returns a per-series summary by default: `points`, `missing_points` (availabilit
 - `lookback_minutes` (integer, optional): Current window. Default: 60.
 - `start_time_iso` / `end_time_iso` (string, optional): Explicit current window.
 - `baseline_start_time_iso` / `baseline_end_time_iso` (string, optional): Explicit baseline. Defaults to the immediately preceding equal-duration window.
-- `datasource` (string, optional): Restrict the comparison to one datasource.
+- `datasource` (string, optional): Omit for the default; approximate names resolve as for the Prometheus tools. The response names the default or closest match used; ambiguous names return candidates without querying.
 - `env` (string, optional): Defaults to `prod`.
 - `max_services` / `max_operations` (integer, optional): Default 10, max 10 each.
 
@@ -812,6 +816,29 @@ Returns JSON with `alerts_raised`, `acknowledged`, `unacknowledged`, `current_ba
 - `alert_group_name` / `alert_group_type` / `data_source_name` (string, optional)
 - `tags` (array, optional): All must match (AND logic).
 
+Each rule lists `Recent Evaluations`: 5 one-minute samples, newest first, each labelled by the UTC minute it ends; the newest ends 1–2 minutes before the call, since the monitor fills the latest minute late. `firing`; `ok` = the monitor reported the rule not firing (normal, resolved, pending or empty state, as `is_firing=0` in `get_alert_rule_state`); `unknown` = no monitor row for the rule (not evaluated yet, or that minute's lookup failed, noted at the top of the response), or a row whose state is none of firing, normal, resolved, pending or empty (e.g. `no_data`, `silenced`). Disabled rules show none. When more than 25 enabled rules match, history is omitted for all of them and the response says so.
+
+### get_entity_kpis
+
+Read-only; in the `alerts` and `investigate` toolsets. Lists every KPI on one alert group, including KPIs no alert rule uses yet. Use the returned ids in `expression_args` / `indicators_used`; never invent one.
+
+- `entity_id` (string, required): Alert group/entity UUID, from `get_alert_groups` or `get_alert_config`.
+
+Returns JSON `{"entity_id","count","kpis":[{"id","name","description","query","unit"}]}`, sorted by name. `unit` is a display label: thresholds compare against the raw query value. When no KPI fits, create one with `create_kpi`. An empty group's result names `create_kpi` only when the session serves it; with `--read-only` (unless `--allow-write-tools=create_kpi`) or the `investigate` toolset it says KPI creation needs a writable `alerts` session instead.
+
+### create_kpi
+
+Creates a KPI on an existing alert group; `alerts` toolset only. Use it only when `get_entity_kpis` has no KPI with the query you need. Check the query returns data with `prometheus_range_query` first: the API rejects only a query that does not parse, and saves a valid query for a metric that does not exist.
+
+- `entity_id` (string, required): Alert group/entity UUID.
+- `name` (string, required): Unique within the alert group; a second create with the same name is rejected as a conflict.
+- `query` (string, required): PromQL. To alert on a dashboard panel, take the panel's PromQL from `get_dashboard`.
+- `unit` (string, required): Unit of the query's raw value, e.g. `seconds`, `ms`, `percent`, `ratio`, `count`, `req/s`. It is a label only and converts nothing, so thresholds compare against the raw value.
+- `description` (string, optional)
+- `data_source_id` (string, optional): Defaults to the alert group's data source.
+
+No MCP tool deletes or edits a KPI (use the Last9 UI), so confirm name, query and unit before creating. Create once and keep the returned id for `expression_args` / `indicators_used`; on a name conflict, reuse the existing KPI's id from `get_entity_kpis`. On a timeout or connection error the create may or may not have been applied: check by name with `get_entity_kpis` before retrying. Returns `{"id","name","query","unit"}`.
+
 ### get_alerts
 
 - `time_iso` (string, optional): Evaluation time in RFC3339.
@@ -820,9 +847,9 @@ Returns JSON with `alerts_raised`, `acknowledged`, `unacknowledged`, `current_ba
 
 ### get_alert_rule_state
 
-- `start_time` (integer, required): Unix epoch start of the range (inclusive).
-- `end_time` (integer, required): Unix epoch end of the range (inclusive).
-- `step` (integer, required): Resolution in seconds between samples. The number of samples `((end_time - start_time) / step + 1)` is capped at 100.
+- `start_time` (integer or string, required): Start of the range (inclusive): Unix epoch seconds (`1718000000`) or RFC3339 (`2024-06-10T06:13:20Z`). Epoch milliseconds, microseconds and nanoseconds are converted to seconds; values before 2000-01-01 are rejected.
+- `end_time` (integer or string, required): End of the range (inclusive), in the same formats.
+- `step` (integer, required): Resolution in seconds between samples. The number of samples `((end_time - start_time) / step + 1)` is capped at 100. Each sample is one upstream call covering the `min(step, 3600)` seconds ending at its timestamp; samples are fetched 5 at a time, and the tool returns an error with retry guidance if they take longer than 60s.
 - `alert_group_id` (string, optional): Filter by alert group ID.
 - `rule_name` (string, optional): Regex filter on rule name.
 - `alert_group_name` (string, optional): Regex filter on alert group name.
@@ -853,7 +880,7 @@ Dry-runs an expression without saving. Use before `create_alert` / `update_alert
 
 - `entity_id` (string, required): Alert group/entity UUID.
 - `expression` (string, required): Arithmetic over indicators named by their KPI's exact name, e.g. `errors / requests`. At most 3 indicators. Write names with spaces, dots or dashes as-is (`Test Alert / errors`), exactly as `create_alert` saves them.
-- `indicators_used` (object, required, non-empty): Indicator name to KPI UUID owned by `entity_id`. Use each KPI's exact name: this dry-run accepts any name, but `create_alert` and `update_alert` reject `expression_args` keys that are not the bound KPI's name.
+- `indicators_used` (object, required, non-empty): Indicator name to KPI UUID owned by `entity_id`; list the group's KPI ids and names with `get_entity_kpis`. Use each KPI's exact name: this dry-run accepts any name, but `create_alert` and `update_alert` reject `expression_args` keys that are not the bound KPI's name.
 
 Only the arithmetic expression is checked (pass the inner metric expression, not an `adaptive_std_cmp(...)` wrapper); `condition` / `alert_condition` are not. The at-least-one-timeseries check runs only when more than one indicator is used.
 
@@ -989,7 +1016,7 @@ Returns up to 3 closest matches with similarity scores. Use this before any tool
 ### get_service_profile
 
 - `service_name` (string, required): Service to derive a telemetry profile for.
-- `datasource` (string, optional): Datasource name. Omit for the default.
+- `datasource` (string, optional): Datasource name. Omit for the default; an approximate name resolves as for the Prometheus tools.
 
 Returns a short investigation brief followed by the full profile as raw JSON: signal presence (`logs`/`traces`/`metrics` as `present`, `absent`, or `unknown`), language and runtime, deployment environments, log `signal_shape` (`log_format`, `severity_set`, `level_field`, `trace_context_in_logs`), and a recommended ingest fix where one applies. When the backend reports `freshness`, the brief adds a `last seen` line with `freshness.logs.last_seen` and `freshness.traces.last_seen` (RFC3339, or `none` when null), and a `traces stale` warning when `freshness.traces_stale` is `true`: spans stopped while logs continued, so investigate a regression around `freshness.traces.last_seen`, not missing setup. Derived upstream and cached with a ~15 minute TTL.
 
@@ -1004,6 +1031,8 @@ No parameters. Returns all custom dashboards in the org as a JSON array with `id
 - `id` (string, required): Dashboard UUID.
 - `region` (string, optional): Region for panel query population. Defaults to configured datasource region.
 
+To alert on a panel, see `last9://reference/alerting`.
+
 ### validate_dashboard
 
 Read-only. Never creates or updates dashboards. Accept exactly one of `dashboard_id` or `dashboard_definition`.
@@ -1014,6 +1043,25 @@ Read-only. Never creates or updates dashboards. Accept exactly one of `dashboard
 - `region` (string, optional): Region for panel query execution.
 
 Returns `dashboard_validation/v1`: per-panel lint + execute classification (`data` / `no_data` / `invalid` / `error`). Day-1 empty results classify as `valid_no_data` without diagnose probes.
+
+### preview_dashboard
+
+Read-only client-side preview. Pass either `dashboard` (the unsaved dashboard object from a create request) or `id` plus `ops` (the same ordered operations as `patch_dashboard`). Required `start_time_iso` and `end_time_iso` are RFC3339 timestamps spanning at most 24 hours. Optional `variables` contains scalar overrides; otherwise dashboard values and built-in defaults apply.
+
+```json
+{
+  "id": "dashboard-id",
+  "ops": [{"op": "update_panel", "panel_id": "panel-id", "fields": {"name": "Request latency"}}],
+  "start_time_iso": "2026-10-01T08:00:00Z",
+  "end_time_iso": "2026-10-01T09:00:00Z"
+}
+```
+
+Returns `saved: false`, a definition/query `validation` summary (including `definition_error` for a create-schema mismatch), and `panels` with `ok` / `empty` / `error` status, resolved queries and target diagnostics. PromQL and LogJSON execute; unsupported query types and unresolved variables make the panel an error. Valid non-query panels are `ok`; invalid panel definitions are `error`. Patch `diff` includes net `panels_added`, `panels_changed` (including moves) and `panels_removed`, plus ordered operation changes. IDs and zero-based indices identify panels; removed indices refer to the original dashboard. Saved panels must have distinct, nonempty IDs.
+
+Limits: 50 panels, 100 queries, 100 operations, 65536 JSON bytes each for input and candidate dashboard, and a 60-second execution deadline. Resolved queries over 65536 JSON bytes are rejected before execution. Evidence keeps at most three samples and 1024 JSON bytes per target, with `truncated: true` when samples are omitted. A JSON report over 262144 bytes fails with guidance to reduce the input.
+
+No dashboard is created or updated. This checks the candidate against the create schema and queries using the existing validator; it does not guarantee backend acceptance or rendering. Backend-assigned IDs, defaults, discarded fields or concurrent edits can change the saved result. The preview uses the same local patch operations and panel-version defaults as a write.
 
 ### create_dashboard
 
@@ -1121,7 +1169,36 @@ No parameters. Returns a safe projection of datasources (no credential fields).
 
 ## Testing
 
-See [TESTING.md](TESTING.md) for integration test setup and instructions.
+Run the test goroutine analyzer without executing the application tests:
+
+```bash
+make lint-test
+```
+
+This runs Go's `testinggoroutine` analyzer over all packages, including their
+`*_test.go` files, and checks it against unsafe and safe fixtures. Both CI test
+workflows run `go vet -testinggoroutine ./...` as a separate step, so cached
+package test results cannot bypass lint enforcement.
+
+The root package also runs the analyzer as a test. Use `go test -count=1 ./...`
+for the full suite with that check uncached: Go's test cache does not track
+internal package source files read by the analyzer subprocess. A plain
+`go test ./...` can reuse the root test's passing result after those files change.
+
+`Fatal`, `Fatalf`, and `FailNow` on `testing.T` or `testing.B` must run in the
+parent test goroutine. Workers should send errors back for the parent to assert:
+
+```go
+errs := make(chan error, 1)
+go func() { errs <- doWork() }()
+if err := <-errs; err != nil {
+    t.Fatal(err)
+}
+```
+
+The analyzer catches direct calls in `go func` closures; it is not a general
+interprocedural check for assertions hidden behind arbitrary helper calls.
+Integration tests skip unless `TEST_REFRESH_TOKEN` is set.
 
 ---
 

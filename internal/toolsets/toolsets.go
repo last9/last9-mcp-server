@@ -74,6 +74,10 @@ var named = map[string][]string{
 		"get_alert_groups",
 		"get_alert_operations_summary",
 		"get_entity_alert_rules",
+		"get_entity_kpis",
+		"create_kpi",
+		"prometheus_range_query",
+		"get_dashboard",
 		"describe_alert_chart",
 		"create_alert_from_chart",
 		"get_alert_rule_state",
@@ -87,6 +91,7 @@ var named = map[string][]string{
 		"list_dashboards",
 		"get_dashboard",
 		"validate_dashboard",
+		"preview_dashboard",
 		"create_dashboard",
 		"update_dashboard",
 		"patch_dashboard",
@@ -122,6 +127,7 @@ var investigateExtras = []string{
 	"did_you_mean",
 	"get_service_profile",
 	"list_datasources",
+	"get_entity_kpis",
 	"get_alert_operations_summary",
 }
 

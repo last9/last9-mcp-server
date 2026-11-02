@@ -4,7 +4,7 @@
 {{- $attributes := tools "get_log_attributes" "get_log_attributes_for_pipeline" "get_trace_attributes" "get_trace_attributes_for_pipeline" "get_trace_attribute_values" -}}
 {{- $metricNames := tools "prometheus_labels" "prometheus_label_values" -}}
 {{- $metricLookups := tools "prometheus_labels" "prometheus_label_values" "get_metric_status" -}}
-{{- $alertRules := tools "get_alert_groups" "get_alert_config" "get_entity_alert_rules" "get_notification_channels" -}}
+{{- $alertRules := tools "get_alert_groups" "get_alert_config" "get_entity_alert_rules" "get_entity_kpis" "get_notification_channels" -}}
 {{- $dashboards := tools "list_dashboards" "list_dashboard_snapshots" "grafana_search_dashboards" "grafana_list_folders" "grafana_list_folder_dashboards" -}}
 {{- $dashboardReads := tools "get_dashboard" "get_dashboard_snapshot" "grafana_get_dashboard" -}}
 {{- $serviceProfile := tools "get_service_profile" -}}
@@ -19,8 +19,8 @@
 {{- $raw := tools "get_logs" "get_traces" -}}
 {{- $logInventory := "" -}}
 {{- with $metricNames}}{{$raw = tools "prometheus_range_query" "prometheus_instant_query" "get_logs" "get_traces"}}{{else}}{{$logInventory = tools "prometheus_instant_query"}}{{end -}}
-{{- $create := tools "create_dashboard" "create_alert" "create_notification_channel" "create_alert_from_chart" -}}
-{{- $validate := tools "validate_dashboard" -}}
+{{- $create := tools "create_dashboard" "create_alert" "create_kpi" "create_notification_channel" "create_alert_from_chart" -}}
+{{- $validate := tools "validate_dashboard" "preview_dashboard" -}}
 {{- $alertValidate := tools "validate_alert_expression" -}}
 {{- $alertDesign := tools "recommend_alert_config" "describe_alert_chart" -}}
 {{- $dropRules := tools "get_drop_rules" -}}
@@ -39,7 +39,7 @@ When a request names no service or tool, call {{.}} first: it returns environmen
 For today's date or a relative window ("since 9am IST"), call {{.}}.
 {{- end}}
 {{- end}}
-{{- if or $services $attributes $metricLookups $logInventory $alertRules $dashboards}}
+{{- if or $services $attributes $metricNames $metricLookups $logInventory $alertRules $dashboards $dashboardReads}}
 
 ## Discover before you query
 Never guess service, environment, attribute, metric or label names, or dashboard ids; look them up and reuse the exact values.
@@ -60,7 +60,9 @@ Never guess service, environment, attribute, metric or label names, or dashboard
 {{- end}}
 {{- with $dashboards}}
 - Dashboards, snapshots and Grafana folders: {{.}}{{with $dashboardReads}}; open one by id with {{.}}{{end}}.
-{{- end}}
+{{- else}}{{with $dashboardReads}}
+- Open a dashboard by id with {{.}}.
+{{- end}}{{end}}
 {{- end}}
 {{- if or $serviceProfile $health $alerts $alertOps $changes $deviations $scoped $databases $profiles}}
 
@@ -146,6 +148,9 @@ Read these resources before writing a non-trivial query{{if has "get_logs"}}. Af
 {{- end}}
 {{- with tools "create_alert" "create_alert_from_chart"}}
 - Alert rules from {{.}} are created disabled{{with tools "patch_alert"}}; enable them with {{.}} after validating{{end}}.
+{{- end}}
+{{- with tools "create_alert_from_chart"}}
+- An alert on a Discover chart uses {{.}} with a catalog signal_key{{with tools "create_alert" "create_kpi"}}; never {{.}} even if the user pastes PromQL{{end}}.
 {{- end}}
 {{- with $refine}}
 - Refine an existing object with {{.}}.

@@ -16,4 +16,4 @@ Full investigation orchestration guide: `last9://reference/investigation`
 
 Parameters:
 - service_name: (Required) Service to derive a telemetry profile for
-- datasource: (Optional) Datasource name. Omit for default.
+- datasource: (Optional) Datasource; omit for default. A typo picks its closest match; ambiguous names list candidates, no query. An additional block names it unless exact.

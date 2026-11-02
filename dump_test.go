@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
@@ -126,7 +127,7 @@ func TestDumpTools(t *testing.T) {
 	for i, tool := range out.Tools {
 		byName[tool.Name] = i
 	}
-	for _, name := range []string{"get_traces", "get_service_summary", "prometheus_label_values", "get_logs", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel"} {
+	for _, name := range []string{"get_traces", "get_service_summary", "prometheus_label_values", "get_logs", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "get_entity_kpis"} {
 		i, ok := byName[name]
 		if !ok {
 			t.Fatalf("tool %q missing from dump", name)
@@ -693,17 +694,17 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	for _, tool := range out.Tools {
 		byName[tool.Name] = true
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "get_metric_status", "did_you_mean", "get_service_profile", "list_datasources", "get_alert_operations_summary"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "get_metric_status", "did_you_mean", "get_service_profile", "list_datasources", "get_entity_kpis", "get_alert_operations_summary"} {
 		if !byName[want] {
 			t.Errorf("investigate dump missing %q", want)
 		}
 	}
-	for _, deny := range []string{"get_alerts", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard"} {
+	for _, deny := range []string{"get_alerts", "get_alert_groups", "validate_alert_expression", "mute_alert_group", "acknowledge_alert", "reassign_alert", "create_notification_channel", "attach_notification_channel", "detach_notification_channel", "delete_notification_channel", "list_dashboards", "create_dashboard", "add_drop_rule", "list_dashboard_snapshots", "validate_dashboard", "create_kpi"} {
 		if byName[deny] {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}
 	}
-	if len(out.Tools) >= 42 {
+	if len(out.Tools) >= 44 {
 		t.Fatalf("investigate should expose fewer than full surface; got %d", len(out.Tools))
 	}
 }
@@ -877,5 +878,35 @@ func TestOnCallRunbookRoutesHTTPStatusToServiceLogs(t *testing.T) {
 	}
 	if strings.Contains(runbook, "write logjson") && !strings.Contains(runbook, "do not write logjson") {
 		t.Fatal("on_call_runbook must not tell the agent to write logjson for service 5xx")
+	}
+}
+
+func TestDumpToolsPreviewDashboardReadOnly(t *testing.T) {
+	for _, spec := range toolsets.ValidNames() {
+		for _, readOnly := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/read_only=%t", spec, readOnly), func(t *testing.T) {
+				allowed, err := toolsets.Parse(spec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				found := false
+				for _, tool := range dumpServedTools(t, toolsets.Filter{Tools: allowed, ReadOnly: readOnly}) {
+					if tool.Name != "preview_dashboard" {
+						continue
+					}
+					found = true
+					if tool.Description != prompts.PreviewDashboardDescription {
+						t.Error("preview description differs from embedded Markdown")
+					}
+					if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
+						t.Fatal("preview must be annotated read-only")
+					}
+				}
+				want := spec == "all" || spec == "dashboards"
+				if found != want {
+					t.Fatalf("preview served=%t want %t", found, want)
+				}
+			})
+		}
 	}
 }

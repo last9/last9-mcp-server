@@ -102,6 +102,8 @@ The four highest-token tools — `get_logs`, `get_traces`, `get_service_logs`,
 rules + a `last9://reference/...` pointer). Their full manuals live in
 `internal/prompts/references/` (`logjson.md`, `tracejson.md`, `service_logs.md`,
 `metrics.md`, `investigation.md`) and are registered as MCP resources in `resources.go`.
+`alerting.md` is the shared manual for the alert tools; their descriptions keep the critical
+rules and a one-line pointer to it.
 
 - The `*_base.md` suffix means progressive disclosure and nothing else. A description with
   no manual of its own must not carry it.
@@ -387,6 +389,10 @@ NO:  // loop over the rows and build the summary
 
 Leave existing comments alone.
 
+`comment_lint_test.go` fails on any comment block over 3 lines (`//go:` directives excluded)
+that is not in `testdata/long_comment_baseline.txt`. The baseline only shrinks: when you
+shorten or delete a listed block, delete its line; never add one.
+
 Exception: a function in an `internal/last9api/<area>` endpoint file that issues a call
 starts its doc comment with the method and path.
 
@@ -403,6 +409,13 @@ struct, unless a struct genuinely makes it less readable.
 
 `contracts/` holds JSON schemas and fixtures pinned by sha256 in `contracts_test.go`.
 Editing one without updating its pin fails a test whose message will not explain itself.
+
+## Pull requests
+
+**After every merge from main, recheck the PR against its base.** Review
+`git diff origin/main...HEAD` and `git log origin/main..HEAD`; update the PR title,
+description, and any stated commit count to match the remaining changes. Close the PR
+if the diff is empty.
 
 ## CHANGELOG
 

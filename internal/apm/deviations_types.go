@@ -2,19 +2,6 @@ package apm
 
 import "time"
 
-type DeviationArgs struct {
-	ServiceName      string  `json:"service_name,omitempty"`
-	Env              string  `json:"env,omitempty"`
-	Datasource       string  `json:"datasource,omitempty"`
-	StartTimeISO     string  `json:"start_time_iso,omitempty"`
-	EndTimeISO       string  `json:"end_time_iso,omitempty"`
-	LookbackMinutes  float64 `json:"lookback_minutes,omitempty"`
-	BaselineStartISO string  `json:"baseline_start_time_iso,omitempty"`
-	BaselineEndISO   string  `json:"baseline_end_time_iso,omitempty"`
-	MaxServices      int     `json:"max_services,omitempty"`
-	MaxOperations    int     `json:"max_operations,omitempty"`
-}
-
 type EvidenceQuality struct {
 	Level   string   `json:"level"`
 	Reasons []string `json:"reasons,omitempty"`
@@ -146,4 +133,3 @@ type DeviationResponse struct {
 	Outcome          string                `json:"outcome"`
 	Warnings         []string              `json:"warnings,omitempty"`
 }
-

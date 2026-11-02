@@ -461,7 +461,7 @@ func shouldChunkGetLogsQuery(logjsonQuery interface{}) bool {
 func executeLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, startTime, endTime int64, limit int, index string) (map[string]interface{}, error) {
 	resp, err := utils.MakeLogsJSONQueryAPI(ctx, client, cfg, logjsonQuery, startTime, endTime, limit, index)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call log JSON query API: %v", err)
+		return nil, fmt.Errorf("failed to call log JSON query API: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -472,7 +472,7 @@ func executeLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	return result, nil
@@ -583,7 +583,7 @@ func emptyStreamsResponse() map[string]interface{} {
 
 // parseTimeRangeFromArgs extracts start and end times from GetLogsArgs
 func parseTimeRangeFromArgs(args GetLogsArgs) (int64, int64, error) {
-	return parseTimeRangeFromArgsAt(args, time.Now().UTC())
+	return parseTimeRangeFromArgsAt(args, utils.Now().UTC())
 }
 
 func parseTimeRangeFromArgsAt(args GetLogsArgs, now time.Time) (int64, int64, error) {
