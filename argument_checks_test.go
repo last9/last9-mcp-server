@@ -51,6 +51,20 @@ func TestDashboardWritesNameEveryConditionallyRequiredField(t *testing.T) {
 	}
 }
 
+func TestDashboardArgumentCheckLeavesOtherShapesAndToolsToTheSchema(t *testing.T) {
+	session := newInMemoryClientSession(t)
+	badDashboard := `{"name":"x","panels":[` + grafanaPanel + `]}`
+	for tool, args := range map[string]string{
+		"create_dashboard": `{"dashboard":"x","metadata":{"_category":"custom","_type":"metrics"}}`,
+		"patch_dashboard":  `{"id":"dash-1","ops":[],"dashboard":` + badDashboard + `}`,
+	} {
+		t.Run(tool, func(t *testing.T) {
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args)})
+			assertToolError(t, result, toolErrorExpectation{absent: []string{"does not match the dashboard schema"}})
+		})
+	}
+}
+
 func TestDashboardArgumentCheckRunsAfterIntegerCoercion(t *testing.T) {
 	session := newInMemoryClientSession(t)
 	args := `{"dashboard":{"name":"x","panels":[{"name":"p","version":"1","gridPos":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"section"}}]}}`

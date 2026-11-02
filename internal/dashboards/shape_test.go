@@ -43,12 +43,28 @@ func TestCheckDashboardArguments_AcceptsValidAndLeavesOtherShapesToSchema(t *tes
 		"no panels":        `{"dashboard":{"name":"x","panels":[]}}`,
 		"extra panel keys": `{"dashboard":{"name":"x","panels":[{"id":"p","name":"p","description":"d","unit":"s","layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"section"}}]}}`,
 		"title with name":  `{"dashboard":{"name":"x","panels":[{"name":"p","title":"p","layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"markdown"}}]}}`,
+		"extra dashboard and query keys": `{"dashboard":{"name":"x","foo":1,"panels":[{"name":"p","layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"stat"},` +
+			`"queries":[{"name":"A","type":"range","expr":"1","telemetry":"metrics","query_type":"promql","legend":{"type":"auto","value":""},"foo":1}]}]}}`,
 		"no dashboard":     `{}`,
+		"dashboard string": `{"dashboard":"x"}`,
+		"dashboard null":   `{"dashboard":null}`,
 		"not an object":    `[]`,
 		"not json":         `{`,
 	} {
 		if err := CheckDashboardArguments(json.RawMessage(args)); err != nil {
 			t.Errorf("%s: unexpected error %v", name, err)
+		}
+	}
+}
+
+func TestCheckDashboardArguments_NamesWrongContainerTypes(t *testing.T) {
+	for args, want := range map[string]string{
+		`{"dashboard":{"name":"x","panels":{}}}`:     "dashboard.panels: got object, want array",
+		`{"dashboard":{"name":"x","panels":[null]}}`: "dashboard.panels[0]: got null, want object {name, layout, visualization}",
+	} {
+		err := CheckDashboardArguments(json.RawMessage(args))
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: want %q, got %v", args, want, err)
 		}
 	}
 }
