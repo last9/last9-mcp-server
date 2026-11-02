@@ -22,6 +22,15 @@ func fakeGitHub(t *testing.T) GitHub {
 			_, _ = w.Write([]byte(`{"number":481}`))
 		case "/repos/last9/repo/issues/500":
 			w.WriteHeader(http.StatusBadGateway)
+		case "/repos/last9/repo/contents/CHANGELOG.md":
+			if got := r.Header.Get("Accept"); got != "application/vnd.github.raw+json" {
+				t.Errorf("Accept = %q", got)
+			}
+			if r.URL.Query().Get("ref") != "abc123" {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			_, _ = w.Write([]byte("## [Unreleased]\n- Base entry (#1).\n"))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -47,6 +56,48 @@ func TestGitHubIsPullRequestFailsOnUnexpectedStatus(t *testing.T) {
 	_, err := fakeGitHub(t).IsPullRequest(context.Background(), 500)
 	if err == nil || !strings.Contains(err.Error(), "502") {
 		t.Fatalf("err = %v, want one naming the 502", err)
+	}
+}
+
+func TestGitHubFileAt(t *testing.T) {
+	got, err := fakeGitHub(t).FileAt(context.Background(), "CHANGELOG.md", "abc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "## [Unreleased]\n- Base entry (#1).\n" {
+		t.Fatalf("FileAt = %q", got)
+	}
+	if _, err := fakeGitHub(t).FileAt(context.Background(), "CHANGELOG.md", "missing"); err == nil || !strings.Contains(err.Error(), "404") {
+		t.Fatalf("err = %v, want one naming the 404", err)
+	}
+}
+
+func TestReadPullRequestEvent(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		path := dir + "/" + name
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	pr, err := ReadPullRequestEvent(write("pr.json", `{"pull_request":{"number":30,"base":{"sha":"abc123"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pr == nil || pr.Number != 30 || pr.BaseSHA != "abc123" {
+		t.Fatalf("event = %+v, want #30 on abc123", pr)
+	}
+
+	if pr, err := ReadPullRequestEvent(write("push.json", `{"ref":"refs/heads/main"}`)); err != nil || pr != nil {
+		t.Fatalf("push event = %+v, %v; want nil, nil", pr, err)
+	}
+	if _, err := ReadPullRequestEvent(write("bad.json", `{"pull_request":{"number":30}}`)); err == nil {
+		t.Fatal("want an error for a pull_request event without a base sha")
+	}
+	if _, err := ReadPullRequestEvent(dir + "/absent.json"); err == nil {
+		t.Fatal("want an error for a missing event file")
 	}
 }
 
@@ -94,6 +145,28 @@ func TestRepoChangelogCitesPullRequests(t *testing.T) {
 	for _, p := range problems {
 		t.Error(p)
 	}
+
+	// A subtest, so the workflow's -run filter for this test picks it up.
+	t.Run("added bullets cite this pull request", func(t *testing.T) {
+		eventPath := os.Getenv("GITHUB_EVENT_PATH")
+		if eventPath == "" {
+			t.Skip("GITHUB_EVENT_PATH not set")
+		}
+		pr, err := ReadPullRequestEvent(eventPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pr == nil {
+			t.Skip("not a pull_request event")
+		}
+		base, err := gh.FileAt(t.Context(), "CHANGELOG.md", pr.BaseSHA)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range CheckCitesPullRequest(base, string(text), pr.Number) {
+			t.Error(p)
+		}
+	})
 }
 
 func envOr(key, fallback string) string {
