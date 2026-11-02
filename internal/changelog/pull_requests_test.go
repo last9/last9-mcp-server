@@ -70,8 +70,6 @@ func TestCheckStopsOnResolveError(t *testing.T) {
 	}
 }
 
-// TestRepoChangelogCitesPullRequests resolves every number CHANGELOG.md's
-// [Unreleased] bullets cite. CI runs it with GITHUB_TOKEN on pull requests.
 func TestRepoChangelogCitesPullRequests(t *testing.T) {
 	token := os.Getenv("GITHUB_TOKEN")
 	if token == "" {

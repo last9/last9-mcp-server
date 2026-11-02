@@ -33,9 +33,7 @@ func entries(changelog string) []entry {
 	return out
 }
 
-// CheckPlacement lists head bullets that a released version did not ship, judged against
-// base (the merge base), and new bullets that appear more than once. A version base lacks
-// is a release cut and may hold any bullet.
+// A version base lacks is a release cut, so it may hold any bullet.
 func CheckPlacement(base, head string) []string {
 	shipped := map[string]release{}
 	known := map[string]bool{}

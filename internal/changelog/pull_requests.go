@@ -16,7 +16,6 @@ type GitHub struct {
 	Token  string
 }
 
-// IsPullRequest calls GET /repos/{repo}/issues/{number}; a missing number is not a pull request.
 func (g GitHub) IsPullRequest(ctx context.Context, number int) (bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/repos/%s/issues/%d", g.APIURL, g.Repo, number), nil)
 	if err != nil {
