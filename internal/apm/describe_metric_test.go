@@ -461,6 +461,8 @@ func TestDescribeMetricSemanticLabelsSurviveOutputCap(t *testing.T) {
 		{"custom_duration_bucket", "custom_duration_bucket", "le", "histogram", "histogram_quantile(0.95, sum by (le) (rate(custom_duration_bucket[5m])))"},
 		{"custom_duration_sum", "custom_duration_bucket", "le", "histogram", "histogram_quantile(0.95, sum by (le) (rate(custom_duration_bucket[5m])))"},
 		{"custom_duration_count", "custom_duration_bucket", "le", "histogram", "histogram_quantile(0.95, sum by (le) (rate(custom_duration_bucket[5m])))"},
+		{"custom_latency_sum", "custom_latency", "quantile", "summary", ""},
+		{"custom_latency_count", "custom_latency", "quantile", "summary", ""},
 	} {
 		for _, extra := range []int{18, 19, 20, 21} {
 			t.Run(fmt.Sprintf("%s/extra=%d", tc.name, extra), func(t *testing.T) {
