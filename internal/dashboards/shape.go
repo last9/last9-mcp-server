@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 )
@@ -220,9 +221,12 @@ func hasSchemaType(schema map[string]any, value any) bool {
 	case "string":
 		_, ok := value.(string)
 		return ok
-	case "number", "integer":
+	case "number":
 		_, ok := value.(float64)
 		return ok
+	case "integer":
+		n, ok := value.(float64)
+		return ok && n == math.Trunc(n)
 	case "boolean":
 		_, ok := value.(bool)
 		return ok
