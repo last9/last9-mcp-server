@@ -528,6 +528,40 @@ func TestServerInstructionsPutPipelineTimeWindowInArguments(t *testing.T) {
 	}
 }
 
+func TestServerInstructionsSayDiscoverChartAlertsUseCatalog(t *testing.T) {
+	tests := []struct {
+		name  string
+		tools []string
+		want  string
+	}{
+		{
+			name:  "chart plus kpi path",
+			tools: []string{"create_alert_from_chart", "create_alert", "create_kpi"},
+			want:  "- An alert on a Discover chart uses `create_alert_from_chart` with a catalog signal_key; never `create_alert`, `create_kpi` even if the user pastes PromQL.",
+		},
+		{
+			name:  "chart only",
+			tools: []string{"create_alert_from_chart"},
+			want:  "- An alert on a Discover chart uses `create_alert_from_chart` with a catalog signal_key.",
+		},
+		{name: "no chart tool", tools: []string{"create_alert", "create_kpi"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			var got string
+			for _, line := range strings.Split(instructions, "\n") {
+				if strings.Contains(line, "Discover chart") {
+					got = line
+				}
+			}
+			if got != tt.want {
+				t.Errorf("Discover-chart line = %q, want %q:\n%s", got, tt.want, instructions)
+			}
+		})
+	}
+}
+
 func TestServerInstructionsSayCreateAlertRulesStartDisabled(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -1,4 +1,4 @@
-Create a KPI (indicator) on an existing alert group so alert rules can bind to it. Use it only when `get_entity_kpis` shows no KPI with the query you need.
+Create a KPI (indicator) on an existing alert group so alert rules can bind to it. Use it only when `get_entity_kpis` shows no KPI with the query you need. Never use a Discover chart's eval_query or a PromQL the user pasted for that chart; that alert is `create_alert_from_chart` with a catalog signal_key, or an explanation that the chart path has no custom-query parameter.
 
 On a timeout or connection error the create may or may not have been applied; check by name with get_entity_kpis before retrying.
 
