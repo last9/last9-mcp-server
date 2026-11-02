@@ -1,6 +1,6 @@
 # Dashboard query guide
 
-This prompt takes no arguments. Use it with `create_dashboard_guide` and `dashboard_examples`; it is also available at `last9://reference/query_guide`. Examples are patterns, not a catalog of metrics available in a tenant. Discover the datasource, metrics, labels, values, units and metric semantics before substituting them. If tools are not available in this session, report the missing validation rather than inventing a result.
+This prompt takes no arguments. Use it with `create_dashboard_guide` and `dashboard_examples`; it is also available at `last9://reference/query_guide`. Examples are patterns, not a catalog of metrics available in a tenant. Discover the datasource, metrics, labels, values, units and metric semantics before substituting them. Discovery and test queries need the dashboards, metrics, logs and traces toolsets (`--toolsets=dashboards,metrics,logs,traces`); if a tool is not available in this session, report the missing validation rather than inventing a result.
 
 ## PromQL and metric types
 
