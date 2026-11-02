@@ -68,6 +68,16 @@ func (e *ResponseTooLargeError) Error() string {
 	return fmt.Sprintf("%s: response exceeds %d bytes; narrow the request", e.Op, e.MaxBytes)
 }
 
+// ResponseReadError is a 2xx whose body could not be read in full.
+type ResponseReadError struct {
+	Op  string
+	Err error
+}
+
+func (e *ResponseReadError) Error() string { return fmt.Sprintf("%s: read response: %v", e.Op, e.Err) }
+
+func (e *ResponseReadError) Unwrap() error { return e.Err }
+
 func (c *Client) Do(ctx context.Context, op string, r Request, out any, opts ...Option) error {
 	o := applyOptions(opts)
 
@@ -196,7 +206,7 @@ func decodeResponse(resp *http.Response, op string, out any, required bool, maxB
 	if out == nil {
 		// A body cut off mid-read means the answer never fully arrived, even after a 2xx.
 		if _, err := io.CopyN(io.Discard, resp.Body, 4<<10); err != nil && err != io.EOF {
-			return fmt.Errorf("%s: read response: %w", op, err)
+			return &ResponseReadError{Op: op, Err: err}
 		}
 		return nil
 	}
@@ -206,7 +216,7 @@ func decodeResponse(resp *http.Response, op string, out any, required bool, maxB
 	}
 	raw, err := io.ReadAll(src)
 	if err != nil {
-		return fmt.Errorf("%s: read response: %w", op, err)
+		return &ResponseReadError{Op: op, Err: err}
 	}
 	if maxBytes > 0 && int64(len(raw)) > maxBytes {
 		return &ResponseTooLargeError{Op: op, MaxBytes: maxBytes}
