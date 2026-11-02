@@ -53,6 +53,8 @@ func TestChartQueryRefusalSelectorShapes(t *testing.T) {
 		`{__name__!="x"}`, `{__name__!~"x.*"}`, `{__name__=~"("}`,
 		`m1{__name__!="x"}`, `{__name__=~"m1|x", __name__!="x"}`, `{__name__!="m1"} + {__name__=~"m1"}`,
 		"# custom\n{__name__=\"m1\"}", "x # custom\n+ {__name__=~\"m.*\"}", "{job=\"a\" # x\n, __name__=\"m1\"}", `m1{job="#"}`,
+		`{__name__="x" or __name__="m1"}`, `{__name__="x" or __name__=~"m.*"}`, `{job="a" or __name__="m1", job="b"}`,
+		`sum(`, `m1{`,
 	} {
 		if refusal := chartQueryRefusal(nil, "query", query); !strings.Contains(refusal, "nothing was created") {
 			t.Errorf("%s was not refused", query)
@@ -64,6 +66,7 @@ func TestChartQueryRefusalSelectorShapes(t *testing.T) {
 		`other{__name__!="m1"}`, `{__name__=~"m1|x", __name__!="m1"}`, `x{__name__="m1"}`, `{__name__=~"m.*", __name__!~"m1|job:.*"}`,
 		"# m1\nother", "other # {__name__=\"m1\"}", `x{job="# m1"}`, "{__name__=\"x\" # \"m1\"\n}",
 		`sum(other) default 0`, `other if m3 ifnot m4 keep_metric_names`,
+		`{__name__="x" or __name__="y"}`, `{__name__=~"m.*", __name__!="m1" or __name__="x", __name__!="m1"}`,
 	} {
 		if refusal := chartQueryRefusal(nil, "query", query); refusal != "" {
 			t.Errorf("%s refused: %s", query, refusal)
@@ -192,14 +195,16 @@ var queueDepthOnlyQueries = []string{
 	`{__name__=~"queue_depth|trace_service_apdex_score",__name__!="trace_service_apdex_score"}`,
 }
 
-// PromQL ignores line comments, so a comment before a selector must not hide the chart metric.
-var commentedChartQueries = []string{
+// Neither a comment before a selector nor an `or` alternative inside one may hide the chart metric.
+var disguisedChartQueries = []string{
 	"# custom\n{__name__=\"trace_service_apdex_score\"}",
 	"# custom\n{__name__=~\"trace_service_apdex_.*\"}",
+	`{__name__="queue_depth" or __name__="trace_service_apdex_score"}`,
+	`{__name__="queue_depth" or __name__=~"trace_service_apdex_.*"}`,
 }
 
-func TestCreateKPIRefusesCommentedChartQueries(t *testing.T) {
-	for _, query := range commentedChartQueries {
+func TestCreateKPIRefusesDisguisedChartQueries(t *testing.T) {
+	for _, query := range disguisedChartQueries {
 		t.Run(query, func(t *testing.T) {
 			server, writes := chartGuardServer(t)
 			describeApdexChart(t, server)
@@ -218,8 +223,8 @@ func TestCreateKPIRefusesCommentedChartQueries(t *testing.T) {
 	}
 }
 
-func TestCreateAlertRefusesKPIsWithCommentedChartQueries(t *testing.T) {
-	for _, query := range commentedChartQueries {
+func TestCreateAlertRefusesKPIsWithDisguisedChartQueries(t *testing.T) {
+	for _, query := range disguisedChartQueries {
 		t.Run(query, func(t *testing.T) {
 			server, writes := chartGuardServerWithKPIQuery(t, query)
 			describeApdexChart(t, server)
