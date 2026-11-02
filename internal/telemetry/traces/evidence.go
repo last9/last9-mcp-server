@@ -1,6 +1,7 @@
 package traces
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -23,6 +24,9 @@ func readEvidenceEnvelope(body []byte, analysisVersion string) (map[string]json.
 	if err := json.Unmarshal(body, &top); err != nil {
 		return nil, newTraceInvalidResponseError(err)
 	}
+	if err := checkUniqueKeys(json.NewDecoder(bytes.NewReader(body))); err != nil {
+		return nil, newTraceInvalidResponseError(err)
+	}
 	for _, field := range [][2]string{{"contract_version", investigationEvidenceVersion}, {"analysis_version", analysisVersion}} {
 		key, want := field[0], field[1]
 		var got string
@@ -32,4 +36,41 @@ func readEvidenceEnvelope(body []byte, analysisVersion string) (map[string]json.
 		}
 	}
 	return top, nil
+}
+
+// checkUniqueKeys fails on any object repeating a key. encoding/json keeps the
+// last duplicate, so a first-key parser downstream could read a value never checked.
+func checkUniqueKeys(dec *json.Decoder) error {
+	tok, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	switch tok {
+	case json.Delim('{'):
+		seen := map[string]bool{}
+		for dec.More() {
+			keyTok, err := dec.Token()
+			if err != nil {
+				return err
+			}
+			key, _ := keyTok.(string)
+			if seen[key] {
+				return fmt.Errorf("duplicate key %q", key)
+			}
+			seen[key] = true
+			if err := checkUniqueKeys(dec); err != nil {
+				return err
+			}
+		}
+	case json.Delim('['):
+		for dec.More() {
+			if err := checkUniqueKeys(dec); err != nil {
+				return err
+			}
+		}
+	default:
+		return nil
+	}
+	_, err = dec.Token() // the closing delimiter
+	return err
 }
