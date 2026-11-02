@@ -90,6 +90,11 @@ func TestCheckPlacement(t *testing.T) {
 			[]string{`"Another one." is new under [0.1.0]; move it to [Unreleased]`},
 		},
 		{
+			"new entry naming a shipped number only in prose",
+			addShipped(placementBase, "- Follow-up to #10."),
+			[]string{`"Follow-up to #10." is new under [0.2.0]; move it to [Unreleased]`},
+		},
+		{
 			"release cut",
 			strings.Replace(placementBase, "## [Unreleased]\n\n### Added\n", "## [Unreleased]\n\n## [0.3.0] - 2026-11-02\n\n### Added\n", 1),
 			nil,

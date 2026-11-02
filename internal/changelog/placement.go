@@ -2,15 +2,15 @@ package changelog
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 )
 
-var numberRef = regexp.MustCompile(`#\d+`)
-
 type entry struct{ version, bullet string }
 
-type release struct{ bullets, refs map[string]bool }
+type release struct {
+	bullets map[string]bool
+	cited   map[int]bool
+}
 
 func entries(changelog string) []entry {
 	var out []entry
@@ -42,12 +42,12 @@ func CheckPlacement(base, head string) []string {
 	for _, e := range entries(base) {
 		r, ok := shipped[e.version]
 		if !ok {
-			r = release{bullets: map[string]bool{}, refs: map[string]bool{}}
+			r = release{bullets: map[string]bool{}, cited: map[int]bool{}}
 			shipped[e.version] = r
 		}
 		r.bullets[e.bullet] = true
-		for _, ref := range numberRef.FindAllString(e.bullet, -1) {
-			r.refs[ref] = true
+		for _, n := range CitedNumbers(e.bullet) {
+			r.cited[n] = true
 		}
 		known[e.bullet] = true
 	}
@@ -65,15 +65,15 @@ func CheckPlacement(base, head string) []string {
 		if e.version == "Unreleased" || !released || r.bullets[e.bullet] {
 			continue
 		}
-		refs := numberRef.FindAllString(e.bullet, -1)
-		if len(refs) == 0 {
+		numbers := CitedNumbers(e.bullet)
+		if numbers == nil {
 			problems = append(problems, fmt.Sprintf("%q is new under [%s]; move it to [Unreleased]", e.bullet, e.version))
 			continue
 		}
 		var unshipped []string
-		for _, ref := range refs {
-			if !r.refs[ref] {
-				unshipped = append(unshipped, ref)
+		for _, n := range numbers {
+			if !r.cited[n] {
+				unshipped = append(unshipped, fmt.Sprintf("#%d", n))
 			}
 		}
 		if len(unshipped) > 0 {
