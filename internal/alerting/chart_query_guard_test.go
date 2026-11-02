@@ -27,8 +27,8 @@ func TestPromQLMetricNames(t *testing.T) {
 		`{__name__="raw", job="a"} + {"quoted"} + {"__name__"='single'}`:                      {"raw", "quoted", "single"},
 		`label_replace(up{job="}"}, "dst", "m1", "src", "(.*)") + x{job=` + "`m2`" + `}`:      {"up", "x"},
 	} {
-		if got := parsePromQL(query).names; !reflect.DeepEqual(got, want) {
-			t.Errorf("parsePromQL(%q).names = %v, want %v", query, got, want)
+		if got := promQLNames(query); !reflect.DeepEqual(got, want) {
+			t.Errorf("promQLNames(%q) = %v, want %v", query, got, want)
 		}
 	}
 }
