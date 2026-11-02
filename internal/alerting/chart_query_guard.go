@@ -107,6 +107,7 @@ func chartQueryRefusal(session *mcp.ServerSession, what, query string) string {
 const promQLString = `"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|` + "`[^`]*`"
 
 var (
+	promQLComment   = regexp.MustCompile(promQLString + `|#[^\n]*`)
 	promQLNoise     = regexp.MustCompile(promQLString + `|\{(?:` + promQLString + "|[^}\"'`])*\\}|\\[[^\\]]*\\]")
 	promQLMatcher   = regexp.MustCompile(`(` + promQLString + `|[a-zA-Z_][a-zA-Z0-9_]*)\s*(=~|!~|!=|=)\s*(` + promQLString + `)|(` + promQLString + `)`)
 	promQLLabelSet  = regexp.MustCompile(`\b(?:by|without|on|ignoring|group_left|group_right)\s*\([^)]*\)`)
@@ -146,6 +147,7 @@ func (s *promQLSelector) addName(name string) {
 }
 
 func parsePromQL(query string) []promQLSelector {
+	query = stripPromQLComments(query)
 	var selectors []promQLSelector
 	var rest strings.Builder
 	last := 0
@@ -184,6 +186,16 @@ func parsePromQL(query string) []promQLSelector {
 		}
 	}
 	return selectors
+}
+
+// A comment word left before a selector would read as an extra name restriction and hide its metric.
+func stripPromQLComments(query string) string {
+	return promQLComment.ReplaceAllStringFunc(query, func(token string) string {
+		if strings.HasPrefix(token, "#") {
+			return " "
+		}
+		return token
+	})
 }
 
 func promQLNames(query string) []string {
