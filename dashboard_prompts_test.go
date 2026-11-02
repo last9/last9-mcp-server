@@ -96,6 +96,10 @@ func TestDashboardAuthoringPrompts(t *testing.T) {
 					t.Errorf("references unavailable tool or prompt %q", ref[1])
 				}
 			}
+			// Prompts are listed under every --toolsets value, so each guide must say which tools it needs.
+			if !strings.Contains(body.Text, "`--toolsets=dashboards,metrics,logs,traces`") {
+				t.Error("guide must name the toolsets its tools need")
+			}
 			resource, err := session.ReadResource(ctx, &mcp.ReadResourceParams{URI: "last9://reference/" + name})
 			if err != nil {
 				t.Fatal(err)
@@ -126,7 +130,7 @@ func TestDashboardAuthoringPrompts(t *testing.T) {
 					}
 					previous = index
 				}
-				for _, phrase := range []string{"12-column", "dashboard_definition", "run each panel's query", "`prometheus_range_query`", "`prometheus_instant_query`", "`get_logs`", "`get_traces`", "query_panel", "#475", "unsupported_execution", "`--toolsets=dashboards,metrics,logs,traces`", "`patch_dashboard`", "add_panel", "update_panel"} {
+				for _, phrase := range []string{"12-column", "dashboard_definition", "run each panel's query", "`prometheus_range_query`", "`prometheus_instant_query`", "`get_logs`", "`get_traces`", "query_panel", "#475", "unsupported_execution", "`patch_dashboard`", "add_panel", "update_panel"} {
 					if !strings.Contains(body.Text, phrase) {
 						t.Errorf("missing guidance %q", phrase)
 					}
