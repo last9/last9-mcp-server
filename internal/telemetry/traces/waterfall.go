@@ -117,15 +117,11 @@ func waterfallAPIError(err error) error {
 }
 
 // checkWaterfallEvidence fails closed unless the body is waterfall evidence that
-// names the sanitizer it went through. Keys are read exactly: encoding/json would
-// otherwise accept "Sanitizer", which a client reading "sanitizer" never sees.
+// names the sanitizer it went through, reading keys exactly as readEvidenceEnvelope does.
 func checkWaterfallEvidence(body []byte) error {
-	if err := checkEvidenceContract(body, traceWaterfallAnalysisVersion); err != nil {
+	top, err := readEvidenceEnvelope(body, traceWaterfallAnalysisVersion)
+	if err != nil {
 		return err
-	}
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(body, &top); err != nil {
-		return newTraceInvalidResponseError(err)
 	}
 	var sanitizer map[string]json.RawMessage
 	if err := json.Unmarshal(top["sanitizer"], &sanitizer); err != nil || sanitizer == nil {
