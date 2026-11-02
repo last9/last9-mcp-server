@@ -155,7 +155,7 @@ func TestDescribeAlertChartRejectsUncoveredSurface(t *testing.T) {
 	if err != nil || !result.IsError || requests != 0 {
 		t.Fatalf("result=%s err=%v requests=%d", resultText(result), err, requests)
 	}
-	for _, want := range []string{"discover-service", "discover-exceptions", "create_alert"} {
+	for _, want := range []string{"discover-service", "discover-exceptions", "create_alert", "coverage_miss", "not covered by the alert-coverage catalog"} {
 		if !strings.Contains(resultText(result), want) {
 			t.Errorf("message missing %q: %s", want, resultText(result))
 		}
