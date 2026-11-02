@@ -59,9 +59,11 @@ func (s *shapeChecker) err() error {
 	return errors.New("dashboard does not match the dashboard schema; nothing was written:\n- " + strings.Join(lines, "\n- "))
 }
 
+// check is the one interpreter of the input schema: the anyOf branches and allOf
+// conditions are evaluated with it too, so every rule reports the same way.
 func (s *shapeChecker) check(schema map[string]any, value any, path, kind string) {
-	if !hasSchemaType(schema, value) {
-		s.problems = append(s.problems, fmt.Sprintf("%s: got %s, want %s", path, jsonKind(value), describeSchema(schema)))
+	if problem := valueProblem(schema, value); problem != "" {
+		s.problems = append(s.problems, path+": "+problem)
 		return
 	}
 	if items, ok := schema["items"].(map[string]any); ok {
@@ -90,12 +92,11 @@ func (s *shapeChecker) check(schema map[string]any, value any, path, kind string
 			}
 		}
 	}
-	if !s.requireFields {
-		return
-	}
-	for _, key := range required {
-		if _, set := obj[key]; !set && !aliased[key] {
-			s.missing(props, key, path)
+	if s.requireFields {
+		for _, key := range required {
+			if _, set := obj[key]; !set && !aliased[key] {
+				s.missing(props, key, path)
+			}
 		}
 	}
 	s.checkConditions(schema, obj, path)
@@ -106,28 +107,37 @@ func (s *shapeChecker) missing(props map[string]any, key, path string) {
 	s.problems = append(s.problems, fmt.Sprintf("%s.%s: missing; want %s", path, key, describeSchema(propSchema)))
 }
 
-// checkConditions reports what the allOf if/then and anyOf keywords require, which the
-// SDK would otherwise report one at a time.
+// checkConditions reports the allOf if/then and anyOf rules the SDK reports one at a time.
+// A failed anyOf names the problems of each branch whose required fields are set, else
+// lists the branches; partial panels skip the list and the then requirements.
 func (s *shapeChecker) checkConditions(schema, obj map[string]any, path string) {
 	allOf, _ := schema["allOf"].([]any)
 	for _, c := range allOf {
 		cond, _ := c.(map[string]any)
 		ifSchema, _ := cond["if"].(map[string]any)
 		then, _ := cond["then"].(map[string]any)
-		if ifSchema != nil && then != nil && matches(ifSchema, obj) {
+		if s.requireFields && ifSchema != nil && then != nil && matches(ifSchema, obj) {
 			s.requireFrom(schema, then, obj, path)
 		}
 	}
 	anyOf, _ := schema["anyOf"].([]any)
 	options := make([]string, 0, len(anyOf))
+	var chosen []string
 	for _, b := range anyOf {
 		branch, _ := b.(map[string]any)
-		if matches(branch, obj) {
+		sub := shapeChecker{requireFields: true}
+		sub.check(branch, obj, path, "")
+		if len(sub.problems) == 0 {
 			return
+		}
+		if required, _ := branch["required"].([]string); len(required) > 0 && hasAll(obj, required) {
+			chosen = append(chosen, sub.problems...)
 		}
 		options = append(options, describeBranch(branch, ""))
 	}
-	if len(options) > 0 {
+	if len(chosen) > 0 {
+		s.problems = append(s.problems, chosen...)
+	} else if s.requireFields && len(options) > 0 {
 		s.problems = append(s.problems, fmt.Sprintf("%s: want one of %s", path, strings.Join(options, ", ")))
 	}
 }
@@ -151,31 +161,15 @@ func (s *shapeChecker) requireFrom(schema, cond, obj map[string]any, path string
 	}
 }
 
-// matches supports only the keywords the input schema's conditions use.
 func matches(schema map[string]any, value any) bool {
-	if c, ok := schema["const"]; ok && value != c {
-		return false
-	}
-	if enum, ok := schema["enum"].([]string); ok {
-		str, _ := value.(string)
-		if !slices.Contains(enum, str) {
-			return false
-		}
-	}
-	obj, ok := value.(map[string]any)
-	if !ok {
-		return true
-	}
-	required, _ := schema["required"].([]string)
-	for _, key := range required {
+	s := shapeChecker{requireFields: true}
+	s.check(schema, value, "", "")
+	return len(s.problems) == 0
+}
+
+func hasAll(obj map[string]any, keys []string) bool {
+	for _, key := range keys {
 		if _, set := obj[key]; !set {
-			return false
-		}
-	}
-	props, _ := schema["properties"].(map[string]any)
-	for key, p := range props {
-		sub, _ := p.(map[string]any)
-		if v, set := obj[key]; set && !matches(sub, v) {
 			return false
 		}
 	}
@@ -208,6 +202,44 @@ func childKind(key string) string {
 		return "query"
 	}
 	return ""
+}
+
+// valueProblem checks the keywords that apply to a single value: type, const, enum and
+// numeric bounds.
+func valueProblem(schema map[string]any, value any) string {
+	if !hasSchemaType(schema, value) {
+		return fmt.Sprintf("got %s, want %s", jsonKind(value), describeSchema(schema))
+	}
+	if c, ok := schema["const"]; ok && value != c {
+		return fmt.Sprintf("got %s, want %v", describeValue(value), c)
+	}
+	if enum, ok := schema["enum"].([]string); ok {
+		if str, _ := value.(string); !slices.Contains(enum, str) {
+			return fmt.Sprintf("got %s, want %s", describeValue(value), describeSchema(schema))
+		}
+	}
+	n, ok := value.(float64)
+	if !ok {
+		return ""
+	}
+	lo, hasLo := schema["minimum"].(int)
+	hi, hasHi := schema["maximum"].(int)
+	switch {
+	case hasLo && hasHi && (n < float64(lo) || n > float64(hi)):
+		return fmt.Sprintf("got %v, want %s from %d to %d", n, schema["type"], lo, hi)
+	case hasLo && n < float64(lo):
+		return fmt.Sprintf("got %v, want %s of at least %d", n, schema["type"], lo)
+	case hasHi && n > float64(hi):
+		return fmt.Sprintf("got %v, want %s of at most %d", n, schema["type"], hi)
+	}
+	return ""
+}
+
+func describeValue(value any) string {
+	if str, ok := value.(string); ok {
+		return fmt.Sprintf("%q", str)
+	}
+	return jsonKind(value)
 }
 
 func hasSchemaType(schema map[string]any, value any) bool {
