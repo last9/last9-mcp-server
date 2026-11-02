@@ -45,6 +45,7 @@ func TestChartQueryRefusalSelectorShapes(t *testing.T) {
 		`{job="}", __name__="m1"}`, `{__name__=~"m1|x"}`, `{__name__=~"m.*"}`, `{__name__=~"job:.*"}`,
 		`{__name__!="x"}`, `{__name__!~"x.*"}`, `{__name__=~"("}`,
 		`m1{__name__!="x"}`, `{__name__=~"m1|x", __name__!="x"}`, `{__name__!="m1"} + {__name__=~"m1"}`,
+		"# custom\n{__name__=\"m1\"}", "x # custom\n+ {__name__=~\"m.*\"}", "{job=\"a\" # x\n, __name__=\"m1\"}", `m1{job="#"}`,
 	} {
 		if refusal := chartQueryRefusal(nil, "query", query); !strings.Contains(refusal, "nothing was created") {
 			t.Errorf("%s was not refused", query)
@@ -54,6 +55,7 @@ func TestChartQueryRefusalSelectorShapes(t *testing.T) {
 		`{job="m1"}`, `sum by (m1) (other)`, `other and bool m3 or m4 unless m5`, `{__name__="m10"}`,
 		`{__name__=~"m1x|y"}`, `{__name__!~"m.*|job:.*"}`, `label_replace(other, "dst", "m1", "src", "(.*)")`,
 		`other{__name__!="m1"}`, `{__name__=~"m1|x", __name__!="m1"}`, `x{__name__="m1"}`, `{__name__=~"m.*", __name__!~"m1|job:.*"}`,
+		"# m1\nother", "other # {__name__=\"m1\"}", `x{job="# m1"}`, "{__name__=\"x\" # \"m1\"\n}",
 	} {
 		if refusal := chartQueryRefusal(nil, "query", query); refusal != "" {
 			t.Errorf("%s refused: %s", query, refusal)
@@ -180,6 +182,53 @@ func TestCreateAlertAllowsKPIsNotFromADescribedChart(t *testing.T) {
 var queueDepthOnlyQueries = []string{
 	`queue_depth{__name__!="unrelated"}`,
 	`{__name__=~"queue_depth|trace_service_apdex_score",__name__!="trace_service_apdex_score"}`,
+}
+
+// PromQL ignores line comments, so a comment before a selector must not hide the chart metric.
+var commentedChartQueries = []string{
+	"# custom\n{__name__=\"trace_service_apdex_score\"}",
+	"# custom\n{__name__=~\"trace_service_apdex_.*\"}",
+}
+
+func TestCreateKPIRefusesCommentedChartQueries(t *testing.T) {
+	for _, query := range commentedChartQueries {
+		t.Run(query, func(t *testing.T) {
+			server, writes := chartGuardServer(t)
+			describeApdexChart(t, server)
+
+			args := validCreateKPIArgs()
+			args.Query = query
+			result, _, err := NewCreateKPIHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil, args)
+			if err != nil || !result.IsError {
+				t.Fatalf("want a tool error, got result=%+v err=%v", result, err)
+			}
+			assertChartQueryRefusal(t, resultText(result))
+			if got := writes(); len(got) != 0 {
+				t.Fatalf("refused create_kpi still wrote: %v", got)
+			}
+		})
+	}
+}
+
+func TestCreateAlertRefusesKPIsWithCommentedChartQueries(t *testing.T) {
+	for _, query := range commentedChartQueries {
+		t.Run(query, func(t *testing.T) {
+			server, writes := chartGuardServerWithKPIQuery(t, query)
+			describeApdexChart(t, server)
+
+			name := "orders-backlog"
+			rule := AlertRulePayload{PrimaryIndicator: "queue_depth", ExpressionArgs: map[string]AlertExpressionArg{"queue_depth": {ID: "kpi-2"}}, RuleName: &name}
+			result, _, err := NewCreateAlertHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil,
+				CreateAlertArgs{EntityID: "entity-1", AlertRuleMutation: AlertRuleMutation{AlertRule: rule}})
+			if err != nil || !result.IsError {
+				t.Fatalf("want a tool error, got result=%+v err=%v", result, err)
+			}
+			assertChartQueryRefusal(t, resultText(result))
+			if got := writes(); len(got) != 0 {
+				t.Fatalf("refused create_alert still wrote: %v", got)
+			}
+		})
+	}
 }
 
 func TestCreateKPIAllowsSelectorsExcludingTheChartMetric(t *testing.T) {
