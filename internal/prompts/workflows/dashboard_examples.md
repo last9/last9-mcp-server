@@ -1,6 +1,6 @@
 # Worked dashboard examples
 
-This prompt takes no arguments. Use these patterns after discovery, not as evidence that a tenant has these metrics or labels. The payload below is one complete example containing five sections. Its http_* metrics illustrate ordinary counters and classic histogram buckets, and node_* metrics illustrate a host exporter. Verify their existence, types, units and labels; adapt to the actual instrumentation before any write. Discovering, checking and saving it needs the dashboards, metrics, logs and traces toolsets (`--toolsets=dashboards,metrics,logs,traces`); if a tool is not available in this session, report what stays unverified or unsaved. Do not substitute derived trace_* interval counts into counter rate/increase expressions; see `query_guide`.
+This prompt takes no arguments. Use these patterns after discovery, not as evidence that a tenant has these metrics or labels. The payload below is one complete example containing five sections. Its http_* metrics illustrate ordinary counters and classic histogram buckets, and node_* metrics illustrate a host exporter. Verify their existence, types, units and labels; adapt to the actual instrumentation before any write. Discovering, checking and saving it needs the dashboards and investigate toolsets (`--toolsets=dashboards,investigate`); if a tool is not available in this session, report what stays unverified or unsaved. Do not substitute derived trace_* interval counts into counter rate/increase expressions; see `query_guide`.
 
 ## Variables and dependent matches
 
