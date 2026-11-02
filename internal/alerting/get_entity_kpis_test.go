@@ -9,7 +9,10 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"last9-mcp/internal/last9api/alerts"
 	"last9-mcp/internal/toolsets"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestGetEntityKPIsListsIDsQueriesAndUnits(t *testing.T) {
@@ -83,6 +86,29 @@ func TestGetEntityKPIsEmptyGroupNamesCreateKPIOnlyWhenServed(t *testing.T) {
 				t.Fatalf("hidden create_kpi must say how to get it; text = %s", text)
 			}
 		})
+	}
+}
+
+func TestGetEntityKPIsNotesDescribedChart(t *testing.T) {
+	t.Cleanup(resetDescribedChartMetrics)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`[{"id":"kpi-1","name":"errors","definition":{"query":"sum(rate(e[5m]))","unit":"count"}}]`))
+	}))
+	defer server.Close()
+
+	session := openServerSessions(t, 1)[0]
+	recordDescribedChart(session, "discover-service/apdex", []alerts.Signal{{EvalQuery: "sum(m)"}})
+	result, _, err := NewGetEntityKPIsHandler(server.Client(), testAlertMutationConfig(server.URL))(
+		context.Background(), &mcp.CallToolRequest{Session: session}, GetEntityKPIsArgs{EntityID: "entity-1"})
+	if err != nil || result.IsError {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	text := resultText(result)
+	if !strings.Contains(text, `"id":"kpi-1"`) {
+		t.Fatalf("missing KPI payload: %s", text)
+	}
+	if !strings.Contains(text, describedChartKPIHint) {
+		t.Fatalf("missing described-chart hint: %s", text)
 	}
 }
 

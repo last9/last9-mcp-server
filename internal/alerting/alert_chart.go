@@ -51,8 +51,8 @@ func uncoveredSurfaceError(surface string, filter toolsets.Filter) string {
 	if filter.ServesWrite("create_alert") {
 		rule = "create_alert"
 	}
-	return fmt.Sprintf("surface %q is not covered by chart alerts; use %s. Custom dashboard panels and other pages are not covered: bind %s to a KPI of the alert group instead",
-		surface, strings.Join(coveredAlertSurfaces, " or "), rule)
+	return fmt.Sprintf("surface %q is not covered by chart alerts (%s); use %s. This surface is not covered by the alert-coverage catalog. Custom dashboard panels and other pages are not covered: bind %s to a KPI of the alert group instead",
+		surface, classCoverageMiss, strings.Join(coveredAlertSurfaces, " or "), rule)
 }
 
 // A 400 carrying one of these means "this chart is not alert-coverage eligible".

@@ -58,6 +58,7 @@ var pinnedInstructionLines = []string{
 	"## Write tools",
 	"- Create once with <tools> and keep the returned id; never create a second copy to change the first.",
 	"- Alert rules from <tools> are created disabled; enable them with <tools> after validating.",
+	"- An alert on a Discover chart uses <tools> with a catalog signal_key; never <tools> even if the user pastes PromQL.",
 	"- Refine an existing object with <tools>.",
 	"- Add, edit, remove or move individual dashboard panels with <tools>; use <tools> only to restructure most of a dashboard.",
 	"- Claim, release or hand off an alert with <tools>; these change ownership, not data.",
