@@ -433,6 +433,44 @@ func TestGetAlertCoverage_ScopeLookupFailureIsNotComplete(t *testing.T) {
 	}
 }
 
+func TestGetAlertCoverage_CapsListedGapsPerKind(t *testing.T) {
+	for _, tc := range []struct {
+		n           int
+		wantListed  int
+		wantOmitted int
+	}{
+		{maxCoverageGapsPerKind - 1, maxCoverageGapsPerKind - 1, 0},
+		{maxCoverageGapsPerKind, maxCoverageGapsPerKind, 0},
+		{maxCoverageGapsPerKind + 1, maxCoverageGapsPerKind, 1},
+	} {
+		t.Run(strconv.Itoa(tc.n), func(t *testing.T) {
+			gaps := make([]string, tc.n)
+			for i := range gaps {
+				gaps[i] = `{"kind":"all_rules_disabled","entity_id":"e-` + strconv.Itoa(i) + `"}`
+			}
+			body := `{"generated_at":1,"muted_days":7,"gaps":[` + strings.Join(gaps, ",") +
+				`],"counts":{"all_rules_disabled":` + strconv.Itoa(tc.n) + `}}`
+			result, err := callAlertCoverage(t, &coverageStub{body: body}, GetAlertCoverageArgs{})
+			if err != nil {
+				t.Fatalf("handler: %v", err)
+			}
+			out := decodeAlertCoverage(t, result)
+			group := out.Groups[0]
+			if group.Count != tc.n || len(group.Gaps) != tc.wantListed || group.Omitted != tc.wantOmitted {
+				t.Fatalf("group count=%d listed=%d omitted=%d, want %d/%d/%d",
+					group.Count, len(group.Gaps), group.Omitted, tc.n, tc.wantListed, tc.wantOmitted)
+			}
+			if group.Gaps[0].SuggestedArgs["entity_id"] != "e-0" {
+				t.Errorf("first listed gap = %+v, want the API's first", group.Gaps[0])
+			}
+			narrow := strings.Contains(out.Summary, "narrow by service, environment or entity_id")
+			if narrow != (tc.wantOmitted > 0) {
+				t.Errorf("summary = %q, want the narrowing hint only when gaps are omitted", out.Summary)
+			}
+		})
+	}
+}
+
 func TestGetAlertCoverage_GapsSkipScopeLookup(t *testing.T) {
 	for _, body := range []string{
 		`{"generated_at":1,"muted_days":7,"gaps":[{"kind":"all_rules_disabled","entity_id":"e-1"}],"counts":{"all_rules_disabled":1}}`,

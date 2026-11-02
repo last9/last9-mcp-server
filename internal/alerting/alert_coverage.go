@@ -24,6 +24,9 @@ const defaultCoverageMutedDays = 7
 // The API rejects larger values with a 400.
 const maxCoverageMutedDays = 3650
 
+// Keeps an org-wide report near 32 KB (a gap renders to ~400 bytes); counts stay exact.
+const maxCoverageGapsPerKind = 20
+
 // The alert group labels the API scopes service and environment by.
 const (
 	coverageServiceLabel     = "service_name"
@@ -66,6 +69,8 @@ type alertCoverageGroup struct {
 	Kind  string             `json:"kind"`
 	Count int                `json:"count"`
 	Gaps  []alertCoverageGap `json:"gaps"`
+	// Omitted counts gaps past maxCoverageGapsPerKind, included in Count.
+	Omitted int `json:"omitted,omitempty"`
 }
 
 type alertCoverageGap struct {
@@ -168,6 +173,9 @@ func buildAlertCoverageResult(in alerts.GetAlertCoverageInput, resp *alerts.GetA
 			pluralize(counted, "coverage gap", "coverage gaps"), describeCoverageScope(scope))
 	default:
 		result.Summary = fmt.Sprintf("%s for %s.", pluralize(len(resp.Gaps), "alert coverage gap", "alert coverage gaps"), describeCoverageScope(scope))
+		if slices.ContainsFunc(result.Groups, func(g alertCoverageGroup) bool { return g.Omitted > 0 }) {
+			result.Summary += fmt.Sprintf(" Each kind lists at most %d gaps; narrow by service, environment or entity_id to see the rest.", maxCoverageGapsPerKind)
+		}
 	}
 	return result
 }
@@ -226,7 +234,11 @@ func groupCoverageGaps(gaps []alerts.CoverageGap) []alertCoverageGroup {
 				unknown = append(unknown, gap.Kind)
 			}
 		}
-		group.Gaps = append(group.Gaps, projectCoverageGap(gap))
+		if len(group.Gaps) < maxCoverageGapsPerKind {
+			group.Gaps = append(group.Gaps, projectCoverageGap(gap))
+		} else {
+			group.Omitted++
+		}
 		group.Count++
 	}
 	slices.Sort(unknown)

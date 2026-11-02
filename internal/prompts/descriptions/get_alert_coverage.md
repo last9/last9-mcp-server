@@ -19,7 +19,9 @@ Optional parameters (values are trimmed; blank strings are ignored):
   longer than this is a muted_too_long gap.
 
 Output is compact JSON {scope, generated_at, complete, summary, counts, groups}:
-- groups: one entry per gap kind present, as {kind, count, gaps}, in the order above.
+- groups: one entry per gap kind present, as {kind, count, gaps, omitted}, in the
+  order above. At most 20 gaps per kind are listed; omitted counts the rest, so narrow
+  the scope to see them.
 - Each gap: entity_name, service, rule_name, severity, detail, muted_since and
   mute_until (RFC3339 UTC; muted_since is the rule's last update, since the mute start
   is not recorded; mute_until is omitted for an indefinite mute),
