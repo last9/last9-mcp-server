@@ -30,6 +30,10 @@ func NewRecommendAlertConfigHandler(_ *http.Client, cfg models.Config) func(cont
 		return operation
 	}
 	createKPI, create, patch, update := tool("create_kpi", "the KPI-creation tool"), tool("create_alert", "the API"), tool("patch_alert", "a PATCH"), tool("update_alert", "a full update")
+	chartRoute := ""
+	if cfg.ToolFilter.ServesWrite("create_alert_from_chart") {
+		chartRoute = "0. An alert on a Discover chart (service or exceptions page) does not follow this lifecycle: create it with create_alert_from_chart and a signal_key from describe_alert_chart. Never rebuild the chart's query as a KPI or expression; the KPI and rule tools refuse it; if no signal fits, tell the user the chart does not support it.\n"
+	}
 	return func(_ context.Context, _ *mcp.CallToolRequest, args RecommendAlertConfigArgs) (*mcp.CallToolResult, any, error) {
 		if strings.TrimSpace(args.Signal) == "" {
 			return utils.ToolErrorResult("signal is required"), nil, nil
@@ -67,7 +71,7 @@ Severity: %s
 Strategy: %s
 
 Lifecycle:
-1. Discover and verify the alert group, labels, and alert-group notification routing. Take KPI ids from get_entity_kpis; if none fits, create one once with %s. Never invent a KPI id.
+%s1. Discover and verify the alert group, labels, and alert-group notification routing. Take KPI ids from get_entity_kpis; if none fits, create one once with %s. Never invent a KPI id.
 2. Check each KPI query and its unit against real data with prometheus_range_query; thresholds compare against the raw value.
 3. Run validate_alert_expression until it returns {"valid":true}.
 4. Create the rule once (%s always creates it disabled, is_disabled=true). The backend derives the algorithm from expression; clients must not send algorithm.
@@ -87,7 +91,7 @@ Notification routing is configured on the alert group, not inside the alert rule
 
 Quality gates: actionable and user-impacting; resistant to low-volume/no-data noise; bounded cardinality; grouped where appropriate; recovery notifications enabled; linked dashboard/runbook; distinct warning/page severities; threshold or sensitivity justified by evidence.`,
 			ruleType, args.Signal, args.Objective, defaultText(args.Environment, "not supplied — inspect before promotion"), severity, strategy,
-			createKPI, create, patch, update, patch)
+			chartRoute, createKPI, create, patch, update, patch)
 
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil, nil
 	}

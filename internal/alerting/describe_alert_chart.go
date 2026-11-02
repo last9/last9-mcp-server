@@ -2,6 +2,7 @@ package alerting
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -27,7 +28,7 @@ type DescribeAlertChartArgs struct {
 // describe_alert_chart: a read-only enumerate of the alertable signals on a
 // covered chart.
 func NewDescribeAlertChartHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, DescribeAlertChartArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, args DescribeAlertChartArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args DescribeAlertChartArgs) (*mcp.CallToolResult, any, error) {
 		surface := strings.TrimSpace(args.Surface)
 		if surface == "" {
 			return utils.ToolErrorResult("surface is required"), nil, nil
@@ -55,6 +56,10 @@ func NewDescribeAlertChartHandler(client *http.Client, cfg models.Config) func(c
 				return utils.ToolErrorResult(alertIntelGuidance(apiErr)), nil, nil
 			}
 			return nil, nil, err
+		}
+		var described alerts.IntelligenceResponse
+		if json.Unmarshal(body, &described) == nil {
+			recordDescribedChart(requestSession(req), surface+"/"+chartKey, described.Signals)
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}, nil, nil
 	}
