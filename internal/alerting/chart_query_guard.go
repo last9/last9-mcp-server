@@ -17,6 +17,7 @@ import (
 // An alert on a Discover chart may use only the chart's catalog signal, so create_alert_from_chart
 // takes no query. describe_alert_chart records the metrics its signals query, per MCP session,
 // and create_kpi / create_alert refuse a query on them instead of rebuilding the chart by hand.
+// Stateless --http gives every request its own session, so there only the tool copy routes agents.
 const (
 	maxGuardedSessions      = 256
 	maxGuardedChartMetrics  = 64
@@ -47,8 +48,8 @@ func requestSession(req *mcp.CallToolRequest) *mcp.ServerSession {
 	return req.Session
 }
 
-// recordDescribedChart remembers the metrics the chart's signals query. The oldest session is
-// evicted past maxGuardedSessions, so memory stays bounded on a long-lived --http server.
+// recordDescribedChart remembers the metrics the chart's signals query until the session closes.
+// Past maxGuardedSessions open sessions the oldest is evicted, so memory stays bounded.
 func recordDescribedChart(session *mcp.ServerSession, chart string, signals []alerts.Signal) {
 	chartMetrics.mu.Lock()
 	defer chartMetrics.mu.Unlock()
@@ -61,6 +62,9 @@ func recordDescribedChart(session *mcp.ServerSession, chart string, signals []al
 		metrics = map[string]string{}
 		chartMetrics.sessions[session] = metrics
 		chartMetrics.order = append(chartMetrics.order, session)
+		if session != nil {
+			go forgetWhenClosed(session)
+		}
 	}
 	for _, signal := range signals {
 		for _, metric := range parsePromQL(signal.EvalQuery + " " + signal.CanonicalQuery).names {
@@ -69,6 +73,14 @@ func recordDescribedChart(session *mcp.ServerSession, chart string, signals []al
 			}
 		}
 	}
+}
+
+func forgetWhenClosed(session *mcp.ServerSession) {
+	_ = session.Wait()
+	chartMetrics.mu.Lock()
+	defer chartMetrics.mu.Unlock()
+	delete(chartMetrics.sessions, session)
+	chartMetrics.order = slices.DeleteFunc(chartMetrics.order, func(s *mcp.ServerSession) bool { return s == session })
 }
 
 func hasDescribedChart(session *mcp.ServerSession) bool {
