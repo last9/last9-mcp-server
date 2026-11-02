@@ -43,12 +43,45 @@ func TestCheckDashboardArguments_AcceptsValidAndLeavesOtherShapesToSchema(t *tes
 		"no panels":        `{"dashboard":{"name":"x","panels":[]}}`,
 		"extra panel keys": `{"dashboard":{"name":"x","panels":[{"id":"p","name":"p","description":"d","unit":"s","layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"section"}}]}}`,
 		"title with name":  `{"dashboard":{"name":"x","panels":[{"name":"p","title":"p","layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"markdown"}}]}}`,
+		"extra dashboard and query keys": `{"dashboard":{"name":"x","foo":1,"panels":[{"name":"p","layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"stat"},` +
+			`"queries":[{"name":"A","type":"range","expr":"1","telemetry":"metrics","query_type":"promql","legend":{"type":"auto","value":""},"foo":1}]}]}}`,
 		"no dashboard":     `{}`,
+		"dashboard string": `{"dashboard":"x"}`,
+		"dashboard null":   `{"dashboard":null}`,
 		"not an object":    `[]`,
 		"not json":         `{`,
 	} {
 		if err := CheckDashboardArguments(json.RawMessage(args)); err != nil {
 			t.Errorf("%s: unexpected error %v", name, err)
+		}
+	}
+}
+
+func TestCheckDashboardArguments_NamesWrongContainerTypes(t *testing.T) {
+	for args, want := range map[string]string{
+		`{"dashboard":{"name":"x","panels":{}}}`:     "dashboard.panels: got object, want array",
+		`{"dashboard":{"name":"x","panels":[null]}}`: "dashboard.panels[0]: got null, want object {name, layout, visualization}",
+	} {
+		err := CheckDashboardArguments(json.RawMessage(args))
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: want %q, got %v", args, want, err)
+		}
+	}
+}
+
+func TestShapeCheck_IntegerFieldsRejectOnlyFractionalNumbers(t *testing.T) {
+	panel := func(rowLimit string) map[string]any {
+		var p map[string]any
+		_ = json.Unmarshal([]byte(`{"visualization":{"type":"logs","logs_config":{"columns":["body"],"row_limit":`+rowLimit+`}}}`), &p)
+		return p
+	}
+	want := "panel.visualization.logs_config.row_limit: got number, want integer"
+	if got := checkPanelShape(panel("1.5"), "panel"); strings.Join(got, "\n") != want {
+		t.Errorf("fractional row_limit: got %q, want %q", got, want)
+	}
+	for _, whole := range []string{"100", "100.0", "1e2"} {
+		if got := checkPanelShape(panel(whole), "panel"); len(got) != 0 {
+			t.Errorf("row_limit %s: unexpected %v", whole, got)
 		}
 	}
 }
