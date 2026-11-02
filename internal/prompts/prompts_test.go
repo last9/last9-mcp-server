@@ -1012,7 +1012,7 @@ func TestAlertCoverageDescription(t *testing.T) {
 		"Read-only",
 		"uncovered_signal", "all_rules_disabled", "no_notification_channel", "muted_too_long",
 		"Default: 7", "0 means the default",
-		"no gaps and every count is 0",
+		"no gaps, every count is 0, and an alert group matches the scope",
 		"if available in this session",
 		"## Pairs well with", "`create_alert`", "`create_alert_from_chart`", "`attach_notification_channel`", "`patch_alert`",
 	} {

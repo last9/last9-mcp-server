@@ -25,8 +25,9 @@ Output is compact JSON {scope, generated_at, complete, summary, counts, groups}:
   is not recorded; mute_until is omitted for an indefinite mute),
   suggested_tool, and suggested_args (whichever of entity_id, rule_id, signal apply).
 - counts: the API's total per gap kind.
-- complete: true only when the API lists no gaps and every count is 0; summary then
-  says coverage is complete for that scope. Counts with no listed gaps are not complete.
+- complete: true only when the API lists no gaps, every count is 0, and an alert group matches the scope.
+  A scope matching none (check names with get_alert_groups), or counts with no listed
+  gaps, is not complete.
 
 suggested_tool names the tool that would close the gap. Call it only
 if available in this session and only after the user confirms the change; otherwise

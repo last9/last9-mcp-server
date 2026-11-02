@@ -24,6 +24,12 @@ const defaultCoverageMutedDays = 7
 // The API rejects larger values with a 400.
 const maxCoverageMutedDays = 3650
 
+// The alert group labels the API scopes service and environment by.
+const (
+	coverageServiceLabel     = "service_name"
+	coverageEnvironmentLabel = "env"
+)
+
 // Kinds outside this list are still rendered, after these, so a gap kind the API adds
 // later is never dropped.
 var coverageKindOrder = []string{
@@ -86,7 +92,11 @@ func NewGetAlertCoverageHandler(client *http.Client, cfg models.Config) func(con
 			return nil, nil, alertCoverageError(err)
 		}
 
-		payload, err := json.Marshal(buildAlertCoverageResult(in, resp))
+		result := buildAlertCoverageResult(in, resp)
+		if result.Complete {
+			confirmCoverageScope(ctx, client, cfg, &result)
+		}
+		payload, err := json.Marshal(result)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal response: %w", err)
 		}
@@ -160,6 +170,41 @@ func buildAlertCoverageResult(in alerts.GetAlertCoverageInput, resp *alerts.GetA
 		result.Summary = fmt.Sprintf("%s for %s.", pluralize(len(resp.Gaps), "alert coverage gap", "alert coverage gaps"), describeCoverageScope(scope))
 	}
 	return result
+}
+
+// The API reports no gaps for a scope matching no alert group, so complete needs an
+// alert group in scope. A lookup that fails or finds none leaves it unconfirmed.
+func confirmCoverageScope(ctx context.Context, client *http.Client, cfg models.Config, result *alertCoverageResult) {
+	matched, err := countCoverageScopeGroups(ctx, client, cfg, result.Scope)
+	switch {
+	case err != nil:
+		result.Complete = false
+		result.Summary = fmt.Sprintf("The API listed no coverage gaps for %s, but the alert group lookup failed, so coverage is not confirmed complete; retry.",
+			describeCoverageScope(result.Scope))
+	case matched == 0:
+		result.Complete = false
+		result.Summary = fmt.Sprintf("No alert group matches %s, so coverage is not confirmed complete; check the service, environment or entity_id with get_alert_groups.",
+			describeCoverageScope(result.Scope))
+	}
+}
+
+// countCoverageScopeGroups matches as the coverage API does: exact service_name and
+// env labels, and the entity id.
+func countCoverageScopeGroups(ctx context.Context, client *http.Client, cfg models.Config, scope alertCoverageScope) (int, error) {
+	entities, err := fetchAlertGroupEntities(ctx, client, cfg, alertGroupEntityQuery{})
+	if err != nil {
+		return 0, err
+	}
+	matched := 0
+	for _, entity := range entities {
+		labels := entity.Metadata.Labels
+		if (scope.EntityID == "" || strings.EqualFold(entity.ID, scope.EntityID)) &&
+			(scope.Service == "" || labels[coverageServiceLabel] == scope.Service) &&
+			(scope.Environment == "" || labels[coverageEnvironmentLabel] == scope.Environment) {
+			matched++
+		}
+	}
+	return matched, nil
 }
 
 func pluralize(n int, singular, plural string) string {
