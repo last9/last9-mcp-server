@@ -224,7 +224,7 @@ func NewGetTraceWaterfallHandler(client *http.Client, cfg models.Config) func(co
 			// Equal because this path never clamps; the envelope requires both fields.
 			requested:  evidenceWindow(start, end),
 			effective:  evidenceWindow(start, end),
-			observedAt: time.Now().UTC(),
+			observedAt: utils.Now().UTC(),
 		})
 		b, err := json.Marshal(resp)
 		if err != nil {

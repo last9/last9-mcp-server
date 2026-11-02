@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/prom"
@@ -77,7 +76,7 @@ func validateGetMetricStatusArgs(args GetMetricStatusArgs) error {
 
 func computeGetMetricStatus(ctx context.Context, client *http.Client, queryCfg models.Config, args GetMetricStatusArgs) (GetMetricStatusResult, error) {
 	metric := strings.TrimSpace(args.Metric)
-	endTime := time.Now().UTC().Unix()
+	endTime := utils.Now().UTC().Unix()
 	dur := promDurationFromMinutes(args.WindowMinutes)
 	sel := metricSelector(metric)
 
