@@ -59,8 +59,8 @@ func NewSendFeedbackHandler(client *http.Client, cfg models.Config) func(context
 	}
 }
 
-// Client identity comes from the session's clientInfo, never from arguments, so the
-// team can tell which agents hit a problem.
+// Client identity comes from clientInfo, never from arguments, so the team can tell which
+// agents hit a problem. Stateless --http forgets initialize, so there only _meta carries it.
 func feedbackInput(args SendFeedbackArgs, req *mcp.CallToolRequest, serverVersion string) apifeedback.SendMCPFeedbackInput {
 	in := apifeedback.SendMCPFeedbackInput{
 		Category:      strings.ToLower(strings.TrimSpace(args.Category)),

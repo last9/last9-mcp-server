@@ -6,6 +6,6 @@ Parameters:
 - `details`: (Optional, omitted by default) At most 4000 characters: the arguments you sent, the error or output, and what you tried instead.
 - `tool_name`: (Optional, omitted by default) At most 100 characters. The Last9 tool the feedback is about, e.g. `get_logs`.
 
-Never include secrets, tokens, passwords, raw log lines, personal data or other customer data: describe the shape of the problem, not the user's data. Your client's name and version and this server's version are added automatically.
+Never include secrets, tokens, passwords, raw log lines, personal data or other customer data: describe the shape of the problem, not the user's data. This server's version, and your client's name and version when the client reports them, are added automatically.
 
 Returns JSON with `feedback_id` only after a complete acknowledgement. A failed call may still have delivered the report; do not send the same feedback again.

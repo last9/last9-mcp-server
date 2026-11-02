@@ -693,3 +693,38 @@ func TestPostMCPTestRequestConcurrentFailure(t *testing.T) {
 		t.Fatalf("broken call = %v, want JSON syntax error", errs[1])
 	}
 }
+
+// Stateless --http has no session to remember initialize's clientInfo, so a tools/call
+// identifies its client only through per-request _meta.
+func TestHTTPSendFeedbackClientIdentityComesFromRequestMeta(t *testing.T) {
+	bodies := make(chan map[string]any, 2)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		bodies <- body
+		_, _ = io.WriteString(w, `{"feedback_id":"fb-1"}`)
+	}))
+	defer upstream.Close()
+	ts, _ := newToolsetHTTPServerFor(t, writeToolTestConfig(upstream.URL), "")
+
+	for _, tc := range []struct {
+		name, meta  string
+		wantName    any
+		wantVersion any
+	}{
+		{"per-request clientInfo", `,"_meta":{"io.modelcontextprotocol/clientInfo":{"name":"qa-client","version":"v-http-1"}}`, "qa-client", "v-http-1"},
+		{"no clientInfo", "", nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			call := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send_feedback","arguments":{"category":"other","summary":"http mode check"}` + tc.meta + `}}`
+			var result mcp.CallToolResult
+			if status, raw := postRPC(t, ts, "", "", call, &result); status != http.StatusOK || result.IsError {
+				t.Fatalf("status %d, result %s", status, raw)
+			}
+			body := <-bodies
+			if body["client_name"] != tc.wantName || body["client_version"] != tc.wantVersion {
+				t.Errorf("client_name=%v client_version=%v, want %v %v", body["client_name"], body["client_version"], tc.wantName, tc.wantVersion)
+			}
+		})
+	}
+}

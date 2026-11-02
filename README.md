@@ -256,7 +256,7 @@ last9-mcp --read-only --allow-write-tools=acknowledge_alert,mute_alert_group
 
 - **`get_workspace_overview`** — Recommended first call when a request names no service or tool (one that does goes straight to its tool): environments, which signals (logs, traces, metrics) were seen in the last hour, service and alert-group counts, firing alerts, and the current time in one cheap call. A signal not seen in that hour can still have older data, so it stays queryable. A failed sub-call leaves its field `null` and adds an `errors[]` entry. Served under every toolset
 - **`get_current_time`** — Current time, plus absolute bounds for `last 2h`, `yesterday` or `since yesterday 9am IST`, in any IANA zone or common abbreviation. Served under every toolset
-- **`send_feedback`** — Lets the agent report a broken tool, a wrong result, a missing capability or a misleading description straight to the Last9 team, with the client and server versions attached. Served under every named toolset and in `--read-only` mode; left out of `investigate`
+- **`send_feedback`** — Lets the agent report a broken tool, a wrong result, a missing capability or a misleading description straight to the Last9 team, with the server version and, when the client reports it, the client's name and version attached (over `--http`, only from per-request `_meta` clientInfo). Served under every named toolset and in `--read-only` mode; left out of `investigate`
 
 ### Service Health
 
