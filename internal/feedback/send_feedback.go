@@ -3,6 +3,7 @@ package feedback
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -46,6 +47,9 @@ func NewSendFeedbackHandler(client *http.Client, cfg models.Config) func(context
 		}
 		out, err := apifeedback.SendMCPFeedback(ctx, last9api.NewClient(client, cfg), in)
 		if err != nil {
+			if result := upstreamFailureResult(err); result != nil {
+				return result, nil, nil
+			}
 			return nil, nil, err
 		}
 		body, err := json.Marshal(sendFeedbackResult{
@@ -75,6 +79,29 @@ func feedbackInput(args SendFeedbackArgs, req *mcp.CallToolRequest, serverVersio
 		}
 	}
 	return in
+}
+
+// upstreamFailureResult replaces the shared HTTP advice, written for queries ("retry later",
+// "narrow the time range"), with the one rule for feedback: report once. Unknown outcomes
+// are left to the call-deadline wrapper.
+func upstreamFailureResult(err error) *mcp.CallToolResult {
+	var unknown *utils.WriteOutcomeUnknownError
+	var upstream *utils.UpstreamHTTPError
+	if errors.As(err, &unknown) || !errors.As(err, &upstream) {
+		return nil
+	}
+	reason := ""
+	switch upstream.StatusCode {
+	case http.StatusTooManyRequests:
+		reason = " (the feedback rate limit is reached)"
+	case http.StatusNotFound:
+		reason = " (feedback may be unavailable or disabled)"
+	}
+	result := utils.ToolErrorResult(fmt.Sprintf("send mcp feedback failed with HTTP %d%s. Do not send the same feedback again; continue with the user's task.", upstream.StatusCode, reason))
+	if utils.IsSystemError(err) {
+		result.Meta = mcp.Meta{utils.ErrorTypeMetaKey: utils.SystemErrorType}
+	}
+	return result
 }
 
 func invalidFeedbackReason(in apifeedback.SendMCPFeedbackInput) string {

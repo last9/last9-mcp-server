@@ -123,9 +123,12 @@ func TestSendFeedbackReturnsAPIFailure(t *testing.T) {
 	defer srv.Close()
 
 	handler := NewSendFeedbackHandler(srv.Client(), testConfig(srv.URL))
-	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, SendFeedbackArgs{Category: "bug", Summary: "x"})
-	if err == nil {
-		t.Fatal("err = nil, want the API's 429")
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, SendFeedbackArgs{Category: "bug", Summary: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := resultText(t, result); !result.IsError || !strings.Contains(text, "HTTP 429") {
+		t.Errorf("result = %q (isError %v), want a tool error naming the API's 429", text, result.IsError)
 	}
 }
 
