@@ -53,6 +53,31 @@ func TestDescribeAlertChartHappyPath(t *testing.T) {
 	if len(resp.Signals) != 1 || resp.Signals[0].Key != "p95_latency" || resp.Signals[0].Unit != "ms" {
 		t.Fatalf("signals changed in transit: %+v", resp)
 	}
+	text := resultText(result)
+	if !strings.Contains(text, `"alert_path"`) || !strings.Contains(text, chartAlertPathNote) {
+		t.Fatalf("response missing catalog-path note: %s", text)
+	}
+}
+
+func TestDescribeAlertChartRejectsNonObjectResponse(t *testing.T) {
+	for _, body := range []string{`null`, `[]`, `"ok"`} {
+		t.Run(body, func(t *testing.T) {
+			t.Cleanup(resetDescribedChartMetrics)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(body))
+			}))
+			defer server.Close()
+
+			result, _, err := NewDescribeAlertChartHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil,
+				DescribeAlertChartArgs{Surface: "discover-service", ChartKey: "response_time", ServiceName: "checkout"})
+			if err != nil || result == nil || !result.IsError {
+				t.Fatalf("want tool error, got result=%v err=%v", result, err)
+			}
+			if text := resultText(result); !strings.Contains(text, "not a JSON object") || !strings.Contains(text, body) {
+				t.Errorf("error should quote the upstream body: %s", text)
+			}
+		})
+	}
 }
 
 func TestDescribeAlertChartCoverageMiss(t *testing.T) {
@@ -151,7 +176,7 @@ func TestDescribeAlertChartRejectsUncoveredSurface(t *testing.T) {
 	if err != nil || !result.IsError || requests != 0 {
 		t.Fatalf("result=%s err=%v requests=%d", resultText(result), err, requests)
 	}
-	for _, want := range []string{"discover-service", "discover-exceptions", "create_alert"} {
+	for _, want := range []string{"discover-service", "discover-exceptions", "create_alert", "coverage_miss", "not covered by the alert-coverage catalog"} {
 		if !strings.Contains(resultText(result), want) {
 			t.Errorf("message missing %q: %s", want, resultText(result))
 		}
