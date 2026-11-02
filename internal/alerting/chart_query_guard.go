@@ -115,9 +115,12 @@ var (
 	promQLBraceName = regexp.MustCompile(`\b([a-zA-Z_:][a-zA-Z0-9_:]*)\s*$`)
 )
 
+// Chart eval_queries are MetricsQL, so its operators and modifiers are keywords too; a keyword
+// recorded as a chart metric would refuse every query that uses it.
 var promQLKeywords = map[string]bool{
 	"by": true, "without": true, "on": true, "ignoring": true, "group_left": true, "group_right": true,
-	"bool": true, "and": true, "or": true, "unless": true, "offset": true, "inf": true, "nan": true,
+	"bool": true, "and": true, "or": true, "unless": true, "atan2": true, "offset": true, "inf": true, "nan": true,
+	"default": true, "if": true, "ifnot": true, "keep_metric_names": true, "limit": true, "prefix": true,
 }
 
 // PromQL ANDs every name restriction within one selector, so they are kept together per selector.
