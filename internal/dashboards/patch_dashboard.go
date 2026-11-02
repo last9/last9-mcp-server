@@ -39,7 +39,7 @@ type PatchDashboardArgs struct {
 type PatchDashboardOp struct {
 	Op       string         `json:"op" jsonschema:"(Required) add_panel, update_panel, remove_panel, move_panel, set_title or set_variable"`
 	PanelID  string         `json:"panel_id,omitempty" jsonschema:"Panel id (update_panel, remove_panel, move_panel)"`
-	Panel    map[string]any `json:"panel,omitempty" jsonschema:"Full panel object, same shape as in create_dashboard (add_panel)"`
+	Panel    map[string]any `json:"panel,omitempty" jsonschema:"Full panel object, same shape as dashboard.panels (add_panel)"`
 	Fields   map[string]any `json:"fields,omitempty" jsonschema:"Top-level panel fields to replace; null removes a field (update_panel)"`
 	Index    *int           `json:"index,omitempty" jsonschema:"0-based position in panels: insert position for add_panel (default: append), target position for move_panel (required)"`
 	Title    string         `json:"title,omitempty" jsonschema:"New dashboard name (set_title)"`
@@ -93,7 +93,7 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 		api := last9api.NewClient(client, cfg)
 		current, err := apidashboards.GetDashboard(ctx, api, args.ID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("%w; nothing was written", mapDashboardAPIError(err))
+			return nil, nil, fmt.Errorf("%w; nothing was written", mapDashboardFetchError(args.ID, err))
 		}
 		if current.Dashboard == nil {
 			return nil, nil, errors.New("get dashboard returned no dashboard object; nothing was written")
