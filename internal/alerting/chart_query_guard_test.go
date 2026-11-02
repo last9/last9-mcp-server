@@ -277,6 +277,40 @@ func TestCreateAlertAllowsKPIsWithSelectorsExcludingTheChartMetric(t *testing.T)
 	}
 }
 
+// The KPI lookup runs before the rule-name check, so its failures must read like that check's.
+func TestCreateAlertKPILookupFailureSaysNothingWasCreated(t *testing.T) {
+	for status, want := range map[int]string{
+		http.StatusBadRequest:         `entity_id "missing" is not an alert group; nothing was created`,
+		http.StatusNotFound:           `entity_id "missing" is not an alert group; nothing was created`,
+		http.StatusServiceUnavailable: "retry later. Nothing was created.",
+	} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			t.Cleanup(resetDescribedChartMetrics)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet && r.URL.Path == "/entities/missing/kpis" {
+					w.WriteHeader(status)
+					return
+				}
+				_, _ = w.Write([]byte(`{"signals":[{"key":"apdex","eval_query":"avg(trace_service_apdex_score)","query_kind":"metric"}]}`))
+			}))
+			t.Cleanup(server.Close)
+			describeApdexChart(t, server)
+
+			name := "orders-backlog"
+			rule := AlertRulePayload{PrimaryIndicator: "queue_depth", ExpressionArgs: map[string]AlertExpressionArg{"queue_depth": {ID: "kpi-2"}}, RuleName: &name}
+			result, _, err := NewCreateAlertHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil,
+				CreateAlertArgs{EntityID: "missing", AlertRuleMutation: AlertRuleMutation{AlertRule: rule}})
+			text := fmt.Sprint(err)
+			if result != nil {
+				text = resultText(result)
+			}
+			if !strings.Contains(text, want) {
+				t.Fatalf("want %q, got result=%+v err=%v", want, result, err)
+			}
+		})
+	}
+}
+
 func chartGuardMCP(t *testing.T, upstream *httptest.Server) (connect func() *mcp.ClientSession, call func(*mcp.ClientSession, string, map[string]any) *mcp.CallToolResult) {
 	t.Helper()
 	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "0"}, nil)
