@@ -96,9 +96,17 @@ func TestDashboardAuthoringPrompts(t *testing.T) {
 					t.Errorf("references unavailable tool or prompt %q", ref[1])
 				}
 			}
-			// Prompts are listed under every --toolsets value, so each guide must say which tools it needs.
-			if !strings.Contains(body.Text, "`--toolsets=dashboards,metrics,logs,traces`") {
-				t.Error("guide must name the toolsets its tools need")
+			// Prompts are listed under every --toolsets value, so each guide must name a
+			// toolsets value that serves every tool it tells the agent to call.
+			spec := regexp.MustCompile("`--toolsets=([a-z,]+)`").FindStringSubmatch(body.Text)
+			if spec == nil {
+				t.Fatal("guide must name the toolsets its tools need")
+			}
+			served := servedDescriptions(t, spec[1])
+			for _, ref := range refs {
+				if _, ok := served[ref[1]]; tools[ref[1]] && !ok {
+					t.Errorf("names %s, which --toolsets=%s does not serve", ref[1], spec[1])
+				}
 			}
 			resource, err := session.ReadResource(ctx, &mcp.ReadResourceParams{URI: "last9://reference/" + name})
 			if err != nil {
