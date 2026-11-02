@@ -189,6 +189,10 @@ func TestGetTraceWaterfallRejectsNonConformingEvidence(t *testing.T) {
 		"wrong analysis version":               waterfallFixtureWith(t, func(p map[string]any) { p["analysis_version"] = "trace-attribute-deviations/v1" }),
 		"contract_version key in another case": renameWaterfallKey(t, "contract_version", "CONTRACT_VERSION"),
 		"analysis_version key in another case": renameWaterfallKey(t, "analysis_version", "Analysis_Version"),
+		"sanitizer key duplicated":             prefixWaterfallKey(t, `"sanitizer":{"version":"none"}`),
+		"contract_version key duplicated":      prefixWaterfallKey(t, `"contract_version":"investigation-evidence/v2"`),
+		"sanitizer version key duplicated": []byte(strings.Replace(string(waterfallFixtureWith(t, func(map[string]any) {})),
+			`"sanitizer":{`, `"sanitizer":{"version":"none",`, 1)),
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -210,6 +214,13 @@ func renameWaterfallKey(t *testing.T, from, to string) []byte {
 		p[to] = p[from]
 		delete(p, from)
 	})
+}
+
+// prefixWaterfallKey returns the fixture with member written before its own keys,
+// so a decoder keeping the first duplicate sees member, not the fixture's value.
+func prefixWaterfallKey(t *testing.T, member string) []byte {
+	t.Helper()
+	return append([]byte("{"+member+","), waterfallFixtureWith(t, func(map[string]any) {})[1:]...)
 }
 
 // paddedWaterfall returns a valid fixture body of exactly size bytes.
