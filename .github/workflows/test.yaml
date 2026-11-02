@@ -11,6 +11,8 @@ on:
 
 permissions:
   contents: read
+  issues: read
+  pull-requests: read
 
 jobs:
   test:
@@ -37,3 +39,10 @@ jobs:
         env:
           # Integration tests will be skipped if TEST_REFRESH_TOKEN is not set
           TEST_REFRESH_TOKEN: ${{ secrets.TEST_REFRESH_TOKEN }}
+
+      # Only on pull requests: a bullet cites its own PR, which a branch push may precede.
+      - name: Check CHANGELOG bullets cite pull requests
+        if: github.event_name == 'pull_request'
+        run: go test -count=1 -run '^TestRepoChangelogCitesPullRequests$' -v ./internal/changelog
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
