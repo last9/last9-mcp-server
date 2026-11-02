@@ -91,6 +91,7 @@ var named = map[string][]string{
 		"list_dashboards",
 		"get_dashboard",
 		"validate_dashboard",
+		"preview_dashboard",
 		"create_dashboard",
 		"update_dashboard",
 		"patch_dashboard",

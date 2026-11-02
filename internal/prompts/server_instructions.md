@@ -19,7 +19,7 @@
 {{- $logInventory := "" -}}
 {{- with $metricNames}}{{$raw = tools "prometheus_range_query" "prometheus_instant_query" "get_logs" "get_traces"}}{{else}}{{$logInventory = tools "prometheus_instant_query"}}{{end -}}
 {{- $create := tools "create_dashboard" "create_alert" "create_kpi" "create_notification_channel" "create_alert_from_chart" -}}
-{{- $validate := tools "validate_dashboard" -}}
+{{- $validate := tools "validate_dashboard" "preview_dashboard" -}}
 {{- $alertValidate := tools "validate_alert_expression" -}}
 {{- $alertDesign := tools "recommend_alert_config" "describe_alert_chart" -}}
 {{- $dropRules := tools "get_drop_rules" -}}
@@ -144,6 +144,9 @@ Read these resources before writing a non-trivial query{{if has "get_logs"}}. Af
 {{- end}}
 {{- with tools "create_alert" "create_alert_from_chart"}}
 - Alert rules from {{.}} are created disabled{{with tools "patch_alert"}}; enable them with {{.}} after validating{{end}}.
+{{- end}}
+{{- with tools "create_alert_from_chart"}}
+- An alert on a Discover chart uses {{.}} with a catalog signal_key{{with tools "create_alert" "create_kpi"}}; never {{.}} even if the user pastes PromQL{{end}}.
 {{- end}}
 {{- with $refine}}
 - Refine an existing object with {{.}}.

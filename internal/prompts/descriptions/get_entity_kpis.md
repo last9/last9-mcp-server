@@ -1,4 +1,4 @@
-List every KPI (indicator) defined on one alert group, including KPIs no alert rule uses yet. Use it to get the KPI UUIDs that alert rules and `validate_alert_expression` need in `expression_args` / `indicators_used`; never invent a KPI id or reuse one from another alert group.
+List every KPI (indicator) defined on one alert group, including KPIs no alert rule uses yet. Use it to get the KPI UUIDs that alert rules and `validate_alert_expression` need in `expression_args` / `indicators_used`; never invent a KPI id or reuse one from another alert group. If the user asked to alert on a Discover chart, even with pasted PromQL, do not call this tool.
 
 Parameters:
 - `entity_id` (required): alert group/entity UUID, from `get_alert_groups` or `get_alert_config`.
@@ -8,3 +8,4 @@ Returns JSON `{"entity_id", "count", "kpis": [{"id", "name", "description", "que
 ## Pairs well with
 - `create_kpi` (when no existing KPI fits)
 - `validate_alert_expression` (dry-run an expression over these KPIs)
+- `create_alert_from_chart` (Discover-chart alerts; pasted PromQL is not a reason to pick a KPI)
