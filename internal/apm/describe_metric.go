@@ -66,7 +66,7 @@ func NewDescribeMetricHandler(client *http.Client, cfg models.Config) func(conte
 		if choice.candidates != nil {
 			return ambiguousDatasourceResult(args.Datasource, choice), nil, nil
 		}
-		reader := metricDescriber{api: last9api.NewClient(client, choice.cfg), datasource: promDatasource(choice.cfg), timestamp: time.Now().Unix()}
+		reader := metricDescriber{api: last9api.NewClient(client, choice.cfg), datasource: promDatasource(choice.cfg), timestamp: utils.Now().Unix()}
 		report := DescribeMetricResult{Metrics: make([]MetricDescription, 0, len(args.MetricNames))}
 		for _, name := range args.MetricNames {
 			metric, err := reader.describe(ctx, name)
