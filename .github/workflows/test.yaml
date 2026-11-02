@@ -21,6 +21,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # On pull requests HEAD is the merge commit; the changelog check reads its base, HEAD^1.
+          fetch-depth: 2
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -43,6 +46,8 @@ jobs:
       # Only on pull requests: a bullet cites its own PR, which a branch push may precede.
       - name: Check CHANGELOG bullets cite pull requests
         if: github.event_name == 'pull_request'
-        run: go test -count=1 -run '^TestRepoChangelogCitesPullRequests$' -v ./internal/changelog
+        run: go test -count=1 -run '^TestRepoChangelogCites(PullRequests|ThisPullRequest)$' -v ./internal/changelog
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          CHANGELOG_BASE_REF: HEAD^1
