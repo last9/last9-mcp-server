@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
 	// The release image is alpine without tzdata; embed the zone database so
 	// get_current_time's LoadLocation works wherever the binary runs.
 	_ "time/tzdata"
@@ -235,6 +236,15 @@ func run() int {
 	cfg, err := SetupConfig(models.Config{})
 	if err != nil {
 		log.Fatalf("config error: %v", err)
+	}
+
+	// Evals/replays only: pins relative query windows to a fixed instant.
+	fake, err := utils.InitClock()
+	if err != nil {
+		log.Fatalf("clock error: %v", err)
+	}
+	if fake != nil {
+		log.Printf("FAKE CLOCK ACTIVE (%s=%s): relative time windows are anchored to this instant; for evals/replays only", utils.FakeNowEnv, fake.Format(time.RFC3339))
 	}
 	// OTEL_SDK_DISABLED is the standard OTel env var. Honour it explicitly so
 	// that users can override the default (disable_telemetry=true) without

@@ -32,7 +32,7 @@ const (
 
 // Request is one change to analyze. Env is exact; empty means every
 // environment. Zero window lengths take their defaults and others are clamped
-// to 30..120 minutes; a zero Now means time.Now.
+// to 30..120 minutes; a zero Now means utils.Now.
 type Request struct {
 	Service         string
 	Env             string
