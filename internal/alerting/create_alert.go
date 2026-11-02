@@ -66,13 +66,8 @@ func refuseDuplicateRuleName(ctx context.Context, api *last9api.Client, entityID
 	}
 	name := strings.TrimSpace(*ruleName)
 	rules, err := entities.ListAlertRules(ctx, api, entityID)
-	var upstream *utils.UpstreamHTTPError
-	if errors.As(err, &upstream) && (upstream.StatusCode == http.StatusBadRequest || upstream.StatusCode == http.StatusNotFound) {
-		// The list takes only entity_id, so its 4xx means the group is unknown.
-		return utils.ToolErrorResult(fmt.Sprintf("entity_id %q is not an alert group; nothing was created. Copy the alert group id from get_alert_groups", entityID)), nil
-	}
 	if err != nil {
-		return nil, withUpstreamBody(err)
+		return alertGroupLookupError(err, entityID)
 	}
 	for _, rule := range rules {
 		if strings.EqualFold(strings.TrimSpace(rule.RuleName), name) {
@@ -89,7 +84,7 @@ func refuseChartDerivedKPI(ctx context.Context, api *last9api.Client, session *m
 	}
 	kpis, err := entities.ListEntityKPIs(ctx, api, args.EntityID)
 	if err != nil {
-		return nil, withUpstreamBody(err)
+		return alertGroupLookupError(err, args.EntityID)
 	}
 	for name, arg := range args.AlertRule.ExpressionArgs {
 		for _, kpi := range kpis {
@@ -102,4 +97,13 @@ func refuseChartDerivedKPI(ctx context.Context, api *last9api.Client, session *m
 		}
 	}
 	return nil, nil
+}
+
+func alertGroupLookupError(err error, entityID string) (*mcp.CallToolResult, error) {
+	var upstream *utils.UpstreamHTTPError
+	if errors.As(err, &upstream) && (upstream.StatusCode == http.StatusBadRequest || upstream.StatusCode == http.StatusNotFound) {
+		// The group lists take only entity_id, so their 4xx means the group is unknown.
+		return utils.ToolErrorResult(fmt.Sprintf("entity_id %q is not an alert group; nothing was created. Copy the alert group id from get_alert_groups", entityID)), nil
+	}
+	return nil, fmt.Errorf("%w Nothing was created.", withUpstreamBody(err))
 }
