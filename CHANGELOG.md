@@ -7,13 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-<<<<<<< HEAD
 ### Added
 - Dashboard authoring prompts `create_dashboard_guide`, `dashboard_examples` and `query_guide`, also served as reference resources, guide discovery, layout, query semantics, per-panel checks before approval and targeted edits; create and patch tool descriptions link to them (#477).
-=======
+
 ### Changed
 - Bumped `golang.org/x/net` 0.58.0 → 0.62.0, which also raises `golang.org/x/sync` 0.22.0 → 0.24.0, `golang.org/x/sys` 0.47.0 → 0.49.0, `golang.org/x/text` 0.41.0 → 0.43.0, and test-only `golang.org/x/tools` 0.48.0 → 0.51.0. The `x/net` copy linked through gRPC is now past the HTTP/2 fixes in v0.60.0 and the HTML fixes in v0.62.0 (#495).
->>>>>>> origin/main
 
 ## [0.22.0] - 2026-11-02
 
