@@ -61,6 +61,25 @@ func NewDescribeAlertChartHandler(client *http.Client, cfg models.Config) func(c
 		if json.Unmarshal(body, &described) == nil {
 			recordDescribedChart(requestSession(req), surface+"/"+chartKey, described.Signals)
 		}
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}, nil, nil
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(withChartAlertPath(body))}}}, nil, nil
 	}
+}
+
+const chartAlertPathNote = "create_alert_from_chart with a listed signal key. Do not copy eval_query into create_alert, create_kpi, prometheus_range_query, or validate_alert_expression; pasted PromQL is not a custom-query parameter on this path."
+
+func withChartAlertPath(body []byte) []byte {
+	var payload map[string]json.RawMessage
+	if json.Unmarshal(body, &payload) != nil {
+		return body
+	}
+	note, err := json.Marshal(chartAlertPathNote)
+	if err != nil {
+		return body
+	}
+	payload["alert_path"] = note
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return body
+	}
+	return out
 }

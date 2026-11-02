@@ -53,6 +53,10 @@ func TestDescribeAlertChartHappyPath(t *testing.T) {
 	if len(resp.Signals) != 1 || resp.Signals[0].Key != "p95_latency" || resp.Signals[0].Unit != "ms" {
 		t.Fatalf("signals changed in transit: %+v", resp)
 	}
+	text := resultText(result)
+	if !strings.Contains(text, `"alert_path"`) || !strings.Contains(text, chartAlertPathNote) {
+		t.Fatalf("response missing catalog-path note: %s", text)
+	}
 }
 
 func TestDescribeAlertChartCoverageMiss(t *testing.T) {
