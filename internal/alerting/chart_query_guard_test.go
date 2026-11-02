@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"last9-mcp/internal/last9api/alerts"
 
@@ -167,14 +168,14 @@ func TestCreateAlertAllowsKPIsNotFromADescribedChart(t *testing.T) {
 	}
 }
 
-// A chart described in one MCP session must not block KPI authoring in another.
-func TestChartQueryGuardIsPerSession(t *testing.T) {
-	upstream, writes := chartGuardServer(t)
+// chartGuardMCP serves describe_alert_chart and create_kpi over in-memory MCP sessions.
+func chartGuardMCP(t *testing.T, upstream *httptest.Server) (connect func() *mcp.ClientSession, call func(*mcp.ClientSession, string, map[string]any) *mcp.CallToolResult) {
+	t.Helper()
 	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "0"}, nil)
 	cfg := testAlertMutationConfig(upstream.URL)
 	mcp.AddTool(server, &mcp.Tool{Name: "describe_alert_chart"}, NewDescribeAlertChartHandler(upstream.Client(), cfg))
 	mcp.AddTool(server, &mcp.Tool{Name: "create_kpi"}, NewCreateKPIHandler(upstream.Client(), cfg))
-	connect := func() *mcp.ClientSession {
+	connect = func() *mcp.ClientSession {
 		serverTransport, clientTransport := mcp.NewInMemoryTransports()
 		if _, err := server.Connect(context.Background(), serverTransport, nil); err != nil {
 			t.Fatal(err)
@@ -186,15 +187,24 @@ func TestChartQueryGuardIsPerSession(t *testing.T) {
 		t.Cleanup(func() { _ = session.Close() })
 		return session
 	}
-	call := func(session *mcp.ClientSession, tool string, args map[string]any) *mcp.CallToolResult {
+	call = func(session *mcp.ClientSession, tool string, args map[string]any) *mcp.CallToolResult {
 		result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: tool, Arguments: args})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return result
 	}
+	return connect, call
+}
+
+var describeApdexArgs = map[string]any{"surface": "discover-service", "chart_key": "apdex", "service_name": "checkout"}
+
+// A chart described in one MCP session must not block KPI authoring in another.
+func TestChartQueryGuardIsPerSession(t *testing.T) {
+	upstream, writes := chartGuardServer(t)
+	connect, call := chartGuardMCP(t, upstream)
 	chartSession, otherSession := connect(), connect()
-	if r := call(chartSession, "describe_alert_chart", map[string]any{"surface": "discover-service", "chart_key": "apdex", "service_name": "checkout"}); r.IsError {
+	if r := call(chartSession, "describe_alert_chart", describeApdexArgs); r.IsError {
 		t.Fatalf("describe: %s", resultText(r))
 	}
 	kpi := map[string]any{"entity_id": "entity-1", "name": "apdex", "query": `sum(trace_service_apdex_score{service_name="checkout"})`, "unit": "score"}
@@ -207,4 +217,35 @@ func TestChartQueryGuardIsPerSession(t *testing.T) {
 	if got := writes(); !reflect.DeepEqual(got, []string{"/entities/entity-1/kpis/"}) {
 		t.Fatalf("writes = %v", got)
 	}
+}
+
+// A closed session's guard is dropped, so closed sessions (every request under stateless
+// --http) never hold the maxGuardedSessions slots that live sessions need.
+func TestChartQueryGuardIsDroppedWhenSessionCloses(t *testing.T) {
+	upstream, _ := chartGuardServer(t)
+	connect, call := chartGuardMCP(t, upstream)
+	session := connect()
+	if r := call(session, "describe_alert_chart", describeApdexArgs); r.IsError {
+		t.Fatalf("describe: %s", resultText(r))
+	}
+	if got := guardedSessionCount(); got != 1 {
+		t.Fatalf("guarded sessions after describe = %d, want 1", got)
+	}
+	_ = session.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for guardedSessionCount() != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("closed session still guarded: %d sessions", guardedSessionCount())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func guardedSessionCount() int {
+	chartMetrics.mu.Lock()
+	defer chartMetrics.mu.Unlock()
+	if len(chartMetrics.sessions) != len(chartMetrics.order) {
+		panic("chart guard sessions and order disagree")
+	}
+	return len(chartMetrics.sessions)
 }
