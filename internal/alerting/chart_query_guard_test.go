@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -43,6 +44,7 @@ func TestChartQueryRefusalSelectorShapes(t *testing.T) {
 		`{__name__="m1"}`, `rate({__name__='m1', job="a"}[5m])`, `{"__name__"="m1"}`, `{"m1"}`, `{"m1", job="a"}`,
 		`{job="}", __name__="m1"}`, `{__name__=~"m1|x"}`, `{__name__=~"m.*"}`, `{__name__=~"job:.*"}`,
 		`{__name__!="x"}`, `{__name__!~"x.*"}`, `{__name__=~"("}`,
+		`m1{__name__!="x"}`, `{__name__=~"m1|x", __name__!="x"}`, `{__name__!="m1"} + {__name__=~"m1"}`,
 	} {
 		if refusal := chartQueryRefusal(nil, "query", query); !strings.Contains(refusal, "nothing was created") {
 			t.Errorf("%s was not refused", query)
@@ -51,6 +53,7 @@ func TestChartQueryRefusalSelectorShapes(t *testing.T) {
 	for _, query := range []string{
 		`{job="m1"}`, `sum by (m1) (other)`, `other and bool m3 or m4 unless m5`, `{__name__="m10"}`,
 		`{__name__=~"m1x|y"}`, `{__name__!~"m.*|job:.*"}`, `label_replace(other, "dst", "m1", "src", "(.*)")`,
+		`other{__name__!="m1"}`, `{__name__=~"m1|x", __name__!="m1"}`, `x{__name__="m1"}`, `{__name__=~"m.*", __name__!~"m1|job:.*"}`,
 	} {
 		if refusal := chartQueryRefusal(nil, "query", query); refusal != "" {
 			t.Errorf("%s refused: %s", query, refusal)
@@ -62,6 +65,12 @@ func TestChartQueryRefusalSelectorShapes(t *testing.T) {
 // create routes, recording every write so a refusal can be shown to have sent nothing.
 func chartGuardServer(t *testing.T) (*httptest.Server, func() []string) {
 	t.Helper()
+	return chartGuardServerWithKPIQuery(t, `max(queue_depth{queue="orders"})`)
+}
+
+// chartGuardServerWithKPIQuery is chartGuardServer with kpi-2 (queue_depth) on the given query.
+func chartGuardServerWithKPIQuery(t *testing.T, queueDepthQuery string) (*httptest.Server, func() []string) {
+	t.Helper()
 	t.Cleanup(resetDescribedChartMetrics)
 	var mu sync.Mutex
 	var writes []string
@@ -72,7 +81,7 @@ func chartGuardServer(t *testing.T) (*httptest.Server, func() []string) {
 			_, _ = w.Write([]byte(`{"signals":[{"key":"apdex","eval_query":"avg(trace_service_apdex_score{service_name=\"checkout\"})","unit":"score","query_kind":"metric"}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/entities/entity-1/kpis":
 			_, _ = w.Write([]byte(`[{"id":"kpi-1","name":"apdex","definition":{"query":"sum(trace_service_apdex_score{service_name=\"checkout\"})","unit":"score"}},` +
-				`{"id":"kpi-2","name":"queue_depth","definition":{"query":"max(queue_depth{queue=\"orders\"})","unit":"count"}}]`))
+				`{"id":"kpi-2","name":"queue_depth","definition":{"query":` + strconv.Quote(queueDepthQuery) + `,"unit":"count"}}]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/entities/entity-1/alert-rules":
 			_, _ = w.Write([]byte(`{"rules":[]}`))
 		case r.Method == http.MethodPost:
@@ -166,6 +175,51 @@ func TestCreateAlertAllowsKPIsNotFromADescribedChart(t *testing.T) {
 	}
 	if got := writes(); !reflect.DeepEqual(got, []string{"/entities/entity-1/alert-rules"}) {
 		t.Fatalf("writes = %v", got)
+	}
+}
+
+// PromQL ANDs every name restriction in one selector, so these select only queue_depth.
+var queueDepthOnlyQueries = []string{
+	`queue_depth{__name__!="unrelated"}`,
+	`{__name__=~"queue_depth|trace_service_apdex_score",__name__!="trace_service_apdex_score"}`,
+}
+
+func TestCreateKPIAllowsSelectorsExcludingTheChartMetric(t *testing.T) {
+	for _, query := range queueDepthOnlyQueries {
+		t.Run(query, func(t *testing.T) {
+			server, writes := chartGuardServer(t)
+			describeApdexChart(t, server)
+
+			args := validCreateKPIArgs()
+			args.Query = query
+			result, _, err := NewCreateKPIHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil, args)
+			if err != nil || result.IsError {
+				t.Fatalf("%s: result=%+v err=%v", query, result, err)
+			}
+			if got := writes(); !reflect.DeepEqual(got, []string{"/entities/entity-1/kpis/"}) {
+				t.Fatalf("%s: writes = %v", query, got)
+			}
+		})
+	}
+}
+
+func TestCreateAlertAllowsKPIsWithSelectorsExcludingTheChartMetric(t *testing.T) {
+	for _, query := range queueDepthOnlyQueries {
+		t.Run(query, func(t *testing.T) {
+			server, writes := chartGuardServerWithKPIQuery(t, query)
+			describeApdexChart(t, server)
+
+			name := "orders-backlog"
+			rule := AlertRulePayload{PrimaryIndicator: "queue_depth", ExpressionArgs: map[string]AlertExpressionArg{"queue_depth": {ID: "kpi-2"}}, RuleName: &name}
+			result, _, err := NewCreateAlertHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil,
+				CreateAlertArgs{EntityID: "entity-1", AlertRuleMutation: AlertRuleMutation{AlertRule: rule}})
+			if err != nil || result.IsError {
+				t.Fatalf("%s: result=%+v err=%v", query, result, err)
+			}
+			if got := writes(); !reflect.DeepEqual(got, []string{"/entities/entity-1/alert-rules"}) {
+				t.Fatalf("%s: writes = %v", query, got)
+			}
+		})
 	}
 }
 
