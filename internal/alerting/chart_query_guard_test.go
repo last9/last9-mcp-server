@@ -2,6 +2,7 @@ package alerting
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -238,6 +239,71 @@ func TestChartQueryGuardIsDroppedWhenSessionCloses(t *testing.T) {
 			t.Fatalf("closed session still guarded: %d sessions", guardedSessionCount())
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// openServerSessions returns n live, distinct server sessions; they close at test cleanup.
+func openServerSessions(t *testing.T, n int) []*mcp.ServerSession {
+	t.Helper()
+	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "0"}, nil)
+	sessions := make([]*mcp.ServerSession, n)
+	for i := range sessions {
+		serverTransport, _ := mcp.NewInMemoryTransports()
+		session, err := server.Connect(context.Background(), serverTransport, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = session.Close() })
+		sessions[i] = session
+	}
+	return sessions
+}
+
+// At maxGuardedSessions every session stays guarded; one more evicts only the oldest.
+func TestChartQueryGuardEvictsOldestSessionPastCap(t *testing.T) {
+	t.Cleanup(resetDescribedChartMetrics)
+	sessions := openServerSessions(t, maxGuardedSessions+1)
+	signal := []alerts.Signal{{EvalQuery: "m1"}}
+	for _, session := range sessions[:maxGuardedSessions] {
+		recordDescribedChart(session, "discover-service/chart-a", signal)
+	}
+	if got := guardedSessionCount(); got != maxGuardedSessions {
+		t.Fatalf("guarded sessions at cap = %d, want %d", got, maxGuardedSessions)
+	}
+	if chartQueryRefusal(sessions[0], "query", "m1") == "" {
+		t.Fatal("oldest session unguarded at cap")
+	}
+	recordDescribedChart(sessions[maxGuardedSessions], "discover-service/chart-a", signal)
+	if got := guardedSessionCount(); got != maxGuardedSessions {
+		t.Fatalf("guarded sessions past cap = %d, want %d", got, maxGuardedSessions)
+	}
+	if refusal := chartQueryRefusal(sessions[0], "query", "m1"); refusal != "" {
+		t.Fatalf("oldest session still guarded past cap: %s", refusal)
+	}
+	for _, i := range []int{1, maxGuardedSessions - 1, maxGuardedSessions} {
+		if chartQueryRefusal(sessions[i], "query", "m1") == "" {
+			t.Errorf("session %d unguarded past cap", i)
+		}
+	}
+}
+
+// A session guards its first maxGuardedChartMetrics metrics, across describes, and no more.
+func TestChartQueryGuardCapsMetricsPerSession(t *testing.T) {
+	t.Cleanup(resetDescribedChartMetrics)
+	metric := func(i int) string { return fmt.Sprintf("m%d", i) }
+	var first []string
+	for i := range maxGuardedChartMetrics - 1 {
+		first = append(first, metric(i))
+	}
+	recordDescribedChart(nil, "discover-service/chart-a", []alerts.Signal{{EvalQuery: strings.Join(first, " + ")}})
+	recordDescribedChart(nil, "discover-service/chart-b", []alerts.Signal{{EvalQuery: metric(maxGuardedChartMetrics-1) + " + " + metric(maxGuardedChartMetrics)}})
+	for _, i := range []int{0, maxGuardedChartMetrics - 2, maxGuardedChartMetrics - 1} {
+		if chartQueryRefusal(nil, "query", metric(i)) == "" {
+			t.Errorf("%s unguarded within the cap", metric(i))
+		}
+	}
+	if refusal := chartQueryRefusal(nil, "query", metric(maxGuardedChartMetrics)); refusal != "" {
+		t.Errorf("%s guarded past the cap: %s", metric(maxGuardedChartMetrics), refusal)
 	}
 }
 
