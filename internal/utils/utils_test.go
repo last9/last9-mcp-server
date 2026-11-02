@@ -303,6 +303,44 @@ func TestGetTimeRange_LookbackMinutes(t *testing.T) {
 	}
 }
 
+func TestGetTimeRange_LookbackMinutesUpperBound(t *testing.T) {
+	const maxLookback = 366 * 24 * 60
+	tests := []struct {
+		name            string
+		params          map[string]interface{}
+		defaultLookback int
+		wantValue       string
+	}{
+		{name: "max-1 as int", params: map[string]interface{}{"lookback_minutes": maxLookback - 1}, defaultLookback: 60},
+		{name: "max as float", params: map[string]interface{}{"lookback_minutes": float64(maxLookback)}, defaultLookback: 60},
+		{name: "max as default", params: map[string]interface{}{}, defaultLookback: maxLookback},
+		{name: "max+1 as int", params: map[string]interface{}{"lookback_minutes": maxLookback + 1}, defaultLookback: 60, wantValue: "527041"},
+		{name: "max+1 as float", params: map[string]interface{}{"lookback_minutes": float64(maxLookback + 1)}, defaultLookback: 60, wantValue: "527041"},
+		{name: "float beyond int range", params: map[string]interface{}{"lookback_minutes": 1e30}, defaultLookback: 60, wantValue: "1e+30"},
+		{name: "max+1 as default", params: map[string]interface{}{}, defaultLookback: maxLookback + 1, wantValue: "527041"},
+		{name: "max+1 with one bound", params: map[string]interface{}{"end_time_iso": "2026-02-09T16:04:05Z", "lookback_minutes": 10000000}, defaultLookback: 60, wantValue: "10000000"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := GetTimeRange(tt.params, tt.defaultLookback)
+			if tt.wantValue == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected an out-of-range error")
+			}
+			for _, want := range []string{"lookback_minutes " + tt.wantValue, "between 1 and 527040 (366 days)", "start_time_iso"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("error %q missing %q", err.Error(), want)
+				}
+			}
+		})
+	}
+}
+
 func TestGetTimeRange_UTCConsistency(t *testing.T) {
 	// Test that all returned times are consistently in UTC
 	params := map[string]interface{}{
