@@ -53,6 +53,32 @@ func TestCheckDashboardArguments_AcceptsValidAndLeavesOtherShapesToSchema(t *tes
 	}
 }
 
+func TestCheckDashboardArguments_NamesConditionallyRequiredFields(t *testing.T) {
+	logsPanel := `{"name":"a","layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"logs"},"queries":[]}`
+	noQueriesPanel := `{"name":"b","layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"stat"}}`
+	err := CheckDashboardArguments(json.RawMessage(`{"dashboard":{"name":"x","panels":[` + logsPanel + "," + logsPanel + "," + noQueriesPanel + `]}}`))
+	if err == nil {
+		t.Fatal("expected shape error")
+	}
+	for _, want := range []string{
+		"dashboard.panels[0].visualization.logs_config: missing; want object {columns}",
+		"dashboard.panels[1].visualization.logs_config: missing; want object {columns}",
+		"dashboard.panels[2]: want one of visualization.type section, visualization.type markdown, csv, queries",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error lacks %q:\n%v", want, err)
+		}
+	}
+	for _, other := range []string{"panels[0]: want one of", "panels[2].visualization.logs_config"} {
+		if strings.Contains(err.Error(), other) {
+			t.Errorf("error reports a satisfied condition %q:\n%v", other, err)
+		}
+	}
+	if got := checkPanelShape(map[string]any{"visualization": map[string]any{"type": "logs"}}, "panel"); len(got) != 0 {
+		t.Fatalf("partial patch panel: %v", got)
+	}
+}
+
 func TestCheckDashboardArguments_CapsProblems(t *testing.T) {
 	// Each panel is valid except for a string legend: exactly one problem per panel.
 	oneProblemPanel := `{"name":"p","version":1,"layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"stat"},"queries":[{"name":"A","type":"range","expr":"1","telemetry":"metrics","query_type":"promql","legend":"l"}]}`

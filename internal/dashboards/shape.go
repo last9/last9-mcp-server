@@ -96,10 +96,110 @@ func (s *shapeChecker) check(schema map[string]any, value any, path, kind string
 	}
 	for _, key := range required {
 		if _, set := obj[key]; !set && !aliased[key] {
-			propSchema, _ := props[key].(map[string]any)
-			s.problems = append(s.problems, fmt.Sprintf("%s.%s: missing; want %s", path, key, describeSchema(propSchema)))
+			s.missing(props, key, path)
 		}
 	}
+	s.checkConditions(schema, obj, path)
+}
+
+func (s *shapeChecker) missing(props map[string]any, key, path string) {
+	propSchema, _ := props[key].(map[string]any)
+	s.problems = append(s.problems, fmt.Sprintf("%s.%s: missing; want %s", path, key, describeSchema(propSchema)))
+}
+
+// checkConditions reports what the allOf if/then and anyOf keywords require, which the
+// SDK would otherwise report one at a time.
+func (s *shapeChecker) checkConditions(schema, obj map[string]any, path string) {
+	allOf, _ := schema["allOf"].([]any)
+	for _, c := range allOf {
+		cond, _ := c.(map[string]any)
+		ifSchema, _ := cond["if"].(map[string]any)
+		then, _ := cond["then"].(map[string]any)
+		if ifSchema != nil && then != nil && matches(ifSchema, obj) {
+			s.requireFrom(schema, then, obj, path)
+		}
+	}
+	anyOf, _ := schema["anyOf"].([]any)
+	options := make([]string, 0, len(anyOf))
+	for _, b := range anyOf {
+		branch, _ := b.(map[string]any)
+		if matches(branch, obj) {
+			return
+		}
+		options = append(options, describeBranch(branch, ""))
+	}
+	if len(options) > 0 {
+		s.problems = append(s.problems, fmt.Sprintf("%s: want one of %s", path, strings.Join(options, ", ")))
+	}
+}
+
+// requireFrom reports the fields cond requires of obj, described by obj's own schema.
+func (s *shapeChecker) requireFrom(schema, cond, obj map[string]any, path string) {
+	props, _ := schema["properties"].(map[string]any)
+	required, _ := cond["required"].([]string)
+	for _, key := range required {
+		if _, set := obj[key]; !set {
+			s.missing(props, key, path)
+		}
+	}
+	condProps, _ := cond["properties"].(map[string]any)
+	for _, key := range sortedKeys(condProps) {
+		child, ok := obj[key].(map[string]any)
+		propSchema, _ := props[key].(map[string]any)
+		sub, _ := condProps[key].(map[string]any)
+		if ok {
+			s.requireFrom(propSchema, sub, child, path+"."+key)
+		}
+	}
+}
+
+// matches evaluates the required, properties, const and enum keywords of schema.
+func matches(schema map[string]any, value any) bool {
+	if c, ok := schema["const"]; ok && value != c {
+		return false
+	}
+	if enum, ok := schema["enum"].([]string); ok {
+		str, _ := value.(string)
+		if !slices.Contains(enum, str) {
+			return false
+		}
+	}
+	obj, ok := value.(map[string]any)
+	if !ok {
+		return true
+	}
+	required, _ := schema["required"].([]string)
+	for _, key := range required {
+		if _, set := obj[key]; !set {
+			return false
+		}
+	}
+	props, _ := schema["properties"].(map[string]any)
+	for key, p := range props {
+		sub, _ := p.(map[string]any)
+		if v, set := obj[key]; set && !matches(sub, v) {
+			return false
+		}
+	}
+	return true
+}
+
+func describeBranch(schema map[string]any, prefix string) string {
+	required, _ := schema["required"].([]string)
+	parts := make([]string, 0, len(required))
+	for _, key := range required {
+		parts = append(parts, prefix+key)
+	}
+	props, _ := schema["properties"].(map[string]any)
+	for _, key := range sortedKeys(props) {
+		sub, _ := props[key].(map[string]any)
+		if enum, ok := sub["enum"].([]string); ok {
+			parts = append(parts, prefix+key+" "+strings.Join(enum, " or "))
+		} else if nested := describeBranch(sub, prefix+key+"."); nested != "" {
+			parts = append(parts, nested)
+		}
+	}
+	return strings.Join(parts, " and ")
 }
 
 func childKind(key string) string {

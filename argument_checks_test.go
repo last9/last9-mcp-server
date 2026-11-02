@@ -30,6 +30,27 @@ func TestDashboardWritesNameEveryWrongFieldBeforeSchemaValidation(t *testing.T) 
 	}
 }
 
+func TestDashboardWritesNameEveryConditionallyRequiredField(t *testing.T) {
+	session := newInMemoryClientSession(t)
+	logsPanel := `{"name":"a","layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"logs"},"queries":[]}`
+	panels := `"panels":[` + logsPanel + "," + logsPanel + `]`
+	for tool, args := range map[string]string{
+		"create_dashboard": `{"dashboard":{"name":"x",` + panels + `}}`,
+		"update_dashboard": `{"id":"dash-1","dashboard":{"name":"x",` + panels + `}}`,
+	} {
+		t.Run(tool, func(t *testing.T) {
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args)})
+			assertToolError(t, result, toolErrorExpectation{
+				contains: []string{
+					"dashboard.panels[0].visualization.logs_config: missing; want object {columns}",
+					"dashboard.panels[1].visualization.logs_config: missing; want object {columns}",
+				},
+				absent: []string{"validating /properties"},
+			})
+		})
+	}
+}
+
 func TestDashboardArgumentCheckRunsAfterIntegerCoercion(t *testing.T) {
 	session := newInMemoryClientSession(t)
 	args := `{"dashboard":{"name":"x","panels":[{"name":"p","version":"1","gridPos":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"section"}}]}}`
