@@ -15,5 +15,5 @@ On success the response lists the chart's signals with per-signal units as retur
 
 ## Pairs well with
 - `create_alert_from_chart` (alert on a signal listed here)
-- `create_alert` (alert on an alert-group KPI, for uncovered surfaces)
+- `create_alert` (custom dashboard panels only; never a KPI rebuilt from this chart's query)
 - `patch_alert` (promote a disabled draft rule)
