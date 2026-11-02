@@ -52,6 +52,9 @@ const (
 	// MaxLogAttributeLookbackMinutes caps the time window for attribute discovery
 	// queries. Longer windows return the same label set at higher cost.
 	MaxLogAttributeLookbackMinutes = 60
+	// MaxLookbackMinutes bounds lookback_minutes: chunked log and trace reads split a
+	// window into hourly requests, so a typo like 10000000 would run past any deadline.
+	MaxLookbackMinutes = int(maxLookback / time.Minute)
 	// TokenRefreshBuffer is the percentage of token lifetime to refresh before expiry (50%)
 	TokenRefreshBufferPercent = 50
 )
@@ -95,10 +98,13 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 
 	// First check if lookback_minutes is provided
 	lookbackMinutes := defaultLookbackMinutes
+	var requestedLookback any = defaultLookbackMinutes
 	if rawLookback, ok := params["lookback_minutes"]; ok {
+		requestedLookback = rawLookback
 		switch l := rawLookback.(type) {
 		case float64:
-			lookbackMinutes = int(l)
+			// Clamped before converting: a float beyond the int range converts to garbage.
+			lookbackMinutes = int(min(l, float64(MaxLookbackMinutes+1)))
 		case int:
 			lookbackMinutes = l
 		case int64:
@@ -109,6 +115,9 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 	}
 	if lookbackMinutes < 1 {
 		return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes must be at least 1. Use minutes as a number, for example 60 for 1h")
+	}
+	if lookbackMinutes > MaxLookbackMinutes {
+		return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes %v is out of range: use a value between 1 and %d (366 days), or start_time_iso and end_time_iso for an older window", requestedLookback, MaxLookbackMinutes)
 	}
 	// Default start time based on lookback
 	startTime = endTime.Add(time.Duration(-lookbackMinutes) * time.Minute)

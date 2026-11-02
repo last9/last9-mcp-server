@@ -29,7 +29,7 @@ type GetLogsArgs struct {
 	LogjsonQuery    []map[string]interface{} `json:"logjson_query,omitempty" jsonschema:"(Required) JSON pipeline query for logs"`
 	StartTimeISO    string                   `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
 	EndTimeISO      string                   `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
-	LookbackMinutes int                      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 5, minimum: 1)"`
+	LookbackMinutes int                      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 5, minimum: 1, maximum: 527040 = 366 days)"`
 	Limit           int                      `json:"limit,omitempty" jsonschema:"Maximum rows to return (optional; default: 1000 for aggregate/dataframe queries, 5000 for chunked raw queries)"`
 	Index           string                   `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Use a user-named index or a non-default physical index discovered by get_service_profile; omit for default or when unknown."`
 	ResponseMode    string                   `json:"response_mode,omitempty" jsonschema:"summary (default) or raw"`

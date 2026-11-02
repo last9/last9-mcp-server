@@ -20,7 +20,7 @@ import (
 // get_trace_attributes_for_pipeline tool.
 type GetTraceAttributesForPipelineArgs struct {
 	Pipeline        []map[string]interface{} `json:"pipeline,omitempty" jsonschema:"(Required) Pipeline of prior filter stages to scope discovery, e.g. [{\"type\":\"filter\",\"query\":{\"$and\":[{\"$eq\":[\"ServiceName\",\"<service>\"]}]}}]"`
-	LookbackMinutes int                      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 15, minimum: 1)"`
+	LookbackMinutes int                      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 15, minimum: 1, maximum: 527040 = 366 days)"`
 	StartTimeISO    string                   `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
 	EndTimeISO      string                   `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
 	Region          string                   `json:"region,omitempty" jsonschema:"Region to query (optional). Defaults to configured region."`

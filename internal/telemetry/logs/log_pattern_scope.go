@@ -22,7 +22,7 @@ type LogPatternScopeArgs struct {
 	Env             string   `json:"env,omitempty" jsonschema:"Environment to filter by (e.g. production). Omit when unknown."`
 	StartTimeISO    string   `json:"start_time_iso,omitempty" jsonschema:"Window start, RFC3339 (e.g. 2026-10-16T10:00:00Z). If omitted, lookback_minutes is used."`
 	EndTimeISO      string   `json:"end_time_iso,omitempty" jsonschema:"Window end, RFC3339. Defaults to now."`
-	LookbackMinutes int      `json:"lookback_minutes,omitempty" jsonschema:"Window length in minutes when start_time_iso is omitted (default: 60, minimum: 1)"`
+	LookbackMinutes int      `json:"lookback_minutes,omitempty" jsonschema:"Window length in minutes when start_time_iso is omitted (default: 60, minimum: 1, maximum: 527040 = 366 days)"`
 	SeverityFilters []string `json:"severity_filters,omitempty" jsonschema:"Severities to keep, OR logic, case-insensitive (e.g. [error warn]). Set it only when get_service_profile reports severity_set \"all\"; with none or partial, severity lives in the message body and this filter drops those lines. Omit to cluster every severity."`
 	BodyFilters     []string `json:"body_filters,omitempty" jsonschema:"Message substrings to keep, OR logic, case-insensitive (e.g. [timeout])"`
 	Index           string   `json:"index,omitempty" jsonschema:"Optional log index, physical_index:<name> or rehydration_index:<block_name>, as discovered by get_service_profile. Omit for the default index."`
