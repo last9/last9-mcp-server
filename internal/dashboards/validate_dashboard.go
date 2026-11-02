@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -268,7 +269,7 @@ func runValidateDashboard(ctx context.Context, exec *validateExecutor, parsed *v
 		},
 		"summary":   summary,
 		"panels":    panelRecords,
-		"timestamp": time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+		"timestamp": utils.Now().UTC().Format("2006-01-02T15:04:05Z"),
 	}
 
 	// Round-trip through JSON so validateReport sees []any shapes consistently.

@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"time"
 
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -98,7 +98,7 @@ func NewGetAlertConfigHandler(client *http.Client, cfg models.Config) func(conte
 			resolveAlertConfigKPIs(ctx, client, cfg, filteredAlertConfig)
 		}
 
-		evaluationNote := attachRecentEvaluations(ctx, last9api.NewClient(client, cfg), filteredAlertConfig, time.Now())
+		evaluationNote := attachRecentEvaluations(ctx, last9api.NewClient(client, cfg), filteredAlertConfig, utils.Now())
 
 		formattedResponse := formatAlertConfigResponse(
 			filteredAlertConfig,

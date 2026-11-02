@@ -583,7 +583,7 @@ func emptyStreamsResponse() map[string]interface{} {
 
 // parseTimeRangeFromArgs extracts start and end times from GetLogsArgs
 func parseTimeRangeFromArgs(args GetLogsArgs) (int64, int64, error) {
-	return parseTimeRangeFromArgsAt(args, time.Now().UTC())
+	return parseTimeRangeFromArgsAt(args, utils.Now().UTC())
 }
 
 func parseTimeRangeFromArgsAt(args GetLogsArgs, now time.Time) (int64, int64, error) {
