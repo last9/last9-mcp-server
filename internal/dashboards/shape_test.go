@@ -54,17 +54,29 @@ func TestCheckDashboardArguments_AcceptsValidAndLeavesOtherShapesToSchema(t *tes
 }
 
 func TestCheckDashboardArguments_CapsProblems(t *testing.T) {
-	panels := make([]string, 30)
-	for i := range panels {
-		panels[i] = `{"title":"p"}`
-	}
-	err := CheckDashboardArguments(json.RawMessage(`{"dashboard":{"name":"x","panels":[` + strings.Join(panels, ",") + `]}}`))
-	if err == nil {
-		t.Fatal("expected shape error")
-	}
-	lines := strings.Split(err.Error(), "\n")
-	if len(lines) != maxShapeProblems+2 || !strings.HasPrefix(lines[len(lines)-1], "- and ") {
-		t.Fatalf("got %d lines, last %q", len(lines), lines[len(lines)-1])
+	// Each panel is valid except for a string legend: exactly one problem per panel.
+	oneProblemPanel := `{"name":"p","version":1,"layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"stat"},"queries":[{"name":"A","type":"range","expr":"1","telemetry":"metrics","query_type":"promql","legend":"l"}]}`
+	for _, tc := range []struct {
+		problems int
+		lastLine string
+	}{
+		{maxShapeProblems - 1, "- dashboard.panels[18].queries[0].legend: got string, want object {type, value}"},
+		{maxShapeProblems, "- dashboard.panels[19].queries[0].legend: got string, want object {type, value}"},
+		{maxShapeProblems + 1, "- and 1 more"},
+	} {
+		panels := make([]string, tc.problems)
+		for i := range panels {
+			panels[i] = oneProblemPanel
+		}
+		err := CheckDashboardArguments(json.RawMessage(`{"dashboard":{"name":"x","panels":[` + strings.Join(panels, ",") + `]}}`))
+		if err == nil {
+			t.Fatalf("%d problems: expected shape error", tc.problems)
+		}
+		lines := strings.Split(err.Error(), "\n")
+		wantLines := 1 + min(tc.problems, maxShapeProblems+1)
+		if len(lines) != wantLines || lines[len(lines)-1] != tc.lastLine {
+			t.Errorf("%d problems: got %d lines (want %d), last %q (want %q)", tc.problems, len(lines), wantLines, lines[len(lines)-1], tc.lastLine)
+		}
 	}
 }
 
