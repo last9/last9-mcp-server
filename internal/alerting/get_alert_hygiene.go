@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
@@ -30,18 +31,31 @@ type GetAlertHygieneArgs struct {
 	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum flagged rules to return, worst first (default: 20, range: 1-100)"`
 }
 
+// The API caps a request at 31 days, so both windows are sent as they are.
+var hygieneWindowDurations = map[string]time.Duration{
+	hygieneWindow7d:  7 * 24 * time.Hour,
+	hygieneWindow30d: 30 * 24 * time.Hour,
+}
+
+const (
+	hygieneWindow7d  = "7d"
+	hygieneWindow30d = "30d"
+)
+
 type alertHygieneResult struct {
-	Window         string            `json:"window"`
-	From           string            `json:"from"`
-	To             string            `json:"to"`
-	CoveredDays    float64           `json:"covered_days"`
-	PartialWindow  bool              `json:"partial_window"`
-	RulesEvaluated int               `json:"rules_evaluated"`
-	FlaggedRules   int               `json:"flagged_rules"`
-	Truncated      bool              `json:"truncated"`
-	OmittedForSize int               `json:"omitted_for_size"`
-	NullFields     hygieneNullFields `json:"null_fields"`
-	Rules          []hygieneVerdict  `json:"rules"`
+	Window   string                 `json:"window"`
+	From     string                 `json:"from"`
+	To       string                 `json:"to"`
+	Coverage alerts.HygieneCoverage `json:"coverage"`
+	// UpstreamTruncated: the API capped its list by fire count, so the quietest
+	// rules (the likeliest stale ones) were not evaluated.
+	UpstreamTruncated bool               `json:"upstream_truncated"`
+	RulesEvaluated    int                `json:"rules_evaluated"`
+	FlaggedRules      int                `json:"flagged_rules"`
+	Truncated         bool               `json:"truncated"`
+	OmittedForSize    int                `json:"omitted_for_size"`
+	Unavailable       hygieneUnavailable `json:"unavailable"`
+	Rules             []hygieneVerdict   `json:"rules"`
 }
 
 func NewGetAlertHygieneHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetAlertHygieneArgs) (*mcp.CallToolResult, any, error) {
@@ -51,7 +65,10 @@ func NewGetAlertHygieneHandler(client *http.Client, cfg models.Config) func(cont
 			return nil, nil, err
 		}
 
-		resp, err := alerts.GetAlertHygiene(ctx, last9api.NewClient(client, cfg), alerts.GetAlertHygieneInput{Window: window})
+		to := time.Now().UTC().Truncate(time.Minute)
+		resp, err := alerts.GetAlertHygiene(ctx, last9api.NewClient(client, cfg), alerts.GetAlertHygieneInput{
+			From: to.Add(-hygieneWindowDurations[window]), To: to, Timezone: "UTC",
+		})
 		var upstream *utils.UpstreamHTTPError
 		if errors.As(err, &upstream) && upstream.StatusCode == http.StatusNotFound {
 			return nil, nil, fmt.Errorf("%w This Last9 deployment may not serve alert hygiene yet; no alert rules were checked.", err)
@@ -59,20 +76,25 @@ func NewGetAlertHygieneHandler(client *http.Client, cfg models.Config) func(cont
 		if err != nil {
 			return nil, nil, err
 		}
+		// The hygiene API sends stats only; fixes need each rule's condition and eval_window.
+		configs, err := fetchAlertConfig(ctx, client, cfg)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to fetch alert rule configuration: %w", err)
+		}
 
-		ranked := rankAlertHygiene(resp)
-		covered := newHygieneWindow(resp.Window, resp.From, resp.To)
+		rules := joinHygieneRuleConfig(resp.Rules, configs)
+		ranked := rankAlertHygiene(rules, newHygieneWindow(window, resp))
 		result := alertHygieneResult{
-			Window:         resp.Window,
-			From:           formatUnix(resp.From),
-			To:             formatUnix(resp.To),
-			CoveredDays:    covered.coveredDays(),
-			PartialWindow:  covered.Partial,
-			RulesEvaluated: len(resp.Rules),
-			FlaggedRules:   len(ranked),
-			Truncated:      len(ranked) > limit,
-			NullFields:     countNullFields(resp.Rules),
-			Rules:          ranked[:min(limit, len(ranked))],
+			Window:            window,
+			From:              formatHygieneTime(resp.Period.From),
+			To:                formatHygieneTime(resp.Period.To),
+			Coverage:          resp.Coverage,
+			UpstreamTruncated: resp.Truncated,
+			RulesEvaluated:    len(resp.Rules),
+			FlaggedRules:      len(ranked),
+			Truncated:         len(ranked) > limit,
+			Unavailable:       countUnavailable(rules),
+			Rules:             ranked[:min(limit, len(ranked))],
 		}
 		payload, err := marshalHygieneResult(result)
 		if err != nil {
@@ -124,10 +146,10 @@ func parseAlertHygieneArgs(args GetAlertHygieneArgs) (string, int, error) {
 	window := strings.ToLower(strings.TrimSpace(args.Window))
 	switch window {
 	case "":
-		window = alerts.HygieneWindow7d
-	case alerts.HygieneWindow7d, alerts.HygieneWindow30d:
+		window = hygieneWindow7d
+	case hygieneWindow7d, hygieneWindow30d:
 	default:
-		return "", 0, fmt.Errorf("window must be %q or %q, got %q", alerts.HygieneWindow7d, alerts.HygieneWindow30d, args.Window)
+		return "", 0, fmt.Errorf("window must be %q or %q, got %q", hygieneWindow7d, hygieneWindow30d, args.Window)
 	}
 
 	limit := args.Limit

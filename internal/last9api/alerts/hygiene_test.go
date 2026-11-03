@@ -28,88 +28,82 @@ func testClient(t *testing.T, h http.HandlerFunc) *last9api.Client {
 	return last9api.NewClient(srv.Client(), cfg)
 }
 
-func TestGetAlertHygiene_RequestPerWindow(t *testing.T) {
-	for _, window := range []string{HygieneWindow7d, HygieneWindow30d} {
-		t.Run(window, func(t *testing.T) {
-			var method, path, gotWindow string
-			c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-				_, _ = io.Copy(io.Discard, r.Body)
-				method, path, gotWindow = r.Method, r.URL.Path, r.URL.Query().Get("window")
-				_, _ = w.Write([]byte(`{"window":"` + window + `","from":1,"to":2,"rules":[]}`))
-			})
+var testHygieneInput = GetAlertHygieneInput{
+	From:     time.Date(2026, 10, 27, 0, 0, 0, 0, time.UTC),
+	To:       time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC),
+	Timezone: "UTC",
+}
 
-			resp, err := GetAlertHygiene(context.Background(), c, GetAlertHygieneInput{Window: window})
-			if err != nil {
-				t.Fatalf("GetAlertHygiene: %v", err)
-			}
-			if method != http.MethodGet || path != "/alert-hygiene" {
-				t.Errorf("request = %s %s, want GET /alert-hygiene", method, path)
-			}
-			if gotWindow != window {
-				t.Errorf("window query = %q, want %q", gotWindow, window)
-			}
-			if resp.Window != window {
-				t.Errorf("response window = %q", resp.Window)
-			}
-		})
+func TestGetAlertHygiene_SendsRFC3339RangeAndTimezone(t *testing.T) {
+	var method, path, from, to, timezone string
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		q := r.URL.Query()
+		method, path, from, to, timezone = r.Method, r.URL.Path, q.Get("from"), q.Get("to"), q.Get("timezone")
+		_, _ = w.Write([]byte(`{"rules":[]}`))
+	})
+
+	if _, err := GetAlertHygiene(context.Background(), c, testHygieneInput); err != nil {
+		t.Fatalf("GetAlertHygiene: %v", err)
+	}
+	if method != http.MethodGet || path != "/alerts/hygiene" {
+		t.Errorf("request = %s %s, want GET /alerts/hygiene", method, path)
+	}
+	if from != "2026-10-27T00:00:00Z" || to != "2026-11-03T00:00:00Z" || timezone != "UTC" {
+		t.Errorf("from, to, timezone = %q, %q, %q", from, to, timezone)
 	}
 }
 
-func TestGetAlertHygiene_DecodesNullHistoryAsNil(t *testing.T) {
+func TestGetAlertHygiene_DecodesAvailabilityCoverageAndTruncation(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
-		_, _ = w.Write([]byte(`{"window":"7d","from":1000,"to":2000,"rules":[
-			{"rule_id":"r-null","fire_count":0,"last_fired_at":null,"ack":null,"muted_seconds":null,"history_since":null,"routed":null,"channels":[]},
-			{"rule_id":"r-zero","expression":"error_rate","condition":"expr > 5","fire_count":3,"last_fired_at":1500,"ack":{"acked_episodes":0,"ack_rate":0,"median_seconds_to_ack":null},"muted_seconds":0,"history_since":900,"routed":true,
-			 "channels":[{"type":"slack","name":"oncall"}]},
-			{"rule_id":"r-absent","fire_count":0}
-		]}`))
+		_, _ = w.Write([]byte(`{
+			"period":{"from":"2026-10-27T00:00:00Z","to":"2026-11-03T00:00:00Z","timezone":"UTC"},
+			"coverage":{"lifecycle":{"status":"partial","range":{"from":"2026-10-30T00:00:00Z","to":"2026-11-03T00:00:00Z"},"reason":"retention"},
+			            "delivery":{"status":"unavailable","reason":"no ledger"}},
+			"rules":[
+				{"rule_id":"r-zero","alert_group_id":"g1","fire_count":{"status":"available","count":0},
+				 "flaps_per_day":{"status":"available","value":0},"ack_rate":{"status":"available","value":0},
+				 "last_fired_at":"2026-10-01T00:00:00Z","routed":false},
+				{"rule_id":"r-unavailable","fire_count":{"status":"unavailable","reason":"no ledger"},
+				 "flaps_per_day":{"status":"unavailable"},"ack_rate":{"status":"unavailable"}}
+			],
+			"truncated":true}`))
 	})
 
-	resp, err := GetAlertHygiene(context.Background(), c, GetAlertHygieneInput{Window: HygieneWindow7d})
+	resp, err := GetAlertHygiene(context.Background(), c, testHygieneInput)
 	if err != nil {
 		t.Fatalf("GetAlertHygiene: %v", err)
 	}
-	if resp.From != 1000 || resp.To != 2000 || len(resp.Rules) != 3 {
+	if !resp.Truncated || !resp.Period.To.Equal(testHygieneInput.To) || len(resp.Rules) != 2 {
 		t.Fatalf("resp = %+v", resp)
 	}
-	null := resp.Rules[0]
-	if null.LastFiredAt != nil || null.Ack != nil || null.MutedSeconds != nil || null.HistorySince != nil || null.Routed != nil {
-		t.Errorf("null history decoded as values: %+v", null)
+	if lc := resp.Coverage.Lifecycle; lc.Status != HygieneStatusPartial || lc.Range == nil || lc.Range.From.Day() != 30 {
+		t.Errorf("lifecycle coverage = %+v", lc)
 	}
-	if absent := resp.Rules[2]; absent.Routed != nil {
-		t.Errorf("absent routed decoded as %v, want nil", *absent.Routed)
+	zero := resp.Rules[0]
+	if zero.FireCount.Count == nil || *zero.FireCount.Count != 0 || zero.AckRate.Value == nil || *zero.AckRate.Value != 0 {
+		t.Errorf("observed zeros decoded as %+v", zero)
 	}
-	zero := resp.Rules[1]
-	if zero.Ack == nil || zero.Ack.AckRate != 0 || zero.Ack.MedianSecondsToAck != nil {
-		t.Errorf("ack = %+v, want recorded zero rate", zero.Ack)
+	if zero.LastFiredAt == nil || zero.Routed == nil || *zero.Routed {
+		t.Errorf("last_fired_at, routed = %v, %v", zero.LastFiredAt, zero.Routed)
 	}
-	if zero.MutedSeconds == nil || *zero.MutedSeconds != 0 {
-		t.Errorf("muted_seconds = %v, want recorded zero", zero.MutedSeconds)
-	}
-	if zero.LastFiredAt == nil || *zero.LastFiredAt != 1500 || zero.HistorySince == nil || *zero.HistorySince != 900 {
-		t.Errorf("timestamps = %v %v", zero.LastFiredAt, zero.HistorySince)
-	}
-	if zero.Expression != "error_rate" || zero.Condition != "expr > 5" {
-		t.Errorf("expression, condition = %q, %q", zero.Expression, zero.Condition)
-	}
-	if zero.Routed == nil || !*zero.Routed {
-		t.Errorf("routed = %v, want recorded true", zero.Routed)
-	}
-	if len(zero.Channels) != 1 || zero.Channels[0].Type != "slack" || zero.Channels[0].Name != "oncall" {
-		t.Errorf("channels = %+v", zero.Channels)
+	unavailable := resp.Rules[1]
+	if unavailable.FireCount.Count != nil || unavailable.FlapsPerDay.Value != nil || unavailable.AckRate.Value != nil ||
+		unavailable.LastFiredAt != nil || unavailable.Routed != nil {
+		t.Errorf("unavailable values decoded as observed: %+v", unavailable)
 	}
 }
 
 // The tool reads an empty rules list as "nothing to fix", so a body without one must fail.
 func TestGetAlertHygiene_RejectsResponseWithoutRules(t *testing.T) {
-	for _, body := range []string{``, `null`, `{}`, `{"window":"7d","from":1,"to":2}`, `{"window":"7d","from":1,"to":2,"rules":null}`} {
+	for _, body := range []string{``, `null`, `{}`, `{"truncated":false}`, `{"rules":null}`} {
 		t.Run(body, func(t *testing.T) {
 			c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 				_, _ = io.Copy(io.Discard, r.Body)
 				_, _ = w.Write([]byte(body))
 			})
-			if resp, err := GetAlertHygiene(context.Background(), c, GetAlertHygieneInput{Window: HygieneWindow7d}); err == nil {
+			if resp, err := GetAlertHygiene(context.Background(), c, testHygieneInput); err == nil {
 				t.Fatalf("expected an error, got %+v", resp)
 			}
 		})
@@ -119,9 +113,9 @@ func TestGetAlertHygiene_RejectsResponseWithoutRules(t *testing.T) {
 func TestGetAlertHygiene_AcceptsEmptyRules(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
-		_, _ = w.Write([]byte(`{"window":"7d","from":1,"to":2,"rules":[]}`))
+		_, _ = w.Write([]byte(`{"rules":[]}`))
 	})
-	resp, err := GetAlertHygiene(context.Background(), c, GetAlertHygieneInput{Window: HygieneWindow7d})
+	resp, err := GetAlertHygiene(context.Background(), c, testHygieneInput)
 	if err != nil {
 		t.Fatalf("GetAlertHygiene: %v", err)
 	}
@@ -136,7 +130,7 @@ func TestGetAlertHygiene_UpstreamErrorSurfaces(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	})
 
-	if _, err := GetAlertHygiene(context.Background(), c, GetAlertHygieneInput{Window: HygieneWindow7d}); err == nil {
+	if _, err := GetAlertHygiene(context.Background(), c, testHygieneInput); err == nil {
 		t.Fatal("expected an error for a 500 response")
 	}
 }

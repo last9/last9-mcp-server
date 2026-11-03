@@ -5,69 +5,99 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"last9-mcp/internal/last9api"
 )
 
-const pathAlertHygiene = "/alert-hygiene"
+const pathAlertHygiene = "/alerts/hygiene"
 
 const opAlertHygiene = "alert hygiene"
 
+// Values of HygieneMetric.Status, HygieneValue.Status and HygieneCoverageSource.Status.
 const (
-	HygieneWindow7d  = "7d"
-	HygieneWindow30d = "30d"
+	HygieneStatusAvailable   = "available"
+	HygieneStatusPartial     = "partial"
+	HygieneStatusUnavailable = "unavailable"
+	HygieneStatusComplete    = "complete"
 )
 
+// GetAlertHygieneInput is a half-open [From, To) range; the API caps it at 31 days.
 type GetAlertHygieneInput struct {
-	Window string
+	From, To time.Time
+	Timezone string
 }
 
-// Nullable fields are pointers: null or absent means no history (or, for routed, no
-// routing data) was recorded, never zero or false.
+// HygieneMetric is a count the API may not have observed: Count is nil when Status
+// is unavailable, so an unobserved value never reads as zero.
+type HygieneMetric struct {
+	Status string `json:"status"`
+	Count  *int64 `json:"count,omitempty"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// HygieneValue is a derived value with the same availability contract as HygieneMetric.
+type HygieneValue struct {
+	Status string   `json:"status"`
+	Value  *float64 `json:"value,omitempty"`
+	Reason string   `json:"reason,omitempty"`
+}
+
+// HygieneRule is one rule's stats for the period, without mute history or rule
+// configuration. LastFiredAt is nil without lifecycle coverage and may precede the
+// period for a still-open episode; Routed is nil without delivery coverage.
 type HygieneRule struct {
-	RuleID         string           `json:"rule_id"`
-	RuleName       string           `json:"rule_name"`
-	AlertGroupID   string           `json:"alert_group_id"`
-	AlertGroupName string           `json:"alert_group_name"`
-	Algorithm      string           `json:"algorithm"`
-	Expression     string           `json:"expression"`
-	Condition      string           `json:"condition"`
-	EvalWindow     int64            `json:"eval_window"`
-	AlertCondition string           `json:"alert_condition"`
-	Severity       string           `json:"severity"`
-	IsDisabled     bool             `json:"is_disabled"`
-	FireCount      int64            `json:"fire_count"`
-	FlapsPerDay    float64          `json:"flaps_per_day"`
-	FiringSeconds  float64          `json:"firing_seconds"`
-	LastFiredAt    *int64           `json:"last_fired_at"`
-	Ack            *HygieneAck      `json:"ack"`
-	MutedSeconds   *float64         `json:"muted_seconds"`
-	HistorySince   *int64           `json:"history_since"`
-	Routed         *bool            `json:"routed"`
-	Channels       []HygieneChannel `json:"channels"`
+	AlertGroupID           string            `json:"alert_group_id"`
+	RuleID                 string            `json:"rule_id"`
+	RuleType               string            `json:"rule_type"`
+	RuleName               string            `json:"rule_name"`
+	Service                string            `json:"service,omitempty"`
+	Severity               string            `json:"severity,omitempty"`
+	GroupLabels            map[string]string `json:"group_labels,omitempty"`
+	FireCount              HygieneMetric     `json:"fire_count"`
+	FlapCount              HygieneMetric     `json:"flap_count"`
+	FlapsPerDay            HygieneValue      `json:"flaps_per_day"`
+	TimeFiringSeconds      HygieneMetric     `json:"time_firing_seconds"`
+	LastFiredAt            *time.Time        `json:"last_fired_at,omitempty"`
+	AckRate                HygieneValue      `json:"ack_rate"`
+	MedianTimeToAckSeconds HygieneValue      `json:"median_time_to_ack_seconds"`
+	Routed                 *bool             `json:"routed,omitempty"`
 }
 
-type HygieneAck struct {
-	AckedEpisodes      int64    `json:"acked_episodes"`
-	AckRate            float64  `json:"ack_rate"`
-	MedianSecondsToAck *float64 `json:"median_seconds_to_ack"`
+type HygienePeriod struct {
+	From     time.Time `json:"from"`
+	To       time.Time `json:"to"`
+	Timezone string    `json:"timezone"`
 }
 
-// The API names channels and never sends their destinations, which hold webhook URLs.
-type HygieneChannel struct {
-	Type string `json:"type"`
-	Name string `json:"name"`
+// HygieneCoverageSource says how much of the period one source observed.
+type HygieneCoverageSource struct {
+	Status string        `json:"status"`
+	Range  *HygieneRange `json:"range,omitempty"`
+	Reason string        `json:"reason,omitempty"`
 }
 
-// From, To, LastFiredAt and HistorySince are unix seconds.
+type HygieneRange struct {
+	From time.Time `json:"from"`
+	To   time.Time `json:"to"`
+}
+
+// HygieneCoverage: lifecycle backs fire, flap and last-fired values; delivery backs routed.
+type HygieneCoverage struct {
+	Lifecycle HygieneCoverageSource `json:"lifecycle"`
+	Delivery  HygieneCoverageSource `json:"delivery"`
+}
+
+// GetAlertHygieneResponse lists rules by fire count; Truncated is set when the API
+// capped the list, so the quietest rules are missing from Rules.
 type GetAlertHygieneResponse struct {
-	Window string        `json:"window"`
-	From   int64         `json:"from"`
-	To     int64         `json:"to"`
-	Rules  []HygieneRule `json:"rules"`
+	Period    HygienePeriod   `json:"period"`
+	Coverage  HygieneCoverage `json:"coverage"`
+	Rules     []HygieneRule   `json:"rules"`
+	Truncated bool            `json:"truncated"`
 }
 
-// GetAlertHygiene calls GET /alert-hygiene?window={window}.
+// GetAlertHygiene calls GET /alerts/hygiene?from&to&timezone.
 func GetAlertHygiene(
 	ctx context.Context, c *last9api.Client, in GetAlertHygieneInput,
 ) (*GetAlertHygieneResponse, error) {
@@ -75,7 +105,11 @@ func GetAlertHygiene(
 	err := c.Do(ctx, opAlertHygiene,
 		last9api.Request{Method: http.MethodGet, Path: pathAlertHygiene},
 		&out,
-		last9api.WithQuery(url.Values{"window": {in.Window}}),
+		last9api.WithQuery(url.Values{
+			"from":     {in.From.UTC().Format(time.RFC3339)},
+			"to":       {in.To.UTC().Format(time.RFC3339)},
+			"timezone": {in.Timezone},
+		}),
 	)
 	if err != nil {
 		return nil, err
