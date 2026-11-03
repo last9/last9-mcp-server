@@ -1032,7 +1032,7 @@ Read-only. Never creates or updates dashboards. Accept exactly one of `dashboard
 - `start_time_iso` / `end_time_iso` (string, optional): Validation window (RFC3339). Must be ≤ 24h.
 - `region` (string, optional): Region for panel query execution.
 
-Returns `dashboard_validation/v1`: per-panel lint + execute classification (`data` / `no_data` / `invalid` / `error`). Day-1 empty results classify as `valid_no_data` without diagnose probes. A dashboard with no panels returns `success: false` with `error: "no_panels"`. Panel fields from other formats (Grafana `gridPos`, `title`, `type`, `targets`) and mistyped fields are listed per panel in `shape_problems`, counted in `summary.panels_invalid_shape`, and make `overall` `fail`.
+Returns `dashboard_validation/v1`: per-panel lint + execute classification (`data` / `no_data` / `invalid` / `error`). Day-1 empty results classify as `valid_no_data` without diagnose probes. A dashboard with no panels returns `success: false` with `error: "no_panels"`. Panel fields from other formats (Grafana `gridPos`, `title`, `type`, and `targets` on panels that need queries) and mistyped fields are listed per panel in `shape_problems`, counted in `summary.panels_invalid_shape`, and make `overall` `fail`.
 
 ### preview_dashboard
 

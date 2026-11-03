@@ -1,6 +1,6 @@
 Read-only validation of a Last9 dashboard: lints and executes every panel query in a bounded time window and classifies each result (data / no data / invalid / error). Accepts exactly one of dashboard_id (saved dashboard) or dashboard_definition (unsaved inline definition — a true dry run, nothing is persisted). Window must be ≤ 24h. Never mutates anything.
 
-dashboard_definition is the dashboard object (name, panels); a {dashboard, metadata} create envelope is unwrapped. A dashboard with no panels returns error no_panels. Panel fields from other formats (Grafana gridPos, title, type, targets) and mistyped fields are listed per panel in shape_problems and make overall fail.
+dashboard_definition is the dashboard object (name, panels); a {dashboard, metadata} create envelope is unwrapped. A dashboard with no panels returns error no_panels. Panel fields from other formats (Grafana gridPos, title, type, and targets on panels that need queries) and mistyped fields are listed per panel in shape_problems and make overall fail.
 
 Panel and target execution is sequential; large dashboards may be slow or hit client timeouts.
 

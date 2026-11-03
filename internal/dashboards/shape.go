@@ -84,7 +84,7 @@ func (s *shapeChecker) check(schema map[string]any, value any, path, kind string
 			continue
 		}
 		if native, ok := aliases[key]; ok {
-			if _, set := obj[native]; !set {
+			if _, set := obj[native]; !set && needsField(schema, obj, native) {
 				aliased[native] = true
 				s.problems = append(s.problems, fmt.Sprintf("%s.%s: unknown %s field; use %s", path, key, kind, describeField(props, native)))
 			}
@@ -149,6 +149,41 @@ func (s *shapeChecker) requireFrom(schema, cond, obj map[string]any, path string
 			s.requireFrom(propSchema, sub, child, path+"."+key)
 		}
 	}
+}
+
+// needsField reports whether obj must set key: it is required, or no anyOf branch
+// without it fits obj. The API ignores an alias of a field obj does not need.
+func needsField(schema, obj map[string]any, key string) bool {
+	required, _ := schema["required"].([]string)
+	if slices.Contains(required, key) {
+		return true
+	}
+	anyOf, _ := schema["anyOf"].([]any)
+	for _, b := range anyOf {
+		branch, _ := b.(map[string]any)
+		branchRequired, _ := branch["required"].([]string)
+		if !slices.Contains(branchRequired, key) && matches(branch, obj) && pinned(branch, obj) {
+			return false
+		}
+	}
+	return len(anyOf) > 0
+}
+
+// pinned reports whether value sets every property schema constrains, so that
+// matches(schema, value) is not true merely because those properties are absent.
+func pinned(schema map[string]any, value any) bool {
+	obj, ok := value.(map[string]any)
+	if !ok {
+		return true
+	}
+	props, _ := schema["properties"].(map[string]any)
+	for key, p := range props {
+		sub, _ := p.(map[string]any)
+		if v, set := obj[key]; !set || !pinned(sub, v) {
+			return false
+		}
+	}
+	return true
 }
 
 // matches supports only the keywords the input schema's conditions use.
