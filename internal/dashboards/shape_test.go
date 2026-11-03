@@ -214,4 +214,17 @@ func TestShapeCheck_FlagsAliasesOnlyWhereTheirFieldIsNeeded(t *testing.T) {
 	if got := strings.Join(checkPanelShape(stat, "panel"), "\n"); got != "panel.targets: unknown panel field; use queries" {
 		t.Errorf("patch stat panel with targets: got %q", got)
 	}
+
+	// Without visualization the section and markdown alternatives hold vacuously; they
+	// must not hide targets on a panel that will need queries once it names its type.
+	grafanaPanel := `{"title":"p","type":"timeseries","gridPos":{"x":0,"y":0,"w":6,"h":6},"targets":[{"expr":"up"}]}`
+	err = CheckDashboardArguments(json.RawMessage(`{"dashboard":{"name":"x","panels":[` + grafanaPanel + `]}}`))
+	if want := "dashboard.panels[0].targets: unknown panel field; use queries"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("Grafana panel without visualization: want %q, got %v", want, err)
+	}
+	var grafana map[string]any
+	_ = json.Unmarshal([]byte(grafanaPanel), &grafana)
+	if got := strings.Join(checkPanelShape(grafana, "panel"), "\n"); !strings.Contains(got, "panel.targets: unknown panel field; use queries") {
+		t.Errorf("patch Grafana panel without visualization: got %q", got)
+	}
 }
