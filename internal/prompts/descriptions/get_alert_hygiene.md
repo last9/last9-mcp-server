@@ -7,8 +7,8 @@ Parameters: window `7d` or `30d` (default `7d`, ending now); limit, flagged rule
 first (default 20, range 1-100).
 
 Categories (a rule may have several; disabled rules are never flagged):
-- noisy: fires at least 5 times/day with under 20% of episodes acked. With an unavailable
-  `ack_rate` it is judged on fire rate alone and the reason says so. Mute time is not reported.
+- noisy: fires at least 5 times/day with under 20% of episodes acked. With `ack_rate`
+  unavailable it is judged on fire rate alone and the reason says so. Mute time is not reported.
 - flapping: more than 4 flaps/day.
 - stale: last fired before the window with no firing time in it, or a configured rule with no
   episode in it while `coverage.lifecycle` is complete and the list is not truncated.
@@ -29,10 +29,10 @@ Suggested fixes (`suggested_fix`, sometimes `alternative_fix`, each `{parameter,
   or switch `expression` to the `adaptive_std_cmp(metric, sensitivity, window)` macro (not an
   `algorithm` value).
 - unrouted: attach a notification channel.
-- stale: set `is_disabled` to true, or delete the rule, once confirmed unneeded.
+- stale: set `is_disabled` to true, or delete it, once confirmed unneeded.
 
-Output is compact JSON: `{window, from, to, coverage, upstream_truncated, rules_evaluated, flagged_rules, truncated, omitted_for_size, unavailable, rules}`.
-`truncated`: more flagged rules than `limit` or 32 KB holds (`omitted_for_size` counts size cuts).
+Compact JSON output: `{window, from, to, coverage, upstream_truncated, rules_evaluated, flagged_rules, truncated, omitted_for_size, unavailable, rules}`.
+`truncated`: more flagged rules than `limit` or the 32 KB target holds (`omitted_for_size` counts size cuts).
 Each rule has `findings` (`category`, `reason` with the numbers, `suggested_fix`) and raw `stats`.
 
 Ranked by category count, then fire count, then flaps/day.

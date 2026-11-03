@@ -400,6 +400,10 @@ func TestGetAlertHygiene_KeepsTheWorstRulePastTheByteCap(t *testing.T) {
 	if len(out.Rules) != 1 || out.Rules[0].Stats.RuleID != "r01" || out.OmittedForSize != 1 || !out.Truncated {
 		t.Fatalf("returned %d rules, omitted_for_size=%d truncated=%v; want only r01", len(out.Rules), out.OmittedForSize, out.Truncated)
 	}
+	// The documented exception: a lone oversized worst rule exceeds the target.
+	if size := len(utils.GetTextContent(t, result)); size <= maxHygieneResponseBytes {
+		t.Fatalf("response is %d bytes; want the kept rule to push it past %d", size, maxHygieneResponseBytes)
+	}
 }
 
 // Every eval_window proposal must pass update_alert's own payload validation.
