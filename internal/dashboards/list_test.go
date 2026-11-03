@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -58,7 +59,7 @@ func overviewFixture(n, nameLen int) []map[string]any {
 			"id":         fmt.Sprintf("00000000-0000-4000-8000-%012d", i),
 			"name":       name,
 			"created_by": fmt.Sprintf("someone.with.a.long.address-%03d@example.com", i),
-			"updated_at": "2026-10-31T12:34:56.123456Z",
+			"updated_at": strconv.Itoa(1793683205 - i),
 			"tags":       []string{"production", "kubernetes", "golden-signals", "team-platform", "slo"},
 			"readonly":   i%7 == 0,
 		}

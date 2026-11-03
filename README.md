@@ -1028,7 +1028,7 @@ Call it before any service-scoped investigation so tool selection matches the se
 - `limit` (integer, optional): Dashboards per page, 1–200. Default: 100.
 - `cursor` (string, optional): `next_cursor` from the previous page; pass the same `name` with it.
 
-Returns `{"dashboards": [{"id", "name", "updated_at"}], "total", "next_cursor"}`, most recently updated first. A page ends early to stay under 32 KB; `next_cursor` is absent on the last page.
+Returns `{"dashboards": [{"id", "name", "updated_at"}], "total", "next_cursor"}`, most recently updated first. `updated_at` is Unix epoch seconds as a string. A page ends early to stay under 32 KB; `next_cursor` is absent on the last page.
 
 ### get_dashboard
 
