@@ -7,6 +7,8 @@ import (
 	"math"
 	"slices"
 	"strings"
+
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
 const maxShapeProblems = 20
@@ -75,12 +77,20 @@ func (s *shapeChecker) check(schema map[string]any, value any, path, kind string
 		return
 	}
 	props, _ := schema["properties"].(map[string]any)
+	branchProps := anyOfProperties(schema)
 	required, _ := schema["required"].([]string)
 	aliases := fieldAliases[kind]
 	aliased := map[string]bool{}
+	branchFieldMistyped := false
 	for _, key := range sortedKeys(obj) {
 		if propSchema, ok := props[key].(map[string]any); ok {
 			s.check(propSchema, obj[key], path+"."+key, childKind(key))
+			continue
+		}
+		if propSchema, ok := branchProps[key]; ok {
+			before := len(s.problems)
+			s.check(propSchema, obj[key], path+"."+key, childKind(key))
+			branchFieldMistyped = branchFieldMistyped || len(s.problems) > before
 			continue
 		}
 		if native, ok := aliases[key]; ok {
@@ -98,7 +108,24 @@ func (s *shapeChecker) check(schema map[string]any, value any, path, kind string
 			s.missing(props, key, path)
 		}
 	}
-	s.checkConditions(schema, obj, path)
+	s.checkConditions(schema, obj, path, !branchFieldMistyped)
+}
+
+// anyOfProperties collects property schemas declared only inside anyOf branches, such
+// as a panel's csv, so their values are type-checked like top-level properties.
+func anyOfProperties(schema map[string]any) map[string]map[string]any {
+	anyOf, _ := schema["anyOf"].([]any)
+	props := map[string]map[string]any{}
+	for _, b := range anyOf {
+		branch, _ := b.(map[string]any)
+		branchProps, _ := branch["properties"].(map[string]any)
+		for key, p := range branchProps {
+			if sub, ok := p.(map[string]any); ok && sub["type"] != nil {
+				props[key] = sub
+			}
+		}
+	}
+	return props
 }
 
 func (s *shapeChecker) missing(props map[string]any, key, path string) {
@@ -107,8 +134,9 @@ func (s *shapeChecker) missing(props map[string]any, key, path string) {
 }
 
 // checkConditions reports what the allOf if/then and anyOf keywords require, which the
-// SDK would otherwise report one at a time.
-func (s *shapeChecker) checkConditions(schema, obj map[string]any, path string) {
+// SDK would otherwise report one at a time. reportAnyOf is false when a mistyped branch
+// field already explains why no anyOf branch fits.
+func (s *shapeChecker) checkConditions(schema, obj map[string]any, path string, reportAnyOf bool) {
 	allOf, _ := schema["allOf"].([]any)
 	for _, c := range allOf {
 		cond, _ := c.(map[string]any)
@@ -127,7 +155,7 @@ func (s *shapeChecker) checkConditions(schema, obj map[string]any, path string) 
 		}
 		options = append(options, describeBranch(branch, ""))
 	}
-	if len(options) > 0 {
+	if reportAnyOf && len(options) > 0 {
 		s.problems = append(s.problems, fmt.Sprintf("%s: want one of %s", path, strings.Join(options, ", ")))
 	}
 }
@@ -186,35 +214,22 @@ func pinned(schema map[string]any, value any) bool {
 	return true
 }
 
-// matches supports only the keywords the input schema's conditions use.
+// matches reports whether value satisfies schema under the JSON Schema validator the SDK
+// applies to tool arguments, so branch matching cannot drift from the write tools.
 func matches(schema map[string]any, value any) bool {
-	if c, ok := schema["const"]; ok && value != c {
+	data, err := json.Marshal(schema)
+	if err != nil {
 		return false
 	}
-	if enum, ok := schema["enum"].([]string); ok {
-		str, _ := value.(string)
-		if !slices.Contains(enum, str) {
-			return false
-		}
+	var parsed jsonschema.Schema
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return false
 	}
-	obj, ok := value.(map[string]any)
-	if !ok {
-		return true
+	resolved, err := parsed.Resolve(nil)
+	if err != nil {
+		return false
 	}
-	required, _ := schema["required"].([]string)
-	for _, key := range required {
-		if _, set := obj[key]; !set {
-			return false
-		}
-	}
-	props, _ := schema["properties"].(map[string]any)
-	for key, p := range props {
-		sub, _ := p.(map[string]any)
-		if v, set := obj[key]; set && !matches(sub, v) {
-			return false
-		}
-	}
-	return true
+	return resolved.Validate(value) == nil
 }
 
 func describeBranch(schema map[string]any, prefix string) string {
