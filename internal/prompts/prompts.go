@@ -294,3 +294,12 @@ var AuthorAlertWorkflow string
 //
 //go:embed workflows/partials.md
 var WorkflowPartials string
+
+//go:embed workflows/create_dashboard_guide.md
+var CreateDashboardGuideWorkflow string
+
+//go:embed workflows/dashboard_examples.md
+var DashboardExamplesWorkflow string
+
+//go:embed workflows/query_guide.md
+var QueryGuideWorkflow string
