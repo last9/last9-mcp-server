@@ -3,6 +3,7 @@ package alerting
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/constants"
+	"last9-mcp/internal/last9api/alerts"
 	"last9-mcp/internal/models"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -483,5 +485,48 @@ func TestGetAlertCoverage_GapsSkipScopeLookup(t *testing.T) {
 		if stub.entityLookups != 0 {
 			t.Errorf("body %s: entity lookups = %d, want 0 when the report already lists or counts gaps", body, stub.entityLookups)
 		}
+	}
+}
+
+// maxCoverageResultBytes is the size bound for one get_alert_coverage result.
+const maxCoverageResultBytes = 32 << 10
+
+func TestGetAlertCoverage_WholeOrgResultFitsSizeBound(t *testing.T) {
+	const perKind = 500
+	report := alerts.GetAlertCoverageResponse{GeneratedAt: 1700000000, MutedDays: 7, Counts: map[string]int{}}
+	for _, kind := range []string{
+		alerts.CoverageGapUncoveredSignal, alerts.CoverageGapAllRulesDisabled,
+		alerts.CoverageGapNoNotificationChannel, alerts.CoverageGapMutedTooLong,
+	} {
+		report.Counts[kind] = perKind
+		for i := range perKind {
+			// Every field set at a realistic length, so this bounds the worst case per gap.
+			report.Gaps = append(report.Gaps, alerts.CoverageGap{
+				Kind:          kind,
+				EntityID:      fmt.Sprintf("8f14e45f-ceea-467a-9575-%012d", i),
+				EntityName:    fmt.Sprintf("payments-gateway-service-%d", i),
+				Service:       fmt.Sprintf("payments-gateway-service-%d", i),
+				Signal:        "http_server_request_error_rate",
+				RuleID:        fmt.Sprintf("c9f0f895-fb98-4b91-99f5-%012d", i),
+				RuleName:      "Payments gateway p99 latency above SLO threshold",
+				Severity:      "breach",
+				MutedSince:    1699000000,
+				MuteUntil:     1799000000,
+				Detail:        "Rule is muted since the last incident review and has no notification channel attached",
+				SuggestedTool: "patch_alert",
+			})
+		}
+	}
+	body, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := callAlertCoverage(t, &coverageStub{body: string(body)}, GetAlertCoverageArgs{})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	if len(text) > maxCoverageResultBytes {
+		t.Errorf("result = %d bytes, want at most %d", len(text), maxCoverageResultBytes)
 	}
 }
