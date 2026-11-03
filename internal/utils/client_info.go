@@ -13,6 +13,7 @@ import (
 
 // Stateless --http forgets initialize, so the session ID it hands out carries the client's
 // name and version itself: any replica can read them back from the ID the client echoes.
+// The ID is unsigned, so like clientInfo itself the identity it carries is self-reported.
 const (
 	clientSessionPrefix = "l9c1-"
 	maxClientInfoRunes  = 100
@@ -32,8 +33,8 @@ func NewClientSessionID(info mcp.Implementation) string {
 	return clientSessionPrefix + hex.EncodeToString(nonce) + "." + base64.RawURLEncoding.EncodeToString(payload)
 }
 
-// WithClientSession attaches the client identity encoded in sessionID to ctx. IDs this
-// server did not issue leave ctx unchanged.
+// WithClientSession attaches the client identity encoded in sessionID to ctx. It checks the
+// format only: a malformed ID leaves ctx unchanged, a well-formed one is trusted as given.
 func WithClientSession(ctx context.Context, sessionID string) context.Context {
 	rest, ok := strings.CutPrefix(sessionID, clientSessionPrefix)
 	if !ok {

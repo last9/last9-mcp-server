@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -23,10 +24,20 @@ func TestClientSessionIDRoundTripsBoundedIdentity(t *testing.T) {
 	}
 }
 
-func TestWithClientSessionIgnoresForeignIDs(t *testing.T) {
+func TestWithClientSessionIgnoresMalformedIDs(t *testing.T) {
 	for _, id := range []string{"", "abc123", "l9c1-", "l9c1-nonce", "l9c1-nonce.!!!", "l9c1-nonce.bnVsbA", "l9c1-nonce.e30"} {
 		if info := RequestClientInfo(WithClientSession(context.Background(), id), nil); info != nil {
 			t.Errorf("%q: got %+v, want no client identity", id, info)
 		}
+	}
+}
+
+// Session IDs are unsigned, so a caller can encode any identity; it is self-reported, like
+// clientInfo, and the README says so.
+func TestWithClientSessionTakesWellFormedCallerIDsAsSelfReported(t *testing.T) {
+	id := clientSessionPrefix + "." + base64.RawURLEncoding.EncodeToString([]byte(`{"name":"fabricated","version":"1"}`))
+	info := RequestClientInfo(WithClientSession(context.Background(), id), nil)
+	if info == nil || info.Name != "fabricated" || info.Version != "1" {
+		t.Errorf("got %+v, want the caller-encoded identity fabricated 1", info)
 	}
 }

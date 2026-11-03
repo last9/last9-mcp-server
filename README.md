@@ -423,7 +423,7 @@ Server starts at `http://localhost:8080/mcp`.
 
 ### Test with curl
 
-The Streamable HTTP handler runs in **stateless** mode, so any request is served independently. An `initialize` handshake and an `Mcp-Session-Id` header are optional — clients that send them still work, and clients can also skip straight to `tools/list` / `tools/call`. `initialize` returns an `Mcp-Session-Id` that encodes the client's `clientInfo` name and version (each cut to 100 characters), so any replica can attribute the client's later requests without shared state; an ID the server did not issue is ignored. Every tool is an independent request/response query; the server issues no server→client notifications, so `GET /mcp` (the SSE stream) returns `405`.
+The Streamable HTTP handler runs in **stateless** mode, so any request is served independently. An `initialize` handshake and an `Mcp-Session-Id` header are optional — clients that send them still work, and clients can also skip straight to `tools/list` / `tools/call`. `initialize` returns an `Mcp-Session-Id` that encodes the client's `clientInfo` name and version (each cut to 100 characters), so any replica can attribute the client's later requests without shared state. The ID is checked for format only, not signed, so like `clientInfo` the identity it carries is self-reported; a malformed ID is ignored. Every tool is an independent request/response query; the server issues no server→client notifications, so `GET /mcp` (the SSE stream) returns `405`.
 
 ```bash
 # List tools — a session handshake is optional in stateless mode
