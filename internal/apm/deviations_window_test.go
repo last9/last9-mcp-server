@@ -2,8 +2,11 @@ package apm
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
+
+	"last9-mcp/internal/utils"
 )
 
 func TestDeviationWindowResolverAvailableOnAllPlatforms(t *testing.T) {
@@ -95,6 +98,36 @@ func TestResolveDeviationWindowsLookbackFloorBoundary(t *testing.T) {
 			}
 			if gotErr && err.Error() != "requested window contains no completed buckets" {
 				t.Fatalf("lookback=%v: unexpected error %v", tt.lookback, err)
+			}
+		})
+	}
+}
+
+func TestResolveDeviationWindowsLookbackUpperBound(t *testing.T) {
+	now := time.Date(2026, 7, 11, 10, 7, 32, 0, time.UTC)
+	max := float64(utils.MaxLookbackMinutes)
+	tests := []struct {
+		lookback float64
+		wantErr  string
+	}{
+		{max - 1, ""},
+		{max, ""},
+		{max + 0.9, ""}, // truncated like GetTimeRange
+		{max + 1, "lookback_minutes 527041 is out of range: use a value between 1 and 527040 (366 days), or start_time_iso and end_time_iso for an older window"},
+		{1e30, "lookback_minutes 1e+30 is out of range"},
+		{1e308, "lookback_minutes 1e+308 is out of range"},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("lookback=%v", tt.lookback), func(t *testing.T) {
+			_, err := resolveDeviationWindows(DeviationArgs{LookbackMinutes: tt.lookback}, now, time.Minute)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("want accepted, got %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.HasPrefix(err.Error(), tt.wantErr) {
+				t.Fatalf("got err %v, want prefix %q", err, tt.wantErr)
 			}
 		})
 	}
