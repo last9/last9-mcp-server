@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,7 +32,15 @@ type metricDescriptionFixture struct {
 	labelBodies  map[string]string // metric -> raw label-lookup response, overriding labels
 	status       int
 	labelStatus  int
+	mu           sync.Mutex // guards requests: a canceled request's handler can overlap its fallback's
 	requests     []map[string]any
+}
+
+// recorded returns a snapshot of the request log, safe while handlers still run.
+func (f *metricDescriptionFixture) recorded() []map[string]any {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.requests)
 }
 
 func (f *metricDescriptionFixture) handler(t *testing.T) func(context.Context, *mcp.CallToolRequest, DescribeMetricArgs) (*mcp.CallToolResult, any, error) {
@@ -40,7 +49,9 @@ func (f *metricDescriptionFixture) handler(t *testing.T) func(context.Context, *
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		body["path"] = r.URL.Path
+		f.mu.Lock()
 		f.requests = append(f.requests, body)
+		f.mu.Unlock()
 		metric, _ := body["metric"].(string)
 		switch r.URL.Path {
 		case "/prom_metadata":
@@ -208,8 +219,8 @@ func TestDescribeMetricValidatesBatchBeforeIO(t *testing.T) {
 	for _, names := range [][]string{nil, {}, {"up", " "}, {"up", "up{}"}, {strings.Repeat("a", 257)}, strings.Fields(strings.Repeat("up ", 11))} {
 		f := &metricDescriptionFixture{}
 		_, _, err := f.handler(t)(context.Background(), nil, DescribeMetricArgs{MetricNames: names})
-		if err == nil || len(f.requests) != 0 {
-			t.Fatalf("names=%v err=%v requests=%v", names, err, f.requests)
+		if err == nil || len(f.recorded()) != 0 {
+			t.Fatalf("names=%v err=%v requests=%v", names, err, f.recorded())
 		}
 	}
 }
@@ -259,7 +270,7 @@ func TestDescribeMetricLabelsAndBounds(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 	var queries []any
-	for _, r := range f.requests {
+	for _, r := range f.recorded() {
 		if strings.Contains(fmt.Sprint(r["query"]), "last_over_time(") {
 			queries = append(queries, r["query"])
 		}
@@ -270,7 +281,7 @@ func TestDescribeMetricLabelsAndBounds(t *testing.T) {
 	// A series without labels still proves the metric exists, so the wider lookback is not needed.
 	f = &metricDescriptionFixture{labelBodies: map[string]string{"up": `[{"metric":{},"value":[1700000000,"1"]}]`}}
 	got = describeOne(t, f, "up")
-	if len(got.LabelKeys) != 0 || strings.Contains(strings.Join(got.Notes, " "), "existence remains unverified") || len(f.requests) == 0 || strings.Contains(fmt.Sprint(f.requests), "345600s") {
+	if len(got.LabelKeys) != 0 || strings.Contains(strings.Join(got.Notes, " "), "existence remains unverified") || len(f.recorded()) == 0 || strings.Contains(fmt.Sprint(f.recorded()), "345600s") {
 		t.Fatalf("%+v", got)
 	}
 }
@@ -355,7 +366,7 @@ func TestDescribeMetricNativeHistogram(t *testing.T) {
 			t.Fatalf("count=%s: %+v", count, got)
 		}
 		found := false
-		for _, request := range f.requests {
+		for _, request := range f.recorded() {
 			if strings.HasPrefix(fmt.Sprint(request["query"]), "count(") {
 				found = true
 				if request["query"] != "count(histogram_count(latency))" {
@@ -408,7 +419,7 @@ func TestDescribeMetricTotalResponseIncludesDatasourceNote(t *testing.T) {
 func TestDescribeMetricBoundsInvalidNameError(t *testing.T) {
 	f := &metricDescriptionFixture{}
 	_, _, err := f.handler(t)(context.Background(), nil, DescribeMetricArgs{MetricNames: []string{strings.Repeat("x", 256<<10)}})
-	if err == nil || len(err.Error()) > 1024 || len(f.requests) != 0 {
+	if err == nil || len(err.Error()) > 1024 || len(f.recorded()) != 0 {
 		t.Fatal("invalid name must fail before I/O with a bounded diagnostic")
 	}
 }

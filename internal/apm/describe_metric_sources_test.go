@@ -27,7 +27,7 @@ func TestDescribeMetricSources(t *testing.T) {
 			if got.Type != tt.kind || got.TypeSource != tt.source || got.Unit != tt.unit || got.Confidence == "" {
 				t.Fatalf("%+v", got)
 			}
-			for _, req := range f.requests {
+			for _, req := range f.recorded() {
 				if req["path"] == "/prom_metadata" {
 					t.Fatal("resolved type depends on optional metadata")
 				}
@@ -147,7 +147,7 @@ func TestDescribeMetricProbeRequestBounds(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 	probes := 0
-	for _, req := range f.requests {
+	for _, req := range f.recorded() {
 		if !strings.HasSuffix(fmt.Sprint(req["query"]), "[5m:30s]") {
 			continue
 		}
@@ -198,7 +198,7 @@ func TestDescribeMetricGaugeEvidencePrecedesMetadata(t *testing.T) {
 	if got.Type != "gauge" || got.TypeSource != "probe" || got.RecommendedQuery != "custom" {
 		t.Fatalf("%+v", got)
 	}
-	for _, req := range f.requests {
+	for _, req := range f.recorded() {
 		if req["path"] == "/prom_metadata" {
 			t.Fatal("metadata was read after decisive gauge evidence")
 		}
