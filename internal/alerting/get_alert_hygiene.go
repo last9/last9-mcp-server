@@ -65,7 +65,7 @@ func NewGetAlertHygieneHandler(client *http.Client, cfg models.Config) func(cont
 			return nil, nil, err
 		}
 
-		to := time.Now().UTC().Truncate(time.Minute)
+		to := utils.Now().UTC().Truncate(time.Minute)
 		resp, err := alerts.GetAlertHygiene(ctx, last9api.NewClient(client, cfg), alerts.GetAlertHygieneInput{
 			From: to.Add(-hygieneWindowDurations[window]), To: to, Timezone: "UTC",
 		})
