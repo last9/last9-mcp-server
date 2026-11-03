@@ -157,23 +157,31 @@ func TestGetAlertCoverage_RejectsInvalidMutedDays(t *testing.T) {
 
 func TestGetAlertCoverage_RendersEachGapKind(t *testing.T) {
 	for _, tc := range []struct {
-		gap      string
-		kind     string
-		tool     string
-		wantArgs map[string]string
+		name        string
+		gap         string
+		kind        string
+		tool        string
+		wantContext [3]string // entity_id, rule_id, signal
+		wantArgs    map[string]any
 	}{
-		{`{"kind":"uncovered_signal","entity_id":"ent-1","entity_name":"Checkout","service":"checkout","signal":"latency","detail":"no latency rule","suggested_tool":"create_alert"}`,
-			"uncovered_signal", "create_alert", map[string]string{"entity_id": "ent-1", "signal": "latency"}},
-		{`{"kind":"all_rules_disabled","entity_id":"ent-2","entity_name":"Payments","detail":"3 rules, all disabled","suggested_tool":"patch_alert"}`,
-			"all_rules_disabled", "patch_alert", map[string]string{"entity_id": "ent-2"}},
-		{`{"kind":"uncovered_signal","entity_id":"ent-1","entity_name":"Checkout","service":"checkout","signal":"error_rate","rule_id":"rule-2","rule_name":"errors","detail":"re-enable it","suggested_tool":"patch_alert"}`,
-			"uncovered_signal", "patch_alert", map[string]string{"entity_id": "ent-1", "rule_id": "rule-2", "signal": "error_rate"}},
-		{`{"kind":"no_notification_channel","entity_id":"ent-3","entity_name":"Search","rule_id":"rule-5","rule_name":"5xx","severity":"critical","detail":"no channel routes it","suggested_tool":"attach_notification_channel"}`,
-			"no_notification_channel", "attach_notification_channel", map[string]string{"entity_id": "ent-3", "rule_id": "rule-5"}},
-		{`{"kind":"muted_too_long","entity_id":"ent-4","rule_id":"rule-9","rule_name":"p99 latency","severity":"breach","muted_since":1690000000,"mute_until":-1,"suggested_tool":"patch_alert"}`,
-			"muted_too_long", "patch_alert", map[string]string{"entity_id": "ent-4", "rule_id": "rule-9"}},
+		{"uncovered signal, new rule", `{"kind":"uncovered_signal","entity_id":"ent-1","entity_name":"Checkout","service":"checkout","signal":"latency","detail":"no latency rule","suggested_tool":"create_alert"}`,
+			"uncovered_signal", "create_alert", [3]string{"ent-1", "", "latency"}, map[string]any{"entity_id": "ent-1"}},
+		{"uncovered signal, from chart", `{"kind":"uncovered_signal","entity_id":"ent-1","service":"checkout","signal":"latency","suggested_tool":"create_alert_from_chart"}`,
+			"uncovered_signal", "create_alert_from_chart", [3]string{"ent-1", "", "latency"}, map[string]any{"service_name": "checkout"}},
+		{"all rules disabled", `{"kind":"all_rules_disabled","entity_id":"ent-2","entity_name":"Payments","detail":"3 rules, all disabled","suggested_tool":"patch_alert"}`,
+			"all_rules_disabled", "patch_alert", [3]string{"ent-2", "", ""}, map[string]any{"entity_id": "ent-2", "is_disabled": false}},
+		{"uncovered signal, disabled rule", `{"kind":"uncovered_signal","entity_id":"ent-1","entity_name":"Checkout","service":"checkout","signal":"error_rate","rule_id":"rule-2","rule_name":"errors","detail":"re-enable it","suggested_tool":"patch_alert"}`,
+			"uncovered_signal", "patch_alert", [3]string{"ent-1", "rule-2", "error_rate"}, map[string]any{"entity_id": "ent-1", "id": "rule-2", "is_disabled": false}},
+		{"no channel", `{"kind":"no_notification_channel","entity_id":"ent-3","entity_name":"Search","rule_id":"rule-5","rule_name":"5xx","severity":"threat","detail":"no channel routes it","suggested_tool":"attach_notification_channel"}`,
+			"no_notification_channel", "attach_notification_channel", [3]string{"ent-3", "rule-5", ""}, map[string]any{"alert_group_id": "ent-3", "severity": "threat"}},
+		{"no channel, unknown severity", `{"kind":"no_notification_channel","entity_id":"ent-3","rule_id":"rule-5","severity":"critical","suggested_tool":"attach_notification_channel"}`,
+			"no_notification_channel", "attach_notification_channel", [3]string{"ent-3", "rule-5", ""}, map[string]any{"alert_group_id": "ent-3"}},
+		{"muted too long", `{"kind":"muted_too_long","entity_id":"ent-4","rule_id":"rule-9","rule_name":"p99 latency","severity":"breach","muted_since":1690000000,"mute_until":-1,"suggested_tool":"patch_alert"}`,
+			"muted_too_long", "patch_alert", [3]string{"ent-4", "rule-9", ""}, map[string]any{"entity_id": "ent-4", "id": "rule-9", "mute_until": float64(0)}},
+		{"unknown tool", `{"kind":"muted_too_long","entity_id":"ent-4","rule_id":"rule-9","suggested_tool":"future_tool"}`,
+			"muted_too_long", "future_tool", [3]string{"ent-4", "rule-9", ""}, nil},
 	} {
-		t.Run(tc.kind, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			stub := &coverageStub{body: `{"generated_at":1700000000,"muted_days":7,"gaps":[` + tc.gap + `],"counts":{"` + tc.kind + `":1}}`}
 			result, err := callAlertCoverage(t, stub, GetAlertCoverageArgs{})
 			if err != nil {
@@ -189,6 +197,9 @@ func TestGetAlertCoverage_RendersEachGapKind(t *testing.T) {
 			gap := out.Groups[0].Gaps[0]
 			if gap.SuggestedTool != tc.tool {
 				t.Errorf("suggested_tool = %q, want %q", gap.SuggestedTool, tc.tool)
+			}
+			if got := [3]string{gap.EntityID, gap.RuleID, gap.Signal}; got != tc.wantContext {
+				t.Errorf("entity_id, rule_id, signal = %q, want %q", got, tc.wantContext)
 			}
 			if !maps.Equal(gap.SuggestedArgs, tc.wantArgs) {
 				t.Errorf("suggested_args = %v, want %v", gap.SuggestedArgs, tc.wantArgs)
@@ -246,7 +257,7 @@ func TestGetAlertCoverage_GroupsInKindOrder(t *testing.T) {
 		t.Fatalf("group order = %v, want %s", kinds, want)
 	}
 	signals := out.Groups[0].Gaps
-	if out.Groups[0].Count != 2 || signals[0].SuggestedArgs["signal"] != "latency" || signals[1].SuggestedArgs["signal"] != "error_rate" {
+	if out.Groups[0].Count != 2 || signals[0].Signal != "latency" || signals[1].Signal != "error_rate" {
 		t.Errorf("uncovered_signal group = %+v, want both gaps in API order", out.Groups[0])
 	}
 }
@@ -462,7 +473,7 @@ func TestGetAlertCoverage_CapsListedGapsPerKind(t *testing.T) {
 				t.Fatalf("group count=%d listed=%d omitted=%d, want %d/%d/%d",
 					group.Count, len(group.Gaps), group.Omitted, tc.n, tc.wantListed, tc.wantOmitted)
 			}
-			if group.Gaps[0].SuggestedArgs["entity_id"] != "e-0" {
+			if group.Gaps[0].EntityID != "e-0" {
 				t.Errorf("first listed gap = %+v, want the API's first", group.Gaps[0])
 			}
 			narrow := strings.Contains(out.Summary, "narrow by service, environment or entity_id")

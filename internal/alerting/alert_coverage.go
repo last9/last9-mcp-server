@@ -75,15 +75,18 @@ type alertCoverageGroup struct {
 }
 
 type alertCoverageGap struct {
-	EntityName    string            `json:"entity_name,omitempty"`
-	Service       string            `json:"service,omitempty"`
-	RuleName      string            `json:"rule_name,omitempty"`
-	Severity      string            `json:"severity,omitempty"`
-	MutedSince    string            `json:"muted_since,omitempty"`
-	MuteUntil     string            `json:"mute_until,omitempty"`
-	Detail        string            `json:"detail,omitempty"`
-	SuggestedTool string            `json:"suggested_tool,omitempty"`
-	SuggestedArgs map[string]string `json:"suggested_args,omitempty"`
+	EntityID      string         `json:"entity_id,omitempty"`
+	EntityName    string         `json:"entity_name,omitempty"`
+	Service       string         `json:"service,omitempty"`
+	Signal        string         `json:"signal,omitempty"`
+	RuleID        string         `json:"rule_id,omitempty"`
+	RuleName      string         `json:"rule_name,omitempty"`
+	Severity      string         `json:"severity,omitempty"`
+	MutedSince    string         `json:"muted_since,omitempty"`
+	MuteUntil     string         `json:"mute_until,omitempty"`
+	Detail        string         `json:"detail,omitempty"`
+	SuggestedTool string         `json:"suggested_tool,omitempty"`
+	SuggestedArgs map[string]any `json:"suggested_args,omitempty"`
 }
 
 func NewGetAlertCoverageHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetAlertCoverageArgs) (*mcp.CallToolResult, any, error) {
@@ -254,27 +257,55 @@ func groupCoverageGaps(gaps []alerts.CoverageGap) []alertCoverageGroup {
 }
 
 func projectCoverageGap(gap alerts.CoverageGap) alertCoverageGap {
-	suggestedArgs := map[string]string{}
-	for key, value := range map[string]string{
-		"entity_id": gap.EntityID,
-		"rule_id":   gap.RuleID,
-		"signal":    gap.Signal,
-	} {
-		if value != "" {
-			suggestedArgs[key] = value
-		}
-	}
 	return alertCoverageGap{
+		EntityID:      gap.EntityID,
 		EntityName:    gap.EntityName,
 		Service:       gap.Service,
+		Signal:        gap.Signal,
+		RuleID:        gap.RuleID,
 		RuleName:      gap.RuleName,
 		Severity:      gap.Severity,
 		MutedSince:    formatCoverageTime(gap.MutedSince),
 		MuteUntil:     formatCoverageTime(gap.MuteUntil),
 		Detail:        gap.Detail,
 		SuggestedTool: gap.SuggestedTool,
-		SuggestedArgs: suggestedArgs,
+		SuggestedArgs: coverageSuggestedArgs(gap),
 	}
+}
+
+// coverageSuggestedArgs names a gap's ids by its suggested tool's own inputs, plus the
+// change that closes the gap when known; a tool this server does not serve gets none.
+func coverageSuggestedArgs(gap alerts.CoverageGap) map[string]any {
+	args := map[string]any{}
+	set := func(key, value string) {
+		if value != "" {
+			args[key] = value
+		}
+	}
+	switch gap.SuggestedTool {
+	case "create_alert":
+		set("entity_id", gap.EntityID)
+	case "create_alert_from_chart":
+		set("service_name", gap.Service)
+	case "attach_notification_channel":
+		set("alert_group_id", gap.EntityID)
+		if gap.Severity == "breach" || gap.Severity == "threat" {
+			args["severity"] = gap.Severity
+		}
+	case "patch_alert":
+		set("entity_id", gap.EntityID)
+		set("id", gap.RuleID)
+		switch gap.Kind {
+		case alerts.CoverageGapMutedTooLong:
+			args["mute_until"] = 0
+		case alerts.CoverageGapUncoveredSignal, alerts.CoverageGapAllRulesDisabled:
+			args["is_disabled"] = false
+		}
+	}
+	if len(args) == 0 {
+		return nil
+	}
+	return args
 }
 
 func describeCoverageScope(scope alertCoverageScope) string {

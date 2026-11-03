@@ -1029,6 +1029,8 @@ func TestAlertCoverageDescription(t *testing.T) {
 		"no gaps, every count is 0, and an alert group matches the scope",
 		"At most 10 gaps per kind",
 		"if available in this session",
+		"suggested_args holds only\ninputs that tool accepts", "Fill its other required inputs first",
+		"entity_id, id, is_disabled=false or mute_until=0", "alert_group_id, breach or threat severity",
 		"## Pairs well with", "`create_alert`", "`create_alert_from_chart`", "`attach_notification_channel`", "`patch_alert`",
 	} {
 		if !strings.Contains(prompts.GetAlertCoverageDescription, want) {
