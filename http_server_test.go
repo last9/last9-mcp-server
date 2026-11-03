@@ -758,6 +758,47 @@ func TestHTTPSendFeedbackClientIdentityComesFromInitializeSession(t *testing.T) 
 	}
 }
 
+// countingBody counts the bytes the handler reads, to show where it stopped.
+type countingBody struct {
+	io.Reader
+	read int
+}
+
+func (b *countingBody) Read(p []byte) (int, error) {
+	n, err := b.Reader.Read(p)
+	b.read += n
+	return n, err
+}
+
+func (b *countingBody) Close() error { return nil }
+
+// Looking for initialize must not buffer more than the SDK would accept: an oversized
+// body is refused with 413 after at most the SDK limit plus one byte, session or not.
+func TestHTTPBodyLimitBeforeSessionInspection(t *testing.T) {
+	server := newRegisterTestServer(t)
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+	handler := NewHTTPServer(server, models.Config{}, nil).Handler()
+	for name, sessionID := range map[string]string{"without session": "", "with session": "foreign-session"} {
+		t.Run(name, func(t *testing.T) {
+			body := &countingBody{Reader: strings.NewReader(strings.Repeat(" ", 2*mcp.DefaultMaxRequestBodyBytes))}
+			req := httptest.NewRequest(http.MethodPost, "/mcp", body)
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json, text/event-stream")
+			if sessionID != "" {
+				req.Header.Set("Mcp-Session-Id", sessionID)
+			}
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusRequestEntityTooLarge {
+				t.Errorf("status %d, want 413", w.Code)
+			}
+			if body.read > mcp.DefaultMaxRequestBodyBytes+1 {
+				t.Errorf("read %d bytes before refusing, want at most %d", body.read, mcp.DefaultMaxRequestBodyBytes+1)
+			}
+		})
+	}
+}
+
 // postMCP posts one JSON-RPC body, sending sessionID as Mcp-Session-Id when set, and returns
 // the status, the response's Mcp-Session-Id and its body.
 func postMCP(t *testing.T, url, sessionID, body string) (int, string, string) {
