@@ -354,6 +354,16 @@ Rules, channels and attachments these tools create are marked `created_via: last
 - **`get_dashboard_snapshot`** — Full frozen snapshot including panel data for RCA / shareable views
 - **`delete_dashboard_snapshot`** — Delete a frozen snapshot by ID
 
+Dashboard authoring is available through MCP `prompts/list` and `prompts/get`, without installing a skill. All three prompts take no arguments:
+
+- **`create_dashboard_guide`** — Discovery, layout and panel selection; validate the complete candidate and run each panel's query before approval, create once, patch targeted edits, then read back.
+- **`dashboard_examples`** — A complete example covering service RED, endpoint latency, status classes, host health, log counts and trace panels, with dependent variables.
+- **`query_guide`** — Counter/gauge/histogram and derived trace metric semantics, instant versus range, rate windows, percentage bounds, and logjson/tracejson rules.
+
+The same content is readable at `last9://reference/create_dashboard_guide`, `last9://reference/dashboard_examples`, and `last9://reference/query_guide`. Prompts and resources remain discoverable under every toolset; executing the workflow needs the relevant tools (for mixed-signal authoring, use `--toolsets=dashboards,investigate`, which also serves `list_datasources`). Read-only sessions can prepare and validate but cannot save. Check tool availability before following a step.
+
+Panel checks currently use `prometheus_range_query`, `prometheus_instant_query`, `get_logs` and `get_traces` alongside `validate_dashboard`. The validator's unsupported query types and simplified defaults do not establish rendering parity. The separate query-check step will switch to `query_panel` after #475 lands.
+
 ### Continuous Profiling
 
 Requires continuous profiling enabled for the org. Discover services first with `get_profile_services`, then pull a flamegraph or ranked functions.
@@ -770,9 +780,9 @@ Requires the companion backend capability to be enabled.
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `lookback_minutes` (integer, optional): Default: 4320 (72 hours).
 - `selected_span_id` (string, optional): Returns attributes, events, and links for that span only.
-- `max_spans` (integer, optional): Default: 500. Maximum: 1000.
+- `max_spans` (integer, optional): Default: 500. Maximum: 1000; the org's redaction policy may cap it lower.
 
-Returns an `investigation-evidence/v1` envelope; the waterfall is under `data`.
+Returns the trace service's `investigation-evidence/v1` envelope unchanged; the waterfall is under `data`. The service builds the waterfall and redacts values under a per-org policy (credentials, query literals, URLs, emails, IPs, user identifiers) before it leaves the backend: `sanitizer` names the policy that ran and `evidence.sanitization` counts what it redacted or truncated. If something needed is redacted, ask an org admin to adjust the policy rather than working around it. The tool refuses a response with no `sanitizer` block, a `sanitizer.version` other than `trace-evidence-sanitizer/v1`, a body that repeats a JSON key, or a body over 512 KiB (lower `max_spans`). Requires the companion backend capability to be enabled.
 
 ### get_change_events
 

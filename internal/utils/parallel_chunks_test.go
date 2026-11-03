@@ -147,10 +147,12 @@ func TestRunChunksParallelHonorsPerCallContextTimeout(t *testing.T) {
 		func(ctx context.Context, _ int, _ TimeChunk) (int, error) {
 			deadlineCtx, cancel := context.WithTimeout(ctx, 5*time.Millisecond)
 			defer cancel()
+			// The fallback must dwarf the deadline: a goroutine scheduled late
+			// under -race finds both cases ready, and select picks at random.
 			select {
 			case <-deadlineCtx.Done():
 				return 0, deadlineCtx.Err()
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(10 * time.Second):
 				return 0, nil
 			}
 		})

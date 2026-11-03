@@ -363,3 +363,25 @@ func TestDo_ReadFaultIsNotUnknownWriteOutcome(t *testing.T) {
 		t.Fatalf("want a plain error for a failed read, got %v", err)
 	}
 }
+
+func TestDo_BodyCutOffIsResponseReadError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "100")
+		_, _ = w.Write([]byte(`{"ok":`))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.Client(), testCfg(srv.URL))
+
+	for name, out := range map[string]any{"decoded": &struct{}{}, "relayed": &[]byte{}, "discarded": nil} {
+		t.Run(name, func(t *testing.T) {
+			err := c.Do(context.Background(), "test op", Request{Method: http.MethodGet, Path: "/a"}, out)
+			var readErr *ResponseReadError
+			if !errors.As(err, &readErr) || !errors.Is(err, io.ErrUnexpectedEOF) {
+				t.Fatalf("want a *ResponseReadError wrapping the read failure, got %#v", err)
+			}
+			if got, want := err.Error(), "test op: read response: unexpected EOF"; got != want {
+				t.Errorf("message = %q, want %q", got, want)
+			}
+		})
+	}
+}
