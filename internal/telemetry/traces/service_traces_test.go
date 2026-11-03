@@ -145,7 +145,7 @@ func TestParseGetTracesParams(t *testing.T) {
 		wantErr      bool
 		wantTrace    string
 		wantSvc      string
-		wantLookback int
+		wantLookback float64
 		wantLimit    int
 	}{
 		{

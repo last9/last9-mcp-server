@@ -56,13 +56,11 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 			limit = 20
 		}
 
-		lookbackMinutes := 60
-		if args.LookbackMinutes != 0 {
-			lookbackMinutes = int(args.LookbackMinutes)
-		}
-
-		// Prepare arguments map for GetTimeRange function
+		// Prepare arguments map for GetTimeRange function; it bounds the raw float itself.
 		arguments := make(map[string]interface{})
+		if args.LookbackMinutes != 0 {
+			arguments["lookback_minutes"] = args.LookbackMinutes
+		}
 		if args.StartTimeISO != "" {
 			arguments["start_time_iso"] = args.StartTimeISO
 		}
@@ -71,7 +69,7 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 		}
 
 		// Get time range using the common utility
-		startTime, endTime, err := utils.GetTimeRange(arguments, lookbackMinutes)
+		startTime, endTime, err := utils.GetTimeRange(arguments, 60)
 		if err != nil {
 			return nil, nil, err
 		}

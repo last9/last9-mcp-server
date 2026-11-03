@@ -42,7 +42,7 @@ type GetServiceTracesArgs struct {
 type GetTracesQueryParams struct {
 	TraceID         string
 	ServiceName     string
-	LookbackMinutes int
+	LookbackMinutes float64
 	Region          string
 	Limit           int
 	Env             string
@@ -149,7 +149,7 @@ func parseGetServiceTraceParams(args GetServiceTracesArgs, cfg models.Config) (*
 
 	// Override defaults with provided values
 	if args.LookbackMinutes != 0 {
-		queryParams.LookbackMinutes = int(args.LookbackMinutes)
+		queryParams.LookbackMinutes = args.LookbackMinutes
 	}
 	if args.Limit >= 1 {
 		queryParams.Limit = int(args.Limit)
@@ -231,8 +231,8 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 			return nil, nil, err
 		}
 
-		// Prepare arguments map for GetTimeRange function
-		arguments := make(map[string]interface{})
+		// GetTimeRange bounds the raw float itself, so it is passed unconverted.
+		arguments := map[string]interface{}{"lookback_minutes": queryParams.LookbackMinutes}
 		if args.StartTimeISO != "" {
 			arguments["start_time_iso"] = args.StartTimeISO
 		}
@@ -241,7 +241,7 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 		}
 
 		// Get time range
-		startTime, endTime, err := utils.GetTimeRange(arguments, queryParams.LookbackMinutes)
+		startTime, endTime, err := utils.GetTimeRange(arguments, utils.DefaultLookbackMinutes)
 		if err != nil {
 			return nil, nil, err
 		}
