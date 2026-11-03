@@ -162,7 +162,9 @@ func (s *shapeChecker) requireFrom(schema, cond, obj map[string]any, path string
 }
 
 // needsField reports whether obj needs field: it is required, or an anyOf branch requires
-// it and no branch is satisfied. An alias for a field obj does not need is dropped harmlessly.
+// it and no branch is satisfied by a field obj sets. A branch whose fields are all unset
+// holds vacuously, yet the panel will need field once it sets them (e.g. visualization).
+// An alias for a field obj does not need is dropped harmlessly.
 func needsField(schema, obj map[string]any, field string) bool {
 	if required, _ := schema["required"].([]string); slices.Contains(required, field) {
 		return true
@@ -171,13 +173,24 @@ func needsField(schema, obj map[string]any, field string) bool {
 	inBranch := false
 	for _, b := range anyOf {
 		branch, _ := b.(map[string]any)
-		if matches(branch, obj) {
+		if constrainsSetField(branch, obj) && matches(branch, obj) {
 			return false
 		}
 		required, _ := branch["required"].([]string)
 		inBranch = inBranch || slices.Contains(required, field)
 	}
 	return inBranch
+}
+
+func constrainsSetField(schema, obj map[string]any) bool {
+	required, _ := schema["required"].([]string)
+	props, _ := schema["properties"].(map[string]any)
+	for key := range obj {
+		if _, ok := props[key]; ok || slices.Contains(required, key) {
+			return true
+		}
+	}
+	return false
 }
 
 func matches(schema map[string]any, value any) bool {
