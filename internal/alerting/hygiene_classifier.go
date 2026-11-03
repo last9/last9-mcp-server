@@ -122,11 +122,11 @@ type hygieneVerdict struct {
 // could not supply, each of which skips or weakens a check, so a short list of
 // findings is never mistaken for a clean bill of health.
 type hygieneUnavailable struct {
-	FireCount   int `json:"fire_count"`
-	FlapsPerDay int `json:"flaps_per_day"`
-	AckRate     int `json:"ack_rate"`
-	Routed      int `json:"routed"`
-	RuleConfig  int `json:"rule_config"`
+	FireCount  int `json:"fire_count"`
+	FlapCount  int `json:"flap_count"`
+	AckRate    int `json:"ack_rate"`
+	Routed     int `json:"routed"`
+	RuleConfig int `json:"rule_config"`
 }
 
 func countUnavailable(rules []hygieneRule) hygieneUnavailable {
@@ -138,8 +138,8 @@ func countUnavailable(rules []hygieneRule) hygieneUnavailable {
 		if rule.FireCount.Count == nil {
 			n.FireCount++
 		}
-		if rule.FlapsPerDay.Value == nil {
-			n.FlapsPerDay++
+		if rule.FlapCount.Count == nil {
+			n.FlapCount++
 		}
 		if rule.AckRate.Value == nil {
 			n.AckRate++
@@ -245,15 +245,22 @@ func noisyFinding(rule hygieneRule, w hygieneWindow) *hygieneFinding {
 	}
 }
 
-func flappingFinding(rule hygieneRule, _ hygieneWindow) *hygieneFinding {
-	if rule.FlapsPerDay.Value == nil || *rule.FlapsPerDay.Value <= hygieneFlappingMinFlapsPerDay {
+// The API's flaps_per_day divides by the whole requested period, so a window longer
+// than alert history dilutes it; the rate here uses the covered span, like noisy.
+func flappingFinding(rule hygieneRule, w hygieneWindow) *hygieneFinding {
+	if rule.FlapCount.Count == nil {
+		return nil
+	}
+	flaps := *rule.FlapCount.Count
+	perDay := float64(flaps) / w.observedDays()
+	if perDay <= hygieneFlappingMinFlapsPerDay {
 		return nil
 	}
 	fix, alt := sustainFixes(rule.config())
 	return &hygieneFinding{
 		Category: hygieneCategoryFlapping,
-		Reason: fmt.Sprintf("flapped %.1f times/day (flapping above %.0f/day)",
-			*rule.FlapsPerDay.Value, hygieneFlappingMinFlapsPerDay),
+		Reason: fmt.Sprintf("flapped %d times over the %s (%.1f/day; flapping above %.0f/day)",
+			flaps, w.span(), perDay, hygieneFlappingMinFlapsPerDay),
 		SuggestedFix:   fix,
 		AlternativeFix: alt,
 	}

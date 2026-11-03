@@ -288,7 +288,7 @@ func TestGetAlertHygiene_NotFoundSaysNothingWasChecked(t *testing.T) {
 // of letting "no noisy rules" hide that the inputs were missing.
 func TestGetAlertHygiene_CountsUnavailableValuesOfEnabledRules(t *testing.T) {
 	unobserved := healthyRule("unobserved")
-	unobserved.FireCount, unobserved.FlapsPerDay, unobserved.AckRate = unavailableCount, unavailableValue, unavailableValue
+	unobserved.FireCount, unobserved.FlapCount, unobserved.AckRate = unavailableCount, unavailableCount, unavailableValue
 	unknownRouting := healthyRule("unknown-routing")
 	unknownRouting.Routed = nil
 	noConfig := healthyRule("no-config")
@@ -302,11 +302,11 @@ func TestGetAlertHygiene_CountsUnavailableValuesOfEnabledRules(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
-	want := hygieneUnavailable{FireCount: 1, FlapsPerDay: 1, AckRate: 1, Routed: 1, RuleConfig: 1}
+	want := hygieneUnavailable{FireCount: 1, FlapCount: 1, AckRate: 1, Routed: 1, RuleConfig: 1}
 	if got := decodeHygieneResult(t, result).Unavailable; got != want {
 		t.Errorf("unavailable = %+v, want %+v", got, want)
 	}
-	const wantJSON = `"unavailable":{"fire_count":1,"flaps_per_day":1,"ack_rate":1,"routed":1,"rule_config":1}`
+	const wantJSON = `"unavailable":{"fire_count":1,"flap_count":1,"ack_rate":1,"routed":1,"rule_config":1}`
 	if body := utils.GetTextContent(t, result); !strings.Contains(body, wantJSON) {
 		t.Errorf("payload does not carry %s:\n%s", wantJSON, body)
 	}
@@ -379,7 +379,7 @@ func TestGetAlertHygiene_EvalWindowProposalsPassUpdateAlertValidation(t *testing
 			rule := healthyRule("synthetic")
 			rule.Config.EvalWindow = window
 			rule.Config.AlertCondition = "count_true(result) >= " + strconv.FormatInt(window, 10)
-			rule.FlapsPerDay = value(9)
+			rule.FlapCount = count(63)
 			result, err := callGetAlertHygiene(t, &hygieneStub{rules: []hygieneRule{rule}}, GetAlertHygieneArgs{})
 			if err != nil {
 				t.Fatal(err)

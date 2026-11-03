@@ -22,7 +22,7 @@ import (
 func TestHygieneSelectedBackendContract(t *testing.T) {
 	const selected = `{"period":{"from":"2026-10-27T00:00:00Z","to":"2026-11-03T00:00:00Z","timezone":"UTC"},
 		"coverage":{"lifecycle":{"status":"complete"},"delivery":{"status":"complete"}},
-		"rules":[{"rule_id":"synthetic","fire_count":{"status":"available","count":70},"flaps_per_day":{"status":"available","value":5},
+		"rules":[{"rule_id":"synthetic","fire_count":{"status":"available","count":70},"flap_count":{"status":"available","count":35},"flaps_per_day":{"status":"available","value":5},
 		"ack_rate":{"status":"available","value":0}}],"truncated":true}`
 	var query map[string][]string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

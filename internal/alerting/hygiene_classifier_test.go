@@ -98,9 +98,17 @@ func TestClassifyHygieneRule_Categories(t *testing.T) {
 		{"covered span is at least one day", func(w *hygieneWindow) {
 			w.LifecycleComplete, w.Observed = false, time.Hour
 		}, func(r *hygieneRule) { r.FireCount = count(4); r.AckRate = value(0) }, []string{}},
-		{"flaps at threshold", nil, func(r *hygieneRule) { r.FlapsPerDay = value(4) }, []string{}},
-		{"flaps above threshold", nil, func(r *hygieneRule) { r.FlapsPerDay = value(4.1) }, []string{"flapping"}},
-		{"unavailable flaps give no flapping verdict", nil, func(r *hygieneRule) { r.FlapsPerDay = unavailableValue }, []string{}},
+		{"flaps at threshold", nil, func(r *hygieneRule) { r.FlapCount = count(28) }, []string{}},
+		{"flaps above threshold", nil, func(r *hygieneRule) { r.FlapCount = count(29) }, []string{"flapping"}},
+		{"unavailable flap count gives no flapping verdict", nil, func(r *hygieneRule) {
+			r.FlapCount, r.FlapsPerDay = unavailableCount, value(9)
+		}, []string{}},
+		{"flap rate uses the covered span, not the upstream rate over the whole window", func(w *hygieneWindow) {
+			w.Label, w.From, w.LifecycleComplete, w.Observed = "30d", testWindowTo.Add(-30*testDay), false, 7*testDay
+		}, func(r *hygieneRule) { r.FlapCount, r.FlapsPerDay = count(35), value(35.0/30) }, []string{"flapping"}},
+		{"flap span is at least one day", func(w *hygieneWindow) {
+			w.LifecycleComplete, w.Observed = false, time.Hour
+		}, func(r *hygieneRule) { r.FlapCount = count(4) }, []string{}},
 		{"last fired before the window", nil, func(r *hygieneRule) {
 			r.LastFiredAt, r.FireCount, r.TimeFiringSeconds = timep(testWindowFr.Add(-time.Second)), count(0), count(0)
 		}, []string{"stale"}},
@@ -120,15 +128,15 @@ func TestClassifyHygieneRule_Categories(t *testing.T) {
 		{"unrouted", nil, func(r *hygieneRule) { r.Routed = boolp(false) }, []string{"unrouted"}},
 		{"unavailable routing gives no unrouted verdict", nil, func(r *hygieneRule) { r.Routed = nil }, []string{}},
 		{"several categories", nil, func(r *hygieneRule) {
-			r.FireCount, r.AckRate, r.FlapsPerDay, r.Routed = count(70), value(0), value(9), boolp(false)
+			r.FireCount, r.AckRate, r.FlapCount, r.Routed = count(70), value(0), count(63), boolp(false)
 		}, []string{"noisy", "flapping", "unrouted"}},
 		{"missing configuration still classifies", nil, func(r *hygieneRule) {
 			r.Config = nil
-			r.FireCount, r.AckRate, r.FlapsPerDay, r.Routed = count(70), value(0), value(9), boolp(false)
+			r.FireCount, r.AckRate, r.FlapCount, r.Routed = count(70), value(0), count(63), boolp(false)
 		}, []string{"noisy", "flapping", "unrouted"}},
 		{"disabled rule is never flagged", nil, func(r *hygieneRule) {
 			r.Config.IsDisabled = boolp(true)
-			r.FireCount, r.AckRate, r.FlapsPerDay, r.Routed = count(70), value(0), value(9), boolp(false)
+			r.FireCount, r.AckRate, r.FlapCount, r.Routed = count(70), value(0), count(63), boolp(false)
 		}, []string{}},
 	}
 	for _, tc := range cases {
@@ -148,11 +156,11 @@ func TestClassifyHygieneRule_Categories(t *testing.T) {
 
 func TestClassifyHygieneRule_ReasonsCarryTheNumbers(t *testing.T) {
 	rule := healthyRule("r1")
-	rule.FireCount, rule.AckRate, rule.FlapsPerDay, rule.Routed = count(70), value(0.05), value(6.5), boolp(false)
+	rule.FireCount, rule.AckRate, rule.FlapCount, rule.Routed = count(70), value(0.05), count(46), boolp(false)
 
 	want := map[string][]string{
 		"noisy":    {"70", "10.0/day", "5%"},
-		"flapping": {"6.5"},
+		"flapping": {"46 times", "6.6/day"},
 		"unrouted": {"group-1"},
 	}
 	for _, f := range classifyOne(rule) {
@@ -187,7 +195,7 @@ func TestClassifyHygieneRule_ReasonsCarryTheNumbers(t *testing.T) {
 }
 
 func TestClassifyHygieneRule_Fixes(t *testing.T) {
-	flapping := func(r *hygieneRule) { r.FlapsPerDay = value(9) }
+	flapping := func(r *hygieneRule) { r.FlapCount = count(63) }
 	noisy := func(r *hygieneRule) { r.FireCount, r.AckRate = count(70), value(0) }
 	cases := []struct {
 		name     string
@@ -249,7 +257,7 @@ func TestClassifyHygieneRule_Fixes(t *testing.T) {
 		},
 		{
 			name: "missing configuration proposes a lengthened window without a current value", category: "flapping",
-			mutate: func(r *hygieneRule) { r.Config = nil; r.FlapsPerDay = value(9) },
+			mutate: func(r *hygieneRule) { r.Config = nil; r.FlapCount = count(63) },
 			fix:    hygieneFix{Parameter: "eval_window", Proposed: "lengthen, up to 60"},
 		},
 		{
@@ -343,7 +351,7 @@ func TestRankAlertHygiene_OrdersFlaggedRules(t *testing.T) {
 	moreFlaps.Routed, moreFlaps.FlapsPerDay, moreFlaps.FireCount = boolp(false), value(6), count(4)
 
 	threeFindings := healthyRule("three-findings")
-	threeFindings.Routed, threeFindings.FlapsPerDay, threeFindings.FireCount, threeFindings.AckRate = boolp(false), value(5), count(70), value(0)
+	threeFindings.Routed, threeFindings.FlapsPerDay, threeFindings.FlapCount, threeFindings.FireCount, threeFindings.AckRate = boolp(false), value(5), count(35), count(70), value(0)
 
 	rules := []hygieneRule{healthy, oneFinding, quieter, louder, moreFlaps, threeFindings}
 	got := []string{}
