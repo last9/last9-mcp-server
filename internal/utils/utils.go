@@ -84,6 +84,12 @@ func ParseToolTimestamp(value string) (time.Time, error) {
 	)
 }
 
+// LookbackOutOfRangeError reports a lookback_minutes above MaxLookbackMinutes,
+// naming the value as the caller sent it.
+func LookbackOutOfRangeError(requested any) error {
+	return fmt.Errorf("lookback_minutes %v is out of range: use a value between 1 and %d (366 days), or start_time_iso and end_time_iso for an older window", requested, MaxLookbackMinutes)
+}
+
 // GetTimeRange returns start and end times based on lookback minutes.
 // If start_time_iso and end_time_iso are provided, they take precedence.
 // Otherwise, returns now and now - lookbackMinutes.
@@ -117,7 +123,7 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 		return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes must be at least 1. Use minutes as a number, for example 60 for 1h")
 	}
 	if lookbackMinutes > MaxLookbackMinutes {
-		return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes %v is out of range: use a value between 1 and %d (366 days), or start_time_iso and end_time_iso for an older window", requestedLookback, MaxLookbackMinutes)
+		return time.Time{}, time.Time{}, LookbackOutOfRangeError(requestedLookback)
 	}
 	// Default start time based on lookback
 	startTime = endTime.Add(time.Duration(-lookbackMinutes) * time.Minute)
