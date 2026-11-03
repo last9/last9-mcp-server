@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"last9-mcp/internal/last9api"
 )
@@ -15,12 +16,11 @@ const opHealthSummary = "alert health summary"
 const maxHealthSummaryBytes = 1 << 20
 
 type GetHealthSummaryInput struct {
-	// Unix seconds.
-	From       int64    `json:"from"`
-	To         int64    `json:"to"`
-	Timezone   string   `json:"timezone"`
-	Services   []string `json:"services,omitempty"`
-	Severities []string `json:"severities,omitempty"`
+	From       time.Time `json:"from"`
+	To         time.Time `json:"to"`
+	Timezone   string    `json:"timezone"`
+	Services   []string  `json:"services,omitempty"`
+	Severities []string  `json:"severities,omitempty"`
 }
 
 // HealthMetric is how the API reports every count: Count is meaningful only with Status.

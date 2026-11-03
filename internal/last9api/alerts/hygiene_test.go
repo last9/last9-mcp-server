@@ -16,13 +16,14 @@ func TestGetHygieneRequestAndResponse(t *testing.T) {
 	})
 
 	resp, err := GetHygiene(context.Background(), c, GetHygieneInput{
-		From: 1700000000, To: 1700086400, Timezone: "UTC", Services: []string{"api", "web"},
+		From: testFrom, To: testTo, Timezone: "UTC", Services: []string{"api", "web"},
+		Labels: map[string]string{"team": "payments"}, GroupBy: "team",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	q := got.URL.Query()
-	if got.Method != http.MethodGet || got.URL.Path != "/alerts/hygiene" || q.Get("from") != "1700000000" || q.Get("to") != "1700086400" || q.Get("timezone") != "UTC" || len(q["services"]) != 2 || q.Has("severities") {
+	if got.Method != http.MethodGet || got.URL.Path != "/alerts/hygiene" || q.Get("from") != "2026-10-16T00:00:00Z" || q.Get("to") != "2026-10-17T00:00:00Z" || q.Get("timezone") != "UTC" || len(q["services"]) != 2 || q.Has("severities") || q.Get("label.team") != "payments" || q.Get("group_by") != "team" {
 		t.Errorf("request = %s %s", got.Method, got.URL)
 	}
 	if len(resp.Rules) != 1 {
@@ -40,7 +41,7 @@ func TestGetHygieneRejectsMissingRulesList(t *testing.T) {
 			c := newAlertsTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 				_, _ = io.WriteString(w, body)
 			})
-			if _, err := GetHygiene(context.Background(), c, GetHygieneInput{From: 1, To: 2}); err == nil || !strings.Contains(err.Error(), "no rules list") {
+			if _, err := GetHygiene(context.Background(), c, GetHygieneInput{From: testFrom, To: testTo}); err == nil || !strings.Contains(err.Error(), "no rules list") {
 				t.Errorf("err = %v", err)
 			}
 		})

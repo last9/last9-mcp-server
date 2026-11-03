@@ -157,7 +157,7 @@ func TestGetAlertOperationsSummaryRequest(t *testing.T) {
 	}
 	out := decodeOps(t, res)
 	b := f.summaryBody
-	if b["from"] != float64(1792108800) || b["to"] != float64(1792713600) || b["timezone"] != "UTC" {
+	if b["from"] != "2026-10-16T00:00:00Z" || b["to"] != "2026-10-23T00:00:00Z" || b["timezone"] != "UTC" {
 		t.Errorf("body = %v", b)
 	}
 	if fmt.Sprint(b["services"]) != "[checkout]" || fmt.Sprint(b["severities"]) != "[P1]" {
@@ -255,7 +255,7 @@ func TestGetAlertOperationsSummaryIncludeRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := decodeOps(t, res)
-	if !strings.Contains(f.hygieneQuery, "severities=P1") || !strings.Contains(f.hygieneQuery, "from=1792108800") {
+	if !strings.Contains(f.hygieneQuery, "severities=P1") || !strings.Contains(f.hygieneQuery, "from=2026-10-16T00%3A00%3A00Z") {
 		t.Errorf("hygiene query = %s", f.hygieneQuery)
 	}
 	r := out["rules"].(map[string]any)

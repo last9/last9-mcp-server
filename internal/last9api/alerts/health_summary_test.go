@@ -16,6 +16,11 @@ import (
 	"last9-mcp/internal/utils"
 )
 
+var (
+	testFrom = time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC)
+	testTo   = testFrom.Add(24 * time.Hour)
+)
+
 func newAlertsTestClient(t *testing.T, h http.HandlerFunc) *last9api.Client {
 	t.Helper()
 	srv := httptest.NewServer(h)
@@ -37,7 +42,7 @@ func TestGetHealthSummaryRequestAndResponse(t *testing.T) {
 	})
 
 	resp, err := GetHealthSummary(context.Background(), c, GetHealthSummaryInput{
-		From: 1700000000, To: 1700086400, Timezone: "Asia/Kolkata", Severities: []string{"P1"},
+		From: testFrom, To: testTo, Timezone: "Asia/Kolkata", Severities: []string{"P1"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +50,7 @@ func TestGetHealthSummaryRequestAndResponse(t *testing.T) {
 	if method != http.MethodPost || path != "/alerts/health_summary" {
 		t.Errorf("request = %s %s", method, path)
 	}
-	if body["from"] != float64(1700000000) || body["to"] != float64(1700086400) || body["timezone"] != "Asia/Kolkata" {
+	if body["from"] != "2026-10-16T00:00:00Z" || body["to"] != "2026-10-17T00:00:00Z" || body["timezone"] != "Asia/Kolkata" {
 		t.Errorf("body = %v", body)
 	}
 	if _, ok := body["services"]; ok {
@@ -66,7 +71,7 @@ func TestGetHealthSummaryUpstreamError(t *testing.T) {
 	c := newAlertsTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	})
-	_, err := GetHealthSummary(context.Background(), c, GetHealthSummaryInput{From: 1, To: 2})
+	_, err := GetHealthSummary(context.Background(), c, GetHealthSummaryInput{From: testFrom, To: testTo})
 	var apiErr *utils.UpstreamHTTPError
 	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusNotFound {
 		t.Fatalf("err = %v", err)

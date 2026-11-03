@@ -141,7 +141,7 @@ func parseOpsSummaryArgs(args GetAlertOperationsSummaryArgs) (alerts.GetHealthSu
 		return in, opsSummaryWindow{}, fmt.Sprintf("timezone %q is not an IANA timezone name such as UTC or Asia/Kolkata", args.Timezone)
 	}
 	in = alerts.GetHealthSummaryInput{
-		From: start.Unix(), To: end.Unix(), Timezone: tz,
+		From: start.UTC(), To: end.UTC(), Timezone: tz,
 		Services: nonEmptyTrimmed(args.Services), Severities: nonEmptyTrimmed(args.Severities),
 	}
 	window := opsSummaryWindow{
