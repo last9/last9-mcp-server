@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"last9-mcp/internal/telemetry"
+	"last9-mcp/internal/utils"
 )
 
 // namedCapturePattern extracts (?P<name>…) groups from a regexp parse pattern.
@@ -434,6 +435,9 @@ func validateParseStage(stage map[string]interface{}, stagePath string) error {
 				stagePath+".pattern",
 				fmt.Sprintf("regexp parse stage at %s missing required \"pattern\" with named captures like (?P<level>ERROR|WARN)", stagePath),
 			)
+		}
+		if err := utils.CheckPipelineRegex(pattern, stagePath+".pattern"); err != nil {
+			return newLogValidationError(LogValidationInvalidField, stagePath+".pattern", err.Error())
 		}
 		if err := validateRegexpNamedCaptures(pattern, stagePath+".pattern"); err != nil {
 			return err

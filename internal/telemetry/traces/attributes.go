@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
-	"time"
 
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
@@ -107,13 +106,6 @@ func fetchTraceTagNames(ctx context.Context, client *http.Client, cfg models.Con
 	}
 	sort.Strings(names)
 	return names, nil
-}
-
-// FetchTraceAttributeNames fetches global trace attribute names from the API and
-// returns them as a sorted, prefixed string slice.
-func FetchTraceAttributeNames(ctx context.Context, client *http.Client, cfg models.Config) ([]string, error) {
-	now := time.Now()
-	return fetchTraceTagNames(ctx, client, cfg, now.Add(-15*time.Minute).Unix(), now.Unix(), cfg.Region)
 }
 
 // NewGetTraceAttributesHandler creates a handler for fetching the global trace attributes.

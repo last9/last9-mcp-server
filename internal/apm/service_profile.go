@@ -23,7 +23,7 @@ const briefUnavailableMarker = "Service profile: brief unavailable — the respo
 // GetServiceProfileArgs are the input parameters for the get_service_profile tool.
 type GetServiceProfileArgs struct {
 	ServiceName string `json:"service_name" jsonschema:"(Required) Service to derive a telemetry profile for"`
-	Datasource  string `json:"datasource,omitempty" jsonschema:"Name of the datasource to query. If omitted, uses the default configured datasource."`
+	Datasource  string `json:"datasource,omitempty" jsonschema:"Datasource name; omitted uses the default, a near miss its closest match (named in an additional content block)."`
 }
 
 type serviceProfileRequest struct {
@@ -42,10 +42,14 @@ func NewGetServiceProfileHandler(client *http.Client, cfg models.Config) func(co
 			return nil, nil, fmt.Errorf("service_name is required")
 		}
 
-		queryCfg, err := resolveDatasourceCfg(cfg, strings.TrimSpace(args.Datasource))
+		choice, err := chooseDatasource(cfg, args.Datasource)
 		if err != nil {
 			return nil, nil, err
 		}
+		if choice.candidates != nil {
+			return ambiguousDatasourceResult(args.Datasource, choice), nil, nil
+		}
+		queryCfg := choice.cfg
 
 		payload := serviceProfileRequest{
 			Service:  service,
@@ -106,12 +110,12 @@ func NewGetServiceProfileHandler(client *http.Client, cfg models.Config) func(co
 			text = formatInvestigationBrief(profile) + "\n\n" + text
 		}
 
-		return &mcp.CallToolResult{
+		return withDatasourceNote(&mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{
 					Text: text,
 				},
 			},
-		}, nil, nil
+		}, choice.note), nil, nil
 	}
 }

@@ -58,6 +58,7 @@ func TestPlantedRegressionIsRegressionLikely(t *testing.T) {
 	if report.Verdict != VerdictRegressionLikely {
 		t.Fatalf("verdict = %q (%s), want %q", report.Verdict, report.Reason, VerdictRegressionLikely)
 	}
+	assertRegressionsMatchReason(t, report)
 	if !strings.Contains(report.Reason, "checkout") || !strings.Contains(report.Reason, "error rate") {
 		t.Fatalf("reason %q should name the service and the error-rate rise", report.Reason)
 	}
@@ -85,7 +86,7 @@ func TestNewFiringAlertAloneIsRegressionLikely(t *testing.T) {
 		change: change, baseline: flatWindow(), after: flatWindow(),
 		callers: map[string]float64{"web": 10},
 		alerts: []alerting.AlertRuleData{{
-			RuleID: "r2", RuleName: "web latency", Since: change.Add(5 * time.Minute).Unix(),
+			RuleID: "r2", RuleName: "web latency", State: "firing", Since: change.Add(5 * time.Minute).Unix(),
 			Alerts: []alerting.AlertInstance{{GroupLabels: map[string]interface{}{"service_name": "web"}}},
 		}},
 	}
@@ -96,6 +97,7 @@ func TestNewFiringAlertAloneIsRegressionLikely(t *testing.T) {
 	if report.Verdict != VerdictRegressionLikely || !strings.Contains(report.Reason, "web latency") {
 		t.Fatalf("verdict = %q (%s), want a regression citing the dependent's new alert", report.Verdict, report.Reason)
 	}
+	assertRegressionsMatchReason(t, report)
 }
 
 // A deploy that sheds most traffic while errors and p95 stay flat must not
@@ -113,6 +115,7 @@ func TestTrafficCollapseIsRegressionLikely(t *testing.T) {
 	if report.Verdict != VerdictRegressionLikely || !strings.Contains(report.Reason, "checkout throughput fell") {
 		t.Fatalf("verdict=%q reason=%q; a ~98%% traffic drop must not clear the change", report.Verdict, report.Reason)
 	}
+	assertRegressionsMatchReason(t, report)
 }
 
 func TestDependentRegressionAloneIsRegressionLikely(t *testing.T) {
@@ -127,6 +130,7 @@ func TestDependentRegressionAloneIsRegressionLikely(t *testing.T) {
 	if report.Verdict != VerdictRegressionLikely || !strings.Contains(report.Reason, "web p95") {
 		t.Fatalf("verdict = %q (%s), want a regression citing the dependent's p95", report.Verdict, report.Reason)
 	}
+	assertRegressionsMatchReason(t, report)
 }
 
 func TestFlatSignalsAreNoSignificantChange(t *testing.T) {
@@ -204,7 +208,7 @@ func TestResultBoundsReportDroppedCounts(t *testing.T) {
 	for i := 12; i >= 1; i-- {
 		deviations = append(deviations, traces.AttributeDeviation{Attribute: "k8s.pod", Value: fmt.Sprintf("pod-%d", i), Rank: i, PercentagePointDelta: float64(i)})
 		alerts = append(alerts, alerting.AlertRuleData{RuleID: fmt.Sprintf("r%02d", i), AlertGroupName: "checkout",
-			Alerts: []alerting.AlertInstance{{Since: change.Add(time.Duration(i) * time.Minute).Unix()}}})
+			Alerts: []alerting.AlertInstance{{State: "firing", Since: change.Add(time.Duration(i) * time.Minute).Unix()}}})
 	}
 	f := &fakeLast9{change: change, baseline: baseline, after: after, callers: callers, traceDeviations: deviations, alerts: alerts}
 
@@ -228,6 +232,11 @@ func TestResultBoundsReportDroppedCounts(t *testing.T) {
 	if len(report.Alerts.Started) != sectionTopN || report.Alerts.Dropped != 2 || report.Alerts.Started[0].RuleID != "r01" {
 		t.Fatalf("alerts = %d, dropped %d, first %+v", len(report.Alerts.Started), report.Alerts.Dropped, report.Alerts.Started[0])
 	}
+	// The alerts section keeps 10, but every firing alert is a regression.
+	if report.Verdict != VerdictRegressionLikely || len(report.Regressions) != 12 {
+		t.Fatalf("verdict = %q, regressions = %d, want all 12 alerts", report.Verdict, len(report.Regressions))
+	}
+	assertRegressionsMatchReason(t, report)
 }
 
 func TestFailingUpstreamDegradesOnlyItsSection(t *testing.T) {
@@ -251,6 +260,7 @@ func TestFailingUpstreamDegradesOnlyItsSection(t *testing.T) {
 	if report.Verdict != VerdictRegressionLikely {
 		t.Fatalf("verdict = %q (%s); the golden signals still show the regression", report.Verdict, report.Reason)
 	}
+	assertRegressionsMatchReason(t, report)
 }
 
 // The on-call runbook rules a change out on `no significant change`, so a
@@ -327,6 +337,7 @@ func TestRegressionDisclosesMissingEvidence(t *testing.T) {
 	if report.Verdict != VerdictRegressionLikely || !strings.Contains(report.Reason, "error rate") || !strings.Contains(report.Reason, "alerts unavailable") {
 		t.Fatalf("verdict = %q (%s), want the regression with the missing alerts disclosed", report.Verdict, report.Reason)
 	}
+	assertRegressionsMatchReason(t, report)
 }
 
 func TestFailingGoldenSignalsIsInsufficientWithCause(t *testing.T) {
