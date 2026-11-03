@@ -728,3 +728,52 @@ func TestHTTPSendFeedbackClientIdentityComesFromRequestMeta(t *testing.T) {
 		})
 	}
 }
+
+// Old-protocol clients send clientInfo only in initialize, then echo the Mcp-Session-Id it
+// returned. That ID must carry their identity to send_feedback on any replica.
+func TestHTTPSendFeedbackClientIdentityComesFromInitializeSession(t *testing.T) {
+	bodies := make(chan map[string]any, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		bodies <- body
+		_, _ = io.WriteString(w, `{"feedback_id":"fb-1"}`)
+	}))
+	defer upstream.Close()
+	ts, _ := newToolsetHTTPServerFor(t, writeToolTestConfig(upstream.URL), "")
+
+	initialize := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},` +
+		`"clientInfo":{"name":"` + strings.Repeat("n", 150) + `","version":"v-http-2"}}}`
+	status, sessionID, raw := postMCP(t, ts.URL+"/mcp", "", initialize)
+	if status != http.StatusOK || sessionID == "" {
+		t.Fatalf("initialize: status %d, Mcp-Session-Id %q, body %s", status, sessionID, raw)
+	}
+
+	call := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"send_feedback","arguments":{"category":"other","summary":"http session check"}}}`
+	if status, _, raw := postMCP(t, ts.URL+"/mcp", sessionID, call); status != http.StatusOK || strings.Contains(raw, `"isError":true`) {
+		t.Fatalf("tools/call: status %d, body %s", status, raw)
+	}
+	body := <-bodies
+	if want := strings.Repeat("n", 100); body["client_name"] != want || body["client_version"] != "v-http-2" {
+		t.Errorf("client_name=%v client_version=%v, want the name cut to 100 characters and v-http-2", body["client_name"], body["client_version"])
+	}
+}
+
+// postMCP posts one JSON-RPC body, sending sessionID as Mcp-Session-Id when set, and returns
+// the status, the response's Mcp-Session-Id and its body.
+func postMCP(t *testing.T, url, sessionID, body string) (int, string, string) {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodPost, url, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	if sessionID != "" {
+		req.Header.Set("Mcp-Session-Id", sessionID)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, resp.Header.Get("Mcp-Session-Id"), string(raw)
+}
