@@ -29,7 +29,7 @@ type GetDatabaseSlowQueriesArgs struct {
 	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Calling service name filter"`
 	Env             string  `json:"env,omitempty" jsonschema:"Deployment environment filter"`
 	MinDurationMs   float64 `json:"min_duration_ms,omitempty" jsonschema:"Minimum query duration in milliseconds"`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60, minimum: 1)"`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60, minimum: 1, maximum: 527040 = 366 days)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339 format"`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339 format"`
 	Limit           int     `json:"limit,omitempty" jsonschema:"Maximum results (default: 20)"`
