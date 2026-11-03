@@ -41,7 +41,7 @@ type sendFeedbackResult struct {
 
 func NewSendFeedbackHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, SendFeedbackArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args SendFeedbackArgs) (*mcp.CallToolResult, any, error) {
-		in := feedbackInput(args, req, cfg.ServerVersion)
+		in := feedbackInput(ctx, args, req, cfg.ServerVersion)
 		if msg := invalidFeedbackReason(in); msg != "" {
 			return utils.ToolErrorResult(msg), nil, nil
 		}
@@ -64,8 +64,8 @@ func NewSendFeedbackHandler(client *http.Client, cfg models.Config) func(context
 }
 
 // Client identity comes from clientInfo, never from arguments, so the team can tell which
-// agents hit a problem. Stateless --http forgets initialize, so there only _meta carries it.
-func feedbackInput(args SendFeedbackArgs, req *mcp.CallToolRequest, serverVersion string) apifeedback.SendMCPFeedbackInput {
+// agents hit a problem. On --http it may come from _meta or the initialize session ID.
+func feedbackInput(ctx context.Context, args SendFeedbackArgs, req *mcp.CallToolRequest, serverVersion string) apifeedback.SendMCPFeedbackInput {
 	in := apifeedback.SendMCPFeedbackInput{
 		Category:      strings.ToLower(strings.TrimSpace(args.Category)),
 		Summary:       strings.TrimSpace(args.Summary),
@@ -73,10 +73,8 @@ func feedbackInput(args SendFeedbackArgs, req *mcp.CallToolRequest, serverVersio
 		ToolName:      strings.TrimSpace(args.ToolName),
 		ServerVersion: serverVersion,
 	}
-	if req != nil {
-		if info := req.ClientInfo(); info != nil {
-			in.ClientName, in.ClientVersion = truncateRunes(info.Name, maxToolNameRunes), truncateRunes(info.Version, maxToolNameRunes)
-		}
+	if info := utils.RequestClientInfo(ctx, req); info != nil {
+		in.ClientName, in.ClientVersion = truncateRunes(info.Name, maxToolNameRunes), truncateRunes(info.Version, maxToolNameRunes)
 	}
 	return in
 }

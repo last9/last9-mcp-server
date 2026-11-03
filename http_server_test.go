@@ -694,8 +694,7 @@ func TestPostMCPTestRequestConcurrentFailure(t *testing.T) {
 	}
 }
 
-// Stateless --http has no session to remember initialize's clientInfo, so a tools/call
-// identifies its client only through per-request _meta.
+// A tools/call without a session ID identifies its client only through per-request _meta.
 func TestHTTPSendFeedbackClientIdentityComesFromRequestMeta(t *testing.T) {
 	bodies := make(chan map[string]any, 2)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

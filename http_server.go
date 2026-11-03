@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"last9-mcp/internal/constants"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/toolsets"
+	"last9-mcp/internal/utils"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -26,6 +28,7 @@ const (
 	// is for clients that cannot set headers. A non-blank header wins over it.
 	toolsetsHeader     = "X-Last9-Toolsets"
 	toolsetsQueryParam = "toolsets"
+	sessionIDHeader    = "Mcp-Session-Id"
 )
 
 // HTTPServer wraps the MCP server for HTTP transport
@@ -75,8 +78,9 @@ func (h *HTTPServer) Handler() http.Handler {
 
 	// Register handlers on both root and /mcp paths for maximum client flexibility
 	mux := http.NewServeMux()
-	mux.Handle("/", mcpHandler)    // Root endpoint for standard MCP clients
-	mux.Handle("/mcp", mcpHandler) // /mcp endpoint for explicit MCP usage
+	sessions := withClientSessions(mcpHandler)
+	mux.Handle("/", sessions)    // Root endpoint for standard MCP clients
+	mux.Handle("/mcp", sessions) // /mcp endpoint for explicit MCP usage
 	mux.HandleFunc("/health", h.handleHealth)
 	return mux
 }
@@ -86,6 +90,44 @@ func (h *HTTPServer) Handler() http.Handler {
 func reject(w http.ResponseWriter, r *http.Request, msg string, status int) {
 	_, _ = io.Copy(io.Discard, r.Body)
 	http.Error(w, msg, status)
+}
+
+// withClientSessions keeps an old-protocol client's initialize clientInfo, which the stateless
+// SDK drops: initialize gets a session ID encoding it, and requests echoing that ID carry it
+// in their context for tools that report the client.
+func withClientSessions(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if sessionID := r.Header.Get(sessionIDHeader); sessionID != "" {
+			next.ServeHTTP(w, r.WithContext(utils.WithClientSession(r.Context(), sessionID)))
+			return
+		}
+		if r.Method == http.MethodPost {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				reject(w, r, "failed to read body", http.StatusBadRequest)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			if info := initializeClientInfo(body); info != nil {
+				w.Header().Set(sessionIDHeader, utils.NewClientSessionID(*info))
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// initializeClientInfo returns the clientInfo of a single initialize request, else nil.
+func initializeClientInfo(body []byte) *mcp.Implementation {
+	var msg struct {
+		Method string `json:"method"`
+		Params struct {
+			ClientInfo *mcp.Implementation `json:"clientInfo"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(body, &msg) != nil || msg.Method != "initialize" || msg.Params.ClientInfo == nil || msg.Params.ClientInfo.Name == "" {
+		return nil
+	}
+	return msg.Params.ClientInfo
 }
 
 func streamableOptions() *mcp.StreamableHTTPOptions {
