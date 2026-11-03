@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -29,6 +30,8 @@ const (
 	toolsetsHeader     = "X-Last9-Toolsets"
 	toolsetsQueryParam = "toolsets"
 	sessionIDHeader    = "Mcp-Session-Id"
+	// maxRequestBodyBytes bounds every POST body, both where we look for initialize and in the SDK.
+	maxRequestBodyBytes = mcp.DefaultMaxRequestBodyBytes
 )
 
 // HTTPServer wraps the MCP server for HTTP transport
@@ -102,7 +105,12 @@ func withClientSessions(next http.Handler) http.Handler {
 			return
 		}
 		if r.Method == http.MethodPost {
-			body, err := io.ReadAll(r.Body)
+			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBodyBytes))
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				http.Error(w, fmt.Sprintf("request body exceeds %d bytes", tooLarge.Limit), http.StatusRequestEntityTooLarge)
+				return
+			}
 			if err != nil {
 				reject(w, r, "failed to read body", http.StatusBadRequest)
 				return
@@ -131,7 +139,7 @@ func initializeClientInfo(body []byte) *mcp.Implementation {
 }
 
 func streamableOptions() *mcp.StreamableHTTPOptions {
-	return &mcp.StreamableHTTPOptions{Stateless: true}
+	return &mcp.StreamableHTTPOptions{Stateless: true, MaxRequestBodyBytes: maxRequestBodyBytes}
 }
 
 // requestToolsets returns the tools a request may see: the startup set
