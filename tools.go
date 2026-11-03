@@ -183,6 +183,10 @@ func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, 
 	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, tagSystemErrors(handler)); regErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, regErr)
 	}
+	// Middleware added later runs first, so integer coercion precedes the check.
+	if check, ok := argumentChecks[tool.Name]; ok {
+		server.Server.AddReceivingMiddleware(argumentCheckMiddleware(tool.Name, check))
+	}
 	if coerceErr := addIntegerArgsCoercion[In](server.Server, tool); coerceErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, coerceErr)
 	}

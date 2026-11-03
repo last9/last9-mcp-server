@@ -159,7 +159,12 @@ func validatePatchOp(op PatchDashboardOp) error {
 		if op.Panel == nil {
 			return errors.New("panel is required")
 		}
-		return checkQueriesQueryTypes(op.Panel["queries"])
+		if err := checkQueriesQueryTypes(op.Panel["queries"]); err != nil {
+			return err
+		}
+		if problems := checkPanelShape(op.Panel, "panel"); len(problems) > 0 {
+			return errors.New(strings.Join(problems, "; "))
+		}
 	case "update_panel":
 		if op.PanelID == "" {
 			return errors.New("panel_id is required")
