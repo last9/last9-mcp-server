@@ -256,10 +256,14 @@ func runValidateDashboard(ctx context.Context, exec *validateExecutor, parsed *v
 	}
 	// Preview checks the whole candidate against the dashboard schema itself.
 	if len(panels) == 0 && !exec.preview {
+		detail := "dashboard has no panels to validate; dashboard_definition must be a dashboard object with a non-empty panels list"
+		if source == "saved" {
+			detail = fmt.Sprintf("saved dashboard %s has no panels to validate; add panels before validating it", dashboardRef)
+		}
 		return map[string]any{
 			"success": false,
 			"error":   "no_panels",
-			"detail":  []string{"dashboard has no panels to validate; dashboard_definition must be a dashboard object with a non-empty panels list"},
+			"detail":  []string{detail},
 		}
 	}
 
