@@ -161,10 +161,9 @@ func (s *shapeChecker) requireFrom(schema, cond, obj map[string]any, path string
 	}
 }
 
-// needsField reports whether obj needs field: it is required, or an anyOf branch requires
-// it and no branch is satisfied by a field obj sets. A branch whose fields are all unset
-// holds vacuously, yet the panel will need field once it sets them (e.g. visualization).
-// An alias for a field obj does not need is dropped harmlessly.
+// needsField reports whether field is required, or required by an anyOf branch while no
+// branch is satisfied by a field obj sets. A branch over unset fields holds only vacuously:
+// the panel needs field once it sets them (e.g. visualization).
 func needsField(schema, obj map[string]any, field string) bool {
 	if required, _ := schema["required"].([]string); slices.Contains(required, field) {
 		return true
