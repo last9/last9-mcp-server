@@ -54,7 +54,7 @@ func TestLogJSONExampleIsScopedAndAggregated(t *testing.T) {
 }
 
 func TestCreateDashboardDescriptionSaysPanelChecksAggregate(t *testing.T) {
-	const note = "check a log panel with get_logs only through its aggregate expr"
+	const note = "log panels: aggregate expr only, short lookback"
 	if !strings.Contains(prompts.CreateDashboardDescription, note) {
 		t.Errorf("CreateDashboardDescription missing %q", note)
 	}
