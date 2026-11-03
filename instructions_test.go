@@ -590,6 +590,33 @@ func TestServerInstructionsSayCreateAlertRulesStartDisabled(t *testing.T) {
 	}
 }
 
+// get_alert_coverage gets its own bullet at the end of the section, so every
+// pinned line keeps its wording and place: rewording or inserting mid-section
+// regressed unrelated log-query evals.
+func TestServerInstructionsNameAlertCoverageWithoutShiftingLines(t *testing.T) {
+	tests := []struct {
+		spec string
+		want string
+	}{
+		{spec: "", want: "- Alert coverage gaps: `get_alert_coverage`."},
+		{spec: "alerts", want: "- Alert coverage gaps: `get_alert_coverage`."},
+		{spec: "investigate", want: "- Alert coverage gaps: `get_alert_coverage`."},
+	}
+	for _, tt := range tests {
+		t.Run("toolsets="+tt.spec, func(t *testing.T) {
+			instructions, _ := initializeOver(t, tt.spec)
+			if got := lineNaming(instructions, "get_alert_coverage"); got != tt.want {
+				t.Errorf("get_alert_coverage line = %q, want %q", got, tt.want)
+			}
+			_, dedicated, _ := strings.Cut(instructions, "## Prefer dedicated tools\n")
+			dedicated, _, _ = strings.Cut(dedicated, "\n\n")
+			if last := dedicated[strings.LastIndex(dedicated, "\n")+1:]; last != tt.want {
+				t.Errorf("last dedicated-tools bullet = %q, want %q:\n%s", last, tt.want, instructions)
+			}
+		})
+	}
+}
+
 // With the Start here block, log_query evals referenced parsed fields by bare
 // name (rejected by the validator) until this line named the attributes form;
 // it is about get_logs pipelines, so other query tools don't carry it.
