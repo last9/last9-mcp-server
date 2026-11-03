@@ -77,13 +77,14 @@ func TestDescribeMetricProbeNotesNameTheBound(t *testing.T) {
 		{"few samples", &metricDescriptionFixture{status: 404, probe: probeFixture(`"1","2","3"`)}, "too few or malformed", "limit"},
 		// Without a fall or two rises the samples are no evidence; a flat counter must not become a never-rate gauge.
 		{"flat", &metricDescriptionFixture{status: 404, probe: probeFixture(`"3","3","3","3","3","3"`)}, "neither rose nor fell", "limit"},
+		{"all zero", &metricDescriptionFixture{status: 404, probe: probeFixture(`"0","0","0","0","0","0"`)}, "neither rose nor fell", "limit"},
 		{"one rise", &metricDescriptionFixture{status: 404, probe: probeFixture(`"3","3","3","4","4","4"`)}, "neither rose nor fell", "limit"},
 		{"request failed", &metricDescriptionFixture{status: 404, probeStatus: 500}, "Probe request failed", "limit"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got := describeOne(t, tt.f, "load_value")
 			notes := strings.Join(got.Notes, " ")
-			if got.Type != "unknown" || !strings.Contains(notes, tt.note) || strings.Contains(notes, "Probe stopped at its "+tt.other) {
+			if got.Type != "unknown" || !strings.Contains(notes, tt.note) || strings.Contains(notes, "Probe stopped at its "+tt.other) || strings.Contains(notes, "Never apply rate") {
 				t.Fatalf("probe note must name the bound that fired: %+v", got)
 			}
 		})
