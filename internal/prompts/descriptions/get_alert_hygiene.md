@@ -10,16 +10,16 @@ Categories (a rule may have several; disabled rules are never flagged):
 - noisy: fires at least 5 times/day with under 20% of episodes acked. With an unavailable
   `ack_rate` it is judged on fire rate alone and the reason says so. Mute time is not reported.
 - flapping: more than 4 flaps/day.
-- stale: last fired before the window with no firing time in it, or no recorded fire while
-  `coverage.lifecycle` is complete.
+- stale: last fired before the window with no firing time in it, or a configured rule with no
+  episode in it while `coverage.lifecycle` is complete and the list is not truncated.
 - unrouted: its alert group has no notification channel.
 
 Each stat is `{status, count|value, reason}`; an unavailable value is never read as zero and
-skips the check that needs it. `unavailable` counts enabled rules per missing value, including
-`rule_config` (rule not in the alert rules list, so its fixes carry no current value).
+skips the check that needs it. `unavailable` counts enabled rules per missing value, plus
+`rule_config` (not in the alert rules list; fixes carry no current value) and `activity`
+(configured, no episode, silence unproven: not assessed).
 `coverage` says how much of the window alert history covered; rates use the covered span, at
-least one day. `upstream_truncated`: the API returned only its loudest rules (up to 200 by fire
-count), so quieter rules, the likeliest stale ones, were not evaluated.
+least one day. `upstream_truncated`: the API returned only its 200 loudest rules.
 
 Suggested fixes (`suggested_fix`, sometimes `alternative_fix`, each `{parameter, current, proposed}`):
 - flapping, and noisy non-static rules: raise `bad_minutes` (N in
@@ -33,8 +33,7 @@ Suggested fixes (`suggested_fix`, sometimes `alternative_fix`, each `{parameter,
 
 Output is compact JSON: `{window, from, to, coverage, upstream_truncated, rules_evaluated, flagged_rules, truncated, omitted_for_size, unavailable, rules}`.
 `truncated`: more flagged rules than `limit` or 32 KB holds (`omitted_for_size` counts size cuts).
-Each rule has `findings` (`category`, `reason` with the numbers, `suggested_fix`) and `stats`,
-the raw per-rule API data.
+Each rule has `findings` (`category`, `reason` with the numbers, `suggested_fix`) and raw `stats`.
 
 Ranked by number of categories, then fire count, then flaps/day.
 

@@ -25,8 +25,10 @@ import (
 // hygieneStub serves the hygiene API and the alert rules list the tool joins it with.
 type hygieneStub struct {
 	rules       []hygieneRule
-	status      int // hygiene API status; zero means 200
-	rulesStatus int // alert rules list status; zero means 200
+	quiet       []AlertRule                   // configured rules the hygiene API has no row for
+	lifecycle   *alerts.HygieneCoverageSource // nil means complete
+	status      int                           // hygiene API status; zero means 200
+	rulesStatus int                           // alert rules list status; zero means 200
 	truncated   bool
 	requests    atomic.Int32
 	from, to    atomic.Value
@@ -43,10 +45,14 @@ func (s *hygieneStub) serve(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(s.status)
 			return
 		}
+		lifecycle := alerts.HygieneCoverageSource{Status: alerts.HygieneStatusComplete}
+		if s.lifecycle != nil {
+			lifecycle = *s.lifecycle
+		}
 		resp := alerts.GetAlertHygieneResponse{
 			Period: alerts.HygienePeriod{From: testWindowFr, To: testWindowTo, Timezone: "UTC"},
 			Coverage: alerts.HygieneCoverage{
-				Lifecycle: alerts.HygieneCoverageSource{Status: alerts.HygieneStatusComplete},
+				Lifecycle: lifecycle,
 				Delivery:  alerts.HygieneCoverageSource{Status: alerts.HygieneStatusComplete},
 			},
 			Rules:     []alerts.HygieneRule{},
@@ -61,7 +67,7 @@ func (s *hygieneStub) serve(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(s.rulesStatus)
 			return
 		}
-		configs := AlertConfigResponse{}
+		configs := append(AlertConfigResponse{}, s.quiet...)
 		for _, rule := range s.rules {
 			if rule.Config != nil {
 				configs = append(configs, *rule.Config)
@@ -306,7 +312,7 @@ func TestGetAlertHygiene_CountsUnavailableValuesOfEnabledRules(t *testing.T) {
 	if got := decodeHygieneResult(t, result).Unavailable; got != want {
 		t.Errorf("unavailable = %+v, want %+v", got, want)
 	}
-	const wantJSON = `"unavailable":{"fire_count":1,"flap_count":1,"ack_rate":1,"routed":1,"rule_config":1}`
+	const wantJSON = `"unavailable":{"fire_count":1,"flap_count":1,"ack_rate":1,"routed":1,"rule_config":1,"activity":0}`
 	if body := utils.GetTextContent(t, result); !strings.Contains(body, wantJSON) {
 		t.Errorf("payload does not carry %s:\n%s", wantJSON, body)
 	}
@@ -403,5 +409,37 @@ func TestGetAlertHygiene_EvalWindowProposalsPassUpdateAlertValidation(t *testing
 				}
 			}
 		})
+	}
+}
+
+// A configured rule without an activity row is assessed for staleness only when
+// complete history proves its silence; otherwise it is counted, never zero-filled.
+func TestGetAlertHygiene_AccountsForQuietConfiguredRules(t *testing.T) {
+	quiet := AlertRule{ID: "synthetic", EntityID: "group-1", IsDisabled: boolp(false), CreatedAt: testWindowFr.Add(-testDay).Unix()}
+
+	partial := &alerts.HygieneCoverageSource{
+		Status: alerts.HygieneStatusPartial, Reason: "continuity unverified",
+		Range: &alerts.HygieneRange{From: testWindowFr, To: testWindowTo},
+	}
+	result, err := callGetAlertHygiene(t, &hygieneStub{quiet: []AlertRule{quiet}, lifecycle: partial}, GetAlertHygieneArgs{Window: "7d"})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	out := decodeHygieneResult(t, result)
+	if out.RulesEvaluated != 0 || out.FlaggedRules != 0 || out.Unavailable != (hygieneUnavailable{Activity: 1}) {
+		t.Errorf("partial history: evaluated=%d flagged=%d unavailable=%+v, want the quiet rule counted as unassessed",
+			out.RulesEvaluated, out.FlaggedRules, out.Unavailable)
+	}
+
+	result, err = callGetAlertHygiene(t, &hygieneStub{quiet: []AlertRule{quiet}}, GetAlertHygieneArgs{Window: "7d"})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	out = decodeHygieneResult(t, result)
+	if out.RulesEvaluated != 1 || len(out.Rules) != 1 || out.Rules[0].Stats.RuleID != "synthetic" {
+		t.Fatalf("complete history: %+v, want the quiet rule evaluated and flagged", out)
+	}
+	if f := out.Rules[0].Findings; len(f) != 1 || f[0].Category != hygieneCategoryStale || !strings.Contains(f[0].Reason, "no alert episode") {
+		t.Errorf("findings = %+v, want one stale finding saying no episode was recorded", f)
 	}
 }

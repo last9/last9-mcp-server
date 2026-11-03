@@ -387,11 +387,69 @@ func TestClassifyHygieneRule_StaleReasonNamesTheCoveredSpan(t *testing.T) {
 
 func TestJoinHygieneRuleConfig_MatchesByRuleID(t *testing.T) {
 	rules := []alerts.HygieneRule{{RuleID: "a"}, {RuleID: "missing"}}
-	joined := joinHygieneRuleConfig(rules, AlertConfigResponse{{ID: "b", EvalWindow: 5}, {ID: "a", EvalWindow: 10}})
-	if joined[0].Config == nil || joined[0].Config.EvalWindow != 10 {
-		t.Errorf("rule a config = %+v, want eval_window 10", joined[0].Config)
+	configs := AlertConfigResponse{
+		{ID: "b", EntityID: "group-b", RuleName: "quiet", EvalWindow: 5},
+		{ID: "a", EvalWindow: 10},
+		{ID: "off", IsDisabled: boolp(true)},
+	}
+	joined := joinHygieneRuleConfig(rules, configs)
+	if len(joined) != 3 {
+		t.Fatalf("joined %d rules, want the 2 activity rows plus the enabled quiet rule: %+v", len(joined), joined)
+	}
+	if joined[0].Config == nil || joined[0].Config.EvalWindow != 10 || joined[0].NoActivity {
+		t.Errorf("rule a = %+v, want eval_window 10 with activity", joined[0])
 	}
 	if joined[1].Config != nil {
 		t.Errorf("rule without configuration got %+v", joined[1].Config)
+	}
+	quiet := joined[2]
+	if !quiet.NoActivity || quiet.RuleID != "b" || quiet.RuleName != "quiet" || quiet.AlertGroupID != "group-b" {
+		t.Errorf("quiet rule = %+v, want rule b of group-b marked NoActivity", quiet.HygieneRule)
+	}
+	// Absence is not an observed zero.
+	if quiet.FireCount.Count != nil || quiet.FireCount.Status != alerts.HygieneStatusUnavailable {
+		t.Errorf("quiet rule fire_count = %+v, want unavailable without a count", quiet.FireCount)
+	}
+}
+
+// The API returns only rules with an episode in the period, so a configured rule
+// without a row is silent there unless the API capped its list or history is partial.
+func TestClassifyHygieneRule_QuietConfiguredRules(t *testing.T) {
+	quiet := func(createdAt time.Time) hygieneRule {
+		return joinHygieneRuleConfig(nil, AlertConfigResponse{{
+			ID: "q", EntityID: "group-1", CreatedAt: createdAt.Unix(), IsDisabled: boolp(false),
+		}})[0]
+	}
+	old := testWindowFr.Add(-testDay)
+	cases := []struct {
+		name      string
+		rule      hygieneRule
+		window    func(*hygieneWindow)
+		want      []string
+		available bool
+	}{
+		{"complete history and an untruncated list", quiet(old), nil, []string{"stale"}, true},
+		{"created at window start", quiet(testWindowFr), nil, []string{"stale"}, true},
+		{"created inside the window", quiet(testWindowFr.Add(time.Second)), nil, []string{}, false},
+		{"partial history", quiet(old), func(w *hygieneWindow) { w.LifecycleComplete = false }, []string{}, false},
+		{"upstream truncated", quiet(old), func(w *hygieneWindow) { w.UpstreamTruncated = true }, []string{}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := testWindow()
+			if tc.window != nil {
+				tc.window(&w)
+			}
+			if got := categories(classifyHygieneRule(tc.rule, w)); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("categories = %v, want %v", got, tc.want)
+			}
+			wantUnassessed := 1
+			if tc.available {
+				wantUnassessed = 0
+			}
+			if got := countUnavailable([]hygieneRule{tc.rule}, w); got != (hygieneUnavailable{Activity: wantUnassessed}) {
+				t.Errorf("unavailable = %+v, want only activity=%d", got, wantUnassessed)
+			}
+		})
 	}
 }

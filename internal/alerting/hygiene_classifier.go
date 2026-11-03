@@ -37,23 +37,52 @@ var (
 )
 
 // hygieneRule joins a rule's stats with its configuration from the alert rules list,
-// which the hygiene API does not send. Config is nil when the rule is not in that
-// list; its fixes then carry no current values.
+// which the hygiene API does not send.
 type hygieneRule struct {
 	alerts.HygieneRule
+	// Config is nil when the rule is not in the list; its fixes then carry no current values.
 	Config *AlertRule
+	// NoActivity: an enabled configured rule the API sent no row for, because no
+	// episode overlapped the period or the API's cap dropped it.
+	NoActivity bool
 }
+
+// noActivityReason marks the stats of a rule the API has no row for: unknown, not zero.
+const noActivityReason = "no activity row: no episode in the period, or the API capped its list"
 
 func joinHygieneRuleConfig(rules []alerts.HygieneRule, configs AlertConfigResponse) []hygieneRule {
 	byID := make(map[string]*AlertRule, len(configs))
 	for i := range configs {
 		byID[configs[i].ID] = &configs[i]
 	}
-	joined := make([]hygieneRule, len(rules))
-	for i, rule := range rules {
-		joined[i] = hygieneRule{HygieneRule: rule, Config: byID[rule.RuleID]}
+	joined := make([]hygieneRule, 0, len(rules))
+	for _, rule := range rules {
+		joined = append(joined, hygieneRule{HygieneRule: rule, Config: byID[rule.RuleID]})
+		delete(byID, rule.RuleID)
+	}
+	// Configuration order, so the result does not depend on map iteration.
+	for i := range configs {
+		if config := &configs[i]; byID[config.ID] == config {
+			if quiet := quietHygieneRule(config); !quiet.disabled() {
+				joined = append(joined, quiet)
+			}
+		}
 	}
 	return joined
+}
+
+func quietHygieneRule(config *AlertRule) hygieneRule {
+	count := alerts.HygieneMetric{Status: alerts.HygieneStatusUnavailable, Reason: noActivityReason}
+	value := alerts.HygieneValue{Status: alerts.HygieneStatusUnavailable, Reason: noActivityReason}
+	return hygieneRule{
+		HygieneRule: alerts.HygieneRule{
+			AlertGroupID: config.EntityID, RuleID: config.ID, RuleName: config.RuleName, Severity: config.Severity,
+			FireCount: count, FlapCount: count, FlapsPerDay: value, TimeFiringSeconds: count,
+			AckRate: value, MedianTimeToAckSeconds: value,
+		},
+		Config:     config,
+		NoActivity: true,
+	}
 }
 
 func (r hygieneRule) config() AlertRule {
@@ -73,6 +102,8 @@ type hygieneWindow struct {
 	From, To          time.Time
 	Observed          time.Duration
 	LifecycleComplete bool
+	// UpstreamTruncated: the API capped its list, so a missing row proves no silence.
+	UpstreamTruncated bool
 }
 
 func newHygieneWindow(label string, resp *alerts.GetAlertHygieneResponse) hygieneWindow {
@@ -80,6 +111,7 @@ func newHygieneWindow(label string, resp *alerts.GetAlertHygieneResponse) hygien
 		Label: label, From: resp.Period.From, To: resp.Period.To,
 		Observed:          resp.Period.To.Sub(resp.Period.From),
 		LifecycleComplete: resp.Coverage.Lifecycle.Status == alerts.HygieneStatusComplete,
+		UpstreamTruncated: resp.Truncated,
 	}
 	if r := resp.Coverage.Lifecycle.Range; r != nil && !w.LifecycleComplete {
 		w.Observed = r.To.Sub(r.From)
@@ -127,12 +159,21 @@ type hygieneUnavailable struct {
 	AckRate    int `json:"ack_rate"`
 	Routed     int `json:"routed"`
 	RuleConfig int `json:"rule_config"`
+	// Activity counts configured rules with no activity row whose silence the
+	// history cannot prove, so they were not assessed.
+	Activity int `json:"activity"`
 }
 
-func countUnavailable(rules []hygieneRule) hygieneUnavailable {
+func countUnavailable(rules []hygieneRule, w hygieneWindow) hygieneUnavailable {
 	var n hygieneUnavailable
 	for _, rule := range rules {
 		if rule.disabled() {
+			continue
+		}
+		if rule.NoActivity {
+			if !quietRuleAssessable(rule, w) {
+				n.Activity++
+			}
 			continue
 		}
 		if rule.FireCount.Count == nil {
@@ -272,6 +313,12 @@ func flappingFinding(rule hygieneRule, w hygieneWindow) *hygieneFinding {
 func staleFinding(rule hygieneRule, w hygieneWindow) *hygieneFinding {
 	var reason string
 	switch {
+	case rule.NoActivity:
+		if !quietRuleAssessable(rule, w) {
+			return nil
+		}
+		reason = fmt.Sprintf("no alert episode in the %s; the rule existed before it began %s",
+			w.span(), formatHygieneTime(w.From))
 	case rule.LastFiredAt != nil && rule.LastFiredAt.Before(w.From) &&
 		rule.TimeFiringSeconds.Count != nil && *rule.TimeFiringSeconds.Count == 0:
 		reason = fmt.Sprintf("last fired %s, before the %s, which began %s",
@@ -288,6 +335,13 @@ func staleFinding(rule hygieneRule, w hygieneWindow) *hygieneFinding {
 		SuggestedFix:   hygieneFix{Parameter: "is_disabled", Current: "false", Proposed: "true"},
 		AlternativeFix: &hygieneFix{Parameter: "rule", Proposed: "delete"},
 	}
+}
+
+// A missing activity row proves silence only when history covers the whole window,
+// the API listed every active rule, and the rule existed for all of it.
+func quietRuleAssessable(rule hygieneRule, w hygieneWindow) bool {
+	return w.LifecycleComplete && !w.UpstreamTruncated &&
+		rule.Config != nil && !time.Unix(rule.Config.CreatedAt, 0).After(w.From)
 }
 
 // An unavailable routed value means the API could not tell, so it never counts as unrouted.

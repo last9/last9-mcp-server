@@ -83,17 +83,19 @@ func NewGetAlertHygieneHandler(client *http.Client, cfg models.Config) func(cont
 		}
 
 		rules := joinHygieneRuleConfig(resp.Rules, configs)
-		ranked := rankAlertHygiene(rules, newHygieneWindow(window, resp))
+		w := newHygieneWindow(window, resp)
+		ranked := rankAlertHygiene(rules, w)
+		unavailable := countUnavailable(rules, w)
 		result := alertHygieneResult{
 			Window:            window,
 			From:              formatHygieneTime(resp.Period.From),
 			To:                formatHygieneTime(resp.Period.To),
 			Coverage:          resp.Coverage,
 			UpstreamTruncated: resp.Truncated,
-			RulesEvaluated:    len(resp.Rules),
+			RulesEvaluated:    len(rules) - unavailable.Activity,
 			FlaggedRules:      len(ranked),
 			Truncated:         len(ranked) > limit,
-			Unavailable:       countUnavailable(rules),
+			Unavailable:       unavailable,
 			Rules:             ranked[:min(limit, len(ranked))],
 		}
 		payload, err := marshalHygieneResult(result)
