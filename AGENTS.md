@@ -406,6 +406,16 @@ starts its doc comment with the method and path.
 **Take at most 3 parameters**, not counting `ctx` and variadic options. More than 3 means a
 struct, unless a struct genuinely makes it less readable.
 
+### Validation
+
+**Validate arguments before taking a concurrency slot or calling the API.** An invalid
+call must fail with its own diagnostic, not wait on a semaphore or reach the upstream. Test
+it with every slot held, asserting the original error and zero upstream requests.
+
+**A shared predicate that reconciles a newer explicit field with a legacy fallback lets the
+explicit field win whenever it is set.** Normalize the legacy value once, inside the
+predicate, and table-test conflicting inputs through every tool that calls it.
+
 ### Contracts
 
 `contracts/` holds JSON schemas and fixtures pinned by sha256 in `contracts_test.go`.
