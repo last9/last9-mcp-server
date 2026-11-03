@@ -28,7 +28,7 @@ func GetTraceWaterfallInputSchema() map[string]interface{} {
 			},
 			"lookback_minutes": map[string]interface{}{
 				"type":        []string{"integer", "null"},
-				"description": "Lookback ending now; default 4320 minutes",
+				"description": "Lookback ending now; default 4320 minutes, maximum 527040 (366 days)",
 			},
 			"selected_span_id": map[string]interface{}{
 				"type":        []string{"string", "null"},

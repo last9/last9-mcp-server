@@ -25,7 +25,7 @@ func GetServiceSummaryInputSchema() map[string]interface{} {
 			"lookback_minutes": map[string]interface{}{
 				"type":        "number",
 				"minimum":     float64(1),
-				"description": "Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes.",
+				"description": "Number of minutes to look back from now (default: 60, minimum: 1, maximum: 527040 = 366 days). Use for relative windows like last 30 minutes.",
 			},
 			"env": map[string]interface{}{
 				"type":        "string",
