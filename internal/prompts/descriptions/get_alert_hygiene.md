@@ -12,30 +12,30 @@ Categories (a rule may have several; disabled rules are never flagged):
 - flapping: more than 4 flaps/day.
 - stale: last fired before the window with no firing time in it, or a configured rule with no
   episode in it while `coverage.lifecycle` is complete and the list is not truncated.
-- unrouted: its alert group has no notification channel.
+- unrouted: no firing reached a channel and its alert group has no channel attached.
 
 Each stat is `{status, count|value, reason}`; an unavailable value is never read as zero and
-skips the check that needs it. `unavailable` counts enabled rules per missing value, plus
-`rule_config` (not in the alert rules list; fixes carry no current value) and `activity`
-(configured, no episode, silence unproven: not assessed).
-`coverage` says how much of the window alert history covered; rates use the covered span, at
-least one day. `upstream_truncated`: the API returned only its 200 loudest rules.
+skips the check that needs it. `unavailable` counts enabled rules per missing value (`routed`
+also if attachments were unreadable), plus `rule_config` (not in the alert rules list; fixes
+carry no current value) and `activity` (no episode, silence unproven: not assessed).
+`coverage`: how much of the window history covered; rates use that span, at least a day.
+`upstream_truncated`: the API returned only its 200 loudest rules.
 
 Suggested fixes (`suggested_fix`, sometimes `alternative_fix`, each `{parameter, current, proposed}`):
 - flapping, and noisy non-static rules: raise `bad_minutes` (N in
   `alert_condition = count_true(result) >= N`) up to `eval_window`, or lengthen `eval_window`
   (minutes, max 60).
 - noisy static threshold: raise (or, for `<`, lower) the threshold in `condition` (`expr > 100`),
-  or switch `expression` to the `adaptive_std_cmp(metric, sensitivity, window)` macro (an
-  expression, not an `algorithm` value).
-- unrouted: attach a notification channel to the alert group.
+  or switch `expression` to the `adaptive_std_cmp(metric, sensitivity, window)` macro (not an
+  `algorithm` value).
+- unrouted: attach a notification channel.
 - stale: set `is_disabled` to true, or delete the rule, once confirmed unneeded.
 
 Output is compact JSON: `{window, from, to, coverage, upstream_truncated, rules_evaluated, flagged_rules, truncated, omitted_for_size, unavailable, rules}`.
 `truncated`: more flagged rules than `limit` or 32 KB holds (`omitted_for_size` counts size cuts).
 Each rule has `findings` (`category`, `reason` with the numbers, `suggested_fix`) and raw `stats`.
 
-Ranked by number of categories, then fire count, then flaps/day.
+Ranked by category count, then fire count, then flaps/day.
 
 ## Pairs well with
 - `get_alert_rule_state` (a rule's firing timeline)

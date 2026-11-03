@@ -45,6 +45,8 @@ type hygieneRule struct {
 	// NoActivity: an enabled configured rule the API sent no row for, because no
 	// episode overlapped the period or the API's cap dropped it.
 	NoActivity bool
+	// Attached: the alert group has a channel attachment now; nil when not read.
+	Attached *bool
 }
 
 // noActivityReason marks the stats of a rule the API has no row for: unknown, not zero.
@@ -185,7 +187,7 @@ func countUnavailable(rules []hygieneRule, w hygieneWindow) hygieneUnavailable {
 		if rule.AckRate.Value == nil {
 			n.AckRate++
 		}
-		if rule.Routed == nil {
+		if rule.Routed == nil || (!*rule.Routed && rule.Attached == nil) {
 			n.Routed++
 		}
 		if rule.Config == nil {
@@ -344,18 +346,41 @@ func quietRuleAssessable(rule hygieneRule, w hygieneWindow) bool {
 		rule.Config != nil && !time.Unix(rule.Config.CreatedAt, 0).After(w.From)
 }
 
-// An unavailable routed value means the API could not tell, so it never counts as unrouted.
-func unroutedFinding(rule hygieneRule, _ hygieneWindow) *hygieneFinding {
-	if rule.Routed == nil || *rule.Routed {
+// routed=false only says no firing in the period reached a channel, and a channel
+// attached since then routes the next one; unrouted also needs no current attachment.
+// An unavailable routed value or unread attachments never count as unrouted.
+func unroutedFinding(rule hygieneRule, w hygieneWindow) *hygieneFinding {
+	if rule.Routed == nil || *rule.Routed || rule.Attached == nil || *rule.Attached {
 		return nil
 	}
 	return &hygieneFinding{
 		Category: hygieneCategoryUnrouted,
-		Reason:   fmt.Sprintf("alert group %s has no notification channel, so firings reach no one", rule.AlertGroupID),
+		Reason: fmt.Sprintf("alert group %s has no notification channel attached, and no firing in the %s reached one",
+			rule.AlertGroupID, w.span()),
 		SuggestedFix: hygieneFix{
 			Parameter: "notification_channel",
 			Proposed:  fmt.Sprintf("attach a notification channel to alert group %s", rule.AlertGroupID),
 		},
+	}
+}
+
+// needsAttachmentCheck: only an enabled rule with no delivery in the period can be unrouted.
+func needsAttachmentCheck(rules []hygieneRule) bool {
+	for _, rule := range rules {
+		if !rule.disabled() && rule.Routed != nil && !*rule.Routed {
+			return true
+		}
+	}
+	return false
+}
+
+// markHygieneAttachments sets Attached from the attachment rows of the channel list;
+// org-wide channels do not count, matching the dashboard's "Not configured".
+func markHygieneAttachments(rules []hygieneRule, channels []NotificationChannel) {
+	index := buildEntityNotificationChannelIndex(channels)
+	for i := range rules {
+		attached := entityHasPerEntityBindings(rules[i].AlertGroupID, index)
+		rules[i].Attached = &attached
 	}
 }
 

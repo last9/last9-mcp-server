@@ -83,6 +83,13 @@ func NewGetAlertHygieneHandler(client *http.Client, cfg models.Config) func(cont
 		}
 
 		rules := joinHygieneRuleConfig(resp.Rules, configs)
+		// Unreadable attachments leave routing unverified (counted in unavailable.routed)
+		// rather than failing the audit or guessing a missing channel.
+		if needsAttachmentCheck(rules) {
+			if channels, err := fetchNotificationChannels(ctx, client, cfg); err == nil {
+				markHygieneAttachments(rules, channels)
+			}
+		}
 		w := newHygieneWindow(window, resp)
 		ranked := rankAlertHygiene(rules, w)
 		unavailable := countUnavailable(rules, w)

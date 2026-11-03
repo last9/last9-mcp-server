@@ -125,18 +125,30 @@ func TestClassifyHygieneRule_Categories(t *testing.T) {
 			w.LifecycleComplete, w.Observed = false, 6*testDay
 		}, func(r *hygieneRule) { r.LastFiredAt = nil; r.FireCount = count(0) }, []string{}},
 		{"no recorded fire with an unavailable fire count", nil, func(r *hygieneRule) { r.LastFiredAt = nil; r.FireCount = unavailableCount }, []string{}},
-		{"unrouted", nil, func(r *hygieneRule) { r.Routed = boolp(false) }, []string{"unrouted"}},
+		{"unrouted", nil, func(r *hygieneRule) { r.Routed, r.Attached = boolp(false), boolp(false) }, []string{"unrouted"}},
 		{"unavailable routing gives no unrouted verdict", nil, func(r *hygieneRule) { r.Routed = nil }, []string{}},
+		{"no delivery but a channel attached is not unrouted", nil, func(r *hygieneRule) {
+			r.Routed, r.Attached = boolp(false), boolp(true)
+		}, []string{}},
+		{"no delivery with unverified attachments gives no unrouted verdict", nil, func(r *hygieneRule) {
+			r.Routed, r.Attached = boolp(false), nil
+		}, []string{}},
+		{"unattached group that delivered is not unrouted", nil, func(r *hygieneRule) {
+			r.Routed, r.Attached = boolp(true), boolp(false)
+		}, []string{}},
 		{"several categories", nil, func(r *hygieneRule) {
 			r.FireCount, r.AckRate, r.FlapCount, r.Routed = count(70), value(0), count(63), boolp(false)
+			r.Attached = boolp(false)
 		}, []string{"noisy", "flapping", "unrouted"}},
 		{"missing configuration still classifies", nil, func(r *hygieneRule) {
 			r.Config = nil
 			r.FireCount, r.AckRate, r.FlapCount, r.Routed = count(70), value(0), count(63), boolp(false)
+			r.Attached = boolp(false)
 		}, []string{"noisy", "flapping", "unrouted"}},
 		{"disabled rule is never flagged", nil, func(r *hygieneRule) {
 			r.Config.IsDisabled = boolp(true)
 			r.FireCount, r.AckRate, r.FlapCount, r.Routed = count(70), value(0), count(63), boolp(false)
+			r.Attached = boolp(false)
 		}, []string{}},
 	}
 	for _, tc := range cases {
@@ -157,6 +169,7 @@ func TestClassifyHygieneRule_Categories(t *testing.T) {
 func TestClassifyHygieneRule_ReasonsCarryTheNumbers(t *testing.T) {
 	rule := healthyRule("r1")
 	rule.FireCount, rule.AckRate, rule.FlapCount, rule.Routed = count(70), value(0.05), count(46), boolp(false)
+	rule.Attached = boolp(false)
 
 	want := map[string][]string{
 		"noisy":    {"70", "10.0/day", "5%"},
@@ -302,7 +315,7 @@ func TestClassifyHygieneRule_Fixes(t *testing.T) {
 			alt:    &hygieneFix{Parameter: "eval_window", Current: "10", Proposed: "20"},
 		},
 		{
-			name: "unrouted", mutate: func(r *hygieneRule) { r.Routed = boolp(false) }, category: "unrouted",
+			name: "unrouted", mutate: func(r *hygieneRule) { r.Routed, r.Attached = boolp(false), boolp(false) }, category: "unrouted",
 			fix: hygieneFix{Parameter: "notification_channel", Proposed: "attach a notification channel to alert group group-1"},
 		},
 		{
@@ -340,18 +353,23 @@ func TestRankAlertHygiene_OrdersFlaggedRules(t *testing.T) {
 
 	oneFinding := healthyRule("one-finding")
 	oneFinding.Routed = boolp(false)
+	oneFinding.Attached = boolp(false)
 
 	quieter := healthyRule("two-findings-quieter")
 	quieter.Routed, quieter.FlapsPerDay, quieter.FireCount = boolp(false), value(5), count(3)
+	quieter.Attached = boolp(false)
 
 	louder := healthyRule("two-findings-louder")
 	louder.Routed, louder.FlapsPerDay, louder.FireCount = boolp(false), value(5), count(4)
+	louder.Attached = boolp(false)
 
 	moreFlaps := healthyRule("two-findings-louder-more-flaps")
 	moreFlaps.Routed, moreFlaps.FlapsPerDay, moreFlaps.FireCount = boolp(false), value(6), count(4)
+	moreFlaps.Attached = boolp(false)
 
 	threeFindings := healthyRule("three-findings")
 	threeFindings.Routed, threeFindings.FlapsPerDay, threeFindings.FlapCount, threeFindings.FireCount, threeFindings.AckRate = boolp(false), value(5), count(35), count(70), value(0)
+	threeFindings.Attached = boolp(false)
 
 	rules := []hygieneRule{healthy, oneFinding, quieter, louder, moreFlaps, threeFindings}
 	got := []string{}

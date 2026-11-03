@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"last9-mcp/internal/auth"
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/last9api/alerts"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
@@ -24,14 +25,17 @@ import (
 
 // hygieneStub serves the hygiene API and the alert rules list the tool joins it with.
 type hygieneStub struct {
-	rules       []hygieneRule
-	quiet       []AlertRule                   // configured rules the hygiene API has no row for
-	lifecycle   *alerts.HygieneCoverageSource // nil means complete
-	status      int                           // hygiene API status; zero means 200
-	rulesStatus int                           // alert rules list status; zero means 200
-	truncated   bool
-	requests    atomic.Int32
-	from, to    atomic.Value
+	rules           []hygieneRule
+	quiet           []AlertRule // configured rules the hygiene API has no row for
+	attached        []string    // alert group ids with a notification channel attachment row
+	channelsStatus  int         // notification channel list status; zero means 200
+	channelRequests atomic.Int32
+	lifecycle       *alerts.HygieneCoverageSource // nil means complete
+	status          int                           // hygiene API status; zero means 200
+	rulesStatus     int                           // alert rules list status; zero means 200
+	truncated       bool
+	requests        atomic.Int32
+	from, to        atomic.Value
 }
 
 func (s *hygieneStub) serve(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +66,22 @@ func (s *hygieneStub) serve(w http.ResponseWriter, r *http.Request) {
 			resp.Rules = append(resp.Rules, rule.HygieneRule)
 		}
 		_ = json.NewEncoder(w).Encode(resp)
+	case constants.EndpointNotificationSettings:
+		s.channelRequests.Add(1)
+		// Without exact=true the API omits attachment rows.
+		if r.URL.Query().Get("exact") != "true" {
+			http.Error(w, "exact=true required", http.StatusBadRequest)
+			return
+		}
+		if s.channelsStatus != 0 {
+			w.WriteHeader(s.channelsStatus)
+			return
+		}
+		rows := []NotificationChannel{{ID: 1, Name: "org-wide", Type: "slack", Global: true}}
+		for _, group := range s.attached {
+			rows = append(rows, NotificationChannel{ID: 2, Name: "pager", Type: "pagerduty", Global: true, ServiceFQID: group})
+		}
+		_ = json.NewEncoder(w).Encode(rows)
 	case "/alert-rules":
 		if s.rulesStatus != 0 {
 			w.WriteHeader(s.rulesStatus)
@@ -356,9 +376,13 @@ func TestGetAlertHygiene_CapsResponseBytes(t *testing.T) {
 			if top := fmt.Sprintf("r%02d", tc.flagged-1); len(out.Rules) == 0 || out.Rules[0].Stats.RuleID != top {
 				t.Fatalf("first returned rule is not the top-ranked %s", top)
 			}
-			// Each long-named rule is a little over 2000 bytes, so a cut response
-			// with room for one more dropped a rule it did not need to.
-			if tc.wantCut && len(body)+2200 <= maxHygieneResponseBytes {
+			// A cut response with room for one more rule (plus its comma) dropped a
+			// rule it did not need to.
+			ruleBytes, err := json.Marshal(out.Rules[len(out.Rules)-1])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.wantCut && len(body)+len(ruleBytes)+1 <= maxHygieneResponseBytes {
 				t.Errorf("response is %d bytes; another rule would have fit under %d", len(body), maxHygieneResponseBytes)
 			}
 		})
@@ -441,5 +465,57 @@ func TestGetAlertHygiene_AccountsForQuietConfiguredRules(t *testing.T) {
 	}
 	if f := out.Rules[0].Findings; len(f) != 1 || f[0].Category != hygieneCategoryStale || !strings.Contains(f[0].Reason, "no alert episode") {
 		t.Errorf("findings = %+v, want one stale finding saying no episode was recorded", f)
+	}
+}
+
+// routed=false only says no firing in the window reached a channel; a channel attached
+// since then routes the next one, so unrouted needs the group's current attachments.
+func TestGetAlertHygiene_UnroutedNeedsNoCurrentAttachment(t *testing.T) {
+	rule := func(routed *bool) hygieneRule {
+		r := healthyRule("synthetic")
+		r.FireCount, r.FlapsPerDay, r.AckRate = count(1), value(0), value(1)
+		r.LastFiredAt, r.Routed = timep(testWindowTo.Add(-testDay)), routed
+		return r
+	}
+	cases := []struct {
+		name           string
+		routed         *bool
+		attached       []string
+		channelsStatus int
+		wantUnrouted   bool
+		wantRouted     int // unavailable.routed
+		wantChannelGet bool
+	}{
+		{"no delivery, channel attached", boolp(false), []string{"group-1"}, 0, false, 0, true},
+		{"no delivery, only another group attached", boolp(false), []string{"group-2"}, 0, true, 0, true},
+		{"no delivery, attachments unreadable", boolp(false), nil, http.StatusForbidden, false, 1, true},
+		{"delivered, channel attached", boolp(true), []string{"group-1"}, 0, false, 0, false},
+		{"delivered, nothing attached", boolp(true), nil, 0, false, 0, false},
+		{"delivery history unavailable", nil, nil, 0, false, 1, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stub := &hygieneStub{rules: []hygieneRule{rule(tc.routed)}, attached: tc.attached, channelsStatus: tc.channelsStatus}
+			result, err := callGetAlertHygiene(t, stub, GetAlertHygieneArgs{Window: "7d"})
+			if err != nil {
+				t.Fatalf("handler: %v", err)
+			}
+			out := decodeHygieneResult(t, result)
+			unrouted := false
+			for _, v := range out.Rules {
+				for _, f := range v.Findings {
+					unrouted = unrouted || f.Category == hygieneCategoryUnrouted
+				}
+			}
+			if unrouted != tc.wantUnrouted {
+				t.Errorf("unrouted = %v, want %v: %+v", unrouted, tc.wantUnrouted, out.Rules)
+			}
+			if out.Unavailable.Routed != tc.wantRouted {
+				t.Errorf("unavailable.routed = %d, want %d", out.Unavailable.Routed, tc.wantRouted)
+			}
+			if got := stub.channelRequests.Load() > 0; got != tc.wantChannelGet {
+				t.Errorf("read attachments = %v, want %v", got, tc.wantChannelGet)
+			}
+		})
 	}
 }
