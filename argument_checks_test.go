@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -141,6 +142,44 @@ func TestDashboardToolsFlagTargetsOnlyOnQueryBackedPanels(t *testing.T) {
 				flagged := strings.Contains(toolResultText(result), "targets: unknown panel field; use queries")
 				if want := kind == "timeseries"; flagged != want {
 					t.Errorf("targets flagged = %v, want %v: %s", flagged, want, toolResultText(result))
+				}
+			})
+		}
+	}
+}
+
+// Shape checks follow the input schema's anyOf branches, including properties only a branch declares.
+func TestDashboardToolsCheckPanelsAgainstEveryAnyOfBranch(t *testing.T) {
+	session := newInMemoryClientSession(t)
+	panel := func(fields string) string { return `{"name":"p","layout":{"x":0,"y":0,"w":6,"h":4},` + fields + `}` }
+	cases := map[string]struct{ panel, want string }{
+		"section":                   {panel(`"visualization":{"type":"section"}`), ""},
+		"markdown":                  {panel(`"visualization":{"type":"markdown"}`), ""},
+		"csv object":                {panel(`"visualization":{"type":"table"},"csv":{}`), ""},
+		"csv null":                  {panel(`"visualization":{"type":"table"},"csv":null`), "csv: got null, want object"},
+		"csv string":                {panel(`"visualization":{"type":"table"},"csv":"data.csv"`), "csv: got string, want object"},
+		"csv array":                 {panel(`"visualization":{"type":"table"},"csv":[]`), "csv: got array, want object"},
+		"timeseries targets":        {panel(`"visualization":{"type":"timeseries"},"targets":[]`), "targets: unknown panel field; use queries"},
+		"no visualization, targets": {panel(`"targets":[]`), "targets: unknown panel field; use queries"},
+	}
+	calls := map[string]func(panel string) string{
+		"create_dashboard": func(p string) string { return `{"dashboard":{"name":"x","panels":[` + p + `]}}` },
+		"update_dashboard": func(p string) string { return `{"id":"dash-1","dashboard":{"name":"x","panels":[` + p + `]}}` },
+		"patch_dashboard":  func(p string) string { return `{"id":"dash-1","ops":[{"op":"add_panel","panel":` + p + `}]}` },
+		"validate_dashboard": func(p string) string {
+			return `{"start_time_iso":"2026-01-01T00:00:00Z","end_time_iso":"2026-01-01T01:00:00Z","dashboard_definition":{"name":"x","panels":[` + p + `]}}`
+		},
+	}
+	shapeProblem := regexp.MustCompile(`panels?(\[0\])?[.\w\[\]]*: (got |unknown |missing;|want one of)`)
+	for name, c := range cases {
+		for tool, args := range calls {
+			t.Run(name+"/"+tool, func(t *testing.T) {
+				text := toolResultText(callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args(c.panel))}))
+				if c.want == "" && shapeProblem.MatchString(text) {
+					t.Errorf("valid panel got a shape problem: %s", text)
+				}
+				if c.want != "" && !strings.Contains(text, c.want) {
+					t.Errorf("missing %q: %s", c.want, text)
 				}
 			})
 		}
