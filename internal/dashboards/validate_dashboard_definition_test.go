@@ -64,6 +64,19 @@ func TestValidateDashboard_UnwrapsCreateEnvelope(t *testing.T) {
 	}
 }
 
+func TestValidateDashboard_EnvelopeWithNoPanelsKeepsNote(t *testing.T) {
+	report := validateInline(t, map[string]any{
+		"dashboard": map[string]any{"name": "Empty", "panels": []any{}},
+		"metadata":  map[string]any{"category": "custom"},
+	})
+	if report["success"] != false || report["error"] != "no_panels" {
+		t.Fatalf("report=%v", report)
+	}
+	if note, _ := report["note"].(string); !strings.Contains(note, "envelope") {
+		t.Fatalf("note=%q", note)
+	}
+}
+
 func TestValidateDashboard_RejectsUnreadableEnvelope(t *testing.T) {
 	cases := map[string]map[string]any{
 		"dashboard is not an object": {"dashboard": "Notes", "metadata": map[string]any{}},
