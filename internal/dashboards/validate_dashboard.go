@@ -175,7 +175,7 @@ func NewValidateDashboardHandler(client *http.Client, cfg models.Config) func(co
 
 		exec := &validateExecutor{client: client, cfg: cfg}
 		result := runValidateDashboard(ctx, exec, parsed)
-		if unwrapped && result["success"] == true {
+		if unwrapped {
 			result["note"] = "dashboard_definition was a {dashboard, metadata} envelope; validated its inner dashboard object."
 		}
 		return jsonToolResult(result)
