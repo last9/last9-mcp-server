@@ -185,3 +185,39 @@ func TestDashboardToolsCheckPanelsAgainstEveryAnyOfBranch(t *testing.T) {
 		}
 	}
 }
+
+func TestDashboardWritesNameEveryMistypedAlternativeField(t *testing.T) {
+	session := newInMemoryClientSession(t)
+	panel := func(name, fields string) string {
+		return `{"name":"` + name + `","layout":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"stat"},` + fields + `}`
+	}
+	query := `{"name":"A","type":"range","expr":"1","telemetry":"metrics","query_type":"promql","legend":{"type":"auto","value":""}}`
+	for tool, prefix := range map[string]string{
+		"create_dashboard": `{"dashboard":`,
+		"update_dashboard": `{"id":"dash-1","dashboard":`,
+	} {
+		t.Run(tool+"/invalid csv", func(t *testing.T) {
+			args := prefix + `{"name":"x","panels":[` + panel("a", `"csv":"bad"`) + "," + panel("b", `"csv":"bad"`) + `]}}`
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args)})
+			assertToolError(t, result, toolErrorExpectation{
+				contains: []string{
+					"dashboard.panels[0].csv: got string, want object",
+					"dashboard.panels[1].csv: got string, want object",
+				},
+				absent: []string{"validating /properties"},
+			})
+		})
+		for name, fields := range map[string]string{
+			"valid csv":         `"csv":{"columns":{}}`,
+			"queries satisfied": `"csv":"bad","queries":[` + query + `]`,
+		} {
+			t.Run(tool+"/"+name, func(t *testing.T) {
+				args := prefix + `{"name":"x","panels":[` + panel("a", fields) + `]}}`
+				result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args)})
+				if text := toolResultText(result); strings.Contains(text, "does not match the dashboard schema") || strings.Contains(text, "validating /properties") {
+					t.Errorf("valid alternative refused: %s", text)
+				}
+			})
+		}
+	}
+}

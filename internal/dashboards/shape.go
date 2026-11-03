@@ -7,8 +7,6 @@ import (
 	"math"
 	"slices"
 	"strings"
-
-	"github.com/google/jsonschema-go/jsonschema"
 )
 
 const maxShapeProblems = 20
@@ -61,9 +59,11 @@ func (s *shapeChecker) err() error {
 	return errors.New("dashboard does not match the dashboard schema; nothing was written:\n- " + strings.Join(lines, "\n- "))
 }
 
+// check is the one interpreter of the input schema: the anyOf branches and allOf
+// conditions are evaluated with it too, so every rule reports the same way.
 func (s *shapeChecker) check(schema map[string]any, value any, path, kind string) {
-	if !hasSchemaType(schema, value) {
-		s.problems = append(s.problems, fmt.Sprintf("%s: got %s, want %s", path, jsonKind(value), describeSchema(schema)))
+	if problem := valueProblem(schema, value); problem != "" {
+		s.problems = append(s.problems, path+": "+problem)
 		return
 	}
 	if items, ok := schema["items"].(map[string]any); ok {
@@ -77,20 +77,12 @@ func (s *shapeChecker) check(schema map[string]any, value any, path, kind string
 		return
 	}
 	props, _ := schema["properties"].(map[string]any)
-	branchProps := anyOfProperties(schema)
 	required, _ := schema["required"].([]string)
 	aliases := fieldAliases[kind]
 	aliased := map[string]bool{}
-	branchFieldMistyped := false
 	for _, key := range sortedKeys(obj) {
 		if propSchema, ok := props[key].(map[string]any); ok {
 			s.check(propSchema, obj[key], path+"."+key, childKind(key))
-			continue
-		}
-		if propSchema, ok := branchProps[key]; ok {
-			before := len(s.problems)
-			s.check(propSchema, obj[key], path+"."+key, childKind(key))
-			branchFieldMistyped = branchFieldMistyped || len(s.problems) > before
 			continue
 		}
 		if native, ok := aliases[key]; ok {
@@ -100,32 +92,14 @@ func (s *shapeChecker) check(schema map[string]any, value any, path, kind string
 			}
 		}
 	}
-	if !s.requireFields {
-		return
-	}
-	for _, key := range required {
-		if _, set := obj[key]; !set && !aliased[key] {
-			s.missing(props, key, path)
-		}
-	}
-	s.checkConditions(schema, obj, path, !branchFieldMistyped)
-}
-
-// anyOfProperties collects property schemas declared only inside anyOf branches, such
-// as a panel's csv, so their values are type-checked like top-level properties.
-func anyOfProperties(schema map[string]any) map[string]map[string]any {
-	anyOf, _ := schema["anyOf"].([]any)
-	props := map[string]map[string]any{}
-	for _, b := range anyOf {
-		branch, _ := b.(map[string]any)
-		branchProps, _ := branch["properties"].(map[string]any)
-		for key, p := range branchProps {
-			if sub, ok := p.(map[string]any); ok && sub["type"] != nil {
-				props[key] = sub
+	if s.requireFields {
+		for _, key := range required {
+			if _, set := obj[key]; !set && !aliased[key] {
+				s.missing(props, key, path)
 			}
 		}
 	}
-	return props
+	s.checkConditions(schema, obj, path)
 }
 
 func (s *shapeChecker) missing(props map[string]any, key, path string) {
@@ -133,29 +107,37 @@ func (s *shapeChecker) missing(props map[string]any, key, path string) {
 	s.problems = append(s.problems, fmt.Sprintf("%s.%s: missing; want %s", path, key, describeSchema(propSchema)))
 }
 
-// checkConditions reports what the allOf if/then and anyOf keywords require, which the
-// SDK would otherwise report one at a time. reportAnyOf is false when a mistyped branch
-// field already explains why no anyOf branch fits.
-func (s *shapeChecker) checkConditions(schema, obj map[string]any, path string, reportAnyOf bool) {
+// checkConditions reports the allOf if/then and anyOf rules the SDK reports one at a time.
+// A failed anyOf names the problems of each branch whose required fields are set, else
+// lists the branches; partial panels skip the list and the then requirements.
+func (s *shapeChecker) checkConditions(schema, obj map[string]any, path string) {
 	allOf, _ := schema["allOf"].([]any)
 	for _, c := range allOf {
 		cond, _ := c.(map[string]any)
 		ifSchema, _ := cond["if"].(map[string]any)
 		then, _ := cond["then"].(map[string]any)
-		if ifSchema != nil && then != nil && matches(ifSchema, obj) {
+		if s.requireFields && ifSchema != nil && then != nil && matches(ifSchema, obj) {
 			s.requireFrom(schema, then, obj, path)
 		}
 	}
 	anyOf, _ := schema["anyOf"].([]any)
 	options := make([]string, 0, len(anyOf))
+	var chosen []string
 	for _, b := range anyOf {
 		branch, _ := b.(map[string]any)
-		if matches(branch, obj) {
+		sub := shapeChecker{requireFields: true}
+		sub.check(branch, obj, path, "")
+		if len(sub.problems) == 0 {
 			return
+		}
+		if required, _ := branch["required"].([]string); len(required) > 0 && hasAll(obj, required) {
+			chosen = append(chosen, sub.problems...)
 		}
 		options = append(options, describeBranch(branch, ""))
 	}
-	if reportAnyOf && len(options) > 0 {
+	if len(chosen) > 0 {
+		s.problems = append(s.problems, chosen...)
+	} else if s.requireFields && len(options) > 0 {
 		s.problems = append(s.problems, fmt.Sprintf("%s: want one of %s", path, strings.Join(options, ", ")))
 	}
 }
@@ -179,57 +161,50 @@ func (s *shapeChecker) requireFrom(schema, cond, obj map[string]any, path string
 	}
 }
 
-// needsField reports whether obj must set key: it is required, or no anyOf branch
-// without it fits obj. The API ignores an alias of a field obj does not need.
-func needsField(schema, obj map[string]any, key string) bool {
-	required, _ := schema["required"].([]string)
-	if slices.Contains(required, key) {
+// needsField reports whether field is required, or required by an anyOf branch while no
+// branch is satisfied by a field obj sets. A branch over unset fields holds only vacuously:
+// the panel needs field once it sets them (e.g. visualization).
+func needsField(schema, obj map[string]any, field string) bool {
+	if required, _ := schema["required"].([]string); slices.Contains(required, field) {
 		return true
 	}
 	anyOf, _ := schema["anyOf"].([]any)
+	inBranch := false
 	for _, b := range anyOf {
 		branch, _ := b.(map[string]any)
-		branchRequired, _ := branch["required"].([]string)
-		if !slices.Contains(branchRequired, key) && matches(branch, obj) && pinned(branch, obj) {
+		if constrainsSetField(branch, obj) && matches(branch, obj) {
 			return false
 		}
+		required, _ := branch["required"].([]string)
+		inBranch = inBranch || slices.Contains(required, field)
 	}
-	return len(anyOf) > 0
+	return inBranch
 }
 
-// pinned reports whether value sets every property schema constrains, so that
-// matches(schema, value) is not true merely because those properties are absent.
-func pinned(schema map[string]any, value any) bool {
-	obj, ok := value.(map[string]any)
-	if !ok {
-		return true
-	}
+func constrainsSetField(schema, obj map[string]any) bool {
+	required, _ := schema["required"].([]string)
 	props, _ := schema["properties"].(map[string]any)
-	for key, p := range props {
-		sub, _ := p.(map[string]any)
-		if v, set := obj[key]; !set || !pinned(sub, v) {
+	for key := range obj {
+		if _, ok := props[key]; ok || slices.Contains(required, key) {
+			return true
+		}
+	}
+	return false
+}
+
+func matches(schema map[string]any, value any) bool {
+	s := shapeChecker{requireFields: true}
+	s.check(schema, value, "", "")
+	return len(s.problems) == 0
+}
+
+func hasAll(obj map[string]any, keys []string) bool {
+	for _, key := range keys {
+		if _, set := obj[key]; !set {
 			return false
 		}
 	}
 	return true
-}
-
-// matches reports whether value satisfies schema under the JSON Schema validator the SDK
-// applies to tool arguments, so branch matching cannot drift from the write tools.
-func matches(schema map[string]any, value any) bool {
-	data, err := json.Marshal(schema)
-	if err != nil {
-		return false
-	}
-	var parsed jsonschema.Schema
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		return false
-	}
-	resolved, err := parsed.Resolve(nil)
-	if err != nil {
-		return false
-	}
-	return resolved.Validate(value) == nil
 }
 
 func describeBranch(schema map[string]any, prefix string) string {
@@ -258,6 +233,42 @@ func childKind(key string) string {
 		return "query"
 	}
 	return ""
+}
+
+func valueProblem(schema map[string]any, value any) string {
+	if !hasSchemaType(schema, value) {
+		return fmt.Sprintf("got %s, want %s", jsonKind(value), describeSchema(schema))
+	}
+	if c, ok := schema["const"]; ok && value != c {
+		return fmt.Sprintf("got %s, want %v", describeValue(value), c)
+	}
+	if enum, ok := schema["enum"].([]string); ok {
+		if str, _ := value.(string); !slices.Contains(enum, str) {
+			return fmt.Sprintf("got %s, want %s", describeValue(value), describeSchema(schema))
+		}
+	}
+	n, ok := value.(float64)
+	if !ok {
+		return ""
+	}
+	lo, hasLo := schema["minimum"].(int)
+	hi, hasHi := schema["maximum"].(int)
+	switch {
+	case hasLo && hasHi && (n < float64(lo) || n > float64(hi)):
+		return fmt.Sprintf("got %v, want %s from %d to %d", n, schema["type"], lo, hi)
+	case hasLo && n < float64(lo):
+		return fmt.Sprintf("got %v, want %s of at least %d", n, schema["type"], lo)
+	case hasHi && n > float64(hi):
+		return fmt.Sprintf("got %v, want %s of at most %d", n, schema["type"], hi)
+	}
+	return ""
+}
+
+func describeValue(value any) string {
+	if str, ok := value.(string); ok {
+		return fmt.Sprintf("%q", str)
+	}
+	return jsonKind(value)
 }
 
 func hasSchemaType(schema map[string]any, value any) bool {
