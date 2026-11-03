@@ -223,8 +223,6 @@ func childKind(key string) string {
 	return ""
 }
 
-// valueProblem checks the keywords that apply to a single value: type, const, enum and
-// numeric bounds.
 func valueProblem(schema map[string]any, value any) string {
 	if !hasSchemaType(schema, value) {
 		return fmt.Sprintf("got %s, want %s", jsonKind(value), describeSchema(schema))
