@@ -115,3 +115,34 @@ func TestDashboardArgumentCheckRunsAfterIntegerCoercion(t *testing.T) {
 		absent:   []string{"version"},
 	})
 }
+
+// Query-free panels ignore targets, so it is flagged only where queries are required.
+func TestDashboardToolsFlagTargetsOnlyOnQueryBackedPanels(t *testing.T) {
+	session := newInMemoryClientSession(t)
+	layout := `"layout":{"x":0,"y":0,"w":6,"h":4}`
+	panels := map[string]string{
+		"section":    `{"name":"s",` + layout + `,"visualization":{"type":"section"},"targets":[]}`,
+		"markdown":   `{"name":"m",` + layout + `,"visualization":{"type":"markdown"},"targets":[]}`,
+		"csv":        `{"name":"c",` + layout + `,"visualization":{"type":"table"},"csv":{},"targets":[]}`,
+		"timeseries": `{"name":"t",` + layout + `,"visualization":{"type":"timeseries"},"targets":[]}`,
+	}
+	calls := map[string]func(panel string) string{
+		"create_dashboard": func(p string) string { return `{"dashboard":{"name":"x","panels":[` + p + `]}}` },
+		"update_dashboard": func(p string) string { return `{"id":"dash-1","dashboard":{"name":"x","panels":[` + p + `]}}` },
+		"patch_dashboard":  func(p string) string { return `{"id":"dash-1","ops":[{"op":"add_panel","panel":` + p + `}]}` },
+		"validate_dashboard": func(p string) string {
+			return `{"start_time_iso":"2026-01-01T00:00:00Z","end_time_iso":"2026-01-01T01:00:00Z","dashboard_definition":{"name":"x","panels":[` + p + `]}}`
+		},
+	}
+	for kind, panel := range panels {
+		for tool, args := range calls {
+			t.Run(kind+"/"+tool, func(t *testing.T) {
+				result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: tool, Arguments: json.RawMessage(args(panel))})
+				flagged := strings.Contains(toolResultText(result), "targets: unknown panel field; use queries")
+				if want := kind == "timeseries"; flagged != want {
+					t.Errorf("targets flagged = %v, want %v: %s", flagged, want, toolResultText(result))
+				}
+			})
+		}
+	}
+}
