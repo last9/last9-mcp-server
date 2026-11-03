@@ -12,7 +12,7 @@ func TestGetHygieneRequestAndResponse(t *testing.T) {
 	var got *http.Request
 	c := newAlertsTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		got = r
-		_, _ = io.WriteString(w, `{"rules":[{"rule_id":"r1","rule_name":"High error rate","fire_count":12,"flaps_per_day":1.5,"routed":false,"firing_seconds":60,"ack":{"ack_rate":0.5,"median_seconds_to_ack":null}}]}`)
+		_, _ = io.WriteString(w, `{"coverage":{"lifecycle":{"status":"partial"}},"truncated":true,"rules":[{"alert_group_id":"g1","rule_id":"r1","rule_type":"alert_rule","rule_name":"High error rate","service":"api","severity":"P1","group_labels":{"team":"payments"},"fire_count":{"status":"available","count":12},"flap_count":{"status":"available","count":3},"flaps_per_day":{"status":"available","value":1.5},"time_firing_seconds":{"status":"partial","count":60,"reason":"ledger gap"},"ack_rate":{"status":"available","value":0.5},"median_time_to_ack_seconds":{"status":"unavailable","reason":"no acks"},"notification_attempts":{"status":"available","count":4},"routed":false}]}`)
 	})
 
 	resp, err := GetHygiene(context.Background(), c, GetHygieneInput{
@@ -30,8 +30,17 @@ func TestGetHygieneRequestAndResponse(t *testing.T) {
 		t.Fatalf("rules = %+v", resp.Rules)
 	}
 	r := resp.Rules[0]
-	if r.RuleID != "r1" || *r.FireCount != 12 || *r.FlapsPerDay != 1.5 || *r.Routed || *r.FiringSeconds != 60 || *r.Ack.AckRate != 0.5 || r.Ack.MedianSecondsToAck != nil {
+	if r.AlertGroupID != "g1" || r.RuleID != "r1" || r.RuleType != "alert_rule" || r.Service != "api" || r.GroupLabels["team"] != "payments" || *r.Routed {
 		t.Errorf("rule = %+v", r)
+	}
+	if *r.FireCount.Count != 12 || *r.FlapCount.Count != 3 || *r.FlapsPerDay.Value != 1.5 || r.TimeFiringSeconds.Status != "partial" || *r.NotificationAttempts.Count != 4 {
+		t.Errorf("counts = %+v", r)
+	}
+	if *r.AckRate.Value != 0.5 || r.MedianTimeToAckSeconds.Status != "unavailable" || r.MedianTimeToAckSeconds.Value != nil {
+		t.Errorf("ack = %+v %+v", r.AckRate, r.MedianTimeToAckSeconds)
+	}
+	if !resp.Truncated || string(resp.Coverage) != `{"lifecycle":{"status":"partial"}}` {
+		t.Errorf("truncated = %v, coverage = %s", resp.Truncated, resp.Coverage)
 	}
 }
 

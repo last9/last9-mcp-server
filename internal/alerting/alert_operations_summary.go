@@ -54,6 +54,8 @@ type opsDelivered struct {
 }
 
 type opsRules struct {
+	Coverage       json.RawMessage      `json:"coverage"`
+	Truncated      bool                 `json:"truncated"`
 	TotalRules     int                  `json:"total_rules"`
 	TopByFireCount []alerts.HygieneRule `json:"top_by_fire_count"`
 	Flapping       []alerts.HygieneRule `json:"flapping"`
@@ -104,7 +106,7 @@ func NewGetAlertOperationsSummaryHandler(client *http.Client, cfg models.Config)
 			if err != nil {
 				result.Errors = append(result.Errors, opsError{Field: "rules", Error: err.Error()})
 			} else {
-				result.Rules = shapeOpsRules(hygiene.Rules)
+				result.Rules = shapeOpsRules(hygiene)
 			}
 		}
 
@@ -222,23 +224,51 @@ func normalizeHealthMetric(m *alerts.HealthMetric) alerts.HealthMetric {
 	return alerts.HealthMetric{Status: metricUnavailable, Reason: fmt.Sprintf("unrecognized status %q", m.Status)}
 }
 
-func shapeOpsRules(rules []alerts.HygieneRule) *opsRules {
-	byFires := append([]alerts.HygieneRule(nil), rules...)
+// A derived value follows the same rule as a count: no value without a status we can read.
+func normalizeHygieneValue(v *alerts.HygieneValue) *alerts.HygieneValue {
+	if v == nil {
+		return &alerts.HygieneValue{Status: metricUnavailable, Reason: "not returned by the API"}
+	}
+	switch v.Status {
+	case metricAvailable, metricPartial, metricUnavailable:
+		return v
+	}
+	return &alerts.HygieneValue{Status: metricUnavailable, Reason: fmt.Sprintf("unrecognized status %q", v.Status)}
+}
+
+func normalizeHygieneRule(r alerts.HygieneRule) alerts.HygieneRule {
+	for _, m := range []**alerts.HealthMetric{&r.FireCount, &r.FlapCount, &r.TimeFiringSeconds, &r.NotificationAttempts} {
+		n := normalizeHealthMetric(*m)
+		*m = &n
+	}
+	for _, v := range []**alerts.HygieneValue{&r.FlapsPerDay, &r.AckRate, &r.MedianTimeToAckSeconds} {
+		*v = normalizeHygieneValue(*v)
+	}
+	return r
+}
+
+func shapeOpsRules(hygiene alerts.GetHygieneResponse) *opsRules {
+	byFires := make([]alerts.HygieneRule, len(hygiene.Rules))
+	for i, r := range hygiene.Rules {
+		byFires[i] = normalizeHygieneRule(r)
+	}
 	sort.SliceStable(byFires, func(i, j int) bool { return fireCount(byFires[i]) > fireCount(byFires[j]) })
 
 	var flapping, unrouted []alerts.HygieneRule
 	for _, r := range byFires {
-		if r.FlapsPerDay != nil && *r.FlapsPerDay >= flappingMinPerDay {
+		if flapsPerDay(r) >= flappingMinPerDay {
 			flapping = append(flapping, r)
 		}
 		if r.Routed != nil && !*r.Routed {
 			unrouted = append(unrouted, r)
 		}
 	}
-	sort.SliceStable(flapping, func(i, j int) bool { return *flapping[i].FlapsPerDay > *flapping[j].FlapsPerDay })
+	sort.SliceStable(flapping, func(i, j int) bool { return flapsPerDay(flapping[i]) > flapsPerDay(flapping[j]) })
 
 	return &opsRules{
-		TotalRules:     len(rules),
+		Coverage:       hygiene.Coverage,
+		Truncated:      hygiene.Truncated,
+		TotalRules:     len(hygiene.Rules),
 		TopByFireCount: firstRules(byFires),
 		Flapping:       firstRules(flapping),
 		FlappingTotal:  len(flapping),
@@ -247,11 +277,19 @@ func shapeOpsRules(rules []alerts.HygieneRule) *opsRules {
 	}
 }
 
+// Rules are normalized first, so an unavailable or unrecognized value carries no number.
 func fireCount(r alerts.HygieneRule) int64 {
-	if r.FireCount == nil {
+	if r.FireCount.Count == nil {
 		return -1
 	}
-	return *r.FireCount
+	return *r.FireCount.Count
+}
+
+func flapsPerDay(r alerts.HygieneRule) float64 {
+	if r.FlapsPerDay.Value == nil {
+		return -1
+	}
+	return *r.FlapsPerDay.Value
 }
 
 func firstRules(rules []alerts.HygieneRule) []alerts.HygieneRule {

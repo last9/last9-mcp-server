@@ -233,7 +233,7 @@ func TestGetAlertOperationsSummaryMapsAPIErrors(t *testing.T) {
 }
 
 func hygieneRule(id string, fires int, flaps float64, routed bool) string {
-	return fmt.Sprintf(`{"rule_id":%q,"rule_name":"rule %s","fire_count":%d,"flaps_per_day":%g,"routed":%t}`, id, id, fires, flaps, routed)
+	return fmt.Sprintf(`{"rule_id":%q,"rule_name":"rule %s","fire_count":{"status":"available","count":%d},"flaps_per_day":{"status":"available","value":%g},"routed":%t}`, id, id, fires, flaps, routed)
 }
 
 func TestGetAlertOperationsSummaryIncludeRules(t *testing.T) {
@@ -241,12 +241,13 @@ func TestGetAlertOperationsSummaryIncludeRules(t *testing.T) {
 		hygieneRule("flappy", 5, flappingMinPerDay, true),
 		hygieneRule("calm", 3, flappingMinPerDay-0.01, true),
 		hygieneRule("lost", 1, 0, false),
-		`{"rule_id":"unknown","fire_count":null,"routed":null}`,
+		`{"rule_id":"unknown","fire_count":{"status":"unavailable","reason":"no lifecycle data"},"flaps_per_day":{"status":"unavailable"}}`,
+		`{"rule_id":"odd","fire_count":{"status":"bogus","count":9999},"flaps_per_day":{"status":"bogus","value":50}}`,
 	}
 	for i := 0; i < opsRulesLimit; i++ {
 		rules = append(rules, hygieneRule(fmt.Sprintf("busy%02d", i), 100+i, 0, true))
 	}
-	f := &opsFake{summary: opsSummaryBody, hygiene: `{"rules":[` + strings.Join(rules, ",") + `]}`}
+	f := &opsFake{summary: opsSummaryBody, hygiene: `{"truncated":true,"coverage":{"lifecycle":{"status":"partial"}},"rules":[` + strings.Join(rules, ",") + `]}`}
 	args := weekArgs()
 	args.IncludeRules = true
 	args.Severities = []string{"P1"}
@@ -276,8 +277,29 @@ func TestGetAlertOperationsSummaryIncludeRules(t *testing.T) {
 	if r["total_rules"] != float64(len(rules)) || r["flapping_total"] != float64(1) || r["unrouted_total"] != float64(1) {
 		t.Errorf("totals = %v %v %v", r["total_rules"], r["flapping_total"], r["unrouted_total"])
 	}
+	if r["truncated"] != true || fmt.Sprint(r["coverage"]) != "map[lifecycle:map[status:partial]]" {
+		t.Errorf("truncated = %v, coverage = %v", r["truncated"], r["coverage"])
+	}
 	if _, ok := out["errors"]; ok {
 		t.Errorf("errors = %v", out["errors"])
+	}
+}
+
+func TestGetAlertOperationsSummaryWithholdsUnknownRuleStatus(t *testing.T) {
+	f := &opsFake{summary: opsSummaryBody, hygiene: `{"rules":[{"rule_id":"odd","fire_count":{"status":"bogus","count":9999},"ack_rate":{"status":"bogus","value":0.9}}]}`}
+	args := weekArgs()
+	args.IncludeRules = true
+	res, err := runOpsSummary(t, f, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := decodeOps(t, res)["rules"].(map[string]any)["top_by_fire_count"].([]any)[0].(map[string]any)
+	fires, ack := rule["fire_count"].(map[string]any), rule["ack_rate"].(map[string]any)
+	if fires["status"] != metricUnavailable || fires["count"] != nil || ack["status"] != metricUnavailable || ack["value"] != nil {
+		t.Errorf("rule = %v", rule)
+	}
+	if missing := rule["flaps_per_day"].(map[string]any); missing["status"] != metricUnavailable {
+		t.Errorf("flaps_per_day = %v", missing)
 	}
 }
 

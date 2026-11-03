@@ -2,6 +2,7 @@ package alerts
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -16,7 +17,7 @@ const opHygiene = "alert hygiene"
 
 const hygieneLabelPrefix = "label."
 
-// One row per alert rule in the organization.
+// The API returns at most 200 rules, each with its group labels.
 const maxHygieneBytes = 4 << 20
 
 type GetHygieneInput struct {
@@ -29,27 +30,41 @@ type GetHygieneInput struct {
 	GroupBy string
 }
 
-// Nullable fields are pointers: null or absent means no history (or, for routed, no
-// routing data) was recorded, never zero or false.
+// Counts are HealthMetric and derived values HygieneValue, each meaningful only with its
+// status. Routed is omitted when the API has no delivery coverage, never false.
 type HygieneRule struct {
-	RuleID         string      `json:"rule_id"`
-	RuleName       string      `json:"rule_name"`
-	AlertGroupName string      `json:"alert_group_name,omitempty"`
-	Severity       string      `json:"severity,omitempty"`
-	FireCount      *int64      `json:"fire_count"`
-	FlapsPerDay    *float64    `json:"flaps_per_day"`
-	FiringSeconds  *float64    `json:"firing_seconds"`
-	Ack            *HygieneAck `json:"ack"`
-	Routed         *bool       `json:"routed"`
+	AlertGroupID           string            `json:"alert_group_id"`
+	RuleID                 string            `json:"rule_id"`
+	RuleType               string            `json:"rule_type"`
+	RuleName               string            `json:"rule_name"`
+	Service                string            `json:"service"`
+	Severity               string            `json:"severity"`
+	GroupLabels            map[string]string `json:"group_labels,omitempty"`
+	FireCount              *HealthMetric     `json:"fire_count"`
+	FlapCount              *HealthMetric     `json:"flap_count"`
+	FlapsPerDay            *HygieneValue     `json:"flaps_per_day"`
+	TimeFiringSeconds      *HealthMetric     `json:"time_firing_seconds"`
+	LastFiredAt            *time.Time        `json:"last_fired_at,omitempty"`
+	SecondsSinceLastFire   *int64            `json:"seconds_since_last_fire,omitempty"`
+	AckRate                *HygieneValue     `json:"ack_rate"`
+	MedianTimeToAckSeconds *HygieneValue     `json:"median_time_to_ack_seconds"`
+	NotificationAttempts   *HealthMetric     `json:"notification_attempts"`
+	Routed                 *bool             `json:"routed,omitempty"`
 }
 
-type HygieneAck struct {
-	AckRate            *float64 `json:"ack_rate"`
-	MedianSecondsToAck *float64 `json:"median_seconds_to_ack"`
+type HygieneValue struct {
+	Status string   `json:"status"`
+	Value  *float64 `json:"value,omitempty"`
+	Reason string   `json:"reason,omitempty"`
 }
 
 type GetHygieneResponse struct {
-	Rules []HygieneRule `json:"rules"`
+	Coverage json.RawMessage `json:"coverage"`
+	Rules    []HygieneRule   `json:"rules"`
+	// True when the API cut the rule list at its cap; the rules kept are the top by fire count.
+	Truncated bool            `json:"truncated"`
+	GroupBy   string          `json:"group_by,omitempty"`
+	Groups    json.RawMessage `json:"groups,omitempty"`
 }
 
 // GetHygiene calls GET /alerts/hygiene.

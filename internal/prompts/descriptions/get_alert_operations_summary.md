@@ -11,9 +11,12 @@ Parameters:
 - severities, services: lists that narrow the summary (default: all).
 - include_rules (default: false): also return per-rule hygiene in rules:
   top_by_fire_count (top 20), flapping (flaps_per_day >= 1), unrouted (routed=false),
-  each capped at 20, with total_rules, flapping_total and unrouted_total.
-  Per-rule fields: fire_count, flaps_per_day, firing_seconds, ack.ack_rate (0-1),
-  ack.median_seconds_to_ack (seconds), routed; null means no history recorded.
+  each capped at 20, with total_rules, flapping_total and unrouted_total. If
+  truncated is true the API kept only its top 200 rules by fire count, so totals
+  cover those only. Per-rule counts (fire_count, flap_count, time_firing_seconds,
+  notification_attempts) are metrics; flaps_per_day, ack_rate (0-1) and
+  median_time_to_ack_seconds are {status, value?, reason?}. routed is absent when
+  delivery data is unavailable.
 
 Output: JSON with window, alerts_raised, acknowledged, unacknowledged, current_backlog,
 delivered{total,slack,email}, notification_outcomes, top_rules, needs_attention,

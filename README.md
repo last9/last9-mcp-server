@@ -813,7 +813,7 @@ Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `en
 - `start_time_iso` / `end_time_iso` (string, required): RFC3339 window, at most 31 days.
 - `timezone` (string, optional): IANA name for day boundaries. Default: `UTC`.
 - `severities` / `services` (array, optional): Narrow the summary.
-- `include_rules` (boolean, optional): Also return per-rule hygiene (top 20 by `fire_count`, flapping and unrouted rules). Default: `false`.
+- `include_rules` (boolean, optional): Also return per-rule hygiene (top 20 by `fire_count`, flapping and unrouted rules, with `truncated` when the API capped its rule list). Default: `false`.
 
 Returns JSON with `alerts_raised`, `acknowledged`, `unacknowledged`, `current_backlog`, `delivered`, `notification_outcomes`, `top_rules`, `needs_attention` and `coverage`. Each metric is `{status, count?, reason?}`; a `partial` count covers only part of the window and is not a lower bound.
 
