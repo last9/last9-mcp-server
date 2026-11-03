@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -172,6 +173,32 @@ func TestGetAlertOperationsSummaryRequest(t *testing.T) {
 	w := out["window"].(map[string]any)
 	if w["start_time_iso"] != "2026-10-16T00:00:00Z" || w["timezone"] != "UTC" {
 		t.Errorf("window = %v", w)
+	}
+}
+
+func TestGetAlertOperationsSummarySendsOneWindowToBothAPIs(t *testing.T) {
+	f := &opsFake{summary: opsSummaryBody, hygiene: `{"rules":[]}`}
+	args := GetAlertOperationsSummaryArgs{
+		StartTimeISO: "2026-10-16T00:00:00.100Z", EndTimeISO: "2026-10-16T00:00:00.900Z", IncludeRules: true,
+	}
+	res, err := runOpsSummary(t, f, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := decodeOps(t, res)
+	const from, to = "2026-10-16T00:00:00.1Z", "2026-10-16T00:00:00.9Z"
+	if b := f.summaryBody; b["from"] != from || b["to"] != to {
+		t.Errorf("summary body from/to = %v/%v, want %s/%s", b["from"], b["to"], from, to)
+	}
+	q, err := url.ParseQuery(f.hygieneQuery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q.Get("from") != from || q.Get("to") != to {
+		t.Errorf("hygiene query from/to = %s/%s, want %s/%s", q.Get("from"), q.Get("to"), from, to)
+	}
+	if w := out["window"].(map[string]any); w["start_time_iso"] != from || w["end_time_iso"] != to {
+		t.Errorf("window = %v, want %s/%s", w, from, to)
 	}
 }
 
