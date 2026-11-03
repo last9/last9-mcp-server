@@ -24,8 +24,9 @@ const defaultCoverageMutedDays = 7
 // The API rejects larger values with a 400.
 const maxCoverageMutedDays = 3650
 
-// Keeps an org-wide report near 32 KB (a gap renders to ~400 bytes); counts stay exact.
-const maxCoverageGapsPerKind = 20
+// Keeps an org-wide result under 32 KiB (a fully populated gap renders to ~540 bytes);
+// counts stay exact.
+const maxCoverageGapsPerKind = 10
 
 // The alert group labels the API scopes service and environment by.
 const (

@@ -20,7 +20,7 @@ Optional parameters (values are trimmed; blank strings are ignored):
 
 Output is compact JSON {scope, generated_at, complete, summary, counts, groups}:
 - groups: one entry per gap kind present, as {kind, count, gaps, omitted}, in the
-  order above. At most 20 gaps per kind are listed; omitted counts the rest, so narrow
+  order above. At most 10 gaps per kind are listed; omitted counts the rest, so narrow
   the scope to see them.
 - Each gap: entity_name, service, rule_name, severity, detail, muted_since and
   mute_until (RFC3339 UTC; muted_since is the rule's last update, since the mute start
