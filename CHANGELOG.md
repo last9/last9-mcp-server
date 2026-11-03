@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `describe_metric` (read-only, metrics and investigate) describes 1–10 metrics using exact Last9 rollups, pinned OTel receiver definitions, naming and bounded sample probes before optional metadata. It reports provenance/confidence and label keys observed on the metric's own series, keeps gauge and trace quantile queries safe, and works without the metadata API. Observed `le` and `quantile` keys retain slots within the 20-label output cap so truncation preserves histogram and summary guidance (#479).
+- Dashboard authoring prompts `create_dashboard_guide`, `dashboard_examples` and `query_guide`, also served as reference resources, guide discovery, layout, query semantics, per-panel checks before approval and targeted edits; create and patch tool descriptions link to them (#477).
 - `preview_dashboard` previews an unsaved dashboard or ordered patch without saving: it reuses the create schema, query-type compatibility checks (including non-query panels), query validation and local patch operations, returns resolved queries, bounded per-panel results and a net panel diff, and remains available in read-only dashboard toolsets. Backend acceptance and normalization are not guaranteed by this client-side preview (#474).
 
 ### Changed

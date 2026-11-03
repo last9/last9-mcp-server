@@ -297,3 +297,12 @@ var WorkflowPartials string
 
 //go:embed descriptions/describe_metric.md
 var DescribeMetricDescription string
+
+//go:embed workflows/create_dashboard_guide.md
+var CreateDashboardGuideWorkflow string
+
+//go:embed workflows/dashboard_examples.md
+var DashboardExamplesWorkflow string
+
+//go:embed workflows/query_guide.md
+var QueryGuideWorkflow string
