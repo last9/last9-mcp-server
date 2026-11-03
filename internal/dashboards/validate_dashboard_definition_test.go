@@ -110,6 +110,31 @@ func TestValidateDashboard_NoPanelsFails(t *testing.T) {
 	}
 }
 
+func TestValidateDashboard_SavedNoPanelsNamesDashboardID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"dashboard":{"id":"dash-1","name":"Empty","panels":[]}}`))
+	}))
+	defer srv.Close()
+	handler := NewValidateDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
+	id := "dash-1"
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ValidateDashboardArgs{
+		DashboardID:  &id,
+		StartTimeISO: "2026-09-10T08:00:00Z",
+		EndTimeISO:   "2026-09-10T09:00:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report map[string]any
+	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &report); err != nil {
+		t.Fatal(err)
+	}
+	detail, _ := json.Marshal(report["detail"])
+	if report["error"] != "no_panels" || !strings.Contains(string(detail), "dash-1") || strings.Contains(string(detail), "dashboard_definition") {
+		t.Fatalf("report=%v", report)
+	}
+}
+
 func TestValidateDashboard_GrafanaPanelReportsEachUnknownField(t *testing.T) {
 	report := validateInline(t, map[string]any{
 		"name": "Grafana draft",
