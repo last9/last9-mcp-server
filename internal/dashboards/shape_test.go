@@ -194,14 +194,21 @@ func TestCheckPanelShape_FlagsAliasesAndTypesButNotMissingFields(t *testing.T) {
 func TestShapeCheck_FlagsAliasesOnlyWhereTheirFieldIsNeeded(t *testing.T) {
 	layout := `"layout":{"x":0,"y":0,"w":6,"h":6}`
 	sectionPanel := `{"name":"s",` + layout + `,"visualization":{"type":"section"},"targets":[]}`
+	markdownPanel := `{"name":"m",` + layout + `,"visualization":{"type":"markdown"},"targets":[]}`
 	csvPanel := `{"name":"c",` + layout + `,"visualization":{"type":"table"},"csv":{"columns":{}},"targets":[]}`
-	if err := CheckDashboardArguments(json.RawMessage(`{"dashboard":{"name":"x","panels":[` + sectionPanel + "," + csvPanel + `]}}`)); err != nil {
+	if err := CheckDashboardArguments(json.RawMessage(`{"dashboard":{"name":"x","panels":[` + sectionPanel + "," + markdownPanel + "," + csvPanel + `]}}`)); err != nil {
 		t.Errorf("targets beside a satisfied alternative: unexpected %v", err)
 	}
-	var section map[string]any
-	_ = json.Unmarshal([]byte(`{"visualization":{"type":"section"},"targets":[]}`), &section)
-	if got := checkPanelShape(section, "panel"); len(got) != 0 {
-		t.Errorf("patch section panel with targets: unexpected %v", got)
+	for _, patch := range []string{
+		`{"visualization":{"type":"section"},"targets":[]}`,
+		`{"visualization":{"type":"markdown"},"targets":[]}`,
+		`{"visualization":{"type":"table"},"csv":{"columns":{}},"targets":[]}`,
+	} {
+		var panel map[string]any
+		_ = json.Unmarshal([]byte(patch), &panel)
+		if got := checkPanelShape(panel, "panel"); len(got) != 0 {
+			t.Errorf("patch panel %s: unexpected %v", patch, got)
+		}
 	}
 
 	statPanel := `{"name":"t",` + layout + `,"visualization":{"type":"stat"},"targets":[]}`
@@ -218,13 +225,26 @@ func TestShapeCheck_FlagsAliasesOnlyWhereTheirFieldIsNeeded(t *testing.T) {
 	// Without visualization the section and markdown alternatives hold vacuously; they
 	// must not hide targets on a panel that will need queries once it names its type.
 	grafanaPanel := `{"title":"p","type":"timeseries","gridPos":{"x":0,"y":0,"w":6,"h":6},"targets":[{"expr":"up"}]}`
+	grafanaFields := []string{
+		"gridPos: unknown panel field; use layout {x, y, w, h}",
+		"targets: unknown panel field; use queries",
+		"title: unknown panel field; use name",
+		"type: unknown panel field; use visualization {type}",
+	}
 	err = CheckDashboardArguments(json.RawMessage(`{"dashboard":{"name":"x","panels":[` + grafanaPanel + `]}}`))
-	if want := "dashboard.panels[0].targets: unknown panel field; use queries"; err == nil || !strings.Contains(err.Error(), want) {
-		t.Errorf("Grafana panel without visualization: want %q, got %v", want, err)
+	for _, field := range grafanaFields {
+		if want := "dashboard.panels[0]." + field; err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("Grafana panel without visualization: want %q in one call, got %v", want, err)
+		}
 	}
 	var grafana map[string]any
 	_ = json.Unmarshal([]byte(grafanaPanel), &grafana)
-	if got := strings.Join(checkPanelShape(grafana, "panel"), "\n"); !strings.Contains(got, "panel.targets: unknown panel field; use queries") {
-		t.Errorf("patch Grafana panel without visualization: got %q", got)
+	got := checkPanelShape(grafana, "panel")
+	want := make([]string, len(grafanaFields))
+	for i, field := range grafanaFields {
+		want[i] = "panel." + field
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("patch Grafana panel without visualization: got %q, want %q", got, want)
 	}
 }
