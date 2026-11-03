@@ -125,7 +125,10 @@ func paginateDashboards(matched []dashboardSummary, offset, limit int, name stri
 	return page
 }
 
-var errBadListCursor = errors.New("cursor is not a next_cursor from list_dashboards with this name; omit cursor to start from the first page")
+var (
+	errMalformedListCursor = errors.New("cursor is malformed: pass next_cursor from list_dashboards unchanged, or omit cursor to start from the first page")
+	errForeignListCursor   = errors.New("cursor was issued for a different name filter: pass the name used on the page that returned it, or omit cursor to start from the first page")
+)
 
 // A cursor is bound to its name filter, since an offset into one filtered list is meaningless in another.
 func encodeListCursor(offset int, name string) string {
@@ -138,12 +141,15 @@ func decodeListCursor(cursor, name string) (int, error) {
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
-		return 0, errBadListCursor
+		return 0, errMalformedListCursor
 	}
 	offsetText, key, ok := strings.Cut(string(raw), ":")
 	offset, err := strconv.Atoi(offsetText)
-	if !ok || err != nil || offset < 0 || key != nameFilterKey(name) {
-		return 0, errBadListCursor
+	if !ok || err != nil || offset < 0 {
+		return 0, errMalformedListCursor
+	}
+	if key != nameFilterKey(name) {
+		return 0, errForeignListCursor
 	}
 	return offset, nil
 }

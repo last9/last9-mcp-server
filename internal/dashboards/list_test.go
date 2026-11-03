@@ -229,13 +229,16 @@ func TestListDashboardsRejectsForeignCursors(t *testing.T) {
 	limit := 2
 	page, _ := listPage(t, srv, ListDashboardsArgs{Limit: &limit})
 
-	for name, args := range map[string]ListDashboardsArgs{
-		"garbage":       {Cursor: "not-a-cursor"},
-		"other filter":  {Cursor: page.NextCursor, Name: "team"},
-		"negative skip": {Cursor: encodeListCursor(-1, "")},
+	for name, tc := range map[string]struct {
+		args ListDashboardsArgs
+		want string
+	}{
+		"garbage":       {ListDashboardsArgs{Cursor: "not-a-cursor"}, "malformed"},
+		"negative skip": {ListDashboardsArgs{Cursor: encodeListCursor(-1, "")}, "malformed"},
+		"other filter":  {ListDashboardsArgs{Cursor: page.NextCursor, Name: "team"}, "different name"},
 	} {
-		if _, err := callListDashboards(t, srv, args); err == nil || !strings.Contains(err.Error(), "cursor") {
-			t.Errorf("%s: err %v, want a cursor error", name, err)
+		if _, err := callListDashboards(t, srv, tc.args); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err %v, want a cursor error containing %q", name, err, tc.want)
 		}
 	}
 }
