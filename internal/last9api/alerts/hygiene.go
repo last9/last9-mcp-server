@@ -70,8 +70,8 @@ type GetHygieneResponse struct {
 // GetHygiene calls GET /alerts/hygiene.
 func GetHygiene(ctx context.Context, c *last9api.Client, in GetHygieneInput) (GetHygieneResponse, error) {
 	q := url.Values{}
-	q.Set("from", in.From.UTC().Format(time.RFC3339))
-	q.Set("to", in.To.UTC().Format(time.RFC3339))
+	q.Set("from", in.From.UTC().Format(time.RFC3339Nano))
+	q.Set("to", in.To.UTC().Format(time.RFC3339Nano))
 	if in.Timezone != "" {
 		q.Set("timezone", in.Timezone)
 	}

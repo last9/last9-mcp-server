@@ -147,8 +147,8 @@ func parseOpsSummaryArgs(args GetAlertOperationsSummaryArgs) (alerts.GetHealthSu
 		Services: nonEmptyTrimmed(args.Services), Severities: nonEmptyTrimmed(args.Severities),
 	}
 	window := opsSummaryWindow{
-		StartTimeISO: start.UTC().Format(time.RFC3339),
-		EndTimeISO:   end.UTC().Format(time.RFC3339),
+		StartTimeISO: start.UTC().Format(time.RFC3339Nano),
+		EndTimeISO:   end.UTC().Format(time.RFC3339Nano),
 		Timezone:     tz,
 	}
 	return in, window, ""
