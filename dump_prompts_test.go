@@ -29,6 +29,7 @@ func TestDumpPromptsListsAllPrompts(t *testing.T) {
 	}
 	for _, want := range []string{
 		"scoped-log-attribute-discovery", "exception-root-cause-investigation",
+		"create_dashboard_guide", "dashboard_examples", "query_guide",
 		"investigate-latency-spike", "diagnose-error-rate", "analyze-slow-queries", "on-call-runbook",
 		"author-alert",
 	} {
@@ -36,8 +37,8 @@ func TestDumpPromptsListsAllPrompts(t *testing.T) {
 			t.Errorf("dump-prompts missing prompt %q", want)
 		}
 	}
-	if len(out.Prompts) < 7 {
-		t.Errorf("expected >= 7 prompts, got %d", len(out.Prompts))
+	if len(out.Prompts) < 10 {
+		t.Errorf("expected >= 10 prompts, got %d", len(out.Prompts))
 	}
 	// Prompt names must be unique — AddPrompt is last-wins on a duplicate Name,
 	// which would silently drop a workflow.
