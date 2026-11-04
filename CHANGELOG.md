@@ -7,13 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `describe_metric` (read-only, metrics and investigate) describes 1–10 metrics using exact Last9 rollups, pinned OTel receiver definitions, naming and bounded sample probes before optional metadata. It reports provenance/confidence and label keys observed on the metric's own series, keeps gauge and trace quantile queries safe, and works without the metadata API. Observed `le` and `quantile` keys retain slots within the 20-label output cap so truncation preserves histogram and summary guidance (#479).
+
 ### Fixed
 - `validate_dashboard` no longer reports `overall: pass` with `panels_total: 0` when nothing was validated. A `{dashboard, metadata}` create envelope passed as `dashboard_definition` is unwrapped and its inner dashboard validated; a dashboard with no panels returns `success: false`, `error: "no_panels"`; panel fields from other formats (Grafana `gridPos`, `title`, `type`, and `targets` on panels that need queries) and mistyped fields such as a string `queries[].legend` or a non-object `csv` are listed per panel in `shape_problems` and make `overall` `fail` (#498).
 
 ## [0.23.0] - 2026-11-04
 
 ### Added
-- `describe_metric` (read-only, metrics and investigate) describes 1–10 metrics using exact Last9 rollups, pinned OTel receiver definitions, naming and bounded sample probes before optional metadata. It reports provenance/confidence and label keys observed on the metric's own series, keeps gauge and trace quantile queries safe, and works without the metadata API. Observed `le` and `quantile` keys retain slots within the 20-label output cap so truncation preserves histogram and summary guidance (#479).
 - Added the read-only `get_alert_coverage` tool (alerts and investigate toolsets): answers "what am I not alerting on?" for a service, environment, alert group, or the whole org, grouping gaps by kind (`uncovered_signal`, `all_rules_disabled`, `no_notification_channel`, `muted_too_long`, with `muted_days` 1–3650, default 7), each with its `entity_id`, `rule_id` and `signal`, the suggested fix tool, and arguments that tool's schema accepts, listing at most 10 gaps per kind with exact counts. It reports coverage complete only when the API returns no gaps and counts none and an alert group matches the scope (a misspelled service or environment is not complete), and when the coverage endpoint is missing (HTTP 404) or returns no report (an empty, `null` or `{}` body, or one with neither gaps nor counts) it errors saying coverage was not checked (#350).
 - Dashboard authoring prompts `create_dashboard_guide`, `dashboard_examples` and `query_guide`, also served as reference resources, guide discovery, layout, query semantics, per-panel checks before approval and targeted edits; create and patch tool descriptions link to them (#477).
 - `preview_dashboard` previews an unsaved dashboard or ordered patch without saving: it reuses the create schema, query-type compatibility checks (including non-query panels), query validation and local patch operations, returns resolved queries, bounded per-panel results and a net panel diff, and remains available in read-only dashboard toolsets. Backend acceptance and normalization are not guaranteed by this client-side preview (#474).
