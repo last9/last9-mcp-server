@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -282,7 +283,11 @@ func runValidateDashboard(ctx context.Context, exec *validateExecutor, parsed *v
 			}()
 			record := validatePanel(ctx, panel, exec, parsed.variables, defaults, window, dashboardRef)
 			if !exec.preview {
-				if problems := checkPanelShape(panel, fmt.Sprintf("panels[%d]", index)); len(problems) > 0 {
+				shaped := panel
+				if source == "saved" {
+					shaped = withoutNullQueries(panel)
+				}
+				if problems := checkPanelShape(shaped, fmt.Sprintf("panels[%d]", index)); len(problems) > 0 {
 					record["shape_problems"] = problems
 				}
 			}
@@ -377,6 +382,17 @@ func panelFailureRecord(panel map[string]any, err error) map[string]any {
 		"classification":     "query",
 		"targets":            []map[string]any{failureTarget(0, err)},
 	}
+}
+
+// withoutNullQueries drops a null queries list, which the API returns for saved panels
+// without queries; write inputs stay strict and must send an array or omit it.
+func withoutNullQueries(panel map[string]any) map[string]any {
+	if queries, set := panel["queries"]; !set || queries != nil {
+		return panel
+	}
+	trimmed := maps.Clone(panel)
+	delete(trimmed, "queries")
+	return trimmed
 }
 
 func malformedPanelRecord(index int, raw any) map[string]any {
