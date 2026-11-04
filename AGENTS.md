@@ -283,8 +283,9 @@ type Request struct{ Method, Path string; Body any }
   messages, so make it readable.
 - `out` may be `nil` when the response body is not needed.
 - `Do` maps every non-2xx to a sanitized error — endpoint code never inspects status codes.
-- Options (`WithQuery`, `WithRegionHeader`, `WithRegionQuery`) are passed only by endpoints
-  that need them. `WithQuery` merges with the region parameter.
+- Options (`WithQuery`, `WithRegionHeader`, `WithRegionQuery`, `WithMaxResponseBytes`) are
+  passed only by endpoints that need them. `WithQuery` merges with the region parameter.
+  `WithMaxResponseBytes` turns an oversized success body into an error instead of decoding it.
 - A response the API reports as partial comes back alongside its field errors rather than as
   a failure; the tool surfaces them.
 
@@ -404,6 +405,16 @@ starts its doc comment with the method and path.
 
 **Take at most 3 parameters**, not counting `ctx` and variadic options. More than 3 means a
 struct, unless a struct genuinely makes it less readable.
+
+### Validation
+
+**Validate arguments before taking a concurrency slot or calling the API.** An invalid
+call must fail with its own diagnostic, not wait on a semaphore or reach the upstream. Test
+it with every slot held, asserting the original error and zero upstream requests.
+
+**A shared predicate that reconciles a newer explicit field with a legacy fallback lets the
+explicit field win whenever it is set.** Normalize the legacy value once, inside the
+predicate, and table-test conflicting inputs through every tool that calls it.
 
 ### Contracts
 

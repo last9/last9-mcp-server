@@ -183,6 +183,10 @@ func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, 
 	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, tagSystemErrors(handler)); regErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, regErr)
 	}
+	// Middleware added later runs first, so integer coercion precedes the check.
+	if check, ok := argumentChecks[tool.Name]; ok {
+		server.Server.AddReceivingMiddleware(argumentCheckMiddleware(tool.Name, check))
+	}
 	if coerceErr := addIntegerArgsCoercion[In](server.Server, tool); coerceErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, coerceErr)
 	}
@@ -521,6 +525,12 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Annotations: readOnlyTool("Get Alert Groups"),
 		Description: prompts.GetAlertGroupsDescription,
 	}, alerting.NewGetAlertGroupsHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_alert_coverage",
+		Annotations: readOnlyTool("Get Alert Coverage"),
+		Description: prompts.GetAlertCoverageDescription,
+	}, alerting.NewGetAlertCoverageHandler(client, cfg)))
 
 	// Register entity alert rules tool (entity-scoped, includes expression_args and resolved PromQL)
 	reg(registerIfAllowed(server, gate, &mcp.Tool{

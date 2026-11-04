@@ -330,6 +330,7 @@ Label keys are observed, not exhaustive: they are the union of keys on at most 5
 - **`get_change_events`** — Deployments, config changes, rollbacks. Correlate incidents with what changed
 - **`analyze_change_impact`** — Did a change break anything? Compares a service and its direct callers before and after a change: golden signals, APM and trace-attribute deviations, new firing alerts, and a verdict (`regression likely` / `no significant change` / `insufficient data`)
 - **`get_alert_groups`** — Configured Compass alert groups with metadata labels, team, tier, and rule counts — including groups with zero rules and groups that are not firing
+- **`get_alert_coverage`** — What you are not alerting on: uncovered golden signals, fully disabled or unrouted alert groups, and rules muted too long, each with a suggested fix tool. Read-only.
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_entity_kpis`** — Every KPI (id, name, PromQL, unit) on one alert group, including KPIs no rule uses yet — the ids `create_alert` and `validate_alert_expression` need
 - **`create_kpi`** — Create a KPI (PromQL + unit) on an alert group when no existing KPI fits. Create once and keep the returned id
@@ -823,6 +824,19 @@ Configured Compass alert-group inventory for changeboard / label-coverage audits
 - `label_key` + `label_value` (string, optional): Must be set together. Exact case-insensitive match on one `metadata.labels` pair — both key and value.
 
 Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `entity_class`, `team`, `tier`, `metadata.labels`, and rule counts. Empty `team` / `labels` means unset.
+
+### get_alert_coverage
+
+Answers "what am I not alerting on?" for a service, an environment, one alert group, or the whole organization when no scope is given. Read-only: it never creates, changes, or unmutes anything. Also served in the `investigate` toolset.
+
+- `service` (string, optional): Service name.
+- `environment` (string, optional): Deployment environment (for example `prod`).
+- `entity_id` (string, optional): Alert group (entity) UUID, as returned by `get_alert_groups`.
+- `muted_days` (integer, optional): Whole days, 1 to 3650. Default: 7; 0 means the default. A rule muted longer than this is a `muted_too_long` gap.
+
+Values are trimmed; blank strings are ignored. Gap kinds: **uncovered_signal** (no enabled rule on latency, error_rate, throughput, or saturation; names a disabled rule that would cover it), **all_rules_disabled** (an alert group whose rules are all disabled), **no_notification_channel** (a rule whose severity no channel on its alert group routes), **muted_too_long** (muted indefinitely or for more than `muted_days`; `muted_since` is the rule's last update and `mute_until` is omitted for an indefinite mute).
+
+Returns compact JSON `{scope, generated_at, complete, summary, counts, groups}`. `groups` holds one `{kind, count, gaps, omitted}` entry per kind present, listing at most 10 gaps per kind (`omitted` counts the rest; narrow the scope to see them); each gap carries `suggested_tool` (`create_alert`, `create_alert_from_chart`, `attach_notification_channel`, or `patch_alert`) and `suggested_args`, holding only inputs that tool accepts (`patch_alert`: `entity_id`, `id` and `is_disabled=false` or `mute_until=0`; `attach_notification_channel`: `alert_group_id` and a `breach`/`threat` `severity`; `create_alert`: `entity_id`; `create_alert_from_chart`: `service_name`); the gap's own `entity_id`, `rule_id` and `signal` are listed beside them. Call the suggested tool only if it is available in the session and the user confirms. `complete` is true only when the API lists no gaps, every count is 0, and at least one alert group matches the scope (exact `service_name` / `env` labels, checked against `get_alert_groups`' list); a scope matching none, a failed lookup, or counts with no listed gaps are not complete, and `summary` says why.
 
 ### get_alert_config
 
