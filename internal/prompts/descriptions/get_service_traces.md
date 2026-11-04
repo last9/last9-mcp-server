@@ -36,3 +36,5 @@ Spans with trace_id, span_id, span_name, span_kind, service_name, duration, time
 
 ## Known traps
 Passing `service_name` alongside a known `trace_id` narrows the lookup; pass the ID alone.
+
+**Envelope:** `truncated`, `trimmed_items`, `partial`: disclose; follow `hints`.

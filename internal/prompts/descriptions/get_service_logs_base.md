@@ -2,8 +2,6 @@ Fetch log lines for one service (`service_name`, optional `severity_filters`, `b
 
 **Profile first:** Call `get_service_profile`. Route using `signal_shape` and `telemetry`; see `last9://reference/investigation`. If results contradict the profile, use discovery tools (profile TTL: 15min).
 
-**Use this tool when:** filtering one known service by severity, HTTP status, named attributes, or plain-text `body_filters`—no pipeline needed.
-
 **HTTP status:** Pass `http_status_class` (`5xx`) or `http_status_code` (`500`). This tool discovers the status field for the service/env/window. If discovery finds none or more than one, pass `http_status_field` (e.g. `attributes['http.status_code']`). Severity is not an HTTP-error proxy (5xx often INFO)—do not use `severity_filters` for status.
 
 **Named attributes:** `attribute_filters` is `[{field, value}]` equality. For comparisons (`>`, `<`, ranges), grouping, or aggregation, use `get_logs` instead. `field` uses logjson syntax (`attributes['user_id']`). Invalid syntax is rejected; unknown org fields are allowed. Discover names with `get_log_attributes` / `get_log_attributes_for_pipeline` if unsure.
@@ -15,6 +13,8 @@ Fetch log lines for one service (`service_name`, optional `severity_filters`, `b
 **Lines:** omit `response_mode`; >20 lines→summary (counts, severities, histogram, top patterns+samples); `raw` only for exact text.
 
 **Time/index:** Prefer `lookback_minutes` for relative windows; `start_time_iso`+`end_time_iso` (RFC3339) for absolute. Use a user-named `index` (`physical_index:<name>` / `rehydration_index:<block>`) or one from `get_service_profile`. Match env via `log_index_envs`; query matching indexes separately. Omit `index` for `default` or unknown.
+
+**Envelope:** `truncated`, `trimmed_items`, `partial`: disclose; follow `hints`.
 
 Full service-logs reference: `last9://reference/service_logs`. Logjson: `last9://reference/logjson`
 

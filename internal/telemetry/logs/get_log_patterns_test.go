@@ -140,8 +140,8 @@ func TestGetLogPatterns_ClustersSampleAndFoldsTailIntoOther(t *testing.T) {
 	if len(reqs) != 1 {
 		t.Fatalf("requests = %d, want one search", len(reqs))
 	}
-	if reqs[0]["limit"] != float64(10) {
-		t.Errorf("limit = %v, want sample_size", reqs[0]["limit"])
+	if reqs[0]["limit"] != float64(11) {
+		t.Errorf("limit = %v, want sample_size+1 (one extra row detects truncation)", reqs[0]["limit"])
 	}
 	pipeline, _ := json.Marshal(reqs[0]["pipeline"])
 	for _, want := range []string{`"ServiceName","checkout"`, `"resources['deployment.environment']","prod"`} {
@@ -169,8 +169,8 @@ func TestGetLogPatterns_EmptyWindowIsAValidAnswer(t *testing.T) {
 	if got.TotalPatterns != 0 || got.Other != nil || got.Window.SampledLines != 0 || got.Window.SampleLimitReached {
 		t.Errorf("response = %+v, want an empty, complete window", got)
 	}
-	if reqs := stub.requests(); reqs[0]["limit"] != float64(defaultPatternSampleSize) {
-		t.Errorf("limit = %v, want default sample size %d", reqs[0]["limit"], defaultPatternSampleSize)
+	if reqs := stub.requests(); reqs[0]["limit"] != float64(defaultPatternSampleSize+1) {
+		t.Errorf("limit = %v, want default sample size %d plus one", reqs[0]["limit"], defaultPatternSampleSize)
 	}
 }
 

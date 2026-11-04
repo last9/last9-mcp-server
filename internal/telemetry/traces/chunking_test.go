@@ -96,8 +96,8 @@ func TestGetTracesHandlerChunksAndHonorsLimit(t *testing.T) {
 		t.Fatalf("expected 6 chunk requests (range/6 sizing), got %d", got)
 	}
 	for _, q := range rec.all() {
-		if got := q.Get("limit"); got != "3" {
-			t.Fatalf("expected every chunk limit=3 (effective), got %q", got)
+		if got := q.Get("limit"); got != "4" {
+			t.Fatalf("expected every chunk limit=4 (effective 3 plus one probe row), got %q", got)
 		}
 	}
 
@@ -143,8 +143,8 @@ func TestGetTracesHandlerCapsAtConfiguredMax(t *testing.T) {
 	}
 
 	for _, q := range rec.all() {
-		if got := q.Get("limit"); got != "3" {
-			t.Fatalf("expected every chunk capped at limit=3, got %q", got)
+		if got := q.Get("limit"); got != "4" {
+			t.Fatalf("expected every chunk capped at limit=3 plus one probe row, got %q", got)
 		}
 	}
 
@@ -240,8 +240,8 @@ func TestGetTracesHandlerExactTraceIDUsesSingleRequest(t *testing.T) {
 		t.Fatalf("expected 1 request for exact trace ID lookup, got %d", rec.count())
 	}
 	q := rec.all()[0]
-	if got := q.Get("limit"); got != "3" {
-		t.Fatalf("expected full-window request limit=3, got %q", got)
+	if got := q.Get("limit"); got != "4" {
+		t.Fatalf("expected full-window request limit=3 plus one probe row, got %q", got)
 	}
 	if got := q.Get("start"); got != "0" || q.Get("end") != "1800" {
 		t.Fatalf("expected full-window bounds start=0 end=1800, got %v", q)
@@ -559,16 +559,16 @@ func TestGetTracesHandlerLaterChunksAskOnlyForRemainingBudget(t *testing.T) {
 		limits[(endSeconds-end)/chunkSeconds] = q.Get("limit")
 	}
 	// Chunks 0 and 1 start together with the full budget; each later chunk
-	// starts after one more is merged, so it asks for what is still unfilled.
+	// starts after one more is merged, asking for the unfilled budget plus one probe row.
 	// Chunk 5 is cancelled once chunk 4 fills the limit, so it may not arrive.
-	want := map[int]string{0: "5", 1: "5", 2: "4", 3: "3", 4: "2"}
+	want := map[int]string{0: "6", 1: "6", 2: "5", 3: "4", 4: "3"}
 	for idx, limit := range want {
 		if limits[idx] != limit {
 			t.Errorf("chunk %d: expected limit=%s, got %q (all: %v)", idx, limit, limits[idx], limits)
 		}
 	}
-	if got, ok := limits[5]; ok && got != "1" {
-		t.Errorf("chunk 5: expected limit=1, got %q", got)
+	if got, ok := limits[5]; ok && got != "2" {
+		t.Errorf("chunk 5: expected limit=2, got %q", got)
 	}
 	if len(limits) > 6 {
 		t.Errorf("expected no chunk older than 5 to be fetched, got %d chunks: %v", len(limits), limits)

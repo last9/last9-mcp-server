@@ -68,8 +68,8 @@ func TestGetLogsHandlerChunksRawQueriesAndHonorsLimit(t *testing.T) {
 		t.Fatalf("expected 6 chunk requests (range/6 sizing), got %d", got)
 	}
 	for _, q := range rec.all() {
-		if got := q.Get("limit"); got != "3" {
-			t.Fatalf("expected every chunk limit=3 (effective), got %q", got)
+		if got := q.Get("limit"); got != "4" {
+			t.Fatalf("expected every chunk limit=4 (effective 3 plus one probe row), got %q", got)
 		}
 	}
 
@@ -174,8 +174,8 @@ func TestGetLogsHandlerCapsExplicitLimitAtConfiguredMax(t *testing.T) {
 		t.Fatalf("expected 6 chunk requests, got %d", got)
 	}
 	for _, q := range rec.all() {
-		if got := q.Get("limit"); got != "3" {
-			t.Fatalf("expected every chunk capped to limit=3, got %q", got)
+		if got := q.Get("limit"); got != "4" {
+			t.Fatalf("expected every chunk capped to limit=3 plus one probe row, got %q", got)
 		}
 	}
 

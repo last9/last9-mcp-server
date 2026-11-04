@@ -46,7 +46,7 @@ func TestFetchLogJSONQuery_APIMode_RawSendsLimit(t *testing.T) {
 	defer srv.Close()
 
 	pipeline := []map[string]interface{}{{"type": "filter"}}
-	result, err := fetchLogJSONQuery(
+	result, env, err := fetchLogJSONQuery(
 		context.Background(), srv.Client(), apiModeCfg(srv.URL), pipeline,
 		1_700_000_000_000, 1_700_000_600_000, GetLogsArgs{Limit: 100})
 	if err != nil {
@@ -56,8 +56,11 @@ func TestFetchLogJSONQuery_APIMode_RawSendsLimit(t *testing.T) {
 	if path != "/logs/query" {
 		t.Errorf("path = %q, want /logs/query — the flag did not route to the API", path)
 	}
-	if got := body["limit"]; got != float64(100) {
-		t.Errorf("limit = %v, want 100", got)
+	if got := body["limit"]; got != float64(101) {
+		t.Errorf("limit = %v, want 101 (the limit plus one probe row)", got)
+	}
+	if !env.IsEmpty() {
+		t.Errorf("envelope = %+v, want empty for an untruncated result", env)
 	}
 	if result["total_matching_lines"] != 7 {
 		t.Errorf("total_matching_lines = %v, want 7", result["total_matching_lines"])
@@ -83,7 +86,7 @@ func TestFetchLogJSONQuery_APIMode_AggregateOmitsLimit(t *testing.T) {
 
 	// A limit on an aggregate pipeline is a 400 upstream, so it must never be sent.
 	pipeline := []map[string]interface{}{{"type": "aggregate"}}
-	_, err := fetchLogJSONQuery(
+	_, _, err := fetchLogJSONQuery(
 		context.Background(), srv.Client(), apiModeCfg(srv.URL), pipeline,
 		1_700_000_000_000, 1_700_000_600_000, GetLogsArgs{Limit: 100})
 	if err != nil {
@@ -102,7 +105,7 @@ func TestFetchLogJSONQuery_APIMode_SurfacesUpstreamMessage(t *testing.T) {
 	defer srv.Close()
 
 	pipeline := []map[string]interface{}{{"type": "filter"}}
-	_, err := fetchLogJSONQuery(
+	_, _, err := fetchLogJSONQuery(
 		context.Background(), srv.Client(), apiModeCfg(srv.URL), pipeline,
 		1_700_000_000_000, 1_700_000_600_000, GetLogsArgs{})
 	if err == nil {
@@ -131,7 +134,7 @@ func TestFetchLogJSONQuery_FlagOffUsesChunkedPath(t *testing.T) {
 	cfg.UseLogSearchAPI = false
 
 	pipeline := []map[string]interface{}{{"type": "filter"}}
-	if _, err := fetchLogJSONQuery(
+	if _, _, err := fetchLogJSONQuery(
 		context.Background(), srv.Client(), cfg, pipeline,
 		1_700_000_000_000, 1_700_000_600_000, GetLogsArgs{}); err != nil {
 		t.Fatalf("fetchLogJSONQuery: %v", err)
@@ -204,7 +207,7 @@ func TestFetchLogJSONQuery_APIMode_AggregateRowCap(t *testing.T) {
 	srv, baselineCalls := aggregateSearchServer(t, 12)
 	defer srv.Close()
 
-	result, err := fetchLogJSONQuery(
+	result, env, err := fetchLogJSONQuery(
 		context.Background(), srv.Client(), apiModeCfg(srv.URL), countAggregatePipeline(),
 		1_700_000_000_000, 1_700_000_600_000, GetLogsArgs{Limit: 10})
 	if err != nil {
@@ -229,6 +232,10 @@ func TestFetchLogJSONQuery_APIMode_AggregateRowCap(t *testing.T) {
 		}
 	}
 
+	if !env.Truncated || env.Limit != 10 {
+		t.Errorf("envelope = %+v, want truncated at limit 10", env)
+	}
+
 	// A trimmed result is not a count of anything, so sanity must not run on it.
 	if _, present := result["l9_sanity"]; present {
 		t.Error("l9_sanity must be omitted when the row cap trimmed the result")
@@ -244,7 +251,7 @@ func TestFetchLogJSONQuery_APIMode_AggregateUnderCapKeepsSanity(t *testing.T) {
 	srv, baselineCalls := aggregateSearchServer(t, 3)
 	defer srv.Close()
 
-	result, err := fetchLogJSONQuery(
+	result, env, err := fetchLogJSONQuery(
 		context.Background(), srv.Client(), apiModeCfg(srv.URL), countAggregatePipeline(),
 		1_700_000_000_000, 1_700_000_600_000, GetLogsArgs{Limit: 10})
 	if err != nil {
@@ -257,6 +264,9 @@ func TestFetchLogJSONQuery_APIMode_AggregateUnderCapKeepsSanity(t *testing.T) {
 	}
 	if _, present := result["l9_result"]; present {
 		t.Errorf("l9_result = %#v, want no partial marker under the cap", result["l9_result"])
+	}
+	if env.Truncated {
+		t.Errorf("envelope = %+v, want no truncation under the cap", env)
 	}
 	if _, present := result["l9_sanity"]; !present {
 		t.Error("l9_sanity must still be attached when nothing was trimmed")
@@ -286,7 +296,7 @@ func TestFetchLogJSONQuery_APIMode_SlowSearchReturnsAdviceWithinBudget(t *testin
 	cfg.LogSearchTimeout = 50 * time.Millisecond
 
 	started := time.Now()
-	_, err := fetchLogJSONQuery(
+	_, _, err := fetchLogJSONQuery(
 		utils.DeadlineContext(t, 5*time.Second), srv.Client(), cfg, []map[string]interface{}{{"type": "filter"}},
 		1_700_000_000_000, 1_700_000_600_000, GetLogsArgs{Limit: 100})
 	if !errors.Is(err, utils.ErrLogSearchTimeout) {

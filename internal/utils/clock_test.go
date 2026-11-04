@@ -64,6 +64,7 @@ func TestGetTimeRangeAnchoredAtFakeNow(t *testing.T) {
 func TestNoRawTimeNowInQueryWindows(t *testing.T) {
 	// Wall-clock uses that are not query windows: timeouts, token expiry.
 	allowed := map[string]bool{
+		"session.go":                    true, // guardrail idle expiry must advance even under the fake query clock
 		"clock.go":                      true,
 		"validate_dashboard_execute.go": true, // elapsed-time measurement
 		"test_helpers.go":               true, // fixture token expiry

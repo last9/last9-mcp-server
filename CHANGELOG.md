@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Query cost guardrail for `get_logs`, `get_traces`, `get_service_logs` and `get_service_traces`. Before querying, each tool fetches a scan estimate (2s budget) and checks, in order: a window over the range cap (default 24h) without a service or stream filter in the query itself, an unscoped scan over the scope threshold, and a scan over the per-query budget; it also warns at 80% of a per-session budget. Decisions land in the result envelope `hints` with reason codes `range_too_wide`, `unscoped_query`, `scan_budget_exceeded`, `session_budget_80pct` or `estimate_unavailable`, plus guidance (add a `ServiceName` filter, a window that fits, aggregate first). `LAST9_QUERY_GUARDRAIL` / `--query_guardrail` selects `off` (default, so no query pays an estimate round trip before the estimate routes are live), `shadow` (log and hint, never block) or `enforce` (reject as a tool error without querying); thresholds have their own flags and env vars. Without an estimate only the range cap applies; the missing estimate never blocks a query by itself (#357).
+
 ### Fixed
+- Oversized log stream responses retain the longest prefix of individual lines that fits the response budget, preserving stream labels and reporting omitted lines in `trimmed_items` instead of discarding an entire stream (#357).
 - `validate_dashboard` no longer reports `overall: pass` with `panels_total: 0` when nothing was validated. A `{dashboard, metadata}` create envelope passed as `dashboard_definition` is unwrapped and its inner dashboard validated; a dashboard with no panels returns `success: false`, `error: "no_panels"`; panel fields from other formats (Grafana `gridPos`, `title`, `type`, and `targets` on panels that need queries) and mistyped fields such as a string `queries[].legend` or a non-object `csv` are listed per panel in `shape_problems` and make `overall` `fail` (#498).
+
+### Changed
+- `get_logs`, `get_traces`, `get_service_logs`, `get_service_traces` and `prometheus_range_query` mirror their payload and completeness metadata as `structuredContent` `{result, envelope}`, with a trailing `envelope:` text block when metadata is non-empty. Log and trace queries probe one row past their limit to identify truncation; trace chunks retain their shrinking budget and early stop, reporting unconsumed older chunks as partial coverage when extra matches are unknown. Failed server-side log chunks are reported as `partial`/`skipped`. Raw log, trace and Prometheus range results over 100,000 bytes drop trailing items and report `trimmed_items`; service-log coverage also becomes partial after trimming. Empty results and capped limits carry next-action hints. Log summaries and aggregate `l9_result` guidance remain available (#357).
+- Unknown-field HTTP 400/422 errors from log and trace queries now recommend the corresponding attribute-discovery tool. HTTP 401 errors advise renewing credentials, while HTTP 403 errors identify missing token scope or user-role access instead of suggesting unchanged retries (#357).
 
 ## [0.23.0] - 2026-11-04
 

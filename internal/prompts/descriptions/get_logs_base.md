@@ -12,7 +12,7 @@ Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`cond
 
 **window_aggregate:** type+function+as+window (not `aggregates`). Count: `{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"]}`. P99: `{"type":"window_aggregate","function":{"$quantile":[0.99,"attributes['latency_ms']"]},"as":"p99","window":["24","hours"],"groupby":{"attributes['route']":"route"}}`.
 
-**Percentiles:** Day-wise: exactly ONE get_logs call over the full half-open start_time_iso/end_time_iso range with one window_aggregate; NEVER one call per day; honor requested timezone. Parse, then use the canonical anchored numeric `$regex` shown: `^[0-9]+(?:\\.[0-9]+)?$`. It excludes non-matching values from percentile calculations; disclose that exclusion in the answer. Only report returned P99 values; empty result→say unavailable and stop (no count/sample substitute). Never template/merge/recombine aggregated percentile rows. Use a discovered normalized route. Raw URI: aggregate exact values; never normalize/merge later. If `l9_result.partial=true`, preserve rows and disclose partial coverage. Units: report source; never convert.
+**Percentiles:** Day-wise: exactly ONE get_logs call over the full half-open start_time_iso/end_time_iso range with one window_aggregate; NEVER one call per day; honor requested timezone. Parse, then use the canonical anchored numeric `$regex` shown: `^[0-9]+(?:\\.[0-9]+)?$`. It excludes non-matching values from percentile calculations; disclose that exclusion in the answer. Only report returned P99 values; empty result→say unavailable and stop (no count/sample substitute). Never template/merge/recombine aggregated percentile rows. Use a discovered normalized route. Raw URI: aggregate exact values; never normalize/merge later. If `envelope.truncated`, preserve rows and disclose the row limit. Units: report source; never convert.
 
 **Attrs:** exists→neq(field,"") (not `$exists`). `community_member_id`→`attributes['key']`, `resource_attributes['key']`→`resources['key']`; bare: ServiceName/Body/SeverityText/Timestamp.
 
@@ -20,7 +20,7 @@ Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`cond
 
 **Free-text:** no service→search `Body` with `$contains` (even service-like); else `ServiceName`.
 
-**HTTP counts:** `get_logs`; status from Body, not SeverityText. `get_service_logs` for lines.
+**HTTP:** status from Body, not SeverityText; `get_service_logs` for lines.
 
 **Time:** `lookback_minutes` default **5**; absolute→`start_time_iso`+`end_time_iso` (not Timestamp).
 
@@ -28,10 +28,12 @@ Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`cond
 
 **l9_sanity:** high→add filter, recount; zero→inspect samples.
 
+**Envelope:** `truncated`, `trimmed_items`, `partial`: disclose; follow `hints`.
+
 Manual: `last9://reference/logjson`
 
 ## When to use
-Counts, aggregates, percentiles or ad-hoc filters over logs, across services or with no known service.
+Counts, percentiles or ad-hoc log filters across services or without a known service.
 
 ## When not to use
 - Raw lines for one known service: `get_service_logs`
@@ -39,4 +41,4 @@ Counts, aggregates, percentiles or ad-hoc filters over logs, across services or 
 - APM fleet error ranking: `get_service_summary`
 
 ## Output shape
-Line summary, log rows (`raw`) or aggregate rows, with `l9_result` / `l9_sanity` metadata on partial or suspicious counts.
+Summaries, raw logs or aggregates; partial/count metadata: `l9_result`/`l9_sanity`.

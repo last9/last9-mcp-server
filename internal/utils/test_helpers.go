@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math/rand/v2"
 	"net/http"
@@ -219,6 +220,22 @@ func GetTextContent(t *testing.T, result *mcp.CallToolResult) string {
 		t.Fatalf("expected TextContent type")
 	}
 	return textContent.Text
+}
+
+// GetResultEnvelope decodes the envelope a tool mirrored into structuredContent.
+func GetResultEnvelope(t *testing.T, result *mcp.CallToolResult) ResultEnvelope {
+	t.Helper()
+	encoded, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatalf("marshal structuredContent: %v", err)
+	}
+	var structured struct {
+		Envelope *ResultEnvelope `json:"envelope"`
+	}
+	if err := json.Unmarshal(encoded, &structured); err != nil || structured.Envelope == nil {
+		t.Fatalf("structuredContent %s has no envelope (err %v)", encoded, err)
+	}
+	return *structured.Envelope
 }
 
 // RecordedSpanContext stands in for the tool span the MCP SDK puts on a

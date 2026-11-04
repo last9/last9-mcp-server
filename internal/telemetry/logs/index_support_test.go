@@ -70,14 +70,14 @@ func TestGetLogsHandler_ForwardsLimitWhenProvided(t *testing.T) {
 		expectedLimit string
 	}{
 		{
-			name:          "forwards explicit limit",
+			name:          "forwards explicit limit plus one probe row",
 			limit:         25,
-			expectedLimit: "25",
+			expectedLimit: "26",
 		},
 		{
-			name:          "uses configured max when unset",
+			name:          "uses configured max plus one probe row when unset",
 			limit:         0,
-			expectedLimit: "5000",
+			expectedLimit: "5001",
 		},
 	}
 
@@ -315,8 +315,8 @@ func TestGetServiceLogsHandler_ForwardsLargeLimitWhenProvided(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case constants.EndpointLogsQueryRange:
-			if got := r.URL.Query().Get("limit"); got != "2500" {
-				t.Fatalf("expected limit %q, got %q", "2500", got)
+			if got := r.URL.Query().Get("limit"); got != "2501" {
+				t.Fatalf("expected limit %q (2500 plus one probe row), got %q", "2501", got)
 			}
 			if got := r.URL.Query().Get("index"); got != "physical_index:payments" {
 				t.Fatalf("unexpected logs query index %q", got)

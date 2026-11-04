@@ -26,6 +26,18 @@ func TestGetLogsRelays400BodyAndDrains502(t *testing.T) {
 			forbid:     "https://",
 		},
 		{
+			name:       "400 unknown field names the discovery tool as next action",
+			status:     http.StatusBadRequest,
+			body:       `{"error":"unknown field attributes['usr']"}`,
+			wantSubstr: "Next action: call get_log_attributes_for_pipeline",
+		},
+		{
+			name:       "403 names scope and role",
+			status:     http.StatusForbidden,
+			body:       `denied`,
+			wantSubstr: "the token's scope or the user's role",
+		},
+		{
 			name:       "502 omits body",
 			status:     http.StatusBadGateway,
 			body:       `{"error":"gateway SECRET"}`,
@@ -58,7 +70,7 @@ func TestGetLogsRelays400BodyAndDrains502(t *testing.T) {
 			if tt.forbid != "" && strings.Contains(got, tt.forbid) {
 				t.Fatalf("error leaked %q: %s", tt.forbid, got)
 			}
-			if tt.status == http.StatusBadRequest {
+			if tt.status == http.StatusBadRequest && strings.Contains(tt.body, "https://") {
 				if !strings.Contains(got, "[redacted-url]") {
 					t.Fatalf("expected URL redaction in 400 error, got %s", got)
 				}
