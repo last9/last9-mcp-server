@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `get_apm_service_deviations` now includes the query step and nearest aligned start/end timestamps in explicit current and baseline window alignment errors, so callers can correct their arguments (#507).
+- `validate_dashboard` no longer reports `overall: pass` with `panels_total: 0` when nothing was validated. A `{dashboard, metadata}` create envelope passed as `dashboard_definition` is unwrapped and its inner dashboard validated; a dashboard with no panels returns `success: false`, `error: "no_panels"`; panel fields from other formats (Grafana `gridPos`, `title`, `type`, and `targets` on panels that need queries) and mistyped fields such as a string `queries[].legend` or a non-object `csv` are listed per panel in `shape_problems` and make `overall` `fail` (#498).
 
 ## [0.23.0] - 2026-11-04
 
