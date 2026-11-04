@@ -25,6 +25,7 @@ var promptDescriptionFiles = map[string]string{
 	"get_alert_config.md":                  prompts.GetAlertConfigDescription,
 	"get_alert_coverage.md":                prompts.GetAlertCoverageDescription,
 	"get_alert_groups.md":                  prompts.GetAlertGroupsDescription,
+	"get_alert_operations_summary.md":      prompts.GetAlertOperationsSummaryDescription,
 	"get_alert_rule_state.md":              prompts.GetAlertRuleStateDescription,
 	"get_alerts.md":                        prompts.GetAlertsDescription,
 	"get_apm_service_deviations.md":        prompts.GetAPMServiceDeviationsDescription,

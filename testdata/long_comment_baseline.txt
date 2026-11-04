@@ -4,7 +4,6 @@ description_sections_test.go	4	// sectionViolations reports missing or misordere
 dump.go	13	// dumpTools registers every tool and the server instructions exactly as the
 http_server.go	4	// requestToolsets returns the tools a request may see: the startup set
 http_server_test.go	7	// TestStatelessStreamableHandler verifies the HTTP handler runs in stateless
-instructions_test.go	7	// maxInvestigateInstructionsBytes caps the policy automation sessions receive,
 instructions_test.go	4	// "; alerts are created as drafts" on this line repeated the created-disabled
 instructions_wording_test.go	8	// pinnedInstructionLines is the wording of every prose line in
 integer_args.go	4	// Models sometimes quote integer ids ({"channel_id": "42"}) and the SDK validates
