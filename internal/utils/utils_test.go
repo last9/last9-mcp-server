@@ -319,6 +319,8 @@ func TestGetTimeRange_LookbackMinutesUpperBound(t *testing.T) {
 		{name: "float beyond int range", params: map[string]interface{}{"lookback_minutes": 1e30}, defaultLookback: 60, wantValue: "1e+30"},
 		{name: "max+1 as default", params: map[string]interface{}{}, defaultLookback: maxLookback + 1, wantValue: "527041"},
 		{name: "max+1 with one bound", params: map[string]interface{}{"end_time_iso": "2026-02-09T16:04:05Z", "lookback_minutes": 10000000}, defaultLookback: 60, wantValue: "10000000"},
+		// Validated like lookback_minutes < 1 even though both bounds make it unused.
+		{name: "max+1 with both bounds", params: map[string]interface{}{"start_time_iso": "2026-02-09T15:04:05Z", "end_time_iso": "2026-02-09T16:04:05Z", "lookback_minutes": maxLookback + 1}, defaultLookback: 60, wantValue: "527041"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
