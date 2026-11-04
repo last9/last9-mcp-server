@@ -8,7 +8,8 @@ Parameters:
 - start_time_iso, end_time_iso (required): RFC3339 window; at most 31 days. Call
   get_current_time first for relative windows ("last 7 days").
 - timezone: IANA name for day boundaries (default: UTC).
-- severities, services: lists that narrow the summary (default: all).
+- severities, services: lists that narrow the summary (default: all). With
+  include_rules=true, entries cannot contain commas; use separate array entries.
 - include_rules (default: false): also return per-rule hygiene in rules:
   top_by_fire_count (top 20), flapping (flaps_per_day >= 1), unrouted (routed=false),
   each capped at 20, with total_rules, flapping_total and unrouted_total. If

@@ -146,6 +146,18 @@ func parseOpsSummaryArgs(args GetAlertOperationsSummaryArgs) (alerts.GetHealthSu
 		From: start.UTC(), To: end.UTC(), Timezone: tz,
 		Services: nonEmptyTrimmed(args.Services), Severities: nonEmptyTrimmed(args.Severities),
 	}
+	if args.IncludeRules {
+		for _, filter := range []struct {
+			name   string
+			values []string
+		}{{"services", in.Services}, {"severities", in.Severities}} {
+			for _, value := range filter.values {
+				if strings.Contains(value, ",") {
+					return in, opsSummaryWindow{}, fmt.Sprintf("%s entries cannot contain commas when include_rules is true; use separate array entries for multiple values, or set include_rules to false for a literal comma", filter.name)
+				}
+			}
+		}
+	}
 	window := opsSummaryWindow{
 		StartTimeISO: start.UTC().Format(time.RFC3339Nano),
 		EndTimeISO:   end.UTC().Format(time.RFC3339Nano),

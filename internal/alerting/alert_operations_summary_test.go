@@ -135,6 +135,69 @@ func TestGetAlertOperationsSummaryRejectsInvalidArgs(t *testing.T) {
 	}
 }
 
+func TestGetAlertOperationsSummaryFilterScope(t *testing.T) {
+	for _, field := range []string{"services", "severities"} {
+		for _, includeRules := range []bool{false, true} {
+			for _, comma := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/rules=%t/comma=%t", field, includeRules, comma), func(t *testing.T) {
+					values := []string{"api", "worker"}
+					if field == "severities" {
+						values = []string{"P1", "P2"}
+					}
+					if comma {
+						values = []string{values[0], strings.Join(values, ",")}
+					}
+					args := weekArgs()
+					args.IncludeRules = includeRules
+					if field == "services" {
+						args.Services = values
+					} else {
+						args.Severities = values
+					}
+					f := &opsFake{summary: opsSummaryBody, hygiene: `{"rules":[]}`}
+					res, err := runOpsSummary(t, f, args)
+					if err != nil {
+						t.Fatal(err)
+					}
+					f.mu.Lock()
+					defer f.mu.Unlock()
+					if includeRules && comma {
+						if !res.IsError || !strings.Contains(opsText(t, res), field) || !strings.Contains(opsText(t, res), "comma") {
+							t.Errorf("want argument error naming %s and comma, got %s", field, opsText(t, res))
+						}
+						if len(f.paths) != 0 {
+							t.Errorf("made %d upstream calls for ambiguous filters", len(f.paths))
+						}
+						return
+					}
+					decodeOps(t, res)
+					if got := fmt.Sprint(f.summaryBody[field]); got != fmt.Sprint(values) {
+						t.Errorf("summary %s = %s, want %v", field, got, values)
+					}
+					wantCalls := 1
+					if includeRules {
+						wantCalls = 2
+						q, err := url.ParseQuery(f.hygieneQuery)
+						if err != nil {
+							t.Fatal(err)
+						}
+						var got []string
+						for _, value := range q[field] {
+							got = append(got, strings.Split(value, ",")...)
+						}
+						if fmt.Sprint(got) != fmt.Sprint(values) {
+							t.Errorf("hygiene %s = %v, want %v", field, got, values)
+						}
+					}
+					if len(f.paths) != wantCalls {
+						t.Errorf("made %d upstream calls, want %d", len(f.paths), wantCalls)
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestGetAlertOperationsSummaryAcceptsExactly31Days(t *testing.T) {
 	f := &opsFake{summary: opsSummaryBody}
 	args := weekArgs()
