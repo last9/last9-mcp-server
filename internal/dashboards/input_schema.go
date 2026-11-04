@@ -95,7 +95,7 @@ func queriesArraySchema() map[string]interface{} {
 				"telemetry": map[string]interface{}{"type": "string"},
 				"expr": map[string]interface{}{
 					"type":        "string",
-					"description": `Every log_json expression must be a JSON pipeline with an aggregate stage; use log_ql for a raw logs panel. For log_json line, timeseries, or bar panels, include exactly one time-windowed aggregate (window_aggregate or aggregate with window); grouping by service or environment does not replace the window. Example: [{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["5","minutes"],"groupby":{"ServiceName":"service"}}].`,
+					"description": `Every log_json expression must be a JSON pipeline with an aggregate stage; use log_ql for a raw logs panel. For log_json line, timeseries, or bar panels, include exactly one time-windowed aggregate (window_aggregate or aggregate with window); grouping by service or environment does not replace the window. Example: [{"type":"filter","query":{"$and":[{"$eq":["ServiceName","checkout"]},{"$eq":["resources['deployment.environment']","prod"]}]}},{"type":"window_aggregate","function":{"$count":[]},"as":"count","window":["1","minutes"]}].`,
 				},
 				"legend": map[string]interface{}{
 					"type": "object", "required": []string{"type", "value"},
