@@ -314,6 +314,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`analyze_change_impact`** — Did a change break anything? Compares a service and its direct callers before and after a change: golden signals, APM and trace-attribute deviations, new firing alerts, and a verdict (`regression likely` / `no significant change` / `insufficient data`)
 - **`get_alert_groups`** — Configured Compass alert groups with metadata labels, team, tier, and rule counts — including groups with zero rules and groups that are not firing
 - **`get_alert_operations_summary`** — On-call health over a window: alerts raised vs acknowledged, backlog, deliveries and, with `include_rules`, the noisiest, flapping and unrouted rules. Every count carries its `status` (`available` / `partial` / `unavailable`)
+- **`get_alert_coverage`** — What you are not alerting on: uncovered golden signals, fully disabled or unrouted alert groups, and rules muted too long, each with a suggested fix tool. Read-only.
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
 - **`get_entity_kpis`** — Every KPI (id, name, PromQL, unit) on one alert group, including KPIs no rule uses yet — the ids `create_alert` and `validate_alert_expression` need
 - **`create_kpi`** — Create a KPI (PromQL + unit) on an alert group when no existing KPI fits. Create once and keep the returned id
@@ -817,6 +818,19 @@ Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `en
 
 Returns JSON with `alerts_raised`, `acknowledged`, `unacknowledged`, `current_backlog`, `delivered`, `notification_outcomes`, `top_rules`, `needs_attention` and `coverage`. Each metric is `{status, count?, reason?}`; a `partial` count covers only part of the window and is not a lower bound.
 
+### get_alert_coverage
+
+Answers "what am I not alerting on?" for a service, an environment, one alert group, or the whole organization when no scope is given. Read-only: it never creates, changes, or unmutes anything. Also served in the `investigate` toolset.
+
+- `service` (string, optional): Service name.
+- `environment` (string, optional): Deployment environment (for example `prod`).
+- `entity_id` (string, optional): Alert group (entity) UUID, as returned by `get_alert_groups`.
+- `muted_days` (integer, optional): Whole days, 1 to 3650. Default: 7; 0 means the default. A rule muted longer than this is a `muted_too_long` gap.
+
+Values are trimmed; blank strings are ignored. Gap kinds: **uncovered_signal** (no enabled rule on latency, error_rate, throughput, or saturation; names a disabled rule that would cover it), **all_rules_disabled** (an alert group whose rules are all disabled), **no_notification_channel** (a rule whose severity no channel on its alert group routes), **muted_too_long** (muted indefinitely or for more than `muted_days`; `muted_since` is the rule's last update and `mute_until` is omitted for an indefinite mute).
+
+Returns compact JSON `{scope, generated_at, complete, summary, counts, groups}`. `groups` holds one `{kind, count, gaps, omitted}` entry per kind present, listing at most 10 gaps per kind (`omitted` counts the rest; narrow the scope to see them); each gap carries `suggested_tool` (`create_alert`, `create_alert_from_chart`, `attach_notification_channel`, or `patch_alert`) and `suggested_args`, holding only inputs that tool accepts (`patch_alert`: `entity_id`, `id` and `is_disabled=false` or `mute_until=0`; `attach_notification_channel`: `alert_group_id` and a `breach`/`threat` `severity`; `create_alert`: `entity_id`; `create_alert_from_chart`: `service_name`); the gap's own `entity_id`, `rule_id` and `signal` are listed beside them. Call the suggested tool only if it is available in the session and the user confirms. `complete` is true only when the API lists no gaps, every count is 0, and at least one alert group matches the scope (exact `service_name` / `env` labels, checked against `get_alert_groups`' list); a scope matching none, a failed lookup, or counts with no listed gaps are not complete, and `summary` says why.
+
 ### get_alert_config
 
 - `search_term` (string, optional): Free-text search across name, group, data source, tags.
@@ -1048,11 +1062,11 @@ To alert on a panel, see `last9://reference/alerting`.
 Read-only. Never creates or updates dashboards. Accept exactly one of `dashboard_id` or `dashboard_definition`.
 
 - `dashboard_id` (string, optional): Saved dashboard UUID to validate.
-- `dashboard_definition` (object, optional): Inline unsaved dashboard body (true dry run).
+- `dashboard_definition` (object, optional): Inline unsaved dashboard body (true dry run). A `{dashboard, metadata}` create envelope is unwrapped to its `dashboard` object.
 - `start_time_iso` / `end_time_iso` (string, optional): Validation window (RFC3339). Must be ≤ 24h.
 - `region` (string, optional): Region for panel query execution.
 
-Returns `dashboard_validation/v1`: per-panel lint + execute classification (`data` / `no_data` / `invalid` / `error`). Day-1 empty results classify as `valid_no_data` without diagnose probes.
+Returns `dashboard_validation/v1`: per-panel lint + execute classification (`data` / `no_data` / `invalid` / `error`). Day-1 empty results classify as `valid_no_data` without diagnose probes. A dashboard with no panels returns `success: false` with `error: "no_panels"`. Panel fields from other formats (Grafana `gridPos`, `title`, `type`, and `targets` on panels that need queries) and mistyped fields are listed per panel in `shape_problems`, counted in `summary.panels_invalid_shape`, and make `overall` `fail`.
 
 ### preview_dashboard
 

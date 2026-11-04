@@ -125,6 +125,9 @@ var GetAlertGroupsDescription string
 //go:embed descriptions/get_alert_operations_summary.md
 var GetAlertOperationsSummaryDescription string
 
+//go:embed descriptions/get_alert_coverage.md
+var GetAlertCoverageDescription string
+
 //go:embed descriptions/get_entity_alert_rules.md
 var GetEntityAlertRulesDescription string
 

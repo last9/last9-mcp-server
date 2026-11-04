@@ -11,6 +11,7 @@
 {{- $health := tools "get_service_summary" "get_service_performance_details" "get_service_operations_summary" "get_service_dependency_graph" -}}
 {{- $alerts := tools "get_alerts" "get_alert_rule_state" -}}
 {{- $alertOps := tools "get_alert_operations_summary" -}}
+{{- $coverage := tools "get_alert_coverage" -}}
 {{- $changes := tools "get_change_events" "analyze_change_impact" -}}
 {{- $deviations := tools "get_apm_service_deviations" "get_trace_attribute_deviations" -}}
 {{- $scoped := tools "get_service_logs" "get_log_patterns" "get_emerging_log_patterns" "get_service_traces" "get_exceptions" "get_trace_waterfall" -}}
@@ -64,7 +65,7 @@ Never guess service, environment, attribute, metric or label names, or dashboard
 - Open a dashboard by id with {{.}}.
 {{- end}}{{end}}
 {{- end}}
-{{- if or $serviceProfile $health $alerts $alertOps $changes $deviations $scoped $databases $profiles}}
+{{- if or $serviceProfile $health $alerts $alertOps $coverage $changes $deviations $scoped $databases $profiles}}
 
 ## Prefer dedicated tools
 They return computed answers with the right scoping; reach for them before writing a query.
@@ -78,7 +79,7 @@ They return computed answers with the right scoping; reach for them before writi
 - Firing alerts and rule state: {{.}}.
 {{- end}}
 {{- with $alertOps}}
-- Alerts raised vs acknowledged over a window, and noisy or unrouted rules: {{.}}.
+- Alert counts and hygiene: {{.}}.
 {{- end}}
 {{- with $changes}}
 - Deploys and other changes: {{.}}.
@@ -94,6 +95,9 @@ They return computed answers with the right scoping; reach for them before writi
 {{- end}}
 {{- with $profiles}}
 - Profiles: {{.}}.
+{{- end}}
+{{- with $coverage}}
+- Alert coverage gaps: {{.}}.
 {{- end}}
 {{- end}}
 {{- with $raw}}
