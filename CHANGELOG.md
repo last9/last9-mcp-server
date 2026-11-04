@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-11-03
+
 ### Added
 - Dashboard authoring prompts `create_dashboard_guide`, `dashboard_examples` and `query_guide`, also served as reference resources, guide discovery, layout, query semantics, per-panel checks before approval and targeted edits; create and patch tool descriptions link to them (#477).
 - `preview_dashboard` previews an unsaved dashboard or ordered patch without saving: it reuses the create schema, query-type compatibility checks (including non-query panels), query validation and local patch operations, returns resolved queries, bounded per-panel results and a net panel diff, and remains available in read-only dashboard toolsets. Backend acceptance and normalization are not guaranteed by this client-side preview (#474).
