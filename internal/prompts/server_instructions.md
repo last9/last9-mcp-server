@@ -33,7 +33,7 @@ Last9 observability for the caller's organization. Discover names first, answer 
 
 ## Start here
 {{- with $overview}}
-When a request names no service or tool, call {{.}} first: it returns environments, signals seen in the last hour, service and alert-group counts, firing alerts and the current time. Otherwise go straight to the most specific tool. A signal it reports absent was only not observed in that hour: still query it for the user's requested time range, index or datasource.
+When a request names no service or tool, call {{.}} first. Otherwise go straight to the most specific tool. Still query signals it reports absent for the user's requested time range, index or datasource.
 {{- end}}
 {{- with $time}}
 For today's date or a relative window ("since 9am IST"), call {{.}}.
