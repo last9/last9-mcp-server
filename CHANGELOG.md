@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `get_remapping_rules` and `add_remapping_rule` (`alerts` toolset, next to the drop-rule tools) list and create control-plane remapping rules by `rule_type`: `logs_extract` pulls fields out of log bodies (`json` or a named-capture `pattern`, optionally scoped by one precondition), `logs_map` promotes attributes to `service`, `severity` or `resource_deployment.environment`, and `traces_map` promotes them to the trace `service`. `add_remapping_rule` checks these combinations, regexes and blank names or keys before any request, creates one rule per call, and is never retried: after a timeout it reports the outcome as unknown and points to `get_remapping_rules` (#196).
+
 ### Fixed
 - `validate_dashboard` no longer reports `overall: pass` with `panels_total: 0` when nothing was validated. A `{dashboard, metadata}` create envelope passed as `dashboard_definition` is unwrapped and its inner dashboard validated; a dashboard with no panels returns `success: false`, `error: "no_panels"`; panel fields from other formats (Grafana `gridPos`, `title`, `type`, and `targets` on panels that need queries) and mistyped fields such as a string `queries[].legend` or a non-object `csv` are listed per panel in `shape_problems` and make `overall` `fail` (#498).
 
