@@ -70,7 +70,7 @@ func FitItems[T any](items []T, maxBytes int, size func([]T) int) ([]T, int) {
 }
 
 // FormatQueryResponse renders a logs or traces query response as indented JSON,
-// dropping trailing data.result items until the text fits MaxResultTextBytes.
+// dropping trailing rows (individual lines for streams) to fit MaxResultTextBytes.
 func FormatQueryResponse(response map[string]any, env *ResultEnvelope) string {
 	text := formatIndentedJSON(response)
 	if len(text) <= MaxResultTextBytes {
@@ -82,6 +82,9 @@ func FormatQueryResponse(response map[string]any, env *ResultEnvelope) string {
 	}
 	switch items := data["result"].(type) {
 	case []any:
+		if data["resultType"] == "streams" {
+			return trimStreamResponse(response, items, env)
+		}
 		return trimQueryResponse(response, items, env)
 	case []json.RawMessage:
 		return trimQueryResponse(response, items, env)
