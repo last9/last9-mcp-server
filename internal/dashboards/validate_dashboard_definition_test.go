@@ -33,7 +33,6 @@ func validateInline(t *testing.T, definition map[string]any) map[string]any {
 	return report
 }
 
-// validateSaved validates dashboard dash-1, served as body by the fake API.
 func validateSaved(t *testing.T, body string) map[string]any {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
