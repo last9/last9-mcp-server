@@ -29,7 +29,7 @@ type GetDatabaseSlowQueriesArgs struct {
 	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Calling service name filter"`
 	Env             string  `json:"env,omitempty" jsonschema:"Deployment environment filter"`
 	MinDurationMs   float64 `json:"min_duration_ms,omitempty" jsonschema:"Minimum query duration in milliseconds"`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60, minimum: 1)"`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60, minimum: 1, maximum: 527040 = 366 days)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339 format"`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339 format"`
 	Limit           int     `json:"limit,omitempty" jsonschema:"Maximum results (default: 20)"`
@@ -193,7 +193,7 @@ type GetDatabaseQueriesArgs struct {
 	DBSystem        string  `json:"db_system" jsonschema:"(Required) Database system (e.g. postgresql, mysql, mongodb, redis)"`
 	Host            string  `json:"host,omitempty" jsonschema:"Database host filter (net_peer_name)"`
 	Env             string  `json:"env,omitempty" jsonschema:"(Optional) Exact deployment environment name, e.g. production. Default all environments (empty or .*). Anchored forms like ^production$ are accepted and matched exactly. Alternation (a|b) and wildcards (prod.*) are rejected; list names with get_service_environments."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60)"`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60, minimum: 1, maximum: 527040 = 366 days)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339 format"`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339 format"`
 	SortBy          string  `json:"sort_by,omitempty" jsonschema:"Sort by: throughput (default), latency, or errors"`
@@ -433,7 +433,7 @@ func fetchPromToSpanNameMap(ctx context.Context, client *http.Client, cfg models
 
 type GetDatabaseServerMetricsArgs struct {
 	DBSystem        string  `json:"db_system,omitempty" jsonschema:"Focus on a specific database type (e.g. postgresql, mysql, oracle, redis, mongodb, mssql, elasticsearch, aerospike). Aerospike metrics include open_connections, memory_free_pct, namespace_memory_free_pct, namespace_memory_used_bytes, reads_per_sec, writes_per_sec, errors_per_sec, disk_available_pct"`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60)"`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60, minimum: 1, maximum: 527040 = 366 days)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339 format"`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339 format"`
 }

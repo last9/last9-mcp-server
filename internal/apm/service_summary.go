@@ -72,7 +72,7 @@ type ServiceSummaryResult struct {
 type ServiceSummaryArgs struct {
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start of the interval in RFC3339/ISO8601 (e.g. 2024-06-01T12:00:00Z). When both start and end are set they beat lookback."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End of the interval in RFC3339/ISO8601 (e.g. 2024-06-01T13:00:00Z). When both start and end are set they beat lookback. A single bound fills the other with lookback_minutes."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1, maximum: 527040 = 366 days). Use for relative windows like last 30 minutes."`
 	Env             string  `json:"env,omitempty" jsonschema:"Environment PromQL regex (default: .*). Exact one-env match needs anchors (e.g. ^prod$). Invalid regex is rejected before querying."`
 	SortBy          string  `json:"sort_by,omitempty" jsonschema:"Sort key. Allowed: request_count (default), throughput_rpm, http_4xx_count, http_5xx_count, grpc_error_count. throughput_rpm ranks identically to request_count. Unknown values including errors, error_rate, and 5xx are rejected."`
 	Limit           int     `json:"limit,omitempty" jsonschema:"Max ranked rows. Omit or 0 means 10. Other values below 1 are an error. Values above 100 clamp to 100."`

@@ -25,7 +25,7 @@ Parameters:
 - env: (Optional) Filter by deployment environment. Accepts a regular expression, so
   "prod|staging" matches either. Default: all environments. For one exact environment
   use get_database_queries or get_service_performance_details, which take a literal name.
-- lookback_minutes: (Optional) Time window in minutes (default: 60). The window may not
-  exceed 7 days.
+- lookback_minutes: (Optional) Time window in minutes (default: 60, maximum: 10080 = 7 days).
+  A start_time_iso/end_time_iso window may not exceed 7 days either.
 - start_time_iso: (Optional) Start time in RFC3339 format. Overrides lookback_minutes.
 - end_time_iso: (Optional) End time in RFC3339 format.

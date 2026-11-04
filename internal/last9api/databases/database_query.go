@@ -14,9 +14,10 @@ const pathDatabaseQuery = "/database-query"
 
 const opDatabaseQuery = "database query"
 
-// Checked client-side so an oversized request fails with an actionable message instead of
-// spending one of the organization's rate-limited calls on a guaranteed 400.
-const maxWindow = 7 * 24 * time.Hour
+// MaxWindow is the widest window the endpoint accepts. Checked client-side so an oversized
+// request fails with an actionable message instead of spending one of the organization's
+// rate-limited calls on a guaranteed 400.
+const MaxWindow = 7 * 24 * time.Hour
 
 // The bare "env" name reaches trace-discovered rows only, which would silently leave
 // metrics-discovered rows unfiltered.
@@ -127,7 +128,7 @@ func validateWindow(tr TimeRange) error {
 		return errors.New("end time must be after start time")
 	}
 	span := time.Duration(tr.To-tr.From) * time.Second
-	if span > maxWindow {
+	if span > MaxWindow {
 		return fmt.Errorf(
 			"time range exceeds the 7 day maximum (got %s); request a shorter window",
 			span.Round(time.Hour),

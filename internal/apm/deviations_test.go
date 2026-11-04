@@ -75,6 +75,23 @@ func TestAPMServiceDeviationsHandlerRejectsLookbackWithExplicitWindowBeforeQuery
 	}
 }
 
+func TestAPMServiceDeviationsHandlerRejectsOutOfRangeLookbackBeforeQuery(t *testing.T) {
+	deps := testDeviationHandlerDeps()
+	queryCalls := 0
+	deps.execute = func(context.Context, deviationQueryRunner, deviationQueryPlan) deviationQueryExecution {
+		queryCalls++
+		return deviationQueryExecution{}
+	}
+	handler := newAPMServiceDeviationsHandler(http.DefaultClient, models.Config{}, deps)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, DeviationArgs{LookbackMinutes: 527041})
+	if err == nil || !strings.Contains(err.Error(), "lookback_minutes 527041 is out of range") {
+		t.Fatalf("error = %v, want out-of-range lookback", err)
+	}
+	if queryCalls != 0 {
+		t.Fatalf("query executions = %d, want 0", queryCalls)
+	}
+}
+
 func TestAPMServiceDeviationsHandlerFleetKeepsEnvironmentsSeparateAndStable(t *testing.T) {
 	deps := testDeviationHandlerDeps()
 	var calls []deviationQueryPlan

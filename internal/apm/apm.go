@@ -34,7 +34,7 @@ type apiPromInstantResp []struct {
 type ServiceEnvironmentsArgs struct {
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1, maximum: 527040 = 366 days). Use for relative windows like last 30 minutes."`
 	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Optional service name to filter environments for (e.g. my-api). When omitted, returns environments across all services."`
 }
 
@@ -42,14 +42,14 @@ type ServiceOperationsSummaryArgs struct {
 	ServiceName     string  `json:"service_name" jsonschema:"(Required) Name of the service to get operations summary for"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1, maximum: 527040 = 366 days). Use for relative windows like last 30 minutes."`
 	Env             string  `json:"env,omitempty" jsonschema:"(Optional) Exact environment name, e.g. production. Default all environments (empty or .*). Anchored forms like ^production$ are accepted and matched exactly. Alternation (a|b) and wildcards (prod.*) are rejected; list names with get_service_environments, or use get_service_summary for regex matching."`
 }
 
 type ServiceDependencyGraphArgs struct {
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2024-06-01T12:00:00Z). Optional when lookback_minutes is provided."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2024-06-01T13:00:00Z). Defaults to now when omitted."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1). Use for relative windows like last 30 minutes."`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 60, minimum: 1, maximum: 527040 = 366 days). Use for relative windows like last 30 minutes."`
 	Env             string  `json:"env,omitempty" jsonschema:"(Optional) Exact environment name, e.g. production. Default all environments (empty or .*). Anchored forms like ^production$ are accepted and matched exactly. Alternation (a|b) and wildcards (prod.*) are rejected; list names with get_service_environments, or use get_service_summary for regex matching."`
 	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Service name to focus on in the dependency graph (e.g. api-service)"`
 }

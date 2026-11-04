@@ -3,9 +3,11 @@ package apm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"last9-mcp/internal/utils"
@@ -220,6 +222,50 @@ func TestGetDatabasesHandler_NoDatabases(t *testing.T) {
 	text := result.Content[0].(*mcp.TextContent).Text
 	if !strings.Contains(text, "No databases found") {
 		t.Errorf("unexpected empty-result text: %s", text)
+	}
+}
+
+// The shared 366-day lookback bound would tell the agent to retry with a window this
+// tool refuses, so get_databases names its own 7-day maximum.
+func TestGetDatabasesHandler_LookbackBoundIsSevenDays(t *testing.T) {
+	cases := []struct {
+		lookback float64
+		wantErr  string
+	}{
+		{lookback: 10079},
+		{lookback: 10080},
+		{lookback: 10080.9},
+		{lookback: 10081, wantErr: "lookback_minutes 10081 is out of range: use a value between 1 and 10080 (7 days)"},
+		{lookback: 527041, wantErr: "lookback_minutes 527041 is out of range: use a value between 1 and 10080 (7 days)"},
+		{lookback: 1e30, wantErr: "lookback_minutes 1e+30 is out of range: use a value between 1 and 10080 (7 days)"},
+	}
+	for _, tc := range cases {
+		t.Run(fmt.Sprint(tc.lookback), func(t *testing.T) {
+			var requests atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				_, _ = w.Write([]byte(`{"template":"discover","discover":{"databases":[]}}`))
+			}))
+			defer srv.Close()
+
+			handler := NewGetDatabasesHandler(srv.Client(), testDBConfig(srv.URL))
+			_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabasesArgs{LookbackMinutes: tc.lookback})
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("lookback %v rejected: %v", tc.lookback, err)
+				}
+				if requests.Load() != 1 {
+					t.Fatalf("upstream requests = %d, want 1", requests.Load())
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("err = %v, want it to contain %q", err, tc.wantErr)
+			}
+			if requests.Load() != 0 {
+				t.Fatalf("upstream requests = %d, want 0", requests.Load())
+			}
+		})
 	}
 }
 

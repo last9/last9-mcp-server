@@ -31,7 +31,7 @@ const (
 type GetServiceTracesArgs struct {
 	TraceID         string  `json:"trace_id,omitempty" jsonschema:"Specific 32-character hexadecimal OpenTelemetry trace ID."`
 	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Name of service to get traces for"`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 4320 for trace_id, 60 for service_name, minimum: 1)"`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 4320 for trace_id, 60 for service_name, minimum: 1, maximum: 527040 = 366 days)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z). Leave empty to default to now - lookback_minutes."`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z). Leave empty to default to current time."`
 	Limit           float64 `json:"limit,omitempty" jsonschema:"Maximum number of traces to return (optional, default: 10)"`
@@ -42,7 +42,7 @@ type GetServiceTracesArgs struct {
 type GetTracesQueryParams struct {
 	TraceID         string
 	ServiceName     string
-	LookbackMinutes int
+	LookbackMinutes float64
 	Region          string
 	Limit           int
 	Env             string
@@ -149,7 +149,7 @@ func parseGetServiceTraceParams(args GetServiceTracesArgs, cfg models.Config) (*
 
 	// Override defaults with provided values
 	if args.LookbackMinutes != 0 {
-		queryParams.LookbackMinutes = int(args.LookbackMinutes)
+		queryParams.LookbackMinutes = args.LookbackMinutes
 	}
 	if args.Limit >= 1 {
 		queryParams.Limit = int(args.Limit)
@@ -231,8 +231,8 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 			return nil, nil, err
 		}
 
-		// Prepare arguments map for GetTimeRange function
-		arguments := make(map[string]interface{})
+		// GetTimeRange bounds the raw float itself, so it is passed unconverted.
+		arguments := map[string]interface{}{"lookback_minutes": queryParams.LookbackMinutes}
 		if args.StartTimeISO != "" {
 			arguments["start_time_iso"] = args.StartTimeISO
 		}
@@ -241,7 +241,7 @@ func GetServiceTracesHandler(client *http.Client, cfg models.Config) func(contex
 		}
 
 		// Get time range
-		startTime, endTime, err := utils.GetTimeRange(arguments, queryParams.LookbackMinutes)
+		startTime, endTime, err := utils.GetTimeRange(arguments, utils.DefaultLookbackMinutes)
 		if err != nil {
 			return nil, nil, err
 		}

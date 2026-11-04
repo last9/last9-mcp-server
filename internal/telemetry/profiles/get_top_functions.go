@@ -23,7 +23,7 @@ type GetTopFunctionsArgs struct {
 	ProfileType     string `json:"profile_type,omitempty" jsonschema:"Profile type: cpu (default), alloc, or wall"`
 	Region          string `json:"region,omitempty" jsonschema:"Optional region override; defaults to the configured datasource region"`
 	Limit           int    `json:"limit,omitempty" jsonschema:"Max ranked functions to return after folding (default: 50)"`
-	LookbackMinutes int    `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back from now (default: 60, minimum: 1)"`
+	LookbackMinutes int    `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back from now (default: 60, minimum: 1, maximum: 527040 = 366 days)"`
 	StartTimeISO    string `json:"start_time_iso,omitempty" jsonschema:"(Optional) Start time in RFC3339/ISO8601 format"`
 	EndTimeISO      string `json:"end_time_iso,omitempty" jsonschema:"(Optional) End time in RFC3339/ISO8601 format"`
 }

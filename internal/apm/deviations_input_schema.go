@@ -35,7 +35,7 @@ func GetAPMServiceDeviationsInputSchema() map[string]interface{} {
 			"lookback_minutes": map[string]interface{}{
 				"type":    "number",
 				"minimum": float64(1),
-				"description": "Current-window duration in minutes (syntactic minimum 1, default 60). " +
+				"description": "Current-window duration in minutes (syntactic minimum 1, default 60, maximum 527040 = 366 days). " +
 					"The resolver keeps only fully-completed 1-minute buckets: integer lookback below 2 " +
 					"returns a 'no completed buckets' error in production (now is essentially never minute-aligned), " +
 					"and lookback below about 5 typically returns 'insufficient_evidence' because classification " +

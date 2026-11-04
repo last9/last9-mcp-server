@@ -37,7 +37,7 @@ type exceptionAggregate struct {
 // GetExceptionsArgs defines the input structure for getting exceptions
 type GetExceptionsArgs struct {
 	Limit           float64 `json:"limit,omitempty" jsonschema:"Maximum number of exceptions to return (optional, default: 20)"`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time (default: 60, minimum: 1)"`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from current time (default: 60, minimum: 1, maximum: 527040 = 366 days)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339/ISO8601 format (e.g. 2026-02-09T15:04:05Z)"`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339/ISO8601 format (e.g. 2026-02-09T16:04:05Z)"`
 	ServiceName     string  `json:"service_name,omitempty" jsonschema:"Filter exceptions by service name (e.g. api-service)"`
@@ -56,13 +56,11 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 			limit = 20
 		}
 
-		lookbackMinutes := 60
-		if args.LookbackMinutes != 0 {
-			lookbackMinutes = int(args.LookbackMinutes)
-		}
-
-		// Prepare arguments map for GetTimeRange function
+		// Prepare arguments map for GetTimeRange function; it bounds the raw float itself.
 		arguments := make(map[string]interface{})
+		if args.LookbackMinutes != 0 {
+			arguments["lookback_minutes"] = args.LookbackMinutes
+		}
 		if args.StartTimeISO != "" {
 			arguments["start_time_iso"] = args.StartTimeISO
 		}
@@ -71,7 +69,7 @@ func NewGetExceptionsHandler(client *http.Client, cfg models.Config) func(contex
 		}
 
 		// Get time range using the common utility
-		startTime, endTime, err := utils.GetTimeRange(arguments, lookbackMinutes)
+		startTime, endTime, err := utils.GetTimeRange(arguments, 60)
 		if err != nil {
 			return nil, nil, err
 		}

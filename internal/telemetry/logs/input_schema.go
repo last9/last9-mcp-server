@@ -25,7 +25,7 @@ func GetLogsInputSchema() map[string]interface{} {
 			},
 			"lookback_minutes": map[string]interface{}{
 				"type":        []string{"integer", "null"},
-				"description": "Number of minutes to look back from now (default: 5, minimum: 1). Use for relative windows.",
+				"description": "Minutes to look back from now (default: 5, minimum: 1, maximum: 527040 = 366 days).",
 			},
 			"limit": map[string]interface{}{
 				"type":        []string{"integer", "null"},

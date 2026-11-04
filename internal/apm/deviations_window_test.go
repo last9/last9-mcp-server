@@ -2,8 +2,11 @@ package apm
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
+
+	"last9-mcp/internal/utils"
 )
 
 func TestDeviationWindowResolverAvailableOnAllPlatforms(t *testing.T) {
@@ -95,6 +98,47 @@ func TestResolveDeviationWindowsLookbackFloorBoundary(t *testing.T) {
 			}
 			if gotErr && err.Error() != "requested window contains no completed buckets" {
 				t.Fatalf("lookback=%v: unexpected error %v", tt.lookback, err)
+			}
+		})
+	}
+}
+
+func TestResolveDeviationWindowsLookbackUpperBound(t *testing.T) {
+	now := time.Date(2026, 7, 11, 10, 7, 32, 0, time.UTC)
+	max := float64(utils.MaxLookbackMinutes)
+	maxDuration := time.Duration(utils.MaxLookbackMinutes) * time.Minute
+	tests := []struct {
+		lookback      float64
+		wantRequested time.Duration
+		wantEffective time.Duration
+		wantErr       string
+	}{
+		{lookback: max - 1, wantRequested: maxDuration - time.Minute, wantEffective: maxDuration - 2*time.Minute},
+		{lookback: max, wantRequested: maxDuration, wantEffective: maxDuration - time.Minute},
+		// The fraction is kept, so the requested window reaches past the
+		// minute boundary and its effective window rounds to all 366 days.
+		{lookback: max + 0.9, wantRequested: maxDuration + 54*time.Second, wantEffective: maxDuration},
+		{lookback: max + 1, wantErr: "lookback_minutes 527041 is out of range: use a value between 1 and 527040 (366 days), or start_time_iso and end_time_iso for an older window"},
+		{lookback: 1e30, wantErr: "lookback_minutes 1e+30 is out of range"},
+		{lookback: 1e308, wantErr: "lookback_minutes 1e+308 is out of range"},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("lookback=%v", tt.lookback), func(t *testing.T) {
+			got, err := resolveDeviationWindows(DeviationArgs{LookbackMinutes: tt.lookback}, now, time.Minute)
+			if tt.wantErr != "" {
+				if err == nil || !strings.HasPrefix(err.Error(), tt.wantErr) {
+					t.Fatalf("got err %v, want prefix %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("want accepted, got %v", err)
+			}
+			if requested := got.RequestedCurrentEnd.Sub(got.RequestedCurrentStart); requested != tt.wantRequested {
+				t.Fatalf("requested duration = %v, want %v", requested, tt.wantRequested)
+			}
+			if effective := got.EffectiveCurrentEnd.Sub(got.EffectiveCurrentStart); effective != tt.wantEffective {
+				t.Fatalf("effective duration = %v, want %v", effective, tt.wantEffective)
 			}
 		})
 	}

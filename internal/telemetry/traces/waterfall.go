@@ -30,7 +30,7 @@ type GetTraceWaterfallArgs struct {
 	Environment     string `json:"environment,omitempty" jsonschema:"Optional exact deployment.environment value"`
 	StartTimeISO    string `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339"`
 	EndTimeISO      string `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339"`
-	LookbackMinutes int    `json:"lookback_minutes,omitempty" jsonschema:"Lookback ending now; default 4320 minutes"`
+	LookbackMinutes int    `json:"lookback_minutes,omitempty" jsonschema:"Lookback ending now; default 4320 minutes, maximum 527040 (366 days)"`
 	SelectedSpanID  string `json:"selected_span_id,omitempty" jsonschema:"Optional 16-character hexadecimal OpenTelemetry span ID whose attributes, events, and links should be returned."`
 	MaxSpans        int    `json:"max_spans,omitempty" jsonschema:"Maximum spans; default 500, maximum 1000"`
 }

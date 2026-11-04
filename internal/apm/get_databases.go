@@ -5,18 +5,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/databases"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type GetDatabasesArgs struct {
 	Env             string  `json:"env,omitempty" jsonschema:"(Optional) Regular expression over deployment environment, e.g. prod|staging matches either. Default all environments. For one exact environment use get_database_queries or get_service_performance_details, which take a literal name."`
-	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60, minimum: 1, maximum window: 7 days)"`
+	LookbackMinutes float64 `json:"lookback_minutes,omitempty" jsonschema:"Minutes to look back (default: 60, minimum: 1, maximum: 10080 = 7 days)"`
 	StartTimeISO    string  `json:"start_time_iso,omitempty" jsonschema:"Start time in RFC3339 format"`
 	EndTimeISO      string  `json:"end_time_iso,omitempty" jsonschema:"End time in RFC3339 format"`
 }
@@ -69,6 +71,11 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 }
 
 func discoverInputFor(args GetDatabasesArgs) (databases.DiscoverDatabasesInput, error) {
+	// Fractions below the next minute pass, as in utils.GetTimeRange, which truncates them.
+	maxMinutes := int(databases.MaxWindow / time.Minute)
+	if args.LookbackMinutes >= float64(maxMinutes+1) {
+		return databases.DiscoverDatabasesInput{}, utils.LookbackAboveMaxError(args.LookbackMinutes, maxMinutes, "7 days")
+	}
 	startTime, endTime, err := resolveTimeRange(args.StartTimeISO, args.EndTimeISO, args.LookbackMinutes)
 	if err != nil {
 		return databases.DiscoverDatabasesInput{}, err

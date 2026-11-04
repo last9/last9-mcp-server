@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"time"
+
+	"last9-mcp/internal/utils"
 )
 
 const defaultDeviationLookback = 60 * time.Minute
@@ -14,6 +16,12 @@ func resolveDeviationWindows(args DeviationArgs, now time.Time, queryStep time.D
 	}
 	if args.LookbackMinutes < 0 {
 		return DeviationWindows{}, fmt.Errorf("lookback_minutes must be positive")
+	}
+	// Checked before the Duration conversion, which overflows past ~292 years.
+	// Fractions below max+1 are kept, not truncated as in GetTimeRange; the
+	// effective window then rounds to completed query-step buckets.
+	if args.LookbackMinutes >= float64(utils.MaxLookbackMinutes+1) {
+		return DeviationWindows{}, utils.LookbackOutOfRangeError(args.LookbackMinutes)
 	}
 
 	hasCurrentStart := args.StartTimeISO != ""

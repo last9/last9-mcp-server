@@ -8,7 +8,7 @@ func GetServiceLogsInputSchema() map[string]interface{} {
 			"service_name":      map[string]interface{}{"type": "string", "description": "(Required) Name of the service to retrieve logs for."},
 			"start_time_iso":    map[string]interface{}{"type": []string{"string", "null"}, "description": "Start time in RFC3339/ISO8601. If omitted, use lookback_minutes."},
 			"end_time_iso":      map[string]interface{}{"type": []string{"string", "null"}, "description": "End time in RFC3339/ISO8601; defaults to now."},
-			"lookback_minutes":  map[string]interface{}{"type": []string{"integer", "null"}, "description": "Minutes to look back when start_time_iso is omitted (default: 60, minimum: 1)."},
+			"lookback_minutes":  map[string]interface{}{"type": []string{"integer", "null"}, "description": "Minutes to look back when start_time_iso is omitted (default: 60, minimum: 1, maximum: 527040 = 366 days)."},
 			"limit":             map[string]interface{}{"type": []string{"integer", "null"}, "description": "Maximum log entries to return (default: 100; 20 in raw mode)."},
 			"severity_filters":  map[string]interface{}{"type": []string{"array", "null"}, "items": map[string]interface{}{"type": "string"}, "description": "Severity patterns to match with OR logic."},
 			"body_filters":      map[string]interface{}{"type": []string{"array", "null"}, "items": map[string]interface{}{"type": "string"}, "description": "Message content patterns to match with OR logic."},
