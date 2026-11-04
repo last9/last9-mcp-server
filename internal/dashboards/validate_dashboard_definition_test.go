@@ -33,6 +33,30 @@ func validateInline(t *testing.T, definition map[string]any) map[string]any {
 	return report
 }
 
+// validateSaved validates dashboard dash-1, served as body by the fake API.
+func validateSaved(t *testing.T, body string) map[string]any {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+	handler := NewValidateDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
+	id := "dash-1"
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ValidateDashboardArgs{
+		DashboardID:  &id,
+		StartTimeISO: "2026-09-10T08:00:00Z",
+		EndTimeISO:   "2026-09-10T09:00:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report map[string]any
+	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &report); err != nil {
+		t.Fatal(err)
+	}
+	return report
+}
+
 func markdownDashboard() map[string]any {
 	return map[string]any{
 		"name": "Notes",
@@ -111,24 +135,7 @@ func TestValidateDashboard_NoPanelsFails(t *testing.T) {
 }
 
 func TestValidateDashboard_SavedNoPanelsNamesDashboardID(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"dashboard":{"id":"dash-1","name":"Empty","panels":[]}}`))
-	}))
-	defer srv.Close()
-	handler := NewValidateDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
-	id := "dash-1"
-	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ValidateDashboardArgs{
-		DashboardID:  &id,
-		StartTimeISO: "2026-09-10T08:00:00Z",
-		EndTimeISO:   "2026-09-10T09:00:00Z",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var report map[string]any
-	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &report); err != nil {
-		t.Fatal(err)
-	}
+	report := validateSaved(t, `{"dashboard":{"id":"dash-1","name":"Empty","panels":[]}}`)
 	detail, _ := json.Marshal(report["detail"])
 	if report["error"] != "no_panels" || !strings.Contains(string(detail), "dash-1") || strings.Contains(string(detail), "dashboard_definition") {
 		t.Fatalf("report=%v", report)
@@ -181,5 +188,42 @@ func TestValidateDashboard_MistypedQueryFieldFails(t *testing.T) {
 	problems, _ := json.Marshal(panel["shape_problems"])
 	if summary["overall"] != "fail" || !strings.Contains(string(problems), "panels[0].queries[0].legend: got string, want object") {
 		t.Fatalf("summary=%v shape_problems=%s", summary, problems)
+	}
+}
+
+// Saved query-free panels can come back with "queries": null, which is no shape problem.
+func TestValidateDashboard_SavedQueryFreePanelQueries(t *testing.T) {
+	panels := map[string]string{
+		"section":  `"visualization":{"type":"section"}`,
+		"markdown": `"visualization":{"type":"markdown"}`,
+		"csv":      `"visualization":{"type":"csv"},"csv":{"data":"a,b"}`,
+	}
+	queries := map[string]struct {
+		field string
+		pass  bool
+	}{
+		"omitted":   {"", true},
+		"null":      {`,"queries":null`, true},
+		"empty":     {`,"queries":[]`, true},
+		"malformed": {`,"queries":"up"`, false},
+	}
+	for kind, fields := range panels {
+		for name, q := range queries {
+			t.Run(kind+"/"+name, func(t *testing.T) {
+				report := validateSaved(t, `{"dashboard":{"id":"dash-1","name":"Notes","panels":[{"name":"Notes","layout":{"x":0,"y":0,"w":6,"h":4},`+fields+q.field+`}]}}`)
+				summary, _ := report["summary"].(map[string]any)
+				panels, _ := report["panels"].([]any)
+				if len(panels) != 1 {
+					t.Fatalf("report=%v", report)
+				}
+				problems, _ := json.Marshal(panels[0].(map[string]any)["shape_problems"])
+				if q.pass && (summary["overall"] != "pass" || string(problems) != "null") {
+					t.Fatalf("summary=%v shape_problems=%s", summary, problems)
+				}
+				if !q.pass && (summary["overall"] != "fail" || !strings.Contains(string(problems), "panels[0].queries: got string, want array")) {
+					t.Fatalf("summary=%v shape_problems=%s", summary, problems)
+				}
+			})
+		}
 	}
 }
