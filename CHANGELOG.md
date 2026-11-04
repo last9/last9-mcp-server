@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- `get_apm_service_deviations` now includes the query step and nearest aligned start/end timestamps in explicit current and baseline window alignment errors, so callers can correct their arguments (PR pending).
+- `get_apm_service_deviations` now includes the query step and nearest aligned start/end timestamps in explicit current and baseline window alignment errors, so callers can correct their arguments (#507).
 
 ## [0.23.0] - 2026-11-04
 
