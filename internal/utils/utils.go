@@ -87,7 +87,13 @@ func ParseToolTimestamp(value string) (time.Time, error) {
 // LookbackOutOfRangeError reports a lookback_minutes above MaxLookbackMinutes,
 // naming the value as the caller sent it.
 func LookbackOutOfRangeError(requested any) error {
-	return fmt.Errorf("lookback_minutes %v is out of range: use a value between 1 and %d (366 days), or start_time_iso and end_time_iso for an older window", requested, MaxLookbackMinutes)
+	return LookbackAboveMaxError(requested, MaxLookbackMinutes, "366 days")
+}
+
+// LookbackAboveMaxError is LookbackOutOfRangeError for a tool with a tighter cap, so
+// the agent is never told to retry with a window that tool refuses.
+func LookbackAboveMaxError(requested any, maxMinutes int, maxLabel string) error {
+	return fmt.Errorf("lookback_minutes %v is out of range: use a value between 1 and %d (%s), or start_time_iso and end_time_iso for an older window", requested, maxMinutes, maxLabel)
 }
 
 // GetTimeRange returns start and end times based on lookback minutes.
