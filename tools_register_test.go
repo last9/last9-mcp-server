@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -55,12 +57,15 @@ func noopHandler(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallTool
 
 func TestRegisterIfAllowedSkipsExcludedTools(t *testing.T) {
 	server := newRegisterTestServer(t)
-	allowed := toolsets.Set{"included_tool": {}}
-	if err := registerIfAllowed(server, allowed, &mcp.Tool{Name: "excluded_tool"}, noopHandler); err != nil {
+	gate := newToolGate(toolsets.Filter{Tools: toolsets.Set{"included_tool": {}}})
+	if err := registerIfAllowed(server, gate, &mcp.Tool{Name: "excluded_tool"}, noopHandler); err != nil {
 		t.Fatalf("skipped registration returned error: %v", err)
 	}
-	if err := registerIfAllowed(server, allowed, &mcp.Tool{Name: "included_tool"}, noopHandler); err != nil {
+	if err := registerIfAllowed(server, gate, &mcp.Tool{Name: "included_tool"}, noopHandler); err != nil {
 		t.Fatalf("allowed registration failed: %v", err)
+	}
+	if err := gate.registerAdmitted(); err != nil {
+		t.Fatalf("register admitted tools: %v", err)
 	}
 	names := registeredToolNames(t, server)
 	if !reflect.DeepEqual(names, []string{"included_tool"}) {
@@ -70,7 +75,7 @@ func TestRegisterIfAllowedSkipsExcludedTools(t *testing.T) {
 
 func TestRegisterWriteToolRequiresVerifyCall(t *testing.T) {
 	server := newRegisterTestServer(t)
-	err := registerWriteTool(server, nil, &mcp.Tool{Name: "create_thing"}, " ", noopHandler)
+	err := registerWriteTool(server, newToolGate(toolsets.Filter{}), &mcp.Tool{Name: "create_thing"}, " ", noopHandler)
 	if err == nil || !strings.Contains(err.Error(), "create_thing") {
 		t.Fatalf("want an error naming create_thing, got %v", err)
 	}
@@ -82,7 +87,7 @@ func TestRegisterWriteToolRequiresVerifyCall(t *testing.T) {
 func TestRegisterWriteToolRequiresVerifyToolInSameToolset(t *testing.T) {
 	server := newRegisterTestServer(t)
 	allowed := toolsets.Set{"create_thing": {}}
-	err := registerWriteTool(server, allowed, &mcp.Tool{Name: "create_thing"}, "get_things (name)", noopHandler)
+	err := registerWriteTool(server, newToolGate(toolsets.Filter{Tools: allowed}), &mcp.Tool{Name: "create_thing"}, "get_things (name)", noopHandler)
 	if err == nil || !strings.Contains(err.Error(), "get_things") {
 		t.Fatalf("want an error naming get_things, got %v", err)
 	}
@@ -101,9 +106,55 @@ func TestEveryToolsetServesWriteToolsVerifyCalls(t *testing.T) {
 				t.Fatalf("parse %q: %v", name, err)
 			}
 			cfg := writeToolTestConfig("http://unused.invalid")
-			cfg.AllowedTools = allowed
-			if err := registerTools(newRegisterTestServer(t), cfg, http.DefaultClient); err != nil {
+			cfg.ToolFilter = toolsets.Filter{Tools: allowed}
+			if _, err := registerTools(newRegisterTestServer(t), cfg, http.DefaultClient); err != nil {
 				t.Fatalf("register tools: %v", err)
+			}
+		})
+	}
+}
+
+// get_entity_kpis on an empty group must name create_kpi exactly when the session serves it.
+func TestGetEntityKPIsEmptyHintMatchesServedTools(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/entities/entity-1/kpis" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer upstream.Close()
+
+	for _, tt := range []struct {
+		toolsets, allowWrite string
+		readOnly             bool
+	}{
+		{"alerts", "", false},
+		{"investigate", "", false},
+		{"alerts", "", true},
+		{"alerts", "create_kpi", true},
+	} {
+		t.Run(tt.toolsets+"/read_only="+strconv.FormatBool(tt.readOnly)+"/allow="+tt.allowWrite, func(t *testing.T) {
+			cfg := writeToolTestConfig(upstream.URL)
+			var err error
+			if cfg.ToolFilter, err = toolsets.NewFilter(tt.toolsets, tt.readOnly, tt.allowWrite); err != nil {
+				t.Fatal(err)
+			}
+			session := connectTestSession(t, cfg, upstream.Client())
+			served := false
+			for tool, err := range session.Tools(context.Background(), nil) {
+				if err != nil {
+					t.Fatal(err)
+				}
+				served = served || tool.Name == "create_kpi"
+			}
+			result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+				Name: "get_entity_kpis", Arguments: map[string]any{"entity_id": "entity-1"}})
+			if err != nil || result.IsError {
+				t.Fatalf("result=%+v err=%v", result, err)
+			}
+			text := result.Content[0].(*mcp.TextContent).Text
+			if named := strings.Contains(text, "create_kpi"); named != served {
+				t.Fatalf("result names create_kpi = %v, served = %v; text = %s", named, served, text)
 			}
 		})
 	}
@@ -114,7 +165,11 @@ func TestRegisterIfAllowedRecoversSchemaPanic(t *testing.T) {
 	chanHandler := func(context.Context, *mcp.CallToolRequest, chan int) (*mcp.CallToolResult, any, error) {
 		return nil, nil, nil
 	}
-	err := registerIfAllowed(server, nil, &mcp.Tool{Name: "bad_schema_tool"}, chanHandler)
+	gate := newToolGate(toolsets.Filter{})
+	if err := registerIfAllowed(server, gate, &mcp.Tool{Name: "bad_schema_tool"}, chanHandler); err != nil {
+		t.Fatalf("queueing an admitted tool returned error: %v", err)
+	}
+	err := gate.registerAdmitted()
 	if err == nil {
 		t.Fatal("expected error from panicking tool registration, got nil")
 	}

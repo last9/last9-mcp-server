@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
 	// The release image is alpine without tzdata; embed the zone database so
 	// get_current_time's LoadLocation works wherever the binary runs.
 	_ "time/tzdata"
@@ -59,9 +60,14 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	fs.IntVar(&cfg.RequestRateBurst, "burst", 1, "Request burst capacity")
 	fs.IntVar(&cfg.MaxGetLogsEntries, "max_get_logs_entries", models.DefaultMaxGetLogsEntries, "Maximum number of entries returned by chunked raw get_logs requests")
 	fs.BoolVar(&cfg.HTTPMode, "http", false, "Run as HTTP server instead of STDIO")
+	cfg.UserTokenFallback = userTokenFallbackFromEnv()
 	fs.StringVar(&cfg.Port, "port", "8080", "HTTP server port")
 	fs.StringVar(&cfg.Host, "host", "localhost", "HTTP server host")
-	fs.StringVar(&cfg.Toolsets, "toolsets", toolsets.SpecFromEnv(), "Comma-separated MCP toolsets to expose (logs,traces,metrics,alerts,dashboards,profiles,investigate,all). Empty or all = full surface")
+	filterFlags, err := bindToolFilterFlags(fs)
+	if err != nil {
+		return cfg, err
+	}
+
 	fs.StringVar(&cfg.QueryGuardrail.Mode, "query_guardrail", guardrail.DefaultMode, "Query cost guardrail for log and trace tools: off, shadow (log and hint, never block) or enforce (reject over-limit queries)")
 	fs.DurationVar(&cfg.QueryGuardrail.RangeCap, "query_guardrail_range_cap", guardrail.DefaultRangeCap, "Longest window a log or trace query without a service or stream filter may span")
 	fs.Int64Var(&cfg.QueryGuardrail.ScopeThresholdBytes, "query_guardrail_scope_threshold_bytes", guardrail.DefaultScopeThresholdBytes, "Estimated scan in bytes above which a log or trace query needs a service or stream filter")
@@ -72,7 +78,7 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 	var configFile string
 	fs.StringVar(&configFile, "config", "", "config file path")
 
-	err := ff.Parse(fs, os.Args[1:],
+	err = ff.Parse(fs, os.Args[1:],
 		ff.WithEnvVarPrefix("LAST9"),
 		ff.WithConfigFileFlag("config"),
 		ff.WithConfigFileParser(ff.JSONParser),
@@ -100,57 +106,82 @@ func SetupConfig(defaults models.Config) (models.Config, error) {
 		return cfg, err
 	}
 
-	allowed, err := toolsets.Parse(cfg.Toolsets)
-	if err != nil {
+	cfg.Toolsets = filterFlags.toolsets
+	if cfg.ToolFilter, err = filterFlags.filter(); err != nil {
 		return cfg, err
 	}
-	cfg.AllowedTools = allowed
 
 	return cfg, nil
 }
 
-// parseDumpToolsets loads .env then parses --toolsets / LAST9_TOOLSETS for dump-tools
-// (which short-circuits before SetupConfig and needs no credentials).
-func parseDumpToolsets() (toolsets.Set, error) {
-	_ = godotenv.Load()
-	fs := flag.NewFlagSet("dump-tools", flag.ContinueOnError)
-	spec := toolsets.SpecFromEnv()
-	fs.StringVar(&spec, "toolsets", spec, "Comma-separated MCP toolsets to dump")
-	args := []string{}
-	if len(os.Args) > 2 {
-		args = os.Args[2:]
-	}
-	if err := fs.Parse(args); err != nil {
+// toolFilterFlags holds the flags that decide the served tool surface. Serving
+// and dump-tools both bind them, so a dump matches what a deployment serves.
+type toolFilterFlags struct {
+	toolsets   string
+	readOnly   bool
+	allowWrite string
+}
+
+func bindToolFilterFlags(fs *flag.FlagSet) (*toolFilterFlags, error) {
+	readOnly, err := toolsets.ReadOnlyFromEnv()
+	if err != nil {
 		return nil, err
 	}
-	return toolsets.Parse(spec)
+	f := &toolFilterFlags{}
+	fs.StringVar(&f.toolsets, "toolsets", toolsets.SpecFromEnv(), "Comma-separated MCP toolsets to expose (logs,traces,metrics,alerts,dashboards,profiles,grafana,investigate,all). Empty or all = full surface")
+	fs.BoolVar(&f.readOnly, "read-only", readOnly, "Serve only read-only tools (env LAST9_MCP_READ_ONLY)")
+	fs.StringVar(&f.allowWrite, "allow-write-tools", toolsets.AllowWriteSpecFromEnv(), "Comma-separated write tools still served with --read-only (env LAST9_MCP_ALLOW_WRITE_TOOLS)")
+	return f, nil
 }
 
-// toolsetServerBuilder returns what --http calls to build the server for a
-// request's narrowed toolsets: cfg with only AllowedTools replaced.
+func (f *toolFilterFlags) filter() (toolsets.Filter, error) {
+	return toolsets.NewFilter(f.toolsets, f.readOnly, f.allowWrite)
+}
+
+// parseDumpToolFilter loads .env then parses the tool filter flags and env for
+// dump-tools (which short-circuits before SetupConfig and needs no credentials).
+func parseDumpToolFilter(args []string) (toolsets.Filter, error) {
+	_ = godotenv.Load()
+	fs := flag.NewFlagSet("dump-tools", flag.ContinueOnError)
+	flags, err := bindToolFilterFlags(fs)
+	if err != nil {
+		return toolsets.Filter{}, err
+	}
+	if err := fs.Parse(args); err != nil {
+		return toolsets.Filter{}, err
+	}
+	return flags.filter()
+}
+
+// Startup and narrowed HTTP servers share one user token middleware so
+// narrowing toolsets cannot bypass token enforcement. The builder changes
+// only the configured toolsets.
 func toolsetServerBuilder(cfg models.Config) func(toolsets.Set) (*last9mcp.Last9MCPServer, error) {
+	var middleware []mcp.Middleware
+	if cfg.HTTPMode {
+		middleware = append(middleware, userTokenMiddleware(cfg, newUserTokenVerifier(apiUserTokenCheck(cfg))))
+	}
 	return func(allowed toolsets.Set) (*last9mcp.Last9MCPServer, error) {
 		c := cfg
-		c.AllowedTools = allowed
-		return buildServer(c)
+		c.ToolFilter.Tools = allowed
+		return buildServer(c, middleware...)
 	}
 }
 
-// buildServer creates the served MCP server for cfg.AllowedTools: resources,
-// prompts, tools and the instructions that name them.
-func buildServer(cfg models.Config) (*last9mcp.Last9MCPServer, error) {
+// buildServer creates the served MCP server for cfg.ToolFilter: resources,
+// prompts, tools and the instructions that name them, behind middleware.
+// middleware is added last so it runs before the per-tool argument middleware.
+func buildServer(cfg models.Config, middleware ...mcp.Middleware) (*last9mcp.Last9MCPServer, error) {
 	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create MCP server: %w", err)
 	}
 	registerReferenceResources(server)
 	workflows.Register(server)
-	if err := registerAllTools(server, cfg); err != nil {
-		return nil, fmt.Errorf("failed to register tools: %w", err)
+	if err := registerToolsAndInstructions(server, cfg); err != nil {
+		return nil, fmt.Errorf("failed to build the served surface: %w", err)
 	}
-	if err := registerServerInstructions(server, cfg.AllowedTools); err != nil {
-		return nil, fmt.Errorf("failed to register server instructions: %w", err)
-	}
+	server.Server.AddReceivingMiddleware(middleware...)
 	return server, nil
 }
 
@@ -186,14 +217,14 @@ func cancelRequestsOn(shutdown context.Context) mcp.Middleware {
 func run() int {
 	// dump-tools runs before full config parsing: it needs no credentials
 	// and must work in CI and eval harnesses without a refresh token.
-	// It still honors --toolsets / LAST9_TOOLSETS (and loads .env) so
-	// snapshots match the served surface.
+	// It still honors --toolsets, --read-only and --allow-write-tools and
+	// their env vars (and loads .env) so snapshots match the served surface.
 	if len(os.Args) > 1 && os.Args[1] == "dump-tools" {
-		allowed, err := parseDumpToolsets()
+		filter, err := parseDumpToolFilter(os.Args[2:])
 		if err != nil {
 			log.Fatalf("dump-tools failed: %v", err)
 		}
-		if err := dumpTools(os.Stdout, allowed); err != nil {
+		if err := dumpTools(os.Stdout, filter); err != nil {
 			log.Fatalf("dump-tools failed: %v", err)
 		}
 		return 0
@@ -216,6 +247,15 @@ func run() int {
 	cfg, err := SetupConfig(models.Config{})
 	if err != nil {
 		log.Fatalf("config error: %v", err)
+	}
+
+	// Evals/replays only: pins relative query windows to a fixed instant.
+	fake, err := utils.InitClock()
+	if err != nil {
+		log.Fatalf("clock error: %v", err)
+	}
+	if fake != nil {
+		log.Printf("FAKE CLOCK ACTIVE (%s=%s): relative time windows are anchored to this instant; for evals/replays only", utils.FakeNowEnv, fake.Format(time.RFC3339))
 	}
 	// OTEL_SDK_DISABLED is the standard OTel env var. Honour it explicitly so
 	// that users can override the default (disable_telemetry=true) without
@@ -264,7 +304,8 @@ func run() int {
 	)
 
 	// From here on, return instead of log.Fatal: os.Exit would skip the deferred telemetry flush.
-	server, err := buildServer(cfg)
+	build := toolsetServerBuilder(cfg)
+	server, err := build(cfg.ToolFilter.Tools)
 	if err != nil {
 		slog.Error("failed to build server", "error", err)
 		return 1
@@ -294,7 +335,7 @@ func run() int {
 	}
 
 	if cfg.HTTPMode {
-		httpServer := NewHTTPServer(server, cfg, toolsetServerBuilder(cfg))
+		httpServer := NewHTTPServer(server, cfg, build)
 		if err := httpServer.Start(); err != nil {
 			slog.Error("HTTP server error", "error", err)
 			return 1

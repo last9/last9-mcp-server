@@ -1,6 +1,7 @@
 package alerting
 
 import (
+	"encoding/json"
 	"strings"
 	"unicode"
 
@@ -92,14 +93,22 @@ func newCreatedViaFields(req *mcp.CallToolRequest) last9api.CreatedVia {
 
 // storedCreatedViaMarker returns the marker annotations a stored rule already carries, so
 // an edit that replaces properties keeps them.
-func storedCreatedViaMarker(rule entities.AlertRule) map[string]string {
+func storedCreatedViaMarker(rule entities.AlertRule) (map[string]string, error) {
+	var props struct {
+		Annotations map[string]any `json:"annotations"`
+	}
+	if len(rule.Properties) > 0 {
+		if err := json.Unmarshal(rule.Properties, &props); err != nil {
+			return nil, err
+		}
+	}
 	marker := map[string]string{}
 	for _, k := range []string{annotationCreatedVia, annotationCreatedViaClient} {
-		if v, ok := rule.Properties.Annotations[k].(string); ok {
+		if v, ok := props.Annotations[k].(string); ok {
 			marker[k] = v
 		}
 	}
-	return marker
+	return marker, nil
 }
 
 // formatRuleCreatedVia renders a listed rule's marker, or "-" when it has none.

@@ -109,7 +109,7 @@ func runOverviewAllowing(t *testing.T, api *overviewAPI, callTimeout time.Durati
 		PrometheusUsername: "user",
 		PrometheusPassword: "pass",
 		TokenManager:       &auth.TokenManager{AccessToken: "mock-token", ExpiresAt: time.Now().Add(time.Hour)},
-		AllowedTools:       allowed,
+		ToolFilter:         toolsets.Filter{Tools: allowed},
 	}
 	opts := overviewOptions{now: fixedClock(time.Date(2026, 10, 16, 19, 0, 0, 0, time.UTC)), callTimeout: callTimeout}
 	res, _, err := newWorkspaceOverviewHandler(srv.Client(), cfg, opts)(context.Background(), &mcp.CallToolRequest{}, GetWorkspaceOverviewArgs{})
@@ -313,6 +313,18 @@ func TestWorkspaceOverviewOneSubCallFails(t *testing.T) {
 				t.Fatalf("an unrelated field went null")
 			}
 		})
+	}
+}
+
+func TestWorkspaceOverviewEmptyServiceReplyIsAnError(t *testing.T) {
+	responses := healthyResponses()
+	responses[routeServices] = ""
+	out := runOverview(t, &overviewAPI{responses: responses}, time.Second)
+	if fields := errorFields(t, out); len(fields) != 1 || fields[0] != "service_count" {
+		t.Fatalf("errors = %v, want only service_count", fields)
+	}
+	if out["service_count"] != nil {
+		t.Fatalf("service_count = %v, want null", out["service_count"])
 	}
 }
 

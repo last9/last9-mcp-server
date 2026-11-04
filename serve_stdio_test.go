@@ -76,7 +76,7 @@ func TestServeStdioCancelAbortsInFlightToolCall(t *testing.T) {
 	cfg := testToolRegistrationConfig()
 	cfg.APIBaseURL = api.URL
 	server := newTestServer(t)
-	if err := registerTools(server, cfg, api.Client()); err != nil {
+	if _, err := registerTools(server, cfg, api.Client()); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())

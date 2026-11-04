@@ -3,8 +3,11 @@ package prom
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -40,5 +43,36 @@ func TestQueryInstantRequestAndResponse(t *testing.T) {
 	}
 	if body["query"] != "up" || body["timestamp"] != float64(1700000000) || body["read_url"] != "https://prom.example" || body["username"] != "u" || body["password"] != "p" {
 		t.Errorf("body = %v", body)
+	}
+}
+
+func TestQueryInstantMissingPayload(t *testing.T) {
+	for _, tc := range []struct {
+		body    string
+		wantErr bool
+	}{
+		{body: "", wantErr: true},
+		{body: "null", wantErr: true},
+		{body: "[]", wantErr: false},
+	} {
+		t.Run(fmt.Sprintf("body=%q", tc.body), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			t.Cleanup(srv.Close)
+			cfg := models.Config{APIBaseURL: srv.URL, TokenManager: &auth.TokenManager{AccessToken: "t", ExpiresAt: time.Now().Add(time.Hour)}}
+
+			series, err := QueryInstant(context.Background(), last9api.NewClient(srv.Client(), cfg), QueryInstantInput{Query: "up", Timestamp: 1700000000})
+			if !tc.wantErr {
+				if err != nil || series == nil || len(series) != 0 {
+					t.Fatalf("series=%#v err=%v, want empty non-nil series", series, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "prometheus instant query: empty response") {
+				t.Fatalf("series=%#v err=%v, want empty-response error", series, err)
+			}
+		})
 	}
 }

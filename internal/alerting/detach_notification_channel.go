@@ -40,7 +40,7 @@ func NewDetachNotificationChannelHandler(client *http.Client, cfg models.Config)
 		if row == nil || strings.TrimSpace(row.ServiceFQID) == "" {
 			return utils.ToolErrorResult("attachment_id is not an attachment row. If it is a channel id, detaching would delete the channel, so nothing was sent. Use the id column of get_notification_channels with scope=attached"), nil, nil
 		}
-		if group := strings.TrimSpace(args.AlertGroupID); group != "" && group != row.ServiceFQID {
+		if group := strings.TrimSpace(args.AlertGroupID); group != "" && !strings.EqualFold(group, row.ServiceFQID) {
 			return utils.ToolErrorResult("that attachment belongs to a different alert group than alert_group_id; nothing was sent"), nil, nil
 		}
 		if err := notifications.DetachNotificationSetting(ctx, api, row.ID); err != nil {

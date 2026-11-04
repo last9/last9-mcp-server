@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"math/rand/v2"
@@ -13,6 +14,9 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/models"
@@ -232,4 +236,33 @@ func GetResultEnvelope(t *testing.T, result *mcp.CallToolResult) ResultEnvelope 
 		t.Fatalf("structuredContent %s has no envelope (err %v)", encoded, err)
 	}
 	return *structured.Envelope
+}
+
+// RecordedSpanContext stands in for the tool span the MCP SDK puts on a
+// handler's context. The returned func ends the span and returns its attributes.
+func RecordedSpanContext(t *testing.T) (context.Context, func() map[attribute.Key]attribute.Value) {
+	t.Helper()
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
+	ctx, span := provider.Tracer("test").Start(context.Background(), "tools/call")
+	return ctx, func() map[attribute.Key]attribute.Value {
+		span.End()
+		attrs := map[attribute.Key]attribute.Value{}
+		for _, ended := range recorder.Ended() {
+			for _, kv := range ended.Attributes() {
+				attrs[kv.Key] = kv.Value
+			}
+		}
+		return attrs
+	}
+}
+
+// DeadlineContext bounds a test's call so a missing timeout fails the test
+// quickly instead of hanging until go test -timeout.
+func DeadlineContext(t *testing.T, d time.Duration) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), d)
+	t.Cleanup(cancel)
+	return ctx
 }

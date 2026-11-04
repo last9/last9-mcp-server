@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,6 +30,9 @@ type alertConfigTestServerState struct {
 	lastEntityRequest          filterAlertGroupEntitiesRequest
 	kpiResponses               map[string]kpiResponse // kpiID → response (empty = 404)
 	emulateUpstreamFilters     bool
+	monitorRules               []AlertRuleData
+	monitorStatus              int
+	monitorCalls               atomic.Int32
 }
 
 func applyUpstreamFilters(
@@ -473,7 +477,7 @@ func TestGetAlertConfigHandler_NotificationChannelEnrichmentOnRule(t *testing.T)
 func TestGetAlertConfigHandler_ShowsMutes(t *testing.T) {
 	rules := sampleAlertConfigRules()
 	rules[0].MuteUntil = 1792260000
-	rules[0].RecurringMuteSchedule = json.RawMessage(`{"enabled":false,"timezone":"UTC","windows":[]}`)
+	rules[0].RecurringMuteSchedule = &RecurringMuteSchedule{Enabled: false, Timezone: "UTC"}
 	state := alertConfigTestServerState{
 		alertRules:         rules,
 		entityGroups:       sampleAlertGroupEntities(),
@@ -485,8 +489,8 @@ func TestGetAlertConfigHandler_ShowsMutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
-	if !strings.Contains(text, "  Mute Until: 2026-10-17 18:00:00 UTC\n") ||
-		!strings.Contains(text, `  Recurring Mute Schedule: {"enabled":false,"timezone":"UTC","windows":[]}`+"\n") {
+	if !strings.Contains(text, "  Muted until: 2026-10-17T18:00:00Z\n") ||
+		!strings.Contains(text, "  Recurring mute schedule: timezone UTC (enabled: false)\n") {
 		t.Fatalf("expected mute lines, got:\n%s", text)
 	}
 }
@@ -758,6 +762,14 @@ func newAlertConfigTestServer(
 				return
 			}
 			_, _ = w.Write([]byte(`{"error":"alert rules failed"}`))
+		case constants.EndpointAlertsMonitor:
+			state.monitorCalls.Add(1)
+			if state.monitorStatus != 0 && state.monitorStatus != http.StatusOK {
+				w.WriteHeader(state.monitorStatus)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(AlertsResponse{AlertRules: state.monitorRules})
 		case constants.EndpointEntitiesList:
 			state.entityLookupCalls++
 			defer r.Body.Close()

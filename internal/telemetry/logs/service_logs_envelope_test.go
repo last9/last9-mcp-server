@@ -15,7 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func callGetServiceLogs(t *testing.T, server *httptest.Server, cfg func(string) models.Config, args GetServiceLogsArgs) *mcp.CallToolResult {
+func callGetServiceLogsEnvelope(t *testing.T, server *httptest.Server, cfg func(string) models.Config, args GetServiceLogsArgs) *mcp.CallToolResult {
 	t.Helper()
 	result, _, err := NewGetServiceLogsHandler(server.Client(), cfg(server.URL))(context.Background(), &mcp.CallToolRequest{}, args)
 	if err != nil {
@@ -53,7 +53,7 @@ func TestGetServiceLogsChunkedProbesOnePastLimit(t *testing.T) {
 	} {
 		var limits []string
 		server := streamsServer(t, nLogValues(tc.matched, "boom"), &limits)
-		result := callGetServiceLogs(t, server, testLogsConfig, wholeSecondWindow)
+		result := callGetServiceLogsEnvelope(t, server, testLogsConfig, wholeSecondWindow)
 
 		if len(limits) != 1 || limits[0] != "4" {
 			t.Fatalf("matched %d: requested limits = %v, want one probe for limit+1", tc.matched, limits)
@@ -74,7 +74,7 @@ func TestGetServiceLogsChunkedProbesOnePastLimit(t *testing.T) {
 
 func TestGetServiceLogsEmptyResultHintsServiceDiscovery(t *testing.T) {
 	server := streamsServer(t, nil, nil)
-	result := callGetServiceLogs(t, server, testLogsConfig, wholeSecondWindow)
+	result := callGetServiceLogsEnvelope(t, server, testLogsConfig, wholeSecondWindow)
 
 	env := utils.GetResultEnvelope(t, result)
 	if len(env.Hints) != 1 || !strings.Contains(env.Hints[0], "did_you_mean") || !strings.Contains(env.Hints[0], "get_service_profile") {
@@ -86,7 +86,8 @@ func TestGetServiceLogsTrimsOversizedResponse(t *testing.T) {
 	server := streamsServer(t, nLogValues(40, strings.Repeat("x", 4000)), nil)
 	args := wholeSecondWindow
 	args.Limit = 40
-	result := callGetServiceLogs(t, server, testLogsConfig, args)
+	args.ResponseMode = logResponseModeRaw
+	result := callGetServiceLogsEnvelope(t, server, testLogsConfig, args)
 
 	text := result.Content[0].(*mcp.TextContent).Text
 	if len(text) > utils.MaxResultTextBytes {
@@ -127,7 +128,7 @@ func TestGetServiceLogsSearchAPIProbesOnePastLimit(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			result := callGetServiceLogs(t, srv, apiModeCfg, wholeSecondWindow)
+			result := callGetServiceLogsEnvelope(t, srv, apiModeCfg, wholeSecondWindow)
 			if sentLimit != float64(4) {
 				t.Fatalf("sent limit = %v, want limit+1", sentLimit)
 			}
@@ -154,7 +155,7 @@ func TestGetLogToolsReportFailedSearchChunksAsPartial(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	serviceLogs := callGetServiceLogs(t, srv, apiModeCfg, wholeSecondWindow)
+	serviceLogs := callGetServiceLogsEnvelope(t, srv, apiModeCfg, wholeSecondWindow)
 	logs, _, err := NewGetLogsHandler(srv.Client(), apiModeCfg(srv.URL))(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
 		LogjsonQuery: rawErrorFilter, LookbackMinutes: 5,
 	})

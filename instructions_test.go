@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,23 +18,31 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// initializeOver connects a client to a server built like main's for spec and
-// returns the instructions from initialize plus the served tool names.
+// initializeOver connects a client to a server built like main's for the
+// --toolsets spec and returns the instructions from initialize plus the served
+// tool names.
 func initializeOver(t *testing.T, spec string) (string, map[string]bool) {
 	t.Helper()
-	allowed, err := toolsets.Parse(spec)
+	return initializeWith(t, toolFilter(t, spec, false, ""))
+}
+
+func toolFilter(t *testing.T, spec string, readOnly bool, allowWrite string) toolsets.Filter {
+	t.Helper()
+	filter, err := toolsets.NewFilter(spec, readOnly, allowWrite)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return filter
+}
+
+func initializeWith(t *testing.T, filter toolsets.Filter) (string, map[string]bool) {
+	t.Helper()
 	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := models.Config{TokenManager: &auth.TokenManager{}, AllowedTools: allowed}
-	if err := registerAllTools(server, cfg); err != nil {
-		t.Fatal(err)
-	}
-	if err := registerServerInstructions(server, allowed); err != nil {
+	cfg := models.Config{TokenManager: &auth.TokenManager{}, ToolFilter: filter}
+	if err := registerToolsAndInstructions(server, cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -90,24 +100,45 @@ func TestNamedToolsMatchesOnlyRegisteredNames(t *testing.T) {
 }
 
 // A tool registered without a line in server_instructions.md fails here, so
-// the policy cannot silently drift from tools.go.
+// the policy cannot silently drift from tools.go. Read-only variants keep the
+// policy from recommending write tools that tools/list hides.
 func TestServerInstructionsNameExactlyServedTools(t *testing.T) {
 	_, registry := initializeOver(t, "")
+	type variant struct {
+		name   string
+		filter toolsets.Filter
+	}
+	var variants []variant
 	for _, spec := range []string{"", "logs", "traces", "metrics", "alerts", "dashboards", "profiles", "grafana", "investigate", "logs,alerts"} {
-		t.Run("toolsets="+spec, func(t *testing.T) {
-			instructions, served := initializeOver(t, spec)
+		variants = append(variants, variant{"toolsets=" + spec, toolFilter(t, spec, false, "")})
+	}
+	variants = append(variants,
+		variant{"read-only", toolFilter(t, "", true, "")},
+		variant{"alerts read-only", toolFilter(t, "alerts", true, "")},
+		variant{"alerts read-only allow mute_alert_group", toolFilter(t, "alerts", true, "mute_alert_group")},
+		variant{"read-only allow create_alert", toolFilter(t, "", true, "create_alert")},
+		variant{"dashboards read-only allow update_dashboard", toolFilter(t, "dashboards", true, "update_dashboard")},
+	)
+	for _, v := range variants {
+		t.Run(v.name, func(t *testing.T) {
+			instructions, served := initializeWith(t, v.filter)
 			if len(served) == 0 {
-				t.Fatalf("toolsets=%q serves no tools", spec)
+				t.Fatalf("%s serves no tools", v.name)
 			}
 			named := namedTools(instructions, registry)
 			for tool := range named {
 				if !served[tool] {
-					t.Errorf("instructions name %q, which toolsets=%q does not serve", tool, spec)
+					t.Errorf("instructions name %q, which %s does not serve", tool, v.name)
 				}
 			}
 			for tool := range served {
 				if !named[tool] {
-					t.Errorf("instructions never name %q, which toolsets=%q serves", tool, spec)
+					t.Errorf("instructions never name %q, which %s serves", tool, v.name)
+				}
+			}
+			for tool := range registry {
+				if !served[tool] && regexp.MustCompile(`\b`+regexp.QuoteMeta(tool)+`\b`).MatchString(instructions) {
+					t.Errorf("instructions mention %q, which %s does not serve", tool, v.name)
 				}
 			}
 			if strings.Contains(instructions, "\n\n\n") {
@@ -126,7 +157,7 @@ func TestServerInstructionsNameExactlyServedTools(t *testing.T) {
 					}
 				}
 				if next == "" || strings.HasPrefix(next, "## ") {
-					t.Errorf("heading %q has no content under toolsets=%q", line, spec)
+					t.Errorf("heading %q has no content under %s", line, v.name)
 				}
 			}
 		})
@@ -196,7 +227,7 @@ func TestServerInstructionsAdaptToToolsets(t *testing.T) {
 		},
 		{
 			spec:     "alerts",
-			mentions: []string{"`get_alert_groups`", "`get_alerts`", "`get_notification_channels`", "`get_drop_rules`", "`add_drop_rule`"},
+			mentions: []string{"`get_alert_groups`", "`get_alerts`", "`get_notification_channels`", "`get_drop_rules`", "`add_drop_rule`", "- Open a dashboard by id with `get_dashboard`.", "last9://reference/metrics"},
 		},
 		{
 			spec:      "grafana",
@@ -278,9 +309,10 @@ func TestDiscoverSectionListsOnlyNameLookups(t *testing.T) {
 // near its size, so growth is a reviewed decision: it precedes every tool
 // description, and growing it moved log_query evals. The parsed-field line
 // was a reviewed increase, validated on the full log_query suite; naming
-// analyze_change_impact on the changes line and the log-pattern tools joining
-// the one-service bullet were others.
-const maxInvestigateInstructionsBytes = 2705
+// analyze_change_impact and get_metric_status, the log-pattern tools joining
+// the one-service bullet, the explicit pipeline time-window rule (issue #379),
+// and get_entity_kpis, which investigate serves, were reviewed additions.
+const maxInvestigateInstructionsBytes = 3000
 
 func TestInvestigateInstructionsBounded(t *testing.T) {
 	instructions, _ := initializeOver(t, "investigate")
@@ -363,6 +395,53 @@ func TestServerInstructionsDestructiveLinesMatchEachToolsEffect(t *testing.T) {
 	}
 }
 
+// update_dashboard re-sends every panel, so a one-panel edit through it costs
+// the whole dashboard in model output and risks drifting the other panels.
+func TestServerInstructionsRoutePanelEditsToPatchDashboard(t *testing.T) {
+	tests := []struct {
+		name       string
+		tools      []string
+		wantRefine string
+		wantPanels string
+	}{
+		{
+			name:       "both dashboard writes",
+			tools:      []string{"update_dashboard", "patch_dashboard"},
+			wantRefine: "- Refine an existing object with `patch_dashboard`, `update_dashboard`.",
+			wantPanels: "- Add, edit, remove or move individual dashboard panels with `patch_dashboard`; use `update_dashboard` only to restructure most of a dashboard.",
+		},
+		{
+			name:       "patch only",
+			tools:      []string{"patch_dashboard"},
+			wantRefine: "- Refine an existing object with `patch_dashboard`.",
+			wantPanels: "- Add, edit, remove or move individual dashboard panels with `patch_dashboard`.",
+		},
+		{
+			name:       "update only",
+			tools:      []string{"update_dashboard"},
+			wantRefine: "- Refine an existing object with `update_dashboard`.",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			lines := strings.Split(instructions, "\n")
+			if !slices.Contains(lines, tt.wantRefine) {
+				t.Errorf("missing refine line %q:\n%s", tt.wantRefine, instructions)
+			}
+			got := ""
+			for _, line := range lines {
+				if strings.Contains(line, "dashboard panels") {
+					got = line
+				}
+			}
+			if got != tt.wantPanels {
+				t.Errorf("panel-edit line = %q, want %q", got, tt.wantPanels)
+			}
+		})
+	}
+}
+
 // The logs toolset serves prometheus_instant_query for the log index inventory
 // metric only; it serves no tool that discovers other metric names.
 func TestServerInstructionsOfferPrometheusQueriesOnlyWithMetricDiscovery(t *testing.T) {
@@ -422,6 +501,67 @@ func TestServerInstructionsRawQueryLineReadsForOneOrManyTools(t *testing.T) {
 	}
 }
 
+// Without an explicit rule, trace_query eval tq-017 passed or failed on
+// incidental wording elsewhere in the policy: the model put the window into
+// the pipeline as $gte/$lte on Timestamp.
+func TestServerInstructionsPutPipelineTimeWindowInArguments(t *testing.T) {
+	const timeWindowLine = "Put the time window in `start_time_iso`/`end_time_iso` (or `lookback_minutes`), never as `Timestamp` filters in the pipeline."
+	tests := []struct {
+		name  string
+		tools []string
+		want  bool
+	}{
+		{name: "get_traces", tools: []string{"get_traces"}, want: true},
+		{name: "get_logs", tools: []string{"get_logs"}, want: true},
+		{name: "prometheus queries only", tools: []string{"prometheus_labels", "prometheus_range_query"}, want: false},
+		{name: "service-scoped tools only", tools: []string{"get_service_traces", "get_service_logs"}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			_, raw, _ := strings.Cut(instructions, "## Raw queries are the last resort")
+			raw, _, _ = strings.Cut(raw, "\n## ")
+			if got := strings.Contains(raw, "\n"+timeWindowLine); got != tt.want {
+				t.Errorf("raw-query section has the time-window line = %v, want %v:\n%s", got, tt.want, instructions)
+			}
+		})
+	}
+}
+
+func TestServerInstructionsSayDiscoverChartAlertsUseCatalog(t *testing.T) {
+	tests := []struct {
+		name  string
+		tools []string
+		want  string
+	}{
+		{
+			name:  "chart plus kpi path",
+			tools: []string{"create_alert_from_chart", "create_alert", "create_kpi"},
+			want:  "- An alert on a Discover chart uses `create_alert_from_chart` with a catalog signal_key; never `create_alert`, `create_kpi` even if the user pastes PromQL.",
+		},
+		{
+			name:  "chart only",
+			tools: []string{"create_alert_from_chart"},
+			want:  "- An alert on a Discover chart uses `create_alert_from_chart` with a catalog signal_key.",
+		},
+		{name: "no chart tool", tools: []string{"create_alert", "create_kpi"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			var got string
+			for _, line := range strings.Split(instructions, "\n") {
+				if strings.Contains(line, "Discover chart") {
+					got = line
+				}
+			}
+			if got != tt.want {
+				t.Errorf("Discover-chart line = %q, want %q:\n%s", got, tt.want, instructions)
+			}
+		})
+	}
+}
+
 func TestServerInstructionsSayCreateAlertRulesStartDisabled(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -430,7 +570,9 @@ func TestServerInstructionsSayCreateAlertRulesStartDisabled(t *testing.T) {
 	}{
 		{name: "with patch_alert", tools: []string{"create_alert", "patch_alert"}, want: "- Alert rules from `create_alert` are created disabled; enable them with `patch_alert` after validating."},
 		{name: "without patch_alert", tools: []string{"create_alert"}, want: "- Alert rules from `create_alert` are created disabled."},
-		{name: "without create_alert", tools: []string{"patch_alert", "create_alert_from_chart"}},
+		{name: "chart only", tools: []string{"patch_alert", "create_alert_from_chart"}, want: "- Alert rules from `create_alert_from_chart` are created disabled; enable them with `patch_alert` after validating."},
+		{name: "both creates", tools: []string{"create_alert", "create_alert_from_chart", "patch_alert"}, want: "- Alert rules from `create_alert`, `create_alert_from_chart` are created disabled; enable them with `patch_alert` after validating."},
+		{name: "without alert creates", tools: []string{"patch_alert"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -443,6 +585,33 @@ func TestServerInstructionsSayCreateAlertRulesStartDisabled(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("created-disabled line = %q, want %q:\n%s", got, tt.want, instructions)
+			}
+		})
+	}
+}
+
+// get_alert_coverage gets its own bullet at the end of the section, so every
+// pinned line keeps its wording and place: rewording or inserting mid-section
+// regressed unrelated log-query evals.
+func TestServerInstructionsNameAlertCoverageWithoutShiftingLines(t *testing.T) {
+	tests := []struct {
+		spec string
+		want string
+	}{
+		{spec: "", want: "- Alert coverage gaps: `get_alert_coverage`."},
+		{spec: "alerts", want: "- Alert coverage gaps: `get_alert_coverage`."},
+		{spec: "investigate", want: "- Alert coverage gaps: `get_alert_coverage`."},
+	}
+	for _, tt := range tests {
+		t.Run("toolsets="+tt.spec, func(t *testing.T) {
+			instructions, _ := initializeOver(t, tt.spec)
+			if got := lineNaming(instructions, "get_alert_coverage"); got != tt.want {
+				t.Errorf("get_alert_coverage line = %q, want %q", got, tt.want)
+			}
+			_, dedicated, _ := strings.Cut(instructions, "## Prefer dedicated tools\n")
+			dedicated, _, _ = strings.Cut(dedicated, "\n\n")
+			if last := dedicated[strings.LastIndex(dedicated, "\n")+1:]; last != tt.want {
+				t.Errorf("last dedicated-tools bullet = %q, want %q:\n%s", last, tt.want, instructions)
 			}
 		})
 	}
@@ -491,6 +660,52 @@ func TestServerInstructionsChangesLineKeepsItsWording(t *testing.T) {
 				t.Errorf("changes line = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// "; alerts are created as drafts" on this line repeated the created-disabled
+// write rule and was most of the instruction text #336 added when log_query
+// eval lq-mf-005 fell from 30/30 to 21/30 in snapshot mode, so the line keeps
+// main's wording.
+func TestServerInstructionsAlertDesignLineKeepsItsWording(t *testing.T) {
+	instructions := renderInstructions(t, "recommend_alert_config", "describe_alert_chart", "create_alert")
+	const want = "- Design an alert rule with `recommend_alert_config`, `describe_alert_chart` before creating it."
+	if got := lineNaming(instructions, "recommend_alert_config"); got != want {
+		t.Errorf("alert design line = %q, want %q", got, want)
+	}
+}
+
+// Rewording this line ("Metric and label names, metric liveness: ...") dropped
+// trace_query eval tq-017 from 30/30 to 21/30 and 14/30, so get_metric_status
+// only joins main's wording.
+func TestServerInstructionsMetricNamesLineKeepsItsWording(t *testing.T) {
+	tests := []struct {
+		name  string
+		tools []string
+		want  string
+	}{
+		{name: "label lookups only", tools: []string{"prometheus_labels", "prometheus_label_values"}, want: "- Metric and label names: `prometheus_labels`, `prometheus_label_values`."},
+		{name: "with get_metric_status", tools: []string{"prometheus_labels", "prometheus_label_values", "get_metric_status"}, want: "- Metric and label names: `prometheus_labels`, `prometheus_label_values`, `get_metric_status`."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			if got := lineNaming(instructions, "prometheus_labels"); got != tt.want {
+				t.Errorf("metric-names line = %q, want %q", got, tt.want)
+			}
+			if got := lineNaming(instructions, "get_metric_status"); slices.Contains(tt.tools, "get_metric_status") && got != tt.want {
+				t.Errorf("get_metric_status line = %q, want it only on the metric-names line %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// get_metric_status reads metrics but discovers no names, so serving it alone
+// must not offer raw Prometheus queries in place of the log-index inventory.
+func TestServerInstructionsMetricStatusAloneKeepsLogInventory(t *testing.T) {
+	instructions := renderInstructions(t, "get_metric_status", "prometheus_instant_query", "get_logs")
+	if got := lineNaming(instructions, "prometheus_instant_query"); !strings.Contains(got, "physical_index_service_count") {
+		t.Errorf("prometheus_instant_query line = %q, want the log-index inventory line", got)
 	}
 }
 

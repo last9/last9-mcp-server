@@ -33,6 +33,7 @@ type GetLogsArgs struct {
 	LookbackMinutes int                      `json:"lookback_minutes,omitempty" jsonschema:"Number of minutes to look back from now (default: 5, minimum: 1)"`
 	Limit           int                      `json:"limit,omitempty" jsonschema:"Maximum rows to return (optional; default: 1000 for aggregate/dataframe queries, 5000 for chunked raw queries)"`
 	Index           string                   `json:"index,omitempty" jsonschema:"Optional log index in the form physical_index:<name> or rehydration_index:<block_name>. Use a user-named index or a non-default physical index discovered by get_service_profile; omit for default or when unknown."`
+	ResponseMode    string                   `json:"response_mode,omitempty" jsonschema:"summary (default) or raw"`
 }
 
 // NewGetLogsHandler creates a handler for getting logs using logjson_query parameter
@@ -42,6 +43,9 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 		// Check if logjson_query is provided
 		if len(args.LogjsonQuery) == 0 {
 			return nil, nil, fmt.Errorf("logjson_query parameter is required. logjson_query is a JSON array of stages (filter/parse/aggregate/window_aggregate) — see last9://reference/logjson")
+		}
+		if err := validateLogResponseMode(args.ResponseMode); err != nil {
+			return nil, nil, err
 		}
 
 		sanitizedQuery, err := prepareLogJSONQuery(args.LogjsonQuery, "logjson_query")
@@ -88,6 +92,15 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 	}
 	q.guardrailVerdict.AddHints(&env)
 	addGetLogsHints(cfg, args, result, &env)
+	truncated := addGetLogsGuidance(result, args, getLogsGuidanceContext{
+		startMs:        startTime,
+		endMs:          endTime,
+		effectiveLimit: effectiveGetLogsResultLimit(cfg, args.Limit),
+		maxLimit:       effectiveGetLogsResultLimit(cfg, 0),
+	})
+	if args.ResponseMode != logResponseModeRaw {
+		result = summarizeLogResult(result, startTime, endTime, truncated)
+	}
 	text := utils.FormatQueryResponse(result, &env)
 
 	// Build deep link URL
@@ -112,7 +125,7 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 }
 
 func addGetLogsHints(cfg models.Config, args GetLogsArgs, result map[string]interface{}, env *utils.ResultEnvelope) {
-	if maxEntries := getLogsMaxEntries(cfg); args.Limit > maxEntries {
+	if maxEntries := configuredMaxGetLogsEntries(cfg); args.Limit > maxEntries {
 		env.Hint(fmt.Sprintf("limit %d exceeds the configured maximum of %d rows; at most %d were requested.", args.Limit, maxEntries, maxEntries))
 	}
 	// Aggregates answer emptiness themselves: percentiles report unavailable, zero counts get l9_sanity.
@@ -128,6 +141,7 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 	if cfg.UseLogSearchAPI {
 		return fetchViaLogSearchAPI(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
 	}
+	utils.TagLogSearchPath(ctx, utils.LogSearchPathChunked)
 
 	var env utils.ResultEnvelope
 	chunkingDebug := chunkingDebugEnabled()
@@ -152,9 +166,17 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		if err != nil {
 			return nil, env, err
 		}
-		truncated := applyGetLogsAggregateRowLimit(result, aggregateLimit)
-		if truncated {
-			env.Truncate(aggregateLimit)
+		truncated := false
+		if aggregateLimit > 0 {
+			truncated = applyGetLogsAggregateRowLimit(result, aggregateLimit)
+			if truncated {
+				env.Truncate(aggregateLimit)
+				addGetLogsAggregateGuidance(result, utils.TruncatedResultOptions{
+					Subject:  "log rows",
+					Returned: aggregateLimit,
+					MaxLimit: configuredMaxGetLogsEntries(cfg),
+				})
+			}
 		}
 		if stages, ok := logjsonQuery.([]map[string]interface{}); ok && !truncated {
 			result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
@@ -360,6 +382,7 @@ func fetchViaLogSearchAPI(
 ) (map[string]interface{}, utils.ResultEnvelope, error) {
 	var env utils.ResultEnvelope
 	req := utils.LogSearchRequest{
+		Op:       "logs query",
 		Pipeline: logjsonQuery,
 		StartMs:  startTime,
 		EndMs:    endTime,
@@ -378,26 +401,23 @@ func fetchViaLogSearchAPI(
 		req.Limit = rawLimit + 1
 	}
 
-	// The shared client's 3-minute timeout applies. Deliberately NOT wrapped in
-	// PerChunkHTTPTimeout: that bounds one chunk, and the server runs the whole
-	// sweep inside this single call.
-	resp, err := utils.MakeLogSearchAPI(ctx, client, cfg, req)
-	if err != nil {
-		return nil, env, fmt.Errorf("failed to call log search API: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, env, utils.NewUpstreamHTTPErrorWithAdvice(resp, "logs query", utils.LogsQueryAdvice)
-	}
-
-	result, err := utils.DecodeLogSearchResponse(resp)
+	result, err := utils.SearchLogs(ctx, client, cfg, req)
 	if err != nil {
 		return nil, env, err
 	}
-	if applyGetLogsAggregateRowLimit(result, aggregateLimit) {
-		env.Truncate(aggregateLimit)
-	} else if hasStages {
+	partial := false
+	if aggregateLimit > 0 {
+		partial = applyGetLogsAggregateRowLimit(result, aggregateLimit)
+		if partial {
+			env.Truncate(aggregateLimit)
+			addGetLogsAggregateGuidance(result, utils.TruncatedResultOptions{
+				Subject:  "log rows",
+				Returned: aggregateLimit,
+				MaxLimit: configuredMaxGetLogsEntries(cfg),
+			})
+		}
+	}
+	if hasStages && !partial {
 		result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
 	}
 	if rawLimit > 0 && applyGetLogsEntryLimit(result, rawLimit) {
@@ -408,15 +428,8 @@ func fetchViaLogSearchAPI(
 	return result, env, nil
 }
 
-func getLogsMaxEntries(cfg models.Config) int {
-	if cfg.MaxGetLogsEntries <= 0 {
-		return models.DefaultMaxGetLogsEntries
-	}
-	return cfg.MaxGetLogsEntries
-}
-
 func effectiveGetLogsAggregateLimit(cfg models.Config, requestedLimit int) int {
-	maxEntries := getLogsMaxEntries(cfg)
+	maxEntries := configuredMaxGetLogsEntries(cfg)
 	if requestedLimit <= 0 {
 		requestedLimit = defaultGetLogsAggregateLimit
 	}
@@ -440,6 +453,12 @@ func applyGetLogsAggregateRowLimit(result map[string]interface{}, rowLimit int) 
 	}
 
 	data["result"] = slices.Clone(rows[:rowLimit])
+	result["l9_result"] = map[string]interface{}{
+		"partial":       true,
+		"reason":        "row_limit_reached",
+		"returned_rows": rowLimit,
+		"row_limit":     rowLimit,
+	}
 	return true
 }
 
@@ -456,7 +475,7 @@ func applyGetLogsEntryLimit(result map[string]interface{}, limit int) bool {
 }
 
 func effectiveGetLogsChunkLimit(cfg models.Config, requestedLimit int) int {
-	maxEntries := getLogsMaxEntries(cfg)
+	maxEntries := configuredMaxGetLogsEntries(cfg)
 	if requestedLimit <= 0 {
 		return maxEntries
 	}
@@ -464,6 +483,21 @@ func effectiveGetLogsChunkLimit(cfg models.Config, requestedLimit int) int {
 		return maxEntries
 	}
 	return requestedLimit
+}
+
+func effectiveGetLogsResultLimit(cfg models.Config, requestedLimit int) int {
+	limit := effectiveGetLogsChunkLimit(cfg, requestedLimit)
+	if cfg.UseLogSearchAPI && limit > utils.LogSearchMaxSampleSize {
+		return utils.LogSearchMaxSampleSize
+	}
+	return limit
+}
+
+func configuredMaxGetLogsEntries(cfg models.Config) int {
+	if cfg.MaxGetLogsEntries > 0 {
+		return cfg.MaxGetLogsEntries
+	}
+	return models.DefaultMaxGetLogsEntries
 }
 
 // shouldChunkGetLogsQuery returns false for pipelines containing an
@@ -482,17 +516,18 @@ func shouldChunkGetLogsQuery(logjsonQuery interface{}) bool {
 func executeLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, startTime, endTime int64, limit int, index string) (map[string]interface{}, error) {
 	resp, err := utils.MakeLogsJSONQueryAPI(ctx, client, cfg, logjsonQuery, startTime, endTime, limit, index)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call log JSON query API: %v", err)
+		return nil, fmt.Errorf("failed to call log JSON query API: %w", err)
 	}
 	defer resp.Body.Close()
 
+	utils.TagLogUpstreamStatus(ctx, resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
 		return nil, utils.NewUpstreamHTTPErrorWithAdvice(resp, "logs query", utils.LogsQueryAdvice)
 	}
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	return result, nil
@@ -511,10 +546,7 @@ func extractResultItems(result map[string]interface{}) (string, []interface{}, e
 
 	rawItems, exists := data["result"]
 	if !exists || rawItems == nil {
-		if resultType == "streams" {
-			return resultType, []interface{}{}, nil
-		}
-		return resultType, nil, fmt.Errorf("logs API response missing result array")
+		return resultType, []interface{}{}, nil
 	}
 
 	items, ok := rawItems.([]interface{})
@@ -606,7 +638,7 @@ func emptyStreamsResponse() map[string]interface{} {
 
 // parseTimeRangeFromArgs extracts start and end times from GetLogsArgs
 func parseTimeRangeFromArgs(args GetLogsArgs) (int64, int64, error) {
-	return parseTimeRangeFromArgsAt(args, time.Now().UTC())
+	return parseTimeRangeFromArgsAt(args, utils.Now().UTC())
 }
 
 func parseTimeRangeFromArgsAt(args GetLogsArgs, now time.Time) (int64, int64, error) {
@@ -626,4 +658,13 @@ func parseTimeRangeFromArgsAt(args GetLogsArgs, now time.Time) (int64, int64, er
 		return 0, 0, err
 	}
 	return startTime.UnixMilli(), endTime.UnixMilli(), nil
+}
+
+// formatJSON formats JSON for display
+func formatJSON(data interface{}) string {
+	bytes, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("%v", data)
+	}
+	return string(bytes)
 }

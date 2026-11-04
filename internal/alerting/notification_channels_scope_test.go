@@ -47,3 +47,18 @@ func TestGetNotificationChannelsInvalidScope(t *testing.T) {
 		t.Fatalf("text=%q isErr=%v err=%v", text, isErr, err)
 	}
 }
+
+func TestGetNotificationChannelsScopeChannelsNeverRelaysUpstreamBody(t *testing.T) {
+	for status, want := range map[int]string{
+		http.StatusBadRequest:          "the API returned HTTP 400",
+		http.StatusForbidden:           "listing channels requires a token that can read notification channels",
+		http.StatusInternalServerError: "the API returned HTTP 500",
+	} {
+		s := newChannelServer(t, func(*http.Request) (int, string) { return status, `{"error":"bad destination ` + channelSecret + `"}` })
+		text, isErr, err := runGetChannels(s, "channels")
+		assertNoSecret(t, text, err)
+		if err != nil || !isErr || text != want {
+			t.Errorf("status %d: text=%q isErr=%v err=%v", status, text, isErr, err)
+		}
+	}
+}

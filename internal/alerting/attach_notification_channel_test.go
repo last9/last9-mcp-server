@@ -92,7 +92,8 @@ func TestAttachNotificationChannelPartialFailureAndSafeErrors(t *testing.T) {
 	}))
 	text, isErr, err := runAttachChannel(s, AttachNotificationChannelArgs{ChannelID: 7, AlertGroupID: "g", Severity: "both"})
 	assertNoSecret(t, text, err)
-	if err != nil || !isErr || !strings.Contains(text, "attached breach (attachment_id 11) but threat failed") {
+	if err != nil || !isErr || !strings.HasPrefix(text, "attached breach (attachment_id 11) but threat failed: the API rejected the attach (HTTP 400)") ||
+		!strings.HasSuffix(text, "breach stays attached; to finish, retry with severity=threat (re-attaching is idempotent, so severity=both is also safe)") {
 		t.Fatalf("text=%s isErr=%v err=%v", text, isErr, err)
 	}
 	s = newChannelServer(t, withMasterList(func(*http.Request) (int, string) { return 404, channelSecret }))

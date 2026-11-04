@@ -17,10 +17,7 @@ var scopeFields = map[string]bool{
 	"resources['host.name']":            true,
 }
 
-// PipelineScoped reports whether a logjson or tracejson pipeline restricts
-// its scan to one service or stream before aggregating. Filters after the
-// first aggregate act on its output rows and narrow nothing scanned.
-// tracejson accepts `where` as an alias of `filter`.
+// Filters after the first aggregate narrow output rows, not the scanned data.
 func PipelineScoped(pipeline []map[string]any) bool {
 	for _, stage := range pipeline {
 		switch stage["type"] {

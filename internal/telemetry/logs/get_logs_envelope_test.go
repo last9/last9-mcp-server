@@ -33,7 +33,7 @@ func streamsServer(t *testing.T, values []logValue, limits *[]string) *httptest.
 	return server
 }
 
-func callGetLogs(t *testing.T, server *httptest.Server, args GetLogsArgs) *mcp.CallToolResult {
+func callGetLogsEnvelope(t *testing.T, server *httptest.Server, args GetLogsArgs) *mcp.CallToolResult {
 	t.Helper()
 	cfg := testLogsConfig(server.URL)
 	cfg.MaxGetLogsEntries = 50
@@ -65,7 +65,7 @@ func TestGetLogsRawProbesOnePastLimitAndMarksTruncated(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var limits []string
 			server := streamsServer(t, nLogValues(tc.matched, "boom"), &limits)
-			result := callGetLogs(t, server, GetLogsArgs{LogjsonQuery: rawErrorFilter, LookbackMinutes: 5, Limit: 3})
+			result := callGetLogsEnvelope(t, server, GetLogsArgs{LogjsonQuery: rawErrorFilter, LookbackMinutes: 5, Limit: 3})
 
 			if len(limits) != 1 || limits[0] != "4" {
 				t.Fatalf("requested limits = %v, want one probe for limit+1", limits)
@@ -100,7 +100,7 @@ func TestGetLogsChunkedRawMarksTruncatedWhenChunksTogetherExceedLimit(t *testing
 	}))
 	t.Cleanup(server.Close)
 
-	result := callGetLogs(t, server, GetLogsArgs{
+	result := callGetLogsEnvelope(t, server, GetLogsArgs{
 		LogjsonQuery: rawErrorFilter,
 		StartTimeISO: "1970-01-01T00:00:00Z",
 		EndTimeISO:   "1970-01-01T01:30:00Z",
@@ -120,7 +120,7 @@ func TestGetLogsChunkedRawMarksTruncatedWhenChunksTogetherExceedLimit(t *testing
 
 func TestGetLogsRawEmptyResultHintsDiscovery(t *testing.T) {
 	server := streamsServer(t, nil, nil)
-	result := callGetLogs(t, server, GetLogsArgs{LogjsonQuery: rawErrorFilter, LookbackMinutes: 5})
+	result := callGetLogsEnvelope(t, server, GetLogsArgs{LogjsonQuery: rawErrorFilter, LookbackMinutes: 5})
 
 	env := utils.GetResultEnvelope(t, result)
 	if len(env.Hints) != 1 || !strings.Contains(env.Hints[0], "get_log_attributes_for_pipeline") {
@@ -138,7 +138,7 @@ func TestGetLogsAggregateEmptyResultAddsNoHint(t *testing.T) {
 		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
 	}))
 	t.Cleanup(server.Close)
-	result := callGetLogs(t, server, GetLogsArgs{
+	result := callGetLogsEnvelope(t, server, GetLogsArgs{
 		LogjsonQuery: []map[string]interface{}{testCountAggregate()}, LookbackMinutes: 5,
 	})
 	if env := utils.GetResultEnvelope(t, result); !env.IsEmpty() {
@@ -148,7 +148,7 @@ func TestGetLogsAggregateEmptyResultAddsNoHint(t *testing.T) {
 
 func TestGetLogsWarnsWhenLimitIsCapped(t *testing.T) {
 	server := streamsServer(t, nLogValues(1, "boom"), nil)
-	result := callGetLogs(t, server, GetLogsArgs{LogjsonQuery: rawErrorFilter, LookbackMinutes: 5, Limit: 500})
+	result := callGetLogsEnvelope(t, server, GetLogsArgs{LogjsonQuery: rawErrorFilter, LookbackMinutes: 5, Limit: 500})
 
 	env := utils.GetResultEnvelope(t, result)
 	if len(env.Hints) != 1 || !strings.Contains(env.Hints[0], "500") || !strings.Contains(env.Hints[0], "50") {
@@ -171,7 +171,7 @@ func TestGetLogsTrimsOversizedResponse(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	result := callGetLogs(t, server, GetLogsArgs{LogjsonQuery: rawErrorFilter, LookbackMinutes: 5})
+	result := callGetLogsEnvelope(t, server, GetLogsArgs{LogjsonQuery: rawErrorFilter, LookbackMinutes: 5, ResponseMode: logResponseModeRaw})
 
 	text := result.Content[0].(*mcp.TextContent).Text
 	if len(text) > utils.MaxResultTextBytes {
@@ -194,8 +194,8 @@ func TestGetLogsAggregateRowCapUsesEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
-	if _, present := parseToolJSONResult(t, result)["l9_result"]; present {
-		t.Fatal("l9_result is superseded by the envelope")
+	if marker, _ := parseToolJSONResult(t, result)["l9_result"].(map[string]any); marker["partial"] != true || marker["row_limit"] != float64(10) {
+		t.Fatalf("l9_result = %v, want the payload marker to agree with the envelope", marker)
 	}
 	if env := utils.GetResultEnvelope(t, result); !env.Truncated || env.Limit != 10 {
 		t.Fatalf("envelope = %+v, want truncated at 10", env)

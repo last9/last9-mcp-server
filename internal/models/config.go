@@ -38,11 +38,15 @@ type Config struct {
 	// endpoint instead of the client-side chunk sweep. Off by default; the
 	// chunked path is deleted once this is proven in production.
 	UseLogSearchAPI bool
+	// LogSearchTimeout bounds one log search call; zero means
+	// constants.LogSearchTimeout.
+	LogSearchTimeout time.Duration
 
 	// HTTP server configuration
-	HTTPMode bool   // Enable HTTP server mode instead of STDIO
-	Port     string // HTTP server port
-	Host     string // HTTP server host
+	HTTPMode          bool   // Enable HTTP server mode instead of STDIO
+	UserTokenFallback bool   // Validate user tokens without using them for tool calls
+	Port              string // HTTP server port
+	Host              string // HTTP server host
 
 	OrgSlug    string // Organization slug for multi-tenant support
 	ActionURL  string
@@ -69,8 +73,9 @@ type Config struct {
 
 	// Toolsets is the raw CLI/env spec (comma-separated). Empty means all tools.
 	Toolsets string
-	// AllowedTools is the expanded allow-list from Toolsets. nil means all tools.
-	AllowedTools toolsets.Set
+	// ToolFilter decides which tools are served: Toolsets expanded, plus
+	// read-only mode and its write-tool allow list. The zero value serves all.
+	ToolFilter toolsets.Filter
 
 	QueryGuardrail QueryGuardrail
 }

@@ -55,7 +55,7 @@ func (h *HTTPServer) Handler() http.Handler {
 	// instrumented helper sets the transport, needed for client attribution.
 	startup := h.server.NewStreamableHTTPHandler(streamableOptions())
 	mcpHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		allowed, narrowed, err := requestToolsets(r, h.config.AllowedTools)
+		allowed, narrowed, err := requestToolsets(r, h.config.ToolFilter.Tools)
 		if err != nil {
 			reject(w, r, err.Error(), http.StatusBadRequest)
 			return

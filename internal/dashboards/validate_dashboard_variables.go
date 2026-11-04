@@ -158,11 +158,6 @@ func interpolateWithBuiltins(expr string, callerVars, defaults map[string]any, b
 	return out, used, unresolved
 }
 
-// interpolatePipeline interpolates every string inside a pipeline structure.
-func interpolatePipeline(pipeline any, callerVars, defaults map[string]any) (any, map[string]map[string]any, []string) {
-	return interpolatePipelineWithBuiltins(pipeline, callerVars, defaults, builtinDefaults)
-}
-
 func interpolatePipelineWithBuiltins(pipeline any, callerVars, defaults map[string]any, builtins map[string]string) (any, map[string]map[string]any, []string) {
 	used := map[string]map[string]any{}
 	var unresolved []string

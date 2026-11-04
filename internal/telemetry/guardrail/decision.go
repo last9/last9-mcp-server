@@ -47,10 +47,7 @@ func (s scan) anyScope() bool {
 	return s.Scoped || s.ServerScoped
 }
 
-// decide runs the range, scope and scan-budget checks in that order and
-// returns the first reject. Without an estimate only the range check runs,
-// so an unscoped query within the cap, and every scoped query, is allowed:
-// the scope threshold and the budget need the estimate's bytes.
+// Without an estimate, only the local range cap can be checked.
 func decide(l models.QueryGuardrail, s scan) Decision {
 	if !s.Scoped && s.Range > l.RangeCap {
 		return Decision{Reject, ReasonRangeTooWide, fmt.Sprintf(

@@ -2,7 +2,9 @@ package alerting
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -27,12 +29,12 @@ type DescribeAlertChartArgs struct {
 // describe_alert_chart: a read-only enumerate of the alertable signals on a
 // covered chart.
 func NewDescribeAlertChartHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, DescribeAlertChartArgs) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, args DescribeAlertChartArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args DescribeAlertChartArgs) (*mcp.CallToolResult, any, error) {
 		surface := strings.TrimSpace(args.Surface)
 		if surface == "" {
 			return utils.ToolErrorResult("surface is required"), nil, nil
 		}
-		if msg := uncoveredSurfaceError(surface); msg != "" {
+		if msg := uncoveredSurfaceError(surface, cfg.ToolFilter); msg != "" {
 			return utils.ToolErrorResult(msg), nil, nil
 		}
 		chartKey := strings.TrimSpace(args.ChartKey)
@@ -56,6 +58,34 @@ func NewDescribeAlertChartHandler(client *http.Client, cfg models.Config) func(c
 			}
 			return nil, nil, err
 		}
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}, nil, nil
+		out, ok := withChartAlertPath(body)
+		if !ok {
+			return utils.ToolErrorResult(fmt.Sprintf("describe_alert_chart: upstream response is not a JSON object: %.200s", body)), nil, nil
+		}
+		var described alerts.IntelligenceResponse
+		if json.Unmarshal(body, &described) == nil {
+			recordDescribedChart(requestSession(req), surface+"/"+chartKey, described.Signals)
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(out)}}}, nil, nil
 	}
+}
+
+const chartAlertPathNote = "create_alert_from_chart with a listed signal key. Do not copy eval_query into create_alert, create_kpi, prometheus_range_query, or validate_alert_expression; pasted PromQL is not a custom-query parameter on this path."
+
+// withChartAlertPath reports false when body is not a JSON object (`null` decodes to a nil map).
+func withChartAlertPath(body []byte) ([]byte, bool) {
+	var payload map[string]json.RawMessage
+	if json.Unmarshal(body, &payload) != nil || payload == nil {
+		return nil, false
+	}
+	note, err := json.Marshal(chartAlertPathNote)
+	if err != nil {
+		return nil, false
+	}
+	payload["alert_path"] = note
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return nil, false
+	}
+	return out, true
 }

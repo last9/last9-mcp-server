@@ -80,13 +80,21 @@ func FormatQueryResponse(response map[string]any, env *ResultEnvelope) string {
 	if !ok {
 		return text
 	}
-	items, ok := data["result"].([]any)
-	if !ok {
+	switch items := data["result"].(type) {
+	case []any:
+		return trimQueryResponse(response, items, env)
+	case []json.RawMessage:
+		return trimQueryResponse(response, items, env)
+	default:
 		return text
 	}
+}
+
+func trimQueryResponse[T any](response map[string]any, items []T, env *ResultEnvelope) string {
+	data := response["data"].(map[string]any)
 	probe, probeData := maps.Clone(response), maps.Clone(data)
 	probe["data"] = probeData
-	kept, omitted := FitItems(items, MaxResultTextBytes, func(prefix []any) int {
+	kept, omitted := FitItems(items, MaxResultTextBytes, func(prefix []T) int {
 		probeData["result"] = prefix
 		return len(formatIndentedJSON(probe))
 	})

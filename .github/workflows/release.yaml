@@ -29,6 +29,9 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
+      - name: Lint test goroutine assertions
+        run: go vet -testinggoroutine ./...
+
       - name: Run tests
         run: go test -v -race ./...
         env:
@@ -114,7 +117,9 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          # Exact patched release: first 24.x that blocks the eMudhra
+          # intermediates (nodejs/node#66871). Pinned by node_version_test.go.
+          node-version: '24.22.1'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Ensure npm supports trusted publishing (OIDC)

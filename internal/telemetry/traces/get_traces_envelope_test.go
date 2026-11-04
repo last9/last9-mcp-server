@@ -74,7 +74,7 @@ func TestGetTracesSingleRequestPathsProbeOnePastLimit(t *testing.T) {
 	}
 }
 
-func TestGetTracesChunkedMarksTruncatedWhenChunksTogetherExceedLimit(t *testing.T) {
+func TestGetTracesChunkedMarksUnqueriedWindowPartial(t *testing.T) {
 	rec := newTracesRequestRecorder()
 	result := callGetTraces(t, func(w http.ResponseWriter, r *http.Request) {
 		rec.add(r.URL.Query())
@@ -94,8 +94,8 @@ func TestGetTracesChunkedMarksTruncatedWhenChunksTogetherExceedLimit(t *testing.
 	if got := countTracesInPayload(t, parseTracesToolResult(t, result)); got != 5 {
 		t.Fatalf("traces = %d, want 5", got)
 	}
-	if env := utils.GetResultEnvelope(t, result); !env.Truncated || env.Limit != 5 {
-		t.Fatalf("envelope = %+v, want truncated at 5", env)
+	if env := utils.GetResultEnvelope(t, result); env.Truncated || !env.Partial || len(env.Skipped) != 1 || env.Skipped[0] != "1 older trace chunks after reaching limit" {
+		t.Fatalf("envelope = %+v, want partial coverage without claiming unobserved rows", env)
 	}
 }
 

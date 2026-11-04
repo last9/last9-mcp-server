@@ -142,7 +142,7 @@ func servedDescriptions(t *testing.T, spec string) map[string]string {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := dumpTools(&buf, set); err != nil {
+	if err := dumpTools(&buf, toolsets.Filter{Tools: set}); err != nil {
 		t.Fatal(err)
 	}
 	var out struct {

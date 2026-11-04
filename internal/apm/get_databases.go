@@ -54,7 +54,7 @@ func NewGetDatabasesHandler(client *http.Client, cfg models.Config) func(context
 
 		meta := deeplink.ToMeta(deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildDatabasesLink())
 		if len(resp.Databases) == 0 && len(fieldErrs) == 0 {
-			return &mcp.CallToolResult{Meta: meta, Content: noDatabasesContent()}, nil, nil
+			return &mcp.CallToolResult{Meta: meta, Content: noDatabasesContent(args, in.TimeRange.From, in.TimeRange.To)}, nil, nil
 		}
 
 		payload, err := json.Marshal(buildPayload(resp.Databases, fieldErrs))
@@ -82,9 +82,13 @@ func discoverInputFor(args GetDatabasesArgs) (databases.DiscoverDatabasesInput, 
 	return in, nil
 }
 
-func noDatabasesContent() []mcp.Content {
+func noDatabasesContent(args GetDatabasesArgs, startUnix, endUnix int64) []mcp.Content {
 	return []mcp.Content{&mcp.TextContent{
-		Text: "No databases found for the given parameters. Databases are discovered from OpenTelemetry client spans (db_system set) and from infrastructure metrics such as CloudWatch. Widen the time range or check that either signal is being sent.",
+		Text: apmEmptyAdvice(
+			"databases",
+			apmGuidanceArgs{env: args.Env, startUnix: startUnix, endUnix: endUnix},
+			"verify OpenTelemetry database client spans or infrastructure metrics are being sent",
+		),
 	}}
 }
 

@@ -12,10 +12,8 @@ import (
 // close event ever arrives to free its entry.
 const sessionTTL = time.Hour
 
-// maxSessions bounds the map: over HTTP the session id is client-chosen, so a
-// caller minting ids would otherwise grow it until the TTL. Past the cap the
-// least recently seen session is forgotten; the session budget only warns, so
-// that costs a warning, never a blocked query.
+// Client-chosen session ids need a cap as well as an idle TTL.
+// Evicting the least recent session costs a warning, never a blocked query.
 const maxSessions = 10_000
 
 const (
