@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -872,6 +874,88 @@ func TestGetDatabaseServerMetricsHandler_KeepsKeysWithNoSeries(t *testing.T) {
 	sort.Strings(wantMissing)
 	if strings.Join(db.MissingMetrics, ",") != strings.Join(wantMissing, ",") {
 		t.Errorf("missing_metrics = %v, want %v", db.MissingMetrics, wantMissing)
+	}
+}
+
+func TestOracleKeyMetricsUseOracledbExporterNames(t *testing.T) {
+	want := map[string][]string{
+		"active_sessions":          {"oracledb_sessions_usage"},
+		"executions_per_sec":       {"oracledb_executions_total"},
+		"user_commits_per_sec":     {"oracledb_user_commits_total"},
+		"user_rollbacks_per_sec":   {"oracledb_user_rollbacks_total"},
+		"parse_calls_per_sec":      {"oracledb_parse_calls_total"},
+		"hard_parses_per_sec":      {"oracledb_hard_parses_total"},
+		"logical_reads_per_sec":    {"oracledb_logical_reads_total"},
+		"consistent_gets_per_sec":  {"oracledb_consistent_gets_total"},
+		"db_block_gets_per_sec":    {"oracledb_db_block_gets_total"},
+		"physical_reads_per_sec":   {"oracledb_physical_reads_total"},
+		"cpu_time_seconds_per_sec": {"oracledb_cpu_time_seconds_total"},
+		"tablespace_used_pct":      {"oracledb_tablespace_size_usage_bytes", "oracledb_tablespace_size_limit_bytes"},
+	}
+	metricName := regexp.MustCompile(`\boracle(?:db)?_[a-z_]+`)
+
+	keyMetrics := dbExporterConfigs["oracle"].KeyMetrics
+	if len(keyMetrics) != len(want) {
+		t.Errorf("got %d oracle key metrics, want %d", len(keyMetrics), len(want))
+	}
+	for _, km := range keyMetrics {
+		t.Run(km.Name, func(t *testing.T) {
+			wantNames, ok := want[km.Name]
+			if !ok {
+				t.Fatalf("unexpected key %q (query %s)", km.Name, km.Query)
+			}
+			got := slices.DeleteFunc(metricName.FindAllString(km.Query, -1), func(name string) bool {
+				return name == "oracledb_instance_name"
+			})
+			sort.Strings(got)
+			got = slices.Compact(got)
+			wantSorted := slices.Sorted(slices.Values(wantNames))
+			if !slices.Equal(got, wantSorted) {
+				t.Errorf("query %s references %v, want %v", km.Query, got, wantSorted)
+			}
+			if !strings.Contains(km.Query, "by (oracledb_instance_name)") {
+				t.Errorf("query %s is not grouped by oracledb_instance_name", km.Query)
+			}
+		})
+	}
+}
+
+func TestGetDatabaseServerMetricsHandler_OracleValuesPerInstance(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "prom_label_values") {
+			json.NewEncoder(w).Encode([]string{"oracledb_up"})
+			return
+		}
+		json.NewEncoder(w).Encode([]map[string]any{
+			{"metric": map[string]string{"oracledb_instance_name": "ORCL1"}, "value": []any{1700000000, "3"}},
+			{"metric": map[string]string{"oracledb_instance_name": "ORCL2"}, "value": []any{1700000000, "5"}},
+			{"metric": map[string]string{"oracledb_instance_name": "ORCL3"}, "value": []any{1700000000, "NaN"}},
+		})
+	}))
+	defer server.Close()
+
+	handler := NewGetDatabaseServerMetricsHandler(server.Client(), testDBConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabaseServerMetricsArgs{
+		DBSystem:        "oracle",
+		LookbackMinutes: 60,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	var response struct {
+		Databases []struct {
+			Metrics map[string]map[string]float64 `json:"metrics"`
+		} `json:"databases"`
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	if err := json.Unmarshal([]byte(text), &response); err != nil {
+		t.Fatalf("failed to unmarshal %s: %v", text, err)
+	}
+	got := response.Databases[0].Metrics["active_sessions"]
+	want := map[string]float64{"ORCL1": 3, "ORCL2": 5}
+	if !maps.Equal(got, want) {
+		t.Errorf("active_sessions = %v, want %v (non-finite samples dropped)", got, want)
 	}
 }
 
