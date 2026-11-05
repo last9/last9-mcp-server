@@ -38,3 +38,5 @@ Spans with trace_id, span_id, span_name, span_kind, service_name, duration, time
 Passing `service_name` alongside a known `trace_id` narrows the lookup; pass the ID alone.
 
 **Envelope:** `truncated`, `trimmed_items`, `partial`: disclose; follow `hints`.
+
+**Guardrail (server-configured):** `off` (default) skips checks; `shadow` adds hints without blocking; `enforce` rejects over-limit queries before execution. Follow reason-coded `hints`: narrow the window; do not retry unchanged. `estimate_unavailable` alone never rejects; only the unscoped range cap still applies. Exact `trace_id` lookups bypass the guardrail.

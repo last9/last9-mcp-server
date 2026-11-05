@@ -30,6 +30,8 @@ Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`cond
 
 **Envelope:** `truncated`, `trimmed_items`, `partial`: disclose; follow `hints`.
 
+**Guardrail (server-configured):** `off` (default) skips checks; `shadow` adds hints without blocking; `enforce` rejects over-limit queries before execution. Follow reason-coded `hints`: narrow the window or add a service filter; do not retry unchanged. `estimate_unavailable` alone never rejects; only the unscoped range cap still applies.
+
 Manual: `last9://reference/logjson`
 
 ## When to use

@@ -16,6 +16,8 @@ Fetch log lines for one service (`service_name`, optional `severity_filters`, `b
 
 **Envelope:** `truncated`, `trimmed_items`, `partial`: disclose; follow `hints`.
 
+**Guardrail (server-configured):** `off` (default) skips checks; `shadow` adds hints without blocking; `enforce` rejects over-limit queries before execution. Follow reason-coded `hints`: narrow the window; do not retry unchanged. `estimate_unavailable` alone never rejects; only the unscoped range cap still applies.
+
 Full service-logs reference: `last9://reference/service_logs`. Logjson: `last9://reference/logjson`
 
 ## When to use

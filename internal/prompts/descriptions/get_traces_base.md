@@ -29,6 +29,8 @@ For calendar buckets, use explicit ISO bounds and time zone. P99 `Duration` outp
 
 **Envelope:** `truncated`, `trimmed_items`, `partial`: disclose; follow `hints`.
 
+**Guardrail (server-configured):** `off` (default) skips checks; `shadow` adds hints without blocking; `enforce` rejects over-limit queries before execution. Follow reason-coded `hints`: narrow the window or add a service filter; do not retry unchanged. `estimate_unavailable` alone never rejects; only the unscoped range cap still applies.
+
 Manual: `last9://reference/tracejson`
 
 ## When to use
