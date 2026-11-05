@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/entities"
 	"last9-mcp/internal/models"
@@ -62,6 +63,9 @@ func NewCreateKPIHandler(client *http.Client, cfg models.Config) func(context.Co
 			return nil, nil, fmt.Errorf("failed to encode KPI: %w", err)
 		}
 		text := string(body) + "\n\nKeep this id and bind it in expression_args / indicators_used; do not call create_kpi again for the same query."
-		return alertMutationResult(cfg, []byte(text), ""), nil, nil
+		result := alertMutationResult(cfg, []byte(text), "")
+		link := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildAlertingGroupsLink()
+		result.Meta = deeplink.ToMetaWithLink(link, "Open alert group")
+		return result, nil, nil
 	}
 }

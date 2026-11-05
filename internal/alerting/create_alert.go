@@ -47,14 +47,17 @@ func NewCreateAlertHandler(client *http.Client, cfg models.Config) func(context.
 		if err != nil {
 			return alertRuleWriteError(err)
 		}
-		if err := validateMutationIDResponse(body); err != nil {
+		ruleID, err := mutationResponseID(body)
+		if err != nil {
 			return nil, nil, fmt.Errorf("invalid create alert response: %w", err)
 		}
 		text := strings.TrimSpace(string(body)) + "\n\n" + draftCreatedNote
 		if overridden {
 			text += " Requested is_disabled=false was ignored: create_alert always creates disabled."
 		}
-		return alertMutationResult(cfg, []byte(text), ""), nil, nil
+		result := alertMutationResult(cfg, []byte(text), "")
+		result.Meta = alertRuleMeta(cfg, args.EntityID, ruleID)
+		return result, nil, nil
 	}
 }
 

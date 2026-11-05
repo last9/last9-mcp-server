@@ -92,7 +92,9 @@ func NewPatchAlertHandler(client *http.Client, cfg models.Config) func(context.C
 			}
 			return nil, nil, withUpstreamBody(err)
 		}
-		return alertMutationResult(cfg, nil, fmt.Sprintf(`{"patched":true,"id":%q}`, args.ID)), nil, nil
+		result := alertMutationResult(cfg, nil, fmt.Sprintf(`{"patched":true,"id":%q}`, args.ID))
+		result.Meta = alertRuleMeta(cfg, args.EntityID, args.ID)
+		return result, nil, nil
 	}
 }
 

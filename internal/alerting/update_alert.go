@@ -46,9 +46,12 @@ func NewUpdateAlertHandler(client *http.Client, cfg models.Config) func(context.
 		if err != nil {
 			return alertRuleWriteError(err)
 		}
-		if err := validateMutationIDResponse(body); err != nil {
+		ruleID, err := mutationResponseID(body)
+		if err != nil {
 			return nil, nil, fmt.Errorf("invalid update alert response: %w", err)
 		}
-		return alertMutationResult(cfg, body, ""), nil, nil
+		result := alertMutationResult(cfg, body, "")
+		result.Meta = alertRuleMeta(cfg, args.EntityID, ruleID)
+		return result, nil, nil
 	}
 }

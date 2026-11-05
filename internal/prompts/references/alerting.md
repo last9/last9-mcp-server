@@ -167,3 +167,8 @@ Add responder context to any template under `properties`: `description`, `runboo
 5. Continue from step 3 of the lifecycle: ground the threshold, validate, `create_alert` as a draft, read it back, promote only on confirmation.
 
 Dashboard tools do not create alerts themselves.
+
+
+## Result links
+
+Successful `create_alert`, `update_alert`, `patch_alert`, and `create_alert_from_chart` results set `_meta.reference_url` to the rule editor and include the same URL in `_meta.links` with the label “Open alert”. Updates use the returned rule ID, which may replace the previous ID. These calls do not know the group name, so they omit the optional “Open group” link. `create_kpi` links to the groups index with the label “Open alert group”.
