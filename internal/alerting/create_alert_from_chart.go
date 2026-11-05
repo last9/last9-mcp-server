@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/alerts"
 	"last9-mcp/internal/last9api/entities"
@@ -147,10 +148,9 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 		if failure := disableChartRule(ctx, api, resp.GroupID, resp.ID); failure != nil {
 			return failure, nil, nil
 		}
-		return &mcp.CallToolResult{
-			Meta:    alertRuleMeta(cfg, resp.GroupID, resp.ID),
-			Content: []mcp.Content{&mcp.TextContent{Text: createFromChartReport(resp, args)}},
-		}, nil, nil
+		return alertRuleMutationResult(cfg, createFromChartReport(resp, args), deeplink.AlertRuleReference{
+			RuleID: resp.ID, GroupID: resp.GroupID, GroupName: resp.GroupName,
+		}), nil, nil
 	}
 }
 

@@ -30,11 +30,11 @@ func TestCreateKPI(t *testing.T) {
 
 	args := validCreateKPIArgs()
 	args.Description = "checkout p99"
-	result, _, err := NewCreateKPIHandler(server.Client(), testAlertMutationConfig(server.URL))(context.Background(), nil, args)
+	result, _, err := NewCreateKPIHandler(server.Client(), createAlertFromChartTestConfig(server.URL))(context.Background(), nil, args)
 	if err != nil || result.IsError {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
-	assertAlertLinkMeta(t, result, expectedAlertLink{URL: "/v2/organizations//alerting/groups", Label: "Open alert group"})
+	assertAlertLinkMeta(t, result, expectedAlertLink{URL: "/v2/organizations/acme/alerting/groups", Label: "Open alert group"})
 	text := resultText(result)
 	wantJSON := `{"id":"kpi-9","name":"p99_latency","query":"histogram_quantile(0.99, rate(x_bucket[5m]))","unit":"seconds"}`
 	if !strings.HasPrefix(text, wantJSON) || !strings.Contains(text, "Keep this id") || !strings.Contains(text, "do not call create_kpi again") {

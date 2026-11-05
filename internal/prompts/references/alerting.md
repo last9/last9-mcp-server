@@ -168,7 +168,6 @@ Add responder context to any template under `properties`: `description`, `runboo
 
 Dashboard tools do not create alerts themselves.
 
+## Write result links
 
-## Result links
-
-Successful `create_alert`, `update_alert`, `patch_alert`, and `create_alert_from_chart` results set `_meta.reference_url` to the rule editor and include the same URL in `_meta.links` with the label “Open alert”. Updates use the returned rule ID, which may replace the previous ID. These calls do not know the group name, so they omit the optional “Open group” link. `create_kpi` links to the groups index with the label “Open alert group”.
+Successful `create_alert`, `update_alert`, `patch_alert` and `create_alert_from_chart` results include `_meta.reference_url`, a relative URL opening the saved rule in its alert group. The same URL appears in `_meta.links` labeled `Open alert`. Updates use the returned replacement rule ID. If the API supplies `group_name` in the write response or the existing ownership lookup, `_meta.links` also includes an `Open group` link filtered by that name. Query values are URL-encoded; an unavailable group name omits only the `Open group` entry. No extra lookup is made for this optional metadata. Failed writes do not carry these success links. `create_kpi` continues to link to the groups index, labeled `Open alert group` in `_meta.links`; dashboard writes continue to link to their dashboard.

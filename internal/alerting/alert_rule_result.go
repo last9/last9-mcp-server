@@ -15,20 +15,23 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func mutationResponseID(body []byte) (string, error) {
-	var response struct {
-		ID string `json:"id"`
-	}
+type alertRuleMutationResponse struct {
+	ID        string `json:"id"`
+	GroupName string `json:"group_name"`
+}
+
+func parseMutationIDResponse(body []byte) (alertRuleMutationResponse, error) {
+	var response alertRuleMutationResponse
 	if len(bytes.TrimSpace(body)) == 0 {
-		return "", fmt.Errorf("API returned an empty body; replacement rule ID is unknown")
+		return response, fmt.Errorf("API returned an empty body; replacement rule ID is unknown")
 	}
 	if err := json.Unmarshal(body, &response); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
+		return response, fmt.Errorf("failed to parse response: %w", err)
 	}
 	if strings.TrimSpace(response.ID) == "" {
-		return "", fmt.Errorf("API response is missing id")
+		return response, fmt.Errorf("API response is missing id")
 	}
-	return response.ID, nil
+	return response, nil
 }
 
 func unreadableStoredPropertiesResult(ruleID string, err error) *mcp.CallToolResult {
@@ -44,9 +47,11 @@ func alertMutationResult(cfg models.Config, body []byte, fallback string) *mcp.C
 	return &mcp.CallToolResult{Meta: deeplink.ToMeta(link), Content: []mcp.Content{&mcp.TextContent{Text: text}}}
 }
 
-func alertRuleMeta(cfg models.Config, entityID, ruleID string) mcp.Meta {
-	link := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildAlertRuleLink(entityID, ruleID)
-	return deeplink.ToMetaWithLink(link, "Open alert")
+func alertRuleMutationResult(cfg models.Config, text string, rule deeplink.AlertRuleReference) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		Meta:    deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).AlertRuleMeta(rule),
+		Content: []mcp.Content{&mcp.TextContent{Text: text}},
+	}
 }
 
 // staticRuleRequiredFields maps the API's errors for a static rule missing a field to that
