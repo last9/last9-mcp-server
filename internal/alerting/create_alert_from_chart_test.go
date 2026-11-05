@@ -13,7 +13,7 @@ import (
 	"sync"
 	"testing"
 
-	"last9-mcp/internal/deeplink"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 )
@@ -75,7 +75,7 @@ func TestCreateAlertFromChartAllDefaultsOmitted(t *testing.T) { // AE1
 		}
 	}
 
-	wantMeta := deeplink.ToMeta(deeplink.NewBuilder("acme", "cluster-1").BuildAlertingGroupsLink())
+	wantMeta := mcp.Meta{"reference_url": "/v2/organizations/acme/alerting/groups?group_id=grp-2&rule=rule-9"}
 	if !reflect.DeepEqual(result.Meta, wantMeta) {
 		t.Errorf("meta = %+v, want %+v", result.Meta, wantMeta)
 	}
@@ -306,6 +306,9 @@ func TestCreateAlertFromChartSuccessWithoutRuleID(t *testing.T) {
 	if !result.IsError {
 		t.Fatalf("expected error result, got: %s", resultText(result))
 	}
+	if len(result.Meta) != 0 {
+		t.Errorf("missing rule ID must not produce links: %v", result.Meta)
+	}
 	text := resultText(result)
 	for _, want := range []string{"no rule id", "get_alert_config"} {
 		if !strings.Contains(text, want) {
@@ -496,6 +499,9 @@ func TestCreateAlertFromChartReportsFailedDisable(t *testing.T) {
 				if !strings.Contains(text, want) {
 					t.Errorf("result missing %q:\n%s", want, text)
 				}
+			}
+			if len(result.Meta) != 0 {
+				t.Errorf("failed disable must not produce links: %v", result.Meta)
 			}
 			if strings.Contains(text, draftSentence) {
 				t.Errorf("failed disable must not claim a draft:\n%s", text)
