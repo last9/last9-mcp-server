@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -224,4 +225,139 @@ func connectRegisteredServer(t *testing.T, server *last9mcp.Last9MCPServer) *mcp
 	}
 	t.Cleanup(func() { _ = session.Close() })
 	return session
+}
+
+func TestFeedbackDeadlineDoesNotSuggestRetry(t *testing.T) {
+	var calls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		calls.Add(1)
+		<-r.Context().Done()
+	}))
+	defer upstream.Close()
+	server := newRegisterTestServer(t)
+	if _, err := registerTools(server, writeToolTestConfig(upstream.URL), upstream.Client()); err != nil {
+		t.Fatal(err)
+	}
+	server.Server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if method == "tools/call" {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 100*time.Millisecond)
+				defer cancel()
+			}
+			return next(ctx, method, req)
+		}
+	})
+	session := connectRegisteredServer(t, server)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "send_feedback", Arguments: map[string]any{"category": "bug", "summary": "synthetic test"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("calls=%d, want one accepted request", calls.Load())
+	}
+	text := toolResultText(result)
+	if !result.IsError {
+		t.Fatalf("expected error, got %s", text)
+	}
+	if strings.Contains(text, "before retrying") || !strings.Contains(strings.ToLower(text), "do not") {
+		t.Fatalf("accepted report must not invite resending: %s", text)
+	}
+	if result.Meta[utils.ErrorTypeMetaKey] != utils.SystemErrorType {
+		t.Errorf("deadline missing system_error tag: %v", result.Meta)
+	}
+}
+
+func TestFeedbackUnknownDeliveryDoesNotSuggestRetry(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"gateway failure", http.StatusBadGateway, ""},
+		{"truncated acknowledgement", http.StatusCreated, `{"feedback_id":`},
+		{"missing acknowledgement ID", http.StatusCreated, `{}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				calls.Add(1)
+				w.WriteHeader(tc.status)
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			defer upstream.Close()
+			server := newRegisterTestServer(t)
+			if _, err := registerTools(server, writeToolTestConfig(upstream.URL), upstream.Client()); err != nil {
+				t.Fatal(err)
+			}
+			session := connectRegisteredServer(t, server)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "send_feedback", Arguments: map[string]any{"category": "bug", "summary": "synthetic test"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if calls.Load() != 1 {
+				t.Fatalf("calls=%d, want one accepted request", calls.Load())
+			}
+			text := toolResultText(result)
+			if !result.IsError || !strings.Contains(strings.ToLower(text), "do not") || strings.Contains(text, "retry later") {
+				t.Fatalf("want an error forbidding resending, got %s", text)
+			}
+			if result.Meta[utils.ErrorTypeMetaKey] != utils.SystemErrorType {
+				t.Errorf("unknown delivery missing system_error tag: %v", result.Meta)
+			}
+		})
+	}
+}
+
+// A definite API error still must not invite a resend: the description promises one
+// report per problem, and 429 means the hourly feedback limit, not a query to narrow.
+func TestFeedbackAPIErrorsDoNotSuggestRetry(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		system bool
+	}{
+		{http.StatusTooManyRequests, false},
+		{http.StatusNotFound, false},
+		{http.StatusInternalServerError, true},
+	} {
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			var calls atomic.Int32
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				calls.Add(1)
+				w.WriteHeader(tc.status)
+			}))
+			defer upstream.Close()
+			server := newRegisterTestServer(t)
+			if _, err := registerTools(server, writeToolTestConfig(upstream.URL), upstream.Client()); err != nil {
+				t.Fatal(err)
+			}
+			session := connectRegisteredServer(t, server)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "send_feedback", Arguments: map[string]any{"category": "bug", "summary": "synthetic test"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if calls.Load() != 1 {
+				t.Fatalf("calls=%d, want one request", calls.Load())
+			}
+			text := toolResultText(result)
+			if !result.IsError || strings.Contains(strings.ToLower(text), "retry") || !strings.Contains(text, "Do not send the same feedback again") {
+				t.Fatalf("want an error forbidding resending, got %s", text)
+			}
+			if !strings.Contains(text, fmt.Sprintf("HTTP %d", tc.status)) {
+				t.Errorf("error does not name the status: %s", text)
+			}
+			if got := result.Meta[utils.ErrorTypeMetaKey] == utils.SystemErrorType; got != tc.system {
+				t.Errorf("system_error tag=%v, want %v: %v", got, tc.system, result.Meta)
+			}
+		})
+	}
 }

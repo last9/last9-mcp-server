@@ -65,6 +65,8 @@ type Config struct {
 
 	ClusterID string // Cluster ID from datasource (for dashboard deep links)
 
+	ServerVersion string // This binary's release version, sent with feedback
+
 	// Datasources holds all available datasources fetched at startup.
 	// Used to resolve per-query datasource credentials without an extra API call.
 	Datasources []DatasourceInfo

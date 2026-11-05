@@ -693,3 +693,127 @@ func TestPostMCPTestRequestConcurrentFailure(t *testing.T) {
 		t.Fatalf("broken call = %v, want JSON syntax error", errs[1])
 	}
 }
+
+// A tools/call without a session ID identifies its client only through per-request _meta.
+func TestHTTPSendFeedbackClientIdentityComesFromRequestMeta(t *testing.T) {
+	bodies := make(chan map[string]any, 2)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		bodies <- body
+		_, _ = io.WriteString(w, `{"feedback_id":"fb-1"}`)
+	}))
+	defer upstream.Close()
+	ts, _ := newToolsetHTTPServerFor(t, writeToolTestConfig(upstream.URL), "")
+
+	for _, tc := range []struct {
+		name, meta  string
+		wantName    any
+		wantVersion any
+	}{
+		{"per-request clientInfo", `,"_meta":{"io.modelcontextprotocol/clientInfo":{"name":"qa-client","version":"v-http-1"}}`, "qa-client", "v-http-1"},
+		{"no clientInfo", "", nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			call := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send_feedback","arguments":{"category":"other","summary":"http mode check"}` + tc.meta + `}}`
+			var result mcp.CallToolResult
+			if status, raw := postRPC(t, ts, "", "", call, &result); status != http.StatusOK || result.IsError {
+				t.Fatalf("status %d, result %s", status, raw)
+			}
+			body := <-bodies
+			if body["client_name"] != tc.wantName || body["client_version"] != tc.wantVersion {
+				t.Errorf("client_name=%v client_version=%v, want %v %v", body["client_name"], body["client_version"], tc.wantName, tc.wantVersion)
+			}
+		})
+	}
+}
+
+// Old-protocol clients send clientInfo only in initialize, then echo the Mcp-Session-Id it
+// returned. That ID must carry their identity to send_feedback on any replica.
+func TestHTTPSendFeedbackClientIdentityComesFromInitializeSession(t *testing.T) {
+	bodies := make(chan map[string]any, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		bodies <- body
+		_, _ = io.WriteString(w, `{"feedback_id":"fb-1"}`)
+	}))
+	defer upstream.Close()
+	ts, _ := newToolsetHTTPServerFor(t, writeToolTestConfig(upstream.URL), "")
+
+	initialize := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},` +
+		`"clientInfo":{"name":"` + strings.Repeat("n", 150) + `","version":"v-http-2"}}}`
+	status, sessionID, raw := postMCP(t, ts.URL+"/mcp", "", initialize)
+	if status != http.StatusOK || sessionID == "" {
+		t.Fatalf("initialize: status %d, Mcp-Session-Id %q, body %s", status, sessionID, raw)
+	}
+
+	call := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"send_feedback","arguments":{"category":"other","summary":"http session check"}}}`
+	if status, _, raw := postMCP(t, ts.URL+"/mcp", sessionID, call); status != http.StatusOK || strings.Contains(raw, `"isError":true`) {
+		t.Fatalf("tools/call: status %d, body %s", status, raw)
+	}
+	body := <-bodies
+	if want := strings.Repeat("n", 100); body["client_name"] != want || body["client_version"] != "v-http-2" {
+		t.Errorf("client_name=%v client_version=%v, want the name cut to 100 characters and v-http-2", body["client_name"], body["client_version"])
+	}
+}
+
+// countingBody counts the bytes the handler reads, to show where it stopped.
+type countingBody struct {
+	io.Reader
+	read int
+}
+
+func (b *countingBody) Read(p []byte) (int, error) {
+	n, err := b.Reader.Read(p)
+	b.read += n
+	return n, err
+}
+
+func (b *countingBody) Close() error { return nil }
+
+// Looking for initialize must not buffer more than the SDK would accept: an oversized
+// body is refused with 413 after at most the SDK limit plus one byte, session or not.
+func TestHTTPBodyLimitBeforeSessionInspection(t *testing.T) {
+	server := newRegisterTestServer(t)
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+	handler := NewHTTPServer(server, models.Config{}, nil).Handler()
+	for name, sessionID := range map[string]string{"without session": "", "with session": "foreign-session"} {
+		t.Run(name, func(t *testing.T) {
+			body := &countingBody{Reader: strings.NewReader(strings.Repeat(" ", 2*mcp.DefaultMaxRequestBodyBytes))}
+			req := httptest.NewRequest(http.MethodPost, "/mcp", body)
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json, text/event-stream")
+			if sessionID != "" {
+				req.Header.Set("Mcp-Session-Id", sessionID)
+			}
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusRequestEntityTooLarge {
+				t.Errorf("status %d, want 413", w.Code)
+			}
+			if body.read > mcp.DefaultMaxRequestBodyBytes+1 {
+				t.Errorf("read %d bytes before refusing, want at most %d", body.read, mcp.DefaultMaxRequestBodyBytes+1)
+			}
+		})
+	}
+}
+
+// postMCP posts one JSON-RPC body, sending sessionID as Mcp-Session-Id when set, and returns
+// the status, the response's Mcp-Session-Id and its body.
+func postMCP(t *testing.T, url, sessionID, body string) (int, string, string) {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodPost, url, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	if sessionID != "" {
+		req.Header.Set("Mcp-Session-Id", sessionID)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, resp.Header.Get("Mcp-Session-Id"), string(raw)
+}
