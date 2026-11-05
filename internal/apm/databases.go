@@ -446,8 +446,19 @@ type dbExporterConfig struct {
 }
 
 type dbKeyMetric struct {
-	Name  string // human-readable metric name
-	Query string // PromQL query
+	Name    string // human-readable metric name
+	Query   string // PromQL query
+	ByLabel string // when set, the value maps each series' ByLabel value to its sample
+}
+
+// Oracle keys are per instance so a host running several instances is not merged.
+// Names follow the oracledb exporter, as the Last9 infrastructure database queries do.
+func oracleKeyMetric(name, query string) dbKeyMetric {
+	return dbKeyMetric{Name: name, Query: query, ByLabel: "oracledb_instance_name"}
+}
+
+func oracleRateKeyMetric(name, counter string) dbKeyMetric {
+	return oracleKeyMetric(name, fmt.Sprintf("sum by (oracledb_instance_name) (rate(%s[5m]))", counter))
 }
 
 var dbExporterConfigs = map[string]dbExporterConfig{
@@ -487,14 +498,18 @@ var dbExporterConfigs = map[string]dbExporterConfig{
 		DisplayName:    "Oracle",
 		MetricPrefixes: []string{"oracle_", "oracledb_"},
 		KeyMetrics: []dbKeyMetric{
-			{Name: "active_sessions", Query: "sum(oracledb_sessions_active)"},
-			{Name: "session_utilization_pct", Query: "100 * sum(oracledb_sessions_active) / (oracledb_resource_current_utilization{resource_name='sessions'} + 1)"},
-			{Name: "buffer_cache_hit_ratio_pct", Query: "oracledb_buffer_cachehit_ratio"},
-			{Name: "tablespace_used_pct", Query: "max(oracledb_tablespace_used_percent)"},
-			{Name: "wait_time_seconds", Query: "sum(rate(oracledb_wait_time_seconds[5m]))"},
-			{Name: "parse_count_per_sec", Query: "rate(oracledb_activity_parse_count_total[5m])"},
-			{Name: "user_commits_per_sec", Query: "rate(oracledb_activity_user_commits[5m])"},
-			{Name: "physical_reads_per_sec", Query: "rate(oracledb_physical_reads[5m])"},
+			oracleKeyMetric("active_sessions", `sum by (oracledb_instance_name) (oracledb_sessions_usage{session_status="ACTIVE"})`),
+			oracleRateKeyMetric("executions_per_sec", "oracledb_executions_total"),
+			oracleRateKeyMetric("user_commits_per_sec", "oracledb_user_commits_total"),
+			oracleRateKeyMetric("user_rollbacks_per_sec", "oracledb_user_rollbacks_total"),
+			oracleRateKeyMetric("parse_calls_per_sec", "oracledb_parse_calls_total"),
+			oracleRateKeyMetric("hard_parses_per_sec", "oracledb_hard_parses_total"),
+			oracleRateKeyMetric("logical_reads_per_sec", "oracledb_logical_reads_total"),
+			oracleRateKeyMetric("consistent_gets_per_sec", "oracledb_consistent_gets_total"),
+			oracleRateKeyMetric("db_block_gets_per_sec", "oracledb_db_block_gets_total"),
+			oracleRateKeyMetric("physical_reads_per_sec", "oracledb_physical_reads_total"),
+			oracleRateKeyMetric("cpu_time_seconds_per_sec", "oracledb_cpu_time_seconds_total"),
+			oracleKeyMetric("tablespace_used_pct", "max by (oracledb_instance_name) (100 * oracledb_tablespace_size_usage_bytes / (oracledb_tablespace_size_limit_bytes > 0))"),
 		},
 	},
 	"redis": {
@@ -653,7 +668,7 @@ func NewGetDatabaseServerMetricsHandler(client *http.Client, cfg models.Config) 
 					mWg.Add(1)
 					go func(km dbKeyMetric) {
 						defer mWg.Done()
-						val := queryPromInstantValue(ctx, client, cfg, km.Query, endTime)
+						val := keyMetricValue(km, queryPromInstantSeries(ctx, client, cfg, km.Query, endTime))
 						metricMu.Lock()
 						metrics[km.Name] = val
 						if val == nil {
@@ -747,8 +762,8 @@ func probeMetricPrefix(ctx context.Context, client *http.Client, cfg models.Conf
 	return len(values) > 0
 }
 
-// queryPromInstantValue runs a PromQL instant query and returns the scalar value, or nil.
-func queryPromInstantValue(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64) any {
+// queryPromInstantSeries runs a PromQL instant query and returns its series, or nil on any failure.
+func queryPromInstantSeries(ctx context.Context, client *http.Client, cfg models.Config, query string, endTime int64) apiPromInstantResp {
 	resp, err := utils.MakePromInstantAPIQuery(ctx, client, query, endTime, cfg)
 	if err != nil {
 		return nil
@@ -763,13 +778,32 @@ func queryPromInstantValue(ctx context.Context, client *http.Client, cfg models.
 	if err := json.NewDecoder(resp.Body).Decode(&series); err != nil {
 		return nil
 	}
+	return series
+}
 
-	if len(series) == 0 {
+// keyMetricValue returns nil when no series has a finite sample: JSON cannot
+// encode NaN or Inf, and one would fail the whole response.
+func keyMetricValue(km dbKeyMetric, series apiPromInstantResp) any {
+	if km.ByLabel == "" {
+		if len(series) == 0 {
+			return nil
+		}
+		if v := parsePromValue(series[0].Value); isFinite(v) {
+			return v
+		}
 		return nil
 	}
 
-	// Return the first value
-	return parsePromValue(series[0].Value)
+	byLabel := make(map[string]float64, len(series))
+	for _, s := range series {
+		if v := parsePromValue(s.Value); isFinite(v) {
+			byLabel[s.Metric[km.ByLabel]] = v
+		}
+	}
+	if len(byLabel) == 0 {
+		return nil
+	}
+	return byLabel
 }
 
 // --- helpers ---
