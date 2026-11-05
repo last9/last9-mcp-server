@@ -74,8 +74,8 @@ func joinHygieneRuleConfig(rules []alerts.HygieneRule, configs AlertConfigRespon
 }
 
 func quietHygieneRule(config *AlertRule) hygieneRule {
-	count := alerts.HygieneMetric{Status: alerts.HygieneStatusUnavailable, Reason: noActivityReason}
-	value := alerts.HygieneValue{Status: alerts.HygieneStatusUnavailable, Reason: noActivityReason}
+	count := &alerts.HealthMetric{Status: alerts.HygieneStatusUnavailable, Reason: noActivityReason}
+	value := &alerts.HygieneValue{Status: alerts.HygieneStatusUnavailable, Reason: noActivityReason}
 	return hygieneRule{
 		HygieneRule: alerts.HygieneRule{
 			AlertGroupID: config.EntityID, RuleID: config.ID, RuleName: config.RuleName, Severity: config.Severity,
@@ -178,13 +178,13 @@ func countUnavailable(rules []hygieneRule, w hygieneWindow) hygieneUnavailable {
 			}
 			continue
 		}
-		if rule.FireCount.Count == nil {
+		if rule.FireCount == nil || rule.FireCount.Count == nil {
 			n.FireCount++
 		}
-		if rule.FlapCount.Count == nil {
+		if rule.FlapCount == nil || rule.FlapCount.Count == nil {
 			n.FlapCount++
 		}
-		if rule.AckRate.Value == nil {
+		if rule.AckRate == nil || rule.AckRate.Value == nil {
 			n.AckRate++
 		}
 		if rule.Routed == nil || (!*rule.Routed && rule.Attached == nil) {
@@ -225,15 +225,15 @@ func rankAlertHygiene(rules []hygieneRule, w hygieneWindow) []hygieneVerdict {
 	return verdicts
 }
 
-func countOrZero(m alerts.HygieneMetric) int64 {
-	if m.Count == nil {
+func countOrZero(m *alerts.HealthMetric) int64 {
+	if m == nil || m.Count == nil {
 		return 0
 	}
 	return *m.Count
 }
 
-func valueOrZero(v alerts.HygieneValue) float64 {
-	if v.Value == nil {
+func valueOrZero(v *alerts.HygieneValue) float64 {
+	if v == nil || v.Value == nil {
 		return 0
 	}
 	return *v.Value
@@ -259,7 +259,7 @@ func classifyHygieneRule(rule hygieneRule, w hygieneWindow) []hygieneFinding {
 // fire rate alone and says so, rather than leaving every loud rule unflagged.
 // The API keeps no mute history, so muting is not checked.
 func noisyFinding(rule hygieneRule, w hygieneWindow) *hygieneFinding {
-	if rule.FireCount.Count == nil {
+	if rule.FireCount == nil || rule.FireCount.Count == nil {
 		return nil
 	}
 	fires := *rule.FireCount.Count
@@ -268,7 +268,7 @@ func noisyFinding(rule hygieneRule, w hygieneWindow) *hygieneFinding {
 	switch {
 	case perDay < hygieneNoisyMinFiresPerDay:
 		return nil
-	case rule.AckRate.Value == nil:
+	case rule.AckRate == nil || rule.AckRate.Value == nil:
 		reason = fmt.Sprintf(
 			"fired %d times (%.1f/day; noisy at >= %.0f/day); ack rate is unavailable, so acknowledgement was not checked",
 			fires, perDay, hygieneNoisyMinFiresPerDay)
@@ -291,7 +291,7 @@ func noisyFinding(rule hygieneRule, w hygieneWindow) *hygieneFinding {
 // The API's flaps_per_day divides by the whole requested period, so a window longer
 // than alert history dilutes it; the rate here uses the covered span, like noisy.
 func flappingFinding(rule hygieneRule, w hygieneWindow) *hygieneFinding {
-	if rule.FlapCount.Count == nil {
+	if rule.FlapCount == nil || rule.FlapCount.Count == nil {
 		return nil
 	}
 	flaps := *rule.FlapCount.Count
@@ -322,11 +322,11 @@ func staleFinding(rule hygieneRule, w hygieneWindow) *hygieneFinding {
 		reason = fmt.Sprintf("no alert episode in the %s; the rule existed before it began %s",
 			w.span(), formatHygieneTime(w.From))
 	case rule.LastFiredAt != nil && rule.LastFiredAt.Before(w.From) &&
-		rule.TimeFiringSeconds.Count != nil && *rule.TimeFiringSeconds.Count == 0:
+		rule.TimeFiringSeconds != nil && rule.TimeFiringSeconds.Count != nil && *rule.TimeFiringSeconds.Count == 0:
 		reason = fmt.Sprintf("last fired %s, before the %s, which began %s",
 			formatHygieneTime(*rule.LastFiredAt), w.span(), formatHygieneTime(w.From))
 	case rule.LastFiredAt == nil && w.LifecycleComplete &&
-		rule.FireCount.Count != nil && *rule.FireCount.Count == 0:
+		rule.FireCount != nil && rule.FireCount.Count != nil && *rule.FireCount.Count == 0:
 		reason = fmt.Sprintf("no recorded fire, and alert history covers the whole %s", w.span())
 	default:
 		return nil

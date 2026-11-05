@@ -2,6 +2,7 @@ package alerts
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -10,11 +11,77 @@ import (
 	"last9-mcp/internal/last9api"
 )
 
-const pathAlertHygiene = "/alerts/hygiene"
+const pathHygiene = "/alerts/hygiene"
 
-const opAlertHygiene = "alert hygiene"
+const opHygiene = "alert hygiene"
 
-// Values of HygieneMetric.Status, HygieneValue.Status and HygieneCoverageSource.Status.
+const hygieneLabelPrefix = "label."
+
+// The API returns at most 200 rules, each with its group labels.
+const maxHygieneBytes = 4 << 20
+
+type GetHygieneInput struct {
+	From, To   time.Time
+	Timezone   string
+	Services   []string
+	Severities []string
+	// Sent as label.<key>=<value>: only rules whose alert group carries every label.
+	Labels  map[string]string
+	GroupBy string
+}
+
+// Counts are HealthMetric and derived values HygieneValue, each meaningful only with its
+// status. Routed is omitted when the API has no delivery coverage, never false.
+type HygieneRule struct {
+	AlertGroupID           string            `json:"alert_group_id"`
+	RuleID                 string            `json:"rule_id"`
+	RuleType               string            `json:"rule_type"`
+	RuleName               string            `json:"rule_name"`
+	Service                string            `json:"service"`
+	Severity               string            `json:"severity"`
+	GroupLabels            map[string]string `json:"group_labels,omitempty"`
+	FireCount              *HealthMetric     `json:"fire_count"`
+	FlapCount              *HealthMetric     `json:"flap_count"`
+	FlapsPerDay            *HygieneValue     `json:"flaps_per_day"`
+	TimeFiringSeconds      *HealthMetric     `json:"time_firing_seconds"`
+	LastFiredAt            *time.Time        `json:"last_fired_at,omitempty"`
+	SecondsSinceLastFire   *int64            `json:"seconds_since_last_fire,omitempty"`
+	AckRate                *HygieneValue     `json:"ack_rate"`
+	MedianTimeToAckSeconds *HygieneValue     `json:"median_time_to_ack_seconds"`
+	NotificationAttempts   *HealthMetric     `json:"notification_attempts"`
+	Routed                 *bool             `json:"routed,omitempty"`
+}
+
+type HygieneValue struct {
+	Status string   `json:"status"`
+	Value  *float64 `json:"value,omitempty"`
+	Reason string   `json:"reason,omitempty"`
+}
+
+type GetHygieneResponse struct {
+	Coverage json.RawMessage `json:"coverage"`
+	Rules    []HygieneRule   `json:"rules"`
+	// True when the API cut the rule list at its cap; the rules kept are the top by fire count.
+	Truncated bool            `json:"truncated"`
+	GroupBy   string          `json:"group_by,omitempty"`
+	Groups    json.RawMessage `json:"groups,omitempty"`
+}
+
+// GetHygiene calls GET /alerts/hygiene.
+func GetHygiene(ctx context.Context, c *last9api.Client, in GetHygieneInput) (GetHygieneResponse, error) {
+	var resp GetHygieneResponse
+	err := queryHygiene(ctx, c, in, &resp)
+	if err != nil {
+		return resp, err
+	}
+	// Do accepts an empty 2xx; a missing rules list must not read as "no noisy rules".
+	if resp.Rules == nil {
+		return resp, fmt.Errorf("%s: response has no rules list", opHygiene)
+	}
+	return resp, nil
+}
+
+// Values of HealthMetric.Status, HygieneValue.Status and HygieneCoverageSource.Status.
 const (
 	HygieneStatusAvailable   = "available"
 	HygieneStatusPartial     = "partial"
@@ -26,42 +93,6 @@ const (
 type GetAlertHygieneInput struct {
 	From, To time.Time
 	Timezone string
-}
-
-// HygieneMetric is a count the API may not have observed: Count is nil when Status
-// is unavailable, so an unobserved value never reads as zero.
-type HygieneMetric struct {
-	Status string `json:"status"`
-	Count  *int64 `json:"count,omitempty"`
-	Reason string `json:"reason,omitempty"`
-}
-
-// HygieneValue is a derived value with the same availability contract as HygieneMetric.
-type HygieneValue struct {
-	Status string   `json:"status"`
-	Value  *float64 `json:"value,omitempty"`
-	Reason string   `json:"reason,omitempty"`
-}
-
-// HygieneRule is one rule's stats for the period, without mute history or rule
-// configuration. LastFiredAt is nil without lifecycle coverage and may precede the
-// period for a still-open episode; Routed is nil without delivery coverage.
-type HygieneRule struct {
-	AlertGroupID           string            `json:"alert_group_id"`
-	RuleID                 string            `json:"rule_id"`
-	RuleType               string            `json:"rule_type"`
-	RuleName               string            `json:"rule_name"`
-	Service                string            `json:"service,omitempty"`
-	Severity               string            `json:"severity,omitempty"`
-	GroupLabels            map[string]string `json:"group_labels,omitempty"`
-	FireCount              HygieneMetric     `json:"fire_count"`
-	FlapCount              HygieneMetric     `json:"flap_count"`
-	FlapsPerDay            HygieneValue      `json:"flaps_per_day"`
-	TimeFiringSeconds      HygieneMetric     `json:"time_firing_seconds"`
-	LastFiredAt            *time.Time        `json:"last_fired_at,omitempty"`
-	AckRate                HygieneValue      `json:"ack_rate"`
-	MedianTimeToAckSeconds HygieneValue      `json:"median_time_to_ack_seconds"`
-	Routed                 *bool             `json:"routed,omitempty"`
 }
 
 type HygienePeriod struct {
@@ -98,25 +129,37 @@ type GetAlertHygieneResponse struct {
 }
 
 // GetAlertHygiene calls GET /alerts/hygiene?from&to&timezone.
-func GetAlertHygiene(
-	ctx context.Context, c *last9api.Client, in GetAlertHygieneInput,
-) (*GetAlertHygieneResponse, error) {
+func GetAlertHygiene(ctx context.Context, c *last9api.Client, in GetAlertHygieneInput) (*GetAlertHygieneResponse, error) {
 	var out GetAlertHygieneResponse
-	err := c.Do(ctx, opAlertHygiene,
-		last9api.Request{Method: http.MethodGet, Path: pathAlertHygiene},
-		&out,
-		last9api.WithQuery(url.Values{
-			"from":     {in.From.UTC().Format(time.RFC3339)},
-			"to":       {in.To.UTC().Format(time.RFC3339)},
-			"timezone": {in.Timezone},
-		}),
-	)
-	if err != nil {
+	if err := queryHygiene(ctx, c, GetHygieneInput{From: in.From, To: in.To, Timezone: in.Timezone}, &out); err != nil {
 		return nil, err
 	}
-	// Do accepts an empty 2xx; a missing rules list must not read as "every rule is fine".
 	if out.Rules == nil {
-		return nil, fmt.Errorf("%s: response has no rules list", opAlertHygiene)
+		return nil, fmt.Errorf("%s: response has no rules list", opHygiene)
 	}
 	return &out, nil
+}
+
+// queryHygiene calls GET /alerts/hygiene.
+func queryHygiene(ctx context.Context, c *last9api.Client, in GetHygieneInput, out any) error {
+	q := url.Values{}
+	q.Set("from", in.From.UTC().Format(time.RFC3339Nano))
+	q.Set("to", in.To.UTC().Format(time.RFC3339Nano))
+	if in.Timezone != "" {
+		q.Set("timezone", in.Timezone)
+	}
+	for _, s := range in.Services {
+		q.Add("services", s)
+	}
+	for _, s := range in.Severities {
+		q.Add("severities", s)
+	}
+	for k, v := range in.Labels {
+		q.Set(hygieneLabelPrefix+k, v)
+	}
+	if in.GroupBy != "" {
+		q.Set("group_by", in.GroupBy)
+	}
+	return c.Do(ctx, opHygiene, last9api.Request{Method: http.MethodGet, Path: pathHygiene}, out,
+		last9api.WithQuery(q), last9api.WithMaxResponseBytes(maxHygieneBytes))
 }

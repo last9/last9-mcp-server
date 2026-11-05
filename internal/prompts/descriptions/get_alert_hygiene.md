@@ -14,8 +14,8 @@ Categories (a rule may have several; disabled rules are never flagged):
   episode in it while `coverage.lifecycle` is complete and the list is not truncated.
 - unrouted: no firing reached a channel and its alert group has no channel attached.
 
-Each stat is `{status, count|value, reason}`; an unavailable value is never read as zero and
-skips the check that needs it. `unavailable` counts enabled rules per missing value (`routed`
+Stats: `{status, count|value, reason}` or null; unavailable values never read as zero and
+skip the check that needs them. `unavailable` counts enabled rules per missing value (`routed`
 also if attachments were unreadable), plus `rule_config` (not in the alert rules list; fixes
 carry no current value) and `activity` (no episode, silence unproven: not assessed).
 `coverage`: how much of the window history covered; rates use that span, at least a day.

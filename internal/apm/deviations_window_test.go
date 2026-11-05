@@ -2,6 +2,7 @@ package apm
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -259,6 +260,69 @@ func TestResolveDeviationWindowsRejectsUnalignedHistoricalBoundaries(t *testing.
 		if _, err := resolveDeviationWindows(args, now, time.Minute); err == nil {
 			t.Fatalf("expected unaligned historical boundary error for %+v", args)
 		}
+	}
+}
+
+func TestResolveDeviationWindowsUnalignedErrorNamesStepAndNearestAlignedWindow(t *testing.T) {
+	now := time.Date(2026, 7, 11, 10, 7, 32, 0, time.UTC)
+	tests := []struct {
+		name string
+		args DeviationArgs
+		step time.Duration
+		want string
+	}{
+		{
+			name: "current rounds down",
+			args: DeviationArgs{StartTimeISO: "2026-07-11T07:00:20Z", EndTimeISO: "2026-07-11T08:00:20Z"},
+			step: time.Minute,
+			want: "explicit current window boundaries must align to the 60s query step; nearest aligned window: start_time_iso=2026-07-11T07:00:00Z end_time_iso=2026-07-11T08:00:00Z",
+		},
+		{
+			name: "current rounds up from the half step",
+			args: DeviationArgs{StartTimeISO: "2026-07-11T07:00:30Z", EndTimeISO: "2026-07-11T08:00:30Z"},
+			step: time.Minute,
+			want: "start_time_iso=2026-07-11T07:01:00Z end_time_iso=2026-07-11T08:01:00Z",
+		},
+		{
+			name: "only the end is unaligned",
+			args: DeviationArgs{StartTimeISO: "2026-07-11T07:00:00Z", EndTimeISO: "2026-07-11T08:00:45Z"},
+			step: time.Minute,
+			want: "start_time_iso=2026-07-11T07:00:00Z end_time_iso=2026-07-11T08:01:00Z",
+		},
+		{
+			name: "window shorter than a step widens to one step",
+			args: DeviationArgs{StartTimeISO: "2026-07-11T07:00:10Z", EndTimeISO: "2026-07-11T07:00:20Z"},
+			step: time.Minute,
+			want: "start_time_iso=2026-07-11T07:00:00Z end_time_iso=2026-07-11T07:01:00Z",
+		},
+		{
+			name: "non-minute step",
+			args: DeviationArgs{StartTimeISO: "2026-07-11T07:01:00Z", EndTimeISO: "2026-07-11T08:01:00Z"},
+			step: 5 * time.Minute,
+			want: "explicit current window boundaries must align to the 300s query step; nearest aligned window: start_time_iso=2026-07-11T07:00:00Z end_time_iso=2026-07-11T08:00:00Z",
+		},
+		{
+			name: "baseline",
+			args: DeviationArgs{
+				StartTimeISO:     "2026-07-11T07:00:00Z",
+				EndTimeISO:       "2026-07-11T08:00:00Z",
+				BaselineStartISO: "2026-07-10T07:00:40Z",
+				BaselineEndISO:   "2026-07-10T08:00:40Z",
+			},
+			step: time.Minute,
+			want: "explicit baseline window boundaries must align to the 60s query step; nearest aligned window: baseline_start_time_iso=2026-07-10T07:01:00Z baseline_end_time_iso=2026-07-10T08:01:00Z",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := resolveDeviationWindows(tt.args, now, tt.step)
+			if err == nil {
+				t.Fatal("expected alignment error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error %q does not contain %q", err, tt.want)
+			}
+		})
 	}
 }
 

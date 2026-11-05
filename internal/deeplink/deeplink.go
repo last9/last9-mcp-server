@@ -20,7 +20,7 @@ const (
 	RouteAlertingGroups       = "alerting/groups"
 	RouteNotificationChannels = "settings/notification-channels"
 	RouteDropRules            = "control-plane/%s/drop" // requires clusterId
-	RouteDashboards = "dashboards"
+	RouteDashboards           = "dashboards"
 )
 
 // Builder helps construct deep links
@@ -179,6 +179,25 @@ func (b *Builder) BuildDatabasesLink() string {
 // BuildAlertingGroupsLink creates a deep link to the alerting groups page
 func (b *Builder) BuildAlertingGroupsLink() string {
 	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, RouteAlertingGroups)
+}
+
+type AlertRuleReference struct {
+	RuleID    string
+	GroupID   string
+	GroupName string
+}
+
+func (b *Builder) AlertRuleMeta(rule AlertRuleReference) mcp.Meta {
+	params := url.Values{"rule": {rule.RuleID}, "group_id": {rule.GroupID}}
+	meta := ToMeta(b.BuildAlertingGroupsLink() + "?" + params.Encode())
+	if strings.TrimSpace(rule.GroupName) != "" {
+		groupParams := url.Values{"alertGroupNames": {rule.GroupName}}
+		meta["links"] = []map[string]string{{
+			"label": "Open group",
+			"url":   b.BuildAlertingGroupsLink() + "?" + groupParams.Encode(),
+		}}
+	}
+	return meta
 }
 
 // BuildNotificationChannelsLink creates a deep link to the notification channels settings page

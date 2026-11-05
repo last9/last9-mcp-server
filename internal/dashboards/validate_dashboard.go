@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -155,6 +156,15 @@ func validateDashboardInput(args ValidateDashboardArgs) (*validatedDashboardArgs
 // NewValidateDashboardHandler returns the MCP tool handler for validate_dashboard.
 func NewValidateDashboardHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, ValidateDashboardArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args ValidateDashboardArgs) (*mcp.CallToolResult, any, error) {
+		definition, unwrapped, envelopeErr := unwrapDashboardEnvelope(args.DashboardDefinition)
+		if envelopeErr != "" {
+			return jsonToolResult(map[string]any{
+				"success": false,
+				"error":   "invalid_input",
+				"detail":  []string{envelopeErr},
+			})
+		}
+		args.DashboardDefinition = definition
 		parsed, errs := validateDashboardInput(args)
 		if len(errs) > 0 {
 			return jsonToolResult(map[string]any{
@@ -166,8 +176,25 @@ func NewValidateDashboardHandler(client *http.Client, cfg models.Config) func(co
 
 		exec := &validateExecutor{client: client, cfg: cfg}
 		result := runValidateDashboard(ctx, exec, parsed)
+		if unwrapped {
+			result["note"] = "dashboard_definition was a {dashboard, metadata} envelope; validated its inner dashboard object."
+		}
 		return jsonToolResult(result)
 	}
+}
+
+// unwrapDashboardEnvelope accepts the {dashboard, metadata} envelope create_dashboard takes,
+// which would otherwise read as a dashboard with no panels.
+func unwrapDashboardEnvelope(definition map[string]any) (map[string]any, bool, string) {
+	inner, wrapped := definition["dashboard"]
+	if !wrapped {
+		return definition, false, ""
+	}
+	dashboard, ok := inner.(map[string]any)
+	if _, hasPanels := definition["panels"]; !ok || hasPanels {
+		return nil, false, "dashboard_definition has a top-level dashboard key; pass the inner dashboard object (name, panels, variables), not the {dashboard, metadata} envelope"
+	}
+	return dashboard, true, ""
 }
 
 func jsonToolResult(v any) (*mcp.CallToolResult, any, error) {
@@ -228,6 +255,18 @@ func runValidateDashboard(ctx context.Context, exec *validateExecutor, parsed *v
 			"detail":  []string{"dashboard.panels must be a list"},
 		}
 	}
+	// Preview checks the whole candidate against the dashboard schema itself.
+	if len(panels) == 0 && !exec.preview {
+		detail := "dashboard has no panels to validate; dashboard_definition must be a dashboard object with a non-empty panels list"
+		if source == "saved" {
+			detail = fmt.Sprintf("saved dashboard %s has no panels to validate; add panels before validating it", dashboardRef)
+		}
+		return map[string]any{
+			"success": false,
+			"error":   "no_panels",
+			"detail":  []string{detail},
+		}
+	}
 
 	panelRecords := make([]map[string]any, 0, len(panels))
 	for index, raw := range panels {
@@ -242,7 +281,17 @@ func runValidateDashboard(ctx context.Context, exec *validateExecutor, parsed *v
 					panelRecords = append(panelRecords, panelFailureRecord(panel, fmt.Errorf("%v", r)))
 				}
 			}()
-			panelRecords = append(panelRecords, validatePanel(ctx, panel, exec, parsed.variables, defaults, window, dashboardRef))
+			record := validatePanel(ctx, panel, exec, parsed.variables, defaults, window, dashboardRef)
+			if !exec.preview {
+				shaped := panel
+				if source == "saved" {
+					shaped = withoutNullQueries(panel)
+				}
+				if problems := checkPanelShape(shaped, fmt.Sprintf("panels[%d]", index)); len(problems) > 0 {
+					record["shape_problems"] = problems
+				}
+			}
+			panelRecords = append(panelRecords, record)
 		}()
 	}
 
@@ -333,6 +382,17 @@ func panelFailureRecord(panel map[string]any, err error) map[string]any {
 		"classification":     "query",
 		"targets":            []map[string]any{failureTarget(0, err)},
 	}
+}
+
+// withoutNullQueries drops a null queries list, which the API returns for saved panels
+// without queries; write inputs stay strict and must send an array or omit it.
+func withoutNullQueries(panel map[string]any) map[string]any {
+	if queries, set := panel["queries"]; !set || queries != nil {
+		return panel
+	}
+	trimmed := maps.Clone(panel)
+	delete(trimmed, "queries")
+	return trimmed
 }
 
 func malformedPanelRecord(index int, raw any) map[string]any {

@@ -19,17 +19,17 @@ var (
 func boolp(v bool) *bool           { return &v }
 func timep(v time.Time) *time.Time { return &v }
 
-func count(n int64) alerts.HygieneMetric {
-	return alerts.HygieneMetric{Status: alerts.HygieneStatusAvailable, Count: &n}
+func count(n int64) *alerts.HealthMetric {
+	return &alerts.HealthMetric{Status: alerts.HygieneStatusAvailable, Count: &n}
 }
 
-func value(v float64) alerts.HygieneValue {
-	return alerts.HygieneValue{Status: alerts.HygieneStatusAvailable, Value: &v}
+func value(v float64) *alerts.HygieneValue {
+	return &alerts.HygieneValue{Status: alerts.HygieneStatusAvailable, Value: &v}
 }
 
 var (
-	unavailableCount = alerts.HygieneMetric{Status: alerts.HygieneStatusUnavailable, Reason: "not observed"}
-	unavailableValue = alerts.HygieneValue{Status: alerts.HygieneStatusUnavailable, Reason: "not observed"}
+	unavailableCount = &alerts.HealthMetric{Status: alerts.HygieneStatusUnavailable, Reason: "not observed"}
+	unavailableValue = &alerts.HygieneValue{Status: alerts.HygieneStatusUnavailable, Reason: "not observed"}
 )
 
 // healthyRule is enabled, routed, fired inside the window, has its configuration and

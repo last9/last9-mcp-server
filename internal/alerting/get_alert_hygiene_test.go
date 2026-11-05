@@ -523,3 +523,31 @@ func TestGetAlertHygiene_UnroutedNeedsNoCurrentAttachment(t *testing.T) {
 		})
 	}
 }
+
+func TestGetAlertHygiene_NullMetricsRemainUnavailable(t *testing.T) {
+	first := healthyRule("first")
+	first.FireCount, first.FlapCount, first.TimeFiringSeconds = nil, nil, nil
+	first.AckRate, first.FlapsPerDay = nil, nil
+	first.LastFiredAt = timep(testWindowFr.Add(-testDay))
+	first.Routed = boolp(false)
+	second := first
+	second.RuleID = "second"
+	stub := &hygieneStub{rules: []hygieneRule{first, second}}
+	result, err := callGetAlertHygiene(t, stub, GetAlertHygieneArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := decodeHygieneResult(t, result)
+	want := hygieneUnavailable{FireCount: 2, FlapCount: 2, AckRate: 2, RuleConfig: 1}
+	if out.Unavailable != want || out.RulesEvaluated != 2 || len(out.Rules) != 2 {
+		t.Fatalf("result = %+v, want two assessed rules with unavailable metrics %+v", out, want)
+	}
+	for _, rule := range out.Rules {
+		if got := categories(rule.Findings); !reflect.DeepEqual(got, []string{hygieneCategoryUnrouted}) {
+			t.Errorf("categories = %v, want only unrouted", got)
+		}
+		if rule.Stats.FireCount != nil || rule.Stats.AckRate != nil {
+			t.Errorf("missing metrics became observed: %+v", rule.Stats)
+		}
+	}
+}

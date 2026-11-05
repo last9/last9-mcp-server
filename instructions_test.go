@@ -306,13 +306,9 @@ func TestDiscoverSectionListsOnlyNameLookups(t *testing.T) {
 }
 
 // maxInvestigateInstructionsBytes caps the policy automation sessions receive,
-// near its size, so growth is a reviewed decision: it precedes every tool
-// description, and growing it moved log_query evals. The parsed-field line
-// was a reviewed increase, validated on the full log_query suite; naming
-// analyze_change_impact and get_metric_status, the log-pattern tools joining
-// the one-service bullet, the explicit pipeline time-window rule (issue #379),
-// and get_entity_kpis, which investigate serves, were reviewed additions.
-const maxInvestigateInstructionsBytes = 3000
+// near its size: it precedes every tool description and growing it moved
+// log_query evals, so each increase is a reviewed decision.
+const maxInvestigateInstructionsBytes = 3040
 
 func TestInvestigateInstructionsBounded(t *testing.T) {
 	instructions, _ := initializeOver(t, "investigate")
@@ -585,6 +581,33 @@ func TestServerInstructionsSayCreateAlertRulesStartDisabled(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("created-disabled line = %q, want %q:\n%s", got, tt.want, instructions)
+			}
+		})
+	}
+}
+
+// get_alert_coverage gets its own bullet at the end of the section, so every
+// pinned line keeps its wording and place: rewording or inserting mid-section
+// regressed unrelated log-query evals.
+func TestServerInstructionsNameAlertCoverageWithoutShiftingLines(t *testing.T) {
+	tests := []struct {
+		spec string
+		want string
+	}{
+		{spec: "", want: "- Alert coverage gaps: `get_alert_coverage`."},
+		{spec: "alerts", want: "- Alert coverage gaps: `get_alert_coverage`."},
+		{spec: "investigate", want: "- Alert coverage gaps: `get_alert_coverage`."},
+	}
+	for _, tt := range tests {
+		t.Run("toolsets="+tt.spec, func(t *testing.T) {
+			instructions, _ := initializeOver(t, tt.spec)
+			if got := lineNaming(instructions, "get_alert_coverage"); got != tt.want {
+				t.Errorf("get_alert_coverage line = %q, want %q", got, tt.want)
+			}
+			_, dedicated, _ := strings.Cut(instructions, "## Prefer dedicated tools\n")
+			dedicated, _, _ = strings.Cut(dedicated, "\n\n")
+			if last := dedicated[strings.LastIndex(dedicated, "\n")+1:]; last != tt.want {
+				t.Errorf("last dedicated-tools bullet = %q, want %q:\n%s", last, tt.want, instructions)
 			}
 		})
 	}

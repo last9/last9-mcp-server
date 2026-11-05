@@ -167,3 +167,7 @@ Add responder context to any template under `properties`: `description`, `runboo
 5. Continue from step 3 of the lifecycle: ground the threshold, validate, `create_alert` as a draft, read it back, promote only on confirmation.
 
 Dashboard tools do not create alerts themselves.
+
+## Write result links
+
+Successful `create_alert`, `update_alert`, `patch_alert` and `create_alert_from_chart` results include `_meta.reference_url`, a relative URL opening the saved rule in its alert group. Updates use the returned replacement rule ID. If the API supplies `group_name` in the write response or the existing ownership lookup, `_meta.links` also includes an `Open group` link filtered by that name. Query values are URL-encoded; an unavailable group name omits `links`. No extra lookup is made for this optional metadata. Failed writes do not carry these success links. `create_kpi` continues to link to the groups index; dashboard writes continue to link to their dashboard.
