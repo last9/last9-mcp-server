@@ -148,11 +148,9 @@ func NewCreateAlertFromChartHandler(client *http.Client, cfg models.Config) func
 		if failure := disableChartRule(ctx, api, resp.GroupID, resp.ID); failure != nil {
 			return failure, nil, nil
 		}
-		link := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildAlertingGroupsLink()
-		return &mcp.CallToolResult{
-			Meta:    deeplink.ToMeta(link),
-			Content: []mcp.Content{&mcp.TextContent{Text: createFromChartReport(resp, args)}},
-		}, nil, nil
+		return alertRuleMutationResult(cfg, createFromChartReport(resp, args), deeplink.AlertRuleReference{
+			RuleID: resp.ID, GroupID: resp.GroupID, GroupName: resp.GroupName,
+		}), nil, nil
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/entities"
 	"last9-mcp/internal/models"
@@ -47,14 +48,15 @@ func NewCreateAlertHandler(client *http.Client, cfg models.Config) func(context.
 		if err != nil {
 			return alertRuleWriteError(err)
 		}
-		if err := validateMutationIDResponse(body); err != nil {
+		response, err := parseMutationIDResponse(body)
+		if err != nil {
 			return nil, nil, fmt.Errorf("invalid create alert response: %w", err)
 		}
 		text := strings.TrimSpace(string(body)) + "\n\n" + draftCreatedNote
 		if overridden {
 			text += " Requested is_disabled=false was ignored: create_alert always creates disabled."
 		}
-		return alertMutationResult(cfg, []byte(text), ""), nil, nil
+		return alertRuleMutationResult(cfg, text, deeplink.AlertRuleReference{RuleID: response.ID, GroupID: args.EntityID, GroupName: response.GroupName}), nil, nil
 	}
 }
 
