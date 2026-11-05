@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/entities"
 	"last9-mcp/internal/models"
@@ -46,9 +47,13 @@ func NewUpdateAlertHandler(client *http.Client, cfg models.Config) func(context.
 		if err != nil {
 			return alertRuleWriteError(err)
 		}
-		if err := validateMutationIDResponse(body); err != nil {
+		response, err := parseMutationIDResponse(body)
+		if err != nil {
 			return nil, nil, fmt.Errorf("invalid update alert response: %w", err)
 		}
-		return alertMutationResult(cfg, body, ""), nil, nil
+		if strings.TrimSpace(response.GroupName) == "" {
+			response.GroupName = stored.GroupName
+		}
+		return alertRuleMutationResult(cfg, strings.TrimSpace(string(body)), deeplink.AlertRuleReference{RuleID: response.ID, GroupID: args.EntityID, GroupName: response.GroupName}), nil, nil
 	}
 }
