@@ -18,5 +18,7 @@ Parameters:
 - start_time_iso: (Optional) Start time in RFC3339 format.
 - end_time_iso: (Optional) End time in RFC3339 format.
 
+Output: every key metric of an available database is listed in `metrics`; a key whose query returned no series is `null` and also named in `missing_metrics`, so a missing exporter metric is not mistaken for an unqueried one.
+
 Example metrics:
 - Aerospike: open_connections, memory_free_pct, namespace_memory_free_pct, namespace_memory_used_bytes, reads_per_sec, writes_per_sec, errors_per_sec, disk_available_pct.

@@ -595,10 +595,11 @@ func NewGetDatabaseServerMetricsHandler(client *http.Client, cfg models.Config) 
 		}
 
 		type dbResult struct {
-			DBSystem    string         `json:"db_system"`
-			DisplayName string         `json:"display_name"`
-			Available   bool           `json:"available"`
-			Metrics     map[string]any `json:"metrics,omitempty"`
+			DBSystem       string         `json:"db_system"`
+			DisplayName    string         `json:"display_name"`
+			Available      bool           `json:"available"`
+			Metrics        map[string]any `json:"metrics,omitempty"`
+			MissingMetrics []string       `json:"missing_metrics,omitempty"`
 		}
 
 		// Probe all database types in parallel
@@ -643,7 +644,8 @@ func NewGetDatabaseServerMetricsHandler(client *http.Client, cfg models.Config) 
 			metricsWg.Add(1)
 			go func(pr probeResult) {
 				defer metricsWg.Done()
-				metrics := make(map[string]any)
+				metrics := make(map[string]any, len(pr.exporterCfg.KeyMetrics))
+				var missing []string
 				var metricMu sync.Mutex
 				var mWg sync.WaitGroup
 
@@ -652,21 +654,24 @@ func NewGetDatabaseServerMetricsHandler(client *http.Client, cfg models.Config) 
 					go func(km dbKeyMetric) {
 						defer mWg.Done()
 						val := queryPromInstantValue(ctx, client, cfg, km.Query, endTime)
-						if val != nil {
-							metricMu.Lock()
-							metrics[km.Name] = val
-							metricMu.Unlock()
+						metricMu.Lock()
+						metrics[km.Name] = val
+						if val == nil {
+							missing = append(missing, km.Name)
 						}
+						metricMu.Unlock()
 					}(km)
 				}
 				mWg.Wait()
+				sort.Strings(missing)
 
 				resultsMu.Lock()
 				results = append(results, dbResult{
-					DBSystem:    pr.dbSys,
-					DisplayName: pr.exporterCfg.DisplayName,
-					Available:   true,
-					Metrics:     metrics,
+					DBSystem:       pr.dbSys,
+					DisplayName:    pr.exporterCfg.DisplayName,
+					Available:      true,
+					Metrics:        metrics,
+					MissingMetrics: missing,
 				})
 				resultsMu.Unlock()
 			}(pr)
