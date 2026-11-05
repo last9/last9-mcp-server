@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -795,6 +796,82 @@ func TestGetDatabaseServerMetricsHandler_NotAvailable(t *testing.T) {
 	db := databases[0].(map[string]any)
 	if db["available"] != false {
 		t.Error("expected oracle to be unavailable")
+	}
+}
+
+func TestGetDatabaseServerMetricsHandler_KeepsKeysWithNoSeries(t *testing.T) {
+	keyMetrics := dbExporterConfigs["oracle"].KeyMetrics
+	answered := keyMetrics[0]
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "prom_label_values") {
+			json.NewEncoder(w).Encode([]string{"oracledb_up"})
+			return
+		}
+		var body struct {
+			Query string `json:"query"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode instant query body: %v", err)
+		}
+		if body.Query != answered.Query {
+			json.NewEncoder(w).Encode([]any{})
+			return
+		}
+		json.NewEncoder(w).Encode([]map[string]any{{
+			"metric": map[string]string{"oracledb_instance_name": "ORCL"},
+			"value":  []any{1700000000, "7"},
+		}})
+	}))
+	defer server.Close()
+
+	handler := NewGetDatabaseServerMetricsHandler(server.Client(), testDBConfig(server.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetDatabaseServerMetricsArgs{
+		DBSystem:        "oracle",
+		LookbackMinutes: 60,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	var response struct {
+		Databases []struct {
+			Available      bool           `json:"available"`
+			Metrics        map[string]any `json:"metrics"`
+			MissingMetrics []string       `json:"missing_metrics"`
+		} `json:"databases"`
+	}
+	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &response); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if len(response.Databases) != 1 {
+		t.Fatalf("expected one database, got %d", len(response.Databases))
+	}
+	db := response.Databases[0]
+	if !db.Available {
+		t.Error("expected oracle to stay available when some key metrics have no series")
+	}
+
+	var wantMissing []string
+	for _, km := range keyMetrics {
+		value, present := db.Metrics[km.Name]
+		if !present {
+			t.Errorf("key %q missing from metrics", km.Name)
+			continue
+		}
+		if km.Name == answered.Name {
+			if value == nil {
+				t.Errorf("key %q: expected a value, got null", km.Name)
+			}
+			continue
+		}
+		if value != nil {
+			t.Errorf("key %q: expected null for a query with no series, got %v", km.Name, value)
+		}
+		wantMissing = append(wantMissing, km.Name)
+	}
+	sort.Strings(wantMissing)
+	if strings.Join(db.MissingMetrics, ",") != strings.Join(wantMissing, ",") {
+		t.Errorf("missing_metrics = %v, want %v", db.MissingMetrics, wantMissing)
 	}
 }
 
