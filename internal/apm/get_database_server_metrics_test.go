@@ -6,6 +6,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"regexp"
 	"slices"
 	"sort"
@@ -265,6 +266,42 @@ func TestGetDatabaseServerMetricsHandler_OracleValuesPerInstance(t *testing.T) {
 	want := map[string]float64{"ORCL1": 3, "ORCL2": 5}
 	if !maps.Equal(got, want) {
 		t.Errorf("active_sessions = %v, want %v (non-finite samples dropped)", got, want)
+	}
+}
+
+func TestKeyMetricValue_NonFiniteSamples(t *testing.T) {
+	series := func(instanceValues ...string) apiPromInstantResp {
+		var resp apiPromInstantResp
+		for i := 0; i < len(instanceValues); i += 2 {
+			resp = append(resp, apiPromInstantResp{{
+				Metric: map[string]string{"oracledb_instance_name": instanceValues[i]},
+				Value:  []any{1700000000.0, instanceValues[i+1]},
+			}}...)
+		}
+		return resp
+	}
+	scalar := dbKeyMetric{Name: "scalar"}
+	grouped := dbKeyMetric{Name: "grouped", ByLabel: "oracledb_instance_name"}
+
+	tests := []struct {
+		name   string
+		km     dbKeyMetric
+		series apiPromInstantResp
+		want   any
+	}{
+		{"scalar finite", scalar, series("", "2"), 2.0},
+		{"scalar NaN", scalar, series("", "NaN"), nil},
+		{"scalar no series", scalar, nil, nil},
+		{"grouped mixed omits non-finite instance", grouped, series("ORCL1", "3", "ORCL3", "NaN", "ORCL4", "+Inf"), map[string]float64{"ORCL1": 3}},
+		{"grouped all non-finite", grouped, series("ORCL1", "NaN", "ORCL2", "-Inf"), nil},
+		{"grouped no series", grouped, nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := keyMetricValue(tt.km, tt.series); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("got %#v, want %#v", got, tt.want)
+			}
+		})
 	}
 }
 
