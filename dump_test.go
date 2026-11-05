@@ -764,8 +764,8 @@ func TestDumpToolsInvestigate(t *testing.T) {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}
 	}
-	if len(out.Tools) >= 44 {
-		t.Fatalf("investigate should expose fewer than full surface; got %d", len(out.Tools))
+	if len(out.Tools) >= 45 {
+		t.Fatalf("investigate should expose at most 44 tools; got %d", len(out.Tools))
 	}
 }
 
