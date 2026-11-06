@@ -71,6 +71,9 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 
 	result, err := fetchLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
 	if err != nil {
+		if scanResult := scanErrorResult(err, getLogsScanSteps); scanResult != nil {
+			return scanResult, nil
+		}
 		return nil, err
 	}
 	truncated := addGetLogsGuidance(result, args, getLogsGuidanceContext{
