@@ -13,10 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const (
-	scanCauseTimeout = "timeout"
-	scanCauseFailed  = "scan_failed"
-)
+const scanCauseFailed = "scan_failed"
 
 var getLogsScanSteps = []string{
 	"add a selective `$contains` or `$eq` filter stage before any `parse` or `aggregate` stage, so fewer lines are parsed",
@@ -47,6 +44,10 @@ func scanErrorResult(err error, steps []string) *mcp.CallToolResult {
 	}
 	result := utils.ErrorResult(err)
 	result.Content = []mcp.Content{&mcp.TextContent{Text: string(text)}}
+	if result.Meta == nil {
+		result.Meta = mcp.Meta{}
+	}
+	result.Meta[utils.GuidanceCauseMetaKey] = cause
 	return result
 }
 
@@ -55,7 +56,7 @@ func classifyScanError(err error) (cause, message string) {
 	if errors.As(err, &upstream) {
 		switch status := upstream.StatusCode; {
 		case status == http.StatusRequestTimeout || status == http.StatusGatewayTimeout:
-			return scanCauseTimeout, scanTimeoutMessage
+			return utils.GuidanceCauseTimeout, scanTimeoutMessage
 		case status >= http.StatusInternalServerError:
 			return scanCauseFailed, fmt.Sprintf("The log backend failed the scan with HTTP %d. Over a wide window this usually means the scan read too many lines before a selective filter.", status)
 		}
@@ -64,7 +65,7 @@ func classifyScanError(err error) (cause, message string) {
 	var netErr net.Error
 	if errors.Is(err, utils.ErrLogSearchTimeout) || errors.Is(err, context.DeadlineExceeded) ||
 		(errors.As(err, &netErr) && netErr.Timeout()) {
-		return scanCauseTimeout, scanTimeoutMessage
+		return utils.GuidanceCauseTimeout, scanTimeoutMessage
 	}
 	return "", ""
 }
