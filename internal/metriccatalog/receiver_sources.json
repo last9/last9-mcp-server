@@ -1,0 +1,3425 @@
+[
+  {
+    "path": "receiver/apachereceiver/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "1d9bee0e1fd21f3dc10fc1ff83bdca1d82b0723ffbc9017f956b6e85dee599c7",
+    "metrics": [
+      {
+        "name": "apache.cpu.load",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "%",
+        "help": "Current load of the CPU."
+      },
+      {
+        "name": "apache.cpu.time",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{jiff}",
+        "help": "Jiffs used by processes of given category."
+      },
+      {
+        "name": "apache.current_connections",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{connections}",
+        "help": "The number of active connections currently attached to the HTTP server."
+      },
+      {
+        "name": "apache.load.1",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "%",
+        "help": "The average server load during the last minute."
+      },
+      {
+        "name": "apache.load.15",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "%",
+        "help": "The average server load during the last 15 minutes."
+      },
+      {
+        "name": "apache.load.5",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "%",
+        "help": "The average server load during the last 5 minutes."
+      },
+      {
+        "name": "apache.request.time",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "ms",
+        "help": "Total time spent on handling requests."
+      },
+      {
+        "name": "apache.requests",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{requests}",
+        "help": "The number of requests serviced by the HTTP server per second."
+      },
+      {
+        "name": "apache.scoreboard",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{workers}",
+        "help": "The number of workers in each state."
+      },
+      {
+        "name": "apache.traffic",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "By",
+        "help": "Total HTTP server traffic."
+      },
+      {
+        "name": "apache.uptime",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "s",
+        "help": "The amount of time that the server has been running in seconds."
+      },
+      {
+        "name": "apache.workers",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{workers}",
+        "help": "The number of workers currently attached to the HTTP server."
+      }
+    ]
+  },
+  {
+    "path": "receiver/dockerstatsreceiver/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "5a891af129066fc6c03fb89070fe6adb4c28dc779067ba459e1979ecb1f54e8a",
+    "metrics": [
+      {
+        "name": "container.blockio.io_merged_recursive",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{operations}",
+        "help": "Number of bios/requests merged into requests belonging to this cgroup and its descendant cgroups (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.blockio.io_queued_recursive",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{operations}",
+        "help": "Number of requests queued up for this cgroup and its descendant cgroups (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.blockio.io_service_bytes_recursive",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "By",
+        "help": "Number of bytes transferred to/from the disk by the group and descendant groups."
+      },
+      {
+        "name": "container.blockio.io_service_time_recursive",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "ns",
+        "help": "Total amount of time in nanoseconds between request dispatch and request completion for the IOs done by this cgroup and descendant cgroups (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.blockio.io_serviced_recursive",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{operations}",
+        "help": "Number of IOs (bio) issued to the disk by the group and descendant groups (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.blockio.io_time_recursive",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "ms",
+        "help": "Disk time allocated to cgroup (and descendant cgroups) per device in milliseconds (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.blockio.io_wait_time_recursive",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "ns",
+        "help": "Total amount of time the IOs for this cgroup (and descendant cgroups) spent waiting in the scheduler queues for service (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.blockio.sectors_recursive",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{sectors}",
+        "help": "Number of sectors transferred to/from disk by the group and descendant groups (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.cpu.limit",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{cpus}",
+        "help": "CPU limit set for the container."
+      },
+      {
+        "name": "container.cpu.logical.count",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{cpus}",
+        "help": "Number of cores available to the container."
+      },
+      {
+        "name": "container.cpu.shares",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "CPU shares set for the container."
+      },
+      {
+        "name": "container.cpu.throttling_data.periods",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{periods}",
+        "help": "Number of periods with throttling active."
+      },
+      {
+        "name": "container.cpu.throttling_data.throttled_periods",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{periods}",
+        "help": "Number of periods when the container hits its throttling limit."
+      },
+      {
+        "name": "container.cpu.throttling_data.throttled_time",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "ns",
+        "help": "Aggregate time the container was throttled."
+      },
+      {
+        "name": "container.cpu.usage.kernelmode",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "ns",
+        "help": "Time spent by tasks of the cgroup in kernel mode (Linux).  Time spent by all container processes in kernel mode (Windows)."
+      },
+      {
+        "name": "container.cpu.usage.percpu",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "ns",
+        "help": "Per-core CPU usage by the container (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.cpu.usage.system",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "ns",
+        "help": "System CPU usage, as reported by docker."
+      },
+      {
+        "name": "container.cpu.usage.total",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "ns",
+        "help": "Total CPU time consumed."
+      },
+      {
+        "name": "container.cpu.usage.usermode",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "ns",
+        "help": "Time spent by tasks of the cgroup in user mode (Linux).  Time spent by all container processes in user mode (Windows)."
+      },
+      {
+        "name": "container.cpu.utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Percent of CPU used by the container."
+      },
+      {
+        "name": "container.memory.active_anon",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The amount of anonymous memory that has been identified as active by the kernel."
+      },
+      {
+        "name": "container.memory.active_file",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Cache memory that has been identified as active by the kernel."
+      },
+      {
+        "name": "container.memory.anon",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Amount of memory used in anonymous mappings such as brk(), sbrk(), and mmap(MAP_ANONYMOUS) (Only available with cgroups v2)."
+      },
+      {
+        "name": "container.memory.cache",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The amount of memory used by the processes of this control group that can be associated precisely with a block on a block device (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.dirty",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Bytes that are waiting to get written back to the disk, from this cgroup (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.fails",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{fails}",
+        "help": "Number of times the memory limit was hit."
+      },
+      {
+        "name": "container.memory.file",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Amount of memory used to cache filesystem data, including tmpfs and shared memory (Only available with cgroups v2)."
+      },
+      {
+        "name": "container.memory.hierarchical_memory_limit",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The maximum amount of physical memory that can be used by the processes of this control group (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.hierarchical_memsw_limit",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The maximum amount of RAM + swap that can be used by the processes of this control group (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.inactive_anon",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The amount of anonymous memory that has been identified as inactive by the kernel."
+      },
+      {
+        "name": "container.memory.inactive_file",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Cache memory that has been identified as inactive by the kernel."
+      },
+      {
+        "name": "container.memory.mapped_file",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Indicates the amount of memory mapped by the processes in the control group (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.percent",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Percentage of memory used."
+      },
+      {
+        "name": "container.memory.pgfault",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{faults}",
+        "help": "Indicate the number of times that a process of the cgroup triggered a page fault."
+      },
+      {
+        "name": "container.memory.pgmajfault",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{faults}",
+        "help": "Indicate the number of times that a process of the cgroup triggered a major fault."
+      },
+      {
+        "name": "container.memory.pgpgin",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{operations}",
+        "help": "Number of pages read from disk by the cgroup (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.pgpgout",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{operations}",
+        "help": "Number of pages written to disk by the cgroup (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.rss",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The amount of memory that doesn’t correspond to anything on disk: stacks, heaps, and anonymous memory maps (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.rss_huge",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Number of bytes of anonymous transparent hugepages in this cgroup (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.total_active_anon",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The amount of anonymous memory that has been identified as active by the kernel. Includes descendant cgroups (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.total_active_file",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Cache memory that has been identified as active by the kernel. Includes descendant cgroups (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.total_cache",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Total amount of memory used by the processes of this cgroup (and descendants) that can be associated with a block on a block device. Also accounts for memory used by tmpfs (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.total_dirty",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Bytes that are waiting to get written back to the disk, from this cgroup and descendants (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.total_inactive_anon",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The amount of anonymous memory that has been identified as inactive by the kernel. Includes descendant cgroups (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.total_inactive_file",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Cache memory that has been identified as inactive by the kernel. Includes descendant cgroups (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.total_mapped_file",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Indicates the amount of memory mapped by the processes in the control group and descendant groups (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.total_pgfault",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{faults}",
+        "help": "Indicate the number of times that a process of the cgroup (or descendant cgroups) triggered a page fault (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.total_pgmajfault",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{faults}",
+        "help": "Indicate the number of times that a process of the cgroup (or descendant cgroups) triggered a major fault (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.total_pgpgin",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{operations}",
+        "help": "Number of pages read from disk by the cgroup and descendant groups (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.total_pgpgout",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{operations}",
+        "help": "Number of pages written to disk by the cgroup and descendant groups (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.total_rss",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The amount of memory that doesn’t correspond to anything on disk: stacks, heaps, and anonymous memory maps. Includes descendant cgroups (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.total_rss_huge",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Number of bytes of anonymous transparent hugepages in this cgroup and descendant cgroups (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.total_unevictable",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The amount of memory that cannot be reclaimed. Includes descendant cgroups (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.total_writeback",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Number of bytes of file/anon cache that are queued for syncing to disk in this cgroup and descendants (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.memory.unevictable",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The amount of memory that cannot be reclaimed."
+      },
+      {
+        "name": "container.memory.usage.limit",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Memory limit of the container."
+      },
+      {
+        "name": "container.memory.usage.max",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Maximum memory usage."
+      },
+      {
+        "name": "container.memory.usage.total",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Memory usage of the container. This excludes the cache."
+      },
+      {
+        "name": "container.memory.writeback",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Number of bytes of file/anon cache that are queued for syncing to disk in this cgroup (Only available with cgroups v1)."
+      },
+      {
+        "name": "container.network.io.usage.rx_bytes",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "By",
+        "help": "Bytes received by the container."
+      },
+      {
+        "name": "container.network.io.usage.rx_dropped",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{packets}",
+        "help": "Incoming packets dropped."
+      },
+      {
+        "name": "container.network.io.usage.rx_errors",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{errors}",
+        "help": "Received errors."
+      },
+      {
+        "name": "container.network.io.usage.rx_packets",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{packets}",
+        "help": "Packets received."
+      },
+      {
+        "name": "container.network.io.usage.tx_bytes",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "By",
+        "help": "Bytes sent."
+      },
+      {
+        "name": "container.network.io.usage.tx_dropped",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{packets}",
+        "help": "Outgoing packets dropped."
+      },
+      {
+        "name": "container.network.io.usage.tx_errors",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{errors}",
+        "help": "Sent errors."
+      },
+      {
+        "name": "container.network.io.usage.tx_packets",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{packets}",
+        "help": "Packets sent."
+      },
+      {
+        "name": "container.pids.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{pids}",
+        "help": "Number of pids in the container's cgroup."
+      },
+      {
+        "name": "container.pids.limit",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{pids}",
+        "help": "Maximum number of pids in the container's cgroup."
+      },
+      {
+        "name": "container.restarts",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{restarts}",
+        "help": "Number of restarts for the container."
+      },
+      {
+        "name": "container.uptime",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "s",
+        "help": "Time elapsed since container start time."
+      }
+    ]
+  },
+  {
+    "path": "receiver/hostmetricsreceiver/internal/scraper/cpuscraper/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "a4024844d73491eaca5370a04cc0d5e6ab30847185e5bdda57cfb8b7bf2471ba",
+    "metrics": [
+      {
+        "name": "system.cpu.frequency",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "Hz",
+        "help": "Current frequency of the CPU core in Hz."
+      },
+      {
+        "name": "system.cpu.logical.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{cpu}",
+        "help": "Number of available logical CPUs."
+      },
+      {
+        "name": "system.cpu.physical.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{cpu}",
+        "help": "Number of available physical CPUs."
+      },
+      {
+        "name": "system.cpu.time",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "s",
+        "help": "Total seconds each logical CPU spent on each mode."
+      },
+      {
+        "name": "system.cpu.utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Difference in system.cpu.time since the last measurement per logical CPU, divided by the elapsed time (value in interval [0,1])."
+      }
+    ]
+  },
+  {
+    "path": "receiver/hostmetricsreceiver/internal/scraper/diskscraper/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "41501e873558806daffa12771981f1023b051c564d56707e9871496eb0388c5a",
+    "metrics": [
+      {
+        "name": "system.disk.io",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "By",
+        "help": "Disk bytes transferred."
+      },
+      {
+        "name": "system.disk.io_time",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "s",
+        "help": "Time disk spent activated. On Windows, this is calculated as the inverse of disk idle time."
+      },
+      {
+        "name": "system.disk.merged",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{operations}",
+        "help": "The number of disk reads/writes merged into single physical disk access operations."
+      },
+      {
+        "name": "system.disk.operation_time",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "s",
+        "help": "Time spent in disk operations."
+      },
+      {
+        "name": "system.disk.operations",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{operations}",
+        "help": "Disk operations count."
+      },
+      {
+        "name": "system.disk.pending_operations",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{operations}",
+        "help": "The queue size of pending I/O operations."
+      },
+      {
+        "name": "system.disk.weighted_io_time",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "s",
+        "help": "Time disk spent activated multiplied by the queue length."
+      }
+    ]
+  },
+  {
+    "path": "receiver/hostmetricsreceiver/internal/scraper/filesystemscraper/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "24615a6dbb5a4f528ca5f12a0f9e7cd59affb96cc61a065847eaf6b736d30752",
+    "metrics": [
+      {
+        "name": "system.filesystem.inodes.usage",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{inodes}",
+        "help": "FileSystem inodes used."
+      },
+      {
+        "name": "system.filesystem.usage",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Filesystem bytes used."
+      },
+      {
+        "name": "system.filesystem.utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Fraction of filesystem bytes used."
+      }
+    ]
+  },
+  {
+    "path": "receiver/hostmetricsreceiver/internal/scraper/loadscraper/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "99b592cb415061729329f5f28a3323c043e088f22bec0c5611b395601ea26817",
+    "metrics": [
+      {
+        "name": "system.cpu.load_average.15m",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{thread}",
+        "help": "Average CPU Load over 15 minutes."
+      },
+      {
+        "name": "system.cpu.load_average.1m",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{thread}",
+        "help": "Average CPU Load over 1 minute."
+      },
+      {
+        "name": "system.cpu.load_average.5m",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{thread}",
+        "help": "Average CPU Load over 5 minutes."
+      }
+    ]
+  },
+  {
+    "path": "receiver/hostmetricsreceiver/internal/scraper/memoryscraper/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "09bc4a6b1e8f4628af52017ec5303e13d24de70e9de6ed0461e1d51ebcb61248",
+    "metrics": [
+      {
+        "name": "system.linux.memory.available",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "An estimate of how much memory is available for starting new applications, without swapping. This is a more accurate alternative than system.memory.usage with state=free. (Linux only)"
+      },
+      {
+        "name": "system.memory.limit",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Total bytes of memory available."
+      },
+      {
+        "name": "system.memory.usage",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Bytes of memory in use."
+      },
+      {
+        "name": "system.memory.utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Percentage of memory bytes in use."
+      }
+    ]
+  },
+  {
+    "path": "receiver/hostmetricsreceiver/internal/scraper/networkscraper/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "709fe43f720ca329db8f7f866af12c53bd53e3b04f1443e14fde21fde48de899",
+    "metrics": [
+      {
+        "name": "system.network.connections",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{connections}",
+        "help": "The number of connections."
+      },
+      {
+        "name": "system.network.conntrack.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{entries}",
+        "help": "The count of entries in conntrack table."
+      },
+      {
+        "name": "system.network.conntrack.max",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{entries}",
+        "help": "The limit for entries in the conntrack table."
+      },
+      {
+        "name": "system.network.dropped",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{packets}",
+        "help": "The number of packets dropped."
+      },
+      {
+        "name": "system.network.errors",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{errors}",
+        "help": "The number of errors encountered."
+      },
+      {
+        "name": "system.network.io",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "By",
+        "help": "The number of bytes transmitted and received."
+      },
+      {
+        "name": "system.network.packets",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{packets}",
+        "help": "The number of packets transferred."
+      }
+    ]
+  },
+  {
+    "path": "receiver/hostmetricsreceiver/internal/scraper/pagingscraper/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "0723bdba33984425cb92a64d9dd365ce93739b526ee4c5803977deae58967004",
+    "metrics": [
+      {
+        "name": "system.paging.faults",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{faults}",
+        "help": "The number of page faults."
+      },
+      {
+        "name": "system.paging.operations",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{operations}",
+        "help": "The number of paging operations."
+      },
+      {
+        "name": "system.paging.usage",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Swap (unix) or pagefile (windows) usage."
+      },
+      {
+        "name": "system.paging.utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Swap (unix) or pagefile (windows) utilization."
+      }
+    ]
+  },
+  {
+    "path": "receiver/hostmetricsreceiver/internal/scraper/processesscraper/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "cd5fd4171bd70724cb92145b1a73d3842e505bc8359a66267dcaeb6eb5256f9f",
+    "metrics": [
+      {
+        "name": "system.processes.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{processes}",
+        "help": "Total number of processes in each state."
+      },
+      {
+        "name": "system.processes.created",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{processes}",
+        "help": "Total number of created processes."
+      }
+    ]
+  },
+  {
+    "path": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "b5e57bd5f19c9f94e08bb462a199fab359b638905bf1872788f4390af331d782",
+    "metrics": [
+      {
+        "name": "process.context_switches",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{count}",
+        "help": "Number of times the process has been context switched."
+      },
+      {
+        "name": "process.cpu.time",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "s",
+        "help": "Total CPU seconds broken down by different states."
+      },
+      {
+        "name": "process.cpu.utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Percentage of total CPU time used by the process since last scrape, expressed as a value between 0 and 1. On the first scrape, no data point is emitted for this metric."
+      },
+      {
+        "name": "process.disk.io",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "By",
+        "help": "Disk bytes transferred."
+      },
+      {
+        "name": "process.disk.operations",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{operations}",
+        "help": "Number of disk operations performed by the process."
+      },
+      {
+        "name": "process.handles",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{count}",
+        "help": "Number of handles held by the process."
+      },
+      {
+        "name": "process.memory.usage",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The amount of physical memory in use."
+      },
+      {
+        "name": "process.memory.utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Percentage of total physical memory that is used by the process."
+      },
+      {
+        "name": "process.memory.virtual",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Virtual memory size."
+      },
+      {
+        "name": "process.open_file_descriptors",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{count}",
+        "help": "Number of file descriptors in use by the process."
+      },
+      {
+        "name": "process.paging.faults",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{faults}",
+        "help": "Number of page faults the process has made."
+      },
+      {
+        "name": "process.signals_pending",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{signals}",
+        "help": "Number of pending signals for the process."
+      },
+      {
+        "name": "process.threads",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{threads}",
+        "help": "Process threads count."
+      },
+      {
+        "name": "process.uptime",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "s",
+        "help": "The time the process has been running."
+      }
+    ]
+  },
+  {
+    "path": "receiver/iisreceiver/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "273740ee7796598bec4159b3feff91b91bf8105a85aee2c623e7d546363caeb7",
+    "metrics": [
+      {
+        "name": "iis.connection.active",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{connections}",
+        "help": "Number of active connections."
+      },
+      {
+        "name": "iis.connection.anonymous",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{connections}",
+        "help": "Number of connections established anonymously."
+      },
+      {
+        "name": "iis.connection.attempt.count",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{attempts}",
+        "help": "Total number of attempts to connect to the server."
+      },
+      {
+        "name": "iis.network.blocked",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "By",
+        "help": "Number of bytes blocked due to bandwidth throttling."
+      },
+      {
+        "name": "iis.network.file.count",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{files}",
+        "help": "Number of transmitted files."
+      },
+      {
+        "name": "iis.network.io",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "By",
+        "help": "Total amount of bytes sent and received."
+      },
+      {
+        "name": "iis.request.count",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{requests}",
+        "help": "Total number of requests of a given type."
+      },
+      {
+        "name": "iis.request.queue.age.max",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "ms",
+        "help": "Age of oldest request in the queue."
+      },
+      {
+        "name": "iis.request.queue.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{requests}",
+        "help": "Current number of requests in the queue."
+      },
+      {
+        "name": "iis.request.rejected",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{requests}",
+        "help": "Total number of requests rejected."
+      },
+      {
+        "name": "iis.thread.active",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{threads}",
+        "help": "Current number of active threads."
+      },
+      {
+        "name": "iis.uptime",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "s",
+        "help": "The amount of time the server has been up."
+      }
+    ]
+  },
+  {
+    "path": "receiver/k8sclusterreceiver/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "0f419205cdd8738831f6dc624136f23fbb2a160d8c449e6b3451e790d1d2f6d2",
+    "metrics": [
+      {
+        "name": "k8s.container.cpu_limit",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{cpu}",
+        "help": "Maximum resource limit set for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details"
+      },
+      {
+        "name": "k8s.container.cpu_request",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{cpu}",
+        "help": "Resource requested for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details"
+      },
+      {
+        "name": "k8s.container.ephemeralstorage_limit",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Maximum resource limit set for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details"
+      },
+      {
+        "name": "k8s.container.ephemeralstorage_request",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Resource requested for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details"
+      },
+      {
+        "name": "k8s.container.memory_limit",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Maximum resource limit set for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details"
+      },
+      {
+        "name": "k8s.container.memory_request",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Resource requested for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details"
+      },
+      {
+        "name": "k8s.container.ready",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "",
+        "help": "Whether a container has passed its readiness probe (0 for no, 1 for yes)"
+      },
+      {
+        "name": "k8s.container.restarts",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{restart}",
+        "help": "How many times the container has restarted in the recent past. This value is pulled directly from the K8s API and the value can go indefinitely high and be reset to 0 at any time depending on how your kubelet is configured to prune dead containers. It is best to not depend too much on the exact value but rather look at it as either == 0, in which case you can conclude there were no restarts in the recent past, or > 0, in which case you can conclude there were restarts in the recent past, and not try and analyze the value beyond that."
+      },
+      {
+        "name": "k8s.container.storage_limit",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Maximum resource limit set for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details"
+      },
+      {
+        "name": "k8s.container.storage_request",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Resource requested for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details"
+      },
+      {
+        "name": "k8s.cronjob.active_jobs",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{job}",
+        "help": "The number of actively running jobs for a cronjob"
+      },
+      {
+        "name": "k8s.daemonset.current_scheduled_nodes",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{node}",
+        "help": "Number of nodes that are running at least 1 daemon pod and are supposed to run the daemon pod"
+      },
+      {
+        "name": "k8s.daemonset.desired_scheduled_nodes",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{node}",
+        "help": "Number of nodes that should be running the daemon pod (including nodes currently running the daemon pod)"
+      },
+      {
+        "name": "k8s.daemonset.misscheduled_nodes",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{node}",
+        "help": "Number of nodes that are running the daemon pod, but are not supposed to run the daemon pod"
+      },
+      {
+        "name": "k8s.daemonset.ready_nodes",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{node}",
+        "help": "Number of nodes that should be running the daemon pod and have one or more of the daemon pod running and ready"
+      },
+      {
+        "name": "k8s.deployment.available",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "Total number of available pods (ready for at least minReadySeconds) targeted by this deployment"
+      },
+      {
+        "name": "k8s.deployment.desired",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "Number of desired pods in this deployment"
+      },
+      {
+        "name": "k8s.hpa.current_replicas",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "Current number of pod replicas managed by this autoscaler."
+      },
+      {
+        "name": "k8s.hpa.desired_replicas",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "Desired number of pod replicas managed by this autoscaler."
+      },
+      {
+        "name": "k8s.hpa.max_replicas",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "Maximum number of replicas to which the autoscaler can scale up."
+      },
+      {
+        "name": "k8s.hpa.min_replicas",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "Minimum number of replicas to which the autoscaler can scale up."
+      },
+      {
+        "name": "k8s.job.active_pods",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "The number of actively running pods for a job"
+      },
+      {
+        "name": "k8s.job.desired_successful_pods",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "The desired number of successfully finished pods the job should be run with"
+      },
+      {
+        "name": "k8s.job.failed_pods",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "The number of pods which reached phase Failed for a job"
+      },
+      {
+        "name": "k8s.job.max_parallel_pods",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "The max desired number of pods the job should run at any given time"
+      },
+      {
+        "name": "k8s.job.successful_pods",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "The number of pods which reached phase Succeeded for a job"
+      },
+      {
+        "name": "k8s.namespace.phase",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "",
+        "help": "The current phase of namespaces (1 for active and 0 for terminating)"
+      },
+      {
+        "name": "k8s.node.condition",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{condition}",
+        "help": "The condition of a particular Node."
+      },
+      {
+        "name": "k8s.pod.phase",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "",
+        "help": "Current phase of the pod (1 - Pending, 2 - Running, 3 - Succeeded, 4 - Failed, 5 - Unknown)"
+      },
+      {
+        "name": "k8s.pod.status_reason",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "",
+        "help": "Current status reason of the pod (1 - Evicted, 2 - NodeAffinity, 3 - NodeLost, 4 - Shutdown, 5 - UnexpectedAdmissionError, 6 - Unknown)"
+      },
+      {
+        "name": "k8s.replicaset.available",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "Total number of available pods (ready for at least minReadySeconds) targeted by this replicaset"
+      },
+      {
+        "name": "k8s.replicaset.desired",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "Number of desired pods in this replicaset"
+      },
+      {
+        "name": "k8s.replication_controller.available",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "Total number of available pods (ready for at least minReadySeconds) targeted by this replication_controller"
+      },
+      {
+        "name": "k8s.replication_controller.desired",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "Number of desired pods in this replication_controller"
+      },
+      {
+        "name": "k8s.resource_quota.hard_limit",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{resource}",
+        "help": "The upper limit for a particular resource in a specific namespace. Will only be sent if a quota is specified. CPU requests/limits will be sent as millicores"
+      },
+      {
+        "name": "k8s.resource_quota.used",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{resource}",
+        "help": "The usage for a particular resource in a specific namespace. Will only be sent if a quota is specified. CPU requests/limits will be sent as millicores"
+      },
+      {
+        "name": "k8s.statefulset.current_pods",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "The number of pods created by the StatefulSet controller from the StatefulSet version"
+      },
+      {
+        "name": "k8s.statefulset.desired_pods",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "Number of desired pods in the stateful set (the `spec.replicas` field)"
+      },
+      {
+        "name": "k8s.statefulset.ready_pods",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "Number of pods created by the stateful set that have the `Ready` condition"
+      },
+      {
+        "name": "k8s.statefulset.updated_pods",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pod}",
+        "help": "Number of pods created by the StatefulSet controller from the StatefulSet version"
+      },
+      {
+        "name": "openshift.appliedclusterquota.limit",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{resource}",
+        "help": "The upper limit for a particular resource in a specific namespace."
+      },
+      {
+        "name": "openshift.appliedclusterquota.used",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{resource}",
+        "help": "The usage for a particular resource in a specific namespace."
+      },
+      {
+        "name": "openshift.clusterquota.limit",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{resource}",
+        "help": "The configured upper limit for a particular resource."
+      },
+      {
+        "name": "openshift.clusterquota.used",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{resource}",
+        "help": "The usage for a particular resource with a configured limit."
+      }
+    ]
+  },
+  {
+    "path": "receiver/kafkametricsreceiver/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "e0c93b8e6d0f52397a0d81712c81acb4f042b055a1a98e0b5b3a9fd97761d175",
+    "metrics": [
+      {
+        "name": "kafka.broker.log_retention_period",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "s",
+        "help": "log retention time (s) of a broker."
+      },
+      {
+        "name": "kafka.brokers",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{brokers}",
+        "help": "Number of brokers in the cluster."
+      },
+      {
+        "name": "kafka.consumer_group.lag",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Current approximate lag of consumer group at partition of topic"
+      },
+      {
+        "name": "kafka.consumer_group.lag_sum",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Current approximate sum of consumer group lag across all partitions of topic"
+      },
+      {
+        "name": "kafka.consumer_group.members",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{members}",
+        "help": "Count of members in the consumer group"
+      },
+      {
+        "name": "kafka.consumer_group.offset",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Current offset of the consumer group at partition of topic"
+      },
+      {
+        "name": "kafka.consumer_group.offset_sum",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Sum of consumer group offset across partitions of topic"
+      },
+      {
+        "name": "kafka.partition.current_offset",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Current offset of partition of topic."
+      },
+      {
+        "name": "kafka.partition.oldest_offset",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Oldest offset of partition of topic"
+      },
+      {
+        "name": "kafka.partition.replicas",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{replicas}",
+        "help": "Number of replicas for partition of topic"
+      },
+      {
+        "name": "kafka.partition.replicas_in_sync",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{replicas}",
+        "help": "Number of synchronized replicas of partition"
+      },
+      {
+        "name": "kafka.topic.log_retention_period",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "s",
+        "help": "log retention period of a topic (s)."
+      },
+      {
+        "name": "kafka.topic.log_retention_size",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "log retention size of a topic in Bytes, The value (-1) indicates infinite size."
+      },
+      {
+        "name": "kafka.topic.min_insync_replicas",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{replicas}",
+        "help": "minimum in-sync replicas of a topic."
+      },
+      {
+        "name": "kafka.topic.partitions",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{partitions}",
+        "help": "Number of partitions in topic."
+      },
+      {
+        "name": "kafka.topic.replication_factor",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "replication factor of a topic."
+      }
+    ]
+  },
+  {
+    "path": "receiver/kubeletstatsreceiver/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "f379e08bd10bc7496d95b1c40317ce947d6ea281ac0c30977669e4e875fa657c",
+    "metrics": [
+      {
+        "name": "container.cpu.time",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "s",
+        "help": "Total cumulative CPU time (sum of all cores) spent by the container/pod/node since its creation"
+      },
+      {
+        "name": "container.cpu.usage",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{cpu}",
+        "help": "Total CPU usage (sum of all cores per second) averaged over the sample window"
+      },
+      {
+        "name": "container.cpu.utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Container CPU utilization"
+      },
+      {
+        "name": "container.filesystem.available",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Container filesystem available"
+      },
+      {
+        "name": "container.filesystem.capacity",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Container filesystem capacity"
+      },
+      {
+        "name": "container.filesystem.usage",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Container filesystem usage"
+      },
+      {
+        "name": "container.memory.available",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Container memory available"
+      },
+      {
+        "name": "container.memory.major_page_faults",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Container memory major_page_faults"
+      },
+      {
+        "name": "container.memory.page_faults",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Container memory page_faults"
+      },
+      {
+        "name": "container.memory.rss",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Container memory rss"
+      },
+      {
+        "name": "container.memory.usage",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Container memory usage"
+      },
+      {
+        "name": "container.memory.working_set",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Container memory working_set"
+      },
+      {
+        "name": "container.uptime",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "s",
+        "help": "The time since the container started"
+      },
+      {
+        "name": "k8s.container.cpu.node.utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Container cpu utilization as a ratio of the node's capacity"
+      },
+      {
+        "name": "k8s.container.cpu_limit_utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Container cpu utilization as a ratio of the container's limits"
+      },
+      {
+        "name": "k8s.container.cpu_request_utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Container cpu utilization as a ratio of the container's requests"
+      },
+      {
+        "name": "k8s.container.memory.node.utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Container memory utilization as a ratio of the node's capacity"
+      },
+      {
+        "name": "k8s.container.memory_limit_utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Container memory utilization as a ratio of the container's limits"
+      },
+      {
+        "name": "k8s.container.memory_request_utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Container memory utilization as a ratio of the container's requests"
+      },
+      {
+        "name": "k8s.node.cpu.time",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "s",
+        "help": "Total cumulative CPU time (sum of all cores) spent by the container/pod/node since its creation"
+      },
+      {
+        "name": "k8s.node.cpu.usage",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{cpu}",
+        "help": "Total CPU usage (sum of all cores per second) averaged over the sample window"
+      },
+      {
+        "name": "k8s.node.cpu.utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Node CPU utilization"
+      },
+      {
+        "name": "k8s.node.filesystem.available",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Node filesystem available"
+      },
+      {
+        "name": "k8s.node.filesystem.capacity",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Node filesystem capacity"
+      },
+      {
+        "name": "k8s.node.filesystem.usage",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Node filesystem usage"
+      },
+      {
+        "name": "k8s.node.memory.available",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Node memory available"
+      },
+      {
+        "name": "k8s.node.memory.major_page_faults",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Node memory major_page_faults"
+      },
+      {
+        "name": "k8s.node.memory.page_faults",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Node memory page_faults"
+      },
+      {
+        "name": "k8s.node.memory.rss",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Node memory rss"
+      },
+      {
+        "name": "k8s.node.memory.usage",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Node memory usage"
+      },
+      {
+        "name": "k8s.node.memory.working_set",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Node memory working_set"
+      },
+      {
+        "name": "k8s.node.network.errors",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "Node network errors"
+      },
+      {
+        "name": "k8s.node.network.io",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "By",
+        "help": "Node network IO"
+      },
+      {
+        "name": "k8s.node.uptime",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "s",
+        "help": "The time since the node started"
+      },
+      {
+        "name": "k8s.pod.cpu.node.utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Pod cpu utilization as a ratio of the node's capacity"
+      },
+      {
+        "name": "k8s.pod.cpu.time",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "s",
+        "help": "Total cumulative CPU time (sum of all cores) spent by the container/pod/node since its creation"
+      },
+      {
+        "name": "k8s.pod.cpu.usage",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{cpu}",
+        "help": "Total CPU usage (sum of all cores per second) averaged over the sample window"
+      },
+      {
+        "name": "k8s.pod.cpu.utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Pod CPU utilization"
+      },
+      {
+        "name": "k8s.pod.cpu_limit_utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Pod cpu utilization as a ratio of the pod's total container limits. If any container is missing a limit the metric is not emitted."
+      },
+      {
+        "name": "k8s.pod.cpu_request_utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Pod cpu utilization as a ratio of the pod's total container requests. If any container is missing a request the metric is not emitted."
+      },
+      {
+        "name": "k8s.pod.filesystem.available",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Pod filesystem available"
+      },
+      {
+        "name": "k8s.pod.filesystem.capacity",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Pod filesystem capacity"
+      },
+      {
+        "name": "k8s.pod.filesystem.usage",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Pod filesystem usage"
+      },
+      {
+        "name": "k8s.pod.memory.available",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Pod memory available"
+      },
+      {
+        "name": "k8s.pod.memory.major_page_faults",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Pod memory major_page_faults"
+      },
+      {
+        "name": "k8s.pod.memory.node.utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Pod memory utilization as a ratio of the node's capacity"
+      },
+      {
+        "name": "k8s.pod.memory.page_faults",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Pod memory page_faults"
+      },
+      {
+        "name": "k8s.pod.memory.rss",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Pod memory rss"
+      },
+      {
+        "name": "k8s.pod.memory.usage",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Pod memory usage"
+      },
+      {
+        "name": "k8s.pod.memory.working_set",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Pod memory working_set"
+      },
+      {
+        "name": "k8s.pod.memory_limit_utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Pod memory utilization as a ratio of the pod's total container limits. If any container is missing a limit the metric is not emitted."
+      },
+      {
+        "name": "k8s.pod.memory_request_utilization",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Pod memory utilization as a ratio of the pod's total container requests. If any container is missing a request the metric is not emitted."
+      },
+      {
+        "name": "k8s.pod.network.errors",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "Pod network errors"
+      },
+      {
+        "name": "k8s.pod.network.io",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "By",
+        "help": "Pod network IO"
+      },
+      {
+        "name": "k8s.pod.uptime",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "s",
+        "help": "The time since the pod started"
+      },
+      {
+        "name": "k8s.volume.available",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The number of available bytes in the volume."
+      },
+      {
+        "name": "k8s.volume.capacity",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The total capacity in bytes of the volume."
+      },
+      {
+        "name": "k8s.volume.inodes",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "The total inodes in the filesystem."
+      },
+      {
+        "name": "k8s.volume.inodes.free",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "The free inodes in the filesystem."
+      },
+      {
+        "name": "k8s.volume.inodes.used",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "The inodes used by the filesystem. This may not equal inodes - free because filesystem may share inodes with other filesystems."
+      }
+    ]
+  },
+  {
+    "path": "receiver/mongodbreceiver/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "3bf98e7e853f087f7870c784392faceb13877abe7579cafc26cfe891b1344d2e",
+    "metrics": [
+      {
+        "name": "mongodb.cache.operations",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{operations}",
+        "help": "The number of cache operations of the instance."
+      },
+      {
+        "name": "mongodb.collection.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{collections}",
+        "help": "The number of collections."
+      },
+      {
+        "name": "mongodb.connection.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{connections}",
+        "help": "The number of connections."
+      },
+      {
+        "name": "mongodb.cursor.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{cursors}",
+        "help": "The number of open cursors maintained for clients."
+      },
+      {
+        "name": "mongodb.cursor.timeout.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{cursors}",
+        "help": "The number of cursors that have timed out."
+      },
+      {
+        "name": "mongodb.data.size",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The size of the collection. Data compression does not affect this value."
+      },
+      {
+        "name": "mongodb.database.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{databases}",
+        "help": "The number of existing databases."
+      },
+      {
+        "name": "mongodb.document.operation.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{documents}",
+        "help": "The number of document operations executed."
+      },
+      {
+        "name": "mongodb.extent.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{extents}",
+        "help": "The number of extents."
+      },
+      {
+        "name": "mongodb.global_lock.time",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "ms",
+        "help": "The time the global lock has been held."
+      },
+      {
+        "name": "mongodb.health",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "The health status of the server."
+      },
+      {
+        "name": "mongodb.index.access.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{accesses}",
+        "help": "The number of times an index has been accessed."
+      },
+      {
+        "name": "mongodb.index.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{indexes}",
+        "help": "The number of indexes."
+      },
+      {
+        "name": "mongodb.index.size",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Sum of the space allocated to all indexes in the database, including free index space."
+      },
+      {
+        "name": "mongodb.lock.acquire.count",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{count}",
+        "help": "Number of times the lock was acquired in the specified mode."
+      },
+      {
+        "name": "mongodb.lock.acquire.time",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "microseconds",
+        "help": "Cumulative wait time for the lock acquisitions."
+      },
+      {
+        "name": "mongodb.lock.acquire.wait_count",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{count}",
+        "help": "Number of times the lock acquisitions encountered waits because the locks were held in a conflicting mode."
+      },
+      {
+        "name": "mongodb.lock.deadlock.count",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{count}",
+        "help": "Number of times the lock acquisitions encountered deadlocks."
+      },
+      {
+        "name": "mongodb.memory.usage",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The amount of memory used."
+      },
+      {
+        "name": "mongodb.network.io.receive",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The number of bytes received."
+      },
+      {
+        "name": "mongodb.network.io.transmit",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The number of by transmitted."
+      },
+      {
+        "name": "mongodb.network.request.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{requests}",
+        "help": "The number of requests received by the server."
+      },
+      {
+        "name": "mongodb.object.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{objects}",
+        "help": "The number of objects."
+      },
+      {
+        "name": "mongodb.operation.count",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{operations}",
+        "help": "The number of operations executed."
+      },
+      {
+        "name": "mongodb.operation.latency.time",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "us",
+        "help": "The latency of operations."
+      },
+      {
+        "name": "mongodb.operation.repl.count",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{operations}",
+        "help": "The number of replicated operations executed."
+      },
+      {
+        "name": "mongodb.operation.time",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "ms",
+        "help": "The total time spent performing operations."
+      },
+      {
+        "name": "mongodb.session.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{sessions}",
+        "help": "The total number of active sessions."
+      },
+      {
+        "name": "mongodb.storage.size",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "By",
+        "help": "The total amount of storage allocated to this collection."
+      },
+      {
+        "name": "mongodb.uptime",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "ms",
+        "help": "The amount of time that the server has been running."
+      }
+    ]
+  },
+  {
+    "path": "receiver/mysqlreceiver/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "3e2bec1b2ad8968ff1b30ad40d039b944c443479f4aeb9dfb7412219f1fe9eef",
+    "metrics": [
+      {
+        "name": "mysql.buffer_pool.data_pages",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "1",
+        "help": "The number of data pages in the InnoDB buffer pool."
+      },
+      {
+        "name": "mysql.buffer_pool.limit",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The configured size of the InnoDB buffer pool."
+      },
+      {
+        "name": "mysql.buffer_pool.operations",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of operations on the InnoDB buffer pool."
+      },
+      {
+        "name": "mysql.buffer_pool.page_flushes",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of requests to flush pages from the InnoDB buffer pool."
+      },
+      {
+        "name": "mysql.buffer_pool.pages",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "1",
+        "help": "The number of pages in the InnoDB buffer pool."
+      },
+      {
+        "name": "mysql.buffer_pool.usage",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The number of bytes in the InnoDB buffer pool."
+      },
+      {
+        "name": "mysql.client.network.io",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "By",
+        "help": "The number of transmitted bytes between server and clients."
+      },
+      {
+        "name": "mysql.commands",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of times each type of command has been executed."
+      },
+      {
+        "name": "mysql.connection.count",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of connection attempts (successful or not) to the MySQL server."
+      },
+      {
+        "name": "mysql.connection.errors",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "Errors that occur during the client connection process."
+      },
+      {
+        "name": "mysql.double_writes",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of writes to the InnoDB doublewrite buffer."
+      },
+      {
+        "name": "mysql.handlers",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of requests to various MySQL handlers."
+      },
+      {
+        "name": "mysql.index.io.wait.count",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The total count of I/O wait events for an index."
+      },
+      {
+        "name": "mysql.index.io.wait.time",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "ns",
+        "help": "The total time of I/O wait events for an index."
+      },
+      {
+        "name": "mysql.joins",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of joins that perform table scans."
+      },
+      {
+        "name": "mysql.locks",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of MySQL locks."
+      },
+      {
+        "name": "mysql.log_operations",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of InnoDB log operations."
+      },
+      {
+        "name": "mysql.mysqlx_connections",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of mysqlx connections."
+      },
+      {
+        "name": "mysql.mysqlx_worker_threads",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "1",
+        "help": "The number of worker threads available."
+      },
+      {
+        "name": "mysql.opened_resources",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of opened resources."
+      },
+      {
+        "name": "mysql.operations",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of InnoDB operations."
+      },
+      {
+        "name": "mysql.page_operations",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of InnoDB page operations."
+      },
+      {
+        "name": "mysql.prepared_statements",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of times each type of prepared statement command has been issued."
+      },
+      {
+        "name": "mysql.query.client.count",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of statements executed by the server. This includes only statements sent to the server by clients."
+      },
+      {
+        "name": "mysql.query.count",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of statements executed by the server."
+      },
+      {
+        "name": "mysql.query.slow.count",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of slow queries."
+      },
+      {
+        "name": "mysql.replica.sql_delay",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "s",
+        "help": "The number of seconds that the replica must lag the source."
+      },
+      {
+        "name": "mysql.replica.time_behind_source",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "s",
+        "help": "This field is an indication of how “late” the replica is."
+      },
+      {
+        "name": "mysql.row_locks",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of InnoDB row locks."
+      },
+      {
+        "name": "mysql.row_operations",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of InnoDB row operations."
+      },
+      {
+        "name": "mysql.sorts",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of MySQL sorts."
+      },
+      {
+        "name": "mysql.statement_event.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Summary of current and recent statement events."
+      },
+      {
+        "name": "mysql.statement_event.wait.time",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "ns",
+        "help": "The total wait time of the summarized timed events."
+      },
+      {
+        "name": "mysql.table.average_row_length",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The average row length in bytes for a given table."
+      },
+      {
+        "name": "mysql.table.io.wait.count",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The total count of I/O wait events for a table."
+      },
+      {
+        "name": "mysql.table.io.wait.time",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "ns",
+        "help": "The total time of I/O wait events for a table."
+      },
+      {
+        "name": "mysql.table.lock_wait.read.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "1",
+        "help": "The total table lock wait read events."
+      },
+      {
+        "name": "mysql.table.lock_wait.read.time",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "ns",
+        "help": "The total table lock wait read events times."
+      },
+      {
+        "name": "mysql.table.lock_wait.write.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "1",
+        "help": "The total table lock wait write events."
+      },
+      {
+        "name": "mysql.table.lock_wait.write.time",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "ns",
+        "help": "The total table lock wait write events times."
+      },
+      {
+        "name": "mysql.table.rows",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "1",
+        "help": "The number of rows for a given table."
+      },
+      {
+        "name": "mysql.table.size",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The table size in bytes for a given table."
+      },
+      {
+        "name": "mysql.table_open_cache",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of hits, misses or overflows for open tables cache lookups."
+      },
+      {
+        "name": "mysql.threads",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "1",
+        "help": "The state of MySQL threads."
+      },
+      {
+        "name": "mysql.tmp_resources",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of created temporary resources."
+      },
+      {
+        "name": "mysql.uptime",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "s",
+        "help": "The number of seconds that the server has been up."
+      }
+    ]
+  },
+  {
+    "path": "receiver/nginxreceiver/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "dfe688053a047b709088bf4ff24252ef43ba8a9b3f0eeb3c2a68d134875f9728",
+    "metrics": [
+      {
+        "name": "nginx.connections_accepted",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "connections",
+        "help": "The total number of accepted client connections"
+      },
+      {
+        "name": "nginx.connections_current",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "connections",
+        "help": "The current number of nginx connections by state"
+      },
+      {
+        "name": "nginx.connections_handled",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "connections",
+        "help": "The total number of handled connections. Generally, the parameter value is the same as nginx.connections_accepted unless some resource limits have been reached (for example, the worker_connections limit)."
+      },
+      {
+        "name": "nginx.requests",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "requests",
+        "help": "Total number of requests made to the server since it started"
+      }
+    ]
+  },
+  {
+    "path": "receiver/oracledbreceiver/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "f9f9daaf1c39cb15f35a0d25aaa77c2b080c242c63cf18e6b3142a36e65dd719",
+    "metrics": [
+      {
+        "name": "oracledb.consistent_gets",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{gets}",
+        "help": "Number of times a consistent read was requested for a block from the buffer cache."
+      },
+      {
+        "name": "oracledb.cpu_time",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "s",
+        "help": "Cumulative CPU time, in seconds"
+      },
+      {
+        "name": "oracledb.db_block_gets",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{gets}",
+        "help": "Number of times a current block was requested from the buffer cache."
+      },
+      {
+        "name": "oracledb.dml_locks.limit",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{locks}",
+        "help": "Maximum limit of active DML (Data Manipulation Language) locks, -1 if unlimited."
+      },
+      {
+        "name": "oracledb.dml_locks.usage",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{locks}",
+        "help": "Current count of active DML (Data Manipulation Language) locks."
+      },
+      {
+        "name": "oracledb.enqueue_deadlocks",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{deadlocks}",
+        "help": "Total number of deadlocks between table or row locks in different sessions."
+      },
+      {
+        "name": "oracledb.enqueue_locks.limit",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{locks}",
+        "help": "Maximum limit of active enqueue locks, -1 if unlimited."
+      },
+      {
+        "name": "oracledb.enqueue_locks.usage",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{locks}",
+        "help": "Current count of active enqueue locks."
+      },
+      {
+        "name": "oracledb.enqueue_resources.limit",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{resources}",
+        "help": "Maximum limit of active enqueue resources, -1 if unlimited."
+      },
+      {
+        "name": "oracledb.enqueue_resources.usage",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{resources}",
+        "help": "Current count of active enqueue resources."
+      },
+      {
+        "name": "oracledb.exchange_deadlocks",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{deadlocks}",
+        "help": "Number of times that a process detected a potential deadlock when exchanging two buffers and raised an internal, restartable error. Index scans are the only operations that perform exchanges."
+      },
+      {
+        "name": "oracledb.executions",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{executions}",
+        "help": "Total number of calls (user and recursive) that executed SQL statements"
+      },
+      {
+        "name": "oracledb.hard_parses",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{parses}",
+        "help": "Number of hard parses"
+      },
+      {
+        "name": "oracledb.logical_reads",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{reads}",
+        "help": "Number of logical reads"
+      },
+      {
+        "name": "oracledb.parse_calls",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{parses}",
+        "help": "Total number of parse calls."
+      },
+      {
+        "name": "oracledb.pga_memory",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "By",
+        "help": "Session PGA (Program Global Area) memory"
+      },
+      {
+        "name": "oracledb.physical_reads",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{reads}",
+        "help": "Number of physical reads"
+      },
+      {
+        "name": "oracledb.processes.limit",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{processes}",
+        "help": "Maximum limit of active processes, -1 if unlimited."
+      },
+      {
+        "name": "oracledb.processes.usage",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{processes}",
+        "help": "Current count of active processes."
+      },
+      {
+        "name": "oracledb.sessions.limit",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{sessions}",
+        "help": "Maximum limit of active sessions, -1 if unlimited."
+      },
+      {
+        "name": "oracledb.sessions.usage",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{sessions}",
+        "help": "Count of active sessions."
+      },
+      {
+        "name": "oracledb.tablespace_size.limit",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Maximum size of tablespace in bytes, -1 if unlimited."
+      },
+      {
+        "name": "oracledb.tablespace_size.usage",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Used tablespace in bytes."
+      },
+      {
+        "name": "oracledb.transactions.limit",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{transactions}",
+        "help": "Maximum limit of active transactions, -1 if unlimited."
+      },
+      {
+        "name": "oracledb.transactions.usage",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{transactions}",
+        "help": "Current count of active transactions."
+      },
+      {
+        "name": "oracledb.user_commits",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{commits}",
+        "help": "Number of user commits. When a user commits a transaction, the redo generated that reflects the changes made to database blocks must be written to disk. Commits often represent the closest thing to a user transaction rate."
+      },
+      {
+        "name": "oracledb.user_rollbacks",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "Number of times users manually issue the ROLLBACK statement or an error occurs during a user's transactions"
+      }
+    ]
+  },
+  {
+    "path": "receiver/postgresqlreceiver/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "4053cc010b744be0ee78fc1d9fed3855edc5ac64c84800609a88af12f6e85300",
+    "metrics": [
+      {
+        "name": "postgresql.backends",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "1",
+        "help": "The number of backends."
+      },
+      {
+        "name": "postgresql.bgwriter.buffers.allocated",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{buffers}",
+        "help": "Number of buffers allocated."
+      },
+      {
+        "name": "postgresql.bgwriter.buffers.writes",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{buffers}",
+        "help": "Number of buffers written."
+      },
+      {
+        "name": "postgresql.bgwriter.checkpoint.count",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{checkpoints}",
+        "help": "The number of checkpoints performed."
+      },
+      {
+        "name": "postgresql.bgwriter.duration",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "ms",
+        "help": "Total time spent writing and syncing files to disk by checkpoints."
+      },
+      {
+        "name": "postgresql.bgwriter.maxwritten",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "Number of times the background writer stopped a cleaning scan because it had written too many buffers."
+      },
+      {
+        "name": "postgresql.blks_hit",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{blks_hit}",
+        "help": "Number of times disk blocks were found already in the buffer cache."
+      },
+      {
+        "name": "postgresql.blks_read",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{blks_read}",
+        "help": "Number of disk blocks read in this database."
+      },
+      {
+        "name": "postgresql.blocks_read",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of blocks read."
+      },
+      {
+        "name": "postgresql.commits",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of commits."
+      },
+      {
+        "name": "postgresql.connection.max",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{connections}",
+        "help": "Configured maximum number of client connections allowed"
+      },
+      {
+        "name": "postgresql.database.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{databases}",
+        "help": "Number of user databases."
+      },
+      {
+        "name": "postgresql.database.locks",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{lock}",
+        "help": "The number of database locks."
+      },
+      {
+        "name": "postgresql.db_size",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The database disk usage."
+      },
+      {
+        "name": "postgresql.deadlocks",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{deadlock}",
+        "help": "The number of deadlocks."
+      },
+      {
+        "name": "postgresql.index.scans",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{scans}",
+        "help": "The number of index scans on a table."
+      },
+      {
+        "name": "postgresql.index.size",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The size of the index on disk."
+      },
+      {
+        "name": "postgresql.operations",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of db row operations."
+      },
+      {
+        "name": "postgresql.replication.data_delay",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The amount of data delayed in replication."
+      },
+      {
+        "name": "postgresql.rollbacks",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "1",
+        "help": "The number of rollbacks."
+      },
+      {
+        "name": "postgresql.rows",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "1",
+        "help": "The number of rows in the database."
+      },
+      {
+        "name": "postgresql.sequential_scans",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{sequential_scan}",
+        "help": "The number of sequential scans."
+      },
+      {
+        "name": "postgresql.table.count",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{table}",
+        "help": "Number of user tables in a database."
+      },
+      {
+        "name": "postgresql.table.size",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Disk space used by a table."
+      },
+      {
+        "name": "postgresql.table.vacuum.count",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{vacuums}",
+        "help": "Number of times a table has manually been vacuumed."
+      },
+      {
+        "name": "postgresql.temp_files",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{temp_file}",
+        "help": "The number of temp files."
+      },
+      {
+        "name": "postgresql.tup_deleted",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{tup_deleted}",
+        "help": "Number of rows deleted by queries in the database."
+      },
+      {
+        "name": "postgresql.tup_fetched",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{tup_fetched}",
+        "help": "Number of rows fetched by queries in the database."
+      },
+      {
+        "name": "postgresql.tup_inserted",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{tup_inserted}",
+        "help": "Number of rows inserted by queries in the database."
+      },
+      {
+        "name": "postgresql.tup_returned",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{tup_returned}",
+        "help": "Number of rows returned by queries in the database."
+      },
+      {
+        "name": "postgresql.tup_updated",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{tup_updated}",
+        "help": "Number of rows updated by queries in the database."
+      },
+      {
+        "name": "postgresql.wal.age",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "s",
+        "help": "Age of the oldest WAL file."
+      },
+      {
+        "name": "postgresql.wal.delay",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "s",
+        "help": "Time between flushing recent WAL locally and receiving notification that the standby server has completed an operation with it."
+      },
+      {
+        "name": "postgresql.wal.lag",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "s",
+        "help": "Time between flushing recent WAL locally and receiving notification that the standby server has completed an operation with it."
+      }
+    ]
+  },
+  {
+    "path": "receiver/redisreceiver/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "a7ce6d66816e0e147174e73480ea4e53e5d9fd9cd27f3ddd80c85a4367335a18",
+    "metrics": [
+      {
+        "name": "redis.clients.blocked",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{client}",
+        "help": "Number of clients pending on a blocking call"
+      },
+      {
+        "name": "redis.clients.connected",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{client}",
+        "help": "Number of client connections (excluding connections from replicas)"
+      },
+      {
+        "name": "redis.clients.max_input_buffer",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Biggest input buffer among current client connections"
+      },
+      {
+        "name": "redis.clients.max_output_buffer",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Longest output list among current client connections"
+      },
+      {
+        "name": "redis.cmd.calls",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{call}",
+        "help": "Total number of calls for a command"
+      },
+      {
+        "name": "redis.cmd.latency",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "s",
+        "help": "Command execution latency"
+      },
+      {
+        "name": "redis.cmd.usec",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "us",
+        "help": "Total time for all executions of this command"
+      },
+      {
+        "name": "redis.commands",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{ops}/s",
+        "help": "Number of commands processed per second"
+      },
+      {
+        "name": "redis.commands.processed",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{command}",
+        "help": "Total number of commands processed by the server"
+      },
+      {
+        "name": "redis.connections.received",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{connection}",
+        "help": "Total number of connections accepted by the server"
+      },
+      {
+        "name": "redis.connections.rejected",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{connection}",
+        "help": "Number of connections rejected because of maxclients limit"
+      },
+      {
+        "name": "redis.cpu.time",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "s",
+        "help": "System CPU consumed by the Redis server in seconds since server start"
+      },
+      {
+        "name": "redis.db.avg_ttl",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "ms",
+        "help": "Average keyspace keys TTL"
+      },
+      {
+        "name": "redis.db.expires",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{key}",
+        "help": "Number of keyspace keys with an expiration"
+      },
+      {
+        "name": "redis.db.keys",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{key}",
+        "help": "Number of keyspace keys"
+      },
+      {
+        "name": "redis.keys.evicted",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{key}",
+        "help": "Number of evicted keys due to maxmemory limit"
+      },
+      {
+        "name": "redis.keys.expired",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{event}",
+        "help": "Total number of key expiration events"
+      },
+      {
+        "name": "redis.keyspace.hits",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{hit}",
+        "help": "Number of successful lookup of keys in the main dictionary"
+      },
+      {
+        "name": "redis.keyspace.misses",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{miss}",
+        "help": "Number of failed lookup of keys in the main dictionary"
+      },
+      {
+        "name": "redis.latest_fork",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "us",
+        "help": "Duration of the latest fork operation in microseconds"
+      },
+      {
+        "name": "redis.maxmemory",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The value of the maxmemory configuration directive"
+      },
+      {
+        "name": "redis.memory.fragmentation_ratio",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "1",
+        "help": "Ratio between used_memory_rss and used_memory"
+      },
+      {
+        "name": "redis.memory.lua",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Number of bytes used by the Lua engine"
+      },
+      {
+        "name": "redis.memory.peak",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Peak memory consumed by Redis (in bytes)"
+      },
+      {
+        "name": "redis.memory.rss",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Number of bytes that Redis allocated as seen by the operating system"
+      },
+      {
+        "name": "redis.memory.used",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Total number of bytes allocated by Redis using its allocator"
+      },
+      {
+        "name": "redis.net.input",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "By",
+        "help": "The total number of bytes read from the network"
+      },
+      {
+        "name": "redis.net.output",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "By",
+        "help": "The total number of bytes written to the network"
+      },
+      {
+        "name": "redis.rdb.changes_since_last_save",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{change}",
+        "help": "Number of changes since the last dump"
+      },
+      {
+        "name": "redis.replication.backlog_first_byte_offset",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The master offset of the replication backlog buffer"
+      },
+      {
+        "name": "redis.replication.offset",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "The server's current replication offset"
+      },
+      {
+        "name": "redis.replication.replica_offset",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By",
+        "help": "Offset for redis replica"
+      },
+      {
+        "name": "redis.role",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{role}",
+        "help": "Redis node's role"
+      },
+      {
+        "name": "redis.slaves.connected",
+        "kind": "sum",
+        "monotonic": false,
+        "unit": "{replica}",
+        "help": "Number of connected replicas"
+      },
+      {
+        "name": "redis.uptime",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "s",
+        "help": "Number of seconds since Redis server start"
+      }
+    ]
+  },
+  {
+    "path": "receiver/sqlserverreceiver/metadata.yaml",
+    "version": "v0.120.0",
+    "sha256": "5fe26b472593512a7fd15e1ad879293a0c1c6803b27cca7c09b39b29a6554cb5",
+    "metrics": [
+      {
+        "name": "sqlserver.batch.request.rate",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{requests}/s",
+        "help": "Number of batch requests received by SQL Server."
+      },
+      {
+        "name": "sqlserver.batch.sql_compilation.rate",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{compilations}/s",
+        "help": "Number of SQL compilations needed."
+      },
+      {
+        "name": "sqlserver.batch.sql_recompilation.rate",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{compilations}/s",
+        "help": "Number of SQL recompilations needed."
+      },
+      {
+        "name": "sqlserver.database.count",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{databases}",
+        "help": "The number of databases"
+      },
+      {
+        "name": "sqlserver.database.io",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "By",
+        "help": "The number of bytes of I/O on this file."
+      },
+      {
+        "name": "sqlserver.database.latency",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "s",
+        "help": "Total time that the users waited for I/O issued on this file."
+      },
+      {
+        "name": "sqlserver.database.operations",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{operations}",
+        "help": "The number of operations issued on the file."
+      },
+      {
+        "name": "sqlserver.lock.wait.rate",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{requests}/s",
+        "help": "Number of lock requests resulting in a wait."
+      },
+      {
+        "name": "sqlserver.lock.wait_time.avg",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "ms",
+        "help": "Average wait time for all lock requests that had to wait."
+      },
+      {
+        "name": "sqlserver.page.buffer_cache.hit_ratio",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "%",
+        "help": "Pages found in the buffer pool without having to read from disk."
+      },
+      {
+        "name": "sqlserver.page.checkpoint.flush.rate",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pages}/s",
+        "help": "Number of pages flushed by operations requiring dirty pages to be flushed."
+      },
+      {
+        "name": "sqlserver.page.lazy_write.rate",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{writes}/s",
+        "help": "Number of lazy writes moving dirty pages to disk."
+      },
+      {
+        "name": "sqlserver.page.life_expectancy",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "s",
+        "help": "Time a page will stay in the buffer pool."
+      },
+      {
+        "name": "sqlserver.page.operation.rate",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{operations}/s",
+        "help": "Number of physical database page operations issued."
+      },
+      {
+        "name": "sqlserver.page.split.rate",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{pages}/s",
+        "help": "Number of pages split as a result of overflowing index pages."
+      },
+      {
+        "name": "sqlserver.processes.blocked",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{processes}",
+        "help": "The number of processes that are currently blocked"
+      },
+      {
+        "name": "sqlserver.resource_pool.disk.throttled.read.rate",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{reads}/s",
+        "help": "The number of read operations that were throttled in the last second"
+      },
+      {
+        "name": "sqlserver.resource_pool.disk.throttled.write.rate",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{writes}/s",
+        "help": "The number of write operations that were throttled in the last second"
+      },
+      {
+        "name": "sqlserver.transaction.rate",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{transactions}/s",
+        "help": "Number of transactions started for the database (not including XTP-only transactions)."
+      },
+      {
+        "name": "sqlserver.transaction.write.rate",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{transactions}/s",
+        "help": "Number of transactions that wrote to the database and committed."
+      },
+      {
+        "name": "sqlserver.transaction_log.flush.data.rate",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "By/s",
+        "help": "Total number of log bytes flushed."
+      },
+      {
+        "name": "sqlserver.transaction_log.flush.rate",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{flushes}/s",
+        "help": "Number of log flushes."
+      },
+      {
+        "name": "sqlserver.transaction_log.flush.wait.rate",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{commits}/s",
+        "help": "Number of commits waiting for a transaction log flush."
+      },
+      {
+        "name": "sqlserver.transaction_log.growth.count",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{growths}",
+        "help": "Total number of transaction log expansions for a database."
+      },
+      {
+        "name": "sqlserver.transaction_log.shrink.count",
+        "kind": "sum",
+        "monotonic": true,
+        "unit": "{shrinks}",
+        "help": "Total number of transaction log shrinks for a database."
+      },
+      {
+        "name": "sqlserver.transaction_log.usage",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "%",
+        "help": "Percent of transaction log space used."
+      },
+      {
+        "name": "sqlserver.user.connection.count",
+        "kind": "gauge",
+        "monotonic": false,
+        "unit": "{connections}",
+        "help": "Number of users connected to the SQL Server."
+      }
+    ]
+  }
+]

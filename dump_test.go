@@ -53,6 +53,9 @@ func TestServedQueryToolSchemas(t *testing.T) {
 		"prometheus_instant_query": {valid: map[string]any{"query": "up", "lookback_minutes": 5.5}, invalid: []map[string]any{
 			{"promql": "up"}, {}, {"query": 1},
 		}, requiredFields: []string{"query"}},
+		"describe_metric": {valid: map[string]any{"metric_names": []any{"up"}}, invalid: []map[string]any{
+			{}, {"metric_names": "up"}, {"metric_names": []any{1}}, {"metric_names": []any{"up"}, "unexpected": true},
+		}, requiredFields: []string{"metric_names"}},
 		"get_metric_status": {valid: map[string]any{"metric": "up", "window_minutes": 60}, invalid: []map[string]any{
 			{"metric": "up", "unexpected": true}, {}, {"metric": 1},
 		}, requiredFields: []string{"metric", "window_minutes"}},
@@ -751,7 +754,7 @@ func TestDumpToolsInvestigate(t *testing.T) {
 	for _, tool := range out.Tools {
 		byName[tool.Name] = true
 	}
-	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "get_metric_status", "did_you_mean", "get_service_profile", "list_datasources", "get_entity_kpis", "get_alert_operations_summary"} {
+	for _, want := range []string{"get_logs", "get_traces", "prometheus_instant_query", "get_metric_status", "describe_metric", "did_you_mean", "get_service_profile", "list_datasources", "get_entity_kpis", "get_alert_operations_summary"} {
 		if !byName[want] {
 			t.Errorf("investigate dump missing %q", want)
 		}
@@ -761,8 +764,8 @@ func TestDumpToolsInvestigate(t *testing.T) {
 			t.Errorf("investigate dump should exclude %q", deny)
 		}
 	}
-	if len(out.Tools) >= 44 {
-		t.Fatalf("investigate should expose fewer than full surface; got %d", len(out.Tools))
+	if len(out.Tools) >= 45 {
+		t.Fatalf("investigate should expose at most 44 tools; got %d", len(out.Tools))
 	}
 }
 

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `describe_metric` (read-only, metrics and investigate) describes 1–10 metrics using exact Last9 rollups, pinned OTel receiver definitions, naming and bounded sample probes before optional metadata. It reports provenance/confidence and label keys observed on the metric's own series, keeps gauge and trace quantile queries safe, and works without the metadata API. Observed `le` and `quantile` keys retain slots within the 20-label output cap so truncation preserves histogram and summary guidance (#479).
 - Added `get_alert_operations_summary` (`alerts` and `investigate` toolsets): alerts raised vs acknowledged, unacknowledged, current backlog and notification deliveries over an RFC3339 window of at most 31 days, optionally by severity or service. Every count is returned with its `status` (`available`, `partial`, `unavailable`) and `reason`, plus `coverage`; a status the server does not recognise is served as `unavailable` without its count. `include_rules=true` adds per-rule hygiene: the top 20 rules by fire count and the flapping (≥ 1 flap per day) and unrouted ones, with totals and the API's `truncated` flag; if that call fails the summary is still returned with an `errors` entry. With hygiene enabled, service and severity entries containing commas are rejected before either request to keep both results in the same filter scope (#429).
 
 ### Fixed

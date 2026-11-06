@@ -1,0 +1,13 @@
+Describe 1–10 exact metric names before writing PromQL: type, unit/help when known, observed label keys and safe query shapes. Read-only; needs no metadata API.
+
+Parameters:
+- `metric_names` (required): 1–10 exact Prometheus names, at most 256 bytes each; no selectors, expressions or default. The whole batch is validated before I/O.
+- `datasource` (optional): configured default; exact or safe closest match, ambiguous names return candidates without querying. A separate content block names a default or closest match.
+
+Returns `metrics`: `name`, `type` (counter/gauge/histogram/summary/unknown), `type_source`, `confidence`, `inferred`, optional `unit`/`help`, `label_keys`, `recommended_query`, `notes`, and `metadata_status` when attempted. Empty recommendations need more evidence.
+
+Source priority: exact Last9 catalog (`catalog`, high), pinned OTel receiver definitions (`receiver`, high), suffixes/labels (`naming`, medium), one bounded series (`probe`, low), optional non-empty API metadata (`metadata`, high), else `unknown`. Receiver units retain OTel spelling (e.g. By, ms); no rescaling. Missing/unsupported/empty API data is `metadata_unavailable`; other optional failures are `metadata_error`. Authorization and caller cancellation fail. Conflicting metadata stays unknown. Missing evidence does not prove absence.
+
+Never apply rate()/increase() to gauges, including pre-windowed gauges. Exact counters use `rate(metric[5m])`; inferred counter-like shapes need verification first. Unknown types must not use rate()/increase() until verified. `_sum`/`_count` need family evidence; `_bucket` needs observed `le`. Classic histogram quantiles require observed buckets; native queries require a native sample check. Never fabricate buckets. Summary quantiles are direct; trace latency gauges use milliseconds and `quantile="p95"`, never histogram_quantile. Never average quantiles into a wider-window percentile. Five-minute recommendations are examples; adjust to cadence.
+
+Labels come from at most 50 of the metric's series, not exhaustive: 60-minute lookback, widened once to 5760 minutes if none; at most 20 keys, omitting keys over 128 bytes. Unresolved names may probe one fixed series for 5 minutes at 30-second steps (4–11 points, 32 KiB, 2 seconds). Optional metadata also has a 2-second deadline. Help: 1024 bytes; unit: 128 bytes; output: 256 KiB. Notes disclose truncation. Discover names with `prometheus_label_values`; inspect cadence with `get_metric_status`.

@@ -330,6 +330,12 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 	}, apm.NewListDatasourcesHandler(cfg)))
 
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "describe_metric",
+		Annotations: readOnlyTool("Describe Metric"),
+		Description: prompts.DescribeMetricDescription,
+	}, apm.NewDescribeMetricHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "get_metric_status",
 		Annotations: readOnlyTool("Get Metric Liveness and Cadence"),
 		Description: prompts.GetMetricStatusDescription,

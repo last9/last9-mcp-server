@@ -301,6 +301,9 @@ var AuthorAlertWorkflow string
 //go:embed workflows/partials.md
 var WorkflowPartials string
 
+//go:embed descriptions/describe_metric.md
+var DescribeMetricDescription string
+
 //go:embed workflows/create_dashboard_guide.md
 var CreateDashboardGuideWorkflow string
 

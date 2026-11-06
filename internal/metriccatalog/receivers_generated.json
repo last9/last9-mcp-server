@@ -1,0 +1,4766 @@
+{
+  "apache_cpu_load": {
+    "type": "gauge",
+    "unit": "%",
+    "help": "Current load of the CPU.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_cpu_load_percent": {
+    "type": "gauge",
+    "unit": "%",
+    "help": "Current load of the CPU.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_cpu_time": {
+    "type": "counter",
+    "unit": "{jiff}",
+    "help": "Jiffs used by processes of given category.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_cpu_time_total": {
+    "type": "counter",
+    "unit": "{jiff}",
+    "help": "Jiffs used by processes of given category.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_current_connections": {
+    "type": "gauge",
+    "unit": "{connections}",
+    "help": "The number of active connections currently attached to the HTTP server.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_load_1": {
+    "type": "gauge",
+    "unit": "%",
+    "help": "The average server load during the last minute.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_load_15": {
+    "type": "gauge",
+    "unit": "%",
+    "help": "The average server load during the last 15 minutes.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_load_15_percent": {
+    "type": "gauge",
+    "unit": "%",
+    "help": "The average server load during the last 15 minutes.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_load_1_percent": {
+    "type": "gauge",
+    "unit": "%",
+    "help": "The average server load during the last minute.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_load_5": {
+    "type": "gauge",
+    "unit": "%",
+    "help": "The average server load during the last 5 minutes.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_load_5_percent": {
+    "type": "gauge",
+    "unit": "%",
+    "help": "The average server load during the last 5 minutes.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_request_time": {
+    "type": "counter",
+    "unit": "ms",
+    "help": "Total time spent on handling requests.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_request_time_milliseconds_total": {
+    "type": "counter",
+    "unit": "ms",
+    "help": "Total time spent on handling requests.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_requests": {
+    "type": "counter",
+    "unit": "{requests}",
+    "help": "The number of requests serviced by the HTTP server per second.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_requests_total": {
+    "type": "counter",
+    "unit": "{requests}",
+    "help": "The number of requests serviced by the HTTP server per second.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_scoreboard": {
+    "type": "gauge",
+    "unit": "{workers}",
+    "help": "The number of workers in each state.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_traffic": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Total HTTP server traffic.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_traffic_bytes_total": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Total HTTP server traffic.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_uptime": {
+    "type": "counter",
+    "unit": "s",
+    "help": "The amount of time that the server has been running in seconds.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_uptime_seconds_total": {
+    "type": "counter",
+    "unit": "s",
+    "help": "The amount of time that the server has been running in seconds.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "apache_workers": {
+    "type": "gauge",
+    "unit": "{workers}",
+    "help": "The number of workers currently attached to the HTTP server.",
+    "source": "receiver/apachereceiver/metadata.yaml@v0.120.0"
+  },
+  "container_blockio_io_merged_recursive": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "Number of bios/requests merged into requests belonging to this cgroup and its descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_blockio_io_merged_recursive_total": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "Number of bios/requests merged into requests belonging to this cgroup and its descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_blockio_io_queued_recursive": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "Number of requests queued up for this cgroup and its descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_blockio_io_queued_recursive_total": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "Number of requests queued up for this cgroup and its descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_blockio_io_service_bytes_recursive": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Number of bytes transferred to/from the disk by the group and descendant groups.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_blockio_io_service_bytes_recursive_total": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Number of bytes transferred to/from the disk by the group and descendant groups.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_blockio_io_service_time_recursive": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "Total amount of time in nanoseconds between request dispatch and request completion for the IOs done by this cgroup and descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_blockio_io_service_time_recursive_nanoseconds_total": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "Total amount of time in nanoseconds between request dispatch and request completion for the IOs done by this cgroup and descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_blockio_io_serviced_recursive": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "Number of IOs (bio) issued to the disk by the group and descendant groups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_blockio_io_serviced_recursive_total": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "Number of IOs (bio) issued to the disk by the group and descendant groups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_blockio_io_time_recursive": {
+    "type": "counter",
+    "unit": "ms",
+    "help": "Disk time allocated to cgroup (and descendant cgroups) per device in milliseconds (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_blockio_io_time_recursive_milliseconds_total": {
+    "type": "counter",
+    "unit": "ms",
+    "help": "Disk time allocated to cgroup (and descendant cgroups) per device in milliseconds (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_blockio_io_wait_time_recursive": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "Total amount of time the IOs for this cgroup (and descendant cgroups) spent waiting in the scheduler queues for service (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_blockio_io_wait_time_recursive_nanoseconds_total": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "Total amount of time the IOs for this cgroup (and descendant cgroups) spent waiting in the scheduler queues for service (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_blockio_sectors_recursive": {
+    "type": "counter",
+    "unit": "{sectors}",
+    "help": "Number of sectors transferred to/from disk by the group and descendant groups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_blockio_sectors_recursive_total": {
+    "type": "counter",
+    "unit": "{sectors}",
+    "help": "Number of sectors transferred to/from disk by the group and descendant groups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_limit": {
+    "type": "gauge",
+    "unit": "{cpus}",
+    "help": "CPU limit set for the container.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_logical_count": {
+    "type": "gauge",
+    "unit": "{cpus}",
+    "help": "Number of cores available to the container.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_shares": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "CPU shares set for the container.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_shares_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "CPU shares set for the container.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_throttling_data_periods": {
+    "type": "counter",
+    "unit": "{periods}",
+    "help": "Number of periods with throttling active.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_throttling_data_periods_total": {
+    "type": "counter",
+    "unit": "{periods}",
+    "help": "Number of periods with throttling active.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_throttling_data_throttled_periods": {
+    "type": "counter",
+    "unit": "{periods}",
+    "help": "Number of periods when the container hits its throttling limit.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_throttling_data_throttled_periods_total": {
+    "type": "counter",
+    "unit": "{periods}",
+    "help": "Number of periods when the container hits its throttling limit.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_throttling_data_throttled_time": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "Aggregate time the container was throttled.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_throttling_data_throttled_time_nanoseconds_total": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "Aggregate time the container was throttled.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_time": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Total cumulative CPU time (sum of all cores) spent by the container/pod/node since its creation",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_time_seconds_total": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Total cumulative CPU time (sum of all cores) spent by the container/pod/node since its creation",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_usage": {
+    "type": "gauge",
+    "unit": "{cpu}",
+    "help": "Total CPU usage (sum of all cores per second) averaged over the sample window",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_usage_kernelmode": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "Time spent by tasks of the cgroup in kernel mode (Linux).  Time spent by all container processes in kernel mode (Windows).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_usage_kernelmode_nanoseconds_total": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "Time spent by tasks of the cgroup in kernel mode (Linux).  Time spent by all container processes in kernel mode (Windows).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_usage_nanoseconds_total": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "Total CPU time consumed.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_usage_percpu": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "Per-core CPU usage by the container (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_usage_percpu_nanoseconds_total": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "Per-core CPU usage by the container (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_usage_system": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "System CPU usage, as reported by docker.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_usage_system_nanoseconds_total": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "System CPU usage, as reported by docker.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_usage_total": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "Total CPU time consumed.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_usage_usermode": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "Time spent by tasks of the cgroup in user mode (Linux).  Time spent by all container processes in user mode (Windows).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_cpu_usage_usermode_nanoseconds_total": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "Time spent by tasks of the cgroup in user mode (Linux).  Time spent by all container processes in user mode (Windows).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_filesystem_available": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Container filesystem available",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_filesystem_available_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Container filesystem available",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_filesystem_capacity": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Container filesystem capacity",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_filesystem_capacity_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Container filesystem capacity",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_filesystem_usage": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Container filesystem usage",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_filesystem_usage_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Container filesystem usage",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_active_anon": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of anonymous memory that has been identified as active by the kernel.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_active_anon_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of anonymous memory that has been identified as active by the kernel.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_active_file": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Cache memory that has been identified as active by the kernel.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_active_file_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Cache memory that has been identified as active by the kernel.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_anon": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Amount of memory used in anonymous mappings such as brk(), sbrk(), and mmap(MAP_ANONYMOUS) (Only available with cgroups v2).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_anon_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Amount of memory used in anonymous mappings such as brk(), sbrk(), and mmap(MAP_ANONYMOUS) (Only available with cgroups v2).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_available": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Container memory available",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_available_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Container memory available",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_cache": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of memory used by the processes of this control group that can be associated precisely with a block on a block device (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_cache_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of memory used by the processes of this control group that can be associated precisely with a block on a block device (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_dirty": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Bytes that are waiting to get written back to the disk, from this cgroup (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_dirty_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Bytes that are waiting to get written back to the disk, from this cgroup (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_fails": {
+    "type": "counter",
+    "unit": "{fails}",
+    "help": "Number of times the memory limit was hit.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_fails_total": {
+    "type": "counter",
+    "unit": "{fails}",
+    "help": "Number of times the memory limit was hit.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_file": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Amount of memory used to cache filesystem data, including tmpfs and shared memory (Only available with cgroups v2).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_file_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Amount of memory used to cache filesystem data, including tmpfs and shared memory (Only available with cgroups v2).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_hierarchical_memory_limit": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The maximum amount of physical memory that can be used by the processes of this control group (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_hierarchical_memory_limit_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The maximum amount of physical memory that can be used by the processes of this control group (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_hierarchical_memsw_limit": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The maximum amount of RAM + swap that can be used by the processes of this control group (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_hierarchical_memsw_limit_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The maximum amount of RAM + swap that can be used by the processes of this control group (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_inactive_anon": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of anonymous memory that has been identified as inactive by the kernel.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_inactive_anon_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of anonymous memory that has been identified as inactive by the kernel.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_inactive_file": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Cache memory that has been identified as inactive by the kernel.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_inactive_file_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Cache memory that has been identified as inactive by the kernel.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_major_page_faults": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Container memory major_page_faults",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_major_page_faults_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Container memory major_page_faults",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_mapped_file": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Indicates the amount of memory mapped by the processes in the control group (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_mapped_file_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Indicates the amount of memory mapped by the processes in the control group (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_page_faults": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Container memory page_faults",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_page_faults_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Container memory page_faults",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_percent": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Percentage of memory used.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_percent_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Percentage of memory used.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_pgfault": {
+    "type": "counter",
+    "unit": "{faults}",
+    "help": "Indicate the number of times that a process of the cgroup triggered a page fault.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_pgmajfault": {
+    "type": "counter",
+    "unit": "{faults}",
+    "help": "Indicate the number of times that a process of the cgroup triggered a major fault.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_pgpgin": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "Number of pages read from disk by the cgroup (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_pgpgout": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "Number of pages written to disk by the cgroup (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_rss_huge": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Number of bytes of anonymous transparent hugepages in this cgroup (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_rss_huge_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Number of bytes of anonymous transparent hugepages in this cgroup (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_active_anon": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of anonymous memory that has been identified as active by the kernel. Includes descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_active_anon_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of anonymous memory that has been identified as active by the kernel. Includes descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_active_file": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Cache memory that has been identified as active by the kernel. Includes descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_active_file_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Cache memory that has been identified as active by the kernel. Includes descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_cache": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Total amount of memory used by the processes of this cgroup (and descendants) that can be associated with a block on a block device. Also accounts for memory used by tmpfs (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_cache_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Total amount of memory used by the processes of this cgroup (and descendants) that can be associated with a block on a block device. Also accounts for memory used by tmpfs (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_dirty": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Bytes that are waiting to get written back to the disk, from this cgroup and descendants (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_dirty_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Bytes that are waiting to get written back to the disk, from this cgroup and descendants (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_inactive_anon": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of anonymous memory that has been identified as inactive by the kernel. Includes descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_inactive_anon_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of anonymous memory that has been identified as inactive by the kernel. Includes descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_inactive_file": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Cache memory that has been identified as inactive by the kernel. Includes descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_inactive_file_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Cache memory that has been identified as inactive by the kernel. Includes descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_mapped_file": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Indicates the amount of memory mapped by the processes in the control group and descendant groups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_mapped_file_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Indicates the amount of memory mapped by the processes in the control group and descendant groups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_pgfault": {
+    "type": "counter",
+    "unit": "{faults}",
+    "help": "Indicate the number of times that a process of the cgroup (or descendant cgroups) triggered a page fault (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_pgmajfault": {
+    "type": "counter",
+    "unit": "{faults}",
+    "help": "Indicate the number of times that a process of the cgroup (or descendant cgroups) triggered a major fault (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_pgpgin": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "Number of pages read from disk by the cgroup and descendant groups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_pgpgout": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "Number of pages written to disk by the cgroup and descendant groups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_rss": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of memory that doesn’t correspond to anything on disk: stacks, heaps, and anonymous memory maps. Includes descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_rss_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of memory that doesn’t correspond to anything on disk: stacks, heaps, and anonymous memory maps. Includes descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_rss_huge": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Number of bytes of anonymous transparent hugepages in this cgroup and descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_rss_huge_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Number of bytes of anonymous transparent hugepages in this cgroup and descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_unevictable": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of memory that cannot be reclaimed. Includes descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_unevictable_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of memory that cannot be reclaimed. Includes descendant cgroups (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_writeback": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Number of bytes of file/anon cache that are queued for syncing to disk in this cgroup and descendants (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_total_writeback_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Number of bytes of file/anon cache that are queued for syncing to disk in this cgroup and descendants (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_unevictable": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of memory that cannot be reclaimed.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_unevictable_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of memory that cannot be reclaimed.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_usage": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Container memory usage",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_usage_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Container memory usage",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_usage_limit": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Memory limit of the container.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_usage_limit_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Memory limit of the container.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_usage_max": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Maximum memory usage.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_usage_max_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Maximum memory usage.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_usage_total": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Memory usage of the container. This excludes the cache.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_usage_total_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Memory usage of the container. This excludes the cache.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_working_set": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Container memory working_set",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_working_set_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Container memory working_set",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_writeback": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Number of bytes of file/anon cache that are queued for syncing to disk in this cgroup (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_memory_writeback_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Number of bytes of file/anon cache that are queued for syncing to disk in this cgroup (Only available with cgroups v1).",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_network_io_usage_rx_bytes": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Bytes received by the container.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_network_io_usage_rx_bytes_total": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Bytes received by the container.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_network_io_usage_rx_dropped": {
+    "type": "counter",
+    "unit": "{packets}",
+    "help": "Incoming packets dropped.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_network_io_usage_rx_dropped_total": {
+    "type": "counter",
+    "unit": "{packets}",
+    "help": "Incoming packets dropped.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_network_io_usage_rx_errors": {
+    "type": "counter",
+    "unit": "{errors}",
+    "help": "Received errors.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_network_io_usage_rx_errors_total": {
+    "type": "counter",
+    "unit": "{errors}",
+    "help": "Received errors.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_network_io_usage_rx_packets": {
+    "type": "counter",
+    "unit": "{packets}",
+    "help": "Packets received.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_network_io_usage_rx_packets_total": {
+    "type": "counter",
+    "unit": "{packets}",
+    "help": "Packets received.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_network_io_usage_tx_bytes": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Bytes sent.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_network_io_usage_tx_bytes_total": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Bytes sent.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_network_io_usage_tx_dropped": {
+    "type": "counter",
+    "unit": "{packets}",
+    "help": "Outgoing packets dropped.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_network_io_usage_tx_dropped_total": {
+    "type": "counter",
+    "unit": "{packets}",
+    "help": "Outgoing packets dropped.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_network_io_usage_tx_errors": {
+    "type": "counter",
+    "unit": "{errors}",
+    "help": "Sent errors.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_network_io_usage_tx_errors_total": {
+    "type": "counter",
+    "unit": "{errors}",
+    "help": "Sent errors.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_network_io_usage_tx_packets": {
+    "type": "counter",
+    "unit": "{packets}",
+    "help": "Packets sent.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_network_io_usage_tx_packets_total": {
+    "type": "counter",
+    "unit": "{packets}",
+    "help": "Packets sent.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_pids_count": {
+    "type": "gauge",
+    "unit": "{pids}",
+    "help": "Number of pids in the container's cgroup.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_pids_limit": {
+    "type": "gauge",
+    "unit": "{pids}",
+    "help": "Maximum number of pids in the container's cgroup.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_restarts": {
+    "type": "counter",
+    "unit": "{restarts}",
+    "help": "Number of restarts for the container.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_restarts_total": {
+    "type": "counter",
+    "unit": "{restarts}",
+    "help": "Number of restarts for the container.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_uptime_seconds": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "Time elapsed since container start time.",
+    "source": "receiver/dockerstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "container_uptime_seconds_total": {
+    "type": "counter",
+    "unit": "s",
+    "help": "The time since the container started",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_connection_active": {
+    "type": "gauge",
+    "unit": "{connections}",
+    "help": "Number of active connections.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_connection_anonymous": {
+    "type": "counter",
+    "unit": "{connections}",
+    "help": "Number of connections established anonymously.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_connection_anonymous_total": {
+    "type": "counter",
+    "unit": "{connections}",
+    "help": "Number of connections established anonymously.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_connection_attempt_count": {
+    "type": "counter",
+    "unit": "{attempts}",
+    "help": "Total number of attempts to connect to the server.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_connection_attempt_count_total": {
+    "type": "counter",
+    "unit": "{attempts}",
+    "help": "Total number of attempts to connect to the server.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_network_blocked": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Number of bytes blocked due to bandwidth throttling.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_network_blocked_bytes_total": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Number of bytes blocked due to bandwidth throttling.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_network_file_count": {
+    "type": "counter",
+    "unit": "{files}",
+    "help": "Number of transmitted files.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_network_file_count_total": {
+    "type": "counter",
+    "unit": "{files}",
+    "help": "Number of transmitted files.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_network_io": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Total amount of bytes sent and received.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_network_io_bytes_total": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Total amount of bytes sent and received.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_request_count": {
+    "type": "counter",
+    "unit": "{requests}",
+    "help": "Total number of requests of a given type.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_request_count_total": {
+    "type": "counter",
+    "unit": "{requests}",
+    "help": "Total number of requests of a given type.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_request_queue_age_max": {
+    "type": "gauge",
+    "unit": "ms",
+    "help": "Age of oldest request in the queue.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_request_queue_age_max_milliseconds": {
+    "type": "gauge",
+    "unit": "ms",
+    "help": "Age of oldest request in the queue.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_request_queue_count": {
+    "type": "gauge",
+    "unit": "{requests}",
+    "help": "Current number of requests in the queue.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_request_rejected": {
+    "type": "counter",
+    "unit": "{requests}",
+    "help": "Total number of requests rejected.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_request_rejected_total": {
+    "type": "counter",
+    "unit": "{requests}",
+    "help": "Total number of requests rejected.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_thread_active": {
+    "type": "gauge",
+    "unit": "{threads}",
+    "help": "Current number of active threads.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_uptime": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "The amount of time the server has been up.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "iis_uptime_seconds": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "The amount of time the server has been up.",
+    "source": "receiver/iisreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_cpu_limit": {
+    "type": "gauge",
+    "unit": "{cpu}",
+    "help": "Maximum resource limit set for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_cpu_limit_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Container cpu utilization as a ratio of the container's limits",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_cpu_limit_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Container cpu utilization as a ratio of the container's limits",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_cpu_node_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Container cpu utilization as a ratio of the node's capacity",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_cpu_node_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Container cpu utilization as a ratio of the node's capacity",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_cpu_request": {
+    "type": "gauge",
+    "unit": "{cpu}",
+    "help": "Resource requested for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_cpu_request_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Container cpu utilization as a ratio of the container's requests",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_cpu_request_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Container cpu utilization as a ratio of the container's requests",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_ephemeralstorage_limit": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Maximum resource limit set for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_ephemeralstorage_limit_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Maximum resource limit set for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_ephemeralstorage_request": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Resource requested for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_ephemeralstorage_request_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Resource requested for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_memory_limit": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Maximum resource limit set for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_memory_limit_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Maximum resource limit set for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_memory_limit_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Container memory utilization as a ratio of the container's limits",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_memory_limit_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Container memory utilization as a ratio of the container's limits",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_memory_node_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Container memory utilization as a ratio of the node's capacity",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_memory_node_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Container memory utilization as a ratio of the node's capacity",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_memory_request": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Resource requested for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_memory_request_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Resource requested for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_memory_request_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Container memory utilization as a ratio of the container's requests",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_memory_request_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Container memory utilization as a ratio of the container's requests",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_ready": {
+    "type": "gauge",
+    "unit": "",
+    "help": "Whether a container has passed its readiness probe (0 for no, 1 for yes)",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_restarts": {
+    "type": "gauge",
+    "unit": "{restart}",
+    "help": "How many times the container has restarted in the recent past. This value is pulled directly from the K8s API and the value can go indefinitely high and be reset to 0 at any time depending on how your kubelet is configured to prune dead containers. It is best to not depend too much on the exact value but rather look at it as either == 0, in which case you can conclude there were no restarts in the recent past, or \u003e 0, in which case you can conclude there were restarts in the recent past, and not try and analyze the value beyond that.",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_storage_limit": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Maximum resource limit set for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_storage_limit_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Maximum resource limit set for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_storage_request": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Resource requested for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_container_storage_request_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Resource requested for the container. See https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#resourcerequirements-v1-core for details",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_cronjob_active_jobs": {
+    "type": "gauge",
+    "unit": "{job}",
+    "help": "The number of actively running jobs for a cronjob",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_daemonset_current_scheduled_nodes": {
+    "type": "gauge",
+    "unit": "{node}",
+    "help": "Number of nodes that are running at least 1 daemon pod and are supposed to run the daemon pod",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_daemonset_desired_scheduled_nodes": {
+    "type": "gauge",
+    "unit": "{node}",
+    "help": "Number of nodes that should be running the daemon pod (including nodes currently running the daemon pod)",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_daemonset_misscheduled_nodes": {
+    "type": "gauge",
+    "unit": "{node}",
+    "help": "Number of nodes that are running the daemon pod, but are not supposed to run the daemon pod",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_daemonset_ready_nodes": {
+    "type": "gauge",
+    "unit": "{node}",
+    "help": "Number of nodes that should be running the daemon pod and have one or more of the daemon pod running and ready",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_deployment_available": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "Total number of available pods (ready for at least minReadySeconds) targeted by this deployment",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_deployment_desired": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "Number of desired pods in this deployment",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_hpa_current_replicas": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "Current number of pod replicas managed by this autoscaler.",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_hpa_desired_replicas": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "Desired number of pod replicas managed by this autoscaler.",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_hpa_max_replicas": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "Maximum number of replicas to which the autoscaler can scale up.",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_hpa_min_replicas": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "Minimum number of replicas to which the autoscaler can scale up.",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_job_active_pods": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "The number of actively running pods for a job",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_job_desired_successful_pods": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "The desired number of successfully finished pods the job should be run with",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_job_failed_pods": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "The number of pods which reached phase Failed for a job",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_job_max_parallel_pods": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "The max desired number of pods the job should run at any given time",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_job_successful_pods": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "The number of pods which reached phase Succeeded for a job",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_namespace_phase": {
+    "type": "gauge",
+    "unit": "",
+    "help": "The current phase of namespaces (1 for active and 0 for terminating)",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_condition": {
+    "type": "gauge",
+    "unit": "{condition}",
+    "help": "The condition of a particular Node.",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_cpu_time": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Total cumulative CPU time (sum of all cores) spent by the container/pod/node since its creation",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_cpu_time_seconds_total": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Total cumulative CPU time (sum of all cores) spent by the container/pod/node since its creation",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_cpu_usage": {
+    "type": "gauge",
+    "unit": "{cpu}",
+    "help": "Total CPU usage (sum of all cores per second) averaged over the sample window",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_cpu_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Node CPU utilization",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_cpu_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Node CPU utilization",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_filesystem_available": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Node filesystem available",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_filesystem_available_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Node filesystem available",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_filesystem_capacity": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Node filesystem capacity",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_filesystem_capacity_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Node filesystem capacity",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_filesystem_usage": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Node filesystem usage",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_filesystem_usage_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Node filesystem usage",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_memory_available": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Node memory available",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_memory_available_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Node memory available",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_memory_major_page_faults": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Node memory major_page_faults",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_memory_major_page_faults_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Node memory major_page_faults",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_memory_page_faults": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Node memory page_faults",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_memory_page_faults_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Node memory page_faults",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_memory_rss": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Node memory rss",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_memory_rss_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Node memory rss",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_memory_usage": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Node memory usage",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_memory_usage_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Node memory usage",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_memory_working_set": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Node memory working_set",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_memory_working_set_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Node memory working_set",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_network_errors": {
+    "type": "counter",
+    "unit": "1",
+    "help": "Node network errors",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_network_errors_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "Node network errors",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_network_io": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Node network IO",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_network_io_bytes_total": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Node network IO",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_uptime": {
+    "type": "counter",
+    "unit": "s",
+    "help": "The time since the node started",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_node_uptime_seconds_total": {
+    "type": "counter",
+    "unit": "s",
+    "help": "The time since the node started",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_cpu_limit_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Pod cpu utilization as a ratio of the pod's total container limits. If any container is missing a limit the metric is not emitted.",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_cpu_limit_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Pod cpu utilization as a ratio of the pod's total container limits. If any container is missing a limit the metric is not emitted.",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_cpu_node_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Pod cpu utilization as a ratio of the node's capacity",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_cpu_node_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Pod cpu utilization as a ratio of the node's capacity",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_cpu_request_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Pod cpu utilization as a ratio of the pod's total container requests. If any container is missing a request the metric is not emitted.",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_cpu_request_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Pod cpu utilization as a ratio of the pod's total container requests. If any container is missing a request the metric is not emitted.",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_cpu_time": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Total cumulative CPU time (sum of all cores) spent by the container/pod/node since its creation",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_cpu_time_seconds_total": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Total cumulative CPU time (sum of all cores) spent by the container/pod/node since its creation",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_cpu_usage": {
+    "type": "gauge",
+    "unit": "{cpu}",
+    "help": "Total CPU usage (sum of all cores per second) averaged over the sample window",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_cpu_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Pod CPU utilization",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_cpu_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Pod CPU utilization",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_filesystem_available": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Pod filesystem available",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_filesystem_available_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Pod filesystem available",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_filesystem_capacity": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Pod filesystem capacity",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_filesystem_capacity_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Pod filesystem capacity",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_filesystem_usage": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Pod filesystem usage",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_filesystem_usage_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Pod filesystem usage",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_memory_available": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Pod memory available",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_memory_available_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Pod memory available",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_memory_limit_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Pod memory utilization as a ratio of the pod's total container limits. If any container is missing a limit the metric is not emitted.",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_memory_limit_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Pod memory utilization as a ratio of the pod's total container limits. If any container is missing a limit the metric is not emitted.",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_memory_major_page_faults": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Pod memory major_page_faults",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_memory_major_page_faults_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Pod memory major_page_faults",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_memory_node_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Pod memory utilization as a ratio of the node's capacity",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_memory_node_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Pod memory utilization as a ratio of the node's capacity",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_memory_page_faults": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Pod memory page_faults",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_memory_page_faults_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Pod memory page_faults",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_memory_request_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Pod memory utilization as a ratio of the pod's total container requests. If any container is missing a request the metric is not emitted.",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_memory_request_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Pod memory utilization as a ratio of the pod's total container requests. If any container is missing a request the metric is not emitted.",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_memory_rss": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Pod memory rss",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_memory_rss_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Pod memory rss",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_memory_usage": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Pod memory usage",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_memory_usage_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Pod memory usage",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_memory_working_set": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Pod memory working_set",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_memory_working_set_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Pod memory working_set",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_network_errors": {
+    "type": "counter",
+    "unit": "1",
+    "help": "Pod network errors",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_network_errors_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "Pod network errors",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_network_io": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Pod network IO",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_network_io_bytes_total": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Pod network IO",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_phase": {
+    "type": "gauge",
+    "unit": "",
+    "help": "Current phase of the pod (1 - Pending, 2 - Running, 3 - Succeeded, 4 - Failed, 5 - Unknown)",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_status_reason": {
+    "type": "gauge",
+    "unit": "",
+    "help": "Current status reason of the pod (1 - Evicted, 2 - NodeAffinity, 3 - NodeLost, 4 - Shutdown, 5 - UnexpectedAdmissionError, 6 - Unknown)",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_uptime": {
+    "type": "counter",
+    "unit": "s",
+    "help": "The time since the pod started",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_pod_uptime_seconds_total": {
+    "type": "counter",
+    "unit": "s",
+    "help": "The time since the pod started",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_replicaset_available": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "Total number of available pods (ready for at least minReadySeconds) targeted by this replicaset",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_replicaset_desired": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "Number of desired pods in this replicaset",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_replication_controller_available": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "Total number of available pods (ready for at least minReadySeconds) targeted by this replication_controller",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_replication_controller_desired": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "Number of desired pods in this replication_controller",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_resource_quota_hard_limit": {
+    "type": "gauge",
+    "unit": "{resource}",
+    "help": "The upper limit for a particular resource in a specific namespace. Will only be sent if a quota is specified. CPU requests/limits will be sent as millicores",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_resource_quota_used": {
+    "type": "gauge",
+    "unit": "{resource}",
+    "help": "The usage for a particular resource in a specific namespace. Will only be sent if a quota is specified. CPU requests/limits will be sent as millicores",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_statefulset_current_pods": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "The number of pods created by the StatefulSet controller from the StatefulSet version",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_statefulset_desired_pods": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "Number of desired pods in the stateful set (the `spec.replicas` field)",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_statefulset_ready_pods": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "Number of pods created by the stateful set that have the `Ready` condition",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_statefulset_updated_pods": {
+    "type": "gauge",
+    "unit": "{pod}",
+    "help": "Number of pods created by the StatefulSet controller from the StatefulSet version",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_volume_available": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The number of available bytes in the volume.",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_volume_available_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The number of available bytes in the volume.",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_volume_capacity": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The total capacity in bytes of the volume.",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_volume_capacity_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The total capacity in bytes of the volume.",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_volume_inodes": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "The total inodes in the filesystem.",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_volume_inodes_free": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "The free inodes in the filesystem.",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_volume_inodes_free_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "The free inodes in the filesystem.",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_volume_inodes_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "The total inodes in the filesystem.",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_volume_inodes_used": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "The inodes used by the filesystem. This may not equal inodes - free because filesystem may share inodes with other filesystems.",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "k8s_volume_inodes_used_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "The inodes used by the filesystem. This may not equal inodes - free because filesystem may share inodes with other filesystems.",
+    "source": "receiver/kubeletstatsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_broker_log_retention_period": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "log retention time (s) of a broker.",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_broker_log_retention_period_seconds": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "log retention time (s) of a broker.",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_brokers": {
+    "type": "gauge",
+    "unit": "{brokers}",
+    "help": "Number of brokers in the cluster.",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_consumer_group_lag": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Current approximate lag of consumer group at partition of topic",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_consumer_group_lag_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Current approximate lag of consumer group at partition of topic",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_consumer_group_lag_sum": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Current approximate sum of consumer group lag across all partitions of topic",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_consumer_group_lag_sum_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Current approximate sum of consumer group lag across all partitions of topic",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_consumer_group_members": {
+    "type": "gauge",
+    "unit": "{members}",
+    "help": "Count of members in the consumer group",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_consumer_group_offset": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Current offset of the consumer group at partition of topic",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_consumer_group_offset_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Current offset of the consumer group at partition of topic",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_consumer_group_offset_sum": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Sum of consumer group offset across partitions of topic",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_consumer_group_offset_sum_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Sum of consumer group offset across partitions of topic",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_partition_current_offset": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Current offset of partition of topic.",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_partition_current_offset_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Current offset of partition of topic.",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_partition_oldest_offset": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Oldest offset of partition of topic",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_partition_oldest_offset_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Oldest offset of partition of topic",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_partition_replicas": {
+    "type": "gauge",
+    "unit": "{replicas}",
+    "help": "Number of replicas for partition of topic",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_partition_replicas_in_sync": {
+    "type": "gauge",
+    "unit": "{replicas}",
+    "help": "Number of synchronized replicas of partition",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_topic_log_retention_period": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "log retention period of a topic (s).",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_topic_log_retention_period_seconds": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "log retention period of a topic (s).",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_topic_log_retention_size": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "log retention size of a topic in Bytes, The value (-1) indicates infinite size.",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_topic_log_retention_size_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "log retention size of a topic in Bytes, The value (-1) indicates infinite size.",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_topic_min_insync_replicas": {
+    "type": "gauge",
+    "unit": "{replicas}",
+    "help": "minimum in-sync replicas of a topic.",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_topic_partitions": {
+    "type": "gauge",
+    "unit": "{partitions}",
+    "help": "Number of partitions in topic.",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_topic_replication_factor": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "replication factor of a topic.",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "kafka_topic_replication_factor_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "replication factor of a topic.",
+    "source": "receiver/kafkametricsreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_cache_operations": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "The number of cache operations of the instance.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_cache_operations_total": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "The number of cache operations of the instance.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_collection_count": {
+    "type": "gauge",
+    "unit": "{collections}",
+    "help": "The number of collections.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_connection_count": {
+    "type": "gauge",
+    "unit": "{connections}",
+    "help": "The number of connections.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_cursor_count": {
+    "type": "gauge",
+    "unit": "{cursors}",
+    "help": "The number of open cursors maintained for clients.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_cursor_timeout_count": {
+    "type": "gauge",
+    "unit": "{cursors}",
+    "help": "The number of cursors that have timed out.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_data_size": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The size of the collection. Data compression does not affect this value.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_data_size_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The size of the collection. Data compression does not affect this value.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_database_count": {
+    "type": "gauge",
+    "unit": "{databases}",
+    "help": "The number of existing databases.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_document_operation_count": {
+    "type": "gauge",
+    "unit": "{documents}",
+    "help": "The number of document operations executed.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_extent_count": {
+    "type": "gauge",
+    "unit": "{extents}",
+    "help": "The number of extents.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_global_lock_time": {
+    "type": "counter",
+    "unit": "ms",
+    "help": "The time the global lock has been held.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_global_lock_time_milliseconds_total": {
+    "type": "counter",
+    "unit": "ms",
+    "help": "The time the global lock has been held.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_health": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "The health status of the server.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_health_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "The health status of the server.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_index_access_count": {
+    "type": "gauge",
+    "unit": "{accesses}",
+    "help": "The number of times an index has been accessed.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_index_count": {
+    "type": "gauge",
+    "unit": "{indexes}",
+    "help": "The number of indexes.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_index_size": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Sum of the space allocated to all indexes in the database, including free index space.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_index_size_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Sum of the space allocated to all indexes in the database, including free index space.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_lock_acquire_count": {
+    "type": "counter",
+    "unit": "{count}",
+    "help": "Number of times the lock was acquired in the specified mode.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_lock_acquire_count_total": {
+    "type": "counter",
+    "unit": "{count}",
+    "help": "Number of times the lock was acquired in the specified mode.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_lock_acquire_time": {
+    "type": "counter",
+    "unit": "microseconds",
+    "help": "Cumulative wait time for the lock acquisitions.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_lock_acquire_time_microseconds_total": {
+    "type": "counter",
+    "unit": "microseconds",
+    "help": "Cumulative wait time for the lock acquisitions.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_lock_acquire_wait_count": {
+    "type": "counter",
+    "unit": "{count}",
+    "help": "Number of times the lock acquisitions encountered waits because the locks were held in a conflicting mode.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_lock_acquire_wait_count_total": {
+    "type": "counter",
+    "unit": "{count}",
+    "help": "Number of times the lock acquisitions encountered waits because the locks were held in a conflicting mode.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_lock_deadlock_count": {
+    "type": "counter",
+    "unit": "{count}",
+    "help": "Number of times the lock acquisitions encountered deadlocks.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_lock_deadlock_count_total": {
+    "type": "counter",
+    "unit": "{count}",
+    "help": "Number of times the lock acquisitions encountered deadlocks.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_memory_usage": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of memory used.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_memory_usage_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of memory used.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_network_io_receive": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The number of bytes received.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_network_io_receive_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The number of bytes received.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_network_io_transmit": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The number of by transmitted.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_network_io_transmit_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The number of by transmitted.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_network_request_count": {
+    "type": "gauge",
+    "unit": "{requests}",
+    "help": "The number of requests received by the server.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_object_count": {
+    "type": "gauge",
+    "unit": "{objects}",
+    "help": "The number of objects.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_operation_count": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "The number of operations executed.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_operation_count_total": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "The number of operations executed.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_operation_latency_time": {
+    "type": "gauge",
+    "unit": "us",
+    "help": "The latency of operations.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_operation_latency_time_microseconds": {
+    "type": "gauge",
+    "unit": "us",
+    "help": "The latency of operations.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_operation_repl_count": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "The number of replicated operations executed.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_operation_repl_count_total": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "The number of replicated operations executed.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_operation_time": {
+    "type": "counter",
+    "unit": "ms",
+    "help": "The total time spent performing operations.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_operation_time_milliseconds_total": {
+    "type": "counter",
+    "unit": "ms",
+    "help": "The total time spent performing operations.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_session_count": {
+    "type": "gauge",
+    "unit": "{sessions}",
+    "help": "The total number of active sessions.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_storage_size": {
+    "type": "counter",
+    "unit": "By",
+    "help": "The total amount of storage allocated to this collection.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_storage_size_bytes_total": {
+    "type": "counter",
+    "unit": "By",
+    "help": "The total amount of storage allocated to this collection.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_uptime": {
+    "type": "counter",
+    "unit": "ms",
+    "help": "The amount of time that the server has been running.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mongodb_uptime_milliseconds_total": {
+    "type": "counter",
+    "unit": "ms",
+    "help": "The amount of time that the server has been running.",
+    "source": "receiver/mongodbreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_buffer_pool_data_pages": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "The number of data pages in the InnoDB buffer pool.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_buffer_pool_limit": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The configured size of the InnoDB buffer pool.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_buffer_pool_limit_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The configured size of the InnoDB buffer pool.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_buffer_pool_operations": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of operations on the InnoDB buffer pool.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_buffer_pool_operations_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of operations on the InnoDB buffer pool.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_buffer_pool_page_flushes": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of requests to flush pages from the InnoDB buffer pool.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_buffer_pool_page_flushes_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of requests to flush pages from the InnoDB buffer pool.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_buffer_pool_pages": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "The number of pages in the InnoDB buffer pool.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_buffer_pool_usage": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The number of bytes in the InnoDB buffer pool.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_buffer_pool_usage_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The number of bytes in the InnoDB buffer pool.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_client_network_io": {
+    "type": "counter",
+    "unit": "By",
+    "help": "The number of transmitted bytes between server and clients.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_client_network_io_bytes_total": {
+    "type": "counter",
+    "unit": "By",
+    "help": "The number of transmitted bytes between server and clients.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_commands": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of times each type of command has been executed.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_commands_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of times each type of command has been executed.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_connection_count": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of connection attempts (successful or not) to the MySQL server.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_connection_count_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of connection attempts (successful or not) to the MySQL server.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_connection_errors": {
+    "type": "counter",
+    "unit": "1",
+    "help": "Errors that occur during the client connection process.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_connection_errors_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "Errors that occur during the client connection process.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_double_writes": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of writes to the InnoDB doublewrite buffer.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_double_writes_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of writes to the InnoDB doublewrite buffer.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_handlers": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of requests to various MySQL handlers.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_handlers_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of requests to various MySQL handlers.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_index_io_wait_count": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The total count of I/O wait events for an index.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_index_io_wait_count_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The total count of I/O wait events for an index.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_index_io_wait_time": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "The total time of I/O wait events for an index.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_index_io_wait_time_nanoseconds_total": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "The total time of I/O wait events for an index.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_joins": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of joins that perform table scans.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_joins_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of joins that perform table scans.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_locks": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of MySQL locks.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_locks_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of MySQL locks.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_log_operations": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of InnoDB log operations.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_log_operations_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of InnoDB log operations.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_mysqlx_connections": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of mysqlx connections.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_mysqlx_connections_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of mysqlx connections.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_mysqlx_worker_threads": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "The number of worker threads available.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_opened_resources": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of opened resources.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_opened_resources_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of opened resources.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_operations": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of InnoDB operations.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_operations_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of InnoDB operations.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_page_operations": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of InnoDB page operations.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_page_operations_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of InnoDB page operations.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_prepared_statements": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of times each type of prepared statement command has been issued.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_prepared_statements_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of times each type of prepared statement command has been issued.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_query_client_count": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of statements executed by the server. This includes only statements sent to the server by clients.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_query_client_count_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of statements executed by the server. This includes only statements sent to the server by clients.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_query_count": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of statements executed by the server.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_query_count_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of statements executed by the server.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_query_slow_count": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of slow queries.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_query_slow_count_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of slow queries.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_replica_sql_delay": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "The number of seconds that the replica must lag the source.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_replica_sql_delay_seconds": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "The number of seconds that the replica must lag the source.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_replica_time_behind_source": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "This field is an indication of how “late” the replica is.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_replica_time_behind_source_seconds": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "This field is an indication of how “late” the replica is.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_row_locks": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of InnoDB row locks.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_row_locks_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of InnoDB row locks.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_row_operations": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of InnoDB row operations.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_row_operations_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of InnoDB row operations.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_sorts": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of MySQL sorts.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_sorts_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of MySQL sorts.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_statement_event_count": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Summary of current and recent statement events.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_statement_event_wait_time": {
+    "type": "gauge",
+    "unit": "ns",
+    "help": "The total wait time of the summarized timed events.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_statement_event_wait_time_nanoseconds": {
+    "type": "gauge",
+    "unit": "ns",
+    "help": "The total wait time of the summarized timed events.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_table_average_row_length": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The average row length in bytes for a given table.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_table_average_row_length_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The average row length in bytes for a given table.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_table_io_wait_count": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The total count of I/O wait events for a table.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_table_io_wait_count_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The total count of I/O wait events for a table.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_table_io_wait_time": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "The total time of I/O wait events for a table.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_table_io_wait_time_nanoseconds_total": {
+    "type": "counter",
+    "unit": "ns",
+    "help": "The total time of I/O wait events for a table.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_table_lock_wait_read_count": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "The total table lock wait read events.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_table_lock_wait_read_time": {
+    "type": "gauge",
+    "unit": "ns",
+    "help": "The total table lock wait read events times.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_table_lock_wait_read_time_nanoseconds": {
+    "type": "gauge",
+    "unit": "ns",
+    "help": "The total table lock wait read events times.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_table_lock_wait_write_count": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "The total table lock wait write events.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_table_lock_wait_write_time": {
+    "type": "gauge",
+    "unit": "ns",
+    "help": "The total table lock wait write events times.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_table_lock_wait_write_time_nanoseconds": {
+    "type": "gauge",
+    "unit": "ns",
+    "help": "The total table lock wait write events times.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_table_open_cache": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of hits, misses or overflows for open tables cache lookups.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_table_open_cache_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of hits, misses or overflows for open tables cache lookups.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_table_rows": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "The number of rows for a given table.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_table_size": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The table size in bytes for a given table.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_table_size_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The table size in bytes for a given table.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_threads": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "The state of MySQL threads.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_tmp_resources": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of created temporary resources.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_tmp_resources_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of created temporary resources.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_uptime": {
+    "type": "counter",
+    "unit": "s",
+    "help": "The number of seconds that the server has been up.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "mysql_uptime_seconds_total": {
+    "type": "counter",
+    "unit": "s",
+    "help": "The number of seconds that the server has been up.",
+    "source": "receiver/mysqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "nginx_connections_accepted": {
+    "type": "counter",
+    "unit": "connections",
+    "help": "The total number of accepted client connections",
+    "source": "receiver/nginxreceiver/metadata.yaml@v0.120.0"
+  },
+  "nginx_connections_accepted_total": {
+    "type": "counter",
+    "unit": "connections",
+    "help": "The total number of accepted client connections",
+    "source": "receiver/nginxreceiver/metadata.yaml@v0.120.0"
+  },
+  "nginx_connections_current": {
+    "type": "gauge",
+    "unit": "connections",
+    "help": "The current number of nginx connections by state",
+    "source": "receiver/nginxreceiver/metadata.yaml@v0.120.0"
+  },
+  "nginx_connections_handled": {
+    "type": "counter",
+    "unit": "connections",
+    "help": "The total number of handled connections. Generally, the parameter value is the same as nginx.connections_accepted unless some resource limits have been reached (for example, the worker_connections limit).",
+    "source": "receiver/nginxreceiver/metadata.yaml@v0.120.0"
+  },
+  "nginx_connections_handled_total": {
+    "type": "counter",
+    "unit": "connections",
+    "help": "The total number of handled connections. Generally, the parameter value is the same as nginx.connections_accepted unless some resource limits have been reached (for example, the worker_connections limit).",
+    "source": "receiver/nginxreceiver/metadata.yaml@v0.120.0"
+  },
+  "nginx_requests": {
+    "type": "counter",
+    "unit": "requests",
+    "help": "Total number of requests made to the server since it started",
+    "source": "receiver/nginxreceiver/metadata.yaml@v0.120.0"
+  },
+  "nginx_requests_total": {
+    "type": "counter",
+    "unit": "requests",
+    "help": "Total number of requests made to the server since it started",
+    "source": "receiver/nginxreceiver/metadata.yaml@v0.120.0"
+  },
+  "openshift_appliedclusterquota_limit": {
+    "type": "gauge",
+    "unit": "{resource}",
+    "help": "The upper limit for a particular resource in a specific namespace.",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "openshift_appliedclusterquota_used": {
+    "type": "gauge",
+    "unit": "{resource}",
+    "help": "The usage for a particular resource in a specific namespace.",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "openshift_clusterquota_limit": {
+    "type": "gauge",
+    "unit": "{resource}",
+    "help": "The configured upper limit for a particular resource.",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "openshift_clusterquota_used": {
+    "type": "gauge",
+    "unit": "{resource}",
+    "help": "The usage for a particular resource with a configured limit.",
+    "source": "receiver/k8sclusterreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_consistent_gets": {
+    "type": "counter",
+    "unit": "{gets}",
+    "help": "Number of times a consistent read was requested for a block from the buffer cache.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_consistent_gets_total": {
+    "type": "counter",
+    "unit": "{gets}",
+    "help": "Number of times a consistent read was requested for a block from the buffer cache.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_cpu_time": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Cumulative CPU time, in seconds",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_cpu_time_seconds_total": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Cumulative CPU time, in seconds",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_db_block_gets": {
+    "type": "counter",
+    "unit": "{gets}",
+    "help": "Number of times a current block was requested from the buffer cache.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_db_block_gets_total": {
+    "type": "counter",
+    "unit": "{gets}",
+    "help": "Number of times a current block was requested from the buffer cache.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_dml_locks_limit": {
+    "type": "gauge",
+    "unit": "{locks}",
+    "help": "Maximum limit of active DML (Data Manipulation Language) locks, -1 if unlimited.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_dml_locks_usage": {
+    "type": "gauge",
+    "unit": "{locks}",
+    "help": "Current count of active DML (Data Manipulation Language) locks.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_enqueue_deadlocks": {
+    "type": "counter",
+    "unit": "{deadlocks}",
+    "help": "Total number of deadlocks between table or row locks in different sessions.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_enqueue_deadlocks_total": {
+    "type": "counter",
+    "unit": "{deadlocks}",
+    "help": "Total number of deadlocks between table or row locks in different sessions.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_enqueue_locks_limit": {
+    "type": "gauge",
+    "unit": "{locks}",
+    "help": "Maximum limit of active enqueue locks, -1 if unlimited.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_enqueue_locks_usage": {
+    "type": "gauge",
+    "unit": "{locks}",
+    "help": "Current count of active enqueue locks.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_enqueue_resources_limit": {
+    "type": "gauge",
+    "unit": "{resources}",
+    "help": "Maximum limit of active enqueue resources, -1 if unlimited.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_enqueue_resources_usage": {
+    "type": "gauge",
+    "unit": "{resources}",
+    "help": "Current count of active enqueue resources.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_exchange_deadlocks": {
+    "type": "counter",
+    "unit": "{deadlocks}",
+    "help": "Number of times that a process detected a potential deadlock when exchanging two buffers and raised an internal, restartable error. Index scans are the only operations that perform exchanges.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_exchange_deadlocks_total": {
+    "type": "counter",
+    "unit": "{deadlocks}",
+    "help": "Number of times that a process detected a potential deadlock when exchanging two buffers and raised an internal, restartable error. Index scans are the only operations that perform exchanges.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_executions": {
+    "type": "counter",
+    "unit": "{executions}",
+    "help": "Total number of calls (user and recursive) that executed SQL statements",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_executions_total": {
+    "type": "counter",
+    "unit": "{executions}",
+    "help": "Total number of calls (user and recursive) that executed SQL statements",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_hard_parses": {
+    "type": "counter",
+    "unit": "{parses}",
+    "help": "Number of hard parses",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_hard_parses_total": {
+    "type": "counter",
+    "unit": "{parses}",
+    "help": "Number of hard parses",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_logical_reads": {
+    "type": "counter",
+    "unit": "{reads}",
+    "help": "Number of logical reads",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_logical_reads_total": {
+    "type": "counter",
+    "unit": "{reads}",
+    "help": "Number of logical reads",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_parse_calls": {
+    "type": "counter",
+    "unit": "{parses}",
+    "help": "Total number of parse calls.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_parse_calls_total": {
+    "type": "counter",
+    "unit": "{parses}",
+    "help": "Total number of parse calls.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_pga_memory": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Session PGA (Program Global Area) memory",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_pga_memory_bytes_total": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Session PGA (Program Global Area) memory",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_physical_reads": {
+    "type": "counter",
+    "unit": "{reads}",
+    "help": "Number of physical reads",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_physical_reads_total": {
+    "type": "counter",
+    "unit": "{reads}",
+    "help": "Number of physical reads",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_processes_limit": {
+    "type": "gauge",
+    "unit": "{processes}",
+    "help": "Maximum limit of active processes, -1 if unlimited.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_processes_usage": {
+    "type": "gauge",
+    "unit": "{processes}",
+    "help": "Current count of active processes.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_sessions_limit": {
+    "type": "gauge",
+    "unit": "{sessions}",
+    "help": "Maximum limit of active sessions, -1 if unlimited.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_sessions_usage": {
+    "type": "gauge",
+    "unit": "{sessions}",
+    "help": "Count of active sessions.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_tablespace_size_limit": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Maximum size of tablespace in bytes, -1 if unlimited.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_tablespace_size_limit_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Maximum size of tablespace in bytes, -1 if unlimited.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_tablespace_size_usage": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Used tablespace in bytes.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_tablespace_size_usage_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Used tablespace in bytes.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_transactions_limit": {
+    "type": "gauge",
+    "unit": "{transactions}",
+    "help": "Maximum limit of active transactions, -1 if unlimited.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_transactions_usage": {
+    "type": "gauge",
+    "unit": "{transactions}",
+    "help": "Current count of active transactions.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_user_commits": {
+    "type": "counter",
+    "unit": "{commits}",
+    "help": "Number of user commits. When a user commits a transaction, the redo generated that reflects the changes made to database blocks must be written to disk. Commits often represent the closest thing to a user transaction rate.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_user_commits_total": {
+    "type": "counter",
+    "unit": "{commits}",
+    "help": "Number of user commits. When a user commits a transaction, the redo generated that reflects the changes made to database blocks must be written to disk. Commits often represent the closest thing to a user transaction rate.",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_user_rollbacks": {
+    "type": "counter",
+    "unit": "1",
+    "help": "Number of times users manually issue the ROLLBACK statement or an error occurs during a user's transactions",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "oracledb_user_rollbacks_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "Number of times users manually issue the ROLLBACK statement or an error occurs during a user's transactions",
+    "source": "receiver/oracledbreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_backends": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "The number of backends.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_bgwriter_buffers_allocated": {
+    "type": "counter",
+    "unit": "{buffers}",
+    "help": "Number of buffers allocated.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_bgwriter_buffers_allocated_total": {
+    "type": "counter",
+    "unit": "{buffers}",
+    "help": "Number of buffers allocated.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_bgwriter_buffers_writes": {
+    "type": "counter",
+    "unit": "{buffers}",
+    "help": "Number of buffers written.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_bgwriter_buffers_writes_total": {
+    "type": "counter",
+    "unit": "{buffers}",
+    "help": "Number of buffers written.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_bgwriter_checkpoint_count": {
+    "type": "counter",
+    "unit": "{checkpoints}",
+    "help": "The number of checkpoints performed.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_bgwriter_checkpoint_count_total": {
+    "type": "counter",
+    "unit": "{checkpoints}",
+    "help": "The number of checkpoints performed.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_bgwriter_duration": {
+    "type": "counter",
+    "unit": "ms",
+    "help": "Total time spent writing and syncing files to disk by checkpoints.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_bgwriter_duration_milliseconds_total": {
+    "type": "counter",
+    "unit": "ms",
+    "help": "Total time spent writing and syncing files to disk by checkpoints.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_bgwriter_maxwritten": {
+    "type": "counter",
+    "unit": "1",
+    "help": "Number of times the background writer stopped a cleaning scan because it had written too many buffers.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_bgwriter_maxwritten_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "Number of times the background writer stopped a cleaning scan because it had written too many buffers.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_blks_hit": {
+    "type": "counter",
+    "unit": "{blks_hit}",
+    "help": "Number of times disk blocks were found already in the buffer cache.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_blks_hit_total": {
+    "type": "counter",
+    "unit": "{blks_hit}",
+    "help": "Number of times disk blocks were found already in the buffer cache.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_blks_read": {
+    "type": "counter",
+    "unit": "{blks_read}",
+    "help": "Number of disk blocks read in this database.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_blks_read_total": {
+    "type": "counter",
+    "unit": "{blks_read}",
+    "help": "Number of disk blocks read in this database.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_blocks_read": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of blocks read.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_blocks_read_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of blocks read.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_commits": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of commits.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_commits_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of commits.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_connection_max": {
+    "type": "gauge",
+    "unit": "{connections}",
+    "help": "Configured maximum number of client connections allowed",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_database_count": {
+    "type": "gauge",
+    "unit": "{databases}",
+    "help": "Number of user databases.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_database_locks": {
+    "type": "gauge",
+    "unit": "{lock}",
+    "help": "The number of database locks.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_db_size": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The database disk usage.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_db_size_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The database disk usage.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_deadlocks": {
+    "type": "counter",
+    "unit": "{deadlock}",
+    "help": "The number of deadlocks.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_deadlocks_total": {
+    "type": "counter",
+    "unit": "{deadlock}",
+    "help": "The number of deadlocks.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_index_scans": {
+    "type": "counter",
+    "unit": "{scans}",
+    "help": "The number of index scans on a table.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_index_scans_total": {
+    "type": "counter",
+    "unit": "{scans}",
+    "help": "The number of index scans on a table.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_index_size": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The size of the index on disk.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_index_size_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The size of the index on disk.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_operations": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of db row operations.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_operations_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of db row operations.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_replication_data_delay": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of data delayed in replication.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_replication_data_delay_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of data delayed in replication.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_rollbacks": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of rollbacks.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_rollbacks_total": {
+    "type": "counter",
+    "unit": "1",
+    "help": "The number of rollbacks.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_rows": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "The number of rows in the database.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_sequential_scans": {
+    "type": "counter",
+    "unit": "{sequential_scan}",
+    "help": "The number of sequential scans.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_sequential_scans_total": {
+    "type": "counter",
+    "unit": "{sequential_scan}",
+    "help": "The number of sequential scans.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_table_count": {
+    "type": "gauge",
+    "unit": "{table}",
+    "help": "Number of user tables in a database.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_table_size": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Disk space used by a table.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_table_size_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Disk space used by a table.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_table_vacuum_count": {
+    "type": "counter",
+    "unit": "{vacuums}",
+    "help": "Number of times a table has manually been vacuumed.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_table_vacuum_count_total": {
+    "type": "counter",
+    "unit": "{vacuums}",
+    "help": "Number of times a table has manually been vacuumed.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_temp_files": {
+    "type": "counter",
+    "unit": "{temp_file}",
+    "help": "The number of temp files.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_temp_files_total": {
+    "type": "counter",
+    "unit": "{temp_file}",
+    "help": "The number of temp files.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_tup_deleted": {
+    "type": "counter",
+    "unit": "{tup_deleted}",
+    "help": "Number of rows deleted by queries in the database.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_tup_deleted_total": {
+    "type": "counter",
+    "unit": "{tup_deleted}",
+    "help": "Number of rows deleted by queries in the database.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_tup_fetched": {
+    "type": "counter",
+    "unit": "{tup_fetched}",
+    "help": "Number of rows fetched by queries in the database.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_tup_fetched_total": {
+    "type": "counter",
+    "unit": "{tup_fetched}",
+    "help": "Number of rows fetched by queries in the database.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_tup_inserted": {
+    "type": "counter",
+    "unit": "{tup_inserted}",
+    "help": "Number of rows inserted by queries in the database.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_tup_inserted_total": {
+    "type": "counter",
+    "unit": "{tup_inserted}",
+    "help": "Number of rows inserted by queries in the database.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_tup_returned": {
+    "type": "counter",
+    "unit": "{tup_returned}",
+    "help": "Number of rows returned by queries in the database.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_tup_returned_total": {
+    "type": "counter",
+    "unit": "{tup_returned}",
+    "help": "Number of rows returned by queries in the database.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_tup_updated": {
+    "type": "counter",
+    "unit": "{tup_updated}",
+    "help": "Number of rows updated by queries in the database.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_tup_updated_total": {
+    "type": "counter",
+    "unit": "{tup_updated}",
+    "help": "Number of rows updated by queries in the database.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_wal_age": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "Age of the oldest WAL file.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_wal_age_seconds": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "Age of the oldest WAL file.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_wal_delay": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "Time between flushing recent WAL locally and receiving notification that the standby server has completed an operation with it.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_wal_delay_seconds": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "Time between flushing recent WAL locally and receiving notification that the standby server has completed an operation with it.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_wal_lag": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "Time between flushing recent WAL locally and receiving notification that the standby server has completed an operation with it.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "postgresql_wal_lag_seconds": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "Time between flushing recent WAL locally and receiving notification that the standby server has completed an operation with it.",
+    "source": "receiver/postgresqlreceiver/metadata.yaml@v0.120.0"
+  },
+  "process_context_switches": {
+    "type": "counter",
+    "unit": "{count}",
+    "help": "Number of times the process has been context switched.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_context_switches_total": {
+    "type": "counter",
+    "unit": "{count}",
+    "help": "Number of times the process has been context switched.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_cpu_time": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Total CPU seconds broken down by different states.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_cpu_time_seconds_total": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Total CPU seconds broken down by different states.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_cpu_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Percentage of total CPU time used by the process since last scrape, expressed as a value between 0 and 1. On the first scrape, no data point is emitted for this metric.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_cpu_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Percentage of total CPU time used by the process since last scrape, expressed as a value between 0 and 1. On the first scrape, no data point is emitted for this metric.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_disk_io": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Disk bytes transferred.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_disk_io_bytes_total": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Disk bytes transferred.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_disk_operations": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "Number of disk operations performed by the process.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_disk_operations_total": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "Number of disk operations performed by the process.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_handles": {
+    "type": "gauge",
+    "unit": "{count}",
+    "help": "Number of handles held by the process.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_memory_usage": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of physical memory in use.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_memory_usage_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The amount of physical memory in use.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_memory_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Percentage of total physical memory that is used by the process.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_memory_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Percentage of total physical memory that is used by the process.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_memory_virtual": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Virtual memory size.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_memory_virtual_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Virtual memory size.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_open_file_descriptors": {
+    "type": "gauge",
+    "unit": "{count}",
+    "help": "Number of file descriptors in use by the process.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_paging_faults": {
+    "type": "counter",
+    "unit": "{faults}",
+    "help": "Number of page faults the process has made.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_paging_faults_total": {
+    "type": "counter",
+    "unit": "{faults}",
+    "help": "Number of page faults the process has made.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_signals_pending": {
+    "type": "gauge",
+    "unit": "{signals}",
+    "help": "Number of pending signals for the process.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_threads": {
+    "type": "gauge",
+    "unit": "{threads}",
+    "help": "Process threads count.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_uptime": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "The time the process has been running.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "process_uptime_seconds": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "The time the process has been running.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processscraper/metadata.yaml@v0.120.0"
+  },
+  "redis_clients_blocked": {
+    "type": "gauge",
+    "unit": "{client}",
+    "help": "Number of clients pending on a blocking call",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_clients_connected": {
+    "type": "gauge",
+    "unit": "{client}",
+    "help": "Number of client connections (excluding connections from replicas)",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_clients_max_input_buffer": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Biggest input buffer among current client connections",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_clients_max_input_buffer_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Biggest input buffer among current client connections",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_clients_max_output_buffer": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Longest output list among current client connections",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_clients_max_output_buffer_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Longest output list among current client connections",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_cmd_calls": {
+    "type": "counter",
+    "unit": "{call}",
+    "help": "Total number of calls for a command",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_cmd_calls_total": {
+    "type": "counter",
+    "unit": "{call}",
+    "help": "Total number of calls for a command",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_cmd_latency": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "Command execution latency",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_cmd_latency_seconds": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "Command execution latency",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_cmd_usec": {
+    "type": "counter",
+    "unit": "us",
+    "help": "Total time for all executions of this command",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_cmd_usec_microseconds_total": {
+    "type": "counter",
+    "unit": "us",
+    "help": "Total time for all executions of this command",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_commands": {
+    "type": "gauge",
+    "unit": "{ops}/s",
+    "help": "Number of commands processed per second",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_commands_per_second": {
+    "type": "gauge",
+    "unit": "{ops}/s",
+    "help": "Number of commands processed per second",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_commands_processed": {
+    "type": "counter",
+    "unit": "{command}",
+    "help": "Total number of commands processed by the server",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_commands_processed_total": {
+    "type": "counter",
+    "unit": "{command}",
+    "help": "Total number of commands processed by the server",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_connections_received": {
+    "type": "counter",
+    "unit": "{connection}",
+    "help": "Total number of connections accepted by the server",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_connections_received_total": {
+    "type": "counter",
+    "unit": "{connection}",
+    "help": "Total number of connections accepted by the server",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_connections_rejected": {
+    "type": "counter",
+    "unit": "{connection}",
+    "help": "Number of connections rejected because of maxclients limit",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_connections_rejected_total": {
+    "type": "counter",
+    "unit": "{connection}",
+    "help": "Number of connections rejected because of maxclients limit",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_cpu_time": {
+    "type": "counter",
+    "unit": "s",
+    "help": "System CPU consumed by the Redis server in seconds since server start",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_cpu_time_seconds_total": {
+    "type": "counter",
+    "unit": "s",
+    "help": "System CPU consumed by the Redis server in seconds since server start",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_db_avg_ttl": {
+    "type": "gauge",
+    "unit": "ms",
+    "help": "Average keyspace keys TTL",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_db_avg_ttl_milliseconds": {
+    "type": "gauge",
+    "unit": "ms",
+    "help": "Average keyspace keys TTL",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_db_expires": {
+    "type": "gauge",
+    "unit": "{key}",
+    "help": "Number of keyspace keys with an expiration",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_db_keys": {
+    "type": "gauge",
+    "unit": "{key}",
+    "help": "Number of keyspace keys",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_keys_evicted": {
+    "type": "counter",
+    "unit": "{key}",
+    "help": "Number of evicted keys due to maxmemory limit",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_keys_evicted_total": {
+    "type": "counter",
+    "unit": "{key}",
+    "help": "Number of evicted keys due to maxmemory limit",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_keys_expired": {
+    "type": "counter",
+    "unit": "{event}",
+    "help": "Total number of key expiration events",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_keys_expired_total": {
+    "type": "counter",
+    "unit": "{event}",
+    "help": "Total number of key expiration events",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_keyspace_hits": {
+    "type": "counter",
+    "unit": "{hit}",
+    "help": "Number of successful lookup of keys in the main dictionary",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_keyspace_hits_total": {
+    "type": "counter",
+    "unit": "{hit}",
+    "help": "Number of successful lookup of keys in the main dictionary",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_keyspace_misses": {
+    "type": "counter",
+    "unit": "{miss}",
+    "help": "Number of failed lookup of keys in the main dictionary",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_keyspace_misses_total": {
+    "type": "counter",
+    "unit": "{miss}",
+    "help": "Number of failed lookup of keys in the main dictionary",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_latest_fork": {
+    "type": "gauge",
+    "unit": "us",
+    "help": "Duration of the latest fork operation in microseconds",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_latest_fork_microseconds": {
+    "type": "gauge",
+    "unit": "us",
+    "help": "Duration of the latest fork operation in microseconds",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_maxmemory": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The value of the maxmemory configuration directive",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_maxmemory_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The value of the maxmemory configuration directive",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_memory_fragmentation_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Ratio between used_memory_rss and used_memory",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_memory_lua": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Number of bytes used by the Lua engine",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_memory_lua_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Number of bytes used by the Lua engine",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_memory_peak": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Peak memory consumed by Redis (in bytes)",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_memory_peak_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Peak memory consumed by Redis (in bytes)",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_memory_rss": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Number of bytes that Redis allocated as seen by the operating system",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_memory_rss_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Number of bytes that Redis allocated as seen by the operating system",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_memory_used": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Total number of bytes allocated by Redis using its allocator",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_memory_used_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Total number of bytes allocated by Redis using its allocator",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_net_input": {
+    "type": "counter",
+    "unit": "By",
+    "help": "The total number of bytes read from the network",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_net_input_bytes_total": {
+    "type": "counter",
+    "unit": "By",
+    "help": "The total number of bytes read from the network",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_net_output": {
+    "type": "counter",
+    "unit": "By",
+    "help": "The total number of bytes written to the network",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_net_output_bytes_total": {
+    "type": "counter",
+    "unit": "By",
+    "help": "The total number of bytes written to the network",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_rdb_changes_since_last_save": {
+    "type": "gauge",
+    "unit": "{change}",
+    "help": "Number of changes since the last dump",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_replication_backlog_first_byte_offset": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The master offset of the replication backlog buffer",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_replication_backlog_first_byte_offset_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The master offset of the replication backlog buffer",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_replication_offset": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The server's current replication offset",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_replication_offset_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "The server's current replication offset",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_replication_replica_offset": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Offset for redis replica",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_replication_replica_offset_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Offset for redis replica",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_role": {
+    "type": "gauge",
+    "unit": "{role}",
+    "help": "Redis node's role",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_slaves_connected": {
+    "type": "gauge",
+    "unit": "{replica}",
+    "help": "Number of connected replicas",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_uptime": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Number of seconds since Redis server start",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "redis_uptime_seconds_total": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Number of seconds since Redis server start",
+    "source": "receiver/redisreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_batch_request_rate": {
+    "type": "gauge",
+    "unit": "{requests}/s",
+    "help": "Number of batch requests received by SQL Server.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_batch_request_rate_per_second": {
+    "type": "gauge",
+    "unit": "{requests}/s",
+    "help": "Number of batch requests received by SQL Server.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_batch_sql_compilation_rate": {
+    "type": "gauge",
+    "unit": "{compilations}/s",
+    "help": "Number of SQL compilations needed.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_batch_sql_compilation_rate_per_second": {
+    "type": "gauge",
+    "unit": "{compilations}/s",
+    "help": "Number of SQL compilations needed.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_batch_sql_recompilation_rate": {
+    "type": "gauge",
+    "unit": "{compilations}/s",
+    "help": "Number of SQL recompilations needed.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_batch_sql_recompilation_rate_per_second": {
+    "type": "gauge",
+    "unit": "{compilations}/s",
+    "help": "Number of SQL recompilations needed.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_database_count": {
+    "type": "gauge",
+    "unit": "{databases}",
+    "help": "The number of databases",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_database_io": {
+    "type": "counter",
+    "unit": "By",
+    "help": "The number of bytes of I/O on this file.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_database_io_bytes_total": {
+    "type": "counter",
+    "unit": "By",
+    "help": "The number of bytes of I/O on this file.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_database_latency": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Total time that the users waited for I/O issued on this file.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_database_latency_seconds_total": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Total time that the users waited for I/O issued on this file.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_database_operations": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "The number of operations issued on the file.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_database_operations_total": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "The number of operations issued on the file.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_lock_wait_rate": {
+    "type": "gauge",
+    "unit": "{requests}/s",
+    "help": "Number of lock requests resulting in a wait.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_lock_wait_rate_per_second": {
+    "type": "gauge",
+    "unit": "{requests}/s",
+    "help": "Number of lock requests resulting in a wait.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_lock_wait_time_avg": {
+    "type": "gauge",
+    "unit": "ms",
+    "help": "Average wait time for all lock requests that had to wait.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_lock_wait_time_avg_milliseconds": {
+    "type": "gauge",
+    "unit": "ms",
+    "help": "Average wait time for all lock requests that had to wait.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_page_buffer_cache_hit_ratio": {
+    "type": "gauge",
+    "unit": "%",
+    "help": "Pages found in the buffer pool without having to read from disk.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_page_buffer_cache_hit_ratio_percent": {
+    "type": "gauge",
+    "unit": "%",
+    "help": "Pages found in the buffer pool without having to read from disk.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_page_checkpoint_flush_rate": {
+    "type": "gauge",
+    "unit": "{pages}/s",
+    "help": "Number of pages flushed by operations requiring dirty pages to be flushed.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_page_checkpoint_flush_rate_per_second": {
+    "type": "gauge",
+    "unit": "{pages}/s",
+    "help": "Number of pages flushed by operations requiring dirty pages to be flushed.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_page_lazy_write_rate": {
+    "type": "gauge",
+    "unit": "{writes}/s",
+    "help": "Number of lazy writes moving dirty pages to disk.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_page_lazy_write_rate_per_second": {
+    "type": "gauge",
+    "unit": "{writes}/s",
+    "help": "Number of lazy writes moving dirty pages to disk.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_page_life_expectancy": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "Time a page will stay in the buffer pool.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_page_life_expectancy_seconds": {
+    "type": "gauge",
+    "unit": "s",
+    "help": "Time a page will stay in the buffer pool.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_page_operation_rate": {
+    "type": "gauge",
+    "unit": "{operations}/s",
+    "help": "Number of physical database page operations issued.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_page_operation_rate_per_second": {
+    "type": "gauge",
+    "unit": "{operations}/s",
+    "help": "Number of physical database page operations issued.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_page_split_rate": {
+    "type": "gauge",
+    "unit": "{pages}/s",
+    "help": "Number of pages split as a result of overflowing index pages.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_page_split_rate_per_second": {
+    "type": "gauge",
+    "unit": "{pages}/s",
+    "help": "Number of pages split as a result of overflowing index pages.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_processes_blocked": {
+    "type": "gauge",
+    "unit": "{processes}",
+    "help": "The number of processes that are currently blocked",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_resource_pool_disk_throttled_read_rate": {
+    "type": "gauge",
+    "unit": "{reads}/s",
+    "help": "The number of read operations that were throttled in the last second",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_resource_pool_disk_throttled_read_rate_per_second": {
+    "type": "gauge",
+    "unit": "{reads}/s",
+    "help": "The number of read operations that were throttled in the last second",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_resource_pool_disk_throttled_write_rate": {
+    "type": "gauge",
+    "unit": "{writes}/s",
+    "help": "The number of write operations that were throttled in the last second",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_resource_pool_disk_throttled_write_rate_per_second": {
+    "type": "gauge",
+    "unit": "{writes}/s",
+    "help": "The number of write operations that were throttled in the last second",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_transaction_log_flush_data_rate": {
+    "type": "gauge",
+    "unit": "By/s",
+    "help": "Total number of log bytes flushed.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_transaction_log_flush_data_rate_bytes_per_second": {
+    "type": "gauge",
+    "unit": "By/s",
+    "help": "Total number of log bytes flushed.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_transaction_log_flush_rate": {
+    "type": "gauge",
+    "unit": "{flushes}/s",
+    "help": "Number of log flushes.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_transaction_log_flush_rate_per_second": {
+    "type": "gauge",
+    "unit": "{flushes}/s",
+    "help": "Number of log flushes.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_transaction_log_flush_wait_rate": {
+    "type": "gauge",
+    "unit": "{commits}/s",
+    "help": "Number of commits waiting for a transaction log flush.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_transaction_log_flush_wait_rate_per_second": {
+    "type": "gauge",
+    "unit": "{commits}/s",
+    "help": "Number of commits waiting for a transaction log flush.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_transaction_log_growth_count": {
+    "type": "counter",
+    "unit": "{growths}",
+    "help": "Total number of transaction log expansions for a database.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_transaction_log_growth_count_total": {
+    "type": "counter",
+    "unit": "{growths}",
+    "help": "Total number of transaction log expansions for a database.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_transaction_log_shrink_count": {
+    "type": "counter",
+    "unit": "{shrinks}",
+    "help": "Total number of transaction log shrinks for a database.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_transaction_log_shrink_count_total": {
+    "type": "counter",
+    "unit": "{shrinks}",
+    "help": "Total number of transaction log shrinks for a database.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_transaction_log_usage": {
+    "type": "gauge",
+    "unit": "%",
+    "help": "Percent of transaction log space used.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_transaction_log_usage_percent": {
+    "type": "gauge",
+    "unit": "%",
+    "help": "Percent of transaction log space used.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_transaction_rate": {
+    "type": "gauge",
+    "unit": "{transactions}/s",
+    "help": "Number of transactions started for the database (not including XTP-only transactions).",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_transaction_rate_per_second": {
+    "type": "gauge",
+    "unit": "{transactions}/s",
+    "help": "Number of transactions started for the database (not including XTP-only transactions).",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_transaction_write_rate": {
+    "type": "gauge",
+    "unit": "{transactions}/s",
+    "help": "Number of transactions that wrote to the database and committed.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_transaction_write_rate_per_second": {
+    "type": "gauge",
+    "unit": "{transactions}/s",
+    "help": "Number of transactions that wrote to the database and committed.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "sqlserver_user_connection_count": {
+    "type": "gauge",
+    "unit": "{connections}",
+    "help": "Number of users connected to the SQL Server.",
+    "source": "receiver/sqlserverreceiver/metadata.yaml@v0.120.0"
+  },
+  "system_cpu_frequency": {
+    "type": "gauge",
+    "unit": "Hz",
+    "help": "Current frequency of the CPU core in Hz.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/cpuscraper/metadata.yaml@v0.120.0"
+  },
+  "system_cpu_frequency_hertz": {
+    "type": "gauge",
+    "unit": "Hz",
+    "help": "Current frequency of the CPU core in Hz.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/cpuscraper/metadata.yaml@v0.120.0"
+  },
+  "system_cpu_load_average_15m": {
+    "type": "gauge",
+    "unit": "{thread}",
+    "help": "Average CPU Load over 15 minutes.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/loadscraper/metadata.yaml@v0.120.0"
+  },
+  "system_cpu_load_average_1m": {
+    "type": "gauge",
+    "unit": "{thread}",
+    "help": "Average CPU Load over 1 minute.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/loadscraper/metadata.yaml@v0.120.0"
+  },
+  "system_cpu_load_average_5m": {
+    "type": "gauge",
+    "unit": "{thread}",
+    "help": "Average CPU Load over 5 minutes.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/loadscraper/metadata.yaml@v0.120.0"
+  },
+  "system_cpu_logical_count": {
+    "type": "gauge",
+    "unit": "{cpu}",
+    "help": "Number of available logical CPUs.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/cpuscraper/metadata.yaml@v0.120.0"
+  },
+  "system_cpu_physical_count": {
+    "type": "gauge",
+    "unit": "{cpu}",
+    "help": "Number of available physical CPUs.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/cpuscraper/metadata.yaml@v0.120.0"
+  },
+  "system_cpu_time": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Total seconds each logical CPU spent on each mode.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/cpuscraper/metadata.yaml@v0.120.0"
+  },
+  "system_cpu_time_seconds_total": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Total seconds each logical CPU spent on each mode.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/cpuscraper/metadata.yaml@v0.120.0"
+  },
+  "system_cpu_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Difference in system.cpu.time since the last measurement per logical CPU, divided by the elapsed time (value in interval [0,1]).",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/cpuscraper/metadata.yaml@v0.120.0"
+  },
+  "system_cpu_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Difference in system.cpu.time since the last measurement per logical CPU, divided by the elapsed time (value in interval [0,1]).",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/cpuscraper/metadata.yaml@v0.120.0"
+  },
+  "system_disk_io": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Disk bytes transferred.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/diskscraper/metadata.yaml@v0.120.0"
+  },
+  "system_disk_io_bytes_total": {
+    "type": "counter",
+    "unit": "By",
+    "help": "Disk bytes transferred.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/diskscraper/metadata.yaml@v0.120.0"
+  },
+  "system_disk_io_time": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Time disk spent activated. On Windows, this is calculated as the inverse of disk idle time.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/diskscraper/metadata.yaml@v0.120.0"
+  },
+  "system_disk_io_time_seconds_total": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Time disk spent activated. On Windows, this is calculated as the inverse of disk idle time.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/diskscraper/metadata.yaml@v0.120.0"
+  },
+  "system_disk_merged": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "The number of disk reads/writes merged into single physical disk access operations.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/diskscraper/metadata.yaml@v0.120.0"
+  },
+  "system_disk_merged_total": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "The number of disk reads/writes merged into single physical disk access operations.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/diskscraper/metadata.yaml@v0.120.0"
+  },
+  "system_disk_operation_time": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Time spent in disk operations.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/diskscraper/metadata.yaml@v0.120.0"
+  },
+  "system_disk_operation_time_seconds_total": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Time spent in disk operations.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/diskscraper/metadata.yaml@v0.120.0"
+  },
+  "system_disk_operations": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "Disk operations count.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/diskscraper/metadata.yaml@v0.120.0"
+  },
+  "system_disk_operations_total": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "Disk operations count.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/diskscraper/metadata.yaml@v0.120.0"
+  },
+  "system_disk_pending_operations": {
+    "type": "gauge",
+    "unit": "{operations}",
+    "help": "The queue size of pending I/O operations.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/diskscraper/metadata.yaml@v0.120.0"
+  },
+  "system_disk_weighted_io_time": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Time disk spent activated multiplied by the queue length.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/diskscraper/metadata.yaml@v0.120.0"
+  },
+  "system_disk_weighted_io_time_seconds_total": {
+    "type": "counter",
+    "unit": "s",
+    "help": "Time disk spent activated multiplied by the queue length.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/diskscraper/metadata.yaml@v0.120.0"
+  },
+  "system_filesystem_inodes_usage": {
+    "type": "gauge",
+    "unit": "{inodes}",
+    "help": "FileSystem inodes used.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/filesystemscraper/metadata.yaml@v0.120.0"
+  },
+  "system_filesystem_usage": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Filesystem bytes used.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/filesystemscraper/metadata.yaml@v0.120.0"
+  },
+  "system_filesystem_usage_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Filesystem bytes used.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/filesystemscraper/metadata.yaml@v0.120.0"
+  },
+  "system_filesystem_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Fraction of filesystem bytes used.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/filesystemscraper/metadata.yaml@v0.120.0"
+  },
+  "system_filesystem_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Fraction of filesystem bytes used.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/filesystemscraper/metadata.yaml@v0.120.0"
+  },
+  "system_linux_memory_available": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "An estimate of how much memory is available for starting new applications, without swapping. This is a more accurate alternative than system.memory.usage with state=free. (Linux only)",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/memoryscraper/metadata.yaml@v0.120.0"
+  },
+  "system_linux_memory_available_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "An estimate of how much memory is available for starting new applications, without swapping. This is a more accurate alternative than system.memory.usage with state=free. (Linux only)",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/memoryscraper/metadata.yaml@v0.120.0"
+  },
+  "system_memory_limit": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Total bytes of memory available.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/memoryscraper/metadata.yaml@v0.120.0"
+  },
+  "system_memory_limit_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Total bytes of memory available.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/memoryscraper/metadata.yaml@v0.120.0"
+  },
+  "system_memory_usage": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Bytes of memory in use.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/memoryscraper/metadata.yaml@v0.120.0"
+  },
+  "system_memory_usage_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Bytes of memory in use.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/memoryscraper/metadata.yaml@v0.120.0"
+  },
+  "system_memory_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Percentage of memory bytes in use.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/memoryscraper/metadata.yaml@v0.120.0"
+  },
+  "system_memory_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Percentage of memory bytes in use.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/memoryscraper/metadata.yaml@v0.120.0"
+  },
+  "system_network_connections": {
+    "type": "gauge",
+    "unit": "{connections}",
+    "help": "The number of connections.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/networkscraper/metadata.yaml@v0.120.0"
+  },
+  "system_network_conntrack_count": {
+    "type": "gauge",
+    "unit": "{entries}",
+    "help": "The count of entries in conntrack table.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/networkscraper/metadata.yaml@v0.120.0"
+  },
+  "system_network_conntrack_max": {
+    "type": "gauge",
+    "unit": "{entries}",
+    "help": "The limit for entries in the conntrack table.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/networkscraper/metadata.yaml@v0.120.0"
+  },
+  "system_network_dropped": {
+    "type": "counter",
+    "unit": "{packets}",
+    "help": "The number of packets dropped.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/networkscraper/metadata.yaml@v0.120.0"
+  },
+  "system_network_dropped_total": {
+    "type": "counter",
+    "unit": "{packets}",
+    "help": "The number of packets dropped.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/networkscraper/metadata.yaml@v0.120.0"
+  },
+  "system_network_errors": {
+    "type": "counter",
+    "unit": "{errors}",
+    "help": "The number of errors encountered.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/networkscraper/metadata.yaml@v0.120.0"
+  },
+  "system_network_errors_total": {
+    "type": "counter",
+    "unit": "{errors}",
+    "help": "The number of errors encountered.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/networkscraper/metadata.yaml@v0.120.0"
+  },
+  "system_network_io": {
+    "type": "counter",
+    "unit": "By",
+    "help": "The number of bytes transmitted and received.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/networkscraper/metadata.yaml@v0.120.0"
+  },
+  "system_network_io_bytes_total": {
+    "type": "counter",
+    "unit": "By",
+    "help": "The number of bytes transmitted and received.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/networkscraper/metadata.yaml@v0.120.0"
+  },
+  "system_network_packets": {
+    "type": "counter",
+    "unit": "{packets}",
+    "help": "The number of packets transferred.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/networkscraper/metadata.yaml@v0.120.0"
+  },
+  "system_network_packets_total": {
+    "type": "counter",
+    "unit": "{packets}",
+    "help": "The number of packets transferred.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/networkscraper/metadata.yaml@v0.120.0"
+  },
+  "system_paging_faults": {
+    "type": "counter",
+    "unit": "{faults}",
+    "help": "The number of page faults.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/pagingscraper/metadata.yaml@v0.120.0"
+  },
+  "system_paging_faults_total": {
+    "type": "counter",
+    "unit": "{faults}",
+    "help": "The number of page faults.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/pagingscraper/metadata.yaml@v0.120.0"
+  },
+  "system_paging_operations": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "The number of paging operations.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/pagingscraper/metadata.yaml@v0.120.0"
+  },
+  "system_paging_operations_total": {
+    "type": "counter",
+    "unit": "{operations}",
+    "help": "The number of paging operations.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/pagingscraper/metadata.yaml@v0.120.0"
+  },
+  "system_paging_usage": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Swap (unix) or pagefile (windows) usage.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/pagingscraper/metadata.yaml@v0.120.0"
+  },
+  "system_paging_usage_bytes": {
+    "type": "gauge",
+    "unit": "By",
+    "help": "Swap (unix) or pagefile (windows) usage.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/pagingscraper/metadata.yaml@v0.120.0"
+  },
+  "system_paging_utilization": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Swap (unix) or pagefile (windows) utilization.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/pagingscraper/metadata.yaml@v0.120.0"
+  },
+  "system_paging_utilization_ratio": {
+    "type": "gauge",
+    "unit": "1",
+    "help": "Swap (unix) or pagefile (windows) utilization.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/pagingscraper/metadata.yaml@v0.120.0"
+  },
+  "system_processes_count": {
+    "type": "gauge",
+    "unit": "{processes}",
+    "help": "Total number of processes in each state.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processesscraper/metadata.yaml@v0.120.0"
+  },
+  "system_processes_created": {
+    "type": "counter",
+    "unit": "{processes}",
+    "help": "Total number of created processes.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processesscraper/metadata.yaml@v0.120.0"
+  },
+  "system_processes_created_total": {
+    "type": "counter",
+    "unit": "{processes}",
+    "help": "Total number of created processes.",
+    "source": "receiver/hostmetricsreceiver/internal/scraper/processesscraper/metadata.yaml@v0.120.0"
+  }
+}

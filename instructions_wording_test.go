@@ -20,7 +20,7 @@ import (
 var pinnedInstructionLines = []string{
 	"Last9 observability for the caller's organization. Discover names first, answer with the most specific tool, and treat writes with care.",
 	"## Start here",
-	"When a request names no service or tool, call <tools> first: it returns environments, signals seen in the last hour, service and alert-group counts, firing alerts and the current time. Otherwise go straight to the most specific tool. A signal it reports absent was only not observed in that hour: still query it for the user's requested time range, index or datasource.",
+	"When a request names no service or tool, call <tools> first. Otherwise go straight to the most specific tool. Still query signals it reports absent for the user's requested time range, index or datasource.",
 	"For today's date or a relative window (\"since 9am IST\"), call <tools>.",
 	"## Discover before you query",
 	"Never guess service, environment, attribute, metric or label names, or dashboard ids; look them up and reuse the exact values.",
