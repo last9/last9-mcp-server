@@ -29,9 +29,6 @@ var logPatternsScanSteps = []string{
 	"lower `sample_size` (default 1000)",
 }
 
-// scanErrorResult returns a log scan that timed out or failed upstream as an
-// error result whose l9_guidance names the cause and how to shrink the scan.
-// Any other error returns nil and stays the caller's to report.
 func scanErrorResult(err error, steps []string) *mcp.CallToolResult {
 	cause, message := classifyScanError(err)
 	if cause == "" {
