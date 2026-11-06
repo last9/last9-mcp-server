@@ -255,6 +255,69 @@ func TestGetLogsHandler_LogSearchAggregateNullResultIncludesEmptyGuidance(t *tes
 	}
 }
 
+func TestAddGetLogsGuidance_EmptyGuidanceOnlyWhenNoRows(t *testing.T) {
+	aggregateRow := map[string]interface{}{
+		"metric": map[string]interface{}{"c": float64(42)},
+		"values": []interface{}{},
+	}
+	tests := []struct {
+		name       string
+		resultType string
+		rows       []interface{}
+		wantEmpty  bool
+	}{
+		{name: "dataframe with rows", resultType: "dataframe", rows: []interface{}{aggregateRow}},
+		{name: "matrix with rows", resultType: "matrix", rows: []interface{}{aggregateRow}},
+		{name: "empty dataframe", resultType: "dataframe", rows: []interface{}{}, wantEmpty: true},
+		{name: "null dataframe", resultType: "dataframe", rows: nil, wantEmpty: true},
+		{
+			name:       "streams with lines",
+			resultType: "streams",
+			rows: []interface{}{map[string]interface{}{
+				"stream": map[string]interface{}{"ServiceName": "checkout"},
+				"values": []interface{}{[]interface{}{"1700000000000000000", "line"}},
+			}},
+		},
+		{
+			name:       "streams with no lines",
+			resultType: "streams",
+			rows: []interface{}{map[string]interface{}{
+				"stream": map[string]interface{}{"ServiceName": "checkout"},
+				"values": []interface{}{},
+			}},
+			wantEmpty: true,
+		},
+		{name: "empty streams", resultType: "streams", rows: []interface{}{}, wantEmpty: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := map[string]interface{}{"resultType": tt.resultType}
+			if tt.rows != nil {
+				data["result"] = tt.rows
+			}
+			result := map[string]interface{}{"status": "success", "data": data}
+
+			addGetLogsGuidance(result, GetLogsArgs{LogjsonQuery: countAggregatePipeline()}, getLogsGuidanceContext{
+				startMs:        0,
+				endMs:          60 * 60 * 1000,
+				effectiveLimit: 100,
+				maxLimit:       5000,
+			})
+
+			guidance, hasGuidance := result["l9_guidance"].(map[string]interface{})
+			if !tt.wantEmpty {
+				if hasGuidance {
+					t.Fatalf("result with rows must not carry l9_guidance, got %#v", guidance)
+				}
+				return
+			}
+			if !hasGuidance || !strings.Contains(guidanceText(guidance), "No logs found") {
+				t.Fatalf("empty result must carry empty-result l9_guidance, got %#v", result["l9_guidance"])
+			}
+		})
+	}
+}
+
 func guidanceText(guidance map[string]interface{}) string {
 	var parts []string
 	for _, value := range guidance {
