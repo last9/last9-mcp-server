@@ -8,12 +8,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 )
@@ -75,10 +73,7 @@ func TestCreateAlertFromChartAllDefaultsOmitted(t *testing.T) { // AE1
 		}
 	}
 
-	wantMeta := mcp.Meta{"reference_url": "/v2/organizations/acme/alerting/groups?group_id=grp-2&rule=rule-9"}
-	if !reflect.DeepEqual(result.Meta, wantMeta) {
-		t.Errorf("meta = %+v, want %+v", result.Meta, wantMeta)
-	}
+	assertAlertLinkMeta(t, result, expectedAlertLink{URL: "/v2/organizations/acme/alerting/groups?group_id=grp-2&rule=rule-9", Label: "Open alert"})
 }
 
 func TestCreateAlertFromChartExplicitScoreUnitThreshold(t *testing.T) { // AE4
@@ -447,6 +442,7 @@ func TestCreateAlertFromChartDisablesInPassedGroupWhenResponseOmitsIt(t *testing
 	if err != nil || result.IsError {
 		t.Fatalf("result=%s err=%v", resultText(result), err)
 	}
+	assertAlertLinkMeta(t, result, expectedAlertLink{URL: "/v2/organizations/acme/alerting/groups?group_id=grp-7&rule=rule-9", Label: "Open alert"})
 	if reqs := requests(); len(reqs) != 2 || reqs[1].path != "/entities/grp-7/alert-rules/rule-9" {
 		t.Fatalf("requests = %+v, want the disable in grp-7", reqs)
 	}
