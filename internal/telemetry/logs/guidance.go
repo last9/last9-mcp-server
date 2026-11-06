@@ -27,13 +27,16 @@ func addGetLogsGuidance(result map[string]interface{}, args GetLogsArgs, guidanc
 	if err != nil {
 		return false
 	}
-	if len(items) == 0 || countLogEntriesInResultItems(items) == 0 {
+	if !resultHasRows(kind, items) {
 		result["l9_guidance"] = utils.EmptyResultGuidanceMap("logs", logsGuidanceOptions(args, guidance.startMs, guidance.endMs))
+		return false
+	}
+	if kind != "streams" {
 		return false
 	}
 	returned := countLogEntriesInResultItems(items)
 	totalMatching := logTotalMatching(result)
-	if kind == "streams" && isLogResultTruncated(result, logTruncationState{
+	if isLogResultTruncated(result, logTruncationState{
 		returned:       returned,
 		totalMatching:  totalMatching,
 		effectiveLimit: guidance.effectiveLimit,
@@ -50,6 +53,14 @@ func addGetLogsGuidance(result map[string]interface{}, args GetLogsArgs, guidanc
 		return true
 	}
 	return false
+}
+
+// Aggregate rows carry an empty "values" array, so only streams are counted by log line.
+func resultHasRows(kind string, items []interface{}) bool {
+	if kind == "streams" {
+		return countLogEntriesInResultItems(items) > 0
+	}
+	return len(items) > 0
 }
 
 func addGetLogsAggregateGuidance(result map[string]interface{}, guidance utils.TruncatedResultOptions) {
