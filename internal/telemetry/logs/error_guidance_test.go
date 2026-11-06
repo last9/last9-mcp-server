@@ -264,12 +264,17 @@ func TestAddGetLogsGuidance_EmptyGuidanceOnlyWhenNoRows(t *testing.T) {
 		name       string
 		resultType string
 		rows       []interface{}
+		omitResult bool
 		wantEmpty  bool
 	}{
 		{name: "dataframe with rows", resultType: "dataframe", rows: []interface{}{aggregateRow}},
 		{name: "matrix with rows", resultType: "matrix", rows: []interface{}{aggregateRow}},
 		{name: "empty dataframe", resultType: "dataframe", rows: []interface{}{}, wantEmpty: true},
+		{name: "empty matrix", resultType: "matrix", rows: []interface{}{}, wantEmpty: true},
 		{name: "null dataframe", resultType: "dataframe", rows: nil, wantEmpty: true},
+		{name: "null matrix", resultType: "matrix", rows: nil, wantEmpty: true},
+		{name: "dataframe without result", resultType: "dataframe", omitResult: true, wantEmpty: true},
+		{name: "matrix without result", resultType: "matrix", omitResult: true, wantEmpty: true},
 		{
 			name:       "streams with lines",
 			resultType: "streams",
@@ -292,10 +297,10 @@ func TestAddGetLogsGuidance_EmptyGuidanceOnlyWhenNoRows(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			data := map[string]interface{}{"resultType": tt.resultType}
-			if tt.rows != nil {
+			if !tt.omitResult {
 				data["result"] = tt.rows
 			}
-			result := map[string]interface{}{"status": "success", "data": data}
+			result := decodeJSONRoundTrip(t, map[string]interface{}{"status": "success", "data": data})
 
 			addGetLogsGuidance(result, GetLogsArgs{LogjsonQuery: countAggregatePipeline()}, getLogsGuidanceContext{
 				startMs:        0,
@@ -316,6 +321,21 @@ func TestAddGetLogsGuidance_EmptyGuidanceOnlyWhenNoRows(t *testing.T) {
 			}
 		})
 	}
+}
+
+// decodeJSONRoundTrip gives a fixture the shape of a decoded response, so a nil
+// slice becomes JSON null rather than a typed nil.
+func decodeJSONRoundTrip(t *testing.T, value map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal fixture: %v", err)
+	}
+	return decoded
 }
 
 func guidanceText(guidance map[string]interface{}) string {
