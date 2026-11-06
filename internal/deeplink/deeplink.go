@@ -189,13 +189,13 @@ type AlertRuleReference struct {
 
 func (b *Builder) AlertRuleMeta(rule AlertRuleReference) mcp.Meta {
 	params := url.Values{"rule": {rule.RuleID}, "group_id": {rule.GroupID}}
-	meta := ToMeta(b.BuildAlertingGroupsLink() + "?" + params.Encode())
+	meta := ToMetaWithLink(b.BuildAlertingGroupsLink()+"?"+params.Encode(), "Open alert")
 	if strings.TrimSpace(rule.GroupName) != "" {
 		groupParams := url.Values{"alertGroupNames": {rule.GroupName}}
-		meta["links"] = []map[string]string{{
+		meta["links"] = append(meta["links"].([]map[string]string), map[string]string{
 			"label": "Open group",
 			"url":   b.BuildAlertingGroupsLink() + "?" + groupParams.Encode(),
-		}}
+		})
 	}
 	return meta
 }
