@@ -24,6 +24,38 @@ func TestBuildDashboardsIndexLink(t *testing.T) {
 	}
 }
 
+func TestBuildExceptionLink(t *testing.T) {
+	b := NewBuilder("acme", "cluster-1")
+
+	narrowed := b.BuildExceptionLink(1_700_000_000_000, 1_700_003_600_000, ExceptionRow{ID: "1b589f62-web-GET /a&b", Env: "prod"})
+	want := "/v2/organizations/acme/exceptions?cluster=cluster-1" +
+		"&exception_id=1b589f62-web-GET+%2Fa%26b" +
+		"&filter=%5B%22deployment_environment%3D%5C%22prod%5C%22%22%5D" +
+		"&from=1700000000&to=1700003600"
+	if narrowed != want {
+		t.Fatalf("narrowed link:\n got %s\nwant %s", narrowed, want)
+	}
+	parsed, err := url.Parse(narrowed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := parsed.Query().Get("filter"); got != `["deployment_environment=\"prod\""]` {
+		t.Fatalf("filter = %s, want the dashboard's getFilterString shape", got)
+	}
+
+	notSet := b.BuildExceptionLink(1_700_000_000_000, 1_700_003_600_000, ExceptionRow{ID: "1b589f62-web-View"})
+	parsed, err = url.Parse(notSet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := parsed.Query().Get("filter"); got != `["deployment_environment=\"\""]` {
+		t.Fatalf("a row without env must select Not Set, overriding the reader's saved env; filter = %s", got)
+	}
+	if got := parsed.Query().Get("exception_id"); got != "1b589f62-web-View" {
+		t.Fatalf("exception_id = %q", got)
+	}
+}
+
 func TestAPMCatalogEnvExact(t *testing.T) {
 	cases := map[string]string{
 		"":             "",

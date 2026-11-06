@@ -1,7 +1,14 @@
 Get aggregate server-side exception heat over the requested time range.
 Returns ranked aggregate groups: exception type, service name, span name, span kind, deployment environment, and occurrence count.
 
-IMPORTANT: This data comes from aggregated metrics, not raw spans. It does not return trace or span IDs, event timestamps, messages, stack traces, durations, status, or exact exception samples. A row identifies a hot aggregate group only; do not infer that any later trace is an exact match for that group.
+Each row also carries:
+- `fingerprint`: 8 lowercase hex chars hashing `exception_type:service_name:span_name`, identical to the fingerprint Discover Exceptions shows. It ignores message, stack trace and environment, so it stays stable across deploys. Use it to deduplicate.
+- `exception_id`: the Discover Exceptions row id, `<fingerprint>-<service_name>-<span_name>`, plus `-<env>` only when `env` is not given (one row per environment).
+- `url`: relative link opening this row in Discover Exceptions for the queried window.
+- `count`: occurrences summed from trace-derived exception counters over the window, not counted spans.
+- `first_seen` / `last_seen` (optional): RFC3339 times of the first and last query step inside the window with occurrences, at one-minute or coarser steps (at most 60 per window). Not the exception's lifetime first occurrence; omitted when unavailable.
+
+IMPORTANT: This data comes from aggregated metrics, not raw spans. It does not return trace or span IDs, exact event timestamps, messages, stack traces, durations, status, or exact exception samples. A row identifies a hot aggregate group only; do not infer that any later trace is an exact match for that group.
 
 **Profile first (service-scoped):** When investigating a specific `service_name`, call `get_service_profile` before using this tool. Use `signal_shape` and `telemetry` for routing — see `last9://reference/investigation`. If results contradict the profile, fall back to discovery tools (profile may be stale; 15min TTL).
 

@@ -76,7 +76,7 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 			]`, endTime.Unix(), endTime.Unix()))
 
 		case constants.EndpointPromQuery:
-			t.Fatalf("did not expect range query")
+			w.WriteHeader(http.StatusInternalServerError)
 
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
@@ -147,6 +147,7 @@ func TestGetExceptionsHandler_UsesFrontendPromQueries(t *testing.T) {
 		t.Fatalf("unexpected deployment_environment: got %v, want prod", first["deployment_environment"])
 	}
 
+	// first_seen/last_seen come only from range data; this server fails the range query.
 	for _, exception := range []map[string]any{first, second} {
 		for _, field := range []string{
 			"trace_id", "span_id", "timestamp", "exception_message", "exception_stacktrace",
@@ -190,7 +191,7 @@ func TestGetExceptionsHandler_UsesDashboardShapeForEnvOnlyFilters(t *testing.T) 
 			io.WriteString(w, `[{"metric":{"exception_type":"IOException","service_name":"api","span_name":"GET /health","span_kind":"SPAN_KIND_SERVER"},"value":[1737374400,"5"]}]`)
 
 		case constants.EndpointPromQuery:
-			t.Fatalf("did not expect range query")
+			w.WriteHeader(http.StatusInternalServerError)
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -259,7 +260,7 @@ func TestGetExceptionsHandler_EscapesHyphenatedServiceNamesLikeFrontend(t *testi
 			io.WriteString(w, `[{"metric":{"exception_type":"IOException","service_name":"last9-api","span_name":"GET /health","span_kind":"SPAN_KIND_SERVER"},"value":[1737374400,"5"]}]`)
 
 		case constants.EndpointPromQuery:
-			t.Fatalf("did not expect range query")
+			w.WriteHeader(http.StatusInternalServerError)
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -289,7 +290,7 @@ func TestGetExceptionsHandler_EscapesHyphenatedServiceNamesLikeFrontend(t *testi
 	}
 }
 
-func TestGetExceptionsHandler_DoesNotCallRangeQuery(t *testing.T) {
+func TestGetExceptionsHandler_BuildsUnfilteredSelector(t *testing.T) {
 	endTime := time.Date(2026, 1, 20, 12, 0, 0, 0, time.UTC)
 	startTime := endTime.Add(-4 * time.Minute)
 
@@ -320,7 +321,7 @@ func TestGetExceptionsHandler_DoesNotCallRangeQuery(t *testing.T) {
 			io.WriteString(w, `[{"metric":{"exception_type":"IOException","service_name":"api","span_name":"GET /health","span_kind":"SPAN_KIND_SERVER"},"value":[1737374400,"5"]}]`)
 
 		case constants.EndpointPromQuery:
-			t.Fatalf("did not expect range query")
+			w.WriteHeader(http.StatusInternalServerError)
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -369,6 +370,7 @@ func TestGetExceptionsHandler_DoesNotExposeInstantTimestampAsLastSeen(t *testing
 	endTime := startTime.Add(10 * time.Minute)
 	clientLastSeen := endTime.Add(-3 * time.Minute).Unix()
 	serverLastSeen := endTime.Unix()
+	clientOccurrence := startTime.Add(5 * time.Minute)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -379,7 +381,10 @@ func TestGetExceptionsHandler_DoesNotExposeInstantTimestampAsLastSeen(t *testing
 				{"metric":{"exception_type":"TimeoutException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_SERVER"},"value":[%d,"2"]}
 			]`, clientLastSeen, serverLastSeen))
 		case constants.EndpointPromQuery:
-			t.Fatalf("did not expect range query")
+			// Only the client series has occurrences in range data; the server series has none.
+			io.WriteString(w, fmt.Sprintf(`[
+				{"metric":{"exception_type":"TimeoutException","service_name":"checkout","span_name":"POST /orders","span_kind":"SPAN_KIND_CLIENT"},"values":[[%d,"1"],[%d,"0"]]}
+			]`, clientOccurrence.Unix(), endTime.Unix()))
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -427,8 +432,18 @@ func TestGetExceptionsHandler_DoesNotExposeInstantTimestampAsLastSeen(t *testing
 		if !ok {
 			t.Fatalf("unexpected exception entry type: %T", entry)
 		}
-		if _, found := exceptionMap["last_seen"]; found {
-			t.Fatalf("aggregate exception row must not expose the instant query timestamp as last_seen: %#v", exceptionMap)
+		lastSeen, found := exceptionMap["last_seen"]
+		switch exceptionMap["span_kind"] {
+		case "SPAN_KIND_CLIENT":
+			if lastSeen != clientOccurrence.Format(time.RFC3339) {
+				t.Fatalf("last_seen = %v, want the range data's last occurrence %s, not the instant query timestamp", lastSeen, clientOccurrence.Format(time.RFC3339))
+			}
+		case "SPAN_KIND_SERVER":
+			if found {
+				t.Fatalf("a row without range occurrences must not expose the instant query timestamp as last_seen: %#v", exceptionMap)
+			}
+		default:
+			t.Fatalf("unexpected row: %#v", exceptionMap)
 		}
 	}
 }
@@ -452,7 +467,7 @@ func TestGetExceptionsHandler_DoesNotCapLargeLimit(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			io.WriteString(w, "["+strings.Join(points, ",")+"]")
 		case constants.EndpointPromQuery:
-			t.Fatalf("did not expect range query")
+			w.WriteHeader(http.StatusInternalServerError)
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -587,7 +602,7 @@ func TestGetExceptionsHandler_EscapesSingleQuoteInFilters(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			io.WriteString(w, `[]`)
 		case constants.EndpointPromQuery:
-			t.Fatalf("did not expect range query")
+			w.WriteHeader(http.StatusInternalServerError)
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}

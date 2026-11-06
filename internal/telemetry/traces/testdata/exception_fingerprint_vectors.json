@@ -1,0 +1,130 @@
+{
+  "vectors": [
+    {
+      "name": "ascii, env narrowed",
+      "exception_type": "TypeError",
+      "service_name": "web",
+      "span_name": "View",
+      "env": null,
+      "fingerprint": "1b589f62",
+      "exception_id": "1b589f62-web-View"
+    },
+    {
+      "name": "ascii, all envs",
+      "exception_type": "TypeError",
+      "service_name": "web",
+      "span_name": "View",
+      "env": "production",
+      "fingerprint": "1b589f62",
+      "exception_id": "1b589f62-web-View-production"
+    },
+    {
+      "name": "all envs, row without env",
+      "exception_type": "TypeError",
+      "service_name": "web",
+      "span_name": "View",
+      "env": "",
+      "fingerprint": "1b589f62",
+      "exception_id": "1b589f62-web-View-"
+    },
+    {
+      "name": "unknown defaults",
+      "exception_type": "Unknown",
+      "service_name": "Unknown",
+      "span_name": "Unknown",
+      "env": null,
+      "fingerprint": "7b5bae37",
+      "exception_id": "7b5bae37-Unknown-Unknown"
+    },
+    {
+      "name": "separator inside values",
+      "exception_type": "a:b",
+      "service_name": "c",
+      "span_name": "d",
+      "env": null,
+      "fingerprint": "43154ca3",
+      "exception_id": "43154ca3-c-d"
+    },
+    {
+      "name": "separator moved between values",
+      "exception_type": "a",
+      "service_name": "b:c",
+      "span_name": "d",
+      "env": null,
+      "fingerprint": "43154ca3",
+      "exception_id": "43154ca3-b:c-d"
+    },
+    {
+      "name": "hyphenated names, all envs",
+      "exception_type": "java.io.IOException",
+      "service_name": "last9-api",
+      "span_name": "POST /v1/orders",
+      "env": "prod-eu",
+      "fingerprint": "11f973c4",
+      "exception_id": "11f973c4-last9-api-POST /v1/orders-prod-eu"
+    },
+    {
+      "name": "latin-1 accent (one UTF-16 unit, two UTF-8 bytes)",
+      "exception_type": "Erreur",
+      "service_name": "café",
+      "span_name": "GET /menü",
+      "env": null,
+      "fingerprint": "4cfd74f4",
+      "exception_id": "4cfd74f4-café-GET /menü"
+    },
+    {
+      "name": "CJK (one UTF-16 unit, three UTF-8 bytes)",
+      "exception_type": "例外",
+      "service_name": "服务",
+      "span_name": "查询",
+      "env": null,
+      "fingerprint": "51cbc311",
+      "exception_id": "51cbc311-服务-查询"
+    },
+    {
+      "name": "astral emoji (surrogate pair)",
+      "exception_type": "Boom💥",
+      "service_name": "svc🚀",
+      "span_name": "op",
+      "env": "stage",
+      "fingerprint": "012abfd0",
+      "exception_id": "012abfd0-svc🚀-op-stage"
+    },
+    {
+      "name": "long input wraps int32 many times",
+      "exception_type": "org.springframework.web.client.HttpServerErrorException$InternalServerError",
+      "service_name": "payments-gateway-service",
+      "span_name": "POST /api/v2/payments/{paymentId}/capture",
+      "env": null,
+      "fingerprint": "570b1112",
+      "exception_id": "570b1112-payments-gateway-service-POST /api/v2/payments/{paymentId}/capture"
+    },
+    {
+      "name": "hash is int32 min (abs needs 64 bits)",
+      "exception_type": "OverflowError",
+      "service_name": "svc",
+      "span_name": "op41610퟿뷃",
+      "env": null,
+      "fingerprint": "80000000",
+      "exception_id": "80000000-svc-op41610퟿뷃"
+    },
+    {
+      "name": "hash is int32 max",
+      "exception_type": "OverflowError",
+      "service_name": "svc",
+      "span_name": "op41610퟿뷂",
+      "env": null,
+      "fingerprint": "7fffffff",
+      "exception_id": "7fffffff-svc-op41610퟿뷂"
+    },
+    {
+      "name": "hash is -1 (leading zero padding)",
+      "exception_type": "OverflowError",
+      "service_name": "svc",
+      "span_name": "op124200警.",
+      "env": null,
+      "fingerprint": "00000001",
+      "exception_id": "00000001-svc-op124200警."
+    }
+  ]
+}
