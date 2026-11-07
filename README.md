@@ -351,6 +351,7 @@ Rules, channels and attachments these tools create are marked `created_via: last
 - **`update_dashboard`** — Restructure most of an existing dashboard by ID (full replacement; readonly system dashboards return an error). For individual panel edits use `patch_dashboard`
 - **`patch_dashboard`** — Targeted edits to an existing dashboard by ID (add/update/remove/move panel, set title, set variable); returns a compact diff, not the full dashboard
 - **`delete_dashboard`** — Delete a custom dashboard by ID
+- **`set_dashboard_lock`** — Lock or unlock a custom dashboard by ID (author or org admin only); a locked dashboard refuses update, patch and delete
 - **`list_dashboard_snapshots`** — Frozen point-in-time snapshots for a dashboard (metadata only)
 - **`get_dashboard_snapshot`** — Full frozen snapshot including panel data for RCA / shareable views
 - **`delete_dashboard_snapshot`** — Delete a frozen snapshot by ID
@@ -1048,12 +1049,14 @@ Call it before any service-scoped investigation so tool selection matches the se
 
 ### list_dashboards
 
-No parameters. Returns all custom dashboards in the org as a JSON array with `id`, `name`, and metadata.
+No parameters. Returns all custom dashboards in the org as a JSON array with `id`, `name`, and metadata; rows that report `readonly` also carry `locked`.
 
 ### get_dashboard
 
 - `id` (string, required): Dashboard UUID.
 - `region` (string, optional): Region for panel query population. Defaults to configured datasource region.
+
+The result adds top-level `locked` (`false` when the API omits it) and `created_by` (the author's user id).
 
 To alert on a panel, see `last9://reference/alerting`.
 
@@ -1100,7 +1103,7 @@ Use only to restructure most of a dashboard; for adding, editing, removing or mo
 
 - `id` (string, required): Dashboard UUID to update.
 - `dashboard` (object, required): Full replacement dashboard body (same shape as create).
-- `metadata` (object, optional): Replacement metadata. Readonly system dashboards return a 403 error.
+- `metadata` (object, optional): Replacement metadata. Readonly system dashboards return a recoverable tool error.
 
 ### patch_dashboard
 
@@ -1118,6 +1121,13 @@ Prefer this over `update_dashboard` for small refinements: unchanged panels are 
 ### delete_dashboard
 
 - `id` (string, required): Dashboard UUID to delete. Readonly system dashboards cannot be deleted.
+
+### set_dashboard_lock
+
+- `id` (string, required): Dashboard UUID.
+- `locked` (boolean, required): `true` locks the dashboard, `false` unlocks it.
+
+Write tool; call it only when the user explicitly asks. Only the dashboard's author or an org admin can lock or unlock it, and built-in dashboards are always read-only. Returns `{"id", "locked"}` with the resulting state. While locked, `update_dashboard`, `patch_dashboard` and `delete_dashboard` send no write and return a recoverable tool error starting `dashboard is locked` that names the author and suggests unlocking or copying the dashboard with `create_dashboard`.
 
 ### list_dashboard_snapshots
 

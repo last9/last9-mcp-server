@@ -90,6 +90,7 @@ var promptDescriptionFiles = map[string]string{
 	"prometheus_labels.md":                 prompts.PromqlLabelsQueryDetails,
 	"prometheus_range_query_base.md":       prompts.PromqlRangeQueryDetails,
 	"recommend_alert_config.md":            prompts.RecommendAlertConfigDescription,
+	"set_dashboard_lock.md":                prompts.SetDashboardLockDescription,
 	"update_alert.md":                      prompts.UpdateAlertDescription,
 	"update_dashboard.md":                  prompts.UpdateDashboardDescription,
 	"validate_alert_expression.md":         prompts.ValidateAlertExpressionDescription,

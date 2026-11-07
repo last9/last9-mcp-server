@@ -25,7 +25,7 @@ func NewListDashboardsHandler(client *http.Client, cfg models.Config) func(conte
 		return &mcp.CallToolResult{
 			Meta: deeplink.ToMeta(dlBuilder.BuildDashboardsIndexLink()),
 			Content: []mcp.Content{
-				&mcp.TextContent{Text: string(body)},
+				&mcp.TextContent{Text: string(withDashboardRowsLocked(body))},
 			},
 		}, nil, nil
 	}

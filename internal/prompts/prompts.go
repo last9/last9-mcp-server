@@ -218,6 +218,9 @@ var PatchDashboardDescription string
 //go:embed descriptions/delete_dashboard.md
 var DeleteDashboardDescription string
 
+//go:embed descriptions/set_dashboard_lock.md
+var SetDashboardLockDescription string
+
 //go:embed descriptions/list_dashboard_snapshots.md
 var ListDashboardSnapshotsDescription string
 
