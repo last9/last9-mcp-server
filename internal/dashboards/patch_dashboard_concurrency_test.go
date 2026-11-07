@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -74,5 +75,27 @@ func TestConcurrentPatchDashboardKeepsBothChanges(t *testing.T) {
 	}
 	if got.Dashboard["name"] != "Renamed" || !slices.Contains(panelIDs(got.Dashboard), "pA") {
 		t.Fatalf("stored name=%v panels=%v, want both changes", got.Dashboard["name"], panelIDs(got.Dashboard))
+	}
+}
+
+func TestPatchDashboardValidatesBeforeWaitingOnHeldDashboard(t *testing.T) {
+	unlock, err := utils.LockKey(context.Background(), "dashboard:dash-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	ctx := utils.DeadlineContext(t, time.Second)
+	handler := NewPatchDashboardHandler(http.DefaultClient, testDashboardConfig("http://unused"))
+	if _, _, err := handler(ctx, &mcp.CallToolRequest{}, PatchDashboardArgs{ID: "dash-1"}); err == nil || !strings.Contains(err.Error(), "ops must contain") {
+		t.Fatalf("err = %v, want the validation error", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	var args PatchDashboardArgs
+	if err := json.Unmarshal([]byte(`{"id":"DASH-1","ops":[{"op":"set_title","title":"x"}]}`), &args); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := handler(ctx, &mcp.CallToolRequest{}, args); err == nil || !strings.Contains(err.Error(), "nothing was written") {
+		t.Fatalf("err = %v, want a wait error before any request", err)
 	}
 }

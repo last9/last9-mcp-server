@@ -65,6 +65,11 @@ func NewPatchAlertHandler(client *http.Client, cfg models.Config) func(context.C
 			}
 			body.RecurringMuteSchedule = raw
 		}
+		unlock, err := lockAlertRule(ctx, args.EntityID, args.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		defer unlock()
 		api := last9api.NewClient(client, cfg)
 		stored, refusal, err := requireRuleInGroup(ctx, api, args.EntityID, args.ID)
 		if refusal != nil || err != nil {

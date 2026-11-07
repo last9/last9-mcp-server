@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -227,5 +228,45 @@ func TestConcurrentCreateAlertWithSameNameCreatesOnce(t *testing.T) {
 	}
 	if results[0].IsError == results[1].IsError {
 		t.Fatalf("want one create and one duplicate refusal: %q / %q", resultText(results[0]), resultText(results[1]))
+	}
+}
+
+func TestAlertWritesValidateBeforeWaitingOnRuleLock(t *testing.T) {
+	unlock, err := lockAlertRule(context.Background(), "entity-1", concurrencyRuleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	cfg := testAlertMutationConfig("http://unused")
+	ctx := utils.DeadlineContext(t, time.Second)
+	patch, _, err := NewPatchAlertHandler(http.DefaultClient, cfg)(ctx, nil, PatchAlertArgs{EntityID: "entity-1", ID: concurrencyRuleID})
+	if err != nil || !strings.Contains(resultText(patch), "at least one of") {
+		t.Fatalf("patch_alert: result=%s err=%v", resultText(patch), err)
+	}
+	update, _, err := NewUpdateAlertHandler(http.DefaultClient, cfg)(ctx, nil, UpdateAlertArgs{EntityID: "entity-1", ID: concurrencyRuleID})
+	if err != nil || !update.IsError {
+		t.Fatalf("update_alert: result=%s err=%v", resultText(update), err)
+	}
+}
+
+func TestPatchAlertWaitingOnHeldRuleStopsAtDeadlineWithoutRequests(t *testing.T) {
+	unlock, err := lockAlertRule(context.Background(), "ENTITY-1", strings.ToUpper(concurrencyRuleID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests.Add(1) }))
+	t.Cleanup(server.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	disabled := true
+	_, _, err = NewPatchAlertHandler(server.Client(), testAlertMutationConfig(server.URL))(ctx, nil,
+		PatchAlertArgs{EntityID: "entity-1", ID: concurrencyRuleID, IsDisabled: &disabled})
+	if err == nil || !strings.Contains(err.Error(), "nothing was changed") {
+		t.Fatalf("err = %v", err)
+	}
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("requests = %d, want 0", got)
 	}
 }

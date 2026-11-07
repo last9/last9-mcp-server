@@ -17,6 +17,7 @@ import (
 	"last9-mcp/internal/last9api"
 	apidashboards "last9-mcp/internal/last9api/dashboards"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -90,6 +91,13 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, err
 		}
 
+		// Held through the PUT so a concurrent patch of this dashboard cannot write back
+		// the version this call read, dropping its changes.
+		unlock, err := utils.LockKey(ctx, "dashboard:"+strings.ToLower(strings.TrimSpace(args.ID)))
+		if err != nil {
+			return nil, nil, fmt.Errorf("another patch_dashboard call was still changing dashboard %s; nothing was written: %w", args.ID, err)
+		}
+		defer unlock()
 		api := last9api.NewClient(client, cfg)
 		current, err := apidashboards.GetDashboard(ctx, api, args.ID)
 		if err != nil {

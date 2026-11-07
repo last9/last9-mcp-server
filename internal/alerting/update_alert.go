@@ -32,6 +32,11 @@ func NewUpdateAlertHandler(client *http.Client, cfg models.Config) func(context.
 		if err := validateAlertRulePayload(args.AlertRule); err != nil {
 			return utils.ToolErrorResult(err.Error()), nil, nil
 		}
+		unlock, err := lockAlertRule(ctx, args.EntityID, args.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		defer unlock()
 		api := last9api.NewClient(client, cfg)
 		stored, refusal, err := requireRuleInGroup(ctx, api, args.EntityID, args.ID)
 		if refusal != nil || err != nil {
