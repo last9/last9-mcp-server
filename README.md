@@ -1049,12 +1049,14 @@ Call it before any service-scoped investigation so tool selection matches the se
 
 ### list_dashboards
 
-No parameters. Returns all custom dashboards in the org as a JSON array with `id`, `name`, and metadata.
+No parameters. Returns all custom dashboards in the org as a JSON array with `id`, `name`, and metadata; rows that report `readonly` also carry `locked`.
 
 ### get_dashboard
 
 - `id` (string, required): Dashboard UUID.
 - `region` (string, optional): Region for panel query population. Defaults to configured datasource region.
+
+The result adds top-level `locked` (`false` when the API omits it) and `created_by` (the author's user id).
 
 To alert on a panel, see `last9://reference/alerting`.
 

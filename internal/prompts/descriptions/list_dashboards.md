@@ -1,1 +1,1 @@
-List custom dashboards in the Last9 organization. Returns JSON array of dashboard summaries (id, name, metadata).
+List custom dashboards in the Last9 organization. Returns JSON array of dashboard summaries (id, name, metadata); a row that reports `readonly` also carries `locked` with the same value.
