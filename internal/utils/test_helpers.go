@@ -249,3 +249,30 @@ func DeadlineContext(t *testing.T, d time.Duration) context.Context {
 	t.Cleanup(cancel)
 	return ctx
 }
+
+// ReadBarrier holds each fake-server read until n reads have arrived or wait passes,
+// so unserialized concurrent tool calls all read before any of them writes.
+type ReadBarrier struct {
+	mu      sync.Mutex
+	n       int
+	arrived int
+	all     chan struct{}
+	wait    time.Duration
+}
+
+func NewReadBarrier(n int, wait time.Duration) *ReadBarrier {
+	return &ReadBarrier{n: n, all: make(chan struct{}), wait: wait}
+}
+
+func (b *ReadBarrier) Wait() {
+	b.mu.Lock()
+	b.arrived++
+	if b.arrived == b.n {
+		close(b.all)
+	}
+	b.mu.Unlock()
+	select {
+	case <-b.all:
+	case <-time.After(b.wait):
+	}
+}
