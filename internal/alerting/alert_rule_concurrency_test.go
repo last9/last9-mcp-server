@@ -205,29 +205,38 @@ func TestConcurrentUpdateAndPatchAlertNeverPatchReplacedRule(t *testing.T) {
 }
 
 func TestConcurrentCreateAlertWithSameNameCreatesOnce(t *testing.T) {
-	store, server := newRuleStore(t, "entity-1", map[string]storedRule{})
-	handler := NewCreateAlertHandler(server.Client(), testAlertMutationConfig(server.URL))
-	create := func(name string) toolCall {
-		return func() (*mcp.CallToolResult, error) {
-			result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, CreateAlertArgs{
-				EntityID: "entity-1", AlertRuleMutation: AlertRuleMutation{AlertRule: validAlertRulePayload(&name)}})
-			return result, err
-		}
-	}
-	results, errs := runConcurrently(create("High latency"), create(" high latency "))
-	for i := range results {
-		if errs[i] != nil {
-			t.Fatalf("call %d: %v", i, errs[i])
-		}
-	}
-	store.mu.Lock()
-	posts := store.posts
-	store.mu.Unlock()
-	if posts != 1 {
-		t.Fatalf("POST count = %d, want 1", posts)
-	}
-	if results[0].IsError == results[1].IsError {
-		t.Fatalf("want one create and one duplicate refusal: %q / %q", resultText(results[0]), resultText(results[1]))
+	// Each pair is equal under the duplicate check's strings.EqualFold.
+	for _, names := range [][2]string{
+		{"High latency", " high latency "},
+		{"Σ latency", "ς latency"},
+		{"K latency", "k latency"}, // Kelvin sign
+	} {
+		t.Run(names[0]+"/"+names[1], func(t *testing.T) {
+			store, server := newRuleStore(t, "entity-1", map[string]storedRule{})
+			handler := NewCreateAlertHandler(server.Client(), testAlertMutationConfig(server.URL))
+			create := func(name string) toolCall {
+				return func() (*mcp.CallToolResult, error) {
+					result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, CreateAlertArgs{
+						EntityID: "entity-1", AlertRuleMutation: AlertRuleMutation{AlertRule: validAlertRulePayload(&name)}})
+					return result, err
+				}
+			}
+			results, errs := runConcurrently(create(names[0]), create(names[1]))
+			for i := range results {
+				if errs[i] != nil {
+					t.Fatalf("call %d: %v", i, errs[i])
+				}
+			}
+			store.mu.Lock()
+			posts := store.posts
+			store.mu.Unlock()
+			if posts != 1 {
+				t.Fatalf("POST count = %d, want 1", posts)
+			}
+			if results[0].IsError == results[1].IsError {
+				t.Fatalf("want one create and one duplicate refusal: %q / %q", resultText(results[0]), resultText(results[1]))
+			}
+		})
 	}
 }
 
