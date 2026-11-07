@@ -52,7 +52,7 @@ func doJSONRequest(ctx context.Context, client *http.Client, cfg models.Config, 
 		return nil, resp.StatusCode, utils.MarkUnknownWriteOutcome(req, resp, fmt.Errorf("failed to read response: %w", err))
 	}
 	if int64(len(respBody)) > maxAPISuccessBodyBytes {
-		return nil, resp.StatusCode, fmt.Errorf("dashboard API response exceeds %d bytes; open the UI link instead", maxAPISuccessBodyBytes)
+		return nil, resp.StatusCode, utils.MarkUnknownWriteOutcome(req, resp, fmt.Errorf("dashboard API response exceeds %d bytes; open the UI link instead", maxAPISuccessBodyBytes))
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {

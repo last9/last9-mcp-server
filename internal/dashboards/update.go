@@ -37,6 +37,9 @@ func NewUpdateDashboardHandler(client *http.Client, cfg models.Config) func(cont
 		if err != nil {
 			return nil, nil, mapDashboardAPIError(err)
 		}
+		if err := requireDashboardInResponse(body); err != nil {
+			return nil, nil, err
+		}
 
 		return textResultWithDashboardLink(dlBuilder, body, args.ID), nil, nil
 	}
