@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Alert create, update, patch and chart-create success links now open the persisted rule in its group, including replacement IDs from updates; an API-provided group name adds an encoded `Open group` link. KPI and dashboard write links are unchanged (#516).
 - `validate_dashboard` no longer reports `overall: pass` with `panels_total: 0` when nothing was validated. A `{dashboard, metadata}` create envelope passed as `dashboard_definition` is unwrapped and its inner dashboard validated; a dashboard with no panels returns `success: false`, `error: "no_panels"`; panel fields from other formats (Grafana `gridPos`, `title`, `type`, and `targets` on panels that need queries) and mistyped fields such as a string `queries[].legend` or a non-object `csv` are listed per panel in `shape_problems` and make `overall` `fail` (#498).
 
+### Changed
+- `update_dashboard`, `patch_dashboard` and `delete_dashboard` read the dashboard first and refuse a locked one (`readonly: true`) without sending any write. A locked refusal, or any other 403 on the write, is now a recoverable tool error (`isError`, user error) instead of a protocol error: it names the author and the two ways forward, unlocking with `set_dashboard_lock` by the author or an org admin, or copying with `create_dashboard`. Like `patch_dashboard`, `update_dashboard` and `delete_dashboard` now need a configured region for that read. `preview_dashboard` reports `locked` for a locked dashboard (#538).
+
 ## [0.23.0] - 2026-11-04
 
 ### Added

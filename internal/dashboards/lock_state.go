@@ -13,6 +13,8 @@ import (
 	apidashboards "last9-mcp/internal/last9api/dashboards"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // The API calls a locked dashboard "readonly"; tools serve it as "locked".
@@ -69,20 +71,62 @@ func upstreamLockedRefusal(err error) bool {
 	return errors.As(err, &upstream) && isDashboardLockedRefusal(upstream.StatusCode, upstream.Body)
 }
 
-// dashboardLockedError keeps the "dashboard is locked" prefix stable: clients match on it.
-func dashboardLockedError(createdBy string) error {
+func isForbidden(err error) bool {
+	var upstream *utils.UpstreamHTTPError
+	return errors.As(err, &upstream) && upstream.StatusCode == http.StatusForbidden
+}
+
+// dashboardLock is the lock state a dashboard read reports. Readonly stays nil
+// when the field is absent or not a bool, so an unknown state never reads as
+// unlocked.
+type dashboardLock struct {
+	Readonly  *bool
+	CreatedBy string
+}
+
+func dashboardLockOf(dashboard map[string]any) dashboardLock {
+	var lock dashboardLock
+	if readonly, ok := dashboard["readonly"].(bool); ok {
+		lock.Readonly = &readonly
+	}
+	lock.CreatedBy, _ = dashboard["created_by"].(string)
+	return lock
+}
+
+func (l dashboardLock) locked() bool {
+	return l.Readonly != nil && *l.Readonly
+}
+
+// readDashboardLock reads the dashboard a write targets so a locked one is
+// refused before any write is sent.
+func readDashboardLock(ctx context.Context, client *http.Client, cfg models.Config, id string) (dashboardLock, error) {
+	current, err := apidashboards.GetDashboard(ctx, last9api.NewClient(client, cfg), id)
+	if err != nil {
+		return dashboardLock{}, fmt.Errorf("%w; nothing was written", mapDashboardFetchError(id, err))
+	}
+	return dashboardLockOf(current.Dashboard), nil
+}
+
+// lockedResult is a user error: the caller recovers by asking for an unlock or
+// copying the dashboard, not by retrying. Clients match the "dashboard is
+// locked" prefix, so keep it stable.
+func lockedResult(lock dashboardLock) *mcp.CallToolResult {
+	return utils.ToolErrorResult("dashboard is locked " + lockAuthor(lock) + ", so nothing was written. " + lockRecovery)
+}
+
+func lockAuthor(lock dashboardLock) string {
+	createdBy := lock.CreatedBy
 	if createdBy == "" {
 		createdBy = "unknown"
 	}
-	return fmt.Errorf("dashboard is locked (created_by: %s): only its author or an org admin can unlock it with set_dashboard_lock; nothing was written", createdBy)
+	return "(created_by: " + createdBy + ")"
 }
 
-// lockedDashboardAuthor is best effort: the refusal stands even if the author cannot be read.
-func lockedDashboardAuthor(ctx context.Context, client *http.Client, cfg models.Config, id string) string {
-	resp, err := apidashboards.GetDashboard(ctx, last9api.NewClient(client, cfg), id)
-	if err != nil {
-		return ""
-	}
-	createdBy, _ := resp.Dashboard["created_by"].(string)
-	return createdBy
+const lockRecovery = "Ask its author or an org admin to unlock it with set_dashboard_lock, " +
+	"or copy it with create_dashboard and edit the copy."
+
+// forbiddenWriteResult serves any other write 403 (a built-in dashboard) as a user error.
+func forbiddenWriteResult(err error) *mcp.CallToolResult {
+	return utils.ToolErrorResult(fmt.Sprintf(
+		"dashboard is readonly and cannot be modified, so nothing was written; copy it with create_dashboard and edit the copy: %v", err))
 }

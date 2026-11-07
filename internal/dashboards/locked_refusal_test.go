@@ -163,6 +163,32 @@ func TestDashboardWrites_UnlockedDashboardIsWritten(t *testing.T) {
 	}
 }
 
+func TestDashboardLockOf_DecodesReadonlyAsTriState(t *testing.T) {
+	tests := []struct {
+		name   string
+		doc    map[string]any
+		locked bool
+		known  bool
+	}{
+		{"absent", map[string]any{}, false, false},
+		{"null", map[string]any{"readonly": nil}, false, false},
+		{"non-bool", map[string]any{"readonly": "true"}, false, false},
+		{"false", map[string]any{"readonly": false}, false, true},
+		{"true", map[string]any{"readonly": true}, true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lock := dashboardLockOf(tt.doc)
+			if (lock.Readonly != nil) != tt.known {
+				t.Fatalf("known = %v, want %v", lock.Readonly != nil, tt.known)
+			}
+			if lock.locked() != tt.locked {
+				t.Fatalf("locked = %v, want %v", lock.locked(), tt.locked)
+			}
+		})
+	}
+}
+
 func TestPreviewDashboard_ReportsLockedDashboard(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
