@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -276,11 +277,13 @@ func (tm *TokenManager) refreshToken(ctx context.Context) {
 	client := GetHTTPClient()
 	newAccessToken, err := RefreshAccessToken(ctx, client, tm.RefreshToken)
 	if err != nil {
+		slog.Warn("access token refresh failed", "error", err)
 		return
 	}
 
 	expiry, err := GetTokenExpiry(newAccessToken)
 	if err != nil {
+		slog.Warn("refreshed access token has no usable expiry", "error", err)
 		return
 	}
 
