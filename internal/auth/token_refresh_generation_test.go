@@ -19,8 +19,7 @@ func TestGetAccessToken_WaiterReturnsAfterItsRefreshEvenIfAnotherStarts(t *testi
 	time.Sleep(50 * time.Millisecond) // let the waiter park in refreshCond.Wait
 
 	tm.condMu.Lock()
-	tm.refreshing = false
-	tm.refreshCond.Broadcast()
+	tm.completeRefreshLocked()
 	tm.refreshing = true
 	tm.condMu.Unlock()
 

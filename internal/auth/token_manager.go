@@ -42,16 +42,21 @@ type TokenManager struct {
 	// RWMutex so the hot read path can take just a read lock.
 	mu sync.RWMutex
 
-	// condMu guards refreshing and is the locker that backs refreshCond. It
-	// must be a dedicated sync.Mutex (not tm.mu): refreshCond.Wait() performs
-	// an implicit c.L.Unlock() followed by c.L.Lock(), and those resolve to
-	// the *exclusive* Lock/Unlock of whatever Locker NewCond was given. If
+	// condMu guards refreshing and refreshGen and is the locker that backs
+	// refreshCond. It must be a dedicated sync.Mutex (not tm.mu):
+	// refreshCond.Wait() performs an implicit c.L.Unlock() followed by
+	// c.L.Lock(), and those resolve to the *exclusive* Lock/Unlock of
+	// whatever Locker NewCond was given. If
 	// refreshCond were bound to tm.mu, a caller holding only tm.mu.RLock()
 	// would trigger a runtime fatal ("sync: Unlock of unlocked RWMutex") on
 	// Wait(). Using a plain Mutex here means Wait()'s Unlock/Lock operates
 	// on a lock the slow-path caller actually holds.
-	condMu      sync.Mutex
-	refreshing  bool
+	condMu     sync.Mutex
+	refreshing bool
+	// refreshGen counts completed refreshes. A waiter records it on entry and
+	// stops waiting once it changes, so it does not also wait out a refresh
+	// another caller starts after a failed one.
+	refreshGen  uint64
 	refreshCond *sync.Cond
 
 	// Configuration
@@ -230,6 +235,7 @@ func (tm *TokenManager) GetAccessToken(ctx context.Context) string {
 	// by condMu, and the cond is built on condMu, so refreshCond.Wait()'s
 	// implicit Unlock/Lock operates on condMu -- a lock this goroutine holds.
 	tm.condMu.Lock()
+	gen := tm.refreshGen
 	if !tm.refreshing {
 		tm.refreshing = true
 		// Other callers wait on this refresh, so it must outlive the tool call
@@ -243,7 +249,7 @@ func (tm *TokenManager) GetAccessToken(ctx context.Context) string {
 		tm.refreshCond.Broadcast()
 		tm.condMu.Unlock()
 	})
-	for tm.refreshing && ctx.Err() == nil {
+	for tm.refreshing && tm.refreshGen == gen && ctx.Err() == nil {
 		tm.refreshCond.Wait()
 	}
 	tm.condMu.Unlock()
@@ -263,8 +269,7 @@ func (tm *TokenManager) GetAccessToken(ctx context.Context) string {
 func (tm *TokenManager) refreshToken(ctx context.Context) {
 	defer func() {
 		tm.condMu.Lock()
-		tm.refreshing = false
-		tm.refreshCond.Broadcast()
+		tm.completeRefreshLocked()
 		tm.condMu.Unlock()
 	}()
 
@@ -283,6 +288,14 @@ func (tm *TokenManager) refreshToken(ctx context.Context) {
 	tm.AccessToken = newAccessToken
 	tm.ExpiresAt = expiry
 	tm.mu.Unlock()
+}
+
+// completeRefreshLocked ends the in-flight refresh, successful or not, and
+// wakes every waiter. The caller must hold condMu.
+func (tm *TokenManager) completeRefreshLocked() {
+	tm.refreshing = false
+	tm.refreshGen++
+	tm.refreshCond.Broadcast()
 }
 
 func (tm *TokenManager) backgroundRefresh() {
