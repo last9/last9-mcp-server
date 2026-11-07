@@ -260,8 +260,8 @@ func TestWriteToolsReportUnusableSuccessBodyAsUnknownOutcome(t *testing.T) {
 		"update_alert":            {"", "{}", "<html>ok</html>"},
 		"create_kpi":              {"", "{}"},
 		"create_alert_from_chart": {"", "{}", "<html>ok</html>"},
-		"create_dashboard":        {oversized},
-		"update_dashboard":        {oversized},
+		"create_dashboard":        {"", "{}", `{"dashboard":null}`, oversized},
+		"update_dashboard":        {"", "{}", `{"dashboard":null}`, oversized},
 	}
 	for name, bodies := range cases {
 		fixture := writeToolFixtures[name]
