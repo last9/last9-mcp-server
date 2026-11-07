@@ -14,7 +14,6 @@ import (
 
 const lockedRefusalBody = `{"message":"dashboard is locked; ask its author or an admin to unlock it"}`
 
-// lockingServer answers GET with a dashboard by authorID and refuses every write with refusal.
 func lockingServer(t *testing.T, authorID, refusal string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

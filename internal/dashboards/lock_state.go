@@ -36,7 +36,6 @@ func withDashboardLockState(body []byte) []byte {
 	return encodeJSON(resp)
 }
 
-// withDashboardRowsLocked adds locked to each list row that reports readonly.
 func withDashboardRowsLocked(body []byte) []byte {
 	var rows []map[string]json.RawMessage
 	if err := json.Unmarshal(body, &rows); err != nil {
