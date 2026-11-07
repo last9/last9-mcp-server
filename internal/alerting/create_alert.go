@@ -50,7 +50,7 @@ func NewCreateAlertHandler(client *http.Client, cfg models.Config) func(context.
 		}
 		response, err := parseMutationIDResponse(body)
 		if err != nil {
-			return nil, nil, fmt.Errorf("invalid create alert response: %w", err)
+			return nil, nil, utils.MarkUnusableWriteResponse(fmt.Errorf("invalid create alert response: %w", err))
 		}
 		text := strings.TrimSpace(string(body)) + "\n\n" + draftCreatedNote
 		if overridden {
