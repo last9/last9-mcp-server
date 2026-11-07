@@ -2,7 +2,17 @@ package dashboards
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"strings"
+
+	"last9-mcp/internal/last9api"
+	apidashboards "last9-mcp/internal/last9api/dashboards"
+	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 )
 
 // The API calls a locked dashboard "readonly"; tools serve it as "locked".
@@ -47,4 +57,32 @@ func encodeJSON(v any) []byte {
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(v)
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
+}
+
+// isDashboardLockedRefusal tells the API's lock refusal from the 403 a built-in dashboard gets.
+func isDashboardLockedRefusal(status int, body string) bool {
+	return status == http.StatusForbidden && strings.Contains(strings.ToLower(body), "dashboard is locked")
+}
+
+func upstreamLockedRefusal(err error) bool {
+	var upstream *utils.UpstreamHTTPError
+	return errors.As(err, &upstream) && isDashboardLockedRefusal(upstream.StatusCode, upstream.Body)
+}
+
+// dashboardLockedError keeps the "dashboard is locked" prefix stable: clients match on it.
+func dashboardLockedError(createdBy string) error {
+	if createdBy == "" {
+		createdBy = "unknown"
+	}
+	return fmt.Errorf("dashboard is locked (created_by: %s): only its author or an org admin can unlock it with set_dashboard_lock; nothing was written", createdBy)
+}
+
+// lockedDashboardAuthor is best effort: the refusal stands even if the author cannot be read.
+func lockedDashboardAuthor(ctx context.Context, client *http.Client, cfg models.Config, id string) string {
+	resp, err := apidashboards.GetDashboard(ctx, last9api.NewClient(client, cfg), id)
+	if err != nil {
+		return ""
+	}
+	createdBy, _ := resp.Dashboard["created_by"].(string)
+	return createdBy
 }

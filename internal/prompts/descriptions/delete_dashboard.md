@@ -1,1 +1,1 @@
-Delete a custom dashboard by ID. Readonly system dashboards cannot be deleted.
+Delete a custom dashboard by ID. Readonly system dashboards cannot be deleted. A locked dashboard returns an error starting `dashboard is locked` that names its `created_by`; only that author or an org admin can unlock it with `set_dashboard_lock`.

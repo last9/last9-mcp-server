@@ -23,7 +23,10 @@ func NewDeleteDashboardHandler(client *http.Client, cfg models.Config) func(cont
 
 		path := fmt.Sprintf(constants.EndpointDashboardByID, url.PathEscape(args.ID))
 		u := cfg.APIBaseURL + path
-		body, _, err := doJSONRequest(ctx, client, cfg, http.MethodDelete, u, nil)
+		body, status, err := doJSONRequest(ctx, client, cfg, http.MethodDelete, u, nil)
+		if err != nil && isDashboardLockedRefusal(status, string(body)) {
+			return nil, nil, dashboardLockedError(lockedDashboardAuthor(ctx, client, cfg, args.ID))
+		}
 		if err != nil {
 			return nil, nil, mapDashboardAPIError(err)
 		}

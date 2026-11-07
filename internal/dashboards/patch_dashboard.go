@@ -117,6 +117,10 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, err
 		}
 		if err := apidashboards.UpdateDashboard(ctx, api, args.ID, payload); err != nil {
+			if upstreamLockedRefusal(err) {
+				createdBy, _ := current.Dashboard["created_by"].(string)
+				return nil, nil, dashboardLockedError(createdBy)
+			}
 			return nil, nil, mapDashboardAPIError(err)
 		}
 
