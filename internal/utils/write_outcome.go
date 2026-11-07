@@ -40,7 +40,7 @@ func MarkUnknownWriteOutcome(req *http.Request, resp *http.Response, err error) 
 // no usable result, in *WriteOutcomeUnknownError: the API answered success, so the write
 // may have been applied.
 func MarkUnusableWriteResponse(err error) error {
-	return &WriteOutcomeUnknownError{Cause: "the API answered success but its response had no usable id", Err: err}
+	return &WriteOutcomeUnknownError{Cause: "the API answered success but its response had no usable result", Err: err}
 }
 
 func isWriteMethod(method string) bool {
