@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -79,13 +80,19 @@ func TestConcurrentPatchDashboardKeepsBothChanges(t *testing.T) {
 }
 
 func TestPatchDashboardValidatesBeforeWaitingOnHeldDashboard(t *testing.T) {
-	unlock, err := utils.LockKey(context.Background(), "dashboard:dash-1")
+	unlock, err := lockDashboard(context.Background(), "dash-1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer unlock()
 	ctx := utils.DeadlineContext(t, time.Second)
-	handler := NewPatchDashboardHandler(http.DefaultClient, testDashboardConfig("http://unused"))
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.Error(w, "fixture must not be reached", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+	handler := NewPatchDashboardHandler(srv.Client(), testDashboardConfig(srv.URL))
 	if _, _, err := handler(ctx, &mcp.CallToolRequest{}, PatchDashboardArgs{ID: "dash-1"}); err == nil || !strings.Contains(err.Error(), "ops must contain") {
 		t.Fatalf("err = %v, want the validation error", err)
 	}
@@ -95,7 +102,10 @@ func TestPatchDashboardValidatesBeforeWaitingOnHeldDashboard(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"id":"DASH-1","ops":[{"op":"set_title","title":"x"}]}`), &args); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := handler(ctx, &mcp.CallToolRequest{}, args); err == nil || !strings.Contains(err.Error(), "nothing was written") {
+	if _, _, err := handler(ctx, &mcp.CallToolRequest{}, args); err == nil || !strings.Contains(err.Error(), "still changing dashboard") {
 		t.Fatalf("err = %v, want a wait error before any request", err)
+	}
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("upstream requests = %d, want 0", got)
 	}
 }
