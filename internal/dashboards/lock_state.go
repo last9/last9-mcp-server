@@ -11,7 +11,6 @@ import (
 
 	"last9-mcp/internal/last9api"
 	apidashboards "last9-mcp/internal/last9api/dashboards"
-	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 )
 
@@ -78,8 +77,8 @@ func dashboardLockedError(createdBy string) error {
 }
 
 // lockedDashboardAuthor is best effort: the refusal stands even if the author cannot be read.
-func lockedDashboardAuthor(ctx context.Context, client *http.Client, cfg models.Config, id string) string {
-	resp, err := apidashboards.GetDashboard(ctx, last9api.NewClient(client, cfg), id)
+func lockedDashboardAuthor(ctx context.Context, api *last9api.Client, id string) string {
+	resp, err := apidashboards.GetDashboard(ctx, api, id)
 	if err != nil {
 		return ""
 	}

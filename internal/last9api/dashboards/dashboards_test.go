@@ -87,11 +87,15 @@ func TestUpdateDashboard(t *testing.T) {
 	defer srv.Close()
 
 	body := json.RawMessage(`{"dashboard":{"id":"d1"},"metadata":{"_type":"metrics"}}`)
-	if err := UpdateDashboard(context.Background(), newClient(srv.URL, srv.Client()), "d1", body); err != nil {
+	got, err := UpdateDashboard(context.Background(), newClient(srv.URL, srv.Client()), "d1", body)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if gotBody != string(body) {
 		t.Fatalf("body = %s", gotBody)
+	}
+	if string(got) != `{"dashboard":{"id":"d1"}}` {
+		t.Fatalf("response = %s", got)
 	}
 }
 
@@ -101,9 +105,39 @@ func TestUpdateDashboardForbidden(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	err := UpdateDashboard(context.Background(), newClient(srv.URL, srv.Client()), "d1", json.RawMessage(`{}`))
+	_, err := UpdateDashboard(context.Background(), newClient(srv.URL, srv.Client()), "d1", json.RawMessage(`{}`))
 	var u *utils.UpstreamHTTPError
 	if !errors.As(err, &u) || u.StatusCode != http.StatusForbidden {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestDeleteDashboard(t *testing.T) {
+	for _, resp := range []string{`{"deleted":true}`, ""} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodDelete || r.URL.EscapedPath() != "/dashboards/d%2F1" || r.URL.RawQuery != "" {
+				t.Errorf("request = %s %s?%s", r.Method, r.URL.EscapedPath(), r.URL.RawQuery)
+			}
+			_, _ = io.WriteString(w, resp)
+		}))
+		got, err := DeleteDashboard(context.Background(), newClient(srv.URL, srv.Client()), "d/1")
+		srv.Close()
+		if err != nil || string(got) != resp {
+			t.Fatalf("got = %q, err = %v", got, err)
+		}
+	}
+}
+
+func TestDeleteDashboardForbidden(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, `{"message":"dashboard is locked"}`)
+	}))
+	defer srv.Close()
+
+	_, err := DeleteDashboard(context.Background(), newClient(srv.URL, srv.Client()), "d1")
+	var u *utils.UpstreamHTTPError
+	if !errors.As(err, &u) || u.StatusCode != http.StatusForbidden || !strings.Contains(u.Body, "dashboard is locked") {
 		t.Fatalf("err = %v", err)
 	}
 }
