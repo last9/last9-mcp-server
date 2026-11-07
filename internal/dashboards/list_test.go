@@ -40,3 +40,27 @@ func TestListDashboardsHandler_ReturnsJSON(t *testing.T) {
 		t.Fatalf("reference_url %q", refURL)
 	}
 }
+
+func TestListDashboardsHandler_ServesLockedPerRow(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[{"id":"a","readonly":true,"created_by":"user-7"},{"id":"b","readonly":false},{"id":"c"}]`))
+	}))
+	defer srv.Close()
+
+	handler := NewListDashboardsHandler(srv.Client(), testDashboardConfig(srv.URL))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, ListDashboardsArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows []map[string]any
+	text := result.Content[0].(*mcp.TextContent).Text
+	if err := json.Unmarshal([]byte(text), &rows); err != nil {
+		t.Fatalf("%v: %s", err, text)
+	}
+	if len(rows) != 3 || rows[0]["locked"] != true || rows[1]["locked"] != false || rows[0]["created_by"] != "user-7" {
+		t.Fatalf("rows %s", text)
+	}
+	if _, ok := rows[2]["locked"]; ok {
+		t.Fatalf("row without readonly gained locked: %s", text)
+	}
+}

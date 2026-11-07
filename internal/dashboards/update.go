@@ -2,12 +2,11 @@ package dashboards
 
 import (
 	"context"
-	"fmt"
 	"net/http"
-	"net/url"
 
-	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
+	"last9-mcp/internal/last9api"
+	apidashboards "last9-mcp/internal/last9api/dashboards"
 	"last9-mcp/internal/models"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -31,9 +30,11 @@ func NewUpdateDashboardHandler(client *http.Client, cfg models.Config) func(cont
 			return nil, nil, err
 		}
 
-		path := fmt.Sprintf(constants.EndpointDashboardByID, url.PathEscape(args.ID))
-		u := cfg.APIBaseURL + path
-		body, _, err := doJSONRequest(ctx, client, cfg, http.MethodPut, u, payload)
+		api := last9api.NewClient(client, cfg)
+		body, err := apidashboards.UpdateDashboard(ctx, api, args.ID, payload)
+		if upstreamLockedRefusal(err) {
+			return nil, nil, dashboardLockedError(lockedDashboardAuthor(ctx, api, args.ID))
+		}
 		if err != nil {
 			return nil, nil, mapDashboardAPIError(err)
 		}

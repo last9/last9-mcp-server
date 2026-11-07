@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 
-	"last9-mcp/internal/constants"
 	"last9-mcp/internal/deeplink"
+	"last9-mcp/internal/last9api"
+	apidashboards "last9-mcp/internal/last9api/dashboards"
 	"last9-mcp/internal/models"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -21,9 +21,11 @@ func NewDeleteDashboardHandler(client *http.Client, cfg models.Config) func(cont
 			return nil, nil, err
 		}
 
-		path := fmt.Sprintf(constants.EndpointDashboardByID, url.PathEscape(args.ID))
-		u := cfg.APIBaseURL + path
-		body, _, err := doJSONRequest(ctx, client, cfg, http.MethodDelete, u, nil)
+		api := last9api.NewClient(client, cfg)
+		body, err := apidashboards.DeleteDashboard(ctx, api, args.ID)
+		if upstreamLockedRefusal(err) {
+			return nil, nil, dashboardLockedError(lockedDashboardAuthor(ctx, api, args.ID))
+		}
 		if err != nil {
 			return nil, nil, mapDashboardAPIError(err)
 		}

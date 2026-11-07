@@ -31,10 +31,25 @@ func GetDashboard(ctx context.Context, c *last9api.Client, id string) (*GetDashb
 	return &out, nil
 }
 
-// UpdateDashboard calls PUT /dashboards/{id} with a {dashboard, metadata} body.
-func UpdateDashboard(ctx context.Context, c *last9api.Client, id string, body json.RawMessage) error {
+// UpdateDashboard calls PUT /dashboards/{id} with a {dashboard, metadata} body
+// and returns the response body as sent.
+func UpdateDashboard(ctx context.Context, c *last9api.Client, id string, body json.RawMessage) ([]byte, error) {
+	var out []byte
 	req := last9api.Request{Method: http.MethodPut, Path: dashboardPath(id), Body: body}
-	return c.Do(ctx, "update dashboard", req, nil)
+	if err := c.Do(ctx, "update dashboard", req, &out, last9api.WithMaxResponseBytes(maxDashboardBytes)); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DeleteDashboard calls DELETE /dashboards/{id} and returns the response body as sent.
+func DeleteDashboard(ctx context.Context, c *last9api.Client, id string) ([]byte, error) {
+	var out []byte
+	req := last9api.Request{Method: http.MethodDelete, Path: dashboardPath(id)}
+	if err := c.Do(ctx, "delete dashboard", req, &out, last9api.WithMaxResponseBytes(maxDashboardBytes)); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func dashboardPath(id string) string {
