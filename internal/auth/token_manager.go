@@ -43,20 +43,18 @@ type TokenManager struct {
 	// RWMutex so the hot read path can take just a read lock.
 	mu sync.RWMutex
 
-	// condMu guards refreshing and refreshGen and is the locker that backs
-	// refreshCond. It must be a dedicated sync.Mutex (not tm.mu):
-	// refreshCond.Wait() performs an implicit c.L.Unlock() followed by
-	// c.L.Lock(), and those resolve to the *exclusive* Lock/Unlock of
-	// whatever Locker NewCond was given. If
+	// condMu guards refreshing and is the locker that backs refreshCond. It
+	// must be a dedicated sync.Mutex (not tm.mu): refreshCond.Wait() performs
+	// an implicit c.L.Unlock() followed by c.L.Lock(), and those resolve to
+	// the *exclusive* Lock/Unlock of whatever Locker NewCond was given. If
 	// refreshCond were bound to tm.mu, a caller holding only tm.mu.RLock()
 	// would trigger a runtime fatal ("sync: Unlock of unlocked RWMutex") on
 	// Wait(). Using a plain Mutex here means Wait()'s Unlock/Lock operates
 	// on a lock the slow-path caller actually holds.
 	condMu     sync.Mutex
 	refreshing bool
-	// refreshGen counts completed refreshes. A waiter records it on entry and
-	// stops waiting once it changes, so it does not also wait out a refresh
-	// another caller starts after a failed one.
+	// refreshGen, guarded by condMu, counts completed refreshes: a waiter stops
+	// once it changes, so it never waits out a refresh started after its own.
 	refreshGen  uint64
 	refreshCond *sync.Cond
 

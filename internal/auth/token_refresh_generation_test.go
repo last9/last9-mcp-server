@@ -11,10 +11,8 @@ import (
 	"time"
 )
 
-// A waiter must return once the refresh it waited on completes, even if that
-// refresh failed and another caller immediately started the next one.
-// Schedule: refresh 1 is in flight; the waiter parks; refresh 1 fails and
-// broadcasts; before the waiter reacquires condMu, caller B starts refresh 2.
+// A waiter must return once its refresh completes, even if that refresh failed
+// and another caller started refresh 2 before the waiter reacquired condMu.
 func TestGetAccessToken_WaiterReturnsAfterItsRefreshEvenIfAnotherStarts(t *testing.T) {
 	tm := newTestTokenManager(t, "stale", time.Now().Add(-time.Minute), 0)
 	tm.refreshing = true
