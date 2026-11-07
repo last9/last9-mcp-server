@@ -3,6 +3,7 @@ package utils
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -63,5 +64,18 @@ func TestLockKeyWaitStopsAtContextEnd(t *testing.T) {
 	defer cancel()
 	if _, err := LockKey(ctx, "test:ctx"); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
+	}
+}
+
+func TestFoldKeyMatchesEqualFold(t *testing.T) {
+	names := []string{"High latency", " high latency ", "Σ latency", "σ latency", "ς latency",
+		"K latency", "K latency", "k latency", "ß", "ẞ", "ss", "latency"}
+	for _, a := range names {
+		for _, b := range names {
+			want := strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+			if got := FoldKey(a) == FoldKey(b); got != want {
+				t.Errorf("FoldKey(%q) == FoldKey(%q) is %v, strings.EqualFold says %v", a, b, got, want)
+			}
+		}
 	}
 }

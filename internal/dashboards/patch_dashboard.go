@@ -93,7 +93,7 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 
 		// Held through the PUT so a concurrent patch of this dashboard cannot write back
 		// the version this call read, dropping its changes.
-		unlock, err := utils.LockKey(ctx, "dashboard:"+strings.ToLower(strings.TrimSpace(args.ID)))
+		unlock, err := utils.LockKey(ctx, "dashboard:"+utils.FoldKey(args.ID))
 		if err != nil {
 			return nil, nil, fmt.Errorf("another patch_dashboard call was still changing dashboard %s; nothing was written: %w", args.ID, err)
 		}

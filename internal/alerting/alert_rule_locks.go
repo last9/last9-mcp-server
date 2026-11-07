@@ -11,7 +11,7 @@ import (
 // lockAlertRule serializes this process's read-then-write calls on one rule, so a
 // concurrent patch_alert or update_alert cannot overwrite or replace what this call read.
 func lockAlertRule(ctx context.Context, entityID, ruleID string) (unlock func(), err error) {
-	unlock, err = utils.LockKey(ctx, "alert_rule:"+lockKeyPart(entityID)+"/"+lockKeyPart(ruleID))
+	unlock, err = utils.LockKey(ctx, "alert_rule:"+utils.FoldKey(entityID)+"/"+utils.FoldKey(ruleID))
 	if err != nil {
 		return nil, fmt.Errorf("another call was still changing alert rule %s; nothing was changed: %w", ruleID, err)
 	}
@@ -24,14 +24,9 @@ func lockAlertRuleName(ctx context.Context, entityID string, ruleName *string) (
 	if ruleName == nil || strings.TrimSpace(*ruleName) == "" {
 		return func() {}, nil
 	}
-	unlock, err = utils.LockKey(ctx, "alert_rule_create:"+lockKeyPart(entityID)+"/"+lockKeyPart(*ruleName))
+	unlock, err = utils.LockKey(ctx, "alert_rule_create:"+utils.FoldKey(entityID)+"/"+utils.FoldKey(*ruleName))
 	if err != nil {
 		return nil, fmt.Errorf("another call was still creating alert rule %q; nothing was created: %w", strings.TrimSpace(*ruleName), err)
 	}
 	return unlock, nil
-}
-
-// Ids and rule names compare case-insensitively elsewhere, so their lock keys fold case too.
-func lockKeyPart(s string) string {
-	return strings.ToLower(strings.TrimSpace(s))
 }
