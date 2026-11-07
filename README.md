@@ -351,6 +351,7 @@ Rules, channels and attachments these tools create are marked `created_via: last
 - **`update_dashboard`** — Restructure most of an existing dashboard by ID (full replacement; readonly system dashboards return an error). For individual panel edits use `patch_dashboard`
 - **`patch_dashboard`** — Targeted edits to an existing dashboard by ID (add/update/remove/move panel, set title, set variable); returns a compact diff, not the full dashboard
 - **`delete_dashboard`** — Delete a custom dashboard by ID
+- **`set_dashboard_lock`** — Lock or unlock a custom dashboard by ID (author or org admin only); a locked dashboard refuses update, patch and delete
 - **`list_dashboard_snapshots`** — Frozen point-in-time snapshots for a dashboard (metadata only)
 - **`get_dashboard_snapshot`** — Full frozen snapshot including panel data for RCA / shareable views
 - **`delete_dashboard_snapshot`** — Delete a frozen snapshot by ID
@@ -1118,6 +1119,13 @@ Prefer this over `update_dashboard` for small refinements: unchanged panels are 
 ### delete_dashboard
 
 - `id` (string, required): Dashboard UUID to delete. Readonly system dashboards cannot be deleted.
+
+### set_dashboard_lock
+
+- `id` (string, required): Dashboard UUID.
+- `locked` (boolean, required): `true` locks the dashboard, `false` unlocks it.
+
+Write tool; call it only when the user explicitly asks. Only the dashboard's author or an org admin can lock or unlock it, and built-in dashboards are always read-only. Returns `{"id", "locked"}` with the resulting state. While locked, `update_dashboard`, `patch_dashboard` and `delete_dashboard` fail with an error starting `dashboard is locked`.
 
 ### list_dashboard_snapshots
 
