@@ -36,7 +36,7 @@ import (
 // without asking, and always confirms a destructive one. Every tool acts only on
 // the caller's own Last9 organization, so none is open-world.
 func readOnlyTool(title string) *mcp.ToolAnnotations {
-	return &mcp.ToolAnnotations{Title: title, ReadOnlyHint: true, OpenWorldHint: boolPtr(false)}
+	return &mcp.ToolAnnotations{Title: title, ReadOnlyHint: true, DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)}
 }
 
 // writeTool annotates a tool that changes Last9 state. destructive marks tools
