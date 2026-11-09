@@ -69,10 +69,13 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		return nil, fmt.Errorf("failed to parse time range: %v", err)
 	}
 
+	endFetch := utils.StartToolPhase(ctx, "get_logs", "fetch")
 	result, err := fetchLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
+	endFetch(err)
 	if err != nil {
 		return nil, err
 	}
+	endProcess := utils.StartToolPhase(ctx, "get_logs", "post_process")
 	truncated := addGetLogsGuidance(result, args, getLogsGuidanceContext{
 		startMs:        startTime,
 		endMs:          endTime,
@@ -83,7 +86,11 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		result = summarizeLogResult(result, startTime, endTime, truncated)
 	}
 
+	text := formatJSON(result)
+	endProcess(nil)
+
 	// Build deep link URL
+	endLink := utils.StartToolPhase(ctx, "get_logs", "deep_link")
 	dlBuilder := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID)
 	dashboardIndex := ""
 	hasExplicitIndex := strings.TrimSpace(args.Index) != ""
@@ -99,12 +106,14 @@ func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Con
 		meta = deeplink.ToMeta(dashboardURL)
 	}
 
+	endLink(nil)
+
 	// Return the result in MCP format with deep link
 	return &mcp.CallToolResult{
 		Meta: meta,
 		Content: []mcp.Content{
 			&mcp.TextContent{
-				Text: formatJSON(result),
+				Text: text,
 			},
 		},
 	}, nil
@@ -150,7 +159,9 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 			}
 		}
 		if stages, ok := logjsonQuery.([]map[string]interface{}); ok && !partial {
+			endSanity := utils.StartToolPhase(ctx, "get_logs", "count_sanity")
 			result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
+			endSanity(nil)
 		}
 		return result, nil
 	}
@@ -388,7 +399,9 @@ func fetchViaLogSearchAPI(
 		}
 	}
 	if hasStages && !partial {
+		endSanity := utils.StartToolPhase(ctx, "get_logs", "count_sanity")
 		result = utils.AppendCountSanity(ctx, client, cfg, stages, startTime, endTime, result)
+		endSanity(nil)
 	}
 	return result, nil
 }
