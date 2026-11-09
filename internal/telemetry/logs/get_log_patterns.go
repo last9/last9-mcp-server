@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -57,11 +58,15 @@ func NewGetLogPatternsHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, err
 		}
 
+		endSample := utils.StartToolPhase(ctx, "get_log_patterns", "sample")
 		lines, window, err := scope.sample(ctx, client, cfg, start, end)
+		endSample(err)
 		if err != nil {
 			return nil, nil, err
 		}
+		endMine := utils.StartToolPhase(ctx, "get_log_patterns", "mine")
 		patterns, err := mineLogPatterns(lines)
+		endMine(err)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -74,8 +79,11 @@ func NewGetLogPatternsHandler(client *http.Client, cfg models.Config) func(conte
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to format response: %w", err)
 		}
+		endLink := utils.StartToolPhase(ctx, "get_log_patterns", "deep_link")
+		meta := serviceLogsDeepLink(ctx, client, cfg, scope.search(start, end))
+		endLink(nil)
 		return &mcp.CallToolResult{
-			Meta:    serviceLogsDeepLink(ctx, client, cfg, scope.search(start, end)),
+			Meta:    meta,
 			Content: []mcp.Content{&mcp.TextContent{Text: string(text)}},
 		}, nil, nil
 	}
