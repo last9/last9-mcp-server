@@ -46,6 +46,8 @@ func TestTraceStageKeyAllowlist_AllowsDeclaredKeys(t *testing.T) {
 		{"parse field", map[string]interface{}{"type": "parse", "parser": "json", "field": "Body", "pattern": "(?P<id>.*)", "labels": map[string]interface{}{"user_id": "uid"}}},
 		{"transform transforms", map[string]interface{}{"type": "transform", "transforms": []interface{}{map[string]interface{}{"function": map[string]interface{}{"$split": []interface{}{"SpanName", "/", 1}}, "as": "endpoint"}}}},
 		{"select order limit offset", map[string]interface{}{"type": "select", "labels": map[string]interface{}{"ServiceName": "service"}, "order": "Duration", "limit": 10, "offset": 1}},
+		{"select direction", map[string]interface{}{"type": "select", "order": []interface{}{"Duration"}, "direction": 1}},
+		{"select time range", map[string]interface{}{"type": "select", "starttime": "1793131500", "endtime": "1793131560"}},
 		{"aggregate fields", map[string]interface{}{"type": "aggregate", "aggregates": []interface{}{map[string]interface{}{"function": map[string]interface{}{"$count": []interface{}{}}, "as": "count"}}, "groupby": map[string]interface{}{"ServiceName": "service"}}},
 		{"window aggregate", map[string]interface{}{"type": "window_aggregate", "function": map[string]interface{}{"$count": []interface{}{}}, "as": "count", "window": []interface{}{5, "m"}}},
 	}
