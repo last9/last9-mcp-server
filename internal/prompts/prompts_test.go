@@ -375,6 +375,24 @@ func TestGetTracesDescriptionCriticalRules(t *testing.T) {
 	}
 }
 
+func TestTraceQueryGuidanceDistinguishesSpansFromTraces(t *testing.T) {
+	checks := map[string]string{
+		"description": prompts.GetTracesDescription,
+		"reference":   prompts.TracejsonReference,
+	}
+	for name, body := range checks {
+		for _, phrase := range []string{
+			"filter-only results contain one row per span",
+			"deduplicate by `TraceId`",
+			"fetch the complete trace with `get_service_traces`",
+		} {
+			if !strings.Contains(body, phrase) {
+				t.Errorf("%s missing %q", name, phrase)
+			}
+		}
+	}
+}
+
 func TestPrometheusQueryDescriptionsUseValidPercentileSources(t *testing.T) {
 	for name, desc := range map[string]string{
 		"instant": prompts.PromqlInstantQueryDetails,
