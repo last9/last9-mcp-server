@@ -30,9 +30,42 @@ func CheckDashboardArguments(args json.RawMessage) error {
 	if !ok {
 		return nil
 	}
+	normalizeDashboardShape(dashboard)
 	s := shapeChecker{requireFields: true}
 	s.check(dashboardObjectSchema(""), dashboard, "dashboard", "")
 	return s.err()
+}
+
+func normalizeDashboardShape(dashboard map[string]any) {
+	if panels, set := dashboard["panels"]; set && panels == nil {
+		dashboard["panels"] = []any{}
+	}
+	panels, _ := dashboard["panels"].([]any)
+	for _, raw := range panels {
+		panel, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if panel["layout"] == nil {
+			delete(panel, "layout")
+		}
+		if queries, set := panel["queries"]; set && queries == nil {
+			panel["queries"] = []any{}
+		}
+		visualization, _ := panel["visualization"].(map[string]any)
+		logsConfig, _ := visualization["logs_config"].(map[string]any)
+		if logsConfig["sort_order"] == "" {
+			logsConfig["sort_order"] = "desc"
+		}
+		queries, _ := panel["queries"].([]any)
+		for _, rawQuery := range queries {
+			query, _ := rawQuery.(map[string]any)
+			legend, _ := query["legend"].(map[string]any)
+			if legend["type"] == "" {
+				legend["type"] = "auto"
+			}
+		}
+	}
 }
 
 // checkPanelShape flags aliased and mistyped fields of a patch panel. Missing fields
@@ -146,7 +179,7 @@ func (s *shapeChecker) requireFrom(schema, cond, obj map[string]any, path string
 	props, _ := schema["properties"].(map[string]any)
 	required, _ := cond["required"].([]string)
 	for _, key := range required {
-		if _, set := obj[key]; !set {
+		if _, set := obj[key]; !set && !hasAlias(obj, key) {
 			s.missing(props, key, path)
 		}
 	}
@@ -161,12 +194,39 @@ func (s *shapeChecker) requireFrom(schema, cond, obj map[string]any, path string
 	}
 }
 
+func hasAlias(obj map[string]any, field string) bool {
+	for _, aliases := range fieldAliases {
+		for alias, native := range aliases {
+			if native == field {
+				_, set := obj[alias]
+				return set
+			}
+		}
+	}
+	return false
+}
+
 // needsField reports whether field is required, or required by an anyOf branch while no
 // branch is satisfied by a field obj sets. A branch over unset fields holds only vacuously:
 // the panel needs field once it sets them (e.g. visualization).
 func needsField(schema, obj map[string]any, field string) bool {
 	if required, _ := schema["required"].([]string); slices.Contains(required, field) {
 		return true
+	}
+	allOf, _ := schema["allOf"].([]any)
+	for _, raw := range allOf {
+		condition, _ := raw.(map[string]any)
+		then, _ := condition["then"].(map[string]any)
+		required, _ := then["required"].([]string)
+		if !slices.Contains(required, field) {
+			continue
+		}
+		if _, hasVisualization := obj["visualization"]; !hasVisualization {
+			return true
+		}
+		if predicate, _ := condition["if"].(map[string]any); matches(predicate, obj) {
+			return true
+		}
 	}
 	anyOf, _ := schema["anyOf"].([]any)
 	inBranch := false
@@ -193,6 +253,9 @@ func constrainsSetField(schema, obj map[string]any) bool {
 }
 
 func matches(schema map[string]any, value any) bool {
+	if excluded, ok := schema["not"].(map[string]any); ok && matches(excluded, value) {
+		return false
+	}
 	s := shapeChecker{requireFields: true}
 	s.check(schema, value, "", "")
 	return len(s.problems) == 0
@@ -236,6 +299,9 @@ func childKind(key string) string {
 }
 
 func valueProblem(schema map[string]any, value any) string {
+	if excluded, ok := schema["not"].(map[string]any); ok && matches(excluded, value) {
+		return fmt.Sprintf("got %s, want another value", describeValue(value))
+	}
 	if !hasSchemaType(schema, value) {
 		return fmt.Sprintf("got %s, want %s", jsonKind(value), describeSchema(schema))
 	}

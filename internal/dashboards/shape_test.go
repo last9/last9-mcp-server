@@ -86,7 +86,7 @@ func TestCheckDashboardArguments_StillRejectsMissingQueryLayoutAndInvalidEnums(t
 func TestCheckDashboardArguments_NamesWrongContainerTypes(t *testing.T) {
 	for args, want := range map[string]string{
 		`{"dashboard":{"name":"x","panels":{}}}`:     "dashboard.panels: got object, want array",
-		`{"dashboard":{"name":"x","panels":[null]}}`: "dashboard.panels[0]: got null, want object {name, layout, visualization}",
+		`{"dashboard":{"name":"x","panels":[null]}}`: "dashboard.panels[0]: got null, want object {name, visualization}",
 	} {
 		err := CheckDashboardArguments(json.RawMessage(args))
 		if err == nil || !strings.Contains(err.Error(), want) {

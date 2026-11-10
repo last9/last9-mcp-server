@@ -56,7 +56,9 @@ func TestPreviewDashboardValidatesCreateDefinition(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if version := asAnySlice(candidate["panels"])[0].(map[string]any)["version"]; version != float64(1) {
+				panel := asAnySlice(candidate["panels"])[0].(map[string]any)
+				visualization, _ := panel["visualization"].(map[string]any)
+				if version := panel["version"]; visualization["type"] != "section" && version != float64(1) {
 					t.Fatalf("prepared version=%v want 1", version)
 				}
 			}

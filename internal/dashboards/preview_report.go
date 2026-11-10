@@ -113,6 +113,14 @@ func previewResult(report map[string]any) ([]byte, error) {
 }
 
 func validatePreviewSchema(value any, definition map[string]any) error {
+	if dashboard, ok := value.(map[string]any); ok {
+		properties, _ := definition["properties"].(map[string]any)
+		if _, isDashboard := properties["panels"]; isDashboard {
+			normalizeDashboardShape(dashboard)
+		} else {
+			normalizeDashboardShape(map[string]any{"panels": []any{dashboard}})
+		}
+	}
 	raw, err := json.Marshal(definition)
 	if err != nil {
 		return err

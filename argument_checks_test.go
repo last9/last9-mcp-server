@@ -109,7 +109,7 @@ func TestStrictModeRefusesTokenlessDashboardWritesBeforeArgumentChecks(t *testin
 
 func TestDashboardArgumentCheckRunsAfterIntegerCoercion(t *testing.T) {
 	session := newInMemoryClientSession(t)
-	args := `{"dashboard":{"name":"x","panels":[{"name":"p","version":"1","gridPos":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"section"}}]}}`
+	args := `{"dashboard":{"name":"x","panels":[{"name":"p","version":"1","gridPos":{"x":0,"y":0,"w":6,"h":6},"visualization":{"type":"stat"},"queries":[]}]}}`
 	result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: "create_dashboard", Arguments: json.RawMessage(args)})
 	assertToolError(t, result, toolErrorExpectation{
 		contains: []string{"dashboard.panels[0].gridPos: unknown panel field; use layout"},
