@@ -189,21 +189,19 @@ func sanitizeLogFieldOperatorArgs(value interface{}, operator string, fieldArgIn
 	if !ok {
 		return sanitized, nil
 	}
-	trimmedFieldRef := strings.TrimSpace(fieldRef)
+	fieldPath := fmt.Sprintf("%s[%d]", path, fieldArgIndex)
+	next, err := sanitizeStageFieldRef(fieldRef, fieldPath, aliases)
+	if err != nil {
+		return nil, err
+	}
 	if operator == "$notnull" {
-		if _, ok := aggregateOutputs[trimmedFieldRef]; ok {
-			fieldPath := fmt.Sprintf("%s[%d]", path, fieldArgIndex)
+		if _, ok := aggregateOutputs[next]; ok {
 			return nil, newLogValidationError(
 				LogValidationInvalidField,
 				fieldPath,
-				fmt.Sprintf("aggregate output %q is never null at %s; remove the redundant $notnull filter", trimmedFieldRef, fieldPath),
+				fmt.Sprintf("aggregate output %q is never null at %s; remove the redundant $notnull filter", next, fieldPath),
 			)
 		}
-	}
-
-	next, err := sanitizeStageFieldRef(fieldRef, fmt.Sprintf("%s[%d]", path, fieldArgIndex), aliases)
-	if err != nil {
-		return nil, err
 	}
 	sanitized[fieldArgIndex] = next
 
