@@ -26,6 +26,7 @@ type AlertRuleInput struct {
 type AlertRule struct {
 	ID         string          `json:"id"`
 	EntityID   string          `json:"entity_id"`
+	GroupName  string          `json:"group_name,omitempty"`
 	RuleName   string          `json:"rule_name"`
 	Properties json.RawMessage `json:"properties"`
 }

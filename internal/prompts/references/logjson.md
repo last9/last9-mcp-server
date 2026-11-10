@@ -51,6 +51,7 @@ onset conclusions (a narrow raw sample is not a trend):
 5. Call the `get_logs` tool with canonical time params:
    - Use `start_time_iso` + `end_time_iso` when the user gave explicit absolute dates/times
    - Otherwise use `lookback_minutes` (default: 5 when no time is specified)
+   - Chunked raw searches are limited to 24 chunks (currently at most 24 hours / 1440 minutes). Larger plans are refused before any log query is sent. Narrow `lookback_minutes` or the `start_time_iso`/`end_time_iso` window; do not retry unchanged. Lowering `limit` does not reduce the chunk count. Aggregate pipelines and server-side log search do not use this client-side chunk budget.
 6. Analyze the results and provide insights to the user
 
 **LOG SERVICE INVENTORY BEFORE BROAD SEARCH:**
@@ -143,6 +144,8 @@ The JSON pipeline format supports filtering, parsing, aggregation on log data.
 3. **aggregate** - Perform aggregations (sum, avg, count, etc.)
 4. **window_aggregate** - Time-windowed aggregations
 
+No other stage type exists: `transform` and `select` are rejected.
+
 ### Filter Operations:
 ```json
 {
@@ -194,6 +197,7 @@ The JSON pipeline format supports filtering, parsing, aggregation on log data.
 
 ### Parse Operations:
 Note that regex parsing operators also work as regex filters
+Regexps (`$regex` family and the `regexp` parser) use RE2 syntax: no lookahead/lookbehind, backreferences or possessive quantifiers; negate with `$notregex`.
 ```json
 {
   "type": "parse",

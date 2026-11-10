@@ -2,6 +2,7 @@ package changeimpact
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,6 +29,18 @@ func TestDrillDownNamesNextToolsWithWindows(t *testing.T) {
 	}
 	if tools["get_apm_service_deviations"]["baseline_end_time_iso"] != change.Format(time.RFC3339) || tools["get_service_traces"]["service_name"] != "checkout" {
 		t.Fatalf("drill_down arguments = %+v", tools)
+	}
+	for _, d := range report.DrillDown {
+		if d.Tool != "get_service_performance_details" {
+			continue
+		}
+		raw := d.Arguments["include_series"] == true
+		if mentionsSeries := strings.Contains(d.Why, "time series"); raw != mentionsSeries {
+			t.Fatalf("include_series=%v but why = %q", d.Arguments["include_series"], d.Why)
+		}
+		if !raw && !strings.Contains(d.Why, "summary") {
+			t.Fatalf("summary-mode drill-down must say it returns a summary: %q", d.Why)
+		}
 	}
 }
 

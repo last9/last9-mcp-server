@@ -1,12 +1,12 @@
-Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`conditions`.
+Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`conditions`. Stages: `filter`|`parse`|`aggregate`|`window_aggregate` (no `transform`/`select`).
 
 **Profile:** service→`get_service_profile`; `signal_shape`/`telemetry`. Stale→discovery; 400→`get_log_attributes_for_pipeline`, retry.
 
-**Order:** scope→parse→filter→group/aggregate.
+**Order:** filter (scope: service/env/tenant)→parse→filter→aggregate. Stage types: only filter/parse/aggregate/window_aggregate; parsed labels: attributes['key'].
 
-**Filter:** `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`. Predicates: one standalone, many in `$and`. Ops: `$and`/`$or`/`$not`, `$eq`/`$neq` (is not X; never `$not`+`$eq`)/`$gt`/`$gte`/`$lt`/`$lte`, `$regex`. Body words: `$containsWords` args `[field,word]` (e.g. `["Body","timeout"]`); ALL→`$and`; ANY→`$or`; never `$icontainsWords`.
+**Filter:** `[{"type":"filter","query":{"$and":[{"$eq":["SeverityText","ERROR"]}]}}]`. Predicates: one standalone, many in `$and`. Ops: `$and`/`$or`/`$not`, `$eq`/`$neq` (is not X; never `$not`+`$eq`)/`$gt`/`$gte`/`$lt`/`$lte`, `$regex` (RE2: no lookaround). Body words: `$containsWords` args `[field,word]` (e.g. `["Body","timeout"]`); ALL→`$and`; ANY→`$or`; never `$icontainsWords`.
 
-**Parse:** JSON `{"type":"parse","parser":"json","field":"Body","labels":{"key":"key"}}`; also logfmt/regexp. Parse Body-derived fields before filtering, grouping, or aggregation. `attributes['key']`.
+**Parse:** JSON `{"type":"parse","parser":"json","field":"Body","labels":{"key":"key"}}`; also logfmt/regexp. Parse Body-derived fields before filtering, grouping, or aggregation, then reference labels as `attributes['key']`.
 
 **Aggregate:** `{"type":"aggregate","aggregates":[{"function":{"$count":[]},"as":"count"}]}`; optional `groupby`. `$quantile` is the general/default percentile operator.
 
@@ -14,7 +14,7 @@ Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`cond
 
 **Percentiles:** Day-wise: exactly ONE get_logs call over the full half-open start_time_iso/end_time_iso range with one window_aggregate; NEVER one call per day; honor requested timezone. Parse, then use the canonical anchored numeric `$regex` shown: `^[0-9]+(?:\\.[0-9]+)?$`. It excludes non-matching values from percentile calculations; disclose that exclusion in the answer. Only report returned P99 values; empty result→say unavailable and stop (no count/sample substitute). Never template/merge/recombine aggregated percentile rows. Use a discovered normalized route. Raw URI: aggregate exact values; never normalize/merge later. If `l9_result.partial=true`, preserve rows and disclose partial coverage. Units: report source; never convert.
 
-**Attrs:** exists→neq(field,"") (not `$exists`). Dotted (`community_member_id`)→`attributes['key']`/`resources['key']`; bare: ServiceName/Body/SeverityText/Timestamp.
+**Attrs:** exists→neq(field,"") (not `$exists`). `community_member_id`→`attributes['key']`, `resource_attributes['key']`→`resources['key']`; bare: ServiceName/Body/SeverityText/Timestamp.
 
 **Scope:** no `service_name` arg; filter ServiceName in query. tenant/env→`resources['last9.tenant']`/`resources['deployment.environment']`; k8s.*→`resources['k8s.…']`; service.name→`ServiceName`.
 
@@ -23,6 +23,8 @@ Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`cond
 **HTTP counts:** `get_logs`; status from Body, not SeverityText. `get_service_logs` for lines.
 
 **Time:** `lookback_minutes` default **5**; absolute→`start_time_iso`+`end_time_iso` (not Timestamp).
+
+**Lines:** omit `response_mode`; >20 lines→summary (counts, severities, histogram, top patterns+samples); `raw` only for exact text.
 
 **l9_sanity:** high→add filter, recount; zero→inspect samples.
 
@@ -37,4 +39,4 @@ Counts, aggregates, percentiles or ad-hoc filters over logs, across services or 
 - APM fleet error ranking: `get_service_summary`
 
 ## Output shape
-Log rows or aggregate rows, with `l9_result` / `l9_sanity` metadata on partial or suspicious counts.
+Line summary, log rows (`raw`) or aggregate rows, with `l9_result` / `l9_sanity` metadata on partial or suspicious counts.
