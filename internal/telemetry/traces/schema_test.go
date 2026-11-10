@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -142,6 +143,24 @@ func TestGetTracesInputSchema_DocumentsAllowedStageKeys(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestGetTracesInputSchema_DocumentsSelectTimestampFormat(t *testing.T) {
+	schema := GetTracesInputSchema()
+	properties := schema["properties"].(map[string]interface{})
+	query := properties["tracejson_query"].(map[string]interface{})
+	selectStage := findStageByType(query["items"].(map[string]interface{})["oneOf"].([]interface{}), "select")
+	selectProperties := selectStage["properties"].(map[string]interface{})
+
+	for name, example := range map[string]string{"starttime": `"1793131500"`, "endtime": `"1793131560"`} {
+		property := selectProperties[name].(map[string]interface{})
+		description := property["description"].(string)
+		for _, want := range []string{"Unix timestamp in seconds", example, "Optional; no default", "start_time_iso and end_time_iso"} {
+			if !strings.Contains(description, want) {
+				t.Errorf("%s description %q does not contain %q", name, description, want)
+			}
+		}
 	}
 }
 
