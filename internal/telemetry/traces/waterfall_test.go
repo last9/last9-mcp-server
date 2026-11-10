@@ -48,17 +48,52 @@ func hasWarning(warnings []string, substring string) bool {
 }
 
 func TestTraceWaterfallHandlerRejectsOversizedUpstreamBodyBeforeDecode(t *testing.T) {
+	validBody := append([]byte(`{"traces":[]}`), bytes.Repeat([]byte{' '}, traceWaterfallMaxResponseBytes-len(`{"traces":[]}`)+1)...)
 	client := &http.Client{Transport: waterfallRoundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewReader(bytes.Repeat([]byte{' '}, traceWaterfallMaxResponseBytes+1))),
+			Body:       io.NopCloser(bytes.NewReader(validBody)),
 			Header:     make(http.Header),
 		}, nil
 	})}
 	handler := NewGetTraceWaterfallHandler(client, tracesTestConfig("https://example.test"))
-	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceWaterfallArgs{TraceID: "trace-1"})
-	if err == nil {
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceWaterfallArgs{TraceID: "0123456789abcdef0123456789abcdef"})
+	if err == nil || !strings.Contains(err.Error(), "exceeds 16777216 bytes") {
 		t.Fatalf("expected bounded-body error, got %v", err)
+	}
+}
+
+func TestTraceWaterfallHandlerAcceptsBodyAtUpstreamLimit(t *testing.T) {
+	validBody := append([]byte(`{"traces":[]}`), bytes.Repeat([]byte{' '}, traceWaterfallMaxResponseBytes-len(`{"traces":[]}`))...)
+	client := &http.Client{Transport: waterfallRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(validBody)), Header: make(http.Header)}, nil
+	})}
+	handler := NewGetTraceWaterfallHandler(client, tracesTestConfig("https://example.test"))
+	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceWaterfallArgs{TraceID: "0123456789abcdef0123456789abcdef"}); err != nil {
+		t.Fatalf("body at limit: %v", err)
+	}
+}
+
+func TestTraceWaterfallHandlerPreservesEmptySpanArrays(t *testing.T) {
+	client := &http.Client{Transport: waterfallRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"traces":[]}`)), Header: make(http.Header)}, nil
+	})}
+	handler := NewGetTraceWaterfallHandler(client, tracesTestConfig("https://example.test"))
+	result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceWaterfallArgs{TraceID: "0123456789abcdef0123456789abcdef"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := result.Content[0].(*mcp.TextContent)
+	var payload struct {
+		Data map[string]json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(text.Text), &payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"spans", "slowest_spans", "largest_self_time_contributors"} {
+		if string(payload.Data[field]) != "[]" {
+			t.Errorf("data.%s = %s, want []", field, payload.Data[field])
+		}
 	}
 }
 

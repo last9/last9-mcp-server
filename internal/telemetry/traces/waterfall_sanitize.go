@@ -289,7 +289,7 @@ func (s *traceEvidenceSanitizer) sanitizeWaterfallSpans(spans []WaterfallSpan) [
 		s.truncations["collection_items"] += limit - traceWaterfallMaxSpansCeiling
 		limit = traceWaterfallMaxSpansCeiling
 	}
-	out := append([]WaterfallSpan(nil), spans[:limit]...)
+	out := append([]WaterfallSpan{}, spans[:limit]...)
 	for i := range out {
 		out[i].SpanID = s.sanitizeString("span_id", out[i].SpanID)
 		out[i].ParentSpanID = s.sanitizeString("parent_span_id", out[i].ParentSpanID)
