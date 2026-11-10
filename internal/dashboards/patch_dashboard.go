@@ -17,6 +17,7 @@ import (
 	"last9-mcp/internal/last9api"
 	apidashboards "last9-mcp/internal/last9api/dashboards"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -90,6 +91,11 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 			return nil, nil, err
 		}
 
+		unlock, err := lockDashboard(ctx, args.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		defer unlock()
 		api := last9api.NewClient(client, cfg)
 		current, err := apidashboards.GetDashboard(ctx, api, args.ID)
 		if err != nil {
@@ -131,6 +137,16 @@ func NewPatchDashboardHandler(client *http.Client, cfg models.Config) func(conte
 		}
 		return patchResult(dlBuilder, diff), nil, nil
 	}
+}
+
+// lockDashboard is held from the read through the PUT, so a concurrent patch of this
+// dashboard cannot write back the version this call read, dropping its changes.
+func lockDashboard(ctx context.Context, id string) (unlock func(), err error) {
+	unlock, err = utils.LockKey(ctx, "dashboard:"+utils.FoldKey(id))
+	if err != nil {
+		return nil, fmt.Errorf("another patch_dashboard call was still changing dashboard %s; nothing was written: %w", id, err)
+	}
+	return unlock, nil
 }
 
 func patchResult(dlBuilder *deeplink.Builder, diff patchDiff) *mcp.CallToolResult {

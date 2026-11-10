@@ -36,6 +36,11 @@ func NewCreateAlertHandler(client *http.Client, cfg models.Config) func(context.
 		if refusal, err := refuseChartDerivedKPI(ctx, api, requestSession(req), args); refusal != nil || err != nil {
 			return refusal, nil, err
 		}
+		unlock, err := lockAlertRuleName(ctx, args.EntityID, args.AlertRule.RuleName)
+		if err != nil {
+			return nil, nil, err
+		}
+		defer unlock()
 		if refusal, err := refuseDuplicateRuleName(ctx, api, args.EntityID, args.AlertRule.RuleName); refusal != nil || err != nil {
 			return refusal, nil, err
 		}
