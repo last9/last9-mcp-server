@@ -63,6 +63,10 @@ func boundRawResult(full *mcp.CallToolResult, count int, info *mcp.Implementatio
 	return fallback, nil
 }
 
-func rawLimitHint(returned, fetched int) string {
-	return fmt.Sprintf("Response limited to 32000 bytes; returned %d of %d fetched log entries. Narrow the filters or time range, or open logs in the UI.", returned, fetched)
+func rawLimitHint(returned, fetched, fetchLimit int) string {
+	hint := fmt.Sprintf("Response limited to 32000 bytes; returned %d of %d fetched log entries. Use a lower limit for a cheaper request, narrow the filters or time range, or open logs in the UI.", returned, fetched)
+	if fetched >= fetchLimit {
+		hint += " The fetch limit was reached, so more results may match."
+	}
+	return hint
 }

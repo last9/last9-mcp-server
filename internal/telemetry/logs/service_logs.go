@@ -32,6 +32,7 @@ type ServiceLogsResponse struct {
 	TotalMatchingLines *int           `json:"total_matching_lines,omitempty"`
 	LogsTruncated      *bool          `json:"logs_truncated,omitempty"`
 	SearchStats        map[string]any `json:"search_stats,omitempty"`
+	RawLimit           map[string]any `json:"l9_raw_limit,omitempty"`
 	Hint               string         `json:"hint,omitempty"`
 	coverageStatus     string
 }
@@ -183,7 +184,8 @@ func NewGetServiceLogsHandler(client *http.Client, cfg models.Config) func(conte
 			limited.Count = n
 			truncated := true
 			limited.LogsTruncated = &truncated
-			limited.Hint = rawLimitHint(n, count)
+			limited.RawLimit = map[string]any{"returned_entries": n, "fetched_entries": count, "max_bytes": maxRawResultBytes}
+			limited.Hint = rawLimitHint(n, count, limit)
 			limited.coverageStatus = "partial"
 			encoded, err := json.MarshalIndent(&limited, "", "  ")
 			if err != nil {
