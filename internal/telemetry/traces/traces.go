@@ -85,11 +85,17 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	if err != nil {
 		return nil, err
 	}
+	effectiveLimit := effectiveGetTracesLimit(cfg, args.Limit)
+	maxLimit := configuredMaxGetTracesEntries(cfg)
+	if selectLimit, ok := finalSelectLimit(args.TracejsonQuery); ok {
+		effectiveLimit = selectLimit
+		maxLimit = maxSelectLimit
+	}
 	addTraceJSONGuidance(result, args, traceGuidanceContext{
 		startMs:        startTime,
 		endMs:          endTime,
-		effectiveLimit: effectiveGetTracesLimit(cfg, args.Limit),
-		maxLimit:       configuredMaxGetTracesEntries(cfg),
+		effectiveLimit: effectiveLimit,
+		maxLimit:       maxLimit,
 	})
 
 	// Build deep link URL

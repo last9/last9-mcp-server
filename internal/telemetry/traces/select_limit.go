@@ -49,6 +49,18 @@ func boundFinalSelectLimit(stages []map[string]interface{}, requestLimit int) {
 	last["limit"] = min(requestLimit, maxSelectLimit)
 }
 
+func finalSelectLimit(stages []map[string]interface{}) (int, bool) {
+	if len(stages) == 0 {
+		return 0, false
+	}
+	last := stages[len(stages)-1]
+	if stageType, _ := last["type"].(string); stageType != "select" {
+		return 0, false
+	}
+	limit, ok := wholeNumber(last["limit"])
+	return limit, ok
+}
+
 func wholeNumber(v interface{}) (int, bool) {
 	switch n := v.(type) {
 	case int:
