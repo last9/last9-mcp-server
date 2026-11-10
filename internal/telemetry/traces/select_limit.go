@@ -13,16 +13,13 @@ const (
 	maxSelectOffset = 10000
 )
 
-// validateFinalSelectBounds rejects an explicit limit/offset on the last
-// select stage that is not a whole number in range. A missing limit is
-// filled in by boundFinalSelectLimit before the request is sent.
 func validateFinalSelectBounds(stage map[string]interface{}, path string) error {
 	if raw, ok := stage["limit"]; ok {
 		if n, whole := wholeNumber(raw); !whole || n < 1 || n > maxSelectLimit {
 			return &tracePipelineError{
 				category: traceCategoryInvalidField,
 				path:     path + ".limit",
-				msg:      fmt.Sprintf(`"limit" at %s.limit must be an integer from 1 to %d, e.g. {"type":"select","order":["Duration"],"limit":10}; got %v`, path, maxSelectLimit, raw),
+				msg:      fmt.Sprintf(`"limit" at %s.limit must be an integer from 1 to %d, e.g. {"type":"select","labels":{"ServiceName":"svc"},"order":["Duration"],"limit":10}; got %v`, path, maxSelectLimit, raw),
 			}
 		}
 	}
@@ -38,8 +35,6 @@ func validateFinalSelectBounds(stage map[string]interface{}, path string) error 
 	return nil
 }
 
-// boundFinalSelectLimit sets the request limit, capped at maxSelectLimit, on a
-// final select stage that has none.
 func boundFinalSelectLimit(stages []map[string]interface{}, requestLimit int) {
 	if len(stages) == 0 {
 		return
