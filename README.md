@@ -756,7 +756,7 @@ Exactly one of `trace_id` or `service_name` is required.
 - `population` (string, optional): `service` or `operation`; derived from whether `operation` is present when omitted.
 - `filters` (array, optional): Trace JSON filter conditions.
 - `candidate_attributes` (array, optional): Maximum 8; omit for bounded discovery.
-- `latency_threshold_ms` / `latency_percentile` (number, optional): `latency` mode requires exactly one. Percentile is greater than 0 and less than 100 and uses the same normalized population/window as the cohorts. Both are rejected for other modes.
+- `latency_threshold_ms` / `latency_percentile` (number, optional): `latency` mode requires exactly one. Percentile is a whole number greater than 0 and less than 100 and uses the same normalized population/window as the cohorts. Both are rejected for other modes.
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `lookback_minutes` (integer, optional): Default: 15. Maximum: 15.
 - `baseline_start_time_iso` / `baseline_end_time_iso` (string, optional): Required for `time` mode; non-overlapping and equal in duration to the target window.

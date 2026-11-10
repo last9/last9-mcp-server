@@ -163,6 +163,27 @@ func TestTraceAttributeDeviationsHandlerSendsLatencyPercentile(t *testing.T) {
 	}
 }
 
+func TestTraceAttributeDeviationsHandlerRejectsFractionalLatencyPercentile(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	handler := NewGetTraceAttributeDeviationsHandler(server.Client(), tracesTestConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeDeviationsArgs{
+		ComparisonMode: "latency", ServiceName: "checkout", Environment: "production",
+		LatencyPercentile: deviationFloat64(99.5),
+	})
+	if err == nil || !strings.Contains(err.Error(), "whole number") {
+		t.Fatalf("expected whole-number percentile error, got %v", err)
+	}
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("upstream requests = %d, want 0", got)
+	}
+}
+
 // The sanitizer must not forward a {"$and":[...]} logical operator as a single
 // filters-array element. When a filters element mixes $notnull/$exists with a
 // sibling field operator, the shared existence rewriter folds it to $and; the

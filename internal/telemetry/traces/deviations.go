@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -47,7 +48,7 @@ type GetTraceAttributeDeviationsArgs struct {
 	Filters             []map[string]interface{} `json:"filters,omitempty" jsonschema:"Optional additional trace filter conditions in trace JSON operator form"`
 	CandidateAttributes []string                 `json:"candidate_attributes,omitempty" jsonschema:"Candidate attributes from get_trace_attributes_for_pipeline; maximum 8. Omit for bounded safe discovery."`
 	LatencyThresholdMs  *float64                 `json:"latency_threshold_ms,omitempty" jsonschema:"Latency split in milliseconds; use exactly one latency selector in latency mode"`
-	LatencyPercentile   *float64                 `json:"latency_percentile,omitempty" jsonschema:"Latency percentile in the same scoped population; greater than 0 and less than 100; use exactly one latency selector in latency mode"`
+	LatencyPercentile   *float64                 `json:"latency_percentile,omitempty" jsonschema:"Whole-number latency percentile in the same scoped population; greater than 0 and less than 100; use exactly one latency selector in latency mode"`
 	StartTimeISO        string                   `json:"start_time_iso,omitempty" jsonschema:"Current/analysis window start in RFC3339"`
 	EndTimeISO          string                   `json:"end_time_iso,omitempty" jsonschema:"Current/analysis window end in RFC3339"`
 	LookbackMinutes     int                      `json:"lookback_minutes,omitempty" jsonschema:"Lookback ending now; default 15, maximum 15"`
@@ -366,6 +367,9 @@ func deviationLatencySelectors(mode string, thresholdValue, percentileValue *flo
 		}
 		if percentileValue != nil && (*percentileValue <= 0 || *percentileValue >= 100) {
 			return nil, nil, fmt.Errorf("latency_percentile must be greater than 0 and less than 100")
+		}
+		if percentileValue != nil && math.Trunc(*percentileValue) != *percentileValue {
+			return nil, nil, fmt.Errorf("latency_percentile must be a whole number")
 		}
 		if thresholdValue != nil {
 			return thresholdValue, nil, nil
