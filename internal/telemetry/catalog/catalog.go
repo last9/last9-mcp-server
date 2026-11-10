@@ -2,18 +2,18 @@
 package catalog
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 
-	"last9-mcp/internal/constants"
+	"last9-mcp/internal/last9api"
+	apilogs "last9-mcp/internal/last9api/logs"
+	apitraces "last9-mcp/internal/last9api/traces"
 	"last9-mcp/internal/models"
 	logtelemetry "last9-mcp/internal/telemetry/logs"
 	"last9-mcp/internal/utils"
@@ -260,43 +260,28 @@ func validateArgs(args CatalogArgs, cfg models.Config) (Scope, models.Config, in
 }
 
 func fetchFields(ctx context.Context, client *http.Client, cfg models.Config, source, start, end, index string) ([]string, int, bool, string, error) {
-	endpoint := constants.EndpointTracesSeries
+	var data []map[string]json.RawMessage
+	var status string
+	var result json.RawMessage
+	apiClient := last9api.NewClient(client, cfg)
 	if source == "logs" {
-		endpoint = constants.EndpointLogsSeries
+		response, err := apilogs.QuerySeries(ctx, apiClient, apilogs.QuerySeriesInput{Start: start, End: end, Index: index})
+		if err != nil {
+			return nil, 0, false, "", err
+		}
+		data, status, result = response.Data, response.Status, response.Result
+	} else {
+		response, err := apitraces.QuerySeries(ctx, apiClient, apitraces.QuerySeriesInput{Start: start, End: end})
+		if err != nil {
+			return nil, 0, false, "", err
+		}
+		data, status, result = response.Data, response.Status, response.Result
 	}
-	params := url.Values{"region": []string{cfg.Region}, "start": []string{start}, "end": []string{end}, "exact_bounds": []string{"true"}}
-	if index != "" {
-		params.Set("index", index)
-	}
-	reqBody, _ := json.Marshal(map[string]any{"pipeline": []map[string]any{}})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.APIBaseURL+endpoint+"?"+params.Encode(), bytes.NewReader(reqBody))
-	if err != nil {
-		return nil, 0, false, "", err
-	}
-	req.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
-	req.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
-	req.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, 0, false, "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, 0, false, "", fmt.Errorf("series returned status %d", resp.StatusCode)
-	}
-	var payload struct {
-		Data   []map[string]json.RawMessage `json:"data"`
-		Status string                       `json:"status"`
-		Result json.RawMessage              `json:"l9_result"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, 0, false, "", err
-	}
-	if payload.Status != "success" {
-		return nil, 0, false, "", fmt.Errorf("series returned status %q", payload.Status)
+	if status != "success" {
+		return nil, 0, false, "", fmt.Errorf("series returned status %q", status)
 	}
 	seen := map[string]bool{}
-	for _, row := range payload.Data {
+	for _, row := range data {
 		for field := range row {
 			if field != "" {
 				seen[field] = true
@@ -308,15 +293,15 @@ func fetchFields(ctx context.Context, client *http.Client, cfg models.Config, so
 		fields = append(fields, field)
 	}
 	sort.Strings(fields)
-	envelope, err := parseBackendEnvelope(payload.Result)
+	envelope, err := parseBackendEnvelope(result)
 	if err != nil {
-		return fields, len(payload.Data), true, "invalid backend attestation: " + err.Error(), nil
+		return fields, len(data), true, "invalid backend attestation: " + err.Error(), nil
 	}
 	reason := envelope.Reason
 	if envelope.Partial && reason == "" {
 		reason = "series response is partial"
 	}
-	return fields, len(payload.Data), envelope.Partial, reason, nil
+	return fields, len(data), envelope.Partial, reason, nil
 }
 
 func parseBackendEnvelope(raw json.RawMessage) (ResultEnvelope, error) {

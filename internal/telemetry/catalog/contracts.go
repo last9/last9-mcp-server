@@ -7,12 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 
-	"last9-mcp/internal/constants"
+	"last9-mcp/internal/last9api"
+	apidatasources "last9-mcp/internal/last9api/datasources"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 )
@@ -281,29 +280,9 @@ func FetchContracts(ctx context.Context, client *http.Client, cfg models.Config,
 	if !ok || ds.ID == "" {
 		return Contracts{}, fmt.Errorf("datasource %q has no API identity", datasource)
 	}
-	if cfg.TokenManager == nil {
-		return Contracts{}, fmt.Errorf("source contracts require an access token")
-	}
-	query := url.Values{"schema_version": {strconv.Itoa(schemaVersion)}}
-	if index != "" {
-		query.Set("index", index)
-	}
-	path := fmt.Sprintf("/datasources/%s/api-source-contracts/?%s", url.PathEscape(ds.ID), query.Encode())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.APIBaseURL+path, nil)
-	if err != nil {
-		return Contracts{}, err
-	}
-	req.Header.Set(constants.HeaderAccept, constants.HeaderAcceptJSON)
-	req.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
-	resp, err := client.Do(req)
-	if err != nil {
-		return Contracts{}, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return Contracts{}, fmt.Errorf("source contracts returned status %d", resp.StatusCode)
-	}
-	contents, err := io.ReadAll(resp.Body)
+	contents, err := apidatasources.GetAPISourceContracts(ctx, last9api.NewClient(client, cfg), apidatasources.GetAPISourceContractsInput{
+		DatasourceID: ds.ID, Index: index, SchemaVersion: schemaVersion,
+	})
 	if err != nil {
 		return Contracts{}, err
 	}
