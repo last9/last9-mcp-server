@@ -19,7 +19,7 @@ var traceAllowedStageKeys = map[string]map[string]struct{}{
 	"where":            keySet("type", "query"),
 	"parse":            keySet("type", "parser", "field", "pattern", "labels"),
 	"transform":        keySet("type", "transforms"),
-	"select":           keySet("type", "order", "limit", "offset", "labels"),
+	"select":           keySet("type", "order", "limit", "offset", "labels", "direction", "starttime", "endtime"),
 	"aggregate":        keySet("type", "aggregates", "groupby"),
 	"window_aggregate": windowAggregateAllowedKeys,
 }
@@ -30,7 +30,7 @@ func traceStageKeyTip(key, stageType string) string {
 		return "pipelines are JSON stages, not SQL"
 	case key == "order_by" && stageType == "aggregate":
 		return "to rank groups, use a final select stage"
-	case key == "table", key == "starttime", key == "endtime", key == "direction", key == "delim":
+	case key == "table", key == "delim":
 		return "not supported in get_traces pipelines"
 	}
 	return ""
