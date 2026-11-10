@@ -14,7 +14,7 @@ Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`cond
 
 **Percentiles:** Day-wise: exactly ONE get_logs call over the full half-open start_time_iso/end_time_iso range with one window_aggregate; NEVER one call per day; honor requested timezone. Parse, then use the canonical anchored numeric `$regex` shown: `^[0-9]+(?:\\.[0-9]+)?$`. It excludes non-matching values from percentile calculations; disclose that exclusion in the answer. Only report returned P99 values; empty result→say unavailable and stop (no count/sample substitute). Never template/merge/recombine aggregated percentile rows. Use a discovered normalized route. Raw URI: aggregate exact values; never normalize/merge later. If `l9_result.partial=true`, preserve rows and disclose partial coverage. Units: report source; never convert.
 
-**Attrs:** exists→neq(field,"") (not `$exists`). `community_member_id`→`attributes['key']`, `resource_attributes['key']`→`resources['key']`; bare: ServiceName/Body/SeverityText/Timestamp.
+**Attrs:** exists→`$notnull:[field]` (not `$exists`). `community_member_id`→`attributes['key']`, `resource_attributes['key']`→`resources['key']`; bare: ServiceName/Body/SeverityText/Timestamp.
 
 **Scope:** no `service_name` arg; filter ServiceName in query. tenant/env→`resources['last9.tenant']`/`resources['deployment.environment']`; k8s.*→`resources['k8s.…']`; service.name→`ServiceName`.
 
