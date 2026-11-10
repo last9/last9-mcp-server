@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -241,9 +242,29 @@ func TestRegisteredWrappedErrorsBeforeDeadline(t *testing.T) {
 	}
 }
 
-// Backend faults in get_trace_waterfall's trace-details response are system
-// errors; inputs the caller can fix stay user errors.
+// Backend faults in get_trace_waterfall's evidence are system errors; inputs
+// the caller can fix (a bad trace_id, an oversized waterfall) stay user errors.
 func TestGetTraceWaterfallTagsBackendFailuresAsSystemErrors(t *testing.T) {
+	golden, err := os.ReadFile("contracts/fixtures/evidence-trace-waterfall.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	withSanitizer := func(sanitizer any) string {
+		var payload map[string]any
+		if err := json.Unmarshal(golden, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if sanitizer == nil {
+			delete(payload, "sanitizer")
+		} else {
+			payload["sanitizer"] = sanitizer
+		}
+		out, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(out)
+	}
 	const traceArgs = `{"trace_id":"abcdef0123456789abcdef0123456789"}`
 	// Served with a longer Content-Length, so the read fails mid-body.
 	const truncatedBody = `{"contract_version":`
@@ -255,9 +276,11 @@ func TestGetTraceWaterfallTagsBackendFailuresAsSystemErrors(t *testing.T) {
 	}{
 		{"malformed JSON", http.StatusOK, `{`, traceArgs, true},
 		{"body cut off", http.StatusOK, truncatedBody, traceArgs, true},
+		{"sanitizer absent", http.StatusOK, withSanitizer(nil), traceArgs, true},
+		{"sanitizer version unsupported", http.StatusOK, withSanitizer(map[string]any{"version": "trace-evidence-sanitizer/v2"}), traceArgs, true},
 		{"HTTP 503", http.StatusServiceUnavailable, `{}`, traceArgs, true},
-		{"over the upstream body cap", http.StatusOK, strings.Repeat(" ", 16<<20+1), traceArgs, true},
-		{"invalid trace_id", http.StatusOK, `{"traces":[]}`, `{"trace_id":"not-a-trace"}`, false},
+		{"over the output cap", http.StatusOK, strings.Repeat(" ", 512<<10+1), traceArgs, false},
+		{"invalid trace_id", http.StatusOK, string(golden), `{"trace_id":"not-a-trace"}`, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

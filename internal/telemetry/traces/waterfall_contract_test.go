@@ -1,7 +1,6 @@
 package traces
 
 import (
-	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -52,33 +51,9 @@ func waterfallFixtureInput() waterfallBuildInput {
 	}
 }
 
-// Run with LAST9_UPDATE_FIXTURES=1 to regenerate, then refresh the content_sha256
-// entries in contracts/fixtures/workflow-cases-v1.json.
-func TestWaterfallFixtureMatchesProducerOutput(t *testing.T) {
-	canonical, err := marshalSanitizedTraceWaterfall(buildTraceWaterfall(waterfallFixtureInput()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var indented bytes.Buffer
-	if err := json.Indent(&indented, canonical, "", "  "); err != nil {
-		t.Fatal(err)
-	}
-	generated := indented.Bytes()
-	generated = append(generated, '\n')
-	path := filepath.Clean(waterfallFixturePath)
-	if os.Getenv("LAST9_UPDATE_FIXTURES") == "1" {
-		if err := os.WriteFile(path, generated, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		t.Log("fixture regenerated; refresh workflow-cases-v1.json content_sha256")
-		return
-	}
-	committed, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(committed) != string(generated) {
-		t.Fatalf("%s has drifted from producer output; regenerate with LAST9_UPDATE_FIXTURES=1", waterfallFixturePath)
+func TestWaterfallFixtureMatchesServiceContract(t *testing.T) {
+	if err := checkWaterfallEvidence(waterfallFixture(t)); err != nil {
+		t.Fatalf("service fixture does not satisfy the waterfall contract: %v", err)
 	}
 }
 

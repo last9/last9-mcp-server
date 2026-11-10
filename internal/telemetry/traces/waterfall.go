@@ -3,13 +3,16 @@ package traces
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"time"
 
 	"last9-mcp/internal/deeplink"
+	"last9-mcp/internal/last9api"
+	apitraces "last9-mcp/internal/last9api/traces"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/otelids"
 	"last9-mcp/internal/utils"
@@ -149,97 +152,110 @@ type TraceWaterfallResponse struct {
 
 func NewGetTraceWaterfallHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTraceWaterfallArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args GetTraceWaterfallArgs) (*mcp.CallToolResult, any, error) {
-		traceID, err := otelids.NormalizeTraceID(args.TraceID)
-		if err != nil {
-			return nil, nil, rejectOTelID("get_trace_waterfall", err)
-		}
-		args.TraceID = traceID
-		if args.SelectedSpanID != "" {
-			spanID, err := otelids.NormalizeSpanID(args.SelectedSpanID)
-			if err != nil {
-				return nil, nil, rejectOTelID("get_trace_waterfall", err)
-			}
-			args.SelectedSpanID = spanID
-		}
-		maxSpans := args.MaxSpans
-		if maxSpans == 0 {
-			maxSpans = traceWaterfallMaxSpansDefault
-		}
-		if maxSpans < 1 || maxSpans > traceWaterfallMaxSpansCeiling {
-			return nil, nil, fmt.Errorf("max_spans must be between 1 and %d", traceWaterfallMaxSpansCeiling)
-		}
-		lookback := args.LookbackMinutes
-		if lookback == 0 {
-			lookback = TraceIDLookbackMinutesDefault
-		}
-		params := map[string]interface{}{}
-		if args.StartTimeISO != "" {
-			params["start_time_iso"] = args.StartTimeISO
-		}
-		if args.EndTimeISO != "" {
-			params["end_time_iso"] = args.EndTimeISO
-		}
-		start, end, err := utils.GetTimeRange(params, lookback)
+		in, err := waterfallInput(args)
 		if err != nil {
 			return nil, nil, err
 		}
-		// No Env: the trace-details URL has no environment parameter, so filtering
-		// happens client-side below via traceDetailsMatchesEnv.
-		qp := &GetTracesQueryParams{TraceID: args.TraceID, Region: cfg.Region, Limit: maxSpans}
-		u, err := buildTraceDetailsRequestURL(cfg, qp, start.Unix(), end.Unix())
+		body, err := apitraces.GetWaterfall(ctx, last9api.NewClient(client, cfg), in)
 		if err != nil {
+			return nil, nil, waterfallAPIError(err)
+		}
+		if err := checkWaterfallEvidence(body); err != nil {
 			return nil, nil, err
 		}
-		req, err := createTraceDetailsRequest(ctx, u, cfg)
-		if err != nil {
-			return nil, nil, err
+		dl := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildTracesLink(in.Start*1000, in.End*1000, nil, in.TraceID, "")
+		return newTraceWaterfallToolResult(body, deeplink.ToMeta(dl)), nil, nil
+	}
+}
+
+func waterfallInput(args GetTraceWaterfallArgs) (apitraces.GetWaterfallInput, error) {
+	traceID, err := otelids.NormalizeTraceID(args.TraceID)
+	if err != nil {
+		return apitraces.GetWaterfallInput{}, rejectOTelID("get_trace_waterfall", err)
+	}
+	spanID := ""
+	if args.SelectedSpanID != "" {
+		if spanID, err = otelids.NormalizeSpanID(args.SelectedSpanID); err != nil {
+			return apitraces.GetWaterfallInput{}, rejectOTelID("get_trace_waterfall", err)
 		}
-		httpResp, err := client.Do(req)
-		if err != nil {
-			return nil, nil, newTraceTransportError(err)
-		}
-		defer httpResp.Body.Close()
-		if httpResp.StatusCode == http.StatusNotFound {
-			return nil, nil, newTraceNotFoundTraceError()
-		}
-		if httpResp.StatusCode != http.StatusOK {
-			return nil, nil, newTraceHTTPError(httpResp)
-		}
-		responseBody, err := io.ReadAll(io.LimitReader(httpResp.Body, traceWaterfallMaxResponseBytes+1))
-		if err != nil {
-			return nil, nil, newTraceInvalidResponseError(err)
-		}
-		if len(responseBody) > traceWaterfallMaxResponseBytes {
-			return nil, nil, newTraceInvalidResponseError(fmt.Errorf("trace-details response exceeds %d bytes", traceWaterfallMaxResponseBytes))
-		}
-		var raw TraceDetailsResponse
-		if err := json.Unmarshal(responseBody, &raw); err != nil {
-			return nil, nil, newTraceInvalidResponseError(err)
-		}
-		filtered := make([]TraceDetailsSpan, 0, len(raw.Traces))
-		for _, s := range raw.Traces {
-			if traceDetailsMatchesEnv(s, args.Environment) {
-				filtered = append(filtered, s)
-			}
-		}
-		resp := buildTraceWaterfall(waterfallBuildInput{
-			traceID:      args.TraceID,
-			environment:  args.Environment,
-			spans:        filtered,
-			fetchedSpans: len(raw.Traces),
-			limit:        maxSpans,
-			selectedID:   args.SelectedSpanID,
-			// Equal because this path never clamps; the envelope requires both fields.
-			requested:  evidenceWindow(start, end),
-			effective:  evidenceWindow(start, end),
-			observedAt: utils.Now().UTC(),
-		})
-		b, err := marshalSanitizedTraceWaterfall(resp)
-		if err != nil {
-			return nil, nil, err
-		}
-		dl := deeplink.NewBuilder(cfg.OrgSlug, cfg.ClusterID).BuildTracesLink(start.UnixMilli(), end.UnixMilli(), nil, args.TraceID, "")
-		return newTraceWaterfallToolResult(b, deeplink.ToMeta(dl)), nil, nil
+	}
+	maxSpans := args.MaxSpans
+	if maxSpans == 0 {
+		maxSpans = traceWaterfallMaxSpansDefault
+	}
+	if maxSpans < 1 || maxSpans > traceWaterfallMaxSpansCeiling {
+		return apitraces.GetWaterfallInput{}, fmt.Errorf("max_spans must be between 1 and %d", traceWaterfallMaxSpansCeiling)
+	}
+	lookback := args.LookbackMinutes
+	if lookback == 0 {
+		lookback = TraceIDLookbackMinutesDefault
+	}
+	params := map[string]interface{}{}
+	if args.StartTimeISO != "" {
+		params["start_time_iso"] = args.StartTimeISO
+	}
+	if args.EndTimeISO != "" {
+		params["end_time_iso"] = args.EndTimeISO
+	}
+	start, end, err := utils.GetTimeRange(params, lookback)
+	if err != nil {
+		return apitraces.GetWaterfallInput{}, err
+	}
+	return apitraces.GetWaterfallInput{TraceID: traceID, Start: start.Unix(), End: end.Unix(), MaxSpans: maxSpans, SelectedSpanID: spanID, Environment: args.Environment}, nil
+}
+
+func waterfallAPIError(err error) error {
+	var tooLarge *last9api.ResponseTooLargeError
+	if errors.As(err, &tooLarge) {
+		return &waterfallRefusedError{Reason: refusalTooLarge}
+	}
+	var transport *url.Error
+	if errors.As(err, &transport) {
+		return newTraceTransportError(err)
+	}
+	var readErr *last9api.ResponseReadError
+	if errors.As(err, &readErr) {
+		return newTraceInvalidResponseError(err)
+	}
+	return err
+}
+
+func checkWaterfallEvidence(body []byte) error {
+	top, err := readEvidenceEnvelope(body, traceWaterfallAnalysisVersion)
+	if err != nil {
+		return err
+	}
+	var sanitizer map[string]json.RawMessage
+	if err := json.Unmarshal(top["sanitizer"], &sanitizer); err != nil || sanitizer == nil {
+		return &waterfallRefusedError{Reason: refusalSanitizerMissing}
+	}
+	var version string
+	if err := json.Unmarshal(sanitizer["version"], &version); err != nil || version != traceEvidenceSanitizerVersion {
+		return &waterfallRefusedError{Reason: refusalSanitizerVersion}
+	}
+	return nil
+}
+
+type waterfallRefusal string
+
+const (
+	refusalSanitizerMissing waterfallRefusal = "sanitizer_missing"
+	refusalSanitizerVersion waterfallRefusal = "sanitizer_version_unsupported"
+	refusalTooLarge         waterfallRefusal = "evidence_too_large"
+)
+
+type waterfallRefusedError struct{ Reason waterfallRefusal }
+
+func (e *waterfallRefusedError) SystemError() bool { return e.Reason != refusalTooLarge }
+
+func (e *waterfallRefusedError) Error() string {
+	switch e.Reason {
+	case refusalTooLarge:
+		return fmt.Sprintf("The trace waterfall exceeds the %d-byte output cap. Lower max_spans, or omit selected_span_id.", apitraces.MaxWaterfallBytes)
+	case refusalSanitizerVersion:
+		return fmt.Sprintf("The trace service's waterfall was not redacted by %s, so it was withheld. Retrying will not help.", traceEvidenceSanitizerVersion)
+	default:
+		return "The trace service's waterfall carries no sanitizer block, so it may be unredacted and was withheld. Retrying will not help."
 	}
 }
 

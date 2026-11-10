@@ -14,7 +14,7 @@
           "budget": { "tool_calls_used": 5, "tool_calls_max": 12 },
           "evidence_refs": [
             { "evidence_id": "E-deviation-001", "content_sha256": "d02830b5d51eb405eb3a58c97295e0ad2cb7d528a68b2a8841dd01c4b1c97750", "contract_version": "investigation-evidence/v1", "analysis_version": "trace-attribute-deviations/v1" },
-            { "evidence_id": "E-waterfall-001", "content_sha256": "8979dd173c4ba84959718cc9ff79100deb71be61e038ee434ee54fb3db038785", "contract_version": "investigation-evidence/v1", "analysis_version": "trace-waterfall/v1" }
+            { "evidence_id": "E-waterfall-001", "content_sha256": "d62959dfbf2cdcc4714fbc700737b6ff20da6d197c989afb0944a67a599af127", "contract_version": "investigation-evidence/v1", "analysis_version": "trace-waterfall/v1" }
           ],
           "hypotheses": [{ "statement": "checkout service.version v2 is associated with the slow cohort, and the representative trace shows pricing-service on the observed path.", "quality": "medium", "supporting_evidence_refs": ["E-deviation-001", "E-waterfall-001"] }],
           "contradictions": [{ "statement": "The evidence establishes association and path contribution, not that either observation caused the regression.", "evidence_refs": ["E-deviation-001", "E-waterfall-001"] }],
@@ -26,7 +26,7 @@
         "events": [
           { "investigation_id": "seed-supported-001", "sequence": 1, "timestamp": "2026-07-15T08:42:00Z", "phase": "created", "status": "started", "message": "Investigation started.", "new_evidence_refs": [], "budget_remaining": { "tool_calls": 12 } },
           { "investigation_id": "seed-supported-001", "sequence": 2, "timestamp": "2026-07-15T08:43:00Z", "phase": "comparing_trace_cohorts", "status": "completed", "message": "Trace cohorts compared.", "new_evidence_refs": [{ "evidence_id": "E-deviation-001", "content_sha256": "d02830b5d51eb405eb3a58c97295e0ad2cb7d528a68b2a8841dd01c4b1c97750", "contract_version": "investigation-evidence/v1", "analysis_version": "trace-attribute-deviations/v1" }], "budget_remaining": { "tool_calls": 8 } },
-          { "investigation_id": "seed-supported-001", "sequence": 3, "timestamp": "2026-07-15T08:46:00Z", "phase": "terminal", "status": "terminal", "message": "A supported action is awaiting explicit approval.", "new_evidence_refs": [{ "evidence_id": "E-waterfall-001", "content_sha256": "8979dd173c4ba84959718cc9ff79100deb71be61e038ee434ee54fb3db038785", "contract_version": "investigation-evidence/v1", "analysis_version": "trace-waterfall/v1" }], "budget_remaining": { "tool_calls": 7 }, "recoverable_user_action": "approve_or_dismiss" }
+          { "investigation_id": "seed-supported-001", "sequence": 3, "timestamp": "2026-07-15T08:46:00Z", "phase": "terminal", "status": "terminal", "message": "A supported action is awaiting explicit approval.", "new_evidence_refs": [{ "evidence_id": "E-waterfall-001", "content_sha256": "d62959dfbf2cdcc4714fbc700737b6ff20da6d197c989afb0944a67a599af127", "contract_version": "investigation-evidence/v1", "analysis_version": "trace-waterfall/v1" }], "budget_remaining": { "tool_calls": 7 }, "recoverable_user_action": "approve_or_dismiss" }
         ]
       }
     },

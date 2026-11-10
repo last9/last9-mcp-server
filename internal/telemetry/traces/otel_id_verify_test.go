@@ -139,14 +139,8 @@ func TestGetTraceWaterfall_UppercaseIDsAreNormalized(t *testing.T) {
 	if strings.Contains(sent.String(), strings.ToUpper(testValidTraceID)) {
 		t.Errorf("raw uppercase ID reached the wire: %q", sent)
 	}
-	var payload struct {
-		Request WaterfallRequest `json:"request"`
-	}
-	if err := json.Unmarshal([]byte(waterfallText(t, call.result)), &payload); err != nil {
-		t.Fatal(err)
-	}
-	if got := payload.Request.SelectedSpanID; got != testValidSpanID {
-		t.Errorf("request.selected_span_id = %q, want %q", got, testValidSpanID)
+	if got := sent.Query().Get("selected_span_id"); got != testValidSpanID {
+		t.Errorf("selected_span_id query = %q, want %q", got, testValidSpanID)
 	}
 }
 
