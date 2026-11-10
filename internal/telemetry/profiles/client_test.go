@@ -2,9 +2,12 @@ package profiles
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+var eagerProfileSanitize = regexp.MustCompile(`(?m)^\s+\w+\s*:=\s*utils\.SanitizeUpstreamBody`)
 
 func TestRunQueryRangeSanitizesOnlyErrorResponses(t *testing.T) {
 	src, err := os.ReadFile("client.go")
@@ -18,7 +21,7 @@ func TestRunQueryRangeSanitizesOnlyErrorResponses(t *testing.T) {
 	if statusCheck < 0 || sanitize < 0 {
 		t.Fatal("runQueryRange must check the response status and sanitize error bodies")
 	}
-	if strings.Contains(code[:statusCheck], "msg := utils.SanitizeUpstreamBody") {
+	if eagerProfileSanitize.MatchString(code[:statusCheck]) {
 		t.Fatal("runQueryRange sanitizes successful response bodies")
 	}
 }
