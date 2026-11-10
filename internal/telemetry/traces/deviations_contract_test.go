@@ -110,7 +110,10 @@ func TestDeviationResponseWithMoreThanFiveResultsFailsClosed(t *testing.T) {
 	}
 	data := payload["data"].(map[string]any)
 	deviations := data["deviations"].([]any)
-	data["deviations"] = append(deviations, deviations[0])
+	for len(deviations) < 6 {
+		deviations = append(deviations, deviations[0])
+	}
+	data["deviations"] = deviations
 	body, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatal(err)
@@ -121,7 +124,21 @@ func TestDeviationResponseWithMoreThanFiveResultsFailsClosed(t *testing.T) {
 }
 
 func TestDeviationResponseWithFiveResultsIsAccepted(t *testing.T) {
-	if _, err := callDeviationsHandler(t, http.StatusOK, deviationEndpointFixture(t)); err != nil {
+	var payload map[string]any
+	if err := json.Unmarshal(deviationEndpointFixture(t), &payload); err != nil {
+		t.Fatal(err)
+	}
+	data := payload["data"].(map[string]any)
+	deviations := data["deviations"].([]any)
+	for len(deviations) < 5 {
+		deviations = append(deviations, deviations[0])
+	}
+	data["deviations"] = deviations
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := callDeviationsHandler(t, http.StatusOK, body); err != nil {
 		t.Fatalf("five-result response: %v", err)
 	}
 }
