@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"last9-mcp/internal/prompts"
+	"last9-mcp/internal/workflows"
 
 	last9mcp "github.com/last9/mcp-go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -15,6 +16,7 @@ const (
 	resourceURIServiceLogs   = "last9://reference/service_logs"
 	resourceURIMetrics       = "last9://reference/metrics"
 	resourceURIInvestigation = "last9://reference/investigation"
+	resourceURIAlerting      = "last9://reference/alerting"
 )
 
 // registerReferenceResources registers whale tool manuals as MCP resources.
@@ -27,11 +29,15 @@ func registerReferenceResources(server *last9mcp.Last9MCPServer) {
 		description string
 		body        string
 	}{
+		{"last9://reference/create_dashboard_guide", "create_dashboard_guide", workflows.CreateDashboardGuide.Description, prompts.CreateDashboardGuideWorkflow},
+		{"last9://reference/dashboard_examples", "dashboard_examples", workflows.DashboardExamples.Description, prompts.DashboardExamplesWorkflow},
+		{"last9://reference/query_guide", "query_guide", workflows.QueryGuide.Description, prompts.QueryGuideWorkflow},
 		{resourceURILogjson, "logjson", "Full logjson pipeline reference for get_logs", prompts.LogjsonReference},
 		{resourceURITracejson, "tracejson", "Full tracejson pipeline reference for get_traces", prompts.TracejsonReference},
 		{resourceURIServiceLogs, "service_logs", "Extended guidance for get_service_logs", prompts.ServiceLogsReference},
 		{resourceURIMetrics, "metrics", "Prometheus range-query usage guide for prometheus_range_query", prompts.MetricsReference},
 		{resourceURIInvestigation, "investigation", "Service-scoped investigation orchestration: tri-state semantics, severity routing, profile bootstrap", prompts.InvestigationReference},
+		{resourceURIAlerting, "alerting", "Alert authoring: expression grammar, static vs adaptive fields, units, validate_alert_expression behaviour, rule templates, dashboard-panel flow", prompts.AlertingReference},
 	}
 
 	handler := func(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {

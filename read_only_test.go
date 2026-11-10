@@ -185,6 +185,21 @@ func TestDumpToolsReadOnlyNamesNoHiddenWriteTool(t *testing.T) {
 	}
 }
 
+// Dashboard descriptions name patch_dashboard only in trimmable routes, so
+// admitting create and update without patch never points a model at it.
+func TestDumpToolsAllowWriteWithoutPatchNamesNoPatchDashboard(t *testing.T) {
+	dashboards, err := toolsets.Parse("dashboards")
+	if err != nil {
+		t.Fatal(err)
+	}
+	filter := toolsets.Filter{Tools: dashboards, ReadOnly: true, AllowWrite: toolsets.Set{"create_dashboard": {}, "update_dashboard": {}}}
+	for _, tool := range dumpServedTools(t, filter) {
+		if strings.Contains(tool.Description, "patch_dashboard") {
+			t.Errorf("%s names unserved patch_dashboard:\n%s", tool.Name, tool.Description)
+		}
+	}
+}
+
 func TestDumpToolsRejectsBadAllowWriteNames(t *testing.T) {
 	tests := []struct {
 		name    string
