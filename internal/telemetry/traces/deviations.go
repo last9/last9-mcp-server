@@ -423,6 +423,9 @@ func callAttributeDeviationsAPI(ctx context.Context, client *http.Client, cfg mo
 	if !json.Valid(responseBody) {
 		return nil, newTraceInvalidResponseError(nil)
 	}
+	if err := checkEvidenceContract(responseBody, attributeDeviationsVersion); err != nil {
+		return nil, err
+	}
 	if err := checkDeviationResponseContract(responseBody); err != nil {
 		return nil, err
 	}

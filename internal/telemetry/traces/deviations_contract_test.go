@@ -233,17 +233,24 @@ func TestDeviationDescriptionWarningStringsAreDocumented(t *testing.T) {
 }
 
 func TestDeviationNonConformingResponseIsRejected(t *testing.T) {
-	cases := map[string]string{
-		"wrong contract version":       `{"contract_version":"investigation-evidence/v2","analysis_version":"trace-attribute-deviations/v1"}`,
-		"missing contract":             `{"data":{"deviations":[]}}`,
-		"wrong analysis version":       `{"contract_version":"investigation-evidence/v1","analysis_version":"trace-waterfall/v1"}`,
-		"contract key in another case": `{"CONTRACT_VERSION":"investigation-evidence/v1","analysis_version":"trace-attribute-deviations/v1"}`,
-		"analysis key in another case": `{"contract_version":"investigation-evidence/v1","Analysis_Version":"trace-attribute-deviations/v1"}`,
-		"contract key duplicated":      `{"contract_version":"investigation-evidence/v2","contract_version":"investigation-evidence/v1","analysis_version":"trace-attribute-deviations/v1"}`,
+	fixture := deviationEndpointFixture(t)
+	cases := map[string][]byte{
+		"wrong contract version": bytes.Replace(fixture,
+			[]byte(`"contract_version": "investigation-evidence/v1"`),
+			[]byte(`"contract_version": "investigation-evidence/v2"`), 1),
+		"contract key in another case": bytes.Replace(fixture,
+			[]byte(`"contract_version": "investigation-evidence/v1"`),
+			[]byte(`"CONTRACT_VERSION": "investigation-evidence/v1"`), 1),
+		"contract key duplicated": bytes.Replace(fixture,
+			[]byte(`"contract_version": "investigation-evidence/v1"`),
+			[]byte(`"contract_version": "investigation-evidence/v2", "CONTRACT_VERSION": "investigation-evidence/v1"`), 1),
+		"exact contract key duplicated": bytes.Replace(fixture,
+			[]byte(`"contract_version": "investigation-evidence/v1"`),
+			[]byte(`"contract_version": "investigation-evidence/v2", "contract_version": "investigation-evidence/v1"`), 1),
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := callDeviationsHandler(t, http.StatusOK, []byte(body)); err == nil {
+			if _, err := callDeviationsHandler(t, http.StatusOK, body); err == nil {
 				t.Fatal("expected a non-conforming response to be rejected")
 			}
 		})
