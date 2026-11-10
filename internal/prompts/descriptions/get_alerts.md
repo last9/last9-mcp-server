@@ -21,7 +21,7 @@
 	- annotations: Additional context and descriptions
 	- generator_url: URL to the source of the alert
 	- fingerprint: Unique fingerprint for this alert instance
-	
+
 	Each alert rule that has been acknowledged or has an owner also carries a claim block (omitted when the rule is unclaimed):
 	- owner_user_id / owner_name / owner_email: the responder who owns the rule
 	- claimed_by_user_id: the user who recorded the claim
