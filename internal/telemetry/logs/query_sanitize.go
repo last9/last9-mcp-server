@@ -492,9 +492,8 @@ func isTraceOnlyLogField(fieldRef string) bool {
 	return ok
 }
 
-// sanitizeStageFieldRef accepts a bare output name of the closest earlier
-// aggregate/window_aggregate stage, then falls back to sanitizeLogFieldRef.
-// ponytail: an alias named like a trace-only field (Duration, SpanKind, StatusCode, SpanName) is still rejected earlier by walkFilterForTraceFields.
+// sanitizeStageFieldRef accepts output names from the closest aggregate.
+// Trace-only names are rejected before this helper runs.
 func sanitizeStageFieldRef(fieldRef, path string, aliases map[string]struct{}) (string, error) {
 	if _, ok := aliases[fieldRef]; ok {
 		return fieldRef, nil
