@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `validate_dashboard` no longer reports `overall: pass` with `panels_total: 0` when nothing was validated. A `{dashboard, metadata}` create envelope passed as `dashboard_definition` is unwrapped and its inner dashboard validated; a dashboard with no panels returns `success: false`, `error: "no_panels"`; panel fields from other formats (Grafana `gridPos`, `title`, `type`, and `targets` on panels that need queries) and mistyped fields such as a string `queries[].legend` or a non-object `csv` are listed per panel in `shape_problems` and make `overall` `fail` (#498).
 
 ### Changed
-- `get_trace_attribute_deviations` now returns at most five ranked deviations and rejects oversized or invalid evidence envelopes; `get_trace_waterfall` sanitizes dynamic evidence values, preserves typed empty arrays, and reports deterministic byte, item, and depth truncation metadata (#220).
+- `get_trace_attribute_deviations` now returns at most five ranked deviations and rejects oversized or invalid evidence envelopes; `get_trace_waterfall` validates and relays organization-sanitized service evidence unchanged, preserves typed empty arrays, and rejects responses above 512 KiB with narrowing guidance (#220).
 
 ## [0.23.0] - 2026-11-04
 
