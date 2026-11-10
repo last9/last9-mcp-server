@@ -74,6 +74,7 @@ func runSearch(ctx context.Context, q searchQuery) (searchPage, error) {
 	if err := validateSearchType(entityType); err != nil {
 		return searchPage{}, err
 	}
+	q.args.EntityType = entityType
 	if err := validateSearchConfig(q.cfg); err != nil {
 		return searchPage{}, err
 	}
