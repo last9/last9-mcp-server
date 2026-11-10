@@ -3,7 +3,7 @@ Suggests correct entity names when you're unsure of the exact spelling.
 Use this tool PROACTIVELY before querying with an entity name you're not confident about — for example,
 when the user types something that looks like a typo, abbreviation, or partial name.
 
-Returns up to 3 closest matches with similarity scores (0–100%) from the Last9 catalog,
+Returns up to 3 closest matches with similarity scores from the Last9 catalog,
 covering all entity types: services, environments, hosts, databases, k8s deployments,
 k8s namespaces, jobs, and more.
 
@@ -17,6 +17,9 @@ Parameters:
 - query: (Required) The name to search for — can be a partial name, misspelling, or abbreviation
 - type: (Optional) Restrict suggestions to a specific entity type (e.g. "service", "environment",
   "host", "k8s_deployment", "k8s_namespace", "database", "job")
+- response_format: (Optional) `json` returns structured suggestions; omit it for the default prose
+  response. Prose renders scores as 0–100% matches; JSON returns each `score` as a fraction from
+  0.0 to 1.0.
 
 Examples:
 - query="paymnt-svc"  → "payment-service (92%, service)"

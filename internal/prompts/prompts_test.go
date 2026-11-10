@@ -1052,3 +1052,16 @@ func TestGetAlertsRoutingStatesDefaultWindow(t *testing.T) {
 		}
 	}
 }
+
+func TestDiscoveryDescriptionsDocumentNewInputsAndUnits(t *testing.T) {
+	for _, want := range []string{"response_format", "default", "0.0", "1.0"} {
+		if !strings.Contains(prompts.DidYouMeanDescription, want) {
+			t.Errorf("DidYouMeanDescription does not document %q", want)
+		}
+	}
+	for _, want := range []string{"log_index", "default 100"} {
+		if !strings.Contains(prompts.GetAPISourceCatalogDescription, want) {
+			t.Errorf("GetAPISourceCatalogDescription does not document %q", want)
+		}
+	}
+}
