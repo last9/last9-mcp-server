@@ -90,7 +90,9 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	if selectLimit, ok := finalSelectLimit(args.TracejsonQuery); ok {
 		effectiveLimit = min(effectiveLimit, selectLimit)
 		maxLimit = min(maxLimit, maxSelectLimit)
-		capTraceResultItems(result, effectiveLimit)
+		if err := capTraceResultItems(result, effectiveLimit); err != nil {
+			return nil, err
+		}
 	}
 	addTraceJSONGuidance(result, args, traceGuidanceContext{
 		startMs:        startTime,
@@ -375,12 +377,16 @@ func extractTraceResultItems(result map[string]interface{}) ([]json.RawMessage, 
 	}
 }
 
-func capTraceResultItems(result map[string]interface{}, limit int) {
+func capTraceResultItems(result map[string]interface{}, limit int) error {
 	items, err := extractTraceResultItems(result)
-	if err != nil || len(items) <= limit {
-		return
+	if err != nil {
+		return err
+	}
+	if len(items) <= limit {
+		return nil
 	}
 	result["data"].(map[string]interface{})["result"] = items[:limit]
+	return nil
 }
 
 // effectiveGetTracesLimit returns the capped limit to use across all chunks.
