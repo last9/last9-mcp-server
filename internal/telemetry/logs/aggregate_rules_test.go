@@ -111,6 +111,36 @@ func TestPrepareLogJSONQueryChainedAggregateAliases(t *testing.T) {
 	}
 }
 
+func TestPrepareLogJSONQueryAcceptsSupportedAggregateMapKeys(t *testing.T) {
+	for _, field := range []string{
+		`attributes['label']`,
+		`resources['deployment.zone']`,
+		`attributes['label[0]']`,
+		`resources['deployment[zone]']`,
+	} {
+		for kind, stage := range map[string]map[string]interface{}{
+			"aggregate": aggregateStage(fn1("$uniq", field), "n"),
+			"window":    windowStage(fn1("$uniq", field), "n"),
+		} {
+			result, err := prepareLogJSONQuery([]map[string]interface{}{stage}, "logjson_query")
+			if err != nil {
+				t.Errorf("%s field %q: %v", kind, field, err)
+				continue
+			}
+			var got interface{}
+			if kind == "aggregate" {
+				entry := result[0]["aggregates"].([]interface{})[0].(map[string]interface{})
+				got = entry["function"].(map[string]interface{})["$uniq"].([]interface{})[0]
+			} else {
+				got = result[0]["function"].(map[string]interface{})["$uniq"].([]interface{})[0]
+			}
+			if got != field {
+				t.Errorf("%s field = %v, want %q", kind, got, field)
+			}
+		}
+	}
+}
+
 func TestPrepareLogJSONQueryDefaultsQuantileExactToPreviousResult(t *testing.T) {
 	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
 		t.Run(operator, func(t *testing.T) {
