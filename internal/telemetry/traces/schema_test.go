@@ -48,10 +48,12 @@ func findStageByType(oneOf []interface{}, stageType string) map[string]interface
 }
 
 // TestGetTracesInputSchema_Structure validates the hand-crafted InputSchema has the
-// correct structure: tracejson_query with items.oneOf covering all stage types, and
-// aggregate stage with additionalProperties:false to block hallucinated key names.
+// correct structure: tracejson_query with items.oneOf covering all stage types.
 func TestGetTracesInputSchema_Structure(t *testing.T) {
 	schema := GetTracesInputSchema()
+	if schema["additionalProperties"] != false {
+		t.Fatalf("root schema must reject unknown arguments, got %v", schema["additionalProperties"])
+	}
 
 	props, ok := schema["properties"].(map[string]interface{})
 	if !ok {
@@ -89,13 +91,12 @@ func TestGetTracesInputSchema_Structure(t *testing.T) {
 		t.Error("tracejson_query must be in required")
 	}
 
-	// aggregate stage must have additionalProperties:false to block wrong key names
 	aggregateStage := findStageByType(oneOf, "aggregate")
 	if aggregateStage == nil {
 		t.Fatal("aggregate stage not found in oneOf")
 	}
-	if aggregateStage["additionalProperties"] != false {
-		t.Errorf("aggregate stage must have additionalProperties:false, got %v", aggregateStage["additionalProperties"])
+	if aggregateStage["additionalProperties"] == false {
+		t.Error("aggregate stage must let the sanitizer return its actionable unknown-key error")
 	}
 
 	// aggregate entry items must also have additionalProperties:false
@@ -120,6 +121,27 @@ func TestGetTracesInputSchema_Structure(t *testing.T) {
 		if _, ok := props[param]; !ok {
 			t.Errorf("param %q missing from InputSchema properties", param)
 		}
+	}
+}
+
+func TestGetTracesInputSchema_DocumentsAllowedStageKeys(t *testing.T) {
+	tests := []struct {
+		name       string
+		stage      map[string]interface{}
+		properties []string
+	}{
+		{"parse", parseStageSchema(), []string{"type", "parser", "field", "pattern", "labels"}},
+		{"select", selectStageSchema(), []string{"type", "order", "limit", "offset", "labels", "direction", "starttime", "endtime"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			properties := tt.stage["properties"].(map[string]interface{})
+			for _, key := range tt.properties {
+				if _, ok := properties[key]; !ok {
+					t.Errorf("schema does not document allowed key %q", key)
+				}
+			}
+		})
 	}
 }
 
