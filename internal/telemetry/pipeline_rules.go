@@ -207,3 +207,31 @@ func CollectStageAliases(stages []map[string]interface{}, upto int) map[string]s
 	}
 	return nil
 }
+
+// CollectAggregateOutputAliases returns function outputs from the closest aggregate stage.
+func CollectAggregateOutputAliases(stages []map[string]interface{}, upto int) map[string]struct{} {
+	for i := upto - 1; i >= 0; i-- {
+		stage := stages[i]
+		stageType, _ := stage["type"].(string)
+		if stageType != "aggregate" && stageType != "window_aggregate" {
+			continue
+		}
+		names := map[string]struct{}{}
+		add := func(v interface{}) {
+			if s, ok := v.(string); ok && aggregateAliasPattern.MatchString(s) {
+				names[s] = struct{}{}
+			}
+		}
+		if stageType == "window_aggregate" {
+			add(stage["as"])
+		}
+		aggregates, _ := stage["aggregates"].([]interface{})
+		for _, aggregate := range aggregates {
+			if item, ok := aggregate.(map[string]interface{}); ok {
+				add(item["as"])
+			}
+		}
+		return names
+	}
+	return nil
+}

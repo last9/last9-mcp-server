@@ -65,6 +65,7 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 		sanitizedStage := make(map[string]interface{}, len(stage))
 		stagePath := fmt.Sprintf("%s[%d]", pathPrefix, stageIndex)
 		aliases := telemetry.CollectStageAliases(stages, stageIndex)
+		aggregateOutputs := telemetry.CollectAggregateOutputAliases(stages, stageIndex)
 
 		for key, value := range stage {
 			var (
@@ -74,7 +75,7 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 
 			switch key {
 			case "query":
-				sanitizedValue, err = sanitizeLogCondition(value, stagePath+".query", aliases)
+				sanitizedValue, err = sanitizeLogCondition(value, stagePath+".query", aliases, aggregateOutputs)
 			case "aggregates":
 				sanitizedValue, err = sanitizeLogAggregates(value, stagePath+".aggregates", aliases)
 			case "function":
@@ -105,12 +106,12 @@ func sanitizeLogJSONQueryPrefixed(stages []map[string]interface{}, pathPrefix st
 	return sanitized, nil
 }
 
-func sanitizeLogCondition(value interface{}, path string, aliases map[string]struct{}) (interface{}, error) {
+func sanitizeLogCondition(value interface{}, path string, aliases, aggregateOutputs map[string]struct{}) (interface{}, error) {
 	switch typed := value.(type) {
 	case []interface{}:
 		sanitized := make([]interface{}, len(typed))
 		for index, item := range typed {
-			next, err := sanitizeLogCondition(item, fmt.Sprintf("%s[%d]", path, index), aliases)
+			next, err := sanitizeLogCondition(item, fmt.Sprintf("%s[%d]", path, index), aliases, aggregateOutputs)
 			if err != nil {
 				return nil, err
 			}
@@ -122,7 +123,7 @@ func sanitizeLogCondition(value interface{}, path string, aliases map[string]str
 		for key, item := range typed {
 			fieldArgIndex, isFieldOperator := logFilterFieldOperators[key]
 			if isFieldOperator {
-				next, err := sanitizeLogFieldOperatorArgs(item, key, fieldArgIndex, path+"."+key, aliases)
+				next, err := sanitizeLogFieldOperatorArgs(item, key, fieldArgIndex, path+"."+key, aliases, aggregateOutputs)
 				if err != nil {
 					return nil, err
 				}
@@ -153,7 +154,7 @@ func sanitizeLogCondition(value interface{}, path string, aliases map[string]str
 					item = []interface{}{item}
 				}
 			}
-			next, err := sanitizeLogCondition(item, path+"."+key, aliases)
+			next, err := sanitizeLogCondition(item, path+"."+key, aliases, aggregateOutputs)
 			if err != nil {
 				return nil, err
 			}
@@ -165,7 +166,7 @@ func sanitizeLogCondition(value interface{}, path string, aliases map[string]str
 	}
 }
 
-func sanitizeLogFieldOperatorArgs(value interface{}, operator string, fieldArgIndex int, path string, aliases map[string]struct{}) (interface{}, error) {
+func sanitizeLogFieldOperatorArgs(value interface{}, operator string, fieldArgIndex int, path string, aliases, aggregateOutputs map[string]struct{}) (interface{}, error) {
 	args, ok := value.([]interface{})
 	if !ok {
 		return nil, newLogValidationError(
@@ -187,6 +188,17 @@ func sanitizeLogFieldOperatorArgs(value interface{}, operator string, fieldArgIn
 	fieldRef, ok := sanitized[fieldArgIndex].(string)
 	if !ok {
 		return sanitized, nil
+	}
+	trimmedFieldRef := strings.TrimSpace(fieldRef)
+	if operator == "$notnull" {
+		if _, ok := aggregateOutputs[trimmedFieldRef]; ok {
+			fieldPath := fmt.Sprintf("%s[%d]", path, fieldArgIndex)
+			return nil, newLogValidationError(
+				LogValidationInvalidField,
+				fieldPath,
+				fmt.Sprintf("aggregate output %q is never null at %s; remove the redundant $notnull filter", trimmedFieldRef, fieldPath),
+			)
+		}
 	}
 
 	next, err := sanitizeStageFieldRef(fieldRef, fmt.Sprintf("%s[%d]", path, fieldArgIndex), aliases)
