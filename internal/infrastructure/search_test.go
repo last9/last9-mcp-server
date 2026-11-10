@@ -64,6 +64,52 @@ func TestSearchInfrastructureEntities_HostPage(t *testing.T) {
 	}
 }
 
+func TestSearchInfrastructureEntities_NormalizesEntityTypeBeforeQuery(t *testing.T) {
+	for _, entityType := range []string{"host", "k8s_cluster", "k8s_node", "k8s_pod"} {
+		t.Run(entityType, func(t *testing.T) {
+			var queries []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var payload map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Errorf("decode request: %v", err)
+					http.Error(w, "invalid request", http.StatusBadRequest)
+					return
+				}
+				queries = append(queries, payload["query"].(string))
+				points := []instantPoint{{Metric: map[string]string{"cluster": "target", "node": "target"}}}
+				switch entityType {
+				case "host":
+					points = []instantPoint{{Metric: map[string]string{"nodename": "target"}}}
+				case "k8s_pod":
+					points = []instantPoint{{Metric: map[string]string{"cluster": "target", "namespace": "default", "pod": "target", "uid": "uid-1", "node": "target"}}}
+				}
+				_ = json.NewEncoder(w).Encode(points)
+			}))
+			defer srv.Close()
+
+			cfg := testResolveConfig(srv.URL)
+			cfg.PrometheusReadURL = "https://prom.example/read"
+			handler := NewSearchInfrastructureEntitiesHandler(srv.Client(), cfg)
+			for _, supplied := range []string{entityType, " " + entityType + " "} {
+				result, _, err := handler(context.Background(), &mcp.CallToolRequest{}, SearchInfrastructureEntitiesArgs{
+					EntityType: supplied,
+					Query:      "target",
+					Timestamp:  1700000000,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if page := decodeSearchPage(t, result); len(page.Entities) != 1 {
+					t.Errorf("entity_type=%q: got %d entities, want 1", supplied, len(page.Entities))
+				}
+			}
+			if queries[1] != queries[0] {
+				t.Errorf("padded entity type changed inventory query: canonical=%q padded=%q", queries[0], queries[1])
+			}
+		})
+	}
+}
+
 func TestSearchInfrastructureEntities_DefaultsTimestampToFakeNow(t *testing.T) {
 	t.Cleanup(func() { t.Setenv(utils.FakeNowEnv, ""); _, _ = utils.InitClock() })
 	t.Setenv(utils.FakeNowEnv, "2026-01-02T03:04:05Z")
