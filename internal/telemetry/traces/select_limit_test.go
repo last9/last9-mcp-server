@@ -211,8 +211,8 @@ func TestGetTracesHandlerCapsExplicitSelectResponse(t *testing.T) {
 	}
 }
 
-func TestGetTracesHandlerRejectsMalformedSelectResponse(t *testing.T) {
-	for _, tc := range []struct {
+func TestGetTracesHandlerValidatesResponseAcrossSelectPositions(t *testing.T) {
+	responses := []struct {
 		name      string
 		body      string
 		wantError bool
@@ -221,31 +221,45 @@ func TestGetTracesHandlerRejectsMalformedSelectResponse(t *testing.T) {
 		{name: "result is not an array", body: `{"status":"success","data":{"result":{"unexpected":1}}}`, wantError: true},
 		{name: "empty result", body: `{"status":"success","data":{"result":[]}}`},
 		{name: "one result", body: traceAPIResponse(1)},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				_, _ = w.Write([]byte(tc.body))
-			}))
-			defer server.Close()
+	}
+	filter := map[string]interface{}{"type": "filter", "query": map[string]interface{}{"$neq": []interface{}{"ServiceName", ""}}}
+	selectStage := map[string]interface{}{
+		"type": "select", "labels": map[string]interface{}{"ServiceName": "ServiceName"}, "limit": 10.0,
+	}
+	pipelines := []struct {
+		name   string
+		stages []map[string]interface{}
+	}{
+		{name: "final select", stages: []map[string]interface{}{filter, selectStage}},
+		{name: "intermediate select", stages: []map[string]interface{}{selectStage, filter}},
+		{name: "no select", stages: []map[string]interface{}{filter}},
+	}
 
-			result, _, err := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))(
-				context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
-					TracejsonQuery: filterThenSelect(map[string]interface{}{
-						"type": "select", "labels": map[string]interface{}{"ServiceName": "svc"}, "limit": 10.0,
-					}),
-					StartTimeISO: "2026-01-01T00:00:00Z",
-					EndTimeISO:   "2026-01-01T00:05:00Z",
-					Limit:        3,
-				},
-			)
-			gotError := err != nil || result != nil && result.IsError
-			if gotError != tc.wantError {
-				t.Fatalf("error outcome = %t (result=%#v, err=%v), want %t", gotError, result, err, tc.wantError)
-			}
-			if !tc.wantError && result == nil {
-				t.Fatal("valid result returned no tool response")
-			}
-		})
+	for _, pipeline := range pipelines {
+		for _, response := range responses {
+			t.Run(pipeline.name+"/"+response.name, func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					_, _ = w.Write([]byte(response.body))
+				}))
+				defer server.Close()
+
+				result, _, err := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))(
+					context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+						TracejsonQuery: pipeline.stages,
+						StartTimeISO:   "2026-01-01T00:00:00Z",
+						EndTimeISO:     "2026-01-01T00:05:00Z",
+						Limit:          3,
+					},
+				)
+				gotError := err != nil || result != nil && result.IsError
+				if gotError != response.wantError {
+					t.Fatalf("error outcome = %t (result=%#v, err=%v), want %t", gotError, result, err, response.wantError)
+				}
+				if !response.wantError && result == nil {
+					t.Fatal("valid result returned no tool response")
+				}
+			})
+		}
 	}
 }
 
