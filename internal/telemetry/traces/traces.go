@@ -135,11 +135,8 @@ func fetchTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 		return executeTraceJSONQuery(ctx, client, cfg, tracejsonQuery, startMs, endMs, effectiveLimit)
 	}
 
-	// Aggregate pipelines (group-by, avg/median/quantile/stddev, etc.) must
-	// never be chunked: concatenating per-chunk aggregate results produces
-	// duplicate group-by keys and mathematically wrong aggregates. Run the
-	// full window as a single request instead. A select's order/limit is a
-	// top-N over the whole window, so it is never chunked either.
+	// Chunking changes aggregate results and turns select's global top-N into
+	// per-chunk top-N, so both pipeline shapes must run over the full window.
 	if utils.PipelineHasAggregateStage(args.TracejsonQuery) || utils.PipelineHasSelectStage(args.TracejsonQuery) {
 		if chunkingDebug {
 			log.Printf(
