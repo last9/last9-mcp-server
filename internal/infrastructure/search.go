@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -79,7 +79,7 @@ func runSearch(ctx context.Context, q searchQuery) (searchPage, error) {
 	}
 	ts := q.args.Timestamp
 	if ts <= 0 {
-		ts = time.Now().Unix()
+		ts = utils.Now().Unix()
 	}
 	metrics, err := fetchSearchMetrics(ctx, q, ts)
 	if err != nil {

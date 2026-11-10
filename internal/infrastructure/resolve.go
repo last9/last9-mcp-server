@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
 	apiinfrastructure "last9-mcp/internal/last9api/infrastructure"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -86,7 +86,7 @@ func buildResolveRequest(cfg models.Config, args GetInfrastructureContextArgs) (
 	}
 	ts := args.Timestamp
 	if ts <= 0 {
-		ts = time.Now().Unix()
+		ts = utils.Now().Unix()
 	}
 	return apiinfrastructure.ResolveInfrastructureInput{
 		ClusterID:  clusterID,
