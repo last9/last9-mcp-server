@@ -308,15 +308,15 @@ func TestGetNotificationChannelsHandler_APIError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for non-200 API response")
 	}
-	if !strings.Contains(err.Error(), "API request failed with status 500") {
+	if !strings.Contains(err.Error(), "notification channels failed with HTTP 500") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestGetNotificationChannelsHandler_APIErrorTruncatesBody(t *testing.T) {
+func TestGetNotificationChannelsHandler_APIErrorOmitsBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(strings.Repeat("x", maxNotificationChannelsErrorBodyBytes+32) + "END"))
+		_, _ = w.Write([]byte("END"))
 	}))
 	defer server.Close()
 
@@ -326,11 +326,8 @@ func TestGetNotificationChannelsHandler_APIErrorTruncatesBody(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for non-200 API response")
 	}
-	if !strings.Contains(err.Error(), "...(truncated)") {
-		t.Fatalf("expected truncated marker in error, got: %v", err)
-	}
 	if strings.Contains(err.Error(), "END") {
-		t.Fatalf("expected truncated body to omit tail marker, got: %v", err)
+		t.Fatalf("expected upstream body to be omitted, got: %v", err)
 	}
 }
 

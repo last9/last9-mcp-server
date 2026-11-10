@@ -80,8 +80,7 @@ func NewGetChangeEventsHandler(client *http.Client, cfg models.Config) func(cont
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return nil, nil, fmt.Errorf("change events API request failed with status %d: %s", resp.StatusCode, string(body))
+			return nil, nil, utils.NewUpstreamHTTPError(resp, "change events API")
 		}
 
 		body, err := io.ReadAll(resp.Body)
