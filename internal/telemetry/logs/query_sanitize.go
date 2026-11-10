@@ -495,8 +495,9 @@ func isTraceOnlyLogField(fieldRef string) bool {
 // sanitizeStageFieldRef accepts output names from the closest aggregate.
 // Trace-only names are rejected before this helper runs.
 func sanitizeStageFieldRef(fieldRef, path string, aliases map[string]struct{}) (string, error) {
-	if _, ok := aliases[fieldRef]; ok {
-		return fieldRef, nil
+	trimmed := strings.TrimSpace(fieldRef)
+	if _, ok := aliases[trimmed]; ok {
+		return trimmed, nil
 	}
-	return sanitizeLogFieldRef(fieldRef, path)
+	return sanitizeLogFieldRef(trimmed, path)
 }
