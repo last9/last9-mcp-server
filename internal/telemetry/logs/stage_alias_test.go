@@ -118,6 +118,17 @@ func TestPrepareLogJSONQueryNotNull(t *testing.T) {
 	}
 }
 
+func TestPrepareLogJSONQueryRejectsNotNullOnAggregateOutput(t *testing.T) {
+	stages := []map[string]interface{}{
+		cmpFilter("$eq", "ServiceName", "example-service"),
+		countBy("n", map[string]interface{}{"SeverityText": "severity"}),
+		cmpFilter("$notnull", "n"),
+	}
+
+	_, err := prepareLogJSONQuery(stages, "logjson_query")
+	requireInvalidField(t, err, "logjson_query[2].query.$notnull[0]", `aggregate output "n" is never null`)
+}
+
 func TestPrepareLogJSONQueryAcceptsAliasesInGroupByAndAggregateFunctions(t *testing.T) {
 	groupBy := func(field, alias string) map[string]interface{} {
 		return map[string]interface{}{field: alias}
