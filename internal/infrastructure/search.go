@@ -27,7 +27,7 @@ type SearchInfrastructureEntitiesArgs struct {
 	Limit      int    `json:"limit,omitempty" jsonschema:"Page size (default 25, max 100)."`
 	Cursor     string `json:"cursor,omitempty" jsonschema:"Opaque cursor from the previous page's next_cursor."`
 	Timestamp  int64  `json:"timestamp,omitempty" jsonschema:"Unix seconds of the observation window. Defaults to now."`
-	ClusterID  string `json:"cluster_id,omitempty" jsonschema:"Levitate datasource UUID used in entity ids. Defaults to the configured datasource."`
+	ClusterID  string `json:"cluster_id,omitempty" jsonschema:"Levitate datasource UUID used in entity ids. Defaults to and, when provided, must match the configured datasource."`
 }
 
 type searchPage struct {
@@ -77,6 +77,9 @@ func runSearch(ctx context.Context, q searchQuery) (searchPage, error) {
 	if err := validateSearchConfig(q.cfg); err != nil {
 		return searchPage{}, err
 	}
+	if err := validateSearchDatasource(q.args.ClusterID, q.cfg.ClusterID); err != nil {
+		return searchPage{}, err
+	}
 	ts := q.args.Timestamp
 	if ts <= 0 {
 		ts = utils.Now().Unix()
@@ -90,6 +93,15 @@ func runSearch(ctx context.Context, q searchQuery) (searchPage, error) {
 	entities = filterEntities(entities, q.args.Query)
 	entities, truncated := capSearchEntities(entities)
 	return paginateEntities(entityType, entities, clampSearchLimit(q.args.Limit), q.args.Cursor, truncated)
+}
+
+func validateSearchDatasource(requested, configured string) error {
+	requested = strings.TrimSpace(requested)
+	configured = strings.TrimSpace(configured)
+	if requested != "" && configured != "" && requested != configured {
+		return fmt.Errorf("cluster_id %q does not match the configured datasource", requested)
+	}
+	return nil
 }
 
 func validateSearchConfig(cfg models.Config) error {

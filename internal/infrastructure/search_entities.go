@@ -235,6 +235,9 @@ func podSearchHref(org, clusterID string, attrs map[string]string) string {
 	if attrs["pod"] != "" {
 		params.Set("pod", attrs["pod"])
 	}
+	if attrs["uid"] != "" {
+		params.Set("uid", attrs["uid"])
+	}
 	return orgPrefixedSearch(org, "k8s/pod-details", params)
 }
 

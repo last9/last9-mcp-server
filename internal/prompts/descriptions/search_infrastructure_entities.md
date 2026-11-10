@@ -10,7 +10,7 @@ Parameters:
 - limit: (Optional) Page size (default 25, max 100).
 - cursor: (Optional) next_cursor from the previous page.
 - timestamp: (Optional) Unix seconds. Defaults to now.
-- cluster_id: (Optional) Levitate datasource UUID used in returned ids. Defaults to the configured datasource.
+- cluster_id: (Optional) Levitate datasource UUID used in returned ids. Defaults to the configured datasource and must match it when provided.
 
 Returns typed ids (host:..., k8s-node:..., k8s-cluster:..., k8s-pod:...), key attributes,
 dashboard hrefs, and next_cursor when more pages exist. Then call get_infrastructure_context
