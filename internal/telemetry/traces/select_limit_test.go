@@ -6,11 +6,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
 
+	jsonschema "github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"last9-mcp/internal/utils"
 )
 
 func filterThenSelect(sel map[string]interface{}) []map[string]interface{} {
@@ -55,6 +58,40 @@ func TestSanitizeTraceJSONQuery_FinalSelectLimitBounds(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestFinalSelectLimitErrorExampleSatisfiesGetTracesSchema(t *testing.T) {
+	query := []map[string]interface{}{{
+		"type": "select", "labels": map[string]interface{}{"ServiceName": "svc"}, "limit": 0.0,
+	}}
+	err := SanitizeTraceJSONQuery(query)
+	if err == nil {
+		t.Fatal("expected limit validation error")
+	}
+	match := regexp.MustCompile(`e\.g\. (\{.*\}); got`).FindStringSubmatch(err.Error())
+	if len(match) != 2 {
+		t.Fatalf("error has no copyable example: %q", err)
+	}
+	var example map[string]interface{}
+	if err := json.Unmarshal([]byte(match[1]), &example); err != nil {
+		t.Fatalf("decode example: %v", err)
+	}
+
+	rawSchema, err := json.Marshal(GetTracesInputSchema())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema jsonschema.Schema
+	if err := json.Unmarshal(rawSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := schema.Resolve(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := resolved.Validate(map[string]interface{}{"tracejson_query": []interface{}{example}}); err != nil {
+		t.Fatalf("limit recovery example does not satisfy get_traces schema: %v", err)
 	}
 }
 
@@ -117,6 +154,49 @@ func TestGetTracesHandlerRunsSelectAsOneBoundedRequest(t *testing.T) {
 			}
 			if got := lastStage(t, rec.bodies[0])["limit"]; got != tc.wantLimit {
 				t.Fatalf("final select limit = %v, want %v", got, tc.wantLimit)
+			}
+		})
+	}
+}
+
+func TestGetTracesHandlerUsesFinalSelectLimitForGuidance(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		rows         int
+		wantGuidance bool
+	}{
+		{name: "capped response", rows: maxSelectLimit, wantGuidance: true},
+		{name: "response below cap", rows: 12, wantGuidance: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(traceAPIResponse(tc.rows)))
+			}))
+			defer server.Close()
+
+			result, _, err := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))(
+				context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+					TracejsonQuery: filterThenSelect(map[string]interface{}{
+						"type": "select", "labels": map[string]interface{}{"ServiceName": "svc"},
+					}),
+					StartTimeISO: "2026-01-01T00:00:00Z",
+					EndTimeISO:   "2026-01-01T00:05:00Z",
+					Limit:        5000,
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var payload map[string]interface{}
+			if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &payload); err != nil {
+				t.Fatal(err)
+			}
+			_, gotGuidance := payload["l9_guidance"]
+			if gotGuidance != tc.wantGuidance {
+				t.Fatalf("l9_guidance present = %t, want %t", gotGuidance, tc.wantGuidance)
+			}
+			if tc.wantGuidance && strings.Contains(utils.GetTextContent(t, result), "5,000") {
+				t.Fatal("guidance recommends a limit above the final select maximum")
 			}
 		})
 	}
