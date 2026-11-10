@@ -104,20 +104,25 @@ func TestDeviationResultPreservesExactBytesAndUnknownAdditiveFields(t *testing.T
 }
 
 func TestDeviationResponseWithMoreThanFiveResultsFailsClosed(t *testing.T) {
-	deviations := make([]map[string]any, 6)
-	for i := range deviations {
-		deviations[i] = map[string]any{"rank": i + 1}
+	var payload map[string]any
+	if err := json.Unmarshal(deviationEndpointFixture(t), &payload); err != nil {
+		t.Fatal(err)
 	}
-	body, err := json.Marshal(map[string]any{
-		"contract_version": investigationEvidenceVersion,
-		"analysis_version": attributeDeviationsVersion,
-		"data":             map[string]any{"deviations": deviations},
-	})
+	data := payload["data"].(map[string]any)
+	deviations := data["deviations"].([]any)
+	data["deviations"] = append(deviations, deviations[0])
+	body, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := callDeviationsHandler(t, http.StatusOK, body); err == nil {
-		t.Fatal("over-5 response must be rejected, not sliced")
+	if _, err := callDeviationsHandler(t, http.StatusOK, body); err == nil || !strings.Contains(err.Error(), "returned 6 deviations") {
+		t.Fatalf("over-5 response must hit the result-count guard, got %v", err)
+	}
+}
+
+func TestDeviationResponseWithFiveResultsIsAccepted(t *testing.T) {
+	if _, err := callDeviationsHandler(t, http.StatusOK, deviationEndpointFixture(t)); err != nil {
+		t.Fatalf("five-result response: %v", err)
 	}
 }
 
