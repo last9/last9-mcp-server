@@ -20,6 +20,7 @@ const (
 	RouteAlertingGroups       = "alerting/groups"
 	RouteNotificationChannels = "settings/notification-channels"
 	RouteDropRules            = "control-plane/%s/drop" // requires clusterId
+	RouteRemapping            = "control-plane/%s/remapping"
 	RouteDashboards           = "dashboards"
 )
 
@@ -103,6 +104,16 @@ func (b *Builder) BuildAlertingLink(fromMs, toMs int64, severity, ruleID string)
 		params.Set("rule_id", ruleID)
 	}
 	return fmt.Sprintf("/v2/organizations/%s/%s?%s", b.orgSlug, RouteAlerting, params.Encode())
+}
+
+// BuildRemappingLink creates a remapping rules dashboard deep link.
+func (b *Builder) BuildRemappingLink() string {
+	clusterID := b.clusterID
+	if clusterID == "" {
+		clusterID = "default"
+	}
+	route := fmt.Sprintf(RouteRemapping, url.PathEscape(clusterID))
+	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, route)
 }
 
 // BuildDropRulesLink creates a drop rules dashboard deep link
@@ -189,13 +200,13 @@ type AlertRuleReference struct {
 
 func (b *Builder) AlertRuleMeta(rule AlertRuleReference) mcp.Meta {
 	params := url.Values{"rule": {rule.RuleID}, "group_id": {rule.GroupID}}
-	meta := ToMeta(b.BuildAlertingGroupsLink() + "?" + params.Encode())
+	meta := ToMetaWithLink(b.BuildAlertingGroupsLink()+"?"+params.Encode(), "Open alert")
 	if strings.TrimSpace(rule.GroupName) != "" {
 		groupParams := url.Values{"alertGroupNames": {rule.GroupName}}
-		meta["links"] = []map[string]string{{
+		meta["links"] = append(meta["links"].([]map[string]string), map[string]string{
 			"label": "Open group",
 			"url":   b.BuildAlertingGroupsLink() + "?" + groupParams.Encode(),
-		}}
+		})
 	}
 	return meta
 }
