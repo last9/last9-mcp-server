@@ -1,9 +1,14 @@
 package logs
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func countBy(as string, groupby map[string]interface{}) map[string]interface{} {
@@ -127,6 +132,34 @@ func TestPrepareLogJSONQueryRejectsNotNullOnAggregateOutput(t *testing.T) {
 
 	_, err := prepareLogJSONQuery(stages, "logjson_query")
 	requireInvalidField(t, err, "logjson_query[2].query.$notnull[0]", `aggregate output "n" is never null`)
+}
+
+func TestGetLogsHandlerRejectsNotNullOnCanonicalizedAggregateOutput(t *testing.T) {
+	for _, searchAPI := range []bool{false, true} {
+		t.Run(map[bool]string{false: "query range", true: "search API"}[searchAPI], func(t *testing.T) {
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				requests++
+				http.Error(w, "should not be called", http.StatusBadRequest)
+			}))
+			defer server.Close()
+
+			cfg := testLogsConfig(server.URL)
+			cfg.UseLogSearchAPI = searchAPI
+			_, _, err := NewGetLogsHandler(server.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetLogsArgs{
+				LogjsonQuery: []map[string]interface{}{
+					cmpFilter("$eq", "ServiceName", "example"),
+					countBy("ServiceName", nil),
+					cmpFilter("$notnull", "service.name"),
+				},
+				LookbackMinutes: 5,
+			})
+			requireInvalidField(t, err, "logjson_query[2].query.$notnull[0]", `aggregate output "ServiceName" is never null`)
+			if requests != 0 {
+				t.Fatalf("API requests = %d, want 0", requests)
+			}
+		})
+	}
 }
 
 func TestPrepareLogJSONQueryAcceptsAliasesInGroupByAndAggregateFunctions(t *testing.T) {
