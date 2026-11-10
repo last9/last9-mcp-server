@@ -211,6 +211,44 @@ func TestGetTracesHandlerCapsExplicitSelectResponse(t *testing.T) {
 	}
 }
 
+func TestGetTracesHandlerRejectsMalformedSelectResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		body      string
+		wantError bool
+	}{
+		{name: "error status without result", body: `{"status":"error","data":null}`, wantError: true},
+		{name: "result is not an array", body: `{"status":"success","data":{"result":{"unexpected":1}}}`, wantError: true},
+		{name: "empty result", body: `{"status":"success","data":{"result":[]}}`},
+		{name: "one result", body: traceAPIResponse(1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+
+			result, _, err := NewGetTracesHandler(server.Client(), testChunkTracesConfig(server.URL))(
+				context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+					TracejsonQuery: filterThenSelect(map[string]interface{}{
+						"type": "select", "labels": map[string]interface{}{"ServiceName": "svc"}, "limit": 10.0,
+					}),
+					StartTimeISO: "2026-01-01T00:00:00Z",
+					EndTimeISO:   "2026-01-01T00:05:00Z",
+					Limit:        3,
+				},
+			)
+			gotError := err != nil || result != nil && result.IsError
+			if gotError != tc.wantError {
+				t.Fatalf("error outcome = %t (result=%#v, err=%v), want %t", gotError, result, err, tc.wantError)
+			}
+			if !tc.wantError && result == nil {
+				t.Fatal("valid result returned no tool response")
+			}
+		})
+	}
+}
+
 func TestGetTracesHandlerUsesFinalSelectLimitForGuidance(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
