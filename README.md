@@ -775,7 +775,7 @@ Requires the companion backend capability to be enabled. Results include explici
 - `selected_span_id` (string, optional): Returns attributes, events, and links for that span only.
 - `max_spans` (integer, optional): Default: 500. Maximum: 1000; the org's redaction policy may cap it lower.
 
-Returns an `investigation-evidence/v1` envelope; the waterfall is under `data`. Text and structured MCP content use one canonical JSON byte slice. Dynamic waterfall strings plus selected-span attributes/events/links use the deterministic `trace-evidence-sanitizer/v1`: telemetry strings are capped at 512 bytes, selected-detail collections at 64 items, upstream trace-details bodies at 16777216 bytes, and the serialized result at 524288 bytes. A maximum-shape span list is trimmed deterministically to the byte budget with typed partial/truncation metadata under `evidence.sanitization`; evidence that still cannot fit fails closed. Unsupported/limited evidence is terminal and must not be reconstructed client-side.
+Returns an `investigation-evidence/v1` envelope; the waterfall is under `data`. The trace service applies the organization's redaction and truncation policy and attests it with `trace-evidence-sanitizer/v1`. The MCP server validates that attestation and relays the exact service bytes as text and structured content. Reads are capped at 524288 bytes; an oversized response fails closed with guidance to lower `max_spans` or omit `selected_span_id`. Unsupported/limited evidence is terminal and must not be reconstructed client-side.
 
 ### get_change_events
 
