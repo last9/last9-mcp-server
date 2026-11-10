@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"last9-mcp/internal/constants"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -60,6 +61,31 @@ func TestSearchInfrastructureEntities_HostPage(t *testing.T) {
 	}
 	if !strings.Contains(page.Entities[0].UI.Href, "/hosts/ip-10-0-1-2") {
 		t.Fatalf("href %q", page.Entities[0].UI.Href)
+	}
+}
+
+func TestSearchInfrastructureEntities_DefaultsTimestampToFakeNow(t *testing.T) {
+	t.Cleanup(func() { t.Setenv(utils.FakeNowEnv, ""); _, _ = utils.InitClock() })
+	t.Setenv(utils.FakeNowEnv, "2026-01-02T03:04:05Z")
+	if _, err := utils.InitClock(); err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+
+	cfg := testResolveConfig(srv.URL)
+	cfg.PrometheusReadURL = "https://prom.example/read"
+	handler := NewSearchInfrastructureEntitiesHandler(srv.Client(), cfg)
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, SearchInfrastructureEntitiesArgs{EntityType: "host"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload["timestamp"] != float64(1767323045) {
+		t.Fatalf("timestamp %#v, want fake now 1767323045", payload["timestamp"])
 	}
 }
 

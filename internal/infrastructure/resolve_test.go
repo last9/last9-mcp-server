@@ -13,6 +13,7 @@ import (
 	"last9-mcp/internal/auth"
 	apiinfrastructure "last9-mcp/internal/last9api/infrastructure"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -219,6 +220,11 @@ func TestGetInfrastructureContext_MissingTokenManager(t *testing.T) {
 }
 
 func TestGetInfrastructureContext_DefaultsTimestamp(t *testing.T) {
+	t.Cleanup(func() { t.Setenv(utils.FakeNowEnv, ""); _, _ = utils.InitClock() })
+	t.Setenv(utils.FakeNowEnv, "2026-01-02T03:04:05Z")
+	if _, err := utils.InitClock(); err != nil {
+		t.Fatal(err)
+	}
 	var payload apiinfrastructure.ResolveInfrastructureInput
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&payload)
@@ -226,7 +232,6 @@ func TestGetInfrastructureContext_DefaultsTimestamp(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	before := time.Now().Unix()
 	handler := NewGetInfrastructureContextHandler(srv.Client(), testResolveConfig(srv.URL))
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetInfrastructureContextArgs{
 		EntityType: "k8s_pod",
@@ -235,8 +240,7 @@ func TestGetInfrastructureContext_DefaultsTimestamp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	after := time.Now().Unix()
-	if payload.Timestamp < before || payload.Timestamp > after {
-		t.Fatalf("timestamp %d not in [%d, %d]", payload.Timestamp, before, after)
+	if payload.Timestamp != 1767323045 {
+		t.Fatalf("timestamp %d, want fake now 1767323045", payload.Timestamp)
 	}
 }
