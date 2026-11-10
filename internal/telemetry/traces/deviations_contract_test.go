@@ -118,7 +118,7 @@ func TestDeviationResponseWithMoreThanFiveResultsFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := callDeviationsHandler(t, http.StatusOK, body); err == nil || !strings.Contains(err.Error(), "returned 6 deviations") {
+	if _, err := callDeviationsHandler(t, http.StatusOK, body); err == nil || !strings.Contains(traceLogCause(err).Error(), "returned 6 deviations") {
 		t.Fatalf("over-5 response must hit the result-count guard, got %v", err)
 	}
 }

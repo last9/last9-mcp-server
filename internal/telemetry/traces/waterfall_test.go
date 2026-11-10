@@ -58,7 +58,7 @@ func TestTraceWaterfallHandlerRejectsOversizedUpstreamBodyBeforeDecode(t *testin
 	})}
 	handler := NewGetTraceWaterfallHandler(client, tracesTestConfig("https://example.test"))
 	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceWaterfallArgs{TraceID: "0123456789abcdef0123456789abcdef"})
-	if err == nil || !strings.Contains(err.Error(), "exceeds 16777216 bytes") {
+	if err == nil || !strings.Contains(traceLogCause(err).Error(), "exceeds 16777216 bytes") {
 		t.Fatalf("expected bounded-body error, got %v", err)
 	}
 }
