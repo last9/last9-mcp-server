@@ -89,7 +89,7 @@ func TestDeviationEndpointFixtureSatisfiesEvidenceContract(t *testing.T) {
 }
 
 func TestDeviationResultPreservesExactBytesAndUnknownAdditiveFields(t *testing.T) {
-	body := bytes.Replace(deviationEndpointFixture(t), []byte("{\n"), []byte("{\n  \"future_field\": {\"kept\": true},\n"), 1)
+	body := bytes.Replace(deviationEndpointFixture(t), []byte("{\n"), []byte("{\n  \"future_field\": {\"kept\": true},\n  \"DATA\": \"extension\",\n"), 1)
 	result, err := callDeviationsHandler(t, http.StatusOK, body)
 	if err != nil {
 		t.Fatal(err)
@@ -100,6 +100,55 @@ func TestDeviationResultPreservesExactBytesAndUnknownAdditiveFields(t *testing.T
 	}
 	if !strings.Contains(string(structured), `"future_field"`) {
 		t.Fatal("unknown additive field was dropped")
+	}
+}
+
+func TestDeviationResponseValidatesOnlyExactFieldNames(t *testing.T) {
+	fixture := deviationEndpointFixture(t)
+	cases := map[string][]byte{
+		"top-level alias before": bytes.Replace(fixture, []byte(`"data": {`), []byte(`"DATA": {"deviations": []}, "data": {`), 1),
+		"nested alias before":    bytes.Replace(fixture, []byte(`"deviations": [`), []byte(`"DEVIATIONS": [], "deviations": [`), 1),
+	}
+	topEnd := bytes.LastIndexByte(fixture, '}')
+	cases["top-level alias after"] = append(append(append([]byte{}, fixture[:topEnd]...), []byte(`, "DATA": {"deviations": []}`)...), fixture[topEnd:]...)
+	deviationsEnd := bytes.LastIndex(fixture, []byte("\n  }"))
+	cases["nested alias after"] = append(append(append([]byte{}, fixture[:deviationsEnd]...), []byte(`, "DEVIATIONS": []`)...), fixture[deviationsEnd:]...)
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := callDeviationsHandler(t, http.StatusOK, body); err != nil {
+				t.Fatalf("additive alias rejected: %v", err)
+			}
+		})
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(fixture, &payload); err != nil {
+		t.Fatal(err)
+	}
+	deviations := payload["data"].(map[string]any)["deviations"].([]any)
+	for len(deviations) < 6 {
+		deviations = append(deviations, deviations[0])
+	}
+	payload["data"].(map[string]any)["deviations"] = deviations
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	end := bytes.LastIndexByte(body, '}')
+	body = append(append(append([]byte{}, body[:end]...), []byte(`, "DATA":{"deviations":[]}`)...), body[end:]...)
+	if _, err := callDeviationsHandler(t, http.StatusOK, body); err == nil || !strings.Contains(traceLogCause(err).Error(), "returned 6 deviations") {
+		t.Fatalf("lowercase deviations must determine the count, got %v", err)
+	}
+
+	for name, aliased := range map[string][]byte{
+		"valid alias before invalid exact": bytes.Replace(fixture, []byte(`"data": {`), []byte(`"DATA":{"deviations":[]}, "data": null, "ignored_data": {`), 1),
+		"valid alias after invalid exact":  append(append(append([]byte{}, bytes.Replace(fixture, []byte(`"data": {`), []byte(`"data": null, "ignored_data": {`), 1)[:topEnd]...), []byte(`, "DATA":{"deviations":[]}`)...), fixture[topEnd:]...),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := callDeviationsHandler(t, http.StatusOK, aliased); err == nil {
+				t.Fatal("invalid exact data field must be rejected")
+			}
+		})
 	}
 }
 
@@ -157,12 +206,15 @@ func TestDeviationResponseRejectsWrongTypedRequiredSections(t *testing.T) {
 	}
 }
 
-func TestDeviationResponseAboveBodyLimitFailsClosed(t *testing.T) {
+func TestDeviationResponseBodyLimit(t *testing.T) {
 	body := append([]byte{}, deviationEndpointFixture(t)...)
 	body = append(body, bytes.Repeat([]byte{' '}, deviationMaxResponseBodyBytes-len(body))...)
-	body = append(body, 'x')
-	if _, err := callDeviationsHandler(t, http.StatusOK, body); err == nil {
-		t.Fatal("over-limit response must be rejected before forwarding")
+	if _, err := callDeviationsHandler(t, http.StatusOK, body); err != nil {
+		t.Fatalf("response at limit must be accepted: %v", err)
+	}
+	body = append(body, ' ')
+	if _, err := callDeviationsHandler(t, http.StatusOK, body); err == nil || !strings.Contains(traceLogCause(err).Error(), "exceeds 4194304 bytes") {
+		t.Fatalf("over-limit response must hit the size guard, got %v", err)
 	}
 }
 

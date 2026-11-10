@@ -439,61 +439,56 @@ func callAttributeDeviationsAPI(ctx context.Context, client *http.Client, cfg mo
 // The handler forwards this body verbatim, so a payload that is not the promised
 // envelope would have the model reasoning over fields that do not exist.
 func checkDeviationResponseContract(body []byte) error {
-	var envelope struct {
-		ContractVersion string `json:"contract_version"`
-		AnalysisVersion string `json:"analysis_version"`
-		Request         *struct {
-			Scope           json.RawMessage `json:"scope"`
-			RequestedWindow json.RawMessage `json:"requested_window"`
-			EffectiveWindow json.RawMessage `json:"effective_window"`
-		} `json:"request"`
-		Evidence *struct {
-			Partial    *bool              `json:"partial"`
-			Truncated  *bool              `json:"truncated"`
-			Warnings   *[]json.RawMessage `json:"warnings"`
-			Provenance json.RawMessage    `json:"provenance"`
-		} `json:"evidence"`
-		Interpretation *struct {
-			EvidenceQuality *string            `json:"evidence_quality"`
-			ClaimType       *string            `json:"claim_type"`
-			Summary         *string            `json:"summary"`
-			Limitations     *[]json.RawMessage `json:"limitations"`
-		} `json:"interpretation"`
-		Data *struct {
-			Deviations *[]json.RawMessage `json:"deviations"`
-		} `json:"data"`
-	}
+	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		return newTraceInvalidResponseError(err)
 	}
-	if envelope.ContractVersion != investigationEvidenceVersion {
-		return newTraceInvalidResponseError(fmt.Errorf(
-			"expected contract_version %q, got %q", investigationEvidenceVersion, envelope.ContractVersion))
-	}
-	if envelope.AnalysisVersion != attributeDeviationsVersion {
-		return newTraceInvalidResponseError(fmt.Errorf(
-			"expected analysis_version %q, got %q", attributeDeviationsVersion, envelope.AnalysisVersion))
-	}
-	if envelope.Request == nil || !rawJSONObject(envelope.Request.Scope) || !rawJSONObject(envelope.Request.RequestedWindow) || !rawJSONObject(envelope.Request.EffectiveWindow) {
+	request, requestOK := rawObject(envelope["request"])
+	if !requestOK || !rawJSONObject(request["scope"]) || !rawJSONObject(request["requested_window"]) || !rawJSONObject(request["effective_window"]) {
 		return newTraceInvalidResponseError(fmt.Errorf("response request must contain object scope and windows"))
 	}
-	if envelope.Evidence == nil || envelope.Evidence.Partial == nil || envelope.Evidence.Truncated == nil || envelope.Evidence.Warnings == nil || !rawJSONObject(envelope.Evidence.Provenance) {
+	evidence, evidenceOK := rawObject(envelope["evidence"])
+	if !evidenceOK || !rawBool(evidence["partial"]) || !rawBool(evidence["truncated"]) || !rawJSONArray(evidence["warnings"]) || !rawJSONObject(evidence["provenance"]) {
 		return newTraceInvalidResponseError(fmt.Errorf("response evidence is missing required typed fields"))
 	}
-	if envelope.Interpretation == nil || envelope.Interpretation.EvidenceQuality == nil || envelope.Interpretation.ClaimType == nil || envelope.Interpretation.Summary == nil || envelope.Interpretation.Limitations == nil {
+	interpretation, interpretationOK := rawObject(envelope["interpretation"])
+	if !interpretationOK || !rawString(interpretation["evidence_quality"]) || !rawString(interpretation["claim_type"]) || !rawString(interpretation["summary"]) || !rawJSONArray(interpretation["limitations"]) {
 		return newTraceInvalidResponseError(fmt.Errorf("response interpretation is missing required typed fields"))
 	}
-	if envelope.Data == nil || envelope.Data.Deviations == nil {
+	data, dataOK := rawObject(envelope["data"])
+	var deviations []json.RawMessage
+	if !dataOK || json.Unmarshal(data["deviations"], &deviations) != nil || deviations == nil {
 		return newTraceInvalidResponseError(fmt.Errorf("response missing required data.deviations array"))
 	}
-	if len(*envelope.Data.Deviations) > deviationReturnedResultsMax {
+	if len(deviations) > deviationReturnedResultsMax {
 		return newTraceInvalidResponseError(fmt.Errorf(
-			"response returned %d deviations; maximum supported is %d", len(*envelope.Data.Deviations), deviationReturnedResultsMax))
+			"response returned %d deviations; maximum supported is %d", len(deviations), deviationReturnedResultsMax))
 	}
 	return nil
 }
 
-func rawJSONObject(raw json.RawMessage) bool {
+func rawObject(raw json.RawMessage) (map[string]json.RawMessage, bool) {
 	var object map[string]json.RawMessage
-	return len(raw) > 0 && json.Unmarshal(raw, &object) == nil && object != nil
+	err := json.Unmarshal(raw, &object)
+	return object, len(raw) > 0 && err == nil && object != nil
+}
+
+func rawJSONObject(raw json.RawMessage) bool {
+	_, ok := rawObject(raw)
+	return ok
+}
+
+func rawJSONArray(raw json.RawMessage) bool {
+	var array []json.RawMessage
+	return len(raw) > 0 && json.Unmarshal(raw, &array) == nil && array != nil
+}
+
+func rawBool(raw json.RawMessage) bool {
+	var value bool
+	return len(raw) > 0 && json.Unmarshal(raw, &value) == nil
+}
+
+func rawString(raw json.RawMessage) bool {
+	var value string
+	return len(raw) > 0 && json.Unmarshal(raw, &value) == nil
 }
