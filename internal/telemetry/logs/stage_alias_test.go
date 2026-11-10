@@ -33,7 +33,7 @@ func lastQueryJSON(t *testing.T, stages []map[string]interface{}) string {
 }
 
 func TestPrepareLogJSONQueryAcceptsStageAliases(t *testing.T) {
-	scope := cmpFilter("$eq", "ServiceName", "last9-api")
+	scope := cmpFilter("$eq", "ServiceName", "example-service")
 	gb := func(k, v string) map[string]interface{} { return map[string]interface{}{k: v} }
 	cases := []struct {
 		name   string
@@ -70,7 +70,7 @@ func TestPrepareLogJSONQueryAcceptsStageAliases(t *testing.T) {
 }
 
 func TestPrepareLogJSONQueryRejectsOutOfScopeAliases(t *testing.T) {
-	scope := cmpFilter("$eq", "ServiceName", "last9-api")
+	scope := cmpFilter("$eq", "ServiceName", "example-service")
 	sev := map[string]interface{}{"SeverityText": "sev"}
 	cases := []struct {
 		name   string
