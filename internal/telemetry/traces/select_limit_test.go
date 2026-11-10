@@ -159,6 +159,58 @@ func TestGetTracesHandlerRunsSelectAsOneBoundedRequest(t *testing.T) {
 	}
 }
 
+func TestGetTracesHandlerCapsExplicitSelectResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		selectLimit     int
+		requestLimit    int
+		configuredLimit int
+		wantRows        int
+	}{
+		{name: "request limit caps select", selectLimit: 10, requestLimit: 3, wantRows: 3},
+		{name: "configured limit caps select", selectLimit: 10, configuredLimit: 3, wantRows: 3},
+		{name: "smaller select limit is preserved", selectLimit: 2, requestLimit: 3, wantRows: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(traceAPIResponse(tc.selectLimit)))
+			}))
+			defer server.Close()
+
+			cfg := testChunkTracesConfig(server.URL)
+			cfg.MaxGetTracesEntries = tc.configuredLimit
+			result, _, err := NewGetTracesHandler(server.Client(), cfg)(
+				context.Background(), &mcp.CallToolRequest{}, GetTracesArgs{
+					TracejsonQuery: filterThenSelect(map[string]interface{}{
+						"type": "select", "labels": map[string]interface{}{"ServiceName": "svc"}, "limit": float64(tc.selectLimit),
+					}),
+					StartTimeISO: "2026-01-01T00:00:00Z",
+					EndTimeISO:   "2026-01-01T00:05:00Z",
+					Limit:        tc.requestLimit,
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var payload struct {
+				Data struct {
+					Result []json.RawMessage `json:"result"`
+				} `json:"data"`
+				Guidance map[string]interface{} `json:"l9_guidance"`
+			}
+			if err := json.Unmarshal([]byte(utils.GetTextContent(t, result)), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if got := len(payload.Data.Result); got != tc.wantRows {
+				t.Fatalf("returned %d rows, want %d", got, tc.wantRows)
+			}
+			if payload.Guidance == nil {
+				t.Fatal("expected truncation guidance at the effective response limit")
+			}
+		})
+	}
+}
+
 func TestGetTracesHandlerUsesFinalSelectLimitForGuidance(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
