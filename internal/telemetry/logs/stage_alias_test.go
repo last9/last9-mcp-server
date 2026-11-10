@@ -117,3 +117,59 @@ func TestPrepareLogJSONQueryNotNull(t *testing.T) {
 		t.Fatalf("$exists: got %v", err)
 	}
 }
+
+func TestPrepareLogJSONQueryAcceptsAliasesInGroupByAndWindowFunction(t *testing.T) {
+	groupBy := func(field, alias string) map[string]interface{} {
+		return map[string]interface{}{field: alias}
+	}
+	scope := cmpFilter("$eq", "ServiceName", "example")
+
+	t.Run("aggregate function and groupby", func(t *testing.T) {
+		stages := []map[string]interface{}{
+			scope,
+			countBy("n", groupBy("ServiceName", "svc")),
+			{
+				"type": "aggregate",
+				"aggregates": []interface{}{map[string]interface{}{
+					"function": fn1("$sum", "n"), "as": "total",
+				}},
+				"groupby": groupBy("svc", "service"),
+			},
+		}
+
+		out, err := prepareLogJSONQuery(stages, "logjson_query")
+		if err != nil {
+			t.Fatalf("prepare query: %v", err)
+		}
+		aggregate := out[2]["aggregates"].([]interface{})[0].(map[string]interface{})
+		function := aggregate["function"].(map[string]interface{})
+		if got := function["$sum"].([]interface{})[0]; got != "n" {
+			t.Errorf("sum field = %v, want n", got)
+		}
+		if got := out[2]["groupby"].(map[string]interface{})["svc"]; got != "service" {
+			t.Errorf("groupby alias = %v, want service", got)
+		}
+	})
+
+	t.Run("window function", func(t *testing.T) {
+		stages := []map[string]interface{}{
+			scope,
+			countBy("n", groupBy("ServiceName", "svc")),
+			{
+				"type":     "window_aggregate",
+				"function": fn1("$sum", "n"),
+				"as":       "total",
+				"window":   []interface{}{"1", "minutes"},
+			},
+		}
+
+		out, err := prepareLogJSONQuery(stages, "logjson_query")
+		if err != nil {
+			t.Fatalf("prepare query: %v", err)
+		}
+		function := out[2]["function"].(map[string]interface{})
+		if got := function["$sum"].([]interface{})[0]; got != "n" {
+			t.Errorf("sum field = %v, want n", got)
+		}
+	})
+}
