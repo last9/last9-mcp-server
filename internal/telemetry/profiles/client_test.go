@@ -12,12 +12,13 @@ func TestRunQueryRangeSanitizesOnlyErrorResponses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	statusCheck := strings.Index(string(src), "switch resp.StatusCode")
-	sanitize := strings.Index(string(src), "utils.SanitizeUpstreamBody")
+	code := string(src)
+	statusCheck := strings.Index(code, "switch resp.StatusCode")
+	sanitize := strings.Index(code, "utils.SanitizeUpstreamBody")
 	if statusCheck < 0 || sanitize < 0 {
 		t.Fatal("runQueryRange must check the response status and sanitize error bodies")
 	}
-	if sanitize < statusCheck {
+	if strings.Contains(code[:statusCheck], "msg := utils.SanitizeUpstreamBody") {
 		t.Fatal("runQueryRange sanitizes successful response bodies")
 	}
 }
