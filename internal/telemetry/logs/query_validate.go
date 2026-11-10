@@ -296,8 +296,12 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 		}
 
 		checkFunction := func(function map[string]interface{}, functionPath string) error {
-			for _, name := range []string{"$quantile", "$quantile_exact"} {
-				rawArgs, ok := function[name].([]interface{})
+			for name, raw := range function {
+				baseName := strings.TrimSuffix(name, "_over_time")
+				if baseName != "$quantile" && baseName != "$quantile_exact" {
+					continue
+				}
+				rawArgs, ok := raw.([]interface{})
 				if !ok || len(rawArgs) != 2 {
 					continue
 				}

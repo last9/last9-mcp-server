@@ -214,12 +214,31 @@ func TestPrepareLogJSONQueryRejectsInvalidAggregateAlias(t *testing.T) {
 }
 
 func TestPrepareLogJSONQueryQuantileExactNeedsNumericGuard(t *testing.T) {
-	fn := fn1("$quantile_exact", 0.99, aggF)
-	_, err := prepareLogJSONQuery([]map[string]interface{}{aggregateStage(fn, "v")}, "logjson_query")
-	requireInvalidField(t, err, "logjson_query[0].aggregates[0].function.$quantile_exact[1]", "canonical anchored numeric $regex")
-	_, err = prepareLogJSONQuery([]map[string]interface{}{testCanonicalNumericFilter(aggF), aggregateStage(fn, "v")}, "logjson_query")
-	if err != nil {
-		t.Fatalf("unexpected error with guard: %v", err)
+	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
+		for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{
+			"aggregate": func(fn map[string]interface{}, as string) map[string]interface{} { return aggregateStage(fn, as) },
+			"window":    windowStage,
+		} {
+			t.Run(operator+"/"+kind, func(t *testing.T) {
+				stage := consumer(fn1(operator, 0.99, aggF), "v")
+				_, err := prepareLogJSONQuery([]map[string]interface{}{stage}, "logjson_query")
+				path := "logjson_query[0].function." + operator + "[1]"
+				if kind == "aggregate" {
+					path = "logjson_query[0].aggregates[0].function." + operator + "[1]"
+				}
+				requireInvalidField(t, err, path, "canonical anchored numeric $regex")
+				_, err = prepareLogJSONQuery([]map[string]interface{}{testCanonicalNumericFilter(aggF), stage}, "logjson_query")
+				if err != nil {
+					t.Fatalf("unexpected error with guard: %v", err)
+				}
+				parse := map[string]interface{}{
+					"type": "parse", "parser": "json", "field": "Body",
+					"labels": map[string]interface{}{"latency_ms": "latency_ms"},
+				}
+				_, err = prepareLogJSONQuery([]map[string]interface{}{testCanonicalNumericFilter(aggF), parse, stage}, "logjson_query")
+				requireInvalidField(t, err, "logjson_query[2]"+strings.TrimPrefix(path, "logjson_query[0]"), "canonical anchored numeric $regex")
+			})
+		}
 	}
 }
 
