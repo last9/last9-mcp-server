@@ -51,13 +51,17 @@ func NewGetLogsHandler(client *http.Client, cfg models.Config) func(context.Cont
 		if err != nil {
 			return nil, nil, err
 		}
+		startTime, endTime, err := parseTimeRangeFromArgs(args)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to parse time range: %v", err)
+		}
 		if err := validateExactQuantileContract(ctx, sanitizedQuery, cfg, args.Index); err != nil {
 			return nil, nil, err
 		}
 		args.LogjsonQuery = sanitizedQuery
 
 		// Handle logjson_query directly
-		result, err := handleLogJSONQuery(ctx, client, cfg, sanitizedQuery, args)
+		result, err := handleLogJSONQuery(ctx, client, cfg, sanitizedQuery, args, startTime, endTime)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -105,13 +109,7 @@ func validateExactQuantileContract(ctx context.Context, stages []map[string]inte
 	return nil
 }
 
-func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, args GetLogsArgs) (*mcp.CallToolResult, error) {
-	// Determine time range from parameters
-	startTime, endTime, err := parseTimeRangeFromArgs(args)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse time range: %v", err)
-	}
-
+func handleLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, args GetLogsArgs, startTime, endTime int64) (*mcp.CallToolResult, error) {
 	result, err := fetchLogJSONQuery(ctx, client, cfg, logjsonQuery, startTime, endTime, args)
 	if err != nil {
 		return nil, err
