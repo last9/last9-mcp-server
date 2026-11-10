@@ -84,9 +84,7 @@ type deviationAPIComparison struct {
 	Target             deviationAPIWindow `json:"target"`
 	Control            deviationAPIWindow `json:"control"`
 	LatencyThresholdMs *float64           `json:"latency_threshold_ms,omitempty"`
-	// LatencyPercentile is validated the same way as Population above, and is
-	// likewise withheld from the wire request until the endpoint accepts it.
-	LatencyPercentile *float64 `json:"-"`
+	LatencyPercentile  *float64           `json:"latency_percentile,omitempty"`
 }
 
 type deviationAPIWindow struct {

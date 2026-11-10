@@ -132,6 +132,37 @@ func TestTraceAttributeDeviationsHandlerCallsAtomicEndpoint(t *testing.T) {
 	}
 }
 
+func TestTraceAttributeDeviationsHandlerSendsLatencyPercentile(t *testing.T) {
+	var comparison map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Comparison map[string]any `json:"comparison"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		comparison = request.Comparison
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(deviationEndpointFixture(t))
+	}))
+	defer server.Close()
+
+	handler := NewGetTraceAttributeDeviationsHandler(server.Client(), tracesTestConfig(server.URL))
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, GetTraceAttributeDeviationsArgs{
+		ComparisonMode: "latency", ServiceName: "checkout", Environment: "production",
+		LatencyPercentile: deviationFloat64(95),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := comparison["latency_percentile"]; got != float64(95) {
+		t.Fatalf("latency_percentile = %v, want 95", got)
+	}
+	if _, ok := comparison["latency_threshold_ms"]; ok {
+		t.Fatalf("latency_threshold_ms must be omitted: %v", comparison)
+	}
+}
+
 // The sanitizer must not forward a {"$and":[...]} logical operator as a single
 // filters-array element. When a filters element mixes $notnull/$exists with a
 // sibling field operator, the shared existence rewriter folds it to $and; the
