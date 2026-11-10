@@ -176,26 +176,5 @@
         "depth": 1
       }
     ]
-  },
-  "sanitizer": {
-    "version": "trace-evidence-sanitizer/v1",
-    "categories_applied": [
-      "credentials",
-      "emails",
-      "ipv4",
-      "ipv6",
-      "query_literals",
-      "urls",
-      "user_identifiers"
-    ],
-    "truncated": false,
-    "partial": false,
-    "limits": {
-      "max_spans": 1000,
-      "max_bytes": 524288,
-      "max_depth": 12,
-      "include_events": true,
-      "include_links": true
-    }
   }
 }

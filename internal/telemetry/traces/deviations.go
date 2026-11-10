@@ -70,11 +70,8 @@ type deviationAPIScope struct {
 	ServiceName string `json:"service_name"`
 	Environment string `json:"environment"`
 	Operation   string `json:"operation,omitempty"`
-	// Population is derived and validated for forward compatibility but kept out
-	// of the wire request: the deployed attribute-deviations endpoint rejects any
-	// unrecognized scope key (additionalProperties: false) with a generic
-	// "request body must be one valid JSON object" 400, and it does not yet know
-	// this key.
+	// The deployed endpoint rejects population as an unknown scope key. Keep it
+	// local until the backend accepts the advertised forward-compatible field.
 	Population string                   `json:"-"`
 	Filters    []map[string]interface{} `json:"filters,omitempty"`
 }
@@ -105,13 +102,24 @@ type deviationAPILimits struct {
 	MaximumRankedResults int `json:"maximum_ranked_results"`
 }
 
+type AttributeDeviation struct {
+	Attribute            string  `json:"attribute"`
+	Value                any     `json:"value"`
+	TargetCount          float64 `json:"target_count"`
+	ControlCount         float64 `json:"control_count"`
+	PercentagePointDelta float64 `json:"percentage_point_delta"`
+	Rank                 int     `json:"rank"`
+	Interpretation       string  `json:"interpretation,omitempty"`
+}
+
+type AttributeDeviations struct {
+	Deviations []AttributeDeviation
+	Warnings   []string
+}
+
 func NewGetTraceAttributeDeviationsHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetTraceAttributeDeviationsArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, args GetTraceAttributeDeviationsArgs) (*mcp.CallToolResult, any, error) {
-		request, err := buildDeviationAPIRequest(args, time.Now())
-		if err != nil {
-			return nil, nil, err
-		}
-		body, err := callAttributeDeviationsAPI(ctx, client, cfg, request)
+		body, err := fetchAttributeDeviations(ctx, client, cfg, args)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -120,6 +128,37 @@ func NewGetTraceAttributeDeviationsHandler(client *http.Client, cfg models.Confi
 			StructuredContent: json.RawMessage(body),
 		}, nil, nil
 	}
+}
+
+func QueryTraceAttributeDeviations(ctx context.Context, client *http.Client, cfg models.Config, args GetTraceAttributeDeviationsArgs) (AttributeDeviations, error) {
+	body, err := fetchAttributeDeviations(ctx, client, cfg, args)
+	if err != nil {
+		return AttributeDeviations{}, err
+	}
+	var envelope struct {
+		Evidence struct {
+			Warnings []string `json:"warnings"`
+		} `json:"evidence"`
+		Data struct {
+			Deviations []AttributeDeviation `json:"deviations"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return AttributeDeviations{}, newTraceInvalidResponseError(err)
+	}
+	result := AttributeDeviations{Deviations: envelope.Data.Deviations, Warnings: envelope.Evidence.Warnings}
+	if result.Warnings == nil {
+		result.Warnings = []string{}
+	}
+	return result, nil
+}
+
+func fetchAttributeDeviations(ctx context.Context, client *http.Client, cfg models.Config, args GetTraceAttributeDeviationsArgs) ([]byte, error) {
+	request, err := buildDeviationAPIRequest(args, utils.Now())
+	if err != nil {
+		return nil, err
+	}
+	return callAttributeDeviationsAPI(ctx, client, cfg, request)
 }
 
 func buildDeviationAPIRequest(args GetTraceAttributeDeviationsArgs, now time.Time) (deviationAPIRequest, error) {

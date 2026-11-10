@@ -7,6 +7,9 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +18,47 @@ import (
 )
 
 type waterfallRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func waterfallFixture(t *testing.T) []byte {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Clean(waterfallFixturePath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
+type waterfallCall struct {
+	result  *mcp.CallToolResult
+	err     error
+	request *http.Request
+}
+
+func callWaterfallHandler(t *testing.T, status int, body []byte, args GetTraceWaterfallArgs) waterfallCall {
+	t.Helper()
+	var call waterfallCall
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call.request = r
+		w.WriteHeader(status)
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+	handler := NewGetTraceWaterfallHandler(server.Client(), verifyTraceCfg(server.URL))
+	call.result, _, call.err = handler(context.Background(), &mcp.CallToolRequest{}, args)
+	return call
+}
+
+func waterfallText(t *testing.T, result *mcp.CallToolResult) string {
+	t.Helper()
+	if result == nil || len(result.Content) != 1 {
+		t.Fatalf("want one content item, got %+v", result)
+	}
+	text, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("unexpected content type %T", result.Content[0])
+	}
+	return text.Text
+}
 
 func (f waterfallRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return f(request)

@@ -123,7 +123,7 @@ func TestGetTraceWaterfall_InvalidIDsMakeZeroUpstreamRequests(t *testing.T) {
 	}
 }
 
-func TestGetTraceWaterfall_UppercaseIDsReachTheWireLowercased(t *testing.T) {
+func TestGetTraceWaterfall_UppercaseIDsAreNormalized(t *testing.T) {
 	call := callWaterfallHandler(t, http.StatusOK, waterfallFixture(t), GetTraceWaterfallArgs{
 		TraceID:        strings.ToUpper(testValidTraceID),
 		SelectedSpanID: strings.ToUpper(testValidSpanID),
@@ -136,11 +136,17 @@ func TestGetTraceWaterfall_UppercaseIDsReachTheWireLowercased(t *testing.T) {
 	if !strings.Contains(sent.Path, testValidTraceID) {
 		t.Errorf("want lowercased trace ID in the upstream URL, got %q", sent)
 	}
-	if strings.Contains(sent.String(), strings.ToUpper(testValidTraceID)) || strings.Contains(sent.String(), strings.ToUpper(testValidSpanID)) {
+	if strings.Contains(sent.String(), strings.ToUpper(testValidTraceID)) {
 		t.Errorf("raw uppercase ID reached the wire: %q", sent)
 	}
-	if got := sent.Query().Get("selected_span_id"); got != testValidSpanID {
-		t.Errorf("selected_span_id = %q, want %q", got, testValidSpanID)
+	var payload struct {
+		Request WaterfallRequest `json:"request"`
+	}
+	if err := json.Unmarshal([]byte(waterfallText(t, call.result)), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if got := payload.Request.SelectedSpanID; got != testValidSpanID {
+		t.Errorf("request.selected_span_id = %q, want %q", got, testValidSpanID)
 	}
 }
 

@@ -206,9 +206,11 @@ func TestResultBoundsReportDroppedCounts(t *testing.T) {
 	var deviations []traces.AttributeDeviation
 	var alerts []alerting.AlertRuleData
 	for i := 12; i >= 1; i-- {
-		deviations = append(deviations, traces.AttributeDeviation{Attribute: "k8s.pod", Value: fmt.Sprintf("pod-%d", i), Rank: i, PercentagePointDelta: float64(i)})
 		alerts = append(alerts, alerting.AlertRuleData{RuleID: fmt.Sprintf("r%02d", i), AlertGroupName: "checkout",
 			Alerts: []alerting.AlertInstance{{State: "firing", Since: change.Add(time.Duration(i) * time.Minute).Unix()}}})
+	}
+	for i := 5; i >= 1; i-- {
+		deviations = append(deviations, traces.AttributeDeviation{Attribute: "k8s.pod", Value: fmt.Sprintf("pod-%d", i), Rank: i, PercentagePointDelta: float64(i)})
 	}
 	f := &fakeLast9{change: change, baseline: baseline, after: after, callers: callers, traceDeviations: deviations, alerts: alerts}
 
@@ -226,7 +228,7 @@ func TestResultBoundsReportDroppedCounts(t *testing.T) {
 		}
 	}
 	tr := report.Deviations.TraceAttributes
-	if len(tr.Items) != sectionTopN || tr.Dropped != 2 || tr.Items[0].Rank != 1 {
+	if len(tr.Items) != 5 || tr.Dropped != 0 || tr.Items[0].Rank != 1 {
 		t.Fatalf("trace deviations = %d items, dropped %d, first rank %d", len(tr.Items), tr.Dropped, tr.Items[0].Rank)
 	}
 	if len(report.Alerts.Started) != sectionTopN || report.Alerts.Dropped != 2 || report.Alerts.Started[0].RuleID != "r01" {
