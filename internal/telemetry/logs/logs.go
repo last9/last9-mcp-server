@@ -22,6 +22,7 @@ import (
 const (
 	defaultGetLogsLookbackMinutes = 5
 	defaultGetLogsAggregateLimit  = 1000
+	maxGetLogsChunks              = 24
 )
 
 // GetLogsArgs represents the input arguments for the get_logs tool
@@ -182,6 +183,13 @@ func fetchLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Conf
 		EndMs:    endTime,
 		Pipeline: args.LogjsonQuery,
 	})
+	// Bound total work before allocating chunks; parallelism alone only bounds in-flight requests.
+	if endTime > startTime {
+		chunkCount := 1 + (endTime-startTime-1)/adaptiveCfg.ChunkSizeMs
+		if chunkCount > maxGetLogsChunks {
+			return nil, fmt.Errorf("get_logs requires %d chunks (maximum %d); no log queries were sent. Reduce lookback_minutes to 1440 or less, or narrow start_time_iso/end_time_iso to at most 24 hours. Do not retry unchanged", chunkCount, maxGetLogsChunks)
+		}
+	}
 	chunks := utils.GetAdaptiveChunks(startTime, endTime, adaptiveCfg)
 	if len(chunks) == 0 {
 		if chunkingDebug {
@@ -476,7 +484,7 @@ func shouldChunkGetLogsQuery(logjsonQuery interface{}) bool {
 func executeLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Config, logjsonQuery interface{}, startTime, endTime int64, limit int, index string) (map[string]interface{}, error) {
 	resp, err := utils.MakeLogsJSONQueryAPI(ctx, client, cfg, logjsonQuery, startTime, endTime, limit, index)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call log JSON query API: %v", err)
+		return nil, fmt.Errorf("failed to call log JSON query API: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -487,7 +495,7 @@ func executeLogJSONQuery(ctx context.Context, client *http.Client, cfg models.Co
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	return result, nil
@@ -598,7 +606,7 @@ func emptyStreamsResponse() map[string]interface{} {
 
 // parseTimeRangeFromArgs extracts start and end times from GetLogsArgs
 func parseTimeRangeFromArgs(args GetLogsArgs) (int64, int64, error) {
-	return parseTimeRangeFromArgsAt(args, time.Now().UTC())
+	return parseTimeRangeFromArgsAt(args, utils.Now().UTC())
 }
 
 func parseTimeRangeFromArgsAt(args GetLogsArgs, now time.Time) (int64, int64, error) {

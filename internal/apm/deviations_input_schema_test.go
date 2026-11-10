@@ -59,7 +59,7 @@ func TestAPMServiceDeviationsInputSchemaStructure(t *testing.T) {
 	descriptionRequirements := map[string][]string{
 		"service_name":            {"Exact service", "Omit", "fleet"},
 		"env":                     {"Exact environment", "never merged"},
-		"datasource":              {"One datasource", "default"},
+		"datasource":              {"One datasource", "default", "closest match", "candidates", "content block"},
 		"start_time_iso":          {"RFC3339", "end_time_iso", "lookback_minutes"},
 		"end_time_iso":            {"RFC3339", "start_time_iso", "lookback_minutes"},
 		"lookback_minutes":        {"default 60", "Mutually exclusive", "no completed buckets"},

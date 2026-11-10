@@ -12,7 +12,7 @@ import (
 func TestDatasourceRejectsBeyondBudget(t *testing.T) {
 	for _, input := range []string{"staging", "stapinx"} {
 		t.Run(input, func(t *testing.T) {
-			tools, readURLs := promToolsUnderTest(t)
+			tools, readURLs := datasourceToolsUnderTest(t)
 			for tool, call := range tools {
 				t.Run(tool, func(t *testing.T) {
 					*readURLs = nil
@@ -47,7 +47,7 @@ func TestDatasourceKeepsNumbersApartAcrossSeparators(t *testing.T) {
 
 func TestDatasourceLongUnknownAllocation(t *testing.T) {
 	input := strings.Repeat("x", 256<<10)
-	tools, readURLs := promToolsUnderTest(t)
+	tools, readURLs := datasourceToolsUnderTest(t)
 	for tool, call := range tools {
 		t.Run(tool, func(t *testing.T) {
 			*readURLs = nil

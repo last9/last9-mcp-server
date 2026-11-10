@@ -24,7 +24,7 @@ Pass JSON stages in `logjson_query`, never `pipeline`; **NOT SQL**/`stage`/`cond
 
 **Time:** `lookback_minutes` default **5**; absolute→`start_time_iso`+`end_time_iso` (not Timestamp).
 
-**Lines:** Set `response_mode:"raw"` to read entries; IDs/status codes if in text. 32000-byte cap: `logs_truncated` or error.
+**Lines:** omit `response_mode`; >20→summary; `raw`=exact text, max 32000 bytes (truncates/errors).
 
 **l9_sanity:** high→add filter, recount; zero→inspect samples.
 

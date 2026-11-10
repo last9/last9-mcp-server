@@ -4,12 +4,14 @@
 {{- $attributes := tools "get_log_attributes" "get_log_attributes_for_pipeline" "get_trace_attributes" "get_trace_attributes_for_pipeline" "get_trace_attribute_values" -}}
 {{- $metricNames := tools "prometheus_labels" "prometheus_label_values" -}}
 {{- $metricLookups := tools "prometheus_labels" "prometheus_label_values" "get_metric_status" -}}
-{{- $alertRules := tools "get_alert_groups" "get_alert_config" "get_entity_alert_rules" "get_notification_channels" -}}
+{{- $alertRules := tools "get_alert_groups" "get_alert_config" "get_entity_alert_rules" "get_entity_kpis" "get_notification_channels" -}}
 {{- $dashboards := tools "list_dashboards" "list_dashboard_snapshots" "grafana_search_dashboards" "grafana_list_folders" "grafana_list_folder_dashboards" -}}
 {{- $dashboardReads := tools "get_dashboard" "get_dashboard_snapshot" "grafana_get_dashboard" -}}
 {{- $serviceProfile := tools "get_service_profile" -}}
 {{- $health := tools "get_service_summary" "get_service_performance_details" "get_service_operations_summary" "get_service_dependency_graph" -}}
 {{- $alerts := tools "get_alerts" "get_alert_rule_state" -}}
+{{- $alertOps := tools "get_alert_operations_summary" -}}
+{{- $coverage := tools "get_alert_coverage" -}}
 {{- $changes := tools "get_change_events" "analyze_change_impact" -}}
 {{- $deviations := tools "get_apm_service_deviations" "get_trace_attribute_deviations" -}}
 {{- $scoped := tools "get_service_logs" "get_log_patterns" "get_emerging_log_patterns" "get_service_traces" "get_exceptions" "get_trace_waterfall" -}}
@@ -18,8 +20,8 @@
 {{- $raw := tools "get_logs" "get_traces" -}}
 {{- $logInventory := "" -}}
 {{- with $metricNames}}{{$raw = tools "prometheus_range_query" "prometheus_instant_query" "get_logs" "get_traces"}}{{else}}{{$logInventory = tools "prometheus_instant_query"}}{{end -}}
-{{- $create := tools "create_dashboard" "create_alert" "create_notification_channel" "create_alert_from_chart" -}}
-{{- $validate := tools "validate_dashboard" -}}
+{{- $create := tools "create_dashboard" "create_alert" "create_kpi" "create_notification_channel" "create_alert_from_chart" -}}
+{{- $validate := tools "validate_dashboard" "preview_dashboard" -}}
 {{- $alertValidate := tools "validate_alert_expression" -}}
 {{- $alertDesign := tools "recommend_alert_config" "describe_alert_chart" -}}
 {{- $dropRules := tools "get_drop_rules" -}}
@@ -38,7 +40,7 @@ When a request names no service or tool, call {{.}} first: it returns environmen
 For today's date or a relative window ("since 9am IST"), call {{.}}.
 {{- end}}
 {{- end}}
-{{- if or $services $attributes $metricLookups $logInventory $alertRules $dashboards}}
+{{- if or $services $attributes $metricNames $metricLookups $logInventory $alertRules $dashboards $dashboardReads}}
 
 ## Discover before you query
 Never guess service, environment, attribute, metric or label names, or dashboard ids; look them up and reuse the exact values.
@@ -59,9 +61,11 @@ Never guess service, environment, attribute, metric or label names, or dashboard
 {{- end}}
 {{- with $dashboards}}
 - Dashboards, snapshots and Grafana folders: {{.}}{{with $dashboardReads}}; open one by id with {{.}}{{end}}.
+{{- else}}{{with $dashboardReads}}
+- Open a dashboard by id with {{.}}.
+{{- end}}{{end}}
 {{- end}}
-{{- end}}
-{{- if or $serviceProfile $health $alerts $changes $deviations $scoped $databases $profiles}}
+{{- if or $serviceProfile $health $alerts $alertOps $coverage $changes $deviations $scoped $databases $profiles}}
 
 ## Prefer dedicated tools
 They return computed answers with the right scoping; reach for them before writing a query.
@@ -73,6 +77,9 @@ They return computed answers with the right scoping; reach for them before writi
 {{- end}}
 {{- with $alerts}}
 - Firing alerts and rule state: {{.}}.
+{{- end}}
+{{- with $alertOps}}
+- Alert counts and hygiene: {{.}}.
 {{- end}}
 {{- with $changes}}
 - Deploys and other changes: {{.}}.
@@ -88,6 +95,9 @@ They return computed answers with the right scoping; reach for them before writi
 {{- end}}
 {{- with $profiles}}
 - Profiles: {{.}}.
+{{- end}}
+{{- with $coverage}}
+- Alert coverage gaps: {{.}}.
 {{- end}}
 {{- end}}
 {{- with $raw}}
@@ -142,6 +152,9 @@ Read these resources before writing a non-trivial query{{if has "get_logs"}}. Af
 {{- end}}
 {{- with tools "create_alert" "create_alert_from_chart"}}
 - Alert rules from {{.}} are created disabled{{with tools "patch_alert"}}; enable them with {{.}} after validating{{end}}.
+{{- end}}
+{{- with tools "create_alert_from_chart"}}
+- An alert on a Discover chart uses {{.}} with a catalog signal_key{{with tools "create_alert" "create_kpi"}}; never {{.}} even if the user pastes PromQL{{end}}.
 {{- end}}
 {{- with $refine}}
 - Refine an existing object with {{.}}.

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"time"
 
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/prom"
@@ -42,7 +41,7 @@ func resolveInstantQueryTime(timeISO string, lookbackMinutes float64) (int64, er
 		return startTime.Unix(), nil
 	}
 
-	return time.Now().UTC().Unix(), nil
+	return utils.Now().UTC().Unix(), nil
 }
 
 func NewPromqlInstantQueryHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, PromqlInstantQueryArgs) (*mcp.CallToolResult, any, error) {
