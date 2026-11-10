@@ -19,6 +19,13 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// maxConcurrentGetTraces caps get_traces calls running at once across the
+// process: each can hold several 5000-trace chunk bodies, so a burst of calls
+// otherwise multiplies peak heap.
+const maxConcurrentGetTraces = 3
+
+var getTracesSlots = make(chan struct{}, maxConcurrentGetTraces)
+
 // GetTracesArgs represents the input arguments for the traces query tool
 type GetTracesArgs struct {
 	TracejsonQuery  []map[string]interface{} `json:"tracejson_query,omitempty" jsonschema:"(Required) JSON pipeline query for traces"`
@@ -39,6 +46,19 @@ func NewGetTracesHandler(client *http.Client, cfg models.Config) func(context.Co
 		// Validate the pipeline before forwarding to the API
 		if err := SanitizeTraceJSONQuery(args.TracejsonQuery); err != nil {
 			return nil, nil, err
+		}
+		if _, _, err := parseTimeRangeFromArgs(args); err != nil {
+			return nil, nil, fmt.Errorf("failed to parse time range: %v", err)
+		}
+
+		select {
+		case getTracesSlots <- struct{}{}:
+			defer func() { <-getTracesSlots }()
+		case <-ctx.Done():
+			return nil, nil, fmt.Errorf(
+				"get_traces is busy: %d concurrent get_traces calls were already running on this server and none finished before this call's deadline. Retry shortly; a narrower time window or lower limit makes calls finish sooner: %w",
+				maxConcurrentGetTraces, ctx.Err(),
+			)
 		}
 
 		// Handle tracejson_query directly

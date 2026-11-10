@@ -496,7 +496,7 @@ func isTraceOnlyLogField(fieldRef string) bool {
 // Trace-only names are rejected before this helper runs.
 func sanitizeStageFieldRef(fieldRef, path string, aliases map[string]struct{}) (string, error) {
 	trimmed := strings.TrimSpace(fieldRef)
-	if _, ok := aliases[trimmed]; ok {
+	if _, ok := aliases[trimmed]; ok || telemetry.IsMapFieldRef(trimmed) {
 		return trimmed, nil
 	}
 	return sanitizeLogFieldRef(trimmed, path)

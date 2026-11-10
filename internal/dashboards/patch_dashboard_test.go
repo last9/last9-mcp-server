@@ -686,6 +686,11 @@ func TestPatchDashboard_InvalidOpNamesIndexAndSkipsWrite(t *testing.T) {
 		{name: "no ops", ops: `[]`, wantErr: "ops must contain at least one op"},
 		{name: "unknown op", ops: `[{"op":"set_title","title":"x"},{"op":"rename"}]`, wantErr: `ops[1]: unknown op "rename"`},
 		{name: "add_panel without panel", ops: `[{"op":"add_panel"}]`, wantErr: "ops[0] (add_panel): panel is required"},
+		{
+			name:    "add_panel in Grafana shape",
+			ops:     `[{"op":"add_panel","panel":{"title":"p","gridPos":{"x":0,"y":0,"w":24,"h":8},"queries":[{"legend":"l","expr":"up"}]}}]`,
+			wantErr: "ops[0] (add_panel): panel.gridPos: unknown panel field; use layout {x, y, w, h}; panel.queries[0].legend: got string, want object {type, value}; panel.title: unknown panel field; use name; nothing was written",
+		},
 		{name: "update_panel without fields", ops: `[{"op":"update_panel","panel_id":"p1"}]`, wantErr: "ops[0] (update_panel): fields is required"},
 		{name: "update_panel changes id", ops: `[{"op":"update_panel","panel_id":"p1","fields":{"id":"p9"}}]`, wantErr: "ops[0] (update_panel): fields must not change id"},
 		{name: "remove_panel without panel_id", ops: `[{"op":"remove_panel"}]`, wantErr: "ops[0] (remove_panel): panel_id is required"},
@@ -818,7 +823,7 @@ func TestPatchDashboard_NotFound(t *testing.T) {
 	_, _, err := NewPatchDashboardHandler(ps.srv.Client(), testDashboardConfig(ps.srv.URL))(context.Background(), &mcp.CallToolRequest{}, PatchDashboardArgs{
 		ID: "other", Ops: []PatchDashboardOp{{Op: "set_title", Title: "x"}},
 	})
-	if err == nil || !strings.Contains(err.Error(), "dashboard not found") {
+	if err == nil || !strings.Contains(err.Error(), `dashboard "other" not found`) || strings.Contains(err.Error(), "capability") {
 		t.Fatalf("err = %v", err)
 	}
 }

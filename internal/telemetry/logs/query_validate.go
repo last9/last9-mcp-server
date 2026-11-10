@@ -241,7 +241,16 @@ func validateLogJSONQuery(stages []map[string]interface{}, pathPrefix string) er
 
 func logStageEmitsResult(stage map[string]interface{}, stageType string) bool {
 	if stageType == "window_aggregate" {
-		return stage["as"] == "__result__"
+		if stage["as"] == "__result__" {
+			return true
+		}
+		groupBy, _ := stage["groupby"].(map[string]interface{})
+		for _, alias := range groupBy {
+			if alias == "__result__" {
+				return true
+			}
+		}
+		return false
 	}
 	if stageType != "aggregate" {
 		return false
@@ -288,8 +297,12 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 		}
 
 		checkFunction := func(function map[string]interface{}, functionPath string) error {
-			for _, name := range []string{"$quantile", "$quantile_exact"} {
-				rawArgs, ok := function[name].([]interface{})
+			for name, raw := range function {
+				baseName := strings.TrimSuffix(name, "_over_time")
+				if baseName != "$quantile" && baseName != "$quantile_exact" {
+					continue
+				}
+				rawArgs, ok := raw.([]interface{})
 				if !ok || len(rawArgs) != 2 {
 					continue
 				}
@@ -343,6 +356,9 @@ func validateQuantileNumericDataflow(stages []map[string]interface{}, pathPrefix
 		groupBy, _ := stage["groupby"].(map[string]interface{})
 		for field, rawAlias := range groupBy {
 			alias, _ := rawAlias.(string)
+			if alias == "__result__" {
+				continue
+			}
 			_, isStringBackedAlias := stringBackedAliases[field]
 			if isStringBackedLogField(field) || isStringBackedAlias {
 				nextStringBackedAliases[alias] = struct{}{}

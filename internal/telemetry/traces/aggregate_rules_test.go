@@ -140,6 +140,19 @@ func TestSanitizeTraceJSONQuery_AcceptsSupportedAggregateFieldSyntax(t *testing.
 	}
 }
 
+func TestSanitizeTraceJSONQuery_RejectsMalformedAggregateMapKeys(t *testing.T) {
+	for _, field := range []string{`attributes["label"]`, `resources['deployment\zone']`} {
+		for _, stage := range []map[string]interface{}{
+			aggStage(fn1("$uniq", field), "n"),
+			winStage(fn1("$uniq", field), "n"),
+		} {
+			if err := SanitizeTraceJSONQuery([]map[string]interface{}{stage}); err == nil {
+				t.Errorf("%s field %q: expected an error", stage["type"], field)
+			}
+		}
+	}
+}
+
 func TestSanitizeTraceJSONQueryDefaultsQuantileExactToPreviousResult(t *testing.T) {
 	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
 		t.Run(operator, func(t *testing.T) {
@@ -171,6 +184,74 @@ func TestSanitizeTraceJSONQueryDefaultsQuantileExactToPreviousResult(t *testing.
 				}
 			}
 		})
+	}
+}
+
+func TestSanitizeTraceJSONQueryDefaultsQuantileExactToEveryWindowResult(t *testing.T) {
+	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
+		for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{
+			"aggregate": func(fn map[string]interface{}, as string) map[string]interface{} { return aggStage(fn, as) },
+			"window":    winStage,
+		} {
+			grouped := winStage(fn1("$count"), "n")
+			grouped["groupby"] = map[string]interface{}{"Duration": "__result__"}
+			for producerName, producer := range map[string]map[string]interface{}{
+				"groupby":     grouped,
+				"empty alias": winStage(fn1("$count"), ""),
+			} {
+				stages := []map[string]interface{}{producer, consumer(fn1(operator, 0.99), "p99")}
+				if err := SanitizeTraceJSONQuery(stages); err != nil {
+					t.Errorf("%s consumed %s %s result: %v", kind, operator, producerName, err)
+				}
+			}
+		}
+	}
+}
+
+func TestSanitizeTraceJSONQueryDefaultsQuantileExactToSelectedResult(t *testing.T) {
+	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
+		for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{
+			"aggregate": func(fn map[string]interface{}, as string) map[string]interface{} { return aggStage(fn, as) },
+			"window":    winStage,
+		} {
+			selected := map[string]interface{}{
+				"type":   "select",
+				"labels": map[string]interface{}{"*": "", "Duration": "__result__"},
+			}
+			aggregateGroup := aggStage(fn1("$count"), "n")
+			aggregateGroup["groupby"] = map[string]interface{}{"Duration": "__result__"}
+			for producerName, producer := range map[string][]map[string]interface{}{
+				"aggregate alias":   {aggStage(fn1("$count"), "__result__")},
+				"aggregate groupby": {aggregateGroup},
+				"select alias":      {selected},
+				"select wildcard":   {aggStage(fn1("$count"), "__result__"), {"type": "select", "labels": map[string]interface{}{"*": ""}}},
+			} {
+				stages := append(producer, consumer(fn1(operator, 0.99), "p99"))
+				if err := SanitizeTraceJSONQuery(stages); err != nil {
+					t.Errorf("%s consumed %s %s result: %v", kind, operator, producerName, err)
+				}
+			}
+		}
+	}
+}
+
+func TestSanitizeTraceJSONQueryDoesNotDefaultQuantileExactAfterResultProjection(t *testing.T) {
+	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
+		for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{
+			"aggregate": func(fn map[string]interface{}, as string) map[string]interface{} { return aggStage(fn, as) },
+			"window":    winStage,
+		} {
+			for _, producer := range []map[string]interface{}{
+				aggStage(fn1("$count"), "__result__"),
+				winStage(fn1("$count"), "__result__"),
+			} {
+				project := map[string]interface{}{"type": "select", "labels": map[string]interface{}{"ServiceName": "service"}}
+				stages := []map[string]interface{}{producer, project, consumer(fn1(operator, 0.99), "p99")}
+				if err := SanitizeTraceJSONQuery(stages); err == nil || !strings.Contains(err.Error(), "[level, field]") {
+					t.Errorf("%s to %s %s projection error = %v", producer["type"], kind, operator, err)
+				}
+			}
+		}
 	}
 }
 

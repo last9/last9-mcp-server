@@ -54,10 +54,13 @@ var aggregateFunctionNames = func() string {
 
 var (
 	aggregateAliasPattern = regexp.MustCompile(`^[A-Za-z0-9_]*[A-Za-z_][A-Za-z0-9_]*$`)
+	mapFieldRefPattern    = regexp.MustCompile(`^(?:attributes|resources)\['[^'\\]+'\]$`)
 	percentileName        = regexp.MustCompile(`^\$p[0-9]+$`)
 	numericLiteral        = regexp.MustCompile(`^[-+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?$`)
 	comparisonOperators   = map[string]struct{}{"$gt": {}, "$gte": {}, "$lt": {}, "$lte": {}}
 )
+
+func IsMapFieldRef(field string) bool { return mapFieldRefPattern.MatchString(field) }
 
 func isQuantile(name string) bool { return name == "$quantile" || name == "$quantile_exact" }
 
