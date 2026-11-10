@@ -72,6 +72,10 @@ func TestRawLogResponseByteBudget(t *testing.T) {
 					if entries[0].(map[string]any)["message"] != lines[0].message {
 						t.Fatal("message clipped")
 					}
+					limit := out["l9_raw_limit"].(map[string]any)
+					if limit["returned_entries"] != float64(kept) || limit["fetched_entries"] != float64(count) || limit["max_bytes"] != float64(maxRawResultBytes) {
+						t.Fatalf("incorrect service-log byte-limit metadata: %v", limit)
+					}
 					coverage := result.Meta["last9/coverage"].(map[string]any)
 					if coverage["status"] != "partial" || len(coverage["covered_scope"].(map[string]any)) != 0 {
 						t.Fatalf("truncated coverage must be partial: %v", coverage)
@@ -92,6 +96,20 @@ func TestRawLogResponseByteBudget(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestRawLimitHintPreservesFetchLimitGuidance(t *testing.T) {
+	hint := rawLimitHint(20, 5000, 5000)
+	for _, want := range []string{"returned 20 of 5000 fetched", "lower limit", "more results may match"} {
+		if !strings.Contains(hint, want) {
+			t.Fatalf("hint %q missing %q", hint, want)
+		}
+	}
+
+	belowLimit := rawLimitHint(20, 30, 5000)
+	if strings.Contains(belowLimit, "more results may match") {
+		t.Fatalf("hint claims backend truncation below the fetch limit: %q", belowLimit)
 	}
 }
 
