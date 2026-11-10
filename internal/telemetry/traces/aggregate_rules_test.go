@@ -174,6 +174,27 @@ func TestSanitizeTraceJSONQueryDefaultsQuantileExactToPreviousResult(t *testing.
 	}
 }
 
+func TestSanitizeTraceJSONQueryDefaultsQuantileExactToEveryWindowResult(t *testing.T) {
+	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
+		for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{
+			"aggregate": func(fn map[string]interface{}, as string) map[string]interface{} { return aggStage(fn, as) },
+			"window":    winStage,
+		} {
+			grouped := winStage(fn1("$count"), "n")
+			grouped["groupby"] = map[string]interface{}{"Duration": "__result__"}
+			for producerName, producer := range map[string]map[string]interface{}{
+				"groupby":     grouped,
+				"empty alias": winStage(fn1("$count"), ""),
+			} {
+				stages := []map[string]interface{}{producer, consumer(fn1(operator, 0.99), "p99")}
+				if err := SanitizeTraceJSONQuery(stages); err != nil {
+					t.Errorf("%s consumed %s %s result: %v", kind, operator, producerName, err)
+				}
+			}
+		}
+	}
+}
+
 func TestSanitizeTraceJSONQuery_AggregatesEarlierDigitLeadingAlias(t *testing.T) {
 	for _, as := range []string{"39b_1", "1x", "9_"} {
 		for _, first := range []map[string]interface{}{

@@ -147,6 +147,22 @@ func TestPrepareLogJSONQueryDefaultsQuantileExactToPreviousResult(t *testing.T) 
 	}
 }
 
+func TestPrepareLogJSONQueryDefaultsQuantileExactToWindowGroupByResult(t *testing.T) {
+	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
+		for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{
+			"aggregate": func(fn map[string]interface{}, as string) map[string]interface{} { return aggregateStage(fn, as) },
+			"window":    windowStage,
+		} {
+			producer := windowStage(fn1("$count"), "n")
+			producer["groupby"] = map[string]interface{}{aggF: "__result__"}
+			stages := []map[string]interface{}{producer, consumer(fn1(operator, 0.99), "p99")}
+			if _, err := prepareLogJSONQuery(stages, "logjson_query"); err != nil {
+				t.Errorf("%s consumed %s groupby result: %v", kind, operator, err)
+			}
+		}
+	}
+}
+
 func TestPrepareLogJSONQueryRejectsInvalidAggregateFunctions(t *testing.T) {
 	const p = "logjson_query[0].aggregates[0].function"
 	cases := []aggregateRuleCase{

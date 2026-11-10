@@ -241,7 +241,16 @@ func validateLogJSONQuery(stages []map[string]interface{}, pathPrefix string) er
 
 func logStageEmitsResult(stage map[string]interface{}, stageType string) bool {
 	if stageType == "window_aggregate" {
-		return stage["as"] == "__result__"
+		if stage["as"] == "__result__" {
+			return true
+		}
+		groupBy, _ := stage["groupby"].(map[string]interface{})
+		for _, alias := range groupBy {
+			if alias == "__result__" {
+				return true
+			}
+		}
+		return false
 	}
 	if stageType != "aggregate" {
 		return false

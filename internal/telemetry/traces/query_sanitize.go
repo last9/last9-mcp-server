@@ -140,7 +140,16 @@ func applyImplicitQuantileExactDefault(stage map[string]interface{}, hasResult b
 
 func traceStageEmitsResult(stage map[string]interface{}, stageType string) bool {
 	if stageType == "window_aggregate" {
-		return stage["as"] == "__result__"
+		if alias, _ := stage["as"].(string); alias == "" || alias == "__result__" {
+			return true
+		}
+		groupBy, _ := stage["groupby"].(map[string]interface{})
+		for _, alias := range groupBy {
+			if alias == "__result__" {
+				return true
+			}
+		}
+		return false
 	}
 	if stageType != "aggregate" {
 		return false
