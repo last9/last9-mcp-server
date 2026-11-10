@@ -380,7 +380,8 @@ func sanitizeLogFunction(value interface{}, path string, aggregateAliases map[st
 		}
 		if field, i, ok := telemetry.AggregateFieldArg(operator, sanitizedArgs); ok {
 			field = strings.TrimSpace(field)
-			if _, known := aggregateAliases[field]; !known {
+			_, known := aggregateAliases[field]
+			if !known && !telemetry.IsMapFieldRef(field) {
 				next, err := sanitizeLogFieldRef(field, fmt.Sprintf("%s.%s[%d]", path, operator, i))
 				if err != nil {
 					return nil, err

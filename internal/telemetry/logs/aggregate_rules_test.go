@@ -141,6 +141,20 @@ func TestPrepareLogJSONQueryAcceptsSupportedAggregateMapKeys(t *testing.T) {
 	}
 }
 
+func TestPrepareLogJSONQueryRejectsMalformedAggregateMapKeys(t *testing.T) {
+	for _, field := range []string{`attributes["label"]`, `resources['deployment\zone']`} {
+		for kind, stage := range map[string]map[string]interface{}{
+			"aggregate": aggregateStage(fn1("$uniq", field), "n"),
+			"window":    windowStage(fn1("$uniq", field), "n"),
+		} {
+			_, err := prepareLogJSONQuery([]map[string]interface{}{stage}, "logjson_query")
+			if err == nil {
+				t.Errorf("%s field %q: expected an error", kind, field)
+			}
+		}
+	}
+}
+
 func TestPrepareLogJSONQueryDefaultsQuantileExactToPreviousResult(t *testing.T) {
 	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
 		t.Run(operator, func(t *testing.T) {

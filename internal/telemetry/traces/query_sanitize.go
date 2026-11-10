@@ -12,7 +12,7 @@ import (
 	"last9-mcp/internal/utils"
 )
 
-var traceAggregateFieldRef = regexp.MustCompile(`^(?:[A-Za-z_][A-Za-z0-9_]*(?:(?:\.[A-Za-z_][A-Za-z0-9_]*)|(?:\[[0-9]+\]))*|[0-9]+[A-Za-z_][A-Za-z0-9_]*|(?:attributes|resources)\['[^'\\]+'\])$`)
+var traceAggregateFieldRef = regexp.MustCompile(`^(?:[A-Za-z_][A-Za-z0-9_]*(?:(?:\.[A-Za-z_][A-Za-z0-9_]*)|(?:\[[0-9]+\]))*|[0-9]+[A-Za-z_][A-Za-z0-9_]*)$`)
 
 var traceFilterFieldOperators = map[string]struct{}{
 	"$contains":          {},
@@ -760,7 +760,7 @@ func validateTraceAggregateFunction(function map[string]interface{}, path string
 	for name, raw := range function {
 		args, _ := raw.([]interface{})
 		field, i, ok := telemetry.AggregateFieldArg(name, args)
-		if !ok || traceAggregateFieldRef.MatchString(field) {
+		if !ok || traceAggregateFieldRef.MatchString(field) || telemetry.IsMapFieldRef(field) {
 			continue
 		}
 		p := fmt.Sprintf("%s.%s[%d]", path, name, i)

@@ -140,6 +140,19 @@ func TestSanitizeTraceJSONQuery_AcceptsSupportedAggregateFieldSyntax(t *testing.
 	}
 }
 
+func TestSanitizeTraceJSONQuery_RejectsMalformedAggregateMapKeys(t *testing.T) {
+	for _, field := range []string{`attributes["label"]`, `resources['deployment\zone']`} {
+		for _, stage := range []map[string]interface{}{
+			aggStage(fn1("$uniq", field), "n"),
+			winStage(fn1("$uniq", field), "n"),
+		} {
+			if err := SanitizeTraceJSONQuery([]map[string]interface{}{stage}); err == nil {
+				t.Errorf("%s field %q: expected an error", stage["type"], field)
+			}
+		}
+	}
+}
+
 func TestSanitizeTraceJSONQueryDefaultsQuantileExactToPreviousResult(t *testing.T) {
 	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
 		t.Run(operator, func(t *testing.T) {
