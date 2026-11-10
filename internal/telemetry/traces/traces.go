@@ -90,6 +90,8 @@ func handleTraceJSONQuery(ctx context.Context, client *http.Client, cfg models.C
 	if selectLimit, ok := finalSelectLimit(args.TracejsonQuery); ok {
 		effectiveLimit = min(effectiveLimit, selectLimit)
 		maxLimit = min(maxLimit, maxSelectLimit)
+	}
+	if utils.PipelineHasSelectStage(args.TracejsonQuery) {
 		if err := capTraceResultItems(result, effectiveLimit); err != nil {
 			return nil, err
 		}
