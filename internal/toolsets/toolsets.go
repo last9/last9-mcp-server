@@ -72,7 +72,13 @@ var named = map[string][]string{
 		"delete_notification_channel",
 		"recommend_alert_config",
 		"get_alert_groups",
+		"get_alert_operations_summary",
+		"get_alert_coverage",
 		"get_entity_alert_rules",
+		"get_entity_kpis",
+		"create_kpi",
+		"prometheus_range_query",
+		"get_dashboard",
 		"describe_alert_chart",
 		"create_alert_from_chart",
 		"get_alert_rule_state",
@@ -86,8 +92,10 @@ var named = map[string][]string{
 		"list_dashboards",
 		"get_dashboard",
 		"validate_dashboard",
+		"preview_dashboard",
 		"create_dashboard",
 		"update_dashboard",
+		"patch_dashboard",
 		"delete_dashboard",
 		"list_dashboard_snapshots",
 		"get_dashboard_snapshot",
@@ -116,10 +124,15 @@ var core = []string{
 }
 
 // discovery tools included in the investigate composite (R9a).
+// get_alert_coverage joins them so an investigation can ask what is not alerted on
+// without pulling in the rest of the alerts toolset.
 var investigateExtras = []string{
 	"did_you_mean",
 	"get_service_profile",
 	"list_datasources",
+	"get_entity_kpis",
+	"get_alert_operations_summary",
+	"get_alert_coverage",
 }
 
 // ValidNames returns sorted valid toolset tokens for error messages.

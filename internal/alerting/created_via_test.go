@@ -268,22 +268,22 @@ func TestChartAndChannelCreatesSendCreatedVia(t *testing.T) {
 	req := clientRequest("claude-code{{x}}", "2.1.0\n")
 	for _, tt := range []struct {
 		name, getReply, writeReply string
-		writes                     int
+		writes, stamped            int
 		call                       func(*bodyRecorder) (*mcp.CallToolResult, error)
 	}{
-		{"create_alert_from_chart", "", `{"id":"rule-9"}`, 1, func(rec *bodyRecorder) (*mcp.CallToolResult, error) {
+		{"create_alert_from_chart", "", `{"id":"rule-9","group_id":"g1"}`, 2, 1, func(rec *bodyRecorder) (*mcp.CallToolResult, error) {
 			r, _, err := NewCreateAlertFromChartHandler(rec.Client(), testAlertMutationConfig(rec.URL))(context.Background(), req, CreateAlertFromChartArgs{
 				Surface: "discover-service", ChartKey: "error_rate", ServiceName: "checkout", SignalKey: "error_ratio", Name: "n",
 			})
 			return r, err
 		}},
-		{"create_notification_channel", "", `{"id":7,"name":"n","type":"email"}`, 1, func(rec *bodyRecorder) (*mcp.CallToolResult, error) {
+		{"create_notification_channel", "", `{"id":7,"name":"n","type":"email"}`, 1, 1, func(rec *bodyRecorder) (*mcp.CallToolResult, error) {
 			r, _, err := NewCreateNotificationChannelHandler(rec.Client(), testAlertMutationConfig(rec.URL))(context.Background(), req, CreateNotificationChannelArgs{
 				Name: "n", Type: "email", Destination: "a@b.co",
 			})
 			return r, err
 		}},
-		{"attach_notification_channel", `[{"id":7,"name":"n","type":"email"}]`, `{"id":11}`, 2, func(rec *bodyRecorder) (*mcp.CallToolResult, error) {
+		{"attach_notification_channel", `[{"id":7,"name":"n","type":"email"}]`, `{"id":11}`, 2, 2, func(rec *bodyRecorder) (*mcp.CallToolResult, error) {
 			r, _, err := NewAttachNotificationChannelHandler(rec.Client(), testAlertMutationConfig(rec.URL))(context.Background(), req, AttachNotificationChannelArgs{
 				ChannelID: 7, AlertGroupID: "g1", Severity: "both",
 			})
@@ -300,7 +300,8 @@ func TestChartAndChannelCreatesSendCreatedVia(t *testing.T) {
 			if len(rec.bodies) != tt.writes {
 				t.Fatalf("writes = %d, want %d", len(rec.bodies), tt.writes)
 			}
-			for _, body := range rec.bodies {
+			// Writes past the stamped ones (the chart rule's follow-up disable) create nothing.
+			for _, body := range rec.bodies[:tt.stamped] {
 				if body["created_via"] != "last9-mcp" || body["created_via_client"] != "claude-codex/2.1.0" {
 					t.Fatalf("body = %v", body)
 				}

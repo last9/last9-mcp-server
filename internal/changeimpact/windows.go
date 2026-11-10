@@ -8,6 +8,7 @@ import (
 	"last9-mcp/internal/apm"
 	"last9-mcp/internal/telemetry/traces"
 	"last9-mcp/internal/toolsets"
+	"last9-mcp/internal/utils"
 )
 
 const (
@@ -29,7 +30,7 @@ type changeWindows struct {
 func normalizeRequest(req Request) (Request, []string) {
 	var notes []string
 	if req.Now.IsZero() {
-		req.Now = time.Now()
+		req.Now = utils.Now()
 	}
 	req.Now = req.Now.UTC()
 	aligned := req.Change.UTC().Truncate(time.Minute)
@@ -151,7 +152,7 @@ func drillDowns(req Request, w changeWindows, allowed toolsets.Set) []DrillDown 
 			Arguments: withEnv(map[string]any{
 				"service_name": req.Service, "start_time_iso": rfc3339(w.baseline.Start), "end_time_iso": rfc3339(w.after.End),
 			}, "env"),
-			Why: "time series of the same signals across both windows, with top operations and errors",
+			Why: "per-series summary (percentiles, change points) of the same signals across both windows, with top operations and errors",
 		},
 		{
 			Tool: "get_apm_service_deviations",
