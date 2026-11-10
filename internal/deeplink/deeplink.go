@@ -192,6 +192,25 @@ func (b *Builder) BuildAlertingGroupsLink() string {
 	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, RouteAlertingGroups)
 }
 
+type AlertRuleReference struct {
+	RuleID    string
+	GroupID   string
+	GroupName string
+}
+
+func (b *Builder) AlertRuleMeta(rule AlertRuleReference) mcp.Meta {
+	params := url.Values{"rule": {rule.RuleID}, "group_id": {rule.GroupID}}
+	meta := ToMetaWithLink(b.BuildAlertingGroupsLink()+"?"+params.Encode(), "Open alert")
+	if strings.TrimSpace(rule.GroupName) != "" {
+		groupParams := url.Values{"alertGroupNames": {rule.GroupName}}
+		meta["links"] = append(meta["links"].([]map[string]string), map[string]string{
+			"label": "Open group",
+			"url":   b.BuildAlertingGroupsLink() + "?" + groupParams.Encode(),
+		})
+	}
+	return meta
+}
+
 // BuildNotificationChannelsLink creates a deep link to the notification channels settings page
 func (b *Builder) BuildNotificationChannelsLink() string {
 	return fmt.Sprintf("/v2/organizations/%s/%s", b.orgSlug, RouteNotificationChannels)

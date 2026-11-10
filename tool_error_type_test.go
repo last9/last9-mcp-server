@@ -3,15 +3,16 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"last9-mcp/internal/models"
-	"last9-mcp/internal/toolsets"
 	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -20,7 +21,10 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
-const getLogsTestArgs = `{"logjson_query":[{"type":"filter","query":{"$and":[{"$eq":["ServiceName","api"]}]}}],"lookback_minutes":5}`
+const (
+	getLogsTestArgs      = `{"logjson_query":[{"type":"filter","query":{"$and":[{"$eq":["ServiceName","api"]}]}}],"lookback_minutes":5}`
+	alertSummaryTestArgs = `{"start_time_iso":"2026-10-16T00:00:00Z","end_time_iso":"2026-10-23T00:00:00Z"}`
+)
 
 // Upstream failures carry the system_error tag the SDK reads for mcp.error.type;
 // caller mistakes stay untagged and so keep the default user_error.
@@ -69,6 +73,12 @@ func TestToolErrorsTagUpstreamFailuresAsSystemErrors(t *testing.T) {
 		{"chunked logs body timeout", stalledBody.URL, false, &http.Client{Timeout: 50 * time.Millisecond}, "get_logs", getLogsTestArgs, true},
 		{"trace service unreachable", unreachable.URL, false, http.DefaultClient, "get_exceptions", `{}`, true},
 		{"log search HTTP 400 bad pipeline", statusServer(http.StatusBadRequest).URL, true, http.DefaultClient, "get_logs", getLogsTestArgs, false},
+		{"alert summary HTTP 503", statusServer(http.StatusServiceUnavailable).URL, false, http.DefaultClient, "get_alert_operations_summary", alertSummaryTestArgs, true},
+		{"alert summary HTTP 500", statusServer(http.StatusInternalServerError).URL, false, http.DefaultClient, "get_alert_operations_summary", alertSummaryTestArgs, true},
+		{"alert summary HTTP 408", statusServer(http.StatusRequestTimeout).URL, false, http.DefaultClient, "get_alert_operations_summary", alertSummaryTestArgs, true},
+		{"alert summary HTTP 400", statusServer(http.StatusBadRequest).URL, false, http.DefaultClient, "get_alert_operations_summary", alertSummaryTestArgs, false},
+		{"alert summary HTTP 422", statusServer(http.StatusUnprocessableEntity).URL, false, http.DefaultClient, "get_alert_operations_summary", alertSummaryTestArgs, false},
+		{"alert summary HTTP 404", statusServer(http.StatusNotFound).URL, false, http.DefaultClient, "get_alert_operations_summary", alertSummaryTestArgs, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -100,50 +110,42 @@ func callToolForErrorType(t *testing.T, cfg models.Config, client *http.Client, 
 func TestRegisteredDeadlineErrorType(t *testing.T) {
 	for _, outcome := range []string{"error", "partial result", "tool error", "unknown write outcome"} {
 		t.Run(outcome, func(t *testing.T) {
-			server := newRegisterTestServer(t)
-			gate := newToolGate(toolsets.Filter{})
-			gate.callTimeout = -time.Second
 			handler := func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+				<-ctx.Done()
 				switch outcome {
 				case "error":
-					return nil, nil, ctx.Err()
+					return nil, nil, fmt.Errorf("query failed: %w", ctx.Err())
 				case "partial result":
 					return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "partial results"}}}, nil, nil
 				case "unknown write outcome":
-					return nil, nil, &utils.WriteOutcomeUnknownError{Err: ctx.Err()}
+					return nil, nil, fmt.Errorf("create failed: %w", &utils.WriteOutcomeUnknownError{Cause: "the request timed out", Err: ctx.Err()})
 				default:
 					return utils.ToolErrorResult("invalid response"), nil, nil
 				}
 			}
-			tool := &mcp.Tool{Name: "get_foo", Annotations: readOnlyTool("Get Foo")}
-			var err error
+			fixture := registeredToolFixture{
+				tool:    &mcp.Tool{Name: "get_foo", Annotations: readOnlyTool("Get Foo")},
+				timeout: 20 * time.Millisecond,
+			}
+			want := toolErrorExpectation{
+				contains: []string{"tool-call deadline", "Narrow the time range or add filters before retrying"},
+				absent:   []string{"partial results", "invalid response"},
+				system:   true,
+			}
+			if outcome == "error" {
+				want.contains = append(want.contains, "query failed: context deadline exceeded")
+			}
 			if outcome == "unknown write outcome" {
-				tool = &mcp.Tool{Name: "create_foo", Annotations: writeTool("Create Foo", false, false)}
-				err = registerWriteTool(server, gate, tool, "get_foos, by name", handler)
-			} else {
-				err = registerIfAllowed(server, gate, tool, handler)
+				fixture.tool = &mcp.Tool{Name: "create_foo", Annotations: writeTool("Create Foo", false, false)}
+				fixture.verify = "get_foos, by name"
+				want = toolErrorExpectation{
+					contains: []string{"may or may not have been applied", "the request timed out", "Do not retry until you have checked: get_foos, by name"},
+					absent:   []string{"tool-call deadline", "Narrow the time range"},
+				}
 			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := gate.registerAdmitted(); err != nil {
-				t.Fatal(err)
-			}
-			result, err := connectRegisteredServer(t, server).CallTool(context.Background(), &mcp.CallToolParams{Name: tool.Name, Arguments: struct{}{}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			wantSystem := outcome != "unknown write outcome"
-			if !result.IsError || (result.Meta[utils.ErrorTypeMetaKey] == utils.SystemErrorType) != wantSystem {
-				t.Fatalf("want isError and system_error=%v, got %+v", wantSystem, result)
-			}
-			wantText := "tool-call deadline"
-			if !wantSystem {
-				wantText = "get_foos, by name"
-			}
-			if !strings.Contains(toolResultText(result), wantText) {
-				t.Fatalf("missing %q: %s", wantText, toolResultText(result))
-			}
+			session := connectToolFixture(t, fixture, handler)
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: fixture.tool.Name, Arguments: struct{}{}})
+			assertToolError(t, result, want)
 		})
 	}
 }
@@ -204,4 +206,100 @@ func (status errorTypeStatusTransport) RoundTrip(req *http.Request) (*http.Respo
 		Body:       io.NopCloser(strings.NewReader(`{"error":"invalid pipeline"}`)),
 		Request:    req,
 	}, nil
+}
+
+func TestRegisteredWrappedErrorsBeforeDeadline(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusRequestTimeout, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			cause := utils.NewUpstreamHTTPError(&http.Response{
+				StatusCode: status,
+				Body:       io.NopCloser(strings.NewReader(`{"error":"invalid pipeline"}`)),
+			}, "query")
+			handler := func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+				return nil, nil, fmt.Errorf("read failed: %w", cause)
+			}
+			fixture := registeredToolFixture{
+				tool:    &mcp.Tool{Name: "get_foo", Annotations: readOnlyTool("Get Foo")},
+				timeout: time.Second,
+			}
+			want := toolErrorExpectation{
+				contains: []string{fmt.Sprintf("read failed: query failed with HTTP %d", status)},
+				absent:   []string{"tool-call deadline"},
+				system:   status != http.StatusBadRequest,
+			}
+			switch status {
+			case http.StatusBadRequest:
+				want.contains = append(want.contains, "invalid pipeline", "Review the tool arguments and retry")
+			case http.StatusRequestTimeout:
+				want.contains = append(want.contains, "Do not retry the same request unchanged")
+			case http.StatusServiceUnavailable:
+				want.contains = append(want.contains, "temporarily unavailable; retry later")
+			}
+			session := connectToolFixture(t, fixture, handler)
+			result := callRegisteredTool(t, session, &mcp.CallToolParams{Name: fixture.tool.Name, Arguments: struct{}{}})
+			assertToolError(t, result, want)
+		})
+	}
+}
+
+// Backend faults in get_trace_waterfall's evidence are system errors; inputs
+// the caller can fix (a bad trace_id, an oversized waterfall) stay user errors.
+func TestGetTraceWaterfallTagsBackendFailuresAsSystemErrors(t *testing.T) {
+	golden, err := os.ReadFile("contracts/fixtures/evidence-trace-waterfall.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	withSanitizer := func(sanitizer any) string {
+		var payload map[string]any
+		if err := json.Unmarshal(golden, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if sanitizer == nil {
+			delete(payload, "sanitizer")
+		} else {
+			payload["sanitizer"] = sanitizer
+		}
+		out, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(out)
+	}
+	const traceArgs = `{"trace_id":"abcdef0123456789abcdef0123456789"}`
+	// Served with a longer Content-Length, so the read fails mid-body.
+	const truncatedBody = `{"contract_version":`
+	cases := []struct {
+		name       string
+		status     int
+		body, args string
+		wantSystem bool
+	}{
+		{"malformed JSON", http.StatusOK, `{`, traceArgs, true},
+		{"body cut off", http.StatusOK, truncatedBody, traceArgs, true},
+		{"sanitizer absent", http.StatusOK, withSanitizer(nil), traceArgs, true},
+		{"sanitizer version unsupported", http.StatusOK, withSanitizer(map[string]any{"version": "trace-evidence-sanitizer/v2"}), traceArgs, true},
+		{"HTTP 503", http.StatusServiceUnavailable, `{}`, traceArgs, true},
+		{"over the output cap", http.StatusOK, strings.Repeat(" ", 512<<10+1), traceArgs, false},
+		{"invalid trace_id", http.StatusOK, string(golden), `{"trace_id":"not-a-trace"}`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if tc.body == truncatedBody {
+					w.Header().Set("Content-Length", "1000")
+				}
+				w.WriteHeader(tc.status)
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			t.Cleanup(srv.Close)
+			result := callToolForErrorType(t, writeToolTestConfig(srv.URL), srv.Client(), "get_trace_waterfall", tc.args)
+			if !result.IsError {
+				t.Fatalf("want isError result, got %+v", result)
+			}
+			gotSystem := result.Meta[utils.ErrorTypeMetaKey] == utils.SystemErrorType
+			if gotSystem != tc.wantSystem {
+				t.Fatalf("system tag = %v, want %v (meta %v, text %q)", gotSystem, tc.wantSystem, result.Meta, result.Content[0].(*mcp.TextContent).Text)
+			}
+		})
+	}
 }

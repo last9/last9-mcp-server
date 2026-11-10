@@ -227,7 +227,7 @@ func TestServerInstructionsAdaptToToolsets(t *testing.T) {
 		},
 		{
 			spec:     "alerts",
-			mentions: []string{"`get_alert_groups`", "`get_alerts`", "`get_notification_channels`", "`get_drop_rules`", "`add_drop_rule`"},
+			mentions: []string{"`get_alert_groups`", "`get_alerts`", "`get_notification_channels`", "`get_drop_rules`", "`add_drop_rule`", "- Open a dashboard by id with `get_dashboard`.", "last9://reference/metrics"},
 		},
 		{
 			spec:      "grafana",
@@ -306,13 +306,9 @@ func TestDiscoverSectionListsOnlyNameLookups(t *testing.T) {
 }
 
 // maxInvestigateInstructionsBytes caps the policy automation sessions receive,
-// near its size, so growth is a reviewed decision: it precedes every tool
-// description, and growing it moved log_query evals. The parsed-field line
-// was a reviewed increase, validated on the full log_query suite; naming
-// analyze_change_impact and get_metric_status and the log-pattern tools joining
-// the one-service bullet were others, and so was the explicit pipeline
-// time-window rule (issue #379).
-const maxInvestigateInstructionsBytes = 2870
+// near its size: it precedes every tool description and growing it moved
+// log_query evals, so each increase is a reviewed decision.
+const maxInvestigateInstructionsBytes = 3040
 
 func TestInvestigateInstructionsBounded(t *testing.T) {
 	instructions, _ := initializeOver(t, "investigate")
@@ -528,6 +524,40 @@ func TestServerInstructionsPutPipelineTimeWindowInArguments(t *testing.T) {
 	}
 }
 
+func TestServerInstructionsSayDiscoverChartAlertsUseCatalog(t *testing.T) {
+	tests := []struct {
+		name  string
+		tools []string
+		want  string
+	}{
+		{
+			name:  "chart plus kpi path",
+			tools: []string{"create_alert_from_chart", "create_alert", "create_kpi"},
+			want:  "- An alert on a Discover chart uses `create_alert_from_chart` with a catalog signal_key; never `create_alert`, `create_kpi` even if the user pastes PromQL.",
+		},
+		{
+			name:  "chart only",
+			tools: []string{"create_alert_from_chart"},
+			want:  "- An alert on a Discover chart uses `create_alert_from_chart` with a catalog signal_key.",
+		},
+		{name: "no chart tool", tools: []string{"create_alert", "create_kpi"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			var got string
+			for _, line := range strings.Split(instructions, "\n") {
+				if strings.Contains(line, "Discover chart") {
+					got = line
+				}
+			}
+			if got != tt.want {
+				t.Errorf("Discover-chart line = %q, want %q:\n%s", got, tt.want, instructions)
+			}
+		})
+	}
+}
+
 func TestServerInstructionsSayCreateAlertRulesStartDisabled(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -551,6 +581,33 @@ func TestServerInstructionsSayCreateAlertRulesStartDisabled(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("created-disabled line = %q, want %q:\n%s", got, tt.want, instructions)
+			}
+		})
+	}
+}
+
+// get_alert_coverage gets its own bullet at the end of the section, so every
+// pinned line keeps its wording and place: rewording or inserting mid-section
+// regressed unrelated log-query evals.
+func TestServerInstructionsNameAlertCoverageWithoutShiftingLines(t *testing.T) {
+	tests := []struct {
+		spec string
+		want string
+	}{
+		{spec: "", want: "- Alert coverage gaps: `get_alert_coverage`."},
+		{spec: "alerts", want: "- Alert coverage gaps: `get_alert_coverage`."},
+		{spec: "investigate", want: "- Alert coverage gaps: `get_alert_coverage`."},
+	}
+	for _, tt := range tests {
+		t.Run("toolsets="+tt.spec, func(t *testing.T) {
+			instructions, _ := initializeOver(t, tt.spec)
+			if got := lineNaming(instructions, "get_alert_coverage"); got != tt.want {
+				t.Errorf("get_alert_coverage line = %q, want %q", got, tt.want)
+			}
+			_, dedicated, _ := strings.Cut(instructions, "## Prefer dedicated tools\n")
+			dedicated, _, _ = strings.Cut(dedicated, "\n\n")
+			if last := dedicated[strings.LastIndex(dedicated, "\n")+1:]; last != tt.want {
+				t.Errorf("last dedicated-tools bullet = %q, want %q:\n%s", last, tt.want, instructions)
 			}
 		})
 	}
@@ -599,6 +656,18 @@ func TestServerInstructionsChangesLineKeepsItsWording(t *testing.T) {
 				t.Errorf("changes line = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// "; alerts are created as drafts" on this line repeated the created-disabled
+// write rule and was most of the instruction text #336 added when log_query
+// eval lq-mf-005 fell from 30/30 to 21/30 in snapshot mode, so the line keeps
+// main's wording.
+func TestServerInstructionsAlertDesignLineKeepsItsWording(t *testing.T) {
+	instructions := renderInstructions(t, "recommend_alert_config", "describe_alert_chart", "create_alert")
+	const want = "- Design an alert rule with `recommend_alert_config`, `describe_alert_chart` before creating it."
+	if got := lineNaming(instructions, "recommend_alert_config"); got != want {
+		t.Errorf("alert design line = %q, want %q", got, want)
 	}
 }
 

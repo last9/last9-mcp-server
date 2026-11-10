@@ -219,6 +219,7 @@ The NPM route is easier on Windows — no path management.
 | ---------------------------- | -------------------- | ----------- |
 | `LAST9_REFRESH_TOKEN`        | *(required)*         | Refresh token from [API Access](https://app.last9.io/settings/api-access) |
 | `LAST9_DATASOURCE`           | org default          | Datasource/cluster name — useful when you have multiple Levitate clusters |
+| `LAST9_FAKE_NOW_ISO`         | *(unset)*            | **For evals/replays only; never set in production.** RFC3339 instant (e.g. `2026-01-02T15:04:05Z`) that replaces the current time when resolving relative windows such as `lookback_minutes`, so runs are reproducible. An invalid value is a startup error. Timeouts, caches and token expiry keep using real time |
 | `LAST9_API_HOST`             | `app.last9.io`       | Override the API host |
 | `LAST9_TOOLSETS`             | all tools            | Comma-separated toolsets to expose (`logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`). Alias: `LAST9_MCP_TOOLSETS` |
 | `LAST9_MCP_READ_ONLY`        | `false`              | Set `true` to serve only read-only tools; see [Read-only mode](#read-only-mode). A value that is not a boolean is a startup error. Alias: `LAST9_READ_ONLY` |
@@ -314,7 +315,11 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`get_change_events`** — Deployments, config changes, rollbacks. Correlate incidents with what changed
 - **`analyze_change_impact`** — Did a change break anything? Compares a service and its direct callers before and after a change: golden signals, APM and trace-attribute deviations, new firing alerts, and a verdict (`regression likely` / `no significant change` / `insufficient data`)
 - **`get_alert_groups`** — Configured Compass alert groups with metadata labels, team, tier, and rule counts — including groups with zero rules and groups that are not firing
+- **`get_alert_operations_summary`** — On-call health over a window: alerts raised vs acknowledged, backlog, deliveries and, with `include_rules`, the noisiest, flapping and unrouted rules. Every count carries its `status` (`available` / `partial` / `unavailable`)
+- **`get_alert_coverage`** — What you are not alerting on: uncovered golden signals, fully disabled or unrouted alert groups, and rules muted too long, each with a suggested fix tool. Read-only.
 - **`get_alert_config`** — Alert rule configurations — searchable by name, severity, type, tags
+- **`get_entity_kpis`** — Every KPI (id, name, PromQL, unit) on one alert group, including KPIs no rule uses yet — the ids `create_alert` and `validate_alert_expression` need
+- **`create_kpi`** — Create a KPI (PromQL + unit) on an alert group when no existing KPI fits. Create once and keep the returned id
 - **`get_alerts`** — Currently firing alerts within a time window
 - **`get_alert_rule_state`** — Historical firing state (1/0) per alert rule over a time range, grouped by `rule_id`. Filterable by alert group, rule name, label filters, and state.
 - **`get_notification_channels`** — Configured notification channels (Slack, PagerDuty, email, etc.). `scope=channels` lists the channels themselves (ids for attaching); the default `attached` lists per-alert-group attachments
@@ -334,7 +339,7 @@ Point these at a different datasource/cluster than the default by setting `LAST9
 - **`detach_notification_channel`** — Remove one channel-to-alert-group attachment
 - **`delete_notification_channel`** — Permanently delete a channel that has no attachments
 
-The alert write tools (`create_alert`, `update_alert`, `patch_alert`, `delete_alert`, `create_alert_from_chart`, `mute_alert_group`, `acknowledge_alert`, `reassign_alert`, `create_notification_channel`, `attach_notification_channel`, `detach_notification_channel`, `delete_notification_channel`) need a token with write scope; `delete_alert`, `detach_notification_channel` and `delete_notification_channel` need delete scope instead. They are exposed only in the `alerts` toolset.
+The alert write tools (`create_kpi`, `create_alert`, `update_alert`, `patch_alert`, `delete_alert`, `create_alert_from_chart`, `mute_alert_group`, `acknowledge_alert`, `reassign_alert`, `create_notification_channel`, `attach_notification_channel`, `detach_notification_channel`, `delete_notification_channel`) need a token with write scope; `delete_alert`, `detach_notification_channel` and `delete_notification_channel` need delete scope instead. They are exposed only in the `alerts` toolset.
 
 Rules, channels and attachments these tools create are marked `created_via: last9-mcp` together with the MCP client's name and version (on rules, the `_l9_created_via_` and `_l9_created_via_client_` annotations, which `patch_alert` and `update_alert` keep and callers cannot set). `get_entity_alert_rules` and `get_notification_channels` show the marker, and `delete_alert`, `detach_notification_channel` and `delete_notification_channel` tell agents to clean up only marked resources unless the user names one.
 
@@ -342,6 +347,7 @@ Rules, channels and attachments these tools create are marked `created_via: last
 
 - **`list_dashboards`** — All custom dashboards in your org: IDs, names, and metadata
 - **`get_dashboard`** — Full dashboard definition by ID, including panels and queries
+- **`preview_dashboard`** — Read-only preview of an unsaved dashboard or patch: resolved queries, bounded per-panel results and a net panel diff; never saves
 - **`validate_dashboard`** — Read-only lint + execute + classify for a saved dashboard id or an inline `dashboard_definition` over a ≤24h window. Never creates or updates dashboards
 - **`create_dashboard`** — Create a net-new custom dashboard once (panels, queries, metadata). After the id is returned, edit panels with `patch_dashboard`.
 - **`update_dashboard`** — Restructure most of an existing dashboard by ID (full replacement; readonly system dashboards return an error). For individual panel edits use `patch_dashboard`
@@ -350,6 +356,16 @@ Rules, channels and attachments these tools create are marked `created_via: last
 - **`list_dashboard_snapshots`** — Frozen point-in-time snapshots for a dashboard (metadata only)
 - **`get_dashboard_snapshot`** — Full frozen snapshot including panel data for RCA / shareable views
 - **`delete_dashboard_snapshot`** — Delete a frozen snapshot by ID
+
+Dashboard authoring is available through MCP `prompts/list` and `prompts/get`, without installing a skill. All three prompts take no arguments:
+
+- **`create_dashboard_guide`** — Discovery, layout and panel selection; validate the complete candidate and run each panel's query before approval, create once, patch targeted edits, then read back.
+- **`dashboard_examples`** — A complete example covering service RED, endpoint latency, status classes, host health, log counts and trace panels, with dependent variables.
+- **`query_guide`** — Counter/gauge/histogram and derived trace metric semantics, instant versus range, rate windows, percentage bounds, and logjson/tracejson rules.
+
+The same content is readable at `last9://reference/create_dashboard_guide`, `last9://reference/dashboard_examples`, and `last9://reference/query_guide`. Prompts and resources remain discoverable under every toolset; executing the workflow needs the relevant tools (for mixed-signal authoring, use `--toolsets=dashboards,investigate`, which also serves `list_datasources`). Read-only sessions can prepare and validate but cannot save. Check tool availability before following a step.
+
+Panel checks currently use `prometheus_range_query`, `prometheus_instant_query`, `get_logs` and `get_traces` alongside `validate_dashboard`. The validator's unsupported query types and simplified defaults do not establish rendering parity. The separate query-check step will switch to `query_panel` after #475 lands.
 
 ### Continuous Profiling
 
@@ -384,9 +400,9 @@ Read-only tools against the org's Grafana instance (via Last9's Grafana proxy). 
 
 **Deep links on every response.** Every tool returns a `deep_link` field — a direct URL into the Last9 dashboard for that exact query and time range. The agent can hand you the link; you click it; you're there.
 
-**Toolsets.** By default the server exposes every tool. Automation hosts that only need investigation (logs/traces/metrics/profiles) can set `LAST9_TOOLSETS=investigate` (or pass `--toolsets=investigate`) so `tools/list` stays small without client-side mass-disable. Named packs: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`. Unknown names fail fast. `get_current_time` and `get_workspace_overview` are served under every toolset. In HTTP mode a request can narrow this further with the `X-Last9-Toolsets` header (see [Per-request toolsets](#per-request-toolsets)). The `metrics` pack alone does **not** include `list_datasources` or `did_you_mean` — use `investigate` (or combine toolsets) when you need those discovery helpers.
+**Toolsets.** By default the server exposes every tool. Automation hosts that only need investigation (logs/traces/metrics/profiles) can set `LAST9_TOOLSETS=investigate` (or pass `--toolsets=investigate`) so `tools/list` stays small without client-side mass-disable. Named packs: `logs`, `traces`, `metrics`, `alerts`, `dashboards`, `profiles`, `grafana`, `investigate`, `all`. Unknown names fail fast. `get_current_time` and `get_workspace_overview` are served under every toolset. In HTTP mode a request can narrow this further with the `X-Last9-Toolsets` header (see [Per-request toolsets](#per-request-toolsets)). The `alerts` pack also serves the read-only `prometheus_range_query` and `get_dashboard`, which the `author-alert` prompt calls. The `metrics` pack alone does **not** include `list_datasources` or `did_you_mean` — use `investigate` (or combine toolsets) when you need those discovery helpers.
 
-**Tool reference resources.** Long logjson/tracejson/service-logs/metrics manuals are MCP resources (`last9://reference/logjson`, `last9://reference/tracejson`, `last9://reference/service_logs`, `last9://reference/metrics`, `last9://reference/investigation`), not always-on tool description text. Critical query rules stay on the tool description so agents that never call `resources/read` still get correct construction guidance. Discover org-specific fields with `get_log_attributes` / `get_log_attributes_for_pipeline` (and the trace equivalents)—they are not injected into descriptions.
+**Tool reference resources.** Long logjson/tracejson/service-logs/metrics manuals are MCP resources (`last9://reference/logjson`, `last9://reference/tracejson`, `last9://reference/service_logs`, `last9://reference/metrics`, `last9://reference/investigation`, `last9://reference/alerting`), not always-on tool description text. The alerting manual covers the alert expression grammar, static vs adaptive fields, units, what `validate_alert_expression` checks, and latency / error-rate / saturation rule templates. Critical query rules stay on the tool description so agents that never call `resources/read` still get correct construction guidance. Discover org-specific fields with `get_log_attributes` / `get_log_attributes_for_pipeline` (and the trace equivalents)—they are not injected into descriptions.
 
 **Chunked large results.** `get_logs` and `get_traces` handle large result sets through chunking rather than truncating. The default limit is 5000 entries for logs; configurable via `LAST9_MAX_GET_LOGS_ENTRIES`.
 
@@ -779,9 +795,9 @@ Requires the companion backend capability to be enabled.
 - `start_time_iso` / `end_time_iso` (string, optional)
 - `lookback_minutes` (integer, optional): Default: 4320 (72 hours).
 - `selected_span_id` (string, optional): Returns attributes, events, and links for that span only.
-- `max_spans` (integer, optional): Default: 500. Maximum: 1000.
+- `max_spans` (integer, optional): Default: 500. Maximum: 1000; the org's redaction policy may cap it lower.
 
-Returns an `investigation-evidence/v1` envelope; the waterfall is under `data`.
+Returns the trace service's `investigation-evidence/v1` envelope unchanged; the waterfall is under `data`. The service builds the waterfall and redacts values under a per-org policy (credentials, query literals, URLs, emails, IPs, user identifiers) before it leaves the backend: `sanitizer` names the policy that ran and `evidence.sanitization` counts what it redacted or truncated. If something needed is redacted, ask an org admin to adjust the policy rather than working around it. The tool refuses a response with no `sanitizer` block, a `sanitizer.version` other than `trace-evidence-sanitizer/v1`, a body that repeats a JSON key, or a body over 512 KiB (lower `max_spans`). Requires the companion backend capability to be enabled.
 
 ### get_change_events
 
@@ -816,6 +832,28 @@ Configured Compass alert-group inventory for changeboard / label-coverage audits
 
 Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `entity_class`, `team`, `tier`, `metadata.labels`, and rule counts. Empty `team` / `labels` means unset.
 
+### get_alert_operations_summary
+
+- `start_time_iso` / `end_time_iso` (string, required): RFC3339 window, at most 31 days.
+- `timezone` (string, optional): IANA name for day boundaries. Default: `UTC`.
+- `severities` / `services` (array, optional): Narrow the summary.
+- `include_rules` (boolean, optional): Also return per-rule hygiene (top 20 by `fire_count`, flapping and unrouted rules, with `truncated` when the API capped its rule list). Default: `false`.
+
+Returns JSON with `alerts_raised`, `acknowledged`, `unacknowledged`, `current_backlog`, `delivered`, `notification_outcomes`, `top_rules`, `needs_attention` and `coverage`. Each metric is `{status, count?, reason?}`; a `partial` count covers only part of the window and is not a lower bound.
+
+### get_alert_coverage
+
+Answers "what am I not alerting on?" for a service, an environment, one alert group, or the whole organization when no scope is given. Read-only: it never creates, changes, or unmutes anything. Also served in the `investigate` toolset.
+
+- `service` (string, optional): Service name.
+- `environment` (string, optional): Deployment environment (for example `prod`).
+- `entity_id` (string, optional): Alert group (entity) UUID, as returned by `get_alert_groups`.
+- `muted_days` (integer, optional): Whole days, 1 to 3650. Default: 7; 0 means the default. A rule muted longer than this is a `muted_too_long` gap.
+
+Values are trimmed; blank strings are ignored. Gap kinds: **uncovered_signal** (no enabled rule on latency, error_rate, throughput, or saturation; names a disabled rule that would cover it), **all_rules_disabled** (an alert group whose rules are all disabled), **no_notification_channel** (a rule whose severity no channel on its alert group routes), **muted_too_long** (muted indefinitely or for more than `muted_days`; `muted_since` is the rule's last update and `mute_until` is omitted for an indefinite mute).
+
+Returns compact JSON `{scope, generated_at, complete, summary, counts, groups}`. `groups` holds one `{kind, count, gaps, omitted}` entry per kind present, listing at most 10 gaps per kind (`omitted` counts the rest; narrow the scope to see them); each gap carries `suggested_tool` (`create_alert`, `create_alert_from_chart`, `attach_notification_channel`, or `patch_alert`) and `suggested_args`, holding only inputs that tool accepts (`patch_alert`: `entity_id`, `id` and `is_disabled=false` or `mute_until=0`; `attach_notification_channel`: `alert_group_id` and a `breach`/`threat` `severity`; `create_alert`: `entity_id`; `create_alert_from_chart`: `service_name`); the gap's own `entity_id`, `rule_id` and `signal` are listed beside them. Call the suggested tool only if it is available in the session and the user confirms. `complete` is true only when the API lists no gaps, every count is 0, and at least one alert group matches the scope (exact `service_name` / `env` labels, checked against `get_alert_groups`' list); a scope matching none, a failed lookup, or counts with no listed gaps are not complete, and `summary` says why.
+
 ### get_alert_config
 
 - `search_term` (string, optional): Free-text search across name, group, data source, tags.
@@ -825,6 +863,29 @@ Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `en
 - `alert_group_name` / `alert_group_type` / `data_source_name` (string, optional)
 - `tags` (array, optional): All must match (AND logic).
 
+Each rule lists `Recent Evaluations`: 5 one-minute samples, newest first, each labelled by the UTC minute it ends; the newest ends 1–2 minutes before the call, since the monitor fills the latest minute late. `firing`; `ok` = the monitor reported the rule not firing (normal, resolved, pending or empty state, as `is_firing=0` in `get_alert_rule_state`); `unknown` = no monitor row for the rule (not evaluated yet, or that minute's lookup failed, noted at the top of the response), or a row whose state is none of firing, normal, resolved, pending or empty (e.g. `no_data`, `silenced`). Disabled rules show none. When more than 25 enabled rules match, history is omitted for all of them and the response says so.
+
+### get_entity_kpis
+
+Read-only; in the `alerts` and `investigate` toolsets. Lists every KPI on one alert group, including KPIs no alert rule uses yet. Use the returned ids in `expression_args` / `indicators_used`; never invent one.
+
+- `entity_id` (string, required): Alert group/entity UUID, from `get_alert_groups` or `get_alert_config`.
+
+Returns JSON `{"entity_id","count","kpis":[{"id","name","description","query","unit"}]}`, sorted by name. `unit` is a display label: thresholds compare against the raw query value. When no KPI fits, create one with `create_kpi`. An empty group's result names `create_kpi` only when the session serves it; with `--read-only` (unless `--allow-write-tools=create_kpi`) or the `investigate` toolset it says KPI creation needs a writable `alerts` session instead.
+
+### create_kpi
+
+Creates a KPI on an existing alert group; `alerts` toolset only. Use it only when `get_entity_kpis` has no KPI with the query you need. Check the query returns data with `prometheus_range_query` first: the API rejects only a query that does not parse, and saves a valid query for a metric that does not exist.
+
+- `entity_id` (string, required): Alert group/entity UUID.
+- `name` (string, required): Unique within the alert group; a second create with the same name is rejected as a conflict.
+- `query` (string, required): PromQL. To alert on a dashboard panel, take the panel's PromQL from `get_dashboard`.
+- `unit` (string, required): Unit of the query's raw value, e.g. `seconds`, `ms`, `percent`, `ratio`, `count`, `req/s`. It is a label only and converts nothing, so thresholds compare against the raw value.
+- `description` (string, optional)
+- `data_source_id` (string, optional): Defaults to the alert group's data source.
+
+No MCP tool deletes or edits a KPI (use the Last9 UI), so confirm name, query and unit before creating. Create once and keep the returned id for `expression_args` / `indicators_used`; on a name conflict, reuse the existing KPI's id from `get_entity_kpis`. On a timeout or connection error the create may or may not have been applied: check by name with `get_entity_kpis` before retrying. Returns `{"id","name","query","unit"}`.
+
 ### get_alerts
 
 - `time_iso` (string, optional): Evaluation time in RFC3339.
@@ -833,9 +894,9 @@ Returns compact JSON `{"count":N,"groups":[...]}` with `id`, `name`, `type`, `en
 
 ### get_alert_rule_state
 
-- `start_time` (integer, required): Unix epoch start of the range (inclusive).
-- `end_time` (integer, required): Unix epoch end of the range (inclusive).
-- `step` (integer, required): Resolution in seconds between samples. The number of samples `((end_time - start_time) / step + 1)` is capped at 100.
+- `start_time` (integer or string, required): Start of the range (inclusive): Unix epoch seconds (`1718000000`) or RFC3339 (`2024-06-10T06:13:20Z`). Epoch milliseconds, microseconds and nanoseconds are converted to seconds; values before 2000-01-01 are rejected.
+- `end_time` (integer or string, required): End of the range (inclusive), in the same formats.
+- `step` (integer, required): Resolution in seconds between samples. The number of samples `((end_time - start_time) / step + 1)` is capped at 100. Each sample is one upstream call covering the `min(step, 3600)` seconds ending at its timestamp; samples are fetched 5 at a time, and the tool returns an error with retry guidance if they take longer than 60s.
 - `alert_group_id` (string, optional): Filter by alert group ID.
 - `rule_name` (string, optional): Regex filter on rule name.
 - `alert_group_name` (string, optional): Regex filter on alert group name.
@@ -866,7 +927,7 @@ Dry-runs an expression without saving. Use before `create_alert` / `update_alert
 
 - `entity_id` (string, required): Alert group/entity UUID.
 - `expression` (string, required): Arithmetic over indicators named by their KPI's exact name, e.g. `errors / requests`. At most 3 indicators. Write names with spaces, dots or dashes as-is (`Test Alert / errors`), exactly as `create_alert` saves them.
-- `indicators_used` (object, required, non-empty): Indicator name to KPI UUID owned by `entity_id`. Use each KPI's exact name: this dry-run accepts any name, but `create_alert` and `update_alert` reject `expression_args` keys that are not the bound KPI's name.
+- `indicators_used` (object, required, non-empty): Indicator name to KPI UUID owned by `entity_id`; list the group's KPI ids and names with `get_entity_kpis`. Use each KPI's exact name: this dry-run accepts any name, but `create_alert` and `update_alert` reject `expression_args` keys that are not the bound KPI's name.
 
 Only the arithmetic expression is checked (pass the inner metric expression, not an `adaptive_std_cmp(...)` wrapper); `condition` / `alert_condition` are not. The at-least-one-timeseries check runs only when more than one indicator is used.
 
@@ -1017,16 +1078,37 @@ No parameters. Returns all custom dashboards in the org as a JSON array with `id
 - `id` (string, required): Dashboard UUID.
 - `region` (string, optional): Region for panel query population. Defaults to configured datasource region.
 
+To alert on a panel, see `last9://reference/alerting`.
+
 ### validate_dashboard
 
 Read-only. Never creates or updates dashboards. Accept exactly one of `dashboard_id` or `dashboard_definition`.
 
 - `dashboard_id` (string, optional): Saved dashboard UUID to validate.
-- `dashboard_definition` (object, optional): Inline unsaved dashboard body (true dry run).
+- `dashboard_definition` (object, optional): Inline unsaved dashboard body (true dry run). A `{dashboard, metadata}` create envelope is unwrapped to its `dashboard` object.
 - `start_time_iso` / `end_time_iso` (string, optional): Validation window (RFC3339). Must be ≤ 24h.
 - `region` (string, optional): Region for panel query execution.
 
-Returns `dashboard_validation/v1`: per-panel lint + execute classification (`data` / `no_data` / `invalid` / `error`). Day-1 empty results classify as `valid_no_data` without diagnose probes.
+Returns `dashboard_validation/v1`: per-panel lint + execute classification (`data` / `no_data` / `invalid` / `error`). Day-1 empty results classify as `valid_no_data` without diagnose probes. A dashboard with no panels returns `success: false` with `error: "no_panels"`. Panel fields from other formats (Grafana `gridPos`, `title`, `type`, and `targets` on panels that need queries) and mistyped fields are listed per panel in `shape_problems`, counted in `summary.panels_invalid_shape`, and make `overall` `fail`.
+
+### preview_dashboard
+
+Read-only client-side preview. Pass either `dashboard` (the unsaved dashboard object from a create request) or `id` plus `ops` (the same ordered operations as `patch_dashboard`). Required `start_time_iso` and `end_time_iso` are RFC3339 timestamps spanning at most 24 hours. Optional `variables` contains scalar overrides; otherwise dashboard values and built-in defaults apply.
+
+```json
+{
+  "id": "dashboard-id",
+  "ops": [{"op": "update_panel", "panel_id": "panel-id", "fields": {"name": "Request latency"}}],
+  "start_time_iso": "2026-10-01T08:00:00Z",
+  "end_time_iso": "2026-10-01T09:00:00Z"
+}
+```
+
+Returns `saved: false`, a definition/query `validation` summary (including `definition_error` for a create-schema mismatch), and `panels` with `ok` / `empty` / `error` status, resolved queries and target diagnostics. PromQL and LogJSON execute; unsupported query types and unresolved variables make the panel an error. Valid non-query panels are `ok`; invalid panel definitions are `error`. Patch `diff` includes net `panels_added`, `panels_changed` (including moves) and `panels_removed`, plus ordered operation changes. IDs and zero-based indices identify panels; removed indices refer to the original dashboard. Saved panels must have distinct, nonempty IDs.
+
+Limits: 50 panels, 100 queries, 100 operations, 65536 JSON bytes each for input and candidate dashboard, and a 60-second execution deadline. Resolved queries over 65536 JSON bytes are rejected before execution. Evidence keeps at most three samples and 1024 JSON bytes per target, with `truncated: true` when samples are omitted. A JSON report over 262144 bytes fails with guidance to reduce the input.
+
+No dashboard is created or updated. This checks the candidate against the create schema and queries using the existing validator; it does not guarantee backend acceptance or rendering. Backend-assigned IDs, defaults, discarded fields or concurrent edits can change the saved result. The preview uses the same local patch operations and panel-version defaults as a write.
 
 ### create_dashboard
 
@@ -1134,7 +1216,36 @@ No parameters. Returns a safe projection of datasources (no credential fields).
 
 ## Testing
 
-See [TESTING.md](TESTING.md) for integration test setup and instructions.
+Run the test goroutine analyzer without executing the application tests:
+
+```bash
+make lint-test
+```
+
+This runs Go's `testinggoroutine` analyzer over all packages, including their
+`*_test.go` files, and checks it against unsafe and safe fixtures. Both CI test
+workflows run `go vet -testinggoroutine ./...` as a separate step, so cached
+package test results cannot bypass lint enforcement.
+
+The root package also runs the analyzer as a test. Use `go test -count=1 ./...`
+for the full suite with that check uncached: Go's test cache does not track
+internal package source files read by the analyzer subprocess. A plain
+`go test ./...` can reuse the root test's passing result after those files change.
+
+`Fatal`, `Fatalf`, and `FailNow` on `testing.T` or `testing.B` must run in the
+parent test goroutine. Workers should send errors back for the parent to assert:
+
+```go
+errs := make(chan error, 1)
+go func() { errs <- doWork() }()
+if err := <-errs; err != nil {
+    t.Fatal(err)
+}
+```
+
+The analyzer catches direct calls in `go func` closures; it is not a general
+interprocedural check for assertions hidden behind arbitrary helper calls.
+Integration tests skip unless `TEST_REFRESH_TOKEN` is set.
 
 ---
 

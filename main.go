@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
 	// The release image is alpine without tzdata; embed the zone database so
 	// get_current_time's LoadLocation works wherever the binary runs.
 	_ "time/tzdata"
@@ -159,17 +160,18 @@ func toolsetServerBuilder(cfg models.Config) func(toolsets.Set) (*last9mcp.Last9
 
 // buildServer creates the served MCP server for cfg.ToolFilter: resources,
 // prompts, tools and the instructions that name them, behind middleware.
+// middleware is added last so it runs before the per-tool argument middleware.
 func buildServer(cfg models.Config, middleware ...mcp.Middleware) (*last9mcp.Last9MCPServer, error) {
 	server, err := last9mcp.NewServerWithOptions("last9-mcp", Version, last9mcp.WithSkipProviderInit())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create MCP server: %w", err)
 	}
-	server.Server.AddReceivingMiddleware(middleware...)
 	registerReferenceResources(server)
 	workflows.Register(server)
 	if err := registerToolsAndInstructions(server, cfg); err != nil {
 		return nil, fmt.Errorf("failed to build the served surface: %w", err)
 	}
+	server.Server.AddReceivingMiddleware(middleware...)
 	return server, nil
 }
 
@@ -235,6 +237,15 @@ func run() int {
 	cfg, err := SetupConfig(models.Config{})
 	if err != nil {
 		log.Fatalf("config error: %v", err)
+	}
+
+	// Evals/replays only: pins relative query windows to a fixed instant.
+	fake, err := utils.InitClock()
+	if err != nil {
+		log.Fatalf("clock error: %v", err)
+	}
+	if fake != nil {
+		log.Printf("FAKE CLOCK ACTIVE (%s=%s): relative time windows are anchored to this instant; for evals/replays only", utils.FakeNowEnv, fake.Format(time.RFC3339))
 	}
 	// OTEL_SDK_DISABLED is the standard OTel env var. Honour it explicitly so
 	// that users can override the default (disable_telemetry=true) without

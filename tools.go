@@ -184,6 +184,10 @@ func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, 
 	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, tagSystemErrors(handler)); regErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, regErr)
 	}
+	// Middleware added later runs first, so integer coercion precedes the check.
+	if check, ok := argumentChecks[tool.Name]; ok {
+		server.Server.AddReceivingMiddleware(argumentCheckMiddleware(tool.Name, check))
+	}
 	if coerceErr := addIntegerArgsCoercion[In](server.Server, tool); coerceErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, coerceErr)
 	}
@@ -260,7 +264,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Name:        "get_current_time",
 		Annotations: readOnlyTool("Get Current Time"),
 		Description: prompts.GetCurrentTimeDescription,
-	}, workspace.NewGetCurrentTimeHandler(time.Now)))
+	}, workspace.NewGetCurrentTimeHandler(utils.Now)))
 
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "get_workspace_overview",
@@ -531,12 +535,37 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Description: prompts.GetAlertGroupsDescription,
 	}, alerting.NewGetAlertGroupsHandler(client, cfg)))
 
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_alert_operations_summary",
+		Annotations: readOnlyTool("Get Alert Operations Summary"),
+		Description: prompts.GetAlertOperationsSummaryDescription,
+	}, alerting.NewGetAlertOperationsSummaryHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_alert_coverage",
+		Annotations: readOnlyTool("Get Alert Coverage"),
+		Description: prompts.GetAlertCoverageDescription,
+	}, alerting.NewGetAlertCoverageHandler(client, cfg)))
+
 	// Register entity alert rules tool (entity-scoped, includes expression_args and resolved PromQL)
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "get_entity_alert_rules",
 		Annotations: readOnlyTool("Get Entity Alert Rules"),
 		Description: prompts.GetEntityAlertRulesDescription,
 	}, alerting.NewGetEntityAlertRulesHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_entity_kpis",
+		Annotations: readOnlyTool("Get Entity KPIs"),
+		Description: prompts.GetEntityKPIsDescription,
+	}, alerting.NewGetEntityKPIsHandler(client, cfg)))
+
+	reg(registerWriteTool(server, gate, &mcp.Tool{
+		Name:        "create_kpi",
+		Annotations: writeTool("Create KPI", false, false),
+		Description: prompts.CreateKPIDescription,
+	}, "get_entity_kpis for entity_id, looking for a KPI with the name you passed",
+		alerting.NewCreateKPIHandler(client, cfg)))
 
 	// Register describe alert chart tool (read-only enumerate of alertable signals on a covered Discover chart)
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
@@ -565,6 +594,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Name:        "get_alert_rule_state",
 		Annotations: readOnlyTool("Get Alert Rule State"),
 		Description: prompts.GetAlertRuleStateDescription,
+		InputSchema: alerting.AlertRuleStateInputSchema(),
 	}, alerting.NewAlertRuleStateHandler(client, cfg)))
 
 	// Register get traces tool (enhanced with trace query instructions)
@@ -734,6 +764,12 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Description: prompts.ValidateDashboardDescription,
 		InputSchema: dashboards.GetValidateDashboardInputSchema(),
 	}, dashboards.NewValidateDashboardHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "preview_dashboard",
+		Annotations: readOnlyTool("Preview Dashboard"),
+		Description: prompts.PreviewDashboardDescription,
+	}, dashboards.NewPreviewDashboardHandler(client, cfg)))
 
 	reg(registerWriteTool(server, gate, &mcp.Tool{
 		Name:        "create_dashboard",

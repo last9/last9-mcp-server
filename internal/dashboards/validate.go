@@ -110,6 +110,17 @@ func mapDashboardAPIError(err error) error {
 	return mapStatusAPIError(err, "dashboard is readonly and cannot be modified", "dashboard not found")
 }
 
+// mapDashboardFetchError names the id on 404 because the shared upstream
+// advice ("capability may be unavailable") misleads for a bad dashboard id.
+func mapDashboardFetchError(id string, err error) error {
+	notFound := fmt.Sprintf("dashboard %q not found; list_dashboards lists dashboard ids", id)
+	var upstream *utils.UpstreamHTTPError
+	if errors.As(err, &upstream) && upstream.StatusCode == http.StatusNotFound {
+		return errors.New(notFound)
+	}
+	return mapStatusAPIError(err, "dashboard is readonly and cannot be modified", notFound)
+}
+
 func mapSnapshotAPIError(err error) error {
 	if err == nil {
 		return nil
