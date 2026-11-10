@@ -44,10 +44,12 @@ func TestContractsLookupUsesConfiguredBoundary(t *testing.T) {
 func TestFetchContractsUsesDatasourceIdentityAndAccessToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/datasources/ds-1/api-source-contracts/" || r.URL.Query().Get("index") != "physical_index:app" || r.URL.Query().Get("schema_version") != "1" {
-			t.Fatalf("unexpected source-contract request: %s", r.URL.String())
+			fixtureErrorf(t, w, "unexpected source-contract request: %s", r.URL.String())
+			return
 		}
 		if r.Header.Get(constants.HeaderXLast9APIToken) != "Bearer token" {
-			t.Fatalf("missing access token")
+			fixtureErrorf(t, w, "missing access token")
+			return
 		}
 		_, _ = w.Write([]byte(`[{"datasource":"prod","source":"logs","index":"physical_index:app","schema_version":1,"backend_limits":{"no_hidden_sampling":true,"max_rows":5001},"execution":{"record_unit":"log_record","parser_stages":[]}}]`))
 	}))

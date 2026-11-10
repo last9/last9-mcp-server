@@ -29,20 +29,24 @@ func TestCatalogUsesExactBoundsAndOverfetchesTrustedInventory(t *testing.T) {
 			}})
 		case constants.EndpointLogsSeries:
 			if r.URL.Query().Get("start") != "2025-10-09T08:53:20Z" || r.URL.Query().Get("end") != "2025-10-09T09:03:20Z" || r.URL.Query().Get("exact_bounds") != "true" {
-				t.Fatalf("series bounds = %s", r.URL.RawQuery)
+				fixtureErrorf(t, w, "series bounds = %s", r.URL.RawQuery)
+				return
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []map[string]string{{"ServiceName": "checkout", "duration_ms": "12"}}, "l9_result": map[string]any{"partial": false}})
 		case constants.EndpointLogsQueryRange:
 			if r.URL.Query().Get("limit") != "3" {
-				t.Fatalf("catalog must overfetch: %s", r.URL.RawQuery)
+				fixtureErrorf(t, w, "catalog must overfetch: %s", r.URL.RawQuery)
+				return
 			}
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Fatal(err)
+				fixtureErrorf(t, w, "decode inventory request: %v", err)
+				return
 			}
 			pipeline := body["pipeline"].([]any)
 			if len(pipeline) != 1 || pipeline[0].(map[string]any)["type"] != "aggregate" {
-				t.Fatalf("service inventory must have no operation filter: %#v", pipeline)
+				fixtureErrorf(t, w, "service inventory must have no operation filter: %#v", pipeline)
+				return
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{"result": []map[string]any{{"metric": map[string]any{"value": "checkout", "count": 9}, "values": []any{}}, {"metric": map[string]any{"value": "payments", "count": 4}, "values": []any{}}, {"metric": map[string]any{"value": "extra", "count": 1}, "values": []any{}}}}, "l9_result": map[string]any{"partial": false}})
 		default:
@@ -71,7 +75,8 @@ func TestCatalogUsesExactBoundsAndOverfetchesTrustedInventory(t *testing.T) {
 func TestCatalogWithoutContractKeepsOnlyPositiveFieldObservations(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != constants.EndpointTracesSeries {
-			t.Fatalf("unexpected request %s", r.URL.Path)
+			fixtureErrorf(t, w, "unexpected request %s", r.URL.Path)
+			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": []map[string]string{{"ServiceName": "checkout"}}})
 	}))
@@ -373,6 +378,12 @@ func TestCatalogBodyEvidenceCarriesSampleCountAndExtraction(t *testing.T) {
 		}
 	}
 	t.Fatalf("body field was not returned: %#v", response.Fields)
+}
+
+func fixtureErrorf(t *testing.T, w http.ResponseWriter, format string, args ...any) {
+	t.Helper()
+	t.Errorf(format, args...)
+	http.Error(w, "invalid test request", http.StatusBadRequest)
 }
 
 func bodySampleResponse(lines ...string) map[string]any {
