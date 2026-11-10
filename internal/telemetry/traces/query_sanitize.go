@@ -103,7 +103,7 @@ func SanitizeTraceJSONQuery(stages []map[string]interface{}) error {
 			}
 		}
 
-		hasResult = hasResult || traceStageEmitsResult(stage, stageType)
+		hasResult = traceStageHasResult(stage, stageType, hasResult)
 	}
 	return nil
 }
@@ -138,7 +138,17 @@ func applyImplicitQuantileExactDefault(stage map[string]interface{}, hasResult b
 	}
 }
 
-func traceStageEmitsResult(stage map[string]interface{}, stageType string) bool {
+func traceStageHasResult(stage map[string]interface{}, stageType string, previous bool) bool {
+	if stageType == "select" {
+		labels, _ := stage["labels"].(map[string]interface{})
+		for field, rawAlias := range labels {
+			alias, _ := rawAlias.(string)
+			if alias == "__result__" || (field == "__result__" && alias == "") || (field == "*" && previous) {
+				return true
+			}
+		}
+		return false
+	}
 	if stageType == "window_aggregate" {
 		if alias, _ := stage["as"].(string); alias == "" || alias == "__result__" {
 			return true
@@ -152,7 +162,7 @@ func traceStageEmitsResult(stage map[string]interface{}, stageType string) bool 
 		return false
 	}
 	if stageType != "aggregate" {
-		return false
+		return previous
 	}
 	aggregates, _ := stage["aggregates"].([]interface{})
 	for _, raw := range aggregates {
