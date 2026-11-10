@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/entities"
 	"last9-mcp/internal/models"
@@ -92,7 +93,8 @@ func NewPatchAlertHandler(client *http.Client, cfg models.Config) func(context.C
 			}
 			return nil, nil, withUpstreamBody(err)
 		}
-		return alertMutationResult(cfg, nil, fmt.Sprintf(`{"patched":true,"id":%q}`, args.ID)), nil, nil
+		return alertRuleMutationResult(cfg, fmt.Sprintf(`{"patched":true,"id":%q}`, args.ID),
+			deeplink.AlertRuleReference{RuleID: args.ID, GroupID: stored.EntityID, GroupName: stored.GroupName}), nil, nil
 	}
 }
 

@@ -130,6 +130,9 @@ func (e *logSearchTimeoutError) Error() string {
 
 func (e *logSearchTimeoutError) Is(target error) bool { return target == ErrLogSearchTimeout }
 
+// SystemError marks the exhausted budget as the backend being slow, not a bad request.
+func (e *logSearchTimeoutError) SystemError() bool { return true }
+
 func logSearchBudget(cfg models.Config) time.Duration {
 	if cfg.LogSearchTimeout > 0 {
 		return cfg.LogSearchTimeout
