@@ -113,8 +113,10 @@ func TestSanitizeTraceJSONQuery_RejectsInvalidAggregateFunctions(t *testing.T) {
 		fnCase("apdex string", ".$apdex_score[0]", "[threshold, field]", fn1("$apdex_score", "0.5", trF)),
 
 		fnCase("avg ref", ".$avg[0]", "invalid aggregate field", fn1("$avg", "Duration) OR (1=1")),
+		fnCase("numeric ref", ".$sum[0]", "invalid aggregate field", fn1("$sum", "123")),
 		fnCase("quantile ref", ".$quantile[1]", "invalid aggregate field", fn1("$quantile", 0.95, "Duration) OR (1=1")),
 		fnCase("uniq ref", ".$uniq[0]", "invalid aggregate field", fn1("$uniq", "attributes['a') OR ('1'='1']")),
+		fnCase("uniq backslash", ".$uniq[0]", "invalid aggregate field", fn1("$uniq", `attributes['a\\b']`)),
 		fnCase("double quotes", ".$sum[0]", "single quotes", fn1("$sum", `attributes["http.status_code"]`)),
 	}
 	for _, c := range cases {
@@ -122,6 +124,67 @@ func TestSanitizeTraceJSONQuery_RejectsInvalidAggregateFunctions(t *testing.T) {
 			err := SanitizeTraceJSONQuery([]map[string]interface{}{aggStage(c.fn, "v")})
 			requireTraceInvalidField(t, err, p+c.suffix, c.substr)
 		})
+	}
+}
+
+func TestSanitizeTraceJSONQuery_AcceptsSupportedAggregateFieldSyntax(t *testing.T) {
+	for _, field := range []string{`attributes['label[0]']`, `resources['deployment[zone]']`, "Events.Name[1]"} {
+		for _, stage := range []map[string]interface{}{
+			aggStage(fn1("$uniq", field), "n"),
+			winStage(fn1("$uniq", field), "n"),
+		} {
+			if err := SanitizeTraceJSONQuery([]map[string]interface{}{stage}); err != nil {
+				t.Errorf("%s field %q: %v", stage["type"], field, err)
+			}
+		}
+	}
+}
+
+func TestSanitizeTraceJSONQueryDefaultsQuantileExactToPreviousResult(t *testing.T) {
+	for _, operator := range []string{"$quantile_exact", "$quantile_exact_over_time"} {
+		t.Run(operator, func(t *testing.T) {
+			for kind, consumer := range map[string]func(map[string]interface{}, string) map[string]interface{}{
+				"aggregate": func(fn map[string]interface{}, as string) map[string]interface{} { return aggStage(fn, as) },
+				"window":    winStage,
+			} {
+				stages := []map[string]interface{}{
+					winStage(fn1("$count"), "__result__"),
+					consumer(fn1(operator, 0.99), "p99"),
+				}
+				if err := SanitizeTraceJSONQuery(stages); err != nil {
+					t.Fatalf("%s consumer: %v", kind, err)
+				}
+				var args []interface{}
+				if kind == "aggregate" {
+					entry := stages[1]["aggregates"].([]interface{})[0].(map[string]interface{})
+					args = entry["function"].(map[string]interface{})[operator].([]interface{})
+				} else {
+					args = stages[1]["function"].(map[string]interface{})[operator].([]interface{})
+				}
+				if len(args) != 2 || args[1] != "__result__" {
+					t.Errorf("%s args = %#v, want an implicit __result__ field", kind, args)
+				}
+
+				invalid := []map[string]interface{}{winStage(fn1("$count"), "__result__"), consumer(fn1(operator, 1.5), "p99")}
+				if err := SanitizeTraceJSONQuery(invalid); err == nil || !strings.Contains(err.Error(), "numeric level in [0,1]") {
+					t.Errorf("%s out-of-range level error = %v", kind, err)
+				}
+			}
+		})
+	}
+}
+
+func TestSanitizeTraceJSONQuery_AggregatesEarlierDigitLeadingAlias(t *testing.T) {
+	for _, as := range []string{"39b_1", "1x", "9_"} {
+		for _, first := range []map[string]interface{}{
+			aggStage(fn1("$count"), as),
+			winStage(fn1("$count"), as),
+		} {
+			stages := []map[string]interface{}{first, aggStage(fn1("$sum", as), "total")}
+			if err := SanitizeTraceJSONQuery(stages); err != nil {
+				t.Errorf("%s alias %q: %v", first["type"], as, err)
+			}
+		}
 	}
 }
 

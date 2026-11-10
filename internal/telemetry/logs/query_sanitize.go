@@ -356,6 +356,10 @@ func sanitizeLogFunction(value interface{}, path string, aliases map[string]stru
 		}
 
 		sanitizedArgs := append([]interface{}(nil), args...)
+		if strings.TrimSuffix(operator, "_over_time") == "$quantile_exact" {
+			_, hasResult := aliases["__result__"]
+			sanitizedArgs = telemetry.DefaultQuantileExactField(sanitizedArgs, hasResult)
+		}
 		if field, i, ok := telemetry.AggregateFieldArg(operator, sanitizedArgs); ok {
 			next, err := sanitizeStageFieldRef(field, fmt.Sprintf("%s.%s[%d]", path, operator, i), aliases)
 			if err != nil {

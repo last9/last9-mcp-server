@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"regexp"
 
 	"last9-mcp/internal/utils"
@@ -33,11 +31,10 @@ func isMetricScopedSelector(query string) bool {
 // labelLookup is one prometheus_labels or prometheus_label_values call; fetch runs it over [start, end].
 // field names the key the API wraps its list in (e.g. {"labels":[...]}); empty means a bare array.
 type labelLookup struct {
-	op         string
 	noun       string
 	field      string
 	matchQuery string
-	fetch      func(start, end int64) (*http.Response, error)
+	fetch      func(start, end int64) ([]byte, error)
 }
 
 // labelWindow is the caller's resolved time range; isDefault marks one the caller left unset.
@@ -58,8 +55,8 @@ func resolveLabelWindow(startTimeISO, endTimeISO string, lookbackMinutes float64
 // run queries the caller's window. A metric-scoped lookup that comes back empty over
 // the default window is retried once over sparseLookbackMinutes, with a note saying so;
 // an explicit window is never widened.
-func (l labelLookup) run(w labelWindow) (*mcp.CallToolResult, any, error) {
-	body, err := l.read(w.start, w.end)
+func (l labelLookup) run(w labelWindow, dsNote string) (*mcp.CallToolResult, any, error) {
+	body, err := l.fetch(w.start, w.end)
 	var upstreamErr *utils.UpstreamHTTPError
 	if errors.As(err, &upstreamErr) {
 		return utils.ToolErrorResult(err.Error()), nil, nil
@@ -69,45 +66,26 @@ func (l labelLookup) run(w labelWindow) (*mcp.CallToolResult, any, error) {
 	}
 
 	if !w.isDefault || !isMetricScopedSelector(l.matchQuery) || resultLen(body, l.field) != 0 {
-		return textResult(body), nil, nil
+		return textResult(body, dsNote), nil, nil
 	}
 
-	wide, err := l.read(w.end-sparseLookbackMinutes*60, w.end)
+	wide, err := l.fetch(w.end-sparseLookbackMinutes*60, w.end)
 	if err != nil {
-		return textResult(body, l.emptyNote("retrying over the last 4 days failed: "+err.Error())), nil, nil
+		return textResult(body, l.emptyNote("retrying over the last 4 days failed: "+err.Error()), dsNote), nil, nil
 	}
 	n := resultLen(wide, l.field)
 	if n == 0 {
-		return textResult(body, fmt.Sprintf("No %s in the last %d minutes or the last 4 days.", l.noun, utils.DefaultLookbackMinutes)), nil, nil
+		return textResult(body, fmt.Sprintf("No %s in the last %d minutes or the last 4 days.", l.noun, utils.DefaultLookbackMinutes), dsNote), nil, nil
 	}
 	found := fmt.Sprintf("found %d", n)
 	if n < 0 {
 		found = "found a non-empty result"
 	}
-	return textResult(wide, l.emptyNote(found+" over the last 4 days (metric reports sparsely). Showing the wider window.")), nil, nil
+	return textResult(wide, l.emptyNote(found+" over the last 4 days (metric reports sparsely). Showing the wider window."), dsNote), nil, nil
 }
 
 func (l labelLookup) emptyNote(outcome string) string {
 	return fmt.Sprintf("No %s in the last %d minutes; %s", l.noun, utils.DefaultLookbackMinutes, outcome)
-}
-
-func (l labelLookup) read(start, end int64) ([]byte, error) {
-	httpResp, err := l.fetch(start, end)
-	if err != nil {
-		return nil, err
-	}
-	if httpResp == nil {
-		return nil, fmt.Errorf("received nil response from Prometheus")
-	}
-	defer httpResp.Body.Close()
-	if httpResp.StatusCode != http.StatusOK {
-		return nil, promErr(httpResp, l.op)
-	}
-	data, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-	return data, nil
 }
 
 // resultLen returns the length of the list in body, a JSON array or an object holding
@@ -135,7 +113,9 @@ func jsonArrayLen(body []byte) int {
 func textResult(body []byte, notes ...string) *mcp.CallToolResult {
 	content := []mcp.Content{&mcp.TextContent{Text: string(body)}}
 	for _, n := range notes {
-		content = append(content, &mcp.TextContent{Text: n})
+		if n != "" {
+			content = append(content, &mcp.TextContent{Text: n})
+		}
 	}
 	return &mcp.CallToolResult{Content: content}
 }

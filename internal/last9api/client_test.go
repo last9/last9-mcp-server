@@ -159,6 +159,49 @@ func TestDo_MissingRegionFailsWhenRequired(t *testing.T) {
 	}
 }
 
+func TestDo_MaxResponseBytes(t *testing.T) {
+	const body = `{"ok":true}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.Client(), testCfg(srv.URL))
+
+	for _, tc := range []struct {
+		name    string
+		limit   int64
+		wantErr bool
+	}{
+		{"below body size", int64(len(body)) - 1, true},
+		{"at body size", int64(len(body)), false},
+		{"above body size", int64(len(body)) + 1, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out struct {
+				OK bool `json:"ok"`
+			}
+			err := c.Do(context.Background(), "test op",
+				Request{Method: http.MethodGet, Path: "/a"}, &out, WithMaxResponseBytes(tc.limit))
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "exceeds") || !strings.Contains(err.Error(), "test op") {
+					t.Fatalf("want an oversized-response error naming the op, got %v", err)
+				}
+				var tooLarge *ResponseTooLargeError
+				if !errors.As(err, &tooLarge) || tooLarge.MaxBytes != tc.limit {
+					t.Fatalf("want a *ResponseTooLargeError with MaxBytes %d, got %#v", tc.limit, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Do: %v", err)
+			}
+			if !out.OK {
+				t.Error("response not decoded")
+			}
+		})
+	}
+}
+
 func TestDo_MapsNon2xxToUpstreamError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)

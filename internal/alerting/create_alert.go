@@ -15,6 +15,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// draftCreatedNote is the lifecycle sentence every alert create returns; evals match it verbatim.
+const draftCreatedNote = "Created as a disabled draft; it will not fire. Promote it with patch_alert is_disabled=false only after the user confirms."
+
 type CreateAlertArgs struct {
 	EntityID string `json:"entity_id" jsonschema:"(Required) Alert group/entity UUID; discover it before creating the rule"`
 	AlertRuleMutation
@@ -44,7 +47,7 @@ func NewCreateAlertHandler(client *http.Client, cfg models.Config) func(context.
 		if err := validateMutationIDResponse(body); err != nil {
 			return nil, nil, fmt.Errorf("invalid create alert response: %w", err)
 		}
-		text := strings.TrimSpace(string(body)) + "\n\nCreated as a disabled draft; it will not fire. Promote it with patch_alert is_disabled=false only after the user confirms."
+		text := strings.TrimSpace(string(body)) + "\n\n" + draftCreatedNote
 		if overridden {
 			text += " Requested is_disabled=false was ignored: create_alert always creates disabled."
 		}

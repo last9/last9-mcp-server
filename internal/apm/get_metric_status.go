@@ -1,6 +1,7 @@
 package apm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,47 +23,60 @@ import (
 type GetMetricStatusArgs struct {
 	Metric        string  `json:"metric" jsonschema:"(Required) Metric name (e.g. up) or PromQL series selector (e.g. up{job=\"api\"})"`
 	WindowMinutes float64 `json:"window_minutes" jsonschema:"(Required) Lookback window in minutes for liveness and cadence probes (minimum: 1). Prefer a window that can cover at least a few emission intervals for slow metrics (e.g. 5760 for daily CloudWatch metrics)."`
-	Datasource    string  `json:"datasource,omitempty" jsonschema:"Name of the datasource to query. If omitted, uses the default configured datasource."`
+	Datasource    string  `json:"datasource,omitempty" jsonschema:"Datasource name; omitted uses the default, a near miss its closest match (named in an additional content block)."`
 }
 
 type GetMetricStatusResult struct {
-	Live                    bool    `json:"live"`
-	SeriesCount             int     `json:"series_count"`
-	LastSampleAgeSeconds    float64 `json:"last_sample_age_seconds"`
-	InferredIntervalSeconds float64 `json:"inferred_interval_seconds"`
-	SuggestedWindow         string  `json:"suggested_window"`
+	Live                 bool    `json:"live"`
+	SeriesCount          int     `json:"series_count"`
+	LastSampleAgeSeconds float64 `json:"last_sample_age_seconds"`
+	// Null, never 0, when the window holds too few samples to infer a cadence.
+	InferredIntervalSeconds *float64 `json:"inferred_interval_seconds"`
+	SuggestedWindow         string   `json:"suggested_window"`
+	Note                    string   `json:"note,omitempty"`
 }
 
 func NewGetMetricStatusHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetMetricStatusArgs) (*mcp.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcp.CallToolRequest, args GetMetricStatusArgs) (*mcp.CallToolResult, any, error) {
-		status, err := computeGetMetricStatus(ctx, client, cfg, args)
+		if err := validateGetMetricStatusArgs(args); err != nil {
+			return nil, nil, err
+		}
+		choice, err := chooseDatasource(cfg, args.Datasource)
 		if err != nil {
 			return nil, nil, err
 		}
-		payload, err := json.Marshal(status)
+		if choice.candidates != nil {
+			return ambiguousDatasourceResult(args.Datasource, choice), nil, nil
+		}
+		status, err := computeGetMetricStatus(ctx, client, choice.cfg, args)
 		if err != nil {
+			return nil, nil, err
+		}
+		// HTML escaping would show the note's <fragment> placeholder as <fragment>.
+		var payload bytes.Buffer
+		enc := json.NewEncoder(&payload)
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(status); err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal get_metric_status response: %w", err)
 		}
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: string(payload)}},
-		}, nil, nil
+		return withDatasourceNote(&mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: strings.TrimSuffix(payload.String(), "\n")}},
+		}, choice.note), nil, nil
 	}
 }
 
-func computeGetMetricStatus(ctx context.Context, client *http.Client, cfg models.Config, args GetMetricStatusArgs) (GetMetricStatusResult, error) {
-	metric := strings.TrimSpace(args.Metric)
-	if metric == "" {
-		return GetMetricStatusResult{}, fmt.Errorf("metric is required")
+func validateGetMetricStatusArgs(args GetMetricStatusArgs) error {
+	if strings.TrimSpace(args.Metric) == "" {
+		return fmt.Errorf("metric is required")
 	}
 	if args.WindowMinutes < 1 {
-		return GetMetricStatusResult{}, fmt.Errorf("window_minutes must be at least 1")
+		return fmt.Errorf("window_minutes must be at least 1")
 	}
+	return nil
+}
 
-	queryCfg, err := resolveDatasourceCfg(cfg, args.Datasource)
-	if err != nil {
-		return GetMetricStatusResult{}, err
-	}
-
+func computeGetMetricStatus(ctx context.Context, client *http.Client, queryCfg models.Config, args GetMetricStatusArgs) (GetMetricStatusResult, error) {
+	metric := strings.TrimSpace(args.Metric)
 	endTime := time.Now().UTC().Unix()
 	dur := promDurationFromMinutes(args.WindowMinutes)
 	sel := metricSelector(metric)
@@ -76,6 +90,7 @@ func computeGetMetricStatus(ctx context.Context, client *http.Client, cfg models
 		return GetMetricStatusResult{
 			Live:        false,
 			SeriesCount: 0,
+			Note:        fmt.Sprintf("No series matched `%s` in the last %s: either it emits less often than that (widen `window_minutes`) or the name is wrong (check it with `prometheus_label_values`, label `__name__`, `match_query` such as `{__name__=~\".*<fragment>.*\"}`).", sel, dur),
 		}, nil
 	}
 
@@ -91,13 +106,19 @@ func computeGetMetricStatus(ctx context.Context, client *http.Client, cfg models
 		return GetMetricStatusResult{}, err
 	}
 
-	return GetMetricStatusResult{
+	status := GetMetricStatusResult{
 		Live:                    true,
 		SeriesCount:             int(math.Round(seriesCount)),
 		LastSampleAgeSeconds:    lastAge,
 		InferredIntervalSeconds: interval,
-		SuggestedWindow:         suggestWindow(lastAge, interval),
-	}, nil
+	}
+	if interval == nil {
+		status.SuggestedWindow = suggestWindow(lastAge, 0)
+		status.Note = fmt.Sprintf("Too few samples in the last %s to infer cadence, so inferred_interval_seconds is null; widen `window_minutes` to cover several emissions.", dur)
+	} else {
+		status.SuggestedWindow = suggestWindow(lastAge, *interval)
+	}
+	return status, nil
 }
 
 func metricSelector(metric string) string {
@@ -162,12 +183,16 @@ func queryInstantValues(ctx context.Context, client *http.Client, cfg models.Con
 	return out, nil
 }
 
-func inferIntervalSeconds(ctx context.Context, client *http.Client, cfg models.Config, sel, dur string, endTime int64) (float64, error) {
+func inferIntervalSeconds(ctx context.Context, client *http.Client, cfg models.Config, sel, dur string, endTime int64) (*float64, error) {
 	vals, err := queryInstantValues(ctx, client, cfg, fmt.Sprintf("scrape_interval(%s[%s])", sel, dur), endTime)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return medianFloat(vals), nil
+	median := medianFloat(vals)
+	if median <= 0 {
+		return nil, nil
+	}
+	return &median, nil
 }
 
 func medianFloat(vals []float64) float64 {

@@ -134,8 +134,8 @@ func TestGetMetricStatus_DailyMetricSuggestedWindow(t *testing.T) {
 	if status.LastSampleAgeSeconds < 85000 || status.LastSampleAgeSeconds > 90000 {
 		t.Fatalf("last_sample_age_seconds=%v, want ~86400", status.LastSampleAgeSeconds)
 	}
-	if status.InferredIntervalSeconds < 85000 || status.InferredIntervalSeconds > 90000 {
-		t.Fatalf("inferred_interval_seconds=%v, want ~86400", status.InferredIntervalSeconds)
+	if intervalSeconds(t, status) < 85000 || intervalSeconds(t, status) > 90000 {
+		t.Fatalf("inferred_interval_seconds=%v, want ~86400", intervalSeconds(t, status))
 	}
 	if status.SuggestedWindow != "3d" {
 		t.Fatalf("suggested_window=%q, want %q", status.SuggestedWindow, "3d")
@@ -194,8 +194,8 @@ func TestGetMetricStatus_LiveHighCadenceUsesInterval(t *testing.T) {
 	if !status.Live || status.SuggestedWindow != "$__interval" {
 		t.Fatalf("got live=%v suggested_window=%q; want live with $__interval", status.Live, status.SuggestedWindow)
 	}
-	if status.InferredIntervalSeconds != 15 {
-		t.Fatalf("inferred_interval_seconds=%v, want 15", status.InferredIntervalSeconds)
+	if intervalSeconds(t, status) != 15 {
+		t.Fatalf("inferred_interval_seconds=%v, want 15", intervalSeconds(t, status))
 	}
 }
 
@@ -340,8 +340,129 @@ func TestGetMetricStatus_DropsNonFiniteSamples(t *testing.T) {
 	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &status); err != nil {
 		t.Fatal(err)
 	}
-	if status.SeriesCount != 2 || status.LastSampleAgeSeconds != 30 || status.InferredIntervalSeconds != 60 {
+	if status.SeriesCount != 2 || status.LastSampleAgeSeconds != 30 || intervalSeconds(t, status) != 60 {
 		t.Fatalf("got %+v; want series_count=2 age=30 interval=60", status)
+	}
+}
+
+func intervalSeconds(t *testing.T, status GetMetricStatusResult) float64 {
+	t.Helper()
+	if status.InferredIntervalSeconds == nil {
+		t.Fatal("inferred_interval_seconds is null, want a number")
+	}
+	return *status.InferredIntervalSeconds
+}
+
+func decodeMetricStatusFields(t *testing.T, result *mcp.CallToolResult) map[string]any {
+	t.Helper()
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &fields); err != nil {
+		t.Fatal(err)
+	}
+	return fields
+}
+
+func TestGetMetricStatus_AbsentMetricSaysNoSeriesMatched(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	cfg := models.Config{APIBaseURL: server.URL, Region: "us-east-1"}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "mock-access-token", ExpiresAt: time.Now().Add(time.Hour)}
+
+	result, _, err := NewGetMetricStatusHandler(server.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetMetricStatusArgs{Metric: "metric_that_does_not_exist", WindowMinutes: 60})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := decodeMetricStatusFields(t, result)
+	want := "No series matched `{__name__=\"metric_that_does_not_exist\"}` in the last 1h: either it emits less often than that (widen `window_minutes`) or the name is wrong (check it with `prometheus_label_values`, label `__name__`, `match_query` such as `{__name__=~\".*<fragment>.*\"}`)."
+	if fields["note"] != want {
+		t.Fatalf("note=%q\nwant %q", fields["note"], want)
+	}
+	if v, ok := fields["inferred_interval_seconds"]; !ok || v != nil {
+		t.Fatalf("inferred_interval_seconds=%v (present=%v), want null", v, ok)
+	}
+	if fields["live"] != false || fields["series_count"] != float64(0) {
+		t.Fatalf("got %v; want live=false series_count=0", fields)
+	}
+	// The model reads the raw text, so placeholders must not arrive as <…>.
+	if raw := result.Content[0].(*mcp.TextContent).Text; !strings.Contains(raw, "<fragment>") {
+		t.Fatalf("raw text %s, want <fragment> unescaped", raw)
+	}
+}
+
+func TestGetMetricStatus_UnknownCadenceIsNull(t *testing.T) {
+	now := time.Now().UTC().Unix()
+	for name, intervalBody := range map[string]string{
+		"no samples": `[]`,
+		"NaN":        fmt.Sprintf(`[{"metric":{},"value":[%d,"NaN"]}]`, now),
+		"zero":       fmt.Sprintf(`[{"metric":{},"value":[%d,"0"]}]`, now),
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var payload struct {
+					Query string `json:"query"`
+				}
+				_ = json.NewDecoder(r.Body).Decode(&payload)
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case strings.Contains(payload.Query, "count(last_over_time("):
+					_, _ = fmt.Fprintf(w, `[{"metric":{},"value":[%d,"1"]}]`, now)
+				case strings.Contains(payload.Query, "time() - timestamp("):
+					_, _ = fmt.Fprintf(w, `[{"metric":{},"value":[%d,"3600"]}]`, now)
+				default:
+					_, _ = w.Write([]byte(intervalBody))
+				}
+			}))
+			defer server.Close()
+
+			cfg := models.Config{APIBaseURL: server.URL, Region: "us-east-1"}
+			cfg.TokenManager = &auth.TokenManager{AccessToken: "mock-access-token", ExpiresAt: time.Now().Add(time.Hour)}
+
+			result, _, err := NewGetMetricStatusHandler(server.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetMetricStatusArgs{Metric: "daily_metric", WindowMinutes: 120})
+			if err != nil {
+				t.Fatal(err)
+			}
+			fields := decodeMetricStatusFields(t, result)
+			if v, ok := fields["inferred_interval_seconds"]; !ok || v != nil {
+				t.Fatalf("inferred_interval_seconds=%v (present=%v), want null", v, ok)
+			}
+			want := "Too few samples in the last 2h to infer cadence, so inferred_interval_seconds is null; widen `window_minutes` to cover several emissions."
+			if fields["note"] != want {
+				t.Fatalf("note=%q\nwant %q", fields["note"], want)
+			}
+			if fields["live"] != true || fields["last_sample_age_seconds"] != float64(3600) || fields["suggested_window"] != "3h" {
+				t.Fatalf("got %v; want live, age 3600, suggested_window 3h", fields)
+			}
+		})
+	}
+}
+
+func TestGetMetricStatus_KnownCadenceHasNoNote(t *testing.T) {
+	now := time.Now().UTC().Unix()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `[{"metric":{},"value":[%d,"15"]}]`, now)
+	}))
+	defer server.Close()
+
+	cfg := models.Config{APIBaseURL: server.URL, Region: "us-east-1"}
+	cfg.TokenManager = &auth.TokenManager{AccessToken: "mock-access-token", ExpiresAt: time.Now().Add(time.Hour)}
+
+	result, _, err := NewGetMetricStatusHandler(server.Client(), cfg)(context.Background(), &mcp.CallToolRequest{}, GetMetricStatusArgs{Metric: "up", WindowMinutes: 15})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := decodeMetricStatusFields(t, result)
+	if _, ok := fields["note"]; ok {
+		t.Fatalf("note=%v, want it omitted when cadence is known", fields["note"])
+	}
+	if fields["inferred_interval_seconds"] != float64(15) {
+		t.Fatalf("inferred_interval_seconds=%v, want 15", fields["inferred_interval_seconds"])
 	}
 }
 
@@ -403,8 +524,8 @@ func TestGetMetricStatus_IntervalIndependentOfWindow(t *testing.T) {
 		if err := json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &status); err != nil {
 			t.Fatal(err)
 		}
-		if status.InferredIntervalSeconds != 60 || status.SuggestedWindow != "$__interval" {
-			t.Fatalf("window=%vm: interval=%v window=%q; want 60 and $__interval", minutes, status.InferredIntervalSeconds, status.SuggestedWindow)
+		if intervalSeconds(t, status) != 60 || status.SuggestedWindow != "$__interval" {
+			t.Fatalf("window=%vm: interval=%v window=%q; want 60 and $__interval", minutes, intervalSeconds(t, status), status.SuggestedWindow)
 		}
 		if !strings.HasPrefix(intervalQuery, "scrape_interval(") {
 			t.Fatalf("cadence must come from a raw-sample rollup, got %q", intervalQuery)

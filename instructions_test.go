@@ -395,6 +395,53 @@ func TestServerInstructionsDestructiveLinesMatchEachToolsEffect(t *testing.T) {
 	}
 }
 
+// update_dashboard re-sends every panel, so a one-panel edit through it costs
+// the whole dashboard in model output and risks drifting the other panels.
+func TestServerInstructionsRoutePanelEditsToPatchDashboard(t *testing.T) {
+	tests := []struct {
+		name       string
+		tools      []string
+		wantRefine string
+		wantPanels string
+	}{
+		{
+			name:       "both dashboard writes",
+			tools:      []string{"update_dashboard", "patch_dashboard"},
+			wantRefine: "- Refine an existing object with `patch_dashboard`, `update_dashboard`.",
+			wantPanels: "- Add, edit, remove or move individual dashboard panels with `patch_dashboard`; use `update_dashboard` only to restructure most of a dashboard.",
+		},
+		{
+			name:       "patch only",
+			tools:      []string{"patch_dashboard"},
+			wantRefine: "- Refine an existing object with `patch_dashboard`.",
+			wantPanels: "- Add, edit, remove or move individual dashboard panels with `patch_dashboard`.",
+		},
+		{
+			name:       "update only",
+			tools:      []string{"update_dashboard"},
+			wantRefine: "- Refine an existing object with `update_dashboard`.",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instructions := renderInstructions(t, tt.tools...)
+			lines := strings.Split(instructions, "\n")
+			if !slices.Contains(lines, tt.wantRefine) {
+				t.Errorf("missing refine line %q:\n%s", tt.wantRefine, instructions)
+			}
+			got := ""
+			for _, line := range lines {
+				if strings.Contains(line, "dashboard panels") {
+					got = line
+				}
+			}
+			if got != tt.wantPanels {
+				t.Errorf("panel-edit line = %q, want %q", got, tt.wantPanels)
+			}
+		})
+	}
+}
+
 // The logs toolset serves prometheus_instant_query for the log index inventory
 // metric only; it serves no tool that discovers other metric names.
 func TestServerInstructionsOfferPrometheusQueriesOnlyWithMetricDiscovery(t *testing.T) {
@@ -489,7 +536,9 @@ func TestServerInstructionsSayCreateAlertRulesStartDisabled(t *testing.T) {
 	}{
 		{name: "with patch_alert", tools: []string{"create_alert", "patch_alert"}, want: "- Alert rules from `create_alert` are created disabled; enable them with `patch_alert` after validating."},
 		{name: "without patch_alert", tools: []string{"create_alert"}, want: "- Alert rules from `create_alert` are created disabled."},
-		{name: "without create_alert", tools: []string{"patch_alert", "create_alert_from_chart"}},
+		{name: "chart only", tools: []string{"patch_alert", "create_alert_from_chart"}, want: "- Alert rules from `create_alert_from_chart` are created disabled; enable them with `patch_alert` after validating."},
+		{name: "both creates", tools: []string{"create_alert", "create_alert_from_chart", "patch_alert"}, want: "- Alert rules from `create_alert`, `create_alert_from_chart` are created disabled; enable them with `patch_alert` after validating."},
+		{name: "without alert creates", tools: []string{"patch_alert"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

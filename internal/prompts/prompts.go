@@ -194,6 +194,9 @@ var CreateDashboardDescription string
 //go:embed descriptions/update_dashboard.md
 var UpdateDashboardDescription string
 
+//go:embed descriptions/patch_dashboard.md
+var PatchDashboardDescription string
+
 //go:embed descriptions/delete_dashboard.md
 var DeleteDashboardDescription string
 
