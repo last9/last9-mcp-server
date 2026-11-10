@@ -102,6 +102,8 @@ The four highest-token tools — `get_logs`, `get_traces`, `get_service_logs`,
 rules + a `last9://reference/...` pointer). Their full manuals live in
 `internal/prompts/references/` (`logjson.md`, `tracejson.md`, `service_logs.md`,
 `metrics.md`, `investigation.md`) and are registered as MCP resources in `resources.go`.
+`alerting.md` is the shared manual for the alert tools; their descriptions keep the critical
+rules and a one-line pointer to it.
 
 - The `*_base.md` suffix means progressive disclosure and nothing else. A description with
   no manual of its own must not carry it.
@@ -281,8 +283,9 @@ type Request struct{ Method, Path string; Body any }
   messages, so make it readable.
 - `out` may be `nil` when the response body is not needed.
 - `Do` maps every non-2xx to a sanitized error — endpoint code never inspects status codes.
-- Options (`WithQuery`, `WithRegionHeader`, `WithRegionQuery`) are passed only by endpoints
-  that need them. `WithQuery` merges with the region parameter.
+- Options (`WithQuery`, `WithRegionHeader`, `WithRegionQuery`, `WithMaxResponseBytes`) are
+  passed only by endpoints that need them. `WithQuery` merges with the region parameter.
+  `WithMaxResponseBytes` turns an oversized success body into an error instead of decoding it.
 - A response the API reports as partial comes back alongside its field errors rather than as
   a failure; the tool surfaces them.
 
@@ -387,6 +390,10 @@ NO:  // loop over the rows and build the summary
 
 Leave existing comments alone.
 
+`comment_lint_test.go` fails on any comment block over 3 lines (`//go:` directives excluded)
+that is not in `testdata/long_comment_baseline.txt`. The baseline only shrinks: when you
+shorten or delete a listed block, delete its line; never add one.
+
 Exception: a function in an `internal/last9api/<area>` endpoint file that issues a call
 starts its doc comment with the method and path.
 
@@ -398,6 +405,16 @@ starts its doc comment with the method and path.
 
 **Take at most 3 parameters**, not counting `ctx` and variadic options. More than 3 means a
 struct, unless a struct genuinely makes it less readable.
+
+### Validation
+
+**Validate arguments before taking a concurrency slot or calling the API.** An invalid
+call must fail with its own diagnostic, not wait on a semaphore or reach the upstream. Test
+it with every slot held, asserting the original error and zero upstream requests.
+
+**A shared predicate that reconciles a newer explicit field with a legacy fallback lets the
+explicit field win whenever it is set.** Normalize the legacy value once, inside the
+predicate, and table-test conflicting inputs through every tool that calls it.
 
 ### Contracts
 

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/last9api"
 	"last9-mcp/internal/last9api/entities"
 	"last9-mcp/internal/models"
@@ -32,6 +33,9 @@ func NewCreateAlertHandler(client *http.Client, cfg models.Config) func(context.
 			return utils.ToolErrorResult(err.Error()), nil, nil
 		}
 		api := last9api.NewClient(client, cfg)
+		if refusal, err := refuseChartDerivedKPI(ctx, api, requestSession(req), args); refusal != nil || err != nil {
+			return refusal, nil, err
+		}
 		if refusal, err := refuseDuplicateRuleName(ctx, api, args.EntityID, args.AlertRule.RuleName); refusal != nil || err != nil {
 			return refusal, nil, err
 		}
@@ -44,14 +48,15 @@ func NewCreateAlertHandler(client *http.Client, cfg models.Config) func(context.
 		if err != nil {
 			return alertRuleWriteError(err)
 		}
-		if err := validateMutationIDResponse(body); err != nil {
+		response, err := parseMutationIDResponse(body)
+		if err != nil {
 			return nil, nil, fmt.Errorf("invalid create alert response: %w", err)
 		}
 		text := strings.TrimSpace(string(body)) + "\n\n" + draftCreatedNote
 		if overridden {
 			text += " Requested is_disabled=false was ignored: create_alert always creates disabled."
 		}
-		return alertMutationResult(cfg, []byte(text), ""), nil, nil
+		return alertRuleMutationResult(cfg, text, deeplink.AlertRuleReference{RuleID: response.ID, GroupID: args.EntityID, GroupName: response.GroupName}), nil, nil
 	}
 }
 
@@ -63,13 +68,8 @@ func refuseDuplicateRuleName(ctx context.Context, api *last9api.Client, entityID
 	}
 	name := strings.TrimSpace(*ruleName)
 	rules, err := entities.ListAlertRules(ctx, api, entityID)
-	var upstream *utils.UpstreamHTTPError
-	if errors.As(err, &upstream) && (upstream.StatusCode == http.StatusBadRequest || upstream.StatusCode == http.StatusNotFound) {
-		// The list takes only entity_id, so its 4xx means the group is unknown.
-		return utils.ToolErrorResult(fmt.Sprintf("entity_id %q is not an alert group; nothing was created. Copy the alert group id from get_alert_groups", entityID)), nil
-	}
 	if err != nil {
-		return nil, withUpstreamBody(err)
+		return alertGroupLookupError(err, entityID)
 	}
 	for _, rule := range rules {
 		if strings.EqualFold(strings.TrimSpace(rule.RuleName), name) {
@@ -77,4 +77,35 @@ func refuseDuplicateRuleName(ctx context.Context, api *last9api.Client, entityID
 		}
 	}
 	return nil, nil
+}
+
+// Sessions that described no chart skip the KPI lookup, so they pay no extra request.
+func refuseChartDerivedKPI(ctx context.Context, api *last9api.Client, session *mcp.ServerSession, args CreateAlertArgs) (*mcp.CallToolResult, error) {
+	if !hasDescribedChart(session) {
+		return nil, nil
+	}
+	kpis, err := entities.ListEntityKPIs(ctx, api, args.EntityID)
+	if err != nil {
+		return alertGroupLookupError(err, args.EntityID)
+	}
+	for name, arg := range args.AlertRule.ExpressionArgs {
+		for _, kpi := range kpis {
+			if !strings.EqualFold(kpi.ID, arg.ID) {
+				continue
+			}
+			if refusal := chartQueryRefusal(session, fmt.Sprintf("KPI %q (id %s) bound as %s", kpi.Name, kpi.ID, name), kpi.Definition.Query); refusal != "" {
+				return utils.ToolErrorResult(refusal), nil
+			}
+		}
+	}
+	return nil, nil
+}
+
+func alertGroupLookupError(err error, entityID string) (*mcp.CallToolResult, error) {
+	var upstream *utils.UpstreamHTTPError
+	if errors.As(err, &upstream) && (upstream.StatusCode == http.StatusBadRequest || upstream.StatusCode == http.StatusNotFound) {
+		// The group lists take only entity_id, so their 4xx means the group is unknown.
+		return utils.ToolErrorResult(fmt.Sprintf("entity_id %q is not an alert group; nothing was created. Copy the alert group id from get_alert_groups", entityID)), nil
+	}
+	return nil, fmt.Errorf("%w Nothing was created.", withUpstreamBody(err))
 }

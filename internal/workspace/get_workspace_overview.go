@@ -20,6 +20,7 @@ import (
 	"last9-mcp/internal/last9api/prom"
 	apitraces "last9-mcp/internal/last9api/traces"
 	"last9-mcp/internal/models"
+	"last9-mcp/internal/utils"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -73,7 +74,7 @@ type overviewOptions struct {
 }
 
 func NewGetWorkspaceOverviewHandler(client *http.Client, cfg models.Config) func(context.Context, *mcp.CallToolRequest, GetWorkspaceOverviewArgs) (*mcp.CallToolResult, any, error) {
-	return newWorkspaceOverviewHandler(client, cfg, overviewOptions{now: time.Now, callTimeout: overviewCallTimeout})
+	return newWorkspaceOverviewHandler(client, cfg, overviewOptions{now: utils.Now, callTimeout: overviewCallTimeout})
 }
 
 func newWorkspaceOverviewHandler(client *http.Client, cfg models.Config, opts overviewOptions) func(context.Context, *mcp.CallToolRequest, GetWorkspaceOverviewArgs) (*mcp.CallToolResult, any, error) {

@@ -8,12 +8,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
-	"last9-mcp/internal/deeplink"
 	"last9-mcp/internal/models"
 	"last9-mcp/internal/utils"
 )
@@ -75,10 +73,7 @@ func TestCreateAlertFromChartAllDefaultsOmitted(t *testing.T) { // AE1
 		}
 	}
 
-	wantMeta := deeplink.ToMeta(deeplink.NewBuilder("acme", "cluster-1").BuildAlertingGroupsLink())
-	if !reflect.DeepEqual(result.Meta, wantMeta) {
-		t.Errorf("meta = %+v, want %+v", result.Meta, wantMeta)
-	}
+	assertAlertLinkMeta(t, result, expectedAlertLink{URL: "/v2/organizations/acme/alerting/groups?group_id=grp-2&rule=rule-9", Label: "Open alert"})
 }
 
 func TestCreateAlertFromChartExplicitScoreUnitThreshold(t *testing.T) { // AE4
@@ -306,6 +301,9 @@ func TestCreateAlertFromChartSuccessWithoutRuleID(t *testing.T) {
 	if !result.IsError {
 		t.Fatalf("expected error result, got: %s", resultText(result))
 	}
+	if len(result.Meta) != 0 {
+		t.Errorf("missing rule ID must not produce links: %v", result.Meta)
+	}
 	text := resultText(result)
 	for _, want := range []string{"no rule id", "get_alert_config"} {
 		if !strings.Contains(text, want) {
@@ -444,6 +442,7 @@ func TestCreateAlertFromChartDisablesInPassedGroupWhenResponseOmitsIt(t *testing
 	if err != nil || result.IsError {
 		t.Fatalf("result=%s err=%v", resultText(result), err)
 	}
+	assertAlertLinkMeta(t, result, expectedAlertLink{URL: "/v2/organizations/acme/alerting/groups?group_id=grp-7&rule=rule-9", Label: "Open alert"})
 	if reqs := requests(); len(reqs) != 2 || reqs[1].path != "/entities/grp-7/alert-rules/rule-9" {
 		t.Fatalf("requests = %+v, want the disable in grp-7", reqs)
 	}
@@ -496,6 +495,9 @@ func TestCreateAlertFromChartReportsFailedDisable(t *testing.T) {
 				if !strings.Contains(text, want) {
 					t.Errorf("result missing %q:\n%s", want, text)
 				}
+			}
+			if len(result.Meta) != 0 {
+				t.Errorf("failed disable must not produce links: %v", result.Meta)
 			}
 			if strings.Contains(text, draftSentence) {
 				t.Errorf("failed disable must not claim a draft:\n%s", text)
