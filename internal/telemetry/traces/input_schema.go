@@ -254,11 +254,11 @@ func selectStageSchema() map[string]interface{} {
 			},
 			"starttime": map[string]interface{}{
 				"type":        "string",
-				"description": "Producer-formatted start time for selection.",
+				"description": "Unix timestamp in seconds encoded as a decimal string, for example \"1793131500\". Optional; no default. Prefer top-level start_time_iso and end_time_iso for the overall trace-query window; use this only when reproducing a producer pipeline's selection window.",
 			},
 			"endtime": map[string]interface{}{
 				"type":        "string",
-				"description": "Producer-formatted end time for selection.",
+				"description": "Unix timestamp in seconds encoded as a decimal string, for example \"1793131560\". Optional; no default. Prefer top-level start_time_iso and end_time_iso for the overall trace-query window; use this only when reproducing a producer pipeline's selection window.",
 			},
 		},
 	}
