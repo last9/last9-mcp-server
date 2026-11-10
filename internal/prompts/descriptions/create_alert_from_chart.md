@@ -1,4 +1,4 @@
-Create an alert rule directly from a covered Last9 Discover chart in one call, using the chart identity plus flat editor fields you already have from describe_alert_chart. Chart-derived rules are always static-threshold rules: there is no algorithm parameter on this tool and none can be set. Lifecycle: the rule is created enabled and fires immediately once its condition is met — unlike create_alert, which creates disabled for validation and requires promoting with patch_alert.
+Create an alert rule from a covered Last9 Discover chart using the identity and editor fields from describe_alert_chart. There is no query, PromQL or expression parameter: if the user pastes a custom query, pick a catalog signal_key from describe_alert_chart or explain that constraint; never call create_alert, create_kpi, get_entity_kpis, validate_alert_expression, or prometheus_range_query. Chart-derived rules are static-threshold only; algorithm cannot be set. Lifecycle: like create_alert, the rule is created disabled as a draft and does not fire; promote it with patch_alert is_disabled=false only after the user confirms. If disabling fails, the error names the rule id: it may be live.
 
 Parameters:
 - surface (Required): Surface identifier; one of discover-service or discover-exceptions.
@@ -21,3 +21,5 @@ Units warning: the defaults (> 0.01 over a 5-minute window with 3 bad minutes) f
 Retry discipline: On a timeout or connection error the create may or may not have been applied; check by name with get_alert_config (rule_name) before retrying. Never retry blindly: a blind retry duplicates the rule. get_alert_config output includes the entity_id; get_entity_alert_rules with that id shows the rule in full. On a duplicate-name conflict, check existing rules and pick a different name.
 
 Credentials must clear the alert-intelligence route's POST gate; viewer-role tokens are rejected with a permissions error.
+
+On success, _meta.reference_url opens the saved rule; _meta.links labels it "Open alert" and adds "Open group" only when the API supplies a group name.

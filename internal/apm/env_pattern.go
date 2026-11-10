@@ -29,6 +29,15 @@ func envRequested(raw, display string) string {
 	return raw
 }
 
+// envLiteral maps a literalEnvPattern display value back to its literal:
+// "" for all environments.
+func envLiteral(display string) string {
+	if display == ".*" {
+		return ""
+	}
+	return display
+}
+
 func literalEnvPattern(env string) (pattern, literal, display string, err error) {
 	lit := env
 	if strings.HasPrefix(lit, "^") && strings.HasSuffix(lit, "$") && len(lit) >= 2 {

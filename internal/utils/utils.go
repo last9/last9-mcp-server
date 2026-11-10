@@ -85,7 +85,7 @@ func ParseToolTimestamp(value string) (time.Time, error) {
 // If start_time_iso and end_time_iso are provided, they take precedence.
 // Otherwise, returns now and now - lookbackMinutes.
 func GetTimeRange(params map[string]interface{}, defaultLookbackMinutes int) (startTime, endTime time.Time, err error) {
-	return GetTimeRangeAt(params, defaultLookbackMinutes, time.Now().UTC())
+	return GetTimeRangeAt(params, defaultLookbackMinutes, Now().UTC())
 }
 
 // GetTimeRangeAt returns start and end times based on lookback minutes using the provided current time.
@@ -104,11 +104,11 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 		case int64:
 			lookbackMinutes = int(l)
 		default:
-			return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes must be a number")
+			return time.Time{}, time.Time{}, fmt.Errorf("Invalid lookback_minutes %q. Use minutes as a number, for example 60 for 1h or 390 for 6h30m", rawLookback)
 		}
 	}
 	if lookbackMinutes < 1 {
-		return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes must be at least 1")
+		return time.Time{}, time.Time{}, fmt.Errorf("lookback_minutes must be at least 1. Use minutes as a number, for example 60 for 1h")
 	}
 	// Default start time based on lookback
 	startTime = endTime.Add(time.Duration(-lookbackMinutes) * time.Minute)
@@ -119,7 +119,7 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 	if hasStart && startTimeStr != "" {
 		parsedStart, parseErr := ParseToolTimestamp(startTimeStr)
 		if parseErr != nil {
-			return time.Time{}, time.Time{}, fmt.Errorf("invalid start_time_iso format: %w", parseErr)
+			return time.Time{}, time.Time{}, fmt.Errorf("Invalid start_time_iso %q. Use RFC3339 like 2026-02-09T15:04:05Z. Original error: %w", startTimeStr, parseErr)
 		}
 		startTime = parsedStart
 	}
@@ -127,7 +127,7 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 	if hasEnd && endTimeStr != "" {
 		parsedEnd, parseErr := ParseToolTimestamp(endTimeStr)
 		if parseErr != nil {
-			return time.Time{}, time.Time{}, fmt.Errorf("invalid end_time_iso format: %w", parseErr)
+			return time.Time{}, time.Time{}, fmt.Errorf("Invalid end_time_iso %q. Use RFC3339 like 2026-02-09T16:04:05Z. Original error: %w", endTimeStr, parseErr)
 		}
 		endTime = parsedEnd
 	}
@@ -141,7 +141,7 @@ func GetTimeRangeAt(params map[string]interface{}, defaultLookbackMinutes int, n
 
 	// Validate time range
 	if startTime.After(endTime) {
-		return time.Time{}, time.Time{}, fmt.Errorf("start_time cannot be after end_time")
+		return time.Time{}, time.Time{}, fmt.Errorf("start_time cannot be after end_time; start_time_iso must be before end_time_iso. Swap the timestamps or widen the window")
 	}
 
 	return startTime, endTime, nil
@@ -260,39 +260,6 @@ func MakePromLabelValuesAPIQuery(ctx context.Context, client *http.Client, label
 	return client.Do(req)
 }
 
-func MakePromLabelsAPIQuery(ctx context.Context, client *http.Client, metric string, startTimeParam, endTimeParam int64, cfg models.Config) (*http.Response, error) {
-	promLabelsParam := struct {
-		Timestamp int64  `json:"timestamp"`
-		Window    int64  `json:"window"`
-		ReadURL   string `json:"read_url"`
-		Username  string `json:"username"`
-		Password  string `json:"password"`
-		Metric    string `json:"metric"`
-	}{
-		Timestamp: endTimeParam,
-		Window:    endTimeParam - startTimeParam,
-		ReadURL:   cfg.PrometheusReadURL,
-		Username:  cfg.PrometheusUsername,
-		Password:  cfg.PrometheusPassword,
-		Metric:    metric,
-	}
-
-	bodyBytes, err := json.Marshal(promLabelsParam)
-	if err != nil {
-		return nil, err
-	}
-
-	reqUrl := fmt.Sprintf("%s%s", cfg.APIBaseURL, constants.EndpointAPMLabels)
-	req, err := http.NewRequestWithContext(ctx, "POST", reqUrl, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set(constants.HeaderContentType, constants.HeaderContentTypeJSON)
-	req.Header.Set(constants.HeaderXLast9APIToken, constants.BearerPrefix+cfg.TokenManager.GetAccessToken(ctx))
-
-	return client.Do(req)
-}
-
 // ConvertTimestamp converts a timestamp from the API response to RFC3339 format
 func ConvertTimestamp(timestamp any) string {
 	switch ts := timestamp.(type) {
@@ -312,7 +279,7 @@ func ConvertTimestamp(timestamp any) string {
 		return time.Unix(0, ts).UTC().Format(time.RFC3339)
 	default:
 		// Fallback to current time if we can't parse
-		return time.Now().UTC().Format(time.RFC3339)
+		return Now().UTC().Format(time.RFC3339)
 	}
 }
 

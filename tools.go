@@ -14,6 +14,7 @@ import (
 	"last9-mcp/internal/auth"
 	"last9-mcp/internal/change_events"
 	"last9-mcp/internal/changeimpact"
+	"last9-mcp/internal/constants"
 	"last9-mcp/internal/dashboards"
 	"last9-mcp/internal/grafana"
 	"last9-mcp/internal/models"
@@ -62,10 +63,17 @@ type toolGate struct {
 	readOnly map[string]bool // every offered tool name → its readOnlyHint
 	served   toolsets.Set    // every admitted tool name
 	pending  []func() error  // registrations of admitted tools, in offer order
+
+	callTimeout time.Duration // overall deadline of one tool call
 }
 
 func newToolGate(filter toolsets.Filter) *toolGate {
-	return &toolGate{filter: filter, readOnly: make(map[string]bool), served: make(toolsets.Set)}
+	return &toolGate{
+		filter:      filter,
+		readOnly:    make(map[string]bool),
+		served:      make(toolsets.Set),
+		callTimeout: constants.ToolCallTimeout,
+	}
 }
 
 func (g *toolGate) admit(tool *mcp.Tool) bool {
@@ -129,9 +137,28 @@ func registerIfAllowed[In, Out any](server *last9mcp.Last9MCPServer, gate *toolG
 		return nil
 	}
 	gate.pending = append(gate.pending, func() error {
-		return registerTool(server, tool, handler, gate.served.Allows)
+		return registerTool(server, tool, withCallDeadline(gate.callTimeout, gate.readOnly[tool.Name], handler), gate.served.Allows)
 	})
 	return nil
+}
+
+// withCallDeadline bounds one tool call as a whole: per-request and per-chunk timeouts
+// alone let a chunk loop run for hours. Read handlers can fold canceled requests into a
+// result, so every read result at the deadline is replaced; a write's may name its verify call.
+func withCallDeadline[In, Out any](timeout time.Duration, readOnly bool, handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		result, out, err := handler(ctx, req, in)
+		if !errors.Is(ctx.Err(), context.DeadlineExceeded) || (err == nil && !readOnly) {
+			return result, out, err
+		}
+		msg := fmt.Sprintf("Stopped at the %s tool-call deadline", timeout)
+		if err != nil {
+			msg += fmt.Sprintf(" (%v)", err)
+		}
+		return last9mcp.SystemErrorResult(msg + ". Narrow the time range or add filters before retrying."), out, nil
+	}
 }
 
 // registerTool registers one admitted tool, keeping only the description
@@ -151,13 +178,32 @@ func registerTool[In, Out any](server *last9mcp.Last9MCPServer, tool *mcp.Tool, 
 			err = fmt.Errorf("register %q: %v", tool.Name, r)
 		}
 	}()
-	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, handler); regErr != nil {
+	if normErr := normalizeToolInputSchema[In](tool); normErr != nil {
+		return fmt.Errorf("register %q: %w", tool.Name, normErr)
+	}
+	if regErr := last9mcp.RegisterInstrumentedTool(server, tool, tagSystemErrors(handler)); regErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, regErr)
+	}
+	// Middleware added later runs first, so integer coercion precedes the check.
+	if check, ok := argumentChecks[tool.Name]; ok {
+		server.Server.AddReceivingMiddleware(argumentCheckMiddleware(tool.Name, check))
 	}
 	if coerceErr := addIntegerArgsCoercion[In](server.Server, tool); coerceErr != nil {
 		return fmt.Errorf("register %q: %w", tool.Name, coerceErr)
 	}
 	return nil
+}
+
+// tagSystemErrors returns an upstream failure as a system_error-tagged result itself:
+// the SDK would wrap the error in an untagged result that telemetry counts as user_error.
+func tagSystemErrors[In, Out any](handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+		result, out, err := handler(ctx, req, in)
+		if utils.IsSystemError(err) {
+			return utils.ErrorResult(err), out, nil
+		}
+		return result, out, err
+	}
 }
 
 // registerWriteTool registers a tool that changes Last9 state. verify is the read call
@@ -220,7 +266,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Name:        "get_current_time",
 		Annotations: readOnlyTool("Get Current Time"),
 		Description: prompts.GetCurrentTimeDescription,
-	}, workspace.NewGetCurrentTimeHandler(time.Now)))
+	}, workspace.NewGetCurrentTimeHandler(utils.Now)))
 
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "get_workspace_overview",
@@ -285,6 +331,12 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Annotations: readOnlyTool("List Datasources"),
 		Description: prompts.ListDatasourcesDescription,
 	}, apm.NewListDatasourcesHandler(cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_metric_status",
+		Annotations: readOnlyTool("Get Metric Liveness and Cadence"),
+		Description: prompts.GetMetricStatusDescription,
+	}, apm.NewGetMetricStatusHandler(client, cfg)))
 
 	// Register PromQL range query tool (enhanced with metrics instructions)
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
@@ -471,12 +523,37 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Description: prompts.GetAlertGroupsDescription,
 	}, alerting.NewGetAlertGroupsHandler(client, cfg)))
 
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_alert_operations_summary",
+		Annotations: readOnlyTool("Get Alert Operations Summary"),
+		Description: prompts.GetAlertOperationsSummaryDescription,
+	}, alerting.NewGetAlertOperationsSummaryHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_alert_coverage",
+		Annotations: readOnlyTool("Get Alert Coverage"),
+		Description: prompts.GetAlertCoverageDescription,
+	}, alerting.NewGetAlertCoverageHandler(client, cfg)))
+
 	// Register entity alert rules tool (entity-scoped, includes expression_args and resolved PromQL)
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
 		Name:        "get_entity_alert_rules",
 		Annotations: readOnlyTool("Get Entity Alert Rules"),
 		Description: prompts.GetEntityAlertRulesDescription,
 	}, alerting.NewGetEntityAlertRulesHandler(client, cfg)))
+
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "get_entity_kpis",
+		Annotations: readOnlyTool("Get Entity KPIs"),
+		Description: prompts.GetEntityKPIsDescription,
+	}, alerting.NewGetEntityKPIsHandler(client, cfg)))
+
+	reg(registerWriteTool(server, gate, &mcp.Tool{
+		Name:        "create_kpi",
+		Annotations: writeTool("Create KPI", false, false),
+		Description: prompts.CreateKPIDescription,
+	}, "get_entity_kpis for entity_id, looking for a KPI with the name you passed",
+		alerting.NewCreateKPIHandler(client, cfg)))
 
 	// Register describe alert chart tool (read-only enumerate of alertable signals on a covered Discover chart)
 	reg(registerIfAllowed(server, gate, &mcp.Tool{
@@ -490,7 +567,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Name:        "create_alert_from_chart",
 		Annotations: writeTool("Create Alert From Chart", false, false),
 		Description: prompts.CreateAlertFromChartDescription,
-	}, "get_alert_config with rule_name set to the name you passed",
+	}, "get_alert_config with rule_name set to the name you passed; if it finds the rule, it was not disabled and can fire: run patch_alert with its Entity ID, id and is_disabled=true",
 		alerting.NewCreateAlertFromChartHandler(client, cfg)))
 
 	// Register alerts tool
@@ -505,6 +582,7 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		Name:        "get_alert_rule_state",
 		Annotations: readOnlyTool("Get Alert Rule State"),
 		Description: prompts.GetAlertRuleStateDescription,
+		InputSchema: alerting.AlertRuleStateInputSchema(),
 	}, alerting.NewAlertRuleStateHandler(client, cfg)))
 
 	// Register get traces tool (enhanced with trace query instructions)
@@ -681,6 +759,12 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		InputSchema: dashboards.GetValidateDashboardInputSchema(),
 	}, dashboards.NewValidateDashboardHandler(client, cfg)))
 
+	reg(registerIfAllowed(server, gate, &mcp.Tool{
+		Name:        "preview_dashboard",
+		Annotations: readOnlyTool("Preview Dashboard"),
+		Description: prompts.PreviewDashboardDescription,
+	}, dashboards.NewPreviewDashboardHandler(client, cfg)))
+
 	reg(registerWriteTool(server, gate, &mcp.Tool{
 		Name:        "create_dashboard",
 		Annotations: writeTool("Create Dashboard", false, false),
@@ -696,6 +780,13 @@ func registerTools(server *last9mcp.Last9MCPServer, cfg models.Config, client *h
 		InputSchema: dashboards.GetUpdateDashboardInputSchema(),
 	}, "get_dashboard for id, comparing it to the dashboard you sent",
 		dashboards.NewUpdateDashboardHandler(client, cfg)))
+
+	reg(registerWriteTool(server, gate, &mcp.Tool{
+		Name:        "patch_dashboard",
+		Annotations: writeTool("Patch Dashboard", true, false),
+		Description: prompts.PatchDashboardDescription,
+	}, "get_dashboard for id, checking the panels your ops targeted",
+		dashboards.NewPatchDashboardHandler(client, cfg)))
 
 	reg(registerWriteTool(server, gate, &mcp.Tool{
 		Name:        "delete_dashboard",
