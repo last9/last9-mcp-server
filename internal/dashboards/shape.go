@@ -22,18 +22,31 @@ var fieldAliases = map[string]map[string]string{
 // arguments that misses or mistypes the dashboard schema, so one call reports them all.
 // Arguments it cannot read as an object pass through for the input schema to reject.
 func CheckDashboardArguments(args json.RawMessage) error {
+	_, err := PrepareDashboardArguments(args)
+	return err
+}
+
+// PrepareDashboardArguments normalizes API round-trip defaults and validates the dashboard shape.
+func PrepareDashboardArguments(args json.RawMessage) (json.RawMessage, error) {
 	var doc map[string]any
 	if err := json.Unmarshal(args, &doc); err != nil {
-		return nil
+		return args, nil
 	}
 	dashboard, ok := doc["dashboard"].(map[string]any)
 	if !ok {
-		return nil
+		return args, nil
 	}
 	normalizeDashboardShape(dashboard)
 	s := shapeChecker{requireFields: true}
 	s.check(dashboardObjectSchema(""), dashboard, "dashboard", "")
-	return s.err()
+	if err := s.err(); err != nil {
+		return args, err
+	}
+	normalized, err := json.Marshal(doc)
+	if err != nil {
+		return nil, fmt.Errorf("normalize dashboard arguments: %w", err)
+	}
+	return normalized, nil
 }
 
 func normalizeDashboardShape(dashboard map[string]any) {
